@@ -20,13 +20,16 @@ const LISTED: usize = 6;
 /// Draws the dialog over `area`, above everything else, for the projects still being let go of.
 pub fn show(ui: &Ui, area: Rect, waiting: &[String]) {
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("closing")).order(egui::Order::Foreground).fixed_pos(area.min).show(ui.ctx(), |ui| {
-        // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
-        let mut styled_ui = style_class.ui(ui);
-        let ui = &mut *styled_ui;
-        ui.set_min_size(area.size());
-        draw(ui, &style_class, area, waiting);
-    });
+    crate::kit::floating::area(ui.ctx(), Id::unique("closing"), crate::kit::floating::Kind::Own)
+        .order(egui::Order::Foreground)
+        .fixed_pos(area.min)
+        .show(ui.ctx(), |ui| {
+            // The sheet's generic `button` and `text-input` rules reach the dialog's own widgets.
+            let mut styled_ui = style_class.ui(ui);
+            let ui = &mut *styled_ui;
+            ui.set_min_size(area.size());
+            draw(ui, &style_class, area, waiting);
+        });
 }
 
 fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[String]) {
@@ -38,9 +41,9 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[S
 
     let listed = waiting.len().min(LISTED) + usize::from(waiting.len() > LISTED);
     let height = ROW + PAD * 2.0 + (1 + listed) as f32 * LINE;
-    let size = crate::app::project_dialog::dialog_size(dialog, area, Vec2::new(WIDTH, height));
+    let size = crate::kit::floating::dialog_size(dialog, area, Vec2::new(WIDTH, height));
     let rect = Rect::from_center_size(area.center(), size);
-    let rect = crate::app::project_dialog::dialog_box(
+    let rect = crate::kit::floating::dialog(
         &painter,
         dialog,
         rect,

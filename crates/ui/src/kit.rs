@@ -8,7 +8,9 @@
 pub mod artwork;
 pub mod artwork_png;
 pub mod control_layout;
+pub mod divider;
 pub mod element;
+pub mod floating;
 pub mod floating_list;
 pub mod frame_trace;
 pub mod gradient;

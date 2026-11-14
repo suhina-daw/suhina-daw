@@ -8,22 +8,38 @@
 //! events in spans of every size, at every parameter's ends, `reset`, hostile events,
 //! all-notes-off and too little room to write, and every note they start is ended, also with
 //! room for no more events than they get. Effects and instruments are prepared again at other
-//! rates and must then sound as a fresh device does, and an effect's impulse must arrive when
-//! its [`Device::latency`] says.
+//! rates and must then sound as a fresh device does, one made at a rate must sound as one made
+//! at 48 kHz and prepared at that rate, and an effect's impulse must arrive when its
+//! [`Device::latency`] says. No device is made at a rate [`check_sample_rate`] refuses.
 //!
 //! The registry runs these checks on every built-in device; a device crate runs them on its own
 //! with [`conformance_test!`](crate::conformance_test).
 
-use crate::{Device, MusicalScale, NoteEvent, ParamKind, ProcessContext, Role, controller};
+#[cfg(doc)]
+use crate::check_sample_rate;
+use crate::{
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, MusicalScale, NoteEvent, ParamKind, ProcessContext, Role,
+    controller,
+};
 
 /// Frames of test signal per check.
 const FRAMES: usize = 8_192;
 /// Largest difference two renders of the same input may have and still count as equal.
 const TOLERANCE: f32 = 1e-6;
 
-/// Runs every check on devices made by `make` and returns what failed (empty when all pass).
-pub fn check(make: &dyn Fn() -> Box<dyn Device>) -> Vec<String> {
+/// Makes a device for a sample rate, as a device crate's `with_rate` does.
+pub type MakeAt<'a> = &'a dyn Fn(f64) -> Result<Box<dyn Device>, DeviceError>;
+
+/// Runs every check on devices `make_at` makes, and returns what failed (empty when all pass).
+/// Most checks run on devices made at [`DEFAULT_SAMPLE_RATE`].
+pub fn check(make_at: MakeAt) -> Vec<String> {
+    if let Err(e) = make_at(DEFAULT_SAMPLE_RATE) {
+        return vec![format!("not made at {DEFAULT_SAMPLE_RATE} Hz: {e}")];
+    }
+    let make = || made(make_at, DEFAULT_SAMPLE_RATE);
+    let make: &dyn Fn() -> Box<dyn Device> = &make;
     let mut failures = Vec::new();
+    check_made_at(make_at, &mut failures);
     check_info(make().as_ref(), &mut failures);
     check_params(make().as_mut(), &mut failures);
     check_hostile_values(make, &mut failures);
@@ -44,18 +60,20 @@ pub fn check(make: &dyn Fn() -> Box<dyn Device>) -> Vec<String> {
     failures
 }
 
-/// A `#[test]` that runs [`check`] on the devices an expression makes and fails with the list of
-/// what failed. For a device crate's tests:
+/// A `#[test]` that runs [`check`] on the devices a `with_rate` function makes and fails with the
+/// list of what failed. For a device crate's tests:
 ///
 /// ```ignore
-/// suhina_device_api::conformance_test!(Utility::new());
+/// suhina_device_api::conformance_test!(Utility::with_rate);
 /// ```
 #[macro_export]
 macro_rules! conformance_test {
-    ($make:expr) => {
+    ($make_at:expr) => {
         #[test]
         fn passes_the_device_conformance_checks() {
-            let failures = $crate::conformance::check(&|| ::std::boxed::Box::new($make));
+            let failures = $crate::conformance::check(&|rate| {
+                $make_at(rate).map(|device| ::std::boxed::Box::new(device) as ::std::boxed::Box<dyn $crate::Device>)
+            });
             assert!(failures.is_empty(), "{failures:#?}");
         }
     };
@@ -75,6 +93,74 @@ pub fn test_signal(frames: usize) -> Vec<f32> {
         }
     }
     out
+}
+
+/// The device `make_at` makes at `rate`, or [`Unmade`] when it makes none, which the checks
+/// then report as a device that sounds wrong.
+fn made(make_at: MakeAt, rate: f64) -> Box<dyn Device> {
+    make_at(rate).unwrap_or_else(|_| Box::new(Unmade))
+}
+
+static UNMADE: DeviceInfo = DeviceInfo::new("unmade", "Unmade", Role::Effect, &[]);
+
+/// Stands in for a device that was not made: silence, nothing else.
+struct Unmade;
+
+impl Device for Unmade {
+    fn info(&self) -> &DeviceInfo {
+        &UNMADE
+    }
+    fn prepare(&mut self, _: f64) -> Result<(), DeviceError> {
+        Ok(())
+    }
+    fn reset(&mut self) {}
+    fn set_param(&mut self, _: usize, _: f64) {}
+    fn param(&self, _: usize) -> Option<f64> {
+        None
+    }
+    fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {
+        buffer.fill(0.0);
+    }
+}
+
+/// A device made at a rate sounds as one made at 48 kHz and then prepared at that rate, also
+/// after a `reset` (ADR 0004 › Amendment: a device is made at its rate); a rate the device
+/// cannot run at makes no device.
+fn check_made_at(make_at: MakeAt, failures: &mut Vec<String>) {
+    for bad in [0.0, -1.0, f64::NAN, f64::INFINITY, 7_999.0, 384_001.0, 1e12] {
+        if make_at(bad).is_ok() {
+            failures.push(format!("a device was made at {bad} Hz"));
+        }
+    }
+    if made(make_at, DEFAULT_SAMPLE_RATE).info().role == Role::MidiEffect {
+        return;
+    }
+    for sr in [22_050.0, 44_100.0, 96_000.0] {
+        let mut at_rate = match make_at(sr) {
+            Ok(device) => device,
+            Err(e) => {
+                failures.push(format!("not made at {sr} Hz: {e}"));
+                continue;
+            }
+        };
+        let mut moved = made(make_at, DEFAULT_SAMPLE_RATE);
+        if let Err(e) = moved.prepare(sr) {
+            failures.push(format!("prepare({sr}) failed: {e}"));
+            continue;
+        }
+        let first = output(at_rate.as_mut(), FRAMES);
+        let diff = largest_difference(&first, &output(moved.as_mut(), FRAMES));
+        if diff > TOLERANCE {
+            failures.push(format!(
+                "made at {sr} Hz, the output differs from one made at 48 kHz and prepared at {sr} Hz by {diff}"
+            ));
+        }
+        at_rate.reset();
+        let diff = largest_difference(&first, &output(at_rate.as_mut(), FRAMES));
+        if diff > TOLERANCE {
+            failures.push(format!("made at {sr} Hz, after reset the output differs from a fresh device's by {diff}"));
+        }
+    }
 }
 
 fn check_info(device: &dyn Device, failures: &mut Vec<String>) {
@@ -186,7 +272,12 @@ fn render(make: &dyn Fn() -> Box<dyn Device>, sizes: &[usize]) -> Vec<f32> {
     signal
 }
 
+/// The largest sample difference; infinite when either buffer holds a non-finite sample, so an
+/// output of NaNs never compares equal (`f32::max` would drop a NaN difference).
 fn largest_difference(a: &[f32], b: &[f32]) -> f32 {
+    if a.iter().chain(b).any(|x| !x.is_finite()) {
+        return f32::INFINITY;
+    }
     a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max)
 }
 

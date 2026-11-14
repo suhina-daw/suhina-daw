@@ -36,7 +36,7 @@ fn db(gain: f64) -> f64 {
     20.0 * gain.log10()
 }
 
-suhina_device_api::conformance_test!(Compressor::new());
+suhina_device_api::conformance_test!(Compressor::with_rate);
 
 #[test]
 fn reduces_a_steady_sine_by_threshold_and_ratio() {

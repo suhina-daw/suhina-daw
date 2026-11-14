@@ -4,13 +4,13 @@ read_when: modern CSS, Stylo, Taffy, Lightning CSS, Blitz, native CSS architectu
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-02
+last_verified: 2026-11-12
 covers:
   - crates/ui/src/kit/native_css.rs
   - crates/ui/src/kit/native_css/paint.rs
   - crates/ui/src/kit/native_css/geometry.rs
   - crates/ui/src/kit/native_css/shadows.rs
-  - crates/ui/src/kit/native_css/workspace.rs
+  - crates/ui/src/kit/native_css/window.rs
   - crates/ui/src/kit/native_css/diagnostics.rs
   - crates/ui/src/kit/theme_css.rs
   - crates/ui/src/kit/style_class.rs

@@ -7,7 +7,7 @@ use super::*;
 
 /// What a drag in the loop brace row changes.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) enum LoopGrab {
+pub(crate) enum LoopGrab {
     /// Draws a new region from this beat (on the grid) to the pointer.
     New(f64),
     Start,
@@ -24,7 +24,7 @@ pub(super) enum Control {
 
 /// A clip being dragged: where it came from, its unsnapped start and the lane under the pointer.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct ClipDrag {
+pub(crate) struct ClipDrag {
     pub(super) track: TrackId,
     pub(super) clip: ClipId,
     pub(super) start: f64,
@@ -60,8 +60,8 @@ pub(super) struct Settling {
 
 /// A clip's edge being dragged: the clip, which grip, and the beat the edge is at so far;
 /// the beat it was at and where the button went down, which the edge follows the pointer from.
-#[derive(Debug, Clone, Copy)]
-pub(super) struct EdgeDrag {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct EdgeDrag {
     pub(super) key: (TrackId, ClipId),
     pub(super) grab: EdgeGrab,
     pub(super) raw: f64,
@@ -79,7 +79,7 @@ pub(super) enum FadeEdge {
 /// A fade handle being dragged: the clip, which fade, and its length so far in beats before
 /// snapping.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct FadeDrag {
+pub(crate) struct FadeDrag {
     pub(super) key: (TrackId, ClipId),
     pub(super) edge: FadeEdge,
     pub(super) raw: f64,
@@ -91,7 +91,7 @@ pub(super) struct FadeDrag {
 /// A fade's curve handle being dragged: the clip, which fade, the curve so far, and how far
 /// below the handle's centre the pointer took hold of it.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct CurveDrag {
+pub(crate) struct CurveDrag {
     pub(super) key: (TrackId, ClipId),
     pub(super) edge: FadeEdge,
     pub(super) curve: f64,
@@ -102,7 +102,7 @@ pub(super) struct CurveDrag {
 /// control, the value it had when the drag started and the value it has now, and the tracks the
 /// drag moves — the whole selection while the track is part of one, so they move in proportion.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct ValueDrag {
+pub(crate) struct ValueDrag {
     pub(super) track: TrackId,
     pub(super) control: Control,
     pub(super) start: f64,
@@ -164,9 +164,6 @@ pub struct ArrangementViewState {
     pub tracks_copied: bool,
     /// Tracks whose take lanes are folded away (Hide take lanes in the lane's menu).
     pub takes_hidden: HashSet<TrackId>,
-    /// A drag across a take lane that picks the part to comp: the track, the take's number and
-    /// the beat it started at.
-    pub(super) take_drag: Option<(TrackId, usize, f64)>,
     /// The take piece a right-click on a take lane was over (track, take number, piece from 0),
     /// which the lane's Recolor colours (#989).
     pub(super) take_piece: Option<(TrackId, usize, usize)>,
@@ -176,18 +173,6 @@ pub struct ArrangementViewState {
     /// The area painted across a track's take lanes with Ctrl and a drag (#1078), which Delete
     /// and Cut act on.
     pub take_area: Option<TakeArea>,
-    /// A Ctrl drag painting that area: the track, the take it started on and its first beat.
-    pub(super) take_area_drag: Option<(TrackId, usize, f64)>,
-    /// A drag moving pieces of takes along the timeline (#1078).
-    pub(super) take_move: Option<TakeMove>,
-    /// A drag on a lower corner of a piece of a take, moving that edge (#1078).
-    pub(super) take_edge: Option<TakeEdge>,
-    /// A drag on the handle of a crossfade between parts of two takes: the part before the cut
-    /// and the crossfade's length in beats so far (#1078).
-    pub(super) comp_fade_drag: Option<(ClipId, f64)>,
-    /// The bend of the crossfade after this part being dragged, and how far from its handle's
-    /// middle the pointer went down (#1078).
-    pub(super) comp_curve_drag: Option<(ClipId, f64, f32)>,
     /// Take pieces picked with Ctrl and a click (track, take number, piece from 0), which Delete
     /// deletes (#989).
     pub take_selected: Vec<(TrackId, usize, usize)>,
@@ -215,8 +200,6 @@ pub struct ArrangementViewState {
     /// show them; the window sets them.
     pub grid_keys: [String; 4],
     pub has_focus: bool,
-    /// A drag of the Draw tool on a lane: the track and the beat it started at.
-    pub(super) draw_drag: Option<(TrackId, f64)>,
     /// Alt held while an audio clip's edge is dragged stretches its audio to the new length
     /// (Settings › Arrangement › Ctrl+Alt-drag on an edge stretches audio).
     pub stretch_alt: bool,
@@ -243,17 +226,8 @@ pub struct ArrangementViewState {
     /// takes the run of clips from it, and the other views work on it.
     pub(super) selected: Vec<(TrackId, ClipId)>,
     pub(super) anchor: Option<(TrackId, ClipId)>,
-    /// Where a drag over empty lanes started: the selection rectangle runs from there to the
-    /// pointer until the button is let go.
-    pub(super) marquee: Option<Pos2>,
-    /// The drag that started `marquee` paints time (a lane's or a clip's upper half) rather than
-    /// drawing a rectangle that picks whole clips (the lower half).
-    pub(super) marquee_time: bool,
-    /// The stacked row a time-painting drag started in: its track, the row and how many.
-    pub(super) marquee_row: Option<(TrackId, usize, usize)>,
-    /// The scroll when `marquee` was last placed: the view scrolls under a drag past its edge,
-    /// and the rectangle's start moves with the lanes (#691).
-    pub(super) marquee_scroll: Vec2,
+    /// The drag under way: only one at a time (#1158).
+    pub(super) gesture: GestureSlot,
     /// The span the last selection rectangle covered: its tracks and its beats.
     pub(super) time_selection: Option<TimeSelection>,
     /// The stretch selected in time in the piano roll, for the clip it shows: that clip and the
@@ -263,12 +237,6 @@ pub struct ArrangementViewState {
     /// last frame left them: whichever was made since gives the others up (#1322).
     seen_selections:
         (Option<TimeSelection>, Vec<(TrackId, ClipId)>, Option<crate::arrangement::automation_lanes::LaneRange>),
-    /// Where a drag on the ruler started, in beats: it selects time over every track.
-    pub(super) ruler_select: Option<f64>,
-    /// While time is being painted: what a drag with Shift goes on from, known once it has begun.
-    pub(super) painted_from: Option<Option<TimeSelection>>,
-    /// A clip's edge being dragged.
-    pub(super) edge_drag: Option<EdgeDrag>,
     /// An edge just let go of: the clip, where its edges are now and the frames left to wait.
     /// It is drawn there until the project has it, or the frame the button came up showed the
     /// clip as it was before the drag for an instant.
@@ -284,7 +252,6 @@ pub struct ArrangementViewState {
     pub(super) settling: Vec<Settling>,
     /// The beat an empty spot of a lane was right-clicked on, for its menu.
     pub(super) menu_beat: Option<f64>,
-    pub(super) clip_drag: Option<ClipDrag>,
     /// A clip dropped on another track this frame: drawn there until the project has moved it,
     /// not back on its own track for a frame (#916).
     pub(super) landing: Option<ClipDrag>,
@@ -294,17 +261,8 @@ pub struct ArrangementViewState {
     /// The empty space under the tracks this frame, top to bottom: a clip dropped there goes to
     /// a new track.
     pub(super) below_tracks: Option<(f32, f32)>,
-    pub(super) value_drag: Option<ValueDrag>,
-    /// A clip gain being dragged, and its value so far.
-    pub(super) gain_drag: Option<((TrackId, ClipId), f64)>,
-    /// The main track's volume being dragged, and its value so far.
-    pub(super) main_drag: Option<f64>,
-    /// A header's send knob being dragged: the track, the return and the level so far (dB).
-    pub(super) send_drag: Option<(TrackId, TrackId, f64)>,
     /// The main row's height, its top edge dragged to change it (a row by default).
     pub(super) main_height: f32,
-    pub(super) fade_drag: Option<FadeDrag>,
-    pub(super) curve_drag: Option<CurveDrag>,
     /// The beat a clip was last right-clicked on, where its menu's Split here cuts.
     pub(super) split_at: Option<f64>,
     /// Tracks selected by clicking their headers (Ctrl adds, Shift takes a run), for grouping.
@@ -328,8 +286,6 @@ pub struct ArrangementViewState {
     /// The track the user last worked on: the header they clicked, or the track of the clip they
     /// selected. A folded group shows that track while it is one of its own.
     pub(super) targeted: Option<TrackId>,
-    /// A track header being dragged to a new place, and where it was let go.
-    pub(super) track_drag: Option<TrackId>,
     pub(super) track_drop: Option<(TrackId, f32)>,
     /// The middle button is held after being pressed over the timeline: the view follows it.
     pub(super) panning: bool,
@@ -388,15 +344,10 @@ pub struct ArrangementViewState {
     pub open_devices: Option<TrackId>,
     /// Automation lanes under the tracks: which are shown, selected points, a drag.
     pub automation: LanesState,
-    /// A marker being dragged: its index and where the pointer is, in beats before snapping.
-    pub(super) marker_drag: Option<(usize, f64)>,
     /// The beat a right-click on the ruler or the marker row would add a marker at.
     pub(super) marker_menu_beat: f64,
     /// The name being typed for a marker in its menu.
     pub(super) marker_name: Option<(usize, String)>,
-    /// A drag in the loop brace row: what it changes and where the pointer is, in beats before
-    /// snapping.
-    pub(super) loop_drag: Option<(LoopGrab, f64)>,
 }
 
 impl Default for ArrangementViewState {
@@ -410,15 +361,9 @@ impl Default for ArrangementViewState {
             returns_hidden: false,
             tracks_copied: false,
             takes_hidden: HashSet::new(),
-            take_drag: None,
             take_piece: None,
             take_heights: HashMap::new(),
             take_area: None,
-            take_area_drag: None,
-            take_move: None,
-            take_edge: None,
-            comp_fade_drag: None,
-            comp_curve_drag: None,
             take_selected: Vec::new(),
             take_lanes_picked: Vec::new(),
             take_headers: Vec::new(),
@@ -431,7 +376,6 @@ impl Default for ArrangementViewState {
             tool_keys: Vec::new(),
             grid_keys: Default::default(),
             has_focus: false,
-            draw_drag: None,
             stretch_alt: true,
             double_click_does_nothing: false,
             ara_tracks: Vec::new(),
@@ -445,31 +389,18 @@ impl Default for ArrangementViewState {
             expanded_heights: HashMap::new(),
             selected: Vec::new(),
             anchor: None,
-            marquee: None,
-            marquee_time: false,
-            marquee_row: None,
-            marquee_scroll: Vec2::ZERO,
+            gesture: GestureSlot::default(),
             time_selection: None,
             editor_span: None,
             seen_selections: (None, Vec::new(), None),
-            ruler_select: None,
-            painted_from: None,
-            edge_drag: None,
             edge_released: None,
             stretch_released: None,
             settling: Vec::new(),
             menu_beat: None,
-            clip_drag: None,
             landing: None,
             pressed_clip: None,
             below_tracks: None,
-            value_drag: None,
-            gain_drag: None,
-            main_drag: None,
-            send_drag: None,
             main_height: ROW,
-            fade_drag: None,
-            curve_drag: None,
             split_at: None,
             selected_tracks: Vec::new(),
             track_focus: false,
@@ -480,7 +411,6 @@ impl Default for ArrangementViewState {
             zoom_area: None,
             knobs: false,
             targeted: None,
-            track_drag: None,
             track_drop: None,
             panning: false,
             reveal: None,
@@ -505,10 +435,8 @@ impl Default for ArrangementViewState {
             insert: None,
             open_devices: None,
             automation: LanesState::default(),
-            marker_drag: None,
             marker_menu_beat: 0.0,
             marker_name: None,
-            loop_drag: None,
         }
     }
 }
@@ -525,7 +453,7 @@ pub struct TakeArea {
 
 /// Pieces of takes being dragged along the timeline.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct TakeMove {
+pub(crate) struct TakeMove {
     /// The number of the take the drag began on, whose lane the pointer's lane is counted from.
     pub(super) take: usize,
     pub(super) track: TrackId,
@@ -539,7 +467,7 @@ pub(super) struct TakeMove {
 
 /// A piece of a take whose edge is being dragged.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct TakeEdge {
+pub(crate) struct TakeEdge {
     pub(super) track: TrackId,
     pub(super) take: usize,
     /// Its place in the take, from 0.
@@ -810,13 +738,37 @@ impl ArrangementViewState {
     /// The clip being dragged with the mouse — or the one a press is held on, before the
     /// pointer has moved enough for the drag to be decided: its track and index.
     pub fn dragged_clip(&self) -> Option<(TrackId, ClipId)> {
-        self.clip_drag.map(|d| (d.track, d.clip)).or(self.pressed_clip)
+        self.gesture.clip().copied().map(|d| (d.track, d.clip)).or(self.pressed_clip)
     }
 
     /// Ends a clip's drag without moving it, as when the window carries it to the other view.
     pub fn cancel_clip_drag(&mut self) {
-        self.clip_drag = None;
+        self.gesture.end_clip(|_| true);
         self.pressed_clip = None;
+    }
+
+    /// Ends whatever drag is under way without committing it, as Escape and a switch to another
+    /// project do; `pressed_clip`, a press not yet a drag, is let go of too, and the rest of the
+    /// press does nothing. Returns whether a drag was under way.
+    pub fn cancel_gesture(&mut self) -> bool {
+        self.pressed_clip = None;
+        self.gesture.cancel()
+    }
+
+    /// Ends a drag that lost its release, once every button is up, while the view is not drawn
+    /// (the Launcher view shown): the view does it itself each frame it draws.
+    pub fn settle_gesture(&mut self, buttons_down: bool) {
+        self.gesture.settle(buttons_down);
+    }
+
+    /// Ends the drag under way, without committing it, when the window loses the focus.
+    pub fn lose_focus(&mut self) {
+        self.gesture.lose_focus();
+    }
+
+    /// Whether a drag is under way in the view (Escape then cancels it).
+    pub fn gesture_under_way(&self) -> bool {
+        self.gesture.is_some()
     }
 
     /// Forgets a press that was held on a clip whose widget has since gone away (scrolled out
@@ -990,17 +942,19 @@ impl ArrangementViewState {
     /// progress on it (fade ends on `grid`, or free when it is `None`).
     pub(super) fn shown(&self, key: (TrackId, ClipId), clip: &ClipBox, grid: Option<TimelineGrid>) -> Shown {
         let mut shown = Shown::of(clip);
-        if let Some((k, v)) = self.gain_drag
+        if let Some((k, v)) = self.gesture.gain().copied()
             && k == key
         {
             shown.gain_db = v;
         }
-        if let Some(drag) = self.fade_drag.filter(|d| d.key == key) {
+        if let Some(drag) = self.gesture.fade().copied().filter(|d| d.key == key) {
             match drag.edge {
                 FadeEdge::In => shown.fade_in = fade_length(drag.raw, FadeEdge::In, clip, shown.fade_out, grid),
                 FadeEdge::Out => shown.fade_out = fade_length(drag.raw, FadeEdge::Out, clip, shown.fade_in, grid),
             }
-        } else if let Some(drag) = self.fade_drag.filter(|d| self.is_selected(d.key) && self.is_selected(key)) {
+        } else if let Some(drag) =
+            self.gesture.fade().copied().filter(|d| self.is_selected(d.key) && self.is_selected(key))
+        {
             // Another selected clip's fade dragged: this one's moves by as much (#715).
             if clip.audio {
                 let by = drag.raw - drag.from;
@@ -1015,7 +969,7 @@ impl ArrangementViewState {
             }
         }
         // Another selected clip's curve dragged: this one's takes it too.
-        let curve = self.curve_drag.filter(|d| {
+        let curve = self.gesture.fade_curve().copied().filter(|d| {
             d.key == key || (clip.audio && self.selected.len() > 1 && self.is_selected(d.key) && self.is_selected(key))
         });
         if let Some(drag) = curve {

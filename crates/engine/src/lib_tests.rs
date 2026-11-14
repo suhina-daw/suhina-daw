@@ -1884,9 +1884,9 @@ fn a_clip_goes_between_direct_and_stretched_while_playing_without_a_click() {
 struct Counting(std::sync::atomic::AtomicUsize);
 
 impl DeviceFactory for Counting {
-    fn create(&self, id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn suhina_device_api::Device>> {
+    fn create(&self, id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn suhina_device_api::Device>> {
         self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        suhina_device_registry::factory().create(id, asset)
+        suhina_device_registry::factory().create(id, rate, asset)
     }
 
     fn graph_device(
@@ -1902,8 +1902,8 @@ impl DeviceFactory for Counting {
         suhina_device_registry::factory().runs_a_file(id)
     }
 
-    fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
-        suhina_device_registry::factory().preview_instrument()
+    fn preview_instrument(&self, rate: f64) -> Option<Box<dyn suhina_device_api::Device>> {
+        suhina_device_registry::factory().preview_instrument(rate)
     }
 }
 
@@ -1920,6 +1920,99 @@ fn devices_are_made_by_the_factory_the_renderer_is_given() {
     with_utility(&mut project);
     controller.update(&project).unwrap();
     assert!(counting.0.load(std::sync::atomic::Ordering::Relaxed) >= 3);
+}
+
+/// A sample player that writes down what the engine does to it, in order.
+struct Recorder(Arc<std::sync::Mutex<Vec<String>>>);
+
+static RECORDER: suhina_device_api::DeviceInfo =
+    suhina_device_api::DeviceInfo::new("recorder", "Recorder", suhina_device_api::Role::Instrument, &[]);
+
+impl Recorder {
+    fn note(&self, what: impl Into<String>) {
+        if let Ok(mut done) = self.0.lock() {
+            done.push(what.into());
+        }
+    }
+}
+
+impl suhina_device_api::SampleSource for Recorder {
+    fn load_shared_sample(&mut self, _: u32, _: u16, _: Arc<dyn AsRef<[f32]> + std::marker::Send + Sync>) {
+        self.note("load");
+    }
+}
+
+impl suhina_device_api::Device for Recorder {
+    fn info(&self) -> &suhina_device_api::DeviceInfo {
+        &RECORDER
+    }
+    fn prepare(&mut self, _: f64) -> Result<(), suhina_device_api::DeviceError> {
+        self.note("prepare");
+        Ok(())
+    }
+    fn reset(&mut self) {}
+    fn set_param(&mut self, _: usize, _: f64) {}
+    fn param(&self, _: usize) -> Option<f64> {
+        None
+    }
+    fn process(&mut self, _: &suhina_device_api::ProcessContext, _: &mut [f32]) {}
+    fn samples(&mut self) -> Option<&mut dyn suhina_device_api::SampleSource> {
+        Some(self)
+    }
+}
+
+/// Makes a [`Recorder`] for the id `sampler` (the id a stored sample is read for), sharing one
+/// list of what was done, which starts with the rate it was made for.
+struct Recorders(Arc<std::sync::Mutex<Vec<String>>>);
+
+impl DeviceFactory for Recorders {
+    fn create(&self, id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn suhina_device_api::Device>> {
+        if id == "sampler" {
+            let recorder = Recorder(self.0.clone());
+            recorder.note(format!("made at {rate}"));
+            return Some(Box::new(recorder));
+        }
+        suhina_device_registry::factory().create(id, rate, asset)
+    }
+
+    fn graph_device(
+        &self,
+        graph: &suhina_device_sdk::DeviceGraph,
+        rate: f64,
+        samples: suhina_device_sdk::sample_resource::PreparedSamples,
+    ) -> Result<suhina_device_sdk::GraphDevice, suhina_device_sdk::DeviceSdkError> {
+        suhina_device_registry::factory().graph_device(graph, rate, samples)
+    }
+
+    fn runs_a_file(&self, _: &str) -> bool {
+        false
+    }
+
+    fn preview_instrument(&self, _: f64) -> Option<Box<dyn suhina_device_api::Device>> {
+        None
+    }
+}
+
+/// A device is made at the engine's rate, is never prepared on the way, and only then gets its
+/// sample, so a Sampler builds its stretch voices once, for that rate (#1396, #1402).
+#[test]
+fn a_device_is_made_at_the_engines_rate_before_it_gets_its_sample() {
+    let mut project = project_with(Vec::new(), Vec::new(), 1);
+    with_utility(&mut project);
+    let device = &mut project.channels[0].devices[0];
+    device.kind = DeviceKind::Builtin("sampler".into());
+    device.set_sample_file("a.wav");
+    let mut pool = AudioPool::default();
+    pool.files.insert("a.wav".into(), Arc::new(AudioData { sample_rate: SR, channels: 1, samples: vec![0.25; 4800] }));
+    let done = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&pool, Arc::new(Recorders(done.clone()))),
+        44_100,
+        RenderOptions::STOPPED,
+    );
+    assert!(renderer.is_ok());
+    assert_eq!(*done.lock().unwrap(), ["made at 44100", "load"]);
 }
 
 /// A main channel with volume 0.5 and nothing else: its volume reaches every track's gains.

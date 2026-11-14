@@ -1054,7 +1054,7 @@ const DESCRIPTION_CHOICES: [(Descriptions, &str); 3] = [
 /// Help over the Settings window: what the names and descriptions are, and how a description is
 /// shown, one choice per line. Escape or Close closes it.
 fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome: &mut Outcome) {
-    let modal = egui::Modal::new(Id::unique("settings-help-dialog")).show(ui.ctx(), |ui| {
+    let modal = crate::kit::floating::modal(ui.ctx(), Id::unique("settings-help-dialog")).show(ui.ctx(), |ui| {
         ui.set_width(360.0);
         ui.label(egui::RichText::new("Help").font(theme::ui_font(theme::TEXT + 2.0)).color(theme::text_primary()));
         ui.add_space(6.0);

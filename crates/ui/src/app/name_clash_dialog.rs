@@ -30,7 +30,7 @@ impl CloseChoice for NameClashChoice {
 pub fn show(ui: &Ui, area: Rect, taken: &[String], count: usize, folder: &str) -> Option<NameClashChoice> {
     // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
     let style_class = crate::kit::element::DIALOG.enter();
-    egui::Area::new(Id::unique("name-clash-prompt"))
+    crate::kit::floating::area(ui.ctx(), Id::unique("name-clash-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {

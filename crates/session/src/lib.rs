@@ -40,6 +40,7 @@ mod clip_color;
 mod clip_edges;
 mod clip_shape;
 mod clipboards;
+pub mod colours;
 mod commands;
 mod demo;
 mod device_files;
@@ -231,10 +232,9 @@ pub struct Session {
     /// How long the fades of a part comped from a take are, in milliseconds (Settings ›
     /// Arrangement › Take lanes, #1078): the crossfade where it meets a part of another take.
     take_crossfade_ms: f64,
-    /// The colours a track without one of its own shows, by its place among the tracks (the
-    /// window's palette), and the one a new track gets instead, when set ([`Session::set_track_colours`]).
-    track_colours: (Vec<suhina_model::Rgb>, Option<suhina_model::Rgb>),
-    track_type_colours: Option<(suhina_model::Rgb, suhina_model::Rgb)>,
+    /// Every new track gets [`colours::MIDI`] rather than the default for its kind
+    /// ([`Session::set_one_new_track_colour`]).
+    one_new_track_colour: bool,
     /// A new clip takes its track's colour rather than the MIDI or audio default.
     new_clips_take_track_colour: bool,
     /// The project's plug-ins, running while it plays (ADR 0006).
@@ -290,15 +290,17 @@ impl Session {
     pub fn new(mut project: Project) -> Self {
         // A project that has used every id there is still opens; only adding objects then fails.
         let _ = project.assign_ids();
+        // A track saved without a colour of its own (before tracks stored one) is given the
+        // colour it shows, once. Not an edit: nothing to undo.
+        project.fill_track_colours();
         Self {
             project,
             source: None,
             history: history::History::default(),
             clipboards: clipboards::Clipboards::default(),
             take_crossfade_ms: Project::COMP_CROSSFADE_MS,
-            track_colours: (Vec::new(), None),
-            track_type_colours: None,
-            new_clips_take_track_colour: false,
+            one_new_track_colour: false,
+            new_clips_take_track_colour: true,
             plugins: rack::Rack::default(),
             audio: project_audio::ProjectAudio::default(),
             device_files: device_files::DeviceFiles::default(),
@@ -759,6 +761,15 @@ impl Session {
         self.live.recording.attach(player.take_recorder(), sample_rate);
         self.sync.player = Some(player);
         self.audio.changed = false;
+        // The files were read before this output opened, at the rate known then: an output at
+        // another rate has them read again, and the engine gets the new reads.
+        self.sync_device_files();
+        if self.device_files.changed {
+            // The engine's first graph holds the earlier reads: build and send it again, and
+            // retry like any edit the engine could not take.
+            let sent = self.follow_player(None);
+            self.sync.behind = sent.as_ref().is_err_and(|lag| lag.transient);
+        }
         // A new engine hears the tracks armed before it.
         self.send_armed();
     }
@@ -1351,29 +1362,10 @@ impl Session {
         (self.history.undo.len(), self.history.made)
     }
 
-    /// The colours a track without one of its own shows, by its place among the tracks (the
-    /// window's palette, which follows the theme), and `fixed`, the one colour every new track
-    /// gets, when set. Without a palette, tracks keep no colour of their own. Clears the MIDI and
-    /// audio defaults, so call [`Session::set_track_type_colours`] after it.
-    pub fn set_track_colours(&mut self, palette: Vec<suhina_model::Rgb>, fixed: Option<suhina_model::Rgb>) {
-        // Resolve legacy inherited colours once, before a later theme/default edit can change them.
-        // This is display normalisation, not an undoable project edit.
-        if !palette.is_empty() {
-            for (index, track) in self.project.tracks.iter_mut().enumerate() {
-                if track.color.is_none() {
-                    track.color = palette.get(index % palette.len()).copied();
-                }
-            }
-        }
-        self.track_type_colours = None;
-        if self.track_colours.0 != palette || self.track_colours.1 != fixed {
-            self.track_colours = (palette, fixed);
-        }
-    }
-
-    /// Optional MIDI/audio defaults for newly created tracks; existing explicit colours win.
-    pub fn set_track_type_colours(&mut self, midi: suhina_model::Rgb, audio: suhina_model::Rgb) {
-        self.track_type_colours = Some((midi, audio));
+    /// Whether every new track gets [`colours::MIDI`] (`true`, Settings › *One colour*) or the
+    /// MIDI or audio default for its kind (`false`, the default).
+    pub fn set_one_new_track_colour(&mut self, on: bool) {
+        self.one_new_track_colour = on;
     }
 
     /// Whether a new clip takes its track's colour (`true`) or the MIDI or audio default.
@@ -1382,36 +1374,28 @@ impl Session {
     }
 
     /// After an edit that adds, removes or moves tracks: every track keeps the colour it showed
-    /// (#690, #709). A track without a colour of its own showed its place's colour from the
-    /// palette, so it is given that colour now, before the places shift. A new track gets the
-    /// fixed colour, or else the MIDI or audio default for its kind, and only without those its
-    /// place's palette colour. Part of the same undo step.
+    /// (#690, #709). A track without a colour of its own showed its place's [`colours::LEGACY`]
+    /// colour, so it is given that colour now, before the places shift. A new track gets the MIDI
+    /// or audio default for its kind, or [`colours::MIDI`] with *One colour*. Part of the same
+    /// undo step.
     fn keep_track_colours(&mut self, before: &Project) {
-        let (palette, fixed) = &self.track_colours;
-        if palette.is_empty() && self.track_type_colours.is_none() {
-            return;
-        }
         let order = |p: &Project| p.tracks.iter().map(|t| t.id).collect::<Vec<_>>();
         let was = order(before);
         if was == order(&self.project) {
             return;
         }
-        let colour = |place: usize, track: &suhina_model::Track| {
-            self.track_type_colours.map_or_else(
-                || palette[place % palette.len()],
-                |(midi, audio)| if track.content.audio && !track.content.notes { audio } else { midi },
-            )
-        };
+        // A track an edit left without a colour (an older project set in place) keeps the one it
+        // showed.
         for (place, track) in before.tracks.iter().enumerate().filter(|(_, t)| t.color.is_none()) {
-            if let Some(now) = self.project.tracks.iter_mut().find(|t| t.id == track.id && t.color.is_none())
-                && !palette.is_empty()
-            {
-                now.color = palette.get(place % palette.len()).copied();
+            if let Some(now) = self.project.tracks.iter_mut().find(|t| t.id == track.id && t.color.is_none()) {
+                now.color = Some(colours::track_colour(None, place));
             }
         }
-        for (place, track) in self.project.tracks.iter_mut().enumerate() {
+        let one = self.one_new_track_colour;
+        for track in self.project.tracks.iter_mut() {
             if track.color.is_none() && !was.contains(&track.id) {
-                track.color = Some(fixed.unwrap_or_else(|| colour(place, track)));
+                let audio = !one && track.content.audio && !track.content.notes;
+                track.color = Some(if audio { colours::AUDIO } else { colours::MIDI });
             }
         }
     }
@@ -1419,7 +1403,7 @@ impl Session {
     /// New content takes the creation default once. Existing clips, shared-content copies
     /// and explicit colours never follow later changes to that default.
     fn colour_new_clips(&mut self, before: &Project) {
-        let Some((midi, audio)) = self.track_type_colours else { return };
+        let (midi, audio) = (colours::MIDI, colours::AUDIO);
         if self.project.contents.len() == before.contents.len() {
             return;
         }
@@ -1451,8 +1435,14 @@ impl Session {
             })
             .collect();
         let take_track = self.new_clips_take_track_colour;
-        let track_colours: std::collections::HashMap<_, _> =
-            self.project.tracks.iter().filter_map(|track| Some((track.id, track.color?))).collect();
+        // The colour each track shows, a track saved without one included.
+        let track_colours: std::collections::HashMap<_, _> = self
+            .project
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(place, track)| (track.id, colours::track_colour(track.color, place)))
+            .collect();
         let lanes = self.project.arrangement.lanes.iter_mut().flat_map(|lane| {
             let track = lane.track;
             lane.clips.iter_mut().map(move |clip| (track, clip))
@@ -1486,10 +1476,24 @@ impl Session {
     /// `device_asset_notes`, where a panel reads it. The reads run in the session's thread.
     pub fn sync_device_files(&mut self) {
         let need = self.device_file_paths();
+        // Every read was made at the rate before; a file read at another rate is read again
+        // whenever a device next needs it, also one that is not in the project now (an undo
+        // brings it back), so nothing retained keeps an IR of the wrong rate.
+        let rate = self.device_file_rate();
+        let mut changed = false;
+        if self.device_files.rate != rate {
+            self.device_files.rate = rate;
+            if !self.device_files.assets.entries.is_empty() {
+                self.device_files.assets.entries.clear();
+                changed = true;
+            }
+            self.device_files.notes.clear();
+            self.device_files.modified.clear();
+        }
         if need.is_empty() {
+            self.device_files.changed |= changed;
             return;
         }
-        let mut changed = false;
         for (path, kind) in need.iter() {
             // A path the project names is not even looked at unless its audio could be read
             // from there (#617): a network share would be asked for the person's sign-in. A
@@ -1575,7 +1579,12 @@ impl Session {
         need
     }
 
-    /// What a file-backed device of `kind` runs for `file`, read by the device
+    /// The rate files are read at: the player's, or 48 kHz until the first output opens.
+    fn device_file_rate(&self) -> u32 {
+        self.sync.player.as_ref().map_or(48_000, Player::sample_rate)
+    }
+
+    /// What a file-backed device of `kind` runs for the file at `path`, read by the device
     /// through the registry (a model for the Amp Modeler, an IR for the Cab Loader). The reads run
     /// here, at command or project-load time, never on the audio thread. The registry refuses a
     /// path without the device's extension and this anything but a plain file (a named pipe would
@@ -1596,7 +1605,7 @@ impl Session {
     ) -> Result<suhina_device_registry::DeviceAsset, String> {
         // An IR joins the project at the engine's rate; the session's rate is the player's, or
         // 48 kHz until the first output opens.
-        let rate = self.sync.player.as_ref().map_or(48_000, Player::sample_rate);
+        let rate = self.device_file_rate();
         // A shipped file's key rides the same state slot ([ADR 0036]): `builtin:<device
         // id>/<file name>`, run against the pack's bytes through the device's own loader. A
         // key of another device's pack is refused here, as a path of the wrong extension

@@ -258,7 +258,7 @@ pub(super) fn draw(
     use crate::kit::element::Attr;
     // The theme's parts: `piano-grid` (its border-color for the lines), `piano-row` and
     // `piano-row-black`, `piano-key` and `piano-key-black`, `piano-note` (`[selected]`,
-    // `[muted]`; `--clip-colour` is the clip's colour), `velocity`.
+    // `[muted]`; the `piano-roll` has the clip's colour as `[color]`), `velocity`.
     let grid_style = part_style("piano-grid", &[]);
     let row_style = part_style("piano-row", &[]);
     let black_row_style = part_style("piano-row-black", &[]);

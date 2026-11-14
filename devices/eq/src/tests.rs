@@ -76,7 +76,7 @@ fn gain_db(e: &mut Eq, hz: f64) -> f64 {
     20.0 * (level(&s, hz, 0) / 0.1).log10()
 }
 
-suhina_device_api::conformance_test!(Eq::new());
+suhina_device_api::conformance_test!(Eq::with_rate);
 
 #[test]
 fn every_type_has_the_measured_response() {

@@ -468,7 +468,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Tracks",
         "New track colour",
-        "Whether new tracks take the theme's colour for their kind or all take the same colour",
+        "Whether new tracks take Suhina's colour for their kind or all take the same colour",
         &["new_track_colour"],
         |cx, r| cx.choose(r, &[("By clip type", false), ("One colour", true)], |s| &mut s.view.fixed_track_colour),
     ),
@@ -476,11 +476,9 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Tracks",
         "New clip colour",
-        "Whether a new clip takes its track's colour or the theme's clip colour",
+        "Whether a new clip takes its track's colour or Suhina's colour for its kind",
         &["new_clip_colour"],
-        |cx, r| {
-            cx.choose(r, &[("Track colour", true), ("Theme default", false)], |s| &mut s.view.new_clip_track_colour)
-        },
+        |cx, r| cx.choose(r, &[("Track colour", true), ("By clip type", false)], |s| &mut s.view.new_clip_track_colour),
     ),
     row(
         Page::Arrangement,

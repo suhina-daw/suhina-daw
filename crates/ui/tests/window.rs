@@ -22,6 +22,7 @@ use suhina_ui::settings::themes::FileAction;
 use suhina_ui::{App, OpenAs, Status, View, kit::theme};
 
 mod arrangement;
+mod bars;
 mod control_bar;
 mod detail;
 mod export;

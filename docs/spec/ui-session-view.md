@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-10
+last_verified: 2026-11-14
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -101,7 +101,7 @@ this list and `docs/design/components.md` differ, components.md describes Suhina
 
 ## Launcher view
 
-A theme can opt slot columns into colour/state-keyed `track.body` SVG/PNG artwork
+A theme can opt slot columns into state-keyed `track.body` SVG/PNG artwork
 using `track-column { track-artwork: on; }`. The image stays
 behind cells; empty slots retain the texture, with native stop marks and hover
 feedback. Launch, selection, mapping and drop geometry are unchanged. Omission or
@@ -400,7 +400,8 @@ and an Arrangement header a band down its left edge, the header's full height. A
 colour is dimmed. Text drawn on the colour is the light or the dark text colour of the theme,
 whichever stands out more from it.
 
-The colour is picked from one palette, the theme's eight track colours, wherever a colour is
+The colour is picked from one palette, Suhina's eight track colours (the same in every theme,
+which draws a track's colour but never chooses it), wherever a colour is
 offered: a click on a track's colour band (the strip's in the Launcher view, the header's in the
 Arrangement) opens it as a popup, the track's right-click menu has it as before, and a colour
 tag's right-click menu in the browser has it before the free colour choice. Picking a swatch runs

@@ -229,7 +229,7 @@ fn a_style_that_depends_on_siblings_takes_one_more_frame() {
 fn elements_past_the_tree_s_depth_get_no_style_and_are_counted() {
     let ctx = egui::Context::default();
     let (styles, _) = one_frame(&ctx, "label { color: #FF0000; }", || {
-        let nested: Vec<_> = (0..16).map(|_| WORKSPACE.enter()).collect();
+        let nested: Vec<_> = (0..16).map(|_| WORKSPACE_PANEL.enter()).collect();
         let style = LABEL.style();
         drop(nested);
         (style, LABEL.style())

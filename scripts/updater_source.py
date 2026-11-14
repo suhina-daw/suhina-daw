@@ -49,13 +49,9 @@ PINNED = (
     'if from_fork && !linked.contains(&(pr, run)) {',
 )
 
-# Everything in the updater that decides what is downloaded and from where. Keep in step with
-# .github/CODEOWNERS.
-WATCHED = (
-    "crates/update",
-    "crates/ui/src/app/updates.rs",
-    "crates/ui/src/settings/update_settings.rs",
-)
+# Everything in the updater that decides what is downloaded and from where: the crate. The window's
+# update dialog and settings only show what it found. Keep in step with .github/CODEOWNERS.
+WATCHED = ("crates/update",)
 
 # The one line of each manifest that may name the updater's crate. Without this, a pull request
 # could leave the watched files alone and point `suhina-update` at another crate

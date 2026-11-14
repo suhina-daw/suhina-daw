@@ -11,7 +11,7 @@ const D: usize = CHUNK;
 
 fn loader(ir: Option<Ir>, settings: &[(usize, f64)]) -> CabLoader {
     let mut l = match ir {
-        Some(ir) => CabLoader::with_ir(ir),
+        Some(ir) => CabLoader::with_ir(ir, 48_000.0).unwrap(),
         None => CabLoader::new(),
     };
     for &(index, value) in settings {
@@ -51,7 +51,7 @@ fn level(signal: &[[f32; 2]], hz: f64, from: usize) -> f64 {
 
 #[test]
 fn passes_the_device_conformance_checks() {
-    let failures = conformance::check(&|| Box::new(CabLoader::new()));
+    let failures = conformance::check(&|rate| CabLoader::with_rate(rate).map(|cab| Box::new(cab) as Box<dyn Device>));
     assert!(failures.is_empty(), "{failures:#?}");
     // And with an IR, which fills the convolution but not the rules.
     let ir = Ir::from_interleaved(2, 3_000, 48_000, &{
@@ -59,7 +59,7 @@ fn passes_the_device_conformance_checks() {
         s[2] = 0.5;
         s
     });
-    let make = move || -> Box<dyn Device> { Box::new(CabLoader::with_ir(ir.clone())) };
+    let make = move |rate| CabLoader::with_ir(ir.clone(), rate).map(|cab| Box::new(cab) as Box<dyn Device>);
     let failures = conformance::check(&make);
     assert!(failures.is_empty(), "{failures:#?}");
 }
@@ -189,7 +189,7 @@ fn a_mono_ir_feeds_both_sides() {
 #[test]
 fn an_ir_at_another_rate_does_not_run() {
     let ir = Ir::from_interleaved(2, 4, 44_100, &[1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-    let mut l = CabLoader::with_ir(ir);
+    let mut l = CabLoader::with_ir(ir, 48_000.0).unwrap();
     l.set_param(param::HP, 0.0);
     l.prepare(SR).expect("prepare");
     // Nothing but the trims: an identity stream, one chunk late, finite.

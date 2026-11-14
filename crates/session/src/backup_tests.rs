@@ -312,18 +312,27 @@ fn clean_up_keeps_the_newest_of_one_project_and_touches_nothing_else() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Sets `path`'s last write to `seconds` after 1970: a test that needs a file to read as rewritten
+/// says so, rather than hoping the clock moved between two writes (file times tick in steps of up
+/// to 16 ms on Windows, a second on some file systems; `AGENTS.md` rule 7).
+fn stamp(path: &Path, seconds: u64) {
+    let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds)).unwrap();
+}
+
 #[test]
 fn an_entry_is_offered_only_while_its_backup_is_newer_than_its_file() {
     let dir = temporary("offer");
     let file = dir.join("Song.suhina");
     let backup = dir.join("Song 2026-10-15 14-05-09.suhina");
     std::fs::write(&file, "old").unwrap();
-    std::thread::sleep(Duration::from_millis(20));
+    stamp(&file, 1_000_000);
     std::fs::write(&backup, "new").unwrap();
+    stamp(&backup, 2_000_000);
     let entry = Entry { run: "r".into(), project: 1, file: Some(file.clone()), backup: backup.clone() };
     assert!(offered(&entry).is_some());
-    std::thread::sleep(Duration::from_millis(20));
     std::fs::write(&file, "saved").unwrap();
+    stamp(&file, 3_000_000);
     assert!(offered(&entry).is_none(), "saved after the backup");
     std::fs::remove_file(&file).unwrap();
     assert!(offered(&entry).is_some(), "the project file is gone");

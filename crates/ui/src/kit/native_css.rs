@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use egui::{Color32, Rect, Vec2};
+use egui::{Color32, Rect};
 use suhina_style::{
     motion::{self, Animation, Frames, Transition},
     property::Property,
@@ -27,9 +27,10 @@ mod native;
 pub(super) use native::user_agent;
 pub use native::user_agent_color;
 mod paint;
+pub mod row;
 mod shadows;
 mod text;
-mod workspace;
+mod window;
 pub use diagnostics::{Notice, inspect};
 pub use paint::background_with;
 pub(crate) use paint::border;
@@ -38,7 +39,7 @@ pub(in crate::kit) use paint::surface_with;
 pub(in crate::kit) use paint::{artwork_shadows, background_rounded, gradients_rounded, level_fill, level_glow};
 pub(in crate::kit) use paint::{box_begin, box_end};
 pub use text::paint_text;
-pub use workspace::{Workspace, splitter_between, workspace};
+pub use window::{BrowserSide, DetailPlace, Input as WindowInput, Region, Window, splitter_between, window};
 
 const MAX_CONTEXTS: usize = 128;
 const MAX_DEPTH: usize = 16;
@@ -92,6 +93,12 @@ pub struct Computed {
     resolved: Arc<suhina_style::cascade::ComputedStyle>,
 }
 impl Computed {
+    /// Whether a rule above the user agent wrote `property` on this element itself, rather than
+    /// the element inheriting it.
+    pub fn declared(&self, property: Property) -> bool {
+        self.resolved.declared(property)
+    }
+
     /// The computed value of `property`, written or not (a host default, an initial value).
     pub fn value(&self, property: Property) -> Value {
         self.resolved.get(property)
@@ -202,6 +209,11 @@ impl Computed {
         self.variables.get(name).map(String::as_str)
     }
 
+    /// Whether the sheet gives the element a `box-shadow`.
+    pub fn has_shadow(&self) -> bool {
+        !self.shadows.is_empty()
+    }
+
     pub fn has_gradient(&self) -> bool {
         !self.gradients.is_empty()
     }
@@ -281,6 +293,7 @@ impl Computed {
                         self.text_shadows = resolved.iter().map(text::Shadow::from_native).collect::<Vec<_>>().into();
                     } else {
                         self.shadows = resolved.iter().map(shadows::Shadow::from_native).collect::<Vec<_>>().into();
+                        self.authored.box_shadow = true;
                     }
                 }
             }
@@ -300,6 +313,8 @@ pub struct Authored {
     pub radius: bool,
     pub accent: bool,
     pub border_width: bool,
+    /// `box-shadow` was set, `none` included.
+    pub box_shadow: bool,
 }
 
 /// One running transition of one property of one element.
@@ -351,13 +366,13 @@ struct Engine {
     resolved: HashMap<u64, u64>,
     /// Whether this frame hit a limit of the tree, which the trace was told of.
     limited: bool,
-    toolbar: Option<(String, Vec<Module>)>,
-    workspace: Option<(String, Option<Workspace>)>,
+    /// Laid-out bar rows by their input (#1372), bounded.
+    rows: HashMap<String, row::Row>,
+    window: Option<(String, Window)>,
     /// Whether the browser and the detail area follow their splitters, by the window's size and
-    /// which panels are open: a splitter drag changes only the preferred sizes, which lays the
-    /// workspace out again without probing the flags anew.
-    workspace_follows: Option<(String, (bool, bool))>,
-    toolbar_layout: bool,
+    /// which regions are there: a splitter drag changes only the content sizes, which lays the
+    /// window out again without probing the flags anew.
+    window_follows: Option<(String, (bool, bool))>,
     collecting: bool,
     nodes: Vec<StyleNode>,
     parents: Vec<usize>,
@@ -425,8 +440,6 @@ struct StyleNode {
     id: Option<u32>,
     /// Pointer states (hover 1, active 2, disabled 4, focus 8) and the host's ([`mark_node`]).
     state: u16,
-    /// Custom properties the host gives the element ([`set_variable`]).
-    variables: Vec<(String, String)>,
     /// Attributes with a value the host gives the element (`color`), beside the states in
     /// `state` that are attributes without one.
     attributes: Vec<(String, String)>,
@@ -569,8 +582,7 @@ pub(super) fn enter(
                 | u16::from(!r.enabled()) << 2
                 | u16::from(r.has_focus()) << 3
         });
-        let node =
-            StyleNode { key, parent, element, id, state, variables: Vec::new(), attributes: Vec::new(), sheet: 0 };
+        let node = StyleNode { key, parent, element, id, state, attributes: Vec::new(), sheet: 0 };
         let index = engine.nodes.len();
         engine.nodes.push(node);
         engine.chains.push(0);
@@ -627,32 +639,6 @@ pub enum HostState {
 /// The host states and the selector names they match.
 pub(crate) const HOST_STATES: [(u16, &str); 6] =
     [(16, "checked"), (32, "selected"), (64, "playing"), (128, "recording"), (256, "armed"), (512, "muted")];
-
-/// Gives the element of this frame's tree at `node` the custom property `name` (`--track-colour`)
-/// as `value`, which it and its descendants see below every rule of the sheet.
-pub(super) fn set_variable(node: usize, name: &str, value: String) {
-    ENGINE.with(|engine| {
-        if let Some(node) = engine.borrow_mut().nodes.get_mut(node)
-            && node.variables.len() < 16
-        {
-            node.variables.push((name.to_owned(), value));
-        }
-    });
-}
-
-/// The variables Suhina sets for the elements in scope (`--track-colour`, `--clip-colour`, …),
-/// the innermost last, for artwork's `var()`.
-pub fn scope_variables() -> Vec<(String, String)> {
-    ENGINE.with(|engine| {
-        let engine = engine.borrow();
-        engine
-            .parents
-            .iter()
-            .filter_map(|&at| engine.nodes.get(at))
-            .flat_map(|node| node.variables.iter().cloned())
-            .collect()
-    })
-}
 
 /// `color` as `#RRGGBB` or `#RRGGBBAA`, for a value given to the sheet.
 pub fn hex(color: Color32) -> String {
@@ -1033,9 +1019,9 @@ impl Engine {
         self.swatches.clear();
         self.body = None;
         self.resolved.clear();
-        self.toolbar = None;
-        self.workspace = None;
-        self.workspace_follows = None;
+        self.rows.clear();
+        self.window = None;
+        self.window_follows = None;
     }
 }
 
@@ -1084,7 +1070,6 @@ fn chain_of(engine: &mut Engine, at: usize) -> Option<u64> {
     let mut hash = std::hash::DefaultHasher::new();
     (parent_chain, node.element.index(), name_of(engine, node), node.state, node.sheet).hash(&mut hash);
     node.attributes.hash(&mut hash);
-    node.variables.hash(&mut hash);
     let chain = hash.finish().max(1);
     *engine.chains.get_mut(at)? = chain;
     Some(chain)
@@ -1190,14 +1175,19 @@ fn same_arc(a: Option<&Arc<str>>, b: Option<&Arc<str>>) -> bool {
 /// settings Suhina reads outside a frame: the Arrangement view's track height, a device's
 /// parameter labels. Worked out once per set of sheets and path, which are known by their
 /// pointers: asked for by every track header in every frame, it hashes no sheet's text. `None`
-/// without a sheet.
+/// without a sheet (a theme's or the user's).
 pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
     thread_local! {
         static CACHE: RefCell<Option<SettingsSheets>> = const { RefCell::new(None) };
     }
+    thread_local! {
+        /// The sheet of a skin that has none, one allocation so that the cache can tell it again.
+        static NO_SHEET: Arc<str> = Arc::from("");
+    }
     let skin = skin::current();
-    let css = skin.css.clone()?;
     let user = USER_SHEET.with(|sheet| sheet.borrow().clone());
+    // Without a theme sheet the engine still runs for user.css (as in `frame`).
+    let css = skin.css.clone().or_else(|| user.is_some().then(|| NO_SHEET.with(Arc::clone)))?;
     let key: Vec<&'static str> = path.iter().map(|name| name.name()).collect();
     CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -1228,77 +1218,6 @@ pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
             cache.found.insert(key, found.clone());
         }
         found
-    })
-}
-
-/// One real toolbar child. Drawing and input use this same Taffy rectangle.
-#[derive(Clone, Debug)]
-pub struct Module {
-    pub name: String,
-    pub rect: Rect,
-    pub style: Computed,
-}
-
-pub fn toolbar_layout_requested() -> bool {
-    ENGINE.with(|engine| engine.borrow().toolbar_layout)
-}
-
-/// Flex/Grid layout for actual ordered, visible module ids. No theme-supplied markup.
-///
-/// `size` is the toolbar's whole box; a module is `module_height` tall where the sheet gives no
-/// height, the height of the toolbar's content box (its box less its border and padding).
-pub fn toolbar(order: &[(String, f32)], size: Vec2, module_height: f32) -> Option<Vec<Module>> {
-    if order.len() > skin::MODULES.len()
-        || order.iter().any(|(id, _)| !skin::MODULES.contains(&id.as_str()))
-        || !size.is_finite()
-    {
-        return None;
-    }
-    ENGINE.with(|engine| {
-        let mut engine = engine.borrow_mut();
-        engine.source.as_ref()?;
-        if !same_source(engine.source.as_ref()) {
-            return None;
-        }
-        let key = format!("{order:?}:{size:?}:{module_height:?}");
-        if let Some((previous, modules)) = &engine.toolbar
-            && previous == &key
-        {
-            return Some(modules.clone());
-        }
-        let mut defaults = format!(
-            "toolbar {{ display:flex; width:{}px; height:{}px; gap:4px; align-items:center; }} toolbar-module {{ flex-shrink:0; height:{}px; }}",
-            size.x.clamp(1.0, 16384.0),
-            size.y.clamp(1.0, 16384.0),
-            module_height.clamp(24.0, 16384.0)
-        );
-        for (id, width) in order {
-            defaults.push_str(&format!("#{id} {{ width:{}px; }}", width.clamp(1.0, 4096.0)));
-        }
-        let mut elements = vec![native::element("toolbar", Some("toolbar"), None, Some(1))];
-        for (id, _) in order {
-            elements.push(native::element("toolbar-module", Some(id), None, Some(2)));
-        }
-        let laid = native::layout(&engine, elements, &defaults, [size.x, size.y])?;
-        // The toolbar's own padding pads Suhina's toolbar, in its content box, as its border does
-        // (#1336): only its layout properties (display, flex, grid, gap, sizes) and its modules'
-        // ask for the theme's layout.
-        const PADDING: [Property; 4] =
-            [Property::PaddingTop, Property::PaddingRight, Property::PaddingBottom, Property::PaddingLeft];
-        engine.toolbar_layout = laid
-            .items
-            .iter()
-            .enumerate()
-            .any(|(index, (_, style))| native::requests_layout(style, if index == 0 { &PADDING } else { &[] }));
-        let mut modules = Vec::new();
-        for ((name, _), (rect, style)) in order.iter().zip(laid.items.into_iter().skip(1)) {
-            let Some(rect) = rect else { continue };
-            if style.visible {
-                modules.push(Module { name: name.clone(), rect, style });
-            }
-        }
-        engine.toolbar = Some((key, modules.clone()));
-        Some(modules)
     })
 }
 

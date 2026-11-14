@@ -3,7 +3,7 @@ description: The NAM Amp Modeler and NAM Cab Loader devices: what a .nam model f
 read_when: NAM, Neural Amp Modeler, nam, amp modeler, cab loader, neural amp, .nam file, impulse response, IR, cab, model file, device.setNamFile, nam models folder, IR folder
 type: spec
 status: draft
-last_verified: 2026-11-12
+last_verified: 2026-11-14
 covers:
   - devices/nam-amp-modeler/**
   - devices/nam-cab-loader/**
@@ -132,6 +132,12 @@ not a mix.
   `latency()`; the engine's compensation aligns a chain with the IR's start against parallel
   paths, as with the limiter's look-ahead. Longer IRs are handled inside the same delay with the
   partition's tail buffers. The **Delay** knob is not reported.
+
+The Amp Modeler builds what its rate and its model need (the resampler legs, the staging and the
+two running model instances) when it is made and when `prepare` moves it to another rate; the Cab
+Loader builds its convolutions once, when it is made, and its filters and delays for the rate.
+`reset` only clears all of it (the running models' state, the convolutions' memory, the filters,
+delays and positions) and allocates nothing.
 
 Both devices run their stages on the frames each call brings, as they arrive: the Amp
 Modeler's model, its DC blocker and the resampler legs, and the Cab Loader's convolution

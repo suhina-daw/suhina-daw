@@ -83,7 +83,7 @@ pub fn show(
     follow: bool,
 ) -> Shown {
     let mut clicked = None;
-    let shown = egui::Area::new(id)
+    let shown = crate::kit::floating::area(ctx, id, crate::kit::floating::Kind::Popup)
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
         .show(ctx, |ui| {

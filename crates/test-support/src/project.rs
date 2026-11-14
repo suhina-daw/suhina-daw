@@ -196,9 +196,11 @@ impl From<Project> for ProjectBuilder {
     }
 }
 
-/// `project` with ids on its lanes, clips and scenes, as a session gives them.
+/// `project` with ids on its lanes, clips and scenes and a colour on every track, as a session
+/// gives them.
 pub fn with_ids(mut project: Project) -> Project {
     project.assign_ids().expect("a test project has room for its ids");
+    project.fill_track_colours();
     project
 }
 
