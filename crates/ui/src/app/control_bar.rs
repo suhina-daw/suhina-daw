@@ -1139,19 +1139,15 @@ pub(super) fn signature_field(
     let right = Rect::from_min_max(Pos2::new(middle + half_slash, numbers.top()), numbers.max);
     let numerator_now = numerator_preview.map_or(shown.numerator, |n| n.round().clamp(1.0, 99.0) as u8).to_string();
     let denominator_now = denominator_preview.map_or(shown.denominator, denominator_at).to_string();
-    let part = |typed: Option<&String>, active: bool, now: String| match typed {
+    // A number not typed into yet shows its value dimmed, the outlined one too, so the arrow keys'
+    // steps show while it holds the keys; the first digit replaces it.
+    let part = |typed: Option<&String>, now: String| match typed {
         Some(t) if !t.is_empty() => (t.clone(), theme::text_value()),
-        Some(_) if active => (String::new(), ink),
         Some(_) => (now, theme::text_hint()),
         None => (now, ink),
     };
-    let (numerator_text, numerator_ink) =
-        part(typing.as_ref().map(|t| &t.numerator), typing.as_ref().is_some_and(|t| !t.in_denominator), numerator_now);
-    let (denominator_text, denominator_ink) = part(
-        typing.as_ref().map(|t| &t.denominator),
-        typing.as_ref().is_some_and(|t| t.in_denominator),
-        denominator_now,
-    );
+    let (numerator_text, numerator_ink) = part(typing.as_ref().map(|t| &t.numerator), numerator_now);
+    let (denominator_text, denominator_ink) = part(typing.as_ref().map(|t| &t.denominator), denominator_now);
     widgets::text_in(painter, left, Align2::RIGHT_CENTER, &numerator_text, mono.clone(), numerator_ink);
     widgets::text_in(painter, numbers, Align2::CENTER_CENTER, "/", mono.clone(), ink);
     widgets::text_in(painter, right, Align2::LEFT_CENTER, &denominator_text, mono.clone(), denominator_ink);

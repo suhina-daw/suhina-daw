@@ -2793,9 +2793,9 @@ fn the_ruler_adds_moves_and_removes_a_time_signature_change() {
     harness.run();
     assert_eq!(changes(&harness), [(bar - 2, 3, 4)]);
 
-    // The menu at that bar removes it.
-    let x = harness.get_by_label(&format!("Time-signature change at bar {}", bar - 1)).rect().center().x;
-    let at = egui::pos2(x, row.center().y);
+    // A right-click right on its line on the ruler opens the ruler's menu, which removes it (the
+    // line once took the press for its drag and no menu opened).
+    let at = harness.get_by_label(&format!("Time-signature change at bar {}", bar - 1)).rect().center();
     harness.hover_at(at);
     harness.run();
     for pressed in [true, false] {

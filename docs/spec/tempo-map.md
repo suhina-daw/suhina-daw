@@ -228,7 +228,11 @@ Every edit here is one of the commands above and one undo step.
   (`timeSignature.delete`).
 - **A signature change's line on the ruler** drags sideways with the primary button; it lands on the bar line nearest
   the pointer when released (`timeSignature.move`), never on bar 1, and a line in the accent
-  colour shows where while it moves. Released on its own bar, nothing changes.
+  colour shows where while it moves. Released on its own bar, nothing changes. Clicked, it seeks
+  as the ruler does; right-clicked, it opens the ruler's menu, with *Remove the time-signature
+  change at bar N*. Pointed at, it says what it sets.
+- **A change's text** ("3/4", a tempo) stands after the bar number of its bar line, and only
+  where it fits before the next number shown; in bars too narrow for it only the line shows.
 - A typed signature outside the ranges is sent to the command as typed, and its error is shown;
   nothing changes.
 

@@ -706,15 +706,26 @@ fn show_lanes(
     for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 64.0 && m.beat <= last_beat) {
         let x = x_of(mark.beat).round() + 0.5;
         ruler_painter.vline(x, ruler.y_range(), theme::hairline(tempo_ink));
-        let label = Rect::from_min_max(Pos2::new(x + 30.0, ruler.top()), Pos2::new(x + 140.0, ruler.bottom()));
-        widgets::text_in(
-            &ruler_painter,
-            label,
-            Align2::LEFT_CENTER,
-            &mark.text,
-            theme::mono_font(theme::TEXT_TINY),
-            tempo_ink,
-        );
+        // After the bar number when the mark is on a numbered bar line, and only where it fits
+        // before the next number: in narrow bars it would run over it (the change's line shows
+        // what it sets when pointed at).
+        let bar = meter.position(mark.beat).bar;
+        let numbered =
+            number_shown && bar.is_multiple_of(label_every) && (meter.bar_start(bar) - mark.beat).abs() < 1e-6;
+        let number_width = if numbered {
+            widgets::text_width(ui, &(u64::from(bar) + 1).to_string(), theme::mono_font(number_size)) + 3.0
+        } else {
+            0.0
+        };
+        let left = x + 3.0 + number_width + 4.0;
+        let next_number = (bar / label_every).saturating_add(1).saturating_mul(label_every);
+        let room = x_of(meter.bar_start(next_number)).round() - 2.0;
+        let font = theme::mono_font(theme::TEXT_TINY);
+        if left + widgets::text_width(ui, &mark.text, font.clone()) > room {
+            continue;
+        }
+        let label = Rect::from_min_max(Pos2::new(left, ruler.top()), Pos2::new(room, ruler.bottom()));
+        widgets::text_in(&ruler_painter, label, Align2::LEFT_CENTER, &mark.text, font, tempo_ink);
     }
     let (row_line, band_line) = (line_color("row", theme::border()), line_color("band", theme::border_strong()));
     painter.hline(area.x_range(), ruler.bottom() + 0.5, theme::hairline(row_line));
@@ -803,10 +814,54 @@ fn show_lanes(
             free,
         )
     };
+    // A time-signature change's line on the ruler drags along it to another bar line; it lands
+    // on the nearest one, in one undo step (#1259). The line takes clicks too, as the ruler under
+    // it would: a click seeks there, and a right-click opens the ruler's menu below, with its
+    // Remove item (a handle that only dragged kept the ruler from seeing the right-click).
+    let mut handles = Vec::new();
+    for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 1.0 && m.beat <= last_beat + 1.0) {
+        let Some(from) = mark.signature_bar else { continue };
+        let x = x_of(mark.beat).round() + 0.5;
+        let handle = Rect::from_x_y_ranges(egui::Rangef::new(x - 4.0, x + 4.0), ruler.y_range());
+        let shown = u64::from(from) + 1;
+        let response = ui
+            .interact(handle, Id::unique(("time-signature-change", from)), Sense::click_and_drag())
+            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal)
+            .on_hover_text(format!("Time signature {} from bar {shown}: drag to move it", mark.text));
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Time-signature change at bar {shown}"))
+        });
+        if response.clicked()
+            && let Some(pointer) = response.interact_pointer_pos()
+        {
+            let free = ui.input(|i| i.modifiers.alt);
+            let raw = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
+            actions.push(Action::new("transport.jump", json!({ "beats": ruler_beat(raw, grid, free) })));
+        }
+        handles.push(response.clone());
+        // Only the primary button: a middle-button pan that reaches the ruler moves nothing.
+        let primary = egui::PointerButton::Primary;
+        let Some(pointer) =
+            ui.ctx().pointer_latest_pos().filter(|_| response.dragged_by(primary) || response.drag_stopped_by(primary))
+        else {
+            continue;
+        };
+        let beat = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
+        let (to, _, _) = crate::arrangement::timeline::bar_line_near(&timeline.meter, beat);
+        let to = to.max(1);
+        if response.drag_stopped_by(primary) {
+            if to != from {
+                actions.push(Action::new("timeSignature.move", json!({ "bar": shown, "to": u64::from(to) + 1 })));
+            }
+        } else {
+            let line = x_of(timeline.meter.bar_start(to)).round() + 0.5;
+            ruler_painter.vline(line, ruler.y_range(), Stroke::new(2.0, theme::accent()));
+        }
+    }
     // A right-click on the ruler or the marker row offers a marker there.
     let row_response = ui.interact(marker_row, Id::unique("arrangement-marker-row"), Sense::click());
     row_response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Markers"));
-    for response in [&ruler_response, &row_response] {
+    for response in [&ruler_response, &row_response].into_iter().chain(handles.iter()) {
         if response.secondary_clicked()
             && let Some(pointer) = response.interact_pointer_pos()
         {
@@ -843,38 +898,6 @@ fn show_lanes(
                 ui.close();
             }
         });
-    }
-    // A time-signature change's line on the ruler drags along it to another bar line; it lands
-    // on the nearest one, in one undo step (#1259).
-    for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 1.0 && m.beat <= last_beat + 1.0) {
-        let Some(from) = mark.signature_bar else { continue };
-        let x = x_of(mark.beat).round() + 0.5;
-        let handle = Rect::from_x_y_ranges(egui::Rangef::new(x - 4.0, x + 4.0), ruler.y_range());
-        let shown = u64::from(from) + 1;
-        let response = ui
-            .interact(handle, Id::unique(("time-signature-change", from)), Sense::drag())
-            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("Time-signature change at bar {shown}"))
-        });
-        // Only the primary button: a middle-button pan that reaches the ruler moves nothing.
-        let primary = egui::PointerButton::Primary;
-        let Some(pointer) =
-            ui.ctx().pointer_latest_pos().filter(|_| response.dragged_by(primary) || response.drag_stopped_by(primary))
-        else {
-            continue;
-        };
-        let beat = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
-        let (to, _, _) = crate::arrangement::timeline::bar_line_near(&timeline.meter, beat);
-        let to = to.max(1);
-        if response.drag_stopped_by(primary) {
-            if to != from {
-                actions.push(Action::new("timeSignature.move", json!({ "bar": shown, "to": u64::from(to) + 1 })));
-            }
-        } else {
-            let line = x_of(timeline.meter.bar_start(to)).round() + 0.5;
-            ruler_painter.vline(line, ruler.y_range(), Stroke::new(2.0, theme::accent()));
-        }
     }
     loop_brace(ui, timeline, state, actions, loop_row, &x_of);
     marker_flags(ui, timeline, state, actions, marker_row, &x_of);
