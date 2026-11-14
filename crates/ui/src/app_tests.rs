@@ -1397,3 +1397,40 @@ fn the_ara_editors_x_hides_the_editor_in_the_window() {
     // A session command is not the window's.
     assert!(!app.window_action(&Action::new("transport.play", serde_json::json!({}))));
 }
+
+/// A NAM device inside a group's branch gets its shown name and fault note as one on the
+/// track's chain does, so its panel does not call a loaded model missing
+/// ([docs/spec/nam-amp-and-cab.md] › The panel).
+#[test]
+fn a_nam_device_inside_a_group_has_its_name_and_note_looked_up() {
+    use suhina_engine::model::*;
+
+    let amp = |path: &str| {
+        let mut device = Device::new("NAM Amp Modeler", DeviceKind::Builtin("nam-amp-modeler".into()));
+        device.state = Some(path.as_bytes().into());
+        device
+    };
+    let branch = Branch { devices: vec![amp("nowhere/inner.nam")], ..Branch::new("Branch 1") };
+    let mut channel = Channel::new(ChannelId(1), "Audio");
+    channel.devices = vec![amp("nowhere/outer.nam"), Device::group("Group", DeviceGroup::with_branches(vec![branch]))];
+    let project = Project {
+        tracks: vec![Track {
+            content: ContentKinds { notes: false, audio: true },
+            channel: Some(ChannelId(1)),
+            ..Track::new(TrackId(1), "Audio")
+        }],
+        channels: vec![channel],
+        ..Project::default()
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    let names = app.nam_names();
+    assert!(names.contains_key("nowhere/outer.nam"), "{names:?}");
+    assert!(names.contains_key("nowhere/inner.nam"), "the grouped device's file is looked up: {names:?}");
+    let notes = app.nam_notes();
+    assert_eq!(
+        notes.contains_key("nowhere/inner.nam"),
+        notes.contains_key("nowhere/outer.nam"),
+        "the grouped device's note is read as the chain's is: {notes:?}"
+    );
+}

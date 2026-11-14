@@ -10,6 +10,7 @@ covers:
   - crates/dsp/src/delay.rs
   - crates/dsp/src/resampler.rs
   - crates/dsp/src/convolver.rs
+  - third_party/nam-rs/**
   - crates/device-registry/src/lib.rs
   - crates/engine/src/chain.rs
   - crates/session/src/devices.rs
@@ -49,7 +50,10 @@ here first (clean-room, [ADR 0004](../decisions/0004-built-in-devices.md)).
   (`WaveNet`, `LSTM` or `SlimmableContainer`, NAM's "A2"), the architecture's `config`, the
   trained `weights`, the `sample_rate` the capture ran at and a `metadata` block whose name,
   gear and loudness the panel shows. The model runs on **one channel**; the device keeps one
-  running instance per side.
+  running instance per side. While both sides feed the model the same frames (a mono source),
+  only the left instance runs and its output stands for both; the first span whose frames
+  differ hands the right instance the left one's state, and both run from then on. The sound is
+  the same, bit for bit, as two instances running all along ([§ Cost](#cost)).
 - **IR:** a `.wav` impulse response. Its first samples answer "what the cabinet plays after a
   click"; convolving a signal with it plays the signal through the cabinet. The device keeps one
   convolution per side.
@@ -79,8 +83,9 @@ registry and the automation carry; ids are stable — projects store values by t
 | 6 | `delay` | Delay | continuous, linear | 0…0.02 | 0.0 | s (shown in ms) |
 | 7 | `hq` | HQ | toggle | — | off | |
 | 8 | `outputVolume` | Volume | continuous, linear | −24…+24 | 0.0 | dB |
+| 9 | `mono` | Mono | toggle | — | on | |
 
-Per side, the signal runs: the input gain (smoothed, 20 ms like the utility's), the EQ, — when
+Per side, the signal runs: the **Mono** sum when it is on, the input gain (smoothed, 20 ms like the utility's), the EQ, — when
 the project's rate differs from the model's — the resampler into the model's rate, the model, a
 DC blocker, the resampler back, the delay line and the output gain (smoothed). With no model,
 or one that cannot run, the chain is the same with the model as a pass-through, so the trims,
@@ -99,6 +104,12 @@ EQ and delay still work.
 - **Delay** holds the output back by 0…20 ms, a straight delay line per side. It is part of the
   sound and is **not** latency-compensated: set it by ear against a parallel path.
 - **Volume** sets the output level, after the model.
+- **Mono** (on by default) feeds both sides the mean of the two, `(left + right) / 2`, so the
+  model hears one signal and one instance runs: half the cost of a stereo source. A model is a
+  mono capture, so nothing of it is lost; a mono source plays bit for bit as it does with Mono
+  off. Off, each side runs through the model on its own, two instances once the sides differ.
+  Switching it off mid-stream hands the right instance the left one's state, so the model
+  carries on without a jump; switching it on runs the left instance for both again.
 - **No bypass of its own** (decided 2026-10-18, #645): a device has one on/off state, the
   header's square and the 0 key (`device.setEnabled`), which turns the whole device off.
 - **Latency:** the model adds none. The device reports its 512-frame chunk in `latency()`, plus
@@ -399,14 +410,14 @@ Both panels, top to bottom:
    - **The On button** at the Amp Modeler's controls area's top left ("Amp Modeler: device
      on" / "… off"): a bigger copy of the header's square, the same `device.setEnabled`, lit
      while the device runs; both always show the same state.
-   - Amp Modeler: the **EQ** and **HQ** buttons beside the On button, on its row, with the
+   - Amp Modeler: the **EQ**, **HQ** and **Mono** buttons beside the On button, on its row, with the
      **Mid Freq**'s line right of them — the name beside, a line whose diamond a drag sets and
      a click jumps, the value past it; under them one row of dials, left to right: **Gain**;
      **Bass / Mid / Treble**; **Delay**; **Volume** last.
    - Cab Loader: the **Phase** (Ø) and **HP** buttons at the top; under them one row of
      dials, left to right: **Delay**; **Bass / Mid / Treble**; **Mid Freq** —; a vertical
      **Volume** lane at the right, a handle a drag moves and a click jumps, the value under.
-   - Toggles are lit when on: On, EQ, HQ, Phase, HP. Labels name the device: "Amp Modeler:
+   - Toggles are lit when on: On, EQ, HQ, Mono, Phase, HP. Labels name the device: "Amp Modeler:
      gain" … "Cab Loader: volume".
 3. **The file row** — the file's own name without its folder or extension ("FNDR BFSR VB Edge WRM2 CAB FREE", #644) in a dropdown
    with the same previous/next steppers; "Choose a model file…" when none is set. Its dropdown
@@ -415,7 +426,8 @@ Both panels, top to bottom:
 4. **A note row** under the controls when the device's file does not run, one line, plain
    text: "Model missing: <path>" (the name row falls back to the file's name), or what a file
    faulted with, from the command's error; nothing while it runs and nothing when no file is
-   set — the pack row and the file row say that in their own texts. An A2 model without
+   set — the pack row and the file row say that in their own texts. A device inside a group's
+   branch reads its name and note as one on the chain does. An A2 model without
    quality levels notes "This model has no quality levels" when **HQ** is on.
 
 ## States
@@ -427,7 +439,29 @@ Both panels, top to bottom:
 | The file is gone | Model missing: <path> | Through the trims and EQ, no model or IR |
 | The file cannot run (feature refused, malformed after all) | The fault, the name of the file | Pass-through |
 
-A mono IR is heard on both sides; a mono model captures both sides' moves through two instances.
+A mono IR is heard on both sides; a mono model hears the mean of the sides with **Mono** on, and
+captures both sides' moves through two instances with it off.
+
+## Cost
+
+A model is nearly the device's whole cost; the EQ, the resampler legs and the DC blocker take
+under 1 % of one core. The vendored `nam-rs` (`third_party/nam-rs/VENDORED.md`) runs the
+WaveNet's convs register-blocked with AVX2 picked at run time and NeuralAmpModelerCore's fast
+tanh, and the LSTM's gates vectorised with near-exact activations. On an AMD Ryzen 5 5600X, the
+share of one core for the Amp Modeler with one instance running (a mono source, or **Mono** on),
+in 1024-frame calls:
+
+| Model | 48 kHz project | 44.1 kHz project (resampler legs) |
+|---|---|---|
+| Tim R JCM2000 Crunch (standard WaveNet) | 3.9 % | 4.7 % |
+| Suhina Clean (LSTM 40 × 2) | 6.2 % | 6.9 % |
+
+A stereo source with **Mono** off runs two instances, about twice that. A wider WaveNet costs more
+in the same proportion as in NeuralAmpModelerCore: Phillipe P LaneyGH100S (24 channels against
+the standard 16) takes 6.5 % alone at 48 kHz in 512-frame calls, against the standard's 4.0 %. Calls of 64 frames cost a little more per
+frame (the WaveNet at 44.1 kHz: 5.7 %), and a moving automation lane splits a call into 64-frame
+steps. Before the vendored changes the WaveNet took about 38 % per stereo device and Suhina
+Clean 57.6 % per instance.
 
 ## What the project stores
 
@@ -443,8 +477,6 @@ the panel's Model missing note.
   one-click relink, the missing-files view listing the NAM and IR paths) is its own issue.
 - A2's width dial is run at its widest by **HQ**; a graduated quality choice (a knob over the
   sub-models) comes with a model that shows the trade-off, not with this pair.
-- Models are fed per side through their own running instance; a mono signal both sides share
-  fires the model twice. A cheaper shared instance for a mono track is later work.
 - Browsers and libraries do not list `.nam` files yet; the folders and the pick dialog are the
   whole surface. Drag-and-drop of a `.wav` from the browser onto a Cab Loader is a natural
   follow-on (the file row's dropdown lists it all the same).

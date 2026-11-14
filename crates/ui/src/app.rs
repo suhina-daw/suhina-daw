@@ -1656,14 +1656,12 @@ impl App {
     fn nam_names(&self) -> HashMap<String, String> {
         let mut names = HashMap::new();
         if let Some(session) = self.session() {
-            let project = session.project();
-            // Every channel's devices, the tracks' and the main's (a NAM effect on Main has a
-            // shown name and a fault note as a track's does).
-            for channel in project.channels.iter() {
-                for device in channel.devices.iter() {
-                    if let Some(path) = device_file_path(device) {
-                        names.insert(path.clone(), session.device_asset_name(&path).unwrap_or_default());
-                    }
+            // Every channel's devices, the tracks' and the main's, and those inside a group's
+            // branches (a NAM effect on Main or in a group has a shown name and a fault note as
+            // one on a track's chain does).
+            for device in session.project().all_devices() {
+                if let Some(path) = device_file_path(device) {
+                    names.insert(path.clone(), session.device_asset_name(&path).unwrap_or_default());
                 }
             }
         }
@@ -1674,15 +1672,11 @@ impl App {
     fn nam_notes(&self) -> HashMap<String, String> {
         let mut notes = HashMap::new();
         if let Some(session) = self.session() {
-            let project = session.project();
-            for channel in project.channels.iter() {
-                for device in channel.devices.iter() {
-                    if let Some(path) =
-                        device_file_path(device).filter(|path| session.device_asset_note(path).is_some())
-                        && let Some(note) = session.device_asset_note(&path)
-                    {
-                        notes.insert(path, note.to_owned());
-                    }
+            for device in session.project().all_devices() {
+                if let Some(path) = device_file_path(device)
+                    && let Some(note) = session.device_asset_note(&path)
+                {
+                    notes.insert(path, note.to_owned());
                 }
             }
         }
