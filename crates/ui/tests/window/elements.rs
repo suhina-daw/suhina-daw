@@ -92,3 +92,35 @@ fn the_arrangement_s_parts_take_their_own_rules() {
     ];
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
 }
+
+/// How many painted fills and strokes are `color`.
+fn count(h: &Harness<'static, App>, color: egui::Color32) -> usize {
+    painted(h).into_iter().filter(|shown| *shown == color).count()
+}
+
+/// A rule for every Arrangement tool does not hide the chosen one: only a `[checked]` rule gives
+/// it a colour of its own (#1428 review).
+#[test]
+fn a_rule_for_every_arrangement_tool_keeps_the_chosen_one_lit() {
+    let mut h = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.arrangement_toolbar = true;
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    // The toolbar's tools: select, split, erase, draw, mute and range.
+    let tools = 6;
+    let fills = |h: &mut Harness<'static, App>, css: &str| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        let shown = (count(h, odd(31)), count(h, odd(32)));
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        shown
+    };
+    let general = format!("arrangement-tool {{ background-color: {}; }}", hex(odd(31)));
+    assert_eq!(fills(&mut h, &general), (tools - 1, 0), "the chosen tool keeps its native fill");
+    let chosen = format!("{general} arrangement-tool[checked] {{ background-color: {}; }}", hex(odd(32)));
+    assert_eq!(fills(&mut h, &chosen), (tools - 1, 1), "a rule for `[checked]` recolours it");
+}

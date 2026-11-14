@@ -269,7 +269,9 @@ impl<'a> Builder<'a> {
 
     /// The [`Look`] of an element that is not drawn: what a state's rule is compared with
     /// (`[checked]` against the plain item). It takes no place in the style tree, so no selector of
-    /// the elements drawn after it sees it as a sibling.
+    /// the elements drawn after it sees it as a sibling. Like any element styled in the frame it is
+    /// first drawn in, it is worked out without its siblings, so a rule that reaches a toggle only
+    /// through a sibling combinator (`tool + tool`) is not in the comparison.
     pub fn probe(self) -> Look {
         let entered = self.enter();
         let (style, node) = (entered.style(), entered.scope.node);

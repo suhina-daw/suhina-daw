@@ -1917,11 +1917,11 @@ pub(super) fn take_lanes(
             let el = crate::kit::element::BUTTON.id("take-delete").response(&r).enter();
             let fill = el.background_or(motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
             painter.rect_filled(delete, 2.0, fill);
-            let ink = el.color_or(ink);
+            let delete_ink = el.color_or(ink);
             drop(el);
             // A cross drawn, not a glyph: the interface font has no multiplication cross.
             let c = delete.center();
-            let cross = Stroke::new(1.2, ink);
+            let cross = Stroke::new(1.2, delete_ink);
             painter.line_segment([c + Vec2::new(-3.5, -3.5), c + Vec2::new(3.5, 3.5)], cross);
             painter.line_segment([c + Vec2::new(-3.5, 3.5), c + Vec2::new(3.5, -3.5)], cross);
             if r.clicked() {
@@ -1960,9 +1960,9 @@ pub(super) fn take_lanes(
             let el = crate::kit::element::BUTTON.id("take-promote").response(&r).enter();
             let fill = el.background_or(motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
             painter.rect_filled(promote, 2.0, fill);
-            let ink = el.color_or(ink);
+            let promote_ink = el.color_or(ink);
             drop(el);
-            widgets::text_in(painter, promote, Align2::CENTER_CENTER, "\u{2191}", small.clone(), ink);
+            widgets::text_in(painter, promote, Align2::CENTER_CENTER, "\u{2191}", small.clone(), promote_ink);
             if r.clicked() {
                 actions.push(Action::new("take.promote", json!({ "track": lane.track.0, "take": take.number })));
             }

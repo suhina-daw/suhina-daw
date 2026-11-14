@@ -4224,7 +4224,8 @@ fn lane_header(
         // The picked tint lies over the header's own background.
         let plain = crate::kit::element::AUTOMATION_HEADER.probe();
         painter.rect_filled(rect, 0.0, plain.background_or(surface));
-        painter.rect_filled(rect, 0.0, look.background_or(theme::accent().gamma_multiply(0.18)));
+        // A rule for every header must not hide the pick: only a `[selected]` rule changes the tint.
+        painter.rect_filled(rect, 0.0, look.background_unlike(&plain, theme::accent().gamma_multiply(0.18)));
     } else {
         painter.rect_filled(rect, 0.0, look.background_or(surface));
     }
