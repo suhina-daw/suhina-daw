@@ -293,7 +293,7 @@ fn with_audio() -> Result<App, String> {
     });
     let _ = project.assign_ids();
     project.fill_track_colours();
-    let mut app = App::new();
+    let mut app = crate::fixed_app();
     app.set_browser_open(false);
     app.set_session(suhina_session::Session::new(project), &[]);
     Ok(app)
@@ -308,7 +308,7 @@ fn with_device_group() -> Result<App, String> {
     session
         .execute("device.group", &json!({ "track": "Keys", "device": 0 }))
         .map_err(|e| format!("device.group: {e}"))?;
-    let mut app = App::new();
+    let mut app = crate::fixed_app();
     app.set_browser_open(false);
     app.set_session(session, &[]);
     Ok(app)
@@ -323,7 +323,7 @@ fn on_keys(devices: &[&str]) -> Result<App, String> {
             .execute("device.add", &json!({ "track": "Keys", "id": id }))
             .map_err(|e| format!("device.add {id}: {e}"))?;
     }
-    let mut app = App::new();
+    let mut app = crate::fixed_app();
     app.set_browser_open(false);
     app.set_session(session, &[]);
     Ok(app)
@@ -345,7 +345,7 @@ fn crowded() -> Result<App, String> {
                 .map_err(|e| format!("scene.duplicate: {e}"))?;
         }
     }
-    let mut app = App::new();
+    let mut app = crate::fixed_app();
     app.set_browser_open(false);
     app.set_session(session, &[]);
     Ok(app)

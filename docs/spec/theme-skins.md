@@ -1156,6 +1156,15 @@ themes; one that means to change a look records the new digests with `SUHINA_BLE
 and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare before and after. The About
 dialog, which shows the build's commit, is left out.
 
+**Every scene starts from a state that is the same on every machine** (#1438). A scene's window
+is `suhina_theme_render::fixed_app()`, not `App::new()`: its plug-in library is a committed
+catalogue of three made-up plug-ins (`apps/theme-render/fixtures/plugin-catalog.json`: Test Synth,
+Test Sampler, Test Delay) with no scan and no standard plug-in folders, and its browser library is
+kept nowhere, so no folder, place or recent project of the person's shows. Settings, themes and
+the keymap are the defaults (only the desktop app loads them from the settings folder). A new
+scene builds its app with `fixed_app()`; a scene that draws something else the machine decides
+fixes that too.
+
 Reading refuses a package, before anything is written, when:
 
 - it is not a zip, has no manifest, or its manifest is not a Suhina theme or names no id;
