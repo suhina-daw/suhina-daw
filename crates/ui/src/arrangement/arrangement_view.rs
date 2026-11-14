@@ -2011,16 +2011,29 @@ fn show_lanes(
         }
     }
 
-    // The header column's inner edge resizes it.
+    // The header column's inner edge resizes it: `divider#arrangement-header-splitter`, which shows
+    // only where a theme gives it a `background-color` (#1023).
     let edge = Rect::from_x_y_ranges(egui::Rangef::new(edge_x - 3.0, edge_x + 3.0), area.y_range());
-    let response = ui
-        .interact(edge, Id::unique("arrangement-header-edge"), Sense::drag())
-        .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
-    if response.dragged_by(egui::PointerButton::Primary) {
-        let dx = response.drag_delta().x;
-        let width = if state.headers_left { state.header_width + dx } else { state.header_width - dx };
-        state.header_width = width.clamp(header_least(max_header), HEADER_COLUMN_RANGE.1.min(max_header));
+    let divider = crate::kit::divider::show(
+        ui,
+        crate::kit::divider::Divider {
+            name: "arrangement-header-splitter",
+            key: Id::unique("arrangement-header-edge"),
+            strip: edge,
+            across: true,
+            label: "Track header width",
+            size: state.header_width,
+            grows_forward: state.headers_left,
+            bounds: (header_least(max_header), HEADER_COLUMN_RANGE.1.min(max_header)),
+        },
+    );
+    if let Some(width) = divider.size {
+        state.header_width = width;
     }
+    if let Some(fill) = divider.style.style().filter(|s| s.authored.background).map(|s| s.background) {
+        painter.rect_filled(edge, 0.0, fill);
+    }
+    drop(divider);
 
     // Playhead through ruler and lanes.
     if timeline.running || timeline.beat > 0.0 {
