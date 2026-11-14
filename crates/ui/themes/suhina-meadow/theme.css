@@ -51,7 +51,21 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
  * Original classic desktop / paper theme over an original meadow image.
  */
 @layer suhina-meadow {
-  window, session, arrangement { background-color: transparent; color: color-mix(in oklab, white, black 79.8%); }
+  window, session, arrangement {
+    background-color: transparent;
+    color: var(--text-primary);
+    /* The parts inside take the region's text colour through its variables too (not
+       --text-value, which the fader caps' colour mixes in). */
+    --text-primary: color-mix(in oklab, white, black 79.8%);
+    --text-secondary: var(--text-primary);
+    --text-hint: var(--text-primary);
+    --text-inverse: var(--text-primary);
+    --browser-text-primary: var(--text-primary);
+    --browser-text-secondary: var(--text-primary);
+    --browser-text-value: var(--text-primary);
+    --text-onColorDark: var(--text-primary);
+    --text-onColorLight: var(--text-primary);
+  }
   application-bar, menu-bar, project-tabs {
     /* Intentional transparency over this theme's private background PNG. */
     background-color: transparent;
@@ -59,7 +73,21 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
     color: white;
     border-color: #003CA8;
   }
-  toolbar, status-bar { background-color: color-mix(in srgb, var(--paper), transparent var(--panel-clear)%); color: color-mix(in oklab, white, black 79.8%); }
+  toolbar, status-bar {
+    background-color: color-mix(in srgb, var(--paper), transparent var(--panel-clear)%);
+    color: var(--text-primary);
+    /* The parts inside take the region's text colour through its variables too (not
+       --text-value, which the fader caps' colour mixes in). */
+    --text-primary: color-mix(in oklab, white, black 79.8%);
+    --text-secondary: var(--text-primary);
+    --text-hint: var(--text-primary);
+    --text-inverse: var(--text-primary);
+    --browser-text-primary: var(--text-primary);
+    --browser-text-secondary: var(--text-primary);
+    --browser-text-value: var(--text-primary);
+    --text-onColorDark: var(--text-primary);
+    --text-onColorLight: var(--text-primary);
+  }
   browser, detail, device-panel {
     background-color: color-mix(in srgb, color-mix(in oklab, var(--paper), white 93.3%), transparent var(--browser-clear)%);
     color: color-mix(in oklab, white, black 79.8%);
