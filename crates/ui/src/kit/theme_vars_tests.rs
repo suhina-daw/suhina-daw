@@ -274,3 +274,48 @@ fn layout_css_holds_only_the_placements_that_differ_from_the_sheet() {
     assert!(!layout.contains(".control-mixer-pan"), "the sheet's own placement is not copied: {layout}");
     assert!(theme_css::layout(&from_sheet, &from_sheet).is_empty());
 }
+
+/// Suhina Studio's accent, as the core sheet's initial value writes it.
+fn studio_accent() -> String {
+    core_values(&Theme::default()).remove("--accent").unwrap()
+}
+
+#[test]
+fn a_variant_that_sets_a_colour_back_to_studios_value_paints_and_saves_it() {
+    let (theme, _) = from_sheet(":root { --accent: #5E81AC; }");
+    let studio = studio_accent();
+    let (variant, _) =
+        Variant::from_json("studio", &format!(r##"{{ "name": "Studio", "values": {{ "--accent": "{studio}" }} }}"##))
+            .unwrap();
+    let (mut chosen, warnings) = with_variant(&theme, Some(&variant));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    // Painted: Studio's accent, not the theme's.
+    assert_eq!(chosen.palette().accent, crate::kit::theme::Palette::DARK.accent);
+    // Saved: the variant keeps the value, so reading it back gives the same colour.
+    sync(&mut chosen);
+    assert_eq!(chosen.vars.values.get("--accent").map(String::as_str), Some(studio.as_str()));
+    let saved = Variant::of(&chosen).unwrap();
+    let (again, _) = with_variant(&theme, Some(&saved));
+    assert_eq!(again.palette().accent, chosen.palette().accent);
+    // The theme's own values are the theme's again, and nothing of the variant is left behind.
+    let (own, _) = with_variant(&chosen, None);
+    assert_eq!(own.palette().accent, parse_hex("#5E81AC").unwrap());
+}
+
+#[test]
+fn a_later_root_rule_that_sets_a_colour_back_to_studios_value_wins_over_an_earlier_one() {
+    let studio = studio_accent();
+    let (theme, _) = from_sheet(&format!(":root {{ --accent: #5E81AC; }}\n:root {{ --accent: {studio}; }}"));
+    assert_eq!(theme.palette().accent, crate::kit::theme::Palette::DARK.accent);
+    assert!(!theme.colors.contains_key("accent"));
+    let mut applied = Theme::default();
+    let warnings =
+        theme_css::apply(&mut applied, &format!(":root {{ --accent: #5E81AC; }}\n:root {{ --accent: {studio}; }}"));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(applied.palette().accent, crate::kit::theme::Palette::DARK.accent);
+    // A base theme's different value does not survive a sheet that sets Studio's.
+    let mut base = Theme::default();
+    base.set_color("accent", [1, 2, 3, 255]);
+    theme_css::apply(&mut base, &format!(":root {{ --accent: {studio}; }}"));
+    assert_eq!(base.palette().accent, crate::kit::theme::Palette::DARK.accent);
+}

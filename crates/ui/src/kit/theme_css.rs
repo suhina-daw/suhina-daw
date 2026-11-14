@@ -210,10 +210,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                 ":root" if super::theme::is_former_track_colour(property.trim_start_matches("--")) => Ok(()),
                 ":root" if property.starts_with("--") => {
                     let variable = property.trim_start_matches("--");
-                    match (
-                        super::theme::Palette::is_token(&super::theme::token_key(variable)),
-                        super::theme::parse_rgba(value),
-                    ) {
+                    match (super::theme::is_color_variable(variable), super::theme::parse_rgba(value)) {
                         (true, Some(rgba)) => {
                             theme.read_color(variable, rgba);
                             Ok(())

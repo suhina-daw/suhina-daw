@@ -312,3 +312,13 @@ fn a_theme_that_sets_no_colour_writes_no_colour_block() {
     assert!(!sheet(&theme, None).contains(":root"), "{}", sheet(&theme, None));
     assert!(!export(&theme).contains(":root"), "{}", export(&theme));
 }
+
+#[test]
+fn a_colour_variable_is_kept_by_its_one_name() {
+    // `--window.background` is not the custom property `--window-background`: a name with a dot
+    // does not name a token, and no second entry for the same colour is kept.
+    let mut theme = Theme::default();
+    let warnings = apply(&mut theme, ":root { --window.background: #FF0000; --window-background: #00FF00; }");
+    assert!(theme.colors.keys().all(|name| !name.contains('.')), "{:?}", theme.colors);
+    assert_eq!(theme.colors.len(), 1, "{:?} {warnings:?}", theme.colors);
+}

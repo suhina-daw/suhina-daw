@@ -154,6 +154,14 @@ pub fn token_key(variable: &str) -> String {
     variable.replace('-', ".")
 }
 
+/// Whether `variable` (a name without `--`) is the one name of a colour token's custom property:
+/// `window-background` is, `window.background` (a dot is not part of a custom property's name) is
+/// not.
+pub fn is_color_variable(variable: &str) -> bool {
+    let key = token_key(variable);
+    Palette::is_token(&key) && variable_name(&key) == variable
+}
+
 /// The colours a theme sets: its colour variables by name without the `--`
 /// (`window-background`, `accent`), the names `:root { --… }` uses. A colour the theme does not
 /// set is Suhina Studio's ([`Palette::from_colors`]).
@@ -165,7 +173,9 @@ impl Palette {
     pub fn from_colors(colors: &Colors) -> Self {
         let mut palette = Self::DARK;
         for (variable, color) in colors {
-            if let Some(slot) = palette.token_mut(&token_key(variable)) {
+            if is_color_variable(variable)
+                && let Some(slot) = palette.token_mut(&token_key(variable))
+            {
                 *slot = *color;
             }
         }
