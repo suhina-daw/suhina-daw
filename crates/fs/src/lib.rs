@@ -113,7 +113,12 @@ impl ReadError {
 /// for a pipe's writer (`O_NONBLOCK`, which a plain file reads the same with). A file that grows
 /// past `max` while it is read is refused as well.
 pub fn read_plain(path: &Path, max: usize) -> Result<Vec<u8>, ReadError> {
-    let file = open_without_waiting(path).map_err(ReadError::Io)?;
+    // Windows refuses to open a folder at all: that is a path there but not a plain file, as the
+    // check of the opened file says on Unix. Looking at the path only names the error; it opens
+    // nothing, so a pipe is not waited on.
+    let file = open_without_waiting(path).map_err(|e| {
+        if std::fs::metadata(path).is_ok_and(|info| !info.is_file()) { ReadError::NotAFile } else { ReadError::Io(e) }
+    })?;
     let info = file.metadata().map_err(ReadError::Io)?;
     if !info.is_file() {
         return Err(ReadError::NotAFile);
