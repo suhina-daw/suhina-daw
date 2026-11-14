@@ -742,13 +742,24 @@ fn the_arrangement_track_on_toggle_is_control_track_on() {
             _ => false,
         }
     }
+    // The toggle is lit only by a rule for its lit state (#1440): `#control-track-on` colours the
+    // tracks that are off, `#control-track-on[checked]` the ones that are on.
     let orange = egui::Color32::from_rgb(0xFF, 0x88, 0x00);
-    suhina_ui::kit::native_css::set_user_sheet(Some("#control-track-on { background-color: #ff8800; }".into()));
+    let blue = egui::Color32::from_rgb(0x00, 0x88, 0xFF);
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "#control-track-on { background-color: #ff8800; } #control-track-on[checked] { background-color: #0088ff; }"
+            .into(),
+    ));
     let mut h = window(demo_app());
     h.get_by_label("Arrangement view").click();
     h.run();
-    let toggle = h.get_by_label("Turn Drums off").rect();
-    assert!(h.output().shapes.iter().any(|s| filled(&s.shape, toggle, orange)), "the toggle takes #control-track-on");
+    h.get_by_label("Turn Keys off").click();
+    h.run();
+    let on = h.get_by_label("Turn Drums off").rect();
+    let off = h.get_by_label("Turn Keys on").rect();
+    let shapes = &h.output().shapes;
+    assert!(shapes.iter().any(|s| filled(&s.shape, on, blue)), "a track that is on takes #control-track-on[checked]");
+    assert!(shapes.iter().any(|s| filled(&s.shape, off, orange)), "a track that is off takes #control-track-on");
     suhina_ui::kit::native_css::set_user_sheet(None);
 }
 

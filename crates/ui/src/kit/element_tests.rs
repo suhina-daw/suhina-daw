@@ -916,3 +916,55 @@ fn a_look_s_accent_and_image_are_compared_with_the_plain_one() {
     });
     assert_eq!((general, own, image), (token, rgb(0x10, 0x20, 0x30), true));
 }
+
+/// The inks of a view's words: a rule for a `label` kind gives it, a kind that takes only its own
+/// `color` ignores the colour a rule gives a view around it, and with no rule each is its token
+/// (#1440).
+#[test]
+fn the_ink_helpers_read_label_kinds_and_fall_back_to_their_tokens() {
+    let rgb = egui::Color32::from_rgb;
+    let css = "dialog { color: #102030; } label[kind=\"caption\"] { color: #405060; } \
+               label[kind=\"error\"] { color: #ff0000; }";
+    let (name, hint, caption, error, value, title, token) = frames(css, || {
+        let _dialog = DIALOG.enter();
+        (name_ink(), hint_ink(), caption_ink(), error_ink(), value_ink(), title_ink(), crate::kit::theme::text_hint())
+    });
+    assert_eq!(name, rgb(0x10, 0x20, 0x30), "a name inherits the dialog's colour");
+    assert_eq!((value, title), (name, name), "so do values and titles");
+    assert_eq!(caption, rgb(0x40, 0x50, 0x60), "a caption takes a rule for itself");
+    assert_eq!(error, rgb(0xff, 0, 0));
+    assert_eq!(hint, token, "a hint takes only a rule of its own: the dialog's palette token otherwise");
+    let plain = frames("", || (name_ink(), hint_ink(), caption_ink(), error_ink(), value_ink(), title_ink()));
+    let tokens = (
+        crate::kit::theme::text_primary(),
+        crate::kit::theme::text_hint(),
+        crate::kit::theme::text_secondary(),
+        crate::kit::theme::recording(),
+        crate::kit::theme::text_value(),
+        crate::kit::theme::text_primary(),
+    );
+    assert_eq!(plain, tokens, "with no rule, every word is its token's");
+}
+
+/// A `list-row` and a `dialog-title` give their `background-color`, and no rule leaves the token.
+#[test]
+fn a_list_row_and_a_dialog_title_take_their_own_background() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let (row, selected, title, plain) = frames(
+        "list-row { background-color: #102030; } list-row[selected] { color: #405060; } \
+         dialog-title { background-color: #708090; }",
+        || {
+            (
+                LIST_ROW.look().background_or(token),
+                LIST_ROW.attr(Selected, true).look().color_or(token),
+                DIALOG_TITLE.look().background_or(token),
+                COLOUR_SWATCH.look().border_or(token),
+            )
+        },
+    );
+    assert_eq!(
+        (row, selected, title, plain),
+        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60), rgb(0x70, 0x80, 0x90), token)
+    );
+}

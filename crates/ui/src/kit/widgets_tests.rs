@@ -387,3 +387,60 @@ fn a_silent_value_steps_up_from_the_scale_end_and_stays_when_stepped_down() {
     assert_eq!(stepped(-10.0, range, -1.0), -11.0);
     assert_eq!(stepped(5.5, range, 3.0), 6.0);
 }
+
+/// A lit toggle's colours, as the view takes them with a sheet that has no rule, are the palette's
+/// (`toggle_colors`): moving a switch onto its element changes nothing where no theme says so
+/// (#1440).
+#[test]
+fn a_lit_toggle_is_the_palette_s_where_no_rule_reaches_it() {
+    let ctx = egui::Context::default();
+    motion::set_enabled(&ctx, false);
+    let mut output = ctx.run_ui(Default::default(), |ui| {
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
+        for on in [false, true] {
+            let response = button_area(ui, rect, Id::unique(("lit-toggle", on)), "Track on");
+            let lit =
+                lit_toggle(ui, &response, crate::kit::element::BUTTON.builder(), &[crate::kit::element::Checked], on);
+            assert_eq!(lit.colors(), toggle_colors(ui, &response, on), "on = {on}");
+        }
+    });
+    output.textures_delta.clear();
+}
+
+/// A flat button paints its fill and its words in the palette's colours where no rule reaches it,
+/// and the colours of a rule for `button` where one does.
+#[test]
+fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
+    let rgb = egui::Color32::from_rgb;
+    let colours = |css: &str| {
+        crate::kit::skin::configure(&crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(css)),
+            ..Default::default()
+        });
+        let ctx = egui::Context::default();
+        let mut found = (Color32::TRANSPARENT, Color32::TRANSPARENT);
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(60.0, 20.0));
+                let response = button_area(ui, rect, Id::unique("flat"), "Flat");
+                flat_button(ui, ui.painter(), rect, &response, "Flat", (theme::TEXT_SMALL, theme::text_primary()));
+            });
+            for shape in &output.shapes {
+                match &shape.shape {
+                    egui::Shape::Rect(rect) if rect.fill.a() > 0 => found.0 = rect.fill,
+                    egui::Shape::Text(text) => found.1 = text.fallback_color,
+                    _ => {}
+                }
+            }
+            output.textures_delta.clear();
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        found
+    };
+    assert_eq!(colours(""), (theme::control_background(), theme::text_primary()));
+    assert_eq!(
+        colours("button { background-color: #102030; color: #405060; }"),
+        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60))
+    );
+}

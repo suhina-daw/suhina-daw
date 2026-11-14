@@ -911,3 +911,222 @@ fn the_device_chain_s_insert_line_is_a_drop_target_of_kind_insert() {
     });
     assert_eq!(missing, Vec::<String>::new());
 }
+
+/// The control bar's words, the tabs, the toolbar's lit switches and the Launcher's mixer take
+/// their own rules (#1440).
+#[test]
+fn the_control_bar_s_words_and_switches_take_their_own_rules() {
+    let mut h = window(demo_app());
+    h.get_by_label("Computer keyboard").click();
+    h.run();
+    let rules = [
+        // "Quantize" and "Count-in" are hints, the keys' and the clock's words the toolbar's own.
+        ("label[kind=\"hint\"]", "color", odd(120)),
+        ("toolbar-module#keys button[checked]", "background-color", odd(121)),
+        ("toolbar-module#position", "color", odd(122)),
+        ("toolbar-module#views", "color", odd(123)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// A rule for every `button` does not hide which of the toolbar's switches is on: the computer
+/// keyboard keeps its lit fill while it plays, its unlit self takes the rule's (#1440).
+#[test]
+fn a_rule_for_every_button_keeps_the_computer_keyboard_lit() {
+    let mut h = window(demo_app());
+    let css = format!("button {{ background-color: {}; }}", hex(odd(124)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.clone().into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let unlit = fills_at(&h, h.get_by_label("Computer keyboard").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(unlit.contains(&odd(124)), "the unlit switch takes the rule: {unlit:?}");
+    h.get_by_label("Computer keyboard").click();
+    h.run();
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let lit = fills_at(&h, h.get_by_label_contains("Computer keyboard on").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!lit.is_empty() && !lit.contains(&odd(124)), "the lit switch keeps its fill: {lit:?}");
+}
+
+/// A rule for every `button` does not hide which tracks are on: a track's on switch, in the
+/// Arrangement's header and in the mixer strip, keeps its lit fill (#1440).
+#[test]
+fn a_rule_for_every_button_keeps_a_track_s_on_switch_lit() {
+    for view in [None, Some("Arrangement view")] {
+        let mut h = window(demo_app());
+        if let Some(view) = view {
+            h.get_by_label(view).click();
+            h.run();
+        }
+        h.get_by_label("Turn Keys off").click();
+        h.run();
+        let css = format!("button {{ background-color: {}; }}", hex(odd(125)));
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        let lit = fills_at(&h, h.get_by_label("Turn Drums off").rect());
+        let off = fills_at(&h, h.get_by_label("Turn Keys on").rect());
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        assert!(!lit.is_empty() && !lit.contains(&odd(125)), "{view:?}: a track that is on keeps its fill: {lit:?}");
+        assert!(off.contains(&odd(125)), "{view:?}: a track that is off takes the rule: {off:?}");
+    }
+}
+
+/// A dialog's title row, its words and its lists take their own rules (#1440).
+#[test]
+fn a_dialog_s_title_words_and_rows_take_their_own_rules() {
+    let mut h = window(demo_app());
+    h.state_mut().open_project_dialog(false);
+    h.run();
+    let rules = [
+        ("dialog-title", "background-color", odd(126)),
+        ("dialog-title label[kind=\"title\"]", "color", odd(127)),
+        ("dialog label[kind=\"hint\"]", "color", odd(128)),
+        ("dialog separator[kind=\"row\"]", "color", odd(129)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// The unsaved-changes dialog and the agent prompt read their words from `label`'s kinds (#1440).
+#[test]
+fn the_questions_a_dialog_asks_take_their_own_words() {
+    let mut h = window(demo_app());
+    h.state_mut().ask_agent(1, "An assistant".into());
+    h.run();
+    let rules = [("dialog label", "color", odd(130)), ("dialog label[kind=\"hint\"]", "color", odd(131))];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// The start page's tabs are `editor-tab#tab-recent` and `#tab-templates`, `[checked]` for the one
+/// shown (#1440).
+#[test]
+fn the_start_page_s_tabs_take_their_own_rules() {
+    let mut app = App::new();
+    app.set_browser_open(false);
+    let mut h = window(app);
+    let rules = [
+        ("editor-tab#tab-recent[checked]", "color", odd(132)),
+        ("editor-tab#tab-templates", "color", odd(133)),
+        ("start-page label[kind=\"hint\"]", "color", odd(134)),
+        ("start-page separator[kind=\"row\"]", "color", odd(135)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+/// Settings' words, headings and buttons take their own rules, and its lit switches and chosen
+/// segments stay lit under a rule for every `button` (#1440).
+#[test]
+fn settings_words_and_buttons_take_their_own_rules() {
+    let mut h = window(demo_app());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    h.run();
+    h.get_by_label("Settings page: Keys").click();
+    h.run();
+    let rules = [
+        ("settings label[kind=\"hint\"]", "color", odd(136)),
+        ("settings label[kind=\"caption\"]", "color", odd(137)),
+        ("settings separator[kind=\"row\"]", "color", odd(138)),
+        ("settings button", "color", odd(139)),
+        ("settings button[checked]", "background-color", odd(140)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+}
+
+#[test]
+fn a_rule_for_every_button_keeps_settings_chosen_segment_lit() {
+    let mut h = window(demo_app());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    h.run();
+    h.get_by_label("Settings page: Keys").click();
+    h.run();
+    h.get_by_label("Preset: Mouse-first").click();
+    h.run();
+    let css = format!("button {{ background-color: {}; }}", hex(odd(141)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let lit = fills_at(&h, h.get_by_label("Preset: Mouse-first").rect());
+    let unlit = fills_at(&h, h.get_by_label("Preset: Draw-first").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!lit.is_empty() && !lit.contains(&odd(141)), "the chosen preset keeps its fill: {lit:?}");
+    assert!(unlit.contains(&odd(141)), "an unchosen one takes the rule: {unlit:?}");
+}
+
+/// A yes/no setting's switch is lit by a rule for `[checked]` only: a rule for every `button`
+/// colours the unlit ones and leaves the lit ones lit (#1440).
+#[test]
+fn a_rule_for_every_button_keeps_settings_switches_lit() {
+    use egui_kittest::kittest::NodeT;
+    let mut h = window(demo_app());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    h.run();
+    let css = format!("button {{ background-color: {}; }}", hex(odd(142)));
+    let (mut lit, mut unlit) = (0, 0);
+    for page in ["Projects and backups", "Appearance", "Browser", "Launcher and mixer", "Arrangement"] {
+        h.get_by_label(&format!("Settings page: {page}")).click();
+        h.run();
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.clone().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        for switch in h.query_all_by_role(egui::accesskit::Role::CheckBox) {
+            let fills = fills_at(&h, switch.rect());
+            if fills.is_empty() {
+                continue;
+            }
+            if switch.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True) {
+                lit += 1;
+                assert!(!fills.contains(&odd(142)), "a lit switch keeps its fill: {fills:?}");
+            } else {
+                unlit += 1;
+                assert!(fills.contains(&odd(142)), "an unlit switch takes the rule: {fills:?}");
+            }
+        }
+        suhina_ui::kit::native_css::set_user_sheet(None);
+    }
+    assert!(lit > 0 && unlit > 0, "the pages hold lit and unlit switches ({lit} and {unlit})");
+}
+
+/// The colour picker's swatches are `colour-swatch`es: the chosen one is outlined in its
+/// `border-color` (#1440).
+#[test]
+fn the_colour_picker_s_swatches_take_their_own_rules() {
+    let mut h = window(demo_app());
+    h.get_by_label("Track Drums").click_secondary();
+    h.run();
+    assert_eq!(
+        missing(&mut h, &[("colour-swatch", "border-color", odd(143))]),
+        Vec::<String>::new(),
+        "the swatch under the pointer or the chosen one is outlined"
+    );
+}
+
+/// The detail area's splitter takes `[closed]` while the area is closed, and only then (#1440).
+#[test]
+fn the_detail_splitter_takes_closed_only_while_the_area_is_closed() {
+    let mut h = window(demo_app());
+    let open_rules = [("divider#detail-splitter", "background-color", odd(144))];
+    let closed_rules = [("divider#detail-splitter[closed]", "background-color", odd(145))];
+    h.run();
+    // Closed as it starts, or open: say which, then the other.
+    let shown_closed = |h: &mut Harness<'static, App>| {
+        let all = missing(h, &open_rules);
+        assert!(all.is_empty(), "the splitter is drawn: {all:?}");
+        missing(h, &closed_rules).is_empty()
+    };
+    let first = shown_closed(&mut h);
+    h.get_by_label("View").click();
+    h.run();
+    let item = if first { "Show detail area" } else { "Hide detail area" };
+    h.get_by_label_contains(item).click();
+    h.run();
+    let second = shown_closed(&mut h);
+    assert_ne!(first, second, "[closed] reaches the splitter of the closed area only");
+}
