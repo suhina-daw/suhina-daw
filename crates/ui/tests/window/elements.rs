@@ -475,6 +475,32 @@ fn a_rule_for_every_button_keeps_solo_cue_and_arm_lit() {
     suhina_ui::kit::native_css::set_user_sheet(None);
 }
 
+/// A rule for every `button` does not hide which of the browser's chips is chosen: the lit chip
+/// keeps its lit fill, an unlit one takes the rule's (#1023).
+#[test]
+fn a_rule_for_every_button_keeps_the_browser_s_chosen_chip_lit() {
+    let mut app = demo_app();
+    app.set_browser_open(true);
+    let mut h = window(app);
+    // Recent's kinds as chips, Recent chosen: its "All" chip is the lit one.
+    let ctx = h.ctx.clone();
+    let mut chips = h.state().settings().clone();
+    chips.view.recent_chips = true;
+    h.state_mut().set_settings(&ctx, chips);
+    h.get_by_label("Place Recent").click();
+    h.run();
+    let css = format!("button {{ background-color: {}; }}", hex(odd(97)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let lit = fills_at(&h, h.get_by_label("Recent All").rect());
+    let unlit = fills_at(&h, h.get_by_label("Recent Samples").rect());
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!lit.is_empty() && !lit.contains(&odd(97)), "the chosen chip keeps its lit fill: {lit:?}");
+    assert!(unlit.contains(&odd(97)), "an unlit chip takes the rule: {unlit:?}");
+}
+
 /// The Arrangement's swing is a `slider`, `[checked]` while it is lit: its rail, its fill and its
 /// handle take their parts' rules (#1023).
 #[test]

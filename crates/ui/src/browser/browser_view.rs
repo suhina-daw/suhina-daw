@@ -386,7 +386,8 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             Chip::List => !showing_map,
             Chip::Map => showing_map,
         };
-        let (el, plain) = BUTTON.response(&response).enter_against_plain(Checked, chosen);
+        let (hovered, lit) = widgets::toggle_motion(ui, &response, chosen);
+        let (el, sides) = BUTTON.response(&response).enter_toggle(&[Checked], chosen, lit > 0.0);
         if response.clicked() {
             match chip {
                 Chip::Recent(group) => {
@@ -399,16 +400,19 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             }
             state.scroll = 0.0;
         }
-        let lit = motion::toward(ui.ctx(), response.id.with("on"), chosen, motion::VALUE);
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        // Lit, only a rule for `button[checked]` colours it: one for every `button` does not hide
-        // which chip is chosen.
-        let toggle =
-            widgets::Toggle::of(&el, plain.as_ref(), (idle, tier.secondary), theme::control_selected(), |_| {
-                theme::text_inverse()
-            });
+        let idle = motion::mix(theme::control_background(), theme::control_hover(), hovered);
+        // Lit, only a rule for `button[checked]` colours it, in fill and in image: one for every
+        // `button` does not hide which chip is chosen.
+        let toggle = widgets::Toggle::of(
+            &el,
+            sides.as_ref(),
+            widgets::UnlitInk::Own,
+            (idle, tier.secondary),
+            theme::control_selected(),
+            |_| theme::text_inverse(),
+        );
         let (fill, text) = toggle.at(lit);
-        widgets::button_surface(&painter, rect, &el, &response, chosen, fill, 0.0);
+        widgets::toggle_surface(&painter, rect, &el, &response, fill, toggle.image(lit), 0.0);
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, title, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }
@@ -2790,14 +2794,19 @@ fn plugins_view_switch(
         if response.clicked() && chosen != view {
             run(projects, "library.setPluginsView", json!({ "view": view.name() }), out);
         }
-        let (style, plain) = BUTTON.response(&response).enter_against_plain(Checked, chosen == view);
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        let toggle =
-            widgets::Toggle::of(&style, plain.as_ref(), (idle, tier.secondary), theme::control_selected(), |_| {
-                theme::text_inverse()
-            });
-        let (fill, text) = toggle.at(if chosen == view { 1.0 } else { 0.0 });
-        widgets::button_surface(&painter, rect, &style, &response, chosen == view, fill, 0.0);
+        let (hovered, lit) = widgets::toggle_motion(ui, &response, chosen == view);
+        let (style, sides) = BUTTON.response(&response).enter_toggle(&[Checked], chosen == view, lit > 0.0);
+        let idle = motion::mix(theme::control_background(), theme::control_hover(), hovered);
+        let toggle = widgets::Toggle::of(
+            &style,
+            sides.as_ref(),
+            widgets::UnlitInk::Own,
+            (idle, tier.secondary),
+            theme::control_selected(),
+            |_| theme::text_inverse(),
+        );
+        let (fill, text) = toggle.at(lit);
+        widgets::toggle_surface(&painter, rect, &style, &response, fill, toggle.image(lit), 0.0);
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }

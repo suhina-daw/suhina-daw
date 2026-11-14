@@ -291,6 +291,20 @@ pub fn toggle_face(painter: &Painter, rect: Rect, el: &Entered, response: &Respo
     focus_ring(painter, rect, el, response, radius);
 }
 
+/// [`toggle_face`] of a toggle that has no ring under the pointer and whose radius is `radius`
+/// unless the sheet gives one (a chip, a view switch): the same fill and image as the lit one's.
+pub fn toggle_surface(
+    painter: &Painter,
+    rect: Rect,
+    el: &Entered,
+    response: &Response,
+    fill: Color32,
+    image: f32,
+    radius: f32,
+) {
+    surface(painter, rect, el, response, false, fill, radius, Some(image));
+}
+
 /// The ring of a track button under the pointer, in its `border-color`, and while it has the keys,
 /// in its `accent-color`.
 fn focus_ring(painter: &Painter, rect: Rect, el: &Entered, response: &Response, radius: f32) {

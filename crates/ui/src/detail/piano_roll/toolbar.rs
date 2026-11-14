@@ -470,12 +470,12 @@ fn row_toggle(
         (Color32::TRANSPARENT, theme::text_secondary())
     };
     let (lit_fill, lit_ink) = (visuals.selection.bg_fill, visuals.selection.stroke.color);
-    let (el, plain) = crate::kit::element::PIANO_TOOL
+    let (el, sides) = crate::kit::element::PIANO_TOOL
         .id(button.id())
         .attribute("kind", button.id())
         .response(&response)
-        .enter_against_plain(crate::kit::element::Checked, on);
-    let toggle = widgets::Toggle::of(&el, plain.as_ref(), off, lit_fill, |_| lit_ink);
+        .enter_toggle(&[crate::kit::element::Checked], on, false);
+    let toggle = widgets::Toggle::of(&el, sides.as_ref(), widgets::UnlitInk::Own, off, lit_fill, |_| lit_ink);
     let (fill, ink) = toggle.at(if on { 1.0 } else { 0.0 });
     painter.rect_filled(rect, 3.0, fill);
     let icon = Rect::from_min_size(rect.min + Vec2::new(3.0, 0.0), Vec2::new(rect.height(), rect.height()));

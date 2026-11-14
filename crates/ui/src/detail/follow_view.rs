@@ -188,18 +188,24 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
 fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, label: &str, on: bool, accent: bool) -> bool {
     let response = widgets::button_area(ui, rect, id, label);
     // A `button`, `[checked]` while on: only a rule for the lit state lights it.
-    let (el, plain) =
-        crate::kit::element::BUTTON.response(&response).enter_against_plain(crate::kit::element::Checked, on);
+    let checked = [crate::kit::element::Checked];
     let (fill, text) = if accent {
-        let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
-        let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        let toggle = widgets::Toggle::of(&el, plain.as_ref(), (off, theme::text_secondary()), theme::accent(), |_| {
-            theme::text_inverse()
-        });
+        let (hovered, lit) = widgets::toggle_motion(ui, &response, on);
+        let (el, sides) = crate::kit::element::BUTTON.response(&response).enter_toggle(&checked, on, lit > 0.0);
+        let off = motion::mix(theme::control_background(), theme::control_hover(), hovered);
+        let toggle = widgets::Toggle::of(
+            &el,
+            sides.as_ref(),
+            widgets::UnlitInk::Own,
+            (off, theme::text_secondary()),
+            theme::accent(),
+            |_| theme::text_inverse(),
+        );
         toggle.at(lit)
     } else {
+        let (el, sides) = crate::kit::element::BUTTON.response(&response).enter_toggle(&checked, on, false);
         let (fill, ink) = widgets::toggle_colors(ui, &response, on);
-        let toggle = widgets::Toggle::of(&el, plain.as_ref(), (fill, ink), fill, |_| ink);
+        let toggle = widgets::Toggle::of(&el, sides.as_ref(), widgets::UnlitInk::Own, (fill, ink), fill, |_| ink);
         toggle.at(if on { 1.0 } else { 0.0 })
     };
     painter.rect_filled(rect, 0.0, fill);

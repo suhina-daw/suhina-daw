@@ -371,15 +371,14 @@ pub(super) fn group_panel(
             if branch.mute { format!("Unmute branch {}", branch.name) } else { format!("Mute branch {}", branch.name) },
         );
         // `button`, `[checked]` while muted: only a rule for the lit state lights it.
-        let (el, plain) = crate::kit::element::BUTTON
-            .response(&response)
-            .enter_against_plain(crate::kit::element::Checked, branch.mute);
+        let (el, sides) = crate::kit::element::BUTTON.response(&response).enter_toggle(
+            &[crate::kit::element::Checked],
+            branch.mute,
+            false,
+        );
         let (fill, text) = widgets::toggle_colors(ui, &response, branch.mute);
-        let (fill, text) = widgets::Toggle::of(&el, plain.as_ref(), (fill, text), fill, |_| text).at(if branch.mute {
-            1.0
-        } else {
-            0.0
-        });
+        let toggle = widgets::Toggle::of(&el, sides.as_ref(), widgets::UnlitInk::Own, (fill, text), fill, |_| text);
+        let (fill, text) = toggle.at(if branch.mute { 1.0 } else { 0.0 });
         drop(el);
         painter.rect_filled(mute, 0.0, fill);
         widgets::text_in(painter, mute, Align2::CENTER_CENTER, "M", theme::ui_font(theme::TEXT_SMALL), text);
@@ -399,16 +398,23 @@ pub(super) fn group_panel(
                 format!("Solo branch {}", branch.name)
             },
         );
-        let lit = motion::toward(ui.ctx(), response.id.with("on"), branch.solo, motion::VALUE);
-        let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        // `button#control-solo`, `[checked]` while soloed, as a track's solo.
-        let (el, plain) = crate::kit::element::BUTTON
-            .id("solo")
-            .response(&response)
-            .enter_against_plain(crate::kit::element::Checked, branch.solo);
-        let toggle = widgets::Toggle::of(&el, plain.as_ref(), (off, theme::text_secondary()), theme::accent(), |_| {
-            theme::text_inverse()
-        });
+        let (hovered, lit) = widgets::toggle_motion(ui, &response, branch.solo);
+        let off = motion::mix(theme::control_background(), theme::control_hover(), hovered);
+        // `button#solo`, `[checked]` while soloed, as a track's solo; the lit side is looked up
+        // while it fades out too.
+        let (el, sides) = crate::kit::element::BUTTON.id("solo").response(&response).enter_toggle(
+            &[crate::kit::element::Checked],
+            branch.solo,
+            lit > 0.0,
+        );
+        let toggle = widgets::Toggle::of(
+            &el,
+            sides.as_ref(),
+            widgets::UnlitInk::Own,
+            (off, theme::text_secondary()),
+            theme::accent(),
+            |_| theme::text_inverse(),
+        );
         drop(el);
         let (fill, text) = toggle.at(lit);
         painter.rect_filled(solo, 0.0, fill);
