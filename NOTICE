@@ -45,4 +45,7 @@ Third-party material
 - third_party/cpal is CPAL 0.18.2 by the RustAudio contributors, Apache License 2.0
   (third_party/cpal/LICENSE), with an ASIO callback-cycle fix described in VENDORED.md.
 
+- third_party/nam-rs is nam-rs 0.4.0, Copyright (c) 2026 Leigh, MIT License
+  (third_party/nam-rs/LICENSE, NOTICE), with the fast tanh and sigmoid described in VENDORED.md.
+
 Other bundled material is listed per file (author, source, license) in ATTRIBUTION.md.
