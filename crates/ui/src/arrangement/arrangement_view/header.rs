@@ -246,10 +246,10 @@ pub(super) fn track_header(
         state.open_devices = Some(lane.track);
     }
     if body.drag_started_by(egui::PointerButton::Primary) {
-        state.track_drag = Some(lane.track);
+        state.gesture.begin(Gesture::Track(lane.track));
     }
     if body.drag_stopped_by(egui::PointerButton::Primary)
-        && let Some(dragged) = state.track_drag.take()
+        && let Some(dragged) = state.gesture.end_track(|t| *t == lane.track)
         && let Some(pointer) = body.interact_pointer_pos().or_else(|| ui.ctx().pointer_latest_pos())
     {
         state.track_drop = Some((dragged, pointer.y));

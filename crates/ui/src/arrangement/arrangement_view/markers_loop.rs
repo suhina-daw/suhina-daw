@@ -18,7 +18,7 @@ pub(super) fn marker_flags(
 ) {
     let painter = ui.painter_at(row);
     let font = theme::ui_font(theme::TEXT_SMALL);
-    let shown_beat = |state: &ArrangementViewState, index: usize, beat: f64| match state.marker_drag {
+    let shown_beat = |state: &ArrangementViewState, index: usize, beat: f64| match state.gesture.marker().copied() {
         Some((i, raw)) if i == index => {
             let free = ui.input(|input| input.modifiers.alt);
             let bar_beats = if timeline.bar_beats > 0.0 { timeline.bar_beats } else { 4.0 };
@@ -41,7 +41,7 @@ pub(super) fn marker_flags(
         let id = Id::unique(("arrangement-marker", marker.index));
         let response = ui.interact(tag.expand2(Vec2::new(2.0, 0.0)), id, Sense::click_and_drag());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Marker {}", marker.name)));
-        let dragged = state.marker_drag.is_some_and(|(i, _)| i == marker.index);
+        let dragged = state.gesture.marker().is_some_and(|&(i, _)| i == marker.index);
         // `marker`, `[checked]` while it is dragged: its tag's background, its line's border
         // colour and its name's colour.
         let el = crate::kit::element::MARKER.response(&response).attr(crate::kit::element::Checked, dragged).enter();
@@ -76,19 +76,19 @@ pub(super) fn marker_flags(
             actions.push(Action::new("marker.jump", json!({ "index": marker.index })));
         }
         if response.drag_started_by(egui::PointerButton::Primary) {
-            state.marker_drag = Some((marker.index, marker.beat));
+            state.gesture.begin(Gesture::Marker((marker.index, marker.beat)));
         }
         if response.dragged_by(egui::PointerButton::Primary)
             && let Some(pointer) = response.interact_pointer_pos()
-            && let Some((i, raw)) = state.marker_drag.as_mut()
+            && let Some((i, raw)) = state.gesture.marker_mut()
             && *i == marker.index
         {
             // Where the pointer is, in beats, unsnapped: snapping happens as it is shown.
             *raw = f64::from((pointer.x - row.left() + state.scroll.x) / state.beat_width);
         }
-        if response.drag_stopped() && state.marker_drag.is_some_and(|(i, _)| i == marker.index) {
+        if response.drag_stopped() && state.gesture.marker().is_some_and(|&(i, _)| i == marker.index) {
             let to = shown_beat(state, marker.index, marker.beat);
-            state.marker_drag = None;
+            state.gesture.end_marker(|_| true);
             if to != marker.beat {
                 actions.push(Action::new("marker.move", json!({ "index": marker.index, "beat": to })));
             }
@@ -124,13 +124,9 @@ pub(super) fn marker_flags(
             }
         });
     }
-    // A drag that lost its marker (the project changed under it) ends.
-    if state.marker_drag.is_some() && !ui.input(|i| i.pointer.primary_down()) {
-        state.marker_drag = None;
-    }
 }
 
-/// The loop region as the row under the ruler draws it while `state.loop_drag` changes it, on the
+/// The loop region as the row under the ruler draws it while a drag in it changes it, on the
 /// ruler's grid (Alt: free). `None` while a new region is no wider than a grid step.
 pub(super) fn dragged_loop(
     timeline: &Timeline,
@@ -210,20 +206,20 @@ pub(super) fn loop_brace(
                 LoopGrab::New(ruler_beat(raw, arrangement_grid(state.grid, state.beat_width, bar_beats), free))
             }
         };
-        state.loop_drag = Some((grab, raw));
+        state.gesture.begin(Gesture::Loop((grab, raw)));
     }
     if response.dragged_by(egui::PointerButton::Primary)
         && let Some(pointer) = response.interact_pointer_pos()
-        && state.loop_drag.is_some()
     {
         let at = raw_at(pointer.x, state);
-        if let Some((_, raw)) = state.loop_drag.as_mut() {
+        if let Some((_, raw)) = state.gesture.loop_brace_mut() {
             *raw = at;
         }
     }
-    let dragged = state.loop_drag.and_then(|(grab, raw)| dragged_loop(timeline, state, free, grab, raw));
+    let dragged =
+        state.gesture.loop_brace().copied().and_then(|(grab, raw)| dragged_loop(timeline, state, free, grab, raw));
     if response.drag_stopped()
-        && let Some((grab, _)) = state.loop_drag.take()
+        && let Some((grab, _)) = state.gesture.end_loop_brace(|_| true)
         && let Some((start, end)) = dragged
     {
         let unchanged = timeline.loop_brace.is_some_and(|b| b.start == start && b.end == end);
@@ -249,14 +245,10 @@ pub(super) fn loop_brace(
             ui.close();
         }
     });
-    // A drag that lost its row (the view changed under it) ends.
-    if state.loop_drag.is_some() && !ui.input(|i| i.pointer.primary_down()) {
-        state.loop_drag = None;
-    }
 
     let shown = dragged.or_else(|| timeline.loop_brace.map(|b| (b.start, b.end)));
     let Some((start, end)) = shown else { return };
-    let enabled = timeline.loop_brace.is_none_or(|b| b.enabled) || state.loop_drag.is_some();
+    let enabled = timeline.loop_brace.is_none_or(|b| b.enabled) || state.gesture.loop_brace().is_some();
     let (left, right) = (x_of(start).round(), x_of(end).round());
     // `loop-region` styles the bar, `[checked]` while looping is on; `height` is its thickness
     // and `loop-region` (`.on` while on) its artwork, nine-sliced when the SVG says so.

@@ -571,6 +571,99 @@ fn unreadable_files_are_skipped_and_reported() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A file read before the output opened was read at 48 kHz; an output at another rate has it
+/// read again at its own, and one at 48 kHz keeps the first read.
+#[test]
+fn an_output_at_another_rate_reads_the_device_files_again() {
+    for (rate, loads) in [(48_000, 1), (44_100, 2)] {
+        let mut session = Session::new(blank_project());
+        run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+        run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader" })).unwrap();
+        let path = "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav";
+        run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": path })).unwrap();
+        assert_eq!(session.device_file_loads(), 1, "read once before any output");
+        let project = session.project().clone();
+        let mut renderer = Renderer::stopped(&project, &AudioPool::new(), rate, suhina_session::devices()).unwrap();
+        session.attach_player(Player::new(renderer.controller(), None));
+        assert_eq!(session.device_file_loads(), loads, "an output at {rate} Hz");
+    }
+}
+
+/// A cabinet removed before the output opens at another rate, with another kept through it, then
+/// brought back by an undo, runs a read made at the new rate, not the retained one.
+#[test]
+fn an_undone_removal_after_a_rate_change_reads_its_file_again() {
+    let mut session = Session::new(blank_project());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    for (device, name) in [(0, "Plain"), (1, "Dark")] {
+        run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader" })).unwrap();
+        let path = format!("builtin:nam-cab-loader/Synthetic Cabinet {name}.wav");
+        run(&mut session, "device.setNamFile", json!({ "track": 1, "device": device, "path": path })).unwrap();
+    }
+    assert_eq!(session.device_file_loads(), 2);
+    run(&mut session, "device.remove", json!({ "track": 1, "device": 0 })).unwrap();
+    let project = session.project().clone();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 44_100, suhina_session::devices()).unwrap();
+    session.attach_player(Player::new(renderer.controller(), None));
+    assert_eq!(session.device_file_loads(), 3, "the cabinet kept is read again at 44.1 kHz");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.device_file_loads(), 4, "the cabinet brought back is read again too");
+}
+
+/// What a clip through a Cab Loader sounds like at a 44.1 kHz output, the cabinet set before the
+/// output opened (`late`) or after (so it was read at 44.1 kHz from the start).
+fn cab_sound_at_44k(late: bool) -> Vec<f32> {
+    let dir = temp_dir(if late { "cab-late" } else { "cab-early" });
+    let sample = wav(&dir, "in.wav", 1.0, 0.5);
+    let project = blank_project();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 44_100, suhina_session::devices()).unwrap();
+    let mut session = Session::new(project);
+    let setup = |session: &mut Session| {
+        run(session, "device.add", json!({ "track": 3, "id": "nam-cab-loader" })).unwrap();
+        let path = "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav";
+        run(session, "device.setNamFile", json!({ "track": 3, "device": 0, "path": path })).unwrap();
+        run(session, "clip.addFiles", json!({ "paths": [text(&sample)], "track": 3, "start": 0.0 })).unwrap();
+    };
+    if late {
+        setup(&mut session);
+        // The way the app opens an output: the engine is built with the files read so far.
+        let mut built = None;
+        session
+            .replace_player(|project, pool, assets, _| {
+                let inputs = RenderInputs::from_audio(pool, suhina_session::devices()).with_assets(assets);
+                let made = Renderer::build(project, inputs, 44_100, RenderOptions::STOPPED)?;
+                let mut made = made;
+                let player = Player::new(made.controller(), None);
+                built = Some(made);
+                Ok::<_, suhina_engine::RenderError>(player)
+            })
+            .unwrap();
+        renderer = built.unwrap();
+    } else {
+        session.attach_player(Player::new(renderer.controller(), None));
+        setup(&mut session);
+    }
+    run(&mut session, "transport.play", json!({})).unwrap();
+    let mut heard = Vec::new();
+    let mut out = vec![0.0f32; 4096];
+    for _ in 0..20 {
+        renderer.process(&mut out);
+        heard.extend_from_slice(&out);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    heard
+}
+
+/// The engine an output opened plays the files read again at its rate, not the first reads.
+#[test]
+fn an_output_at_another_rate_plays_the_files_read_again() {
+    let early = cab_sound_at_44k(false);
+    let late = cab_sound_at_44k(true);
+    assert!(early.iter().any(|s| s.abs() > 0.01), "the cabinet is heard");
+    let difference = early.iter().zip(&late).fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
+    assert!(difference < 1e-6, "a cabinet set before the output opened sounds as one set after it: {difference}");
+}
+
 #[test]
 fn a_sample_added_while_playing_reaches_the_engine() {
     let dir = temp_dir("playing");

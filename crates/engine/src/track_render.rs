@@ -118,6 +118,7 @@ impl suhina_device_sdk::DeviceFactory for NoDevices {
     fn create(
         &self,
         _id: &str,
+        _rate: f64,
         _asset: Option<&suhina_device_sdk::DeviceAsset>,
     ) -> Option<Box<dyn suhina_device_api::Device>> {
         None
@@ -136,7 +137,7 @@ impl suhina_device_sdk::DeviceFactory for NoDevices {
         false
     }
 
-    fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
+    fn preview_instrument(&self, _rate: f64) -> Option<Box<dyn suhina_device_api::Device>> {
         None
     }
 }

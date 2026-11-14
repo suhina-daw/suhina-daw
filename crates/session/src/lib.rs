@@ -680,6 +680,15 @@ impl Session {
         self.live.recording.attach(player.take_recorder(), sample_rate);
         self.sync.player = Some(player);
         self.audio.changed = false;
+        // The files were read before this output opened, at the rate known then: an output at
+        // another rate has them read again, and the engine gets the new reads.
+        self.sync_device_files();
+        if self.device_files.changed {
+            // The engine's first graph holds the earlier reads: build and send it again, and
+            // retry like any edit the engine could not take.
+            let sent = self.follow_player(None);
+            self.sync.behind = sent.as_ref().is_err_and(|lag| lag.transient);
+        }
         // A new engine hears the tracks armed before it.
         self.send_armed();
     }
@@ -1412,10 +1421,24 @@ impl Session {
                 }
             }
         }
+        // Every read was made at the rate before; a file read at another rate is read again
+        // whenever a device next needs it, also one that is not in the project now (an undo
+        // brings it back), so nothing retained keeps an IR of the wrong rate.
+        let rate = self.device_file_rate();
+        let mut changed = false;
+        if self.device_files.rate != rate {
+            self.device_files.rate = rate;
+            if !self.device_files.assets.entries.is_empty() {
+                self.device_files.assets.entries.clear();
+                changed = true;
+            }
+            self.device_files.notes.clear();
+            self.device_files.modified.clear();
+        }
         if need.is_empty() {
+            self.device_files.changed |= changed;
             return;
         }
-        let mut changed = false;
         for (path, kind) in need.iter() {
             // A library-relative state's file is at the library's base, not the working
             // folder: the timestamp check sees the same resolved path the load reads.
@@ -1447,6 +1470,11 @@ impl Session {
         }
     }
 
+    /// The rate files are read at: the player's, or 48 kHz until the first output opens.
+    fn device_file_rate(&self) -> u32 {
+        self.sync.player.as_ref().map_or(48_000, Player::sample_rate)
+    }
+
     /// What a file-backed device of `kind` runs for the file at `path`, read by the device
     /// through the registry (a model for the Amp Modeler, an IR for the Cab Loader). The reads run
     /// here, at command or project-load time, never on the audio thread. The registry refuses a
@@ -1466,7 +1494,7 @@ impl Session {
     ) -> Result<suhina_device_registry::DeviceAsset, String> {
         // An IR joins the project at the engine's rate; the session's rate is the player's, or
         // 48 kHz until the first output opens.
-        let rate = self.sync.player.as_ref().map_or(48_000, Player::sample_rate);
+        let rate = self.device_file_rate();
         // A shipped file's key rides the same state slot ([ADR 0036]): `builtin:<device
         // id>/<file name>`, run against the pack's bytes through the device's own loader. A
         // key of another device's pack is refused here, as a path of the wrong extension

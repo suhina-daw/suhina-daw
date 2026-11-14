@@ -118,12 +118,23 @@ impl Default for DjEq {
 
 impl DjEq {
     pub fn new() -> Self {
+        Self::at(DEFAULT_SAMPLE_RATE)
+    }
+
+    /// The same, made for `sample_rate` (ADR 0004 › Amendment: a device is made at its rate);
+    /// fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(Self::at)
+    }
+
+    /// Everything for `sample_rate`, which has been checked.
+    fn at(sample_rate: f64) -> Self {
         let mut eq = Self {
-            sample_rate: DEFAULT_SAMPLE_RATE,
+            sample_rate,
             params: ParamBank::new(&PARAMS),
             gains: [Smoother::new(1.0, 1); 3],
             frequencies: [Smoother::new(0.0, 1); 2],
-            sides: [Side::new(DEFAULT_SAMPLE_RATE, 250.0, 2_500.0, Slope::Db24); 2],
+            sides: [Side::new(sample_rate, 250.0, 2_500.0, Slope::Db24); 2],
             frame: 0,
         };
         eq.rebuild();

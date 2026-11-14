@@ -38,6 +38,7 @@ mod tools;
 mod value_controls;
 
 use self::clip::*;
+use crate::arrangement::gesture::*;
 
 /// The colour Main's automation lanes are drawn in: it has no track colour of its own.
 const MAIN_COLOUR: Rgb = Rgb(150, 150, 150);
@@ -362,6 +363,8 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
     if state.focus.is_some() {
         state.scroll.y = scrolled;
     }
+    // Every widget has had its release by now, this frame's included (#1158).
+    state.gesture.settle(ui.input(|i| i.pointer.any_down()));
     // The line a drag holds, for the headers and panels: they are drawn before the lanes move
     // it, so a change is drawn again at once (#811).
     let dragged = state.automation.take_drawn_drag();
@@ -608,7 +611,7 @@ fn show_lanes(
     state.below_tracks = (lanes_area.bottom() - tracks_bottom > 4.0).then_some((tracks_bottom, lanes_area.bottom()));
     // A clip carried into it: the new track it would make, outlined where it would go.
     if let Some((top, bottom)) = state.below_tracks
-        && state.clip_drag.is_some_and(|d| d.new_track)
+        && state.gesture.clip().copied().is_some_and(|d| d.new_track)
     {
         let band = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(top + 2.0, (top + 42.0).min(bottom)));
         let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
@@ -767,9 +770,9 @@ fn show_lanes(
     {
         let free = ui.input(|i| i.modifiers.alt);
         let raw = f64::from((origin.x - time.left() + state.scroll.x) / state.beat_width);
-        state.ruler_select = Some(ruler_beat(raw, grid, free));
+        state.gesture.begin(Gesture::RulerSelect { from: ruler_beat(raw, grid, free), kept: None });
     }
-    if let Some(from) = state.ruler_select
+    if let Some(&Gesture::RulerSelect { from, .. }) = state.gesture.get()
         && let Some(pointer) = ui.ctx().pointer_latest_pos()
     {
         let free = ui.input(|i| i.modifiers.alt);
@@ -779,15 +782,17 @@ fn show_lanes(
         let (start, end) = (from.min(to), from.max(to));
         let shift = ui.input(|i| i.modifiers.shift);
         let selected = state.time_selection.clone();
-        let kept = state.painted_from.get_or_insert_with(|| selected.filter(|_| shift)).clone();
+        let kept = match state.gesture.get_mut() {
+            Some(Gesture::RulerSelect { kept, .. }) => kept.get_or_insert_with(|| selected.filter(|_| shift)).clone(),
+            _ => None,
+        };
         let selection = match kept {
             Some(kept) => Some(kept.gone_on(&tracks, start, end, None)),
             None => (end - start > 1e-6).then_some(TimeSelection { tracks, start, end, row: None }),
         };
         state.set_time_selection(selection);
         if ui.input(|i| !i.pointer.primary_down()) {
-            state.ruler_select = None;
-            state.painted_from = None;
+            state.gesture.end_if(|g| matches!(g, Gesture::RulerSelect { .. }));
             play_from_selection(state, timeline, actions);
         }
     }
@@ -1204,22 +1209,20 @@ fn show_lanes(
             && body.drag_started_by(egui::PointerButton::Primary)
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
-            state.draw_drag = Some((clips_lane.track, beat_at(origin.x, ui.input(|i| i.modifiers.alt))));
+            state.gesture.begin(Gesture::Draw((clips_lane.track, beat_at(origin.x, ui.input(|i| i.modifiers.alt)))));
         } else if body.drag_started_by(egui::PointerButton::Primary)
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
         {
-            state.marquee = Some(origin);
-            state.marquee_scroll = state.scroll;
-            state.marquee_time = state.tool == ArrangementTool::Range
+            let paints_time = state.tool == ArrangementTool::Range
                 || goes_on
                 || if state.time_select_ctrl {
                     ui.input(|i| i.modifiers.command)
                 } else {
                     origin.y < row.time.center().y
                 };
-            state.marquee_row = None;
+            state.gesture.begin(Gesture::Marquee(Marquee::new(origin, state.scroll, paints_time, None)));
         }
-        if let Some((track, from)) = state.draw_drag.filter(|d| d.0 == clips_lane.track)
+        if let Some((track, from)) = state.gesture.draw().copied().filter(|d| d.0 == clips_lane.track)
             && let Some(pointer) = ui.ctx().pointer_latest_pos()
         {
             let to = beat_at(pointer.x, ui.input(|i| i.modifiers.alt));
@@ -1237,7 +1240,7 @@ fn show_lanes(
             let edge = look.own_color_or(theme::selection());
             lanes_painter.rect_stroke(shown, 0.0, Stroke::new(1.0, edge), StrokeKind::Inside);
             if body.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
-                state.draw_drag = None;
+                state.gesture.end_draw(|_| true);
                 if end - start > 1e-6 {
                     let stack = if lane.notes { state.stack_midi } else { state.stack_audio };
                     let params = json!({ "track": track.0, "start": start, "length": end - start, "stack": stack });
@@ -1246,7 +1249,7 @@ fn show_lanes(
             }
         }
         if !state.time_select_ctrl
-            && state.marquee.is_none()
+            && state.gesture.marquee().is_none()
             && body.hover_pos().is_some_and(|p| p.y < row.time.center().y)
         {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
@@ -1449,7 +1452,16 @@ fn show_lanes(
             color: lane.color,
             top: lane_rect.bottom() + 1.0 + state.takes_height(lane.track, timeline),
         };
-        automation::show(ui, &lanes_painter, &geometry, &lanes, &timeline.automation, &mut state.automation, actions);
+        automation::show(
+            ui,
+            &lanes_painter,
+            &geometry,
+            &lanes,
+            &timeline.automation,
+            &mut state.automation,
+            &mut state.gesture,
+            actions,
+        );
     }
     if state.automation.selected_points().is_some() {
         state.clear_selected_clip();
@@ -1486,26 +1498,23 @@ fn show_lanes(
     // A range painted on automation lanes and dragged out of its track's lanes, onto the clips
     // or another track, goes on as a time selection over the tracks it crosses (#1322).
     if let Some(origin) = state.automation.take_time_from() {
-        state.marquee = Some(origin);
-        state.marquee_scroll = state.scroll;
-        state.marquee_time = true;
-        state.marquee_row = None;
-        state.painted_from = None;
+        state.gesture.begin(Gesture::Marquee(Marquee::new(origin, state.scroll, true, None)));
     }
-    if let Some(origin) = state.marquee.as_mut() {
-        *origin += state.marquee_scroll - state.scroll;
-        state.marquee_scroll = state.scroll;
+    let scroll = state.scroll;
+    if let Some(marquee) = state.gesture.marquee_mut() {
+        marquee.origin += marquee.scroll - scroll;
+        marquee.scroll = scroll;
     }
     // The selection rectangle: the clips it touches are selected when the button goes up, and
     // the span it covers becomes the time selection. It reaches the clips out of view too: every
     // lane's row is known, drawn or not.
-    if let Some(origin) = state.marquee
+    if let Some(Marquee { origin, time: paints_time, row: started_in, .. }) = state.gesture.marquee().cloned()
         && let Some(now) = ui.ctx().pointer_latest_pos()
     {
         let whole = Rect::from_two_pos(origin, now);
         let rect = whole.intersect(lanes_area).intersect(time);
         let done = ui.input(|i| !i.pointer.primary_down());
-        if state.marquee_time {
+        if paints_time {
             // Painting time: the selection follows the pointer, on the grid (Alt: free), over the
             // tracks the drag crosses; the clips' selection is left alone.
             let grid = arrangement_grid(state.grid, state.beat_width, bar_beats);
@@ -1517,10 +1526,13 @@ fn show_lanes(
                 rows.iter().filter(|r| r.span.intersects(whole.y_range())).map(|r| r.clips).collect();
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
             // Begun in a row of a stack and kept to its track: that row alone.
-            let row = state.marquee_row.filter(|(track, _, _)| tracks == [*track]).map(|(_, row, rows)| (row, rows));
+            let row = started_in.filter(|(track, _, _)| tracks == [*track]).map(|(_, row, rows)| (row, rows));
             let shift = ui.input(|i| i.modifiers.shift);
             let selected = state.time_selection.clone();
-            let kept = state.painted_from.get_or_insert_with(|| selected.filter(|_| shift)).clone();
+            let kept = match state.gesture.marquee_mut() {
+                Some(marquee) => marquee.kept.get_or_insert_with(|| selected.filter(|_| shift)).clone(),
+                None => None,
+            };
             state.time_selection = match kept {
                 Some(kept) => Some(kept.gone_on(&tracks, start, end, row)),
                 None => (end - start > 1e-6 && !tracks.is_empty()).then_some(TimeSelection { tracks, start, end, row }),
@@ -1528,8 +1540,7 @@ fn show_lanes(
             // The edit keys act on the painted time, not on tracks a header click picked (#1199).
             state.track_focus = false;
             if done {
-                state.marquee = None;
-                state.painted_from = None;
+                state.gesture.end_marquee(|_| true);
                 if state.time_selection.is_some() {
                     state.selected.clear();
                     state.anchor = None;
@@ -1544,7 +1555,7 @@ fn show_lanes(
             let edge = theme::hairline(look.own_color_or(theme::accent()));
             lanes_painter.rect_stroke(rect, 0.0, edge, egui::StrokeKind::Inside);
             if done {
-                state.marquee = None;
+                state.gesture.end_marquee(|_| true);
                 state.time_selection = None;
                 let picked: Vec<(TrackId, ClipId)> = rows
                     .iter()
@@ -1573,7 +1584,7 @@ fn show_lanes(
 
     // A selection rectangle dragged past the lanes' edge scrolls them, the faster the further
     // past (#691); its start moves with the lanes, so it still starts where the drag did.
-    if state.marquee.is_some()
+    if state.gesture.marquee().is_some()
         && let Some(now) = ui.ctx().pointer_latest_pos()
     {
         let past = |value: f32, low: f32, high: f32| {
@@ -1602,7 +1613,7 @@ fn show_lanes(
         let row = row_of(lane.track)?;
         Some((*lane, y > row.time.center().y))
     };
-    if let Some(dragged) = state.track_drag
+    if let Some(dragged) = state.gesture.track().copied()
         && let Some(pointer) = ui.ctx().pointer_interact_pos()
         && let Some((lane, below)) = target_of(pointer.y)
         && let Some(row) = row_of(lane.track)
@@ -1664,6 +1675,7 @@ fn show_lanes(
             &lanes,
             &timeline.automation,
             &mut state.automation,
+            &mut state.gesture,
             actions,
         );
         fixed_painter.hline(area.x_range(), row.time.bottom() + 0.5, theme::hairline(row_line));
@@ -1742,14 +1754,14 @@ fn show_lanes(
             field.intersect(fixed),
             Id::unique("arrangement-main-volume"),
             "Main volume",
-            widgets::format_db(state.main_drag.unwrap_or(db)),
+            widgets::format_db(state.gesture.main().copied().unwrap_or(db)),
             widgets::DragAxis::Both,
         );
         widgets::value_drag_pointer(ui.ctx(), &response, &volume_style);
         state.value_areas.push(field.intersect(fixed));
-        let mut preview = state.main_drag;
+        let mut preview = state.gesture.main().copied();
         // Dragged up or across: up or right raises it, whichever the drag moves along first.
-        match widgets::drag_value_axis(
+        let drag = widgets::drag_value_axis(
             ui,
             &response,
             &mut preview,
@@ -1759,19 +1771,21 @@ fn show_lanes(
             VOLUME_RANGE,
             0.0,
             widgets::DragAxis::Both,
-        ) {
+        );
+        let mine = |g: &Gesture| matches!(g, Gesture::Main(_));
+        match state.gesture.value_frame(&response, drag, || Gesture::Main(db), mine) {
             Drag::Moving(v) => {
-                state.main_drag = Some(v);
+                if let Some(drag) = state.gesture.main_mut() {
+                    *drag = v;
+                }
                 let gesture = crate::interaction::commands::gesture("main-volume");
                 actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "gesture": gesture })));
             }
             Drag::Done(v) => {
-                state.main_drag = None;
                 let gesture = crate::interaction::commands::gesture("main-volume");
                 actions.push(Action::new("mixer.setMainVolume", json!({ "db": v, "gesture": gesture })));
             }
             Drag::Set(v) => {
-                state.main_drag = None;
                 actions.push(Action::new("mixer.setMainVolume", json!({ "db": v })));
             }
             Drag::None => {}
@@ -1780,7 +1794,7 @@ fn show_lanes(
             &fixed_painter,
             field,
             &volume_style,
-            state.main_drag.unwrap_or(db),
+            state.gesture.main().copied().unwrap_or(db),
             widgets::hover(ui, &response),
         );
         drop(volume_style);
@@ -1815,6 +1829,7 @@ fn show_lanes(
             &lanes,
             &timeline.automation,
             &mut state.automation,
+            &mut state.gesture,
             actions,
         );
     }
@@ -1850,7 +1865,9 @@ fn show_lanes(
     {
         let free = ui.input(|i| i.modifiers.alt);
         let shown = state
-            .loop_drag
+            .gesture
+            .loop_brace()
+            .copied()
             .and_then(|(grab, raw)| markers_loop::dragged_loop(timeline, state, free, grab, raw))
             .or_else(|| timeline.loop_brace.filter(|b| b.enabled).map(|b| (b.start, b.end)));
         if let Some((start, end)) = shown {
@@ -1874,7 +1891,7 @@ fn show_lanes(
 
     // A clip dragged onto another lane is drawn there, over everything in that lane.
     if let Some((lane, clip, start)) = ghost
-        && let Some(drag) = state.clip_drag.or(state.landing)
+        && let Some(drag) = state.gesture.clip().copied().or(state.landing)
         && let Some(row) = row_of_clips(drag.target)
         && let Some(target) = timeline.lanes.iter().find(|l| l.track == drag.target)
     {

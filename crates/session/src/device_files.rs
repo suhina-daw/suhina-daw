@@ -22,4 +22,8 @@ pub(crate) struct DeviceFiles {
     /// How many loads the syncs have made: a parse and, for an IR, a resample each, on the
     /// session's thread. A diagnostic, read by [`crate::Session::device_file_loads`].
     pub(crate) loads: u64,
+    /// The rate the loads in `assets` were made at (an IR joins the project at it). A sync at
+    /// another rate, because the output opened at one the session did not know yet, reads
+    /// every file again.
+    pub(crate) rate: u32,
 }

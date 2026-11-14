@@ -40,7 +40,7 @@ pub(super) fn send_knob(
         format!("{} send to {}", lane.name, send.name),
         format!("{} {mode}", widgets::format_db(send.level_db)),
     );
-    let mut preview = match state.send_drag {
+    let mut preview = match state.gesture.send().copied() {
         Some((t, r, v)) if t == track && r == send.target => Some(v),
         _ => None,
     };
@@ -49,10 +49,14 @@ pub(super) fn send_knob(
     // Heard while it is dragged, in one undo step (#705).
     let drag =
         widgets::drag_value(ui, &response, &mut preview, level, 0.25, 1.0, widgets::SEND_RANGE, widgets::SEND_RANGE.0);
+    let mine = |g: &Gesture| matches!(g, Gesture::Send((t, r, _)) if *t == track && *r == send.target);
+    let drag = state.gesture.value_frame(&response, drag, || Gesture::Send((track, send.target, level)), mine);
     if !matches!(drag, Drag::None) {
         let frame =
             commands::ChannelControlDrag { track, control: commands::ChannelControl::Send(send.target) }.frame(drag);
-        state.send_drag = frame.moving.map(|v| (track, send.target, v));
+        if let (Some(v), Some(drag)) = (frame.moving, state.gesture.send_mut()) {
+            drag.2 = v;
+        }
         committed = frame.committed;
         actions.extend(frame.action);
     }
@@ -68,7 +72,7 @@ pub(super) fn send_knob(
             }
         }
     });
-    let shown = match state.send_drag {
+    let shown = match state.gesture.send().copied() {
         Some((t, r, v)) if t == track && r == send.target => v,
         _ => committed.unwrap_or(level),
     };
@@ -145,12 +149,12 @@ pub(super) fn value_control(
     };
     // The tracks this drag moves: one track, or the whole selection it is part of.
     let tracks = state.controlled_tracks(track);
-    let mut preview = state.value_drag.as_ref().filter(|d| d.track == track && d.control == control).map(|d| d.now);
+    let mut preview = state.gesture.value().filter(|d| d.track == track && d.control == control).map(|d| d.now);
     // Another track of the same selection moves with the drag, by the same amount: what it shows
     // is its own value moved by the drag's offset, before the command lands.
     let moved = state
-        .value_drag
-        .as_ref()
+        .gesture
+        .value()
         .filter(|d| d.control == control && d.tracks.contains(&track))
         .map(|d| moved_by_drag(value, d, range));
     let shown = preview.or(moved).unwrap_or(value);
@@ -186,20 +190,24 @@ pub(super) fn value_control(
             Control::Pan => commands::ChannelControl::Pan,
         };
         let set = |v: f64| commands::ChannelControlDrag { track, control: channel }.action(v, true);
-        match widgets::drag_value_axis(ui, &response, &mut preview, value, per_point, per_tick, range, default, axis) {
+        let drag =
+            widgets::drag_value_axis(ui, &response, &mut preview, value, per_point, per_tick, range, default, axis);
+        let mine = |g: &Gesture| matches!(g, Gesture::Value(d) if d.track == track && d.control == control);
+        let start = || Gesture::Value(ValueDrag { track, control, start: value, now: value, tracks: tracks.clone() });
+        match state.gesture.value_frame(&response, drag, start, mine) {
             Drag::Moving(v) => {
-                state.value_drag = Some(ValueDrag { track, control, start: value, now: v, tracks: tracks.clone() });
+                if let Some(drag) = state.gesture.value_mut() {
+                    (drag.start, drag.now) = (value, v);
+                }
                 if one {
                     actions.push(set(v));
                 }
             }
             Drag::Done(v) => {
-                state.value_drag = None;
                 committed = Some(v);
                 actions.push(if one { set(v) } else { value_action(control, &tracks, value, v) });
             }
             Drag::Set(v) => {
-                state.value_drag = None;
                 committed = Some(v);
                 actions.push(if one { set(v) } else { value_set(control, &tracks, v) });
             }
@@ -209,7 +217,7 @@ pub(super) fn value_control(
     // A drag (and the value it commits) follows the pointer directly and keeps the animation
     // there, so nothing glides back afterwards; other changes (an undo, say) glide.
     let anim = id.with(("shown", control as u8));
-    let dragged = match state.value_drag.as_ref() {
+    let dragged = match state.gesture.value() {
         Some(drag) if drag.control == control && drag.tracks.contains(&track) => {
             Some(moved_by_drag(value, drag, range))
         }
