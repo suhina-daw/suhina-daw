@@ -427,6 +427,13 @@ impl Look {
         }
     }
 
+    /// [`Look::background_unlike`] for the item's text `color`, the one a rule around it gives too
+    /// ([`Look::color_or`]).
+    pub fn color_unlike(&self, plain: &Look, token: Color32) -> Color32 {
+        let own = |look: &Look| look.0.as_ref().filter(|s| s.authored.color).map(|s| s.color);
+        own(self).filter(|color| Some(*color) != own(plain)).unwrap_or(token)
+    }
+
     /// [`Look::background_unlike`] for the item's own `color`.
     pub fn own_color_unlike(&self, plain: &Look, token: Color32) -> Color32 {
         let own = |look: &Look| look.0.as_ref().filter(|s| s.declared(Property::Color)).map(|s| s.color);

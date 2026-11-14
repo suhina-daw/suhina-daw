@@ -330,9 +330,10 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     // A `list-row`: its fill while picked and under the pointer.
     let (row_picked, row_hovered) = {
         use crate::kit::element::{LIST_ROW, Selected};
+        let plain = LIST_ROW.probe();
         (
-            LIST_ROW.attr(Selected, true).look().background_or(theme::control_active()),
-            LIST_ROW.pointer(true, false, false).look().background_or(theme::panel_hover()),
+            LIST_ROW.attr(Selected, true).look().background_unlike(&plain, theme::control_active()),
+            LIST_ROW.pointer(true, false, false).look().background_unlike(&plain, theme::panel_hover()),
         )
     };
     let scanning = plugins.scanning;

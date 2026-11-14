@@ -458,10 +458,11 @@ impl App {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 // Each agent the person let in (ADR 0028), lit; a click disconnects it.
                 let mut left = rect.left();
+                let plain = crate::kit::element::BUTTON.attr(crate::kit::element::Checked, false).probe();
                 let lit = crate::kit::element::BUTTON
                     .attr(crate::kit::element::Checked, true)
                     .look()
-                    .own_color_or(theme::accent());
+                    .own_color_unlike(&plain, theme::accent());
                 for (connection, client) in self.agents.clone() {
                     let text = format!("Disconnect {client}");
                     let galley = widgets::fitted(painter, &text, theme::ui_font(theme::TEXT), lit, 200.0);

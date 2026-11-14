@@ -958,12 +958,13 @@ struct Cards {
 impl Cards {
     fn read() -> Self {
         use crate::kit::element::{Selected, THEME_CARD};
+        let plain_probe = THEME_CARD.probe();
         let in_use = THEME_CARD.attr(Selected, true).look();
         let hovered = THEME_CARD.pointer(true, false, false).look();
         let plain = THEME_CARD.look();
         Self {
             tint: in_use.background_or(theme::accent().gamma_multiply(0.14)),
-            in_use: in_use.border_or(theme::accent()),
+            in_use: in_use.border_unlike(&plain_probe, theme::accent()),
             hovered: hovered.border_or(theme::border_strong()),
             plain: plain.border_or(theme::border()),
             active: in_use.accent_or(theme::accent()),

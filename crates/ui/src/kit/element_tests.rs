@@ -968,3 +968,24 @@ fn a_list_row_and_a_dialog_title_take_their_own_background() {
         (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60), rgb(0x70, 0x80, 0x90), token)
     );
 }
+
+/// `color_unlike` counts the text colour a rule around the item gives too, but only where it
+/// differs from the plain item's: a rule for every row does not hide the picked one (#1440 review).
+#[test]
+fn color_unlike_ignores_what_the_plain_item_has() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let picked_ink = |css: &str| {
+        frames(css, || {
+            let _view = SESSION.enter();
+            let plain = LIST_ROW.probe();
+            LIST_ROW.attr(Selected, true).look().color_unlike(&plain, token)
+        })
+    };
+    assert_eq!(picked_ink("list-row { color: #102030; }"), token);
+    assert_eq!(
+        picked_ink("list-row { color: #102030; } list-row[selected] { color: #405060; }"),
+        rgb(0x40, 0x50, 0x60)
+    );
+    assert_eq!(picked_ink(""), token);
+}

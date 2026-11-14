@@ -211,12 +211,14 @@ pub(crate) fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: 
     widgets::text_in(painter, text, Align2::LEFT_CENTER, &notice.text, theme::ui_font(theme::TEXT), colour);
     if let Some(part) = notice.progress {
         let bar = Rect::from_min_size(Pos2::new(text.left(), line.bottom() - 4.0), Vec2::new(text.width(), 2.0));
-        painter.rect_filled(bar, 0.0, PROGRESS.look().background_or(theme::control_background()));
+        let track = PROGRESS.enter();
+        painter.rect_filled(bar, 0.0, track.background_or(theme::control_background()));
         painter.rect_filled(
             Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
             0.0,
-            PROGRESS_FILL.look().background_or(theme::accent()),
+            PROGRESS_FILL.enter().background_or(theme::accent()),
         );
+        drop(track);
     }
     choice
 }
@@ -241,13 +243,19 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         let response =
             widgets::button_area(ui, rect, egui::Id::unique(("start-tab", text)), format!("{text} projects"));
         let on = state.tab == tab;
+        // The palette's inks, read before the tab is entered: inside it they follow its `color`.
+        let (shown_ink, hint) = (theme::text_primary(), theme::text_hint());
         // An `editor-tab` (`[checked]` for the one shown), `#tab-recent` and `#tab-templates`.
-        let el = EDITOR_TAB
+        let (el, plain) = EDITOR_TAB
             .id(&format!("tab-{}", text.to_lowercase()))
             .response(&response)
-            .attr(crate::kit::element::Checked, on)
-            .enter();
-        let color = el.own_color_or(if on { theme::text_primary() } else { theme::text_hint() });
+            .enter_against_plain(crate::kit::element::Checked, on);
+        // The shown tab's ink comes from a rule for `[checked]` only, so a rule for every tab
+        // does not make both the same.
+        let color = match &plain {
+            Some(plain) => el.look().own_color_unlike(plain, shown_ink),
+            None => el.own_color_or(hint),
+        };
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, text, font, color);
         if on {
             painter.hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(2.0, el.accent_or(theme::accent())));

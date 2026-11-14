@@ -569,7 +569,7 @@ pub const ELEMENTS: &[Element] = &[
     element("popup", Region, "A menu, right-click menu, dropdown list or control's popup.")
         .ids(Ids::Listed { prefix: "", names: &["metronome-level"] })
         .settings(FLOATING),
-    element("tooltip", Region, "A tooltip.").settings(FLOATING),
+    element("tooltip", Region, "A tooltip, and the pill that follows the pointer while something is dragged.").settings(FLOATING),
     element("progress", Drawn, "A progress bar: a dialog's, the sample map's busy card and the MIDI panel's range bar.").parts(&["progress-fill"]),
     element("progress-fill", Part, "A progress bar's done part, in each of those."),
     // Pages and dialogs.

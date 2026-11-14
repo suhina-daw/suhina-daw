@@ -1406,7 +1406,7 @@ of bars, and a slider id per parameter.
   position, the tempo and signature, the views' names, the Keys and Map buttons, RAM and CPU), the
   tabs, the status bar's message, the drag pill (a `tooltip`), the quick-add and project switcher
   lists (`list-row`, `[selected]` for the picked one), the Settings page (its headings `label[kind="hint"]`
-  over a `separator[kind="row"]`, its names `label`, its notes `label[kind="caption"]`, its Help,
+  over a `separator[kind="row"]` (the same element outlines the start page's cards), its names `label`, its notes `label[kind="caption"]`, its Help,
   Close, Reset and Add buttons `button`, its theme picker's cards `theme-card`, `[selected]` for the
   theme in use) and every dialog (its title row `dialog-title`, its words `label` and `label[kind]`,
   its lists `list-row`, its buttons `button`, its progress bar `progress` and `progress-fill`) draw

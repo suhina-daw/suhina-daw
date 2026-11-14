@@ -1130,3 +1130,89 @@ fn the_detail_splitter_takes_closed_only_while_the_area_is_closed() {
     let second = shown_closed(&mut h);
     assert_ne!(first, second, "[closed] reaches the splitter of the closed area only");
 }
+
+/// The colours of the text painted inside `rect` in the last frame.
+fn inks_in(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
+    fn walk(shape: &egui::Shape, rect: egui::Rect, found: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, rect, found)),
+            egui::Shape::Text(text) if rect.contains(text.pos) || rect.intersects(text.visual_bounding_rect()) => {
+                found.push(text.fallback_color);
+                found.extend(text.galley.job.sections.iter().map(|section| section.format.color));
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    h.output().shapes.iter().for_each(|shape| walk(&shape.shape, rect, &mut found));
+    found
+}
+
+/// Shows `h` under `css` for a few frames, runs `read`, and puts the user's sheet away again.
+fn under<R>(h: &mut Harness<'static, App>, css: String, read: impl FnOnce(&Harness<'static, App>) -> R) -> R {
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let out = read(h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    out
+}
+
+/// A rule for every `list-row` does not hide the picked row of a floating list: the picked one
+/// keeps its own ink, the others take the rule's (#1440 review).
+#[test]
+fn a_rule_for_every_list_row_keeps_the_picked_row_lit() {
+    let mut h = window(demo_app());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::P);
+    h.run();
+    let css = format!("list-row {{ color: {}; }}", hex(odd(150)));
+    let (picked, other) = under(&mut h, css, |h| {
+        let rows = h.query_all_by_label_contains("Add ").collect::<Vec<_>>();
+        assert!(rows.len() >= 2, "the list shows rows");
+        (inks_in(h, rows[0].rect()), inks_in(h, rows[1].rect()))
+    });
+    assert!(!picked.contains(&odd(150)), "the picked row keeps its ink: {picked:?}");
+    assert!(other.contains(&odd(150)), "an other row takes the rule: {other:?}");
+}
+
+/// A rule for every `editor-tab` does not make the shown start tab look like the other: it keeps
+/// its own ink (#1440 review).
+#[test]
+fn a_rule_for_every_tab_keeps_the_shown_start_tab_apart() {
+    let mut app = App::new();
+    app.set_browser_open(false);
+    let mut h = window(app);
+    let css = format!("editor-tab {{ color: {}; }}", hex(odd(151)));
+    let (shown, other) = under(&mut h, css, |h| {
+        (inks_in(h, h.get_by_label("Recent projects").rect()), inks_in(h, h.get_by_label("Templates projects").rect()))
+    });
+    assert!(!shown.contains(&odd(151)), "the shown tab keeps its ink: {shown:?}");
+    assert!(other.contains(&odd(151)), "the other tab takes the rule: {other:?}");
+}
+
+/// A rule for every `theme-card` does not take the edge of the theme in use: its 2-point edge
+/// keeps its own colour (#1440 review).
+#[test]
+fn a_rule_for_every_theme_card_keeps_the_theme_in_use_marked() {
+    fn edges(shape: &egui::Shape, found: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| edges(shape, found)),
+            egui::Shape::Rect(rect) if rect.stroke.width >= 2.0 => found.push(rect.stroke.color),
+            _ => {}
+        }
+    }
+    let mut h = window(demo_app());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    h.run();
+    h.get_by_label("Settings page: Themes").click();
+    h.run();
+    let css = format!("theme-card {{ border-color: {}; }}", hex(odd(152)));
+    let found = under(&mut h, css, |h| {
+        let mut found = Vec::new();
+        h.output().shapes.iter().for_each(|shape| edges(&shape.shape, &mut found));
+        found
+    });
+    assert!(!found.is_empty(), "the theme in use has its edge");
+    assert!(!found.contains(&odd(152)), "the edge stays its own: {found:?}");
+}
