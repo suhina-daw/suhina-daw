@@ -363,6 +363,15 @@ impl Drop for UiStyle<'_> {
         }
     }
 }
+/// The outline `own`'s rule gives over the `existing` one: its colour, and its width only when the
+/// rule authors a width (0 included, which removes the line) that is one all round. A rule that
+/// gives a colour alone keeps the width, as egui's separators in a menu are drawn with a
+/// widget's outline and a colour is not a reason to hide them.
+fn outline(own: &super::native_css::Computed, existing: egui::Stroke) -> egui::Stroke {
+    let width = if own.authored.border_width { own.even_border().unwrap_or(existing.width) } else { existing.width };
+    egui::Stroke::new(width, own.border)
+}
+
 /// What the sheet's generic rules say about egui's own widgets: `button` (plain, `:hover`,
 /// `:active`, `:disabled`) for buttons, check boxes and drop-downs, `button[checked]` for the
 /// selection, and `text-input` for text fields; at the root also `text-input:focus`, `menu` for
@@ -370,7 +379,8 @@ impl Drop for UiStyle<'_> {
 /// mapping both a style scope ([`ui_for`]) and the root's `Visuals` ([`root_visuals`]) use.
 pub(super) struct WidgetRules {
     controls: [Option<super::native_css::Computed>; 4],
-    chosen: Option<super::native_css::Computed>,
+    /// What `button[checked]` says of the selection's fill and ink, where it differs from `button`.
+    chosen: (Option<egui::Color32>, Option<egui::Color32>),
     input: Option<super::native_css::Computed>,
     focused_input: Option<super::native_css::Computed>,
     menu: Option<super::native_css::Computed>,
@@ -416,7 +426,19 @@ impl WidgetRules {
                 control(false, false, true),
             ],
             // `button[checked]`: a chosen item in a list or a menu (egui's selection).
-            chosen: look(BUTTON.attr(Checked, true)).filter(|c| c.authored.background || c.authored.color),
+            // Only what the state itself says: a rule for every `button` is not the selection's.
+            chosen: {
+                // Looked up without a place in the style tree, and before the state's own.
+                let plain = BUTTON.builder().probe().style().cloned();
+                let chosen = look(BUTTON.attr(Checked, true));
+                let unlike = |own: fn(&super::native_css::Computed) -> Option<egui::Color32>| {
+                    chosen.as_ref().and_then(own).filter(|c| Some(*c) != plain.as_ref().and_then(own))
+                };
+                (
+                    unlike(|c| c.authored.background.then_some(c.background)),
+                    unlike(|c| c.authored.color.then_some(c.color)),
+                )
+            },
             input: plain_input.filter(input),
             focused_input,
             menu: if root {
@@ -443,7 +465,7 @@ impl WidgetRules {
     /// Whether the sheet says anything about these widgets.
     pub(super) fn any(&self) -> bool {
         self.controls.iter().any(Option::is_some)
-            || self.chosen.is_some()
+            || self.chosen != (None, None)
             || self.input.is_some()
             || self.focused_input.is_some()
             || self.menu.is_some()
@@ -468,8 +490,7 @@ impl WidgetRules {
             // egui draws one outline all round: sides of different widths (an underline, `0 0
             // 2px`) leave its width as it was, and only a colour is taken (#1336).
             if own.authored.border || own.authored.border_width {
-                let width = own.even_border().unwrap_or(widget.bg_stroke.width);
-                widget.bg_stroke = egui::Stroke::new(width, own.border);
+                widget.bg_stroke = outline(own, widget.bg_stroke);
             }
             if own.authored.color {
                 widget.fg_stroke.color = own.color;
@@ -489,13 +510,11 @@ impl WidgetRules {
                 widget.bg_fill = own.background;
             }
         }
-        if let Some(chosen) = &self.chosen {
-            if chosen.authored.background {
-                visuals.selection.bg_fill = chosen.background;
-            }
-            if chosen.authored.color {
-                visuals.selection.stroke.color = chosen.color;
-            }
+        if let Some(fill) = self.chosen.0 {
+            visuals.selection.bg_fill = fill;
+        }
+        if let Some(ink) = self.chosen.1 {
+            visuals.selection.stroke.color = ink;
         }
         if let Some(input) = &self.input {
             if input.authored.background {
@@ -511,9 +530,7 @@ impl WidgetRules {
             if focused.authored.border {
                 visuals.selection.stroke.color = focused.border;
             }
-            if focused.authored.border_width {
-                visuals.selection.stroke.width = focused.even_border().unwrap_or(visuals.selection.stroke.width);
-            }
+            visuals.selection.stroke.width = outline(focused, visuals.selection.stroke).width;
         }
         // egui frames its menus and pop-ups with the window's fill and stroke.
         if let Some(menu) = &self.menu {
@@ -521,8 +538,7 @@ impl WidgetRules {
                 visuals.window_fill = menu.background;
             }
             if menu.authored.border || menu.authored.border_width {
-                let width = menu.even_border().unwrap_or(visuals.window_stroke.width);
-                visuals.window_stroke = egui::Stroke::new(width, menu.border);
+                visuals.window_stroke = outline(menu, visuals.window_stroke);
             }
             if menu.authored.radius {
                 visuals.menu_corner_radius = egui::CornerRadius::same(menu.radius.clamp(0.0, 128.0) as u8);

@@ -573,12 +573,13 @@ Settings, dialogs and the browser, styled by the generic `button` rules) draw on
 fields, scroll bars, menus and pop-ups from `egui::Visuals`. The window builds them from the
 sheet, each value falling back to the palette's: `button` (plain, `:hover`, `:active`,
 `:disabled`; an open button is a pressed one) for the widget states, `button[checked]` for the
-selection, `text-input` for text fields (`text-input:focus`'s border for a focused field's
+selection (only what it says unlike the plain `button`), `text-input` for text fields (`text-input:focus`'s border for a focused field's
 outline), `menu` for every menu and pop-up that egui frames (`background-color`, border,
 `border-radius`, outer `box-shadow`; egui's own windows share these), and `scroll-bar` (plain,
 `:hover`, `:active`) for a scroll handle's fill, which egui also uses for its sliders' and check
 marks' fills. egui has no separate value for a tooltip: `tooltip` styles the frame painted over
-it. A rule with no ancestor reaches them everywhere; one scoped to a view (`settings button`)
+it. A rule that gives a border colour and no width keeps the outline's width, so egui's
+separators stay; only a width (0 too) changes it. A rule with no ancestor reaches them everywhere; one scoped to a view (`settings button`)
 reaches them in that view only, over the root's values. The values are rebuilt when the styles
 reset (theme, variant, `user.css`, a width `@media`, contrast, the window's opacity), not every
 frame, and show from the next frame.

@@ -1119,11 +1119,20 @@ and the palette no longer reaches egui's widgets except as that fallback.
 - **Suhina Studio and the no-rule path.** The default theme runs without the style engine; the
   lookups answer nothing and the `Visuals` are the palette's, as is every built-in theme's that
   has no rule for these elements (`with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme`).
+- **A rule gives only what it says.** A colour and no width (`border-color`) changes an outline's
+  colour and keeps the width it had, and only an authored width (0 too) changes the width: a rule
+  for `button:disabled` that gives a border colour would otherwise make `noninteractive`'s
+  outline, which egui draws its menu separators with, zero-width, and the separators would vanish
+  (Suhina Sheet, Meadow and Blocks did). The same holds for `menu`'s border and `text-input:focus`.
+  `button[checked]` likewise gives the selection only what differs from the plain `button`: a rule
+  for every `button` is not the selection's, which would otherwise be the colour of every row and
+  hide which one is chosen. Both are in the one mapping, so a style scope takes them too.
 - **A theme that styles them.** A theme's rule for `button`, `button:hover` or `text-input` now
   reaches egui's widgets outside a style scope as well: Suhina Sheet, Meadow and Blocks, which
   have such rules, show them on the widgets the views draw with egui at the root (their menus'
-  rows, labels and separators, text fields and tooltips' words: 19 of the painted record's
-  drawings, in the scenes context-menu, empty-space-menu, grid-menu, missing-files, quick-add,
-  settings-menu and tooltip); every other theme's digests are unchanged. A rule that sets a
-  border colour and no width gives a button's `:disabled` state, which egui also draws its
-  separators with, a zero-width outline, so those themes' menu separators are not drawn.
+  rows and labels, text fields and tooltips' words), and the selection takes the theme's
+  `button[checked]` or the token's colour in the scopes too (the piano roll, the sample map, the
+  clip's MIDI view, the export dialog); 34 of the painted record's digests change, in the scenes
+  clip-midi, context-menu, empty-space-menu, export-dialog, grid-menu, menu, missing-files,
+  piano-roll, quick-add, sample-map, settings-menu and tooltip; every other theme's digests are
+  unchanged.

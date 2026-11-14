@@ -846,7 +846,9 @@ focused field's outline), `menu` the fill, border, `border-radius` and outer `bo
 menu and pop-up egui frames (egui's own windows share them), and `scroll-bar` (`:hover`,
 `:active`) a scroll handle's fill, which egui's sliders and check marks use too. egui has no
 value of its own for tooltips: `tooltip` styles the frame painted over them. A theme with no such
-rule keeps the colours of its tokens.
+rule keeps the colours of its tokens. A rule with a `border-color` and no `border-width` keeps the width
+egui draws with (its separators included); only a width, `0` too, changes it. `button[checked]` gives the
+selection only what it says unlike the plain `button`.
 
 ```css
 button { background-color: #24272B; border-width: 0; border-radius: 4px; }

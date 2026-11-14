@@ -330,3 +330,77 @@ fn looking_up_the_root_visuals_adds_nothing_to_the_style_tree() {
     assert!(looked_up, "the frame did look them up");
     skin::configure(&skin::Skin::default());
 }
+
+#[test]
+fn a_rule_that_gives_only_a_border_colour_keeps_the_outline_s_width() {
+    let fallback = theme::palette_visuals_for(&theme::palette());
+    let hairline = fallback.widgets.noninteractive.bg_stroke.width;
+    assert!(hairline > 0.0, "egui draws its separators with this stroke");
+    let ctx = egui::Context::default();
+    let red = egui::Color32::from_rgb(255, 0, 0);
+    let v = root_after(&ctx, "button:disabled { border-color: #ff0000; } menu { border-color: #ff0000; }", 800.0);
+    assert_eq!(v.widgets.noninteractive.bg_stroke, egui::Stroke::new(hairline, red));
+    assert_eq!(v.window_stroke, egui::Stroke::new(fallback.window_stroke.width, red));
+    // An authored width, 0 included, is the width.
+    let v = root_after(&ctx, "button:disabled { border-color: #ff0000; border-width: 0; }", 800.0);
+    assert_eq!(v.widgets.noninteractive.bg_stroke.width, 0.0);
+    let v = root_after(&ctx, "button:disabled { border-width: 3px; }", 800.0);
+    assert_eq!(v.widgets.noninteractive.bg_stroke.width, 3.0);
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn a_scoped_ui_takes_a_colour_only_border_rule_with_the_width_it_had() {
+    skin::configure(&skin::Skin {
+        css: Some("button:disabled { border-color: #ff0000; }".into()),
+        ..Default::default()
+    });
+    let ctx = egui::Context::default();
+    let mut seen = None;
+    for _ in 0..3 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let before = ui.visuals().widgets.noninteractive.bg_stroke.width;
+            let scoped = ui_for(ui, None, false);
+            seen = Some((before, scoped.ui.visuals().widgets.noninteractive.bg_stroke));
+        })
+        .textures_delta
+        .clear();
+    }
+    let (before, stroke) = seen.expect("ran");
+    assert_eq!(stroke, egui::Stroke::new(before, rgb(255, 0, 0)));
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn a_rule_for_every_button_is_not_the_selection_s() {
+    let fallback = theme::palette_visuals_for(&theme::palette());
+    let ctx = egui::Context::default();
+    let v = root_after(&ctx, "button { background-color: #101010; color: #111111; }", 800.0);
+    assert_eq!(v.selection.bg_fill, fallback.selection.bg_fill);
+    assert_eq!(v.selection.stroke.color, fallback.selection.stroke.color);
+    let v = root_after(
+        &ctx,
+        "button { background-color: #101010; color: #111111; } button[checked] { background-color: #202020; }",
+        800.0,
+    );
+    assert_eq!(v.selection.bg_fill, rgb(0x20, 0x20, 0x20));
+    assert_eq!(v.selection.stroke.color, fallback.selection.stroke.color);
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn the_root_visuals_are_built_again_only_when_the_styles_or_the_palette_changed() {
+    let ctx = egui::Context::default();
+    let css = "menu { border-radius: 4px; }";
+    root_after(&ctx, css, 800.0);
+    // A mark a rebuild would write over.
+    let mark = rgb(1, 2, 3);
+    ctx.all_styles_mut(|style| style.visuals.window_fill = mark);
+    assert_eq!(frames_in(&ctx, 800.0).window_fill, mark, "frames with nothing changed leave them");
+    assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a new width resets the styles");
+    ctx.all_styles_mut(|style| style.visuals.window_fill = mark);
+    theme::set_palette(&ctx, theme::palette());
+    assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a palette change rebuilds them");
+    skin::configure(&skin::Skin::default());
+}
