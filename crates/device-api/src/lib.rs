@@ -665,14 +665,15 @@ impl fmt::Display for DeviceError {
 
 impl std::error::Error for DeviceError {}
 
-/// The sample rate a device is prepared for when it is made, before the host calls
-/// [`Device::prepare`].
+/// The sample rate a device's `new()` makes it for, in tests and tools. The engine makes a
+/// device with its `with_rate` at the rate it runs at instead (ADR 0004 › Amendment: a device is
+/// made at its rate).
 pub const DEFAULT_SAMPLE_RATE: f64 = 48_000.0;
 
-/// Lowest and highest sample rates a device must accept in [`Device::prepare`].
+/// Lowest and highest sample rates a device must be made at and accept in [`Device::prepare`].
 pub const SAMPLE_RATE_RANGE: (f64, f64) = (8_000.0, 384_000.0);
 
-/// Checks a sample rate for [`Device::prepare`].
+/// Checks a sample rate for a device's `with_rate` and [`Device::prepare`].
 pub fn check_sample_rate(sample_rate: f64) -> Result<f64, DeviceError> {
     if sample_rate.is_finite() && (SAMPLE_RATE_RANGE.0..=SAMPLE_RATE_RANGE.1).contains(&sample_rate) {
         Ok(sample_rate)
@@ -746,7 +747,8 @@ pub trait SampleSource {
         positions
     }
 
-    /// Share host-owned decoded PCM without copying it. Called off the audio thread.
+    /// Share host-owned decoded PCM without copying it. Called off the audio thread; builds what
+    /// the source needs (a Sampler's stretch voices) for the rate the device runs at now.
     fn load_shared_sample(
         &mut self,
         sample_rate: u32,
@@ -814,13 +816,16 @@ pub trait Device: Send {
         let _ = context;
     }
 
-    /// Gets ready to run at `sample_rate`, allocating whatever that needs, and clears all state.
-    /// A device is usable right after construction, prepared for 48 kHz.
+    /// Moves a made device to `sample_rate`: builds again what depends on the rate, allocating
+    /// what that needs, and clears all state as [`Device::reset`] does. A device is made for the
+    /// rate it runs at (its `with_rate`), so the host calls this only when the rate changes.
+    /// Off the audio thread.
     fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError>;
 
     /// Clears all signal state (filter memories, delay lines, envelopes) as if the device had
-    /// just been prepared, and jumps smoothed parameters to their values. Parameters keep their
-    /// values.
+    /// just been made, and jumps smoothed parameters to their values. Parameters keep their
+    /// values. Never allocates: what the rate or a file needs was built when the device was made
+    /// or prepared, and this only empties it.
     fn reset(&mut self);
 
     /// Sets parameter `index` to `value`, after [`ParamInfo::clamp`]. Unknown indices are

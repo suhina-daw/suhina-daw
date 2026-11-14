@@ -634,11 +634,20 @@ pub enum HostState {
     Armed = 256,
     /// A muted track.
     Muted = 512,
+    /// A clip or a track's stop button waiting for its launch.
+    Queued = 1024,
 }
 
 /// The host states and the selector names they match.
-pub(crate) const HOST_STATES: [(u16, &str); 6] =
-    [(16, "checked"), (32, "selected"), (64, "playing"), (128, "recording"), (256, "armed"), (512, "muted")];
+pub(crate) const HOST_STATES: [(u16, &str); 7] = [
+    (16, "checked"),
+    (32, "selected"),
+    (64, "playing"),
+    (128, "recording"),
+    (256, "armed"),
+    (512, "muted"),
+    (1024, "queued"),
+];
 
 /// `color` as `#RRGGBB` or `#RRGGBBAA`, for a value given to the sheet.
 pub fn hex(color: Color32) -> String {
@@ -727,6 +736,28 @@ pub(super) fn set_attribute(node: usize, name: &str, value: String) {
             && !node.attributes.iter().any(|(own, _)| own == name)
         {
             node.attributes.push((name.to_owned(), value));
+        }
+    });
+}
+
+/// Takes the element at `node` back out of this frame's tree, when it is the last one entered and
+/// has been left: a comparison lookup (`Builder::probe`) is then no sibling for the selectors of
+/// the elements drawn after it, and does not count in their position.
+pub(super) fn discard(node: Option<usize>) {
+    let Some(at) = node else { return };
+    ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        if at + 1 != engine.nodes.len() {
+            return;
+        }
+        let Some(gone) = engine.nodes.pop() else { return };
+        engine.chains.truncate(at);
+        engine.boxes.truncate(at);
+        engine.served.truncate(at);
+        engine.held.truncate(at);
+        let parent_key = gone.parent.and_then(|p| engine.nodes.get(p)).map_or(0, |n| n.key);
+        if let Some(count) = engine.occurrences.get_mut(&(parent_key, gone.element.index())) {
+            *count = count.saturating_sub(1);
         }
     });
 }
@@ -1052,6 +1083,40 @@ pub(super) fn style_of(node: Option<usize>) -> Option<Computed> {
             return None;
         };
         style_at(&mut engine, node).map(|styled| styled.computed)
+    })
+}
+
+/// The style of a comparison lookup at `node` (`Builder::probe`): the one its own chain gives,
+/// never the values the tree last painted under its key. A probe shares its key with the drawn
+/// element it describes whenever they have the same id or response (or the same place, the probe
+/// being taken out again), and with CSS motion on that element's painted values, held for a
+/// transition, would otherwise come back as the probe's: the comparison would see a state's rule
+/// on both sides and hide it. `None` where [`style_of`] gives none.
+pub(super) fn probe_style(node: Option<usize>) -> Option<Computed> {
+    ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        engine.source.as_ref()?;
+        if !same_source(engine.source.as_ref()) {
+            return None;
+        }
+        let at = node?;
+        let chain = chain_of(&mut engine, at)?;
+        // Under a parent held for a transition the probe inherits what the parent paints, which is
+        // not its chain's: worked out each time, as `style_at` does.
+        let parent_held = engine
+            .nodes
+            .get(at)
+            .and_then(|node| node.parent)
+            .is_some_and(|parent| engine.held.get(parent).copied().unwrap_or(false));
+        if let Some(styled) = engine.identities.get(&chain).filter(|_| !parent_held) {
+            return Some(styled.computed.clone());
+        }
+        let styled = native::fresh(&mut engine, at)?;
+        engine.fresh += 1;
+        if !parent_held && engine.identities.len() < MAX_IDENTITIES {
+            engine.identities.insert(chain, styled.clone());
+        }
+        Some(styled.computed)
     })
 }
 

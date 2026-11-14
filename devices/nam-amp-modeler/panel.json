@@ -4,7 +4,7 @@
     "viewport_size": [428, 168],
     "accent_on": true,
     "hidden_parameters": [
-      "inputGain", "eqBass", "eqMid", "eqTreble", "eqMidFreq", "eqOn", "delay", "hq", "outputVolume"
+      "inputGain", "eqBass", "eqMid", "eqTreble", "eqMidFreq", "eqOn", "delay", "hq", "outputVolume", "mono"
     ],
     "controls": [
       { "id": "pack", "name": "Amp Modeler: pack", "bounds": [0, 0, 384, 22],
@@ -22,21 +22,25 @@
       { "id": "hq", "name": "Amp Modeler: hq", "bounds": [96, 24, 40, 22],
         "tooltip": "Click to switch the HQ on or off", "x": { "parameter": "hq" },
         "gesture": "toggle", "widget": { "kind": "button", "label": "HQ" } },
-      { "id": "mid-freq-name", "name": "Amp Modeler: mid freq", "bounds": [142, 24, 44, 22],
+      { "id": "mono", "name": "Amp Modeler: mono", "bounds": [140, 24, 44, 22],
+        "tooltip": "Click to feed the model one signal, the mean of both sides, or each side its own",
+        "x": { "parameter": "mono" },
+        "gesture": "toggle", "widget": { "kind": "button", "label": "Mono" } },
+      { "id": "mid-freq-name", "name": "Amp Modeler: mid freq", "bounds": [190, 24, 44, 22],
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "text", "position": [0, 6], "text": "Mid Freq", "color": [3, 1, 1, 255], "size": 9 }
         ] } },
-      { "id": "mid-freq", "name": "Amp Modeler: mid freq", "bounds": [193, 24, 182, 22],
+      { "id": "mid-freq", "name": "Amp Modeler: mid freq", "bounds": [237, 24, 138, 22],
         "tooltip": "Drag or click along the line; Shift for precision; double click resets",
         "x": { "parameter": "eqMidFreq", "logarithmic": true }, "gesture": "position",
         "drawing": [
-          { "kind": "rect", "rect": [0, 10, 182, 2], "color": [3, 1, 3, 255], "radius": 1 },
+          { "kind": "rect", "rect": [0, 10, 138, 2], "color": [3, 1, 3, 255], "radius": 1 },
           { "kind": "path",
             "points": [
-              [ {"op": "add", "a": 0, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 182}}, 6 ],
-              [ {"op": "add", "a": 5, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 182}}, 11 ],
-              [ {"op": "add", "a": 0, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 182}}, 16 ],
-              [ {"op": "add", "a": -5, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 182}}, 11 ]
+              [ {"op": "add", "a": 0, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 138}}, 6 ],
+              [ {"op": "add", "a": 5, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 138}}, 11 ],
+              [ {"op": "add", "a": 0, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 138}}, 16 ],
+              [ {"op": "add", "a": -5, "b": {"op": "multiply", "a": {"op": "parameter", "parameter": "eqMidFreq", "normalized": true, "logarithmic": true}, "b": 138}}, 11 ]
             ],
             "color": [3, 1, 1, 255], "width": 0.8, "closed": true, "fill": [3, 1, 1, 255] }
         ] },

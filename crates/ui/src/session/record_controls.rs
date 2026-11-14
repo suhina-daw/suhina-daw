@@ -9,7 +9,7 @@
 use egui::{Align2, Id, Painter, Pos2, Rect, Stroke, Ui, Vec2};
 use serde_json::json;
 
-use crate::kit::element::{BUTTON, Checked, POPUP, Recording};
+use crate::kit::element::{BUTTON, Checked, POPUP, Recording, SLIDER, SLIDER_FILL, SLIDER_HANDLE, SLIDER_RAIL};
 use crate::kit::widgets::{self, Action};
 use crate::kit::{motion, theme};
 
@@ -109,7 +109,6 @@ pub fn metronome_button(
     metronome_glyph(painter, rect, style.color_or(ink));
     drop(style);
     // The level's slider is a popup of its own (`#metronome-level`), not part of the button.
-    let _popup = POPUP.id("metronome-level").enter();
     metronome_level(ui, &response, rect, (on, db), actions);
 }
 
@@ -157,16 +156,21 @@ pub fn metronome_level(
         }
     }
     let over = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, response.id.with("level")));
-    over.rect_filled(slider, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    over.rect_stroke(slider, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    over.rect_filled(track, 0.0, theme::control_background());
+    // `popup#metronome-level`, with a `slider` and its rail, fill and handle in it.
+    let popup = POPUP.id("metronome-level").enter();
+    over.rect_filled(slider, 0.0, popup.background_or(crate::kit::style_class::surface_or(theme::panel_background())));
+    let edge = popup.border_or(theme::border_strong());
+    over.rect_stroke(slider, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
+    let el = SLIDER.enter();
+    over.rect_filled(track, 0.0, SLIDER_RAIL.look().background_or(theme::control_background()));
     let position = ((level - low) / (high - low)) as f32;
     let y = track.bottom() - track.height() * position;
-    over.rect_filled(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, theme::control_playing());
+    let fill = SLIDER_FILL.look().background_or(theme::control_playing());
+    over.rect_filled(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, fill);
     over.rect_filled(
         Rect::from_center_size(Pos2::new(track.center().x, y), Vec2::new(18.0, 5.0)),
         0.0,
-        theme::text_primary(),
+        SLIDER_HANDLE.look().background_or(theme::text_primary()),
     );
     widgets::text_in(
         &over,
@@ -174,7 +178,7 @@ pub fn metronome_level(
         Align2::CENTER_CENTER,
         &format!("{level:.0}"),
         theme::mono_font(theme::TEXT_SMALL),
-        theme::text_value(),
+        el.color_or(theme::text_value()),
     );
 }
 
@@ -240,19 +244,26 @@ pub fn slot_record(
         actions.push(Action::new(id, json!({ "track": track, "scene": number.saturating_sub(1) })));
     }
     let pulse = if recording { motion::pulse(ui.ctx()) } else { 1.0 };
+    // `slot-record`, `[recording]` while its slot records: its `color` for the dot and the word,
+    // its `background-color` over the slot while it records.
+    let el = crate::kit::element::SLOT_RECORD.response(&response).attr(Recording, recording).enter();
     if recording {
-        painter.rect_filled(rect, 0.0, theme::recording_background());
+        painter.rect_filled(rect, 0.0, el.background_or(theme::recording_background()));
         widgets::text_in(
             painter,
             rect.shrink2(Vec2::new(width, 0.0)),
             Align2::LEFT_CENTER,
             "Recording",
             theme::ui_font(theme::TEXT_SMALL),
-            theme::recording(),
+            el.own_color_or(theme::recording()),
         );
     }
     let hover = widgets::hover(ui, &response);
-    let color = motion::mix(theme::text_secondary(), theme::recording(), hover.max(f32::from(u8::from(recording))));
+    let color = el.own_color_or(motion::mix(
+        theme::text_secondary(),
+        theme::recording(),
+        hover.max(f32::from(u8::from(recording))),
+    ));
     let radius = (rect.height() * 0.2).clamp(2.5, 4.0);
     painter.circle_filled(button.center(), radius, color.gamma_multiply(pulse));
 }

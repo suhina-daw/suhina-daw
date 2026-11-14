@@ -39,7 +39,7 @@ fn peaks(signal: &[f32]) -> (f32, f32) {
     (amplitude(l), amplitude(r))
 }
 
-suhina_device_api::conformance_test!(Utility::new());
+suhina_device_api::conformance_test!(Utility::with_rate);
 
 #[test]
 fn defaults_pass_the_signal_through_exactly() {

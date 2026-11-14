@@ -3,12 +3,13 @@
 
 //! The NAM Amp Modeler: a signal through a trained NAM model (a `.nam` capture of an amp,
 //! preamp or pedal), with an input trim, the EQ's shelves and mid peak, an HQ toggle, a trim
-//! delay and an output trim.
+//! delay, an output trim and a Mono toggle (on by default) that feeds both sides the mean of
+//! the two, so one model instance runs.
 //!
-//! Per side ([docs/spec/nam-amp-and-cab.md]): the input trim, the EQ, — when the project's rate
-//! differs from the model's — the resampler into the model's rate, the model, a DC blocker, the
-//! resampler back, the trim delay and the output trim. The model runs on one side at a time;
-//! the device keeps one running instance per side, fed by `nam-rs` (MIT), whose
+//! Per side ([docs/spec/nam-amp-and-cab.md]): the Mono sum, the input trim, the EQ, — when the
+//! project's rate differs from the model's — the resampler into the model's rate, the model, a
+//! DC blocker, the resampler back, the trim delay and the output trim. The model runs on one
+//! side at a time; the device keeps one running instance per side, fed by `nam-rs` (MIT), whose
 //! `process_buffer` is allocation-free. Nothing on the audio path allocates.
 //!
 //! The stages run on the frames each call brings, as they arrive, and the output trails the
@@ -60,7 +61,8 @@ pub mod param {
     pub const DELAY: usize = 6;
     pub const HQ: usize = 7;
     pub const OUTPUT_VOLUME: usize = 8;
-    pub(crate) const COUNT: usize = 9;
+    pub const MONO: usize = 9;
+    pub(crate) const COUNT: usize = 10;
 }
 
 static PARAMS: [ParamInfo; param::COUNT] = [
@@ -73,6 +75,7 @@ static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::continuous("delay", "Delay", (0.0, 0.02), 0.0, Unit::Seconds, Scale::Linear),
     ParamInfo::toggle("hq", "HQ", false),
     ParamInfo::continuous("outputVolume", "Volume", (-24.0, 24.0), 0.0, Unit::Decibels, Scale::Linear),
+    ParamInfo::toggle("mono", "Mono", true),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("nam-amp-modeler", "NAM Amp Modeler", Role::Effect, &PARAMS);
@@ -80,8 +83,8 @@ pub static INFO: DeviceInfo = DeviceInfo::new("nam-amp-modeler", "NAM Amp Modele
 /// Reading `.nam` files.
 pub mod model;
 
-/// One side's stages: the EQ's filters, the DC blocker and the two resampler legs. All cleared
-/// by `rebuild`.
+/// One side's stages: the EQ's filters, the DC blocker and the two resampler legs. Built for the
+/// rate with [`ForRate`], cleared by `reset`.
 #[derive(Clone)]
 struct Side {
     bass: Biquad,
@@ -105,17 +108,104 @@ impl Side {
     }
 }
 
+/// What an amp builds for its sample rate and its model, off the audio thread: when it is made
+/// and when `prepare` moves it to another rate. `reset` only clears it.
+struct ForRate {
+    model_rate: f64,
+    model_refused: bool,
+    running: [Option<Model>; 2],
+    sides: [Side; 2],
+    delays: [TrimDelay; 2],
+    chunk_f64: [Vec<f64>; 2],
+    model_input: [Vec<f64>; 2],
+    model_io: [Vec<f32>; 2],
+    dc_staged: [Vec<f64>; 2],
+    stage_out: [Vec<f64>; 2],
+    leg_hold: u32,
+}
+
+impl ForRate {
+    /// The resampler legs, the delays, the staging sized for the rate pair and the two running
+    /// instances, for an amp at `sr` running `model`. Allocates.
+    fn new(sr: f64, model: Option<&NamModel>) -> Self {
+        let model_rate = model.map_or(0.0, |m| m.expected_sample_rate());
+        // The rate gate runs before anything is sized or allocated: sizing asked the file's
+        // rate no questions, and a hostile file could ask for staging that grows with the
+        // ratio without a bound ([model::runnable_rate]). A refused model is sized as the
+        // passthrough it plays as.
+        let mut model_refused =
+            model.is_some_and(|parsed| model::runnable_rate(sr, parsed.expected_sample_rate()).is_err());
+        // The model's expected rate; a model absent keeps the project's.
+        let model_hertz = if model.is_some() && model_rate > 0.0 { model_rate } else { sr };
+        let staged_rate = if model_refused { sr } else { model_hertz.max(1.0) };
+        // The legs' staging is sized for the rate pair: what the legs move is within a chunk
+        // times the ratio, plus the kernels' halves — all four stage lists sized alike so a
+        // path never runs out.
+        let ratio = staged_rate / sr.max(1.0);
+        let cap = CHUNK.max((CHUNK as f64 * ratio).ceil() as usize).max((CHUNK as f64 / ratio).ceil() as usize)
+            + 2 * HALF_TAPS
+            + 16;
+        // The running model, two instances (one per side), or the refusal the gate decided
+        // before any sizing. A model whose features the runtime refuses joins it here.
+        let mut running = [None, None];
+        if let Some(parsed) = model
+            && !model_refused
+        {
+            for slot in running.iter_mut() {
+                match Model::from_nam(parsed) {
+                    Ok(instance) => *slot = Some(instance),
+                    Err(_) => {
+                        model_refused = true;
+                        running = [None, None];
+                        break;
+                    }
+                }
+            }
+        }
+        // When the legs run, their produced stream trails the chunked feed by the two legs'
+        // kernel halves — about `(HALF_TAPS + 2)·(1 + project/model)` frames, plus a frame or
+        // two of each leg's tick-to-tick phase jitter. The delivery waits this much past the
+        // chunk so it never reads a slot production has not reached yet; `latency()` reports
+        // the same sum to the engine's compensation.
+        let leg_hold = if !model_refused && running[0].is_some() && model_rate != sr {
+            let ratio = sr / model_hertz.max(1.0);
+            ((f64::from((HALF_TAPS + 3) as u32) * (1.0 + ratio) + 4.0).ceil()) as u32
+        } else {
+            0
+        };
+        Self {
+            model_rate,
+            model_refused,
+            running,
+            sides: [Side::new(sr, staged_rate), Side::new(sr, staged_rate)],
+            delays: [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)],
+            chunk_f64: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
+            model_input: [vec![0.0; cap], vec![0.0; cap]],
+            model_io: [vec![0.0; cap], vec![0.0; cap]],
+            dc_staged: [vec![0.0; cap], vec![0.0; cap]],
+            stage_out: [vec![0.0; cap], vec![0.0; cap]],
+            leg_hold,
+        }
+    }
+}
+
 /// The NAM Amp Modeler. [`NamAmp::with_model`] runs a parsed model ([`NamModel`], shared with
 /// the session's cache); without one the trims, EQ and delay still run, the model silent.
 pub struct NamAmp {
     sample_rate: f64,
     params: ParamBank<{ param::COUNT }>,
-    /// The parsed model, for `prepare` and `reset` rebuilds.
+    /// The parsed model, which `prepare` builds the running instances from again.
     model: Option<Arc<NamModel>>,
     /// What the parse records as the model's rate.
     model_rate: f64,
     /// The running instances, built at rebuild time (off the audio thread).
     running: [Option<Model>; 2],
+    /// Whether the two instances still stand where one would: every span so far fed both the
+    /// same frames, so only the left one ran and its output stood for the right one too. The
+    /// first span whose frames differ hands the right instance the left one's state and runs
+    /// both from then on, so the output is the same as two instances running all along.
+    /// **Mono** joins them whatever they hold.
+    joined: bool,
     /// Whether the runtime refused the model: it stays silent, and the panel says so.
     model_refused: bool,
     sides: [Side; 2],
@@ -156,52 +246,66 @@ impl Default for NamAmp {
 }
 
 impl NamAmp {
-    /// An amp modeler with no model.
+    /// An amp modeler with no model, made for the default sample rate.
     pub fn new() -> Self {
         Self::build(DEFAULT_SAMPLE_RATE, None)
     }
 
-    /// An amp modeler that runs `model`.
-    pub fn with_model(model: Arc<NamModel>) -> Self {
-        Self::build(DEFAULT_SAMPLE_RATE, Some(model))
+    /// An amp modeler with no model, made for `sample_rate` (ADR 0004 › Amendment: a device is
+    /// made at its rate); fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(|rate| Self::build(rate, None))
     }
 
-    /// Everything for `sample_rate` and the parsed model. `prepare` and `reset` run it again;
-    /// whatever clears the state, counters included, calls it.
+    /// An amp modeler that runs `model`, made for `sample_rate`; fails for a rate a device
+    /// cannot run at. A model too far from that rate to resample plays as a passthrough.
+    pub fn with_model(model: Arc<NamModel>, sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(|rate| Self::build(rate, Some(model)))
+    }
+
+    /// Everything for `sample_rate` and the parsed model, which `prepare` builds again for a new
+    /// rate; `reset` only clears it.
     fn build(sample_rate: f64, model: Option<Arc<NamModel>>) -> Self {
-        let ramp = Smoother::ramp_frames(RAMP_SECONDS, sample_rate);
+        let ForRate {
+            model_rate,
+            model_refused,
+            running,
+            sides,
+            delays,
+            chunk_f64,
+            model_input,
+            model_io,
+            dc_staged,
+            stage_out,
+            leg_hold,
+        } = ForRate::new(sample_rate, model.as_deref());
         let mut amp = Self {
             sample_rate,
             params: ParamBank::new(&PARAMS),
             model,
-            model_rate: DEFAULT_SAMPLE_RATE,
-            running: [None, None],
-            model_refused: false,
-            sides: [Side::new(sample_rate, DEFAULT_SAMPLE_RATE), Side::new(sample_rate, DEFAULT_SAMPLE_RATE)],
+            model_rate,
+            running,
+            joined: true,
+            model_refused,
+            sides,
             chunk: [Box::new([0.0; CHUNK]), Box::new([0.0; CHUNK])],
             ready_left: Box::new([0.0; RING]),
             ready_right: Box::new([0.0; RING]),
             in_pos: 0,
             produced_pos: 0,
             staged_total: 0,
-            leg_hold: 0,
-            chunk_f64: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            model_input: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            model_io: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            dc_staged: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            stage_out: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            delays: [TrimDelay::new(sample_rate, MAX_DELAY_SECONDS), TrimDelay::new(sample_rate, MAX_DELAY_SECONDS)],
+            leg_hold,
+            chunk_f64,
+            model_input,
+            model_io,
+            dc_staged,
+            stage_out,
+            delays,
             input_gain: Smoother::new(1.0, 1),
             delay_frames: Smoother::new(0.0, 1),
             output_volume: Smoother::new(1.0, 1),
         };
-        amp.input_gain.reset(amp.input_target());
-        amp.input_gain.set_ramp(ramp);
-        amp.output_volume.reset(amp.output_target());
-        amp.output_volume.set_ramp(ramp);
-        amp.delay_frames.reset(0.0);
-        amp.delay_frames.set_ramp(ramp);
-        amp.rebuild();
+        amp.clear();
         amp
     }
 
@@ -219,9 +323,9 @@ impl NamAmp {
         self.params.get(index)
     }
 
-    /// The model's expected rate; a model absent keeps the project's.
-    fn model_hertz(&self) -> f64 {
-        if self.model.is_some() && self.model_rate > 0.0 { self.model_rate } else { self.sample_rate }
+    /// Whether **Mono** sums the sides into one signal for the model.
+    fn mono(&self) -> bool {
+        self.value(param::MONO) >= 0.5
     }
 
     /// Whether the project's rate is the model's, so the resampler legs stay out.
@@ -241,6 +345,19 @@ impl NamAmp {
         }
     }
 
+    /// Parts the sides from the start, as two instances running all along: the reference the
+    /// tests hold the joined run against.
+    #[cfg(test)]
+    fn part_sides(&mut self) {
+        self.joined = false;
+    }
+
+    /// Whether the two instances still run as one (`joined`).
+    #[cfg(test)]
+    fn sides_joined(&self) -> bool {
+        self.joined
+    }
+
     /// The EQ's coefficients for the current values.
     fn tune(&mut self) {
         let sr = self.sample_rate;
@@ -257,21 +374,38 @@ impl NamAmp {
         }
     }
 
-    /// Filters, delays, resampler legs, the running model and the schedule, everything for the
-    /// current sample rate and the model in hand, cleared. The running model's build allocates:
-    /// it happens here, at prepare or reset, never on the audio thread.
+    /// Everything a new sample rate needs ([`ForRate`]), then [`Self::clear`]. Allocates: it
+    /// runs at `prepare`, never on the audio thread.
     fn rebuild(&mut self) {
+        let made = ForRate::new(self.sample_rate, self.model.as_deref());
+        self.model_rate = made.model_rate;
+        self.model_refused = made.model_refused;
+        self.running = made.running;
+        self.sides = made.sides;
+        self.delays = made.delays;
+        self.chunk_f64 = made.chunk_f64;
+        self.model_input = made.model_input;
+        self.model_io = made.model_io;
+        self.dc_staged = made.dc_staged;
+        self.stage_out = made.stage_out;
+        self.leg_hold = made.leg_hold;
+        self.clear();
+    }
+
+    /// Filters, resampler legs, delays, staging, the running instances and the schedule, all
+    /// cleared as a new amp has them, and the smoothers at their targets. What `reset` runs:
+    /// allocates nothing, so it is real-time safe.
+    fn clear(&mut self) {
         let sr = self.sample_rate;
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
-        self.model_rate = self.model.as_ref().map_or(0.0, |m| m.expected_sample_rate());
-        // The rate gate runs before anything is sized or allocated: sizing asked the file's
-        // rate no questions, and a hostile file could ask for staging that grows with the
-        // ratio without a bound ([model::runnable_rate]). A refused model is sized as the
-        // passthrough it plays as.
-        self.model_refused =
-            self.model.as_ref().is_some_and(|parsed| model::runnable_rate(sr, parsed.expected_sample_rate()).is_err());
-        let model_rate = if self.model_refused { sr } else { self.model_hertz().max(1.0) };
-        self.sides = [Side::new(sr, model_rate), Side::new(sr, model_rate)];
+        for side in &mut self.sides {
+            side.bass.reset();
+            side.mid.reset();
+            side.treble.reset();
+            side.dc.reset();
+            side.into_model.reset();
+            side.out_of_model.reset();
+        }
         self.chunk[0].fill(0.0);
         self.chunk[1].fill(0.0);
         self.ready_left.fill(0.0);
@@ -279,19 +413,14 @@ impl NamAmp {
         self.in_pos = 0;
         self.produced_pos = 0;
         self.staged_total = 0;
-        self.delays = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
-        // The legs' staging is sized for the rate pair: what the legs move is within a chunk
-        // times the ratio, plus the kernels' halves — all four stage lists sized alike so a
-        // path never runs out.
-        let ratio = model_rate / sr.max(1.0);
-        let cap = CHUNK.max((CHUNK as f64 * ratio).ceil() as usize).max((CHUNK as f64 / ratio).ceil() as usize)
-            + 2 * HALF_TAPS
-            + 16;
-        self.model_input = [vec![0.0; cap], vec![0.0; cap]];
-        self.model_io = [vec![0.0; cap], vec![0.0; cap]];
-        self.dc_staged = [vec![0.0; cap], vec![0.0; cap]];
-        self.stage_out = [vec![0.0; cap], vec![0.0; cap]];
-        self.chunk_f64 = [vec![0.0; CHUNK], vec![0.0; CHUNK]];
+        for staging in
+            [&mut self.model_input, &mut self.dc_staged, &mut self.stage_out, &mut self.chunk_f64].into_iter().flatten()
+        {
+            staging.fill(0.0);
+        }
+        for staging in &mut self.model_io {
+            staging.fill(0.0);
+        }
         let frames = (self.value(param::DELAY) * sr).clamp(0.0, (MAX_DELAY_SECONDS * sr).floor());
         self.input_gain.reset(self.input_target());
         self.input_gain.set_ramp(ramp);
@@ -300,40 +429,16 @@ impl NamAmp {
         self.delay_frames.reset(frames as f32);
         self.delay_frames.set_ramp(ramp);
         for delay in &mut self.delays {
+            delay.reset();
             delay.set_frames(frames);
         }
         self.tune();
-        // The running model, two instances (one per side), or the refusal the gate decided
-        // before any sizing. A model whose features the runtime refuses joins it here.
-        self.running = [None, None];
-        if let Some(parsed) = self.model.as_ref()
-            && !self.model_refused
-        {
-            for slot in self.running.iter_mut() {
-                match Model::from_nam(parsed.as_ref()) {
-                    Ok(instance) => *slot = Some(instance),
-                    Err(_) => {
-                        self.model_refused = true;
-                        self.running = [None, None];
-                        break;
-                    }
-                }
-            }
-            if !self.model_refused {
-                self.apply_hq();
-            }
+        // Both sides start on the left instance again until their frames differ.
+        self.joined = true;
+        for instance in self.running.iter_mut().flatten() {
+            instance.reset();
         }
-        // When the legs run, their produced stream trails the chunked feed by the two legs'
-        // kernel halves — about `(HALF_TAPS + 2)·(1 + project/model)` frames, plus a frame or
-        // two of each leg's tick-to-tick phase jitter. The delivery waits this much past the
-        // chunk so it never reads a slot production has not reached yet; `latency()` reports
-        // the same sum to the engine's compensation.
-        self.leg_hold = if !self.model_refused && self.running[0].is_some() && self.model_rate != self.sample_rate {
-            let ratio = self.sample_rate / self.model_hertz().max(1.0);
-            ((f64::from((HALF_TAPS + 3) as u32) * (1.0 + ratio) + 4.0).ceil()) as u32
-        } else {
-            0
-        };
+        self.apply_hq();
     }
 }
 
@@ -343,8 +448,17 @@ impl NamAmp {
     fn head(&mut self, sample: [f32; 2], slot: usize) {
         let eq_on = self.value(param::EQ_ON) >= 0.5;
         let trim = f64::from(self.input_gain.next_value());
-        for (side, x_in) in [(0usize, sample[0]), (1usize, sample[1])] {
-            let mut x = f64::from(x_in) * trim;
+        // Mono feeds both sides the mean of the two, as a sample of the stream: the model hears
+        // one signal and one instance runs. A mono source's mean is its frame bit for bit
+        // (`(x + x) / 2 == x`).
+        let fed = if self.mono() {
+            let mean = f64::from(((f64::from(sample[0]) + f64::from(sample[1])) * 0.5) as f32);
+            [mean, mean]
+        } else {
+            [f64::from(sample[0]), f64::from(sample[1])]
+        };
+        for (side, x_in) in [(0usize, fed[0]), (1usize, fed[1])] {
+            let mut x = x_in * trim;
             if eq_on {
                 let fields = &mut self.sides[side];
                 x = fields.bass.process(x);
@@ -374,10 +488,7 @@ impl NamAmp {
     /// delivery ring at their stream positions. A model the runtime refuses passes the span
     /// through.
     fn run_span(&mut self, at: usize, len: usize) {
-        let mut counts = [0usize; 2];
-        for (side, count) in counts.iter_mut().enumerate() {
-            *count = self.model_stage(side, at, len);
-        }
+        let counts = self.model_stages(at, len);
         let count = counts[0].min(counts[1]).min(RING);
         for k in 0..count {
             self.delay_frames.next_value();
@@ -398,33 +509,72 @@ impl NamAmp {
         self.produced_pos += count as u64;
     }
 
-    /// One side's stage between the head-stored chunk and the tails: the model over the span,
-    /// with the resampler legs when the model's rate is another one (and no legs without a
-    /// model), plus its DC blocker. The produced frames land in `stage_out[side]`; the count
-    /// comes back.
-    fn model_stage(&mut self, side: usize, at: usize, len: usize) -> usize {
-        if self.running[side].is_none() {
-            // No model: the trims and EQ stand in for it, with no DC blocker to run.
-            for (k, &value) in self.chunk[side][at..at + len].iter().enumerate() {
-                self.stage_out[side][k] = f64::from(value);
-            }
-            return len;
+    /// Both sides' stages between the head-stored chunk and the tails over the span, the
+    /// produced counts back. While the sides stay joined and feed the model the same frames,
+    /// the model runs once and its output stands for both; the first span that feeds them
+    /// different frames parts them (`joined`). **Mono** keeps them joined.
+    fn model_stages(&mut self, at: usize, len: usize) -> [usize; 2] {
+        if self.running[0].is_none() || self.running[1].is_none() {
+            return [self.model_stage(0, at, len), self.model_stage(1, at, len)];
         }
-        let rate_match = self.rates_match();
-        if rate_match {
-            self.model_io[side][..len].copy_from_slice(&self.chunk[side][at..at + len]);
+        let fed = [self.model_input(0, at, len), self.model_input(1, at, len)];
+        // Mono joins the sides whatever they hold: the left instance's output stands for both
+        // (a side's resampler leg may still carry the stereo it had before), and a later
+        // stereo span parts them from the left one's state.
+        if self.mono() {
+            self.joined = true;
+        }
+        // Compared bit for bit (-0.0 and 0.0 count as different frames), and only while the
+        // sides are still joined: once parted they stay apart until a reset or Mono.
+        let same = self.joined
+            && (self.mono()
+                || (fed[0] == fed[1]
+                    && self.model_io[0][..fed[0]]
+                        .iter()
+                        .zip(&self.model_io[1][..fed[1]])
+                        .all(|(l, r)| l.to_bits() == r.to_bits())));
+        if self.joined && !same {
+            // The sides part here: the right instance takes the state the left one reached
+            // for both, before either runs this span.
+            if let [Some(left), Some(right)] = &mut self.running {
+                right.copy_state_from(left);
+            }
+            self.joined = false;
+        }
+        if self.joined {
+            if let Some(model) = self.running[0].as_mut() {
+                model.process_buffer(&mut self.model_io[0][..fed[0]]);
+            }
+            let [left, right] = &mut self.model_io;
+            right[..fed[0]].copy_from_slice(&left[..fed[0]]);
+            // Both legs run at the same rates from the same start, so they feed alike; the right
+            // side takes what the left one's model gave.
+            return [self.model_output(0, fed[0]), self.model_output(1, fed[0])];
+        }
+        for (side, &n) in fed.iter().enumerate() {
             if let Some(model) = self.running.get_mut(side).and_then(|slot| slot.as_mut()) {
-                model.process_buffer(&mut self.model_io[side][..len]);
+                model.process_buffer(&mut self.model_io[side][..n]);
             }
-            // The DC blocker only ever sees the span's frames: the staging list is longer
-            // than a span, and feeding it the slots past the span would drag its state off
-            // with old values.
-            for (k, io) in self.model_io[side].iter().take(len).enumerate() {
-                self.stage_out[side][k] = self.sides[side].dc.process(f64::from(*io));
-            }
+        }
+        [self.model_output(0, fed[0]), self.model_output(1, fed[1])]
+    }
+
+    /// One side's stage without a running model: the trims and EQ stand in for it, with no DC
+    /// blocker to run. The produced frames land in `stage_out[side]`; the count comes back.
+    fn model_stage(&mut self, side: usize, at: usize, len: usize) -> usize {
+        for (k, &value) in self.chunk[side][at..at + len].iter().enumerate() {
+            self.stage_out[side][k] = f64::from(value);
+        }
+        len
+    }
+
+    /// One side's span into the model's buffer: a copy when the model's rate is the project's,
+    /// else through the leg into the model's rate. The frames fed to the model come back.
+    fn model_input(&mut self, side: usize, at: usize, len: usize) -> usize {
+        if self.rates_match() {
+            self.model_io[side][..len].copy_from_slice(&self.chunk[side][at..at + len]);
             return len;
         }
-        // The legs: into the model's rate, through the model, the DC blocker, and back.
         for (k, &value) in self.chunk[side][at..at + len].iter().enumerate() {
             self.chunk_f64[side][k] = f64::from(value);
         }
@@ -432,8 +582,21 @@ impl NamAmp {
         for (k, value) in self.model_input[side].iter().take(fed).enumerate() {
             self.model_io[side][k] = *value as f32;
         }
-        if let Some(model) = self.running.get_mut(side).and_then(|slot| slot.as_mut()) {
-            model.process_buffer(&mut self.model_io[side][..fed]);
+        fed
+    }
+
+    /// One side's model output (`fed` frames in `model_io[side]`) through its DC blocker, and
+    /// back to the project's rate when the model runs at another one. The produced frames land
+    /// in `stage_out[side]`; the count comes back.
+    fn model_output(&mut self, side: usize, fed: usize) -> usize {
+        if self.rates_match() {
+            // The DC blocker only ever sees the span's frames: the staging list is longer
+            // than a span, and feeding it the slots past the span would drag its state off
+            // with old values.
+            for (k, io) in self.model_io[side].iter().take(fed).enumerate() {
+                self.stage_out[side][k] = self.sides[side].dc.process(f64::from(*io));
+            }
+            return fed;
         }
         for (k, io) in self.model_io[side].iter().take(fed).enumerate() {
             self.dc_staged[side][k] = self.sides[side].dc.process(f64::from(*io));
@@ -484,7 +647,7 @@ impl Device for NamAmp {
     }
 
     fn reset(&mut self) {
-        self.rebuild();
+        self.clear();
     }
 
     fn set_param(&mut self, index: usize, value: f64) {

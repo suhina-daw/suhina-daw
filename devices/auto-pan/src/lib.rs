@@ -111,7 +111,18 @@ impl Default for AutoPan {
 
 impl AutoPan {
     pub fn new() -> Self {
-        let sr = DEFAULT_SAMPLE_RATE;
+        Self::at(DEFAULT_SAMPLE_RATE)
+    }
+
+    /// The same, made for `sample_rate` (ADR 0004 › Amendment: a device is made at its rate);
+    /// fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(Self::at)
+    }
+
+    /// Everything for `sample_rate`, which has been checked.
+    fn at(sample_rate: f64) -> Self {
+        let sr = sample_rate;
         let params = ParamBank::new(&PARAMS);
         let amount = Smoother::new(params.get(param::AMOUNT) as f32, Smoother::ramp_frames(RAMP_SECONDS, sr));
         let mut pan = Self {

@@ -20,12 +20,14 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, el: &Entered, pan: f64, ho
     let fill = motion::mix(theme::pan_background(), theme::panel_hover(), hover);
     el.paint_with(painter, rect, Native { radius: 0.0, fill });
     let centre = rect.center().x.round() - 0.5;
-    painter.vline(centre, egui::Rangef::new(rect.top(), rect.top() + 2.0), theme::hairline(theme::pan_centre()));
-    painter.vline(centre, egui::Rangef::new(rect.bottom() - 2.0, rect.bottom()), theme::hairline(theme::pan_centre()));
+    // The centre's ticks are `pan-centre`, the bar from the centre the pan's `value-fill`.
+    let tick = theme::hairline(super::element::PAN_CENTRE.look().own_color_or(theme::pan_centre()));
+    painter.vline(centre, egui::Rangef::new(rect.top(), rect.top() + 2.0), tick);
+    painter.vline(centre, egui::Rangef::new(rect.bottom() - 2.0, rect.bottom()), tick);
     let to = rect.center().x + rect.width() / 2.0 * pan.clamp(-1.0, 1.0) as f32;
     let bar =
         Rect::from_min_max(Pos2::new(centre.min(to), rect.bottom() - 2.0), Pos2::new(centre.max(to), rect.bottom()));
-    painter.rect_filled(bar, 0.0, theme::control_selected());
+    painter.rect_filled(bar, 0.0, super::element::VALUE_FILL.look().background_or(theme::control_selected()));
     widgets::text_in(
         painter,
         rect,
@@ -218,7 +220,7 @@ pub fn send_field(
             Align2::LEFT_CENTER,
             letter,
             theme::mono_font(theme::TEXT_SMALL),
-            theme::text_hint(),
+            super::element::LABEL.look().color_or(theme::text_hint()),
         );
         widgets::text_in(
             painter,

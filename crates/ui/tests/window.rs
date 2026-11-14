@@ -25,6 +25,7 @@ mod arrangement;
 mod bars;
 mod control_bar;
 mod detail;
+mod elements;
 mod export;
 mod mixer;
 mod session;
