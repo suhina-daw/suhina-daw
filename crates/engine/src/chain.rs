@@ -1814,7 +1814,7 @@ mod span_tests {
     /// The delay with its LFO synced to sixteenth notes at full depth on the time and the band,
     /// over a block of clicks, its frames split at `splits` by notes it ignores.
     fn synced_delay(splits: &[usize]) -> Vec<f32> {
-        let Some(mut device) = suhina_device_registry::create("delay") else { panic!("no delay") };
+        let Some(mut device) = suhina_device_registry::create("delay", 48_000.0) else { panic!("no delay") };
         let info = device.info().clone();
         let index = |id: &str| info.params.iter().position(|p| p.id == id).unwrap_or_else(|| panic!("{id}"));
         // Synced mode, 1/16 per cycle, the shortest time so the repeats are heard in one block.
@@ -1848,7 +1848,7 @@ mod sampler_regressions {
     use super::*;
     #[test]
     fn sampler_fit_beats_follows_project_tempo_during_a_held_note() {
-        let mut sampler = suhina_device_registry::create("sampler").unwrap();
+        let mut sampler = suhina_device_registry::create("sampler", 48_000.0).unwrap();
         sampler.samples().unwrap().load_sample(48000, 1, vec![0.2; 48000].into());
         for (id, value) in [("warp", 1.), ("warp_beats", 4.), ("attack", 0.), ("sustain", 1.)] {
             sampler.set_param(sampler.info().param_index(id).unwrap(), value);
@@ -1876,7 +1876,7 @@ mod sampler_regressions {
     }
     #[test]
     fn first_beat_slice_uses_context_before_frame_zero_note() {
-        let mut sampler = suhina_device_registry::create("sampler").unwrap();
+        let mut sampler = suhina_device_registry::create("sampler", 48_000.0).unwrap();
         let source =
             std::sync::Arc::new(crate::AudioData { sample_rate: 48000, channels: 1, samples: vec![0.5; 96000] });
         sampler.samples().unwrap().load_shared_sample(48000, 1, source.clone());

@@ -79,6 +79,12 @@ impl Pitch {
         Self { params: ParamBank::new(&PARAMS), scale: None, sounding: [SILENT; 128] }
     }
 
+    /// The same, made for `sample_rate`, which it does not depend on (ADR 0004 › Amendment: a
+    /// device is made at its rate); fails for a rate a device cannot run at.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(|_| Self::new())
+    }
+
     /// The key a note-on of `key` sounds at with the current settings and scale, or `None` when
     /// Block drops it.
     pub fn transform(&self, key: u8) -> Option<u8> {

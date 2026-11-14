@@ -439,7 +439,7 @@ impl MixLaw {
 
 /// The stereo delay: two lines with a band-pass in their feedback loop and an LFO.
 pub struct Delay {
-    /// The sample rate it was prepared for.
+    /// The sample rate it was made or prepared for.
     sample_rate: f64,
     /// Per-frame constants from the sample rate.
     rates: Rates,
@@ -485,10 +485,21 @@ impl Default for Delay {
 }
 
 impl Delay {
-    /// A delay with every parameter at its default, prepared for the default sample rate
+    /// A delay with every parameter at its default, made for the default sample rate
     /// (allocates).
     pub fn new() -> Self {
-        let sr = DEFAULT_SAMPLE_RATE;
+        Self::at(DEFAULT_SAMPLE_RATE)
+    }
+
+    /// The same, made for `sample_rate` (ADR 0004 › Amendment: a device is made at its rate);
+    /// fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(Self::at)
+    }
+
+    /// Everything for `sample_rate`, which has been checked.
+    fn at(sample_rate: f64) -> Self {
+        let sr = sample_rate;
         let still = Smoother::new(0.0, 1);
         let mut delay = Self {
             sample_rate: sr,

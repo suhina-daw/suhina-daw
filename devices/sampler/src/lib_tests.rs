@@ -714,8 +714,8 @@ fn pitch_envelope_changes_audio_and_is_block_independent() {
 
 #[test]
 fn device_contract() {
-    let failures = suhina_device_api::conformance::check(&|| {
-        let mut sampler = Sampler::new();
+    let failures = suhina_device_api::conformance::check(&|rate| {
+        let mut sampler = Sampler::with_rate(rate)?;
         sampler.load_sample(
             48000,
             1,
@@ -724,7 +724,7 @@ fn device_contract() {
                 .collect::<Vec<_>>()
                 .into(),
         );
-        Box::new(sampler)
+        Ok(Box::new(sampler))
     });
     assert!(failures.is_empty(), "{failures:?}");
 }

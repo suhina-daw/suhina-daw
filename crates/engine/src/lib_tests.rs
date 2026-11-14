@@ -1884,9 +1884,9 @@ fn a_clip_goes_between_direct_and_stretched_while_playing_without_a_click() {
 struct Counting(std::sync::atomic::AtomicUsize);
 
 impl DeviceFactory for Counting {
-    fn create(&self, id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn suhina_device_api::Device>> {
+    fn create(&self, id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn suhina_device_api::Device>> {
         self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        suhina_device_registry::factory().create(id, asset)
+        suhina_device_registry::factory().create(id, rate, asset)
     }
 
     fn graph_device(
@@ -1902,8 +1902,8 @@ impl DeviceFactory for Counting {
         suhina_device_registry::factory().runs_a_file(id)
     }
 
-    fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
-        suhina_device_registry::factory().preview_instrument()
+    fn preview_instrument(&self, rate: f64) -> Option<Box<dyn suhina_device_api::Device>> {
+        suhina_device_registry::factory().preview_instrument(rate)
     }
 }
 
@@ -1923,15 +1923,15 @@ fn devices_are_made_by_the_factory_the_renderer_is_given() {
 }
 
 /// A sample player that writes down what the engine does to it, in order.
-struct Recorder(Arc<std::sync::Mutex<Vec<&'static str>>>);
+struct Recorder(Arc<std::sync::Mutex<Vec<String>>>);
 
 static RECORDER: suhina_device_api::DeviceInfo =
     suhina_device_api::DeviceInfo::new("recorder", "Recorder", suhina_device_api::Role::Instrument, &[]);
 
 impl Recorder {
-    fn note(&self, what: &'static str) {
+    fn note(&self, what: impl Into<String>) {
         if let Ok(mut done) = self.0.lock() {
-            done.push(what);
+            done.push(what.into());
         }
     }
 }
@@ -1962,15 +1962,17 @@ impl suhina_device_api::Device for Recorder {
 }
 
 /// Makes a [`Recorder`] for the id `sampler` (the id a stored sample is read for), sharing one
-/// list of what was done.
-struct Recorders(Arc<std::sync::Mutex<Vec<&'static str>>>);
+/// list of what was done, which starts with the rate it was made for.
+struct Recorders(Arc<std::sync::Mutex<Vec<String>>>);
 
 impl DeviceFactory for Recorders {
-    fn create(&self, id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn suhina_device_api::Device>> {
+    fn create(&self, id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn suhina_device_api::Device>> {
         if id == "sampler" {
-            return Some(Box::new(Recorder(self.0.clone())));
+            let recorder = Recorder(self.0.clone());
+            recorder.note(format!("made at {rate}"));
+            return Some(Box::new(recorder));
         }
-        suhina_device_registry::factory().create(id, asset)
+        suhina_device_registry::factory().create(id, rate, asset)
     }
 
     fn graph_device(
@@ -1986,15 +1988,15 @@ impl DeviceFactory for Recorders {
         false
     }
 
-    fn preview_instrument(&self) -> Option<Box<dyn suhina_device_api::Device>> {
+    fn preview_instrument(&self, _: f64) -> Option<Box<dyn suhina_device_api::Device>> {
         None
     }
 }
 
-/// A device that plays a sample is prepared for the engine's rate before it gets the sample, so
-/// a Sampler builds its stretch voices once, for that rate (#1396).
+/// A device is made at the engine's rate, is never prepared on the way, and only then gets its
+/// sample, so a Sampler builds its stretch voices once, for that rate (#1396, #1402).
 #[test]
-fn a_device_is_prepared_before_it_gets_its_sample() {
+fn a_device_is_made_at_the_engines_rate_before_it_gets_its_sample() {
     let mut project = project_with(Vec::new(), Vec::new(), 1);
     with_utility(&mut project);
     let device = &mut project.channels[0].devices[0];
@@ -2006,11 +2008,11 @@ fn a_device_is_prepared_before_it_gets_its_sample() {
     let renderer = Renderer::build(
         &project,
         RenderInputs::from_audio(&pool, Arc::new(Recorders(done.clone()))),
-        SR,
+        44_100,
         RenderOptions::STOPPED,
     );
     assert!(renderer.is_ok());
-    assert_eq!(*done.lock().unwrap(), ["prepare", "load"]);
+    assert_eq!(*done.lock().unwrap(), ["made at 44100", "load"]);
 }
 
 /// A main channel with volume 0.5 and nothing else: its volume reaches every track's gains.

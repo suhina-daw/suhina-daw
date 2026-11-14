@@ -156,18 +156,25 @@ impl Default for NamAmp {
 }
 
 impl NamAmp {
-    /// An amp modeler with no model.
+    /// An amp modeler with no model, made for the default sample rate.
     pub fn new() -> Self {
         Self::build(DEFAULT_SAMPLE_RATE, None)
     }
 
-    /// An amp modeler that runs `model`.
-    pub fn with_model(model: Arc<NamModel>) -> Self {
-        Self::build(DEFAULT_SAMPLE_RATE, Some(model))
+    /// An amp modeler with no model, made for `sample_rate` (ADR 0004 › Amendment: a device is
+    /// made at its rate); fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(|rate| Self::build(rate, None))
     }
 
-    /// Everything for `sample_rate` and the parsed model. `prepare` and `reset` run it again;
-    /// whatever clears the state, counters included, calls it.
+    /// An amp modeler that runs `model`, made for `sample_rate`; fails for a rate a device
+    /// cannot run at. A model too far from that rate to resample plays as a passthrough.
+    pub fn with_model(model: Arc<NamModel>, sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(|rate| Self::build(rate, Some(model)))
+    }
+
+    /// Everything for `sample_rate` and the parsed model, which `prepare` builds again for a new
+    /// rate; `reset` only clears it.
     fn build(sample_rate: f64, model: Option<Arc<NamModel>>) -> Self {
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sample_rate);
         let mut amp = Self {
@@ -257,12 +264,12 @@ impl NamAmp {
         }
     }
 
-    /// Filters, delays, resampler legs, the running model and the schedule, everything for the
-    /// current sample rate and the model in hand, cleared. The running model's build allocates:
-    /// it happens here, at prepare or reset, never on the audio thread.
+    /// Everything the current sample rate and the model in hand need: the resampler legs, the
+    /// delays, the staging sized for the rate pair and the two running instances, then
+    /// [`Self::clear`]. Allocates: it runs when the amp is made and at `prepare`, never on the
+    /// audio thread.
     fn rebuild(&mut self) {
         let sr = self.sample_rate;
-        let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
         self.model_rate = self.model.as_ref().map_or(0.0, |m| m.expected_sample_rate());
         // The rate gate runs before anything is sized or allocated: sizing asked the file's
         // rate no questions, and a hostile file could ask for staging that grows with the
@@ -272,13 +279,6 @@ impl NamAmp {
             self.model.as_ref().is_some_and(|parsed| model::runnable_rate(sr, parsed.expected_sample_rate()).is_err());
         let model_rate = if self.model_refused { sr } else { self.model_hertz().max(1.0) };
         self.sides = [Side::new(sr, model_rate), Side::new(sr, model_rate)];
-        self.chunk[0].fill(0.0);
-        self.chunk[1].fill(0.0);
-        self.ready_left.fill(0.0);
-        self.ready_right.fill(0.0);
-        self.in_pos = 0;
-        self.produced_pos = 0;
-        self.staged_total = 0;
         self.delays = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
         // The legs' staging is sized for the rate pair: what the legs move is within a chunk
         // times the ratio, plus the kernels' halves — all four stage lists sized alike so a
@@ -292,17 +292,6 @@ impl NamAmp {
         self.dc_staged = [vec![0.0; cap], vec![0.0; cap]];
         self.stage_out = [vec![0.0; cap], vec![0.0; cap]];
         self.chunk_f64 = [vec![0.0; CHUNK], vec![0.0; CHUNK]];
-        let frames = (self.value(param::DELAY) * sr).clamp(0.0, (MAX_DELAY_SECONDS * sr).floor());
-        self.input_gain.reset(self.input_target());
-        self.input_gain.set_ramp(ramp);
-        self.output_volume.reset(self.output_target());
-        self.output_volume.set_ramp(ramp);
-        self.delay_frames.reset(frames as f32);
-        self.delay_frames.set_ramp(ramp);
-        for delay in &mut self.delays {
-            delay.set_frames(frames);
-        }
-        self.tune();
         // The running model, two instances (one per side), or the refusal the gate decided
         // before any sizing. A model whose features the runtime refuses joins it here.
         self.running = [None, None];
@@ -319,9 +308,6 @@ impl NamAmp {
                     }
                 }
             }
-            if !self.model_refused {
-                self.apply_hq();
-            }
         }
         // When the legs run, their produced stream trails the chunked feed by the two legs'
         // kernel halves — about `(HALF_TAPS + 2)·(1 + project/model)` frames, plus a frame or
@@ -334,6 +320,54 @@ impl NamAmp {
         } else {
             0
         };
+        self.clear();
+    }
+
+    /// Filters, resampler legs, delays, staging, the running instances and the schedule, all
+    /// cleared as a new amp has them, and the smoothers at their targets. What `reset` runs:
+    /// allocates nothing, so it is real-time safe.
+    fn clear(&mut self) {
+        let sr = self.sample_rate;
+        let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
+        for side in &mut self.sides {
+            side.bass.reset();
+            side.mid.reset();
+            side.treble.reset();
+            side.dc.reset();
+            side.into_model.reset();
+            side.out_of_model.reset();
+        }
+        self.chunk[0].fill(0.0);
+        self.chunk[1].fill(0.0);
+        self.ready_left.fill(0.0);
+        self.ready_right.fill(0.0);
+        self.in_pos = 0;
+        self.produced_pos = 0;
+        self.staged_total = 0;
+        for staging in
+            [&mut self.model_input, &mut self.dc_staged, &mut self.stage_out, &mut self.chunk_f64].into_iter().flatten()
+        {
+            staging.fill(0.0);
+        }
+        for staging in &mut self.model_io {
+            staging.fill(0.0);
+        }
+        let frames = (self.value(param::DELAY) * sr).clamp(0.0, (MAX_DELAY_SECONDS * sr).floor());
+        self.input_gain.reset(self.input_target());
+        self.input_gain.set_ramp(ramp);
+        self.output_volume.reset(self.output_target());
+        self.output_volume.set_ramp(ramp);
+        self.delay_frames.reset(frames as f32);
+        self.delay_frames.set_ramp(ramp);
+        for delay in &mut self.delays {
+            delay.reset();
+            delay.set_frames(frames);
+        }
+        self.tune();
+        for instance in self.running.iter_mut().flatten() {
+            instance.reset();
+        }
+        self.apply_hq();
     }
 }
 
@@ -484,7 +518,7 @@ impl Device for NamAmp {
     }
 
     fn reset(&mut self) {
-        self.rebuild();
+        self.clear();
     }
 
     fn set_param(&mut self, index: usize, value: f64) {

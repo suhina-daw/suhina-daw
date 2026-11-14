@@ -45,7 +45,7 @@ fn peak(signal: &[f32]) -> f32 {
     signal.as_chunks::<2>().0.iter().skip(4_800).fold(0.0, |m, [l, _]| m.max(l.abs()))
 }
 
-suhina_device_api::conformance_test!(Overdrive::new());
+suhina_device_api::conformance_test!(Overdrive::with_rate);
 
 #[test]
 fn fully_dry_is_the_input_delayed_exactly() {

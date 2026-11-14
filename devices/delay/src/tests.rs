@@ -59,7 +59,7 @@ fn sine(hz: f64, frames: usize) -> Vec<f32> {
         .collect()
 }
 
-suhina_device_api::conformance_test!(Delay::new());
+suhina_device_api::conformance_test!(Delay::with_rate);
 
 #[test]
 fn an_impulse_comes_back_after_the_time() {
