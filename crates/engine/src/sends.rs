@@ -369,11 +369,18 @@ pub(crate) fn run(
                     release(chains, i, frames, context, capture.as_ref(), parallel);
                 }
             });
+            // One queued chain stays for the render thread, which would otherwise only wait: a
+            // worker is woken only for work beside it (as other engines' pools do).
+            let mut queued = chains.iter().filter(|c| c.turn.queued).count();
             for i in 0..chains.len() {
+                if queued <= 1 {
+                    break;
+                }
                 if chains.get(i).is_some_and(|c| c.turn.queued) {
                     if !pool.send(chains, i, frames, context) {
                         break;
                     }
+                    queued -= 1;
                     moved = true;
                 }
             }
@@ -442,7 +449,7 @@ pub(crate) fn run(
             // A chain is at a worker: wait for it, looking at the plug-ins now and then if one
             // of them is out too.
             let plugins = chains.iter().any(|c| c.turn.started && !c.turn.done && !c.turn.away && c.is_waiting());
-            Pool::wait(plugins.then_some(crate::chain::ANSWER_SLICE));
+            pool.wait(plugins.then_some(crate::chain::ANSWER_SLICE));
             continue;
         }
         wait_for_answers(chains, now);

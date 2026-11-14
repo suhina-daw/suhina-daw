@@ -40,6 +40,10 @@ pub const MAX_RENDER_THREADS: usize = 16;
 /// waited for; a worker that returns a chain wakes it sooner.
 const RETURN_WAIT: Duration = Duration::from_millis(2);
 
+/// How many times the render thread looks for a returned chain, with a spin-loop hint between,
+/// before it sleeps: some microseconds.
+const SPINS: usize = 2_000;
+
 /// The number of threads `value` (the environment variable's) asks for: 1 when it is missing,
 /// 0, or not a number, at most [`MAX_RENDER_THREADS`].
 pub fn render_threads_from(value: Option<&str>) -> usize {
@@ -104,9 +108,9 @@ impl Pool {
         if workers == 0 {
             return None;
         }
-        let shared =
-            Arc::new(Shared { stop: AtomicBool::new(false), real_time: AtomicUsize::new(0), sample_rate });
-        let mut pool = Self { workers: Vec::with_capacity(workers), joins: Vec::with_capacity(workers), shared, sent: 0 };
+        let shared = Arc::new(Shared { stop: AtomicBool::new(false), real_time: AtomicUsize::new(0), sample_rate });
+        let mut pool =
+            Self { workers: Vec::with_capacity(workers), joins: Vec::with_capacity(workers), shared, sent: 0 };
         for n in 0..workers {
             let (jobs, job_rx) = rtrb::RingBuffer::<Job>::new(1);
             let (reply_tx, replies) = rtrb::RingBuffer::<Reply>::new(1);
@@ -197,10 +201,20 @@ impl Pool {
         any
     }
 
-    /// Sleeps until a worker gives a chain back, or `slice` passes (a plug-in may answer
-    /// meanwhile). Never allocates.
-    pub(crate) fn wait(slice: Option<Duration>) {
-        std::thread::park_timeout(slice.unwrap_or(RETURN_WAIT));
+    /// Waits until a worker gives a chain back, or `slice` passes (a plug-in may answer
+    /// meanwhile): it spins a moment first, since a chain often comes back sooner than a
+    /// sleeping thread wakes, then sleeps until a worker wakes it. Never allocates.
+    pub(crate) fn wait(&self, slice: Option<Duration>) {
+        let back = || self.workers.iter().any(|w| w.busy.is_some() && !w.replies.is_empty());
+        for _ in 0..SPINS {
+            if back() {
+                return;
+            }
+            std::hint::spin_loop();
+        }
+        if !back() {
+            std::thread::park_timeout(slice.unwrap_or(RETURN_WAIT));
+        }
     }
 }
 
