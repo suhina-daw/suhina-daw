@@ -1301,6 +1301,102 @@
       "docs/spec/ui-clip-editor.md"
     ]
   },
+  "pianoRoll.selectNextOnKey": {
+    "description": "Selects the next note on each selected note's key, without moving any note. A key with no later note keeps its note selected, so a selected chord walks along its keys. With nothing selected it selects the clip's first note.",
+    "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+    "whenToUse": "Walk along a line note by note to fix velocities or lengths without clicking each one.",
+    "sourceFingerprint": "f1d5187f9becabc2efa5fa8734b56fa1fdc9fdb59065fdc173f532e72062ff1a",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "pianoRoll.selectPreviousOnKey": {
+    "description": "Selects the previous note on each selected note's key, without moving any note. With nothing selected it selects the clip's last note.",
+    "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+    "whenToUse": "Step back along a line note by note.",
+    "sourceFingerprint": "ee683b1390ccd77c316ee4f2befbac58954613b39109eb57de46861e959c0384",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "pianoRoll.selectNextNote": {
+    "description": "Selects the clip's next note, one note at a time: in time order, and among notes that start together from the lowest key up. From a chord it takes the chord's lowest note.",
+    "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+    "whenToUse": "Go through every note of a part in order, chords included.",
+    "sourceFingerprint": "0605d968bccd1c7c948b0c0798d7fe398415d301178753f95c0546a589903a25",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "pianoRoll.selectPreviousNote": {
+    "description": "Selects the clip's previous note, the same order backwards: among notes that start together from the highest key down. From a chord it takes the chord's highest note.",
+    "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+    "whenToUse": "Go back through the notes of a part one at a time.",
+    "sourceFingerprint": "d7e67236f86bc461aa2ba9c6410374ea690d4ab6abddd89503074767e1a95c52",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "pianoRoll.growSelectionOnKey": {
+    "description": "Adds the next note on each selected key to the selection.",
+    "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+    "whenToUse": "Select a run of notes on a key from the keyboard.",
+    "sourceFingerprint": "47853e5fe505a5c3f51d2da2a5df24770a5eeec1183b051a8932268dd659bf5d",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "pianoRoll.shrinkSelectionOnKey": {
+    "description": "Takes the last selected note on each key out of the selection; a key keeps its last note.",
+    "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+    "whenToUse": "Undo one step of growing the selection along its keys.",
+    "sourceFingerprint": "11421fb7917607c5b5b93516f414ad411424507b9d3b6cb5152efde4670fb058",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "pianoRoll.growSelection": {
+    "description": "Adds the clip's next note, in the Ctrl+Up order, to the selection.",
+    "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+    "whenToUse": "Select a passage note by note from the keyboard.",
+    "sourceFingerprint": "63254ad3a1f7719a8088f82888e390800dcb8fa7dfa708fd6564fa839ca4423f",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
+  "pianoRoll.shrinkSelection": {
+    "description": "Takes the last selected note out of the selection; the last note left stays.",
+    "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+    "whenToUse": "Undo one step of growing the selection.",
+    "sourceFingerprint": "e5f1124f4e277529b77575de6bbc453f5c96e7718d1c5eae748d928c84764ab6",
+    "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+    "references": [
+      "crates/ui/src/settings/keymap.rs",
+      "docs/shortcuts.md",
+      "docs/spec/ui-clip-editor.md"
+    ]
+  },
   "pianoRoll.join": {
     "description": "Joins the selected notes on the same key into one note, from the first one's start to the last one's end: the first reaches over any gap to the next, as legato does, and joins it. It keeps the first one's velocity. Notes on different keys are joined key by key.",
     "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",

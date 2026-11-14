@@ -4821,6 +4821,666 @@
       "helpStatus": "reviewed"
     },
     {
+      "id": "pianoRoll.selectNextOnKey",
+      "name": "Select the next note on each selected note's key",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "→"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "→"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "→"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "→"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "→"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "→"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "→"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "→"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "→"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "f1d5187f9becabc2efa5fa8734b56fa1fdc9fdb59065fdc173f532e72062ff1a",
+      "description": "Selects the next note on each selected note's key, without moving any note. A key with no later note keeps its note selected, so a selected chord walks along its keys. With nothing selected it selects the clip's first note.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Walk along a line note by note to fix velocities or lengths without clicking each one.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.selectPreviousOnKey",
+      "name": "Select the previous note on each selected note's key",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "←"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "←"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "←"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "←"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "←"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "←"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "←"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "←"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "←"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "ee683b1390ccd77c316ee4f2befbac58954613b39109eb57de46861e959c0384",
+      "description": "Selects the previous note on each selected note's key, without moving any note. With nothing selected it selects the clip's last note.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Step back along a line note by note.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.selectNextNote",
+      "name": "Select the clip's next note, in time and then from the lowest key",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "↑"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "↑"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "↑"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "↑"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "↑"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "↑"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "↑"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "↑"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "↑"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "0605d968bccd1c7c948b0c0798d7fe398415d301178753f95c0546a589903a25",
+      "description": "Selects the clip's next note, one note at a time: in time order, and among notes that start together from the lowest key up. From a chord it takes the chord's lowest note.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Go through every note of a part in order, chords included.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.selectPreviousNote",
+      "name": "Select the clip's previous note, in time and then from the highest key",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "↓"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "↓"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "↓"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "↓"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "↓"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "↓"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "↓"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "↓"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "↓"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "d7e67236f86bc461aa2ba9c6410374ea690d4ab6abddd89503074767e1a95c52",
+      "description": "Selects the clip's previous note, the same order backwards: among notes that start together from the highest key down. From a chord it takes the chord's highest note.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Go back through the notes of a part one at a time.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.growSelectionOnKey",
+      "name": "Add the next note on each selected key to the selection",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "→"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "→"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "→"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "→"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "→"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "→"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "→"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "→"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "→"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "47853e5fe505a5c3f51d2da2a5df24770a5eeec1183b051a8932268dd659bf5d",
+      "description": "Adds the next note on each selected key to the selection.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Select a run of notes on a key from the keyboard.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.shrinkSelectionOnKey",
+      "name": "Take the last selected note on each key out of the selection",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "←"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "←"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "←"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "←"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "←"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "←"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "←"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "←"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "←"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "11421fb7917607c5b5b93516f414ad411424507b9d3b6cb5152efde4670fb058",
+      "description": "Takes the last selected note on each key out of the selection; a key keeps its last note.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Undo one step of growing the selection along its keys.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.growSelection",
+      "name": "Add the clip's next note to the selection",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "↑"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "↑"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "↑"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "↑"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "↑"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "↑"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "↑"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "↑"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "↑"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "63254ad3a1f7719a8088f82888e390800dcb8fa7dfa708fd6564fa839ca4423f",
+      "description": "Adds the clip's next note, in the Ctrl+Up order, to the selection.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Select a passage note by note from the keyboard.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
+      "id": "pianoRoll.shrinkSelection",
+      "name": "Take the last selected note out of the selection",
+      "category": "Piano roll",
+      "bindings": {
+        "Select-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "↓"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "↓"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "↓"
+            ]
+          ]
+        },
+        "Draw-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "↓"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "↓"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "↓"
+            ]
+          ]
+        },
+        "Mouse-first": {
+          "windows": [
+            [
+              "Ctrl",
+              "Shift",
+              "↓"
+            ]
+          ],
+          "linux": [
+            [
+              "Ctrl",
+              "Shift",
+              "↓"
+            ]
+          ],
+          "macos": [
+            [
+              "Cmd",
+              "Shift",
+              "↓"
+            ]
+          ]
+        }
+      },
+      "sourceFingerprint": "e5f1124f4e277529b77575de6bbc453f5c96e7718d1c5eae748d928c84764ab6",
+      "description": "Takes the last selected note out of the selection; the last note left stays.",
+      "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
+      "whenToUse": "Undo one step of growing the selection.",
+      "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
+      "references": [
+        "crates/ui/src/settings/keymap.rs",
+        "docs/shortcuts.md",
+        "docs/spec/ui-clip-editor.md"
+      ],
+      "helpStatus": "reviewed"
+    },
+    {
       "id": "pianoRoll.draw",
       "name": "Switch the piano roll between the Select and Draw tools",
       "category": "Piano roll",
