@@ -1014,3 +1014,13 @@ slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 
   `piano-row[kind="hover"]`, `piano-note[kind="draft"]`, `velocity[kind="line"]`; Main's header is
   `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all**
   `scene[kind="stop-all"]`, the Launcher mixer's top line `divider#mixer-splitter`.
+
+## Amendment: the shared controls draw from their elements (2026-11-14)
+
+Accepted, from [issue #1023](https://github.com/suhina-daw/suhina-daw/issues/1023): the kit's
+shared controls (a track's solo, cue and arm, toggles, fields' underlines, drop-downs, dialog
+buttons, knobs and dials, sliders, sends, fader caps and a typed number) draw from their
+elements as the views do, the palette token as the fallback, a lit toggle lit only by a rule for
+its state (`widgets::Toggle`, `Entered::paint_over`); new kinds are `dropdown[kind="subtle"]`,
+`text-input[kind="typed"]` and `slider[checked]`, and `accent-color` colours a dial's pointer and
+a field's or a track button's focus.
