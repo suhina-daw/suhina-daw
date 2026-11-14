@@ -99,6 +99,8 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | Action | Keys |
 |---|---|
 | Play or stop (`transport.toggle`; Play starts from the play start marker or the selected clip, as Settings › Arrangement › Time and play › Play from says; Stop goes back to the marker or stays, as Settings › Arrangement › Time and play › Playhead after Stop says) | Space |
+| Record into the arrangement, or stop recording (`transport.toggleRecord`; the control bar's record button): every armed track records, MIDI and audio alike ([recording](spec/recording.md)) | F9 |
+| Arm the selected tracks for recording, or disarm them when all are armed (`selection.arm`): arming disarms the other tracks, as a click on an arm button does, so select a MIDI and an audio track to arm both; with no track selected, the selected clip's track ([recording](spec/recording.md)) | none; give it one in Settings › Keys |
 | Switch between Launcher and Arrangement (`view.toggle`) | Tab |
 | Show or hide the detail area (`view.detail`) | Shift+Tab |
 | Hide the clip editor, or show it again (`view.editor`; [spec](spec/ui-clip-editor.md) › Least height and closing). Escape in the piano roll keeps clearing the note selection | Ctrl+Shift+E |
