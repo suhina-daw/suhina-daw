@@ -153,7 +153,7 @@ crates/ui/src/
                  plugin_host, audio_settings, exports) and its dialogs (project, loading,
                  missing files), the start panel and the splash
   arrangement/   the Arrangement view: arrangement_view (with its parts in arrangement_view/),
-                 timeline, automation_lanes
+                 timeline, automation_lanes, gesture (the one drag under way, shared by both)
   session/       the Launcher view: session_view, mixer_strip, slot_launch, launch_keys,
                  record_controls
   detail/        the detail area: detail_view (device chain; its model, parameters, expanded panel,
