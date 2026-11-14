@@ -85,7 +85,7 @@ fn no_background_replaces_the_window_pixels_on_native_alpha_surfaces() {
     }
     assert!(theme::window_background().a() < u8::MAX, "a see-through theme");
     assert!(fills.lock().unwrap().is_empty(), "nothing replaces pixels: {:?}", fills.lock().unwrap());
-    theme::set_palette(&ctx, theme::Palette::DARK);
+    theme::use_palette(&ctx, theme::Palette::DARK);
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn glass_clears_the_views_of_the_main_window_half_as_far_as_its_bars_menus_and_d
         dialog.iter().any(|(rect, fill)| fill.a() == glass.a() && rect.height() > 200.0 && rect.height() < 800.0),
         "a dialog is glass"
     );
-    theme::set_palette(&ctx, theme::Palette::DARK);
+    theme::use_palette(&ctx, theme::Palette::DARK);
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     let mut h = view();
     let (_, mut blocks) = theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-blocks").unwrap();
     skin::configure(&blocks.skin);
-    theme::set_palette(&h.ctx, blocks.palette());
+    theme::use_palette(&h.ctx, blocks.palette());
     h.run_steps(3);
     let slot = h.get_by_label("Launch Root on Bass (scene 1)").rect();
     // The artwork is a rectangle or a nine-slice (at most 16 corners), not the fan of a CSS
@@ -229,7 +229,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     h.run_steps(3);
     assert!(!has_body(&h), "opting out restores native column fills");
     skin::configure(&skin::Skin::default());
-    theme::set_palette(&h.ctx, theme::Palette::DARK);
+    theme::use_palette(&h.ctx, theme::Palette::DARK);
 }
 
 #[test]

@@ -131,6 +131,9 @@ pub struct Skin {
     pub controls: BTreeMap<String, super::control_layout::Placement>,
     /// The resolved `:root` variables, substituted into artwork that writes `var(--name)`.
     pub variables: Arc<BTreeMap<String, String>>,
+    /// Whether Suhina's base sheet applies under the theme's (`suhina_theme_package::BASE_SHEET`):
+    /// `theme.json`'s `"base": "none"` turns it off.
+    pub base: bool,
 }
 impl Default for Skin {
     fn default() -> Self {
@@ -150,6 +153,7 @@ impl Default for Skin {
             toolbar_offsets: BTreeMap::new(),
             controls: BTreeMap::new(),
             variables: Arc::default(),
+            base: true,
         }
     }
 }

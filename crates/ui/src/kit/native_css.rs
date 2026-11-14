@@ -24,8 +24,8 @@ mod diagnostics;
 mod geometry;
 mod native;
 
+pub use native::base_color;
 pub(super) use native::user_agent;
-pub use native::user_agent_color;
 mod paint;
 pub mod row;
 mod shadows;
@@ -97,7 +97,18 @@ pub struct Computed {
     resolved: Arc<suhina_style::cascade::ComputedStyle>,
 }
 impl Computed {
-    /// Whether a rule above the user agent wrote `property` on this element itself, rather than
+    /// Every custom property the element sees, shared rather than copied.
+    pub(in crate::kit) fn shared_variables(&self) -> Arc<std::collections::BTreeMap<String, String>> {
+        Arc::clone(&self.variables)
+    }
+
+    /// Whether the element sees the very same custom properties as `other` (the same map, not
+    /// only equal ones): an element that sets none of its own shares its parent's.
+    pub(in crate::kit) fn shares_variables(&self, other: &Arc<std::collections::BTreeMap<String, String>>) -> bool {
+        Arc::ptr_eq(&self.variables, other)
+    }
+
+    /// Whether a rule above the base tier wrote `property` on this element itself, rather than
     /// the element inheriting it.
     pub fn declared(&self, property: Property) -> bool {
         self.resolved.declared(property)
@@ -353,7 +364,20 @@ struct Motion {
 #[derive(Default)]
 struct Engine {
     source: Option<Arc<str>>,
-    palette: String,
+    /// What the base tier was last given: whether the base sheet applies, and the theme's colour
+    /// map as a `:root` rule ([`set_colors`]). `None` before the first frame.
+    base_inputs: Option<(bool, Option<Arc<str>>)>,
+    /// The colour map's rule, parsed.
+    colors: Option<Arc<Sheet>>,
+    /// The window's faded colours as a rule for `window` ([`set_window_opacity`]), and parsed.
+    window_rule: Option<(String, Arc<Sheet>)>,
+    /// The style reset and the window's opacity the palette's snapshot was taken at.
+    snapshot: Option<(u64, u32)>,
+    /// The custom properties the root sees, the window's faded colours in place: what an element
+    /// that sets none of its own sees ([`style_class`](super::style_class) compares with it).
+    root_variables: Arc<std::collections::BTreeMap<String, String>>,
+    /// The root's colours before the window's opacity is applied.
+    unfaded: theme::Palette,
     size: [u32; 2],
     /// The theme's swatches by colour.
     swatches: HashMap<String, Computed>,
@@ -960,43 +984,128 @@ fn finish_tree(now: f64) -> (bool, bool) {
     })
 }
 
-/// Refresh only when the authored CSS, palette or viewport changes.
-pub fn begin_frame(ui: &egui::Ui) {
-    let user_present = USER_SHEET.with(|sheet| sheet.borrow().is_some());
-    let device_wanted = DEVICE_WANTED.with(|wanted| wanted.replace(false));
-    // Without a theme sheet the engine still runs for user.css and device panel sheets.
-    let source = skin::current().css.clone().or_else(|| (user_present || device_wanted).then(|| Arc::from("")));
-    if source.is_none() {
-        ENGINE.with(|engine| {
-            if engine.borrow().source.is_some() {
-                *engine.borrow_mut() = Engine::default();
-                bump_epoch();
-            }
-        });
+thread_local! {
+    /// The theme's colour map ([`set_colors`]): the colours it sets, and its `:root` rule.
+    static COLORS: RefCell<(theme::Colors, Option<Arc<str>>)> = const { RefCell::new((theme::Colors::new(), None)) };
+    /// How much of the window's own colours covers a backdrop image, 0 to 1 ([`set_window_opacity`]).
+    static WINDOW_OPACITY: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
+    /// The sheet of a skin that has none, one allocation for every frame.
+    static NO_SHEET: Arc<str> = Arc::from("");
+}
+
+/// Uses the theme's colour map `colors` (`Theme.colors`: the colours it sets, by variable name
+/// without `--`) from the next frame on, as a `:root` rule in the base tier, after the base sheet:
+/// any `:root` in the theme's own sheet beats it. A colour it does not set is Suhina Studio's, the
+/// core variables' registered value.
+pub fn set_colors(colors: &theme::Colors) {
+    COLORS.with(|current| {
+        let mut current = current.borrow_mut();
+        if current.0 == *colors {
+            return;
+        }
+        current.1 = theme::colors_rule(colors).map(Arc::from);
+        current.0 = colors.clone();
+    });
+}
+
+/// How much of the window's own background, its panels' and its lines' colours covers a backdrop
+/// image from the next frame on, 0 to 1 (1 when there is none): the host writes those three
+/// colour variables faded on `window`, in the base tier, and the palette's snapshot takes them.
+pub fn set_window_opacity(ctx: &egui::Context, opacity: f32) {
+    let opacity = if opacity.is_finite() { opacity.clamp(0.0, 1.0) } else { 1.0 };
+    if WINDOW_OPACITY.with(|current| current.replace(opacity)) != opacity {
+        ctx.request_repaint();
+    }
+}
+
+/// The colour variable `name` (with its `--`) as the root has it, before the window's opacity:
+/// the theme's own colour (the panels' base under a backdrop). `None` before a frame resolved it.
+pub fn root_color(name: &str) -> Option<Color32> {
+    let key = theme::token_key(name.strip_prefix("--")?);
+    ENGINE.with(|engine| {
+        let engine = engine.borrow();
+        engine.snapshot?;
+        engine.unfaded.token_color(&key)
+    })
+}
+
+/// The custom properties the root sees, the window's faded colours in place.
+pub(super) fn root_variables() -> Arc<std::collections::BTreeMap<String, String>> {
+    ENGINE.with(|engine| Arc::clone(&engine.borrow().root_variables))
+}
+
+/// The palette's colours from the custom properties `variables`: Suhina Studio's for one that is
+/// not there or not a colour.
+fn palette_of(variables: &std::collections::BTreeMap<String, String>) -> theme::Palette {
+    let mut palette = theme::Palette::DARK;
+    for (key, _, _) in theme::Palette::DARK.tokens() {
+        let Some(value) = variables.get(&format!("--{}", theme::variable_name(key))) else { continue };
+        if let Ok(suhina_style::value::Color::Rgba([r, g, b, a])) = suhina_style::value::Color::parse(value.trim())
+            && let Some(slot) = palette.token_mut(key)
+        {
+            *slot = Color32::from_rgba_unmultiplied(r, g, b, a);
+        }
+    }
+    palette
+}
+
+/// The colours the window's opacity fades over a backdrop: its background, its panels' and its
+/// lines', as the palette faded them.
+const FADED: [&str; 3] = ["window.background", "panel.background", "border"];
+
+/// Takes the palette's snapshot of the root's colours, when the styles reset or the window's
+/// opacity changed since the last one: the colour functions (`theme::accent()`) read it until the
+/// next. Over a backdrop the window's colours are faded, written as variables on `window` too.
+fn snapshot(engine: &mut Engine, opacity: f32) {
+    let taken = (style_epoch(), opacity.to_bits());
+    if engine.snapshot == Some(taken) || engine.native.is_none() {
         return;
     }
+    let Some(body) = native::body(engine) else { return };
+    let unfaded = palette_of(body.variables());
+    let mut faded = unfaded;
+    let mut variables = body.variables().clone();
+    let mut rule = String::new();
+    if opacity < 1.0 {
+        for key in FADED {
+            let Some(slot) = faded.token_mut(key) else { continue };
+            *slot = slot.gamma_multiply(opacity);
+            let value = hex(*slot);
+            rule.push_str(&format!(" --{}: {value};", theme::variable_name(key)));
+            variables.insert(format!("--{}", theme::variable_name(key)), value);
+        }
+    }
+    let rule = (!rule.is_empty()).then(|| format!("window {{{rule} }}"));
+    if engine.window_rule.as_ref().map(|(text, _)| text) != rule.as_ref() {
+        engine.window_rule = rule.and_then(|text| Some((text.clone(), Arc::new(Sheet::parse(&text).ok()?))));
+        let window = engine.window_rule.as_ref().map(|(_, sheet)| Arc::clone(sheet));
+        let (base, colors) = (engine.base_inputs.as_ref().is_none_or(|(base, _)| *base), engine.colors.clone());
+        if let Some(paint) = engine.native.as_mut() {
+            paint.set_base(base, colors, window);
+        }
+        engine.styles_changed = true;
+        engine.reset_styles();
+    }
+    // Unfaded, the root's own map: what the elements that set no variable share.
+    engine.root_variables = if opacity < 1.0 { Arc::new(variables) } else { body.shared_variables() };
+    engine.unfaded = unfaded;
+    engine.snapshot = Some((style_epoch(), opacity.to_bits()));
+    theme::set_base_palette(faded);
+}
+
+/// Refresh only when the sheets, the theme's colours, the window's opacity or the viewport change.
+pub fn begin_frame(ui: &egui::Ui) {
+    DEVICE_WANTED.with(|wanted| wanted.set(false));
+    let skin = skin::current();
+    // A theme without a sheet of its own runs the engine on an empty one: the base tier and the
+    // user's sheet still apply.
+    let source = Some(skin.css.clone().unwrap_or_else(|| NO_SHEET.with(Arc::clone)));
     let size = ui.ctx().input(|i| i.content_rect().size());
     let size = [size.x.clamp(1.0, 16384.0) as u32, size.y.clamp(1.0, 16384.0) as u32];
-    let palette = theme::palette();
-    let mut variables = String::from(":root {");
-    for (key, _, color) in palette.tokens() {
-        let variable = key.replace('.', "-");
-        // Only referenced palette variables affect this stylesheet. Resetting all
-        // style/layout caches for an unrelated opacity tick rebuilt every control's
-        // style during every drag frame.
-        // Escaped identifiers are conservatively treated as depending on all tokens.
-        let needed = format!("--{variable}");
-        if key != "text.primary"
-            && !native::PART_COLOURS.contains(&needed)
-            && !source.as_deref().is_some_and(|css| css.contains('\\') || css.contains(&needed))
-        {
-            continue;
-        }
-        variables.push_str(&format!("--{variable}:{};", theme::hex(color)));
-    }
-    variables.push_str("}\n");
+    let colors = COLORS.with(|colors| colors.borrow().1.clone());
+    let opacity = WINDOW_OPACITY.with(std::cell::Cell::get);
     let user = USER_SHEET.with(|sheet| sheet.borrow().clone());
-    let variant = skin::current().variant.clone();
+    let variant = skin.variant.clone();
     ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
         if engine.variant.as_ref().map(|(text, _)| text) != variant.as_ref() {
@@ -1020,7 +1129,7 @@ pub fn begin_frame(ui: &egui::Ui) {
         }
         if engine.source != source {
             let native = suhina_plugins::trace::timed("style paint parse", || {
-                source.as_deref().and_then(|source| native::Paint::new(source, &variables))
+                source.as_deref().and_then(|source| native::Paint::new(source, skin.base))
             });
             match native {
                 Some(native) => {
@@ -1029,9 +1138,9 @@ pub fn begin_frame(ui: &egui::Ui) {
                     let variant = engine.variant.take();
                     let device_sheets = std::mem::take(&mut engine.device_sheets);
                     bump_epoch();
+                    // The base tier's inputs are given to the new sheet below.
                     *engine = Engine {
                         source,
-                        palette: variables,
                         size,
                         native: Some(native),
                         motion,
@@ -1048,19 +1157,26 @@ pub fn begin_frame(ui: &egui::Ui) {
                     bump_epoch();
                 }
             }
-        } else if engine.size != size || engine.palette != variables {
-            // Palette drags and native resizing do not change the scope tree or
-            // authored CSS. Keep the last computed snapshot and resolve the new inputs
-            // once at the end of this pass.
-            engine.palette = variables;
-            let palette = engine.palette.clone();
-            if let Some(paint) = engine.native.as_mut() {
-                let _ = paint.palette(&palette);
-            }
+        } else if engine.size != size {
+            // Native resizing does not change the scope tree or authored CSS. Keep the last
+            // computed snapshot and resolve the new inputs once at the end of this pass.
             engine.size = size;
             engine.styles_changed = true;
             engine.reset_styles();
         }
+        let inputs = (skin.base, colors);
+        if engine.base_inputs.as_ref() != Some(&inputs) {
+            engine.colors = inputs.1.as_deref().and_then(|text| Some(Arc::new(Sheet::parse(text).ok()?)));
+            let window = engine.window_rule.as_ref().map(|(_, sheet)| Arc::clone(sheet));
+            let colors = engine.colors.clone();
+            if let Some(paint) = engine.native.as_mut() {
+                paint.set_base(inputs.0, colors, window);
+            }
+            engine.base_inputs = Some(inputs);
+            engine.styles_changed = true;
+            engine.reset_styles();
+        }
+        snapshot(&mut engine, opacity);
     });
 }
 
@@ -1075,7 +1191,8 @@ fn same_source(engine: Option<&Arc<str>>) -> bool {
 }
 
 impl Engine {
-    /// Forgets every style worked out, after the sheets, the palette or the window's size changed.
+    /// Forgets every style worked out, after the sheets, the theme's colours, the window's opacity
+    /// or its size changed.
     fn reset_styles(&mut self) {
         bump_epoch();
         self.identities.clear();

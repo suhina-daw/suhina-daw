@@ -522,7 +522,6 @@ impl Themes {
         // The copy is a theme of its own: its variant's values become part of its sheet.
         original.vars.variant = None;
         original.vars.variant_name = None;
-        original.skin.css = original.skin.css.or_else(|| original.vars.sheet.take());
         let id = self.free_id(name);
         self.entries.push(ThemeEntry { id: id.clone(), theme: Theme { name: name.to_string(), ..original } });
         id

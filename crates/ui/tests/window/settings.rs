@@ -154,6 +154,8 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
         },
     };
     harness.state_mut().put_theme(&ctx, edited);
+    // The colours come from the style sheet's variables, from the next frame on.
+    harness.run();
     assert_eq!(theme::accent(), colors["accent"]);
 
     // New theme, with the default artwork: every built-in image goes to the theme's assets.

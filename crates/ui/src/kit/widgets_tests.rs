@@ -32,7 +32,7 @@ fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
     palette.window_background = Color32::TRANSPARENT;
     palette.text_value = Color32::from_rgb(220, 230, 220);
     let ctx = egui::Context::default();
-    theme::set_palette(&ctx, palette);
+    theme::use_palette(&ctx, palette);
     motion::set_enabled(&ctx, false);
     let mut output = ctx.run_ui(Default::default(), |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
@@ -42,7 +42,7 @@ fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
         assert!(theme::contrast(fill, text) >= 4.5);
     });
     output.textures_delta.clear();
-    theme::set_palette(&ctx, original);
+    theme::use_palette(&ctx, original);
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn active_toggle_text_stays_visible_when_the_inverse_ink_is_translucent() {
     palette.control_selected = Color32::BLACK;
     palette.text_inverse = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
     let ctx = egui::Context::default();
-    theme::set_palette(&ctx, palette);
+    theme::use_palette(&ctx, palette);
     motion::set_enabled(&ctx, false);
     let mut output = ctx.run_ui(Default::default(), |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
@@ -63,7 +63,7 @@ fn active_toggle_text_stays_visible_when_the_inverse_ink_is_translucent() {
         assert!(theme::text_contrast(text, fill) >= 4.5, "{text:?} on {fill:?}");
     });
     output.textures_delta.clear();
-    theme::set_palette(&ctx, original);
+    theme::use_palette(&ctx, original);
 }
 
 #[test]

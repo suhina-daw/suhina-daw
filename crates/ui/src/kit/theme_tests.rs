@@ -185,13 +185,13 @@ fn the_palette_sets_the_native_windows_scheme() {
     let ctx = egui::Context::default();
     let saved = palette();
     let suhina_light = built_in_themes().into_iter().find(|(id, _)| *id == "suhina-light").unwrap().1;
-    set_palette(&ctx, suhina_light.palette());
+    use_palette(&ctx, suhina_light.palette());
     assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::Light);
     assert!(is_light());
-    set_palette(&ctx, Palette::DARK);
+    use_palette(&ctx, Palette::DARK);
     assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::Dark);
     assert!(!is_light());
-    set_palette(&ctx, saved);
+    use_palette(&ctx, saved);
 }
 
 #[test]
@@ -228,14 +228,14 @@ fn the_themes_that_come_with_suhina_read_whole() {
         assert!(is_built_in(id));
         assert!(id == BUILT_IN || theme.name != Theme::default().name, "{id}");
         if id == BUILT_IN {
-            // Its sheet sets only colours and settings, so the style engine stays off for it.
+            // Its sheet sets only colours, and it runs the style engine like every theme (#1448).
             assert!(
                 sheet
                     .split(":root")
                     .nth(1)
                     .is_some_and(|rest| rest.trim_end().ends_with('}') && rest.matches('{').count() == 1)
             );
-            assert_eq!(built_in_themes()[0].1.skin.css, None);
+            assert_eq!(built_in_themes()[0].1.skin.css.as_deref(), Some(sheet));
             assert!(built_in_themes()[0].1.colors.is_empty(), "Suhina Studio sets nothing over itself");
             assert_eq!(built_in_themes()[0].1.palette(), Palette::DARK);
         }
@@ -380,16 +380,16 @@ fn text_never_takes_a_background_colour_in_files_from_before_text_inverse() {
 #[test]
 fn a_theme_is_see_through_when_a_background_has_alpha() {
     let ctx = egui::Context::default();
-    set_palette(&ctx, Palette::DARK);
+    use_palette(&ctx, Palette::DARK);
     assert!(!see_through());
     let mut glass = Palette::DARK;
     glass.panel_background = Color32::from_rgba_unmultiplied(10, 20, 30, 200);
-    set_palette(&ctx, glass);
+    use_palette(&ctx, glass);
     assert!(see_through());
     // A see-through border is not a background.
     let mut lines = Palette::DARK;
     lines.border = Color32::from_rgba_unmultiplied(255, 255, 255, 40);
-    set_palette(&ctx, lines);
+    use_palette(&ctx, lines);
     assert!(!see_through());
 }
 
@@ -460,10 +460,10 @@ fn independent_text_roles_round_trip_and_old_themes_keep_their_colours() {
     assert!(warnings.is_empty());
     assert_eq!(restored.colors, theme.colors);
     let ctx = egui::Context::default();
-    set_palette(&ctx, restored.palette());
+    use_palette(&ctx, restored.palette());
     assert_eq!(text_on(rgb(0xFFFFFF)), rgb(0x445566));
     assert_eq!(browser_text_primary(), rgb(0x55AAFF));
-    set_palette(&ctx, Palette::DARK);
+    use_palette(&ctx, Palette::DARK);
 }
 
 #[test]
@@ -471,9 +471,9 @@ fn the_palette_in_use_changes_with_the_theme() {
     let ctx = egui::Context::default();
     let mut night = Palette::DARK;
     night.accent = rgb(0x00FF00);
-    set_palette(&ctx, night);
+    use_palette(&ctx, night);
     assert_eq!(accent(), rgb(0x00FF00));
-    set_palette(&ctx, Palette::DARK);
+    use_palette(&ctx, Palette::DARK);
     assert_eq!(accent(), Palette::DARK.accent);
 }
 

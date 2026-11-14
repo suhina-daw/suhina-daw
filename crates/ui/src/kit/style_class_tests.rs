@@ -120,12 +120,12 @@ fn a_live_theme_change_survives_all_enclosing_style_scopes() {
         let _window = test_el("window").enter();
         let _browser = test_el("browser").enter();
         let inside = theme::text_primary();
-        theme::set_palette(&ctx, changed);
+        theme::use_palette(&ctx, changed);
         inside
     });
     assert_eq!(inside, theme::parse_hex("#123456").unwrap());
     assert_eq!(theme::palette(), changed);
-    theme::set_palette(&ctx, original);
+    theme::use_palette(&ctx, original);
 }
 
 #[test]
@@ -269,13 +269,13 @@ fn a_palette_change_such_as_the_window_s_opacity_reaches_the_root_visuals() {
         let mut see_through = saved;
         see_through.panel_background = see_through.panel_background.gamma_multiply(0.5);
         see_through.border = see_through.border.gamma_multiply(0.5);
-        theme::set_palette(&ctx, see_through);
+        theme::use_palette(&ctx, see_through);
         let after = frames_in(&ctx, 800.0);
         assert_eq!(after.panel_fill, see_through.panel_background, "{css:?}");
         assert_eq!(after.window_fill, see_through.panel_background, "{css:?}");
         assert_eq!(after.window_stroke.color, see_through.border, "{css:?}");
         assert_ne!(before.panel_fill, after.panel_fill);
-        theme::set_palette(&ctx, saved);
+        theme::use_palette(&ctx, saved);
         assert_eq!(frames_in(&ctx, 800.0).panel_fill, before.panel_fill, "{css:?}");
     }
     skin::configure(&skin::Skin::default());
@@ -293,7 +293,7 @@ fn with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme() {
     themes.extend(theme::built_in_variants());
     for (id, theme) in &themes {
         let ctx = egui::Context::default();
-        theme::set_palette(&ctx, theme.palette());
+        theme::use_palette(&ctx, theme.palette());
         let expected = theme::palette_visuals_for(&theme.palette());
         skin::configure(&theme.skin);
         let built = frames_in(&ctx, 800.0);
@@ -305,11 +305,11 @@ fn with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme() {
         }
         // Without a sheet: the fallback alone.
         let ctx = egui::Context::default();
-        theme::set_palette(&ctx, theme.palette());
+        theme::use_palette(&ctx, theme.palette());
         skin::configure(&skin::Skin::default());
         assert_eq!(frames_in(&ctx, 800.0), expected, "{id}: no sheet");
     }
-    theme::set_palette(&egui::Context::default(), saved);
+    theme::use_palette(&egui::Context::default(), saved);
     skin::configure(&skin::Skin::default());
 }
 
@@ -400,7 +400,7 @@ fn the_root_visuals_are_built_again_only_when_the_styles_or_the_palette_changed(
     assert_eq!(frames_in(&ctx, 800.0).window_fill, mark, "frames with nothing changed leave them");
     assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a new width resets the styles");
     ctx.all_styles_mut(|style| style.visuals.window_fill = mark);
-    theme::set_palette(&ctx, theme::palette());
+    theme::use_palette(&ctx, theme::palette());
     assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a palette change rebuilds them");
     skin::configure(&skin::Skin::default());
 }

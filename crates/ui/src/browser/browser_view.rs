@@ -212,12 +212,13 @@ fn icon_kind(kind: ItemKind) -> &'static str {
     }
 }
 
-/// The colour the user-agent sheet alone gives the icon of kind `id`, if any: worked out once.
+/// The colour the base sheet alone gives the icon of kind `id`, if any, in Suhina Studio's
+/// colours: worked out once.
 fn icon_default(id: &str) -> Option<Color32> {
     const COLOURED: [&str; 7] = ["midi", "midi-effect", "sample", "instrument", "preset", "effect", "audio-effect"];
     static DEFAULTS: std::sync::OnceLock<[Option<Color32>; 7]> = std::sync::OnceLock::new();
-    let defaults = DEFAULTS
-        .get_or_init(|| COLOURED.map(|id| crate::kit::native_css::user_agent_color("browser-icon", &[("kind", id)])));
+    let defaults =
+        DEFAULTS.get_or_init(|| COLOURED.map(|id| crate::kit::native_css::base_color("browser-icon", &[("kind", id)])));
     COLOURED.iter().position(|known| *known == id).and_then(|at| defaults.get(at).copied().flatten())
 }
 

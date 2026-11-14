@@ -217,7 +217,7 @@ fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
     });
     let ctx = egui::Context::default();
     let faint = Color32::from_rgba_unmultiplied(255, 255, 255, 0x14);
-    crate::kit::theme::set_palette(
+    crate::kit::theme::use_palette(
         &ctx,
         crate::kit::theme::Palette { border: faint, ..crate::kit::theme::Palette::DARK },
     );
@@ -233,7 +233,7 @@ fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
             &mut Vec::new(),
         )
     });
-    crate::kit::theme::set_palette(&ctx, crate::kit::theme::Palette::DARK);
+    crate::kit::theme::use_palette(&ctx, crate::kit::theme::Palette::DARK);
     output.textures_delta.clear();
     let fill = |at: Rect| {
         output.shapes.iter().find_map(|shape| match &shape.shape {
@@ -1009,7 +1009,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             .build_ui(move |ui| {
                 crate::kit::theme::install(ui.ctx());
                 if filename.contains("light") {
-                    crate::kit::theme::set_palette(ui.ctx(), light);
+                    crate::kit::theme::use_palette(ui.ctx(), light);
                 }
                 let data = Arc::new(suhina_engine::AudioData {
                     sample_rate: 48000,
@@ -1046,7 +1046,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             }
             snapshot(&mut harness, "sampler-warp-menu.png");
         }
-        crate::kit::theme::set_palette(&harness.ctx, crate::kit::theme::Palette::DARK);
+        crate::kit::theme::use_palette(&harness.ctx, crate::kit::theme::Palette::DARK);
         if view == 2. {
             harness.get_by_label("lfo shape").click();
             harness.run_steps(4);
@@ -1119,10 +1119,10 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     snapshot(&mut harness, "delay-panel.png");
     let nord =
         crate::kit::theme::built_in_themes().into_iter().find(|(id, _)| *id == "nord").map(|(_, theme)| theme).unwrap();
-    crate::kit::theme::set_palette(&harness.ctx, nord.palette());
+    crate::kit::theme::use_palette(&harness.ctx, nord.palette());
     harness.run();
     snapshot(&mut harness, "delay-panel-nord.png");
-    crate::kit::theme::set_palette(&harness.ctx, crate::kit::theme::Palette::DARK);
+    crate::kit::theme::use_palette(&harness.ctx, crate::kit::theme::Palette::DARK);
     use egui_kittest::kittest::Queryable;
     let mut narrow_parameters = parameters.clone();
     for p in &mut narrow_parameters {
@@ -2139,11 +2139,11 @@ fn built_in_widget_colors_follow_the_active_theme_and_refresh_the_cache() {
         ..DeviceUi::default()
     });
     let dark = crate::kit::theme::Palette::DARK;
-    crate::kit::theme::set_palette(&context, dark);
+    crate::kit::theme::use_palette(&context, dark);
     let dark_loaded = images(&context, &canvas);
     let mut alternate = dark;
     alternate.accent = Color32::from_rgb(12, 34, 56);
-    crate::kit::theme::set_palette(&context, alternate);
+    crate::kit::theme::use_palette(&context, alternate);
     let alternate_loaded = images(&context, &canvas);
     assert!(!Arc::ptr_eq(&dark_loaded, &alternate_loaded));
     assert!(
@@ -2161,7 +2161,7 @@ fn built_in_widget_colors_follow_the_active_theme_and_refresh_the_cache() {
     assert!(themed.controls[button].iter().any(|draw| matches!(
         draw, Draw::Rect { color, .. } if *color == rgba(alternate.accent)
     )));
-    crate::kit::theme::set_palette(&context, dark);
+    crate::kit::theme::use_palette(&context, dark);
 }
 
 #[test]
@@ -2169,7 +2169,7 @@ fn default_canvas_background_follows_the_theme_and_authored_background_stays_fix
     let context = egui::Context::default();
     let mut palette = crate::kit::theme::Palette::DARK;
     palette.panel_background = Color32::from_rgb(11, 22, 33);
-    crate::kit::theme::set_palette(&context, palette);
+    crate::kit::theme::use_palette(&context, palette);
     let default = Arc::new(DeviceUi::default());
     let authored = Arc::new(DeviceUi { background: [44, 55, 66, 255], ..DeviceUi::default() });
     let mut output = context.run_ui(egui::RawInput::default(), |ui| {
@@ -2196,7 +2196,7 @@ fn default_canvas_background_follows_the_theme_and_authored_background_stays_fix
         egui::Shape::Rect(rect) if rect.fill == Color32::from_rgb(44, 55, 66)
     )));
     output.textures_delta.clear();
-    crate::kit::theme::set_palette(&context, crate::kit::theme::Palette::DARK);
+    crate::kit::theme::use_palette(&context, crate::kit::theme::Palette::DARK);
 }
 #[test]
 fn a_negative_that_rounds_to_zero_shows_no_minus_sign() {

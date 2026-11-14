@@ -344,6 +344,13 @@ impl Sheet {
                 })
             })
     }
+    /// Every declaration of the sheet's rules, `@media` and `@layer` ones included, as its
+    /// property's name and its value as written: for checks of a whole sheet (that a sheet gives
+    /// no fixed colour).
+    pub fn declarations(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.rules.iter().flat_map(|rule| rule.declarations.iter().map(|d| (d.name.as_str(), d.value.as_str())))
+    }
+
     /// Classes the sheet declares with `@group-class` but no rule styles as `group.<class>`:
     /// probably a typo, which an import warns about.
     pub fn unstyled_group_classes(&self) -> Vec<&str> {

@@ -35,6 +35,13 @@ fn window() -> Harness<'static, App> {
     harness
 }
 
+/// Draws the window in `palette`'s colours from the next frame: the user's sheet sets them, as the
+/// app gives each frame the theme's own colours.
+fn use_colours(palette: &theme::Palette) {
+    let rule = theme::colors_rule(&theme::colors_of(palette)).unwrap_or_default();
+    suhina_ui::kit::native_css::set_user_sheet(Some(rule.into()));
+}
+
 fn arrangement() -> Harness<'static, App> {
     let mut harness = window();
     harness.get_by_label("Arrangement view").click();
@@ -66,7 +73,7 @@ fn arrangement_header_surfaces_follow_custom_theme_tokens() {
     custom.track_header_background = Color32::from_rgb(31, 45, 53);
     custom.track_header_selected = Color32::from_rgb(65, 72, 84);
     custom.control_selected = Color32::from_rgb(233, 229, 222);
-    theme::set_palette(&harness.ctx, custom);
+    use_colours(&custom);
     harness.run();
     let header = harness.get_by_label("Track Drums").rect();
     let color = default_drums();
@@ -84,7 +91,7 @@ fn arrangement_header_surfaces_follow_custom_theme_tokens() {
     let neutral_volumes = ["Drums volume", "Bass volume", "A Reverb volume"]
         .into_iter()
         .all(|label| filled_with(&harness, harness.get_by_label(label).rect(), custom.control_selected));
-    theme::set_palette(&harness.ctx, previous);
+    suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(has_surface, "the header must tint the editable theme surface with its track color");
     assert!(neutral_volumes, "volume fills share the neutral theme colour regardless of track colour");
 }
@@ -98,7 +105,7 @@ fn selected_header_uses_its_theme_surface_without_recolouring_the_track() {
     let previous = theme::palette();
     let mut custom = previous;
     custom.track_header_selected = Color32::from_rgb(180, 35, 110);
-    theme::set_palette(&harness.ctx, custom);
+    use_colours(&custom);
     harness.run();
     let header = harness.get_by_label("Track Drums").rect();
     let expected = suhina_ui::kit::motion::mix(
@@ -107,7 +114,7 @@ fn selected_header_uses_its_theme_surface_without_recolouring_the_track() {
         0.07,
     );
     let shown = filled_with(&harness, header, expected);
-    theme::set_palette(&harness.ctx, previous);
+    suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(shown, "selected header must use track.headerSelectedBackground");
     assert_eq!(harness.state().session().unwrap().project(), &before);
 }
@@ -119,7 +126,7 @@ fn arrangement_grid_uses_its_own_theme_colors() {
     let mut custom = previous;
     custom.grid_major = Color32::from_rgb(117, 83, 149);
     custom.grid_minor = Color32::from_rgb(53, 79, 101);
-    theme::set_palette(&harness.ctx, custom);
+    use_colours(&custom);
     harness.run();
     fn has_line(shape: &Shape, color: Color32) -> bool {
         match shape {
@@ -131,7 +138,7 @@ fn arrangement_grid_uses_its_own_theme_colors() {
     let has_major = harness.output().shapes.iter().any(|shape| {
         has_line(&shape.shape, suhina_ui::kit::motion::mix(custom.window_background, custom.grid_major, 0.55))
     });
-    theme::set_palette(&harness.ctx, previous);
+    suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(has_major, "timeline grid lines must follow their own theme token");
 }
 

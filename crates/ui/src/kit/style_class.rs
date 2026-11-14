@@ -138,6 +138,13 @@ pub(super) fn enter_inner(
         .filter(|values| values.authored.background && class.is_surface())
         .map(|values| SURFACE.with(|s| s.replace(Some(values.background))));
     if let Some(values) = &own {
+        // The element's colour variables that differ from its parent's reach the palette's
+        // readers inside it, as they reach the base sheet's rules (`mixer { --text-value: gold }`).
+        // Transitional: it goes with the palette (#1452).
+        let parent = INHERITED
+            .with(|inherited| inherited.borrow().as_ref().map(super::native_css::Computed::shared_variables))
+            .unwrap_or_else(super::native_css::root_variables);
+        take_variables(&mut palette, values, &parent);
         if values.authored.color {
             set_foreground(&mut palette, values.color, Some(class));
         }
@@ -164,6 +171,43 @@ pub(super) fn enter_inner(
         }
     });
     Scope { palette: saved, revision: theme::palette_revision(), inherited, surface, own_before, node }
+}
+
+/// The palette's tokens with their custom properties' names (`--accent`), worked out once.
+fn token_variables() -> &'static [(&'static str, String)] {
+    static NAMES: std::sync::OnceLock<Vec<(&'static str, String)>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        theme::Palette::DARK
+            .tokens()
+            .into_iter()
+            .map(|(key, _, _)| (key, format!("--{}", theme::variable_name(key))))
+            .collect()
+    })
+}
+
+/// Gives `palette` the colour variables `style` sees that differ from `parent`'s, the variables of
+/// the element it is in (the root's for the outermost). Nothing to compare when the element sets
+/// none of its own: it shares its parent's.
+fn take_variables(
+    palette: &mut theme::Palette,
+    style: &super::native_css::Computed,
+    parent: &std::sync::Arc<std::collections::BTreeMap<String, String>>,
+) {
+    if style.shares_variables(parent) {
+        return;
+    }
+    for (key, name) in token_variables() {
+        let own = style.variable(name);
+        if own.is_none() || own == parent.get(name).map(String::as_str) {
+            continue;
+        }
+        if let Some(Ok(suhina_style::value::Color::Rgba([r, g, b, a]))) =
+            own.map(|value| suhina_style::value::Color::parse(value.trim()))
+            && let Some(slot) = palette.token_mut(key)
+        {
+            *slot = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
+        }
+    }
 }
 
 /// A background for `class`. A region's or container's is its own, painted once where it is

@@ -321,7 +321,7 @@ fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
     for (pass, width) in [(0, 800.0), (1, 800.0), (2, 500.0)] {
         let mut palette = saved;
         palette.text_primary = Color32::from_rgba_unmultiplied(24, 48, 72, 80 + pass * 40);
-        theme::local_palette(palette);
+        set_colors(&theme::colors_of(&palette));
         ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(width, 600.0))),
@@ -358,7 +358,7 @@ fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
             assert!(!engine.styles_changed);
         });
     }
-    theme::local_palette(saved);
+    set_colors(&theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }
 #[test]
@@ -372,7 +372,7 @@ fn measure_primary_colour_edits() {
     for sample in 0..62 {
         let mut palette = saved;
         palette.text_primary = Color32::from_rgba_unmultiplied(40, 60, 50, 100 + sample);
-        theme::local_palette(palette);
+        set_colors(&theme::colors_of(&palette));
         let start = std::time::Instant::now();
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = frame(ui);
@@ -392,26 +392,27 @@ fn measure_primary_colour_edits() {
     }
     samples.sort_by(f64::total_cmp);
     eprintln!("primary colour edit: median {:.3} ms, max {:.3} ms", samples[30], samples[59]);
-    theme::local_palette(saved);
+    set_colors(&theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }
+/// A colour of the theme's colour map reaches the sheet's `var()` and the colour functions from
+/// the next frame, through the base tier. Every edit resets the styles: the base sheet reads the
+/// colours, and the palette's snapshot and the scopes' variables must follow them (#1448).
 #[test]
-fn unreferenced_palette_edits_keep_computed_contexts_but_variables_invalidate() {
-    let saved = theme::palette();
+fn a_colour_map_edit_reaches_the_sheet_and_the_colour_functions() {
     prepare("browser { color: var(--accent); background-color: white; }", 800.0);
     let stack = ["browser".into()];
-    let original = scoped(&stack).unwrap();
-    let mut palette = saved;
-    palette.grid_major = Color32::from_rgba_unmultiplied(120, 120, 120, 90);
-    theme::local_palette(palette);
+    assert_eq!(scoped(&stack).unwrap().color, theme::Palette::DARK.accent);
+    let accent = Color32::from_rgb(10, 30, 70);
+    set_colors(&[("accent".to_owned(), accent)].into());
     prepare("browser { color: var(--accent); background-color: white; }", 800.0);
-    ENGINE.with(|engine| assert!(!engine.borrow().styles_changed, "unrelated opacity cleared style cache"));
-    assert_eq!(scoped(&stack).unwrap().color, original.color);
-    palette.accent = Color32::from_rgb(10, 30, 70);
-    theme::local_palette(palette);
-    prepare("browser { color: var(--accent); background-color: white; }", 800.0);
-    assert_eq!(scoped(&stack).unwrap().color, palette.accent);
-    theme::local_palette(saved);
+    assert_eq!(scoped(&stack).unwrap().color, accent);
+    assert_eq!(theme::accent(), accent);
+    // The theme's own `:root` beats its colour map.
+    prepare(":root { --accent: #102030; } browser { color: var(--accent); }", 800.0);
+    assert_eq!(scoped(&stack).unwrap().color, Color32::from_rgb(0x10, 0x20, 0x30));
+    assert_eq!(theme::accent(), Color32::from_rgb(0x10, 0x20, 0x30));
+    set_colors(&theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }
 fn prepare(css: &str, width: f32) {

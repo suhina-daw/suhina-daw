@@ -2943,8 +2943,10 @@ impl App {
         application_bar::resize_edges(ui);
         if let Some(theme) = self.themes.get(&self.settings.theme) {
             crate::kit::skin::configure(&theme.skin);
+            crate::kit::native_css::set_colors(&theme.colors);
         } else {
             crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+            crate::kit::native_css::set_colors(&theme::Colors::new());
         }
         let _css_frame = crate::kit::native_css::frame_with_motion(
             ui,
@@ -2965,7 +2967,7 @@ impl App {
         let window_style = window_builder.enter();
         let mut styled_ui = window_style.ui(ui);
         let ui = &mut *styled_ui;
-        if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
+        if let Err(error) = self.background.update(ui, &self.settings) {
             self.status = Status::Error(error);
         }
         // The root: the window's background, painted once under everything (over a private

@@ -383,7 +383,7 @@ fn choosing_a_theme_keeps_the_window_behind_dimmed() {
         assert!(dimmed(&harness), "dimmed on frame {frame} after the click");
     }
     assert!(harness.get_by_label("Theme in use: Nord").rect().is_positive());
-    theme::set_palette(&harness.ctx, theme::Palette::DARK);
+    theme::use_palette(&harness.ctx, theme::Palette::DARK);
 }
 
 /// The window behind stays clear from press to release, also while the pointer rests, not only
@@ -1091,7 +1091,7 @@ fn the_theme_in_use_is_marked_as_selected_in_the_list() {
     harness.run();
     assert!(selected(&harness, "Theme: Suhina Light"));
     assert!(!selected(&harness, "Theme: Suhina Studio"));
-    theme::set_palette(&harness.ctx, theme::Palette::DARK);
+    theme::use_palette(&harness.ctx, theme::Palette::DARK);
 }
 
 /// The variant editor shows the quick controls the theme declares with `@property` and a label,

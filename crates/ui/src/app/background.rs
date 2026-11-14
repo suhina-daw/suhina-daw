@@ -30,10 +30,6 @@ pub(super) struct Background {
     source: Option<(Arc<str>, Arc<image::RgbaImage>)>,
     texture: Option<TextureHandle>,
     texture_path: Arc<str>,
-    visible: bool,
-    /// The palette this set last, with the palette revision it left: the window's style scope
-    /// rewrites the palette each frame, so comparing with `theme::palette()` would never settle.
-    applied: Option<(crate::kit::theme::Palette, u64)>,
 }
 
 impl Background {
@@ -54,13 +50,13 @@ impl Background {
         }
     }
 
-    pub(super) fn update(
-        &mut self,
-        ui: &Ui,
-        settings: &crate::settings::Settings,
-        mut palette: crate::kit::theme::Palette,
-    ) -> Result<(), String> {
-        crate::kit::liquid::set_panel_base(ui.ctx(), palette.window_background);
+    /// Paints the backdrop image, if there is one, and gives the window's opacity over it to the
+    /// style engine, which fades the window's, the panels' and the lines' colours by it.
+    pub(super) fn update(&mut self, ui: &Ui, settings: &crate::settings::Settings) -> Result<(), String> {
+        // The theme's own window colour, before the opacity fades it.
+        let base = crate::kit::native_css::root_color("--window-background")
+            .unwrap_or_else(crate::kit::theme::window_background);
+        crate::kit::liquid::set_panel_base(ui.ctx(), base);
         let skin = crate::kit::skin::current();
         let themed = skin.background.as_ref();
         let path: Arc<str> = if settings.theme == "high-contrast" {
@@ -71,20 +67,13 @@ impl Background {
         let blur = if themed.is_some() { skin.background_blur } else { settings.view.background_blur };
         let result = self.paint(ui, path, blur);
         let visible = result.as_ref().copied().unwrap_or(false);
-        if visible {
-            let opacity = f32::from(
-                if themed.is_some() { skin.background_opacity } else { settings.view.background_tint }.min(100),
-            ) / 100.0;
-            palette.window_background = palette.window_background.gamma_multiply(opacity);
-            palette.panel_background = palette.panel_background.gamma_multiply(opacity);
-            palette.border = palette.border.gamma_multiply(opacity);
-        }
-        // Set again only when the palette wanted changes or someone else set one since.
-        if (visible || self.visible) && self.applied != Some((palette, crate::kit::theme::palette_revision())) {
-            crate::kit::theme::set_palette(ui.ctx(), palette);
-            self.applied = Some((palette, crate::kit::theme::palette_revision()));
-        }
-        self.visible = visible;
+        let opacity = if visible {
+            f32::from(if themed.is_some() { skin.background_opacity } else { settings.view.background_tint }.min(100))
+                / 100.0
+        } else {
+            1.0
+        };
+        crate::kit::native_css::set_window_opacity(ui.ctx(), opacity);
         result.map(|_| ())
     }
 

@@ -4,8 +4,10 @@
 //! Design tokens from `docs/design/brief.md` › Tokens and the sizes in
 //! `docs/design/components.md`. Views use these names, never raw colours or sizes.
 //!
-//! Colours come from the theme in use (a [`Palette`]: Suhina Studio's colours with the ones the
-//! theme sets over them, [`Colors`]), so the user can change them. Sizes are fixed.
+//! Colours come from the theme in use: the colour functions read a [`Palette`] that is a snapshot
+//! of the style sheet's resolved root variables (Suhina Studio's values with the theme's
+//! [`Colors`], its sheet, its variant and `user.css` over them), so the user can change them.
+//! Sizes are fixed.
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -190,8 +192,9 @@ impl Default for Palette {
 }
 
 thread_local! {
-    /// The colours in use. The UI draws on one thread; tests each get their own, so a test that
-    /// changes the theme does not change another's.
+    /// The colours in use: the root's snapshot ([`set_base_palette`]), with a style scope's over
+    /// it while one is entered. The UI draws on one thread; tests each get their own, so a test
+    /// that changes the theme does not change another's.
     static PALETTE: Cell<Palette> = const { Cell::new(Palette::DARK) };
     static PALETTE_REVISION: Cell<u64> = const { Cell::new(0) };
 }
@@ -248,13 +251,51 @@ fn scheme(p: &Palette) -> egui::Theme {
     if light(p) { egui::Theme::Light } else { egui::Theme::Dark }
 }
 
-/// Draws with `palette` from the next frame on: the tokens and egui's own visuals.
+/// Tells egui whether the theme whose colours are `palette` is light or dark, which it passes on to
+/// the native window (its title bar). The colours themselves come from the style sheet's variables
+/// (`native_css::set_colors`, the root's snapshot), not from here: what is left of this goes with
+/// the palette (#1452).
 pub fn set_palette(ctx: &egui::Context, palette: Palette) {
-    PALETTE_REVISION.with(|revision| revision.set(revision.get().wrapping_add(1)));
-    PALETTE.with(|p| p.set(palette));
-    // egui's own visuals are rebuilt from the sheet in the next frame's setup (`sync_root_visuals`).
     ctx.set_theme(scheme(&palette));
     ctx.request_repaint();
+}
+
+/// The colours of `palette` that are not Suhina Studio's, as a theme's colour map holds them.
+pub fn colors_of(palette: &Palette) -> Colors {
+    palette
+        .tokens()
+        .into_iter()
+        .filter(|(key, _, color)| Palette::DARK.token_color(key) != Some(*color))
+        .map(|(key, _, color)| (variable_name(key), color))
+        .collect()
+}
+
+/// `colors` as the `:root` rule that sets them (`:root { --accent: #A6A3FF; }`), `None` when it
+/// sets none. A name that is not a colour variable is left out.
+pub fn colors_rule(colors: &Colors) -> Option<String> {
+    let set: Vec<String> = colors
+        .iter()
+        .filter(|(variable, _)| is_color_variable(variable))
+        .map(|(variable, color)| format!(" --{variable}: {};", hex(*color)))
+        .collect();
+    (!set.is_empty()).then(|| format!(":root {{{} }}", set.concat()))
+}
+
+/// Draws with `palette` from now on, as a theme whose colours it is: the style engine's colour map
+/// from the next frame (`native_css::set_colors`), the colour functions at once, and egui's light
+/// or dark scheme. For what draws without the app, which gives the theme's colours itself each
+/// frame: tests, and tools that paint a widget alone.
+pub fn use_palette(ctx: &egui::Context, palette: Palette) {
+    super::native_css::set_colors(&colors_of(&palette));
+    set_base_palette(palette);
+    set_palette(ctx, palette);
+}
+
+/// Draws with `palette`, the snapshot of the root's resolved colour variables, until the next one:
+/// taken by the style engine once each time its styles reset (`native_css::begin_frame`).
+pub(super) fn set_base_palette(palette: Palette) {
+    PALETTE_REVISION.with(|revision| revision.set(revision.get().wrapping_add(1)));
+    PALETTE.with(|p| p.set(palette));
 }
 
 /// What the root's `Visuals` were last built from, kept in the context: the palette and the
@@ -351,12 +392,7 @@ pub fn built_in_themes() -> Vec<(&'static str, Theme)> {
                     let read = from_files(|path, _| Ok(files.get(path).map(|bytes| bytes.to_vec())));
                     // Every built-in folder reads whole (`the_themes_that_come_with_suhina_read_whole`).
                     debug_assert!(read.as_ref().is_ok_and(|(_, warnings)| warnings.is_empty()), "{id}: {read:?}");
-                    let mut theme = read.map_or_else(|_| Theme::default(), |(theme, _)| theme);
-                    if *id == BUILT_IN {
-                        // Suhina Studio's sheet sets only colours, which are in the palette now, so
-                        // the style engine has nothing to do for the default theme and stays off.
-                        theme.vars.sheet = theme.skin.css.take();
-                    }
+                    let theme = read.map_or_else(|_| Theme::default(), |(theme, _)| theme);
                     (*id, theme)
                 })
                 .collect()
@@ -471,6 +507,7 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
     let mut theme = Theme { name: meta.name.clone(), meta, ..Theme::default() };
     let mut warnings = Vec::new();
     theme.skin.css = Some(sheet.into());
+    theme.skin.base = theme.meta.base;
     match super::theme_vars::read(sheet) {
         Ok((declared, base, notices)) => {
             theme.vars.declared = std::sync::Arc::new(declared);

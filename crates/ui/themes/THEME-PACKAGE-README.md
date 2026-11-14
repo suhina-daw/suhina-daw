@@ -73,6 +73,8 @@ move its rules into `theme.css`.
   A theme whose swatch does not give a colour for every variant is refused on import.
 - `toolbar` (optional) suggests a toolbar arrangement:
   `{ "items": ["browser", "tempo", "transport"], "hidden": ["agents"] }`.
+- `base` (optional): `"none"` leaves Suhina's base sheet out from under your theme (*Suhina's base
+  sheet* below), for a theme that styles everything itself.
 
 ### Swatches and the thumbnail
 
@@ -384,10 +386,34 @@ suhina-cli theme validate out.theme.suhina   # or a folder; lists the notices
 A package is not signed. Sign the file with a key of your own, outside Suhina, when the
 receiver needs to know it came from you.
 
+## Suhina's base sheet, and colouring a region
+
+Under your theme sits Suhina's own design, the **base sheet** (built into the app), and under it
+the **user-agent sheet**, the bare floor that keeps every element usable. Every rule of your theme
+beats every rule of the base sheet, whatever its specificity or `@layer`: you never need a more
+specific selector to win over Suhina's.
+
+- **Set variables, keep every state.** The base sheet takes every colour from the colour variables
+  (`--accent`, `--control-background` …). A theme that sets only `:root` variables keeps every look
+  it gives, its states included. A rule of yours for an element replaces the base sheet's rules
+  for that element, its states' too: `button { … }` hides the base sheet's `button[checked]`, so
+  write the states you want as well (`button[checked] { … }`).
+- **Colour a region through its variables.** `mixer { --text-value: gold; }` reaches every part
+  inside the mixer that Suhina colours with `--text-value`. A plain `mixer { color: gold; }`
+  colours only the text that has no rule of its own, not the parts the base sheet styles.
+- **Your own sheet too.** `:root { --accent: #FF8A00; }` in `user.css` reaches everything, in
+  Suhina Studio as in any theme.
+- **The base sheet's own colours** are variables as well: the browser's icons by kind
+  (`--browser-icon-midi`, `--browser-icon-sample`, `--browser-icon-instrument`,
+  `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …
+  `--sample-other`).
+- **Opting out.** `"base": "none"` in `theme.json` leaves the base sheet out: your theme stands on
+  the user-agent sheet's plain text on a plain background, and styles the rest itself.
+
 ## SVG inheritance and safe defaults
 
-Suhina's user-agent style sheet, the first sheet under your theme, gives every control its
-default artwork, on the element that draws it:
+Suhina's user-agent style sheet, the first sheet under the base sheet and your theme, gives every
+control its default artwork, on the element that draws it:
 
 | Element | File |
 |---|---|
@@ -426,8 +452,8 @@ A theme made for an earlier version: artwork of its own for `knob.body`, `fader.
 `fader.cap` that uses `currentColor` drew in the knob's pointer colour or the values' text colour,
 and now draws in the part's `color`. Give the part that colour to keep the look
 (`knob-body { color: var(--accent); }`, `fader-cap, fader-rail { color: var(--text-value); }`).
-The `--kind-*` colours of the sample map are no longer read: write
-`sample-point[kind="kick"] { color: #D06E5E; }` and so on instead.
+The `--kind-*` colours of the sample map are no longer read: set `--sample-kick` and the others,
+or write `sample-point[kind="kick"] { color: #D06E5E; }` and so on instead.
 
 *More › New theme…* and *More › Duplicate theme…* have an **Include the default artwork**
 checkbox: it copies every default SVG into the new theme's `assets/` and writes a rule for each

@@ -31,27 +31,22 @@ use suhina_theme_render::{Subject, painted, scenes};
 const LEFT_OUT: [&str; 1] = ["about-dialog"];
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-/// A theme to draw, and whether the style engine runs for it when it has no sheet of its own.
+/// A theme to draw, by the name its digests are recorded under. Every theme runs the style engine,
+/// Suhina Studio too (#1448).
 struct Drawn {
     name: String,
     subject: Subject,
-    engine: bool,
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn drawn() -> Vec<Drawn> {
-    let mut drawn: Vec<Drawn> = Subject::built_ins()
-        .into_iter()
-        .map(|subject| Drawn { name: subject.id.clone(), subject, engine: false })
-        .collect();
-    drawn.extend(suhina_ui::kit::theme::built_in_variants().into_iter().filter_map(|(id, _)| {
-        Subject::built_in(&id).map(|subject| Drawn { name: subject.id.clone(), subject, engine: false })
-    }));
-    // Suhina Studio's look with the style engine on, as it runs for every theme once the palette
-    // has gone: what checks the fallbacks of the default theme.
-    if let Some(subject) = Subject::built_in(suhina_ui::kit::theme::BUILT_IN) {
-        drawn.push(Drawn { name: format!("{}+engine", subject.id), subject, engine: true });
-    }
+    let mut drawn: Vec<Drawn> =
+        Subject::built_ins().into_iter().map(|subject| Drawn { name: subject.id.clone(), subject }).collect();
+    drawn.extend(
+        suhina_ui::kit::theme::built_in_variants()
+            .into_iter()
+            .filter_map(|(id, _)| Subject::built_in(&id).map(|subject| Drawn { name: subject.id.clone(), subject })),
+    );
     drawn
 }
 
@@ -84,7 +79,7 @@ fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Res
                 scope.spawn(|| {
                     let mut done = Vec::new();
                     while let Some((scene, d)) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
-                        done.push(((scene.name.clone(), d.name.clone()), painted::scene(&d.subject, scene, d.engine)));
+                        done.push(((scene.name.clone(), d.name.clone()), painted::scene(&d.subject, scene)));
                     }
                     done
                 })
@@ -181,8 +176,8 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
 fn a_listing_is_the_same_each_time() {
     let scene = scenes::find("launcher").unwrap();
     let subject = Subject::built_in("nord").unwrap();
-    let first = painted::scene(&subject, &scene, false).unwrap();
-    let second = painted::scene(&subject, &scene, false).unwrap();
+    let first = painted::scene(&subject, &scene).unwrap();
+    let second = painted::scene(&subject, &scene).unwrap();
     assert!(first.lines().count() > 100, "the launcher paints: {first}");
     let differ: Vec<(usize, (&str, &str))> =
         first.lines().zip(second.lines()).enumerate().filter(|(_, (a, b))| a != b).take(5).collect();
@@ -191,8 +186,7 @@ fn a_listing_is_the_same_each_time() {
 
 #[test]
 fn the_recorded_digests_read() {
-    let recorded =
-        recorded("# a note\nlauncher nord 0123456789abcdef\n\narrangement suhina-studio+engine fedcba9876543210\n");
+    let recorded = recorded("# a note\nlauncher nord 0123456789abcdef\n\narrangement suhina-studio fedcba9876543210\n");
     assert_eq!(recorded.len(), 2);
     assert_eq!(recorded[&("launcher".to_owned(), "nord".to_owned())], "0123456789abcdef");
 }

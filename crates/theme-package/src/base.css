@@ -1,0 +1,62 @@
+/* Copyright (C) 2026 The Suhina contributors; SPDX-License-Identifier: GPL-3.0-or-later */
+/*
+ * Suhina's base sheet: Suhina's own design, under every theme, as a browser's own look sits under
+ * a page's (ADR 0031, amendment of 2026-11-15). It is a tier of the cascade of its own, between the
+ * user-agent sheet and the theme: every rule of a theme, its variant, a device panel's sheet and
+ * `user.css` beats every rule here, whatever its specificity or `@layer`. What it gives an element
+ * is not a theme's (`authored`), as the user agent's is not.
+ *
+ * Every colour here reads a variable (the core ones, registered with Suhina Studio's values), so a
+ * theme that sets only variables reaches everything, and a theme's rule for a region colours what
+ * is inside it through those variables: `mixer { --text-value: gold; }`. A theme opts out of this
+ * sheet with `"base": "none"` in its `theme.json` and stands on the user-agent sheet alone.
+ *
+ * One section per area of the window, each with its own header, so that later work adds its own.
+ */
+
+/* The document: the text everything inherits. */
+html, body { color: var(--text-primary); font-size: 12px; }
+
+/* The bars' borders, the lines between them and the views. */
+application-bar, menu-bar, project-tabs, toolbar, status-bar { border-color: var(--border); }
+
+/* The parts whose artwork takes their `color` (currentColor): a knob's body, a fader's rail and
+   its cap, lit a little by the values' text while the pointer is on it. Each is a rule on the part
+   itself, so a colour a theme gives an element around it (`knob`, `mixer`) is not inherited into
+   the artwork. A knob's pointer has none: it takes the knob's colour. */
+knob-body { color: var(--control-background); }
+fader-rail { color: color-mix(in srgb, var(--control-background), black 65%); }
+fader-cap { color: color-mix(in srgb, var(--control-background), var(--text-value) 28%); }
+fader-cap:hover, fader-cap:active { color: color-mix(in srgb, var(--control-hoverBackground), var(--text-value) 28%); }
+
+/* A progress bar: its track and the part done. */
+progress { background-color: var(--control-background); }
+progress-fill { background-color: var(--accent); }
+
+/* Where something dragged lands: the line it goes in at, and the outline of the place it goes. */
+drop-target[kind="insert"], drop-target[kind="area"] { color: var(--accent); }
+
+/* A browser row's icon, by the kind of item; folders, headings and projects take the row's text. */
+browser-icon[kind="midi"], browser-icon[kind="midi-effect"] { color: var(--browser-icon-midi); }
+browser-icon[kind="sample"] { color: var(--browser-icon-sample); }
+browser-icon[kind="instrument"], browser-icon[kind="preset"] { color: var(--browser-icon-instrument); }
+browser-icon[kind="effect"], browser-icon[kind="audio-effect"] { color: var(--browser-icon-effect); }
+
+/* The sounds of the sample map, by kind. */
+sample-point[kind="kick"] { color: var(--sample-kick); }
+sample-point[kind="snare"] { color: var(--sample-snare); }
+sample-point[kind="clap"] { color: var(--sample-clap); }
+sample-point[kind="closedHat"] { color: var(--sample-closedHat); }
+sample-point[kind="openHat"] { color: var(--sample-openHat); }
+sample-point[kind="hat"] { color: var(--sample-hat); }
+sample-point[kind="rim"] { color: var(--sample-rim); }
+sample-point[kind="tom"] { color: var(--sample-tom); }
+sample-point[kind="crash"] { color: var(--sample-crash); }
+sample-point[kind="ride"] { color: var(--sample-ride); }
+sample-point[kind="cymbal"] { color: var(--sample-cymbal); }
+sample-point[kind="percussion"] { color: var(--sample-percussion); }
+sample-point[kind="bass"] { color: var(--sample-bass); }
+sample-point[kind="tonal"] { color: var(--sample-tonal); }
+sample-point[kind="vocal"] { color: var(--sample-vocal); }
+sample-point[kind="effect"] { color: var(--sample-effect); }
+sample-point[kind="other"] { color: var(--sample-other); }

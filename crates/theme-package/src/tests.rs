@@ -136,6 +136,20 @@ fn theme_json_round_trips_and_refuses_a_file_without_a_name_swatch_or_known_form
     }
 }
 
+/// `"base": "none"` leaves Suhina's base sheet out (#1448); left out, the base sheet applies. It
+/// reads back as written, and any other value is named and keeps the base sheet.
+#[test]
+fn theme_json_opts_out_of_the_base_sheet_with_base_none() {
+    let read = |text: &str| meta::ThemeMeta::parse(text.as_bytes()).unwrap();
+    let (plain, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red" }"#);
+    assert!(plain.base && warnings.is_empty() && !plain.to_json().contains("base"));
+    let (bare, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red", "base": "none" }"#);
+    assert!(!bare.base && warnings.is_empty(), "{warnings:?}");
+    assert_eq!(read(&bare.to_json()), (bare, Vec::new()));
+    let (odd, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red", "base": "plain" }"#);
+    assert!(odd.base && warnings.iter().any(|w| w.contains("base")), "{warnings:?}");
+}
+
 #[test]
 fn the_swatch_must_resolve_to_a_colour_for_every_variant() {
     let with = |swatch: &str, variant: &str| {
@@ -324,11 +338,67 @@ fn default_artwork_is_coloured_by_current_color_alone() {
     }
 }
 
-/// Sample points are styled by kind in the user-agent sheet, one rule per kind.
+/// Sample points are coloured by kind in the base sheet, one rule per kind, each from a variable
+/// of its own.
 #[test]
-fn the_user_agent_sheet_colours_sample_points_by_kind() {
-    let kinds = USER_AGENT_SHEET.matches("sample-point[kind=").count();
+fn the_base_sheet_colours_sample_points_by_kind() {
+    let kinds = BASE_SHEET.matches("sample-point[kind=").count();
     assert_eq!(kinds, 17);
+    assert_eq!(BASE_SHEET.matches("var(--sample-").count(), 17);
+}
+
+/// Whether `name` is a property whose value is a colour.
+fn colour_property(name: &str) -> bool {
+    name == "color" || name.ends_with("-color")
+}
+
+/// The user-agent sheet has no colours (#1448): a theme that opts out of the base sheet stands on
+/// a bare floor. The theme swatch's square takes its colour from its element, not from the sheet.
+#[test]
+fn the_user_agent_sheet_has_no_colours() {
+    let sheet = suhina_style::sheet::Sheet::parse(USER_AGENT_SHEET).unwrap();
+    for (name, value) in sheet.declarations().filter(|(name, _)| colour_property(name)) {
+        assert!(value.trim().starts_with("attr("), "the user-agent sheet gives {name} the colour {value}");
+    }
+}
+
+/// No colour in the base sheet is fixed (#1448): every colour it gives reads a variable, so a
+/// theme's variables reach everything it styles. It declares no variable of its own (the core
+/// ones are registered beside it), has no at-rules, and names only elements of the registry.
+#[test]
+fn the_base_sheet_colours_everything_from_variables() {
+    let sheet = suhina_style::sheet::Sheet::parse(BASE_SHEET).unwrap();
+    assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+    let mut colours = 0;
+    for (name, value) in sheet.declarations() {
+        assert!(!name.starts_with("--"), "the base sheet declares {name}");
+        if colour_property(name) {
+            colours += 1;
+            assert!(value.contains("var(--"), "{name}: {value} is a fixed colour");
+        }
+    }
+    assert!(colours > 25, "{colours}");
+    let mut text = BASE_SHEET.to_owned();
+    while let Some(start) = text.find("/*") {
+        let end = text[start..].find("*/").unwrap() + start + 2;
+        text.replace_range(start..end, "");
+    }
+    assert!(!text.contains('@'), "the base sheet has no at-rules");
+    let mut rest = text.as_str();
+    while let Some(open) = rest.find('{') {
+        let close = rest.find('}').unwrap();
+        for selector in rest[..open].split(',').map(str::trim) {
+            for compound in selector.split([' ', '>']).filter(|part| !part.is_empty()) {
+                let name = compound.split(['[', ':']).next().unwrap();
+                assert!(
+                    matches!(name, "html" | "body") || elements::is_element(name),
+                    "{selector}: {name} is not an element"
+                );
+            }
+            assert!(!selector.contains('.') && !selector.contains('#'), "{selector} has a class or an id");
+        }
+        rest = &rest[close + 1..];
+    }
 }
 
 #[test]

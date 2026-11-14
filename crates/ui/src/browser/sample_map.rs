@@ -521,7 +521,7 @@ pub(crate) fn user_agent_kind_colours() -> [Color32; Kind::ALL.len()] {
     static COLOURS: std::sync::OnceLock<[Color32; Kind::ALL.len()]> = std::sync::OnceLock::new();
     *COLOURS.get_or_init(|| {
         Kind::ALL.map(|kind| {
-            crate::kit::native_css::user_agent_color("sample-point", &[("kind", kind.id())]).unwrap_or(Color32::GRAY)
+            crate::kit::native_css::base_color("sample-point", &[("kind", kind.id())]).unwrap_or(Color32::GRAY)
         })
     })
 }
