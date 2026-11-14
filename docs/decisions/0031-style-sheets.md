@@ -803,7 +803,9 @@ forgot its own scope painted as its parent.
   `[armed]` and `[muted]`, without a value. They are no longer pseudo-classes: a selector with
   `:checked` does not parse, and its rule is skipped with a notice. Pointer and focus states
   stay pseudo-classes (`:hover`, `:active`, `:focus`, `:focus-visible`, `:disabled`), and so do
-  `:open`, `:queued`, `:dragged` and `:drop-target`, which nothing sets yet.
+  `:open`, `:dragged` and `:drop-target`, which nothing sets yet (`:queued`, listed here at first,
+  became the attribute `[queued]`: *Amendment: the Launcher, the mixer, the Arrangement and the
+  piano roll draw from their elements*).
 - **Settings stay as they are for now.** The registry lists the settings each element would
   carry (`meter-style` on `meter`, `track-height` on `arrangement`), as names only, and nothing
   reads them yet. Making them registered properties on their elements, in place of the
@@ -975,3 +977,40 @@ Accepted, from [issue #1370](https://github.com/suhina-daw/suhina-daw/issues/137
   rules: an `auto` size is the content size plus the element's padding and border, and a size
   the sheet sets wins. A splitter stays beside a panel whose size the grid leaves to its content
   size, and its drag sets that size.
+
+## Amendment: the Launcher, the mixer, the Arrangement and the piano roll draw from their elements (2026-11-14)
+
+Accepted, from [issue #1417](https://github.com/suhina-daw/suhina-daw/issues/1417), the first
+slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 10 of #995).
+
+- **What these views draw is an element.** Every colour the Launcher, its mixer strips and
+  meters, the Arrangement (its ruler, grid, lanes, clips, take lanes, automation lanes and
+  envelopes) and the piano roll's grid, notes, ruler and loop row paint is read from the element
+  that draws it, with the palette token it used before
+  as the fallback: where no rule of a sheet reaches the element, it paints as before, in every
+  theme. The palette stays until every view has moved; then the fallbacks become the user-agent
+  sheet's values.
+- **A drawn item's style is read once per kind** (`Look`, from `Name::look` or
+  `Builder::look`), outside the loop that draws its items: a grid line drawn a hundred times is
+  one element of the style tree, so the tree grows with kinds, not with items.
+- **A line or a mark takes only a colour given to it** (`Look::own_color_or`, `Entered::own_color_or`):
+  the text colour a rule gives a view (`session { color }`) does not reach its lines. Text takes
+  the inherited colour (`Look::color_or`, `Entered::color_or`), as the scoped palette gave it.
+- **A toggle keeps its lit state.** While a button is on, its fill and ink come from the sheet
+  only where a rule for the state (`button[checked]`) makes them differ from the same button with
+  only that state off, its pointer states kept (`Builder::enter_against_plain`): neither a rule
+  for every `button` nor a `button:hover` rule hides which one is on (`widgets::toggle_inks`,
+  `Look::background_unlike`). The comparison is its own chain's style, never the values a drawn
+  element held for a transition. The same holds for a clip's `[queued]`, `[selected]` and
+  `[muted]` outlines and fill in a Launcher slot, a picked automation point's `[selected]` colour,
+  and a lane's `[checked]` light.
+- **`[queued]` is an attribute** the app gives, as `[playing]` is: a clip or a track's
+  stop button waiting for its launch. `:queued` is no longer a pseudo-class.
+- **New elements and kinds:** `separator[kind]` for the views' lines, `grid-line`, `tempo-mark`,
+  `start-marker`, `marker`, `time-selection`, `marquee`, `drop-target`, `slot-mark`, `slot-record`,
+  `mapping-overlay`, `clip-fade`, `clip-envelope`, `take-header`, `automation-header`,
+  `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `device-list`,
+  `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool`, `piano-slice`,
+  `piano-row[kind="hover"]`, `piano-note[kind="draft"]`, `velocity[kind="line"]`; Main's header is
+  `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all**
+  `scene[kind="stop-all"]`, the Launcher mixer's top line `divider#mixer-splitter`.

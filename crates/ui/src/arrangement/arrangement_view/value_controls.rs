@@ -232,7 +232,7 @@ pub(super) fn value_control(
         None => value,
     };
     match control {
-        Control::Volume if plain => volume_text(painter, rect, shown, hover),
+        Control::Volume if plain => volume_text(painter, rect, el, shown, hover),
         Control::Volume if state.knobs => volume_knob(painter, rect, el, shown, hover, control_response.as_ref()),
         Control::Volume => volume_field(painter, rect, el, shown, hover),
         Control::Pan if crate::kit::style_class::knob_preference(el, state.knobs) => {
@@ -252,10 +252,10 @@ pub(super) fn volume_knob(
     hover: f32,
     response: Option<&egui::Response>,
 ) {
-    let pointer = motion::mix(theme::text_value(), theme::text_primary(), hover);
+    let pointer = el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
     let text = widgets::format_db(db);
     let right = widgets::ValuePosition::Right;
-    let ink = theme::text_primary();
+    let ink = el.color_or(theme::text_primary());
     widgets::knob_with_value(
         painter,
         rect,
@@ -281,7 +281,7 @@ pub(super) fn pan_knob(
 ) {
     let position = ((pan + 1.0) / 2.0) as f32;
     let text = widgets::format_pan(pan);
-    let (pointer, ink) = (theme::text_primary(), theme::text_secondary());
+    let (pointer, ink) = (el.color_or(theme::text_primary()), el.color_or(theme::text_secondary()));
     let right = widgets::ValuePosition::Right;
     widgets::knob_with_value(painter, rect, el, position, pointer, response, &text, ink, right, theme::TEXT_SMALL);
 }
@@ -350,9 +350,10 @@ pub(super) fn volume_field(
     );
 }
 
-/// A volume as a plain value, for the compact return and main rows.
-pub(super) fn volume_text(painter: &egui::Painter, rect: Rect, db: f64, hover: f32) {
-    let color = motion::mix(theme::text_value(), theme::text_primary(), hover);
+/// A volume as a plain value, for the compact return and main rows, drawn as `el`, the value its
+/// caller entered.
+pub(super) fn volume_text(painter: &egui::Painter, rect: Rect, el: &crate::kit::element::Entered, db: f64, hover: f32) {
+    let color = el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
     widgets::text_in(
         painter,
         rect,

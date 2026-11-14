@@ -2238,7 +2238,7 @@ fn a_take_lanes_edge_drags_its_height() {
 /// A window on the Drums track's first clip as two take lanes of `length` beats, in the
 /// Arrangement.
 #[allow(clippy::unwrap_used)] // a test helper outside #[test] functions
-fn window_with_drums_takes(length: f64) -> Harness<'static, App> {
+pub(super) fn window_with_drums_takes(length: f64) -> Harness<'static, App> {
     let mut project = demo_project();
     let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
     let clip = project
