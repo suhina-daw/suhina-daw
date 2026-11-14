@@ -143,7 +143,10 @@ fn every_port_opens_until_turned_off() {
     assert_eq!(*midi.opened.lock().unwrap(), ["Keys", "Pads"]);
 
     let listed = run(&mut projects, "midi.inputs", json!({})).unwrap();
-    assert_eq!(listed["inputs"][0], json!({ "name": "Keys", "enabled": true, "open": true, "error": null }));
+    assert_eq!(
+        listed["inputs"][0],
+        json!({ "name": "Keys", "enabled": true, "open": true, "claimed": false, "error": null })
+    );
     assert_eq!(listed["connected"], json!(false), "no project plays");
 
     let off = run(&mut projects, "midi.setInput", json!({ "port": "Pads", "enabled": false })).unwrap();
