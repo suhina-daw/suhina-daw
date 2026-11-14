@@ -1018,9 +1018,12 @@ slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 
 ## Amendment: the shared controls draw from their elements (2026-11-14)
 
 Accepted, from [issue #1023](https://github.com/suhina-daw/suhina-daw/issues/1023): the kit's
-shared controls (a track's solo, cue and arm, toggles, fields' underlines, drop-downs, dialog
-buttons, knobs and dials, sliders, sends, fader caps and a typed number) draw from their
-elements as the views do, the palette token as the fallback, a lit toggle lit only by a rule for
-its state (`widgets::Toggle`, `Entered::paint_over`); new kinds are `dropdown[kind="subtle"]`,
-`text-input[kind="typed"]` and `slider[checked]`, and `accent-color` colours a dial's pointer and
-a field's or a track button's focus.
+shared controls (a track's solo, cue and arm, the kit's own fields' underlines, drop-downs,
+dialog buttons, knobs and dials, the swing slider, sends, fader caps and a typed number) draw
+from their elements as the views do, the palette token as the fallback. Solo, cue and arm are lit
+only by a rule for their state, the colour and the background image of a rule for every `button`
+kept off their lit fill, through the whole fade both ways (`widgets::Toggle`,
+`Builder::enter_toggle`, `Entered::paint_over`); the other toggles move to it with their views
+(`widgets::toggle_colors_in`, `toggle_inks`). New kinds are `dropdown[kind="subtle"]` and
+`text-input[kind="typed"]`, which only a rule for the kind reaches, and `slider[checked]`;
+`accent-color` colours a dial's pointer and a field's or a track button's focus.

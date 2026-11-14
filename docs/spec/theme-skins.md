@@ -1368,14 +1368,16 @@ of bars, and a slider id per parameter.
   pointer is over it. `[queued]` is an attribute.
 - **The shared controls (#1023):** the kit's controls draw from their elements the same way: a
   track's solo, cue and arm (`button#control-solo`, `#control-cue`, `#control-arm`, lit only by a
-  rule for `[checked]` or `[armed]`, ringed in `border-color` under the pointer and `accent-color`
-  with the keys), a toggle's colours (`widgets::toggle_colors_in`), a field's underline
-  (`border-color`, `accent-color` while edited), a dialog's button (`border-color`, `color`), a
-  dial (`knob`: rim `border-color`, disc `background-color`, pointer `accent-color`), the swing
-  slider (`slider[checked]` and its `slider-rail`, `slider-fill`, `slider-handle`), a send's rail
-  (the send's `background-color`), a fader cap without artwork (its own `color`), a routing field
-  (`dropdown[kind="subtle"]`, which a rule for every `dropdown` leaves alone) and a typed number
-  (`text-input[kind="typed"]`).
+  rule for `[checked]` or `[armed]`, neither the colour nor the background image of a rule for
+  every `button` over the lit fill, ringed in `border-color` under the pointer and `accent-color`
+  with the keys), the kit's own fields' underlines (`border-color`, `accent-color` while edited),
+  a dialog's button (`border-color`, `color`), a dial (`knob`: rim `border-color`, disc
+  `background-color`, pointer `accent-color`), the swing slider (`slider[checked]` and its
+  `slider-rail`, `slider-fill`, `slider-handle`; lit, its fill only from a rule for the lit
+  slider), a send's rail (the send's `background-color`), a fader cap without artwork (its own
+  `color`), a routing field (`dropdown[kind="subtle"]`) and a typed number
+  (`text-input[kind="typed"]`), which only a rule for the kind reaches. The other toggles keep
+  the palette's colours until their views move.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.
