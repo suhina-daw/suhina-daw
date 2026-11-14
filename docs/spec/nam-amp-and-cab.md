@@ -163,7 +163,8 @@ which run hostile parameter values, hostile buffers, every block size and 8…38
   the runtime does not run) is kept and its device passes the audio through; the panel says why
   ([§ States](#states)).
 - An IR is resampled to the project's rate **once, when it is loaded** (off the audio thread, in
-  the session): the convolver always convolves at the project's rate. A model is **not**
+  the session): the convolver always convolves at the project's rate. The IR keeps its length in time
+  (its frames times the ratio of the rates, rounded, and at least one frame), tail included. A model is **not**
   resampled at load — samples are its language; see [Sample rates](#sample-rates).
 - The file's path is stored in the project: `Device::state` holds the **absolute path** as
   UTF-8 — the same slot plug-ins and `.sd` devices use, saved and read with the project
