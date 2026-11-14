@@ -141,6 +141,8 @@ pub struct Projects {
     plugin_host: PluginHost,
     pub(crate) browser: Browser,
     devices: Devices,
+    /// Extensions (ADR 0015): the store and the surface programs running (ADR 0019 › 10).
+    pub(crate) extensions: crate::extensions::Extensions,
     /// Backups of the open projects: the settings and the thread that writes them.
     pub(crate) backups: crate::backup::Backups,
     /// With no project open, the empty session previews play in, with a player of its own
@@ -690,6 +692,38 @@ impl Projects {
         Self { plugin_host: PluginHost { library, ..PluginHost::default() }, ..Self::default() }
     }
 
+    /// Points the extensions store at `root`, over `SUHINA_EXTENSIONS` too, so a test's store
+    /// is its own whatever the developer's environment names, and reads what is there.
+    pub fn with_extensions_root(mut self, root: &Path) -> Self {
+        self.extensions.force_root(root);
+        self
+    }
+
+    /// The extensions store's root: `root` itself, unless `SUHINA_EXTENSIONS` named a root, in
+    /// which case that one wins (ADR 0015). The app and the MCP server give Suhina's settings
+    /// folder at start-up; the CLI relies on [`Projects::new`]'s default.
+    pub fn set_extensions_root(&mut self, root: &Path) {
+        self.extensions.set_root(root);
+    }
+
+    /// The one program running, for the tests: this slice's store starts none by itself, so
+    /// the tests start exactly one and know which one it is. Not `cfg(test)`: the integration
+    /// tests in `tests/extension_programs.rs` reach these through the compiled lib. The MIDI
+    /// slice will use the by-id accessors on the store instead.
+    pub fn test_extensions_program(&self) -> Option<&crate::extensions::programs::Handle> {
+        self.extensions.programs()
+    }
+
+    /// Drains the running programs' events through the store's one drain, blocking until an
+    /// event answers `which`: the states are applied and the event comes back, so the tests
+    /// see events without stealing them from the session, on a signal rather than a clock.
+    pub fn test_extensions_wait_for(
+        &mut self,
+        which: impl Fn(&crate::extensions::programs::Event) -> bool,
+    ) -> Option<crate::extensions::programs::Event> {
+        self.extensions.wait_for_event(which).map(|(_, event)| event)
+    }
+
     /// The plug-in library. Taking it for changing counts as changing it: sessions get a new
     /// catalog the next time they start a plug-in.
     pub fn library_mut(&mut self) -> &mut Library {
@@ -1051,6 +1085,7 @@ fn projects_commands() -> impl Iterator<Item = &'static CommandSpec<Projects>> {
         .chain(crate::audio_commands())
         .chain(crate::backup::backup_commands())
         .chain(crate::midi_commands())
+        .chain(crate::extensions::extensions_commands())
 }
 
 /// `docs/commands.md`: every command in the order of [`all_commands`], as `suhina-cli commands

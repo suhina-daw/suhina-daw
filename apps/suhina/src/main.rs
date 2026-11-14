@@ -714,6 +714,11 @@ impl Window {
             warnings.push(e);
         }
         self.app.set_file_library(library);
+        // The extensions store lives beside the library's indexes (ADR 0015), unless
+        // SUHINA_EXTENSIONS named another root at start-up.
+        if let Some(settings) = data_dir() {
+            self.app.projects_mut().set_extensions_root(&settings.join("extensions"));
+        }
         // The sample map analyses the library's samples in the background (ADR 0013).
         self.app.projects_mut().start_sound_map();
         // What a crash left in the backups folder is offered (`docs/spec/backups.md`).

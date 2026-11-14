@@ -5823,8 +5823,11 @@ version = "0.0.1"
 dependencies = [
  "chrono",
  "hound",
+ "interprocess",
  "rtrb",
+ "serde",
  "serde_json",
+ "sha2",
  "suhina-als",
  "suhina-device-api",
  "suhina-device-fm-synth",
