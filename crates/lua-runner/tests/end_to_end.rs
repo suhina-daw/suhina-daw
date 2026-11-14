@@ -133,6 +133,34 @@ fn a_port_message_comes_back_as_a_send() {
     runner.quit();
 }
 
+/// The ports handler hears the ports as they are once the script has registered — before
+/// `ready` — and again each time they change: a script that sends can start at once.
+#[test]
+fn the_ports_handler_hears_the_ports_as_they_are_and_again_when_they_change() {
+    let mut runner = Harness::new(
+        r#"
+        suhina.on_ports(function(inputs, outputs)
+            for _, out in ipairs(outputs) do
+                suhina.send(out, suhina.midi.cc(1, 7, #inputs))
+            end
+        end)
+        "#,
+    );
+    // The handshake's ports, to the handler as soon as the script has registered: its first
+    // send-back leaves ahead of `ready`.
+    let sent = runner.line();
+    assert_eq!(sent["op"], "send", "{sent}");
+    assert_eq!(sent["port"], "Pad");
+    assert_eq!(sent["bytes"], "b10701");
+    assert_eq!(runner.line()["op"], "ready", "the script loaded");
+    // The ports replaced whole: the handler hears them again.
+    runner.send(json!({ "op": "ports", "inputs": ["Pad in", "Other"], "outputs": ["Pad"] }));
+    let sent = runner.line();
+    assert_eq!(sent["op"], "send", "{sent}");
+    assert_eq!(sent["bytes"], "b10702");
+    runner.quit();
+}
+
 /// The API's command, read and subscribe, with the tokens carried through.
 #[test]
 fn commands_reads_and_subscriptions_round_trip() {

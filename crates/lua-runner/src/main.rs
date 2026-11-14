@@ -29,7 +29,7 @@ use suhina_plugins::{connect, trace};
 use interprocess::TryClone;
 use interprocess::local_socket::Stream;
 use interprocess::local_socket::traits::Stream as _;
-use mlua::{Function, Lua, MultiValue, Value as LuaValue};
+use mlua::{Function, Lua, MultiValue, Table, Value as LuaValue};
 
 /// Most messages on the runner's send-back queue (spec › Caps); past it `suhina.send` says
 /// false and sends nothing.
@@ -71,6 +71,7 @@ struct Run {
     subscriptions: HashSet<u64>,
     port_message: Option<Function>,
     state: Option<Function>,
+    ports: Option<Function>,
     script_dead: bool,
     next_token: u64,
     /// The wait: its token, and whether it is a command's (`true`) or a read's.
@@ -89,6 +90,7 @@ impl Run {
             subscriptions: HashSet::new(),
             port_message: None,
             state: None,
+            ports: None,
             script_dead: false,
             next_token: 0,
             waiting: None,
@@ -260,7 +262,16 @@ fn run(address: &str, script: &str) -> Result<(), String> {
         .map_err(|e| format!("cannot read the script: {e}"))
         .and_then(|chunk| lua.load(chunk).set_name(script).exec().map_err(|e| e.to_string()));
     match outcome {
-        Ok(()) => emit(&link, &runner, &Message::Ready)?,
+        Ok(()) => {
+            // The script's first look at its ports: what the host sent before it loaded, to its
+            // `on_ports` handler now, so a script that sends sees its ports before anything
+            // else arrives.
+            let handler = runner.borrow_mut().ports.clone();
+            if let Some(handler) = handler {
+                announce_ports(&link, &runner, &lua, handler)?;
+            }
+            emit(&link, &runner, &Message::Ready)?
+        }
         Err(message) => {
             runner.borrow_mut().script_dead = true;
             emit(&link, &runner, &Message::ScriptError { handler: "chunk".into(), message })?;
@@ -318,9 +329,18 @@ fn step_message(
         Message::Ping { id } => emit(link, runner, &Message::Pong { id: *id })?,
         Message::Pong { .. } => {}
         Message::Ports { inputs, outputs } => {
-            let mut runner = runner.borrow_mut();
-            runner.inputs = inputs.clone();
-            runner.outputs = outputs.clone();
+            let call = {
+                let mut runner = runner.borrow_mut();
+                runner.inputs = inputs.clone();
+                runner.outputs = outputs.clone();
+                // A handler never runs inside another handler: while one waits on its answer,
+                // the ports apply and their handler waits its turn — the message queues, and
+                // runs again when it is taken.
+                if runner.script_dead || runner.waiting.is_some() { None } else { runner.ports.clone() }
+            };
+            if let Some(handler) = call {
+                call_ports(link, runner, lua, handler, inputs, outputs)?;
+            }
         }
         Message::Quit => std::process::exit(0),
         Message::Error { message } => {
@@ -425,6 +445,44 @@ fn protocol<T>(result: Result<T, String>) -> mlua::Result<T> {
     result.map_err(mlua::Error::runtime)
 }
 
+/// The ports as they are, to the script's `on_ports` handler: two arrays of names, inputs then
+/// outputs. A handler's error is the boundary, not a failure of the runner.
+fn announce_ports(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, handler: Function) -> Result<(), String> {
+    let (inputs, outputs) = {
+        let runner = runner.borrow_mut();
+        (runner.inputs.clone(), runner.outputs.clone())
+    };
+    call_ports(link, runner, lua, handler, &inputs, &outputs)
+}
+
+fn call_ports(
+    link: &Shared<Link>,
+    runner: &Shared<Run>,
+    lua: &Lua,
+    handler: Function,
+    inputs: &[String],
+    outputs: &[String],
+) -> Result<(), String> {
+    let names = |names: &[String]| -> Result<Table, String> {
+        let table = lua.create_table().map_err(|e| e.to_string())?;
+        for (at, name) in names.iter().enumerate() {
+            table.raw_set(at + 1, lua.create_string(name).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        }
+        Ok(table)
+    };
+    let inputs = names(inputs)?;
+    let outputs = names(outputs)?;
+    match handler.call::<()>((inputs, outputs)) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let message = error.to_string();
+            runner.borrow_mut().script_dead = true;
+            emit(link, runner, &Message::ScriptError { handler: "ports".into(), message })?;
+            Ok(())
+        }
+    }
+}
+
 /// One message from the runner to Suhina: the send-back queue goes first, so the messages
 /// leave in the order the script made them.
 fn emit(link: &Shared<Link>, runner: &Shared<Run>, message: &Message) -> Result<(), String> {
@@ -460,8 +518,10 @@ fn register_api(lua: &Lua, runner: &Shared<Run>, link: &Shared<Link>) -> Result<
     };
     let port_message_slot: fn(&mut Run) -> &mut Option<Function> = |run| &mut run.port_message;
     let state_slot: fn(&mut Run) -> &mut Option<Function> = |run| &mut run.state;
+    let ports_slot: fn(&mut Run) -> &mut Option<Function> = |run| &mut run.ports;
     set(&suhina, "on_port_message", set_handler(port_message_slot)?)?;
     set(&suhina, "on_state", set_handler(state_slot)?)?;
+    set(&suhina, "on_ports", set_handler(ports_slot)?)?;
 
     let send = {
         let runner = Rc::clone(runner);

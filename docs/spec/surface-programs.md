@@ -134,6 +134,7 @@ library — the usual modes, layers and session, mixer and device components —
 | `suhina.version` | The runner's version, a string. |
 | `suhina.on_port_message(handler)` | Sets the handler for `port_message`: `(bytes, port, timestamp)`, the bytes a Lua string (binary). `nil` clears it. |
 | `suhina.on_state(handler)` | Sets the handler for `state`: `(token, value)`. `nil` clears it. |
+| `suhina.on_ports(handler)` | Sets the handler for the claimed ports: `(inputs, outputs)`, two arrays of port names, called once the script has registered — the ports as they are — and again each time they change. `nil` clears it. |
 | `suhina.send(port, bytes)` | Queues a send-back: true, or false and nothing sent when the queue is full or `port` is not an open output port. |
 | `suhina.command(id, params, gesture)` | Runs a command and returns `ok, error`. `params` is a table or `nil`; `gesture` a string or `nil`. |
 | `suhina.read(id, params)` | Runs a reading command and returns `value, error`. |
@@ -186,7 +187,8 @@ Each part lands with tests, by what it is:
   handler called after, pings still answered, `quit` still honoured;
 - end to end: the runner binary as a child process over a real socket — handshake, `ready`, a
   port message in and its send-back out, a command and its answer, a subscription's first
-  `state`, the error boundary, `quit`.
+  `state`, the ports handler's first call and its next one when the ports change, the error
+  boundary, `quit`.
 
 No test depends on timing (AGENTS.md rule 7): the harness reads answers by blocking on the
 socket, and nothing waits a wall-clock while.
