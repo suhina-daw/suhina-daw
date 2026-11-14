@@ -13,8 +13,11 @@ last_verified: 2026-11-07
   pitch bend, program change, 14-bit controller pairs).
 - **Status:** planned. Built so far: the project's `controller_mappings` with launch keys as
   its first targets, `mapping.add`, `mapping.remove` and `mapping.list` for them, and the
-  **Map** button ([#1162](https://github.com/suhina-daw/suhina-daw/issues/1162), *Launch keys*).
-  Controllers themselves (the other sources and targets, shaping the value, takeover, gestures,
+  **Map** button ([#1162](https://github.com/suhina-daw/suhina-daw/issues/1162), *Launch keys*);
+  and the surface-program router of [Surface programs](#surface-programs-later) — a running
+  program's claimed ports open raw for it and its send-backs are written out
+  ([#1422](https://github.com/suhina-daw/suhina-daw/issues/1422)). Controllers themselves (the
+  other sources and targets, shaping the value, takeover, gestures,
   profiles, learning MIDI in the mapping mode) are not built; the split into work is in the pull
   request that added this document ([#403](https://github.com/suhina-daw/suhina-daw/issues/403)). It
   builds on MIDI input (ADR 0017, [#291](https://github.com/suhina-daw/suhina-daw/pull/291)).

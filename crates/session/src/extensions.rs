@@ -285,6 +285,9 @@ pub struct Extension {
     pub state: State,
     /// The last error a running program reported, cleared by `extensions.restart`.
     pub last_error: Option<String>,
+    /// The script stopped at its error boundary: the process keeps running, but the script is
+    /// dead until `extensions.restart`, so the program holds no ports meanwhile.
+    script_stopped: bool,
     /// The program's handle, when it has been started.
     pub program: Option<programs::Handle>,
 }
@@ -326,6 +329,10 @@ pub struct Extensions {
     env_root: Option<PathBuf>,
     root: Option<PathBuf>,
     known: Vec<Extension>,
+    /// Bumped whenever the programs running (and so the ports claimed) may have changed: a
+    /// program started or stopped, its script stopped at its boundary, the store re-read. The
+    /// MIDI router compares it against the look it last synced at.
+    pub(crate) claims_epoch: u64,
 }
 
 impl Default for Extensions {
@@ -337,8 +344,12 @@ impl Default for Extensions {
 impl Extensions {
     pub fn new() -> Self {
         let env_root = std::env::var_os("SUHINA_EXTENSIONS").map(PathBuf::from);
-        let mut extensions =
-            Self { env_root: env_root.clone(), root: env_root.or_else(default_root), known: Vec::new() };
+        let mut extensions = Self {
+            env_root: env_root.clone(),
+            root: env_root.or_else(default_root),
+            known: Vec::new(),
+            claims_epoch: 1,
+        };
         extensions.reload();
         extensions
     }
@@ -371,10 +382,12 @@ impl Extensions {
     /// programs running keep running — their handles re-attach to the re-read entries by id,
     /// and a program whose extension is gone from the store stops when its handle is dropped.
     pub fn reload(&mut self) {
-        let mut running: Vec<(String, programs::Handle)> = self
+        let mut running: Vec<(String, bool, programs::Handle)> = self
             .known
             .iter_mut()
-            .filter_map(|extension| extension.program.take().map(|program| (extension.id.clone(), program)))
+            .filter_map(|extension| {
+                extension.program.take().map(|program| (extension.id.clone(), extension.script_stopped, program))
+            })
             .collect();
         self.known.clear();
         let Some(root) = &self.root else { return };
@@ -395,6 +408,7 @@ impl Extensions {
                     reason: None,
                     state: State::Available,
                     last_error: None,
+                    script_stopped: false,
                     program: None,
                 },
                 Err(reason) => Extension {
@@ -405,17 +419,21 @@ impl Extensions {
                     reason: Some(reason),
                     state: State::Refused,
                     last_error: None,
+                    script_stopped: false,
                     program: None,
                 },
             };
-            if let Some(at) = running.iter().position(|(running_id, _)| *running_id == known.id) {
-                let (_, program) = running.remove(at);
+            if let Some(at) = running.iter().position(|(running_id, _, _)| *running_id == known.id) {
+                let (_, stopped, program) = running.remove(at);
                 known.program = Some(program);
                 known.state = State::Running;
+                known.script_stopped = stopped;
             }
             self.known.push(known);
         }
-        // A program whose extension is gone from the store: dropped here, so it stops.
+        // A program whose extension is gone from the store: dropped here, so it stops. Either
+        // way the claims may have changed, so the router looks again.
+        self.claims_epoch += 1;
     }
 
     fn known_mut(&mut self, id: &str) -> Result<&mut Extension, CommandError> {
@@ -434,14 +452,26 @@ impl Extensions {
             let Some(program) = &mut extension.program else { continue };
             for event in program.drain() {
                 match &event {
-                    programs::Event::Running => extension.state = State::Running,
+                    programs::Event::Running => {
+                        extension.state = State::Running;
+                        extension.script_stopped = false;
+                        // The claims may have changed: the router looks again.
+                        self.claims_epoch += 1;
+                    }
                     programs::Event::Crashed(reason) => {
                         extension.state = State::Crashed;
                         extension.last_error = Some(reason.clone());
+                        self.claims_epoch += 1;
                     }
-                    programs::Event::ScriptError(message) => extension.last_error = Some(message.clone()),
+                    programs::Event::ScriptError(message) => {
+                        extension.last_error = Some(message.clone());
+                        // The script is dead until `extensions.restart`; its ports fall back
+                        // (docs/spec/midi-mapping.md › Surface programs).
+                        extension.script_stopped = true;
+                        self.claims_epoch += 1;
+                    }
                     programs::Event::SendBack { .. } => {
-                        // The MIDI slice consumes these; until then they are counted, not kept.
+                        // The MIDI router consumes these, where the frame drains.
                     }
                     programs::Event::Dropped(count) => {
                         extension.last_error = Some(format!("{count} send-backs dropped, the queue was full"));
@@ -476,6 +506,22 @@ impl Extensions {
         self.drain_events().into_iter().find(|(_, event)| which(event))
     }
 
+    /// Blocks until a running program's queue holds an event that answers `which`, and leaves
+    /// it queued: the router's tests wait for a send-back this way, then let the frame's drain
+    /// — the one that writes it out — take it. On the supervisor's signal, not a clock.
+    pub fn peek_for_event(&mut self, which: impl Fn(&programs::Event) -> bool) {
+        let Some(shared) =
+            self.known.iter().find_map(|extension| extension.program.as_ref()).map(|program| program.shared())
+        else {
+            return;
+        };
+        let (queue, signal) = &*shared;
+        let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        while !queue.iter().any(&which) {
+            queue = signal.wait(queue).unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+    }
+
     /// The running program of an extension, by id: the MIDI slice sends it the ports and takes
     /// its send-backs.
     pub fn program(&self, id: &str) -> Option<&programs::Handle> {
@@ -487,11 +533,61 @@ impl Extensions {
         self.known.iter_mut().find(|e| e.id == id).and_then(|e| e.program.as_mut())
     }
 
+    /// What each running program claims, for the MIDI router: the extension's id, its
+    /// manifest's port name patterns, and the handle to deliver to. A program whose script
+    /// stopped at its boundary holds no ports (they fall back) until `extensions.restart`.
+    pub(crate) fn claims(&self) -> Vec<Claim<'_>> {
+        self.known
+            .iter()
+            .filter_map(|extension| {
+                if extension.state != State::Running || extension.script_stopped {
+                    return None;
+                }
+                let handle = extension.program.as_ref()?;
+                let patterns = extension.manifest.as_ref()?.ports.as_deref()?;
+                Some(Claim { id: &extension.id, patterns, handle })
+            })
+            .collect()
+    }
+
     /// The one program running, for the tests: this slice's store starts none by itself, so
     /// the tests start exactly one.
     pub fn programs(&self) -> Option<&programs::Handle> {
         self.known.iter().find_map(|e| e.program.as_ref())
     }
+}
+
+/// What a running surface program claims, for one look at the ports: its extension's id, the
+/// manifest's port name patterns, and the handle the router delivers to.
+pub(crate) struct Claim<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) patterns: &'a [String],
+    pub(crate) handle: &'a programs::Handle,
+}
+
+/// Whether a port name matches a manifest pattern: `*` wildcards, case ignored
+/// (`docs/spec/extensions.md` › The manifest, the way a controller profile's patterns match).
+pub(crate) fn port_matches(pattern: &str, name: &str) -> bool {
+    let pattern = pattern.to_lowercase();
+    let name = name.to_lowercase();
+    // Between the wildcards, each piece must be found whole, in order: the first as a prefix,
+    // the last as a suffix, the middles anywhere but not before the piece before them.
+    let mut rest = name.as_str();
+    let pieces: Vec<&str> = pattern.split('*').collect();
+    let Some((first, tail)) = pieces.split_first() else { return false };
+    let Some((last, middles)) = tail.split_last() else {
+        // No wildcard at all: the whole name must be the pattern.
+        return rest == *first;
+    };
+    let Some(after_first) = rest.strip_prefix(first) else { return false };
+    rest = after_first;
+    for middle in middles {
+        match rest.find(middle) {
+            Some(at) => rest = &rest[at + middle.len()..],
+            None => return false,
+        }
+    }
+    rest.ends_with(last)
 }
 
 /// `extensions.list`: every known extension with its state and, when it is not usable, why.
@@ -606,8 +702,12 @@ fn restart(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
     extension.value = Some(value);
     extension.reason = None;
     extension.last_error = None;
+    extension.script_stopped = false;
     extension.program = Some(handle);
     extension.state = State::Running;
+    // The new program's ports are claimed at once: this look syncs the claims.
+    projects.extensions.claims_epoch += 1;
+    projects.poll_plugins();
     Ok(json!({ "id": id, "state": "running" }))
 }
 
@@ -629,6 +729,8 @@ fn remove(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
         let _ = std::fs::remove_dir_all(&folder);
     }
     projects.extensions.reload();
+    // The program's ports go back to the usual path at once: this look syncs the claims.
+    projects.poll_plugins();
     Ok(json!({ "id": id, "removed": true }))
 }
 
@@ -759,4 +861,38 @@ fn copy_folder(from: &Path, to: &Path, depth: usize) -> Result<(), CommandError>
 fn sha256(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod matches {
+    use super::port_matches;
+
+    #[test]
+    fn a_pattern_matches_whole_names_case_ignored() {
+        assert!(port_matches("APC40 mkII", "APC40 mkII"));
+        assert!(port_matches("apc40 mkii", "APC40 MKII"));
+        assert!(!port_matches("APC40 mkII", "APC40 mkII MIDI 1"));
+        assert!(!port_matches("APC40 mkII", "Other"));
+    }
+
+    #[test]
+    fn a_wildcard_matches_any_run_at_each_place() {
+        assert!(port_matches("APC*", "APC40 mkII MIDI 1"));
+        assert!(port_matches("*MIDI 1", "APC40 mkII MIDI 1"));
+        assert!(port_matches("APC*MIDI 1", "APC40 mkII MIDI 1"));
+        assert!(port_matches("*40*", "APC40 mkII MIDI 1"));
+        assert!(port_matches("*", "anything at all"));
+        // A wildcard matches the empty run too.
+        assert!(port_matches("APC*mkII", "APCmkII"));
+        assert!(!port_matches("APC*", "Other"));
+        assert!(!port_matches("APC* MIDI 1", "APC40 mkII MIDI 2"));
+    }
+
+    #[test]
+    fn the_pieces_are_found_in_order() {
+        assert!(port_matches("AB*C*D", "ABxCD"));
+        assert!(port_matches("AB*AB", "ABABAB"));
+        // A middle piece found past where the last piece must be does not match.
+        assert!(!port_matches("A*M*Z", "AZM"));
+    }
 }

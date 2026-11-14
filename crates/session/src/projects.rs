@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use suhina_plugins::library::Library;
 
 use crate::commands::{CommandKind, CommandSpec, Param, ParamType, commands, param};
+use crate::extensions::programs;
 use crate::plugins::plugin_commands;
 use crate::{Agents, CommandError, Policy, Session};
 
@@ -244,7 +245,9 @@ impl Projects {
     /// hear about: ports that could not be opened.
     pub fn set_midi_system(&mut self, system: std::sync::Arc<dyn crate::MidiSystem>) -> Vec<String> {
         self.devices.midi.system = Some(system);
-        self.devices.midi.sync()
+        let epoch = self.extensions.claims_epoch;
+        let claims = self.extensions.claims();
+        self.devices.midi.sync(&claims, epoch)
     }
 
     /// The MIDI input ports turned off, by name (the window keeps them in its settings).
@@ -255,7 +258,9 @@ impl Projects {
     /// Turns the ports `off` names off and every other one on, opening and closing them.
     pub fn set_midi_inputs_off(&mut self, off: impl IntoIterator<Item = String>) -> Vec<String> {
         self.devices.midi.off = off.into_iter().collect();
-        self.devices.midi.sync()
+        let epoch = self.extensions.claims_epoch;
+        let claims = self.extensions.claims();
+        self.devices.midi.sync(&claims, epoch)
     }
 
     /// Where the open MIDI ports send what they play: the active project's engine.
@@ -273,16 +278,35 @@ impl Projects {
         &mut self.devices.midi
     }
 
+    /// Looks at the MIDI ports again — the rescan the `midi.*` commands and the frame call —
+    /// with the running programs' claims: claimed ports open raw for their programs, their
+    /// output ports open for their send-backs.
+    pub(crate) fn midi_sync(&mut self) -> Vec<String> {
+        let epoch = self.extensions.claims_epoch;
+        let claims = self.extensions.claims();
+        self.devices.midi.sync(&claims, epoch)
+    }
+
     /// Sends the MIDI inputs' notes to the active project's engine when it is a new one, and
-    /// looks at the ports again now and then, so a controller plugged in later is heard.
+    /// looks at the ports again now and then, so a controller plugged in later is heard. The
+    /// running programs' send-backs go out on every look — they queue in the supervisor, and
+    /// past its cap they are dropped, so they are drained each frame.
     fn poll_midi(&mut self) -> Vec<String> {
         if let Some(sender) = self.session_mut(None).ok().and_then(Session::take_live_input) {
             self.devices.midi.input.connect(sender);
         }
+        for (id, event) in self.extensions.drain_events() {
+            if let programs::Event::SendBack { port, bytes } = event {
+                self.devices.midi.send_back(&id, &port, &bytes);
+            }
+        }
         if self.devices.midi.system.is_some()
-            && self.devices.midi.checked.is_none_or(|t| t.elapsed() >= crate::midi::MIDI_RESCAN)
+            && (self.devices.midi.synced_epoch != self.extensions.claims_epoch
+                || self.devices.midi.checked.is_none_or(|t| t.elapsed() >= crate::midi::MIDI_RESCAN))
         {
-            return self.devices.midi.sync();
+            let epoch = self.extensions.claims_epoch;
+            let claims = self.extensions.claims();
+            return self.devices.midi.sync(&claims, epoch);
         }
         Vec::new()
     }
@@ -722,6 +746,13 @@ impl Projects {
         which: impl Fn(&crate::extensions::programs::Event) -> bool,
     ) -> Option<crate::extensions::programs::Event> {
         self.extensions.wait_for_event(which).map(|(_, event)| event)
+    }
+
+    /// Blocks until a running program's queue holds an event that answers `which`, and leaves
+    /// it queued for the frame's drain: the router's tests wait for a send-back this way, then
+    /// let `poll_plugins` take it and write it out.
+    pub fn test_extensions_peek_for(&mut self, which: impl Fn(&crate::extensions::programs::Event) -> bool) {
+        self.extensions.peek_for_event(which);
     }
 
     /// The plug-in library. Taking it for changing counts as changing it: sessions get a new

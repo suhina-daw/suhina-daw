@@ -5,8 +5,8 @@
 //! `docs/spec/surface-programs.md`): Suhina's side of the protocol, one control thread per
 //! program. The thread starts the shipped runner beside this program with the extension's
 //! script, speaks the handshake, sends pings at the plug-in host's health rhythm, restarts a
-//! crashed or hung process, and hands the script's send-backs to the session as events —
-//! where they go is the MIDI slice's business; until then they are counted.
+//! crashed or hung process, and hands the script's send-backs to the session as events — the
+//! MIDI router writes them to the program's output ports.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -43,11 +43,12 @@ const CRASHES_ALLOWED: usize = 3;
 const CRASH_WINDOW: Duration = Duration::from_secs(60);
 
 /// What the session does to a running program.
-enum ToProgram {
+pub(crate) enum ToProgram {
     /// The claimed ports changed; the whole list is sent again.
     Ports { inputs: Vec<String>, outputs: Vec<String> },
-    /// A raw port message, as the MIDI router will send it (the tests use it first).
-    TestPortMessage { port: String, bytes: Vec<u8> },
+    /// A raw message read from one of the program's claimed input ports, with the driver's
+    /// arrival timestamp in microseconds.
+    PortMessage { port: String, timestamp: u64, bytes: Vec<u8> },
     /// End the process, as a crash does (the tests use it first); the supervisor kills only
     /// the process it started, the one named by `pid`.
     TestKill { pid: u32 },
@@ -74,7 +75,9 @@ pub enum Event {
 /// notifies, the session drains, and a waiter blocks on the signal rather than a clock.
 type Shared = Arc<(Mutex<VecDeque<Event>>, Condvar)>;
 
-/// A running program's handle: the session's half. Dropping it stops the program.
+/// A running program's handle: the session's half. Dropping it stops the program. Each start
+/// carries a token of its own, so the MIDI router tells a restart's handle from the one it
+/// opened the ports for.
 pub struct Handle {
     to: Sender<ToProgram>,
     events: Shared,
@@ -82,6 +85,14 @@ pub struct Handle {
     /// The runner process's id, for the tests that kill it (a crash is otherwise hard to make
     /// on cue); `None` until the handshake is through.
     pid: Arc<std::sync::atomic::AtomicU32>,
+    /// This handle's token: a new one at every [`start`], different for every restart.
+    token: u64,
+}
+
+/// The next handle's token.
+fn next_token() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Handle {
@@ -98,10 +109,16 @@ impl Handle {
         Arc::clone(&self.events)
     }
 
-    /// The claimed ports changed; the program hears the whole list again (the MIDI slice calls
-    /// this where the ports are opened and closed).
+    /// The claimed ports changed; the program hears the whole list again (the MIDI router
+    /// calls this where the ports are opened and closed).
     pub fn set_ports(&self, inputs: Vec<String>, outputs: Vec<String>) {
         let _ = self.to.send(ToProgram::Ports { inputs, outputs });
+    }
+
+    /// This handle's token: a new one at every restart, so the router's bookkeeping keyed by
+    /// it notices when the handle it opened the ports for is no longer the one running.
+    pub(crate) fn token(&self) -> u64 {
+        self.token
     }
 
     /// The runner process's id, once the supervisor has spawned it. A test reads this after
@@ -111,10 +128,21 @@ impl Handle {
         (pid != 0).then_some(pid)
     }
 
-    /// A raw port message, as the MIDI router will send it once it exists: the tests use this
-    /// to drive the script without a MIDI port.
+    /// The order channel, for the router's sink: a raw port message goes through it.
+    pub(crate) fn sender(&self) -> Sender<ToProgram> {
+        self.to.clone()
+    }
+
+    /// Delivers a raw message read from the claimed input port `port`, with the driver's
+    /// arrival timestamp in microseconds.
+    pub(crate) fn port_message(&self, port: &str, timestamp: u64, bytes: &[u8]) {
+        let _ = self.to.send(ToProgram::PortMessage { port: port.to_string(), timestamp, bytes: bytes.to_vec() });
+    }
+
+    /// A raw port message with no timestamp, as the tests drive the script without a MIDI
+    /// port.
     pub fn test_port_message(&self, port: &str, bytes: &[u8]) {
-        let _ = self.to.send(ToProgram::TestPortMessage { port: port.to_string(), bytes: bytes.to_vec() });
+        self.port_message(port, 0, bytes);
     }
 
     /// Ends the runner process, as a crash does; the tests make one on cue. Succeeds only when
@@ -171,8 +199,8 @@ pub fn runner_path() -> PathBuf {
 
 /// Starts `extension`'s script (`script`, in its store `folder`) in the shipped runner, on a
 /// thread of its own. The handshake is the thread's; the handle hears `Running` when it is
-/// through, and everything after. A program starts with no ports open; the MIDI slice sends
-/// the real ones with [`Handle::set_ports`] where the ports are opened.
+/// through, and everything after. A program starts with no ports open; the MIDI router sends
+/// the real ones with [`Handle::set_ports`] when it opens them.
 pub fn start(id: &str, runner: &str, folder: &Path, script: &str) -> Result<Handle, CommandError> {
     if runner != "lua" {
         return Err(format!("the runner {runner:?} is not one Suhina ships").into());
@@ -191,14 +219,17 @@ pub fn start(id: &str, runner: &str, folder: &Path, script: &str) -> Result<Hand
     let thread_events = Arc::clone(&events);
     let pid = Arc::new(std::sync::atomic::AtomicU32::new(0));
     let thread_pid = Arc::clone(&pid);
+    let token = next_token();
     let thread = std::thread::Builder::new()
         .name("suhina-surface".into())
         .spawn(move || run(&id, &runner, &script_path, from, &thread_events, &thread_pid))
         .map_err(|e| crate::CommandError(format!("the program's thread cannot be started: {e}")))?;
-    Ok(Handle { to, events, thread: Some(thread), pid })
+    Ok(Handle { to, events, thread: Some(thread), pid, token })
 }
 
 /// The thread: start the process, watch it, restart it when it dies or hangs, until stopped.
+/// The ports the session last sent are kept across the restarts: the new process hears them
+/// at its handshake, so a crash costs no port message.
 fn run(
     id: &str,
     runner: &Path,
@@ -208,6 +239,7 @@ fn run(
     pid: &std::sync::atomic::AtomicU32,
 ) {
     let mut crashes: Vec<Instant> = Vec::new();
+    let mut ports: (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
     loop {
         // Too many crashes too close together: the restarts stop and the user decides.
         crashes.retain(|at| at.elapsed() < CRASH_WINDOW);
@@ -218,7 +250,7 @@ fn run(
             );
             return;
         }
-        match watch(runner, script, &from, events, pid) {
+        match watch(runner, script, &from, events, pid, &mut ports) {
             Ok(()) => return,
             Err(reason) => {
                 crashes.push(Instant::now());
@@ -265,14 +297,16 @@ impl Child {
 }
 
 /// One order from the session, applied to the program's link and process. A failed send says
-/// the connection is dead; the next read reports it and the restart takes over.
-fn apply(order: ToProgram, link: &mut Link, child: &mut Child) {
+/// the connection is dead; the next read reports it and the restart takes over. A Ports order
+/// is remembered, so the next process hears the same ports at its handshake.
+fn apply(order: ToProgram, link: &mut Link, child: &mut Child, ports: &mut (Vec<String>, Vec<String>)) {
     match order {
         ToProgram::Ports { inputs, outputs } => {
+            *ports = (inputs.clone(), outputs.clone());
             let _ = link.send(&Message::Ports { inputs, outputs });
         }
-        ToProgram::TestPortMessage { port, bytes } => {
-            let _ = link.send(&Message::PortMessage { port, timestamp: 0, bytes });
+        ToProgram::PortMessage { port, timestamp, bytes } => {
+            let _ = link.send(&Message::PortMessage { port, timestamp, bytes });
         }
         ToProgram::TestKill { pid } => {
             // The id check: between the order and this line the process may have died and been
@@ -289,13 +323,15 @@ fn apply(order: ToProgram, link: &mut Link, child: &mut Child) {
 }
 
 /// One process, from the spawn to its end: the handshake, the pings, the restarts' verdict.
-/// `Err` is why the process needs another one; `Ok` says the program was stopped.
+/// `Err` is why the process needs another one; `Ok` says the program was stopped. `ports` is
+/// what the session last sent, heard by the new process at its handshake.
 fn watch(
     runner: &Path,
     script: &Path,
     from: &Receiver<ToProgram>,
     events: &Shared,
     pid: &std::sync::atomic::AtomicU32,
+    ports: &mut (Vec<String>, Vec<String>),
 ) -> Result<(), String> {
     let (address, name) = control_name().map_err(|e| format!("the control socket's name cannot be made: {e}"))?;
     let listener = ListenerOptions::new()
@@ -330,12 +366,14 @@ fn watch(
     stream.set_nonblocking(true).map_err(|e| child.end(format!("the runner's connection cannot be used: {e}")))?;
     let mut link = Link::new(stream).map_err(|reason| child.end(reason))?;
 
-    // The handshake: hello each way, then the ports, then the script's load. The socket stays
+    // The handshake: hello each way, then the ports the session last sent — empty at a fresh
+    // start, the running set at a restart — then the script's load. The socket stays
     // nonblocking: the read returns None until the runner speaks, and the loop polls. Orders
     // that arrive while the script loads are kept for the running loop, not dropped: a Ports
     // message sent while the script loads is the program's ports.
     link.send(&Message::Hello { version: PROTOCOL }).map_err(|reason| child.end(reason))?;
-    link.send(&Message::Ports { inputs: Vec::new(), outputs: Vec::new() }).map_err(|reason| child.end(reason))?;
+    link.send(&Message::Ports { inputs: ports.0.clone(), outputs: ports.1.clone() })
+        .map_err(|reason| child.end(reason))?;
     let mut script_errored = false;
     let mut deferred: Vec<ToProgram> = Vec::new();
     loop {
@@ -379,15 +417,17 @@ fn watch(
         }
         std::thread::sleep(POLL);
     }
-    if !script_errored {
-        report(events, Event::Running);
-    }
     for order in deferred {
         let stopped = matches!(order, ToProgram::Stop);
-        apply(order, &mut link, &mut child);
+        apply(order, &mut link, &mut child, ports);
         if stopped {
             return Ok(());
         }
+    }
+    // Running only now: the script is loaded and everything sent before it is applied, its
+    // ports among them, so what the session does next reaches the script.
+    if !script_errored {
+        report(events, Event::Running);
     }
 
     // Running: pings out at the health rhythm, everything the script says taken down. A script
@@ -404,7 +444,7 @@ fn watch(
                 child.stop();
                 return Ok(());
             }
-            Ok(order) => apply(order, &mut link, &mut child),
+            Ok(order) => apply(order, &mut link, &mut child, ports),
             Err(TryRecvError::Empty) => {}
         }
         // The script's lines, without waiting.
