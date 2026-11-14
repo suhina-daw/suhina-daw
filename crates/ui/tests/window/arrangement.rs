@@ -1335,6 +1335,77 @@ fn dragging_a_midi_clips_right_edge_makes_it_longer_on_the_grid() {
     assert_eq!(beat_b(&harness), before + 4.0, "a bar longer");
 }
 
+/// The length of Beat B on Drums, the clip from beat 64.
+fn beat_b_length(h: &Harness<'static, App>) -> Option<f64> {
+    let p = h.state().session()?.project();
+    let track = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == track)?;
+    lane.clips.iter().find(|c| (c.start - 64.0).abs() < 1e-6).map(|c| c.length)
+}
+
+/// Escape lets go of a drag under way: the edge's release then trims nothing (#1158).
+#[test]
+fn escape_cancels_a_clip_edge_drag() {
+    let mut harness = arrangement_app();
+    let before = beat_b_length(&harness).unwrap();
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    let to = edge + egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    assert!(harness.state().arrangement().gesture_under_way(), "the edge is being dragged");
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "Escape let go of it");
+    // Moving on and letting go with the button still held from before does nothing.
+    harness.hover_at(to);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "the held drag did not start again");
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(beat_b_length(&harness), Some(before), "the clip kept its length");
+}
+
+/// A drag let go of while the Arrangement was not drawn (Tab to the Launcher view mid-drag) ends
+/// without doing anything, and the next drag starts as usual (#1158).
+#[test]
+fn a_drag_released_out_of_sight_ends_and_the_next_one_starts() {
+    let mut harness = arrangement_app();
+    let before = beat_b_length(&harness).unwrap();
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    let to = edge + egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert!(harness.query_by_label("Right edge of Beat B on Drums").is_none(), "the Launcher view is shown");
+    harness.drop_at(to);
+    harness.run();
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "the lost drag ended");
+    assert_eq!(beat_b_length(&harness), Some(before), "its release did nothing");
+    // A new drag of the edge trims the clip by a bar.
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(beat_b_length(&harness), Some(before + 4.0), "a bar longer");
+}
+
 /// The clip is drawn at its new length from the frame the button comes up on. In the window the
 /// trim runs after that frame is drawn, and the clip showed as it was before the drag for that
 /// one frame; the test harness draws the frame again once the trim ran, so it can only check that

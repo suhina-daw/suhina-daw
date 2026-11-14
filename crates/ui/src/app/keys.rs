@@ -89,6 +89,18 @@ impl App {
     /// Runs the actions whose keys were pressed (the keymap), unless a text field has the
     /// keyboard or Settings is waiting for a key to bind.
     pub(super) fn shortcuts(&mut self, ui: &Ui, actions: &mut Vec<Action>) {
+        // Escape lets go of a drag under way in the Arrangement, doing nothing its release would
+        // have done (#1158). That press is the drag's alone: it does not count toward Escape twice
+        // or run another key's action. A value control holding the keys still sees it, and lets
+        // them go.
+        if self.arrangement.gesture_under_way() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.arrangement.cancel_gesture();
+            if !widgets::value_active(ui.ctx()) {
+                ui.input_mut(|i| {
+                    i.events.retain(|e| !matches!(e, egui::Event::Key { key: egui::Key::Escape, pressed: true, .. }))
+                });
+            }
+        }
         // A prompt waiting on a stored edit (the ARA one) included: a key that changed the
         // project meanwhile would leave that edit naming what is gone.
         if ui.ctx().egui_wants_keyboard_input()
