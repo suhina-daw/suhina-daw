@@ -23,6 +23,7 @@ mod device_groups;
 mod devices;
 mod editing;
 mod export;
+mod extensions;
 mod files;
 mod follow;
 mod ids;

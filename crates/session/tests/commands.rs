@@ -1511,7 +1511,10 @@ fn command_ids_and_parameters_follow_one_convention() {
     for command in all.as_array().unwrap() {
         let id = command["id"].as_str().unwrap();
         let namespace = id.split('.').next().unwrap();
-        if namespace.ends_with('s') {
+        // `extensions` is plural on purpose, as its spec names the commands
+        // (`docs/spec/extensions.md` › Adding, listing, removing): the namespace is the kind of
+        // object, and an extension store holds many.
+        if namespace.ends_with('s') && namespace != "extensions" {
             wrong.push(format!("{id}: the namespace is plural"));
         }
         for name in command["params"]["properties"].as_object().unwrap().keys() {

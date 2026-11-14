@@ -1,0 +1,23 @@
+[package]
+name = "suhina-lua-runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "suhina-lua-runner"
+path = "src/main.rs"
+
+[dependencies]
+suhina-plugins.workspace = true
+interprocess = "2.4"  # 0BSD OR Apache-2.0
+serde_json.workspace = true
+mlua.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+sha2 = "0.11"  # MIT OR Apache-2.0
+suhina-session.workspace = true
