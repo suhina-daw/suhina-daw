@@ -186,6 +186,11 @@ jobs:
       # The vst2 feature is on by default (ADR 0022's amendment), so the workspace steps
       # above check it; this checks that a build opting out still compiles.
       - run: cargo clippy -p suhina-plugin-host --all-targets --no-default-features -- -D warnings
+      # third_party/nam-rs is outside the workspace, so the steps above skip its tests: these
+      # cover Suhina's changes to it (third_party/nam-rs/VENDORED.md). The published crate leaves
+      # out tests/fixtures, which the model_runtime and top-level wavenet tests read.
+      - name: Vendored nam-rs (fast tanh, state copy, block kernel)
+        run: cargo test --manifest-path third_party/nam-rs/Cargo.toml --lib -- fast_math wavenet::gating wavenet::layer wavenet::conv wavenet::array wavenet::head wavenet::film lstm
       - name: ASIO driver initialization contract
         if: runner.os == 'Windows'
         env:
