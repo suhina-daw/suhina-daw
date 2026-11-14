@@ -302,12 +302,12 @@ impl Updates {
         {
             let bar = line(&mut y).shrink2(Vec2::new(0.0, 7.0));
             let track = PROGRESS.enter();
-            painter.rect_filled(bar, 0.0, track.background_or(theme::control_background()));
+            painter.rect_filled(bar, 0.0, track.background());
             let part = (*done as f32 / build.size as f32).clamp(0.0, 1.0);
             painter.rect_filled(
                 Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
                 0.0,
-                PROGRESS_FILL.enter().background_or(theme::accent()),
+                PROGRESS_FILL.enter().background(),
             );
             drop(track);
         } else {

@@ -616,7 +616,7 @@ fn show_lanes(
         let band = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(top + 2.0, (top + 42.0).min(bottom)));
         let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
         painter.rect_filled(band, 2.0, target.background_or(theme::accent().gamma_multiply(0.12)));
-        let outline = target.own_color_or(theme::accent());
+        let outline = target.color();
         painter.rect_stroke(band, 2.0, theme::hairline(outline), egui::StrokeKind::Inside);
         widgets::text_in(
             &painter,
@@ -1611,7 +1611,7 @@ fn show_lanes(
     {
         let y = if below { row.time.bottom() + 0.5 } else { row.time.top() - 0.5 };
         if lane.track != dragged {
-            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
+            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color();
             painter.with_clip_rect(lanes_area).hline(area.x_range(), y, egui::Stroke::new(2.0, ink));
         }
     }
@@ -1977,10 +1977,7 @@ fn show_lanes(
                 if row.clip.contains(probe.pointer) && probe.target.is_none() {
                     probe.target = Some(DropTarget::Lane { track: row.track, beat });
                     probe.area = Some(row.clip);
-                    let ink = crate::kit::element::DROP_TARGET
-                        .attribute("kind", "insert")
-                        .look()
-                        .own_color_or(theme::accent());
+                    let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color();
                     painter.rect_filled(mark, 0.0, ink);
                 }
             } else {
@@ -1993,7 +1990,7 @@ fn show_lanes(
         }
         if let Some(target_area) = probe.area {
             let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
-            let outline = target.own_color_or(theme::accent());
+            let outline = target.color();
             painter.rect_stroke(
                 target_area.shrink(0.5),
                 0.0,

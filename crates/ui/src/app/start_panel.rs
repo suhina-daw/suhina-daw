@@ -212,11 +212,11 @@ pub(crate) fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: 
     if let Some(part) = notice.progress {
         let bar = Rect::from_min_size(Pos2::new(text.left(), line.bottom() - 4.0), Vec2::new(text.width(), 2.0));
         let track = PROGRESS.enter();
-        painter.rect_filled(bar, 0.0, track.background_or(theme::control_background()));
+        painter.rect_filled(bar, 0.0, track.background());
         painter.rect_filled(
             Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
             0.0,
-            PROGRESS_FILL.enter().background_or(theme::accent()),
+            PROGRESS_FILL.enter().background(),
         );
         drop(track);
     }

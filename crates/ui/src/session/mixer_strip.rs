@@ -775,7 +775,7 @@ fn device_list(
             .iter()
             .find(|(i, _)| *i == to)
             .map_or_else(|| slots.last().map_or(rect.top(), |(_, r)| r.bottom()), |(_, r)| r.top());
-        let color = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
+        let color = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color();
         list_painter.hline(rect.x_range(), y, egui::Stroke::new(2.0, color));
     }
     let pass = ui.ctx().cumulative_pass_nr();

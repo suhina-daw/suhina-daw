@@ -97,6 +97,26 @@ pub struct Computed {
     resolved: Arc<suhina_style::cascade::ComputedStyle>,
 }
 impl Computed {
+    /// The element's computed `color`, whichever sheet gave it (the base sheet's too).
+    pub fn color(&self) -> Color32 {
+        self.color
+    }
+
+    /// The element's computed `background-color`, whichever sheet gave it.
+    pub fn background(&self) -> Color32 {
+        self.background
+    }
+
+    /// The element's computed `border-color`, whichever sheet gave it.
+    pub fn border(&self) -> Color32 {
+        self.border
+    }
+
+    /// The element's computed `accent-color`, whichever sheet gave it.
+    pub fn accent(&self) -> Color32 {
+        self.accent
+    }
+
     /// Every custom property the element sees, shared rather than copied.
     pub(in crate::kit) fn shared_variables(&self) -> Arc<std::collections::BTreeMap<String, String>> {
         Arc::clone(&self.variables)

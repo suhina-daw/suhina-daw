@@ -635,17 +635,9 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
     let inner = card.shrink(2.0 * theme::PAD);
     painter.text(inner.left_top(), egui::Align2::LEFT_TOP, &busy.title, theme::ui_font(theme::TEXT), tier.primary);
     let bar = Rect::from_min_size(Pos2::new(inner.min.x, inner.center().y - BAR / 2.0), Vec2::new(inner.width(), BAR));
-    painter.rect_filled(
-        bar,
-        CornerRadius::ZERO,
-        crate::kit::element::PROGRESS.look().background_or(theme::control_background()),
-    );
+    painter.rect_filled(bar, CornerRadius::ZERO, crate::kit::element::PROGRESS.look().background());
     let done = Rect::from_min_size(bar.min, Vec2::new(bar.width() * busy.fraction.clamp(0.0, 1.0), BAR));
-    painter.rect_filled(
-        done,
-        CornerRadius::ZERO,
-        crate::kit::element::PROGRESS_FILL.look().background_or(theme::accent()),
-    );
+    painter.rect_filled(done, CornerRadius::ZERO, crate::kit::element::PROGRESS_FILL.look().background());
     painter.text(
         inner.left_bottom(),
         egui::Align2::LEFT_BOTTOM,

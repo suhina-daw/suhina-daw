@@ -1283,3 +1283,79 @@ fn an_open_egui_menu_takes_the_menu_rule_at_the_root() {
     assert_eq!(window.ctx.global_style().visuals.window_fill, odd(52));
     assert!(filled_with(&window, odd(52)) > 0, "the File menu is filled with the rule's colour");
 }
+
+/// The window with the Keys track's device chain shown and its first device carried to the end of
+/// the chain, so that the chain's insert line (`drop-target[kind="insert"]`) is drawn; in the
+/// theme `theme` when one is given (#1448).
+#[allow(clippy::unwrap_used)] // A test's helper: the demo project has the Keys track.
+fn carrying_a_device(theme: Option<suhina_ui::kit::theme::Theme>) -> Harness<'static, App> {
+    let mut session = suhina_session::Session::new(demo_project());
+    for id in ["utility", "utility"] {
+        session.execute("device.add", &serde_json::json!({ "track": "Keys", "id": id })).unwrap();
+    }
+    let track = session.project().tracks.iter().find(|t| t.name == "Keys").map(|t| t.id).unwrap();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut h = window(app);
+    if let Some(theme) = theme {
+        let ctx = h.ctx.clone();
+        let entry = suhina_ui::settings::themes::ThemeEntry { id: "under-test".into(), theme };
+        h.state_mut().set_themes(&ctx, vec![entry], None);
+        h.state_mut().use_theme(&ctx, "under-test");
+    }
+    h.get_by_label("Track Keys").click();
+    h.run();
+    let pointer = egui::pos2(h.ctx.content_rect().right() - 300.0, h.ctx.content_rect().bottom() - 100.0);
+    h.ctx.data_mut(|d| d.insert_temp(egui::Id::unique(suhina_ui::interaction::drop::DEVICE_CARRYING), (track, 0usize)));
+    h.event(egui::Event::PointerMoved(pointer));
+    for _ in 0..4 {
+        h.step();
+    }
+    h
+}
+
+/// The device being carried is put down again.
+fn put_down(h: &mut Harness<'static, App>) {
+    h.ctx.data_mut(|d| {
+        d.remove::<(suhina_engine::model::TrackId, usize)>(egui::Id::unique(
+            suhina_ui::interaction::drop::DEVICE_CARRYING,
+        ))
+    });
+}
+
+/// A drop target's line takes its colour from the base sheet's rule, which reads `--accent`: a
+/// `user.css` that sets the variable reaches it in Suhina Studio, with no rule for the line (#1448).
+#[test]
+fn a_user_sheet_s_accent_reaches_a_drop_target_line_in_suhina_studio() {
+    let mut h = carrying_a_device(None);
+    assert_eq!(h.state().settings().theme, suhina_ui::kit::theme::BUILT_IN);
+    let missing = missing(&mut h, &[(":root", "--accent", odd(130))]);
+    put_down(&mut h);
+    assert_eq!(missing, Vec::<String>::new());
+}
+
+/// A theme's rule beats the base sheet's for the same element, also a less specific one and one
+/// inside `@layer`: `drop-target` over the base sheet's `drop-target[kind="insert"]` (#1448).
+#[test]
+fn a_theme_rule_beats_the_base_sheet_s_less_specific_or_layered() {
+    for css in [
+        format!("drop-target {{ color: {}; }}", hex(odd(131))),
+        format!("@layer mine {{ drop-target {{ color: {}; }} }}", hex(odd(131))),
+    ] {
+        let (theme, warnings) = suhina_ui::kit::theme::from_css(&css);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let mut h = carrying_a_device(Some(theme));
+        let shown = painted(&h);
+        put_down(&mut h);
+        assert!(shown.contains(&odd(131)), "{css}: the theme's colour is the line's");
+    }
+}
+
+/// Colouring a region goes through its variables: `mixer { --text-value: … }` reaches a field in
+/// the mixer, its volume's readout (#1448).
+#[test]
+fn a_mixer_s_text_value_variable_reaches_a_field_in_the_mixer() {
+    let mut h = window(demo_app());
+    assert_eq!(missing(&mut h, &[("mixer", "--text-value", odd(132))]), Vec::<String>::new());
+}

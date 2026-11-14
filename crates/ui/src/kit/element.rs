@@ -369,6 +369,27 @@ pub struct Sides {
 pub struct Look(Option<Computed>);
 
 impl Look {
+    /// The item's computed `color`, the base sheet's where no theme gives one; transparent where
+    /// no sheet styles the window.
+    pub fn color(&self) -> Color32 {
+        self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::color)
+    }
+
+    /// The item's computed `background-color` ([`Look::color`]).
+    pub fn background(&self) -> Color32 {
+        self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::background)
+    }
+
+    /// The item's computed `border-color` ([`Look::color`]).
+    pub fn border(&self) -> Color32 {
+        self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::border)
+    }
+
+    /// The item's computed `accent-color` ([`Look::color`]).
+    pub fn accent(&self) -> Color32 {
+        self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::accent)
+    }
+
     /// The item's own `color`, where a rule on the item sets one; else `token`. A line or a mark
     /// does not take the text colour a view's rule gives everything in it.
     pub fn own_color_or(&self, token: Color32) -> Color32 {
@@ -662,6 +683,27 @@ impl Entered {
     /// (`toolbar`, `workspace`: [`super::native_css::Computed::padding_in`]).
     pub fn insets_in(&self, width: f32) -> [f32; 4] {
         self.style().map_or([0.0; 4], |style| style.insets_in(width))
+    }
+
+    /// The element's computed `color`, the base sheet's where no theme gives one: a reader with
+    /// no palette fallback. Transparent where no sheet styles the window.
+    pub fn color(&self) -> Color32 {
+        self.style().map_or(Color32::TRANSPARENT, |style| style.color())
+    }
+
+    /// The element's computed `background-color` ([`Entered::color`]).
+    pub fn background(&self) -> Color32 {
+        self.style().map_or(Color32::TRANSPARENT, |style| style.background())
+    }
+
+    /// The element's computed `border-color` ([`Entered::color`]).
+    pub fn border(&self) -> Color32 {
+        self.style().map_or(Color32::TRANSPARENT, |style| style.border())
+    }
+
+    /// The element's computed `accent-color` ([`Entered::color`]).
+    pub fn accent(&self) -> Color32 {
+        self.style().map_or(Color32::TRANSPARENT, |style| style.accent())
     }
 
     /// The element's `color`, or `fallback` where the sheet sets none.

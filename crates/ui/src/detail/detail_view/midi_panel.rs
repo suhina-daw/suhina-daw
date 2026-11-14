@@ -590,13 +590,13 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
     y += INFO_ROW;
     let bar = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), RANGE_BAR));
     // `progress`, its span `progress-fill`: their `background-color`.
-    painter.rect_filled(bar, 3.0, crate::kit::element::PROGRESS.look().background_or(theme::control_background()));
+    painter.rect_filled(bar, 3.0, crate::kit::element::PROGRESS.look().background());
     let x_of = |v: u8| bar.left() + 2.0 + (f32::from(v.saturating_sub(1)) / 126.0) * (bar.width() - 4.0);
     let span = Rect::from_min_max(
         Pos2::new(x_of(low), bar.top() + 3.0),
         Pos2::new(x_of(high).max(x_of(low) + 3.0), bar.bottom() - 3.0),
     );
-    painter.rect_filled(span, 2.0, crate::kit::element::PROGRESS_FILL.look().background_or(theme::accent()));
+    painter.rect_filled(span, 2.0, crate::kit::element::PROGRESS_FILL.look().background());
     bar.bottom()
 }
 

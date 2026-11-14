@@ -2315,7 +2315,7 @@ fn drop_headers(
             let area = Rect::from_x_y_ranges(across, egui::Rangef::new(top, bottom));
             let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
             painter.rect_filled(area, 0.0, target.background_or(theme::accent().gamma_multiply(0.2)));
-            painter.rect_stroke(area, 0.0, Stroke::new(2.0, target.own_color_or(theme::accent())), StrokeKind::Inside);
+            painter.rect_stroke(area, 0.0, Stroke::new(2.0, target.color()), StrokeKind::Inside);
         }
         None => {
             let line_y = match landing {
@@ -2326,7 +2326,7 @@ fn drop_headers(
             // the lanes go (in the group or out of it) shows before they are let go of.
             let joins = !drag.group && matches!(place, Place::Before { join: true, .. });
             let line = if joins { egui::Rangef::new(across.min + GROUP_INDENT, across.max) } else { across };
-            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
+            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color();
             painter.hline(line, line_y, Stroke::new(2.0, ink));
         }
     }

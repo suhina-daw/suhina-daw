@@ -71,9 +71,9 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     // `progress` (its background and radius) and `progress-fill` (its background) style the bar.
     let progress_style = crate::kit::element::PROGRESS.enter();
     let radius = progress_style.radius_or(0.0);
-    painter.rect_filled(bar, radius, progress_style.background_or(theme::control_background()));
+    painter.rect_filled(bar, radius, progress_style.background());
     let share = if progress.total == 0 { 1.0 } else { progress.ready as f32 / progress.total as f32 };
-    let fill = crate::kit::element::PROGRESS_FILL.enter().background_or(theme::accent());
+    let fill = crate::kit::element::PROGRESS_FILL.enter().background();
     painter.rect_filled(
         Rect::from_min_size(bar.min, Vec2::new(bar.width() * share.clamp(0.0, 1.0), BAR)),
         radius,

@@ -425,8 +425,7 @@ impl App {
                 let pointer = ui.ctx().pointer_latest_pos();
                 let mut left = rect.left();
                 let (shown_ink, other_ink) = (scope.color_or(theme::text_primary()), caption_ink());
-                let target =
-                    crate::kit::element::DROP_TARGET.attribute("kind", "area").look().own_color_or(theme::accent());
+                let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look().color();
                 for (view, name) in [(View::Session, "Launcher"), (View::Arrangement, "Arrangement")] {
                     let color = if self.shown == view { shown_ink } else { other_ink };
                     let galley = widgets::fitted(painter, name, theme::ui_font(theme::TEXT), color, 120.0);

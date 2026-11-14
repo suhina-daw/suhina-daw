@@ -462,7 +462,7 @@ pub fn show(
             probe.offer(empty, DropTarget::NewTracks { beat: None, scene: Some(scene) });
         }
         if let Some(target_area) = probe.area {
-            let color = DROP_TARGET.attribute("kind", "area").look().own_color_or(theme::accent());
+            let color = DROP_TARGET.attribute("kind", "area").look().color();
             painter.with_clip_rect(area).rect_stroke(
                 target_area.shrink(0.5),
                 0.0,
@@ -482,7 +482,7 @@ pub fn show(
         && let Some((_, span)) = spans.iter().find(|(c, _)| c.track == column.track)
     {
         let x = if after { span.max + 0.5 } else { span.min - 0.5 };
-        let color = DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
+        let color = DROP_TARGET.attribute("kind", "insert").look().color();
         painter.with_clip_rect(tracks_clip).vline(x, area.y_range(), egui::Stroke::new(2.0, color));
     }
     if let Some((dragged, x)) = state.track_drop.take()

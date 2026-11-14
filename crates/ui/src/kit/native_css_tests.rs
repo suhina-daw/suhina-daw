@@ -1825,3 +1825,66 @@ fn a_sheet_that_does_not_parse_keeps_the_last_working_grid() {
     assert!(laid.rect(Region::Toolbar).is_some(), "the broken sheet's rules do not apply");
     assert_eq!(painted, Some(Color32::from_rgb(0x12, 0x34, 0x56)), "painting keeps the same sheet");
 }
+
+/// One frame of `ctx` with the window entered, and the style of `window` in it.
+fn window_frame(ctx: &egui::Context) -> Computed {
+    let mut style = None;
+    ctx.run_ui(Default::default(), |ui| {
+        let _frame = frame(ui);
+        style = test_el("window").enter().style();
+    })
+    .textures_delta
+    .clear();
+    style.unwrap()
+}
+
+/// The window's opacity over a backdrop fades the window's, the panels' and the lines' colours as
+/// the palette did (`gamma_multiply`), byte for byte, and the faded colours are the variables the
+/// sheet sees on `window` (#1448).
+#[test]
+fn an_opacity_change_reaches_the_window_panel_and_border_colours() {
+    let ctx = egui::Context::default();
+    skin::configure(&skin::Skin::default());
+    let dark = theme::Palette::DARK;
+    for percent in [0u8, 37, 80, 100] {
+        let opacity = f32::from(percent) / 100.0;
+        set_window_opacity(&ctx, opacity);
+        let window = window_frame(&ctx);
+        for (name, read, base) in [
+            ("--window-background", theme::window_background(), dark.window_background),
+            ("--panel-background", theme::panel_background(), dark.panel_background),
+            ("--border", theme::border(), dark.border),
+        ] {
+            let faded = base.gamma_multiply(opacity);
+            assert_eq!(read, faded, "{name} at {percent} %");
+            let sheet = match window.variable(name).map(|v| suhina_style::value::Color::parse(v.trim())) {
+                Some(Ok(suhina_style::value::Color::Rgba([r, g, b, a]))) => Color32::from_rgba_unmultiplied(r, g, b, a),
+                other => panic!("{name}: {other:?}"),
+            };
+            assert_eq!(sheet, faded, "the sheet's {name} at {percent} %");
+            // The theme's own colour, the panels' base under the backdrop, is not faded.
+            assert_eq!(root_color(name), Some(base), "{name}");
+        }
+    }
+    set_window_opacity(&ctx, 1.0);
+}
+
+/// `"base": "none"` leaves the base sheet out: its parts' colours are gone and the user-agent
+/// sheet's bare look is left, the variables still resolving. A base rule alone leaves the element
+/// unauthored (#1448).
+#[test]
+fn opting_out_of_the_base_sheet_leaves_the_bare_look() {
+    let ctx = egui::Context::default();
+    let knob_body = |base: bool| {
+        skin::configure(&skin::Skin { css: Some(Arc::from("knob { color: #ffb000; }")), base, ..Default::default() });
+        ctx.run_ui(Default::default(), |ui| begin_frame(ui)).textures_delta.clear();
+        scoped(&["window".into(), "knob".into(), "knob-body".into()]).unwrap()
+    };
+    let based = knob_body(true);
+    assert_eq!(based.color, theme::Palette::DARK.control_background, "the base sheet's knob body");
+    assert!(!based.authored.color, "a base rule is not the theme's");
+    let bare = knob_body(false);
+    assert_eq!(bare.color, Color32::from_rgb(0xff, 0xb0, 0x00), "the knob's own colour, inherited");
+    assert_eq!(bare.variable("--accent"), Some("#A6A3FF"), "the core variables still apply");
+    skin::configure(&skin::Skin::default());
+}

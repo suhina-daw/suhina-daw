@@ -1759,7 +1759,7 @@ pub(super) fn paint_ara_activity(
     painter.rect_filled(track, 0.0, motion::mix(body, ink, 0.2));
     if let Some(p) = progress {
         let done = Rect::from_min_max(track.min, Pos2::new(track.left() + track.width() * p, track.bottom()));
-        painter.rect_filled(done, 0.0, crate::kit::element::PROGRESS_FILL.look().background_or(theme::accent()));
+        painter.rect_filled(done, 0.0, crate::kit::element::PROGRESS_FILL.look().background());
     }
 }
 
