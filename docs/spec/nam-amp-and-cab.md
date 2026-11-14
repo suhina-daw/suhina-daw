@@ -451,8 +451,6 @@ the panel's Model missing note.
   one-click relink, the missing-files view listing the NAM and IR paths) is its own issue.
 - A2's width dial is run at its widest by **HQ**; a graduated quality choice (a knob over the
   sub-models) comes with a model that shows the trade-off, not with this pair.
-- Models are fed per side through their own running instance; a mono signal both sides share
-  fires the model twice. A cheaper shared instance for a mono track is later work.
 - Browsers and libraries do not list `.nam` files yet; the folders and the pick dialog are the
   whole surface. Drag-and-drop of a `.wav` from the browser onto a Cab Loader is a natural
   follow-on (the file row's dropdown lists it all the same).
