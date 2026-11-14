@@ -15,8 +15,10 @@ last_verified: 2026-11-07
   its first targets, `mapping.add`, `mapping.remove` and `mapping.list` for them, and the
   **Map** button ([#1162](https://github.com/suhina-daw/suhina-daw/issues/1162), *Launch keys*);
   and the surface-program router of [Surface programs](#surface-programs-later) — a running
-  program's claimed ports open raw for it and its send-backs are written out
-  ([#1422](https://github.com/suhina-daw/suhina-daw/issues/1422)). Controllers themselves (the
+  program's claimed ports open raw for it, its send-backs are written out, and its commands,
+  reads and subscriptions are serviced
+  ([#1422](https://github.com/suhina-daw/suhina-daw/issues/1422),
+  [#1424](https://github.com/suhina-daw/suhina-daw/issues/1424)). Controllers themselves (the
   other sources and targets, shaping the value, takeover, gestures,
   profiles, learning MIDI in the mapping mode) are not built; the split into work is in the pull
   request that added this document ([#403](https://github.com/suhina-daw/suhina-daw/issues/403)). It

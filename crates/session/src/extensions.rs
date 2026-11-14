@@ -333,6 +333,18 @@ pub struct Extensions {
     /// program started or stopped, its script stopped at its boundary, the store re-read. The
     /// MIDI router compares it against the look it last synced at.
     pub(crate) claims_epoch: u64,
+    /// The live subscriptions of the running programs, re-read each look.
+    subs: Vec<Sub>,
+}
+
+/// A live subscription: the program that made it, its token, the reading command and its
+/// parameters, and the value last pushed — none yet, for a fresh one.
+struct Sub {
+    program: String,
+    token: u64,
+    cmd: String,
+    params: Value,
+    last: Option<Value>,
 }
 
 impl Default for Extensions {
@@ -349,6 +361,7 @@ impl Extensions {
             root: env_root.or_else(default_root),
             known: Vec::new(),
             claims_epoch: 1,
+            subs: Vec::new(),
         };
         extensions.reload();
         extensions
@@ -443,11 +456,15 @@ impl Extensions {
             .ok_or_else(|| format!("no extension {id:?}; see extensions.list").into())
     }
 
-    /// Drains every running program's events, applies them to the states, and returns what
-    /// came, paired with the extension's id. The one drain point: the session's frame calls
-    /// [`Self::accept_events`], and the tests read the events through the same drain.
+    /// Drains every running program's events, applies them to the states, takes the
+    /// subscriptions in and out, and returns what came, paired with the extension's id — the
+    /// send-backs and the scripts' commands and reads for the session to service. The one
+    /// drain point: the session's frame calls [`Projects::poll_programs`], and the tests read
+    /// the events through the same drain.
     pub fn drain_events(&mut self) -> Vec<(String, programs::Event)> {
         let mut drained = Vec::new();
+        let mut subscribing = Vec::new();
+        let mut unsubscribed = Vec::new();
         for extension in &mut self.known {
             let Some(program) = &mut extension.program else { continue };
             for event in program.drain() {
@@ -471,29 +488,74 @@ impl Extensions {
                         self.claims_epoch += 1;
                     }
                     programs::Event::SendBack { .. } => {
-                        // The MIDI router consumes these, where the frame drains.
+                        // The MIDI router writes these out, where the frame drains.
                     }
                     programs::Event::Dropped(count) => {
                         extension.last_error = Some(format!("{count} send-backs dropped, the queue was full"));
+                    }
+                    // The session runs these and answers; they pass through.
+                    programs::Event::Command { .. } | programs::Event::Read { .. } => {}
+                    // A subscription the store keeps; a live one the store takes out.
+                    programs::Event::Subscribe { token, id, params } => {
+                        subscribing.push((extension.id.clone(), *token, id.clone(), params.clone()));
+                        continue;
+                    }
+                    programs::Event::Unsubscribe { token } => {
+                        unsubscribed.push((extension.id.clone(), *token));
+                        continue;
                     }
                 }
                 drained.push((extension.id.clone(), event));
             }
         }
+        for (program, token, cmd, params) in subscribing {
+            // At most the protocol's 64 live subscriptions per program; the runner refuses a
+            // subscribe past it, so this one only guards what crosses the wire.
+            let live = self.subs.iter().filter(|sub| sub.program == program).count();
+            if live < programs::MAX_SUBSCRIPTIONS {
+                self.subs.push(Sub { program, token, cmd, params, last: None });
+            }
+        }
+        for (program, token) in unsubscribed {
+            self.subs.retain(|sub| !(sub.program == program && sub.token == token));
+        }
+        // A program whose handle is gone — stopped, crashed past its restarts, removed — takes
+        // its subscriptions with it.
+        self.subs.retain(|sub| self.known.iter().any(|e| e.id == sub.program && e.program.is_some()));
         drained
     }
 
-    /// What the supervisor reported, applied to the states; called where the session drains
-    /// its queues.
-    pub fn accept_events(&mut self) {
-        let _ = self.drain_events();
+    /// What each subscription wants re-read this look: (program, token, command, parameters).
+    pub(crate) fn sub_reads(&self) -> Vec<(String, u64, String, Value)> {
+        self.subs.iter().map(|sub| (sub.program.clone(), sub.token, sub.cmd.clone(), sub.params.clone())).collect()
+    }
+
+    /// Takes the reads' results in, and says what to push: a `state` for every subscription
+    /// whose value changed from the last one sent — the first read after a subscribe always
+    /// has. A refused read pushes nothing; the next look reads again.
+    pub(crate) fn apply_sub_results(
+        &mut self,
+        results: Vec<(String, u64, Result<Value, String>)>,
+    ) -> Vec<(String, u64, Value)> {
+        let mut pushed = Vec::new();
+        for (program, token, result) in results {
+            let Ok(value) = result else { continue };
+            let Some(sub) = self.subs.iter_mut().find(|sub| sub.program == program && sub.token == token) else {
+                continue;
+            };
+            if sub.last.as_ref() != Some(&value) {
+                sub.last = Some(value.clone());
+                pushed.push((sub.program.clone(), sub.token, value));
+            }
+        }
+        pushed
     }
 
     /// Blocks until a running program's queue holds an event that answers `which`, then drains
     /// — applying the states — and returns the first matching event, with its extension's id.
     /// A wait on the supervisor's signal, not a clock (AGENTS.md rule 7). The tests start
     /// exactly one program, so the one queue is the whole story; the session's frame never
-    /// waits ([`Self::accept_events`]).
+    /// waits ([`Projects::poll_programs`]).
     pub fn wait_for_event(&mut self, which: impl Fn(&programs::Event) -> bool) -> Option<(String, programs::Event)> {
         let shared =
             self.known.iter().find_map(|extension| extension.program.as_ref()).map(|program| program.shared())?;
@@ -592,7 +654,8 @@ pub(crate) fn port_matches(pattern: &str, name: &str) -> bool {
 
 /// `extensions.list`: every known extension with its state and, when it is not usable, why.
 fn list(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
-    projects.extensions.accept_events();
+    // The pending requests the programs made are serviced here too, not dropped.
+    projects.poll_programs();
     let list: Vec<Value> = projects
         .extensions
         .known
@@ -649,7 +712,8 @@ fn add(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
 /// `extensions.info`: one extension in full — the manifest, the licence text, the permissions,
 /// the state and the last error.
 fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    projects.extensions.accept_events();
+    // The pending requests the programs made are serviced here too, not dropped.
+    projects.poll_programs();
     let id = Args::new(params).text("id")?;
     let extension = projects.extensions.known_mut(id)?;
     let manifest = extension.manifest.as_ref();
@@ -682,7 +746,8 @@ fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
 /// was checked this run. A refused or missing extension is refused with its reason.
 fn restart(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let id = Args::new(params).text("id")?;
-    projects.extensions.accept_events();
+    // The pending requests the programs made are serviced here too, not dropped.
+    projects.poll_programs();
     let folder = projects.extensions.known_mut(id)?.folder.clone();
     // The old program stops before the new one takes its ports.
     let old = projects.extensions.known_mut(id)?.program.take();
@@ -715,7 +780,8 @@ fn restart(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
 /// stays where it is, and the store's copy goes.
 fn remove(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let id = Args::new(params).text("id")?;
-    projects.extensions.accept_events();
+    // The pending requests the programs made are serviced here too, not dropped.
+    projects.poll_programs();
     let (program, folder) = {
         let extension = projects.extensions.known_mut(id)?;
         (extension.program.take(), extension.folder.clone())

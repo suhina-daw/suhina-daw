@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use interprocess::TryClone;
 use interprocess::local_socket::traits::{Listener as _, Stream as _};
 use interprocess::local_socket::{GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Name, NameType, Stream};
+use serde_json::Value;
 use suhina_plugins::surface::{self, Message};
 
 use crate::CommandError;
@@ -26,6 +27,8 @@ use crate::CommandError;
 pub const PROTOCOL: u64 = surface::VERSION;
 /// Longest one port name pattern a manifest claims.
 pub const MAX_PORT_NAME: usize = surface::MAX_NAME;
+/// Most live subscriptions a program may keep; the runner refuses a subscribe past it.
+pub use suhina_plugins::surface::MAX_SUBSCRIPTIONS;
 /// Pings go at the plug-in host's health rhythm; five seconds without an answer is a hang.
 const HEALTH_EVERY: Duration = Duration::from_millis(250);
 const HUNG_AFTER: Duration = Duration::from_secs(5);
@@ -54,6 +57,12 @@ pub(crate) enum ToProgram {
     TestKill { pid: u32 },
     /// The user (or the session going away) stops the program.
     Stop,
+    /// The session's answer to the script's `command`.
+    CommandAnswer { token: u64, ok: bool, error: Option<String> },
+    /// The session's answer to the script's `read`.
+    ReadAnswer { token: u64, ok: bool, value: Option<Value>, error: Option<String> },
+    /// A subscription's value, as it is now.
+    StateUpdate { token: u64, value: Value },
 }
 
 /// What a program reports to the session.
@@ -69,6 +78,17 @@ pub enum Event {
     SendBack { port: String, bytes: Vec<u8> },
     /// Send-backs dropped because the session had not taken the last ones.
     Dropped(usize),
+    /// The script asked to run a command, undo included: the same command the window, CLI and
+    /// MCP dispatch. The session answers through [`ToProgram::CommandAnswer`].
+    Command { token: u64, id: String, params: Value, gesture: Option<String> },
+    /// The script asked for a reading command's value. The session answers through
+    /// [`ToProgram::ReadAnswer`].
+    Read { token: u64, id: String, params: Value },
+    /// The script asked to watch a reading command: the store registers it, re-reads it each
+    /// look, and pushes a `state` when the value changed.
+    Subscribe { token: u64, id: String, params: Value },
+    /// The script stopped watching; the store takes the subscription out.
+    Unsubscribe { token: u64 },
 }
 
 /// The program's event queue and the signal it is reported on: the supervisor pushes and
@@ -137,6 +157,21 @@ impl Handle {
     /// arrival timestamp in microseconds.
     pub(crate) fn port_message(&self, port: &str, timestamp: u64, bytes: &[u8]) {
         let _ = self.to.send(ToProgram::PortMessage { port: port.to_string(), timestamp, bytes: bytes.to_vec() });
+    }
+
+    /// The session's answer to the script's `command`.
+    pub(crate) fn command_answer(&self, token: u64, ok: bool, error: Option<String>) {
+        let _ = self.to.send(ToProgram::CommandAnswer { token, ok, error });
+    }
+
+    /// The session's answer to the script's `read`.
+    pub(crate) fn read_answer(&self, token: u64, ok: bool, value: Option<Value>, error: Option<String>) {
+        let _ = self.to.send(ToProgram::ReadAnswer { token, ok, value, error });
+    }
+
+    /// A subscription's value, as it is now.
+    pub(crate) fn state_update(&self, token: u64, value: &Value) {
+        let _ = self.to.send(ToProgram::StateUpdate { token, value: value.clone() });
     }
 
     /// A raw port message with no timestamp, as the tests drive the script without a MIDI
@@ -319,6 +354,43 @@ fn apply(order: ToProgram, link: &mut Link, child: &mut Child, ports: &mut (Vec<
             let _ = link.send(&Message::Quit);
             child.stop();
         }
+        ToProgram::CommandAnswer { token, ok, error } => {
+            let _ = link.send(&Message::CommandResult { token, ok, error });
+        }
+        ToProgram::ReadAnswer { token, ok, value, error } => {
+            let _ = link.send(&Message::ReadResult { token, ok, value, error });
+        }
+        ToProgram::StateUpdate { token, value } => {
+            let _ = link.send(&Message::State { token, value });
+        }
+    }
+}
+
+/// The script's requests, forwarded to the session in the order they came: true for the four
+/// the session services (a command, a read, a subscription and its end), so the caller's
+/// catch-all does not refuse them.
+fn is_request(message: &Message, events: &Shared) -> bool {
+    match message {
+        Message::Command { token, id, params, gesture } => {
+            report(
+                events,
+                Event::Command { token: *token, id: id.clone(), params: params.clone(), gesture: gesture.clone() },
+            );
+            true
+        }
+        Message::Read { token, id, params } => {
+            report(events, Event::Read { token: *token, id: id.clone(), params: params.clone() });
+            true
+        }
+        Message::Subscribe { token, id, params } => {
+            report(events, Event::Subscribe { token: *token, id: id.clone(), params: params.clone() });
+            true
+        }
+        Message::Unsubscribe { token } => {
+            report(events, Event::Unsubscribe { token: *token });
+            true
+        }
+        _ => false,
     }
 }
 
@@ -379,6 +451,9 @@ fn watch(
     loop {
         match link.read().map_err(|reason| child.end(reason))? {
             Some(line) => match Message::decode(&line) {
+                // A request from the chunk, forwarded to the session: the answer reaches it
+                // when the session's next look services it.
+                Some(message) if is_request(&message, events) => {}
                 Some(Message::Hello { version }) if version == PROTOCOL => {}
                 Some(Message::Hello { version }) => {
                     let _ = link.send(&Message::Error {
@@ -471,6 +546,7 @@ fn watch(
                     report(events, Event::ScriptError(format!("{handler}: {message}")));
                 }
                 Some(Message::Hello { .. }) | Some(Message::Ready) => {}
+                Some(message) if is_request(&message, events) => {}
                 Some(_) => {
                     let _ = link.send(&Message::Error { message: "not a message for the host".into() });
                 }

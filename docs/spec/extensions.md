@@ -19,11 +19,12 @@ behaves.
 - **Builds on:** the out-of-process host and its protocol ([ADR 0006](../decisions/0006-plug-in-hosting.md)),
   the command registry ([ADR 0002](../decisions/0002-commands.md)) and the permission model of patch
   devices ([ADR 0008](../decisions/0008-patch-devices.md) §3).
-- **Status:** the manifest, the `extensions.*` commands, the surface programs' supervisor and
-  the MIDI router (a running program's claimed ports and its send-backs) are built
-  (`crates/session/src/extensions.rs`, `crates/session/src/extensions/`, the claim pass in
-  `crates/session/src/midi.rs`); the Settings › Extensions panel is not. First user: stem
-  separation, and a controller script for the Akai APC40 MkII.
+- **Status:** the manifest, the `extensions.*` commands, the surface programs' supervisor, the
+  MIDI router (a running program's claimed ports and its send-backs), and the programs'
+  commands, reads and subscriptions are built (`crates/session/src/extensions.rs`,
+  `crates/session/src/extensions/`, the claim pass in `crates/session/src/midi.rs`); the
+  Settings › Extensions panel is not. First user: stem separation, and a controller script for
+  the Akai APC40 MkII.
 
 ## Terms
 

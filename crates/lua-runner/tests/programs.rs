@@ -3,14 +3,16 @@
 
 //! The surface-program supervisor end to end (`docs/spec/surface-programs.md` › Testing): the
 //! real runner binary as a child of the real supervisor, driven through a [`Projects`]. The
-//! waits are on the events the supervisor reports, never on a wall-clock while.
+//! waits are on the events the supervisor reports, never on a wall-clock while. The tests live
+//! beside the runner they spawn, so the binary under them is the one just built — a
+//! session-only test run would spawn whatever a previous workspace build left behind.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)] // test helpers outside #[test] functions
 
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use suhina_session::extensions::programs;
-use suhina_session::{LiveInput, MidiOut, MidiSystem, Projects, RawSink};
+use suhina_session::{LiveInput, MidiOut, MidiSystem, Projects, RawSink, Session, blank_project};
 
 static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -31,6 +33,37 @@ const SCRIPT_ERROR: &str = "suhina.on_port_message(function() error(\"pad broke\
 /// program has heard its ports.
 const SCRIPT_ECHO: &str =
     "suhina.on_port_message(function(bytes, port) suhina.send(\"APC out\", suhina.midi.cc(1, 7, 100)) end)\n";
+/// Runs a command (a tempo change) and a read (the tempo back), and reports both answers on
+/// one pad: the controller byte says whether the command ran, the value byte the tempo read.
+const SCRIPT_COMMAND: &str = r#"
+suhina.on_port_message(function(bytes, port)
+    if bytes == "\x90\x3c\x7f" then
+        local ok, err = suhina.command("transport.setTempo", { bpm = 110 })
+        local value, read_err = suhina.read("project.launcher")
+        local columns = value and #value.tracks or 0
+        suhina.send("APC out", suhina.midi.cc(1, ok and 1 or 0, columns))
+    end
+end)
+"#;
+/// A command that does not exist: the answer says so, and nothing crashes.
+const SCRIPT_REFUSED: &str = r#"
+suhina.on_port_message(function(bytes, port)
+    if bytes == "\x90\x3c\x7f" then
+        local ok, err = suhina.command("no.such.command")
+        suhina.send("APC out", suhina.midi.cc(1, ok and 1 or 0, 0))
+    end
+end)
+"#;
+/// Watches the launcher grid: the first state comes after the subscribe, the next when the
+/// project changes; the controller byte counts the states.
+const SCRIPT_SUBSCRIBE: &str = r#"
+local seen = 0
+suhina.on_state(function(token, value)
+    seen = seen + 1
+    suhina.send("APC out", suhina.midi.cc(1, seen, 64))
+end)
+suhina.subscribe("project.launcher")
+"#;
 
 impl Fixture {
     /// Makes `id` with `script` as its whole script, and a `Projects` whose extensions store
@@ -77,6 +110,8 @@ impl Fixture {
         let system: Arc<dyn MidiSystem> = midi.clone();
         let mut projects = Projects::default().with_extensions_root(&root);
         projects.set_midi_system(system);
+        // An open session, so the scripts' commands and reads run on a project.
+        projects.add(Session::new(blank_project()), None).expect("the session opens");
         Self { root, id: id.to_string(), projects, midi }
     }
 
@@ -302,6 +337,66 @@ fn a_script_that_stops_at_its_boundary_lets_its_ports_go() {
 type RawOpen = Arc<Mutex<Vec<(String, Arc<dyn RawSink>)>>>;
 /// What programs wrote to the outputs, by port name, in order.
 type Writes = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
+
+/// The script's command runs the real one and is answered; its read answers the value. One
+/// note in, the tempo set to 110 and read back out on a pad. Each stage of the round trip is
+/// waited for on the supervisor's signal, each poll the one step that services it.
+#[test]
+fn a_programs_command_runs_and_its_read_answers() {
+    let mut fixture = Fixture::claiming("commands", SCRIPT_COMMAND);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { .. }));
+    fixture.projects.poll_plugins();
+    fixture.peek(|e| matches!(e, programs::Event::Read { .. }));
+    fixture.projects.poll_plugins();
+    fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
+    fixture.projects.poll_plugins();
+    // The controller byte says the command ran; the value byte is the grid it read back: the
+    // blank project's four tracks.
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 4]]);
+    // The tempo really changed on the project the session runs.
+    let session = fixture.projects.session_mut(None).expect("the session");
+    assert_eq!(session.project().transport.tempo_bpm, 110.0);
+}
+
+/// A command that does not exist is refused in the answer, and the script carries on.
+#[test]
+fn a_refused_command_says_so_in_its_answer() {
+    let mut fixture = Fixture::claiming("refused", SCRIPT_REFUSED);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { .. }));
+    fixture.projects.poll_plugins();
+    fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
+    fixture.projects.poll_plugins();
+    // The controller byte says the command was refused; the script is not at its boundary.
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x00, 0x00]]);
+    assert!(fixture.midi.raw_open("APC in"), "the program kept its ports");
+}
+
+/// A subscription's first state comes after the subscribe; the next when the project changes.
+#[test]
+fn a_subscription_pushes_its_first_state_and_the_next_change() {
+    let mut fixture = Fixture::claiming("watching", SCRIPT_SUBSCRIBE);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    // The subscribe was made as the script loaded: the first look reads and pushes, and the
+    // state's handler sends — the peek waits for it on the supervisor's signal.
+    fixture.projects.poll_plugins();
+    fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
+    fixture.projects.poll_plugins();
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x40]]);
+    // The project changes; the next look pushes again.
+    fixture.projects.execute("track.add", &json!({ "kind": "audio" })).expect("the track adds");
+    fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
+    fixture.projects.poll_plugins();
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x40], vec![0xB1, 0x02, 0x40]]);
+}
 
 /// Stand-in MIDI ports: a claimed input port plays into the sink it was opened raw for, and
 /// what a program writes to an output port is recorded with the port's name.

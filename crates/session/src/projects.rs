@@ -287,18 +287,76 @@ impl Projects {
         self.devices.midi.sync(&claims, epoch)
     }
 
+    /// The running programs' business, where the frame drains: the states the supervisors
+    /// reported are applied, their send-backs are written out, their commands and reads run
+    /// and are answered, and their subscriptions are re-read — a `state` pushed when one
+    /// changed. The `extensions.*` commands call it too, so a pending request is serviced
+    /// wherever the next look comes from, never dropped.
+    pub(crate) fn poll_programs(&mut self) {
+        for (program, event) in self.extensions.drain_events() {
+            match event {
+                programs::Event::SendBack { port, bytes } => self.devices.midi.send_back(&program, &port, &bytes),
+                programs::Event::Command { token, id, params, gesture } => {
+                    let params = with_gesture(&id, params, gesture.as_deref());
+                    let (ok, error) = match self.dispatch_for_program(&id, &params) {
+                        Ok(_) => (true, None),
+                        Err(e) => (false, Some(e.0)),
+                    };
+                    if let Some(handle) = self.extensions.program(&program) {
+                        handle.command_answer(token, ok, error);
+                    }
+                }
+                programs::Event::Read { token, id, params } => {
+                    let (ok, value, error) = match self.dispatch_for_program(&id, &params) {
+                        Ok(value) => (true, Some(value), None),
+                        Err(e) => (false, None, Some(e.0)),
+                    };
+                    if let Some(handle) = self.extensions.program(&program) {
+                        handle.read_answer(token, ok, value, error);
+                    }
+                }
+                // A subscription the store registers in the drain; its reads run below.
+                programs::Event::Subscribe { .. } | programs::Event::Unsubscribe { .. } => {}
+                programs::Event::Running
+                | programs::Event::Crashed(_)
+                | programs::Event::ScriptError(_)
+                | programs::Event::Dropped(_) => {}
+            }
+        }
+        // The subscriptions: re-read each one's command, push what changed — the first read
+        // after a subscribe always has.
+        let reads = self.extensions.sub_reads();
+        if reads.is_empty() {
+            return;
+        }
+        let mut results = Vec::new();
+        for (program, token, id, params) in reads {
+            let result = self.dispatch_for_program(&id, &params);
+            results.push((program, token, result.map_err(|e| e.0)));
+        }
+        for (program, token, value) in self.extensions.apply_sub_results(results) {
+            if let Some(handle) = self.extensions.program(&program) {
+                handle.state_update(token, &value);
+            }
+        }
+    }
+
+    /// Runs a program's command or read: the same command the window, CLI and MCP dispatch, on
+    /// the active session. No poll bracket of its own — this dispatch already runs inside one.
+    fn dispatch_for_program(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
+        if let Some(spec) = projects_commands().find(|c| c.id == id) {
+            crate::commands::check_params(id, spec.params, params)?;
+            return (spec.run)(self, params);
+        }
+        self.session_mut(None)?.execute(id, params)
+    }
     /// Sends the MIDI inputs' notes to the active project's engine when it is a new one, and
     /// looks at the ports again now and then, so a controller plugged in later is heard. The
-    /// running programs' send-backs go out on every look — they queue in the supervisor, and
-    /// past its cap they are dropped, so they are drained each frame.
+    /// running programs' business is [`Self::poll_programs`], called ahead of this from the
+    /// frame.
     fn poll_midi(&mut self) -> Vec<String> {
         if let Some(sender) = self.session_mut(None).ok().and_then(Session::take_live_input) {
             self.devices.midi.input.connect(sender);
-        }
-        for (id, event) in self.extensions.drain_events() {
-            if let programs::Event::SendBack { port, bytes } = event {
-                self.devices.midi.send_back(&id, &port, &bytes);
-            }
         }
         if self.devices.midi.system.is_some()
             && (self.devices.midi.synced_epoch != self.extensions.claims_epoch
@@ -897,6 +955,7 @@ impl Projects {
     /// a drag that outran it ([`Session::catch_up_player`]).
     pub fn poll_plugins(&mut self) -> Vec<String> {
         let mut notices = Vec::new();
+        self.poll_programs();
         if let Some(session) = self.tabs.active.and_then(|id| self.get_mut(id)) {
             session.catch_up_player();
             notices.extend(session.poll_recording());
@@ -1205,4 +1264,22 @@ pub fn let_go(session: Session) -> Option<std::thread::JoinHandle<()>> {
             suhina_plugins::trace!("closed project let go in {:?}", started.elapsed());
         })
         .ok()
+}
+
+/// Merges a program's gesture into its command's parameters, for the commands that take one:
+/// a stream of calls with one gesture is one undo step, ended by `history.endGesture` like
+/// any caller's. A command without the parameter runs without it.
+fn with_gesture(id: &str, mut params: Value, gesture: Option<&str>) -> Value {
+    let Some(gesture) = gesture else { return params };
+    let takes = |params: &[crate::commands::Param]| params.iter().any(|p| p.name == "gesture");
+    let takes_it = crate::commands::commands().iter().any(|c| c.id == id && takes(c.params))
+        || projects_commands().any(|c| c.id == id && takes(c.params));
+    if !takes_it {
+        return params;
+    }
+    if params.is_null() {
+        params = json!({});
+    }
+    params["gesture"] = json!(gesture);
+    params
 }

@@ -5695,7 +5695,9 @@ dependencies = [
  "interprocess",
  "mlua",
  "serde_json",
+ "sha2",
  "suhina-plugins",
+ "suhina-session",
 ]
 
 [[package]]
