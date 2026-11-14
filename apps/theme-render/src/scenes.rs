@@ -40,6 +40,7 @@ pub const FIXED: &[(&str, Step)] = &[
     ("launcher", settle),
     ("launcher-hover", launcher_hover),
     ("launcher-selected", |h| click(h, "Track Drums")),
+    ("launcher-toggles", launcher_toggles),
     ("arrangement", arrangement),
     ("piano-roll", piano_roll),
     ("menu", |h| click(h, "File")),
@@ -154,6 +155,14 @@ fn hover_first(h: &mut Window, contains: &str) -> Result<(), String> {
 fn launcher_hover(h: &mut Window) -> Result<(), String> {
     settle(h)?;
     hover_first(h, "Launch ")
+}
+
+/// A soloed, a cued and an armed track: the toggles lit, as a theme's general `button` rule must
+/// not hide (#1023).
+fn launcher_toggles(h: &mut Window) -> Result<(), String> {
+    click(h, "Solo Drums")?;
+    click(h, "Cue Bass on the headphones")?;
+    click(h, "Arm Keys for recording")
 }
 
 fn arrangement(h: &mut Window) -> Result<(), String> {
