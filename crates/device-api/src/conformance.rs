@@ -127,7 +127,7 @@ impl Device for Unmade {
 /// after a `reset` (ADR 0004 › Amendment: a device is made at its rate); a rate the device
 /// cannot run at makes no device.
 fn check_made_at(make_at: MakeAt, failures: &mut Vec<String>) {
-    for bad in [0.0, -1.0, f64::NAN, 1e12] {
+    for bad in [0.0, -1.0, f64::NAN, f64::INFINITY, 7_999.0, 384_001.0, 1e12] {
         if make_at(bad).is_ok() {
             failures.push(format!("a device was made at {bad} Hz"));
         }

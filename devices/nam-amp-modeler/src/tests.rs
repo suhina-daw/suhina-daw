@@ -404,7 +404,7 @@ fn a_hostile_rate_cannot_bound_the_staging_or_overflow() {
     // must be refused before the staging lists are sized: sizing asked no questions, a
     // rate of 0.0001 Hz asked for staging of ~30 000 000 000 frames a list, and rates
     // beyond the numbers overflowed the count on the way there. Through the public
-    // constructor, like the engine's rate-change prepare builds devices:
+    // constructor, as the engine makes devices:
     for rate in [0.000_1, 0.001, 1e300, 1e-300] {
         let mut amp = NamAmp::with_model(parsed(Some(rate)), 48_000.0).unwrap();
         amp.set_param(param::EQ_ON, 0.0);

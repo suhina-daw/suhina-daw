@@ -1000,6 +1000,8 @@ pub fn graph_device(
     samples: suhina_device_sdk::sample_resource::PreparedSamples,
 ) -> Result<suhina_device_sdk::GraphDevice, suhina_device_sdk::DeviceSdkError> {
     if graph.role == suhina_device_sdk::DeviceRole::MidiEffect {
+        // No sound, but made at a rate a device can run at, as every device is.
+        suhina_device_api::check_sample_rate(rate).map_err(|e| suhina_device_sdk::DeviceSdkError(e.to_string()))?;
         return suhina_device_sdk::GraphDevice::midi(graph);
     }
     let compiled = graph.clone();

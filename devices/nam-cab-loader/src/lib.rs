@@ -93,7 +93,7 @@ impl Side {
 pub struct CabLoader {
     sample_rate: f64,
     params: ParamBank<{ param::COUNT }>,
-    /// The IR the loader was made with, for `prepare` and `reset` rebuilds.
+    /// The IR the loader was made with, which its convolutions are built from.
     ir: Option<Ir>,
     sides: [Side; 2],
     convs: [Option<Convolver>; 2],
@@ -134,7 +134,7 @@ impl CabLoader {
     }
 
     /// A cab loader that convolves with `ir`, made for `sample_rate`; fails for a rate a device
-    /// cannot run at. An IR at another rate is resampled to it.
+    /// cannot run at.
     pub fn with_ir(ir: Ir, sample_rate: f64) -> Result<Self, DeviceError> {
         check_sample_rate(sample_rate).map(|rate| Self::build(rate, Some(ir)))
     }
@@ -162,22 +162,21 @@ impl CabLoader {
         };
         loader.volume.set_ramp(ramp);
         loader.delay_frames.set_ramp(ramp);
-        loader.rebuild();
+        // The sides and delays above are sized for the rate already: only the convolutions are
+        // left to build.
+        loader.build_convs();
+        loader.clear();
         loader
     }
 
-    /// Makes the two sides' convolutions from the IR at the device's rate, resampling an IR
-    /// recorded at another (reading a file already resamples it to the project's rate). A mono
-    /// IR feeds both sides. One the convolver cannot hold stays out. Allocates.
+    /// Makes the two sides' convolutions from the IR, which the session read at the project's
+    /// rate. A mono IR feeds both sides. One the convolver cannot hold stays out. Allocates.
     fn build_convs(&mut self) {
         self.convs = [None, None];
         let Some(ir) = self.ir.as_ref() else { return };
         if ir.channels.max(1) > 2 || ir.sample_rate == 0 {
             return;
         }
-        let rate = self.sample_rate.round() as u32;
-        let resampled = (ir.sample_rate != rate).then(|| ir.resampled_to(rate));
-        let ir = resampled.as_ref().unwrap_or(ir);
         for (side_index, conv_slot) in self.convs.iter_mut().enumerate() {
             let side = ir.side(if ir.channels.max(1) == 1 { 0 } else { side_index });
             if side.is_empty() {
@@ -207,13 +206,12 @@ impl CabLoader {
         self.params.get(index)
     }
 
-    /// Filters, delays and convolutions for the current sample rate, then [`Self::clear`].
-    /// Allocates: it runs when the loader is made and at `prepare`, never on the audio thread.
+    /// Filters and delays for a new sample rate, then [`Self::clear`]. Allocates: it runs at
+    /// `prepare`, never on the audio thread. The convolutions do not depend on the rate.
     fn rebuild(&mut self) {
         let sr = self.sample_rate;
         self.sides = [Side::new(sr), Side::new(sr)];
         self.delay = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
-        self.build_convs();
         self.clear();
     }
 

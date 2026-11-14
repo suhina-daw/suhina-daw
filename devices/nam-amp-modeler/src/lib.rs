@@ -80,8 +80,8 @@ pub static INFO: DeviceInfo = DeviceInfo::new("nam-amp-modeler", "NAM Amp Modele
 /// Reading `.nam` files.
 pub mod model;
 
-/// One side's stages: the EQ's filters, the DC blocker and the two resampler legs. All cleared
-/// by `rebuild`.
+/// One side's stages: the EQ's filters, the DC blocker and the two resampler legs. Built for the
+/// rate with [`ForRate`], cleared by `reset`.
 #[derive(Clone)]
 struct Side {
     bass: Biquad,
@@ -105,12 +105,93 @@ impl Side {
     }
 }
 
+/// What an amp builds for its sample rate and its model, off the audio thread: when it is made
+/// and when `prepare` moves it to another rate. `reset` only clears it.
+struct ForRate {
+    model_rate: f64,
+    model_refused: bool,
+    running: [Option<Model>; 2],
+    sides: [Side; 2],
+    delays: [TrimDelay; 2],
+    chunk_f64: [Vec<f64>; 2],
+    model_input: [Vec<f64>; 2],
+    model_io: [Vec<f32>; 2],
+    dc_staged: [Vec<f64>; 2],
+    stage_out: [Vec<f64>; 2],
+    leg_hold: u32,
+}
+
+impl ForRate {
+    /// The resampler legs, the delays, the staging sized for the rate pair and the two running
+    /// instances, for an amp at `sr` running `model`. Allocates.
+    fn new(sr: f64, model: Option<&NamModel>) -> Self {
+        let model_rate = model.map_or(0.0, |m| m.expected_sample_rate());
+        // The rate gate runs before anything is sized or allocated: sizing asked the file's
+        // rate no questions, and a hostile file could ask for staging that grows with the
+        // ratio without a bound ([model::runnable_rate]). A refused model is sized as the
+        // passthrough it plays as.
+        let mut model_refused =
+            model.is_some_and(|parsed| model::runnable_rate(sr, parsed.expected_sample_rate()).is_err());
+        // The model's expected rate; a model absent keeps the project's.
+        let model_hertz = if model.is_some() && model_rate > 0.0 { model_rate } else { sr };
+        let staged_rate = if model_refused { sr } else { model_hertz.max(1.0) };
+        // The legs' staging is sized for the rate pair: what the legs move is within a chunk
+        // times the ratio, plus the kernels' halves — all four stage lists sized alike so a
+        // path never runs out.
+        let ratio = staged_rate / sr.max(1.0);
+        let cap = CHUNK.max((CHUNK as f64 * ratio).ceil() as usize).max((CHUNK as f64 / ratio).ceil() as usize)
+            + 2 * HALF_TAPS
+            + 16;
+        // The running model, two instances (one per side), or the refusal the gate decided
+        // before any sizing. A model whose features the runtime refuses joins it here.
+        let mut running = [None, None];
+        if let Some(parsed) = model
+            && !model_refused
+        {
+            for slot in running.iter_mut() {
+                match Model::from_nam(parsed) {
+                    Ok(instance) => *slot = Some(instance),
+                    Err(_) => {
+                        model_refused = true;
+                        running = [None, None];
+                        break;
+                    }
+                }
+            }
+        }
+        // When the legs run, their produced stream trails the chunked feed by the two legs'
+        // kernel halves — about `(HALF_TAPS + 2)·(1 + project/model)` frames, plus a frame or
+        // two of each leg's tick-to-tick phase jitter. The delivery waits this much past the
+        // chunk so it never reads a slot production has not reached yet; `latency()` reports
+        // the same sum to the engine's compensation.
+        let leg_hold = if !model_refused && running[0].is_some() && model_rate != sr {
+            let ratio = sr / model_hertz.max(1.0);
+            ((f64::from((HALF_TAPS + 3) as u32) * (1.0 + ratio) + 4.0).ceil()) as u32
+        } else {
+            0
+        };
+        Self {
+            model_rate,
+            model_refused,
+            running,
+            sides: [Side::new(sr, staged_rate), Side::new(sr, staged_rate)],
+            delays: [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)],
+            chunk_f64: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
+            model_input: [vec![0.0; cap], vec![0.0; cap]],
+            model_io: [vec![0.0; cap], vec![0.0; cap]],
+            dc_staged: [vec![0.0; cap], vec![0.0; cap]],
+            stage_out: [vec![0.0; cap], vec![0.0; cap]],
+            leg_hold,
+        }
+    }
+}
+
 /// The NAM Amp Modeler. [`NamAmp::with_model`] runs a parsed model ([`NamModel`], shared with
 /// the session's cache); without one the trims, EQ and delay still run, the model silent.
 pub struct NamAmp {
     sample_rate: f64,
     params: ParamBank<{ param::COUNT }>,
-    /// The parsed model, for `prepare` and `reset` rebuilds.
+    /// The parsed model, which `prepare` builds the running instances from again.
     model: Option<Arc<NamModel>>,
     /// What the parse records as the model's rate.
     model_rate: f64,
@@ -176,39 +257,45 @@ impl NamAmp {
     /// Everything for `sample_rate` and the parsed model, which `prepare` builds again for a new
     /// rate; `reset` only clears it.
     fn build(sample_rate: f64, model: Option<Arc<NamModel>>) -> Self {
-        let ramp = Smoother::ramp_frames(RAMP_SECONDS, sample_rate);
+        let ForRate {
+            model_rate,
+            model_refused,
+            running,
+            sides,
+            delays,
+            chunk_f64,
+            model_input,
+            model_io,
+            dc_staged,
+            stage_out,
+            leg_hold,
+        } = ForRate::new(sample_rate, model.as_deref());
         let mut amp = Self {
             sample_rate,
             params: ParamBank::new(&PARAMS),
             model,
-            model_rate: DEFAULT_SAMPLE_RATE,
-            running: [None, None],
-            model_refused: false,
-            sides: [Side::new(sample_rate, DEFAULT_SAMPLE_RATE), Side::new(sample_rate, DEFAULT_SAMPLE_RATE)],
+            model_rate,
+            running,
+            model_refused,
+            sides,
             chunk: [Box::new([0.0; CHUNK]), Box::new([0.0; CHUNK])],
             ready_left: Box::new([0.0; RING]),
             ready_right: Box::new([0.0; RING]),
             in_pos: 0,
             produced_pos: 0,
             staged_total: 0,
-            leg_hold: 0,
-            chunk_f64: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            model_input: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            model_io: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            dc_staged: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            stage_out: [vec![0.0; CHUNK], vec![0.0; CHUNK]],
-            delays: [TrimDelay::new(sample_rate, MAX_DELAY_SECONDS), TrimDelay::new(sample_rate, MAX_DELAY_SECONDS)],
+            leg_hold,
+            chunk_f64,
+            model_input,
+            model_io,
+            dc_staged,
+            stage_out,
+            delays,
             input_gain: Smoother::new(1.0, 1),
             delay_frames: Smoother::new(0.0, 1),
             output_volume: Smoother::new(1.0, 1),
         };
-        amp.input_gain.reset(amp.input_target());
-        amp.input_gain.set_ramp(ramp);
-        amp.output_volume.reset(amp.output_target());
-        amp.output_volume.set_ramp(ramp);
-        amp.delay_frames.reset(0.0);
-        amp.delay_frames.set_ramp(ramp);
-        amp.rebuild();
+        amp.clear();
         amp
     }
 
@@ -224,11 +311,6 @@ impl NamAmp {
 
     fn value(&self, index: usize) -> f64 {
         self.params.get(index)
-    }
-
-    /// The model's expected rate; a model absent keeps the project's.
-    fn model_hertz(&self) -> f64 {
-        if self.model.is_some() && self.model_rate > 0.0 { self.model_rate } else { self.sample_rate }
     }
 
     /// Whether the project's rate is the model's, so the resampler legs stay out.
@@ -264,62 +346,21 @@ impl NamAmp {
         }
     }
 
-    /// Everything the current sample rate and the model in hand need: the resampler legs, the
-    /// delays, the staging sized for the rate pair and the two running instances, then
-    /// [`Self::clear`]. Allocates: it runs when the amp is made and at `prepare`, never on the
-    /// audio thread.
+    /// Everything a new sample rate needs ([`ForRate`]), then [`Self::clear`]. Allocates: it
+    /// runs at `prepare`, never on the audio thread.
     fn rebuild(&mut self) {
-        let sr = self.sample_rate;
-        self.model_rate = self.model.as_ref().map_or(0.0, |m| m.expected_sample_rate());
-        // The rate gate runs before anything is sized or allocated: sizing asked the file's
-        // rate no questions, and a hostile file could ask for staging that grows with the
-        // ratio without a bound ([model::runnable_rate]). A refused model is sized as the
-        // passthrough it plays as.
-        self.model_refused =
-            self.model.as_ref().is_some_and(|parsed| model::runnable_rate(sr, parsed.expected_sample_rate()).is_err());
-        let model_rate = if self.model_refused { sr } else { self.model_hertz().max(1.0) };
-        self.sides = [Side::new(sr, model_rate), Side::new(sr, model_rate)];
-        self.delays = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
-        // The legs' staging is sized for the rate pair: what the legs move is within a chunk
-        // times the ratio, plus the kernels' halves — all four stage lists sized alike so a
-        // path never runs out.
-        let ratio = model_rate / sr.max(1.0);
-        let cap = CHUNK.max((CHUNK as f64 * ratio).ceil() as usize).max((CHUNK as f64 / ratio).ceil() as usize)
-            + 2 * HALF_TAPS
-            + 16;
-        self.model_input = [vec![0.0; cap], vec![0.0; cap]];
-        self.model_io = [vec![0.0; cap], vec![0.0; cap]];
-        self.dc_staged = [vec![0.0; cap], vec![0.0; cap]];
-        self.stage_out = [vec![0.0; cap], vec![0.0; cap]];
-        self.chunk_f64 = [vec![0.0; CHUNK], vec![0.0; CHUNK]];
-        // The running model, two instances (one per side), or the refusal the gate decided
-        // before any sizing. A model whose features the runtime refuses joins it here.
-        self.running = [None, None];
-        if let Some(parsed) = self.model.as_ref()
-            && !self.model_refused
-        {
-            for slot in self.running.iter_mut() {
-                match Model::from_nam(parsed.as_ref()) {
-                    Ok(instance) => *slot = Some(instance),
-                    Err(_) => {
-                        self.model_refused = true;
-                        self.running = [None, None];
-                        break;
-                    }
-                }
-            }
-        }
-        // When the legs run, their produced stream trails the chunked feed by the two legs'
-        // kernel halves — about `(HALF_TAPS + 2)·(1 + project/model)` frames, plus a frame or
-        // two of each leg's tick-to-tick phase jitter. The delivery waits this much past the
-        // chunk so it never reads a slot production has not reached yet; `latency()` reports
-        // the same sum to the engine's compensation.
-        self.leg_hold = if !self.model_refused && self.running[0].is_some() && self.model_rate != self.sample_rate {
-            let ratio = self.sample_rate / self.model_hertz().max(1.0);
-            ((f64::from((HALF_TAPS + 3) as u32) * (1.0 + ratio) + 4.0).ceil()) as u32
-        } else {
-            0
-        };
+        let made = ForRate::new(self.sample_rate, self.model.as_deref());
+        self.model_rate = made.model_rate;
+        self.model_refused = made.model_refused;
+        self.running = made.running;
+        self.sides = made.sides;
+        self.delays = made.delays;
+        self.chunk_f64 = made.chunk_f64;
+        self.model_input = made.model_input;
+        self.model_io = made.model_io;
+        self.dc_staged = made.dc_staged;
+        self.stage_out = made.stage_out;
+        self.leg_hold = made.leg_hold;
         self.clear();
     }
 

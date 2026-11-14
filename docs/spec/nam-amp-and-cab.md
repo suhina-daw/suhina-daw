@@ -133,10 +133,11 @@ not a mix.
   paths, as with the limiter's look-ahead. Longer IRs are handled inside the same delay with the
   partition's tail buffers. The **Delay** knob is not reported.
 
-Both devices build what their rate and their file need (the Amp Modeler's resampler legs, staging
-and running model instances; the Cab Loader's convolutions) when they are made and when `prepare`
-moves them to another rate; `reset` only clears it — the running models' state, the convolutions'
-memory, the filters, delays and positions — and allocates nothing.
+The Amp Modeler builds what its rate and its model need (the resampler legs, the staging and the
+two running model instances) when it is made and when `prepare` moves it to another rate; the Cab
+Loader builds its convolutions once, when it is made, and its filters and delays for the rate.
+`reset` only clears all of it (the running models' state, the convolutions' memory, the filters,
+delays and positions) and allocates nothing.
 
 Both devices run their stages on the frames each call brings, as they arrive: the Amp
 Modeler's model, its DC blocker and the resampler legs, and the Cab Loader's convolution
@@ -162,9 +163,7 @@ which run hostile parameter values, hostile buffers, every block size and 8…38
   the runtime does not run) is kept and its device passes the audio through; the panel says why
   ([§ States](#states)).
 - An IR is resampled to the project's rate **once, when it is loaded** (off the audio thread, in
-  the session): the convolver always convolves at the project's rate. A Cab Loader made or
-  prepared at another rate than its IR's resamples the IR to its own, off the audio thread, so a
-  convolution never runs at the wrong pitch. A model is **not**
+  the session): the convolver always convolves at the project's rate. A model is **not**
   resampled at load — samples are its language; see [Sample rates](#sample-rates).
 - The file's path is stored in the project: `Device::state` holds the **absolute path** as
   UTF-8 — the same slot plug-ins and `.sd` devices use, saved and read with the project
