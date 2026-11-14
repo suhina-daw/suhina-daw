@@ -881,9 +881,13 @@ fn show_lanes(
             let shown = bar.saturating_add(1);
             // At a bar that only inherits its signature, picking that one starts a change there.
             let same = if changed || shown <= 1 { menus::SameSignature::Nothing } else { menus::SameSignature::Set };
-            ui.menu_button(format!("Time signature from bar {shown}"), |ui| {
-                menus::time_signature_menu(ui, shown, current, same, actions);
-            });
+            // A click into its field must not close it, as a click on any item of a menu does;
+            // its list's picks and Enter close it themselves.
+            let keep_open =
+                egui::containers::menu::MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+            egui::containers::menu::SubMenuButton::new(format!("Time signature from bar {shown}"))
+                .config(keep_open)
+                .ui(ui, |ui| menus::time_signature_menu(ui, shown, current, same, actions));
             if changed && ui.button(format!("Remove the time-signature change at bar {shown}")).clicked() {
                 actions.push(Action::new("timeSignature.delete", json!({ "bar": shown })));
                 ui.close();

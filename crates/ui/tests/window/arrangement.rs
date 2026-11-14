@@ -2819,6 +2819,36 @@ fn the_ruler_adds_moves_and_removes_a_time_signature_change() {
     assert_eq!(changes(&harness), [(bar, 3, 4)]);
 }
 
+/// A click into the ruler menu's time-signature field keeps the menu open, so a signature can be
+/// typed there; Enter sets it (a click on any item of a menu closes it, and closed this one).
+#[test]
+fn a_click_into_the_ruler_menus_signature_field_keeps_it_open() {
+    let mut harness = arrangement_app();
+    let row = harness.get_by_label("Markers").rect();
+    let bar = (f64::from(row.center().x - row.left()) / 8.0 / 4.0).round() as u32;
+    harness.get_by_label("Markers").click_secondary();
+    harness.run();
+    harness.get_by_label(&format!("Time signature from bar {}", bar + 1)).click();
+    harness.run();
+    harness.get_by_label("Type a time signature").click();
+    harness.run();
+    assert!(harness.query_by_label("Type a time signature").is_some(), "the click closed the menu");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.get_by_label("Type a time signature").type_text("5/4");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    let changes: Vec<(u32, u8, u8)> = harness.state().session().map_or(Vec::new(), |s| {
+        let t = &s.project().transport;
+        t.time_signature_changes
+            .iter()
+            .map(|c| (c.bar, c.time_signature.numerator, c.time_signature.denominator))
+            .collect()
+    });
+    assert_eq!(changes, [(bar, 5, 4)]);
+}
+
 /// A clip carried onto another track takes its gain envelope's button (and line) with it while it
 /// is dragged, not leaving them on the track it came from until it is let go of.
 #[test]
