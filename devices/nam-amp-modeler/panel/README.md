@@ -6,8 +6,15 @@ device registry embeds them into the panel's canvas as image assets when it load
 
 | File | Asset id | What it is | Size |
 |---|---|---|---|
-| `background.jpg` | `background` | The amp head behind the controls: the frame, the grille with the dark slots the dropdowns, steppers and buttons sit in, the logo and the brushed plate under the knobs | 1284 × 504, three times the 428 × 168 canvas |
-| `knob.png` | `knob` | A knob's face: a dark body with a soft top-to-bottom shade and a grey rim, transparent around it. The panel draws the value's arc around it and the pointer over it, and a theme's `device.knob.body` artwork replaces it | 128 × 128 |
+| `background-dark.jpg` | `background-dark` | The amp head behind the controls, in black tolex with a dark grille: the frame, the grille the dropdowns, steppers and buttons sit on, the logo and the brushed plate under the knobs. Shown with a dark theme | 1284 × 504, three times the 428 × 168 canvas |
+| `background-light.jpg` | `background-light` | The same head in cream tolex with a light grille and a bright plate. Shown with a light theme (`#light`) | 1284 × 504 |
+| `knob-dark.png` | `knob-dark` | A knob's face for the dark head: a dark body with a soft top-to-bottom shade and a grey rim, transparent around it | 128 × 128 |
+| `knob-light.png` | `knob-light` | A knob's face for the light head: a flat dark body with a grey rim | 128 × 128 |
+
+The panel draws the value's arc around a knob and its pointer over it, and a theme's
+`device.knob.body` artwork replaces the face. The originals' dark slots marked where each
+control sits; they are filled with the grille here, and the panel draws the controls' boxes in
+the theme's colours.
 
 ## Provenance
 
@@ -17,4 +24,5 @@ device registry embeds them into the panel's canvas as image assets when it load
   ([CONTRIBUTING.md › Shipped content](../../../CONTRIBUTING.md#shipped-content)).
 - **What changed:** scaled down from the originals to fit the SDK's image limits
   ([sdk-custom-ui.md](../../../docs/spec/sdk-custom-ui.md)), at most 512 KiB and one million
-  pixels an image: the background from 1712 × 672; the knob cropped to its circle from 1024 × 1024.
+  pixels an image: the backgrounds from 1712 × 672, their control slots filled with grille copied
+  from beside them; the knobs cropped to their circles from 1024 × 1024.

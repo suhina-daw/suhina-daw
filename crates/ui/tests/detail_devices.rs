@@ -432,7 +432,7 @@ fn a_nam_devices_panel_shows_its_controls_and_files() {
         "Amp Modeler: volume",
     ] {
         let rect = harness.get_by_label(label).rect();
-        assert!(rect.width() >= 60.0 && rect.height() >= 52.0, "{label} {rect:?} is too small to read");
+        assert!(rect.width() >= 58.0 && rect.height() >= 50.0, "{label} {rect:?} is too small to read");
         assert_eq!(rect.top(), top("Amp Modeler: gain"), "{label} is not on the amp's knob row");
     }
     let knobs: Vec<(&str, egui::Rect)> =

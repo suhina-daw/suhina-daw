@@ -148,8 +148,10 @@ pub const ENTRIES: [Entry; 17] = [
         layout: LayoutSource::JsonWithImages(
             include_str!("../../../devices/nam-amp-modeler/panel.json"),
             &[
-                ("background", include_bytes!("../../../devices/nam-amp-modeler/panel/background.jpg")),
-                ("knob", include_bytes!("../../../devices/nam-amp-modeler/panel/knob.png")),
+                ("background-dark", include_bytes!("../../../devices/nam-amp-modeler/panel/background-dark.jpg")),
+                ("background-light", include_bytes!("../../../devices/nam-amp-modeler/panel/background-light.jpg")),
+                ("knob-dark", include_bytes!("../../../devices/nam-amp-modeler/panel/knob-dark.png")),
+                ("knob-light", include_bytes!("../../../devices/nam-amp-modeler/panel/knob-light.png")),
             ],
         ),
         file: Some(FileKind {
