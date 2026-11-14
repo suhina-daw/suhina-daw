@@ -18,6 +18,7 @@ use suhina_model::{ChannelId, ChannelRole, Project, TrackId};
 
 use crate::chain::{Chain, LiveVolume, MAX_BLOCK};
 use crate::plugin::Delay;
+use crate::pool::Pool;
 use crate::track_gains;
 
 /// The most channels a loop check follows, so a malformed project cannot make it run long.
@@ -225,10 +226,17 @@ pub(crate) struct Turn {
     /// its plug-ins are waited for that many shares of the deadline sooner, so those buses
     /// still have time when one of its plug-ins is late.
     pub(crate) levels_after: u32,
+    /// It may run on a render worker ([`crate::pool`]): it has no plug-ins and is not Main.
+    pub(crate) parallel: bool,
     /// This block: feeders not done yet; whether it has started and whether it is done.
     left: usize,
     started: bool,
     done: bool,
+    /// Started on a render with workers, its devices not run yet: a worker or the render thread
+    /// takes it next.
+    pub(crate) queued: bool,
+    /// At a worker: its place holds the worker's spare chain until it comes back.
+    pub(crate) away: bool,
 }
 
 impl Turn {
@@ -273,6 +281,12 @@ pub(crate) fn plan_turns(chains: &mut [Chain]) {
     let all: Vec<Vec<usize>> = chains.iter().map(targets).collect();
     // A switched-off plug-in passes the sound and sends no block, so it needs no time.
     let plugins: Vec<bool> = chains.iter_mut().map(|c| c.plugin_slots().any(|s| s.enabled)).collect();
+    // A chain with any plug-in slot (or a clip host) stays on the render thread, where the
+    // plug-in path runs as it always has; the others may run on a render worker.
+    let parallel: Vec<bool> = chains
+        .iter_mut()
+        .map(|c| c.track != suhina_model::TrackId::MAIN && c.ara.is_none() && c.plugin_slots().next().is_none())
+        .collect();
     let mut levels = vec![0u32; chains.len()];
     for i in (0..chains.len()).rev() {
         let after = all.get(i).map_or(&[][..], Vec::as_slice);
@@ -289,8 +303,12 @@ pub(crate) fn plan_turns(chains: &mut [Chain]) {
     for (i, chain) in chains.iter_mut().enumerate() {
         // Main is fed by what reaches the output; it starts once every other chain is done.
         let feeders = if Some(i) == main { 0 } else { all.iter().filter(|t| t.contains(&i)).count() };
-        chain.turn =
-            Turn { feeders, levels_after: levels.get(i).copied().unwrap_or(0).min(MAX_LEVELS), ..Turn::default() };
+        chain.turn = Turn {
+            feeders,
+            levels_after: levels.get(i).copied().unwrap_or(0).min(MAX_LEVELS),
+            parallel: parallel.get(i).copied().unwrap_or(false),
+            ..Turn::default()
+        };
     }
 }
 
@@ -307,6 +325,11 @@ pub(crate) fn plan_turns(chains: &mut [Chain]) {
 /// plays, and a chain outside the source node's subtree adds nothing into a chain inside it (a
 /// return routed into the node's bus plays into the mix, not into the node's file). Never
 /// allocates; in real time it returns by the deadline.
+///
+/// With `pool`, the chains without plug-ins run on its workers as well as on the render thread
+/// ([`crate::pool`]): what they stage is added exactly as above, so the output is the same, bit
+/// for bit, whichever thread ran a chain. The render thread waits for a chain at a worker as
+/// long as it takes, as it would take to run it itself.
 pub(crate) fn run(
     chains: &mut [Chain],
     out: &mut [f32],
@@ -314,7 +337,9 @@ pub(crate) fn run(
     frames: usize,
     context: &ProcessContext,
     mut capture: Option<Capture>,
+    mut pool: Option<&mut Pool>,
 ) {
+    let parallel = pool.is_some();
     // The capture buffer starts empty; the source chain's mix adds to it.
     if let Some(cap) = capture.as_mut()
         && let Some(buffer) = cap.buffer.get_mut(..(frames.min(MAX_BLOCK) * 2).min(cap.buffer.len()))
@@ -326,24 +351,56 @@ pub(crate) fn run(
         chain.turn.left = chain.turn.feeders;
         chain.turn.started = false;
         chain.turn.done = false;
+        chain.turn.queued = false;
+        chain.turn.away = false;
     }
     for i in 0..chains.len() {
         if Some(i) != main && chains.get(i).is_some_and(|c| c.turn.feeders == 0) {
-            start(chains, i, frames, context, capture.as_ref());
+            start(chains, i, frames, context, capture.as_ref(), parallel);
         }
     }
     loop {
         let now = crate::clock::now();
         let mut moved = false;
+        if let Some(pool) = pool.as_deref_mut() {
+            // Chains back from the workers are done: the chains they play into may start.
+            moved |= pool.receive(chains, |chains, i, completed| {
+                if completed {
+                    release(chains, i, frames, context, capture.as_ref(), parallel);
+                }
+            });
+            for i in 0..chains.len() {
+                if chains.get(i).is_some_and(|c| c.turn.queued) {
+                    if !pool.send(chains, i, frames, context) {
+                        break;
+                    }
+                    moved = true;
+                }
+            }
+        }
+        // With workers, the render thread runs one queued chain itself, then looks at the
+        // workers again.
+        let mut ran_queued = false;
         for i in 0..chains.len() {
-            let Some(chain) = chains.get_mut(i).filter(|c| c.turn.started && !c.turn.done) else { continue };
+            let Some(chain) = chains.get_mut(i).filter(|c| c.turn.started && !c.turn.done && !c.turn.away) else {
+                continue;
+            };
+            if chain.turn.queued {
+                if ran_queued {
+                    continue;
+                }
+                chain.turn.queued = false;
+                chain.advance(frames, context);
+                ran_queued = true;
+                moved = true;
+            }
             if chain.is_waiting() && chain.answered(now) {
                 chain.collect(frames);
                 chain.advance(frames, context);
                 moved = true;
             }
             if !chain.is_waiting() {
-                done(chains, i, frames, context, capture.as_ref());
+                done(chains, i, frames, context, capture.as_ref(), parallel);
                 moved = true;
             }
         }
@@ -360,7 +417,7 @@ pub(crate) fn run(
                             *from = 0.0;
                         }
                     }
-                    start(chains, m, frames, context, capture.as_ref());
+                    start(chains, m, frames, context, capture.as_ref(), parallel);
                     continue;
                 }
                 Some((_, turn)) if !turn.done => {}
@@ -376,7 +433,16 @@ pub(crate) fn run(
             && let Some(i) =
                 (0..chains.len()).find(|&i| Some(i) != main && chains.get(i).is_some_and(|c| !c.turn.started))
         {
-            start(chains, i, frames, context, capture.as_ref());
+            start(chains, i, frames, context, capture.as_ref(), parallel);
+            continue;
+        }
+        if let Some(pool) = pool.as_deref()
+            && pool.any_away()
+        {
+            // A chain is at a worker: wait for it, looking at the plug-ins now and then if one
+            // of them is out too.
+            let plugins = chains.iter().any(|c| c.turn.started && !c.turn.done && !c.turn.away && c.is_waiting());
+            Pool::wait(plugins.then_some(crate::chain::ANSWER_SLICE));
             continue;
         }
         wait_for_answers(chains, now);
@@ -424,8 +490,16 @@ fn wait_for_answers(chains: &mut [Chain], now: std::time::Instant) {
 }
 
 /// Starts chain `i`'s block: what its feeders staged for it goes into its input, in their order,
-/// and its devices run as far as they can without waiting ([`Chain::advance`]).
-fn start(chains: &mut [Chain], i: usize, frames: usize, context: &ProcessContext, capture: Option<&Capture>) {
+/// and its devices run as far as they can without waiting ([`Chain::advance`]). With `parallel`
+/// (a render with workers), a chain that may run on a worker is queued instead.
+fn start(
+    chains: &mut [Chain],
+    i: usize,
+    frames: usize,
+    context: &ProcessContext,
+    capture: Option<&Capture>,
+    parallel: bool,
+) {
     let (before, rest) = chains.split_at_mut(i.min(chains.len()));
     let Some(chain) = rest.first_mut() else { return };
     let inside = |j: usize| capture.is_none_or(|c| c.inside(j));
@@ -444,15 +518,40 @@ fn start(chains: &mut [Chain], i: usize, frames: usize, context: &ProcessContext
         }
     }
     chain.turn.started = true;
-    chain.advance(frames, context);
+    if parallel && chain.turn.parallel {
+        chain.turn.queued = true;
+    } else {
+        chain.advance(frames, context);
+    }
 }
 
 /// Chain `i` has run its devices: the rest of its block runs, what it adds where it plays is
 /// staged, and every chain it plays into that has all its feeders done now starts.
-fn done(chains: &mut [Chain], i: usize, frames: usize, context: &ProcessContext, capture: Option<&Capture>) {
+fn done(
+    chains: &mut [Chain],
+    i: usize,
+    frames: usize,
+    context: &ProcessContext,
+    capture: Option<&Capture>,
+    parallel: bool,
+) {
     let Some(chain) = chains.get_mut(i) else { return };
     chain.complete(frames, context);
     chain.stage(frames);
+    release(chains, i, frames, context, capture, parallel);
+}
+
+/// Chain `i` has run its block and staged its sound (here or on a worker): it is done, and every
+/// chain it plays into that has all its feeders done now starts.
+fn release(
+    chains: &mut [Chain],
+    i: usize,
+    frames: usize,
+    context: &ProcessContext,
+    capture: Option<&Capture>,
+    parallel: bool,
+) {
+    let Some(chain) = chains.get_mut(i) else { return };
     chain.turn.done = true;
     let (target, sends) = (chain.target, chain.sends.len());
     for k in 0..=sends {
@@ -463,7 +562,7 @@ fn done(chains: &mut [Chain], i: usize, frames: usize, context: &ProcessContext,
         let Some(next) = chains.get_mut(t) else { continue };
         next.turn.left = next.turn.left.saturating_sub(1);
         if next.turn.left == 0 && !next.turn.started && next.track != suhina_model::TrackId::MAIN {
-            start(chains, t, frames, context, capture);
+            start(chains, t, frames, context, capture, parallel);
         }
     }
 }

@@ -14,6 +14,8 @@ suhina-dsp.workspace = true
 # Waiting for several plug-ins' answers at once (#1256).
 suhina-ipc.workspace = true
 rtrb.workspace = true
+# Render workers join real-time priority as the render thread does.
+suhina-realtime.workspace = true
 
 [lints]
 workspace = true
