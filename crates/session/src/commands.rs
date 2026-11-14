@@ -765,6 +765,7 @@ fn tracks(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
                     "volume_db": channel.map(|c| to_db(c.volume)),
                     "pan": channel.map(|c| c.pan),
                     "mute": channel.map(|c| c.mute),
+                    "solo": channel.map(|c| c.solo),
                     "armed": session.is_armed(t.id),
                     "midi_input": midi_input_json(&t.midi_input),
                     "audio_input": audio_input_json(&t.audio_input),
