@@ -381,6 +381,60 @@ fn the_control_bar_sets_the_time_signature() {
     }
 }
 
+/// A signature typed into the control bar is set by a click elsewhere too, as by Enter, and by a
+/// click on another value control; a click on the other number goes on typing there and keeps
+/// what was typed; only Escape leaves it.
+#[test]
+fn a_click_elsewhere_sets_a_typed_time_signature() {
+    let mut harness = window(demo_app());
+    let press_at = |harness: &mut Harness<'static, App>, at: egui::Pos2| {
+        harness.hover_at(at);
+        harness.run();
+        for pressed in [true, false] {
+            harness.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+        }
+        harness.run();
+    };
+    // A press on the empty middle of the window, below the control bar.
+    let bar = harness.get_by_label("Time signature numerator").rect();
+    let empty = egui::pos2(bar.center().x, bar.bottom() + 300.0);
+
+    harness.get_by_label("Time signature numerator").click();
+    harness.run();
+    harness.get_by_label("Time signature numerator").type_text("5");
+    harness.run();
+    press_at(&mut harness, empty);
+    assert_eq!(start_signature(&harness), Some((5, 4)));
+
+    // The numerator typed, then the denominator clicked and typed: both go.
+    harness.get_by_label("Time signature numerator").click();
+    harness.run();
+    harness.get_by_label("Time signature numerator").type_text("7");
+    harness.run();
+    harness.get_by_label("Time signature denominator").click();
+    harness.run();
+    harness.get_by_label("Time signature denominator").type_text("8");
+    harness.run();
+    harness.get_by_label("Tempo").click();
+    harness.run();
+    assert_eq!(start_signature(&harness), Some((7, 8)));
+
+    // Escape leaves it as it was.
+    harness.get_by_label("Time signature numerator").click();
+    harness.run();
+    harness.get_by_label("Time signature numerator").type_text("3");
+    harness.run();
+    harness.key_press(Key::Escape);
+    harness.run();
+    press_at(&mut harness, empty);
+    assert_eq!(start_signature(&harness), Some((7, 8)));
+}
+
 /// Dragging a number of the time signature up raises only that number, the project following
 /// while it moves (the grids change with it), and the whole drag is one undo step (#1259).
 #[test]

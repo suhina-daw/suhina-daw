@@ -207,7 +207,8 @@ Every edit here is one of the commands above and one undo step.
   number takes the keys: the arrow keys step it, and digits are typed into it. `/`, `-` or Space
   after the numerator's digits goes on to the denominator, Backspace in an empty denominator
   goes back to the numerator, and Enter sets what was typed (one number typed sets that number
-  alone). Escape or a click elsewhere drops it. A double-click puts the number clicked back to 4.
+  alone); a click elsewhere or on another value control sets it too, and a click on the other
+  number goes on typing there, keeping what was typed. Escape drops it. A double-click puts the number clicked back to 4.
   Picking or typing the project's signature while a launched scene's drives the clock puts the
   clock back on the map (`transport.followTempoMap`). The chevron at its right, and only the
   chevron, opens the common signatures to pick (2/4, 3/4, 4/4, 5/4, 6/8, 7/8, 9/8, 12/8, 15/16),

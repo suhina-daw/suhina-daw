@@ -1032,20 +1032,35 @@ pub(super) fn signature_field(
     // Typing: a click on a number gives the field the keys, from that number.
     let ctx = ui.ctx().clone();
     let typing_id = Id::unique("time-signature-typing");
+    // While typing, a click on the other number goes on typing there and keeps what was typed.
     for (response, in_denominator) in [(&numerator, false), (&denominator, true)] {
         if response.clicked() {
-            ctx.data_mut(|d| d.insert_temp(typing_id, SignatureTyping::from(in_denominator)));
+            let typing = match ctx.data(|d| d.get_temp::<SignatureTyping>(typing_id)) {
+                Some(typed) if widgets::holds_value_keys(&ctx, typing_id) => {
+                    SignatureTyping { in_denominator, ..typed }
+                }
+                _ => SignatureTyping::from(in_denominator),
+            };
+            ctx.data_mut(|d| d.insert_temp(typing_id, typing));
             widgets::hold_value_keys(&ctx, typing_id, true);
         }
     }
     let mut typing = ctx.data(|d| d.get_temp::<SignatureTyping>(typing_id));
-    // Another value control clicked, a press anywhere else or a drag lets the keys go.
+    let mut changes: Vec<(serde_json::Value, serde_json::Value, bool)> = Vec::new();
+    // Another value control clicked or a press anywhere else lets the keys go and sets what was
+    // typed, as Enter would; only Escape leaves it. A drag on the field drops it: the drag sets
+    // the number.
     let pressed_elsewhere = ui.input(|i| i.pointer.any_pressed()) && !numerator.hovered() && !denominator.hovered();
     let drag_started = [&numerator, &denominator].into_iter().any(|r| r.drag_started());
-    if typing.is_some() && (!widgets::holds_value_keys(&ctx, typing_id) || pressed_elsewhere || drag_started) {
+    let keys_gone = !widgets::holds_value_keys(&ctx, typing_id);
+    if let Some(typed) = typing.as_ref()
+        && (keys_gone || pressed_elsewhere || drag_started)
+    {
+        if !drag_started && let Some((n, d)) = typed.signature(current) {
+            changes.push((n, d, false));
+        }
         typing = None;
     }
-    let mut changes: Vec<(serde_json::Value, serde_json::Value, bool)> = Vec::new();
     if let Some(typed) = typing.as_mut() {
         widgets::hold_value_keys(&ctx, typing_id, true);
         let (steps, enter, escape) = signature_keys(ui, typed);
