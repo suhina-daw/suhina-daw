@@ -407,7 +407,7 @@ fills, the dropdowns and the steppers take the palette's colours, and a theme's
    for precision, a double click resets), whole Hz (kHz from 1000).
 3. **The knobs** — on the plate, one row, left to right: **Gain**; **Bass / Mid / Treble**;
    **Delay**; **Volume**; each with its name over it and its value under it. A knob's face is the
-   device's own metal knob (`Dial { image }`), its value's arc around it and its pointer over it;
+   device's own knob (`Dial { image }`, a dark body with a grey rim), its value's arc around it and its pointer over it;
    a drag up or down turns, a double-click returns to the default, arrow keys step when a knob
    has focus. Values read as the SDK's formats write them: dB with one decimal, milliseconds two
    decimals. Labels: "Amp Modeler: gain" … "Amp Modeler: volume".
