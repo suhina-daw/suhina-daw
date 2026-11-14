@@ -1251,3 +1251,22 @@ fn split_clip_cuts_at_a_loop_end_selection_edge() {
     let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
     assert_eq!(split.params["ats"], json!([17.0, 20.0]));
 }
+
+/// Selected notes reach the next note with Legato even where a rectangle left a time selection
+/// round them; with none selected, the notes in a time selection reach its end.
+#[test]
+fn legato_of_selected_notes_reaches_the_next_note_past_their_time_selection() {
+    let piano = clip(vec![note(0.0, 1.0, 60), note(2.0, 0.5, 59), note(6.0, 1.0, 61)]);
+    // A rectangle round the second note: it is selected, with the stretch 2 to 3 in time.
+    let mut state = span_state(&piano, 2.0, 3.0);
+    state.selected = BTreeSet::from([1]);
+    if let Some(span) = &mut state.span {
+        span.with = state.selected.clone();
+    }
+    let legato = state.key_action("pianoRoll.legato", &piano, 0.0, None).expect("note.legato");
+    assert_eq!(legato.params["until"], json!(6.0), "to the next note, not the stretch's end");
+    // No note selected: the notes that start in the stretch end at its end.
+    let mut state = span_state(&piano, 2.0, 4.0);
+    let legato = state.key_action("pianoRoll.legato", &piano, 0.0, None).expect("note.legato");
+    assert_eq!(legato.params["until"], json!(4.0));
+}

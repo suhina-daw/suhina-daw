@@ -1147,7 +1147,7 @@ button opens its clip in the editor.
   | **Fit to scale** | Moves each note to the nearest key of the clip's scale. A clip with no scale opens a list of the modes, each with its roots: picking one sets the clip's scale (`clip.setScale`) and fits the notes to it, two undo steps | `note.fitToScale` |
   | **Invert** | Mirrors the pitches around the middle of the selection's range | `note.invert` |
   | **Reverse** | Turns the selection round in time, inside its own span | `note.reverse` |
-  | **Legato** | Makes each note last until the next one starts, at most, and the last notes until the end of a time selection, else the next note after them, else the clip's end | `note.legato` |
+  | **Legato** | Makes each note last until the next one starts, at most, and the last notes until the next note after them, else the clip's end; with no note selected, the notes that start in a time selection last until its end | `note.legato` |
   | **×2**, **÷2** | Stretches or squeezes the selection in time, its starts and its lengths | `note.stretch` |
 
 - **Transform** tab, one under another: a list of transformations, a short line on what the

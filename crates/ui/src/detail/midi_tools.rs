@@ -98,8 +98,9 @@ impl Tools<'_> {
         params
     }
 
-    /// Where Legato's last notes end: at the end of the stretch selected in time (`span_end`), else
-    /// where the next note after them starts, on any key, else at the end of the clip.
+    /// Where Legato's last notes end: at the end of the stretch selected in time (`span_end`, given
+    /// only when no note is selected), else where the next note after them starts, on any key,
+    /// else at the end of the clip.
     pub(crate) fn legato_until(&self, span_end: Option<f64>) -> f64 {
         if let Some(end) = span_end {
             return end;

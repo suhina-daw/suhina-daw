@@ -665,7 +665,7 @@ impl PianoRollState {
                     nothing,
                 };
                 let mut params = tools.params();
-                params["until"] = json!(tools.legato_until(self.span_end()));
+                params["until"] = json!(tools.legato_until(self.legato_span_end()));
                 self.replacing(&mut params);
                 return Some(Action::new("note.legato", params));
             }
