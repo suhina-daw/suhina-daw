@@ -112,7 +112,9 @@ the importable example is `my-theme/`, with an example variant.
 
 A theme's colours are custom properties: every theme has each palette token (`--accent`,
 `--window-background`, `--track-headerBackground`: the palette keys with hyphens), set in
-`:root`. A token colours many things at once; in the Launcher, the mixer and the Arrangement
+`:root`. A theme needs to set only the colours it changes: any other is Suhina Studio's, and a
+theme Suhina saves writes only the colours it sets. Token names from the first versions
+(`--surface-0`, `--line`, …) are no longer read; use the names in the table below. A token colours many things at once; in the Launcher, the mixer and the Arrangement
 each thing is also an element of its own (the selector reference below), and a rule for it
 replaces the token there alone: `slot[kind="stop"] { background-color: … }`,
 `grid-line[kind="beat"] { color: … }`. A line or a mark takes only a `color` given to it, not the

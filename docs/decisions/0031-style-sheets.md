@@ -1136,3 +1136,30 @@ and the palette no longer reaches egui's widgets except as that fallback.
   clip-midi, context-menu, empty-space-menu, export-dialog, grid-menu, menu, missing-files,
   piano-roll, quick-add, sample-map, settings-menu and tooltip; every other theme's digests are
   unchanged.
+
+## Amendment: a theme's colours are variables, not a palette (2026-11-15)
+
+Accepted, from [issue #1444](https://github.com/suhina-daw/suhina-daw/issues/1444), the sixth
+slice of #1023 after #1433, #1435, #1438, #1440 and #1442: a theme held its colours as a fixed
+struct with every token filled in, so a saved theme wrote every token and the theme editor edited
+struct fields. It now holds them the way the style sheet does, as custom properties.
+- **A map of what the theme sets.** `Theme.colors` is a `BTreeMap<String, Color32>` keyed by the
+  variable's name without its `--` (`window-background`, `accent`, `track-headerBackground`), the
+  names `:root { --… }` uses; a JSON theme's `window.background` is read as `window-background`.
+  A colour the theme does not set is not in it. `Theme::transparent_rgb` is keyed the same way.
+- **The effective palette.** `Theme::palette()` is Suhina Studio's colours (`Palette::DARK`) with
+  the map's over them (`Palette::from_colors`). Everything that painted from `theme.colors`
+  (the app's `set_palette`, window opacity, swatches, the style engine's host `:root` block, the
+  device panels' colour snapshot) takes that, so with no change to a theme every built-in theme
+  paints as before: a model change, not a look change. The views' token functions and `Palette`
+  itself stay until the views draw from elements alone.
+- **A colour that equals Suhina Studio's is not set.** Reading a theme's sheet (and a variant)
+  puts a colour in the map only when it differs from Suhina Studio's, so Suhina Studio's own map
+  is empty and a saved theme is short. The editor may set a colour to Suhina Studio's value; it
+  stays in the map until the theme is read again.
+- **Saving writes only the map.** `theme.css` (`theme_css::sheet`), the native CSS export and a
+  theme's JSON write the colours in the map and no other; a theme that sets none writes no
+  `:root` colour block and no `"colors"` object.
+- **Old token names are dropped.** `RENAMED` is gone: `--surface-0`, `"line"` and the rest are
+  reported like any name that is not a token. The former track colours and `kind.*` colours keep
+  their own notices.

@@ -773,7 +773,11 @@ each theme.
 **Colours are custom properties; settings are properties of their elements.** The core set
 every theme has is each palette token (`--accent`, `--track-headerBackground`), registered with
 `@property` and Suhina Studio's values (`crates/ui/src/kit/theme_vars.rs`); a theme sets them in
-`:root`. Its settings are registered properties of the style engine (`suhina_style::property`),
+`:root`. A theme holds only the colours it sets: any other is Suhina Studio's, and a
+theme Suhina saves (its `theme.css`, a copy, a variant, an export) writes only those, with no
+`:root` colour block for a theme that sets none. The names Suhina used before the current tokens
+(`--surface-0`, `--line`, …) are no longer read; a sheet or theme file that has one is told it is
+not a colour token. Its settings are registered properties of the style engine (`suhina_style::property`),
 set on the element they belong to and read from its computed style (`SETTINGS` in
 `theme_vars.rs`): `meter { meter-style; meter-segments; meter-intensity; }`, `window {
 artwork-fps; liquid; panel-gradient; track-gradient; clip-gradient; backdrop-image;
