@@ -18,6 +18,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use suhina_theme_render::scenes::Scene;
 use suhina_theme_render::{Subject, painted, scenes};
@@ -63,30 +64,29 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
         .collect()
 }
 
-/// Every (scene, theme) listing, drawn on a thread per scene: the window's state is the thread's.
+/// Every (scene, theme) listing, drawn by as many workers as the machine has cores; each drawing
+/// is on a thread of its own ([`painted::scene`]).
 fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<String, String>> {
+    let jobs: Vec<(&Scene, &Drawn)> = scenes.iter().flat_map(|scene| drawn.iter().map(move |d| (scene, d))).collect();
+    let next = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
     std::thread::scope(|scope| {
-        let handles: Vec<_> = scenes
-            .iter()
-            .map(|scene| {
-                scope.spawn(move || {
-                    drawn
-                        .iter()
-                        .map(|d| ((scene.name.clone(), d.name.clone()), painted::scene(&d.subject, scene, d.engine)))
-                        .collect::<Vec<_>>()
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    while let Some((scene, d)) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        done.push(((scene.name.clone(), d.name.clone()), painted::scene(&d.subject, scene, d.engine)));
+                    }
+                    done
                 })
             })
             .collect();
-        handles
-            .into_iter()
-            .flat_map(|handle| {
-                handle.join().unwrap_or_else(|_| vec![(("?".into(), "?".into()), Err("panicked".into()))])
-            })
-            .collect()
+        handles.into_iter().flat_map(|handle| handle.join().unwrap_or_default()).collect()
     })
 }
 
-#[cfg(not(windows))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn every_built_in_theme_paints_each_scene_as_recorded() {
     let scenes: Vec<Scene> = scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
@@ -118,7 +118,13 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
     for ((scene, theme), digest) in &now {
         text.push_str(&format!("{scene} {theme} {digest}\n"));
     }
-    if std::env::var_os("SUHINA_BLESS").is_some() {
+    let failed: Vec<String> = listings
+        .iter()
+        .filter_map(|((scene, theme), listing)| listing.as_ref().err().map(|e| format!("{scene} in {theme}: {e}")))
+        .collect();
+    if suhina_test_support::blessing() {
+        // A drawing that failed is never recorded as what it should draw.
+        assert!(failed.is_empty(), "not recorded, these drawings failed:\n{}", failed.join("\n"));
         std::fs::write(file(), text).unwrap();
         return;
     }
@@ -142,11 +148,12 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
     assert!(
         differ.is_empty(),
         "{} of {} drawings differ from {} (see tests/painted.rs for how to compare or record):\n{}\n\n\
-         The file as this run draws it:\n{text}",
+         The file as this run draws it, between the lines:\n----- {} -----\n{text}----- end -----",
         differ.len(),
         now.len(),
         file().display(),
-        differ.join("\n")
+        differ.join("\n"),
+        file().display()
     );
 }
 
