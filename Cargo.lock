@@ -3308,6 +3308,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "multiversion"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb8a68be21d0755f83bfe47e79b896cc732687cf1903f0e50585e8d6ecc53076"
+dependencies = [
+ "multiversion-macros",
+ "target-features",
+]
+
+[[package]]
+name = "multiversion-macros"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a05e0c3c3e4edaa21d87c645852ed0b0c3663752bcc6ec43353bd6189dce35e1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "target-features",
+]
+
+[[package]]
 name = "naga"
 version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3349,6 +3371,7 @@ dependencies = [
 name = "nam-rs"
 version = "0.4.0"
 dependencies = [
+ "multiversion",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -6165,6 +6188,12 @@ dependencies = [
  "filetime",
  "libc",
 ]
+
+[[package]]
+name = "target-features"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1bbb9f3c5c463a01705937a24fdabc5047929ac764b2d5b9cf681c1f5041ed5"
 
 [[package]]
 name = "target-lexicon"

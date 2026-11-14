@@ -52,6 +52,35 @@ impl Activation {
     }
 }
 
+/// `activation` over `src` into `dst`, the activation chosen once outside the loop so the
+/// loop vectorises (AVX2 picked at run time). The same values as [`Activation::apply`] per
+/// element. (Suhina's change, `VENDORED.md`.)
+#[multiversion::multiversion(targets("x86_64+avx+avx2+fma"))]
+pub(super) fn apply_block(activation: Activation, src: &[f32], dst: &mut [f32]) {
+    match activation {
+        Activation::Tanh => {
+            for (d, x) in dst.iter_mut().zip(src) {
+                *d = crate::fast_math::fast_tanh(*x);
+            }
+        }
+        Activation::Relu => {
+            for (d, x) in dst.iter_mut().zip(src) {
+                *d = x.max(0.0);
+            }
+        }
+        Activation::Sigmoid => {
+            for (d, x) in dst.iter_mut().zip(src) {
+                *d = sigmoid(*x);
+            }
+        }
+        Activation::LeakyRelu(slope) => {
+            for (d, x) in dst.iter_mut().zip(src) {
+                *d = if *x > 0.0 { *x } else { slope * *x };
+            }
+        }
+    }
+}
+
 #[inline]
 fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())

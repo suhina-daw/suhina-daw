@@ -19,6 +19,10 @@
 /// longer inputs to this. Scratch is sized to it up front (off the audio thread).
 pub(super) const MAX_BLOCK: usize = 1024;
 
+/// Samples and outputs the block kernel keeps in registers at a time.
+const LANES: usize = 16;
+const OUTS: usize = 4;
+
 /// A dilated causal convolution that processes one sample at a time, keeping the
 /// receptive-field history in a pre-allocated ring buffer (no allocation on the
 /// audio thread).
@@ -45,6 +49,10 @@ pub(super) struct Conv1d {
     /// over time. `staged_stride` is the per-channel row length.
     staged: Vec<f32>,
     staged_stride: usize,
+    /// Whether the history lives in `staged` (the block path keeps it there between
+    /// blocks, shifting each row once per block) rather than in `ring`. The per-sample
+    /// path moves it back to the ring first. (Suhina's change, `VENDORED.md`.)
+    staged_live: bool,
 }
 
 impl Conv1d {
@@ -100,6 +108,7 @@ impl Conv1d {
             pos: ring_len - 1,
             staged: vec![0.0; in_ch * staged_stride],
             staged_stride,
+            staged_live: false,
         }
     }
 
@@ -122,6 +131,9 @@ impl Conv1d {
     pub(super) fn process_sample(&mut self, input: &[f32], out: &mut [f32]) {
         debug_assert_eq!(input.len(), self.in_ch);
         debug_assert_eq!(out.len(), self.out_ch);
+        if self.staged_live {
+            self.history_to_ring();
+        }
 
         // Advance and store the newest column.
         self.pos = (self.pos + 1) % self.ring_len;
@@ -169,68 +181,182 @@ impl Conv1d {
         let hist_len = self.ring_len - 1;
         let s = self.staged_stride;
 
-        // Stage the history tail (chronological: oldest at time 0, newest at
-        // hist_len-1) followed by this block, one contiguous row per input channel.
+        // The history tail (chronological: oldest at time 0, newest at hist_len-1) is
+        // already in each row's head when the previous call was a block; otherwise it is
+        // staged from the ring once. The block follows it in the same row.
+        if !self.staged_live {
+            self.ring_to_history();
+        }
+        for j in 0..self.in_ch {
+            let row = j * s;
+            let src = &block_in[j * n..j * n + n];
+            self.staged[row + hist_len..row + hist_len + n].copy_from_slice(src);
+        }
+
+        // Compute (`kernel_block`: register-blocked, AVX2 and FMA picked at run time).
+        kernel_block(
+            &Geometry {
+                staged: &self.staged,
+                stride: s,
+                hist_len,
+                weights: &self.weights,
+                bias: self.bias.as_deref(),
+                out_ch: self.out_ch,
+                out_per_group: self.out_per_group,
+                in_per_group: self.in_per_group,
+                kernel: self.kernel,
+                dilation: self.dilation,
+            },
+            n,
+            block_out,
+        );
+
+        // The newest `hist_len` columns become the next block's history: one shift per
+        // row instead of a ring write per sample.
+        if hist_len > 0 {
+            for j in 0..self.in_ch {
+                let row = j * s;
+                self.staged.copy_within(row + n..row + n + hist_len, row);
+            }
+        }
+        self.staged_live = true;
+    }
+
+    /// The ring's history into the head of each `staged` row, oldest first.
+    fn ring_to_history(&mut self) {
+        let hist_len = self.ring_len - 1;
+        let s = self.staged_stride;
         for j in 0..self.in_ch {
             let row = j * s;
             for h in 0..hist_len {
                 let col = (self.pos + self.ring_len - (hist_len - 1) + h) % self.ring_len;
                 self.staged[row + h] = self.ring[col * self.in_ch + j];
             }
-            let src = &block_in[j * n..j * n + n];
-            self.staged[row + hist_len..row + hist_len + n].copy_from_slice(src);
         }
+        self.staged_live = true;
+    }
 
-        // Compute. Weight-stationary: for each (out channel, tap, in channel) the
-        // inner loop streams contiguously over time in both `staged` and `block_out`.
-        for o in 0..self.out_ch {
-            let b = self.bias.as_ref().map_or(0.0, |bias| bias[o]);
-            block_out[o * n..o * n + n].fill(b);
-        }
-        let opg = self.out_per_group;
-        let ipg = self.in_per_group;
-        for o in 0..self.out_ch {
-            let g = o / opg;
-            let in_base = g * ipg;
-            let wo = o * ipg * self.kernel; // compact: rows are opg-by-ipg per group, contiguous in o
-            let out = &mut block_out[o * n..o * n + n];
-            for k in 0..self.kernel {
-                let back = (self.kernel - 1 - k) * self.dilation;
-                for jl in 0..ipg {
-                    let w = self.weights[wo + jl * self.kernel + k];
-                    // staged time for output t is `hist_len + t`; tap k reads `- back`.
-                    let base = (in_base + jl) * s + hist_len - back;
-                    let src = &self.staged[base..base + n];
-                    for t in 0..n {
-                        out[t] += w * src[t];
-                    }
-                }
-            }
-        }
-
-        // Advance the ring by pushing every block column (state update only, so a
-        // later `process_sample`/`process_block` continues seamlessly).
-        for t in 0..n {
-            self.pos = (self.pos + 1) % self.ring_len;
-            let base = self.pos * self.in_ch;
+    /// The history in the head of each `staged` row back into the ring, so the
+    /// per-sample path continues from it: columns `0..hist_len` oldest first, the
+    /// newest at `pos`.
+    fn history_to_ring(&mut self) {
+        let hist_len = self.ring_len - 1;
+        let s = self.staged_stride;
+        for h in 0..hist_len {
             for j in 0..self.in_ch {
-                self.ring[base + j] = block_in[j * n + t];
+                self.ring[h * self.in_ch + j] = self.staged[j * s + h];
             }
         }
+        // The slot past the history is the one the next sample overwrites.
+        let last = hist_len * self.in_ch;
+        self.ring[last..last + self.in_ch].fill(0.0);
+        self.pos = if hist_len == 0 { 0 } else { hist_len - 1 };
+        self.staged_live = false;
     }
 
     /// Clear the history to silence.
     pub(super) fn reset(&mut self) {
         self.ring.iter_mut().for_each(|x| *x = 0.0);
         self.pos = self.ring_len - 1;
+        self.staged_live = false;
     }
 
     /// The history of `other`, a conv of the same shape (`Model::copy_state_from`).
     pub(super) fn copy_state_from(&mut self, other: &Self) {
-        if self.ring.len() == other.ring.len() {
+        if self.ring.len() == other.ring.len() && self.staged.len() == other.staged.len() {
             self.ring.copy_from_slice(&other.ring);
             self.pos = other.pos;
+            self.staged.copy_from_slice(&other.staged);
+            self.staged_live = other.staged_live;
         }
+    }
+}
+
+/// What the block kernel reads: the staged rows and the conv's shape.
+struct Geometry<'a> {
+    staged: &'a [f32],
+    stride: usize,
+    hist_len: usize,
+    weights: &'a [f32],
+    bias: Option<&'a [f32]>,
+    out_ch: usize,
+    out_per_group: usize,
+    in_per_group: usize,
+    kernel: usize,
+    dilation: usize,
+}
+
+/// The block path's arithmetic (Suhina's change, `VENDORED.md`), register-blocked:
+/// `OUTS` outputs at a time over `LANES` samples, so each staged load feeds `OUTS`
+/// products and every sum stays in registers across all (tap, in channel) terms. Each
+/// output adds its terms in the order `process_sample` does (bias, then taps, then in
+/// channels), so the result is bit-for-bit the per-sample one, and the same with or
+/// without AVX2 (Rust never fuses a multiply and an add into one FMA on its own).
+#[multiversion::multiversion(targets("x86_64+avx+avx2+fma"))]
+fn kernel_block(g: &Geometry, n: usize, block_out: &mut [f32]) {
+    let (opg, ipg, kernel) = (g.out_per_group, g.in_per_group, g.kernel);
+    let mut o = 0;
+    // A block of outputs must share one group's inputs.
+    while o + OUTS <= g.out_ch && (o % opg) + OUTS <= opg {
+        let in_base = (o / opg) * ipg;
+        let mut bias = [0.0; OUTS];
+        if let Some(b) = g.bias {
+            bias.copy_from_slice(&b[o..o + OUTS]);
+        }
+        let mut t0 = 0;
+        while t0 + LANES <= n {
+            let mut acc = [[0.0f32; LANES]; OUTS];
+            for (r, row) in acc.iter_mut().enumerate() {
+                *row = [bias[r]; LANES];
+            }
+            for k in 0..kernel {
+                let back = (kernel - 1 - k) * g.dilation;
+                for jl in 0..ipg {
+                    // staged time for output t is `hist_len + t`; tap k reads `- back`.
+                    let base = (in_base + jl) * g.stride + g.hist_len - back + t0;
+                    let src: [f32; LANES] = g.staged[base..base + LANES].try_into().unwrap_or([0.0; LANES]);
+                    for (r, row) in acc.iter_mut().enumerate() {
+                        // Output o+r's row, then its (in channel, tap) weight.
+                        let w = g.weights[(o + r) * ipg * kernel + jl * kernel + k];
+                        for (a, x) in row.iter_mut().zip(&src) {
+                            *a += w * x;
+                        }
+                    }
+                }
+            }
+            for (r, row) in acc.iter().enumerate() {
+                let at = (o + r) * n + t0;
+                block_out[at..at + LANES].copy_from_slice(row);
+            }
+            t0 += LANES;
+        }
+        for r in 0..OUTS {
+            output_tail(g, o + r, in_base, t0, n, block_out);
+        }
+        o += OUTS;
+    }
+    // The outputs left over (fewer than `OUTS`, or a block that would cross a group).
+    while o < g.out_ch {
+        output_tail(g, o, (o / opg) * ipg, 0, n, block_out);
+        o += 1;
+    }
+}
+
+/// Output `o`'s samples `from..n`, one at a time, in `process_sample`'s order: the block
+/// kernel's remainder and the outputs it leaves to this.
+#[inline(always)]
+fn output_tail(g: &Geometry, o: usize, in_base: usize, from: usize, n: usize, block_out: &mut [f32]) {
+    let wo = o * g.in_per_group * g.kernel;
+    let b = g.bias.map_or(0.0, |bias| bias[o]);
+    for t in from..n {
+        let mut acc = b;
+        for k in 0..g.kernel {
+            let back = (g.kernel - 1 - k) * g.dilation;
+            for jl in 0..g.in_per_group {
+                acc += g.weights[wo + jl * g.kernel + k] * g.staged[(in_base + jl) * g.stride + g.hist_len - back + t];
+            }
+        }
+        block_out[o * n + t] = acc;
     }
 }
 
