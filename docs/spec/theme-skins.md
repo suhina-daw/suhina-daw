@@ -1338,11 +1338,22 @@ of bars, and a slider id per parameter.
 - **Low tracks:** `compact-below` on `arrangement` (at most 200 points): a header
   lower than it resolves every placement natively (`control_layout::native_only`).
 - **Ruler:** `ruler-number` (`color`, `font-size`, `display`) and `ruler-tick` (`color`, `width`
-  0–4).
+  0–4) inside the Arrangement's `ruler`. The piano roll's bar numbers and ticks are inside its
+  `ruler` too, and take only their `color`.
 - **Browser:** `browser-play` (`[checked]` while playing), `browser-tag-dot` (`opacity`,
   border), `browser-preview-wave` (`color` played, `border-color` ahead), the search field
   `#browser-search`.
 - **Dialogs:** `settings-nav` (`[checked]` for the page shown), `progress`, `progress-fill`.
+- **The views' parts (#1417):** every colour the Launcher, its mixer strips and meters, the
+  Arrangement and the piano roll's grid, notes, ruler and loop row paint comes from the element
+  that draws it, with the palette token as its fallback, so a theme with no rule for an element
+  looks as before. The parts and their kinds are in the theme guide's selector reference and in
+  ADR 0031 › *Amendment: the Launcher, the mixer, the Arrangement and the piano roll draw from
+  their elements*. A line or a mark (`separator[kind]`, `grid-line`, `start-marker`) takes only a
+  `color` given to it; text inherits. While a toggle is on (`[checked]`), and for a slot clip's
+  `[queued]`, `[selected]` and `[muted]` and a picked automation point, a rule for that state
+  sets its own fill and outline. A `clip:hover` background still colours the clip's fill while the
+  pointer is over it. `[queued]` is an attribute.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.

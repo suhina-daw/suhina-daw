@@ -1160,10 +1160,15 @@ pub(super) fn clip_box<'a>(
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
         let body = motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
+        let id = clip_element_id(clip);
+        // A comparison lookup, taken out of the tree again: the clip's body is drawn under the
+        // same key without `[selected]`, and a second element there would leave its selected
+        // style as the body's painted one (held for a transition) in the next frame.
+        let outline = clip_element(&id, lane, clip, timeline, true).probe();
         painter.with_clip_rect(row.clip).rect_stroke(
             rect,
             0.0,
-            egui::Stroke::new(1.0, theme::text_primary()),
+            egui::Stroke::new(1.0, outline.border_or(theme::text_primary())),
             StrokeKind::Inside,
         );
     }
@@ -1246,7 +1251,8 @@ pub(super) fn clip_box<'a>(
     for (edge, hover) in curves {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
         let center = curve_handle(rect, edge, length as f32 * state.beat_width, shown.curve(edge));
-        let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
+        let look = crate::kit::element::CLIP_FADE_HANDLE.attribute("kind", "curve").look();
+        let fill = look.background_or(motion::mix(theme::text_secondary(), theme::text_primary(), hover));
         handle_painter.circle(
             center,
             CURVE_HANDLE / 2.0,
@@ -1351,6 +1357,40 @@ pub(crate) struct ClipSpot {
     pub(super) end: f64,
 }
 
+/// The id an Arrangement clip's `clip` element is entered with: its identity in the style tree,
+/// so its transitions follow it however the clips around it change.
+pub(super) fn clip_element_id(clip: &ClipBox) -> String {
+    format!("clip-{}", clip.id.0)
+}
+
+/// The `clip` element of an Arrangement clip, with its id, its `[color]` and its states:
+/// `[selected]`, `[muted]`, `[playing]` while the play position is inside it, `[recording]` while a
+/// take records over it. Everything drawn of one clip (its body, the outline of a clip picked by a
+/// click in its body) is looked up from this one description, so a rule for its colour or one of
+/// its states reaches each part.
+pub(super) fn clip_element<'a>(
+    id: &'a str,
+    lane: &Lane,
+    clip: &ClipBox,
+    timeline: &Timeline,
+    selected: bool,
+) -> crate::kit::element::Builder<'a> {
+    let off = lane.mute || !clip.enabled;
+    let end = clip.start + clip.length;
+    let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
+    let recording = timeline
+        .recording_spans
+        .iter()
+        .any(|(track, from, to)| *track == lane.track && *from < end && *to > clip.start);
+    crate::kit::element::CLIP
+        .id(id)
+        .color(rgb(clip.color))
+        .attr(crate::kit::element::Selected, selected)
+        .attr(crate::kit::element::Muted, off)
+        .attr(crate::kit::element::Playing, playing)
+        .attr(crate::kit::element::Recording, recording)
+}
+
 /// Draws a clip's body, colour strip, name and the marks of its notes (only those in view).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_clip(
@@ -1368,22 +1408,8 @@ pub(super) fn paint_clip(
 ) {
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement clip");
     let off = lane.mute || !clip.enabled;
-    // `[playing]` while the play position is inside it, `[recording]` while a take records over it.
-    let end = clip.start + clip.length;
-    let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
-    let recording = timeline
-        .recording_spans
-        .iter()
-        .any(|(track, from, to)| *track == lane.track && *from < end && *to > clip.start);
-    let id = format!("clip-{}", clip.id.0);
-    let own = crate::kit::element::CLIP
-        .id(&id)
-        .color(rgb(clip.color))
-        .attr(crate::kit::element::Selected, selected)
-        .attr(crate::kit::element::Muted, off)
-        .attr(crate::kit::element::Playing, playing)
-        .attr(crate::kit::element::Recording, recording)
-        .enter();
+    let id = clip_element_id(clip);
+    let own = clip_element(&id, lane, clip, timeline, selected).enter();
     let view = painter.clip_rect();
     if !rect.intersects(view) {
         return;
@@ -1599,7 +1625,8 @@ pub(super) fn paint_clip(
         if x.span() > 0.0 {
             let top = bar.map_or(rect.top(), |bar| bar.bottom());
             let lit = Rect::from_x_y_ranges(x, egui::Rangef::new(top, rect.bottom()));
-            painter.rect_filled(lit, 0.0, theme::accent().gamma_multiply(EDITOR_SPAN_TINT));
+            let look = crate::kit::element::TIME_SELECTION.attribute("kind", "editor").look();
+            painter.rect_filled(lit, 0.0, look.background_or(theme::accent().gamma_multiply(EDITOR_SPAN_TINT)));
         }
     }
     // Loop boundaries share the leading edge's contrast, with a small top notch so they
@@ -1630,7 +1657,8 @@ pub(super) fn paint_clip(
     // A fade is a line over the waveform, from the clip's bottom corner to where it ends at
     // the top, following its shape and curve.
     if clip.audio {
-        let fade_stroke = theme::hairline(dim(theme::text_secondary()));
+        let fade_stroke =
+            theme::hairline(crate::kit::element::CLIP_FADE.look().own_color_or(dim(theme::text_secondary())));
         if shown.fade_in > 0.0 {
             let end = (rect.left() + shown.fade_in as f32 * beat_width).min(rect.right());
             painter.line(fade_line(rect, FadeEdge::In, rect.left(), end, shown.fade_in_curve), fade_stroke);
@@ -1731,7 +1759,7 @@ pub(super) fn paint_ara_activity(
     painter.rect_filled(track, 0.0, motion::mix(body, ink, 0.2));
     if let Some(p) = progress {
         let done = Rect::from_min_max(track.min, Pos2::new(track.left() + track.width() * p, track.bottom()));
-        painter.rect_filled(done, 0.0, theme::accent());
+        painter.rect_filled(done, 0.0, crate::kit::element::PROGRESS_FILL.look().background_or(theme::accent()));
     }
 }
 
@@ -1756,6 +1784,12 @@ pub(super) struct TakeLanes {
     pub(super) top: f32,
     pub(super) visible: Rect,
     pub(super) bar_beats: f64,
+}
+
+/// What is picked or painted on take lanes, `time-selection[kind="take"]`: its `background-color`
+/// over the lanes and its `color` for the outlines.
+fn take_selection() -> crate::kit::element::Look {
+    crate::kit::element::TIME_SELECTION.attribute("kind", "take").look()
 }
 
 /// Draws `lane`'s take lanes under it (`docs/spec/recording.md` › Take lanes): each take's
@@ -1783,6 +1817,10 @@ pub(super) fn take_lanes(
     let beat_of = |x: f32| ruler_beat(f64::from((x - at.time.min + scroll_x) / beat_width), grid, free);
     let raw_beat = |x: f32| f64::from((x - at.time.min + scroll_x) / beat_width);
     let ctrl = ui.input(|i| i.modifiers.command);
+    // What is picked or painted on take lanes, read once for every lane.
+    let take_sel = take_selection();
+    // The line under each take lane, `separator[kind="row"]`.
+    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
     // Which part of a piece moves it, as for a clip (`docs/spec/arrangement-editing.md`): the name
     // bar, or the lower half; only the name bar when Ctrl selects time, so a drag can still comp;
     // the whole piece when it is too low for either.
@@ -1830,7 +1868,7 @@ pub(super) fn take_lanes(
         painter.hline(
             egui::Rangef::new(at.time.min.min(at.headers.min), at.time.max.max(at.headers.max)),
             row.bottom() + 0.5,
-            theme::hairline(theme::border()),
+            theme::hairline(line),
         );
         if row.bottom() < at.visible.top() || row.top() > at.visible.bottom() {
             continue;
@@ -1844,16 +1882,30 @@ pub(super) fn take_lanes(
         // The header in the take's colour, a darker shade of it, with a strip of the colour itself
         // at its inner edge, as a track's header has (#989).
         let swatch = crate::interaction::colour_picker::color32(colour);
-        let shade = motion::mix(crate::kit::style_class::surface_or(theme::window_background()), swatch, 0.35);
+        let lane_key = (lane.track, take.number);
+        let picked = state.take_lanes_picked.contains(&lane_key);
+        // The take's header, `take-header` with the take's `[color]`, `[selected]` while picked.
+        let take_header =
+            crate::kit::element::TAKE_HEADER.color(swatch).attr(crate::kit::element::Selected, picked).enter();
+        let shade = take_header.background_or(motion::mix(
+            crate::kit::style_class::surface_or(theme::window_background()),
+            swatch,
+            0.35,
+        ));
         painter.rect_filled(whole_header, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
         painter.rect_filled(header, 0.0, shade);
         let strip = Rect::from_min_size(header.min, Vec2::new(4.0, header.height()));
         painter.rect_filled(strip, 0.0, swatch);
         state.take_headers.push(header.intersect(at.visible));
-        let lane_key = (lane.track, take.number);
-        if state.take_lanes_picked.contains(&lane_key) {
-            painter.rect_stroke(header, 0.0, Stroke::new(1.5, theme::selection()), StrokeKind::Inside);
+        if picked {
+            let outline = take_header.border_or(take_sel.own_color_or(theme::selection()));
+            painter.rect_stroke(header, 0.0, Stroke::new(1.5, outline), StrokeKind::Inside);
         }
+        // The name's ink, and its buttons' where no rule of theirs sets one: the header's text
+        // colour, read while it is in scope.
+        let ink = take_header.color_or(ink_on(shade));
+        // The lane's clips and buttons are not inside the header.
+        drop(take_header);
         let name = ui.interact(
             header.intersect(at.visible),
             Id::unique(("take-name", lane.track.0, take.number)),
@@ -1900,7 +1952,6 @@ pub(super) fn take_lanes(
         let solo = place(delete.right() + 3.0);
         let colour_button = place(solo.right() + 3.0);
         let promote = place(header.right() - 4.0 - button.x);
-        let ink = ink_on(shade);
         let small = theme::ui_font(theme::TEXT_SMALL);
         let soloed = state.take_solo == Some((lane.track, take.number));
         if header.height() >= button.y + 4.0 {
@@ -1909,30 +1960,30 @@ pub(super) fn take_lanes(
                 widgets::button_area(ui, rect.intersect(at.visible), id(what), label).on_hover_text(what.to_string())
             };
             let r = clicked(delete, "Delete take", format!("Delete {}", take.name));
-            painter.rect_filled(delete, 2.0, motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
+            let el = crate::kit::element::BUTTON.id("take-delete").response(&r).enter();
+            let fill = el.background_or(motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
+            painter.rect_filled(delete, 2.0, fill);
+            let delete_ink = el.color_or(ink);
+            drop(el);
             // A cross drawn, not a glyph: the interface font has no multiplication cross.
             let c = delete.center();
-            let cross = Stroke::new(1.2, ink);
+            let cross = Stroke::new(1.2, delete_ink);
             painter.line_segment([c + Vec2::new(-3.5, -3.5), c + Vec2::new(3.5, 3.5)], cross);
             painter.line_segment([c + Vec2::new(-3.5, 3.5), c + Vec2::new(3.5, -3.5)], cross);
             if r.clicked() {
                 actions.push(Action::new("take.delete", json!({ "track": params["track"], "take": params["take"] })));
             }
             let r = clicked(solo, "Solo take", format!("Solo {}", take.name));
-            let fill = if soloed {
-                theme::accent()
-            } else {
-                motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r))
-            };
+            let (el, plain) = crate::kit::element::BUTTON
+                .id("take-solo")
+                .response(&r)
+                .enter_against_plain(crate::kit::element::Checked, soloed);
+            let off = motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r));
+            let (fill, _) = widgets::toggle_inks(&el, plain.as_ref(), (theme::accent(), off), (ink, ink));
+            let (_, text) = widgets::toggle_inks(&el, plain.as_ref(), (fill, fill), (ink_on(fill), ink));
             painter.rect_filled(solo, 2.0, fill);
-            widgets::text_in(
-                painter,
-                solo,
-                Align2::CENTER_CENTER,
-                "S",
-                small.clone(),
-                if soloed { ink_on(fill) } else { ink },
-            );
+            widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", small.clone(), text);
+            drop(el);
             if r.clicked() {
                 let number = if soloed { 0 } else { take.number };
                 actions.push(Action::new("take.solo", json!({ "track": lane.track.0, "take": number })));
@@ -1950,8 +2001,12 @@ pub(super) fn take_lanes(
                 }
             });
             let r = clicked(promote, "Put the whole take on the track", format!("Put {} on the track", take.name));
-            painter.rect_filled(promote, 2.0, motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
-            widgets::text_in(painter, promote, Align2::CENTER_CENTER, "\u{2191}", small.clone(), ink);
+            let el = crate::kit::element::BUTTON.id("take-promote").response(&r).enter();
+            let fill = el.background_or(motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
+            painter.rect_filled(promote, 2.0, fill);
+            let promote_ink = el.color_or(ink);
+            drop(el);
+            widgets::text_in(painter, promote, Align2::CENTER_CENTER, "\u{2191}", small.clone(), promote_ink);
             if r.clicked() {
                 actions.push(Action::new("take.promote", json!({ "track": lane.track.0, "take": take.number })));
             }
@@ -2034,7 +2089,12 @@ pub(super) fn take_lanes(
         for &(_, _, piece) in state.take_selected.iter().filter(|(t, n, _)| *t == lane.track && *n == take.number) {
             if let Some(clip) = take.clips.get(piece) {
                 let rect = clip_rect(row, clip.start, clip.length, x_of);
-                painter.rect_stroke(rect, 0.0, Stroke::new(1.5, theme::selection()), StrokeKind::Inside);
+                painter.rect_stroke(
+                    rect,
+                    0.0,
+                    Stroke::new(1.5, take_sel.own_color_or(theme::selection())),
+                    StrokeKind::Inside,
+                );
             }
         }
         // Ctrl and a click picks a piece, or takes it out of what is picked, so Delete deletes
@@ -2069,7 +2129,12 @@ pub(super) fn take_lanes(
                 if moves_at(rect, pointer.y) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                 }
-                painter.rect_stroke(rect, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+                painter.rect_stroke(
+                    rect,
+                    0.0,
+                    Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
+                    StrokeKind::Inside,
+                );
             }
         }
         // With Ctrl a drag only paints an area, wherever it starts (#1078).
@@ -2118,8 +2183,13 @@ pub(super) fn take_lanes(
                 if let Some(edge) = held {
                     let (from, to) = if end { (clip.start, edge.at) } else { (edge.at, clip.start + clip.length) };
                     let shown = clip_rect(row, from, (to - from).max(0.0), x_of);
-                    painter.rect_filled(shown, 0.0, theme::selection().gamma_multiply(0.25));
-                    painter.rect_stroke(shown, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+                    painter.rect_filled(shown, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
+                    painter.rect_stroke(
+                        shown,
+                        0.0,
+                        Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
+                        StrokeKind::Inside,
+                    );
                 }
                 let span = if end {
                     egui::Rangef::new(rect.right() - 6.0, rect.right() + 2.0)
@@ -2186,8 +2256,13 @@ pub(super) fn take_lanes(
             let to = beat_of(pointer.x);
             let (start, end) = (from.min(to), from.max(to));
             let picked = Rect::from_min_max(Pos2::new(x_of(start), row.top()), Pos2::new(x_of(end), row.bottom()));
-            painter.rect_filled(picked, 0.0, theme::selection().gamma_multiply(0.25));
-            painter.rect_stroke(picked, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+            painter.rect_filled(picked, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
+            painter.rect_stroke(
+                picked,
+                0.0,
+                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
+                StrokeKind::Inside,
+            );
             if body.drag_stopped() {
                 state.gesture.end_take(|_| true);
                 if end - start > 1e-6 {
@@ -2226,8 +2301,13 @@ pub(super) fn take_lanes(
         let (start, end) = (from.min(to), from.max(to));
         for (_, row) in covered {
             let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(start), x_of(end)), row.y_range());
-            painter.rect_filled(lit, 0.0, theme::selection().gamma_multiply(0.25));
-            painter.rect_stroke(lit, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+            painter.rect_filled(lit, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
+            painter.rect_stroke(
+                lit,
+                0.0,
+                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
+                StrokeKind::Inside,
+            );
         }
         if !down {
             state.gesture.end_take_area(|_| true);
@@ -2252,8 +2332,13 @@ pub(super) fn take_lanes(
     if let Some(area) = state.take_area.as_ref().filter(|a| a.track == lane.track) {
         for (_, row) in rows.iter().filter(|(n, _)| area.takes.contains(n)) {
             let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(area.start), x_of(area.end)), row.y_range());
-            painter.rect_filled(lit, 0.0, theme::selection().gamma_multiply(0.25));
-            painter.rect_stroke(lit, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
+            painter.rect_filled(lit, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
+            painter.rect_stroke(
+                lit,
+                0.0,
+                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
+                StrokeKind::Inside,
+            );
         }
     }
     // Pieces being moved, shown where they would land: on the grid, Alt for no grid, and as many
@@ -2280,8 +2365,13 @@ pub(super) fn take_lanes(
                 lane_of(number).and_then(|at| usize::try_from(at + lanes_by).ok()).and_then(|at| rows.get(at));
             if let Some((_, row)) = landing_row {
                 let landing = clip_rect(*row, clip.start + by, clip.length, x_of);
-                painter.rect_filled(landing, 0.0, theme::selection().gamma_multiply(0.25));
-                painter.rect_stroke(landing, 0.0, Stroke::new(1.5, theme::selection()), StrokeKind::Inside);
+                painter.rect_filled(landing, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
+                painter.rect_stroke(
+                    landing,
+                    0.0,
+                    Stroke::new(1.5, take_sel.own_color_or(theme::selection())),
+                    StrokeKind::Inside,
+                );
             }
         }
         if !down {
@@ -2427,7 +2517,8 @@ pub(super) fn comp_crossfade(
         hover = hover.max(this);
         bend_handle = Some(this);
     }
-    let ink = theme::text_primary();
+    // A comp's crossfade between two pieces, `clip-fade[kind="crossfade"]`.
+    let ink = crate::kit::element::CLIP_FADE.attribute("kind", "crossfade").look().own_color_or(theme::text_primary());
     let active = if dragging { 1.0 } else { hover };
     painter.rect_filled(span, 0.0, ink.gamma_multiply(0.08 + 0.10 * active));
     let line = Stroke::new(1.0, ink.gamma_multiply(0.85));
@@ -2445,7 +2536,8 @@ pub(super) fn comp_crossfade(
             paint_fade_handle(painter, handle, hover);
         }
         if let Some(hover) = bend_handle {
-            let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
+            let look = crate::kit::element::CLIP_FADE_HANDLE.attribute("kind", "curve").look();
+            let fill = look.background_or(motion::mix(theme::text_secondary(), theme::text_primary(), hover));
             painter.circle(
                 center,
                 CURVE_HANDLE / 2.0,
@@ -2551,7 +2643,7 @@ pub(super) fn paint_live_take(
     if take.audio && !take.peaks.is_empty() && take.peaks_end > take.start {
         let body = Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 14.0), rect.max);
         let step = (take.peaks_end - take.start) / take.peaks.len() as f64;
-        let ink = theme::text_primary().gamma_multiply(0.8);
+        let ink = crate::kit::element::CLIP_WAVEFORM.look().own_color_or(theme::text_primary()).gamma_multiply(0.8);
         let mut last = f32::NEG_INFINITY;
         for (i, peak) in take.peaks.iter().enumerate() {
             let x = x_of(take.start + i as f64 * step).round() + 0.5;
@@ -2568,5 +2660,7 @@ pub(super) fn paint_live_take(
             );
         }
     }
-    painter.rect_stroke(rect, 0.0, Stroke::new(1.5, theme::recording()), StrokeKind::Inside);
+    let edge =
+        crate::kit::element::CLIP.attr(crate::kit::element::Recording, true).look().border_or(theme::recording());
+    painter.rect_stroke(rect, 0.0, Stroke::new(1.5, edge), StrokeKind::Inside);
 }

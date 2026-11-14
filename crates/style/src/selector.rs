@@ -20,14 +20,13 @@ pub const STATES: &[&str] = &[
     "enabled",
     "disabled",
     "open",
-    "queued",
     "dragged",
     "drop-target",
 ];
 
 /// The app's states of an element that are attributes without a value, not pseudo-classes: a
 /// selector writes `[checked]`, and `:checked` does not parse.
-pub const HOST_ATTRIBUTES: &[&str] = &["checked", "selected", "playing", "recording", "armed", "muted"];
+pub const HOST_ATTRIBUTES: &[&str] = &["checked", "selected", "playing", "queued", "recording", "armed", "muted"];
 
 /// Presentation identity only. Parameter bindings and audio data never enter this tree.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

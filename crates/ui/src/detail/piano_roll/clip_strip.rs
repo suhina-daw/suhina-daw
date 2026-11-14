@@ -35,16 +35,20 @@ pub(super) fn show(
     }
     let on = state.focus_first;
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, "Focus on the first clip"));
-    if on {
-        painter.rect_filled(switch, 0.0, theme::accent());
-    }
-    painter.text(
-        switch.center(),
-        Align2::CENTER_CENTER,
-        "Focus",
-        theme::mono_font(theme::TEXT_TINY),
-        if on { theme::text_inverse() } else { theme::text_secondary() },
-    );
+    // The label's native inks, read before the button is entered: inside it the palette's text
+    // colours are the button's own `color`, which would put a rule for the plain button on the lit
+    // one's label after all.
+    let inks = (theme::text_inverse(), theme::text_secondary());
+    // `button#control-focus-first`, `[checked]` while on.
+    let (el, plain) = crate::kit::element::BUTTON
+        .id("focus-first")
+        .response(&response)
+        .enter_against_plain(crate::kit::element::Checked, on);
+    let (fill, ink) =
+        crate::kit::widgets::toggle_inks(&el, plain.as_ref(), (theme::accent(), Color32::TRANSPARENT), inks);
+    painter.rect_filled(switch, 0.0, fill);
+    painter.text(switch.center(), Align2::CENTER_CENTER, "Focus", theme::mono_font(theme::TEXT_TINY), ink);
+    drop(el);
 
     // The clips, over the grid.
     let bars = Rect::from_x_y_ranges(layout.grid.x_range(), row.y_range());
