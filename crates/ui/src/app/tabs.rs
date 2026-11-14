@@ -64,7 +64,7 @@ impl App {
         self.switch_hover = None;
         self.device_carry = None;
         ctx.data_mut(|d| d.remove::<(TrackId, usize)>(egui::Id::unique(crate::interaction::drop::DEVICE_CARRY)));
-        self.arrangement.cancel_clip_drag();
+        self.arrangement.cancel_gesture();
         self.stash_shown();
         for gone in self.stashes.keys().copied().filter(|id| self.projects.get(*id).is_none()).collect::<Vec<_>>() {
             self.stashes.remove(&gone);

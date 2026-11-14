@@ -207,7 +207,7 @@ pub(super) fn clip_box<'a>(
     let grid = arrangement_grid(state.grid, state.beat_width, bar_beats);
     let free = ui.input(|i| i.modifiers.alt);
     let snapped = |raw: f64| grid.place(raw, free, false);
-    let at = match state.clip_drag {
+    let at = match state.gesture.clip().copied() {
         Some(drag) if mine(&drag) => drag_place(drag.start, drag.origin, grid, free),
         // Another clip of the selection is dragged: this one moves by as much.
         Some(drag) if state.is_selected(key) && state.is_selected((drag.track, drag.clip)) => {
@@ -249,7 +249,7 @@ pub(super) fn clip_box<'a>(
         if bar_moves { !on_bar(y) } else { clip_grab_area(visible).is_some_and(|grab| y < grab.top()) }
     };
     let in_body = |y: f32| !state.time_select_ctrl && selects_at(y);
-    if state.clip_drag.is_some_and(|d| mine(&d) && (d.copy || copy_key)) {
+    if state.gesture.clip().copied().is_some_and(|d| mine(&d) && (d.copy || copy_key)) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Copy);
     } else if response.hover_pos().is_some_and(|p| in_body(p.y)) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
@@ -348,10 +348,10 @@ pub(super) fn clip_box<'a>(
         }
     }
     if selects_time {
-        state.marquee = ui.input(|i| i.pointer.press_origin());
-        state.marquee_scroll = state.scroll;
-        state.marquee_time = true;
-        state.marquee_row = (clip.rows > 1).then_some((lane.track, clip.row, clip.rows));
+        if let Some(origin) = ui.input(|i| i.pointer.press_origin()) {
+            let row = (clip.rows > 1).then_some((lane.track, clip.row, clip.rows));
+            state.gesture.begin(Gesture::Marquee(Marquee::new(origin, state.scroll, true, row)));
+        }
     } else if response.clicked() || response.drag_started_by(egui::PointerButton::Primary) {
         // Clips picked by a click or moved: the time selection gives way to them.
         state.time_selection = None;
@@ -406,10 +406,14 @@ pub(super) fn clip_box<'a>(
     // time-selection's press grabs nothing — its origin said so, or the modifiers say so now.
     // A press that is let go dies at the frame's start (`begin_clip_carry`), even when this
     // widget is gone by then.
-    if response.is_pointer_button_down_on() && tool == ArrangementTool::Select && ui.input(|i| i.pointer.primary_down())
+    // A press Escape let go of grabs nothing for the rest of it.
+    if response.is_pointer_button_down_on()
+        && tool == ArrangementTool::Select
+        && ui.input(|i| i.pointer.primary_down())
+        && !state.gesture.cancelled()
     {
         // A time selection being painted stays one when its modifiers are let go mid-drag.
-        if press_selects_time || (state.marquee_time && state.marquee.is_some()) {
+        if press_selects_time || state.gesture.marquee().is_some_and(|m| m.time) {
             // The modifiers of a time selection arrived while the button is still down: the
             // press selects time now, and its record of a grab dies here.
             if state.pressed_clip == Some(key) {
@@ -420,7 +424,7 @@ pub(super) fn clip_box<'a>(
         }
     }
     if response.drag_started_by(egui::PointerButton::Primary) && !selects_time && tool == ArrangementTool::Select {
-        state.clip_drag = Some(ClipDrag {
+        state.gesture.begin(Gesture::Clip(ClipDrag {
             track: lane.track,
             clip: clip.id,
             start: clip.start,
@@ -428,10 +432,10 @@ pub(super) fn clip_box<'a>(
             origin: clip.start,
             copy: copy_key,
             new_track: false,
-        });
+        }));
     }
     if response.dragged_by(egui::PointerButton::Primary)
-        && let Some(drag) = state.clip_drag.as_mut()
+        && let Some(drag) = state.gesture.clip_mut()
         && (drag.track, drag.clip) == key
     {
         drag.start += f64::from(response.drag_delta().x / state.beat_width);
@@ -459,8 +463,7 @@ pub(super) fn clip_box<'a>(
         }
     }
     if response.drag_stopped_by(egui::PointerButton::Primary)
-        && let Some(drag) = state.clip_drag.take()
-        && (drag.track, drag.clip) == key
+        && let Some(drag) = state.gesture.end_clip(|d| (d.track, d.clip) == key)
     {
         let start = drag_place(drag.start, drag.origin, grid, free);
         let stack = (clip.audio && state.stack_audio) || (!clip.audio && state.stack_midi);
@@ -602,7 +605,9 @@ pub(super) fn clip_box<'a>(
     // Another selected clip's edge dragged: this one's same edge moves as far (#956); or it was
     // just trimmed with them and the project does not have it yet.
     let others_edge = state
-        .edge_drag
+        .gesture
+        .edge()
+        .copied()
         .filter(|d| d.key != key && state.selected.len() > 1 && state.is_selected(d.key) && state.is_selected(key))
         .map(|d| edge_by(clip, d.grab, grid.place(d.raw, edge_keys(ui).0, false) - d.from, &grid))
         .map(|extent| off_the_selection(extent, clip, lane, &state.selected))
@@ -616,9 +621,9 @@ pub(super) fn clip_box<'a>(
         .map(|f| (clip.start, clip.start + clip.length * f));
     let released = released.or(others_edge).or(tempo_extent);
     // Copying leaves the clip where it is: its handles stay on it; moving takes them along.
-    let copy_drag = state.clip_drag.is_some_and(|d| d.copy || copy_key);
+    let copy_drag = state.gesture.clip().copied().is_some_and(|d| d.copy || copy_key);
     let base = if copy_drag { clip.start } else { at };
-    let (live_start, live_length) = match state.edge_drag.filter(|d| d.key == key) {
+    let (live_start, live_length) = match state.gesture.edge().copied().filter(|d| d.key == key) {
         Some(edge) => {
             let stretching = edge_keys(ui).1 && state.stretch_alt && clip.audio;
             let mut extent = edge_extent(clip, edge, &grid, edge_keys(ui).0, stretching);
@@ -639,7 +644,7 @@ pub(super) fn clip_box<'a>(
     // An audio clip big enough shows its gain, which a vertical drag changes.
     let mut gain_paint = None;
     if let Some(view) = &clip.audio_view
-        && state.clip_drag.is_none_or(|d| !mine(&d))
+        && state.gesture.clip().copied().is_none_or(|d| !mine(&d))
     {
         let rect = clip_rect(space, live_start, live_length, x_of);
         let field = Rect::from_min_size(
@@ -656,22 +661,27 @@ pub(super) fn clip_box<'a>(
                 &label,
                 widgets::format_db(shown.gain_db),
             );
-            let mut preview = match state.gain_drag {
+            let mut preview = match state.gesture.gain().copied() {
                 Some((k, v)) if k == key => Some(v),
                 _ => None,
             };
             let mut committed = None;
-            match widgets::drag_value(ui, &response, &mut preview, view.gain_db, 0.1, 1.0, CLIP_GAIN_RANGE, 0.0) {
-                Drag::Moving(v) => state.gain_drag = Some((key, v)),
+            let drag = widgets::drag_value(ui, &response, &mut preview, view.gain_db, 0.1, 1.0, CLIP_GAIN_RANGE, 0.0);
+            let mine = |g: &Gesture| matches!(g, Gesture::Gain((k, _)) if *k == key);
+            match state.gesture.value_frame(&response, drag, || Gesture::Gain((key, view.gain_db)), mine) {
+                Drag::Moving(v) => {
+                    if let Some(drag) = state.gesture.gain_mut() {
+                        drag.1 = v;
+                    }
+                }
                 Drag::Done(v) | Drag::Set(v) => {
-                    state.gain_drag = None;
                     committed = Some(v);
                     let db = commands::db_param(v, CLIP_GAIN_RANGE.0);
                     actions.push(Action::new("clip.setGain", json!({ "clip": clip.id.0, "db": db })));
                 }
                 Drag::None => {}
             }
-            shown.gain_db = match state.gain_drag {
+            shown.gain_db = match state.gesture.gain().copied() {
                 Some((k, v)) if k == key => v,
                 _ => committed.unwrap_or(view.gain_db),
             };
@@ -684,7 +694,10 @@ pub(super) fn clip_box<'a>(
     // instead (`clip.trim`, `clip.stretch`; `docs/spec/arrangement-editing.md` › Clip edges).
     // An audio clip keeps its top corners for the fade handles.
     let edge_rect = clip_rect(space, live_start, live_length, x_of);
-    if state.clip_drag.is_none_or(|d| !mine(&d)) && edge_rect.width() >= 12.0 && tool == ArrangementTool::Select {
+    if state.gesture.clip().copied().is_none_or(|d| !mine(&d))
+        && edge_rect.width() >= 12.0
+        && tool == ArrangementTool::Select
+    {
         const ZONE: f32 = 5.0;
         let top = edge_rect.top() + if clip.audio { FADE_HANDLE + 2.0 } else { 2.0 };
         let (free, stretch_held) = edge_keys(ui);
@@ -719,16 +732,16 @@ pub(super) fn clip_box<'a>(
                 // the pointer by them for the whole drag.
                 let origin =
                     ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos()).map_or(0.0, |p| p.x);
-                state.edge_drag = Some(EdgeDrag { key, grab, raw, from: raw, origin });
+                state.gesture.begin(Gesture::Edge(EdgeDrag { key, grab, raw, from: raw, origin }));
             }
             if response.dragged_by(egui::PointerButton::Primary)
                 && let Some(pointer) = response.interact_pointer_pos()
-                && let Some(drag) = state.edge_drag.as_mut().filter(|d| mine_edge(d))
+                && let Some(drag) = state.gesture.edge_mut().filter(|d| mine_edge(d))
             {
                 drag.raw = drag.from + f64::from((pointer.x - drag.origin) / state.beat_width);
             }
             if response.drag_stopped_by(egui::PointerButton::Primary)
-                && let Some(drag) = state.edge_drag.take_if(|d| mine_edge(d))
+                && let Some(drag) = state.gesture.end_edge(|d| mine_edge(d))
             {
                 let stretch = stretch_held && state.stretch_alt && clip.audio;
                 let (from, to) = edge_extent(clip, drag, &grid, free, stretch);
@@ -805,10 +818,15 @@ pub(super) fn clip_box<'a>(
     // A clip picked by a click in its body (the insert marker set there) looks as one not
     // picked, as the play start is what the click chose; picked whole, it is lit.
     let lit = selected && state.picked_whole;
-    let fading = state.fade_drag.is_some_and(|d| d.key == key) || state.curve_drag.is_some_and(|d| d.key == key);
+    let fading = state.gesture.fade().copied().is_some_and(|d| d.key == key)
+        || state.gesture.fade_curve().copied().is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
     let fits = rect.width() >= 3.0 * FADE_HANDLE && rect.height() >= 2.0 * FADE_HANDLE;
-    if clip.audio && fits && state.clip_drag.is_none_or(|d| !mine(&d)) && (pointer_in || selected || fading) {
+    if clip.audio
+        && fits
+        && state.gesture.clip().copied().is_none_or(|d| !mine(&d))
+        && (pointer_in || selected || fading)
+    {
         let grid = fade_grid;
         for edge in [FadeEdge::In, FadeEdge::Out] {
             // The crossfade over the cut has the handles there.
@@ -837,25 +855,25 @@ pub(super) fn clip_box<'a>(
             let mine_fade = |d: &FadeDrag| d.key == key && d.edge == edge;
             let mut done = None;
             if response.double_clicked() {
-                state.fade_drag = None;
+                state.gesture.end_fade(|d| mine_fade(d));
                 done = Some(0.0);
             } else {
                 if response.drag_started_by(egui::PointerButton::Primary) {
-                    state.fade_drag = Some(FadeDrag { key, edge, raw: current, from: current });
+                    state.gesture.begin(Gesture::Fade(FadeDrag { key, edge, raw: current, from: current }));
                 }
                 if response.dragged_by(egui::PointerButton::Primary)
-                    && let Some(drag) = state.fade_drag.as_mut().filter(|d| mine_fade(d))
+                    && let Some(drag) = state.gesture.fade_mut().filter(|d| mine_fade(d))
                 {
                     let dx = f64::from(response.drag_delta().x / state.beat_width);
                     drag.raw += if edge == FadeEdge::In { dx } else { -dx };
                 }
                 if response.drag_stopped_by(egui::PointerButton::Primary)
-                    && let Some(drag) = state.fade_drag.take_if(|d| mine_fade(d))
+                    && let Some(drag) = state.gesture.end_fade(|d| mine_fade(d))
                 {
                     done = Some(fade_length(drag.raw, edge, clip, other, grid));
                 }
             }
-            let length = match (done, state.fade_drag) {
+            let length = match (done, state.gesture.fade().copied()) {
                 (Some(v), _) => v,
                 (None, Some(d)) if mine_fade(&d) => fade_length(d.raw, edge, clip, other, grid),
                 _ => now,
@@ -922,7 +940,7 @@ pub(super) fn clip_box<'a>(
             // The curve handle, half-way along a fade wide enough: a vertical drag bends the
             // curve, a double-click sets it back to 0.
             let fade_width = length as f32 * state.beat_width;
-            if fade_width < CURVE_HANDLE_MIN_FADE || state.fade_drag.is_some_and(|d| mine_fade(&d)) {
+            if fade_width < CURVE_HANDLE_MIN_FADE || state.gesture.fade().copied().is_some_and(|d| mine_fade(&d)) {
                 continue;
             }
             let current_curve = shown.curve(edge);
@@ -943,7 +961,7 @@ pub(super) fn clip_box<'a>(
             let mine_curve = |d: &CurveDrag| d.key == key && d.edge == edge;
             let mut done = None;
             if response.double_clicked() {
-                state.curve_drag = None;
+                state.gesture.end_fade_curve(|d| mine_curve(d));
                 done = Some(0.0);
             } else {
                 if response.drag_started_by(egui::PointerButton::Primary) {
@@ -951,16 +969,16 @@ pub(super) fn clip_box<'a>(
                     // keeps its place under the pointer.
                     let pressed = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
                     let grab = pressed.map_or(0.0, |p| p.y - center.y);
-                    state.curve_drag = Some(CurveDrag { key, edge, curve: current_curve.curve, grab });
+                    state.gesture.begin(Gesture::FadeCurve(CurveDrag { key, edge, curve: current_curve.curve, grab }));
                 }
                 if response.dragged_by(egui::PointerButton::Primary)
                     && let Some(pointer) = response.interact_pointer_pos()
-                    && let Some(drag) = state.curve_drag.as_mut().filter(|d| mine_curve(d))
+                    && let Some(drag) = state.gesture.fade_curve_mut().filter(|d| mine_curve(d))
                 {
                     drag.curve = curve_at(rect, current_curve.shape, pointer.y - drag.grab);
                 }
                 if response.drag_stopped_by(egui::PointerButton::Primary)
-                    && let Some(drag) = state.curve_drag.take_if(|d| mine_curve(d))
+                    && let Some(drag) = state.gesture.end_fade_curve(|d| mine_curve(d))
                 {
                     done = Some(drag.curve);
                 }
@@ -1010,7 +1028,7 @@ pub(super) fn clip_box<'a>(
     }
 
     // Copying (Ctrl held): the clip stays where it is drawn, and its copy shows where it lands.
-    let copying = state.clip_drag.is_some_and(|d| d.copy || copy_key) && (at - clip.start).abs() > 1e-9;
+    let copying = state.gesture.clip().copied().is_some_and(|d| d.copy || copy_key) && (at - clip.start).abs() > 1e-9;
     let paint_at = |start: f64| {
         paint_clip(
             &painter.with_clip_rect(row.clip),
@@ -1030,7 +1048,7 @@ pub(super) fn clip_box<'a>(
     // The envelope's ink: what reads on the clip's colour, as its name does.
     let envelope_ink =
         ink_on(motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82));
-    let result = match state.clip_drag {
+    let result = match state.gesture.clip().copied() {
         Some(drag) if mine(&drag) && drag.target != lane.track => {
             if drag.copy || copy_key {
                 paint_at(clip.start);
@@ -1048,7 +1066,7 @@ pub(super) fn clip_box<'a>(
             // An edge being dragged: the clip is drawn at the length it has so far, its content
             // where it plays.
             let free = edge_keys(ui).0;
-            let extent = match state.edge_drag.filter(|d| d.key == key) {
+            let extent = match state.gesture.edge().copied().filter(|d| d.key == key) {
                 Some(edge) => {
                     let stretching = edge_keys(ui).1 && state.stretch_alt && clip.audio;
                     Some(edge_extent(clip, edge, &grid, free, stretching))
@@ -1083,12 +1101,14 @@ pub(super) fn clip_box<'a>(
             // as it goes, about the edge that stays, not only once it is let go.
             // Let go of, it stays drawn stretched until the project has the new length.
             let dragged = state
-                .edge_drag
+                .gesture
+                .edge()
+                .copied()
                 .filter(|d| d.key == key && clip.audio && state.stretch_alt && edge_keys(ui).1 && clip.length > 0.0)
                 .map(|d| d.grab);
             let released_stretch = state
                 .stretch_released
-                .filter(|_| state.edge_drag.is_none() && clip.audio && clip.length > 0.0)
+                .filter(|_| state.gesture.edge().is_none() && clip.audio && clip.length > 0.0)
                 .filter(|_| state.edge_released.is_some_and(|(k, ..)| k == key));
             let stretching = dragged.or(released_stretch).or(tempo_factor.map(|_| EdgeGrab::Right)).zip(extent);
             match stretching {
@@ -1136,7 +1156,7 @@ pub(super) fn clip_box<'a>(
     };
     // Picked by a click in its body: not lit (the play start is what the click chose), but
     // outlined, so the clip the editor and the keys work on is plain to see.
-    if selected && !lit && state.clip_drag.is_none() {
+    if selected && !lit && state.gesture.clip().is_none() {
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
         let body = motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
@@ -1152,10 +1172,10 @@ pub(super) fn clip_box<'a>(
     // of the name, and Free move under it while editing.
     // Not while it is carried onto another lane, where it is drawn with its envelope (unless a
     // copy is carried and the clip stays here).
-    let carried_away = result.is_some() && !(copy_key || state.clip_drag.is_some_and(|d| d.copy));
+    let carried_away = result.is_some() && !(copy_key || state.gesture.clip().copied().is_some_and(|d| d.copy));
     if let Some(view) = clip.audio_view.as_ref().filter(|_| !carried_away) {
         let envelope_painter = painter.with_clip_rect(row.clip);
-        let edit = envelope_edited && state.clip_drag.is_none() && state.edge_drag.is_none();
+        let edit = envelope_edited && state.gesture.clip().is_none() && state.gesture.edge().is_none();
         let place = envelope_place.unwrap_or(crate::arrangement::envelope::Place {
             rect: wave_area(rect),
             origin: rect.left(),
@@ -2039,7 +2059,7 @@ pub(super) fn take_lanes(
             }
         }
         if !ctrl
-            && state.take_drag.is_none()
+            && state.gesture.take().is_none()
             && let Some(pointer) = body.hover_pos()
         {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
@@ -2053,7 +2073,7 @@ pub(super) fn take_lanes(
             }
         }
         // With Ctrl a drag only paints an area, wherever it starts (#1078).
-        if ctrl && state.take_area_drag.is_none() && body.hover_pos().is_some() {
+        if ctrl && state.gesture.take_area().is_none() && body.hover_pos().is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
         if body.drag_started()
@@ -2062,8 +2082,9 @@ pub(super) fn take_lanes(
             let beat = raw_beat(pointer.x);
             let under = take.clips.iter().enumerate().find(|(_, c)| (c.start..c.start + c.length).contains(&beat));
             if ctrl {
-                state.take_area_drag = Some((lane.track, take.number, beat_of(pointer.x)));
-                state.clear_take_selection();
+                if state.gesture.begin(Gesture::TakeArea((lane.track, take.number, beat_of(pointer.x)))) {
+                    state.clear_take_selection();
+                }
             } else if let Some((piece, clip)) = under
                 && moves_at(clip_rect(row, clip.start, clip.length, x_of), pointer.y)
             {
@@ -2076,9 +2097,10 @@ pub(super) fn take_lanes(
                 } else {
                     vec![(take.number, piece)]
                 };
-                state.take_move =
-                    Some(TakeMove { take: take.number, track: lane.track, pieces, start: clip.start, grab: beat });
-                state.take_area = None;
+                let pieces = TakeMove { take: take.number, track: lane.track, pieces, start: clip.start, grab: beat };
+                if state.gesture.begin(Gesture::TakeMove(pieces)) {
+                    state.take_area = None;
+                }
             }
         }
         // A piece's lower corners move its edges, bringing back the recording around it; a click
@@ -2089,9 +2111,9 @@ pub(super) fn take_lanes(
             // A narrow piece has only its right corner, the one that brings back what was cut.
             let edges: &[bool] = if rect.width() < 16.0 { &[true] } else { &[true, false] };
             for &end in edges {
-                let held = state
-                    .take_edge
-                    .filter(|e| e.track == lane.track && e.take == take.number && e.piece == index && e.end == end);
+                let mine =
+                    |e: &TakeEdge| e.track == lane.track && e.take == take.number && e.piece == index && e.end == end;
+                let held = state.gesture.take_edge().copied().filter(|e| mine(e));
                 // The edge being dragged shows where it would stop.
                 if let Some(edge) = held {
                     let (from, to) = if end { (clip.start, edge.at) } else { (edge.at, clip.start + clip.length) };
@@ -2118,11 +2140,12 @@ pub(super) fn take_lanes(
                 let grip = grip.on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
                 if grip.drag_started() {
                     let at = if end { clip.start + clip.length } else { clip.start };
-                    state.take_edge = Some(TakeEdge { track: lane.track, take: take.number, piece: index, end, at });
+                    let edge = TakeEdge { track: lane.track, take: take.number, piece: index, end, at };
+                    state.gesture.begin(Gesture::TakeEdge(edge));
                 }
                 if grip.dragged()
                     && let Some(pointer) = ui.ctx().pointer_latest_pos()
-                    && let Some(edge) = state.take_edge.as_mut()
+                    && let Some(edge) = state.gesture.take_edge_mut().filter(|e| mine(e))
                 {
                     let before = index.checked_sub(1).and_then(|n| take.clips.get(n));
                     let after = take.clips.get(index + 1);
@@ -2137,7 +2160,7 @@ pub(super) fn take_lanes(
                     edge.at = beat_of(pointer.x).clamp(low, high.max(low));
                 }
                 if grip.drag_stopped()
-                    && let Some(edge) = state.take_edge.take()
+                    && let Some(edge) = state.gesture.end_take_edge(|e| mine(e))
                 {
                     let was = if end { clip.start + clip.length } else { clip.start };
                     if (edge.at - was).abs() > 1e-6 {
@@ -2148,16 +2171,16 @@ pub(super) fn take_lanes(
                 }
             }
         }
-        // From where the button went down, not where the drag was recognised.
+        // From where the button went down, not where the drag was recognised; a press that moves
+        // pieces began its drag above, and this one is refused.
         if body.drag_started()
             && !ctrl
-            && state.take_move.is_none()
             && let Some(pointer) = ui.input(|i| i.pointer.press_origin()).or(body.interact_pointer_pos())
+            && state.gesture.begin(Gesture::Take((lane.track, take.number, beat_of(pointer.x))))
         {
-            state.take_drag = Some((lane.track, take.number, beat_of(pointer.x)));
             state.clear_take_selection();
         }
-        if let Some((_, _, from)) = state.take_drag.filter(|d| d.0 == lane.track && d.1 == take.number)
+        if let Some((_, _, from)) = state.gesture.take().copied().filter(|d| d.0 == lane.track && d.1 == take.number)
             && let Some(pointer) = ui.ctx().pointer_latest_pos()
         {
             let to = beat_of(pointer.x);
@@ -2166,7 +2189,7 @@ pub(super) fn take_lanes(
             painter.rect_filled(picked, 0.0, theme::selection().gamma_multiply(0.25));
             painter.rect_stroke(picked, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
             if body.drag_stopped() {
-                state.take_drag = None;
+                state.gesture.end_take(|_| true);
                 if end - start > 1e-6 {
                     let mut comp = params.clone();
                     comp["start"] = json!(start);
@@ -2193,7 +2216,7 @@ pub(super) fn take_lanes(
     let pointer = ui.ctx().pointer_latest_pos();
     // The area being painted: from the take the drag began on to the one under the pointer, and
     // from its first beat to the pointer's (on the grid, Alt for no grid).
-    if let Some((_, from_take, from)) = state.take_area_drag.filter(|d| d.0 == lane.track)
+    if let Some((_, from_take, from)) = state.gesture.take_area().copied().filter(|d| d.0 == lane.track)
         && let Some(pointer) = pointer
     {
         let first = rows.iter().position(|(n, _)| *n == from_take).unwrap_or(0);
@@ -2207,7 +2230,7 @@ pub(super) fn take_lanes(
             painter.rect_stroke(lit, 0.0, Stroke::new(1.0, theme::selection()), StrokeKind::Inside);
         }
         if !down {
-            state.take_area_drag = None;
+            state.gesture.end_take_area(|_| true);
             if end - start > 1e-6 {
                 let takes: Vec<usize> = covered.iter().map(|(n, _)| *n).collect();
                 // Pieces wholly inside are picked too, so a Ctrl drag from one moves them.
@@ -2235,7 +2258,7 @@ pub(super) fn take_lanes(
     }
     // Pieces being moved, shown where they would land: on the grid, Alt for no grid, and as many
     // lanes up or down as the pointer is from the lane the drag began on.
-    if let Some(drag) = state.take_move.clone().filter(|d| d.track == lane.track)
+    if let Some(drag) = state.gesture.take_move().cloned().filter(|d| d.track == lane.track)
         && let Some(pointer) = pointer
     {
         let piece = |&(number, index): &(usize, usize)| {
@@ -2262,7 +2285,7 @@ pub(super) fn take_lanes(
             }
         }
         if !down {
-            state.take_move = None;
+            state.gesture.end_take_move(|_| true);
             if by.abs() > 1e-6 || lanes_by != 0 {
                 let takes: Vec<usize> = drag.pieces.iter().map(|(n, _)| *n).collect();
                 let pieces: Vec<usize> = drag.pieces.iter().map(|(_, p)| *p).collect();
@@ -2275,10 +2298,6 @@ pub(super) fn take_lanes(
                 state.clear_take_selection();
             }
         }
-    }
-    // A corner scrolled out of view mid-drag has no widget left to say the drag ended.
-    if !down {
-        state.take_edge = state.take_edge.filter(|e| e.track != lane.track);
     }
 }
 
@@ -2313,11 +2332,11 @@ pub(super) fn comp_crossfade(
     actions: &mut Vec<Action>,
 ) {
     let x = x_of(cut.beat);
-    let held = state.comp_fade_drag.filter(|(clip, _)| *clip == cut.left);
+    let held = state.gesture.comp_fade().copied().filter(|(clip, _)| *clip == cut.left);
     let length = held.map_or(cut.length, |(_, length)| length);
     let half = ((length / 2.0) as f32 * state.beat_width).max(4.0);
     let view = painter.clip_rect();
-    let bending = state.comp_curve_drag.filter(|(clip, ..)| *clip == cut.left);
+    let bending = state.gesture.comp_curve().copied().filter(|(clip, ..)| *clip == cut.left);
     let dragging = held.is_some() || bending.is_some();
     if !dragging && (x + half + FADE_HANDLE < view.left() || x - half - FADE_HANDLE > view.right()) {
         return;
@@ -2340,18 +2359,24 @@ pub(super) fn comp_crossfade(
         let response =
             response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal).on_hover_text(format!("Crossfade {ms:.0} ms"));
         if response.double_clicked() {
-            state.comp_fade_drag = None;
+            state.gesture.end_comp_fade(|(clip, _)| *clip == cut.left);
             actions.push(Action::new("take.setCrossfade", json!({ "clip": cut.left.0 })));
-        } else if response.dragged()
-            && let Some(pointer) = ui.ctx().pointer_latest_pos()
-        {
-            // From the cut out to the handle's inner side, so the handle stays under the pointer.
-            let out = ((pointer.x - x).abs() - FADE_HANDLE / 2.0).max(0.0);
-            let beats = f64::from(out / state.beat_width.max(1e-3)) * 2.0;
-            state.comp_fade_drag = Some((cut.left, beats.clamp(1e-3, cut.room.max(1e-3))));
+        } else {
+            if response.drag_started() {
+                state.gesture.begin(Gesture::CompFade((cut.left, cut.length)));
+            }
+            if response.dragged()
+                && let Some(pointer) = ui.ctx().pointer_latest_pos()
+                && let Some(held) = state.gesture.comp_fade_mut().filter(|(clip, _)| *clip == cut.left)
+            {
+                // From the cut out to the handle's inner side, so the handle stays under the pointer.
+                let out = ((pointer.x - x).abs() - FADE_HANDLE / 2.0).max(0.0);
+                let beats = f64::from(out / state.beat_width.max(1e-3)) * 2.0;
+                held.1 = beats.clamp(1e-3, cut.room.max(1e-3));
+            }
         }
         if response.drag_stopped()
-            && let Some((clip, length)) = state.comp_fade_drag.take()
+            && let Some((clip, length)) = state.gesture.end_comp_fade(|(clip, _)| *clip == cut.left)
         {
             actions.push(Action::new("take.setCrossfade", json!({ "clip": clip.0, "length": length })));
         }
@@ -2375,23 +2400,24 @@ pub(super) fn comp_crossfade(
         });
         let mine = |d: &(ClipId, f64, f32)| d.0 == cut.left;
         if response.double_clicked() {
-            state.comp_curve_drag = None;
+            state.gesture.end_comp_curve(|d| mine(d));
             actions.push(Action::new("take.setCrossfade", json!({ "clip": cut.left.0, "curve": 0.0 })));
         } else {
             if response.drag_started_by(egui::PointerButton::Primary) {
                 // Where the button went down, not where the drag was recognised: the handle keeps
                 // its place under the pointer.
                 let pressed = ui.input(|i| i.pointer.press_origin()).or(response.interact_pointer_pos());
-                state.comp_curve_drag = Some((cut.left, curve.curve, pressed.map_or(0.0, |p| p.y - center.y)));
+                let grab = pressed.map_or(0.0, |p| p.y - center.y);
+                state.gesture.begin(Gesture::CompCurve((cut.left, curve.curve, grab)));
             }
             if response.dragged_by(egui::PointerButton::Primary)
                 && let Some(pointer) = response.interact_pointer_pos()
-                && let Some(drag) = state.comp_curve_drag.as_mut().filter(|d| mine(d))
+                && let Some(drag) = state.gesture.comp_curve_mut().filter(|d| mine(d))
             {
                 drag.1 = curve_at(span, shape, pointer.y - drag.2);
             }
             if response.drag_stopped_by(egui::PointerButton::Primary)
-                && let Some((clip, bend, _)) = state.comp_curve_drag.take_if(|d| mine(d))
+                && let Some((clip, bend, _)) = state.gesture.end_comp_curve(|d| mine(d))
             {
                 let bend = (bend * 1000.0).round() / 1000.0;
                 actions.push(Action::new("take.setCrossfade", json!({ "clip": clip.0, "curve": bend })));
@@ -2400,11 +2426,6 @@ pub(super) fn comp_crossfade(
         let this = widgets::hover(ui, &response);
         hover = hover.max(this);
         bend_handle = Some(this);
-    }
-    // A handle scrolled out of view mid-drag has no widget left to say the drag ended.
-    if !ui.input(|i| i.pointer.primary_down()) {
-        state.comp_fade_drag = state.comp_fade_drag.filter(|(clip, _)| *clip != cut.left);
-        state.comp_curve_drag = state.comp_curve_drag.filter(|(clip, ..)| *clip != cut.left);
     }
     let ink = theme::text_primary();
     let active = if dragging { 1.0 } else { hover };
