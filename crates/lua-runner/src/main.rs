@@ -78,6 +78,10 @@ struct Run {
     waiting: Option<(u64, bool)>,
     wait_answer: Option<Answer>,
     queued: VecDeque<Message>,
+    /// Messages dropped because the wait queue was full: a control storm outrunning the
+    /// answers. The count lands in the trace when it changes, and the last message of a run
+    /// stands for its whole storm.
+    dropped_while_waiting: usize,
 }
 
 impl Run {
@@ -91,6 +95,7 @@ impl Run {
             port_message: None,
             state: None,
             ports: None,
+            dropped_while_waiting: 0,
             script_dead: false,
             next_token: 0,
             waiting: None,
@@ -342,7 +347,10 @@ fn step_message(
                 call_ports(link, runner, lua, handler, inputs, outputs)?;
             }
         }
-        Message::Quit => std::process::exit(0),
+        Message::Quit => {
+            suhina_plugins::trace!("runner: quit received, exiting");
+            std::process::exit(0)
+        }
         Message::Error { message } => {
             // Suhina refused something of ours and closed; the report goes to the stderr.
             return Err(format!("Suhina refused a message: {message}"));
@@ -389,11 +397,21 @@ fn deliver(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, message: &Messa
     }
     let decision = {
         let mut runner = runner.borrow_mut();
-        if runner.script_dead {
+        let decision = if runner.script_dead {
             Decision::Skip
         } else if runner.waiting.is_some() {
             if runner.queued.len() >= WAIT_QUEUE_MAX {
-                Decision::QueueFull
+                // A storm of control messages outrunning the answers is not a wedge: the
+                // droppable ones are dropped and counted (the way a mapped control's full
+                // queue drops), and the last one stands in for its run. The pings are what
+                // makes a real wedge — a handler that never returns — visible.
+                let droppable = matches!(message, Message::PortMessage { .. } | Message::State { .. });
+                if droppable {
+                    runner.dropped_while_waiting += 1;
+                    Decision::Skip
+                } else {
+                    Decision::QueueFull
+                }
             } else {
                 runner.queued.push_back(message.clone());
                 Decision::Skip
@@ -404,7 +422,12 @@ fn deliver(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, message: &Messa
                 Message::State { .. } => Decision::Call(runner.state.clone(), "state"),
                 _ => Decision::Skip,
             }
+        };
+        let dropped = runner.dropped_while_waiting;
+        if dropped % 64 == 1 {
+            suhina_plugins::trace!("runner: {} messages dropped while a handler waited", dropped);
         }
+        decision
     };
     let (handler, handler_name) = match decision {
         Decision::Skip => return Ok(()),

@@ -168,8 +168,11 @@ A value over its cap is refused with the reason, and input is hostile as everywh
   message's or send-back's bytes: 1 MiB.
 - The runner's send-back queue holds at most 4096 messages or 8 MiB of bytes; past it
   `suhina.send` says false and sends nothing.
-- At most 1024 messages queue while a handler waits on an answer; past it the runner sends
-  `error` and exits, and the pings its wedge delays are what makes Suhina see the hang.
+- At most 1024 messages queue while a handler waits on an answer. Past it, the droppable ones
+  — `port_message` and `state`, which a storm of control messages arrives faster than the
+  answers — are dropped and counted, and the last one stands for its run; anything else still
+  wedges, and the pings its wedge delays are what makes Suhina see the hang. A handler that
+  returns is never a wedge.
 - At most 64 live subscriptions per program; a `subscribe` past it is refused with an `error`
   naming the reason, and the token stays unused.
 - JSON nesting at most 32 deep in either direction.

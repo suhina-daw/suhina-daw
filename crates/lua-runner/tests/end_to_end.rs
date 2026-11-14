@@ -311,3 +311,37 @@ fn a_wrong_version_is_refused() {
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
+
+/// A control storm outrunning the answers is not a wedge: the port messages past the wait
+/// queue's cap are dropped and counted, and the runner stays up, answers pings, and carries on
+/// when the answer arrives.
+#[test]
+fn a_control_storm_drops_messages_instead_of_dying() {
+    let mut runner = Harness::new(
+        r#"
+        suhina.on_port_message(function(bytes, port, timestamp)
+            suhina.command("transport.setTempo", { bpm = 110 })
+        end)
+        "#,
+    )
+    .expect_ready();
+    // The first press runs the handler, which waits on its command; the harness holds the
+    // answer, so every later message queues — and past the cap, drops.
+    runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": 1, "bytes": "903c7f" }));
+    let command = runner.line();
+    assert_eq!(command["op"], "command", "the handler's command");
+    let _ = command["token"].as_u64().expect("the command's token");
+    for stamp in 2..(1024 + 4) {
+        runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": stamp, "bytes": "903c7f" }));
+    }
+    // The runner is alive through the storm: the ping is answered.
+    runner.send(json!({ "op": "ping", "id": 9 }));
+    assert_eq!(runner.line(), json!({ "op": "pong", "id": 9 }), "alive through the storm");
+    // The answer lands; the handler completes and the runner carries on.
+    runner.send(json!({ "op": "command_result", "token": command["token"], "ok": true, "error": null }));
+    runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": 10_000, "bytes": "803c00" }));
+    let next = runner.line();
+    assert_eq!(next["op"], "command", "the handler ran again after the storm");
+    runner.send(json!({ "op": "command_result", "token": next["token"], "ok": true, "error": null }));
+    runner.quit();
+}

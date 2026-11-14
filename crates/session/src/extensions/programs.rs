@@ -286,8 +286,12 @@ fn run(
             return;
         }
         match watch(runner, script, &from, events, pid, &mut ports) {
-            Ok(()) => return,
+            Ok(()) => {
+                suhina_plugins::trace!("surface {id} stopped cleanly");
+                return;
+            }
             Err(reason) => {
+                suhina_plugins::trace!("surface {id} crashed: {reason}");
                 crashes.push(Instant::now());
                 report(events, Event::Crashed(reason));
             }
@@ -305,7 +309,8 @@ impl Child {
     /// Ends the process on an error path and says why.
     fn end(&mut self, reason: String) -> String {
         let _ = self.child.kill();
-        let _ = self.child.wait();
+        let status = self.child.wait();
+        suhina_plugins::trace!("surface child ended ({reason}): {:?}", status.map(|s| s.to_string()));
         reason
     }
 
@@ -351,6 +356,7 @@ fn apply(order: ToProgram, link: &mut Link, child: &mut Child, ports: &mut (Vec<
             }
         }
         ToProgram::Stop => {
+            suhina_plugins::trace!("surface stop order: quit sent");
             let _ = link.send(&Message::Quit);
             child.stop();
         }
@@ -514,7 +520,14 @@ fn watch(
     loop {
         // What the session asked for, or the end of it.
         match from.try_recv() {
-            Ok(ToProgram::Stop) | Err(TryRecvError::Disconnected) => {
+            Ok(ToProgram::Stop) => {
+                suhina_plugins::trace!("surface stop received (running loop)");
+                let _ = link.send(&Message::Quit);
+                child.stop();
+                return Ok(());
+            }
+            Err(TryRecvError::Disconnected) => {
+                suhina_plugins::trace!("surface order channel disconnected (running loop)");
                 let _ = link.send(&Message::Quit);
                 child.stop();
                 return Ok(());
@@ -547,6 +560,9 @@ fn watch(
                 }
                 Some(Message::Hello { .. }) | Some(Message::Ready) => {}
                 Some(message) if is_request(&message, events) => {}
+                Some(Message::Error { message }) => {
+                    return Err(child.end(format!("the runner sent an error: {message}")));
+                }
                 Some(_) => {
                     let _ = link.send(&Message::Error { message: "not a message for the host".into() });
                 }
