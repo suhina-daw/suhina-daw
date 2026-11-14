@@ -256,11 +256,16 @@ NAM models/
   - **The pack row** (the name row): a folder icon before it (the design system's folder
     artwork, so a theme supplies its own) and the current file's pack's name (the file's parent
     folder;
-    **(entered directly)** for a loose file), "No model" / "No IR" when none is set. Its
-    dropdown lists every pack's name; its ▲ ▼ steppers step through the packs.
+    **(entered directly)** for a loose file), "No model" / "No IR" when none is set; a capture
+    folder's pack shows as `Group › Capture`. Its dropdown lists every pack: a collection's
+    capture folders under their group's name as a heading, a line between one group and the
+    next, each by its own name; the Cab Loader's ◀ ▶ steppers step through the packs (the Amp
+    Modeler has none).
   - **The file row**: the current file's own name, its dropdown lists the current pack's files
-    by their shown names, its ▲ ▼ steppers step through that pack, wrapping.
-  - Labels: the pack row is `Amp Modeler: pack`, its steppers `previous pack` / `next pack`;
+    by their shown names, its ◀ ▶ steppers step through that pack, wrapping.
+  - Every dropdown row is one line: a long name is cut short, and the whole name shows on hover.
+  - Labels: the pack row is `Amp Modeler: pack`, the Cab Loader's steppers `previous pack` /
+    `next pack`;
     the file row is `Amp Modeler: model file` with `previous file` / `next file` (the Cab
     Loader likewise, with `cab file`). Choosing a pack loads its **first** file; both choices
     run `device.setNamFile`, one undo step each, as everything else on the panel.

@@ -2622,3 +2622,93 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
 fn marker_color() -> Color32 {
     color(styled_palette(widget_palette(), None).accent)
 }
+
+/// The pack dropdown lists a collection's capture folders under their group's name, a line
+/// between groups, each row by its own name on one line; the chosen one reads `Group › Capture`
+/// in the box, and a row still chooses its pack's first file.
+#[test]
+fn the_pack_dropdown_groups_a_collections_captures() {
+    use egui_kittest::kittest::Queryable;
+    let set = |name: &str, file: &str| crate::detail::device_widgets::Set {
+        name: name.into(),
+        files: vec![(file.into(), format!("{file} model"))],
+    };
+    let lists = crate::detail::device_widgets::Lists {
+        models: vec![
+            set("Collection / Bright", "p/Collection/Bright/a.nam"),
+            set("Collection / Dark", "p/Collection/Dark/b.nam"),
+            set("Solo", "p/Solo/c.nam"),
+        ],
+        ..crate::detail::device_widgets::Lists::default()
+    };
+    let canvas = Arc::new(DeviceUi {
+        size: [428., 168.],
+        controls: vec![CustomControl {
+            id: "pack".into(),
+            name: "pack".into(),
+            tooltip: String::new(),
+            bounds: [0., 0., 200., 20.],
+            widget: Some(Widget::DeviceFiles { part: FileRowPart::Pack, what: "model".into() }),
+            gesture: UiGesture::Drag,
+            x: None,
+            y: None,
+            drawing: vec![],
+            visible_when: None,
+        }],
+        ..Default::default()
+    });
+    let draw = |ui: &mut egui::Ui, state: &mut (Vec<Action>, String)| {
+        crate::kit::theme::install(ui.ctx());
+        let panel_state = crate::detail::device_widgets::PanelState {
+            name: "NAM Amp Modeler".into(),
+            enabled: true,
+            file: &state.1,
+            lists: Some(&lists),
+        };
+        show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(428., 168.)),
+            &canvas,
+            &panel_state,
+            &[],
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut state.0,
+        );
+    };
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(428., 168.))
+        .build_ui_state(draw, (Vec::new(), "p/Collection/Dark/b.nam".to_owned()));
+    harness.run_steps(2);
+    // The box's text, as the frame paints it.
+    let ctx = egui::Context::default();
+    let mut state = (Vec::new(), "p/Collection/Dark/b.nam".to_owned());
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| draw(ui, &mut state));
+    output.textures_delta.clear();
+    let texts: Vec<String> = output
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        texts.iter().any(|t| t.contains("Collection › Dark")),
+        "the chosen capture reads Group › Capture: {texts:?}"
+    );
+    harness.get_by_label("Amp Modeler: pack").click();
+    harness.run();
+    assert!(harness.query_by_label("Collection").is_some(), "the group's name heads its captures");
+    harness.get_by_label("Amp Modeler: pack: Collection / Bright").click();
+    harness.run();
+    let paths: Vec<&str> = harness
+        .state()
+        .0
+        .iter()
+        .filter(|action| action.id == "device.setNamFile")
+        .filter_map(|action| action.params.get("path").and_then(|p| p.as_str()))
+        .collect();
+    assert_eq!(paths, ["p/Collection/Bright/a.nam"], "a row chooses its pack's first file");
+}
