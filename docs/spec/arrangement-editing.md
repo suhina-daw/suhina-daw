@@ -57,6 +57,31 @@ notes are left out. Each pair has the track, the shared span (`start`, `end`, in
 there were more. ARA's first version refuses such overlaps for the clips it edits
 ([ADR 0033](../decisions/0033-ara-hosting.md)); ordinary stacking is unaffected.
 
+## One drag at a time
+
+The view runs one drag at a time (#1158): a clip moved, a clip's edge, a fade or its curve, a clip's
+gain, a header's volume, pan or send, the main volume, a track header moved, a marker, the loop
+brace, time painted on the lanes or the ruler, a selection rectangle, a clip drawn with the Draw
+tool, on take lanes a comp, an area, pieces moved, a piece's edge and a crossfade or its bend,
+and on automation lanes a point (or a segment's two points), a point made by a press on the line,
+a curve bent, a box or a range painted, and lane headers moved. None starts while another is under
+way. A range painted on a lane and dragged off it onto the clips goes on as a time selection: the
+one drag hands over to the other.
+
+**Escape** lets go of the drag under way. What its release would have done is not done: the clip
+stays where it was, the edge, fade, marker, loop and track keep their places, no clip is drawn and
+no comp is made; an automation point, curve or lane header stays where it was, and a box or range
+selects nothing new. A point a press on an automation line made stays, where the press put it. What the drag already did as it went stays: time painted so far stays selected,
+and a single track's volume, pan or send, or the main volume, stays at the value heard last (a
+selection of tracks moves only on release, so it does not move). That Escape is the drag's alone: it does not count
+toward Escape twice (`docs/spec/ui-clip-editor.md` › Pulled to the top). The rest of the press
+does nothing: it starts no drag, a clip held is carried to no other view, and its release adds no
+automation point; the next press starts a new drag.
+
+A drag whose release the view never saw (the button let go while the view was not drawn, after Tab
+to the Launcher view, or with its handle scrolled out of sight) ends without doing anything once
+every button is up, whichever view is shown then.
+
 ## Tools
 
 With Settings › Arrangement › **Toolbar** on (off by default, #991), a row of tools runs along the

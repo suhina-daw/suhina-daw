@@ -32,7 +32,7 @@ fn parsed(model_rate: Option<f64>) -> Arc<NamModel> {
 
 fn loader(model: Option<Arc<NamModel>>, settings: &[(usize, f64)]) -> NamAmp {
     let mut amp = match model {
-        Some(model) => NamAmp::with_model(model),
+        Some(model) => NamAmp::with_model(model, 48_000.0).unwrap(),
         None => NamAmp::new(),
     };
     for &(index, value) in settings {
@@ -57,15 +57,15 @@ fn frames(signal: &[f32]) -> &[[f32; 2]] {
 
 #[test]
 fn passes_the_device_conformance_checks() {
-    let failures = check(&|| Box::new(NamAmp::new()));
+    let failures = check(&|rate| NamAmp::with_rate(rate).map(|amp| Box::new(amp) as Box<dyn Device>));
     assert!(failures.is_empty(), "{failures:#?}");
     let model = parsed(Some(48_000.0));
-    let make = move || -> Box<dyn Device> { Box::new(NamAmp::with_model(model.clone())) };
+    let make = move |rate| NamAmp::with_model(model.clone(), rate).map(|amp| Box::new(amp) as Box<dyn Device>);
     let failures = check(&make);
     assert!(failures.is_empty(), "{failures:#?}");
     // And with a model the device's own rate rejects — the legs may do the work then.
     let model = parsed(Some(44_100.0));
-    let make = move || -> Box<dyn Device> { Box::new(NamAmp::with_model(model.clone())) };
+    let make = move |rate| NamAmp::with_model(model.clone(), rate).map(|amp| Box::new(amp) as Box<dyn Device>);
     let failures = check(&make);
     assert!(failures.is_empty(), "{failures:#?}");
 }
@@ -150,7 +150,7 @@ fn the_stages_run_over_varied_calls() {
     // frames, with the delivered stream the reference bit for bit.
     const MODEL_HZ: f64 = 44_100.0;
     let parsed = parsed(Some(MODEL_HZ));
-    let mut amp = NamAmp::with_model(parsed.clone());
+    let mut amp = NamAmp::with_model(parsed.clone(), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(SR).expect("prepare");
     let sizes = [3usize, 1, 513, 7, 512, 963];
@@ -280,7 +280,7 @@ fn a_model_at_a_higher_rate_delivers_the_legs_stream_too() {
     // A 48 kHz model in a 44.1 kHz project: the legs run the other way round; the schedule has
     // to hold back for that rate pair the same way.
     let parsed = parsed(Some(48_000.0));
-    let mut amp = NamAmp::with_model(Arc::clone(&parsed));
+    let mut amp = NamAmp::with_model(Arc::clone(&parsed), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(44_100.0).expect("prepare");
     let want_hold = (f64::from((HALF_TAPS + 3) as u32) * (1.0 + 44_100.0 / 48_000.0) + 4.0).ceil() as u32;
@@ -335,7 +335,7 @@ fn a_rate_matched_model_delivers_the_models_dc_stream() {
         "sample_rate": 48000.0
     }"#;
     let parsed = Arc::new(NamModel::from_json_str(TINY).expect("the rate-matched model parses"));
-    let mut amp = NamAmp::with_model(Arc::clone(&parsed));
+    let mut amp = NamAmp::with_model(Arc::clone(&parsed), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(SR).expect("prepare");
     assert_eq!(amp.latency(), D as u32, "no legs, no holdback");
@@ -404,9 +404,9 @@ fn a_hostile_rate_cannot_bound_the_staging_or_overflow() {
     // must be refused before the staging lists are sized: sizing asked no questions, a
     // rate of 0.0001 Hz asked for staging of ~30 000 000 000 frames a list, and rates
     // beyond the numbers overflowed the count on the way there. Through the public
-    // constructor, like the engine's rate-change prepare builds devices:
+    // constructor, as the engine makes devices:
     for rate in [0.000_1, 0.001, 1e300, 1e-300] {
-        let mut amp = NamAmp::with_model(parsed(Some(rate)));
+        let mut amp = NamAmp::with_model(parsed(Some(rate)), 48_000.0).unwrap();
         amp.set_param(param::EQ_ON, 0.0);
         amp.prepare(SR).expect("prepare");
         assert_eq!(amp.latency(), D as u32, "{rate} refused: no holdback");
@@ -436,7 +436,7 @@ fn the_sixteen_to_one_boundary_runs_bit_exact_with_one_frame_calls() {
     const MODEL_HZ: f64 = 24_000.0;
     const PROJECT_HZ: f64 = 384_000.0;
     let parsed = parsed(Some(MODEL_HZ));
-    let mut amp = NamAmp::with_model(parsed.clone());
+    let mut amp = NamAmp::with_model(parsed.clone(), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(PROJECT_HZ).expect("prepare");
     let hold_frames = hold(&amp);
@@ -476,14 +476,14 @@ fn a_model_with_an_unrunnable_rate_is_refused() {
     // ...or too far from the project's: an 8 kHz model at 384 kHz sits 48 times off, a
     // 1 kHz model 384. The device passes the signal through here as well, with no legs.
     for (model, project) in [(8_000.0_f64, 384_000.0_f64), (1_000.0, 384_000.0)] {
-        let mut amp = NamAmp::with_model(parsed(Some(model)));
+        let mut amp = NamAmp::with_model(parsed(Some(model)), 48_000.0).unwrap();
         amp.prepare(project).expect("prepare");
         assert_eq!(amp.latency(), D as u32, "{model} at {project}: refused, no holdback");
     }
     // And the gate does not refuse what it should run: the same 8 kHz model at the 48 kHz
     // default resamples like any other.
     let parsed = parsed(Some(8_000.0));
-    let mut amp = NamAmp::with_model(parsed.clone());
+    let mut amp = NamAmp::with_model(parsed.clone(), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(SR).expect("prepare");
     assert!(amp.latency() > D as u32, "an 8 kHz model at a 48 kHz project runs");
@@ -535,12 +535,11 @@ fn hostile_numbers_stay_finite() {
 const STANDARD_WAVENET: &str = include_str!("../../../packs/nam-amp-modeler/Tim R JCM2000 Crunch.nam");
 const OWN_LSTM: &str = include_str!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam");
 
-/// `input` (interleaved stereo) through an amp prepared at `rate`, in calls of `block` frames;
+/// `input` (interleaved stereo) through an amp made at `rate`, in calls of `block` frames;
 /// `parted` runs the two sides apart from the start, as two instances always did.
 fn joined_render(json: &str, rate: f64, block: usize, input: &[f32], parted: bool) -> (Vec<f32>, bool) {
     let model = Arc::new(NamModel::from_json_str(json).expect("the shipped model parses"));
-    let mut amp = NamAmp::with_model(model);
-    amp.prepare(rate).expect("prepare");
+    let mut amp = NamAmp::with_model(model, rate).expect("a rate a device runs at");
     if parted {
         amp.part_sides();
     }
@@ -607,8 +606,7 @@ fn frames_equal(signal: &[f32]) -> bool {
 #[test]
 fn a_reset_joins_the_sides_again() {
     let model = Arc::new(NamModel::from_json_str(STANDARD_WAVENET).expect("parses"));
-    let mut amp = NamAmp::with_model(model);
-    amp.prepare(SR).expect("prepare");
+    let mut amp = NamAmp::with_model(model, SR).expect("a rate a device runs at");
     let mut stereo = parting_signal(SR, 4_096, 0);
     amp.process(&ProcessContext::default(), &mut stereo);
     assert!(!amp.sides_joined());

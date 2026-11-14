@@ -5521,6 +5521,7 @@ dependencies = [
 name = "suhina-device-registry"
 version = "0.0.1"
 dependencies = [
+ "allocation-counter",
  "hound",
  "nam-rs",
  "serde_json",

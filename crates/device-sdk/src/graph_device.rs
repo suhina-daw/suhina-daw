@@ -41,6 +41,7 @@ impl GraphDevice {
         if graph.role == DeviceRole::MidiEffect {
             return Err(DeviceSdkError("a midi_effect graph is made with GraphDevice::midi".into()));
         }
+        suhina_device_api::check_sample_rate(sample_rate).map_err(|e| DeviceSdkError(e.to_string()))?;
         let prepared = compile(sample_rate)?;
         Ok(Self { info: describe(graph), runtime: Runtime::Audio { prepared, compile } })
     }

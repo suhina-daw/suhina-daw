@@ -233,7 +233,19 @@ impl Default for Sampler {
     }
 }
 impl Sampler {
+    /// A sampler with no sample, made for the default sample rate.
     pub fn new() -> Self {
+        Self::at(suhina_device_api::DEFAULT_SAMPLE_RATE)
+    }
+
+    /// A sampler with no sample, made for `rate` (ADR 0004 › Amendment: a device is made at its
+    /// rate), so a sample loaded next gets its stretch voices for that rate; fails for a rate a
+    /// device cannot run at.
+    pub fn with_rate(rate: f64) -> Result<Self, DeviceError> {
+        suhina_device_api::check_sample_rate(rate).map(Self::at)
+    }
+
+    fn at(rate: f64) -> Self {
         Self {
             window: std::array::from_fn(|i| crate::nodes::granular::hann(i as f64 / 2048.)),
             values: std::array::from_fn(|i| PARAMS[i].default),
@@ -241,7 +253,7 @@ impl Sampler {
             manual_slices: None,
             sample_edits: None,
             tempo: 120.,
-            rate: 48000.,
+            rate,
             source_rate: 48000.,
             channels: 1,
             source: Arc::new(Vec::<f32>::new()),
@@ -356,10 +368,13 @@ impl Device for Sampler {
     fn info(&self) -> &DeviceInfo {
         &INFO
     }
+    /// Moves the sampler to `rate`: a loaded sample's stretch voices are built again only when
+    /// the rate is another than the one they were built for.
     fn prepare(&mut self, rate: f64) -> Result<(), DeviceError> {
         suhina_device_api::check_sample_rate(rate)?;
+        let moved = rate != self.rate;
         self.rate = rate;
-        if self.frames() > 0 {
+        if moved && self.frames() > 0 {
             self.build_warp();
         }
         self.reset();
@@ -611,9 +626,10 @@ mod shared_source_tests {
         let count = || warp::BUILT.with(|built| built.borrow().len());
         let source: SharedPcm = Arc::new(vec![0.25; 4800]);
         for rate in [44_100., 48_000., 96_000.] {
-            // How the engine builds one: prepared, then given its sample.
+            // Made at its rate, prepared at it (as a device kept across a rate change is), then
+            // given its sample.
             let before = count();
-            let mut sampler = Sampler::new();
+            let mut sampler = Sampler::with_rate(rate).unwrap();
             sampler.prepare(rate).unwrap();
             assert!(sampler.warp.is_empty(), "no sample, no voices");
             sampler.load_shared_sample(48000, 1, source.clone());
@@ -621,14 +637,20 @@ mod shared_source_tests {
             // A new sample gets new voices.
             sampler.load_shared_sample(48000, 1, Arc::new(vec![0.5; 4800]));
             assert_eq!(built(before), vec![rate, rate], "a new sample");
+            // Given its sample, then prepared at the rate it was made for.
+            let before = count();
+            let mut sampler = Sampler::with_rate(rate).unwrap();
+            sampler.load_shared_sample(48000, 1, source.clone());
+            sampler.prepare(rate).unwrap();
+            assert_eq!((built(before), sampler.warp.len()), (vec![rate], VOICES), "loaded, then prepared");
         }
-        // Given its sample first, a Sampler has voices for the 48 kHz a new device runs at, and
-        // preparing it at another rate builds them again at that rate.
+        // Moved to another rate, a loaded Sampler builds its voices again, once, for that rate.
         let before = count();
-        let mut sampler = Sampler::new();
+        let mut sampler = Sampler::with_rate(48_000.).unwrap();
         sampler.load_shared_sample(48000, 1, source);
         sampler.prepare(44_100.).unwrap();
-        assert_eq!((built(before), sampler.warp.len()), (vec![48_000., 44_100.], VOICES), "loaded, then prepared");
+        assert_eq!((built(before), sampler.warp.len()), (vec![48_000., 44_100.], VOICES), "moved to 44.1 kHz");
+        assert!(Sampler::with_rate(0.).is_err());
     }
 }
 

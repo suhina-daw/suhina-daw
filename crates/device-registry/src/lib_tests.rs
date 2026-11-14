@@ -412,12 +412,12 @@ fn panel_ids(panel: &Panel) -> Vec<&str> {
 #[test]
 fn every_listed_device_can_be_made_and_ids_are_unique() {
     for (i, info) in DEVICES.iter().enumerate() {
-        let device = create(&info.id).unwrap_or_else(|| panic!("{} cannot be made", info.id));
+        let device = create(&info.id, 48_000.0).unwrap_or_else(|| panic!("{} cannot be made", info.id));
         assert_eq!(device.info(), *info);
         assert_eq!(super::info(&info.id), Some(*info));
         assert!(DEVICES.iter().skip(i + 1).all(|other| other.id != info.id), "{} twice", info.id);
     }
-    assert!(create("no-such-device").is_none());
+    assert!(create("no-such-device", 48_000.0).is_none());
     assert!(info("").is_none());
 }
 
@@ -466,9 +466,9 @@ fn a_device_ignores_an_asset_another_device_read() {
     assert_eq!(asset.device(), "nam-cab-loader");
     // The cab's shown name is its own file, never its folder's (~issue 1289).
     assert_eq!(asset_name(&asset, &wav).as_deref(), Some("ir"));
-    assert!(create_with("nam-cab-loader", Some(&asset)).is_some());
+    assert!(create_with("nam-cab-loader", 48_000.0, Some(&asset)).is_some());
     // The Amp Modeler is given the IR: it starts at its defaults, as with no file.
-    let amp = create_with("nam-amp-modeler", Some(&asset)).unwrap();
+    let amp = create_with("nam-amp-modeler", 48_000.0, Some(&asset)).unwrap();
     assert_eq!(amp.info().id, "nam-amp-modeler");
     std::fs::remove_dir_all(&dir).ok();
 }

@@ -29,7 +29,7 @@ fn an_envelope_is_built_from_an_enabled_lane_with_finite_points() {
 
 #[test]
 fn device_changes_fall_on_the_arrangements_grid_and_at_points() {
-    let device = suhina_device_registry::create("utility").unwrap();
+    let device = suhina_device_registry::create("utility", 48_000.0).unwrap();
     let mut lanes = DeviceLanes::none();
     // 1 beat = 100 frames; a ramp from frame 100 to 200 and a jump at 300.
     lanes.add(0, device.as_ref(), &[lane("gain", &[(1.0, 0.0), (2.0, -10.0), (3.0, -10.0), (3.0, -20.0)])], 100.0);
@@ -52,7 +52,7 @@ fn device_changes_fall_on_the_arrangements_grid_and_at_points() {
 
 #[test]
 fn a_device_lane_moves_evenly_along_its_parameters_knob() {
-    let device = suhina_device_registry::create("utility").unwrap();
+    let device = suhina_device_registry::create("utility", 48_000.0).unwrap();
     let info = device.info();
     let at_middle = |param: &str, from: f64, to: f64| {
         let mut lanes = DeviceLanes::none();
@@ -97,7 +97,7 @@ fn a_whole_number_lane_cuts_its_fraction_toward_zero() {
     assert_eq!(read(&[(0.0, 40.5)], 3.0), 40.0);
 
     // What a device gets: the pitch MIDI effect's semitones, cut toward zero.
-    let device = suhina_device_registry::create("pitch").unwrap();
+    let device = suhina_device_registry::create("pitch", 48_000.0).unwrap();
     let mut lanes = DeviceLanes::none();
     lanes.add(0, device.as_ref(), &[lane("pitch", &[(0.0, 3.0), (12.0, -3.0)])], 8.0);
     let index = device.info().param_index("pitch").unwrap();
@@ -111,7 +111,7 @@ fn a_whole_number_lane_cuts_its_fraction_toward_zero() {
 
 #[test]
 fn hostile_device_lanes_stay_within_bounds() {
-    let device = suhina_device_registry::create("utility").unwrap();
+    let device = suhina_device_registry::create("utility", 48_000.0).unwrap();
     let mut lanes = DeviceLanes::none();
     let many: Vec<(f64, f64)> = (0..5_000).map(|i| (f64::from(i) * 0.001, f64::from(i % 2) * -10.0)).collect();
     for slot in 0..100 {

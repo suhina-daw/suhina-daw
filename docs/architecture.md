@@ -153,7 +153,7 @@ crates/ui/src/
                  plugin_host, audio_settings, exports) and its dialogs (project, loading,
                  missing files), the start panel and the splash
   arrangement/   the Arrangement view: arrangement_view (with its parts in arrangement_view/),
-                 timeline, automation_lanes
+                 timeline, automation_lanes, gesture (the one drag under way, shared by both)
   session/       the Launcher view: session_view, mixer_strip, slot_launch, launch_keys,
                  record_controls
   detail/        the detail area: detail_view (device chain; its model, parameters, expanded panel,
@@ -310,7 +310,7 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
    warped clip placement (two stretchers each, so a fresh one takes over before every strong
    onset and transients stay on the grid; ADR 0003), the prepared launcher clips, the
    per-track gains (group and master chain included) and a device chain for each track whose
-   channel holds built-in effects and instruments, made by the `DeviceFactory` in `RenderInputs` (the session passes `device-registry`'s) and prepared (ADR 0004;
+   channel holds built-in effects and instruments, made by the `DeviceFactory` in `RenderInputs` (the session passes `device-registry`'s) at the renderer's rate (ADR 0004;
    built-in MIDI effects change the chain's note events before its instrument, and each note
    carries its clip's scale for them; MIDI effects without an instrument after them get the
    engine's sine tones as one, `sine.rs`, ADR 0004 › 14); a

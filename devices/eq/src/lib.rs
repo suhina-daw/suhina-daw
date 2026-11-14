@@ -447,8 +447,19 @@ impl Default for Eq {
 
 impl Eq {
     pub fn new() -> Self {
+        Self::at(DEFAULT_SAMPLE_RATE)
+    }
+
+    /// The same, made for `sample_rate` (ADR 0004 › Amendment: a device is made at its rate);
+    /// fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(Self::at)
+    }
+
+    /// Everything for `sample_rate`, which has been checked.
+    fn at(sample_rate: f64) -> Self {
         let mut eq = Self {
-            sample_rate: DEFAULT_SAMPLE_RATE,
+            sample_rate,
             params: ParamBank::new(&PARAMS),
             bands: [[Band::new(); BANDS]; CURVES],
             filters: [[[Svf::default(); 4]; BANDS]; 2],

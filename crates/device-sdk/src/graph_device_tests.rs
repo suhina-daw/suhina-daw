@@ -16,13 +16,24 @@ fn fixture(name: &str) -> DeviceGraph {
 }
 
 fn audio(graph: &DeviceGraph) -> GraphDevice {
+    made_at(graph, 48_000.0).unwrap()
+}
+
+fn made_at(graph: &DeviceGraph, rate: f64) -> Result<GraphDevice, DeviceSdkError> {
     let compiled = graph.clone();
     let compile: Compile = if graph.role == DeviceRole::Instrument {
         Box::new(move |rate| compiled.compile_instrument_at(rate))
     } else {
         Box::new(move |rate| compiled.compile_at(rate))
     };
-    GraphDevice::audio(graph, 48_000.0, compile).unwrap()
+    GraphDevice::audio(graph, rate, compile)
+}
+
+/// The graph as a device made at `rate`, as the conformance checks make one.
+fn at(graph: &DeviceGraph, rate: f64) -> Result<Box<dyn Device>, suhina_device_api::DeviceError> {
+    made_at(graph, rate)
+        .map(|device| Box::new(device) as Box<dyn Device>)
+        .map_err(|_| suhina_device_api::DeviceError::InvalidSampleRate(rate))
 }
 
 /// An instrument of four voices, each a 220 Hz sine under an envelope, louder with velocity.
@@ -156,14 +167,17 @@ fn graphs_pass_the_device_conformance_checks() {
     let mut failures = Vec::new();
     for name in effects {
         let graph = fixture(name);
-        let found = conformance::check(&|| Box::new(audio(&graph)));
+        let found = conformance::check(&|rate| at(&graph, rate));
         failures.extend(found.into_iter().map(|f| format!("{name}: {f}")));
     }
     let instrument = sine_instrument();
-    let found = conformance::check(&|| Box::new(audio(&instrument)));
+    let found = conformance::check(&|rate| at(&instrument, rate));
     failures.extend(found.into_iter().map(|f| format!("sine instrument: {f}")));
     let midi = transpose();
-    let found = conformance::check(&|| Box::new(GraphDevice::midi(&midi).unwrap()));
+    let found = conformance::check(&|rate| {
+        suhina_device_api::check_sample_rate(rate)?;
+        Ok(Box::new(GraphDevice::midi(&midi).unwrap()))
+    });
     failures.extend(found.into_iter().map(|f| format!("transpose: {f}")));
     assert!(failures.is_empty(), "{failures:#?}");
 }

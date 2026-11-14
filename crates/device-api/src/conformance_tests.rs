@@ -4,6 +4,15 @@
 use super::*;
 use crate::{DeviceError, DeviceInfo, ParamInfo, Role, Scale, Unit};
 
+/// Makes a test device for a rate as a device made for 48 kHz and then prepared at it.
+fn at<D: Device + 'static>(make: impl Fn() -> D) -> impl Fn(f64) -> Result<Box<dyn Device>, DeviceError> {
+    move |rate| {
+        let mut device = make();
+        device.prepare(rate)?;
+        Ok(Box::new(device) as Box<dyn Device>)
+    }
+}
+
 static PARAMS: [ParamInfo; 1] = [ParamInfo::continuous("gain", "Gain", (0.0, 2.0), 1.0, Unit::None, Scale::Linear)];
 static INFO: DeviceInfo = DeviceInfo::new("broken", "Broken", Role::Effect, &PARAMS);
 
@@ -42,7 +51,7 @@ impl Device for Broken {
 
 #[test]
 fn catches_a_device_that_breaks_the_contract() {
-    let failures = check(&|| Box::new(Broken { gain: 1.0, applied: 1.0, counter: 0.0 }));
+    let failures = check(&at(|| Broken { gain: 1.0, applied: 1.0, counter: 0.0 }));
     assert!(failures.iter().any(|f| f.contains("blocks of")), "{failures:#?}");
     assert!(failures.iter().any(|f| f.contains("after reset")), "{failures:#?}");
 }
@@ -100,10 +109,10 @@ impl Device for Late {
 /// reports none, or keeps its delay line across `prepare`, does not.
 #[test]
 fn catches_unreported_latency_and_state_kept_across_prepare() {
-    assert_eq!(check(&|| Box::new(Late::new(64, true))), Vec::<String>::new());
-    let failures = check(&|| Box::new(Late::new(0, true)));
+    assert_eq!(check(&at(|| Late::new(64, true))), Vec::<String>::new());
+    let failures = check(&at(|| Late::new(0, true)));
     assert!(failures.iter().any(|f| f.contains("first heard at frame 64, but latency() is 0")), "{failures:#?}");
-    let failures = check(&|| Box::new(Late::new(64, false)));
+    let failures = check(&at(|| Late::new(64, false)));
     assert!(failures.iter().any(|f| f.contains("prepared at 96 kHz")), "{failures:#?}");
 }
 
@@ -169,7 +178,7 @@ impl Device for Sticky {
 /// parameter change.
 #[test]
 fn catches_a_midi_effect_that_leaves_notes_hanging() {
-    let failures = check(&|| Box::new(Sticky { gain: 1.0 }));
+    let failures = check(&at(|| Sticky { gain: 1.0 }));
     assert!(failures.iter().any(|f| f.contains("still sounds")), "{failures:#?}");
 }
 
@@ -200,7 +209,7 @@ impl Device for Through {
 /// A MIDI effect that keeps the default `process_events` fails none of the event checks.
 #[test]
 fn a_midi_effect_that_passes_events_through_passes() {
-    let failures = check(&|| Box::new(Through));
+    let failures = check(&at(|| Through));
     let events: Vec<&String> = failures.iter().filter(|f| !f.contains("parameter")).collect();
     assert!(events.is_empty(), "{events:#?}");
 }
@@ -269,7 +278,7 @@ impl Device for Doubler {
 /// note-offs, without blaming it for the hostile events.
 #[test]
 fn catches_a_midi_effect_that_spends_the_room_note_offs_need() {
-    let failures = check(&|| Box::new(Doubler { swallow: false }));
+    let failures = check(&at(|| Doubler { swallow: false }));
     assert!(failures.iter().any(|f| f.contains("room for as many") && f.contains("still sounds")), "{failures:#?}");
     assert!(!failures.iter().any(|f| f.starts_with("hostile events: ")), "{failures:#?}");
 }
@@ -277,6 +286,94 @@ fn catches_a_midi_effect_that_spends_the_room_note_offs_need() {
 /// The checks catch a MIDI effect that swallows all-notes-off.
 #[test]
 fn catches_a_midi_effect_that_drops_all_notes_off() {
-    let failures = check(&|| Box::new(Doubler { swallow: true }));
+    let failures = check(&at(|| Doubler { swallow: true }));
     assert!(failures.iter().any(|f| f.starts_with("all-notes-off:")), "{failures:#?}");
+}
+
+static SCALED: DeviceInfo = DeviceInfo::new("scaled", "Scaled", Role::Effect, &[]);
+
+/// Scales by 48 kHz over its rate, so its sound tells the rate it runs at.
+struct Scaled {
+    rate: f64,
+}
+
+impl Device for Scaled {
+    fn info(&self) -> &DeviceInfo {
+        &SCALED
+    }
+    fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
+        self.rate = crate::check_sample_rate(sample_rate)?;
+        Ok(())
+    }
+    fn reset(&mut self) {}
+    fn set_param(&mut self, _: usize, _: f64) {}
+    fn param(&self, _: usize) -> Option<f64> {
+        None
+    }
+    fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {
+        let gain = (48_000.0 / self.rate) as f32;
+        for sample in buffer.iter_mut() {
+            *sample = if sample.is_finite() { (*sample * gain).clamp(-1.0, 1.0) } else { 0.0 };
+        }
+    }
+}
+
+/// A device made at a rate but built for 48 kHz, and one made at any rate, are both caught; one
+/// made right passes.
+#[test]
+fn a_device_made_at_a_rate_must_sound_as_one_prepared_at_it() {
+    assert_eq!(check(&at(|| Scaled { rate: 48_000.0 })), Vec::<String>::new());
+    let ignores = |rate: f64| -> Result<Box<dyn Device>, DeviceError> {
+        crate::check_sample_rate(rate)?;
+        Ok(Box::new(Scaled { rate: 48_000.0 }))
+    };
+    let failures = check(&ignores);
+    assert!(
+        failures.iter().any(|f| f.starts_with("made at 44100 Hz, the output differs from one made at 48 kHz")),
+        "{failures:#?}"
+    );
+    let any_rate = |_: f64| -> Result<Box<dyn Device>, DeviceError> { Ok(Box::new(Scaled { rate: 48_000.0 })) };
+    let failures = check(&any_rate);
+    assert!(failures.iter().any(|f| f == "a device was made at 0 Hz"), "{failures:#?}");
+}
+
+static NAN_AT_RATE: DeviceInfo = DeviceInfo::new("nan-at-rate", "Nan at rate", Role::Effect, &[]);
+
+/// Sounds NaN when it was made at a rate other than 48 kHz, and fine when it was made at 48 kHz
+/// and prepared: a fault only the constructor has.
+struct NanAtRate {
+    broken: bool,
+}
+
+impl Device for NanAtRate {
+    fn info(&self) -> &DeviceInfo {
+        &NAN_AT_RATE
+    }
+    fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
+        crate::check_sample_rate(sample_rate).map(|_| ())
+    }
+    fn reset(&mut self) {}
+    fn set_param(&mut self, _: usize, _: f64) {}
+    fn param(&self, _: usize) -> Option<f64> {
+        None
+    }
+    fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {
+        if self.broken {
+            buffer.fill(f32::NAN);
+        }
+    }
+}
+
+/// A device made at a rate that only produces NaN is caught, not read as "no difference".
+#[test]
+fn a_device_made_at_a_rate_that_sounds_nan_is_caught() {
+    let nan_when_made = |rate: f64| -> Result<Box<dyn Device>, DeviceError> {
+        crate::check_sample_rate(rate)?;
+        Ok(Box::new(NanAtRate { broken: rate != 48_000.0 }))
+    };
+    let failures = check(&nan_when_made);
+    assert!(
+        failures.iter().any(|f| f.starts_with("made at 44100 Hz, the output differs from one made at 48 kHz")),
+        "{failures:#?}"
+    );
 }
