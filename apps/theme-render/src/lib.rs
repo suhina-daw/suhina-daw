@@ -10,10 +10,12 @@
 //! written twice: `<scene>.raw.png`, the window's own pixels, and `<scene>.png`, those pixels over
 //! the backdrop, blurred where the system blurs behind the window.
 //!
-//! [`budget`] counts the style engine's work in a scene, for the tests that hold it.
+//! [`budget`] counts the style engine's work in a scene, for the tests that hold it, and
+//! [`painted`] lists what a scene paints, for the test that holds every built-in theme's look.
 
 pub mod budget;
 pub mod composite;
+pub mod painted;
 pub mod scenes;
 
 use std::path::Path;
