@@ -92,12 +92,7 @@ impl Gating {
         let bn = self.bottleneck;
         match self.mode {
             GatingMode::None => {
-                for c in 0..bn {
-                    let base = c * n;
-                    for t in 0..n {
-                        out[base + t] = self.primary.apply(z[base + t]);
-                    }
-                }
+                super::activation::apply_block(self.primary, &z[..bn * n], &mut out[..bn * n]);
             }
             GatingMode::Gated => {
                 for c in 0..bn {

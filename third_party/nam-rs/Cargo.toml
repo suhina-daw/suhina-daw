@@ -55,6 +55,9 @@ name = "process_buffer"
 path = "benches/process_buffer.rs"
 harness = false
 
+[dependencies.multiversion]
+version = "0.8.0"
+
 [dependencies.serde]
 version = "1"
 features = ["derive"]
