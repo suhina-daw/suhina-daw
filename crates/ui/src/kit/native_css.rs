@@ -740,6 +740,28 @@ pub(super) fn set_attribute(node: usize, name: &str, value: String) {
     });
 }
 
+/// Takes the element at `node` back out of this frame's tree, when it is the last one entered and
+/// has been left: a comparison lookup (`Builder::probe`) is then no sibling for the selectors of
+/// the elements drawn after it, and does not count in their position.
+pub(super) fn discard(node: Option<usize>) {
+    let Some(at) = node else { return };
+    ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        if at + 1 != engine.nodes.len() {
+            return;
+        }
+        let Some(gone) = engine.nodes.pop() else { return };
+        engine.chains.truncate(at);
+        engine.boxes.truncate(at);
+        engine.served.truncate(at);
+        engine.held.truncate(at);
+        let parent_key = gone.parent.and_then(|p| engine.nodes.get(p)).map_or(0, |n| n.key);
+        if let Some(count) = engine.occurrences.get_mut(&(parent_key, gone.element.index())) {
+            *count = count.saturating_sub(1);
+        }
+    });
+}
+
 pub fn leave() {
     ENGINE.with(|engine| {
         engine.borrow_mut().parents.pop();

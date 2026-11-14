@@ -158,6 +158,10 @@ impl Name {
     pub fn look(self) -> Look {
         self.builder().look()
     }
+    /// [`Builder::probe`] of this element.
+    pub fn probe(self) -> Look {
+        self.builder().probe()
+    }
     pub fn enter(self) -> Entered {
         self.builder().enter()
     }
@@ -261,6 +265,17 @@ impl<'a> Builder<'a> {
     /// The style of a drawn item: the element entered and left at once.
     pub fn style(self) -> Option<Computed> {
         self.enter().style()
+    }
+
+    /// The [`Look`] of an element that is not drawn: what a state's rule is compared with
+    /// (`[checked]` against the plain item). It takes no place in the style tree, so no selector of
+    /// the elements drawn after it sees it as a sibling.
+    pub fn probe(self) -> Look {
+        let entered = self.enter();
+        let (style, node) = (entered.style(), entered.scope.node);
+        drop(entered);
+        super::native_css::discard(node);
+        Look(style)
     }
 
     /// The [`Look`] of every drawn item of this kind: looked up once, outside the loop that draws

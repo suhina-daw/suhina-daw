@@ -373,15 +373,23 @@ pub fn draw(ui: &Ui, ruler: Rect, axis: &Axis, shape: &ClipShape) {
         Pos2::new(right.max(left + 1.0), row.center().y + LOOP_BAR / 2.0),
     );
     // `loop-region`, `[checked]` while the clip loops, as the Arrangement's loop bar.
+    let plain = looping.then(|| crate::kit::element::LOOP_REGION.probe());
     let el = crate::kit::element::LOOP_REGION.attr(crate::kit::element::Checked, looping).enter();
-    let (fill, edge) = if looping {
-        (theme::control_active(), theme::text_secondary())
+    let (fill, edge, handle) = if looping {
+        (theme::control_active(), theme::text_secondary(), theme::text_primary())
     } else {
-        (theme::control_background(), theme::text_hint())
+        (theme::control_background(), theme::text_hint(), theme::text_hint())
     };
-    painter.rect_filled(bar, 0.0, el.background_or(fill));
-    painter.rect_stroke(bar, 0.0, theme::hairline(el.border_or(edge)), StrokeKind::Inside);
-    let handle_color = el.own_color_or(if looping { theme::text_primary() } else { theme::text_hint() });
+    // A rule for the plain bar must not hide that the clip loops: only a `[checked]` rule does.
+    let (fill, edge, handle_color) = match &plain {
+        Some(plain) => {
+            let lit = el.look();
+            (lit.background_unlike(plain, fill), lit.border_unlike(plain, edge), lit.own_color_unlike(plain, handle))
+        }
+        None => (el.background_or(fill), el.border_or(edge), el.own_color_or(handle)),
+    };
+    painter.rect_filled(bar, 0.0, fill);
+    painter.rect_stroke(bar, 0.0, theme::hairline(edge), StrokeKind::Inside);
     drop(el);
     for x in [left, right] {
         painter.rect_filled(

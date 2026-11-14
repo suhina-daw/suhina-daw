@@ -36,7 +36,7 @@ pub(super) fn show(
     let on = state.focus_first;
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, "Focus on the first clip"));
     // `button#control-focus-first`, `[checked]` while on.
-    let plain = on.then(|| crate::kit::element::BUTTON.id("focus-first").look());
+    let plain = on.then(|| crate::kit::element::BUTTON.id("focus-first").probe());
     let el = crate::kit::element::BUTTON
         .id("focus-first")
         .response(&response)
@@ -48,9 +48,7 @@ pub(super) fn show(
         (theme::accent(), Color32::TRANSPARENT),
         (theme::text_inverse(), theme::text_secondary()),
     );
-    if on {
-        painter.rect_filled(switch, 0.0, fill);
-    }
+    painter.rect_filled(switch, 0.0, fill);
     painter.text(switch.center(), Align2::CENTER_CENTER, "Focus", theme::mono_font(theme::TEXT_TINY), ink);
     drop(el);
 

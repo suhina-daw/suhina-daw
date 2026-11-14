@@ -52,17 +52,21 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
         let chosen = state.tool == tool;
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &label));
         // `arrangement-tool`, `[checked]` on the chosen one.
+        let plain = chosen.then(|| crate::kit::element::ARRANGEMENT_TOOL.probe());
         let el = crate::kit::element::ARRANGEMENT_TOOL
             .response(&response)
             .attr(crate::kit::element::Checked, chosen)
             .enter();
-        let fill = if chosen { theme::control_active() } else { theme::control_background() };
-        painter.rect_filled(
-            area,
-            0.0,
-            el.background_or(crate::kit::motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response))),
+        let hover = widgets::hover(ui, &response);
+        let mix = |fill| crate::kit::motion::mix(fill, theme::control_hover(), hover);
+        // A rule for every tool must not hide the chosen one: only a `[checked]` rule does.
+        let (fill, ink) = widgets::toggle_inks(
+            &el,
+            plain.as_ref(),
+            (mix(theme::control_active()), mix(theme::control_background())),
+            (theme::text_primary(), theme::text_secondary()),
         );
-        let ink = el.color_or(if chosen { theme::text_primary() } else { theme::text_secondary() });
+        painter.rect_filled(area, 0.0, fill);
         match tool {
             ArrangementTool::Select => IconButton::Select.draw(&painter, area, ink, 1.0),
             ArrangementTool::Split => IconButton::Slice.draw(&painter, area, ink, 1.0),

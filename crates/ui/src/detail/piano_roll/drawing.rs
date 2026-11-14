@@ -268,9 +268,11 @@ pub(super) fn draw(
     let note_style = part_style("piano-note", &[]);
     let selected_style = part_style("piano-note", &[Attr::Selected]);
     let muted_style = part_style("piano-note", &[Attr::Muted]);
-    let velocity_style = part_style("velocity", &[]);
-    let (muted_stem, selected_stem) =
-        (part_style("velocity", &[Attr::Muted]), part_style("velocity", &[Attr::Selected]));
+    // The velocity stems: a line takes only the colour its own rule declares, not the text
+    // colour of the `piano-roll` around it, so muted and selected stems keep their distinction.
+    let velocity_look = crate::kit::element::VELOCITY.look();
+    let muted_stem = crate::kit::element::VELOCITY.attr(crate::kit::element::Muted, true).look();
+    let selected_stem = crate::kit::element::VELOCITY.attr(crate::kit::element::Selected, true).look();
     // The row under the pointer: `piano-row[kind="hover"]`'s background.
     let hover_row = crate::kit::element::PIANO_ROW.attribute("kind", "hover").look();
     let line_colour = |strong: bool| {
@@ -504,11 +506,11 @@ pub(super) fn draw(
         let x = rect.left().round() + 0.5;
         let top = layout.lane.bottom() - 2.0 - velocity_height(note.velocity, layout.lane);
         let stem = if muted {
-            muted_stem.color.unwrap_or_else(theme::text_hint)
+            muted_stem.own_color_or(theme::text_hint())
         } else if selected {
-            selected_stem.color.unwrap_or_else(theme::text_primary)
+            selected_stem.own_color_or(theme::text_primary())
         } else {
-            velocity_style.color.unwrap_or(clip.color)
+            velocity_look.own_color_or(clip.color)
         };
         lane_painter.vline(x, egui::Rangef::new(top, layout.lane.bottom()), Stroke::new(1.0, stem));
         lane_painter.rect_filled(Rect::from_min_size(Pos2::new(x - 2.5, top), Vec2::new(5.0, 2.0)), 0.0, stem);

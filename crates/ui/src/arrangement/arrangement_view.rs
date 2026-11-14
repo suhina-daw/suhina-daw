@@ -1167,7 +1167,7 @@ fn show_lanes(
                 .attr(crate::kit::element::Muted, lane.mute)
         };
         // The lane as it is when the piano roll does not edit it, for what `[checked]` changes.
-        let plain_lane = (focus == Some(lane.track)).then(|| lane_of().look());
+        let plain_lane = (focus == Some(lane.track)).then(|| lane_of().probe());
         let lane_el = crate::kit::element::TRACK_LANE
             .id(&format!("track-{}", lane.track.0))
             .color(rgb(lane.color))

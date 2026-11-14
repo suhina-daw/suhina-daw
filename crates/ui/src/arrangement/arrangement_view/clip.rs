@@ -1917,6 +1917,7 @@ pub(super) fn take_lanes(
             let el = crate::kit::element::BUTTON.id("take-delete").response(&r).enter();
             let fill = el.background_or(motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
             painter.rect_filled(delete, 2.0, fill);
+            let ink = el.color_or(ink);
             drop(el);
             // A cross drawn, not a glyph: the interface font has no multiplication cross.
             let c = delete.center();
@@ -1927,7 +1928,7 @@ pub(super) fn take_lanes(
                 actions.push(Action::new("take.delete", json!({ "track": params["track"], "take": params["take"] })));
             }
             let r = clicked(solo, "Solo take", format!("Solo {}", take.name));
-            let plain = soloed.then(|| crate::kit::element::BUTTON.id("take-solo").look());
+            let plain = soloed.then(|| crate::kit::element::BUTTON.id("take-solo").probe());
             let el = crate::kit::element::BUTTON
                 .id("take-solo")
                 .response(&r)
@@ -1959,6 +1960,7 @@ pub(super) fn take_lanes(
             let el = crate::kit::element::BUTTON.id("take-promote").response(&r).enter();
             let fill = el.background_or(motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
             painter.rect_filled(promote, 2.0, fill);
+            let ink = el.color_or(ink);
             drop(el);
             widgets::text_in(painter, promote, Align2::CENTER_CENTER, "\u{2191}", small.clone(), ink);
             if r.clicked() {

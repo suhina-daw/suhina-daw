@@ -616,13 +616,52 @@ fn a_rule_for_every_button_does_not_hide_a_lit_one() {
     let lit_fill = |css: &str| {
         frames(css, || {
             let _view = SESSION.enter();
-            let plain = BUTTON.id("main-metronome").look();
+            let plain = BUTTON.id("main-metronome").probe();
             BUTTON.id("main-metronome").attr(Checked, true).look().background_unlike(&plain, token)
         })
     };
     assert_eq!(lit_fill("button { background-color: #102030; }"), token);
     assert_eq!(
         lit_fill("button { background-color: #102030; } button[checked] { background-color: #405060; }"),
+        rgb(0x40, 0x50, 0x60)
+    );
+}
+
+/// A comparison lookup (`probe`) is not drawn, so it is no sibling: `button + button` does not
+/// match the one drawn after it (#1428 review).
+#[test]
+fn a_probe_is_no_sibling_of_what_is_drawn_after_it() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let css = "button + button { background-color: #102030; }";
+    let (after_probe, after_look) = frames(css, || {
+        let _view = SESSION.enter();
+        let _probe = BUTTON.id("a").probe();
+        let after_probe = BUTTON.id("b").look().background_or(token);
+        let _look = BUTTON.id("c").look();
+        let after_look = BUTTON.id("d").look().background_or(token);
+        (after_probe, after_look)
+    });
+    assert_eq!(after_probe, token, "the probe took no place beside the button");
+    assert_eq!(after_look, rgb(0x10, 0x20, 0x30), "a drawn button is a sibling");
+}
+
+/// A rule for every stop button does not hide the queued one: its colour comes from a rule for
+/// `[queued]` or stays the native accent (#1428 review).
+#[test]
+fn a_rule_for_every_slot_does_not_hide_a_queued_one() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let queued_ink = |css: &str| {
+        frames(css, || {
+            let _view = SESSION.enter();
+            let plain = SLOT.attribute("kind", "stop").probe();
+            SLOT.attribute("kind", "stop").attr(Queued, true).look().own_color_unlike(&plain, token)
+        })
+    };
+    assert_eq!(queued_ink("slot[kind=\"stop\"] { color: #102030; }"), token);
+    assert_eq!(
+        queued_ink("slot[kind=\"stop\"] { color: #102030; } slot[kind=\"stop\"][queued] { color: #405060; }"),
         rgb(0x40, 0x50, 0x60)
     );
 }

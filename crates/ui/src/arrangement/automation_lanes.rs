@@ -3319,7 +3319,7 @@ fn lane(
     // double-click or the menu deletes.
     let dragging = state.point_drag.as_ref().filter(|d| d.track == track && &d.key == key).map(|d| d.point);
     let (point_ink, selected_point) = {
-        let plain = crate::kit::element::AUTOMATION_POINT.look();
+        let plain = crate::kit::element::AUTOMATION_POINT.probe();
         let picked = crate::kit::element::AUTOMATION_POINT.attr(crate::kit::element::Selected, true).look();
         let plain =
             plain.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
@@ -4213,14 +4213,22 @@ fn lane_header(
         return;
     }
     let painter = painter.with_clip_rect(clip);
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
     let track = lanes.track;
     let layout = state.layout(track, params);
     let top = !layout.lanes.contains(&param.key);
-    if state.is_picked(track, &param.key) {
-        let look = crate::kit::element::AUTOMATION_HEADER.attr(crate::kit::element::Selected, true).look();
+    // The header's own look, picked or not: its background and its text colour.
+    let picked = state.is_picked(track, &param.key);
+    let look = crate::kit::element::AUTOMATION_HEADER.attr(crate::kit::element::Selected, picked).look();
+    let surface = crate::kit::style_class::surface_or(theme::panel_background());
+    if picked {
+        // The picked tint lies over the header's own background.
+        let plain = crate::kit::element::AUTOMATION_HEADER.probe();
+        painter.rect_filled(rect, 0.0, plain.background_or(surface));
         painter.rect_filled(rect, 0.0, look.background_or(theme::accent().gamma_multiply(0.18)));
+    } else {
+        painter.rect_filled(rect, 0.0, look.background_or(surface));
     }
+    let name_ink = look.color_or(theme::text_primary());
     let id = Id::unique(("automation-header", track.0, param.key.device, param.key.param.as_str()));
     let background = ui.interact(clip, id.with("background"), Sense::click_and_drag());
     if background.clicked() && !top {
@@ -4293,14 +4301,7 @@ fn lane_header(
         }
     } else {
         // A mounted lane keeps its parameter: its name only.
-        widgets::text_in(
-            &painter,
-            chooser,
-            Align2::LEFT_CENTER,
-            &label,
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::text_primary(),
-        );
+        widgets::text_in(&painter, chooser, Align2::LEFT_CENTER, &label, theme::ui_font(theme::TEXT_SMALL), name_ink);
     }
 
     // On or off: off after a manual change; a click turns it on again (or off).

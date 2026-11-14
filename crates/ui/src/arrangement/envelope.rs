@@ -463,7 +463,10 @@ pub fn show(
         if free { elapsed } else { snap(elapsed).clamp(0.0, length) }
     };
     // The gain envelope's points and their line while it is edited: `clip-envelope`'s `color`.
-    let ink = crate::kit::element::CLIP_ENVELOPE.look().own_color_or(theme::accent());
+    let look = crate::kit::element::CLIP_ENVELOPE.look();
+    let ink = look.own_color_or(theme::accent());
+    // The edited line and the points at rest take the element's colour where a rule gives one.
+    let line_ink = if edit { look.own_color_or(line_ink) } else { line_ink };
     // Over a halo of the other of black and white, so they read on the waveform too.
     let [r, g, b, _] = line_ink.to_srgba_unmultiplied();
     let light = u16::from(r) + u16::from(g) + u16::from(b) > 3 * 128;
@@ -950,7 +953,7 @@ pub fn edit_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, n
     response.widget_info(|| {
         egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, format!("Edit gain envelope of {name}"))
     });
-    let plain = on.then(|| crate::kit::element::BUTTON.id("clip-envelope-edit").look());
+    let plain = on.then(|| crate::kit::element::BUTTON.id("clip-envelope-edit").probe());
     let el = crate::kit::element::BUTTON
         .id("clip-envelope-edit")
         .response(&response)
@@ -982,7 +985,7 @@ pub fn free_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, f
         .on_hover_text(if free { "Free move: points move freely" } else { "Free move: points snap to the dB grid" })
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, free, "Free move"));
-    let plain = free.then(|| crate::kit::element::BUTTON.id("clip-envelope-free").look());
+    let plain = free.then(|| crate::kit::element::BUTTON.id("clip-envelope-free").probe());
     let el = crate::kit::element::BUTTON
         .id("clip-envelope-free")
         .response(&response)

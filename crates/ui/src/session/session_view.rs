@@ -506,10 +506,10 @@ pub fn show(
         let main_header =
             crate::kit::element::TRACK_HEADER.attribute("kind", "main").attr(Selected, main_selected).enter();
         let native = crate::kit::element::Native { radius: 0.0, fill: theme::control_background() };
-        main_header.paint_with(&painter, header_rect, native);
+        let content = main_header.paint_with(&painter, header_rect, native).content;
         widgets::text_in(
             &painter,
-            header_rect.shrink2(Vec2::new(PAD, 0.0)),
+            content.shrink2(Vec2::new(PAD, 0.0)),
             Align2::LEFT_CENTER,
             "Main",
             theme::ui_font(theme::TEXT),
@@ -617,7 +617,7 @@ fn main_metronome(
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
-    let plain = on.then(|| crate::kit::element::BUTTON.id("main-metronome").look());
+    let plain = on.then(|| crate::kit::element::BUTTON.id("main-metronome").probe());
     let el = crate::kit::element::BUTTON.id("main-metronome").response(&response).attr(Checked, on).enter();
     let (fill, glyph) = crate::kit::widgets::toggle_inks(
         &el,
@@ -1291,19 +1291,27 @@ fn column_body(
         }
     }
     // The stop button is `slot[kind="stop"]`, `[queued]` while its stop waits for the beat.
+    // A rule for every stop button must not hide which one is queued: only a `[queued]` rule does.
+    let plain = column.stop_queued.then(|| crate::kit::element::SLOT.attribute("kind", "stop").probe());
     let el = crate::kit::element::SLOT
         .attribute("kind", "stop")
         .response(&response)
         .attr(Queued, column.stop_queued)
         .enter();
-    let fill = el.background_or(motion::mix(
+    let native_fill = motion::mix(
         crate::kit::style_class::surface_or(theme::panel_background()),
         theme::panel_hover(),
         widgets::hover(ui, &response),
-    ));
+    );
+    let (fill, color) = match &plain {
+        Some(plain) => {
+            let lit = el.look();
+            (lit.background_unlike(plain, native_fill), lit.own_color_unlike(plain, theme::accent()))
+        }
+        None => (el.background_or(native_fill), el.own_color_or(theme::text_secondary())),
+    };
     painter.rect_filled(stop_rect, 0.0, fill);
     let square = Rect::from_center_size(stop_rect.center(), Vec2::splat(7.0));
-    let color = el.own_color_or(if column.stop_queued { theme::accent() } else { theme::text_secondary() });
     painter.rect_stroke(square, 0.0, theme::hairline(color), StrokeKind::Inside);
     if mapping {
         crate::session::launch_keys::overlay(
@@ -1382,7 +1390,7 @@ fn plain_clip(
     selected: bool,
 ) -> Option<crate::kit::element::Look> {
     let stated = !slot.enabled || slot.state == SlotState::Queued || selected;
-    (has_clip && stated).then(|| crate::kit::element::CLIP.color(colour).look())
+    (has_clip && stated).then(|| crate::kit::element::CLIP.color(colour).probe())
 }
 
 /// `hover` is how far the pointer's hover has come (0 to 1), with the theme's hovered background
@@ -1456,8 +1464,13 @@ fn slot_cell(
         SlotState::Stopped | SlotState::Queued => {
             // The clip in its colour, lighter under the pointer; a deactivated clip is grey
             // (`clip[muted]`).
-            let base =
-                if slot.enabled { clip_color } else { state.background_unlike(&plain, theme::control_background()) };
+            let base = if !slot.enabled {
+                state.background_unlike(&plain, theme::control_background())
+            } else if slot.state == SlotState::Queued {
+                state.background_unlike(&plain, clip_color)
+            } else {
+                clip_color
+            };
             let fill = lit(base, 0.0);
             let fill = if column.mute { motion::mix(muted, fill, 0.45) } else { fill };
             painter.rect_filled(rect, 0.0, fill);
