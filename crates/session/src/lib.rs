@@ -49,6 +49,7 @@ mod devices;
 mod editing;
 mod execute;
 mod export;
+pub mod extensions;
 mod files;
 mod follow;
 mod history;
