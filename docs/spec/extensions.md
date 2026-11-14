@@ -19,7 +19,11 @@ behaves.
 - **Builds on:** the out-of-process host and its protocol ([ADR 0006](../decisions/0006-plug-in-hosting.md)),
   the command registry ([ADR 0002](../decisions/0002-commands.md)) and the permission model of patch
   devices ([ADR 0008](../decisions/0008-patch-devices.md) §3).
-- **Status:** behaviour spec only; nothing is implemented. First user: stem separation.
+- **Status:** the manifest, the `extensions.*` commands, the surface programs' supervisor and
+  the MIDI router (a running program's claimed ports and its send-backs) are built
+  (`crates/session/src/extensions.rs`, `crates/session/src/extensions/`, the claim pass in
+  `crates/session/src/midi.rs`); the Settings › Extensions panel is not. First user: stem
+  separation, and a controller script for the Akai APC40 MkII.
 
 ## Terms
 
@@ -76,23 +80,27 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
 |---|---|
 | `extensions.list` | every known extension: id, name, version, what it provides, state, licence name, source, and the reason when it is not usable |
 | `extensions.add` | takes a folder, checks its manifest, copies it into the settings folder, and returns the licence and the permissions; not a project edit, so it is not an undo step |
-| `extensions.remove` | forgets an extension; the user's own files stay where they are |
+| `extensions.remove` | forgets an extension; the user's own files stay where they are. A surface program that is running stops first (within the supervisor's bounded stop), and the store's copy of the folder goes |
 | `extensions.info` | one extension in full: the manifest, the licence text, the permissions, the state and the last error |
-| `extensions.restart` | stops its program and starts it again (a crashed or wedged one) |
+| `extensions.restart` | stops its program and starts it again (a crashed or wedged one) on what the folder holds now — the manifest is read again, so the restart runs a script whose checksum was checked this run |
 
 - Adding never copies a program into a project and never writes outside
   `<settings>/extensions/<id>/`.
-- `extensions.remove` refuses while a job of that extension runs, and names the job.
+- `extensions.remove` refuses while a job of that extension runs, and names the job. A surface
+  program is not a job: remove stops the program (the supervisor's bounded stop) and forgets the
+  extension.
 - Extensions are kept in `<settings>/extensions/<id>/`, in the settings folder the library's index
   and the sample map's cache also live under; `SUHINA_EXTENSIONS` names another folder instead, for
-  development.
+  development, and wins over the folder whatever front end names one. A front end that keeps no
+  settings folder gives the store the system's settings folder's `extensions/`.
 
 ## What the user sees
 
 - **Settings › Extensions** lists them with their state, the licence's name and where it came from.
-  An extension that is not usable is shown with its reason, not hidden.
+  An extension that is not usable is shown with its reason, not hidden. (Not built yet: the panel
+  is a later slice; `extensions.list` and `extensions.info` are the commands it will show.)
 - The licence text and the permissions are shown **before** the first time it runs, and stay reachable
-  from the same list afterwards.
+  from the same list afterwards. (Not built yet with the panel; `extensions.info` returns both.)
 - A feature that needs one says so by name: "`separation` needs the Stem Split extension (separates a
   clip into four stems)". The message says what it provides and where the user can get it, when the
   manifest names a source.
@@ -108,7 +116,8 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
   The runner is a program Suhina ships, not an extension and not a surface program; the script's
   folder is both. The extension's state, its health and its restart
   are the runner process's, and the script's ports fall back to their profiles while that process
-  is down.
+  is down. The messages the runner and Suhina say, and the Lua environment and API the runner
+  gives a script, are in [surface programs](surface-programs.md).
 - Suhina does the parts it owns: decoding the audio, the resampling and the DSP chain around the
   model, placing the result in the project, and the undo step. The extension does the part Suhina may
   not ship.

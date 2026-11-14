@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! MIDI controllers ([ADR 0017](../../../docs/decisions/0017-inputs-and-latency.md)): lists the
-//! system's MIDI input ports and opens them with `midir`, and turns what they send into the
-//! engine's live notes. This is the only code that opens a MIDI device; the session sees it as a
-//! [`MidiSystem`].
+//! system's MIDI input and output ports and opens them with `midir`, and turns what the inputs
+//! send into the engine's live notes. This is the only code that opens a MIDI device; the
+//! session sees it as a [`MidiSystem`].
 //!
 //! The driver calls back on a thread of its own (never the audio thread), which parses each
 //! message and hands the note to the session's [`LiveInput`], and from there to the engine of
@@ -13,12 +13,17 @@
 //! (#269). Notes, the sustain pedal, every other controller, pitch bend and channel pressure
 //! (aftertouch) are read, on every channel (#812); program change, polyphonic key pressure,
 //! system exclusive, clock and other system messages are ignored.
+//!
+//! The ports a running surface program claims are opened raw instead
+//! ([ADR 0019](../../../docs/decisions/0019-midi-controllers-and-mapping.md) › 10): every
+//! message whole, system exclusive included, goes to the session's sink with the driver's
+//! timestamp, and what the program sends back is written to an output port opened for it.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use midir::{Ignore, MidiInput, MidiInputConnection};
+use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use suhina_engine::{LiveEvent, LiveSource, StampClock, live_now, port_id};
-use suhina_session::{LiveInput, MidiSystem};
+use suhina_session::{LiveInput, MidiOut, MidiSystem, RawSink};
 
 /// The name Suhina's ports carry in the system's MIDI graph.
 const CLIENT: &str = "Suhina";
@@ -156,6 +161,64 @@ impl MidiSystem for Midi {
             )
             .map_err(|e| e.to_string())?;
         Ok(Box::new(Port { connection: Some(connection), input, port: id }))
+    }
+
+    fn outputs(&self) -> Result<Vec<String>, String> {
+        let output = MidiOutput::new(CLIENT).map_err(|e| e.to_string())?;
+        Ok(output.ports().iter().filter_map(|port| output.port_name(port).ok()).collect())
+    }
+
+    fn open_output(&self, name: &str) -> Result<Box<dyn MidiOut>, String> {
+        let output = MidiOutput::new(CLIENT).map_err(|e| e.to_string())?;
+        let port = output
+            .ports()
+            .into_iter()
+            .find(|port| output.port_name(port).is_ok_and(|n| n == name))
+            .ok_or_else(|| format!("{name} is not there"))?;
+        let connection = output.connect(&port, &format!("{CLIENT} output")).map_err(|e| e.to_string())?;
+        Ok(Box::new(Out { connection: Mutex::new(connection) }))
+    }
+
+    fn open_raw(&self, name: &str, sink: Arc<dyn RawSink>) -> Result<Box<dyn std::any::Any + Send>, String> {
+        let mut input = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
+        // A claimed port gets every message whole: only timing and active sensing are skipped,
+        // so system exclusive reaches the script.
+        input.ignore(Ignore::TimeAndActiveSense);
+        let port = input
+            .ports()
+            .into_iter()
+            .find(|port| input.port_name(port).is_ok_and(|n| n == name))
+            .ok_or_else(|| format!("{name} is not there"))?;
+        let connection = input
+            .connect(&port, &format!("{CLIENT} raw input"), move |stamp, message, _| sink.message(stamp, message), ())
+            .map_err(|e| e.to_string())?;
+        Ok(Box::new(RawPort { connection: Some(connection) }))
+    }
+}
+
+/// An open output port: writes what it is given, whole; dropping it closes the port.
+struct Out {
+    connection: Mutex<MidiOutputConnection>,
+}
+
+impl MidiOut for Out {
+    fn send(&self, bytes: &[u8]) -> Result<(), String> {
+        let mut connection = self.connection.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        connection.send(bytes).map_err(|e| e.to_string())
+    }
+}
+
+/// An input port opened raw for a surface program: every message whole to the sink; dropping
+/// it closes the port. Nothing was parsed into the engine, so there are no keys to let go of.
+struct RawPort {
+    connection: Option<MidiInputConnection<()>>,
+}
+
+impl Drop for RawPort {
+    fn drop(&mut self) {
+        if let Some(connection) = self.connection.take() {
+            connection.close();
+        }
     }
 }
 

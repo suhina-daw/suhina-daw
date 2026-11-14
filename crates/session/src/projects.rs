@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use suhina_plugins::library::Library;
 
 use crate::commands::{CommandKind, CommandSpec, Param, ParamType, commands, param};
+use crate::extensions::programs;
 use crate::plugins::plugin_commands;
 use crate::{Agents, CommandError, Policy, Session};
 
@@ -141,6 +142,8 @@ pub struct Projects {
     plugin_host: PluginHost,
     pub(crate) browser: Browser,
     devices: Devices,
+    /// Extensions (ADR 0015): the store and the surface programs running (ADR 0019 › 10).
+    pub(crate) extensions: crate::extensions::Extensions,
     /// Backups of the open projects: the settings and the thread that writes them.
     pub(crate) backups: crate::backup::Backups,
     /// With no project open, the empty session previews play in, with a player of its own
@@ -242,7 +245,9 @@ impl Projects {
     /// hear about: ports that could not be opened.
     pub fn set_midi_system(&mut self, system: std::sync::Arc<dyn crate::MidiSystem>) -> Vec<String> {
         self.devices.midi.system = Some(system);
-        self.devices.midi.sync()
+        let epoch = self.extensions.claims_epoch;
+        let claims = self.extensions.claims();
+        self.devices.midi.sync(&claims, epoch)
     }
 
     /// The MIDI input ports turned off, by name (the window keeps them in its settings).
@@ -253,7 +258,9 @@ impl Projects {
     /// Turns the ports `off` names off and every other one on, opening and closing them.
     pub fn set_midi_inputs_off(&mut self, off: impl IntoIterator<Item = String>) -> Vec<String> {
         self.devices.midi.off = off.into_iter().collect();
-        self.devices.midi.sync()
+        let epoch = self.extensions.claims_epoch;
+        let claims = self.extensions.claims();
+        self.devices.midi.sync(&claims, epoch)
     }
 
     /// Where the open MIDI ports send what they play: the active project's engine.
@@ -271,16 +278,35 @@ impl Projects {
         &mut self.devices.midi
     }
 
+    /// Looks at the MIDI ports again — the rescan the `midi.*` commands and the frame call —
+    /// with the running programs' claims: claimed ports open raw for their programs, their
+    /// output ports open for their send-backs.
+    pub(crate) fn midi_sync(&mut self) -> Vec<String> {
+        let epoch = self.extensions.claims_epoch;
+        let claims = self.extensions.claims();
+        self.devices.midi.sync(&claims, epoch)
+    }
+
     /// Sends the MIDI inputs' notes to the active project's engine when it is a new one, and
-    /// looks at the ports again now and then, so a controller plugged in later is heard.
+    /// looks at the ports again now and then, so a controller plugged in later is heard. The
+    /// running programs' send-backs go out on every look — they queue in the supervisor, and
+    /// past its cap they are dropped, so they are drained each frame.
     fn poll_midi(&mut self) -> Vec<String> {
         if let Some(sender) = self.session_mut(None).ok().and_then(Session::take_live_input) {
             self.devices.midi.input.connect(sender);
         }
+        for (id, event) in self.extensions.drain_events() {
+            if let programs::Event::SendBack { port, bytes } = event {
+                self.devices.midi.send_back(&id, &port, &bytes);
+            }
+        }
         if self.devices.midi.system.is_some()
-            && self.devices.midi.checked.is_none_or(|t| t.elapsed() >= crate::midi::MIDI_RESCAN)
+            && (self.devices.midi.synced_epoch != self.extensions.claims_epoch
+                || self.devices.midi.checked.is_none_or(|t| t.elapsed() >= crate::midi::MIDI_RESCAN))
         {
-            return self.devices.midi.sync();
+            let epoch = self.extensions.claims_epoch;
+            let claims = self.extensions.claims();
+            return self.devices.midi.sync(&claims, epoch);
         }
         Vec::new()
     }
@@ -690,6 +716,45 @@ impl Projects {
         Self { plugin_host: PluginHost { library, ..PluginHost::default() }, ..Self::default() }
     }
 
+    /// Points the extensions store at `root`, over `SUHINA_EXTENSIONS` too, so a test's store
+    /// is its own whatever the developer's environment names, and reads what is there.
+    pub fn with_extensions_root(mut self, root: &Path) -> Self {
+        self.extensions.force_root(root);
+        self
+    }
+
+    /// The extensions store's root: `root` itself, unless `SUHINA_EXTENSIONS` named a root, in
+    /// which case that one wins (ADR 0015). The app and the MCP server give Suhina's settings
+    /// folder at start-up; the CLI relies on [`Projects::new`]'s default.
+    pub fn set_extensions_root(&mut self, root: &Path) {
+        self.extensions.set_root(root);
+    }
+
+    /// The one program running, for the tests: this slice's store starts none by itself, so
+    /// the tests start exactly one and know which one it is. Not `cfg(test)`: the integration
+    /// tests in `tests/extension_programs.rs` reach these through the compiled lib. The MIDI
+    /// slice will use the by-id accessors on the store instead.
+    pub fn test_extensions_program(&self) -> Option<&crate::extensions::programs::Handle> {
+        self.extensions.programs()
+    }
+
+    /// Drains the running programs' events through the store's one drain, blocking until an
+    /// event answers `which`: the states are applied and the event comes back, so the tests
+    /// see events without stealing them from the session, on a signal rather than a clock.
+    pub fn test_extensions_wait_for(
+        &mut self,
+        which: impl Fn(&crate::extensions::programs::Event) -> bool,
+    ) -> Option<crate::extensions::programs::Event> {
+        self.extensions.wait_for_event(which).map(|(_, event)| event)
+    }
+
+    /// Blocks until a running program's queue holds an event that answers `which`, and leaves
+    /// it queued for the frame's drain: the router's tests wait for a send-back this way, then
+    /// let `poll_plugins` take it and write it out.
+    pub fn test_extensions_peek_for(&mut self, which: impl Fn(&crate::extensions::programs::Event) -> bool) {
+        self.extensions.peek_for_event(which);
+    }
+
     /// The plug-in library. Taking it for changing counts as changing it: sessions get a new
     /// catalog the next time they start a plug-in.
     pub fn library_mut(&mut self) -> &mut Library {
@@ -1051,6 +1116,7 @@ fn projects_commands() -> impl Iterator<Item = &'static CommandSpec<Projects>> {
         .chain(crate::audio_commands())
         .chain(crate::backup::backup_commands())
         .chain(crate::midi_commands())
+        .chain(crate::extensions::extensions_commands())
 }
 
 /// `docs/commands.md`: every command in the order of [`all_commands`], as `suhina-cli commands
