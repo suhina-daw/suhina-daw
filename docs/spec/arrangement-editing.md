@@ -72,14 +72,15 @@ one drag hands over to the other.
 stays where it was, the edge, fade, marker, loop and track keep their places, no clip is drawn and
 no comp is made; an automation point, curve or lane header stays where it was, and a box or range
 selects nothing new. A point a press on an automation line made stays, where the press put it. What the drag already did as it went stays: time painted so far stays selected,
-and a single track's volume, pan or send stays at the value heard last (a selection of tracks
-moves only on release, so it does not move). That Escape is the drag's alone: it does not count
+and a single track's volume, pan or send, or the main volume, stays at the value heard last (a
+selection of tracks moves only on release, so it does not move). That Escape is the drag's alone: it does not count
 toward Escape twice (`docs/spec/ui-clip-editor.md` › Pulled to the top). The rest of the press
-does nothing; the next press starts a new drag.
+does nothing: it starts no drag, a clip held is carried to no other view, and its release adds no
+automation point; the next press starts a new drag.
 
 A drag whose release the view never saw (the button let go while the view was not drawn, after Tab
 to the Launcher view, or with its handle scrolled out of sight) ends without doing anything once
-every button is up.
+every button is up, whichever view is shown then.
 
 ## Tools
 

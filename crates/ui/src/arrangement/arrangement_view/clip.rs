@@ -406,7 +406,11 @@ pub(super) fn clip_box<'a>(
     // time-selection's press grabs nothing — its origin said so, or the modifiers say so now.
     // A press that is let go dies at the frame's start (`begin_clip_carry`), even when this
     // widget is gone by then.
-    if response.is_pointer_button_down_on() && tool == ArrangementTool::Select && ui.input(|i| i.pointer.primary_down())
+    // A press Escape let go of grabs nothing for the rest of it.
+    if response.is_pointer_button_down_on()
+        && tool == ArrangementTool::Select
+        && ui.input(|i| i.pointer.primary_down())
+        && !state.gesture.cancelled()
     {
         // A time selection being painted stays one when its modifiers are let go mid-drag.
         if press_selects_time || state.gesture.marquee().is_some_and(|m| m.time) {
@@ -2107,11 +2111,9 @@ pub(super) fn take_lanes(
             // A narrow piece has only its right corner, the one that brings back what was cut.
             let edges: &[bool] = if rect.width() < 16.0 { &[true] } else { &[true, false] };
             for &end in edges {
-                let held = state
-                    .gesture
-                    .take_edge()
-                    .copied()
-                    .filter(|e| e.track == lane.track && e.take == take.number && e.piece == index && e.end == end);
+                let mine =
+                    |e: &TakeEdge| e.track == lane.track && e.take == take.number && e.piece == index && e.end == end;
+                let held = state.gesture.take_edge().copied().filter(|e| mine(e));
                 // The edge being dragged shows where it would stop.
                 if let Some(edge) = held {
                     let (from, to) = if end { (clip.start, edge.at) } else { (edge.at, clip.start + clip.length) };
@@ -2143,10 +2145,7 @@ pub(super) fn take_lanes(
                 }
                 if grip.dragged()
                     && let Some(pointer) = ui.ctx().pointer_latest_pos()
-                    && let Some(edge) = state
-                        .gesture
-                        .take_edge_mut()
-                        .filter(|e| e.track == lane.track && e.take == take.number && e.piece == index && e.end == end)
+                    && let Some(edge) = state.gesture.take_edge_mut().filter(|e| mine(e))
                 {
                     let before = index.checked_sub(1).and_then(|n| take.clips.get(n));
                     let after = take.clips.get(index + 1);
@@ -2161,9 +2160,7 @@ pub(super) fn take_lanes(
                     edge.at = beat_of(pointer.x).clamp(low, high.max(low));
                 }
                 if grip.drag_stopped()
-                    && let Some(edge) = state.gesture.end_take_edge(|e| {
-                        e.track == lane.track && e.take == take.number && e.piece == index && e.end == end
-                    })
+                    && let Some(edge) = state.gesture.end_take_edge(|e| mine(e))
                 {
                     let was = if end { clip.start + clip.length } else { clip.start };
                     if (edge.at - was).abs() > 1e-6 {

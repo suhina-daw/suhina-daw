@@ -103,38 +103,44 @@ pub(crate) enum Gesture {
 
 /// The drag under way, if any (#1158).
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct GestureSlot(Option<Gesture>);
+pub(crate) struct GestureSlot {
+    now: Option<Gesture>,
+    /// Escape let go of a drag while its button is still held: the rest of that press starts no
+    /// drag and does nothing on release, until every button is up.
+    cancelled: bool,
+}
 
 impl GestureSlot {
     /// Whether a drag is under way.
     pub(crate) fn is_some(&self) -> bool {
-        self.0.is_some()
+        self.now.is_some()
     }
 
     /// The drag under way.
     pub(crate) fn get(&self) -> Option<&Gesture> {
-        self.0.as_ref()
+        self.now.as_ref()
     }
 
     /// The drag under way, to change as the pointer moves.
     pub(crate) fn get_mut(&mut self) -> Option<&mut Gesture> {
-        self.0.as_mut()
+        self.now.as_mut()
     }
 
-    /// Starts `gesture`, when no drag is under way: the one place a drag starts. Returns whether
-    /// it started; the drag under way is kept otherwise.
+    /// Starts `gesture`, when no drag is under way and no press Escape let go of is still held:
+    /// the one place a drag starts. Returns whether it started; the drag under way is kept
+    /// otherwise.
     pub(crate) fn begin(&mut self, gesture: Gesture) -> bool {
-        if self.0.is_some() {
+        if self.now.is_some() || self.cancelled {
             return false;
         }
-        self.0 = Some(gesture);
+        self.now = Some(gesture);
         true
     }
 
     /// Ends the drag under way when `mine` says it is the caller's, handing it back to commit:
     /// the one place a drag ends.
     pub(crate) fn end_if(&mut self, mine: impl FnOnce(&Gesture) -> bool) -> Option<Gesture> {
-        self.0.take_if(|g| mine(g))
+        self.now.take_if(|g| mine(g))
     }
 
     /// A value control's frame (a header's volume, pan or send, a clip's gain, the main volume):
@@ -153,7 +159,7 @@ impl GestureSlot {
         if response.drag_started_by(egui::PointerButton::Primary) {
             self.begin(start());
         }
-        let ours = self.0.as_ref().is_some_and(&mine);
+        let ours = self.now.as_ref().is_some_and(&mine);
         match drag {
             Drag::Moving(_) if !ours => Drag::None,
             Drag::Done(_) if response.drag_stopped() && self.end_if(&mine).is_none() => Drag::None,
@@ -163,14 +169,14 @@ impl GestureSlot {
 
     /// The automation point held: dragged by itself, or made by a press on the line and held since.
     pub(crate) fn lane_point(&self) -> Option<&PointDrag> {
-        match &self.0 {
+        match &self.now {
             Some(Gesture::LanePoint(drag) | Gesture::NewPoint(_, Some(drag))) => Some(drag),
             _ => None,
         }
     }
 
     pub(crate) fn lane_point_mut(&mut self) -> Option<&mut PointDrag> {
-        match &mut self.0 {
+        match &mut self.now {
             Some(Gesture::LanePoint(drag) | Gesture::NewPoint(_, Some(drag))) => Some(drag),
             _ => None,
         }
@@ -179,9 +185,9 @@ impl GestureSlot {
     /// Lets go of the automation point held when `mine` says it is the caller's, handing it back to
     /// commit. A point made by a press stays made: the press goes on until the button comes up.
     pub(crate) fn end_lane_point(&mut self, mine: impl FnOnce(&PointDrag) -> bool) -> Option<PointDrag> {
-        match &mut self.0 {
+        match &mut self.now {
             Some(Gesture::NewPoint(_, held)) => held.take_if(|d| mine(d)),
-            Some(Gesture::LanePoint(drag)) if mine(drag) => match self.0.take() {
+            Some(Gesture::LanePoint(drag)) if mine(drag) => match self.now.take() {
                 Some(Gesture::LanePoint(drag)) => Some(drag),
                 _ => None,
             },
@@ -191,7 +197,7 @@ impl GestureSlot {
 
     /// The point a press on an automation line made, while that press goes on.
     pub(crate) fn new_point(&self) -> Option<&NewPoint> {
-        match &self.0 {
+        match &self.now {
             Some(Gesture::NewPoint(made, _)) => Some(made),
             _ => None,
         }
@@ -199,7 +205,7 @@ impl GestureSlot {
 
     /// The point a press made is on the lane now: `drag` holds it until the button comes up.
     pub(crate) fn hold_new_point(&mut self, drag: PointDrag) {
-        if let Some(Gesture::NewPoint(_, held @ None)) = &mut self.0 {
+        if let Some(Gesture::NewPoint(_, held @ None)) = &mut self.now {
             *held = Some(drag);
         }
     }
@@ -213,10 +219,28 @@ impl GestureSlot {
         }
     }
 
-    /// Ends whatever drag is under way without committing it: Escape, a release its widget never
-    /// saw, a switch to another project. Returns whether one was.
+    /// Ends whatever drag is under way without committing it, as Escape or a switch to another
+    /// project does, and lets the rest of its press do nothing until every button is up. Returns
+    /// whether one was.
     pub(crate) fn cancel(&mut self) -> bool {
-        self.0.take().is_some()
+        self.cancelled = true;
+        self.now.take().is_some()
+    }
+
+    /// Whether the press held now is one Escape let go of: it starts and finishes nothing.
+    pub(crate) fn cancelled(&self) -> bool {
+        self.cancelled
+    }
+
+    /// Called once a frame after every widget had its release: with every button up, a drag still
+    /// under way lost its release (its widget was not drawn when the button went up) and ends
+    /// without doing anything, so it cannot hold up the next drag; and a press Escape let go of is
+    /// over.
+    pub(crate) fn settle(&mut self, buttons_down: bool) {
+        if !buttons_down {
+            self.now = None;
+            self.cancelled = false;
+        }
     }
 }
 
@@ -228,14 +252,14 @@ macro_rules! kinds {
         #[allow(dead_code)]
         impl GestureSlot {$(
             pub(crate) fn $get(&self) -> Option<&$ty> {
-                match &self.0 {
+                match &self.now {
                     Some(Gesture::$variant(drag)) => Some(drag),
                     _ => None,
                 }
             }
 
             pub(crate) fn $get_mut(&mut self) -> Option<&mut $ty> {
-                match &mut self.0 {
+                match &mut self.now {
                     Some(Gesture::$variant(drag)) => Some(drag),
                     _ => None,
                 }

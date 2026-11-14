@@ -181,13 +181,13 @@ fn a_dragged_gain_or_fade_is_what_the_clip_shows() {
     assert!(state.gesture.begin(Gesture::FadeCurve(CurveDrag { key, edge: FadeEdge::In, curve: 0.4, grab: 0.0 })));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_in_curve.curve, 0.4);
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_out_curve.curve, 0.0);
-    state.gesture.cancel();
+    state.gesture.settle(false);
     // The waveform is drawn with the gain being dragged, not the one in the project.
     assert!(state.gesture.begin(Gesture::Gain((key, -12.0))));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).gain_db, -12.0);
     assert_eq!(state.shown((TrackId(1), ClipId(2)), &clip, Some(beats(1.0))).gain_db, 0.0, "only on the dragged clip");
     // A fade being dragged: on the grid, or free with Alt.
-    state.gesture.cancel();
+    state.gesture.settle(false);
     assert!(state.gesture.begin(Gesture::Fade(FadeDrag { key, edge: FadeEdge::Out, raw: 2.6, from: 0.0 })));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_out, 3.0);
     assert!((state.shown(key, &clip, None).fade_out - 2.6).abs() < 1e-9);
@@ -211,10 +211,19 @@ fn a_second_drag_cannot_start_while_one_is_under_way() {
     assert_eq!(slot.end_edge(|d| d.key == key), Some(edge));
     // Then the next drag starts.
     assert!(slot.begin(Gesture::Marker((0, 2.0))));
-    // Escape or a lost release ends it without handing anything back.
+    // Escape ends it without handing anything back, and the rest of its press starts nothing.
     assert!(slot.cancel());
     assert!(!slot.is_some());
-    assert!(!slot.cancel());
+    assert!(slot.cancelled());
+    assert!(!slot.begin(Gesture::Marker((1, 3.0))), "the press Escape let go of starts no drag");
+    slot.settle(true);
+    assert!(slot.cancelled(), "a button still held keeps it so");
+    // Once every button is up the next press may start one; a drag that lost its release ends then.
+    slot.settle(false);
+    assert!(!slot.cancelled());
+    assert!(slot.begin(Gesture::Marker((1, 3.0))));
+    slot.settle(false);
+    assert!(!slot.is_some());
 }
 
 #[test]

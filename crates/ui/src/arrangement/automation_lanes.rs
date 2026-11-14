@@ -2727,8 +2727,11 @@ fn lane(
         && !shift
         && let Some(pos) = ui.input(|i| i.pointer.press_origin())
         && near_line(pos)
+        && let beat = geometry.snap(geometry.beat_of(pos.x), free)
+        && let grab = (geometry.beat_of(pos.x), place_of(plot, pos.y))
+        // The press is the drag under way from here, or does nothing while another is.
+        && gesture.begin(Gesture::NewPoint(NewPoint { track, key: key.clone(), beat, grab }, None))
     {
-        let beat = geometry.snap(geometry.beat_of(pos.x), free);
         let mut params = key.params(track);
         params["beat"] = json!(beat);
         // On the line the point goes on the envelope, and the command splits a bent segment so it
@@ -2743,8 +2746,6 @@ fn lane(
             params["shape"] = json!(shape);
         }
         actions.push(Action::new("automation.addPoint", params));
-        let grab = (geometry.beat_of(pos.x), place_of(plot, pos.y));
-        gesture.begin(Gesture::NewPoint(NewPoint { track, key: key.clone(), beat, grab }, None));
         state.selection = None;
         state.range = None;
     }
@@ -2770,7 +2771,8 @@ fn lane(
     if pressed_point {
         gesture.end_lane_point(|d| d.body && d.track == track && &d.key == key);
     }
-    if let Some(pos) = clicked_at.filter(|_| !pressed_point) {
+    // A press Escape let go of adds nothing when it comes up either.
+    if let Some(pos) = clicked_at.filter(|_| !pressed_point && !gesture.cancelled()) {
         let near = near_line(pos);
         let adds = if body.double_clicked() { !state.click_anywhere && !near } else { near || state.click_anywhere };
         if adds {

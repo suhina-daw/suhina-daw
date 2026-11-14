@@ -355,13 +355,8 @@ pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, 
     if state.focus.is_some() {
         state.scroll.y = scrolled;
     }
-    // With every button up, a drag still under way lost its release: its widget was not drawn
-    // when the button went up (scrolled out of view, the view hidden). It ends without doing
-    // anything, so it cannot hold up the next drag (#1158). Every widget has had its release
-    // by now, this frame's included.
-    if !ui.input(|i| i.pointer.any_down()) {
-        state.gesture.cancel();
-    }
+    // Every widget has had its release by now, this frame's included (#1158).
+    state.gesture.settle(ui.input(|i| i.pointer.any_down()));
     // The line a drag holds, for the headers and panels: they are drawn before the lanes move
     // it, so a change is drawn again at once (#811).
     let dragged = state.automation.take_drawn_drag();

@@ -1388,9 +1388,9 @@ fn a_drag_released_out_of_sight_ends_and_the_next_one_starts() {
     assert!(harness.query_by_label("Right edge of Beat B on Drums").is_none(), "the Launcher view is shown");
     harness.drop_at(to);
     harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "the lost drag ended in the Launcher view");
     harness.key_press(Key::Tab);
     harness.run();
-    assert!(!harness.state().arrangement().gesture_under_way(), "the lost drag ended");
     assert_eq!(beat_b_length(&harness), Some(before), "its release did nothing");
     // A new drag of the edge trims the clip by a bar.
     harness.hover_at(edge);

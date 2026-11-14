@@ -748,11 +748,17 @@ impl ArrangementViewState {
     }
 
     /// Ends whatever drag is under way without committing it, as Escape and a switch to another
-    /// project do; `pressed_clip`, a press not yet a drag, is let go of too. Returns whether a
-    /// drag was under way.
+    /// project do; `pressed_clip`, a press not yet a drag, is let go of too, and the rest of the
+    /// press does nothing. Returns whether a drag was under way.
     pub fn cancel_gesture(&mut self) -> bool {
         self.pressed_clip = None;
         self.gesture.cancel()
+    }
+
+    /// Ends a drag that lost its release, once every button is up, while the view is not drawn
+    /// (the Launcher view shown): the view does it itself each frame it draws.
+    pub fn settle_gesture(&mut self, buttons_down: bool) {
+        self.gesture.settle(buttons_down);
     }
 
     /// Whether a drag is under way in the view (Escape then cancels it).

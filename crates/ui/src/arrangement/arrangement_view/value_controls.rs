@@ -155,8 +155,6 @@ pub(super) fn value_control(
     let moved = state
         .gesture
         .value()
-        .cloned()
-        .as_ref()
         .filter(|d| d.control == control && d.tracks.contains(&track))
         .map(|d| moved_by_drag(value, d, range));
     let shown = preview.or(moved).unwrap_or(value);

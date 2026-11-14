@@ -262,6 +262,30 @@ fn escape_during_a_drag_from_the_line_keeps_the_point_where_it_was_made() {
     assert_eq!(volume(&harness).0, made, "the made point stays where the press put it");
 }
 
+/// A press on the line adds its point; Escape before the button comes up, with no drag, adds
+/// no second point when it does (#1158).
+#[test]
+fn escape_then_a_release_on_the_line_adds_no_second_point() {
+    let mut harness = with_lanes();
+    let rect = lane(&harness);
+    click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 10.0));
+    click_at(&mut harness, Pos2::new(rect.left() + 300.0, rect.top() + 20.0));
+    let a = harness.get_by_label("Volume point 1 on Drums").rect().center();
+    let b = harness.get_by_label("Volume point 2 on Drums").rect().center();
+    let on = a.lerp(b, 0.25);
+    harness.hover_at(on);
+    harness.run();
+    harness.drag_at(on);
+    harness.run();
+    let made = volume(&harness).0;
+    assert_eq!(made.len(), 3, "the press made a point: {made:?}");
+    harness.key_press(Key::Escape);
+    harness.run();
+    harness.drop_at(on);
+    harness.run();
+    assert_eq!(volume(&harness).0, made, "the release added nothing");
+}
+
 /// A selected point goes with Delete, another with a double-click, and the lane stays shown.
 #[test]
 fn a_double_click_or_delete_removes_points() {
