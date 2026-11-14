@@ -83,8 +83,9 @@ registry and the automation carry; ids are stable — projects store values by t
 | 6 | `delay` | Delay | continuous, linear | 0…0.02 | 0.0 | s (shown in ms) |
 | 7 | `hq` | HQ | toggle | — | off | |
 | 8 | `outputVolume` | Volume | continuous, linear | −24…+24 | 0.0 | dB |
+| 9 | `mono` | Mono | toggle | — | on | |
 
-Per side, the signal runs: the input gain (smoothed, 20 ms like the utility's), the EQ, — when
+Per side, the signal runs: the **Mono** sum when it is on, the input gain (smoothed, 20 ms like the utility's), the EQ, — when
 the project's rate differs from the model's — the resampler into the model's rate, the model, a
 DC blocker, the resampler back, the delay line and the output gain (smoothed). With no model,
 or one that cannot run, the chain is the same with the model as a pass-through, so the trims,
@@ -103,6 +104,12 @@ EQ and delay still work.
 - **Delay** holds the output back by 0…20 ms, a straight delay line per side. It is part of the
   sound and is **not** latency-compensated: set it by ear against a parallel path.
 - **Volume** sets the output level, after the model.
+- **Mono** (on by default) feeds both sides the mean of the two, `(left + right) / 2`, so the
+  model hears one signal and one instance runs: half the cost of a stereo source. A model is a
+  mono capture, so nothing of it is lost; a mono source plays bit for bit as it does with Mono
+  off. Off, each side runs through the model on its own, two instances once the sides differ.
+  Switching it off mid-stream hands the right instance the left one's state, so the model
+  carries on without a jump; switching it on runs the left instance for both again.
 - **No bypass of its own** (decided 2026-10-18, #645): a device has one on/off state, the
   header's square and the 0 key (`device.setEnabled`), which turns the whole device off.
 - **Latency:** the model adds none. The device reports its 512-frame chunk in `latency()`, plus
@@ -403,14 +410,14 @@ Both panels, top to bottom:
    - **The On button** at the Amp Modeler's controls area's top left ("Amp Modeler: device
      on" / "… off"): a bigger copy of the header's square, the same `device.setEnabled`, lit
      while the device runs; both always show the same state.
-   - Amp Modeler: the **EQ** and **HQ** buttons beside the On button, on its row, with the
+   - Amp Modeler: the **EQ**, **HQ** and **Mono** buttons beside the On button, on its row, with the
      **Mid Freq**'s line right of them — the name beside, a line whose diamond a drag sets and
      a click jumps, the value past it; under them one row of dials, left to right: **Gain**;
      **Bass / Mid / Treble**; **Delay**; **Volume** last.
    - Cab Loader: the **Phase** (Ø) and **HP** buttons at the top; under them one row of
      dials, left to right: **Delay**; **Bass / Mid / Treble**; **Mid Freq** —; a vertical
      **Volume** lane at the right, a handle a drag moves and a click jumps, the value under.
-   - Toggles are lit when on: On, EQ, HQ, Phase, HP. Labels name the device: "Amp Modeler:
+   - Toggles are lit when on: On, EQ, HQ, Mono, Phase, HP. Labels name the device: "Amp Modeler:
      gain" … "Cab Loader: volume".
 3. **The file row** — the file's own name without its folder or extension ("FNDR BFSR VB Edge WRM2 CAB FREE", #644) in a dropdown
    with the same previous/next steppers; "Choose a model file…" when none is set. Its dropdown
@@ -431,7 +438,8 @@ Both panels, top to bottom:
 | The file is gone | Model missing: <path> | Through the trims and EQ, no model or IR |
 | The file cannot run (feature refused, malformed after all) | The fault, the name of the file | Pass-through |
 
-A mono IR is heard on both sides; a mono model captures both sides' moves through two instances.
+A mono IR is heard on both sides; a mono model hears the mean of the sides with **Mono** on, and
+captures both sides' moves through two instances with it off.
 
 ## Cost
 
@@ -439,14 +447,17 @@ A model is nearly the device's whole cost; the EQ, the resampler legs and the DC
 under 1 % of one core. The vendored `nam-rs` (`third_party/nam-rs/VENDORED.md`) runs the
 WaveNet's convs register-blocked with AVX2 picked at run time and NeuralAmpModelerCore's fast
 tanh, and the LSTM's gates vectorised with near-exact activations. On an AMD Ryzen 5 5600X, the
-share of one core for the Amp Modeler on a mono source (one instance), in 1024-frame calls:
+share of one core for the Amp Modeler with one instance running (a mono source, or **Mono** on),
+in 1024-frame calls:
 
 | Model | 48 kHz project | 44.1 kHz project (resampler legs) |
 |---|---|---|
 | Tim R JCM2000 Crunch (standard WaveNet) | 3.9 % | 4.7 % |
 | Suhina Clean (LSTM 40 × 2) | 6.2 % | 6.9 % |
 
-A stereo source runs two instances, about twice that. Calls of 64 frames cost a little more per
+A stereo source with **Mono** off runs two instances, about twice that. A wider WaveNet costs more
+in the same proportion as in NeuralAmpModelerCore: Phillipe P LaneyGH100S (24 channels against
+the standard 16) takes 6.5 % alone at 48 kHz in 512-frame calls, against the standard's 4.0 %. Calls of 64 frames cost a little more per
 frame (the WaveNet at 44.1 kHz: 5.7 %), and a moving automation lane splits a call into 64-frame
 steps. Before the vendored changes the WaveNet took about 38 % per stereo device and Suhina
 Clean 57.6 % per instance.
