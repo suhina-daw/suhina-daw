@@ -98,7 +98,7 @@ integration target.
 | Selected | A track header: `control.background` in the Arrangement view, `control.activeBackground` in the Launcher view; a clip: `control.activeBackground` with a 1 px `text.primary` inset |
 | Keyboard focus | (planned) 1 px inset outline in `accent` |
 | Disabled | Text `text.hint`, no fills |
-| Track off (muted) | Its name in `text.hint`; its slots, clips, marks and colour strip at 55 % opacity |
+| Track off (muted) | Launcher: its name in `text.hint`; its slots, clips, marks and colour strip at 55 % opacity. Arrangement: its header and its clips' bodies grey (`track-header[muted]`, `clip[muted]` in the user-agent sheet), the colour band, the clips' leading edges and name bars in their colours ([arrangement](../spec/arrangement-editing.md) › Clips off) |
 
 ### Motion
 

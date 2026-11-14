@@ -132,8 +132,9 @@ fn nesting_band_width(depth: usize) -> f32 {
     }
 }
 
-/// A header's colour band: the track's colour down its left edge, the full height of the header
-/// (dimmed while the track is off). A click opens the palette; gives the band's rectangle.
+/// A header's colour band: the track's colour down its left edge, the full height of the header,
+/// at full strength while the track is off too, as the one place its colour stays beside the grey
+/// header (#1393). A click opens the palette; gives the band's rectangle.
 pub(super) fn colour_band(
     ui: &Ui,
     painter: &egui::Painter,
@@ -146,7 +147,7 @@ pub(super) fn colour_band(
     let band = Rect::from_min_size(rect.min, Vec2::new(nesting_band_width(lane.depth), rect.height()));
     let at = crate::kit::control_layout::place("arrangement-color", band, clip);
     if !crate::kit::control_layout::placement("arrangement-color").hidden {
-        painter.rect_filled(at, 0.0, colour_picker::fill(lane.color, lane.mute));
+        painter.rect_filled(at, 0.0, colour_picker::fill(lane.color, false));
         if at.intersects(clip) {
             colour_picker::area(ui, at.intersect(clip), id.with("colour"), lane.track, &lane.name, lane.color, actions);
         }
@@ -283,8 +284,14 @@ pub(super) fn track_header(
     // replacing the track colour with the global selection accent.
     let background = if selected { theme::track_header_selected() } else { theme::track_header_background() };
     let strength = crate::kit::style_class::theme_header_tint().unwrap_or(state.header_colour_strength);
-    let surface = colour_surface(background, rgb(lane.color), strength, lane.mute);
-    let header_fill = if selected { motion::mix(surface, theme::text_primary(), 0.07) } else { surface };
+    // A muted track's header is the user-agent sheet's `track-header[muted]` grey, as its clips
+    // are, not a dimmer shade of its colour (#1393); its colour stays in the band down its edge.
+    let header_fill = if lane.mute {
+        muted_header_grey(selected)
+    } else {
+        let surface = colour_surface(background, rgb(lane.color), strength);
+        if selected { motion::mix(surface, theme::text_primary(), 0.07) } else { surface }
+    };
     if !crate::kit::skin::paint_in_view(
         painter,
         rect,
@@ -880,4 +887,17 @@ pub(super) fn track_header(
             state.resize_lanes(lane.track, state.height(lane), if upward { -dy } else { dy });
         }
     }
+}
+
+/// The background the user-agent sheet gives `track-header[muted]` (`[muted][selected]` while
+/// selected), worked out once: the fallback where no sheet styles the window.
+pub(super) fn muted_header_grey(selected: bool) -> Color32 {
+    static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
+    let greys = GREYS.get_or_init(|| {
+        let of = |attributes: &[(&str, &str)]| {
+            crate::kit::native_css::user_agent_background("track-header", attributes).unwrap_or(Color32::GRAY)
+        };
+        [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
+    });
+    greys[usize::from(selected)]
 }

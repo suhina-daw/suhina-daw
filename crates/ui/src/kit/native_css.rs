@@ -25,7 +25,7 @@ mod geometry;
 mod native;
 
 pub(super) use native::user_agent;
-pub use native::user_agent_color;
+pub use native::{user_agent_background, user_agent_color};
 mod paint;
 pub mod row;
 mod shadows;

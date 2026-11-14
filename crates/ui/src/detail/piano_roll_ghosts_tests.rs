@@ -214,3 +214,41 @@ fn bars_at_the_same_time_lie_one_above_the_other() {
     assert_eq!(rows(vec![bar(4.0, 4.0), bar(0.0, 4.0)]), [0, 0], "side by side");
     assert_eq!(rows(vec![bar(0.0, 4.0); 6]), [0, 1, 2, 3, 3, 3]);
 }
+
+/// Drums' lane and Beat B, the clip edited, at bar 17; Bass plays Walk with it.
+fn drums_beat_b(project: &suhina_engine::model::Project) -> ClipRef {
+    let lane = project.arrangement.lanes.iter().find(|l| l.track == Some(TrackId(1))).unwrap();
+    ClipRef::Arrangement(TrackId(1), lane.clips[1].id)
+}
+
+/// The colours of the ghost notes from the track named `from`.
+fn colours(ghosts: &Ghosts, from: &str) -> Vec<Color32> {
+    let source = ghosts.sources.iter().position(|s| s == from).unwrap();
+    ghosts.notes.iter().filter(|n| n.source == source).map(|n| n.color).collect()
+}
+
+#[test]
+fn the_ghost_notes_of_a_muted_clip_or_track_are_the_muted_grey() {
+    let grey = crate::arrangement::arrangement_view::muted_clip_grey(false);
+    let mut project = demo_project();
+    let edited = drums_beat_b(&project);
+    let shown = ghosts(&project, edited, GhostSource::Together);
+    assert!(colours(&shown, "Bass").iter().all(|c| *c != grey), "a clip that plays keeps its track's colour");
+
+    // Bass muted: Walk still plays with Beat B, and its notes are grey.
+    let bass = project.tracks.iter().find(|t| project.shown_track_name(t.id) == "Bass").unwrap().clone();
+    project.channel_mut(bass.channel.unwrap()).unwrap().mute = true;
+    let shown = ghosts(&project, edited, GhostSource::Together);
+    let bass_notes = colours(&shown, "Bass");
+    assert!(!bass_notes.is_empty() && bass_notes.iter().all(|c| *c == grey), "a muted track's notes are grey");
+    assert!(colours(&shown, "Keys").iter().all(|c| *c != grey), "Keys is not muted");
+
+    // A clip of Drums turned off: shown with This track, in grey; the others keep the colour.
+    let lane = project.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(1))).unwrap();
+    lane.clips[0].enabled = false;
+    let off = ClipRef::Arrangement(TrackId(1), lane.clips[0].id);
+    let shown = ghosts(&project, edited, GhostSource::Track);
+    let of = |clip: ClipRef| shown.notes.iter().filter(|n| n.clip == clip).map(|n| n.color).collect::<Vec<_>>();
+    assert!(!of(off).is_empty() && of(off).iter().all(|c| *c == grey), "a clip turned off is grey");
+    assert!(shown.notes.iter().filter(|n| n.clip != off).all(|n| n.color != grey));
+}

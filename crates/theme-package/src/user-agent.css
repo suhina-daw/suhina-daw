@@ -183,6 +183,14 @@ knob-pointer { image: url("suhina:knob.pointer.svg"); }
 meter { image: url("suhina:meter.svg"); }
 icon[kind="folder"] { image: url("suhina:folder.svg"); }
 
+/* A muted arrangement clip (turned off, or on a muted track) and a muted track's header are grey
+   whatever their colour, a little lighter while selected, so they never read as a darker shade of
+   what plays (#1393). */
+clip[muted] { background-color: #A9A6A0; }
+clip[muted][selected] { background-color: #BDBAB4; }
+track-header[muted] { background-color: #A9A6A0; }
+track-header[muted][selected] { background-color: #B5B2AC; }
+
 /* A browser row's icon, by the kind of item; folders, headings and projects take the row's text. */
 browser-icon[kind="midi"], browser-icon[kind="midi-effect"] { color: #F2D541; }
 browser-icon[kind="sample"] { color: #4FC3F7; }

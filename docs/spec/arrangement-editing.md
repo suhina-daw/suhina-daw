@@ -416,8 +416,21 @@ replaces what it covers unless stacked. Both are `clip.copy` then `clip.paste`
 
 ## Clips off
 
-`clip.setEnabled {clips, enabled}` turns clips on or off: an off clip is drawn dimmed, plays
-nothing and does not sound in a render, so it works as a clip mute. The 0 key turns the selection off,
+`clip.setEnabled {clips, enabled}` turns clips on or off: an off clip plays nothing and does not
+sound in a render, so it works as a clip mute. An off clip, and every clip on a muted track, is
+drawn grey whatever its colour, so it never reads as a darker shade of a clip that plays (#1393):
+the user-agent sheet's `clip[muted]` background (`#A9A6A0`, `#BDBAB4` for
+`clip[muted][selected]`), which a theme restyles with a rule of its own
+([theme skins](theme-skins.md) › The user-agent sheet). Its colour stays in the project and comes
+back when it plays again; while it is grey it stays down the clip's leading edge, so the clip is
+still known by it, and its notes and waveform step back. The two kinds of muted clip differ:
+
+- **A clip turned off itself** is grey to its name bar, with a mute mark (a ring crossed by a
+  slash) before its name. The mark tells it from a clip whose colour is grey.
+- **A clip that plays on a muted track** keeps its colour in its name bar, as it has it when the
+  track plays, and has no mark: the track's header says the track is off.
+
+A muted clip never shows as playing. The 0 key turns the selection off,
 or back on when nothing in it plays; a clip's menu says Mute or Unmute for the clip it fell on.
 ## Splitting
 
@@ -837,8 +850,10 @@ Launcher view's menu share), **Cut**, **Copy**, **Duplicate** (the selected trac
 is among them) and **Paste** (after this track, enabled once tracks are copied), delete. A group's header starts with a triangle that
 folds its tracks away (Folded groups). The Launcher view's column headers have the same menu.
 
-A header's left edge is a 6 px band of the track's colour, the header's full height (dimmed while
-the track is off); return rows have one too. A click on the band opens the colour palette under
+A header's left edge is a 6 px band of the track's colour, the header's full height; return rows
+have one too. While the track is off its header is grey, the user-agent sheet's
+`track-header[muted]` background (`#A9A6A0`, `#B5B2AC` while selected), as its clips are, and the
+band keeps the track's colour at full strength (#1393). A click on the band opens the colour palette under
 it, the same swatches as the menu's; a swatch sets the colour (`track.setColor`, one undo step).
 A press on the band that drags still resizes the header column where the band meets its inner
 edge ([Launcher view](ui-session-view.md) › Track colour).

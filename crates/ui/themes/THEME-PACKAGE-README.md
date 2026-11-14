@@ -300,7 +300,8 @@ following native return order. Launcher sends stay inside their movable sends re
 
 Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds, with a
 variant for a state if you like. Artwork is not chosen by a track's colour; an SVG that draws in
-`currentColor` takes the track's colour as Suhina draws it (dimmed while muted), or the element's
+`currentColor` takes the track's colour as Suhina draws it (dimmed while muted, and grey in a
+muted track's arrangement header), or the element's
 own `color` where your sheet gives one, which a rule can take from the track's colour (see
 *Tracks* below):
 
