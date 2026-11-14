@@ -677,6 +677,7 @@ fn mixer_edge(
             // Up makes the mixer taller; `mixer_height` keeps it under the header.
             grows_forward: false,
             bounds,
+            closed: false,
         },
     );
     let response = &divider.response;

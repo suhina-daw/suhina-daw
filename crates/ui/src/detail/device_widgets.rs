@@ -288,8 +288,17 @@ pub(crate) fn switch(
     } else {
         format!("Click to enable the {} again", label)
     });
-    let (fill, text) = widgets::toggle_colors(ui, &response, state.enabled);
-    ui.painter().rect_filled(rect, 3.0, fill);
+    // `button#control-device-on`, `[checked]` while it runs: only a rule for that state lights it.
+    let lit = widgets::lit_toggle(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.id("device-on"),
+        &[crate::kit::element::Checked],
+        state.enabled,
+    );
+    let (fill, text) = lit.colors();
+    lit.el.paint_over(ui.painter(), rect, crate::kit::element::Native { radius: 3.0, fill }, lit.toggle.image(lit.lit));
+    drop(lit);
     let word = if state.enabled { "On" } else { "Off" };
     widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
     if response.clicked() {

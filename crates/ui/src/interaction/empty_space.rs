@@ -101,7 +101,7 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
         let el = crate::kit::element::ADD_TRACK.id(&name).response(&response).enter();
         let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
         let state = crate::kit::skin::State::response(&response, false);
-        if !crate::kit::skin::paint_as(&el, painter, rect, "add-track", state, theme::text_secondary()) {
+        if !crate::kit::skin::paint_as(&el, painter, rect, "add-track", state, el.color_or(theme::text_secondary())) {
             el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
         }
         let font =
@@ -126,7 +126,7 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
             Align2::CENTER_CENTER,
             "Drop files or devices to add a track",
             font,
-            theme::text_hint(),
+            crate::kit::element::hint_ink(),
         );
     }
 }

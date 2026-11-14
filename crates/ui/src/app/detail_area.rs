@@ -470,7 +470,9 @@ impl App {
             } else {
                 self.side_drag = None;
             }
-            let style = crate::kit::element::DIVIDER.id("detail-splitter").response(&response).enter();
+            // Closed: `divider#detail-splitter[closed]`.
+            let style =
+                crate::kit::element::DIVIDER.id("detail-splitter").response(&response).attribute("closed", "").enter();
             paint_splitter(ui, side_splitter, &style, true);
             (Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())), None)
         } else {
@@ -498,6 +500,7 @@ impl App {
                         detail.center().y < view.center().y
                     },
                     bounds: (0.0, if stacked { area.width() } else { area.height() }),
+                    closed: false,
                 },
             );
             let response = &divider.response;
@@ -953,6 +956,7 @@ impl App {
                     detail.center().y < main.center().y
                 },
                 bounds: (0.0, if side { room.width() } else { room.height() }),
+                closed: true,
             },
         );
         if divider.response.double_clicked() {

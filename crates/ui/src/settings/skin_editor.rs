@@ -33,7 +33,7 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
     ui.label(
         egui::RichText::new("Settings this theme offers. They are saved in the variant in use.")
             .small()
-            .color(crate::kit::theme::text_secondary()),
+            .color(crate::kit::element::caption_ink()),
     );
     let mut group: Option<&str> = None;
     for property in &themes.declared {
@@ -247,7 +247,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             if state.notices.is_empty() { ui.label("The sheet reads without notices."); }
             for notice in &state.notices { ui.label(notice); }
         });
-        if !state.error.is_empty() { ui.colored_label(crate::kit::theme::recording(), &state.error); }
+        if !state.error.is_empty() { ui.colored_label(crate::kit::element::error_ink(), &state.error); }
     });
     request
 }

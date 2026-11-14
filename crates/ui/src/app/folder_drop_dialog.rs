@@ -61,20 +61,34 @@ fn draw(
     );
     let message = format!("Move or copy {samples} to {folder}?");
     let font = theme::ui_font(theme::TEXT);
-    let fitted = widgets::fitted(&painter, &message, font, theme::text_primary(), line.width());
-    painter.galley(Pos2::new(line.left(), line.center().y - fitted.size().y / 2.0), fitted, theme::text_primary());
+    let ink = crate::kit::element::name_ink();
+    let fitted = widgets::fitted(&painter, &message, font, ink, line.width());
+    painter.galley(Pos2::new(line.left(), line.center().y - fitted.size().y / 2.0), fitted, ink);
     // Remember my choice: a box and its label, both one control.
     let check = Rect::from_min_size(Pos2::new(line.left(), line.bottom()), Vec2::new(line.width() * 0.6, LINE));
     let response = widgets::button_area(ui, check, Id::unique("folder-drop-remember"), "Remember my choice");
     let mark = Rect::from_center_size(Pos2::new(check.left() + 6.0, check.center().y), Vec2::splat(11.0));
+    // A `button`, `[checked]` while remembered: its `border-color` for the box, and its mark only
+    // from a rule for the checked state, not one for every `button`.
+    let (el, plain) =
+        crate::kit::element::BUTTON.response(&response).enter_against_plain(crate::kit::element::Checked, *remember);
+    let look = el.look();
     let stroke = if response.hovered() { theme::border_strong() } else { theme::border() };
-    painter.rect_stroke(mark, 0.0, theme::hairline(stroke), egui::StrokeKind::Inside);
-    if *remember {
-        painter.rect_filled(mark.shrink(2.5), 0.0, theme::text_value());
+    painter.rect_stroke(mark, 0.0, theme::hairline(look.border_or(stroke)), egui::StrokeKind::Inside);
+    if let Some(plain) = plain {
+        painter.rect_filled(mark.shrink(2.5), 0.0, look.background_unlike(&plain, theme::text_value()));
     }
+    drop(el);
     let label = Rect::from_min_max(Pos2::new(mark.right() + 6.0, check.top()), check.max);
     let small = theme::ui_font(theme::TEXT_SMALL);
-    widgets::text_in(&painter, label, Align2::LEFT_CENTER, "Remember my choice", small, theme::text_secondary());
+    widgets::text_in(
+        &painter,
+        label,
+        Align2::LEFT_CENTER,
+        "Remember my choice",
+        small,
+        crate::kit::element::caption_ink(),
+    );
     if response.clicked() {
         *remember = !*remember;
     }

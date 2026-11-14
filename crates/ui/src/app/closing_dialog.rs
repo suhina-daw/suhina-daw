@@ -50,15 +50,7 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[S
         crate::kit::style_class::surface_or(theme::panel_background()),
     );
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.rect_filled(title, 0.0, theme::control_background());
-    widgets::text_in(
-        &painter,
-        title.shrink2(Vec2::new(PAD, 0.0)),
-        Align2::LEFT_CENTER,
-        "Closing Suhina",
-        theme::ui_font(theme::TEXT),
-        theme::text_primary(),
-    );
+    drop(super::project_dialog::title_bar(&painter, title, "Closing Suhina"));
 
     let mut y = title.bottom() + PAD;
     let mut line = |label: &str, color| {
@@ -68,12 +60,13 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[S
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
         y += LINE;
     };
-    line("Letting the plug-ins finish", theme::text_secondary());
+    line("Letting the plug-ins finish", crate::kit::element::caption_ink());
+    let hint = crate::kit::element::hint_ink();
     for name in waiting.iter().take(LISTED) {
-        line(&format!("Closing {name}"), theme::text_hint());
+        line(&format!("Closing {name}"), hint);
     }
     if waiting.len() > LISTED {
-        line(&format!("and {} more", waiting.len() - LISTED), theme::text_hint());
+        line(&format!("and {} more", waiting.len() - LISTED), hint);
     }
 }
 

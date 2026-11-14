@@ -4344,11 +4344,25 @@ fn lane_header(
         } else {
             response.on_hover_text("A manual change turned this automation off; click to follow it again")
         };
-        let (fill, ink) = widgets::toggle_colors(ui, &response, param.enabled);
-        painter.rect_filled(toggle, 0.0, fill);
+        // `button#control-automation`, `[checked]` while it follows: only a rule for that state lights it.
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.id("automation"),
+            &[crate::kit::element::Checked],
+            param.enabled,
+        );
+        let (fill, ink) = lit.colors();
+        lit.el.paint_over(
+            &painter,
+            toggle,
+            crate::kit::element::Native { radius: 0.0, fill },
+            lit.toggle.image(lit.lit),
+        );
         if !param.enabled {
-            painter.rect_stroke(toggle, 0.0, theme::hairline(theme::accent()), StrokeKind::Inside);
+            painter.rect_stroke(toggle, 0.0, theme::hairline(lit.el.accent_or(theme::accent())), StrokeKind::Inside);
         }
+        drop(lit);
         widgets::text_in(&painter, toggle, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
     }
 

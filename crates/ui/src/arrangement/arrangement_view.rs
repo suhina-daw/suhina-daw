@@ -2025,6 +2025,7 @@ fn show_lanes(
             size: state.header_width,
             grows_forward: state.headers_left,
             bounds: (header_least(max_header), HEADER_COLUMN_RANGE.1.min(max_header)),
+            closed: false,
         },
     );
     if let Some(width) = divider.size {

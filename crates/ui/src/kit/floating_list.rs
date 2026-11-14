@@ -93,6 +93,13 @@ pub fn show(
                 heading(ui);
                 let spacing = ui.spacing().item_spacing.y;
                 let height = (look.row_height + spacing) * look.visible_rows.max(1) as f32;
+                // `list-row` (`[selected]` for the picked one): its `color`, and the tags' hint.
+                use super::element::{LIST_ROW, Selected};
+                let (picked_ink, other_ink) = (
+                    LIST_ROW.attr(Selected, true).look().color_or(theme::text_primary()),
+                    LIST_ROW.look().color_or(theme::text_secondary()),
+                );
+                let hint = super::element::hint_ink();
                 egui::ScrollArea::vertical()
                     .id_salt(id.with("rows"))
                     .max_height(height)
@@ -100,11 +107,7 @@ pub fn show(
                     .show(ui, |ui| {
                         for (place, row) in rows.iter().enumerate() {
                             let lit = picked == Some(place);
-                            let text = RichText::new(&row.text).color(if lit {
-                                theme::text_primary()
-                            } else {
-                                theme::text_secondary()
-                            });
+                            let text = RichText::new(&row.text).color(if lit { picked_ink } else { other_ink });
                             let response = ui.add(
                                 egui::Button::selectable(lit, text).min_size(Vec2::new(look.width, look.row_height)),
                             );
@@ -118,7 +121,7 @@ pub fn show(
                                     egui::Align2::RIGHT_CENTER,
                                     tag,
                                     egui::FontId::proportional(theme::TEXT_SMALL),
-                                    theme::text_hint(),
+                                    hint,
                                 );
                             }
                             if lit && follow {

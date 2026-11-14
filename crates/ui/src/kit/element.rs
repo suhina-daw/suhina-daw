@@ -103,7 +103,8 @@ impl Name {
             .copied()
             .unwrap_or(false)
     }
-    fn builder<'a>(self) -> Builder<'a> {
+    /// The element described with nothing yet said about it.
+    pub fn builder<'a>(self) -> Builder<'a> {
         Builder {
             name: self,
             id: None,
@@ -794,6 +795,44 @@ pub(crate) fn row_line() -> Color32 {
     SEPARATOR.attribute("kind", "row").look().own_color_or(crate::kit::theme::border())
 }
 
+/// Dim words (a device's kind, an empty area's note, a heading's rule): `label[kind="hint"]`'s own
+/// `color`, else the palette's hint. Its own, not inherited: a colour a theme gives a whole view
+/// keeps them dimmer than the text beside them.
+pub(crate) fn hint_ink() -> Color32 {
+    LABEL.attribute("kind", "hint").look().own_color_or(crate::kit::theme::text_hint())
+}
+
+/// A control's name over it, a figure's name: `label[kind="caption"]`'s own `color`, else the
+/// palette's secondary text. Its own, as a hint's: a colour a theme gives the whole view keeps it
+/// apart from the values.
+pub(crate) fn caption_ink() -> Color32 {
+    LABEL.attribute("kind", "caption").look().own_color_or(crate::kit::theme::text_secondary())
+}
+
+/// A panel's title, such as a clip's name or a dialog's: `label[kind="title"]`'s `color`,
+/// inherited from the panel's too, else the palette's primary text.
+pub(crate) fn title_ink() -> Color32 {
+    LABEL.attribute("kind", "title").look().color_or(crate::kit::theme::text_primary())
+}
+
+/// A figure or a value shown as words, not a field: `label[kind="value"]`'s `color`, inherited
+/// from the view's too, else the palette's value text.
+pub(crate) fn value_ink() -> Color32 {
+    LABEL.attribute("kind", "value").look().color_or(crate::kit::theme::text_value())
+}
+
+/// Words that say something went wrong: `label[kind="error"]`'s own `color`, else the palette's
+/// recording red.
+pub(crate) fn error_ink() -> Color32 {
+    LABEL.attribute("kind", "error").look().own_color_or(crate::kit::theme::recording())
+}
+
+/// A name or a line of text: `label`'s `color`, inherited from the view's too, else the palette's
+/// primary text.
+pub(crate) fn name_ink() -> Color32 {
+    LABEL.look().color_or(crate::kit::theme::text_primary())
+}
+
 /// The registry's element named `name`, for code that has a name at run time.
 pub fn named(name: &str) -> Option<Name> {
     static BY_NAME: std::sync::OnceLock<std::collections::HashMap<&'static str, Name>> = std::sync::OnceLock::new();
@@ -963,9 +1002,13 @@ names! {
     SETTINGS = "settings";
     SETTINGS_NAV = "settings-nav";
     DIALOG = "dialog";
+    DIALOG_TITLE = "dialog-title";
+    COLOUR_SWATCH = "colour-swatch";
+    LIST_ROW = "list-row";
     START_PAGE = "start-page";
     PLUGIN_MANAGER = "plugin-manager";
     EXPORT = "export";
+    THEME_CARD = "theme-card";
     THEME_SWATCH = "theme-swatch";
 }
 

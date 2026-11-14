@@ -129,9 +129,12 @@ impl Splash {
         let painter = ui.painter_at(area);
         painter.rect_filled(area, 0.0, fade(crate::kit::style_class::surface_or(theme::window_background())));
 
+        // The card is a `dialog`: its edge in its `border-color`, its words as a dialog's.
+        let card = crate::kit::element::DIALOG.enter();
         let rect = Rect::from_center_size(area.center(), SIZE.min(area.size()));
         painter.rect_filled(rect, 0.0, fade(crate::kit::style_class::surface_or(theme::panel_background())));
-        painter.rect_stroke(rect, 0.0, theme::hairline(fade(theme::border_strong())), egui::StrokeKind::Inside);
+        let edge = card.border_or(theme::border_strong());
+        painter.rect_stroke(rect, 0.0, theme::hairline(fade(edge)), egui::StrokeKind::Inside);
 
         let line = |center_y: f32, height: f32| {
             Rect::from_center_size(egui::pos2(rect.center().x, center_y), Vec2::new(rect.width(), height))
@@ -149,7 +152,7 @@ impl Splash {
             Align2::CENTER_CENTER,
             &shown,
             theme::mono_font(theme::TEXT_SMALL),
-            fade(theme::text_secondary()),
+            fade(crate::kit::element::caption_ink()),
         );
         name_for_readers(ui, version, &shown);
         let status = line(rect.bottom() - theme::PAD - 8.0, 16.0);
@@ -159,7 +162,7 @@ impl Splash {
             Align2::CENTER_CENTER,
             "Starting",
             theme::ui_font(theme::TEXT_SMALL),
-            fade(theme::text_hint()),
+            fade(crate::kit::element::hint_ink()),
         );
     }
 }

@@ -535,6 +535,7 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
             // Down makes the controls lower and the list taller.
             grows_forward: false,
             bounds: (LEAST_FADER, strip.height().max(LEAST_FADER)),
+            closed: false,
         },
     );
     let response = &divider.response;
@@ -1571,18 +1572,20 @@ fn toggles(
     }
     let toggle = control_layout::place("mixer-enable", toggle, painter.clip_rect());
     let response = widgets::button_area(ui, toggle, id.with("on"), label);
-    let style = crate::kit::element::BUTTON
-        .id("track-on")
-        .response(&response)
-        .attr(Muted, column.mute)
-        .attr(Checked, !column.mute)
-        .enter();
     if response.clicked() {
         actions.push(Action::new("track.setMute", json!({ "tracks": [track.0], "mute": !column.mute })));
     }
-    let (fill, text) = widgets::toggle_colors(ui, &response, !column.mute);
-    widgets::button_surface(painter, toggle, &style, &response, !column.mute, fill, 0.0);
-    let text = style.color_or(text);
+    // Lit only by a rule for `[checked]`: one for every `button` does not hide which tracks are on.
+    let lit = widgets::lit_toggle(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.id("track-on").attr(Muted, column.mute),
+        &[Checked],
+        !column.mute,
+    );
+    let (fill, text) = lit.colors();
+    let style = lit.el;
+    widgets::toggle_surface(painter, toggle, &style, &response, fill, lit.toggle.image(lit.lit), 0.0);
     let number = if column.kind == ColumnKind::Return {
         column.name.chars().next().map(String::from).unwrap_or_default()
     } else {

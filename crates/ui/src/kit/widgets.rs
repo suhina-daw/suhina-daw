@@ -577,6 +577,40 @@ pub fn toggle_colors_in(el: &Entered, sides: Option<&Sides>, hover: f32) -> Togg
     Toggle::of(el, sides, UnlitInk::Inherited, off, on_fill, lit_ink)
 }
 
+/// A toggle drawn as `builder` (a `button` with its id, say), entered with `attrs` while it is on
+/// ([`super::element::Builder::enter_toggle`]) and its colours ([`toggle_colors_in`]): what a
+/// lit switch of a view takes, so only a rule for its lit state lights it and a rule for every
+/// `button` does not hide which one is on.
+pub struct Lit {
+    /// The entered element.
+    pub el: Entered,
+    /// The colours it fades between.
+    pub toggle: Toggle,
+    /// How far on it is, 0 to 1, fading.
+    pub lit: f32,
+}
+
+impl Lit {
+    /// The fill and the ink now.
+    pub fn colors(&self) -> (Color32, Color32) {
+        self.toggle.at(self.lit)
+    }
+}
+
+/// [`Lit`] of the toggle `on` that `response` belongs to.
+pub fn lit_toggle(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+) -> Lit {
+    let (hovered, lit) = toggle_motion(ui, response, on);
+    let (el, sides) = builder.response(response).enter_toggle(attrs, on, lit > 0.0);
+    let toggle = toggle_colors_in(&el, sides.as_ref(), hovered);
+    Lit { el, toggle, lit }
+}
+
 /// How hovered a toggle is and how far on, each fading (0 to 1): worked out before its element is
 /// entered, which while it is lit at all needs its [`Sides`].
 pub fn toggle_motion(ui: &Ui, response: &Response, on: bool) -> (f32, f32) {
@@ -1558,6 +1592,43 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
             Stroke::NONE,
         ));
     }
+}
+
+/// A plain push button's face: `button` with `id` (none: any button), entered with its `response`.
+/// Its fill, where the sheet gives none, fades from the control colour to the hover colour under
+/// the pointer; its edge is its `border-color`, else the strong border; its label its `color`.
+pub(crate) fn push_button(ui: &Ui, painter: &Painter, rect: Rect, id: &str, response: &Response, label: &str) {
+    let hover = hover(ui, response);
+    let el = BUTTON.id(id).response(response).enter();
+    push_face(painter, rect, &el, hover, label);
+}
+
+/// [`push_button`] of the button `el`, its caller entered.
+pub(crate) fn push_face(painter: &Painter, rect: Rect, el: &Entered, hover: f32, label: &str) {
+    let fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
+    el.paint_with(painter, rect, super::element::Native { radius: 0.0, fill });
+    if !el.style().is_some_and(|s| s.authored.border || s.authored.border_width) {
+        painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    }
+    let ink = el.color_or(theme::text_primary());
+    text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(theme::TEXT_SMALL), ink);
+}
+
+/// A button the view paints itself, in a flat fill: `button` entered with its `response`, its fill
+/// its `background-color` where the sheet gives one, else fading from the control colour to the
+/// hover colour; its text its `color` over `ink`, in a font of `size`.
+pub(crate) fn flat_button(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    response: &Response,
+    label: &str,
+    (size, ink): (f32, Color32),
+) {
+    let el = BUTTON.response(response).enter();
+    let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, response));
+    painter.rect_filled(rect, 0.0, el.background_or(fill));
+    text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(size), el.color_or(ink));
 }
 
 /// A button with `text` on it, `label` for screen readers and tests; true when clicked. Its id is

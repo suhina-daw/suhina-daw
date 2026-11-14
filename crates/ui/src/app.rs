@@ -3302,7 +3302,7 @@ impl App {
             if let Some(rect) = region(line) {
                 let style = crate::kit::element::SEPARATOR.id(id).attribute("kind", id).enter();
                 if !image {
-                    ui.painter().rect_filled(rect, 0.0, theme::border());
+                    ui.painter().rect_filled(rect, 0.0, style.border_or(theme::border()));
                 }
                 style.paint_background(ui.painter(), rect, 0.0);
             }
@@ -3471,10 +3471,12 @@ impl App {
                     ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("sample-map-close")));
                 let response = widgets::button_area(ui, close, Id::unique("sample-map-close"), "Close sample map")
                     .on_hover_text("Close the sample map (Esc)");
+                let button = crate::kit::element::BUTTON.response(&response).enter();
                 let fill =
                     motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-                over.rect_filled(close, 0.0, fill);
-                let ink = theme::text_primary();
+                over.rect_filled(close, 0.0, button.background_or(fill));
+                let ink = button.color_or(theme::text_primary());
+                drop(button);
                 for (from, to) in
                     [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
                 {
@@ -4055,20 +4057,7 @@ impl App {
 /// The label beside the pointer while something is dragged: outlined in the accent colour when
 /// it can land where the pointer is.
 fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
-    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
-    let painter = ctx.layer_painter(layer);
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);
-    let rect = Rect::from_min_size(pointer + Vec2::new(14.0, 10.0), galley.size() + Vec2::new(PAD * 2.0, 6.0));
-    painter.rect_filled(rect, 0.0, theme::control_active());
-    painter.rect_stroke(
-        rect,
-        0.0,
-        theme::hairline(if lands { theme::accent() } else { theme::border_strong() }),
-        egui::StrokeKind::Inside,
-    );
-    widgets::paint_text(&painter, rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
-    ctx.request_repaint();
+    drops::pill(ctx, pointer, text, lands);
 }
 
 /// Where an arrangement clip's name is drawn, by (track, index): the inline rename's place.

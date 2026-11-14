@@ -249,7 +249,7 @@ pub const ELEMENTS: &[Element] = &[
     element("workspace-panel", Region, "A panel of the window: the browser, the main view, the detail area.")
         .ids(Ids::Listed { prefix: "", names: &["panel-browser", "panel-main", "panel-detail"] })
         .attributes(&["kind", "closed"]),
-    element("divider", Control, "A strip's divider and the workspace's splitters.")
+    element("divider", Control, "A strip's divider and the workspace's splitters; `#detail-splitter` is `[closed]` while the detail area is closed.")
         .ids(Ids::Listed {
             prefix: "",
             names: &[
@@ -259,7 +259,8 @@ pub const ELEMENTS: &[Element] = &[
                 "browser-splitter",
                 "arrangement-header-splitter",
             ],
-        }),
+        })
+        .attributes(&["closed"]),
     // Views.
     element("browser", Region, "The browser panel.").parts(&[
         "browser-place",
@@ -402,7 +403,7 @@ pub const ELEMENTS: &[Element] = &[
     element(
         "editor-tab",
         Control,
-        "The clip editor's Clip and Devices tabs, and the MIDI tools part's Notes and Transform tabs.",
+        "The clip editor's Clip and Devices tabs, the MIDI tools part's Notes and Transform tabs and the start page's Recent and Templates tabs (`#tab-recent`, `#tab-templates`).",
     )
     .ids(Ids::Prefixed("tab-"))
     .attributes(&["checked"]),
@@ -574,10 +575,16 @@ pub const ELEMENTS: &[Element] = &[
     // Pages and dialogs.
     element("settings", Region, "The Settings page.").parts(&["settings-nav"]),
     element("settings-nav", Control, "An entry of the Settings page's list."),
-    element("dialog", Region, "A dialog.").settings(FLOATING),
+    element("dialog", Region, "A dialog.").parts(&["dialog-title", "list-row"]).settings(FLOATING),
+    element("dialog-title", Part, "A dialog's title row, with its Close button: its `background-color`, its words `label[kind=\"title\"]`."),
+    element("colour-swatch", Control, "A swatch of the colour picker, in a track's or a clip's menu: its `border-color` outlines the chosen one and the one under the pointer, and the square of the colour beside a picker's name."),
+    element("list-row", Control, "A row of a list in a dialog or on the start page that a click picks (a recent project, a template): its `background-color` under the pointer, its `color` for its name.").attributes(&["selected"]),
     element("start-page", Region, "The page shown with no project open."),
     element("plugin-manager", Region, "The Plug-in manager."),
     element("export", Region, "The Export audio dialog."),
+    element("theme-card", Control, "A theme's card in the theme picker, `[selected]` for the theme in use: its `border-color` for its edge (and for a swatch's ring), its `background-color` for the tint under the theme in use and its `accent-color` for the word *Active*.")
+        .parts(&["theme-swatch"])
+        .attributes(&["selected"]),
     element("theme-swatch", Drawn, "A theme's swatch in the theme picker, with a `color` attribute.").attributes(&["color"]),
 ];
 

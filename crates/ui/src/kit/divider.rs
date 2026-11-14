@@ -27,6 +27,8 @@ pub struct Divider<'a> {
     pub grows_forward: bool,
     /// The least and the most size a drag gives.
     pub bounds: (f32, f32),
+    /// Whether what it divides is closed, its place kept for the divider (`divider[closed]`).
+    pub closed: bool,
 }
 
 /// What the divider did this frame.
@@ -42,7 +44,7 @@ pub struct Dragged {
 
 /// Shows `divider`: its input, its cursor and its style.
 pub fn show(ui: &Ui, divider: Divider<'_>) -> Dragged {
-    let Divider { name, key, strip, across, label, size, grows_forward, bounds } = divider;
+    let Divider { name, key, strip, across, label, size, grows_forward, bounds, closed } = divider;
     let cursor = if across { CursorIcon::ResizeHorizontal } else { CursorIcon::ResizeVertical };
     let response = ui.interact(strip, key, Sense::click_and_drag()).on_hover_cursor(cursor);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, label));
@@ -64,7 +66,8 @@ pub fn show(ui: &Ui, divider: Divider<'_>) -> Dragged {
             (if grows_forward { from + moved } else { from - moved }).clamp(low, high)
         })
         .filter(|size| size.is_finite());
-    let style = DIVIDER.id(name).response(&response).enter();
+    let style = DIVIDER.id(name).response(&response);
+    let style = if closed { style.attribute("closed", "") } else { style }.enter();
     Dragged { response, size, style }
 }
 

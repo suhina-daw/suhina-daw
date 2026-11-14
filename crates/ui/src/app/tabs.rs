@@ -120,8 +120,9 @@ impl App {
             .collect();
         let look =
             floating_list::Look { width: 360.0, row_height: 34.0, visible_rows: rows.len(), fixed_height: false };
+        let hint = crate::kit::element::hint_ink();
         let heading = |ui: &mut Ui| {
-            ui.label(egui::RichText::new("Open projects").color(theme::text_hint()).size(theme::TEXT_SMALL));
+            ui.label(egui::RichText::new("Open projects").color(hint).size(theme::TEXT_SMALL));
         };
         let chosen = floating_list::show(
             ctx,
@@ -167,6 +168,7 @@ impl App {
         ui.allocate_rect(whole, Sense::hover());
         let painter = ui.painter_at(whole);
         let active = self.projects.active();
+        let (ink, hint) = (style_class.color_or(theme::text_primary()), crate::kit::element::hint_ink());
         // Each tab as wide as its name, its close button inside it, in one row (#1372).
         let tabs: Vec<_> = self
             .projects
@@ -176,8 +178,7 @@ impl App {
                 let name = self.projects.name(id).unwrap_or("Untitled").to_string();
                 let unsaved = self.projects.get(id).is_some_and(Session::has_unsaved_changes);
                 let shown = if unsaved { format!("{name} •") } else { name.clone() };
-                let galley =
-                    widgets::fitted(&painter, &shown, theme::ui_font(theme::TEXT), theme::text_primary(), 180.0);
+                let galley = widgets::fitted(&painter, &shown, theme::ui_font(theme::TEXT), ink, 180.0);
                 (id, name, galley)
             })
             .collect();
@@ -221,12 +222,12 @@ impl App {
                 galley,
                 text,
             );
-            let cross = motion::mix(theme::text_hint(), theme::text_primary(), widgets::hover(ui, &close_response));
+            let cross = motion::mix(hint, ink, widgets::hover(ui, &close_response));
             let c = close.center();
             for (a, b) in [(Vec2::new(-3.0, -3.0), Vec2::new(3.0, 3.0)), (Vec2::new(-3.0, 3.0), Vec2::new(3.0, -3.0))] {
                 painter.line_segment([c + a, c + b], theme::hairline(cross));
             }
-            painter.vline(tab.right() + 0.5, tab.y_range(), theme::hairline(theme::border()));
+            painter.vline(tab.right() + 0.5, tab.y_range(), theme::hairline(element.border_or(theme::border())));
         }
     }
 
@@ -241,7 +242,7 @@ impl App {
         let mut cancel = false;
         ui.scope_builder(egui::UiBuilder::new().max_rect(bar.shrink2(Vec2::new(PAD, 6.0))), |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new(format!("Open {name}:")).color(theme::text_primary()));
+                ui.label(egui::RichText::new(format!("Open {name}:")).color(crate::kit::element::name_ink()));
                 if ui.button("In a new tab").clicked() {
                     choice = Some(OpenAs::NewTab);
                 }

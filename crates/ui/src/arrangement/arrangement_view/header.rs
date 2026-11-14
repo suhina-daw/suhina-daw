@@ -525,8 +525,22 @@ pub(super) fn track_header(
         if response.clicked() && !state.takes_hidden.remove(&lane.track) {
             state.takes_hidden.insert(lane.track);
         }
-        let (fill, text) = widgets::toggle_colors(ui, &response, !hidden);
-        painter.rect_filled(button, 0.0, fill);
+        // A `button`, `[checked]` while the take lanes show: only a rule for that state lights it.
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.builder(),
+            &[crate::kit::element::Checked],
+            !hidden,
+        );
+        let (fill, text) = lit.colors();
+        lit.el.paint_over(
+            painter,
+            button,
+            crate::kit::element::Native { radius: 0.0, fill },
+            lit.toggle.image(lit.lit),
+        );
+        drop(lit);
         // Three stacked lines: the lanes under the track.
         let glyph = button.shrink2(Vec2::new(4.0, 4.0));
         for i in 0..3 {
@@ -664,18 +678,20 @@ pub(super) fn track_header(
         let response = widgets::button_area(ui, toggle.intersect(clip), id.with("on"), label);
         // `#control-track-on`, as in the mixer: `[checked]` while the track is on, `[muted]` while
         // it is off, and `track-on` artwork (`.on`).
-        let el = crate::kit::element::BUTTON
-            .id("track-on")
-            .response(&response)
-            .attr(crate::kit::element::Muted, lane.mute)
-            .attr(crate::kit::element::Checked, !lane.mute)
-            .enter();
         if response.clicked() {
             actions.push(Action::new("track.setMute", json!({ "tracks": controlled, "mute": !lane.mute })));
         }
-        let (fill, text) = widgets::toggle_colors(ui, &response, !lane.mute);
-        widgets::button_surface(painter, toggle, &el, &response, !lane.mute, fill, 0.0);
-        let text = el.color_or(text);
+        // Lit only by a rule for `[checked]`: one for every `button` does not hide which tracks are on.
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.id("track-on").attr(crate::kit::element::Muted, lane.mute),
+            &[crate::kit::element::Checked],
+            !lane.mute,
+        );
+        let (fill, text) = lit.colors();
+        let el = lit.el;
+        widgets::toggle_surface(painter, toggle, &el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         let state = crate::kit::skin::State::response(&response, !lane.mute);
         if !crate::kit::skin::paint_as(&el, painter, toggle, "track-on", state, text) {
             widgets::track_number_text(painter, toggle, &number, text, lane.mute);
@@ -708,14 +724,16 @@ pub(super) fn track_header(
         .on_hover_text("Choose when you hear the MIDI input");
         let active = mode == suhina_engine::model::Monitor::In;
         // `#control-monitor`, `[checked]` while monitoring is In, and `monitor` artwork.
-        let el = crate::kit::element::BUTTON
-            .id("monitor")
-            .response(&response)
-            .attr(crate::kit::element::Checked, active)
-            .enter();
-        let (fill, ink) = widgets::toggle_colors(ui, &response, active);
-        widgets::button_surface(painter, at, &el, &response, active, fill, 0.0);
-        let ink = el.color_or(ink);
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.id("monitor"),
+            &[crate::kit::element::Checked],
+            active,
+        );
+        let (fill, ink) = lit.colors();
+        let el = lit.el;
+        widgets::toggle_surface(painter, at, &el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         if !crate::kit::skin::paint_as(
             &el,
             painter,

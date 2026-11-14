@@ -2948,12 +2948,14 @@ fn preview_strip(
         .interact(auto, Id::unique("browser-preview-auto"), Sense::click())
         .on_hover_text("Auto preview: a sample plays when it is selected");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Auto preview"));
-    let auto_style = BUTTON.response(&response).attr(Checked, settings.preview_autoplay).enter();
     if response.clicked() {
         out.toggle_autoplay = true;
     }
-    let (fill, text) = widgets::toggle_colors(ui, &response, settings.preview_autoplay);
-    widgets::button_surface(&painter, auto, &auto_style, &response, settings.preview_autoplay, fill, 3.0);
+    // Lit only by a rule for `[checked]`: one for every `button` does not hide that it is on.
+    let lit = widgets::lit_toggle(ui, &response, BUTTON.builder(), &[Checked], settings.preview_autoplay);
+    let (fill, text) = lit.colors();
+    let auto_style = lit.el;
+    widgets::toggle_surface(&painter, auto, &auto_style, &response, fill, lit.toggle.image(lit.lit), 3.0);
     widgets::text_in(
         &painter,
         auto,
@@ -3479,6 +3481,7 @@ pub fn resize_handle(
             size: width,
             grows_forward: left,
             bounds,
+            closed: false,
         },
     );
     if divider.response.double_clicked() {

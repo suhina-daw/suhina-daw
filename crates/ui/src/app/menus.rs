@@ -76,7 +76,8 @@ pub struct Shown {
 /// Draws `menus` as the window's menu bar.
 pub fn show(ui: &mut Ui, menus: &[Menu]) -> Shown {
     let mut shown = Shown::default();
-    ui.style_mut().visuals.widgets.inactive.fg_stroke = theme::hairline(theme::text_secondary());
+    ui.style_mut().visuals.widgets.inactive.fg_stroke =
+        theme::hairline(crate::kit::element::MENU_BAR.look().color_or(theme::text_secondary()));
     egui::MenuBar::new().ui(ui, |ui| {
         for menu in menus {
             bar_menu(ui, menu.title, |ui| {

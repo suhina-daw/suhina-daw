@@ -250,7 +250,8 @@ impl App {
                         ui.painter().set(slot, egui::Shape::rect_filled(*part, 0.0, ink));
                     }
                 }
-                ui.painter().rect_stroke(panel, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+                let edge = crate::kit::element::SETTINGS.look().border_or(theme::border_strong());
+                ui.painter().rect_stroke(panel, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
             });
     }
 

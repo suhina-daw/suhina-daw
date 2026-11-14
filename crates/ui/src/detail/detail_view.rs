@@ -20,8 +20,10 @@ use suhina_session::{Placement, PluginReport, PluginStatus};
 use crate::interaction::commands;
 use crate::interaction::grid::gain_to_db;
 use crate::interaction::menus;
+pub(crate) use crate::kit::element::{caption_ink, error_ink, hint_ink, title_ink, value_ink};
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
+pub(crate) use crate::kit::widgets::push_button;
 use crate::kit::widgets::{self, Action};
 
 mod clip_panel;
@@ -931,13 +933,6 @@ fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), hint_ink());
 }
 
-/// Dim words (a device's kind, an empty area's note): `label[kind="hint"]`'s own `color`, else the
-/// palette's hint. Its own, not inherited: a colour a theme gives the whole detail area keeps
-/// them dimmer than the text beside them.
-pub(crate) fn hint_ink() -> egui::Color32 {
-    crate::kit::element::LABEL.attribute("kind", "hint").look().own_color_or(theme::text_hint())
-}
-
 /// A device's on switch in its header, `on` while it runs: filled in `bright`, else outlined in
 /// `dim`. It is `button#control-device-on`, `[checked]` while on, and only a rule for it, not one
 /// for every `button`, reaches it: its `background-color` while on, its `border-color` while off.
@@ -957,53 +952,6 @@ pub(crate) fn device_switch(
         let edge = own.border_unlike(&plain, dim);
         painter.rect_stroke(switch, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
     }
-}
-
-/// A control's name over it, a figure's name: `label[kind="caption"]`'s own `color`, else the
-/// palette's secondary text. Its own, as a hint's: a colour a theme gives the whole panel keeps it
-/// apart from the values.
-pub(crate) fn caption_ink() -> egui::Color32 {
-    crate::kit::element::LABEL.attribute("kind", "caption").look().own_color_or(theme::text_secondary())
-}
-
-/// A panel's title, such as a clip's name: `label[kind="title"]`'s `color`, inherited from the
-/// panel's too, else the palette's primary text.
-pub(crate) fn title_ink() -> egui::Color32 {
-    crate::kit::element::LABEL.attribute("kind", "title").look().color_or(theme::text_primary())
-}
-
-/// A figure or a value shown as words, not a field: `label[kind="value"]`'s `color`, inherited
-/// from the panel's too, else the palette's value text.
-pub(crate) fn value_ink() -> egui::Color32 {
-    crate::kit::element::LABEL.attribute("kind", "value").look().color_or(theme::text_value())
-}
-
-/// Words that say something went wrong: `label[kind="error"]`'s own `color`, else the palette's
-/// recording red.
-pub(crate) fn error_ink() -> egui::Color32 {
-    crate::kit::element::LABEL.attribute("kind", "error").look().own_color_or(theme::recording())
-}
-
-/// A plain push button's face: `button` with `id`, entered with its `response`. Its fill, where
-/// the sheet gives none, fades from the control colour to the hover colour under the pointer; its
-/// edge is its `border-color`, else the strong border; its label its `color`.
-pub(crate) fn push_button(
-    ui: &Ui,
-    painter: &egui::Painter,
-    rect: Rect,
-    id: &str,
-    response: &egui::Response,
-    label: &str,
-) {
-    let hover = widgets::hover(ui, response);
-    let el = crate::kit::element::BUTTON.id(id).response(response).enter();
-    let fill = crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover);
-    el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
-    if !el.style().is_some_and(|s| s.authored.border || s.authored.border_width) {
-        painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    }
-    let ink = el.color_or(theme::text_primary());
-    widgets::text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(theme::TEXT_SMALL), ink);
 }
 
 /// One device: a header with its on switch and name, then its parameters, one per row. Returns

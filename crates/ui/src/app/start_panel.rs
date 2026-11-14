@@ -13,6 +13,9 @@ use std::time::{Duration, SystemTime};
 use egui::{Align2, Pos2, Rect, Sense, Ui, Vec2};
 
 use crate::app::project_dialog::{BUTTON, LINE, Lists, heading, kind, row, scrolled, stem};
+use crate::kit::element::{
+    EDITOR_TAB, NOTICE_BAR, PROGRESS, PROGRESS_FILL, caption_ink, error_ink, hint_ink, name_ink, row_line,
+};
 use crate::kit::theme::{self, PAD};
 use crate::kit::widgets::{self, button};
 
@@ -140,26 +143,12 @@ pub fn show(
         Pos2::new(content.left(), content.top() + ACTION.y + PAD),
         Vec2::new(content.width(), LINE),
     );
-    widgets::text_in(
-        &painter,
-        drop_hint,
-        Align2::LEFT_CENTER,
-        DROP_HINT,
-        theme::ui_font(theme::TEXT),
-        theme::text_secondary(),
-    );
+    widgets::text_in(&painter, drop_hint, Align2::LEFT_CENTER, DROP_HINT, theme::ui_font(theme::TEXT), caption_ink());
 
     // The footer: the version.
     let footer = Rect::from_min_max(Pos2::new(content.left(), content.bottom() - LINE), content.max);
     let version = format!("Suhina {version}");
-    widgets::text_in(
-        &painter,
-        footer,
-        Align2::LEFT_CENTER,
-        &version,
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_hint(),
-    );
+    widgets::text_in(&painter, footer, Align2::LEFT_CENTER, &version, theme::ui_font(theme::TEXT_SMALL), hint_ink());
 
     // A newer build, under the actions.
     let mut top = drop_hint.bottom() + PAD;
@@ -197,7 +186,7 @@ pub fn show(
 pub(crate) fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: &Notice) -> Option<StartChoice> {
     let mut choice = None;
     painter.rect_filled(line, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    let edge = if notice.error { theme::recording() } else { theme::accent() };
+    let edge = if notice.error { error_ink() } else { NOTICE_BAR.look().accent_or(theme::accent()) };
     painter.rect_filled(Rect::from_min_size(line.min, Vec2::new(3.0, line.height())), 0.0, edge);
     let mut right = line.right() - PAD;
     if let Some(text) = notice.button {
@@ -218,15 +207,15 @@ pub(crate) fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: 
         right = rect.left() - PAD;
     }
     let text = Rect::from_min_max(Pos2::new(line.left() + 3.0 + PAD, line.top()), Pos2::new(right, line.bottom()));
-    let colour = if notice.error { theme::recording() } else { theme::text_primary() };
+    let colour = if notice.error { error_ink() } else { name_ink() };
     widgets::text_in(painter, text, Align2::LEFT_CENTER, &notice.text, theme::ui_font(theme::TEXT), colour);
     if let Some(part) = notice.progress {
         let bar = Rect::from_min_size(Pos2::new(text.left(), line.bottom() - 4.0), Vec2::new(text.width(), 2.0));
-        painter.rect_filled(bar, 0.0, theme::control_background());
+        painter.rect_filled(bar, 0.0, PROGRESS.look().background_or(theme::control_background()));
         painter.rect_filled(
             Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
             0.0,
-            theme::accent(),
+            PROGRESS_FILL.look().background_or(theme::accent()),
         );
     }
     choice
@@ -239,7 +228,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
     }
     let painter = ui.painter_at(area);
     painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    painter.rect_stroke(area, 0.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+    painter.rect_stroke(area, 0.0, theme::hairline(row_line()), egui::StrokeKind::Inside);
     let inner = area.shrink(PAD);
     let mut choice = None;
 
@@ -252,10 +241,16 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         let response =
             widgets::button_area(ui, rect, egui::Id::unique(("start-tab", text)), format!("{text} projects"));
         let on = state.tab == tab;
-        let color = if on { theme::text_primary() } else { theme::text_hint() };
+        // An `editor-tab` (`[checked]` for the one shown), `#tab-recent` and `#tab-templates`.
+        let el = EDITOR_TAB
+            .id(&format!("tab-{}", text.to_lowercase()))
+            .response(&response)
+            .attr(crate::kit::element::Checked, on)
+            .enter();
+        let color = el.own_color_or(if on { theme::text_primary() } else { theme::text_hint() });
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, text, font, color);
         if on {
-            painter.hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(2.0, theme::accent()));
+            painter.hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(2.0, el.accent_or(theme::accent())));
         }
         if response.clicked() {
             state.tab = tab;
@@ -274,9 +269,10 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search projects"));
     }
     let top = inner.top() + LINE + PAD;
-    painter.hline(inner.x_range(), top - PAD / 2.0, theme::hairline(theme::border()));
+    painter.hline(inner.x_range(), top - PAD / 2.0, theme::hairline(row_line()));
     let list = Rect::from_min_max(Pos2::new(inner.left(), top), inner.max);
     let small = theme::ui_font(theme::TEXT_SMALL);
+    let hint = hint_ink();
     let search = state.search.trim().to_lowercase();
     let found = |path: &Path| search.is_empty() || stem(path).to_lowercase().contains(&search);
 
@@ -296,7 +292,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
                     "No recent project has that name"
                 };
                 let empty = Rect::from_min_size(list.min, Vec2::new(list.width(), LINE));
-                widgets::text_in(&painter, empty, Align2::LEFT_CENTER, text, small, theme::text_hint());
+                widgets::text_in(&painter, empty, Align2::LEFT_CENTER, text, small, hint);
             } else {
                 scrolled(ui, list, "start-recent", |ui| {
                     for (path, saved) in rows {
@@ -307,7 +303,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
                             |saved| ago(now, saved),
                         );
                         let label = format!("Open {}", stem(path));
-                        let response = row(ui, &painter, r, path, &stem(path), &note, &label)
+                        let response = row(ui, &painter, r, path, (&stem(path), &note), (&label, hint))
                             .on_hover_text(path.display().to_string());
                         if response.clicked() {
                             choice = Some(StartChoice::Open(path.clone()));
@@ -329,7 +325,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
                 "Templates in {}; the folder is set in Settings › Projects and backups",
                 lists.templates_folder
             );
-            widgets::text_in(&painter, note, Align2::LEFT_CENTER, &folder, small.clone(), theme::text_hint());
+            widgets::text_in(&painter, note, Align2::LEFT_CENTER, &folder, small.clone(), hint);
             let list = Rect::from_min_max(list.min, Pos2::new(list.right(), note.top() - 4.0));
             if rows.is_empty() {
                 let text = if lists.templates.is_empty() {
@@ -338,14 +334,14 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
                     "No template has that name"
                 };
                 let empty = Rect::from_min_size(list.min, Vec2::new(list.width(), LINE));
-                widgets::text_in(&painter, empty, Align2::LEFT_CENTER, text, small, theme::text_hint());
+                widgets::text_in(&painter, empty, Align2::LEFT_CENTER, text, small, hint);
             } else {
                 scrolled(ui, list, "start-templates", |ui| {
                     for path in rows {
                         let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), LINE), Sense::hover());
                         let painter = ui.painter().clone();
                         let label = format!("Start from {}", stem(path));
-                        if row(ui, &painter, r, path, &stem(path), &kind(path), &label).clicked() {
+                        if row(ui, &painter, r, path, (&stem(path), &kind(path)), (&label, hint)).clicked() {
                             choice = Some(StartChoice::NewFromTemplate(path.clone()));
                         }
                     }
@@ -363,16 +359,17 @@ fn audio_card(ui: &Ui, area: Rect, audio: &AudioSummary) -> bool {
     }
     let painter = ui.painter_at(area);
     painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    painter.rect_stroke(area, 0.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+    painter.rect_stroke(area, 0.0, theme::hairline(row_line()), egui::StrokeKind::Inside);
     let inner = area.shrink(PAD);
     heading(&painter, Rect::from_min_size(inner.min, Vec2::new(inner.width(), 0.0)), "Audio");
     let small = theme::ui_font(theme::TEXT_SMALL);
     let mut y = inner.top() + LINE;
+    let (caption, ink) = (caption_ink(), name_ink());
     for (name, value) in [("Output", &audio.device), ("Sample rate", &audio.sample_rate), ("Buffer", &audio.buffer)] {
         let r = Rect::from_min_size(Pos2::new(inner.left(), y), Vec2::new(inner.width(), LINE));
-        widgets::text_in(&painter, r, Align2::LEFT_CENTER, name, small.clone(), theme::text_secondary());
+        widgets::text_in(&painter, r, Align2::LEFT_CENTER, name, small.clone(), caption);
         let value_rect = Rect::from_min_max(Pos2::new(r.left() + 76.0, r.top()), r.max);
-        widgets::text_in(&painter, value_rect, Align2::LEFT_CENTER, value, small.clone(), theme::text_primary());
+        widgets::text_in(&painter, value_rect, Align2::LEFT_CENTER, value, small.clone(), ink);
         y += LINE;
     }
     let settings = Rect::from_min_size(Pos2::new(inner.left(), (y + PAD).min(inner.bottom() - BUTTON.y)), {
