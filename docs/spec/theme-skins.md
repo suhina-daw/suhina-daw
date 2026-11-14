@@ -1134,8 +1134,9 @@ the theme's `id` and `name`, and under `files` every other entry's path and SHA-
 **Seeing a theme without the app.** `suhina-cli theme render <theme-folder | built-in-theme-id> [--backdrop <image.png>]
 [--out <folder>] [--scale <n>] [--scene <name>] [--budget]` (or `cargo run -p suhina-theme-render -- …` from the source) draws the theme in
 a fixed set of scenes of the demo project: the Launcher and Arrangement views, the piano roll,
-every device in a row and each expanded panel, a menu, Settings, a tooltip, and hover and
-selected states. Each scene is `<scene>.raw.png`, the window's own pixels with their alpha, and
+the browser (its places, a search, the plug-ins and the sample map), a MIDI clip's and an audio
+clip's panels, a device group's panel, every device in a row and each expanded panel, a menu,
+Settings, a tooltip, and hover and selected states. Each scene is `<scene>.raw.png`, the window's own pixels with their alpha, and
 `<scene>.png`, those over the backdrop (bright bands by default), blurred where the system blurs
 behind a see-through window. It renders as a window that composites alpha does, so a hole a see-through theme leaves
 shows. `launcher-scrolled` and `arrangement-scrolled` draw both views scrolled down and along on

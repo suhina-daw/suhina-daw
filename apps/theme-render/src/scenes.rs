@@ -5,8 +5,9 @@
 //! labels as the window tests drive the window. A scene whose control a theme hid says so instead
 //! of panicking.
 //!
-//! The fixed scenes are [`FIXED`]; [`scenes`] adds the devices: every effect and MIDI effect in a
-//! row, each instrument, and each device with an expanded panel, expanded.
+//! The fixed scenes are [`FIXED`], and those on a project of their own [`OWN`]; [`scenes`] adds
+//! the devices: every effect and MIDI effect in a row, each instrument, and each device with an
+//! expanded panel, expanded.
 
 use std::sync::Arc;
 
@@ -21,6 +22,8 @@ use suhina_ui::App;
 type Window = Harness<'static, App>;
 /// What is done in a scene: `Err` names a control it could not find.
 type Step = fn(&mut Window) -> Result<(), String>;
+/// How a scene of its own opens its app: `Err` if a command that builds its project is refused.
+type Build = fn() -> Result<App, String>;
 type Drive = Arc<dyn Fn(&mut Window) -> Result<(), String> + Send + Sync>;
 type Open = Arc<dyn Fn() -> Result<App, String> + Send + Sync>;
 
@@ -50,7 +53,23 @@ pub const FIXED: &[(&str, Step)] = &[
     ("tooltip", tooltip),
     ("export-dialog", |h| menu_item(h, "File", "Export…")),
     ("about-dialog", |h| menu_item(h, "Help", "About Suhina")),
+    ("browser", browser),
+    ("browser-search", browser_search),
+    ("browser-plug-ins", |h| {
+        click(h, "Show browser")?;
+        click(h, "Show Plug-ins")
+    }),
+    ("sample-map", |h| {
+        click(h, "Show browser")?;
+        click(h, "Show Samples")?;
+        click(h, "Show the samples laid out by how they sound")
+    }),
+    ("clip-midi", |h| click(h, "Select Walk on Bass (scene 2)")),
 ];
+
+/// The scenes on a project of their own: `(name, the app, what is done)`.
+pub const OWN: &[(&str, Build, Step)] =
+    &[("clip-audio", with_audio, clip_audio), ("device-group", with_device_group, |h| click(h, "Track Keys"))];
 
 /// The scenes with the views scrolled down and along, on a project with more tracks and scenes
 /// than fit: what scrolls must never show through the headers, rulers and fixed rows that stay
@@ -72,6 +91,12 @@ pub fn scenes() -> Vec<Scene> {
             drive: Arc::new(drive),
         })
         .collect();
+    scenes.extend(OWN.iter().map(|&(name, app, drive)| Scene {
+        name: name.to_owned(),
+        width: crate::SIZE.0,
+        app: Arc::new(app),
+        drive: Arc::new(drive),
+    }));
     scenes.extend(SCROLLED.iter().map(|&(name, drive)| Scene {
         name: name.to_owned(),
         width: crate::SIZE.0,
@@ -175,6 +200,118 @@ fn piano_roll(h: &mut Window) -> Result<(), String> {
     click(h, "Clip Beat B on Drums at bar 17")?;
     h.remove_cursor();
     settle(h)
+}
+
+/// The browser open beside the Launcher, its Effects open and the pointer over one of them: the
+/// places, the rows, the search field and the filters (#1023).
+fn browser(h: &mut Window) -> Result<(), String> {
+    click(h, "Show browser")?;
+    click(h, "Browser Effects")?;
+    hover_first(h, "Browser Overdrive")
+}
+
+/// The browser searching: the results of a search and the field that holds it.
+fn browser_search(h: &mut Window) -> Result<(), String> {
+    click(h, "Show browser")?;
+    h.state_mut().browser.search = "o".into();
+    h.remove_cursor();
+    settle(h)
+}
+
+/// An audio clip's panel: the clip of an audio track chosen in the Arrangement.
+fn clip_audio(h: &mut Window) -> Result<(), String> {
+    click(h, "Arrangement view")?;
+    click(h, "Clip Loop on Loop at bar 1")?;
+    h.remove_cursor();
+    settle(h)
+}
+
+/// The demo project with an audio track, Loop, whose one Arrangement clip plays a two-second
+/// sample that is not loaded.
+fn with_audio() -> Result<App, String> {
+    use suhina_model::{
+        ArrangementLane, AudioRegion, Channel, ChannelId, Clip, ClipAudio, ClipContent, ContentId, ContentKinds,
+        ContentLane, LaneData, LoopRange, Track, TrackId, WarpMarker,
+    };
+    let mut project = suhina_ui::demo::demo_project();
+    let (first_track, first_channel) = match (project.tracks.first(), project.channels.first()) {
+        (Some(track), Some(channel)) => (track.clone(), channel.clone()),
+        _ => return Err("the demo project has no track".into()),
+    };
+    let first_clip = project
+        .arrangement
+        .lanes
+        .first()
+        .and_then(|lane| lane.clips.first())
+        .cloned()
+        .ok_or("the demo project has no Arrangement clip")?;
+    project.tracks.push(Track {
+        id: TrackId(30),
+        name: "Loop".into(),
+        content: ContentKinds { notes: false, audio: true },
+        channel: Some(ChannelId(130)),
+        ..first_track
+    });
+    project.channels.push(Channel { id: ChannelId(130), name: "Loop".into(), sends: Vec::new(), ..first_channel });
+    let region = AudioRegion {
+        file: "loop.wav".into(),
+        absolute_file: None,
+        sample_rate: Some(8000),
+        channels: Some(1),
+        duration_seconds: Some(2.0),
+        stream: None,
+    };
+    project.contents.push(ClipContent {
+        id: ContentId(300),
+        name: "Loop".into(),
+        length: 4.0,
+        lanes: vec![ContentLane { target: None, data: LaneData::Audio(region) }].into(),
+        extensions: Default::default(),
+        scale: None,
+    });
+    let audio = ClipAudio {
+        warped: true,
+        warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 4.0, audio_time: 2.0 }],
+        gain: 1.0,
+        ..ClipAudio::default()
+    };
+    let clip = Clip {
+        id: Default::default(),
+        content: ContentId(300),
+        start: 0.0,
+        length: 16.0,
+        loop_range: Some(LoopRange { start: 0.0, end: 4.0 }),
+        audio,
+        color: None,
+        ..first_clip
+    };
+    project.arrangement.lanes.push(ArrangementLane {
+        id: Default::default(),
+        name: "Loop".into(),
+        track: Some(TrackId(30)),
+        clips: vec![clip],
+    });
+    let _ = project.assign_ids();
+    project.fill_track_colours();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(suhina_session::Session::new(project), &[]);
+    Ok(app)
+}
+
+/// The demo project with a device group on Keys holding a Utility: the group's panel.
+fn with_device_group() -> Result<App, String> {
+    let mut session = suhina_session::Session::new(suhina_ui::demo::demo_project());
+    session
+        .execute("device.add", &json!({ "track": "Keys", "id": "utility" }))
+        .map_err(|e| format!("device.add utility: {e}"))?;
+    session
+        .execute("device.group", &json!({ "track": "Keys", "device": 0 }))
+        .map_err(|e| format!("device.group: {e}"))?;
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    Ok(app)
 }
 
 /// The demo project with `devices` added to Keys in order: an instrument takes the place of

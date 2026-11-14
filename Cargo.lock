@@ -5860,6 +5860,7 @@ dependencies = [
  "serde_json",
  "suhina-device-api",
  "suhina-device-registry",
+ "suhina-model",
  "suhina-session",
  "suhina-test-support",
  "suhina-theme-package",
