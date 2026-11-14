@@ -5,7 +5,7 @@ use suhina_device_api::conformance;
 
 use super::*;
 
-suhina_device_api::conformance_test!(Reverb::new());
+suhina_device_api::conformance_test!(Reverb::with_rate);
 
 /// A reverb at `sample_rate`, fully wet, no modulation, then `settings`.
 fn reverb(sample_rate: f64, settings: &[(usize, f64)]) -> Reverb {

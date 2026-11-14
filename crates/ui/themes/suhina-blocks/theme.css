@@ -14,8 +14,6 @@
   --browser-text-primary: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--highlight) 89.8%), white 61%);
   --browser-text-secondary: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--highlight) 60.7%), white 36.6%);
   --browser-text-value: color-mix(in oklab, color-mix(in oklab, var(--ink), var(--highlight) 33.9%), black 2.3%);
-  --clip-audioDefault: #C99070;
-  --clip-midiDefault: #83A9B4;
   --control-activeBackground: color-mix(in oklab, color-mix(in oklab, var(--ink), var(--highlight) 67.2%), black 36.6%);
   --control-background: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 2.6%), var(--highlight) 14.6%);
   --control-hoverBackground: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--highlight) 26.1%), white 5.9%);
@@ -41,14 +39,6 @@
   --text-primary: var(--ink);
   --text-secondary: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--highlight) 60.7%), white 36.6%);
   --text-value: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--ink) 97.7%), var(--highlight) 29.7%);
-  --track-1: #FF9A3C;
-  --track-2: #7FDB5A;
-  --track-3: #4FC3F7;
-  --track-4: #B38BFF;
-  --track-5: #F2D541;
-  --track-6: #E5484D;
-  --track-7: #80ADA1;
-  --track-8: #A84F4F;
   --track-headerBackground: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--highlight) 11.5%), black 11.5%);
   --track-headerSelectedBackground: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--highlight) 26.8%), white 2.5%);
   --track-mutedBackground: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--stone) 29.7%), black 21.3%);
@@ -115,14 +105,6 @@ icon[kind="record"] { image: url("assets/record.svg"); }
 icon[kind="solo"] { image: url("assets/solo.svg"); }
 icon[kind="stop"] { image: url("assets/stop.svg"); }
 icon[kind="audio"] { image: url("assets/track.audio.svg"); }
-track.body.color-4fc3f7 { image: url("assets/track.body.color-4fc3f7.svg"); }
-track.body.color-7fdb5a { image: url("assets/track.body.color-7fdb5a.svg"); }
-track.body.color-80ada1 { image: url("assets/track.body.color-80ada1.svg"); }
-track.body.color-a84f4f { image: url("assets/track.body.color-a84f4f.svg"); }
-track.body.color-b38bff { image: url("assets/track.body.color-b38bff.svg"); }
-track.body.color-e5484d { image: url("assets/track.body.color-e5484d.svg"); }
-track.body.color-f2d541 { image: url("assets/track.body.color-f2d541.svg"); }
-track.body.color-ff9a3c { image: url("assets/track.body.color-ff9a3c.svg"); }
 track-header { image: url("assets/track.body.svg"); }
 icon[kind="midi"] { image: url("assets/track.midi.svg"); }
 track-name { image: url("assets/track.name.svg"); }

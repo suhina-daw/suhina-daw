@@ -9,6 +9,7 @@ rust-version.workspace = true
 nam-rs.workspace = true
 suhina-dsp.workspace = true
 suhina-device-api.workspace = true
+suhina-fs.workspace = true
 
 [lints]
 workspace = true

@@ -311,6 +311,35 @@ fn drums_slot(harness: &Harness<'static, App>, scene: usize) -> Option<String> {
     p.content(clip.content).map(|c| c.name.clone())
 }
 
+/// After Escape, the rest of an arrangement clip's drag carries it nowhere: Tab with the button
+/// still held shows the Launcher view, and letting go over a slot copies nothing into it (#1158).
+#[test]
+fn an_arrangement_clip_drag_let_go_of_with_escape_is_not_carried_by_tab() {
+    let mut harness = arrangement_app();
+    let from = harness.get_by_label("Clip Fill on Drums at bar 29").rect().center_top() + egui::vec2(0.0, 6.0);
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(from + egui::vec2(10.0, 0.0));
+    harness.step();
+    assert!(harness.state().arrangement().dragged_clip().is_some(), "the clip is dragged");
+    harness.key_press(Key::Escape);
+    harness.step();
+    harness.hover_at(from + egui::vec2(14.0, 0.0));
+    harness.step();
+    assert_eq!(harness.state().arrangement().dragged_clip(), None, "nothing is held after Escape");
+    harness.key_press(Key::Tab);
+    harness.step();
+    assert_eq!(harness.state().view(), View::Session);
+    let slot = harness.get_by_label("Stop Drums (scene 5)").rect().center();
+    harness.hover_at(slot);
+    harness.step();
+    harness.drop_at(slot);
+    harness.run();
+    assert_eq!(drums_slot(&harness, 4), None, "no clip was copied into the slot");
+}
+
 /// Pressing Tab while an arrangement clip is dragged switches the view and the drag goes on
 /// as a carry: let go over a slot, the clip is copied into it (#1063).
 #[test]

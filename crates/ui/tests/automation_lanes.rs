@@ -209,6 +209,83 @@ fn dragging_a_point_moves_it_on_the_grid_in_one_undo_step() {
     assert_eq!(volume(&harness).0, before);
 }
 
+/// Escape mid-drag lets go of an automation point: it stays where it was, and the rest of the
+/// press moves nothing (#1158).
+#[test]
+fn escape_cancels_a_point_drag() {
+    let mut harness = with_lanes();
+    add_point(&mut harness, 100.0);
+    let before = volume(&harness).0;
+    let point = harness.get_by_label("Volume point 1 on Drums").rect().center();
+    harness.hover_at(point);
+    harness.run();
+    harness.drag_at(point);
+    harness.run();
+    harness.hover_at(point + vec2(32.0, -5.0));
+    harness.run();
+    assert!(harness.state().arrangement().gesture_under_way(), "the point is held");
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "Escape let go of it");
+    harness.hover_at(point + vec2(64.0, -10.0));
+    harness.run();
+    harness.drop_at(point + vec2(64.0, -10.0));
+    harness.run();
+    assert_eq!(volume(&harness).0, before, "the point did not move");
+}
+
+/// A press on the line adds its point at once; Escape during the drag that follows leaves the
+/// point where the press put it (#1158).
+#[test]
+fn escape_during_a_drag_from_the_line_keeps_the_point_where_it_was_made() {
+    let mut harness = with_lanes();
+    let rect = lane(&harness);
+    click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 10.0));
+    click_at(&mut harness, Pos2::new(rect.left() + 300.0, rect.top() + 20.0));
+    let a = harness.get_by_label("Volume point 1 on Drums").rect().center();
+    let b = harness.get_by_label("Volume point 2 on Drums").rect().center();
+    let on = a.lerp(b, 0.25);
+    harness.hover_at(on);
+    harness.run();
+    harness.drag_at(on);
+    harness.run();
+    harness.hover_at(on + vec2(0.0, 6.0));
+    harness.run();
+    let made = volume(&harness).0;
+    assert_eq!(made.len(), 3, "the press made a point: {made:?}");
+    harness.key_press(Key::Escape);
+    harness.run();
+    harness.hover_at(on + vec2(0.0, 12.0));
+    harness.run();
+    harness.drop_at(on + vec2(0.0, 12.0));
+    harness.run();
+    assert_eq!(volume(&harness).0, made, "the made point stays where the press put it");
+}
+
+/// A press on the line adds its point; Escape before the button comes up, with no drag, adds
+/// no second point when it does (#1158).
+#[test]
+fn escape_then_a_release_on_the_line_adds_no_second_point() {
+    let mut harness = with_lanes();
+    let rect = lane(&harness);
+    click_at(&mut harness, Pos2::new(rect.left() + 100.0, rect.bottom() - 10.0));
+    click_at(&mut harness, Pos2::new(rect.left() + 300.0, rect.top() + 20.0));
+    let a = harness.get_by_label("Volume point 1 on Drums").rect().center();
+    let b = harness.get_by_label("Volume point 2 on Drums").rect().center();
+    let on = a.lerp(b, 0.25);
+    harness.hover_at(on);
+    harness.run();
+    harness.drag_at(on);
+    harness.run();
+    let made = volume(&harness).0;
+    assert_eq!(made.len(), 3, "the press made a point: {made:?}");
+    harness.key_press(Key::Escape);
+    harness.run();
+    harness.drop_at(on);
+    harness.run();
+    assert_eq!(volume(&harness).0, made, "the release added nothing");
+}
+
 /// A selected point goes with Delete, another with a double-click, and the lane stays shown.
 #[test]
 fn a_double_click_or_delete_removes_points() {
@@ -1655,4 +1732,44 @@ fn a_click_on_a_whole_number_slope_adds_a_point_between_numbers() {
     let points = rate(&harness);
     assert_eq!(points.len(), 3, "{points:?}");
     assert_eq!((points[1].beat, points[1].value), (4.0, 0.5), "{points:?}");
+}
+
+/// How many circles the window painted filled with `color`.
+fn circles_filled(harness: &Harness<'static, App>, color: egui::Color32) -> usize {
+    fn walk(shape: &egui::Shape, color: egui::Color32, found: &mut usize) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, color, found)),
+            egui::Shape::Circle(circle) if circle.fill == color => *found += 1,
+            _ => {}
+        }
+    }
+    let mut found = 0;
+    harness.output().shapes.iter().for_each(|shape| walk(&shape.shape, color, &mut found));
+    found
+}
+
+/// A rule for every automation point does not hide which are picked: the picked one keeps its
+/// native colour unless a `[selected]` rule gives it one (#1428 review).
+#[test]
+fn a_rule_for_every_point_keeps_the_picked_one_apart() {
+    let mut harness = with_lanes();
+    for x in [100.0, 200.0, 300.0] {
+        add_point(&mut harness, x);
+    }
+    let two = harness.get_by_label("Volume point 2 on Drums").rect().center();
+    click_at(&mut harness, two);
+    let points = |harness: &mut Harness<'static, App>, css: &str, color: egui::Color32| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            harness.step();
+        }
+        let filled = circles_filled(harness, color);
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        filled
+    };
+    let every = egui::Color32::from_rgb(0x13, 0x57, 0x51);
+    assert_eq!(points(&mut harness, "automation-point { color: #135751; }", every), 2, "the picked one stays apart");
+    let picked = egui::Color32::from_rgb(0x13, 0x57, 0x52);
+    let css = "automation-point { color: #135751; } automation-point[selected] { color: #135752; }";
+    assert_eq!(points(&mut harness, css, picked), 1, "a `[selected]` rule recolours it");
 }

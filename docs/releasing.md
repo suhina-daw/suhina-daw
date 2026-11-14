@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy
 type: howto
 status: current
-last_verified: 2026-11-08
+last_verified: 2026-11-13
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
@@ -282,10 +282,15 @@ the window tests (`crates/ui/tests/main.rs`). The crates that process sound stay
 at 0, `suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the
 list if it processes no sound and takes long to compile.
 
-The queue is a setting, not code: Settings › Rules (or Branches) › the rule for `main` › **Require
-merge queue**, with the merge method used today, a group size of about 5 and *Only merge
-non-failing pull requests*. With a queue, *Require branches to be up to date before merging* is not
-needed. Every check the rule requires must come from a workflow that runs on `merge_group`; today
+The queue is a setting, not code: Settings › Rules › the ruleset **main merge queue** › *Require
+merge queue*, with the merge method used today, a group size of about 5 and *Only merge
+non-failing pull requests*. It is a ruleset of its own so that the queue can be bypassed without
+the rest: the Admin and Write roles may merge a pull request around the queue (a squash merge
+too), while the `main` ruleset (an approval, the code owner's review, the required `ci` check and
+resolved threads) still applies to them. Keep the two apart: a role added to the bypass list of
+`main` skips its reviews and checks as well. With a queue, *Require branches to be up to date
+before merging* is not needed. Every check `main` requires must come from a workflow that runs on
+`merge_group`; today
 that is `ci` alone, and a check required from another workflow would keep the queue waiting. The
 checks that have workflows of their own (`cargo deny`, the Depends on check,
 [`claim-bot.md`](claim-bot.md) › The Depends on check, and the settings guide export) are called

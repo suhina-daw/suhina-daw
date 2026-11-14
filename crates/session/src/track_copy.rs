@@ -34,6 +34,11 @@ pub(crate) struct TrackClipboard {
 }
 
 impl TrackClipboard {
+    /// The devices on the copied tracks' channels (top-level; a group's devices are inside it).
+    pub(crate) fn devices(&self) -> impl Iterator<Item = &suhina_model::Device> {
+        self.tracks.iter().filter_map(|t| t.channel.as_ref()).flat_map(|channel| &channel.devices)
+    }
+
     /// How many tracks a paste adds.
     pub(crate) fn len(&self) -> usize {
         self.tracks.len()

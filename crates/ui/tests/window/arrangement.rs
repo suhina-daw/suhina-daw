@@ -434,6 +434,60 @@ fn play_starts_from_the_selected_clip_as_the_setting_says() {
 }
 
 #[test]
+fn a_click_on_the_ruler_after_picking_a_clip_is_where_play_starts() {
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
+    let mut harness = arrangement_app_with_engine(&mut renderer);
+    let monitor = renderer.monitor();
+    let stop = |harness: &mut Harness<'static, App>, renderer: &mut suhina_engine::Renderer| {
+        harness.get_by_label("Stop").click();
+        harness.run_steps(2);
+        render_a_block(renderer);
+    };
+    let ruler_click = |harness: &mut Harness<'static, App>| {
+        let ruler = harness.get_by_label("Ruler").rect();
+        // 8 points a beat by default, so the grid is a bar: 130 points in is beat 16.25, bar 5.
+        let at = egui::pos2(ruler.left() + 130.0, ruler.center().y);
+        harness.hover_at(at);
+        harness.run();
+        harness.drag_at(at);
+        harness.drop_at(at);
+        harness.run();
+    };
+
+    // The clip picked whole, then the ruler clicked: Play and Space start at the ruler's beat,
+    // the clip still picked (the regression: they went back to the clip's start).
+    click_name_bar(&mut harness, "Clip Beat B on Drums at bar 17");
+    render_a_block(&mut renderer);
+    ruler_click(&mut harness);
+    render_a_block(&mut renderer);
+    assert_eq!(monitor.start_beat(), 16.0);
+    assert!(harness.state().arrangement().selected_clip().is_some(), "the clip stays picked");
+    harness.key_press(Key::Space);
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 16.0));
+    stop(&mut harness, &mut renderer);
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 16.0));
+    stop(&mut harness, &mut renderer);
+
+    // Its name bar clicked again, play starts from the clip once more.
+    click_name_bar(&mut harness, "Clip Beat B on Drums at bar 17");
+    harness.get_by_label("Play").click();
+    harness.run_steps(2);
+    render_a_block(&mut renderer);
+    assert_eq!((monitor.running(), monitor.start_beat()), (true, 64.0));
+}
+
+#[test]
 fn arrangement_headers_turn_tracks_off() {
     let mut harness = arrangement_app();
     harness.get_by_label("Turn Keys off").click();
@@ -775,6 +829,64 @@ fn dragging_an_audio_clips_gain_sets_it() {
     });
     // 30 points up at 0.1 dB a point: +3 dB.
     assert!(gain.is_some_and(|g| (g - 1.4125).abs() < 1e-3), "{gain:?}");
+}
+
+/// A value set by a key in the middle of a gain drag stands: the drag lets go, and its release does
+/// not bring the dragged value back (#1158).
+#[test]
+fn a_key_step_during_a_gain_drag_is_not_undone_by_its_release() {
+    let mut harness = window(audio_app());
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let field = harness.get_by_label("Gain of Loop on Loop").rect().center();
+    harness.hover_at(field);
+    harness.run();
+    harness.drag_at(field);
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 15.0));
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    harness.drop_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    let gain = harness.state().session().and_then(|s| {
+        let clips = s.project().arrangement.lanes.iter().flat_map(|l| &l.clips);
+        clips.into_iter().find(|c| c.content == suhina_engine::model::ContentId(300)).map(|c| c.audio.gain)
+    });
+    // The step is +1 dB from the clip's gain; the 3 dB the drag held is not committed after it.
+    assert!(gain.is_some_and(|g| (g - 1.1220).abs() < 1e-3), "{gain:?}");
+}
+
+/// A value typed in the middle of a gain drag stands: the drag lets go, and its release does
+/// not bring the dragged value back (#1158).
+#[test]
+fn a_typed_gain_during_a_gain_drag_is_not_undone_by_its_release() {
+    let mut harness = window(audio_app());
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let field = harness.get_by_label("Gain of Loop on Loop").rect().center();
+    harness.hover_at(field);
+    harness.run();
+    harness.drag_at(field);
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 15.0));
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    harness.event(egui::Event::Text("2".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    harness.drop_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    let gain = harness.state().session().and_then(|s| {
+        let clips = s.project().arrangement.lanes.iter().flat_map(|l| &l.clips);
+        clips.into_iter().find(|c| c.content == suhina_engine::model::ContentId(300)).map(|c| c.audio.gain)
+    });
+    // The 2 dB typed stands; the 3 dB the drag held is not committed after it.
+    assert!(gain.is_some_and(|g| (g - 1.2589).abs() < 1e-3), "{gain:?}");
 }
 
 /// The Loop clip's fade-in and fade-out in the project.
@@ -1279,6 +1391,77 @@ fn dragging_a_midi_clips_right_edge_makes_it_longer_on_the_grid() {
     harness.drop_at(to);
     harness.run();
     assert_eq!(beat_b(&harness), before + 4.0, "a bar longer");
+}
+
+/// The length of Beat B on Drums, the clip from beat 64.
+fn beat_b_length(h: &Harness<'static, App>) -> Option<f64> {
+    let p = h.state().session()?.project();
+    let track = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == track)?;
+    lane.clips.iter().find(|c| (c.start - 64.0).abs() < 1e-6).map(|c| c.length)
+}
+
+/// Escape lets go of a drag under way: the edge's release then trims nothing (#1158).
+#[test]
+fn escape_cancels_a_clip_edge_drag() {
+    let mut harness = arrangement_app();
+    let before = beat_b_length(&harness).unwrap();
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    let to = edge + egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    assert!(harness.state().arrangement().gesture_under_way(), "the edge is being dragged");
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "Escape let go of it");
+    // Moving on and letting go with the button still held from before does nothing.
+    harness.hover_at(to);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "the held drag did not start again");
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(beat_b_length(&harness), Some(before), "the clip kept its length");
+}
+
+/// A drag let go of while the Arrangement was not drawn (Tab to the Launcher view mid-drag) ends
+/// without doing anything, and the next drag starts as usual (#1158).
+#[test]
+fn a_drag_released_out_of_sight_ends_and_the_next_one_starts() {
+    let mut harness = arrangement_app();
+    let before = beat_b_length(&harness).unwrap();
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    let to = edge + egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert!(harness.query_by_label("Right edge of Beat B on Drums").is_none(), "the Launcher view is shown");
+    harness.drop_at(to);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "the lost drag ended in the Launcher view");
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert_eq!(beat_b_length(&harness), Some(before), "its release did nothing");
+    // A new drag of the edge trims the clip by a bar.
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(beat_b_length(&harness), Some(before + 4.0), "a bar longer");
 }
 
 /// The clip is drawn at its new length from the frame the button comes up on. In the window the
@@ -2055,7 +2238,7 @@ fn a_take_lanes_edge_drags_its_height() {
 /// A window on the Drums track's first clip as two take lanes of `length` beats, in the
 /// Arrangement.
 #[allow(clippy::unwrap_used)] // a test helper outside #[test] functions
-fn window_with_drums_takes(length: f64) -> Harness<'static, App> {
+pub(super) fn window_with_drums_takes(length: f64) -> Harness<'static, App> {
     let mut project = demo_project();
     let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
     let clip = project

@@ -111,6 +111,7 @@ pub fn demo_project() -> Project {
     };
     // Lanes, clips and scenes get their ids in order, as a session would give them.
     let _ = project.assign_ids();
+    project.fill_track_colours();
     project
 }
 
@@ -205,6 +206,7 @@ pub fn grouped_project() -> Project {
         track.parent = Some(group);
         project.tracks.insert(1 + at, track);
     }
+    project.fill_track_colours();
     project
 }
 

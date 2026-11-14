@@ -4,7 +4,7 @@ read_when: preview, audition, preview voice, add a sample while playing, AudioPo
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-14
 covers:
   - crates/engine/src/preview.rs
   - crates/engine/src/swap.rs
@@ -70,7 +70,7 @@ run the same code.
    it sends note-offs for the keys it holds, on the first frame of the block the stop applies
    in (preview commands are taken once the chains have begun the block). A track without an
    instrument plays through a
-   **fallback instrument**: an FM synth made and prepared on the controller's thread (in
+   **fallback instrument**: an FM synth made at the renderer's rate on the controller's thread (in
    `Controller::preview_instrument`, packed with the notes by `preview_notes`) and sent with the notes, processed into a buffer of its own and
    mixed with the sample preview.
 7. **Offline renders include the preview voice** like everything else, so tests render previews

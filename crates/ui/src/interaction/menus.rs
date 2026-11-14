@@ -938,12 +938,12 @@ mod tests {
         assert_eq!(choose(1, SameSignature::FollowMap), Some(("transport.followTempoMap", json!({}))));
         assert_eq!(
             typed_time_signature_action(9, four, SameSignature::Set, "4/4").map(|a| a.id),
-            Some("timeSignature.add".into())
+            Some("timeSignature.add")
         );
         // Another signature is set whatever `same` says.
         assert_eq!(
             signature_choice(1, four, SameSignature::FollowMap, json!(3), json!(4)).map(|a| a.id),
-            Some("transport.setTimeSignature".into())
+            Some("transport.setTimeSignature")
         );
     }
 }

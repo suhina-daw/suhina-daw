@@ -22,6 +22,7 @@
 //! painted over them.
 
 use egui::{Color32, Painter, Rect, Response};
+use suhina_style::property::Property;
 
 use super::native_css::HostState;
 
@@ -43,17 +44,20 @@ pub enum Attr {
     Armed,
     /// A muted track, a clip or note that is off, a device that is off.
     Muted,
+    /// A clip or a track's stop button waiting for its launch.
+    Queued,
 }
-pub use Attr::{Armed, Checked, Muted, Playing, Recording, Selected};
+pub use Attr::{Armed, Checked, Muted, Playing, Queued, Recording, Selected};
 
 /// Every [`Attr`] with the host state that marks it.
-const STATES: [(Attr, HostState); 6] = [
+const STATES: [(Attr, HostState); 7] = [
     (Checked, HostState::Checked),
     (Selected, HostState::Selected),
     (Playing, HostState::Playing),
     (Recording, HostState::Recording),
     (Armed, HostState::Armed),
     (Muted, HostState::Muted),
+    (Queued, HostState::Queued),
 ];
 
 /// What a control paints where the sheet sets nothing: today's token values, until the
@@ -110,7 +114,6 @@ impl Name {
             attributes: Vec::new(),
             sheet: None,
             native: Native::default(),
-            variables: Vec::new(),
         }
     }
     /// The element with the id the app gives it (`play`, `device-compressor`); the registry
@@ -147,13 +150,21 @@ impl Name {
     pub fn pointer<'a>(self, hovered: bool, pressed: bool, disabled: bool) -> Builder<'a> {
         self.builder().pointer(hovered, pressed, disabled)
     }
-    /// The element with the custom property `name` (`--track-colour`) for the sheet.
-    pub fn variable<'a>(self, name: &'static str, value: String) -> Builder<'a> {
-        self.builder().variable(name, value)
-    }
     /// The style of a drawn item of this element, with nothing more said about it.
     pub fn style(self) -> Option<Computed> {
         self.builder().style()
+    }
+    /// The [`Look`] of the drawn items of this element, with nothing more said about them.
+    pub fn look(self) -> Look {
+        self.builder().look()
+    }
+    /// [`Builder::probe`] of this element.
+    pub fn probe(self) -> Look {
+        self.builder().probe()
+    }
+    /// [`Builder::enter_against_plain`] of this element.
+    pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
+        self.builder().enter_against_plain(attr, on)
     }
     pub fn enter(self) -> Entered {
         self.builder().enter()
@@ -162,6 +173,7 @@ impl Name {
 
 /// An element being described before it is entered.
 #[must_use]
+#[derive(Clone)]
 pub struct Builder<'a> {
     name: Name,
     id: Option<&'a str>,
@@ -176,7 +188,6 @@ pub struct Builder<'a> {
     /// Attributes with a value the app gives the element besides its colour (`kind`).
     attributes: Vec<(&'static str, &'a str)>,
     native: Native,
-    variables: Vec<(&'static str, String)>,
 }
 
 impl<'a> Builder<'a> {
@@ -225,15 +236,10 @@ impl<'a> Builder<'a> {
         self.native = native;
         self
     }
-    /// A custom property the element gives the sheet and its descendants (`--track-colour`).
-    pub fn variable(mut self, name: &'static str, value: String) -> Self {
-        self.variables.push((name, value));
-        self
-    }
 
     /// Puts the element in the style tree and the palette scope until the value is dropped.
     pub fn enter(self) -> Entered {
-        let Self { name, id, response, states, pointer, color, attributes, native, variables, sheet } = self;
+        let Self { name, id, response, states, pointer, color, attributes, native, sheet } = self;
         let sheet_wake = sheet.clone();
         let scope = super::style_class::enter_inner(name, id, response, |node| {
             super::native_css::mark_node_bits(node, pointer);
@@ -247,9 +253,6 @@ impl<'a> Builder<'a> {
             }
             for (attribute, value) in attributes {
                 super::native_css::set_attribute(node, attribute, value.to_owned());
-            }
-            for (variable, value) in variables {
-                super::native_css::set_variable(node, variable, value);
             }
             if let Some((ctx, source)) = sheet {
                 super::native_css::device_sheet(Some(node), &ctx, Some(source));
@@ -267,6 +270,101 @@ impl<'a> Builder<'a> {
     /// The style of a drawn item: the element entered and left at once.
     pub fn style(self) -> Option<Computed> {
         self.enter().style()
+    }
+
+    /// The [`Look`] of an element that is not drawn: what a state's rule is compared with
+    /// (`[checked]` against the plain item). It takes no place in the style tree, so no selector of
+    /// the elements drawn after it sees it as a sibling. Like any element styled in the frame it is
+    /// first drawn in, it is worked out without its siblings, so a rule that reaches a toggle only
+    /// through a sibling combinator (`tool + tool`) is not in the comparison.
+    ///
+    /// It is its own chain's style, never the values the tree last painted for a drawn element
+    /// with the same key (held for a CSS transition), so a state's rule is not on both sides of
+    /// the comparison.
+    pub fn probe(self) -> Look {
+        let entered = self.enter();
+        let node = entered.scope.node;
+        let style = match node {
+            Some(_) => super::native_css::probe_style(node),
+            None => entered.style(),
+        };
+        drop(entered);
+        super::native_css::discard(node);
+        Look(style)
+    }
+
+    /// The element entered with `attr` `on`, and while it is on, the [`Look`] of the very same
+    /// element with only `attr` off: its id, response (so its `:hover`, `:active` and focus),
+    /// pointer states, colour, attributes and other states kept. That is what
+    /// [`Look::background_unlike`] and the others compare a state's rule with, so only a rule for
+    /// the state itself (`button[checked]`) counts as the state's colour, not one for the
+    /// pointer's state (`button:hover`) or for every such element.
+    pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
+        // Looked up first, so it is the last node when it is taken out again.
+        let plain = on.then(|| self.clone().attr(attr, false).probe());
+        (self.attr(attr, on).enter(), plain)
+    }
+
+    /// The [`Look`] of every drawn item of this kind: looked up once, outside the loop that draws
+    /// them, so a line drawn a hundred times is one element of the style tree.
+    pub fn look(self) -> Look {
+        Look(self.style())
+    }
+}
+
+/// What a sheet says about a kind of drawn item (a grid line, a slot's mark), each colour with the
+/// palette token it replaces as the fallback: where no rule of a theme reaches the item, it paints
+/// as it did with the token (#1417).
+#[derive(Clone, Debug, Default)]
+pub struct Look(Option<Computed>);
+
+impl Look {
+    /// The item's own `color`, where a rule on the item sets one; else `token`. A line or a mark
+    /// does not take the text colour a view's rule gives everything in it.
+    pub fn own_color_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|own| own.declared(Property::Color)).map_or(token, |own| own.color)
+    }
+
+    /// The item's text colour, inherited from a sheet's rule around it too; else `token`.
+    pub fn color_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|s| s.authored.color).map_or(token, |s| s.color)
+    }
+
+    /// The item's `background-color`, where the sheet sets one; else `token`.
+    pub fn background_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|s| s.authored.background).map_or(token, |s| s.background)
+    }
+
+    /// The item's `border-color`, where the sheet sets one; else `token`.
+    pub fn border_or(&self, token: Color32) -> Color32 {
+        self.0.as_ref().filter(|s| s.authored.border).map_or(token, |s| s.border)
+    }
+
+    /// The item's computed style, when a sheet styles the window.
+    pub fn style(&self) -> Option<&Computed> {
+        self.0.as_ref()
+    }
+
+    /// The item's `background-color` in a state (`[checked]`, `[queued]`) where it differs from
+    /// `plain`, the same item without the state; else `token`, the state's own colour. A rule for
+    /// every `button` then does not hide which one is on: only a rule for the state does.
+    pub fn background_unlike(&self, plain: &Look, token: Color32) -> Color32 {
+        let own = self.0.as_ref().filter(|s| s.authored.background).map(|s| s.background);
+        own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.background).map(|s| s.background))
+            .unwrap_or(token)
+    }
+
+    /// [`Look::background_unlike`] for the `border-color`.
+    pub fn border_unlike(&self, plain: &Look, token: Color32) -> Color32 {
+        let own = self.0.as_ref().filter(|s| s.authored.border).map(|s| s.border);
+        own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.border).map(|s| s.border))
+            .unwrap_or(token)
+    }
+
+    /// [`Look::background_unlike`] for the item's own `color`.
+    pub fn own_color_unlike(&self, plain: &Look, token: Color32) -> Color32 {
+        let own = |look: &Look| look.0.as_ref().filter(|s| s.declared(Property::Color)).map(|s| s.color);
+        own(self).filter(|color| Some(*color) != own(plain)).unwrap_or(token)
     }
 }
 
@@ -442,6 +540,16 @@ impl Entered {
         self.finish();
     }
 
+    /// Where input may reach inside `rect`, the element's box: its padding box when it hides its
+    /// overflow (what its contents paint outside it is cut, and takes no click either), else
+    /// everywhere.
+    pub fn input_clip(&self, rect: Rect) -> Rect {
+        match self.style() {
+            Some(style) if style.hides_overflow() => shrink(rect, style.border_sides),
+            _ => Rect::EVERYTHING,
+        }
+    }
+
     /// The element's content box in `rect`: `rect` less its border and `padding`, for an element
     /// painted in part (a header scrolled partly out of view) whose contents follow its whole box.
     pub fn content_in(&self, rect: Rect) -> Rect {
@@ -465,6 +573,18 @@ impl Entered {
         self.style().filter(|s| s.authored.color).map_or(fallback, |s| s.color)
     }
 
+    /// The element's `color` where a rule gives it one of its own, not the one it inherits (a
+    /// bar's `color` on its items), even when it equals the inherited one; else `fallback`, a
+    /// colour the app gives by state (an error, the shown tab).
+    pub fn own_color_or(&self, fallback: Color32) -> Color32 {
+        self.style().filter(|own| own.declared(Property::Color)).map_or(fallback, |own| own.color)
+    }
+
+    /// The element's node in this frame's style tree, while it is entered.
+    pub(crate) fn node(&self) -> Option<usize> {
+        self.scope.node
+    }
+
     /// The element's computed `color`, the user-agent tier's included: for an element whose
     /// colour that tier gives (`knob-body`, `fader-cap`, `sample-point[kind]`), so a colour a
     /// theme gives an element around it does not reach it. `fallback` only where no sheet styles
@@ -476,6 +596,17 @@ impl Entered {
     /// The element's `background-color`, or `fallback` where the sheet sets none.
     pub fn background_or(&self, fallback: Color32) -> Color32 {
         self.style().filter(|s| s.authored.background).map_or(fallback, |s| s.background)
+    }
+
+    /// The element's `border-color`, or `fallback` where the sheet sets none: for a line the
+    /// element draws along its edge (a column's separator, a selected slot's frame).
+    pub fn border_or(&self, fallback: Color32) -> Color32 {
+        self.style().filter(|s| s.authored.border).map_or(fallback, |s| s.border)
+    }
+
+    /// The [`Look`] of the element, for the colours of what it draws inside itself.
+    pub fn look(&self) -> Look {
+        Look(self.style())
     }
 
     /// The element's corner radius, or `fallback` where the sheet sets none.
@@ -593,16 +724,21 @@ names! {
     MENU_BAR = "menu-bar";
     MENU = "menu";
     PROJECT_TABS = "project-tabs";
+    PROJECT_TAB = "project-tab";
     TOOLBAR = "toolbar";
     TOOLBAR_MODULE = "toolbar-module";
+    GROUP = "group";
+    FLEXIBLE_SPACE = "flexible-space";
+    BAR_ITEM = "bar-item";
     STATUS_BAR = "status-bar";
-    WORKSPACE = "workspace";
+    NOTICE_BAR = "notice-bar";
     WORKSPACE_PANEL = "workspace-panel";
     DIVIDER = "divider";
     BROWSER = "browser";
     BROWSER_PLACE = "browser-place";
     BROWSER_ROW = "browser-row";
     BROWSER_PLAY = "browser-play";
+    BROWSER_ICON = "browser-icon";
     BROWSER_TAG_DOT = "browser-tag-dot";
     BROWSER_PREVIEW_WAVE = "browser-preview-wave";
     SESSION = "session";
@@ -610,29 +746,52 @@ names! {
     SCENE_COLUMN = "scene-column";
     SCENE = "scene";
     SLOT = "slot";
+    MAPPING_OVERLAY = "mapping-overlay";
+    SLOT_RECORD = "slot-record";
+    SLOT_MARK = "slot-mark";
+    DROP_TARGET = "drop-target";
     ARRANGEMENT = "arrangement";
     TRACK_HEADER = "track-header";
     TRACK_NAME = "track-name";
     TRACK_NUMBER = "track-number";
     FOLD = "fold";
     ADD_TRACK = "add-track";
+    TRACK_LANE = "track-lane";
     CLIP = "clip";
     CLIP_NAME = "clip-name";
     CLIP_WAVEFORM = "clip-waveform";
     CLIP_NOTES = "clip-notes";
+    CLIP_ENVELOPE = "clip-envelope";
     CLIP_GAIN = "clip-gain";
     CLIP_FADE_HANDLE = "clip-fade-handle";
+    CLIP_FADE = "clip-fade";
+    TAKE_HEADER = "take-header";
     RULER = "ruler";
     RULER_NUMBER = "ruler-number";
     RULER_TICK = "ruler-tick";
+    TEMPO_MARK = "tempo-mark";
+    GRID_LINE = "grid-line";
+    TIME_SELECTION = "time-selection";
+    MARQUEE = "marquee";
+    START_MARKER = "start-marker";
     LOOP_REGION = "loop-region";
     LOOP_LINE = "loop-line";
+    AUTOMATION_HEADER = "automation-header";
+    AUTOMATION_LANE = "automation-lane";
+    AUTOMATION_LINE = "automation-line";
+    AUTOMATION_POINT = "automation-point";
+    AUTOMATION_PIN = "automation-pin";
+    MARKER = "marker";
+    ARRANGEMENT_TOOL = "arrangement-tool";
     PLAYHEAD = "playhead";
     MIXER = "mixer";
+    DEVICE_LIST = "device-list";
+    DEVICE_ROW = "device-row";
     DETAIL = "detail";
     CLIP_EDITOR = "clip-editor";
     EDITOR_TAB = "editor-tab";
     PIANO_ROLL = "piano-roll";
+    PIANO_ROLL_TOOLBAR = "piano-roll-toolbar";
     PIANO_GRID = "piano-grid";
     PIANO_ROW = "piano-row";
     PIANO_ROW_BLACK = "piano-row-black";
@@ -650,8 +809,10 @@ names! {
     PIANO_INSERT_MARK = "piano-insert-mark";
     PIANO_NOTE = "piano-note";
     VELOCITY = "velocity";
+    PIANO_SLICE = "piano-slice";
     PIANO_TOOL = "piano-tool";
     MIDI_TOOLS = "midi-tools";
+    TAB_ROW = "tab-row";
     CLIP_INFO = "clip-info";
     SAMPLE_MAP = "sample-map";
     SAMPLE_POINT = "sample-point";
@@ -672,6 +833,7 @@ names! {
     VALUE_FILL = "value-fill";
     VALUE_HANDLE = "value-handle";
     PAN = "pan";
+    PAN_CENTRE = "pan-centre";
     FADER = "fader";
     FADER_CAP = "fader-cap";
     FADER_RAIL = "fader-rail";
@@ -683,13 +845,16 @@ names! {
     ICON = "icon";
     METER = "meter";
     METER_LEVEL = "meter-level";
+    METER_CLIP = "meter-clip";
     METER_VERTICAL = "meter-vertical";
     METER_HORIZONTAL = "meter-horizontal";
     DROPDOWN = "dropdown";
     TEXT_INPUT = "text-input";
+    SCROLL_BAR = "scroll-bar";
     LABEL = "label";
     SEPARATOR = "separator";
     POPUP = "popup";
+    TOOLTIP = "tooltip";
     PROGRESS = "progress";
     PROGRESS_FILL = "progress-fill";
     SETTINGS = "settings";

@@ -3,9 +3,10 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-11
+last_verified: 2026-11-14
 covers:
   - crates/session/src/commands.rs
+  - crates/session/src/colours.rs
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
   - crates/ui/src/arrangement/automation_lanes.rs
@@ -55,6 +56,31 @@ notes are left out. Each pair has the track, the shared span (`start`, `end`, in
 (what `clip.move` and the other clip commands take, ADR 0025), `track`, `index` and name; at most 10 000 pairs, `truncated` saying when
 there were more. ARA's first version refuses such overlaps for the clips it edits
 ([ADR 0033](../decisions/0033-ara-hosting.md)); ordinary stacking is unaffected.
+
+## One drag at a time
+
+The view runs one drag at a time (#1158): a clip moved, a clip's edge, a fade or its curve, a clip's
+gain, a header's volume, pan or send, the main volume, a track header moved, a marker, the loop
+brace, time painted on the lanes or the ruler, a selection rectangle, a clip drawn with the Draw
+tool, on take lanes a comp, an area, pieces moved, a piece's edge and a crossfade or its bend,
+and on automation lanes a point (or a segment's two points), a point made by a press on the line,
+a curve bent, a box or a range painted, and lane headers moved. None starts while another is under
+way. A range painted on a lane and dragged off it onto the clips goes on as a time selection: the
+one drag hands over to the other.
+
+**Escape** lets go of the drag under way. What its release would have done is not done: the clip
+stays where it was, the edge, fade, marker, loop and track keep their places, no clip is drawn and
+no comp is made; an automation point, curve or lane header stays where it was, and a box or range
+selects nothing new. A point a press on an automation line made stays, where the press put it. What the drag already did as it went stays: time painted so far stays selected,
+and a single track's volume, pan or send, or the main volume, stays at the value heard last (a
+selection of tracks moves only on release, so it does not move). That Escape is the drag's alone: it does not count
+toward Escape twice (`docs/spec/ui-clip-editor.md` › Pulled to the top). The rest of the press
+does nothing: it starts no drag, a clip held is carried to no other view, and its release adds no
+automation point; the next press starts a new drag.
+
+A drag whose release the view never saw (the button let go while the view was not drawn, after Tab
+to the Launcher view, or with its handle scrolled out of sight) ends without doing anything once
+every button is up, whichever view is shown then.
 
 ## Tools
 
@@ -170,14 +196,19 @@ selected tracks, in their order, one undo step each (Tracks, #919). A time selec
 afterwards, in the lanes or on the ruler, or a click in a lane takes these keys back from the
 tracks: they then act on the painted time, until a header is clicked again (#1199). The
 header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
-and more saturated, with an outline in it. A track keeps the colour it shows when tracks are
-added, removed or moved: one without a colour of its own (from a project saved before tracks
-stored theirs) gets its place's palette colour stored then, in the same undo step. A new track
-gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track colour**:
-*By clip type* gives an audio track the default audio clip colour and every other track the
-default MIDI clip colour; *One colour* gives every new track the default MIDI clip colour. These
-two defaults are the theme's `clip.midiDefault` and `clip.audioDefault` for now; #1020 takes
-them out of the theme. A track never takes its colour from its place, so tracks made one after
+and more saturated, with an outline in it. Every track has a colour of its own: one saved without
+(a project from before tracks stored theirs) is given Suhina's fixed colour for its place when
+the project is opened (orange, yellow, light blue, violet in turn, the same in every theme),
+which is not an edit, so a copy of it, a group's colour and every view show the same. A track
+keeps its colour when tracks are added, removed or moved. A new
+track gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track
+colour**: *By clip type* gives an audio track Suhina's audio colour (orange `#FF9A3C`) and every
+other track its MIDI colour (light blue `#4FC3F7`); *One colour* gives every new track the MIDI
+colour. A new clip takes its track's colour, or with **New clip colour** › *By clip type* the
+MIDI or audio colour for its content. These colours are Suhina's own, never the theme's, and the
+CLI and MCP give them too. A track's colour is saved as `"color": "#RRGGBB"`, the final colour.
+*Not yet:* a palette slot for a colour picked from a palette (#1025), saved beside `color` as a
+key of its own, so that the files read today keep reading. A track never takes its colour from its place, so tracks made one after
 another can share a colour.
 
 ## Clip colours
@@ -684,7 +715,7 @@ Play button pass the setting **Play from** (Settings › Arrangement › Time an
 **Marker**, saved as `play_start = clip | marker` (the older `play_from` key, which every file got as `marker` while that was the default, is read and ignored). Whatever way clips are picked whole (a click on a name bar, a rectangle, Ctrl+A, a paste), the play start marker also moves to the first of them; while playing, playback goes on and the next start begins there. A click where a drag would move the clip (by default its name bar; with the lower half moving it, that half) picks it whole and moves the marker to its exact start, off the grid too, even when it was picked already. A click where a drag would paint time picks it but sets the play start on the grid line nearest the click (the line before it when the nearest is at or past the clip's end), never before the clip's start, and play starts there, not from the clip's start, until the clip is picked whole again.
 A loop the clip starts before still catches playback when it reaches the loop's end. With **Selected clip** and a clip
 selected in the Arrangement view, they run `transport.play {from: "clip"}` on that clip; with a
-time selection painted after the clip was picked, no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
+time selection painted after the clip was picked, the marker moved elsewhere after the pick (a click on a ruler, a marker or a lane: the clip stays picked, and play starts where the user put the marker until a clip is picked again), no clip selected, or while the Launcher view is shown (where the selection is not seen), they play
 from the marker.
 
 Playing from a clip **moves the marker** to the clip's start rather than leaving it where it was.

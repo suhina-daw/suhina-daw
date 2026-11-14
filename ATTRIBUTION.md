@@ -48,6 +48,7 @@ with Suhina's own `fft.c` in place of upstream's, which is not redistributed.
 | `third_party/asio-sys` | asio-sys 0.4.0 with initialized driver information | RustAudio cpal contributors | https://github.com/RustAudio/cpal/tree/e1612d5d98152f8dc2a62e1b51ef7cbf4f7f26b7/asio-sys | Apache-2.0 (`third_party/asio-sys/LICENSE`; see `VENDORED.md`) |
 | `third_party/cpal` | CPAL 0.18.2 with ASIO callback and clock corrections | RustAudio CPAL contributors | https://github.com/RustAudio/cpal/tree/v0.18.2 | Apache-2.0 (`third_party/cpal/LICENSE`; see `third_party/cpal/VENDORED.md`) |
 | `third_party/lame` | LAME 3.100, the MP3 encoder's sources | The LAME Project (Mike Cheng, Mark Taylor and the authors named in its README) | https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz | LGPL-2.0-or-later, used as LGPL-2.1-or-later (`third_party/lame/COPYING`; see `VENDORED.md`) |
+| `third_party/nam-rs` | nam-rs 0.4.0 with NeuralAmpModelerCore's fast tanh and sigmoid | Leigh (OpenSauce) | https://github.com/OpenSauce/nam-rs/tree/97fba1ea22dc19e68d408adf2abd72252af5e4d6 | MIT (`third_party/nam-rs/LICENSE`, `NOTICE`; see `VENDORED.md`) |
 
 ## Test data in the repository
 

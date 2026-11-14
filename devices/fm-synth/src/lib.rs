@@ -186,12 +186,23 @@ impl Default for FmSynth {
 
 impl FmSynth {
     pub fn new() -> Self {
+        Self::at(DEFAULT_SAMPLE_RATE)
+    }
+
+    /// The same, made for `sample_rate` (ADR 0004 › Amendment: a device is made at its rate);
+    /// fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(Self::at)
+    }
+
+    /// Everything for `sample_rate`, which has been checked.
+    fn at(sample_rate: f64) -> Self {
         wave::prepare_bank();
         let mut synth = Self {
             params: ParamBank::new(&PARAMS),
             patch: Patch::default(),
             controllers: Controllers::default(),
-            tables: Box::new(Tables::new(DEFAULT_SAMPLE_RATE)),
+            tables: Box::new(Tables::new(sample_rate)),
             slots: [Slot::default(); VOICES],
             next_seq: 0,
             last_slot: None,
@@ -199,7 +210,7 @@ impl FmSynth {
             sustain: false,
             buses: Buses::default(),
             block: [[0.0; 2]; N],
-            sample_rate: DEFAULT_SAMPLE_RATE,
+            sample_rate,
             voices: 16,
             spread: 0.0,
             pan_by_key: 0.0,
@@ -209,7 +220,7 @@ impl FmSynth {
             target_pan: [1.0; 2],
             tone: 1.0,
             tone_now: 1.0,
-            tone_filter: [OnePole::new(1.0 / (std::f64::consts::TAU * 20_000.0), DEFAULT_SAMPLE_RATE); 2],
+            tone_filter: [OnePole::new(1.0 / (std::f64::consts::TAU * 20_000.0), sample_rate); 2],
             filter_glide: FilterGlide::default(),
             ext: Box::default(),
             drawn: vec![DrawnWave::new(); 6],

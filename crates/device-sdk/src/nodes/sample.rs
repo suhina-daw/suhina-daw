@@ -26,8 +26,9 @@ pub(crate) const SAMPLER: NodeInfo = NodeInfo {
 pub(crate) fn prepare(kind: &NodeKind, rate: f64) -> Result<Option<Box<dyn NativeNode>>, DeviceSdkError> {
     match kind {
         NodeKind::Sampler => {
-            let mut kernel = Box::new(crate::sample_instrument::Sampler::new());
-            kernel.prepare(rate).map_err(|e| DeviceSdkError(e.to_string()))?;
+            let kernel = Box::new(
+                crate::sample_instrument::Sampler::with_rate(rate).map_err(|e| DeviceSdkError(e.to_string()))?,
+            );
             Ok(Some(Box::new(Adapter { kernel, connected: [false; 5] })))
         }
         _ => Ok(None),
@@ -115,8 +116,8 @@ pub(crate) fn prepare_bound(
     source: std::sync::Arc<crate::sample_resource::SampleAsset>,
     rate: f64,
 ) -> Result<Box<dyn NativeNode>, DeviceSdkError> {
-    let mut kernel = Box::new(crate::sample_instrument::Sampler::new());
-    kernel.prepare(rate).map_err(|e| DeviceSdkError(e.to_string()))?;
+    let mut kernel =
+        Box::new(crate::sample_instrument::Sampler::with_rate(rate).map_err(|e| DeviceSdkError(e.to_string()))?);
     kernel.load_shared_sample(source.sample_rate(), source.channels() as u16, source.shared_pcm());
     if let Some(bpm) = source.source_bpm()
         && let Some(index) = kernel.info().param_index("source_bpm")

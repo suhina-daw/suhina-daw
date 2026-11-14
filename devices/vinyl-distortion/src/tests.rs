@@ -50,7 +50,7 @@ fn level(signal: &[f32], side: usize, hz: f64) -> f64 {
     2.0 * re.hypot(im) / frames.len().max(1) as f64
 }
 
-suhina_device_api::conformance_test!(VinylDistortion::new());
+suhina_device_api::conformance_test!(VinylDistortion::with_rate);
 
 #[test]
 fn with_every_effect_off_the_input_comes_out_delayed_exactly() {

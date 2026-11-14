@@ -134,7 +134,6 @@ fn same_identity(a: &Element, b: &Element) -> bool {
         && a.states == b.states
         && a.attributes == b.attributes
         && a.object == b.object
-        && a.variables == b.variables
 }
 
 /// A fast multiplicative hash (as in rustc's `FxHasher`): the keys come from the host, not from
@@ -195,7 +194,6 @@ fn leaf_key(parent: usize, leaf: &Element) -> u64 {
     leaf.states.hash(&mut hasher);
     leaf.attributes.hash(&mut hasher);
     leaf.object.hash(&mut hasher);
-    leaf.variables.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -241,7 +239,7 @@ impl Resolver {
         let styles = cascade::compute(tree, viewport, &sheets)?;
         // Keep exact viewport dimensions in the cache key. Percentage sizes change
         // even without crossing a media breakpoint.
-        let rectangles = layout::compute(tree, &styles, [viewport.width, viewport.height])?;
+        let rectangles = layout::compute(tree, &styles, [viewport.width, viewport.height], &[])?;
         let result = Arc::new(Snapshot { styles, rectangles });
         match self.cached.as_ref().filter(|(_, size, _)| *size == viewport) {
             Some((previous, _, _)) => match changed(previous, tree, self.siblings) {

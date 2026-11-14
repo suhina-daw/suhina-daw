@@ -389,10 +389,7 @@ fn a_track_routes_into_a_group_and_back_to_main() {
 
 /// One lane with three one-beat-long clips at 0, 4 and 8 and a looping eight-beat clip at 12.
 fn lane_project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = lane_project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(lane_project_built())
 }
 
 fn lane_project_built() -> Project {
@@ -749,10 +746,7 @@ fn copied_clips_paste_together_and_keep_their_places() {
 
 /// The test project with its second Bass clip playing an audio content.
 fn audio_project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = audio_project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(audio_project_built())
 }
 
 fn audio_project_built() -> Project {
@@ -871,10 +865,7 @@ fn bad_fades_are_errors_that_change_nothing() {
 /// The audio project with launcher slots on Bass: scene 1 the audio loop, scene 2 the notes
 /// clip, scene 3 empty.
 fn slot_project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = slot_project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(slot_project_built())
 }
 
 fn slot_project_built() -> Project {
@@ -1135,10 +1126,7 @@ fn bad_loop_edits_are_errors_and_change_nothing() {
 /// Bass and Drums; Lead has none. Drums holds a clip in scene 1; the audio clip on the
 /// arrangement has fades, a loop, a gain, warping and an offset.
 fn launcher_project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = launcher_project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(launcher_project_built())
 }
 
 fn launcher_project_built() -> Project {
@@ -1280,10 +1268,7 @@ fn malformed_copies_and_pastes_into_slots_are_errors_that_record_nothing() {
 
 /// Bass and Lead play notes, Drums audio; each has two clip slots, Lead's first one full.
 fn midi_slot_project() -> Project {
-    // Ids on its lanes, clips and scenes, as a session gives them.
-    let mut project = midi_slot_project_built();
-    assert_eq!(project.assign_ids(), Ok(()));
-    project
+    suhina_test_support::with_ids(midi_slot_project_built())
 }
 
 fn midi_slot_project_built() -> Project {

@@ -23,6 +23,7 @@ mod meters;
 mod mixer_strip;
 mod open_recent;
 mod piano_roll;
+mod piano_roll_elements;
 mod piano_roll_fixes;
 mod piano_roll_gestures;
 mod piano_roll_ghosts;

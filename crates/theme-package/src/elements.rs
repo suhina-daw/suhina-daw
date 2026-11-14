@@ -86,6 +86,14 @@ pub const ATTRIBUTES: &[(&str, &str)] = &[
     ("recording", "record while it records, a clip being recorded"),
     ("armed", "a track armed for recording, and its arm button"),
     ("muted", "a muted track, a clip or note that is off, a device that is off"),
+    ("queued", "a clip or a track's stop button waiting for its launch"),
+    ("color", "a track's or clip's own colour, `#rrggbb` in lowercase: `attr(color type(<color>))`"),
+    ("kind", "what an element is among those of its name: an icon's symbol, a panel or line of the window"),
+    ("closed", "the detail area while it is closed, its place kept for its splitter"),
+    ("detail", "where the window has its detail area: below, full-width or beside"),
+    ("browser", "the side the window shows its browser on, left or right, while it shows"),
+    ("menu-bar", "a window with its own menu bar"),
+    ("size", "the piano roll's toolbar at its Toolbar size: normal, large or larger"),
 ];
 
 /// The toolbar's areas, by id (`#tempo`).
@@ -93,6 +101,7 @@ pub const TOOLBAR_MODULES: &[&str] = &[
     "browser",
     "tempo",
     "signature",
+    "keys",
     "grid",
     "count-in",
     "metronome",
@@ -102,6 +111,22 @@ pub const TOOLBAR_MODULES: &[&str] = &[
     "performance",
     "views",
     "agents",
+];
+
+/// The groups of the bars' items, by id (`#toolbar-start`).
+pub const GROUP_IDS: &[&str] =
+    &["toolbar-start", "toolbar-end", "app-bar-start", "app-bar-centre", "app-bar-end", "piano-roll-rows"];
+
+/// The items of the status bar, the application bar and the piano roll's toolbar, by id.
+pub const BAR_ITEM_IDS: &[&str] = &[
+    "status-message",
+    "status-counts",
+    "app-name",
+    "project-name",
+    "project-timing",
+    "piano-roll-workflow",
+    "piano-roll-ghosts",
+    "piano-roll-grid",
 ];
 
 /// Buttons a theme selects by id, as `#control-NAME`: the toolbar's and a track's.
@@ -114,6 +139,18 @@ const CONTROL_IDS: &[&str] = &[
     "solo",
     "cue",
     "arm",
+    "main-metronome",
+    "mixer-monitor-in",
+    "mixer-monitor-auto",
+    "mixer-monitor-off",
+    "back-to-arrangement",
+    "returns-toggle",
+    "take-delete",
+    "take-solo",
+    "take-promote",
+    "clip-envelope-edit",
+    "clip-envelope-free",
+    "focus-first",
     "track-on",
     "automation",
     "monitor",
@@ -140,6 +177,8 @@ const fn own(role: &'static str) -> Artwork {
 }
 
 const NO: &[&str] = &[];
+/// What a surface floating over the window reads: whether it blurs what is behind it.
+const FLOATING: &[&str] = &["backdrop-filter"];
 const NO_ART: &[Artwork] = &[];
 
 const fn element(name: &'static str, kind: Kind, description: &'static str) -> Element {
@@ -174,58 +213,102 @@ use Kind::{Container, Control, Drawn, Part, Region};
 /// Every element, in the order the reference lists them.
 pub const ELEMENTS: &[Element] = &[
     // The window and its bars.
-    element("window", Region, "The whole window, under everything else.").settings(&[
-        "artwork-fps",
-        "liquid",
-        "panel-gradient",
-        "track-gradient",
-        "clip-gradient",
-        "backdrop-image",
-        "backdrop-opacity",
-        "backdrop-blur",
-    ]),
-    element("application-bar", Region, "The bar at the very top, with the application's menus."),
+    element("window", Region, "The whole window, under everything else: one grid of the bars and panels.")
+        .attributes(&["detail", "browser", "menu-bar"])
+        .settings(&[
+            "artwork-fps",
+            "liquid",
+            "panel-gradient",
+            "track-gradient",
+            "clip-gradient",
+            "backdrop-image",
+            "backdrop-opacity",
+            "backdrop-blur",
+        ]),
+    element("application-bar", Region, "The bar at the very top, with the application's menus.")
+        .parts(&["group", "bar-item"]),
     element("menu-bar", Region, "The menu bar."),
-    element("menu", Region, "An open menu of the menu bar."),
-    element("project-tabs", Region, "The bar of open projects' tabs."),
-    element("toolbar", Region, "The toolbar under the bars, with the transport.").parts(&["toolbar-module"]),
+    element("menu", Region, "An open menu of the menu bar.").settings(FLOATING),
+    element("project-tabs", Region, "The bar of open projects' tabs.").parts(&["project-tab"]),
+    element("project-tab", Control, "One open project's tab, its close button inside it.").attributes(&["selected"]),
+    element("toolbar", Region, "The toolbar under the bars, with the transport.").parts(&["group", "toolbar-module"]),
     element("toolbar-module", Part, "One area of the toolbar, by its id.")
         .ids(Ids::Listed { prefix: "", names: TOOLBAR_MODULES }),
-    element("status-bar", Region, "The bar at the bottom of the window."),
-    element("workspace", Region, "The layout under the bars, holding the panels.")
-        .ids(Ids::Listed { prefix: "", names: &["workspace"] }),
-    element("workspace-panel", Region, "A panel of the workspace: the browser, the main view, the detail area.")
-        .ids(Ids::Listed { prefix: "", names: &["panel-browser", "panel-main", "panel-detail"] }),
+    element("group", Container, "A group of a bar's items, by id: the toolbar's start and end, the application bar's parts, the piano roll's Rows.")
+        .ids(Ids::Listed { prefix: "", names: GROUP_IDS })
+        .attributes(&["kind"]),
+    element("flexible-space", Drawn, "A gap in a bar that takes the room left over."),
+    element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id.")
+        .ids(Ids::Listed { prefix: "", names: BAR_ITEM_IDS })
+        .attributes(&["kind"]),
+    element("status-bar", Region, "The bar at the bottom of the window.").parts(&["bar-item"]),
+    element("notice-bar", Region, "The strip over the views that asks about an opened project or names missing files."),
+    element("workspace-panel", Region, "A panel of the window: the browser, the main view, the detail area.")
+        .ids(Ids::Listed { prefix: "", names: &["panel-browser", "panel-main", "panel-detail"] })
+        .attributes(&["kind", "closed"]),
     element("divider", Control, "A strip's divider and the workspace's splitters.")
-        .ids(Ids::Listed { prefix: "", names: &["mixer-divider", "detail-splitter", "browser-splitter"] }),
+        .ids(Ids::Listed {
+            prefix: "",
+            names: &["mixer-divider", "mixer-splitter", "detail-splitter", "browser-splitter"],
+        }),
     // Views.
     element("browser", Region, "The browser panel.").parts(&[
         "browser-place",
         "browser-row",
         "browser-play",
+        "browser-icon",
         "browser-tag-dot",
         "browser-preview-wave",
     ]),
     element("browser-place", Control, "A place or kind on the browser's left.").attributes(&["checked", "selected"]),
     element("browser-row", Control, "A row of the browser's list.").attributes(&["selected"]),
     element("browser-play", Control, "The button that previews a browser row."),
+    element(
+        "browser-icon",
+        Drawn,
+        "A browser row's icon, coloured by its `kind` attribute (`midi`, `sample`, `instrument`, `effect`).",
+    )
+    .attributes(&["kind"]),
     element("browser-tag-dot", Drawn, "The coloured dot of a tag in the browser."),
     element("browser-preview-wave", Drawn, "The waveform of the sound being previewed."),
     element("session", Region, "The Launcher view: tracks as columns of clip slots.")
         .parts(&["track-column", "scene-column"])
         .settings(&["track-width", "return-width", "scene-width", "slot-height", "header-height"]),
     element("track-column", Container, "A track's column in the Launcher view.")
-        .attributes(&["selected", "muted"])
+        .attributes(&["color", "selected", "muted"])
         .settings(&["track-artwork"]),
     element("scene-column", Part, "The column of scenes at the Launcher view's side."),
-    element("scene", Control, "A scene's launch button."),
-    element("slot", Control, "A clip slot in the Launcher view.").settings(&["track-artwork"]),
+    element("scene", Control, "A scene's launch button; the Stop all button under the scenes is `scene[kind=\"stop-all\"]`.")
+        .parts(&["label"])
+        .attributes(&["playing", "kind"]),
+    element("slot", Control, "A clip slot in the Launcher view; a track's stop button under the last scene is `slot[kind=\"stop\"]`, `[queued]` while its stop waits.")
+        .parts(&["clip", "slot-mark", "slot-record"])
+        .attributes(&["selected", "queued", "kind"])
+        .settings(&["track-artwork"]),
+    element("mapping-overlay", Drawn, "The tint over a control while keys are mapped to the Launcher, `[selected]` on the one picked; its `color` is the keys' text.")
+        .attributes(&["selected"]),
+    element("slot-record", Control, "The record button in an armed track's empty slot, `[recording]` while that slot records: its `color` for the dot and the word, its `background-color` over the slot while it records.")
+        .attributes(&["recording"]),
+    element("slot-mark", Drawn, "The mark in an empty slot that holds a stop button."),
+    element("drop-target", Drawn, "Where a drop lands: the outline of the area (`kind=\"area\"`) or the line a moved track goes to (`kind=\"insert\"`).")
+        .attributes(&["kind"]),
     element("arrangement", Region, "The Arrangement view: tracks as rows along a timeline.")
-        .parts(&["track-header", "ruler", "loop-region", "playhead", "clip", "add-track"])
+        .parts(&[
+            "track-header",
+            "track-lane",
+            "ruler",
+            "loop-region",
+            "playhead",
+            "add-track",
+            "grid-line",
+            "time-selection",
+            "marquee",
+            "start-marker",
+        ])
         .settings(&["track-headers", "track-height", "header-min-width", "header-tint", "compact-below"]),
-    element("track-header", Container, "A track's header, in the Arrangement view and over a Launcher column.")
+    element("track-header", Container, "A track's header, in the Arrangement view and over a Launcher column; Main's over the Launcher's scenes is `track-header[kind=\"main\"]`.")
         .parts(&["track-name", "track-number", "fold"])
-        .attributes(&["selected", "armed", "muted"])
+        .attributes(&["color", "selected", "armed", "muted", "kind"])
         .artwork(&[
             default_svg!("track.midi", "icon[kind=\"midi\"]"),
             default_svg!("track.audio", "icon[kind=\"audio\"]"),
@@ -246,25 +329,63 @@ pub const ELEMENTS: &[Element] = &[
     element("add-track", Control, "The buttons that add a track, after the last one.")
         .ids(Ids::Prefixed("add-"))
         .artwork(&[own("add-track")]),
-    element("clip", Control, "An arrangement clip.")
-        .parts(&["clip-name", "clip-waveform", "clip-notes", "clip-gain", "clip-fade-handle"])
-        .attributes(&["selected", "muted", "playing", "recording"])
+    element(
+        "track-lane",
+        Container,
+        "A track's row of clips in the Arrangement view, its clips inside it, `[checked]` while the piano roll edits it alone. Its background is painted over the grid lines, so give it a translucent one.",
+    )
+    .parts(&["clip"])
+    .attributes(&["color", "selected", "muted", "checked"]),
+    element("clip", Control, "A clip, in the Arrangement or in a Launcher slot.")
+        .parts(&["clip-name", "clip-waveform", "clip-notes", "clip-gain", "clip-fade-handle", "clip-fade"])
+        .attributes(&["color", "selected", "muted", "playing", "queued", "recording"])
         .settings(&["track-artwork"]),
     element("clip-name", Part, "An arrangement clip's name bar."),
     element("clip-waveform", Part, "An arrangement clip's waveform."),
     element("clip-notes", Part, "An arrangement clip's notes."),
+    element("clip-envelope", Drawn, "An audio clip's gain envelope while it is edited: its points and line, in its `color`."),
     element("clip-gain", Control, "An arrangement clip's gain field.").settings(VALUE_SETTINGS),
-    element("clip-fade-handle", Control, "An arrangement clip's fade handles.").artwork(&[own("clip.fade-handle")]),
+    element("clip-fade-handle", Control, "An arrangement clip's fade handles; the handle that bends a fade's curve is `clip-fade-handle[kind=\"curve\"]`.")
+        .attributes(&["kind"])
+        .artwork(&[own("clip.fade-handle")]),
+    element("clip-fade", Drawn, "A fade's line over an audio clip; a comp's crossfade between two takes is `clip-fade[kind=\"crossfade\"]`.")
+        .attributes(&["kind"]),
+    element("take-header", Container, "A take lane's header, with the take's `color`, `[selected]` while it is picked.")
+        .attributes(&["color", "selected"]),
     element("ruler", Drawn, "The Arrangement view's ruler.")
         .parts(&["ruler-number", "ruler-tick"])
         .artwork(&[own("ruler")]),
     element("ruler-number", Drawn, "A bar number on the ruler."),
     element("ruler-tick", Drawn, "A line on the ruler."),
+    element("tempo-mark", Drawn, "A tempo or time-signature change on the ruler: its line and what changes, in its `color`."),
+    element("grid-line", Drawn, "A line of the Arrangement's grid, on a bar (`kind=\"bar\"`) or between bars (`kind=\"beat\"`), in its `color`.")
+        .attributes(&["kind"]),
+    element("time-selection", Drawn, "Selected time: its `background-color` over the lanes and its `color` at its edges; along the ruler (`kind=\"ruler\"`); the clip the Draw tool's drag makes (`kind=\"draw\"`); the piano roll's selection lit on its clip (`kind=\"editor\"`); what is picked or painted on take lanes (`kind=\"take\"`) and on automation lanes (`kind=\"automation\"`).")
+        .attributes(&["kind"]),
+    element("marquee", Drawn, "The rectangle a drag draws to pick whole clips."),
+    element("start-marker", Drawn, "The play start marker under the ruler, and its line in the lane clicked (`kind=\"insert\"`); a clip's start and end markers in the piano roll (`kind=\"clip\"`).")
+        .attributes(&["kind"]),
     element("loop-region", Control, "The loop bar.").attributes(&["checked"]).artwork(&[own("loop-region")]),
     element("loop-line", Drawn, "The lines at the loop's ends."),
-    element("playhead", Drawn, "The play position line."),
+    element("automation-header", Container, "An automation lane's header, `[selected]` while it is picked; a group of lanes' is `automation-header[kind=\"group\"]`.")
+        .attributes(&["selected", "kind"]),
+    element("automation-lane", Drawn, "The time of a group of automation lanes, `automation-lane[kind=\"group\"]`: its `background-color`.")
+        .attributes(&["kind"]),
+    element("automation-line", Drawn, "An automation lane's envelope, the track's colour by default; `[muted]` while it is off.")
+        .attributes(&["muted"]),
+    element("automation-point", Drawn, "A point of an automation envelope, `[selected]` while it is picked.").attributes(&["selected"]),
+    element("automation-pin", Drawn, "The pin of an automation lane pinned below its track's top lane."),
+    element("marker", Control, "A marker's tag in the row under the loop: its background, its line's `border-color` and its name's `color`; `[checked]` while it is dragged.")
+        .attributes(&["checked"]),
+    element("arrangement-tool", Control, "A tool button of the Arrangement's own toolbar, `[checked]` on the chosen tool.")
+        .attributes(&["checked"]),
+    element("playhead", Drawn, "The play position line; where a jump waits for its beat is `playhead[kind=\"pending\"]`.")
+        .attributes(&["kind"]),
     element("mixer", Region, "The mixer, and a mixer strip in any view.")
-        .parts(&["fader", "pan", "send", "meter"])
+        .parts(&["fader", "pan", "send", "meter", "device-list"])
+        .attributes(&["color", "selected", "muted"]),
+    element("device-list", Container, "A mixer strip's list of its track's devices.").parts(&["device-row", "label"]),
+    element("device-row", Control, "A device in a mixer strip's list: `[selected]` while it is picked, `[muted]` while it is off.")
         .attributes(&["selected", "muted"]),
     element("detail", Region, "The detail area under the main view."),
     element("clip-editor", Region, "The clip editor in the detail area.").parts(&["editor-tab"]),
@@ -275,7 +396,7 @@ pub const ELEMENTS: &[Element] = &[
     )
     .ids(Ids::Prefixed("tab-"))
     .attributes(&["checked"]),
-    element("piano-roll", Region, "The piano roll.").parts(&[
+    element("piano-roll", Region, "The piano roll, with the edited clip's `color`.").attributes(&["color"]).parts(&[
         "piano-grid",
         "piano-key",
         "piano-note",
@@ -284,8 +405,12 @@ pub const ELEMENTS: &[Element] = &[
         "midi-tools",
         "clip-info",
     ]),
+    element("piano-roll-toolbar", Region, "The toolbar along the top of the piano roll.")
+        .parts(&["piano-tool", "group", "bar-item", "separator", "flexible-space"])
+        .attributes(&["size"]),
     element("piano-grid", Drawn, "The piano roll's grid."),
-    element("piano-row", Drawn, "A row of the piano roll."),
+    element("piano-row", Drawn, "A row of the piano roll; the row under the pointer is `piano-row[kind=\"hover\"]`.")
+        .attributes(&["kind"]),
     element("piano-row-black", Drawn, "A row of a black key."),
     element("piano-key", Drawn, "A white key.").attributes(&["selected", "playing"]),
     element("piano-key-black", Drawn, "A black key.").attributes(&["selected", "playing"]),
@@ -299,8 +424,12 @@ pub const ELEMENTS: &[Element] = &[
     element("piano-clip-strip", Drawn, "The strip over the ruler showing several picked clips."),
     element("piano-time-selection", Drawn, "What is selected in time."),
     element("piano-insert-mark", Drawn, "The mark a click leaves where a paste goes."),
-    element("piano-note", Drawn, "A note.").attributes(&["selected", "muted"]),
-    element("velocity", Drawn, "A note's velocity stem."),
+    element("piano-note", Drawn, "A note; a note a draw or paint drag is making is `piano-note[kind=\"draft\"]`.")
+        .attributes(&["selected", "muted", "kind"]),
+    element("velocity", Drawn, "A note's velocity stem, `[selected]` and `[muted]` as its note; the line a velocity drag draws is `velocity[kind=\"line\"]`.")
+        .attributes(&["selected", "muted", "kind"]),
+    element("piano-slice", Drawn, "The line a slice drag cuts along, `kind=\"cut\"` or `kind=\"delete\"` for the right button's; its `background-color` over what a delete takes away.")
+        .attributes(&["kind"]),
     element("piano-tool", Control, "A tool button of the piano roll.")
         .ids(Ids::Prefixed("piano-"))
         .attributes(&["checked"])
@@ -320,7 +449,10 @@ pub const ELEMENTS: &[Element] = &[
             own("piano.audition"),
             own("piano.hide"),
         ]),
-    element("midi-tools", Container, "The MIDI tools part of a MIDI clip's panel.").settings(&["gap"]),
+    element("midi-tools", Container, "The MIDI tools part of a MIDI clip's panel.")
+        .parts(&["tab-row"])
+        .settings(&["gap"]),
+    element("tab-row", Container, "A row of tabs: the MIDI tools part's Notes and Transform.").parts(&["editor-tab"]),
     element("clip-info", Container, "The clip's column beside the piano roll."),
     element("sample-map", Region, "The sampler's sample map.").parts(&["sample-point"]),
     element("sample-point", Drawn, "A sound on the sample map, coloured by its `kind` attribute (`kick`, `snare`)."),
@@ -339,7 +471,7 @@ pub const ELEMENTS: &[Element] = &[
     element("waveform", Drawn, "A waveform a panel shows."),
     element("slider", Control, "A parameter's slider; the MIDI tools' quantise amount, as a knob.")
         .parts(&["slider-rail", "slider-fill", "slider-handle"])
-        .ids(Ids::Listed { prefix: "", names: &["quantise-amount"] })
+        .ids(Ids::Listed { prefix: "", names: &["quantise-amount", "waveform-zoom"] })
         .settings(VALUE_SETTINGS)
         .artwork(&[own("slider.rail"), own("slider.fill"), own("slider.handle")]),
     element("slider-rail", Part, "A slider's rail."),
@@ -368,7 +500,8 @@ pub const ELEMENTS: &[Element] = &[
         .artwork(&[own("volume.track"), own("volume.fill"), own("volume.handle")]),
     element("value-fill", Part, "The lit part of a level bar."),
     element("value-handle", Part, "The handle where a level bar's fill ends."),
-    element("pan", Control, "A pan control.")
+    element("pan", Control, "A pan control; drawn as a field, its centre's ticks are `pan-centre` and the bar from the centre its `value-fill`.")
+        .parts(&["pan-centre", "value-fill"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
         .settings(VALUE_SETTINGS)
         .artwork(&[
@@ -378,6 +511,7 @@ pub const ELEMENTS: &[Element] = &[
             own("pan.knob.body"),
             own("pan.knob.pointer"),
         ]),
+    element("pan-centre", Drawn, "The ticks at a pan field's centre."),
     element("fader", Control, "A mixer strip's fader.")
         .parts(&["fader-cap", "fader-rail", "fader-scale"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
@@ -398,28 +532,36 @@ pub const ELEMENTS: &[Element] = &[
     element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),
     element("icon", Part, "The symbol on a button or a track header, by its `kind` attribute (`play`, `midi`)."),
     element("meter", Control, "A level meter.")
-        .parts(&["meter-level"])
+        .parts(&["meter-level", "meter-clip"])
         .settings(&["meter-style", "meter-segments", "meter-intensity"])
         .artwork(&[default_svg!("meter", "meter")]),
-    element("meter-level", Part, "A meter's lit part."),
+    element("meter-level", Part, "A meter's lit part; its `color` is the level's, `meter-level[kind=\"hot\"]` near the top.")
+        .attributes(&["kind"]),
+    element("meter-clip", Drawn, "A meter's clip light; its `background-color` while it is lit."),
     element("meter-vertical", Part, "A meter standing up, around its level."),
     element("meter-horizontal", Part, "A meter lying down, around its level."),
     element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists.")
         .artwork(&[default_svg!("folder", "icon[kind=\"folder\"]")]),
     element("text-input", Control, "A text field."),
-    element("label", Drawn, "A label."),
-    element("separator", Drawn, "A rule between parts."),
-    element("popup", Region, "A control's popup.").ids(Ids::Listed { prefix: "", names: &["metronome-level"] }),
+    element("scroll-bar", Drawn, "The mark of how far a row is scrolled, such as a mixer strip's sends."),
+    element("label", Drawn, "A label; a scene's number is `label[kind=\"scene-number\"]`.").attributes(&["kind"]),
+    element("separator", Drawn, "A rule between parts, by its `kind`: the window's lines over and under the views; a divider between a bar's items (`bar`); the Launcher's lines between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's and the piano roll's under their rows (`row`), between their bands (`band`) and under each lane (`lane`).")
+        .ids(Ids::Listed { prefix: "", names: &["views-top", "views-bottom"] })
+        .attributes(&["kind"]),
+    element("popup", Region, "A menu, right-click menu, dropdown list or control's popup.")
+        .ids(Ids::Listed { prefix: "", names: &["metronome-level"] })
+        .settings(FLOATING),
+    element("tooltip", Region, "A tooltip.").settings(FLOATING),
     element("progress", Drawn, "A progress bar.").parts(&["progress-fill"]),
     element("progress-fill", Part, "A progress bar's done part."),
     // Pages and dialogs.
     element("settings", Region, "The Settings page.").parts(&["settings-nav"]),
     element("settings-nav", Control, "An entry of the Settings page's list."),
-    element("dialog", Region, "A dialog."),
+    element("dialog", Region, "A dialog.").settings(FLOATING),
     element("start-page", Region, "The page shown with no project open."),
     element("plugin-manager", Region, "The Plug-in manager."),
     element("export", Region, "The Export audio dialog."),
-    element("theme-swatch", Drawn, "A theme's swatch in the theme picker, with a `color` attribute."),
+    element("theme-swatch", Drawn, "A theme's swatch in the theme picker, with a `color` attribute.").attributes(&["color"]),
 ];
 
 /// The element named `name`.
@@ -622,7 +764,6 @@ mod tests {
         assert_eq!(role_of_selector("icon[kind=stop]:hover"), "stop.hover");
         assert_eq!(selector_of_role("piano.draw:on"), "piano.draw:on");
         assert_eq!(selector_of_role("piano.draw.on"), "piano.draw:on");
-        assert_eq!(selector_of_role("track.body.color-ff9a3c"), "track.body.color-ff9a3c");
     }
 
     #[test]
@@ -649,5 +790,17 @@ mod tests {
         }
         assert_eq!(role_element("knob.body").map(|e| e.name), Some("knob"));
         assert_eq!(role_element("piano.draw").map(|e| e.name), Some("piano-tool"));
+    }
+
+    /// The reference lists `backdrop-filter` for the elements the style engine reads it on.
+    #[test]
+    fn the_floating_elements_are_those_backdrop_filter_reads() {
+        let listed: Vec<&str> =
+            ELEMENTS.iter().filter(|e| e.settings.contains(&"backdrop-filter")).map(|e| e.name).collect();
+        let mut read = suhina_style::property::BACKDROP_FILTERED.to_vec();
+        let mut listed = listed;
+        read.sort_unstable();
+        listed.sort_unstable();
+        assert_eq!(listed, read);
     }
 }

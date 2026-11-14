@@ -14,14 +14,16 @@ pub(super) struct ToolbarCx<'a> {
     pub(super) keymap: &'a crate::settings::keymap::Keymap,
     pub(super) copied: Option<usize>,
     pub(super) scale: f32,
+    /// The Toolbar size setting `scale` comes from: `piano-roll-toolbar[size]`.
+    pub(super) size: crate::settings::ToolbarSize,
 }
 
 /// The toolbar along the top of the piano roll (› Layout): the tools, the note clipboard, quantise,
 /// the MIDI tools and the Rows group (Fold, Scale, Highlight) at the left; the workflow and ghost
-/// menus, the grid value and the × at the right. With less room it gives way in steps, never hiding a part
-/// outright: first the Grid caption, then the Rows words (their icons stay), then the clipboard
-/// folds into an Edit menu, then the ghost menu loses its word. A button that runs something adds
-/// to `actions`.
+/// menus, the grid value and the × at the right. Its items lie in one CSS row (#1372). With less
+/// room it gives way in steps, never hiding a part outright: first the Grid caption, then the Rows
+/// words (their icons stay), then the clipboard folds into an Edit menu, then the ghost menu loses
+/// its word. A button that runs something adds to `actions`.
 pub(super) fn toolbar(
     ui: &mut Ui,
     rect: Rect,
@@ -29,19 +31,22 @@ pub(super) fn toolbar(
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
 ) {
-    let ToolbarCx { clip, keymap, copied, scale } = cx;
+    use crate::kit::native_css::row::{self, Bar};
+    let ToolbarCx { clip, keymap, copied, scale, .. } = cx;
     if rect.height() < 4.0 {
         return;
     }
+    let size_word = cx.size.word();
+    let bar_el = crate::kit::element::PIANO_ROLL_TOOLBAR.attribute("size", size_word).enter();
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    let fill = crate::kit::style_class::surface_or(theme::panel_background());
+    bar_el.paint_with(&painter, rect, crate::kit::element::Native { radius: 0.0, fill });
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border()));
-    let row = rect.shrink2(Vec2::new(4.0, 3.0));
+    let [top, _, bottom, _] = bar_el.insets();
+    let inner = (rect.height() - top - bottom).max(1.0);
     // The icon box, the gap and the strokes scale with Toolbar size; the box never outgrows the
     // band, so a small detail area shows the icons and not a clipped toolbar.
-    let icon = (TOOL_ICON * scale).min(row.height());
-    let gap = TOOL_GAP * scale;
-    let side = row.height().min(icon);
+    let side = (TOOL_ICON * scale).min(inner);
     // `piano-tool { width; height }` sizes the buttons, so stretched artwork has room. Unstyled,
     // a button is wider than its icon by a little room at each side, so the icons do not crowd.
     let size = {
@@ -49,119 +54,202 @@ pub(super) fn toolbar(
         let own = el.style();
         Vec2::new(
             own.as_ref().and_then(|c| c.width).map_or(side + BUTTON_ROOM * scale, |w| w.clamp(8.0, 96.0)),
-            own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, row.height().max(8.0))),
+            own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, inner.max(8.0))),
         )
     };
     // The menus as wide as their words, so they sit close by.
-    let workflow_named = menu_width(ui, (None, keymap.preset().name()));
-    let ghosts_named = menu_width(ui, (None, "Ghosts"));
-    let arrow = menu_width(ui, (None, ""));
-    let grid_value = clip.grid_menu.label();
-    let grids = (menu_width(ui, (Some("Grid"), &grid_value)), menu_width(ui, (None, &grid_value)));
-    let widths = MenuWidths { named: workflow_named + ghosts_named, arrows: 2.0 * arrow, grids };
-    let step = layout_step(ui, row, (size, gap, side), widths);
-    let paint = ButtonPaint { ui, painter: &painter, keymap, scale };
-    let x = std::cell::Cell::new(row.left() + TOOLBAR_INSET);
-    let place = || {
-        let area = Rect::from_min_size(Pos2::new(x.get(), row.top() + (row.height() - size.y) / 2.0), size);
-        x.set(area.right() + gap);
-        area
+    let widths = Widths {
+        size,
+        side,
+        inner,
+        workflow: (menu_width(ui, (None, keymap.preset().name())), menu_width(ui, (None, ""))),
+        ghosts: (menu_width(ui, (None, "Ghosts")), menu_width(ui, (None, ""))),
+        grid: {
+            let value = clip.grid_menu.label();
+            (menu_width(ui, (Some("Grid"), &value)), menu_width(ui, (None, &value)))
+        },
+        rows_height: (inner - ROWS_GROUP_INSETS).max(1.0),
+        rows: ROWS.map(|(_, word)| (row_toggle_width(ui, side, Some(word)), row_toggle_width(ui, side, None))),
     };
-    let divider = || {
-        x.set(x.get() + 2.0);
-        if x.get() < row.right() {
-            painter.vline(x.get(), row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
+    // The buttons lit this frame are `[checked]` in the layout as they are when painted (the tools and the two columns), so a
+    // rule on them (`#piano-select[checked] { display: none }`) takes them out of both.
+    let lit = {
+        let (tool, quantise, tools) = (state.tool, state.quantize_open(), state.tools_open);
+        move |button: IconButton| match button {
+            IconButton::Quantise => quantise,
+            IconButton::MidiTools => tools,
+            button => TOOLS.iter().any(|(t, b)| *b == button && *t == tool),
         }
-        x.set(x.get() + 5.0);
     };
-    for (tool, button) in [
-        (Tool::Select, IconButton::Select),
-        (Tool::Draw, IconButton::Draw),
-        (Tool::Paint, IconButton::Paint),
-        (Tool::Erase, IconButton::Erase),
-        (Tool::Slice, IconButton::Slice),
-        (Tool::Mute, IconButton::Mute),
-    ] {
-        if paint.place(place(), button, tool == state.tool, true) {
-            state.tool = tool;
-        }
-    }
-    divider();
-    // The note clipboard: four buttons, or one Edit menu when room is short.
+    let candidates: Vec<_> = Step::ALL.iter().map(|step| items(*step, &widths, &lit)).collect();
+    let bar = Bar::of(&bar_el, rect.size());
+    let Some((chosen, laid)) = row::fitting(&bar, &candidates) else { return };
+    let (Some(step), Some(items)) = (Step::ALL.get(chosen).copied(), candidates.get(chosen)) else { return };
     let selected = !state.acting().is_empty();
-    let clipboard = [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate];
-    if step >= Step::Edit {
-        let area = Rect::from_min_size(
-            Pos2::new(x.get(), row.top() + (row.height() - size.y) / 2.0),
-            size + Vec2::new(10.0, 0.0),
-        );
-        x.set(area.right() + gap);
-        if let Some(button) = edit_menu(&paint, area, selected) {
-            actions.extend(state.clipboard_action(button, clip, copied));
-        }
-    } else {
-        for button in clipboard {
-            let active = matches!(button, IconButton::Paste) || selected;
-            if paint.place(place(), button, false, active) {
-                actions.extend(state.clipboard_action(button, clip, copied));
+    let mut rows = [None; 3];
+    let mut rows_group = None;
+    // What the controls take as input stops at the toolbar's edge, as what they paint does.
+    let outer_clip = ui.clip_rect();
+    ui.set_clip_rect(outer_clip.intersect(rect));
+    for (index, item) in items.iter().enumerate() {
+        let Some(area) = laid.at(index, rect.min) else { continue };
+        let id = item.id.as_deref().unwrap_or("");
+        match item.name {
+            "separator" => {
+                let line = crate::kit::element::SEPARATOR.attribute("kind", "bar").enter();
+                let ink = line.color_or(theme::border_strong());
+                painter.vline(area.center().x, area.top() + 2.0..=area.bottom() - 2.0, theme::hairline(ink));
             }
+            "group" => rows_group = Some(area),
+            _ if item.parent.is_some() => {
+                let slot = ROWS.iter().position(|(button, _)| button.id() == id).and_then(|at| rows.get_mut(at));
+                if let Some(slot) = slot {
+                    *slot = Some(area);
+                }
+            }
+            "bar-item" => {
+                // The item's box is painted, and its menu goes in the content box, inside its
+                // border and padding.
+                let item = crate::kit::element::BAR_ITEM.id(id).attribute("kind", id).enter();
+                let area = item.paint(&painter, area).content;
+                match id {
+                    "piano-roll-workflow" => workflow_menu(ui, area, keymap, state, step < Step::Arrows),
+                    "piano-roll-ghosts" => {
+                        ghost_view::menu(ui, area, &clip.ghosts, &mut state.ghost_source, step < Step::Arrows);
+                    }
+                    _ => {
+                        if let Some(picked) = grid_menu(ui, area, clip, keymap, step == Step::Full) {
+                            state.grid_picked = Some(picked);
+                        }
+                    }
+                }
+            }
+            _ => match id {
+                "piano-edit" => {
+                    if let Some(button) =
+                        edit_menu(&ButtonPaint { ui, painter: &painter, keymap, scale }, area, selected)
+                    {
+                        actions.extend(state.clipboard_action(button, clip, copied));
+                    }
+                }
+                _ => {
+                    let Some(button) = IconButton::ALL.iter().copied().find(|button| button.id() == id) else {
+                        continue;
+                    };
+                    if let Some(tool) = TOOLS.iter().find(|(_, b)| *b == button).map(|(tool, _)| *tool) {
+                        if place(ui, &painter, (keymap, scale), area, button, (tool == state.tool, true)) {
+                            state.tool = tool;
+                        }
+                        continue;
+                    }
+                    match button {
+                        IconButton::Quantise => {
+                            if place(ui, &painter, (keymap, scale), area, button, (state.quantize_open(), true)) {
+                                let open = !state.quantize_open();
+                                state.set_quantize_open(open);
+                            }
+                        }
+                        IconButton::MidiTools => {
+                            if place(ui, &painter, (keymap, scale), area, button, (state.tools_open, true)) {
+                                state.tools_open = !state.tools_open;
+                            }
+                        }
+                        IconButton::Hide => {
+                            if place(ui, &painter, (keymap, scale), area, button, (false, true)) {
+                                state.hide_requested = true;
+                            }
+                        }
+                        _ => {
+                            let active = matches!(button, IconButton::Paste) || selected;
+                            if place(ui, &painter, (keymap, scale), area, button, (false, active)) {
+                                actions.extend(state.clipboard_action(button, clip, copied));
+                            }
+                        }
+                    }
+                }
+            },
         }
     }
-    divider();
-    // Quantise (which shows Quantise in the clip panel's tools) and the tools part's own toggle.
-    if paint.place(place(), IconButton::Quantise, state.quantize_open(), true) {
-        let open = !state.quantize_open();
-        state.set_quantize_open(open);
+    if let Some(group) = rows_group {
+        rows_toggles(ui, &painter, group, &rows, step < Step::Icons, cx, state, actions);
     }
-    if paint.place(place(), IconButton::MidiTools, state.tools_open, true) {
-        state.tools_open = !state.tools_open;
-    }
-    // The Rows group after them, unless the row has room for nothing but the tools.
-    if step < Step::Squeezed {
-        divider();
-        let end = rows_group(ui, &painter, x.get(), row, side, step < Step::Icons, cx, state, actions);
-        x.set(end + gap);
-    }
-    let left_end = x.get();
+    ui.set_clip_rect(outer_clip);
+}
 
-    // From the right end: the ×, the grid menu (its value after a dim "Grid"), a divider, and the
-    // ghost and workflow menus.
-    let hide =
-        Rect::from_min_size(Pos2::new(row.right() - side, row.top() + (row.height() - side) / 2.0), Vec2::splat(side));
-    if hide.left() >= left_end && paint.place(hide, IconButton::Hide, false, true) {
-        state.hide_requested = true;
+/// One icon button in `area` ([`ButtonPaint::place`]).
+fn place(
+    ui: &Ui,
+    painter: &egui::Painter,
+    (keymap, scale): (&crate::settings::keymap::Keymap, f32),
+    area: Rect,
+    button: IconButton,
+    (chosen, active): (bool, bool),
+) -> bool {
+    ButtonPaint { ui, painter, keymap, scale }.place(area, button, chosen, active)
+}
+
+/// The tools, in the toolbar's order.
+const TOOLS: [(Tool, IconButton); 6] = [
+    (Tool::Select, IconButton::Select),
+    (Tool::Draw, IconButton::Draw),
+    (Tool::Paint, IconButton::Paint),
+    (Tool::Erase, IconButton::Erase),
+    (Tool::Slice, IconButton::Slice),
+    (Tool::Mute, IconButton::Mute),
+];
+
+/// What the toolbar's items measure this frame: a button's box and its icon's side, the room
+/// inside the bar, and each menu's and Rows toggle's width with its word and without.
+struct Widths {
+    size: Vec2,
+    side: f32,
+    inner: f32,
+    /// The height of a Rows toggle: the room inside the bar less the group's vertical padding.
+    rows_height: f32,
+    workflow: (f32, f32),
+    ghosts: (f32, f32),
+    grid: (f32, f32),
+    rows: [(f32, f32); 3],
+}
+
+/// The toolbar's items at `step`, in order.
+fn items(step: Step, w: &Widths, lit: &dyn Fn(IconButton) -> bool) -> Vec<crate::kit::native_css::row::Item> {
+    use crate::kit::native_css::row::Item;
+    let button = |button: IconButton| {
+        Item::named("piano-tool", button.id()).flag("checked", lit(button)).width(w.size.x).height(w.size.y)
+    };
+    let separator = || Item::new("separator").attribute("kind", "bar").width(1.0).height(w.inner);
+    let menu = |id: &str, width: f32| Item::named("bar-item", id).width(width).height(w.inner);
+    let mut items: Vec<Item> = TOOLS.iter().map(|(_, b)| button(*b)).collect();
+    items.push(separator());
+    if step >= Step::Edit {
+        items.push(Item::named("piano-tool", "piano-edit").width(w.size.x + 10.0).height(w.size.y));
+    } else {
+        items.extend([IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate].map(button));
     }
-    let caption = step == Step::Full;
-    let grid_width = if caption { grids.0 } else { grids.1 };
-    let menu = Rect::from_min_max(
-        Pos2::new(hide.left() - gap - 2.0 - grid_width, row.top()),
-        Pos2::new(hide.left() - gap - 2.0, row.bottom()),
-    );
-    if menu.left() < left_end + 6.0 {
-        return;
+    items.push(separator());
+    items.push(button(IconButton::Quantise));
+    items.push(button(IconButton::MidiTools));
+    if step < Step::Squeezed {
+        items.push(separator());
+        let group = items.len();
+        // The group's height is its toggles' (the sheet can set one of its own).
+        items.push(Item::named("group", "piano-roll-rows"));
+        for ((toggle, _), width) in ROWS.iter().zip(w.rows) {
+            let width = if step < Step::Icons { width.0 } else { width.1 };
+            items.push(Item::named("piano-tool", toggle.id()).width(width).height(w.rows_height).in_group(group));
+        }
     }
-    if let Some(picked) = grid_menu(ui, menu, clip, keymap, caption) {
-        state.grid_picked = Some(picked);
+    items.push(Item::new("flexible-space"));
+    if step < Step::Squeezed {
+        let named = step < Step::Arrows;
+        items.push(menu("piano-roll-workflow", if named { w.workflow.0 } else { w.workflow.1 }));
+        items.push(menu("piano-roll-ghosts", if named { w.ghosts.0 } else { w.ghosts.1 }));
+        items.push(separator());
     }
-    let mut right = menu.left();
-    if step == Step::Squeezed {
-        return;
-    }
-    painter.vline(right - 5.0, row.top() + 2.0..=row.bottom() - 2.0, theme::hairline(theme::border_strong()));
-    right -= 10.0;
-    let named = step < Step::Arrows;
-    let ghost_width = if named { ghosts_named } else { arrow };
-    let ghosts = Rect::from_min_max(Pos2::new(right - ghost_width, row.top()), Pos2::new(right, row.bottom()));
-    if ghosts.left() < left_end {
-        return;
-    }
-    ghost_view::menu(ui, ghosts, &clip.ghosts, &mut state.ghost_source, named);
-    right = ghosts.left() - 2.0;
-    let workflow_width = if named { workflow_named } else { arrow };
-    let workflow = Rect::from_min_max(Pos2::new(right - workflow_width, row.top()), Pos2::new(right, row.bottom()));
-    if workflow.left() >= left_end {
-        workflow_menu(ui, workflow, keymap, state, named);
-    }
+    items.push(menu("piano-roll-grid", if step == Step::Full { w.grid.0 } else { w.grid.1 }));
+    items.push(Item::named("piano-tool", IconButton::Hide.id()).width(w.side).height(w.side));
+    items
 }
 
 /// How far the toolbar gives way this frame (› Layout): each step leaves out one more thing the
@@ -181,6 +269,15 @@ enum Step {
     /// Not even that fits: only the tools, the grid value and the ×.
     Squeezed,
 }
+
+impl Step {
+    const ALL: [Step; 6] = [Step::Full, Step::NoCaption, Step::Icons, Step::Edit, Step::Arrows, Step::Squeezed];
+}
+
+/// The vertical room the user-agent sheet's padding leaves round the Rows group's toggles
+/// (`piano-roll-toolbar group { padding: 1px 2px }`), in points: the group has no height of its own,
+/// so a theme's rule for it sets one, and its toggles are this much shorter than the bar's room.
+const ROWS_GROUP_INSETS: f32 = 2.0;
 
 /// The room a toolbar button has beside its icon, both sides together, at Normal size, in points.
 const BUTTON_ROOM: f32 = 8.0;
@@ -269,68 +366,24 @@ fn row_toggle_width(ui: &Ui, side: f32, word: Option<&str>) -> f32 {
     }
 }
 
-/// How wide the toolbar's menus are this frame: the workflow and ghost menus with their words and
-/// as arrows (both together), and the grid menu with its "Grid" caption and without.
-struct MenuWidths {
-    named: f32,
-    arrows: f32,
-    grids: (f32, f32),
-}
-
-/// The least the toolbar gives way to fit `row` (› Layout).
-fn layout_step(ui: &Ui, row: Rect, (size, gap, side): (Vec2, f32, f32), widths: MenuWidths) -> Step {
-    let button = size.x + gap;
-    let rows = |words: bool| -> f32 {
-        ROWS.iter().map(|(_, word)| row_toggle_width(ui, side, words.then_some(*word)) + 2.0).sum::<f32>() + 4.0
-    };
-    let need = |step: Step| {
-        let clipboard = if step >= Step::Edit { size.x + 10.0 + gap } else { 4.0 * button };
-        let grid = if step == Step::Full { widths.grids.0 } else { widths.grids.1 };
-        let menus = if step >= Step::Arrows { widths.arrows } else { widths.named };
-        // The tools, the clipboard, Quantise and the tools' toggle, the Rows group after a third
-        // divider, then the menus, the grid value and the × from the right: what is drawn.
-        TOOLBAR_INSET
-            + 8.0 * button
-            + clipboard
-            + 14.0
-            + 7.0
-            + rows(step < Step::Icons)
-            + gap
-            + menus
-            + 2.0
-            + 10.0
-            + grid
-            + gap
-            + 2.0
-            + side
-    };
-    [Step::Full, Step::NoCaption, Step::Icons, Step::Edit, Step::Arrows]
-        .into_iter()
-        .find(|step| need(*step) <= row.width())
-        .unwrap_or(Step::Squeezed)
-}
-
-/// The Rows group, its left end at `left`, framed: Fold, Scale and Highlight, each lit while
-/// on, as an icon and a word or, when `words` is off, the icon alone (its tooltip names it).
-/// Fold shows the rows with notes, or the scale's while the clip has one; Scale is the clip's
-/// scale switch, the same as the clip panel's; Highlight tints the scale's rows (› Scale and key).
-/// Returns where the group ends at the right.
+/// The Rows group in `group`, framed: Fold, Scale and Highlight in `toggles`, each lit while on,
+/// as an icon and a word or, when `words` is off, the icon alone (its tooltip names it). Fold shows
+/// the rows with notes, or the scale's while the clip has one; Scale is the clip's scale switch,
+/// the same as the clip panel's; Highlight tints the scale's rows (› Scale and key).
 #[allow(clippy::too_many_arguments)]
-fn rows_group(
+fn rows_toggles(
     ui: &Ui,
     painter: &egui::Painter,
-    left: f32,
-    row: Rect,
-    side: f32,
+    group: Rect,
+    toggles: &[Option<Rect>; 3],
     words: bool,
     cx: ToolbarCx<'_>,
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
-) -> f32 {
+) {
     let clip = cx.clip;
-    let widths: Vec<f32> = ROWS.iter().map(|(_, word)| row_toggle_width(ui, side, words.then_some(*word))).collect();
-    let total = widths.iter().map(|w| w + 2.0).sum::<f32>() + 2.0;
-    let group = Rect::from_min_max(Pos2::new(left, row.top()), Pos2::new(left + total, row.bottom()));
+    let element = crate::kit::element::GROUP.id("piano-roll-rows").attribute("kind", "piano-roll-rows").enter();
+    element.paint(painter, group);
     painter.rect_stroke(group, 4.0, theme::hairline(theme::border_strong()), StrokeKind::Inside);
     // Fold folds to the notes, Scale to the clip's scale: each lit while the rows are folded its way.
     let folded = state.fold == Fold::Notes;
@@ -341,15 +394,16 @@ fn rows_group(
         "Highlight scale: tints the rows of the clip's scale and marks its keys",
     ];
     let ons = [folded, scaled, state.highlight_scale];
-    let mut x = group.left() + 2.0;
-    for (index, ((button, word), width)) in ROWS.iter().zip(&widths).enumerate() {
-        let rect = Rect::from_min_size(Pos2::new(x, group.top() + 1.0), Vec2::new(*width, group.height() - 2.0));
-        x = rect.right() + 2.0;
+    for (index, ((button, word), rect)) in ROWS.iter().zip(toggles).enumerate() {
+        // A toggle the sheet hides is gone; the others keep their own places.
+        let Some(rect) = rect else { continue };
         let on = ons.get(index).copied().unwrap_or(false);
+        // A group that hides its overflow takes no input past its padding box either.
+        let input = rect.intersect(element.input_clip(group));
         if !row_toggle(
             ui,
             painter,
-            rect,
+            (*rect, input),
             (*button, words.then_some(*word)),
             on,
             hints.get(index).copied().unwrap_or(""),
@@ -377,7 +431,6 @@ fn rows_group(
             }
         }
     }
-    group.right()
 }
 
 /// One of the Rows group's toggles: lit while on, its icon and, given one, its word; its accessible
@@ -385,13 +438,13 @@ fn rows_group(
 fn row_toggle(
     ui: &Ui,
     painter: &egui::Painter,
-    rect: Rect,
+    (rect, input): (Rect, Rect),
     (button, word): (IconButton, Option<&str>),
     on: bool,
     hint: &str,
     scale: f32,
 ) -> bool {
-    let response = widgets::button_area(ui, rect, Id::unique(("piano-roll-rows", button.name())), button.name());
+    let response = widgets::button_area(ui, input, Id::unique(("piano-roll-rows", button.name())), button.name());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, button.name()));
     // Lit as a selected word is (the selection's fill and ink), as the toolbar's words were.
     let visuals = ui.visuals();
@@ -422,10 +475,14 @@ fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<Icon
     let response = widgets::button_area(ui, area, Id::unique("piano-roll-edit-menu"), "Edit");
     let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
     let ink = theme::text_secondary();
-    paint.painter.rect_filled(area, 3.0, fill);
-    let icon = Rect::from_min_size(area.min, Vec2::splat(area.height()));
+    // The item's box is painted, and its icon and chevron lie in the content box, inside its
+    // border and padding.
+    let item =
+        crate::kit::element::PIANO_TOOL.id("piano-edit").attribute("kind", "piano-edit").response(&response).enter();
+    let content = item.paint_with(paint.painter, area, crate::kit::element::Native { radius: 3.0, fill }).content;
+    let icon = Rect::from_min_size(content.min, Vec2::splat(content.height()));
     IconButton::Copy.draw(paint.painter, icon, ink, paint.scale * ICON_IN_BUTTON);
-    chevron(paint.painter, Pos2::new(area.right() - MENU_PAD, area.center().y), ink);
+    chevron(paint.painter, Pos2::new(content.right() - MENU_PAD, content.center().y), ink);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
         for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
@@ -608,6 +665,7 @@ impl ButtonPaint<'_> {
         // chosen tool or an open column. `piano.draw` (`.on`, `.hover`) replaces its shape.
         let el = crate::kit::element::PIANO_TOOL
             .id(button.id())
+            .attribute("kind", button.id())
             .response(&response)
             .attr(crate::kit::element::Checked, chosen)
             .enter();
