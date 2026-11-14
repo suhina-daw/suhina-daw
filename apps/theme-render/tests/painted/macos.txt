@@ -637,13 +637,13 @@ quick-add high-contrast 338085afeb500309
 quick-add high-contrast@light d09fe694147e9e95
 quick-add nord 51f2920ddd5b2cc4
 quick-add nord@snow-storm 83e1f39978769ff0
-quick-add suhina-blocks 1d12fad1fb52d8b5
+quick-add suhina-blocks d6de762c7459709a
 quick-add suhina-glass 8ebd58ad8b711da6
 quick-add suhina-glass@frost d8ddef20f781ccd9
 quick-add suhina-glass@midnight 9c0af008d25e898a
 quick-add suhina-light cb8101c0d33127a0
-quick-add suhina-meadow bae20d8a97d6d58a
-quick-add suhina-sheet 8ce6106474d8edca
+quick-add suhina-meadow 474c1ec38f01a340
+quick-add suhina-sheet 090e9f57a12bdd24
 quick-add suhina-studio 847539efc7d0a5ab
 quick-add suhina-studio+engine 3566d7aae6b5a16f
 quick-add suhina-studio@blue 7c4b70700b430f80
