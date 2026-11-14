@@ -496,3 +496,16 @@ fn ctrl_and_the_arrows_are_the_piano_roll_selection_keys() {
     }
     assert!(Keymap::default().conflicts().is_empty());
 }
+
+/// Alt+Shift+Up and Down raise and lower the selection's velocity range in the piano roll (#1282).
+#[test]
+fn alt_shift_up_and_down_step_the_velocity_range() {
+    let known = actions();
+    for (id, key) in [("pianoRoll.rangeUp", "Shift+Alt+Up"), ("pianoRoll.rangeDown", "Shift+Alt+Down")] {
+        let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
+        assert_eq!(action.group, PIANO_ROLL);
+        assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
+        assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
+    }
+    assert!(Keymap::default().conflicts().is_empty());
+}

@@ -202,6 +202,8 @@ Settings go on working. Click in the Arrangement or the Launcher to give the key
 | Ctrl+Alt+J | `pianoRoll.fitToTime` | Piano roll | Stretches or squeezes the selected notes so they exactly fill the time selection (a stretch of time dragged in the piano roll). |
 | Ctrl+Shift+J | `pianoRoll.crop` | Piano roll | Crops the clip to the time selection: what is outside it is removed, and notes across its edges are cut there. |
 | Ctrl+E | `pianoRoll.splitClip` | Piano roll | Splits the clip at the two edges of the time selection, into separate clips on the same lane. It never splits at the playhead. |
+| Alt+Shift+Up | `pianoRoll.rangeUp` | Piano roll | Raises the selected notes' velocity range by one: how far above its velocity each note may play, picked anew every time it plays. |
+| Alt+Shift+Down | `pianoRoll.rangeDown` | Piano roll | Lowers the selected notes' velocity range by one; below 0 the notes may play softer than their velocity. |
 | Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings of Quantise in the Transform tab of the clip panel's note tools. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
 
 Copy, cut, paste, duplicate and delete in the piano roll use the [Editing](#editing) keys. With no

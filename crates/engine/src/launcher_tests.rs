@@ -15,7 +15,16 @@ pub(super) const BEAT: usize = SR as usize / 2;
 pub(super) const BAR: usize = 4 * BEAT;
 
 pub(super) fn note(time: f64, key: u8) -> Note {
-    Note { time, duration: 0.25, key, velocity: 1.0, release_velocity: 0.5, channel: 0, muted: false }
+    Note {
+        time,
+        duration: 0.25,
+        key,
+        velocity: 1.0,
+        release_velocity: 0.5,
+        channel: 0,
+        muted: false,
+        velocity_range: 0,
+    }
 }
 
 /// A clip of `length` beats that loops over its whole length, or plays once.

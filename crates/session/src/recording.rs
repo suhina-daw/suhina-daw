@@ -964,6 +964,7 @@ fn notes_in<'a>(played: impl IntoIterator<Item = (&'a RecordedNote, f64)>, lengt
                 release_velocity: 0.5,
                 channel: 0,
                 muted: false,
+                velocity_range: 0,
             });
         }
     };

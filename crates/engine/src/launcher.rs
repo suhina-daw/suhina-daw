@@ -607,8 +607,11 @@ struct PlanNote {
     duration: f64,
     frequency: f64,
     key: u8,
-    velocity: f32,
+    /// The note as the clip holds it: its velocity and velocity range, rolled where it starts
+    /// (ADR 0037).
+    note: suhina_model::Note,
     track: suhina_model::TrackId,
+    /// The track's gains, which the played velocity multiplies.
     gain_left: f32,
     gain_right: f32,
     /// 0 for the output, or 1 + the index of the track's chain.
@@ -689,6 +692,9 @@ pub(crate) struct Playing {
     elapsed_frames: f64,
     last_clip_beat: f64,
     next_note: usize,
+    /// The passes through the clip's loop since the launch, from 0: the notes' rolled velocities
+    /// differ from pass to pass (ADR 0037).
+    passes: u64,
     /// Frames of fade-out left, while stopping.
     pub(crate) fade_left: f64,
     /// Whether this playback uses the clip's stretch voices; it stops using them for good when
@@ -1082,7 +1088,6 @@ fn plan_clip(
                 // The clip's swing, its own or the project's, in its content's beats (#1221).
                 let swing = clip.swing.effective(project.transport.swing);
                 for note in lane_notes.iter().filter(|n| !n.muted && n.time.is_finite() && n.duration.is_finite()) {
-                    let velocity = note_velocity(note.velocity);
                     // The end swings as the start does, so notes that touch keep touching.
                     let time = suhina_model::swung(note.time, swing);
                     let end = suhina_model::swung(note.time + note.duration.max(0.0), swing);
@@ -1091,10 +1096,10 @@ fn plan_clip(
                         duration: (end - time).max(0.0),
                         frequency: 440.0 * 2f64.powf((f64::from(note.key) - 69.0) / 12.0),
                         key: note.key.min(127),
-                        velocity,
+                        note: *note,
                         track: lane_track,
-                        gain_left: gain_left * velocity,
-                        gain_right: gain_right * velocity,
+                        gain_left,
+                        gain_right,
                         bus,
                         meter,
                         scale: crate::musical_scale(content.scale),
@@ -1422,6 +1427,7 @@ impl Renderer {
                     elapsed_frames: elapsed * frames_per_beat_now,
                     last_clip_beat: beat,
                     next_note: plan.first_note_from(beat),
+                    passes: 0,
                     fade_left: 0.0,
                     stretched,
                     // A follow action whose time had come ran on the old output already; one
@@ -1607,6 +1613,7 @@ impl Renderer {
                     elapsed_frames: 0.0,
                     last_clip_beat: plan.offset,
                     next_note: plan.first_note_from(plan.offset),
+                    passes: 0,
                     fade_left: 0.0,
                     stretched: self.graph.launcher.tempo_bpm == self.graph.launcher.project_tempo_bpm,
                     followed: false,
@@ -1672,7 +1679,11 @@ impl Renderer {
         let limit = plan.note_limit();
         let beat = plan.clip_beat(p.elapsed_beats);
         let song_beat = launcher.beat;
-        let mut start = |note: &PlanNote| {
+        let scene = p.slot as u64;
+        // Rolled where it starts (ADR 0037): integer arithmetic, nothing allocated or locked.
+        let mut start = |note: &PlanNote, pass: u64| {
+            let place = suhina_model::RollPlace { track: note.track.0, clip: scene, pass };
+            let velocity = note_velocity(suhina_model::played_velocity(&note.note, place));
             let beats = note.duration.min(limit - note.time).max(0.0);
             // A note's length in frames follows the tempo map from where it starts.
             let frames = if on_map {
@@ -1684,9 +1695,9 @@ impl Renderer {
             let start = NoteStart {
                 frequency: note.frequency,
                 key: note.key,
-                velocity: note.velocity,
+                velocity,
                 track: note.track,
-                gains: (note.gain_left, note.gain_right),
+                gains: (note.gain_left * velocity, note.gain_right * velocity),
                 column: column_id,
                 bus: note.bus,
                 meter: note.meter,
@@ -1700,13 +1711,14 @@ impl Renderer {
         {
             // Wrapped: finish the notes before the loop end, then start the loop again.
             while let Some(note) = plan.notes.get(p.next_note).filter(|n| n.time < loop_end) {
-                start(note);
+                start(note, p.passes);
                 p.next_note += 1;
             }
             p.next_note = plan.first_note_from(loop_start);
+            p.passes = p.passes.wrapping_add(1);
         }
         while let Some(note) = plan.notes.get(p.next_note).filter(|n| n.time <= beat && n.time < limit) {
-            start(note);
+            start(note, p.passes);
             p.next_note += 1;
         }
         p.last_clip_beat = beat;

@@ -367,7 +367,7 @@ pub fn midi_velocity(velocity: f32) -> u8 {
 }
 
 fn note_json(index: usize, id: NoteId, note: &Note) -> Value {
-    json!({
+    let mut out = json!({
         "index": index,
         "id": id.0,
         "time": note.time,
@@ -375,7 +375,12 @@ fn note_json(index: usize, id: NoteId, note: &Note) -> Value {
         "key": note.key,
         "velocity": midi_velocity(note.velocity),
         "muted": note.muted,
-    })
+    });
+    // Only a note that has one lists its velocity range (ADR 0037).
+    if note.velocity_range != 0 {
+        out["velocityRange"] = json!(note.velocity_range);
+    }
+    out
 }
 
 pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -419,6 +424,7 @@ fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
         release_velocity: RELEASE_VELOCITY,
         channel: 0,
         muted: false,
+        velocity_range: 0,
     })
 }
 
