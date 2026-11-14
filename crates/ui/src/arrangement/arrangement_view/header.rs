@@ -894,13 +894,14 @@ pub(super) fn track_header(
     }
 }
 
-/// The background the user-agent sheet gives `track-header[muted]` (`[muted][selected]` while
+/// The background the user-agent sheet gives `arrangement track-header[muted]` (`[muted][selected]` while
 /// selected), worked out once: the fallback where no sheet styles the window.
 pub(super) fn muted_header_grey(selected: bool) -> Color32 {
     static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
     let greys = GREYS.get_or_init(|| {
         let of = |attributes: &[(&str, &str)]| {
-            crate::kit::native_css::user_agent_background("track-header", attributes).unwrap_or(Color32::GRAY)
+            crate::kit::native_css::user_agent_background(Some("arrangement"), "track-header", attributes)
+                .unwrap_or(Color32::GRAY)
         };
         [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
     });

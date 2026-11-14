@@ -751,3 +751,38 @@ fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
     super::super::skin::configure(&super::super::skin::Skin::default());
     assert_eq!(seen, (rgb(0x40, 0x50, 0x60), rgb(0x50, 0x60, 0x70)));
 }
+
+/// The user-agent sheet's muted grey is the Arrangement's: a deactivated Launcher clip keeps the
+/// look it had, and a muted Arrangement clip and track header are grey (#1393 review).
+#[test]
+fn the_muted_grey_reaches_the_arrangement_not_the_launcher() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let (launcher, clip, header) = frames("button { color: #102030; }", || {
+        let launcher = {
+            let _view = SESSION.enter();
+            CLIP.attr(Muted, true).look().background_or(token)
+        };
+        let _view = ARRANGEMENT.enter();
+        (CLIP.attr(Muted, true).look().background_or(token), TRACK_HEADER.attr(Muted, true).look().background_or(token))
+    });
+    assert_eq!(launcher, token, "a deactivated Launcher clip is not the Arrangement's grey");
+    assert_eq!(clip, rgb(0xA9, 0xA6, 0xA0), "arrangement clip[muted]");
+    assert_eq!(header, rgb(0xA9, 0xA6, 0xA0), "arrangement track-header[muted]");
+}
+
+/// `probe_in` looks an element up as if drawn inside an ancestor, so a rule that reaches it only
+/// there counts, and takes both out of the style tree again (#1393 review).
+#[test]
+fn a_probe_in_an_ancestor_takes_the_ancestor_s_rules_and_leaves_no_node() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let seen = frames("arrangement clip[muted] { background-color: #405060; }", || {
+        let before = BUTTON.enter().node();
+        let inside = CLIP.attr(Muted, true).probe_in(ARRANGEMENT).background_or(token);
+        let outside = CLIP.attr(Muted, true).probe().background_or(token);
+        let after = BUTTON.enter().node();
+        (inside, outside, before.zip(after).map(|(b, a)| a - b))
+    });
+    assert_eq!(seen, (rgb(0x40, 0x50, 0x60), token, Some(1)));
+}

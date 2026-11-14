@@ -277,7 +277,7 @@ Artwork can choose an interaction state: `track.name.hover` overrides the defaul
 `track.name`. The own state variant wins, then the own default, then the embedded fallback.
 Artwork is not chosen by a track's colour. In track artwork (`track.name`, `track.body`)
 `currentColor` is the fill Suhina draws there (the track's colour, dimmed while muted; a muted
-track's arrangement header is the `track-header[muted]` grey instead), or the element's own
+track's arrangement header is the `arrangement track-header[muted]` grey instead), or the element's own
 `color` where the sheet gives one, which a rule may take from its `[color]`. A sheet
 that reads `--track-colour`, `--track-fill` or `--clip-colour`, or gives artwork for one colour
 (`track.body.color-ff9a3c`), is told they are no longer used.
@@ -400,9 +400,10 @@ like before a theme styles it.
   `#views-bottom`); the window's grid (*The window grid*);
   `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; the default
   artwork; the sample map's colours; the grey of a muted arrangement clip and track header,
-  `clip[muted] { background-color: #A9A6A0; }` (`#BDBAB4` with `[selected]`) and
-  `track-header[muted]` (`#A9A6A0`, `#B5B2AC` with `[selected]`, #1393); the theme swatch's
-  rounded square.
+  `arrangement clip[muted] { background-color: #A9A6A0; }` (`#BDBAB4` with `[selected]`) and
+  `arrangement track-header[muted]` (`#A9A6A0`, `#B5B2AC` with `[selected]`, #1393), scoped to
+  the Arrangement so a deactivated Launcher clip keeps its own look; the theme swatch's rounded
+  square.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
   `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one
   too. Every theme gets the defaults for the controls it does not replace. The defaults take their

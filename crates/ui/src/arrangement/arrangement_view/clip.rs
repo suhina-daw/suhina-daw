@@ -1792,14 +1792,15 @@ pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: 
     colour_surface(surface, colour, strength)
 }
 
-/// The background the user-agent sheet gives `clip[muted]` (`clip[muted][selected]` while
+/// The background the user-agent sheet gives `arrangement clip[muted]` (`[muted][selected]` while
 /// selected), worked out once: the fallback where no sheet styles the window, as the sample map's
 /// kind colours are.
 pub(crate) fn muted_clip_grey(selected: bool) -> Color32 {
     static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
     let greys = GREYS.get_or_init(|| {
         let of = |attributes: &[(&str, &str)]| {
-            crate::kit::native_css::user_agent_background("clip", attributes).unwrap_or(Color32::GRAY)
+            crate::kit::native_css::user_agent_background(Some("arrangement"), "clip", attributes)
+                .unwrap_or(Color32::GRAY)
         };
         [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
     });

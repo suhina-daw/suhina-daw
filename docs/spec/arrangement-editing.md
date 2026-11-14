@@ -444,8 +444,9 @@ replaces what it covers unless stacked. Both are `clip.copy` then `clip.paste`
 `clip.setEnabled {clips, enabled}` turns clips on or off: an off clip plays nothing and does not
 sound in a render, so it works as a clip mute. An off clip, and every clip on a muted track, is
 drawn grey whatever its colour, so it never reads as a darker shade of a clip that plays (#1393):
-the user-agent sheet's `clip[muted]` background (`#A9A6A0`, `#BDBAB4` for
-`clip[muted][selected]`), which a theme restyles with a rule of its own
+the user-agent sheet's `arrangement clip[muted]` background (`#A9A6A0`, `#BDBAB4` with
+`[selected]`), which a theme restyles with a rule of its own; the rule is the Arrangement's, so a
+deactivated Launcher clip keeps its own look
 ([theme skins](theme-skins.md) › The user-agent sheet). Its colour stays in the project and comes
 back when it plays again; while it is grey it stays down the clip's leading edge, so the clip is
 still known by it, and its notes and waveform step back. The two kinds of muted clip differ:
@@ -877,7 +878,7 @@ folds its tracks away (Folded groups). The Launcher view's column headers have t
 
 A header's left edge is a 6 px band of the track's colour, the header's full height; return rows
 have one too. While the track is off its header is grey, the user-agent sheet's
-`track-header[muted]` background (`#A9A6A0`, `#B5B2AC` while selected), as its clips are, and the
+`arrangement track-header[muted]` background (`#A9A6A0`, `#B5B2AC` while selected), as its clips are, and the
 band keeps the track's colour at full strength (#1393). A click on the band opens the colour palette under
 it, the same swatches as the menu's; a swatch sets the colour (`track.setColor`, one undo step).
 A press on the band that drags still resizes the header column where the band meets its inner
