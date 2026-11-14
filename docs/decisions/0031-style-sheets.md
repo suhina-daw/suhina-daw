@@ -1046,3 +1046,43 @@ header edge is `divider#arrangement-header-splitter`. Where no theme's sheet run
 roll's toolbar is laid out with its Toolbar size and measured with the user-agent sheet's padding,
 as it is when the style engine runs. The EQ's curve and the colours a device panel's canvas hands
 the device SDK still come from the palette.
+
+## Amendment: the control bar, tabs, menus, Settings and the dialogs draw from their elements (2026-11-15)
+
+Accepted, from [issue #1023](https://github.com/suhina-daw/suhina-daw/issues/1023), the last
+slice before the palette goes: the control bar (its words, its keys, mapping and view switches, RAM
+and CPU), the tabs, the menu bar, the status bar, the Settings page and its plug-in manager, the
+start page and every dialog (project, save, unsaved changes, export, updates, missing files,
+loading, closing, quick add, the agent prompt, drops and name clashes), the colour picker, the
+drag pill and the splash draw from their elements, the palette token as the fallback, so a theme
+that leaves them alone looks as before. The rules of the earlier amendments hold: a view reads each
+kind of word once a frame (`label[kind]`: `hint` and `caption` take only a colour given to them;
+names, values and titles inherit), an interactive part is entered with its response, and a lit
+switch is lit only by a rule for its lit state.
+- **Every lit switch keeps its lit state.** The switches that took the palette's colours whole
+  (a track's on switch in the Arrangement and the mixer, the Arrangement's monitor, take-lanes and
+  automation switches, the browser's Auto, a device's On/Off, the computer keyboard, Settings'
+  switches, its chosen segments, a plug-in folder's format and a keymap preset) are entered as a
+  `button` with `[checked]` and drawn with `widgets::lit_toggle` (`Builder::enter_toggle`,
+  `Toggle::of`), so a rule for every `button` colours their unlit state and leaves them lit.
+  `widgets::toggle_colors` stays only for the controls that already take their lit colours from
+  `Toggle::of` or a `[checked]` comparison and use it as their fallback.
+- **New elements:** `dialog-title` (a dialog's title row), `list-row` (a row a click picks,
+  `[selected]`), `colour-swatch` (the colour picker's swatches), `theme-card` (a theme's card in
+  the picker, `[selected]` for the theme in use). The start page's tabs are `editor-tab#tab-recent`
+  and `#tab-templates`. A dialog's progress bar is `progress` and `progress-fill`, the toolbar's
+  RAM and CPU `meter` and `meter-level`, a drag pill `tooltip`, a splash a `dialog`. The detail
+  area's splitter, `divider#detail-splitter`, takes `[closed]` while the area is closed.
+- **What stays on the palette:** the window background's scaling (`app/background.rs`), the theme
+  editor's palette editing and the colour a track's header takes from its track (`colour_picker::fill`
+  mixes the control colour into it while a track is off): the theme model's slice. A bar's native
+  line where no sheet runs has no rule to read.
+- **A theme that styles the new elements:** a rule for `button` now reaches the control bar's
+  Keys and Map, Settings' Help, Close, Reset, Add, Remove and scan buttons, a dialog's Close and
+  the colour picker's "+", which took the palette's colours before: Suhina Sheet, Meadow and Blocks,
+  which have such a rule, paint these as their buttons.
+- **Where no sheet runs, a Settings page's `overflow: hidden` clips.** Suhina Studio drawn with
+  the style engine on and without differ only in the clip rectangles of Settings and the menus
+  over it: the user-agent sheet gives `settings`, `dialog`, `popup`, `start-page`, `plugin-manager`
+  and `export` `overflow: hidden`, which clips what they paint to their boxes. Their shapes are the
+  same.

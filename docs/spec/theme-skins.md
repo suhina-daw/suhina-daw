@@ -1402,6 +1402,22 @@ of bars, and a slider id per parameter.
   `icon[kind="magnifier"]`. egui's fields in the browser take `text-input` through their style. The
   Arrangement's header edge is `divider#arrangement-header-splitter`, painted only where a theme
   gives it a `background-color`.
+- **The control bar, tabs, menus, Settings and the dialogs (#1440):** the toolbar's words (the
+  position, the tempo and signature, the views' names, the Keys and Map buttons, RAM and CPU), the
+  tabs, the status bar's message, the drag pill (a `tooltip`), the quick-add and project switcher
+  lists (`list-row`, `[selected]` for the picked one), the Settings page (its headings `label[kind="hint"]`
+  over a `separator[kind="row"]`, its names `label`, its notes `label[kind="caption"]`, its Help,
+  Close, Reset and Add buttons `button`, its theme picker's cards `theme-card`, `[selected]` for the
+  theme in use) and every dialog (its title row `dialog-title`, its words `label` and `label[kind]`,
+  its lists `list-row`, its buttons `button`, its progress bar `progress` and `progress-fill`) draw
+  from their elements, the palette token as the fallback. The start page's tabs are
+  `editor-tab#tab-recent` and `#tab-templates` and the colour picker's swatches `colour-swatch`
+  (`border-color` outlines the chosen one). Every switch that is lit stays lit under a rule for
+  every `button`: a track's on switch and the Arrangement's monitor, take-lanes and automation
+  switches, the computer keyboard, the browser's Auto, a device's On/Off, a Settings switch, a chosen
+  segment of a Settings choice, a plug-in folder's format and a keymap preset (`button[checked]`).
+  `divider#detail-splitter` is `[closed]` while the detail area is closed. A dialog's `color` reaches
+  its names, values and titles; its hints and captions keep to a colour given to them.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.
