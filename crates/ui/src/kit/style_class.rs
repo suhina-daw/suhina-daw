@@ -363,65 +363,102 @@ impl Drop for UiStyle<'_> {
         }
     }
 }
-/// egui's own widgets in `ui` styled as the element whose style is `values` (`surface` for a
-/// region or container, whose background lies behind its widgets rather than filling them).
-pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Computed>, surface: bool) -> UiStyle<'_> {
-    let color = values.as_ref().filter(|style| style.authored.color).map(|style| style.color);
-    let font = values.as_ref().filter(|style| style.authored.font_size).map(|style| style.font_size);
-    let radius = values.as_ref().filter(|style| style.authored.radius).map(|style| style.radius);
-    // A border the sheet gives (a width, 0 for none) is the ordinary widgets' outline too, in
-    // every state: without it they keep egui's own. Only one width all round: a bar's line along
-    // one side is not a box round each of its buttons (#1336).
-    let border = values
-        .as_ref()
-        .filter(|style| style.authored.border_width)
-        .and_then(|style| style.even_border().map(|width| egui::Stroke::new(width, style.border)));
-    // A panel's or view's background is the surface behind its widgets, not their fill: a
-    // device panel's colour would otherwise hide its sliders' rails.
-    let fill = values.as_ref().filter(|style| style.authored.background && !surface).map(|style| style.background);
-    // egui's own widgets in the scope (Settings, dialogs, the start page, the browser) take the
-    // sheet's generic control rules: `button`, `button:hover`, `button:active`,
-    // `button:disabled` for buttons, check boxes and drop-downs, `button[checked]` for a
-    // chosen row, and `text-input` for text fields.
-    let control = |hovered: bool, pressed: bool, disabled: bool| {
-        super::element::BUTTON.pointer(hovered, pressed, disabled).style().filter(|c| {
-            c.authored.background
-                || c.authored.border
-                || c.authored.border_width
-                || c.authored.color
-                || c.authored.radius
-        })
-    };
-    let controls = [
-        control(false, false, false),
-        control(true, false, false),
-        control(true, true, false),
-        control(false, false, true),
-    ];
-    // `button[checked]`: a chosen item in a list or a menu (egui's selection).
-    let chosen = super::element::BUTTON
-        .attr(super::element::Checked, true)
-        .style()
-        .filter(|c| c.authored.background || c.authored.color);
-    let input =
-        super::element::TEXT_INPUT.style().filter(|c| c.authored.background || c.authored.border || c.authored.color);
-    let has_controls = controls.iter().any(Option::is_some) || input.is_some() || chosen.is_some();
-    let previous = if color.is_some()
-        || font.is_some()
-        || radius.is_some()
-        || border.is_some()
-        || fill.is_some()
-        || has_controls
-    {
-        let previous = ui.style().clone();
-        let style = ui.style_mut();
-        let [idle, hovered, pressed, disabled] = &controls;
+/// What the sheet's generic rules say about egui's own widgets: `button` (plain, `:hover`,
+/// `:active`, `:disabled`) for buttons, check boxes and drop-downs, `button[checked]` for the
+/// selection, and `text-input` for text fields; at the root also `text-input:focus`, `menu` for
+/// menus and pop-ups, and `scroll-bar` (plain, `:hover`, `:active`) for scroll handles. The one
+/// mapping both a style scope ([`ui_for`]) and the root's `Visuals` ([`root_visuals`]) use.
+pub(super) struct WidgetRules {
+    controls: [Option<super::native_css::Computed>; 4],
+    chosen: Option<super::native_css::Computed>,
+    input: Option<super::native_css::Computed>,
+    focused_input: Option<super::native_css::Computed>,
+    menu: Option<super::native_css::Computed>,
+    bars: [Option<super::native_css::Computed>; 3],
+}
+impl WidgetRules {
+    /// The rules, each element's style given by `look`: its style as drawn in a scope, or a
+    /// lookup that adds nothing to the style tree at the root (`root`: also the elements only
+    /// the root's `Visuals` take).
+    pub(super) fn read(
+        look: impl Fn(super::element::Builder<'static>) -> Option<super::native_css::Computed>,
+        root: bool,
+    ) -> Self {
+        use super::element::{BUTTON, Checked, MENU, SCROLL_BAR, TEXT_INPUT};
+        let control = |hovered: bool, pressed: bool, disabled: bool| {
+            look(BUTTON.pointer(hovered, pressed, disabled)).filter(|c| {
+                c.authored.background
+                    || c.authored.border
+                    || c.authored.border_width
+                    || c.authored.color
+                    || c.authored.radius
+            })
+        };
+        let input = |c: &super::native_css::Computed| c.authored.background || c.authored.border || c.authored.color;
+        let plain_input = look(TEXT_INPUT.builder());
+        // Only what `:focus` changes about the outline is the focus's: the plain rule's border is
+        // every field's.
+        let focused_input = if root {
+            look(TEXT_INPUT.builder().focused(true)).filter(|focused| {
+                plain_input
+                    .as_ref()
+                    .is_none_or(|plain| plain.border != focused.border || plain.border_sides != focused.border_sides)
+                    && (focused.authored.border || focused.authored.border_width)
+            })
+        } else {
+            None
+        };
+        Self {
+            controls: [
+                control(false, false, false),
+                control(true, false, false),
+                control(true, true, false),
+                control(false, false, true),
+            ],
+            // `button[checked]`: a chosen item in a list or a menu (egui's selection).
+            chosen: look(BUTTON.attr(Checked, true)).filter(|c| c.authored.background || c.authored.color),
+            input: plain_input.filter(input),
+            focused_input,
+            menu: if root {
+                look(MENU.builder()).filter(|c| {
+                    c.authored.background
+                        || c.authored.border
+                        || c.authored.border_width
+                        || c.authored.radius
+                        || c.authored.box_shadow
+                })
+            } else {
+                None
+            },
+            bars: if root {
+                [(false, false), (true, false), (true, true)].map(|(hovered, pressed)| {
+                    look(SCROLL_BAR.pointer(hovered, pressed, false)).filter(|c| c.authored.background)
+                })
+            } else {
+                [None, None, None]
+            },
+        }
+    }
+
+    /// Whether the sheet says anything about these widgets.
+    pub(super) fn any(&self) -> bool {
+        self.controls.iter().any(Option::is_some)
+            || self.chosen.is_some()
+            || self.input.is_some()
+            || self.focused_input.is_some()
+            || self.menu.is_some()
+            || self.bars.iter().any(Option::is_some)
+    }
+
+    /// Writes what the rules say over `visuals`, which keep every other value they hold.
+    pub(super) fn apply(&self, visuals: &mut egui::Visuals) {
+        let [idle, hovered, pressed, disabled] = &self.controls;
         for (widget, own) in [
-            (&mut style.visuals.widgets.inactive, idle.as_ref()),
-            (&mut style.visuals.widgets.hovered, hovered.as_ref()),
-            (&mut style.visuals.widgets.active, pressed.as_ref()),
-            (&mut style.visuals.widgets.open, pressed.as_ref()),
-            (&mut style.visuals.widgets.noninteractive, disabled.as_ref()),
+            (&mut visuals.widgets.inactive, idle.as_ref()),
+            (&mut visuals.widgets.hovered, hovered.as_ref()),
+            (&mut visuals.widgets.active, pressed.as_ref()),
+            (&mut visuals.widgets.open, pressed.as_ref()),
+            (&mut visuals.widgets.noninteractive, disabled.as_ref()),
         ] {
             let Some(own) = own else { continue };
             if own.authored.background {
@@ -441,23 +478,102 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
                 widget.corner_radius = egui::CornerRadius::same(own.radius.clamp(0.0, 128.0) as u8);
             }
         }
-        if let Some(chosen) = &chosen {
+        // egui draws a scroll handle in a widget's `bg_fill` (not the `weak_bg_fill` of its
+        // buttons), so `scroll-bar` writes only that.
+        for (widget, own) in [
+            (&mut visuals.widgets.inactive, self.bars[0].as_ref()),
+            (&mut visuals.widgets.hovered, self.bars[1].as_ref()),
+            (&mut visuals.widgets.active, self.bars[2].as_ref()),
+        ] {
+            if let Some(own) = own {
+                widget.bg_fill = own.background;
+            }
+        }
+        if let Some(chosen) = &self.chosen {
             if chosen.authored.background {
-                style.visuals.selection.bg_fill = chosen.background;
+                visuals.selection.bg_fill = chosen.background;
             }
             if chosen.authored.color {
-                style.visuals.selection.stroke.color = chosen.color;
+                visuals.selection.stroke.color = chosen.color;
             }
         }
-        if let Some(input) = &input {
+        if let Some(input) = &self.input {
             if input.authored.background {
-                style.visuals.extreme_bg_color = input.background;
-                style.visuals.text_edit_bg_color = Some(input.background);
+                visuals.extreme_bg_color = input.background;
+                visuals.text_edit_bg_color = Some(input.background);
             }
             if input.authored.color {
-                style.visuals.widgets.inactive.fg_stroke.color = input.color;
+                visuals.widgets.inactive.fg_stroke.color = input.color;
             }
         }
+        // egui outlines a focused text field with the selection's stroke.
+        if let Some(focused) = &self.focused_input {
+            if focused.authored.border {
+                visuals.selection.stroke.color = focused.border;
+            }
+            if focused.authored.border_width {
+                visuals.selection.stroke.width = focused.even_border().unwrap_or(visuals.selection.stroke.width);
+            }
+        }
+        // egui frames its menus and pop-ups with the window's fill and stroke.
+        if let Some(menu) = &self.menu {
+            if menu.authored.background {
+                visuals.window_fill = menu.background;
+            }
+            if menu.authored.border || menu.authored.border_width {
+                let width = menu.even_border().unwrap_or(visuals.window_stroke.width);
+                visuals.window_stroke = egui::Stroke::new(width, menu.border);
+            }
+            if menu.authored.radius {
+                visuals.menu_corner_radius = egui::CornerRadius::same(menu.radius.clamp(0.0, 128.0) as u8);
+            }
+            if menu.authored.box_shadow {
+                visuals.popup_shadow = menu.egui_shadow();
+            }
+        }
+    }
+}
+
+/// egui's `Visuals` at the root: the palette's (`fallback`), with what the sheet's rules for
+/// egui's own widgets say written over them. Every element is looked up without entering it, so
+/// the style tree has none of them; with no rule, or no style engine, they are `fallback`'s.
+pub(super) fn root_visuals(fallback: egui::Visuals) -> egui::Visuals {
+    let mut visuals = fallback;
+    let rules = WidgetRules::read(|element| element.probe().style().cloned(), true);
+    rules.apply(&mut visuals);
+    visuals
+}
+
+/// egui's own widgets in `ui` styled as the element whose style is `values` (`surface` for a
+/// region or container, whose background lies behind its widgets rather than filling them).
+pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Computed>, surface: bool) -> UiStyle<'_> {
+    let color = values.as_ref().filter(|style| style.authored.color).map(|style| style.color);
+    let font = values.as_ref().filter(|style| style.authored.font_size).map(|style| style.font_size);
+    let radius = values.as_ref().filter(|style| style.authored.radius).map(|style| style.radius);
+    // A border the sheet gives (a width, 0 for none) is the ordinary widgets' outline too, in
+    // every state: without it they keep egui's own. Only one width all round: a bar's line along
+    // one side is not a box round each of its buttons (#1336).
+    let border = values
+        .as_ref()
+        .filter(|style| style.authored.border_width)
+        .and_then(|style| style.even_border().map(|width| egui::Stroke::new(width, style.border)));
+    // A panel's or view's background is the surface behind its widgets, not their fill: a
+    // device panel's colour would otherwise hide its sliders' rails.
+    let fill = values.as_ref().filter(|style| style.authored.background && !surface).map(|style| style.background);
+    // egui's own widgets in the scope (Settings, dialogs, the start page, the browser) take the
+    // sheet's generic control rules, the same ones the root's `Visuals` are built from.
+    let rules = WidgetRules::read(|element| element.style(), false);
+    let has_controls = rules.any();
+    let previous = if color.is_some()
+        || font.is_some()
+        || radius.is_some()
+        || border.is_some()
+        || fill.is_some()
+        || has_controls
+    {
+        let previous = ui.style().clone();
+        let style = ui.style_mut();
+        rules.apply(&mut style.visuals);
         if let Some(stroke) = border {
             for widget in [
                 &mut style.visuals.widgets.noninteractive,

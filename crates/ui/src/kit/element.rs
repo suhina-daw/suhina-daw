@@ -192,7 +192,7 @@ pub struct Builder<'a> {
     response: Option<&'a Response>,
     /// The [`Attr`]s that are on, a bit each (`1 << attr as u8`).
     states: u8,
-    /// Pointer states given without a response: hover 1, active 2, disabled 4.
+    /// Pointer states given without a response: hover 1, active 2, disabled 4, focus 8.
     pointer: u16,
     /// A device panel's own sheet, and the context to wake when the engine was idle.
     sheet: Option<(egui::Context, &'a str)>,
@@ -224,7 +224,12 @@ impl<'a> Builder<'a> {
     /// The pointer's states for an element drawn without a response: `hovered` (`:hover`),
     /// `pressed` (`:active`), `disabled` (`:disabled`).
     pub fn pointer(mut self, hovered: bool, pressed: bool, disabled: bool) -> Self {
-        self.pointer = u16::from(hovered) | u16::from(pressed) << 1 | u16::from(disabled) << 2;
+        self.pointer = (self.pointer & 8) | u16::from(hovered) | u16::from(pressed) << 1 | u16::from(disabled) << 2;
+        self
+    }
+    /// The element has the keyboard's focus (`:focus`), for one drawn without a response.
+    pub fn focused(mut self, on: bool) -> Self {
+        self.pointer = (self.pointer & !8) | u16::from(on) << 3;
         self
     }
     /// A device panel's own style sheet (`source`), which applies inside the panel only, over the

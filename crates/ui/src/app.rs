@@ -2950,6 +2950,8 @@ impl App {
             ui,
             self.settings.animations && self.settings.theme != "high-contrast",
         );
+        // egui's widgets follow the sheet: the root's `Visuals` the frame's setup rebuilt.
+        theme::follow_root_visuals(ui);
         // The layout settings, as the window's grid reads them (#1370), so a theme's rules for
         // them paint as they lay out.
         let (detail_place, browser_side) = self.window_place(self.session().is_some());

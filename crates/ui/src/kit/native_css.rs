@@ -218,6 +218,11 @@ impl Computed {
         !self.shadows.is_empty()
     }
 
+    /// The first outer `box-shadow` as egui's shadow (none when the sheet gives none).
+    pub(in crate::kit) fn egui_shadow(&self) -> egui::epaint::Shadow {
+        self.shadows.iter().find_map(shadows::Shadow::as_egui).unwrap_or(egui::epaint::Shadow::NONE)
+    }
+
     pub fn has_gradient(&self) -> bool {
         !self.gradients.is_empty()
     }
@@ -458,6 +463,9 @@ struct StyleNode {
 thread_local! {
     static ENGINE: RefCell<Engine> = RefCell::new(Engine::default());
     static USER_SHEET: RefCell<Option<Arc<str>>> = const { RefCell::new(None) };
+    /// Counts the times every computed style was forgotten (a sheet, variant, user sheet, width,
+    /// palette or engine change): what the root's `Visuals` are rebuilt on.
+    static STYLE_EPOCH: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Whether a device panel asked for its sheet since the last frame began, so the engine
     /// runs even when the theme has no style sheet of its own.
     static DEVICE_WANTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -465,6 +473,15 @@ thread_local! {
 
 /// Most device panel sheets kept parsed at once.
 const MAX_DEVICE_SHEETS: usize = 32;
+
+/// How many times the styles were reset: unchanged, the sheet's answers are too.
+pub(super) fn style_epoch() -> u64 {
+    STYLE_EPOCH.with(std::cell::Cell::get)
+}
+
+fn bump_epoch() {
+    STYLE_EPOCH.with(|epoch| epoch.set(epoch.get().wrapping_add(1)));
+}
 
 /// Sets the user's own style sheet (`user.css`), which applies over every theme and device
 /// sheet and stays when the theme changes. `None` removes it. Read at the next frame.
@@ -549,6 +566,8 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
         engine.fresh = 0;
         engine.limited = false;
     });
+    // egui's own widgets, at the root, follow the sheet as of this frame's reset.
+    super::theme::sync_root_visuals(ui.ctx());
     Frame(ui.ctx().clone(), ui.input(|input| input.time))
 }
 
@@ -951,6 +970,7 @@ pub fn begin_frame(ui: &egui::Ui) {
         ENGINE.with(|engine| {
             if engine.borrow().source.is_some() {
                 *engine.borrow_mut() = Engine::default();
+                bump_epoch();
             }
         });
         return;
@@ -1008,6 +1028,7 @@ pub fn begin_frame(ui: &egui::Ui) {
                     let user = engine.user.take();
                     let variant = engine.variant.take();
                     let device_sheets = std::mem::take(&mut engine.device_sheets);
+                    bump_epoch();
                     *engine = Engine {
                         source,
                         palette: variables,
@@ -1024,6 +1045,7 @@ pub fn begin_frame(ui: &egui::Ui) {
                     // A sheet that does not parse (a half-saved file) keeps the last
                     // working styles; its error is shown by the theme editor.
                     engine.source = source;
+                    bump_epoch();
                 }
             }
         } else if engine.size != size || engine.palette != variables {
@@ -1055,6 +1077,7 @@ fn same_source(engine: Option<&Arc<str>>) -> bool {
 impl Engine {
     /// Forgets every style worked out, after the sheets, the palette or the window's size changed.
     fn reset_styles(&mut self) {
+        bump_epoch();
         self.identities.clear();
         self.swatches.clear();
         self.body = None;

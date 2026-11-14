@@ -217,9 +217,57 @@ fn scheme(p: &Palette) -> egui::Theme {
 pub fn set_palette(ctx: &egui::Context, palette: Palette) {
     PALETTE_REVISION.with(|revision| revision.set(revision.get().wrapping_add(1)));
     PALETTE.with(|p| p.set(palette));
-    ctx.all_styles_mut(|style| visuals(&mut style.visuals, &palette));
+    // egui's own visuals are rebuilt from the sheet in the next frame's setup (`sync_root_visuals`).
     ctx.set_theme(scheme(&palette));
     ctx.request_repaint();
+}
+
+/// What the root's `Visuals` were last built from, kept in the context: the palette and the
+/// style engine's resets.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct VisualsSource {
+    palette: u64,
+    styles: u64,
+}
+
+fn visuals_key() -> egui::Id {
+    egui::Id::NULL.with("suhina-root-visuals")
+}
+
+/// Builds egui's `Visuals` for the whole window from the sheet: the palette's own
+/// ([`palette_visuals`]) with what the rules for egui's widgets say over them
+/// ([`super::style_class::root_visuals`]). Run at the start of a frame, it works only when the
+/// palette or the engine's styles were reset since the last time (a theme, variant, `user.css`,
+/// width `@media`, contrast, a palette drag or the window's opacity), not on every frame; the
+/// change shows in every `Ui` made after it, and in the root's once it takes them
+/// ([`follow_root_visuals`]). Scoped styles (`style_class::ui_for`) apply over these.
+pub(super) fn sync_root_visuals(ctx: &egui::Context) {
+    let source = VisualsSource { palette: palette_revision(), styles: super::native_css::style_epoch() };
+    let key = visuals_key();
+    if ctx.data(|data| data.get_temp::<VisualsSource>(key)) == Some(source) {
+        return;
+    }
+    ctx.data_mut(|data| data.insert_temp(key, source));
+    let fallback = palette_visuals(&palette());
+    let built = super::style_class::root_visuals(fallback);
+    if ctx.global_style().visuals != built {
+        ctx.all_styles_mut(|style| style.visuals = built.clone());
+    }
+}
+
+/// Gives `ui`, the window's root, the `Visuals` the frame's setup built, when they changed after it
+/// was made: a `Ui` keeps the style it was created with.
+pub fn follow_root_visuals(ui: &mut egui::Ui) {
+    let global = ui.ctx().global_style();
+    if !std::sync::Arc::ptr_eq(ui.style(), &global) && ui.style().visuals != global.visuals {
+        ui.style_mut().visuals = global.visuals.clone();
+    }
+}
+
+/// egui's `Visuals` as the root has them with no rule in the sheet, for the tests.
+#[cfg(test)]
+pub(super) fn palette_visuals_for(p: &Palette) -> egui::Visuals {
+    palette_visuals(p)
 }
 
 /// The id of the default theme, Suhina Studio, in the settings file.
@@ -935,12 +983,21 @@ pub fn install(ctx: &egui::Context) {
         style.spacing.interact_size.y = ROW;
         // Text is read, not selected: no text cursor over labels.
         style.interaction.selectable_labels = false;
-        visuals(&mut style.visuals, &palette);
+        style.visuals = palette_visuals(&palette);
     });
+    // The palette's visuals are in place: the next frame builds the sheet's over them.
+    ctx.data_mut(|data| data.remove::<VisualsSource>(visuals_key()));
 }
 
-/// egui's visuals in the colours of `p`.
-fn visuals(visuals: &mut egui::Visuals, p: &Palette) {
+/// egui's visuals in the colours of `p`: what the root has where no rule of the sheet says
+/// otherwise.
+fn palette_visuals(p: &Palette) -> egui::Visuals {
+    let mut visuals = egui::Visuals::default();
+    visuals_in(&mut visuals, p);
+    visuals
+}
+
+fn visuals_in(visuals: &mut egui::Visuals, p: &Palette) {
     // egui's own light or dark defaults under the tokens.
     *visuals = if light(p) { egui::Visuals::light() } else { egui::Visuals::dark() };
     visuals.panel_fill = p.panel_background;
