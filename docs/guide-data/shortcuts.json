@@ -561,7 +561,7 @@
         }
       },
       "sourceFingerprint": "4ce31edd3c94fe8f813d0c32bfe4abb5d03a511cd61fbde2eabe3fbeaad7614b",
-      "description": "Switches the main work area between Session, the clip-slot grid, and Arrangement, the song timeline.",
+      "description": "Switches the main work area between the Launcher, the clip-slot grid, and Arrangement, the song timeline.",
       "context": "Requires an open project; text fields keep Tab while they accept keyboard input.",
       "whenToUse": "Move between launching clips and editing the song timeline.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
@@ -594,7 +594,7 @@
         }
       },
       "sourceFingerprint": "0cdf5badb7dc414202328272bfa47bebf02e13a0f020bc5b48b4d699ccb8dd8a",
-      "description": "Shows Session and closes the large sample map so the clip-slot grid is visible.",
+      "description": "Shows the Launcher and closes the large sample map so the clip-slot grid is visible.",
       "context": "Requires an open project. No key is assigned by default; bind one in Settings → Shortcuts.",
       "whenToUse": "Go directly to the clip grid instead of toggling views.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
@@ -948,7 +948,7 @@
         }
       },
       "sourceFingerprint": "151e48061036fe52400bd75752c71aa83e97d475c4a88cc35594dfd6bdded6f6",
-      "description": "Turns Session key mapping on or off. Entering mapping mode shows Session; click a clip slot, scene or stop button and press the key to assign.",
+      "description": "Turns Launcher key mapping on or off. Entering mapping mode shows the Launcher; click a clip slot, scene or stop button and press the key to assign.",
       "context": "Requires an open project. In mapping mode Delete removes an assignment and Escape leaves mapping mode.",
       "whenToUse": "Assign a convenient key to a frequently launched clip or scene.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
@@ -1878,7 +1878,7 @@
         }
       },
       "sourceFingerprint": "a920b8278cf1e42e84b24d84406b1ba0c06f6cec4c03680f6d2c27e44cf0660e",
-      "description": "Copies the relevant selection: piano-roll notes first when that editor handles the key, then focused devices, the selected Session slot, or Arrangement clips or a time selection. Copy leaves the originals in place.",
+      "description": "Copies the relevant selection: piano-roll notes first when that editor handles the key, then focused devices, the selected Launcher slot, or Arrangement clips or a time selection. Copy leaves the originals in place.",
       "context": "Click the intended editor or device panel first. If the piano roll cannot act on notes, copying may fall through to a clip selection.",
       "whenToUse": "Reuse a phrase, clip or device setup elsewhere.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
@@ -1959,7 +1959,7 @@
       },
       "sourceFingerprint": "081d1faf5a3300150ab43523a6103a5b9a4603d3fee970401b5df00c4cbe8541",
       "description": "Copies and removes selected piano-roll notes, focused devices, or Arrangement material. An Arrangement time selection cuts only its span.",
-      "context": "Click the intended editor or device panel first. Cutting a Session slot's clip is not supported; copy and paste it instead.",
+      "context": "Click the intended editor or device panel first. Cutting a Launcher slot's clip is not supported; copy and paste it instead.",
       "whenToUse": "Move a passage or device rather than leave a second copy.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
       "references": [
@@ -2038,7 +2038,7 @@
         }
       },
       "sourceFingerprint": "bb1fad897945b556e8652d4ef58d4d7480dd8faf00abc5281368cb1890f282d5",
-      "description": "Pastes into the focused context. Notes go after selected notes, otherwise at a playhead inside the clip or after their copied position. Devices go after picked devices; Session paste replaces the selected slot. Arrangement paste goes after the selected clip or at the playhead on the selected track; multi-track copies return to their tracks.",
+      "description": "Pastes into the focused context. Notes go after selected notes, otherwise at a playhead inside the clip or after their copied position. Devices go after picked devices; Launcher paste replaces the selected slot. Arrangement paste goes after the selected clip or at the playhead on the selected track; multi-track copies return to their tracks.",
       "context": "Requires copied material and a suitable target. Arrangement overlap follows audio/MIDI stacking settings. Suhina also puts text on the system clipboard because the window delivers Paste only for text clipboard content.",
       "whenToUse": "Place copied material at a chosen clip slot, track, note position or device position.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same. System clipboard events, including Windows Ctrl+Insert, Shift+Delete and Shift+Insert when delivered by the window, are normalized to Copy, Cut and Paste.",
@@ -2119,7 +2119,7 @@
       },
       "sourceFingerprint": "954789096d8b013d97edcf629df5a5b1ca1c3db137ae3606753058bc5965cc69",
       "description": "Copies selected notes, devices or Arrangement material directly after the selection. A duplicated Arrangement time selection moves onto the copy so another press repeats it.",
-      "context": "Click the intended editor or device panel first. Session slot duplication is not supported. Arrangement overlaps follow stacking settings. Draw-first uses Ctrl/Cmd+B instead of Ctrl/Cmd+D.",
+      "context": "Click the intended editor or device panel first. Launcher slot duplication is not supported. Arrangement overlaps follow stacking settings. Draw-first uses Ctrl/Cmd+B instead of Ctrl/Cmd+D.",
       "whenToUse": "Repeat a musical phrase or an effects chain without a separate paste step.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
@@ -2216,7 +2216,7 @@
         }
       },
       "sourceFingerprint": "774c871b94402b5e3a23586222a4d29b5c1fbb3cf8aff765b8dc64af892dacd1",
-      "description": "Deletes the selection handled first: selected piano-roll notes, Arrangement automation points, picked devices, focused tracks, a Session slot's clip, or Arrangement material. A time selection removes the material inside its span.",
+      "description": "Deletes the selection handled first: selected piano-roll notes, Arrangement automation points, picked devices, focused tracks, a Launcher slot's clip, or Arrangement material. A time selection removes the material inside its span.",
       "context": "Click the intended area first: the focused panel and selection decide what is removed.",
       "whenToUse": "Remove selected notes or an unwanted passage after confirming the correct area is focused.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
@@ -2367,8 +2367,8 @@
         }
       },
       "sourceFingerprint": "5b730d42ecfe7d2b50db91837186abd6f819fa64beddabed162b7b1f6c3eb07a",
-      "description": "Opens name editing for a focused track header, otherwise the selected Arrangement clip or Session slot clip. Multiple Arrangement clips can be renamed together when Rename selected clips is enabled.",
-      "context": "Click the track header or clip to choose the target; an empty Session slot has no clip to rename.",
+      "description": "Opens name editing for a focused track header, otherwise the selected Arrangement clip or Launcher slot clip. Multiple Arrangement clips can be renamed together when Rename selected clips is enabled.",
+      "context": "Click the track header or clip to choose the target; an empty Launcher slot has no clip to rename.",
       "whenToUse": "Give tracks and clips meaningful names before the project grows.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
@@ -3246,8 +3246,8 @@
         }
       },
       "sourceFingerprint": "79d83dfcab2baf52cfe84ab8536c5709103614a8d76a6dbbaf2f58ad0b94147b",
-      "description": "Launches the selected Session clip slot using the launcher's scheduling rules.",
-      "context": "Requires Session and a selected clip slot. Piano-roll focus keeps its keys separate from slot navigation.",
+      "description": "Launches the selected Launcher clip slot using the launcher's scheduling rules.",
+      "context": "Requires the Launcher and a selected clip slot. Piano-roll focus keeps its keys separate from slot navigation.",
       "whenToUse": "Start the slot selected with the arrow keys.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
@@ -3317,8 +3317,8 @@
         }
       },
       "sourceFingerprint": "32991acc9fcf0e2e52d67ce0ccfcf9241a3a7964ca243137082bf4bc30bc1b08",
-      "description": "Selects the clip slot in the Session row above the current slot.",
-      "context": "Click a Session slot first; with piano-roll focus Up moves selected notes instead.",
+      "description": "Selects the clip slot in the Launcher row above the current slot.",
+      "context": "Click a Launcher slot first; with piano-roll focus Up moves selected notes instead.",
       "whenToUse": "Navigate vertically through clip choices without launching them.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
@@ -3388,9 +3388,9 @@
         }
       },
       "sourceFingerprint": "9d3994c6a1bd45940a4c32886991ea800e16b10baf9170b604007563308f71ee",
-      "description": "Selects the clip slot in the Session row below the current slot.",
-      "context": "Click a Session slot first; with piano-roll focus Down moves selected notes instead.",
-      "whenToUse": "Move to the next Session row before launching its clip.",
+      "description": "Selects the clip slot in the Launcher row below the current slot.",
+      "context": "Click a Launcher slot first; with piano-roll focus Down moves selected notes instead.",
+      "whenToUse": "Move to the next Launcher row before launching its clip.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
         "crates/ui/src/settings/keymap.rs",
@@ -3459,8 +3459,8 @@
         }
       },
       "sourceFingerprint": "27a1b0bb8376f50cb29653019861b834dc9fa19d8aca67624c0a34479146ab05",
-      "description": "Selects the Session clip slot on the track to the left.",
-      "context": "Click a Session slot first; with piano-roll focus Left moves selected notes instead.",
+      "description": "Selects the Launcher clip slot on the track to the left.",
+      "context": "Click a Launcher slot first; with piano-roll focus Left moves selected notes instead.",
       "whenToUse": "Choose a slot on the neighboring track.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
@@ -3530,9 +3530,9 @@
         }
       },
       "sourceFingerprint": "dc41a451cc414c7dbcf12a088cc421d0a200c48b76ed80edea3a332c7f80776e",
-      "description": "Selects the Session clip slot on the track to the right.",
-      "context": "Click a Session slot first; with piano-roll focus Right moves selected notes instead.",
-      "whenToUse": "Move across the Session grid to another track.",
+      "description": "Selects the Launcher clip slot on the track to the right.",
+      "context": "Click a Launcher slot first; with piano-roll focus Right moves selected notes instead.",
+      "whenToUse": "Move across the Launcher grid to another track.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
       "references": [
         "crates/ui/src/settings/keymap.rs",
