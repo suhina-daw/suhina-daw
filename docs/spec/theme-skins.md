@@ -1147,8 +1147,10 @@ repainting every frame in a scene. `--budget` prints the style engine's counts i
 `suhina-theme-render` draws each scene in every built-in theme and variant without a GPU, and Suhina
 Studio once more with the style engine on, and lists what the last frame paints: each shape's
 place and size to a quarter point, its colours, its text and its texture by name. Each listing's
-digest is held in `apps/theme-render/tests/painted/<system>.txt` (macOS and Linux; some text, such
-as shortcuts, differs between them). A change that differs fails the test, naming the scenes and
+digest is held in `apps/theme-render/tests/painted/<system>.txt`, one for macOS and one for Linux
+(some text, such as shortcuts, differs between them; a run that differs prints its whole file, so
+one system's file can be taken from its CI run). Each drawing runs on a thread of its own, so none
+depends on the one before. A change that differs fails the test, naming the scenes and
 themes; one that means to change a look records the new digests with `SUHINA_BLESS=1` and says why,
 and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare before and after. The About
 dialog, which shows the build's commit, is left out.

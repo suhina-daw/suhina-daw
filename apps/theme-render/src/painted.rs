@@ -39,8 +39,8 @@ fn stroke(s: Stroke) -> String {
 
 fn path_stroke(s: &PathStroke) -> String {
     match &s.color {
-        ColorMode::Solid(c) => format!("{}/{}", q(s.width), color(*c)),
-        ColorMode::UV(_) => format!("{}/uv", q(s.width)),
+        ColorMode::Solid(c) => format!("{}/{}/{:?}", q(s.width), color(*c), s.kind),
+        ColorMode::UV(_) => format!("{}/uv/{:?}", q(s.width), s.kind),
     }
 }
 
@@ -99,7 +99,7 @@ fn shape(out: &mut String, ctx: &egui::Context, depth: usize, shape: &Shape) {
             let c = r.corner_radius;
             writeln!(
                 out,
-                "{pad}rect {} r{},{},{},{} {} {} blur{} {}",
+                "{pad}rect {} r{},{},{},{} {} {} {:?} blur{} angle{} pixels{:?} {}",
                 rect(r.rect),
                 c.nw,
                 c.ne,
@@ -107,7 +107,10 @@ fn shape(out: &mut String, ctx: &egui::Context, depth: usize, shape: &Shape) {
                 c.se,
                 color(r.fill),
                 stroke(r.stroke),
+                r.stroke_kind,
                 q(r.blur_width),
+                q(r.angle * 1000.0),
+                r.round_to_pixels,
                 r.brush.as_ref().map_or_else(String::new, |b| format!(
                     "texture {} uv {}",
                     texture(ctx, b.fill_texture_id),
@@ -122,28 +125,32 @@ fn shape(out: &mut String, ctx: &egui::Context, depth: usize, shape: &Shape) {
                 .iter()
                 .map(|s| {
                     let text = job.text.get(s.byte_range.start.0..s.byte_range.end.0).unwrap_or("");
-                    format!("{text:?} {} {}", color(s.format.color), q(s.format.font_id.size))
+                    // The whole format: font, colours, background, italics, lines, alignment.
+                    format!("{text:?} {:?}", s.format)
                 })
                 .collect();
             writeln!(
                 out,
-                "{pad}text {} {} {} {} angle{} [{}]",
+                "{pad}text {} {} {} {} angle{} opacity{} underline{} [{}]",
                 pos(t.pos),
                 rect(t.galley.rect),
                 color(t.fallback_color),
                 color(t.override_text_color.unwrap_or(Color32::TRANSPARENT)),
                 q(t.angle * 1000.0),
+                q(t.opacity_factor * 1000.0),
+                stroke(t.underline),
                 sections.join(" | ")
             )
         }
         Shape::Mesh(m) => {
-            let mut line = format!("{pad}mesh {} {} {}", texture(ctx, m.texture_id), m.indices.len(), m.vertices.len());
+            let mut line = format!("{pad}mesh {} {:?}", texture(ctx, m.texture_id), m.indices);
             for v in &m.vertices {
                 let _ = write!(
                     line,
                     " {}:{}:{}",
                     pos(v.pos),
-                    pos(Pos2::new(v.uv.x * 256.0, v.uv.y * 256.0)),
+                    // UVs to a 16384th of the texture: finer than a texel of any texture egui allows.
+                    pos(Pos2::new(v.uv.x * 4096.0, v.uv.y * 4096.0)),
                     color(v.color)
                 );
             }
@@ -200,16 +207,28 @@ pub fn digest(text: &str) -> u64 {
     text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3))
 }
 
-/// The listing of `scene` drawn in `subject`: driven, settled, then one more frame.
-/// `engine` runs the style engine even when the theme has no sheet of its own (Suhina Studio,
-/// whose colours are all in its palette), as an empty `user.css` does.
+/// The listing of `scene` drawn in `subject`: driven, settled, then one more frame. `engine` runs
+/// the style engine even when the theme has no sheet of its own (Suhina Studio, whose colours are
+/// all in its palette), as an empty `user.css` does.
+///
+/// Drawn on a thread of its own, whose window state (the palette, the style engine, the user
+/// sheet) starts afresh and goes with it: one drawing never depends on the one before, and the
+/// caller's state is left alone. A scene that still repaints after the most frames a scene may
+/// take says so in its first line: with the fixed step that is the same each run, as long as no
+/// scene plays the transport (which repaints by the clock).
 pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene, engine: bool) -> Result<String, String> {
-    let mut h = crate::headless((scene.app)()?, subject, scene.width);
-    suhina_ui::kit::native_css::set_user_sheet(engine.then(|| "".into()));
-    let driven = (scene.drive)(&mut h);
-    let _steps = h.try_run();
-    h.step();
-    let listing = last_frame(&h);
-    suhina_ui::kit::native_css::set_user_sheet(None);
-    driven.map(|()| listing)
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                suhina_ui::kit::native_css::set_user_sheet(engine.then(|| "".into()));
+                let mut h = crate::headless((scene.app)()?, subject, scene.width);
+                (scene.drive)(&mut h)?;
+                let settled = h.try_run().is_ok();
+                h.step();
+                let listing = last_frame(&h);
+                Ok(if settled { listing } else { format!("restless\n{listing}") })
+            })
+            .join()
+            .unwrap_or_else(|_| Err(format!("{} panicked", scene.name)))
+    })
 }

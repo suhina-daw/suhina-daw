@@ -5835,6 +5835,7 @@ dependencies = [
  "suhina-device-api",
  "suhina-device-registry",
  "suhina-session",
+ "suhina-test-support",
  "suhina-theme-package",
  "suhina-ui",
  "suhina-ui-gpu",
