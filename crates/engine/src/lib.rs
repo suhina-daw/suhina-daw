@@ -109,7 +109,6 @@ use std::time::{Duration, Instant};
 
 use ahead::AheadReader;
 pub use ahead::StretchWorker;
-pub use pool::{MAX_RENDER_THREADS, RENDER_THREADS_VAR, render_threads_from, render_threads_from_env};
 pub use audio::{AudioData, AudioPool};
 use audio::{AudioEvent, Fades};
 use chain::{CHAIN_INPUT_GAIN, Chain, MAX_BLOCK};
@@ -134,6 +133,7 @@ pub use plugin::{
     Sent, SongPosition, plugin_devices, plugin_key,
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
+pub use pool::{MAX_RENDER_THREADS, RENDER_THREADS_VAR, render_threads_from, render_threads_from_env};
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
 pub use record::{
     RECORD_CHUNK, RECORD_CHUNKS, RECORD_NOTES, RecordReceiver, RecordedAudio, RecordedJump, RecordedNote,

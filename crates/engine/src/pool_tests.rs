@@ -41,9 +41,8 @@ fn device(id: &str, params: &[(&str, f64)]) -> Device {
 /// the main channel too. Every chain may run on a worker.
 fn project() -> suhina_model::Project {
     let notes = |key: u8| (0..8).map(|n| Note::new(f64::from(n) * 0.5, 0.4, key + (n % 3) as u8, 0.8)).collect();
-    let mut builder = ProjectBuilder::new()
-        .bus_track(5, "Group", ChannelRole::Submix)
-        .bus_track(6, "Return", ChannelRole::Effect);
+    let mut builder =
+        ProjectBuilder::new().bus_track(5, "Group", ChannelRole::Submix).bus_track(6, "Return", ChannelRole::Effect);
     let chains: [&[Device]; 4] = [
         &[device("fm-synth", &[]), device("overdrive", &[]), device("delay", &[])],
         &[device("fm-synth", &[]), device("saturator", &[]), device("auto-pan", &[])],
