@@ -307,7 +307,8 @@ impl MidiInputs {
         }
     }
 
-    /// Every port there is, with whether it is on, open, and why it could not be opened.
+    /// Every port there is, with whether it is on, open (by the session, or claimed raw by a
+    /// running program), and why it could not be opened.
     fn describe(&self) -> Result<Value, CommandError> {
         let system = self.system.as_ref().ok_or_else(no_midi)?;
         let ports = system.ports().map_err(|e| CommandError(format!("the MIDI inputs could not be listed: {e}")))?;
@@ -315,10 +316,12 @@ impl MidiInputs {
             ports
                 .iter()
                 .map(|name| {
+                    let claimed = self.raw.iter().any(|(p, _, _, _)| p == name);
                     json!({
                         "name": name,
                         "enabled": !self.off.contains(name),
-                        "open": self.open.iter().any(|(open, _)| open == name),
+                        "open": self.open.iter().any(|(open, _)| open == name) || claimed,
+                        "claimed": claimed,
                         "error": self.failed.iter().find(|(n, _)| n == name).map(|(_, e)| e),
                     })
                 })
