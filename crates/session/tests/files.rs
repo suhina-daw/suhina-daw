@@ -571,6 +571,24 @@ fn unreadable_files_are_skipped_and_reported() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A file read before the output opened was read at 48 kHz; an output at another rate has it
+/// read again at its own, and one at 48 kHz keeps the first read.
+#[test]
+fn an_output_at_another_rate_reads_the_device_files_again() {
+    for (rate, loads) in [(48_000, 1), (44_100, 2)] {
+        let mut session = Session::new(blank_project());
+        run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+        run(&mut session, "device.add", json!({ "track": 1, "id": "nam-cab-loader" })).unwrap();
+        let path = "builtin:nam-cab-loader/Synthetic Cabinet Plain.wav";
+        run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": path })).unwrap();
+        assert_eq!(session.device_file_loads(), 1, "read once before any output");
+        let project = session.project().clone();
+        let mut renderer = Renderer::stopped(&project, &AudioPool::new(), rate, suhina_session::devices()).unwrap();
+        session.attach_player(Player::new(renderer.controller(), None));
+        assert_eq!(session.device_file_loads(), loads, "an output at {rate} Hz");
+    }
+}
+
 #[test]
 fn a_sample_added_while_playing_reaches_the_engine() {
     let dir = temp_dir("playing");
