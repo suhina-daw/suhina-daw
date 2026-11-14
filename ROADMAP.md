@@ -1100,3 +1100,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 
 - The bars' items in themes: the toolbar, the status bar, the project tabs, the application bar, the piano roll's toolbar and the MIDI tools' tabs lay out their items in one CSS row, so a theme sets their gaps, padding, alignment and sizes and hides an item with `display: none`, which takes its input away too; a narrow bar still gives way in Suhina's order.
 
+- One drag at a time in the Arrangement: Escape lets go of the drag under way (a clip, an edge, a
+  fade, a header's control, a marker, the loop, time being painted, a take, an automation point,
+  curve, range or lane header) without doing what its release would, and a drag let go of while
+  the view was not drawn ends instead of staying stuck.
+
