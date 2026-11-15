@@ -1181,12 +1181,13 @@ ordinary CSS, in a cascade tier of their own under the theme.
    panel sheets, user sheet. **Every theme rule beats every base rule**, whatever its
    specificity or `@layer`, as a page's rules beat a browser's own sheet: a theme, its variant, a
    device panel's sheet and `user.css` all override it, and nothing about the base sheet's
-   selectors matters to a theme author. A theme that restyles an element states the states it
-   wants for it as well (`button { … }` hides the base sheet's `button[checked]`, so the theme
-   adds its own `button[checked] { … }`); a theme that sets only colour variables keeps every
-   state. Base declarations are not "authored" (`ComputedStyle::authored`, `declared`), as the
-   user agent's are not, so the code that asks whether a theme styled something sees only the
-   theme's rules, and a base rule on an element replaces what it inherited from a theme's rule
+   selectors matters to a theme author. The cascade goes property by property: a theme's
+   `button { background-color: … }` overrides the base sheet's `button[checked]` background too,
+   while a property the theme does not set keeps the base value, so a theme states the states it
+   wants for each property it sets (`button[checked] { background-color: … }`); a theme that sets
+   only colour variables keeps every state. Base declarations are not "authored"
+   (`ComputedStyle::authored`, `declared`), as the user agent's are not, so the code that asks
+   whether a theme styled something sees only the theme's rules, and a base rule on an element replaces what it inherited from a theme's rule
    around it, as a user-agent rule does. The colour variables' defaults (Suhina Studio's) are the
    core `@property` registrations (`core.css`, `theme_vars::core_sheet`), in the base tier of
    every cascade, so `var(--accent)` always resolves. The base sheet moves in what was the host's
@@ -1225,13 +1226,15 @@ With it:
   budget's scenes. Editing one colour of a theme's map resets the styles once, as a theme
   change does: the base sheet reads every colour variable, so no change is unread. Resetting
   only the styles that read the changed variable was not built (it needs the cascade to record
-  which variables each style read, through inheritance); the budget holds the one reset.
+  which variables each style read, through inheritance); the budget holds the one reset, and
+  #1456 follows it up.
 - **Window opacity is a value on `window`.** A backdrop image under a translucent window used to
   rewrite the palette's window, panel and border colours each frame. The host now writes those
   three variables, faded (`Color32::gamma_multiply`), in a base-tier rule for `window`
-  (`native_css::set_window_opacity`), and the root snapshot carries the same faded colours, so
+  (`native_css::set_window_opacity`, given before the frame's styles are worked out, so the frame
+  an image first shows in is faded), and the root snapshot carries the same faded colours, so
   the palette's readers and the sheet's agree, byte for byte with what the palette gave
-  (tested at 0, 37, 80 and 100 %). A base rule mixing them with `transparent` by a variable was
+  (tested at 0, 37, 80 and 100 %, and a translucent colour at every whole percent). A base rule mixing them with `transparent` by a variable was
   not taken: the palette's readers read the variables, and a variable cannot be mixed from its
   own value on the same element.
 - **A transitional scope rule** (removed in #1452 with the palette): entering an element with

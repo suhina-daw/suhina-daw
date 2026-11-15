@@ -51,7 +51,8 @@ use suhina_theme_render::{Subject, scenes};
 /// a built-in theme is not edited in place): the colour map is the base tier's `:root` rule,
 /// and the base sheet reads every colour variable, so one change resets the styles once, as a
 /// theme change does (2 frames, and every identity worked out afresh: 386 and 618, 398 and 630 on
-/// Windows). Before, a colour the theme's own sheet did not read reset nothing.
+/// Windows). Before, a colour the theme's own sheet did not read reset nothing. Resetting only the
+/// styles that read the changed variable is #1456.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (

@@ -461,9 +461,12 @@ page's (ADR 0031, amendment of 2026-11-15).
 - **A tier of its own.** The base sheet is in the cascade's base tier (`Layer::Base`), between the
   user-agent sheet and the theme. Every rule of a theme, its variant, a device panel's sheet and
   `user.css` beats every base rule, whatever its specificity or `@layer`: nothing about the base
-  sheet's selectors matters to a theme author. A theme that restyles an element states the states
-  it wants for it as well: `button { … }` hides a base `button[checked]`, so the theme adds its
-  own `button[checked] { … }`. A theme that sets only colour variables keeps every state.
+  sheet's selectors matters to a theme author. The cascade goes property by property: a theme's
+  `button { background-color: … }` overrides the background of the base sheet's
+  `button[checked]` too, while a property the theme does not set keeps the base sheet's value. A
+  theme that restyles an element states the states it wants for each property it sets
+  (`button[checked] { background-color: … }`). A theme that sets only colour variables keeps every
+  state.
 - **Not the theme's.** What a base rule gives an element is not authored, as the user agent's is
   not: the code that asks whether a theme styled something sees only the theme's rules.
 - **No fixed colour.** Every colour in the base sheet reads a variable (it may mix one with
@@ -790,8 +793,7 @@ and has no migration. Only a sheet of the much earlier form (below) is still mig
 edited, only duplicated; *Export theme…* writes a built-in theme's folder as it is, and the theme
 template carries them all in `examples/`. A built-in folder may hold `variants/`, which come with
 the theme as its swatches (`theme::built_in_variants`). Suhina Studio's sheet sets only colours and
-settings, so it is set aside while the theme has its own values and the style engine stays off;
-any variant of it brings the sheet back.
+settings, and runs on the style engine like every theme's (*The base sheet*).
 
 **Swatches and thumbnails.** The picker shows a swatch for each theme and variant, and a card for
 each theme.

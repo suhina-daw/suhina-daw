@@ -395,9 +395,11 @@ specific selector to win over Suhina's.
 
 - **Set variables, keep every state.** The base sheet takes every colour from the colour variables
   (`--accent`, `--control-background` …). A theme that sets only `:root` variables keeps every look
-  it gives, its states included. A rule of yours for an element replaces the base sheet's rules
-  for that element, its states' too: `button { … }` hides the base sheet's `button[checked]`, so
-  write the states you want as well (`button[checked] { … }`).
+  it gives, its states included. A rule of yours for an element overrides the base sheet's rules
+  for that element, its states' too, for each property your rule sets: `button {
+  background-color: … }` overrides the background of the base sheet's `button[checked]`, so write
+  the states you want for that property as well (`button[checked] { background-color: … }`).
+  A property you do not set keeps the base sheet's value.
 - **Colour a region through its variables.** `mixer { --text-value: gold; }` reaches every part
   inside the mixer that Suhina colours with `--text-value`. A plain `mixer { color: gold; }`
   colours only the text that has no rule of its own, not the parts the base sheet styles.
