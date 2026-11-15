@@ -453,6 +453,22 @@ specific selector to win over Suhina's.
   (a send, a fader's value, a scene's text, a tool, a marker, a clip's gain field …): colour them
   through the region's variables (`--text-primary`, `--text-value`) or give the part a rule
   (`send { color: … }`).
+- **The detail area and the browser.** The base sheet colours the browser (its text, its words by
+  kind from the `--browser-text-*` variables, its rows and places under the pointer, picked and
+  where a drop lands, its filter chips `button[kind="chip"]`, a tag's box
+  `button[kind="tag-check"]`, the preview's play `button[kind="preview"]`, the "…" of the tags that
+  did not fit `button[kind="more"]`, and the fills it paints itself, `browser-fill`), the detail
+  panels (their fills `detail-fill`, a device's header, nodes, outline, lines, parameters and
+  canvas colours `device-canvas`, a group's branches `device-row[kind="branch"]`, the fields
+  `value[kind="field"]`, the buttons `button[kind="panel"]`, switches `button[kind="panel-toggle"]`
+  and lists `dropdown[kind="panel"]`, the Clip and Devices switch `editor-tab[kind="switch"]`) and
+  the piano roll (its grid, rows, notes, velocities, ruler, loop bar, keys, strips, tools and
+  toolbar menus). **A rule for every `button` hides their lit looks too**: state
+  `button[kind="chip"][checked]`, `button[kind="tag-check"][checked]`,
+  `button[kind="focus"][checked]` and `button[kind="more"]:hover`. A region's plain `color` no
+  longer reaches the piano roll's ruler numbers (`ruler-number`) and toolbar lines
+  (`separator[kind="bar"]`) or a device's values (`device-control[kind="value"]`,
+  `device-canvas[kind="value"]`): colour the region through `--text-value`, or give them a rule.
 - **The base sheet's own colours** are variables as well: the browser's icons by kind
   (`--browser-icon-midi`, `--browser-icon-sample`, `--browser-icon-instrument`,
   `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …
@@ -668,7 +684,9 @@ Elements, by name:
 | `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob[kind="dial"]` with its rim in its `border-color`, the disc between rim and face in `knob-ring`'s `background-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
 | `meter`, `meter-level`, `meter-vertical`, `meter-horizontal` | level meters and their lit part |
 | `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs |
-| `label[kind]` | the browser's and the detail panels' words by how much they stand out: dim words (`hint`) and a control's or figure's name (`caption`) take only a colour given to them, not one around them; a panel's title (`title`), a value shown as words (`value`), a fault (`error`), a plug-in's state (`plugin-state`), the head of the MIDI tools' figures (`head`, `[selected]` in its `accent-color`) |
+| `label[kind]` | the browser's and the detail panels' words by how much they stand out: dim words (`hint`) and a control's or figure's name (`caption`) take only a colour given to them, not one around them; a panel's title (`title`), a value shown as words (`value`), a fault (`error`), a plug-in's state (`plugin-state`), a device parameter's name (`parameter`), a check box's words (`check`), the head of the MIDI tools' figures (`head`, `[selected]` in its `accent-color`); inside the browser `hint`, `caption` and `value` take the browser's own colours |
+| `browser-fill`, `detail-fill` | the fills the browser and the detail area paint for themselves where the region behind gives none, by `kind` (`panel`, `window`; the browser's splitter `splitter`, stronger under the pointer; the detail's `control` and `hover` for the hide and close buttons, `outline` the edge of a button that cannot be pressed) |
+| `device-canvas` | the colours a device's own drawings take, read in the device's scope: `color` the text, `background-color` the controls, `border-color` the lines, `accent-color` the accent; `kind="secondary"`, `"value"`, `"inverse"` (`color`) and `"panel"`, `"window"`, `"active"` (`background-color`) the others |
 | `#control-device-on`, `button[kind="close"]`, `button[kind="more"]` | a device's on switch (`[checked]` while it runs), an expanded panel's × and the browser's more tags: only a rule for them reaches them, not one for every `button` |
 | `device[kind="group"]`, `device-row` | a device group's panel, and its branches (`[selected]` while shown, `[muted]` while muted); its `+ Branch` is `add-track[kind="branch"]`; a device's `accent-color` outlines it while selected |
 | `icon[kind]` in the piano roll | its tool pointer (`pointer`, the ring its `background-color`) and the strip's magnifier (`magnifier`); a clip's colour swatch is `icon[kind="swatch"]` |
@@ -688,13 +706,13 @@ Elements, by name:
 | `device-list`, `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends (or the device chain) are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
 | `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
 | `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail (the mixer's and the clip gain fader's) |
-| `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-note`, `velocity` | the piano roll's grid, its rows (`kind="hover"` under the pointer), its keys (with `[selected]` and `[playing]`), the notes (`kind="draft"` while a drag makes them) and their velocity stems (`[selected]`, `[muted]`; `kind="line"` for a velocity drag's line) |
+| `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-note`, `velocity` | the piano roll's grid (`kind="strong"` on an octave and a bar), its rows (`kind="hover"` under the pointer), its keys (with `[selected]` and `[playing]`), the notes (`kind="draft"` while a drag makes them; their own inks `kind="outline"`, `"dashes"` and `"name"`, `[checked]` on a strong note) and their velocity stems (`[selected]`, `[muted]`; `kind="line"` for a velocity drag's line) |
 | `piano-slice` | a slice drag's line (`kind="cut"`, `kind="delete"` for the right button's, with a `background-color` over what it deletes) |
 | `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark` | a C key, a key under the pointer, the line between white keys, the mark on a key in the clip's scale |
 | `piano-scale-strip`, `piano-range` | the strip left of the keys that names the octaves and the row under the pointer, and the range a drag on the keys is selecting |
 | `piano-clip-strip` | the strip over the ruler that shows several picked clips (background) |
 | `piano-time-selection`, `piano-insert-mark` | what is selected in time (background over the rows, `border-color` for its edges and the bar on the ruler), and the mark a click leaves where a paste goes (background) |
-| `piano-tool`, `midi-tools`, `clip-info`, `editor-tab` | the piano roll's tool buttons, the MIDI tools part of a MIDI clip's panel, the clip's column, and the **Clip** / **Devices** and **Notes** / **Transform** tabs |
+| `piano-tool`, `midi-tools`, `clip-info`, `editor-tab` | the piano roll's tool buttons (`[checked]`, `:hover`, `:disabled`), the MIDI tools part of a MIDI clip's panel, the clip's column, and the **Clip** / **Devices** switch (`editor-tab[kind="switch"]`) and **Notes** / **Transform** tabs (`kind="tab-notes"`, `"tab-transform"`) |
 | `device`, `device-header` | a device's panel in the device chain, and its header row |
 
 Ids:

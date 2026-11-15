@@ -506,7 +506,22 @@ page's (ADR 0031, amendment of 2026-11-15).
   grid lines, `tempo-mark`, `start-marker`, `playhead`, `loop-line`, `loop-region`, `marker`,
   `arrangement-tool`, `time-selection` by kind (`ruler`, `draw`, `take`, `automation`, `editor`),
   `marquee`, `clip[recording]`, `track-lane[checked]`, the track headers (`[selected]`; Main's),
-  `clip-gain`, `clip-fade-handle`, and the automation lanes' parts. The views move onto it area by
+  `clip-gain`, `clip-fade-handle`, and the automation lanes' parts; the detail panels' and the browser's section (#1451): the browser's own
+  text and its words in it (`browser label[kind]`, from the `--browser-text-*` variables), its rows
+  and places (`browser-row`, `browser-place`: `:hover`, `[selected]`, `[kind="drop"]`), its chips,
+  tag boxes, preview and "…" buttons (`button[kind="chip"]`, `"tag-check"`, `"preview"`, `"more"`)
+  and the fills it paints for itself (`browser-fill`); the detail area's fills (`detail-fill`), a
+  device panel's header, nodes, outline, lines and parameters (`device-header`, `device-section`,
+  `device[selected]`, `separator[kind="column"]`, `label`/`value[kind="parameter"]`,
+  `device-control[kind]`, `slider[kind="parameter"]`), a device canvas's colours
+  (`device-canvas` and its kinds), a device group's branches (`device-row[kind="branch"]`), the
+  panels' fields, buttons, switches and lists (`value[kind="field"]`, `button[kind="panel"]`,
+  `"panel-toggle"`, `"entry"`, `dropdown[kind="panel"]`, `editor-tab[kind]`); the piano roll's grid,
+  rows, notes, velocities, slices, markers, ruler, loop bar, keys, strips, ranges and tools
+  (`piano-grid`, `piano-row`, `piano-note[kind]`, `velocity`, `piano-slice`, `start-marker`,
+  `playhead`, `ruler-number`, `loop-region[kind="clip"]`, `piano-key`, `piano-scale-strip`,
+  `piano-clip-strip`, `piano-tool` with `[checked]`, `:hover` and `:disabled`, `bar-item[kind="menu"]`
+  and the Focus switch, `button[kind="focus"]`). The views move onto it area by
   area (#1449 – #1452), each in a section of its own. Worked-out colours stay worked out from the
   element's own: the grid lines faded into the view, a send's value over its hover, a header's
   tint of its track's colour, and what a view draws over a region around it that has a
@@ -1500,17 +1515,26 @@ of bars, and a slider id per parameter.
   reaches) and a typed number (`text-input[kind="typed"]`; a rule for every `text-input` is its
   too, until it has its own) are the same. A switch a view draws itself with no `button` takes the
   colours of `toggle`. The switches the views enter themselves and compare (`Toggle::of`: a
-  Settings switch, the browser's chips, the follow action) stay lit under a rule for every
-  `button` until their views move onto the sheet (#1450, #1451).
+  Settings switch) stay lit under a rule for every `button` until their views move onto the sheet
+  (#1450); the browser's chips and the follow action's switches have (#1451).
 - **The browser and the detail panels (#1023):** the browser, the clip panels, the follow action,
   a device's and a device group's panel (`device[kind="group"]`, its branches `device-row`), an
   expanded panel and the piano roll's keys, toolbar and corner draw from their elements the same
   way. Their words are `label` by how much they stand out: `hint` and `caption` take only a colour
   given to them (so a colour a theme gives a whole panel keeps them dim), `title`, `value`,
-  `error`, `plugin-state` and `head` (`[selected]`, in its `accent-color`). Their switches stay
-  lit under a rule for every `button`; a device's on switch (`button#control-device-on`), an
-  expanded panel's × (`button[kind="close"]`), the browser's more tags (`button[kind="more"]`) and
-  the piano roll's toolbar menus (`dropdown[kind="subtle"]`) take only a rule for themselves. The
+  `error`, `plugin-state` and `head` (`[selected]`, in its `accent-color`); inside the browser
+  `hint`, `caption` and `value` take the browser's own colours (`--browser-text-hint` …). They
+  take their colours from the base sheet (#1451): a theme's rule for an element overrides the
+  base sheet's for each property it sets, its lit and hovered looks too, so a theme with a rule
+  for every `button` states the lit looks of the kinds it shows (`button[kind="chip"][checked]`,
+  `[kind="tag-check"][checked]`, `[kind="focus"][checked]`, `button[kind="more"]:hover`), as
+  Suhina Meadow, Blocks, Sheet and Dark Gloss do. A device's on switch
+  (`button#control-device-on`), an expanded panel's × (`button[kind="close"]`) and the piano roll's
+  toolbar menus (`dropdown[kind="subtle"]`) still take only a rule for themselves. A device's own
+  drawings (its canvas, the EQ's display, a sampler's waveform and envelope) take the colours of
+  `device-canvas` in the device's scope, read once a frame. A region's plain `color` no longer
+  reaches what the base sheet colours with `--text-value` or a border variable (the piano roll's
+  ruler numbers and toolbar lines, a device's values): Suhina Meadow and Sheet give those a rule. The
   piano roll's keys take `piano-key`'s `accent-color` for a playing or selected key, its range and
   selection their `accent-color`, its tool pointer and magnifier `icon[kind="pointer"]` and
   `icon[kind="magnifier"]`. egui's fields in the browser take `text-input` through their style. The
