@@ -253,27 +253,32 @@ pub(super) fn tool_role(icon: IconButton) -> String {
 /// A tool's icon in place of the pointer, in `rect`: the toolbar's icon (the theme's when it has
 /// one, else the built-in artwork) in the text colour, ringed with a point of the window's colour
 /// so it reads over a note as well as over the empty grid.
+///
+/// It is `icon[kind="pointer"]`: its `color`, and its `background-color` for the ring.
 pub(super) fn draw_tool_pointer(painter: &egui::Painter, icon: IconButton, rect: Rect) {
+    let look = crate::kit::element::ICON.attribute("kind", "pointer").look();
+    let ink = look.color();
     let role = tool_role(icon);
     if crate::kit::skin::has_own(&role) {
         let normal = crate::kit::skin::State::Normal;
+        let ring = look.background();
         for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
-            let ring = rect.translate(Vec2::new(x, y));
-            crate::kit::skin::paint(painter, ring, &role, normal, theme::window_background(), 0.0);
+            crate::kit::skin::paint(painter, rect.translate(Vec2::new(x, y)), &role, normal, ring, 0.0);
         }
-        if crate::kit::skin::paint(painter, rect, &role, normal, theme::text_primary(), 0.0) {
+        if crate::kit::skin::paint(painter, rect, &role, normal, ink, 0.0) {
             return;
         }
     }
     if let Some(svg) = icon.svg() {
+        let ring = look.background();
         for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
-            crate::kit::skin::paint_icon(painter, rect.translate(Vec2::new(x, y)), svg, theme::window_background());
+            crate::kit::skin::paint_icon(painter, rect.translate(Vec2::new(x, y)), svg, ring);
         }
-        if crate::kit::skin::paint_icon(painter, rect, svg, theme::text_primary()) {
+        if crate::kit::skin::paint_icon(painter, rect, svg, ink) {
             return;
         }
     }
-    icon.draw(painter, rect, theme::text_primary(), rect.width() / TOOL_ICON);
+    icon.draw(painter, rect, ink, rect.width() / TOOL_ICON);
 }
 
 /// Beats rounded to a millionth, so a value made of steps such as thirds sends no float noise.

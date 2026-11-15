@@ -3,7 +3,7 @@ description: Source-owned version-one shortcut data for the Suhina website, its 
 read_when: website shortcuts, shortcuts.json, keyboard guide export, shortcut documentation coverage
 type: spec
 status: current
-last_verified: 2026-10-21
+last_verified: 2026-11-15
 covers:
   - scripts/shortcuts_guide.py
   - scripts/test_shortcuts_guide.py

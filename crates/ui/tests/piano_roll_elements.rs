@@ -178,11 +178,11 @@ fn a_muted_note_s_border_is_its_dashes_alone() {
     assert!(dashes > 0, "the dashes take the colour");
 }
 
-/// The lit Focus switch keeps its native label ink where only a rule for the plain switch gives a
-/// colour: inside the switch the palette's text colours are the switch's own, so the ink is read
-/// before it is entered (#1428 review).
+/// The Focus switch is `button#control-focus-first[kind="focus"]`, `[checked]` while on: a rule
+/// for the plain switch's colour is the lit one's label too, and a `[checked]` rule recolours the
+/// lit label (#1428 review, #1451).
 #[test]
-fn the_lit_focus_switch_keeps_its_label_ink() {
+fn a_rule_for_the_focus_switch_s_colour_is_the_lit_label_s_until_a_checked_rule_gives_its_own() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     h.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
@@ -196,7 +196,7 @@ fn the_lit_focus_switch_keeps_its_label_ink() {
     let css = format!("button#control-focus-first {{ color: {}; }}", hex(odd(63)));
     let inks = text_colours(&shapes_with(&mut h, &css), "Focus");
     assert!(!inks.is_empty(), "the label is drawn");
-    assert!(!inks.contains(&odd(63)), "the plain switch's colour is not the lit one's label: {inks:?}");
+    assert!(inks.iter().all(|c| *c == odd(63)), "the plain switch's colour is the lit one's label too: {inks:?}");
     let lit = format!("{css} button#control-focus-first[checked] {{ color: {}; }}", hex(odd(64)));
     assert!(text_colours(&shapes_with(&mut h, &lit), "Focus").contains(&odd(64)), "a `[checked]` rule recolours it");
 }

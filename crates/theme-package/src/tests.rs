@@ -136,6 +136,20 @@ fn theme_json_round_trips_and_refuses_a_file_without_a_name_swatch_or_known_form
     }
 }
 
+/// `"base": "none"` leaves Suhina's base sheet out (#1448); left out, the base sheet applies. It
+/// reads back as written, and any other value is named and keeps the base sheet.
+#[test]
+fn theme_json_opts_out_of_the_base_sheet_with_base_none() {
+    let read = |text: &str| meta::ThemeMeta::parse(text.as_bytes()).unwrap();
+    let (plain, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red" }"#);
+    assert!(plain.base && warnings.is_empty() && !plain.to_json().contains("base"));
+    let (bare, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red", "base": "none" }"#);
+    assert!(!bare.base && warnings.is_empty(), "{warnings:?}");
+    assert_eq!(read(&bare.to_json()), (bare, Vec::new()));
+    let (odd, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red", "base": "plain" }"#);
+    assert!(odd.base && warnings.iter().any(|w| w.contains("base")), "{warnings:?}");
+}
+
 #[test]
 fn the_swatch_must_resolve_to_a_colour_for_every_variant() {
     let with = |swatch: &str, variant: &str| {
@@ -273,7 +287,7 @@ fn the_user_agent_sheet_selects_by_name_state_and_attribute_only() {
             rules += 1;
             // Each element of a descendant or child chain (`application-bar group`).
             for compound in selector.split([' ', '>']).filter(|part| !part.is_empty()) {
-                let name = compound.split(['[', ':']).next().unwrap();
+                let name = compound.split(['[', ':', '#']).next().unwrap();
                 assert!(elements::is_element(name), "{selector}: {name} is not an element");
             }
             // No classes yet: the standard toolbar group classes the spec allows come with the
@@ -324,25 +338,142 @@ fn default_artwork_is_coloured_by_current_color_alone() {
     }
 }
 
-/// Sample points are styled by kind in the user-agent sheet, one rule per kind.
+/// Sample points are coloured by kind in the base sheet, one rule per kind, each from a variable
+/// of its own.
 #[test]
-fn the_user_agent_sheet_colours_sample_points_by_kind() {
-    let kinds = USER_AGENT_SHEET.matches("sample-point[kind=").count();
+fn the_base_sheet_colours_sample_points_by_kind() {
+    let kinds = BASE_SHEET.matches("sample-point[kind=").count();
     assert_eq!(kinds, 17);
+    assert_eq!(BASE_SHEET.matches("var(--sample-").count(), 17);
 }
 
-/// A muted clip and a muted track's header are grey in the user-agent sheet, whatever their colour,
-/// in the Arrangement only, so a deactivated Launcher clip keeps its own look (#1393).
+/// Whether `name` is a property whose value is a colour.
+fn colour_property(name: &str) -> bool {
+    name == "color" || name.ends_with("-color")
+}
+
+/// The user-agent sheet's only colours are the window's plain text and background (#1448): a
+/// theme that opts out of the base sheet stands on a bare floor it can read. Both are fixed, opaque
+/// values given to `window` alone. The theme swatch's square takes its colour from its element,
+/// not from the sheet.
 #[test]
-fn the_user_agent_sheet_greys_muted_clips_and_headers() {
-    for rule in [
-        "arrangement clip[muted] { background-color: #A9A6A0; }",
-        "arrangement clip[muted][selected] { background-color: #BDBAB4; }",
-        "arrangement track-header[muted] { background-color: #A9A6A0; }",
-        "arrangement track-header[muted][selected] { background-color: #B5B2AC; }",
-    ] {
-        assert!(USER_AGENT_SHEET.contains(rule), "the user-agent sheet lacks {rule}");
+fn the_user_agent_sheet_colours_only_the_window() {
+    let sheet = suhina_style::sheet::Sheet::parse(USER_AGENT_SHEET).unwrap();
+    let mut given: Vec<&str> = Vec::new();
+    for (name, value) in sheet.declarations().filter(|(name, _)| colour_property(name)) {
+        if value.trim().starts_with("attr(") {
+            continue;
+        }
+        assert!(
+            matches!(
+                suhina_style::value::Color::parse(value.trim()),
+                Ok(suhina_style::value::Color::Rgba([_, _, _, 255]))
+            ),
+            "the window's {name} is a fixed opaque colour: {value}"
+        );
+        given.push(name);
     }
+    given.sort_unstable();
+    assert_eq!(given, ["background-color", "color"]);
+    // Both in the one rule for `window`.
+    let mut text = USER_AGENT_SHEET.to_owned();
+    while let Some(start) = text.find("/*") {
+        let end = text[start..].find("*/").unwrap() + start + 2;
+        text.replace_range(start..end, "");
+    }
+    let mut rest = text.as_str();
+    let mut coloured = Vec::new();
+    while let Some(open) = rest.find('{') {
+        let close = rest.find('}').unwrap();
+        let body = &rest[open + 1..close];
+        if body.split(';').any(|declaration| {
+            declaration
+                .split_once(':')
+                .is_some_and(|(name, value)| colour_property(name.trim()) && !value.trim().starts_with("attr("))
+        }) {
+            coloured.push(rest[..open].trim().to_owned());
+        }
+        rest = &rest[close + 1..];
+    }
+    assert_eq!(coloured, ["window"]);
+}
+
+/// No colour in the base sheet is fixed (#1448): every colour it gives reads a variable, so a
+/// theme's variables reach everything it styles. It declares no variable of its own (the core
+/// ones are registered beside it), has no at-rules, and names only elements of the registry.
+#[test]
+fn the_base_sheet_colours_everything_from_variables() {
+    let sheet = suhina_style::sheet::Sheet::parse(BASE_SHEET).unwrap();
+    assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+    let mut colours = 0;
+    for (name, value) in sheet.declarations() {
+        assert!(!name.starts_with("--"), "the base sheet declares {name}");
+        if colour_property(name) {
+            colours += 1;
+            // `transparent` is no colour of a theme's, and `inherit` the colour around: nothing to
+            // read from a variable.
+            assert!(
+                value.contains("var(--") || matches!(value.trim(), "transparent" | "inherit"),
+                "{name}: {value} is a fixed colour"
+            );
+        }
+    }
+    assert!(colours > 25, "{colours}");
+    let mut text = BASE_SHEET.to_owned();
+    while let Some(start) = text.find("/*") {
+        let end = text[start..].find("*/").unwrap() + start + 2;
+        text.replace_range(start..end, "");
+    }
+    assert!(!text.contains('@'), "the base sheet has no at-rules");
+    let mut rest = text.as_str();
+    while let Some(open) = rest.find('{') {
+        let close = rest.find('}').unwrap();
+        for selector in rest[..open].split(',').map(str::trim) {
+            for compound in selector.split([' ', '>']).filter(|part| !part.is_empty()) {
+                let name = compound.split(['[', ':', '#']).next().unwrap();
+                assert!(
+                    matches!(name, "html" | "body") || elements::is_element(name),
+                    "{selector}: {name} is not an element"
+                );
+            }
+            assert!(!selector.contains('.') && !selector.contains('#'), "{selector} has a class or an id");
+        }
+        rest = &rest[close + 1..];
+    }
+}
+
+/// A muted clip and a muted track's header are grey in the base sheet, whatever their colour, in
+/// the Arrangement only, so a deactivated Launcher clip keeps its own look (#1393); each grey is a
+/// core variable with its earlier value, and the user-agent sheet holds none of them.
+#[test]
+fn the_base_sheet_greys_muted_clips_and_headers() {
+    for (rule, variable, value) in [
+        (
+            "arrangement clip[muted] { background-color: var(--clip-mutedBackground); }",
+            "--clip-mutedBackground",
+            "#A9A6A0",
+        ),
+        (
+            "arrangement clip[muted][selected] { background-color: var(--clip-mutedSelectedBackground); }",
+            "--clip-mutedSelectedBackground",
+            "#BDBAB4",
+        ),
+        (
+            "arrangement track-header[muted] { background-color: var(--track-headerMutedBackground); }",
+            "--track-headerMutedBackground",
+            "#A9A6A0",
+        ),
+        (
+            "arrangement track-header[muted][selected] { background-color: var(--track-headerMutedSelectedBackground); }",
+            "--track-headerMutedSelectedBackground",
+            "#B5B2AC",
+        ),
+    ] {
+        assert!(BASE_SHEET.contains(rule), "the base sheet lacks {rule}");
+        let registration = format!("@property {variable} {{ syntax: \"<color>\"; initial-value: {value}; }}");
+        assert!(CORE_SHEET.contains(&registration), "the core sheet lacks {registration}");
+    }
+    assert!(!USER_AGENT_SHEET.contains("[muted]"), "the user-agent sheet colours nothing muted");
 }
 
 #[test]

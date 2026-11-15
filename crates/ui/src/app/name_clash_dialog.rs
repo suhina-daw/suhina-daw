@@ -63,13 +63,15 @@ fn draw(
         _ => format!("{folder} already has files named as {} of the {count} samples", taken.len()),
     };
     let font = theme::ui_font(theme::TEXT);
-    let fitted = widgets::fitted(&painter, &message, font, theme::text_primary(), line.width());
-    painter.galley(Pos2::new(line.left(), line.center().y - fitted.size().y / 2.0), fitted, theme::text_primary());
+    let ink = crate::kit::element::name_ink();
+    let fitted = widgets::fitted(&painter, &message, font, ink, line.width());
+    painter.galley(Pos2::new(line.left(), line.center().y - fitted.size().y / 2.0), fitted, ink);
     let hint = line.translate(Vec2::new(0.0, LINE));
     let small = theme::ui_font(theme::TEXT_SMALL);
     let note = "Keep both gives the new one a number; nothing is overwritten";
-    let fitted = widgets::fitted(&painter, note, small, theme::text_secondary(), hint.width());
-    painter.galley(Pos2::new(hint.left(), hint.center().y - fitted.size().y / 2.0), fitted, theme::text_secondary());
+    let caption = crate::kit::element::caption_ink();
+    let fitted = widgets::fitted(&painter, note, small, caption, hint.width());
+    painter.galley(Pos2::new(hint.left(), hint.center().y - fitted.size().y / 2.0), fitted, caption);
     let keep = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
     let skip = Rect::from_min_size(Pos2::new(keep.left() - 4.0 - BUTTON.x, keep.top()), BUTTON);
     let cancel = Rect::from_min_size(Pos2::new(skip.left() - 4.0 - BUTTON.x, keep.top()), BUTTON);

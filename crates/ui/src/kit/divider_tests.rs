@@ -26,6 +26,7 @@ fn frame(ctx: &egui::Context, events: Vec<Event>, size: f32) -> Option<f32> {
                 size,
                 grows_forward: false,
                 bounds: (20.0, 300.0),
+                closed: false,
             },
         );
         dragged = divider.size;

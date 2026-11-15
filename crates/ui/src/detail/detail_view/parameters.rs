@@ -33,7 +33,11 @@ pub(super) fn parameter_cell(
     let style = &themed;
     let family = if style.monospace { egui::FontFamily::Monospace } else { egui::FontFamily::Proportional };
     let font = egui::FontId::new(style.font_size, family);
-    let foreground = style.text_color.map_or_else(theme::text_secondary, rgb);
+    // A parameter's name and value, `device-control[kind="name"]` and `[kind="value"]`, where the
+    // device gives no text colour.
+    let foreground = style
+        .text_color
+        .map_or_else(|| crate::kit::element::DEVICE_CONTROL.attribute("kind", "name").look().color(), rgb);
     let radius = match style.shape {
         ControlShape::Square => 0.0,
         ControlShape::Pill => 128.0,
@@ -131,7 +135,9 @@ pub(super) fn parameter_cell(
         } else {
             (Rect::from_min_max(Pos2::new(slider_rect.right(), control_min.y), row.max), Align2::RIGHT_CENTER)
         };
-        let color = style.text_color.map_or_else(theme::text_value, rgb);
+        let color = style
+            .text_color
+            .map_or_else(|| crate::kit::element::DEVICE_CONTROL.attribute("kind", "value").look().color(), rgb);
         widgets::text_in(painter, rect, align, &value_text(parameter, value), font, color);
     }
     if response.as_ref().is_some_and(|r| r.changed() || r.drag_stopped()) {
@@ -353,7 +359,8 @@ fn themed_slider_widget(
     let logarithmic = control == ParameterControl::LogSlider && min > 0.0 && max > min;
     let height = ui.spacing().interact_size.y.min(rect.height()).max(8.0);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(rect.width(), height), Sense::click_and_drag());
-    let slider_el = crate::kit::element::SLIDER.response(&response).enter();
+    // `slider[kind="parameter"]`: the parts it is drawn from are inside it.
+    let slider_el = crate::kit::element::SLIDER.attribute("kind", "parameter").response(&response).enter();
     widgets::value_drag_pointer(ui.ctx(), &response, &slider_el);
     let to_position = |v: f64| {
         if logarithmic { (v / min).ln() / (max / min).ln() } else { (v - min) / (max - min).max(f64::EPSILON) }
@@ -373,12 +380,12 @@ fn themed_slider_widget(
         let thickness = rail_el.thickness_or(4.0).clamp(1.0, rect.height());
         let rail = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), thickness));
         if !(skin::has_own("slider.rail")
-            && skin::paint_as(&rail_el, &painter, rail, "slider.rail", state, theme::text_hint()))
+            && skin::paint_as(&rail_el, &painter, rail, "slider.rail", state, rail_el.color()))
         {
             rail_el.paint_with(
                 &painter,
                 rail,
-                crate::kit::element::Native { radius: thickness / 2.0, fill: theme::control_background() },
+                crate::kit::element::Native { radius: thickness / 2.0, fill: rail_el.background() },
             );
         }
         rail
@@ -389,12 +396,12 @@ fn themed_slider_widget(
         let fill = Rect::from_min_max(rail.min, Pos2::new(at, rail.bottom()));
         if fill.width() >= 1.0
             && !(skin::has_own("slider.fill")
-                && skin::paint_as(&fill_el, &painter, fill, "slider.fill", state, theme::accent()))
+                && skin::paint_as(&fill_el, &painter, fill, "slider.fill", state, fill_el.color()))
         {
             fill_el.paint_with(
                 &painter,
                 fill,
-                crate::kit::element::Native { radius: rail.height() / 2.0, fill: theme::control_selected() },
+                crate::kit::element::Native { radius: rail.height() / 2.0, fill: fill_el.background() },
             );
         }
     }
@@ -402,12 +409,12 @@ fn themed_slider_widget(
         let handle_el = crate::kit::element::SLIDER_HANDLE.response(&response).enter();
         let handle = Rect::from_center_size(Pos2::new(at, rect.center().y), Vec2::new(handle_width, rect.height()));
         if !(skin::has_own("slider.handle")
-            && skin::paint_as(&handle_el, &painter, handle, "slider.handle", state, theme::text_primary()))
+            && skin::paint_as(&handle_el, &painter, handle, "slider.handle", state, handle_el.color()))
         {
             handle_el.paint_with(
                 &painter,
                 handle,
-                crate::kit::element::Native { radius: 2.0, fill: theme::text_primary() },
+                crate::kit::element::Native { radius: 2.0, fill: handle_el.background() },
             );
         }
     }
@@ -439,6 +446,9 @@ pub(super) fn knob(
             hides,
         )
     };
+    // Where neither the device nor the theme colours it: its disc `device-control[kind="knob"]`'s
+    // `background-color`, its ring its `color` and its pointer its `accent-color`.
+    let plain = crate::kit::element::DEVICE_CONTROL.attribute("kind", "knob").look();
     let accent = accent.or(sheet_accent);
     let room = rect.width().min(rect.height()).max(8.0);
     let size = themed.map_or(room, |s| s.clamp(8.0, room));
@@ -468,8 +478,8 @@ pub(super) fn knob(
     }
     let center = rect.center();
     let radius = size * 9.0 / 22.0;
-    let background = style.background.map_or_else(theme::control_background, rgb);
-    let border = egui::Stroke::new(1.0, accent.unwrap_or_else(theme::text_hint));
+    let background = style.background.map_or_else(|| plain.background(), rgb);
+    let border = egui::Stroke::new(1.0, accent.unwrap_or_else(|| plain.color()));
     let painter = ui.painter();
     if style.shape == ControlShape::Square {
         let square = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
@@ -481,7 +491,7 @@ pub(super) fn knob(
     }
     let angle = (-135.0 + 270.0 * position as f32).to_radians();
     let tip = center + Vec2::new(angle.sin(), -angle.cos()) * (radius - 1.0);
-    painter.line_segment([center, tip], egui::Stroke::new(1.5, accent.unwrap_or_else(theme::text_primary)));
+    painter.line_segment([center, tip], egui::Stroke::new(1.5, accent.unwrap_or_else(|| plain.accent())));
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &parameter.name));
     response
 }
@@ -508,13 +518,17 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
         }
         // `editor-tab` (`[checked]` for the one shown), `#tab-clip` and `#tab-devices`.
         let tab = format!("tab-{}", text.to_ascii_lowercase());
-        let el =
-            crate::kit::element::EDITOR_TAB.id(&tab).response(&response).attr(crate::kit::element::Checked, on).enter();
-        let on = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        let fill = motion::mix(idle, theme::control_selected(), on);
-        el.paint_with(painter, cell, crate::kit::element::Native { radius: 0.0, fill });
-        let color = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), on));
+        let lit = widgets::lit_toggle_kind(
+            ui,
+            &response,
+            crate::kit::element::EDITOR_TAB.id(&tab),
+            &[crate::kit::element::Checked],
+            on,
+            "switch",
+        );
+        let (fill, color) = lit.colors();
+        lit.el.paint_with(painter, cell, crate::kit::element::Native { radius: 0.0, fill });
+        drop(lit);
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked

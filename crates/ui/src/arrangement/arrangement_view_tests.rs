@@ -883,29 +883,37 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
 
     let lane = timeline.lanes.iter().find(|l| l.clips.iter().any(|c| c.id == clip.id)).unwrap();
     let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(160.0, 60.0));
-    let tint = theme::accent().gamma_multiply(0.45);
+    let tint = crate::kit::theme::studio("accent").gamma_multiply(0.45);
     let lit = |span: Option<(ClipId, f64, f64)>| {
+        // The base sheet's colours, as the style engine gives them over a few frames.
+        crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some("".into()), ..Default::default() });
         let ctx = egui::Context::default();
         let mut found = Vec::new();
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * 20.0;
-            let look = ClipLook { editor_span: span, ..ArrangementViewState::default().clip_look() };
-            paint_clip(
-                ui.painter(),
-                rect,
-                lane,
-                &clip,
-                Shown::of(&clip),
-                clip.start,
-                &x_of,
-                20.0,
-                &timeline,
-                true,
-                &look,
-            );
-        });
-        output.textures_delta.clear();
-        for shape in output.shapes {
+        let mut shown = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * 20.0;
+                let look = ClipLook { editor_span: span, ..ArrangementViewState::default().clip_look() };
+                paint_clip(
+                    ui.painter(),
+                    rect,
+                    lane,
+                    &clip,
+                    Shown::of(&clip),
+                    clip.start,
+                    &x_of,
+                    20.0,
+                    &timeline,
+                    true,
+                    &look,
+                );
+            });
+            output.textures_delta.clear();
+            shown = output.shapes;
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        for shape in shown {
             if let egui::Shape::Rect(r) = shape.shape
                 && r.fill == tint
             {
@@ -921,11 +929,11 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
 }
 
 #[test]
-fn a_muted_clip_is_the_user_agent_grey_whatever_its_colour() {
+fn a_muted_clip_is_the_base_sheet_grey_whatever_its_colour() {
     // #1393: dimming the colour left a muted clip looking like any other clip on a grey track.
-    let surface = crate::kit::theme::panel_background();
+    let surface = crate::kit::theme::studio("panel-background");
     let grey = clip::muted_clip_grey(false);
-    assert_eq!(grey, Color32::from_rgb(0xA9, 0xA6, 0xA0), "the user-agent sheet's clip[muted]");
+    assert_eq!(grey, Color32::from_rgb(0xA9, 0xA6, 0xA0), "the base sheet's clip[muted]");
     assert_eq!(clip::muted_clip_grey(true), Color32::from_rgb(0xBD, 0xBA, 0xB4), "clip[muted][selected]");
     for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), grey] {
         assert_eq!(clip::clip_body(surface, colour, 82, true, false), grey, "{colour:?}");
@@ -944,7 +952,7 @@ fn a_muted_clip_is_the_user_agent_grey_whatever_its_colour() {
 
 #[test]
 fn a_clip_on_a_muted_track_keeps_its_colour_in_its_name_bar() {
-    let surface = crate::kit::theme::panel_background();
+    let surface = crate::kit::theme::studio("panel-background");
     let orange = Color32::from_rgb(0xFF, 0x9A, 0x3C);
     let grey = clip::muted_clip_grey(false);
     // On a muted track: the bar is the colour a clip that plays has.
@@ -959,7 +967,7 @@ fn a_clip_on_a_muted_track_keeps_its_colour_in_its_name_bar() {
 }
 
 #[test]
-fn a_muted_track_header_is_the_user_agent_grey() {
+fn a_muted_track_header_is_the_base_sheet_grey() {
     assert_eq!(header::muted_header_grey(false), Color32::from_rgb(0xA9, 0xA6, 0xA0), "track-header[muted]");
     assert_eq!(header::muted_header_grey(true), Color32::from_rgb(0xB5, 0xB2, 0xAC), "track-header[muted][selected]");
 }

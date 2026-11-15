@@ -254,7 +254,7 @@ fn the_ghost_notes_of_a_muted_clip_or_track_are_the_muted_grey() {
 }
 
 /// With a theme that restyles `clip[muted]`, the ghost notes of a muted track take the theme's
-/// background, as the Arrangement's clips do, not the user-agent grey (#1393 review).
+/// background, as the Arrangement's clips do, not the base sheet's grey (#1393 review).
 #[test]
 fn the_ghost_notes_of_a_muted_track_take_the_theme_s_muted_background() {
     let themed = Color32::from_rgb(0x40, 0x50, 0x60);
@@ -263,6 +263,31 @@ fn the_ghost_notes_of_a_muted_track_take_the_theme_s_muted_background() {
     let bass = project.tracks.iter().find(|t| project.shown_track_name(t.id) == "Bass").unwrap().clone();
     project.channel_mut(bass.channel.unwrap()).unwrap().mute = true;
     let css = "clip[muted] { background-color: #405060; }";
+    crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut bass_notes = Vec::new();
+    for _ in 0..3 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+            bass_notes = colours(&ghosts(&project, edited, GhostSource::Together), "Bass");
+        })
+        .textures_delta
+        .clear();
+    }
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    assert!(!bass_notes.is_empty() && bass_notes.iter().all(|c| *c == themed), "{bass_notes:?}");
+}
+
+/// `--clip-mutedBackground`, the variable the base sheet's `arrangement clip[muted]` reads, is the
+/// ghost notes' grey too, as it is the Arrangement's muted clips' (#1474 review).
+#[test]
+fn the_ghost_notes_of_a_muted_track_take_the_muted_grey_variable() {
+    let themed = Color32::from_rgb(0x40, 0x50, 0x60);
+    let mut project = demo_project();
+    let edited = drums_beat_b(&project);
+    let bass = project.tracks.iter().find(|t| project.shown_track_name(t.id) == "Bass").unwrap().clone();
+    project.channel_mut(bass.channel.unwrap()).unwrap().mute = true;
+    let css = ":root { --clip-mutedBackground: #405060; }";
     crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() });
     let ctx = egui::Context::default();
     let mut bass_notes = Vec::new();

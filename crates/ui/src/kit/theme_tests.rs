@@ -7,7 +7,7 @@ use super::*;
 fn transparent_rgb_survives_theme_round_trip() {
     let (theme, warnings) = Theme::from_json(r##"{"colors":{"text.primary":"#FF804000"}}"##);
     assert!(warnings.is_empty());
-    assert_eq!(theme.rgba("text.primary", theme.colors.text_primary), [255, 128, 64, 0]);
+    assert_eq!(theme.rgba("text-primary", theme.color("text-primary")), [255, 128, 64, 0]);
     let (restored, warnings) = Theme::from_json(&theme.to_json());
     assert!(warnings.is_empty());
     assert_eq!(restored, theme);
@@ -15,7 +15,8 @@ fn transparent_rgb_survives_theme_round_trip() {
 
 #[test]
 fn legacy_and_inherited_transparent_colours_keep_rgb_when_saved() {
-    let (theme, warnings) = Theme::from_json(r##"{"colors":{"surface.0":"#FF804000","text.primary":"#20A04000"}}"##);
+    let (theme, warnings) =
+        Theme::from_json(r##"{"colors":{"window.background":"#FF804000","text.primary":"#20A04000"}}"##);
     assert!(warnings.is_empty());
     let saved: Value = serde_json::from_str(&theme.to_json()).unwrap();
     assert_eq!(saved["colors"]["window.background"], "#FF804000");
@@ -25,10 +26,9 @@ fn legacy_and_inherited_transparent_colours_keep_rgb_when_saved() {
         assert_eq!(saved["colors"][key], "#20A04000");
     }
     assert_eq!(Theme::from_json(&theme.to_json()), (theme, Vec::new()));
-    let (theme, warnings) =
-        Theme::from_json(r##"{"colors":{"surface.0":"#FF804000","window.background":"#00000000"}}"##);
+    let (theme, warnings) = Theme::from_json(r##"{"colors":{"window.background":"#00000000"}}"##);
     assert!(warnings.is_empty());
-    assert_eq!(theme.rgba("window.background", theme.colors.window_background), [0, 0, 0, 0]);
+    assert_eq!(theme.rgba("window-background", theme.color("window-background")), [0, 0, 0, 0]);
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn translucent_theme_colours_preserve_alpha_in_files() {
     for colour in [Color32::from_rgba_unmultiplied(100, 150, 200, 128), Color32::TRANSPARENT, rgb(0xAABBCC)] {
         assert_eq!(parse_hex(&hex(colour)), Some(colour));
         let mut theme = Theme::default();
-        theme.colors.grid_major = colour;
+        theme.colors.insert("grid-major".into(), colour);
         assert_eq!(Theme::from_json(&theme.to_json()), (theme, Vec::new()));
     }
     assert!(parse_hex("#1234567").is_none());
@@ -81,11 +81,9 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
         assert!(warnings.is_empty(), "{warnings:?}");
         let values = super::super::theme_vars::core_values;
         assert_eq!(values(&restored), values(&sheet));
-        assert_eq!(restored.skin.controls, sheet.skin.controls);
         let mut native = sheet.clone();
         assert!(super::super::theme_css::apply(&mut native, &super::super::theme_css::export(&sheet)).is_empty());
         assert_eq!(native.skin.session, sheet.skin.session);
-        assert_eq!(native.skin.controls, sheet.skin.controls);
         assert_eq!(native.skin.meter_intensity, sheet.skin.meter_intensity);
     }
     let meadow = || built_in_themes().into_iter().find(|(id, _)| *id == "suhina-meadow").unwrap().1;
@@ -113,7 +111,6 @@ fn a_theme_sheet_that_sets_the_former_track_colours_is_told_they_are_not_read() 
 fn a_theme_survives_a_round_trip() {
     let mut theme = Theme {
         name: "Night".into(),
-        colors: Palette::DARK,
         liquid: None,
         gradients: Default::default(),
         transparent_rgb: Default::default(),
@@ -121,8 +118,8 @@ fn a_theme_survives_a_round_trip() {
         vars: Default::default(),
         ..Default::default()
     };
-    theme.colors.accent = rgb(0x12AB9F);
-    theme.colors.window_background = rgb(0x000000);
+    theme.colors.insert("accent".into(), rgb(0x12AB9F));
+    theme.colors.insert("window-background".into(), rgb(0x000000));
     assert_eq!(Theme::from_json(&theme.to_json()), (theme, Vec::new()));
 }
 
@@ -131,10 +128,11 @@ fn a_theme_file_needs_only_the_colours_it_changes() {
     let (theme, warnings) = Theme::from_json(r##"{ "name": "Blue", "colors": { "accent": "#3366ff" } }"##);
     assert!(warnings.is_empty());
     assert_eq!(theme.name, "Blue");
-    assert_eq!(theme.colors.accent, rgb(0x3366FF));
-    assert_eq!(theme.colors.window_background, Palette::DARK.window_background);
-    assert_eq!(theme.colors.track_header_background, Palette::DARK.track_header_background);
-    assert_eq!(theme.colors.track_header_selected, Palette::DARK.track_header_selected);
+    assert!(theme.colors.contains_key("accent") && !theme.colors.contains_key("window-background"));
+    assert_eq!(theme.color("accent"), rgb(0x3366FF));
+    for variable in ["window-background", "track-headerBackground", "track-headerSelectedBackground"] {
+        assert_eq!(theme.color(variable), studio(variable), "{variable}");
+    }
 }
 
 #[test]
@@ -159,39 +157,45 @@ fn colours_are_written_and_read_as_hex() {
 }
 
 #[test]
-fn files_with_the_first_token_names_still_read() {
+fn the_first_token_names_are_no_longer_read() {
     let (theme, warnings) =
         Theme::from_json(r##"{ "colors": { "surface.0": "#010203", "line": "#040506", "accent": "#070809" } }"##);
-    assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(theme.colors.window_background, rgb(0x010203));
-    assert_eq!(theme.colors.border, rgb(0x040506));
-    assert_eq!(theme.colors.accent, rgb(0x070809));
-    let mut copy = Palette::DARK;
-    for (old, new) in RENAMED {
-        assert!(copy.token_mut(new).is_some(), "{new} is not a token");
-        assert!(Palette::DARK.tokens().iter().all(|(key, _, _)| *key != old), "{old} is still a token");
-    }
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.starts_with("surface.0 ")) && warnings.iter().any(|w| w.starts_with("line ")));
+    assert_eq!(theme.color("window-background"), studio("window-background"));
+    assert_eq!(theme.color("border"), studio("border"));
+    assert_eq!(theme.color("accent"), rgb(0x070809));
+    // In a style sheet the old name is a custom property of the theme's own, like any other that
+    // is not a token: it colours nothing.
+    let (theme, _) = from_css(":root { --surface-0: #010203; --accent: #070809; }");
+    assert_eq!(theme.color("window-background"), studio("window-background"));
+    assert_eq!(theme.color("accent"), rgb(0x070809));
+    // The editor's CSS box reads only the current names.
+    let mut theme = Theme::default();
+    let warnings = super::super::theme_css::apply(&mut theme, ":root { --surface-0: #010203; }");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(theme.colors.is_empty());
 }
 
 #[test]
-fn the_palette_sets_the_native_windows_scheme() {
+fn the_window_s_text_sets_the_native_windows_scheme() {
     let ctx = egui::Context::default();
-    let saved = palette();
     let suhina_light = built_in_themes().into_iter().find(|(id, _)| *id == "suhina-light").unwrap().1;
-    set_palette(&ctx, suhina_light.colors);
+    use_colors(&ctx, &suhina_light.colors);
+    in_style_frame(&ctx, |_| ());
     assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::Light);
     assert!(is_light());
-    set_palette(&ctx, Palette::DARK);
+    use_colors(&ctx, &Colors::new());
+    in_style_frame(&ctx, |_| ());
     assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::Dark);
     assert!(!is_light());
-    set_palette(&ctx, saved);
 }
 
 #[test]
 fn a_themes_colour_scheme_follows_its_text() {
     let light = ["suhina-light", "catppuccin-latte", "suhina-sheet", "suhina-meadow"];
     for (id, theme) in &built_in_themes() {
-        assert_eq!(super::light(&theme.colors), light.contains(id), "{id}");
+        assert_eq!(luminance(theme.color("text-primary")) < 0.18, light.contains(id), "{id}");
     }
 }
 
@@ -213,7 +217,7 @@ fn the_themes_that_come_with_suhina_read_whole() {
         assert_eq!(theme.name, ThemeMeta::parse(&folder[META]).unwrap().0.name, "{id}");
         assert!(theme.swatch.is_some() && theme.picture.is_some(), "{id}");
         // Every colour is written out, so none falls back to Suhina Studio by mistake.
-        for (key, _, _) in Palette::DARK.tokens() {
+        for (key, _) in TOKENS {
             assert!(sheet.contains(&format!("  --{}: ", key.replace('.', "-"))), "{id} leaves out {key}");
         }
         // The sheet holds the theme's own values: nothing is a variant's.
@@ -221,15 +225,15 @@ fn the_themes_that_come_with_suhina_read_whole() {
         assert!(is_built_in(id));
         assert!(id == BUILT_IN || theme.name != Theme::default().name, "{id}");
         if id == BUILT_IN {
-            // Its sheet sets only colours and settings, so the style engine stays off for it.
+            // Its sheet sets only colours, and it runs the style engine like every theme (#1448).
             assert!(
                 sheet
                     .split(":root")
                     .nth(1)
                     .is_some_and(|rest| rest.trim_end().ends_with('}') && rest.matches('{').count() == 1)
             );
-            assert_eq!(built_in_themes()[0].1.skin.css, None);
-            assert_eq!(built_in_themes()[0].1.colors, Palette::DARK);
+            assert_eq!(built_in_themes()[0].1.skin.css.as_deref(), Some(sheet));
+            assert!(built_in_themes()[0].1.colors.is_empty(), "Suhina Studio sets nothing over itself");
         }
     }
     assert!(!is_built_in("night"));
@@ -261,7 +265,8 @@ fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
         "text.inverse",
         "pan.background",
     ];
-    for ((key, _, before), (_, _, after)) in sheet.colors.tokens().iter().zip(rose.colors.tokens().iter()) {
+    for (key, _) in TOKENS {
+        let (before, after) = (sheet.color(&variable_name(key)), rose.color(&variable_name(key)));
         if !fixed.iter().any(|prefix| key.starts_with(prefix)) {
             assert_ne!(before, after, "{key} does not follow the accent");
         }
@@ -270,7 +275,8 @@ fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
     // Nothing in its rules or its artwork is a fixed colour of its own, the green panel included.
     let css = include_str!("../../themes/suhina-sheet/theme.css");
     let rules = &css[css.find("@layer").unwrap()..];
-    let browser = rules.lines().skip_while(|line| !line.contains("browser")).take(3).collect::<String>();
+    let browser =
+        rules.lines().skip_while(|line| !line.trim_start().starts_with("browser {")).take(3).collect::<String>();
     assert!(browser.contains("var(--tint-light)") && !browser.contains('#'), "{browser}");
     for (path, bytes) in built_in_files("suhina-sheet").unwrap() {
         if path.starts_with("assets/") {
@@ -289,15 +295,15 @@ fn suhina_glass_clears_its_window_as_far_as_its_glassiness_says() {
         let variant = Variant { id: "test".into(), name: "Test".into(), values };
         let (theme, warnings) = with_variant(&glass, Some(&variant));
         assert!(warnings.is_empty(), "{warnings:?}");
-        theme.colors.window_background.a()
+        theme.color("window-background").a()
     };
-    assert_eq!(glass.colors.window_background.a(), window_alpha("18"));
+    assert_eq!(glass.color("window-background").a(), window_alpha("18"));
     assert_eq!(window_alpha("0"), 255);
     assert_eq!(window_alpha("18"), 209);
     assert_eq!(window_alpha("60"), 102);
     // The swatch is the colour, whatever shows through it.
     assert_eq!(glass.swatch, Some(rgb(0x0B2638)));
-    assert_eq!(glass.colors.border.a(), 255);
+    assert_eq!(glass.color("border").a(), 255);
 }
 
 #[test]
@@ -321,10 +327,10 @@ fn the_built_in_variants_read_whole() {
     }
     // A variant of Suhina Studio has the sheet back, so what follows its settings does.
     let (_, darkest) = variants.iter().find(|(key, _)| key == "suhina-studio@darkest").unwrap();
-    assert_eq!(darkest.colors.window_background, rgb(0x000000));
+    assert_eq!(darkest.color("window-background"), rgb(0x000000));
     assert!(darkest.skin.css.is_some());
-    assert_eq!(darkest.colors.text_primary, rgb(0xD4D4D4));
-    assert_ne!(darkest.colors.panel_hover, base("suhina-studio").colors.panel_hover);
+    assert_eq!(darkest.color("text-primary"), rgb(0xD4D4D4));
+    assert_ne!(darkest.color("panel-hoverBackground"), base("suhina-studio").color("panel-hoverBackground"));
 }
 
 #[test]
@@ -342,11 +348,11 @@ fn default_ui_font_is_manrope_and_previous_font_remains_available() {
 #[test]
 fn studio_themes_keep_text_readable_and_round_trip() {
     for (id, theme) in built_in_themes().into_iter().filter(|(id, _)| id.starts_with("suhina-studio-")) {
-        let p = theme.colors;
-        for background in [p.window_background, p.panel_background, p.control_background] {
-            assert!(contrast(p.text_primary, background) >= 7.0, "{id}: primary text");
-            assert!(contrast(p.text_secondary, background) >= 4.5, "{id}: secondary text");
-            assert!(contrast(p.accent, background) >= 3.0, "{id}: accent");
+        let c = |variable: &str| theme.color(variable);
+        for background in [c("window-background"), c("panel-background"), c("control-background")] {
+            assert!(contrast(c("text-primary"), background) >= 7.0, "{id}: primary text");
+            assert!(contrast(c("text-secondary"), background) >= 4.5, "{id}: secondary text");
+            assert!(contrast(c("accent"), background) >= 3.0, "{id}: accent");
         }
         // Its own sheet, as a copy of it is saved, reads back as the same theme.
         let (restored, warnings) = from_css(&super::super::theme_css::sheet(&theme, None));
@@ -361,28 +367,28 @@ fn text_never_takes_a_background_colour_in_files_from_before_text_inverse() {
     let (old, warnings) = Theme::from_json(r##"{"colors":{"window.background":"#10203080","text.value":"#ABCDEF"}}"##);
     assert!(warnings.is_empty());
     // Text on lit fills keeps the window's colour, opaque, and the chosen option its fill.
-    assert_eq!(old.colors.text_inverse, rgb(0x102030));
-    assert_eq!(old.colors.control_selected, rgb(0xABCDEF));
+    assert_eq!(old.color("text-inverse"), rgb(0x102030));
+    assert_eq!(old.color("control-selectedBackground"), rgb(0xABCDEF));
     let (new, _) = Theme::from_json(
         r##"{"colors":{"window.background":"#102030","text.inverse":"#FFFFFF","control.selectedBackground":"#00FF00"}}"##,
     );
-    assert_eq!((new.colors.text_inverse, new.colors.control_selected), (rgb(0xFFFFFF), rgb(0x00FF00)));
+    assert_eq!((new.color("text-inverse"), new.color("control-selectedBackground")), (rgb(0xFFFFFF), rgb(0x00FF00)));
 }
 
 #[test]
 fn a_theme_is_see_through_when_a_background_has_alpha() {
     let ctx = egui::Context::default();
-    set_palette(&ctx, Palette::DARK);
-    assert!(!see_through());
-    let mut glass = Palette::DARK;
-    glass.panel_background = Color32::from_rgba_unmultiplied(10, 20, 30, 200);
-    set_palette(&ctx, glass);
-    assert!(see_through());
+    let see_through_with = |variable: &str, color: Color32| {
+        use_colors(&ctx, &[(variable.to_owned(), color)].into());
+        in_style_frame(&ctx, |_| ());
+        see_through()
+    };
+    assert!(!see_through_with("accent", studio("accent")));
+    assert!(see_through_with("panel-background", Color32::from_rgba_unmultiplied(10, 20, 30, 200)));
+    assert!(see_through_with("window-background", Color32::from_rgba_unmultiplied(10, 20, 30, 200)));
     // A see-through border is not a background.
-    let mut lines = Palette::DARK;
-    lines.border = Color32::from_rgba_unmultiplied(255, 255, 255, 40);
-    set_palette(&ctx, lines);
-    assert!(!see_through());
+    assert!(!see_through_with("border", Color32::from_rgba_unmultiplied(255, 255, 255, 40)));
+    use_colors(&ctx, &Colors::new());
 }
 
 #[test]
@@ -393,28 +399,35 @@ fn the_readme_names_every_token() {
     {
         assert!(readme.contains(rule), "missing authoring rule: {rule}");
     }
-    for (key, purpose, color) in Palette::DARK.tokens() {
+    for (key, purpose) in TOKENS {
+        let color = studio(&variable_name(key));
         assert!(readme.contains(&format!("| `{key}` | `{}` | {purpose} |", hex(color))), "{key}");
     }
 }
 
 #[test]
 fn every_token_has_its_own_name() {
-    let tokens = Palette::DARK.tokens();
-    let mut keys: Vec<_> = tokens.iter().map(|(key, _, _)| *key).collect();
+    let mut keys: Vec<_> = TOKENS.iter().map(|(key, _)| *key).collect();
     keys.sort_unstable();
     keys.dedup();
-    assert_eq!(keys.len(), tokens.len());
+    assert_eq!(keys.len(), TOKENS.len());
+    // Each is a colour the core sheet registers, with Suhina Studio's value.
+    for (key, _) in TOKENS {
+        assert!(default_color(&variable_name(key)).is_some(), "{key}");
+    }
 }
 
 #[test]
 fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
     // The default track colours are light: names on them are dark.
+    let ctx = egui::Context::default();
+    use_colors(&ctx, &Colors::new());
     for fill in [rgb(0xFF9A3C), rgb(0x2FD9C4)] {
-        assert_eq!(text_on(fill), window_background(), "{fill:?}");
-        assert!(contrast(fill, text_on(fill)) >= 4.5, "{fill:?}");
+        let on = in_style_frame(&ctx, |_| text_on(fill));
+        assert_eq!(on, studio("window-background"), "{fill:?}");
+        assert!(contrast(fill, on) >= 4.5, "{fill:?}");
     }
-    assert_eq!(text_on(rgb(0x202020)), text_primary());
+    assert_eq!(in_style_frame(&ctx, |_| text_on(rgb(0x202020))), studio("text-primary"));
     assert!((contrast(rgb(0x000000), rgb(0xFFFFFF)) - 21.0).abs() < 0.01);
     let faint_white = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
     assert!(text_contrast(faint_white, rgb(0x000000)) < 1.5, "faint text counts as faint");
@@ -425,15 +438,15 @@ fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
 fn the_automation_pin_is_a_themes_own_colour_and_older_files_get_their_accent() {
     let (theme, warnings) = Theme::from_json(r##"{"colors":{"accent":"#123456"}}"##);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(theme.colors.automation_pin, rgb(0x123456));
+    assert_eq!(theme.color("automation-pin"), rgb(0x123456));
     let (theme, _) = Theme::from_json(r##"{"colors":{"accent":"#123456","automation.pin":"#ABCDEF"}}"##);
-    assert_eq!(theme.colors.automation_pin, rgb(0xABCDEF));
+    assert_eq!(theme.color("automation-pin"), rgb(0xABCDEF));
 
     let night = || ThemeMeta::new("Night", DEFAULT_SWATCH);
     let (theme, _) = from_folder(night(), ":root { --accent: #123456; --automation-pin: var(--accent); }\n");
-    assert_eq!(theme.colors.automation_pin, rgb(0x123456), "a style sheet's pin from its accent");
+    assert_eq!(theme.color("automation-pin"), rgb(0x123456), "a style sheet's pin from its accent");
     let (theme, _) = from_folder(night(), ":root { --accent: #123456; --automation-pin: #ABCDEF; }\n");
-    assert_eq!(theme.colors.automation_pin, rgb(0xABCDEF), "a style sheet's own pin");
+    assert_eq!(theme.color("automation-pin"), rgb(0xABCDEF), "a style sheet's own pin");
 }
 
 #[test]
@@ -442,30 +455,28 @@ fn independent_text_roles_round_trip_and_old_themes_keep_their_colours() {
         r##"{"colors":{"text.primary":"#EEDDAA","text.secondary":"#998877","window.background":"#112233"}}"##,
     );
     assert!(warnings.is_empty());
-    assert_eq!(theme.colors.browser_text_primary, theme.colors.text_primary);
-    assert_eq!(theme.colors.browser_text_secondary, theme.colors.text_secondary);
-    assert_eq!(theme.colors.text_on_color_dark, theme.colors.window_background);
-    theme.colors.browser_text_primary = rgb(0x55AAFF);
-    theme.colors.text_on_color_dark = rgb(0x445566);
+    assert_eq!(theme.color("browser-text-primary"), theme.color("text-primary"));
+    assert_eq!(theme.color("browser-text-secondary"), theme.color("text-secondary"));
+    assert_eq!(theme.color("text-onColorDark"), theme.color("window-background"));
+    theme.colors.insert("browser-text-primary".into(), rgb(0x55AAFF));
+    theme.colors.insert("text-onColorDark".into(), rgb(0x445566));
     let (restored, warnings) = Theme::from_json(&theme.to_json());
     assert!(warnings.is_empty());
     assert_eq!(restored.colors, theme.colors);
     let ctx = egui::Context::default();
-    set_palette(&ctx, restored.colors);
-    assert_eq!(text_on(rgb(0xFFFFFF)), rgb(0x445566));
-    assert_eq!(browser_text_primary(), rgb(0x55AAFF));
-    set_palette(&ctx, Palette::DARK);
+    use_colors(&ctx, &restored.colors);
+    assert_eq!(in_style_frame(&ctx, |_| text_on(rgb(0xFFFFFF))), rgb(0x445566));
+    assert_eq!(restored.color("browser-text-primary"), rgb(0x55AAFF));
+    use_colors(&ctx, &Colors::new());
 }
 
 #[test]
-fn the_palette_in_use_changes_with_the_theme() {
+fn the_colours_in_use_change_with_the_theme() {
     let ctx = egui::Context::default();
-    let mut night = Palette::DARK;
-    night.accent = rgb(0x00FF00);
-    set_palette(&ctx, night);
-    assert_eq!(accent(), rgb(0x00FF00));
-    set_palette(&ctx, Palette::DARK);
-    assert_eq!(accent(), Palette::DARK.accent);
+    use_colors(&ctx, &[("accent".to_owned(), rgb(0x00FF00))].into());
+    assert_eq!(root_in(&ctx, "--accent"), rgb(0x00FF00));
+    use_colors(&ctx, &Colors::new());
+    assert_eq!(root_in(&ctx, "--accent"), studio("accent"));
 }
 
 #[test]
@@ -483,11 +494,17 @@ fn a_toolbar_in_theme_json_lists_a_module_once_and_bounds_its_offsets() {
 }
 
 #[test]
-fn the_package_checks_resolve_swatches_against_the_same_core_properties() {
-    // suhina-theme-package cannot depend on this crate, so it keeps a copy of the core sheet for
-    // `validate`, `pack` and `read` (the CLI's too). After changing the palette or the settings
-    // the core set holds, copy `core_sheet()` into crates/theme-package/src/core.css.
-    assert_eq!(suhina_theme_package::CORE_SHEET, super::super::theme_vars::core_sheet());
+fn the_core_sheet_registers_every_colour_token_and_base_colour() {
+    // The core sheet is suhina-theme-package's (`CORE_SHEET`), the one place Suhina Studio's
+    // colours are written: the package checks, the CLI and the app read the same values.
+    assert_eq!(super::super::theme_vars::core_sheet(), suhina_theme_package::CORE_SHEET);
+    for (key, _) in TOKENS {
+        let property = super::super::theme_vars::token_property(key);
+        assert!(suhina_theme_package::CORE_SHEET.contains(&format!("@property {property} ")), "{key}");
+    }
+    for (name, value) in super::super::theme_vars::BASE_COLOURS {
+        assert_eq!(default_color(&name[2..]).map(hex), parse_hex(value).map(hex), "{name}");
+    }
 }
 
 #[test]
@@ -503,7 +520,7 @@ fn toolbar_rules_in_a_current_sheet_are_not_read_and_are_named_once() {
     assert_eq!(theme.skin.toolbar.unwrap().hidden, ["tempo"]);
 }
 
-/// A sample-map colour given as a `kind.*` palette token, which is gone, is not read silently: the
+/// A sample-map colour given as a `kind.*` colour token, which is gone, is not read silently: the
 /// notice says the colours are `sample-point` rules now, in a sheet and in a theme file alike.
 #[test]
 fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
@@ -544,4 +561,31 @@ fn a_sheet_reading_former_track_variables_or_colour_artwork_is_told() {
     let (_, warnings) =
         from_folder(ThemeMeta::new("New", DEFAULT_SWATCH), "track-name { color: attr(color type(<color>)); }");
     assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn a_theme_file_holds_only_the_colours_the_theme_sets() {
+    let (theme, warnings) = Theme::from_json(r##"{"colors":{"grid.major":"#102030","recording":"#405060"}}"##);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(theme.colors.keys().map(String::as_str).collect::<Vec<_>>(), ["grid-major", "recording"]);
+    let saved: Value = serde_json::from_str(&theme.to_json()).unwrap();
+    let written: Vec<&str> = saved["colors"].as_object().unwrap().keys().map(String::as_str).collect();
+    assert_eq!(written, ["grid.major", "recording"]);
+    assert_eq!(Theme::from_json(&theme.to_json()), (theme, Vec::new()));
+    let saved: Value = serde_json::from_str(&Theme::default().to_json()).unwrap();
+    assert!(saved.get("colors").is_none(), "a theme that sets nothing has no colour block");
+}
+
+#[test]
+fn a_themes_colours_are_suhina_studios_with_its_own_over_them() {
+    for (key, _) in TOKENS {
+        assert_eq!(Theme::default().color(&variable_name(key)), studio(&variable_name(key)), "{key}");
+    }
+    let mut theme = Theme::default();
+    theme.colors.insert("track-headerBackground".into(), rgb(0x010203));
+    assert_eq!(theme.color("track-headerBackground"), rgb(0x010203));
+    for (key, _) in TOKENS.iter().filter(|(key, _)| *key != "track.headerBackground") {
+        assert_eq!(theme.color(&variable_name(key)), studio(&variable_name(key)), "{key}");
+    }
+    assert_eq!(theme.color("not-a-token"), Color32::TRANSPARENT);
 }

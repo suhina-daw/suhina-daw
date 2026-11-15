@@ -288,8 +288,18 @@ pub(crate) fn switch(
     } else {
         format!("Click to enable the {} again", label)
     });
-    let (fill, text) = widgets::toggle_colors(ui, &response, state.enabled);
-    ui.painter().rect_filled(rect, 3.0, fill);
+    // `button#control-device-on`, `[checked]` while it runs: the lit toggle's look, which a
+    // theme's rule for every `button` overrides as it does any button's (#1448).
+    let lit = widgets::lit_toggle(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.id("device-on"),
+        &[crate::kit::element::Checked],
+        state.enabled,
+    );
+    let (fill, text) = lit.colors();
+    lit.el.paint_over(ui.painter(), rect, crate::kit::element::Native { radius: 3.0, fill }, lit.toggle.image(lit.lit));
+    drop(lit);
     let word = if state.enabled { "On" } else { "Off" };
     widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
     if response.clicked() {
@@ -407,7 +417,7 @@ fn dropdown(
                 icon_rect,
                 role,
                 crate::kit::skin::State::Normal,
-                theme::text_secondary(),
+                crate::kit::element::ICON.attribute("kind", "folder").look().color(),
                 0.0,
             );
             ui.new_child(egui::UiBuilder::new().max_rect(rect.with_min_x(rect.left() + 24.0)))
@@ -463,9 +473,10 @@ fn dropdown(
 /// A stepper button drawn in `rect`: a triangle pointing up or down, answering by its label.
 fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) -> egui::Response {
     let painter = ui.painter();
-    let (fill, _) = widgets::toggle_colors(ui, &ui.interact(rect, egui::Id::unique(id_salt), Sense::click()), false);
     let response = ui.interact(rect, egui::Id::unique(id_salt), Sense::click());
-    painter.rect_filled(rect, 2.0, if response.hovered() { theme::control_hover() } else { fill });
+    // A `button`: its background where the sheet gives one, its `color` for the triangle.
+    let look = crate::kit::element::BUTTON.response(&response).look();
+    painter.rect_filled(rect, 2.0, look.background());
     let inner = rect.shrink(5.0);
     let center = inner.center();
     let dir = if up { -1.0 } else { 1.0 };
@@ -475,7 +486,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
             egui::pos2(center.x - 3.5, center.y - 1.5 * dir),
             egui::pos2(center.x + 3.5, center.y - 1.5 * dir),
         ],
-        theme::text_hint(),
+        look.own_color_or(crate::detail::detail_view::hint_ink()),
         egui::Stroke::NONE,
     ));
     response.widget_info(move || egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
@@ -492,7 +503,7 @@ pub(crate) fn note(painter: &egui::Painter, rect: Rect, state: &PanelState<'_>) 
             Align2::LEFT_CENTER,
             &text,
             theme::ui_font(theme::TEXT_TINY),
-            theme::text_hint(),
+            crate::detail::detail_view::hint_ink(),
         );
     }
 }

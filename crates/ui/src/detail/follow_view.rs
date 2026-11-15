@@ -10,7 +10,6 @@ use egui::{Align2, Id, Pos2, Rect, Response, Ui, Vec2};
 use serde_json::{Value, json};
 use suhina_engine::model::{FollowAction, FollowKind, Project, TrackId};
 
-use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, Action, Drag};
 
@@ -113,7 +112,7 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
     }
     .intersect(area);
     let painter = ui.painter_at(column);
-    painter.rect_filled(column, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(column, 0.0, crate::detail::detail_fill("panel"));
     let f = &info.follow;
     let id = Id::unique(("follow", info.track.0, info.scene));
 
@@ -125,7 +124,7 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
         Align2::LEFT_CENTER,
         "Follow action",
         theme::ui_font(theme::TEXT),
-        theme::text_primary(),
+        crate::detail::detail_view::title_ink(),
     );
     let switch_rect = Rect::from_center_size(
         Pos2::new(title.right() - SWITCH_WIDTH / 2.0, title.center().y),
@@ -143,7 +142,8 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
         r
     };
     // Off, the settings are still there to change; they read as inactive.
-    let label_color = if f.enabled { theme::text_secondary() } else { theme::text_hint() };
+    let label_color =
+        if f.enabled { crate::detail::detail_view::caption_ink() } else { crate::detail::detail_view::hint_ink() };
     let label_of = |painter: &egui::Painter, r: Rect, text: &str| {
         let rect = Rect::from_min_size(r.min, Vec2::new(LABEL_WIDTH, r.height()));
         widgets::text_in(painter, rect, Align2::LEFT_CENTER, text, theme::ui_font(theme::TEXT_SMALL), label_color);
@@ -186,13 +186,17 @@ pub fn show(ui: &mut Ui, area: Rect, info: &FollowInfo, stacked: bool, actions: 
 /// Returns whether it was clicked.
 fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, label: &str, on: bool, accent: bool) -> bool {
     let response = widgets::button_area(ui, rect, id, label);
-    let (fill, text) = if accent {
-        let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
-        let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        (motion::mix(off, theme::accent(), lit), motion::mix(theme::text_secondary(), theme::text_inverse(), lit))
+    // A `button`, `[checked]` while on: only a rule for the lit state lights it. The section's own
+    // switch is lit in the accent (`button[kind="solo"]`), the others as a toggle.
+    let checked = [crate::kit::element::Checked];
+    let builder = crate::kit::element::BUTTON.builder();
+    let lit = if accent {
+        widgets::lit_toggle_kind(ui, &response, builder, &checked, on, "solo")
     } else {
-        widgets::toggle_colors(ui, &response, on)
+        widgets::lit_toggle(ui, &response, builder, &checked, on)
     };
+    let (fill, text) = lit.colors();
+    drop(lit);
     painter.rect_filled(rect, 0.0, fill);
     let word = if on { "On" } else { "Off" };
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
@@ -209,21 +213,20 @@ fn value_look(
     text: &str,
     dim: bool,
 ) {
+    // A `value[kind="field"]` to the theme, its share `value-fill`.
+    let el = crate::kit::element::VALUE.attribute("kind", "field").response(response).enter();
     let fill = if response.dragged() {
-        theme::control_active()
+        el.background()
     } else {
-        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response))
+        el.hover_fade(widgets::hover(ui, response), crate::kit::element::Look::background)
     };
-    painter.rect_filled(rect, 0.0, fill);
+    let rect = el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill }).content;
     if let Some(share) = share {
         let width = rect.width() * share.clamp(0.0, 1.0) as f32;
-        painter.rect_filled(
-            Rect::from_min_size(rect.min, Vec2::new(width, rect.height())),
-            0.0,
-            theme::control_playing(),
-        );
+        let lit = crate::kit::element::VALUE_FILL.look().background();
+        painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(width, rect.height())), 0.0, lit);
     }
-    let color = if dim { theme::text_hint() } else { theme::text_value() };
+    let color = if dim { crate::detail::detail_view::hint_ink() } else { el.color() };
     widgets::text_in(
         painter,
         rect.shrink2(Vec2::new(4.0, 0.0)),

@@ -272,15 +272,17 @@ impl PianoRollState {
 /// copies it went on with) say for themselves what is selected.
 pub(super) fn draw_time_span(painter: &egui::Painter, layout: &Layout, state: &PianoRollState) {
     let style = part_style("piano-time-selection", &[]);
-    let edge = style.border.unwrap_or_else(theme::accent);
+    // Drawn in its `accent-color` where the sheet gives one, else the theme's accent.
+    let accent = crate::kit::element::PIANO_TIME_SELECTION.look().accent();
+    let edge = style.border.unwrap_or(accent);
     if let Some(span) = state.span.as_ref().filter(|_| state.selected.is_empty() && state.gesture.is_none()) {
         let rect = Rect::from_x_y_ranges(layout.x_of(span.start)..=layout.x_of(span.end), layout.grid.y_range());
-        painter.rect_filled(rect, 0.0, style.background.unwrap_or_else(|| theme::accent().gamma_multiply(SPAN_TINT)));
+        painter.rect_filled(rect, 0.0, style.background.unwrap_or_else(|| accent.gamma_multiply(SPAN_TINT)));
         painter.vline(rect.left(), rect.y_range(), Stroke::new(SPAN_EDGE, edge));
         painter.vline(rect.right(), rect.y_range(), Stroke::new(SPAN_EDGE, edge));
     }
     if let Some(beat) = state.insert_at {
-        let color = part_style("piano-insert-mark", &[]).background.unwrap_or_else(theme::text_primary);
+        let color = crate::kit::element::PIANO_INSERT_MARK.look().background();
         painter.vline(layout.x_of(beat).round() + 0.5, layout.grid.y_range(), Stroke::new(1.0, color));
     }
 }
@@ -304,7 +306,9 @@ pub(super) fn draw_span_bar(
     let shown = swept.or_else(|| state.span_shown(clip));
     let painter = ui.painter_at(layout.ruler);
     if let Some((start, end)) = shown {
-        let color = part_style("piano-time-selection", &[]).border.unwrap_or_else(theme::accent);
+        let color = part_style("piano-time-selection", &[])
+            .border
+            .unwrap_or_else(|| crate::kit::element::PIANO_TIME_SELECTION.look().accent());
         let bottom = layout.ruler.bottom();
         let bar = Rect::from_min_max(
             Pos2::new(layout.x_of(start), bottom - SPAN_BAR),
@@ -322,7 +326,7 @@ pub(super) fn draw_span_bar(
         });
     }
     if let Some(beat) = state.insert_at {
-        let color = part_style("piano-insert-mark", &[]).background.unwrap_or_else(theme::text_primary);
+        let color = crate::kit::element::PIANO_INSERT_MARK.look().background();
         let (x, bottom) = (layout.x_of(beat).round() + 0.5, layout.ruler.bottom());
         painter.add(egui::Shape::convex_polygon(
             vec![

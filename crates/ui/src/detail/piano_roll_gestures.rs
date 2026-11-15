@@ -153,7 +153,9 @@ pub(super) fn draw_velocity_label(ui: &Ui, layout: &Layout, clip: &PianoClip, gr
     let rect = layout.note_rect(note);
     let label = Rect::from_min_size(Pos2::new(rect.left(), rect.top() - 15.0), Vec2::new(76.0, 14.0));
     let painter = ui.painter_at(layout.grid);
-    painter.rect_filled(label, 2.0, theme::control_background());
+    // `velocity[kind="label"]`: its `background-color` and `color`.
+    let look = crate::kit::element::VELOCITY.attribute("kind", "label").look();
+    painter.rect_filled(label, 2.0, look.background());
     let text = format!("Velocity {midi}");
     widgets::text_in(
         &painter,
@@ -161,7 +163,7 @@ pub(super) fn draw_velocity_label(ui: &Ui, layout: &Layout, clip: &PianoClip, gr
         Align2::LEFT_CENTER,
         &text,
         theme::mono_font(theme::TEXT_TINY),
-        theme::text_primary(),
+        look.color(),
     );
     let response = ui.interact(label.intersect(layout.grid), Id::unique("piano-roll-velocity-value"), Sense::hover());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &text));

@@ -38,43 +38,19 @@ fn name_liquid_and_surface_gradients_round_trip_through_canonical_css() {
 }
 
 #[test]
-fn control_anchors_round_trip_through_css_and_cycles_warn() {
+fn a_control_placement_is_no_longer_read() {
+    // #1453: the strips lay their parts out in CSS; a `.control-*` rule is the style engine's,
+    // which knows none of its properties.
     let mut theme = Theme::default();
-    let warnings =
-        apply(&mut theme, ".control-arrangement-meter { height: 100%; anchor-bottom: arrangement-volume top 4px; }");
-    assert!(warnings.is_empty(), "{warnings:?}");
-    let css = export(&theme);
-    assert!(css.contains("anchor-bottom: arrangement-volume top 4px;"), "{css}");
-    let mut again = Theme::default();
-    assert!(apply(&mut again, &css).is_empty());
-    assert_eq!(again.skin.controls, theme.skin.controls);
-    let warnings = apply(&mut theme, ".control-arrangement-volume { anchor-top: arrangement-meter bottom; }");
-    assert!(warnings.iter().any(|w| w.contains("cycle")), "{warnings:?}");
-    assert!(theme.skin.controls["arrangement-volume"].anchors.is_empty());
-    assert!(theme.skin.controls["arrangement-meter"].anchors.is_empty());
+    let css =
+        ".control-mixer-volume { left: 8.25px; width: 90px; direction: horizontal; anchor-top: mixer-pan bottom; }";
+    assert!(read_host_rules(&mut theme, css).is_empty());
+    assert_eq!(theme, Theme::default());
+    assert!(!export(&theme).contains(".control-"));
+    let notices = super::super::native_css::inspect(css).unwrap();
+    assert!(notices.iter().any(|notice| notice.message.contains("left")), "{notices:?}");
 }
 
-#[test]
-fn control_geometry_round_trips_between_css_and_json_with_hostile_values_bounded() {
-    let mut theme = Theme::default();
-    let css = ".control-mixer-volume { left: 8.25px; width: 90px; height: 20px; direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-color { display: none; }";
-    assert!(apply(&mut theme, css).is_empty());
-    assert_eq!(theme.skin.controls["mixer-volume"].direction, super::super::control_layout::Direction::Horizontal);
-    assert_eq!(theme.skin.controls["mixer-name"].bottom, Some(0));
-    assert!(theme.skin.controls["mixer-color"].hidden);
-    let mut restored = Theme::default();
-    assert!(apply(&mut restored, &export(&theme)).is_empty());
-    assert_eq!(restored, theme);
-    let mut warnings = Vec::new();
-    assert_eq!(skin::Skin::from_json(&theme.skin.to_json(), &mut warnings), theme.skin);
-    assert!(warnings.is_empty());
-    let before = theme.skin.controls.clone();
-    assert_eq!(
-        apply(&mut theme, ".control-mixer-volume { width: 999999px; top: NaNpx; direction: sideways; }").len(),
-        3
-    );
-    assert_eq!(theme.skin.controls, before);
-}
 #[test]
 fn toolbar_offsets_mirror_without_replacing_the_native_layout() {
     let mut theme = Theme::default();
@@ -141,7 +117,7 @@ fn css_changes_native_model_and_reports_unsupported_rules() {
         &mut theme,
         "/* own style */ :root { --accent: #123456; } meter {style: segmented; segments: 16;} toolbar {order: transport, tempo; hidden: performance;} fader.cap:hover {image: url('assets/cap.svg');} body {display: grid;}",
     );
-    assert_eq!(theme.colors.accent, egui::Color32::from_rgb(0x12, 0x34, 0x56));
+    assert_eq!(theme.color("accent"), egui::Color32::from_rgb(0x12, 0x34, 0x56));
     assert_eq!(theme.skin.meter, skin::MeterStyle::Segmented);
     assert_eq!(theme.skin.toolbar.as_ref().unwrap().order[0], "transport");
     assert_eq!(theme.skin.assets["fader.cap.hover"], "assets/cap.svg");
@@ -189,24 +165,23 @@ fn malformed_css_does_not_panic_or_load_resources() {
 #[test]
 fn host_rules_inside_a_layer_count_and_media_rules_do_not() {
     let mut theme = Theme::default();
-    let css = "@layer base, theme;\n@layer theme { .control-mixer-pan { left: 4px; } @layer inner { .control-arm { top: 2px; } } }\n@media (max-width: 400px) { .control-cue { left: 9px; } }";
+    let css = "@layer base, theme;\n@layer theme { icon[kind=\"play\"] { image: url(\"assets/play.svg\"); } @layer inner { icon[kind=\"stop\"] { image: url(\"assets/stop.svg\"); } } }\n@media (max-width: 400px) { icon[kind=\"record\"] { image: url(\"assets/record.svg\"); } }";
     let warnings = read_host_rules(&mut theme, css);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(theme.skin.controls["mixer-pan"].offset().x, 4.0);
-    assert_eq!(theme.skin.controls["arm"].offset().y, 2.0);
-    assert!(!theme.skin.controls.contains_key("cue"), "a conditional rule is the style engine's");
+    assert_eq!(theme.skin.assets.get("play").map(String::as_str), Some("assets/play.svg"));
+    assert_eq!(theme.skin.assets.get("stop").map(String::as_str), Some("assets/stop.svg"));
+    assert!(!theme.skin.assets.contains_key("record"), "a conditional rule is the style engine's");
 }
 
 #[test]
 fn a_former_suhina_property_is_not_read_and_its_notice_names_what_took_its_place() {
     let mut theme = Theme::default();
     let css = "pan { --suhina-appearance: knob; } device { --suhina-param-columns: 3; } \
-               .control-mixer-pan { --suhina-direction: horizontal; } meter { meter-style: needle; }";
+               meter { meter-style: needle; }";
     let warnings = read_host_rules(&mut theme, css);
-    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
     assert!(warnings[0].contains("now appearance"), "{warnings:?}");
     assert!(warnings[1].contains("a CSS layout replaces it, device { grid-template-columns"), "{warnings:?}");
-    assert!(warnings[2].contains("now direction"), "{warnings:?}");
 }
 
 /// Artwork rules name the element that draws a role's default artwork (`knob-body`,
@@ -284,4 +259,41 @@ fn a_theme_is_told_a_painted_element_takes_no_padding_in_percent() {
     assert!(warnings.iter().any(|w| w.contains("percentage is read only on a CSS layout container")), "{warnings:?}");
     let (_, warnings) = crate::kit::theme::from_folder(meta(), "window { padding: 1%; }");
     assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn a_saved_theme_writes_only_the_colours_it_sets_and_reads_back_the_same() {
+    let meta = || super::super::theme::ThemeMeta::new("Two", super::super::theme::DEFAULT_SWATCH);
+    let (theme, warnings) =
+        super::super::theme::from_folder(meta(), ":root { --accent: #123456; --recording: #ABCDEF; }");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(theme.colors.keys().map(String::as_str).collect::<Vec<_>>(), ["accent", "recording"]);
+    for written in [sheet(&theme, None), export(&theme)] {
+        let colours: Vec<&str> = written.lines().filter(|line| line.trim_start().starts_with("--")).collect();
+        assert_eq!(colours.len(), 2, "{written}");
+        assert!(written.contains("--accent: #123456") && written.contains("--recording: #ABCDEF"), "{written}");
+    }
+    let (again, warnings) = super::super::theme::from_folder(meta(), &sheet(&theme, None));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(again.colors, theme.colors);
+    let mut restored = Theme::default();
+    assert!(apply(&mut restored, &export(&theme)).is_empty());
+    assert_eq!(restored.colors, theme.colors);
+}
+
+#[test]
+fn a_theme_that_sets_no_colour_writes_no_colour_block() {
+    let theme = Theme::default();
+    assert!(!sheet(&theme, None).contains(":root"), "{}", sheet(&theme, None));
+    assert!(!export(&theme).contains(":root"), "{}", export(&theme));
+}
+
+#[test]
+fn a_colour_variable_is_kept_by_its_one_name() {
+    // `--window.background` is not the custom property `--window-background`: a name with a dot
+    // does not name a token, and no second entry for the same colour is kept.
+    let mut theme = Theme::default();
+    let warnings = apply(&mut theme, ":root { --window.background: #FF0000; --window-background: #00FF00; }");
+    assert!(theme.colors.keys().all(|name| !name.contains('.')), "{:?}", theme.colors);
+    assert_eq!(theme.colors.len(), 1, "{:?} {warnings:?}", theme.colors);
 }

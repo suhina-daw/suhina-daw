@@ -20,7 +20,7 @@ fn from_sheet(text: &str) -> (Theme, Vec<String>) {
 #[test]
 fn the_core_set_registers_every_token_and_setting_with_suhina_studios_values() {
     let core = core();
-    for (key, _, _) in crate::kit::theme::Palette::DARK.tokens() {
+    for (key, _) in crate::kit::theme::TOKENS {
         assert!(is_core(&token_property(key)), "{key}");
     }
     for name in ["meter-style", "liquid", "panel-gradient", "backdrop-image", "slot-height"] {
@@ -50,7 +50,7 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     let (theme, warnings) = from_sheet(text);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.vars.declared.len(), 1);
-    assert_eq!(theme.colors.accent, parse_hex("#5E81AC").unwrap());
+    assert_eq!(theme.color("accent"), parse_hex("#5E81AC").unwrap());
     let (frost, warnings) = Variant::from_json(
         "frost",
         r##"{ "name": "Frost",
@@ -59,7 +59,7 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
     let (chosen, warnings) = with_variant(&theme, Some(&frost));
-    assert_eq!(chosen.colors.accent, parse_hex("#88C0D0").unwrap());
+    assert_eq!(chosen.color("accent"), parse_hex("#88C0D0").unwrap());
     assert_eq!(chosen.vars.variant.as_deref(), Some("frost"));
     // A value outside its property's range is left out, with a warning.
     assert!(warnings.iter().any(|w| w.contains("meter-segments")), "{warnings:?}");
@@ -68,7 +68,7 @@ fn a_variant_sets_values_over_the_theme_and_may_use_its_variables() {
     assert!(sheet.contains("--glow: 0.2") && !sheet.contains("meter-segments"), "{sheet}");
     // Without a variant, the theme's own values.
     let (own, _) = with_variant(&chosen, None);
-    assert_eq!(own.colors.accent, theme.colors.accent);
+    assert_eq!(own.color("accent"), theme.color("accent"));
     assert!(own.skin.variant.is_none());
 }
 
@@ -80,7 +80,7 @@ fn a_variant_value_for_an_undeclared_property_is_refused() {
             .unwrap();
     let (chosen, warnings) = with_variant(&theme, Some(&variant));
     assert!(warnings.iter().any(|w| w.contains("--nobody")), "{warnings:?}");
-    assert_eq!(chosen.colors.accent, parse_hex("#ABCDEF").unwrap());
+    assert_eq!(chosen.color("accent"), parse_hex("#ABCDEF").unwrap());
     assert!(!chosen.vars.values.contains_key("--nobody"));
 }
 
@@ -89,12 +89,12 @@ fn editing_the_model_writes_only_the_values_that_differ_from_the_theme() {
     let (mut theme, _) = from_sheet(":root { --accent: #123456; } meter { meter-style: needle; }");
     sync(&mut theme);
     assert!(theme.vars.values.is_empty(), "{:?}", theme.vars.values);
-    theme.colors.accent = parse_hex("#ABCDEF").unwrap();
+    theme.colors.insert("accent".into(), parse_hex("#ABCDEF").unwrap());
     theme.skin.segments = 32;
     sync(&mut theme);
     assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "meter-segments"]);
     // Back to the theme's own value: the variant no longer sets it.
-    theme.colors.accent = parse_hex("#123456").unwrap();
+    theme.colors.insert("accent".into(), parse_hex("#123456").unwrap());
     sync(&mut theme);
     assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["meter-segments"]);
 }
@@ -110,7 +110,7 @@ fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
         resolve(&mut theme);
         sync(&mut theme);
         assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--tint"]);
-        (theme.colors.accent, theme.colors.selection)
+        (theme.color("accent"), theme.color("selection"))
     };
     let first = edit("#FF0000");
     assert_eq!(first.0, parse_hex("#FF0000").unwrap());
@@ -119,7 +119,7 @@ fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
     assert_ne!(first.1, second.1);
 
     // A colour edited by hand is still the variant's, over what the setting gives.
-    theme.colors.accent = parse_hex("#ABCDEF").unwrap();
+    theme.colors.insert("accent".into(), parse_hex("#ABCDEF").unwrap());
     sync(&mut theme);
     assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "--tint"]);
 }
@@ -157,8 +157,6 @@ fn host_rules_are_read_from_a_sheet_and_the_rest_is_left_to_the_engine() {
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.name, Theme::default().name, "a theme's name is its theme.json's, not its sheet's");
     assert_eq!(theme.skin.assets.get("knob.body").map(String::as_str), Some("assets/knob.body.svg"));
-    assert_eq!(theme.skin.controls["mixer-pan"].offset().x, 4.0);
-    assert!(!theme.skin.controls["mixer-pan"].hidden, "a rule in @media is not a placement");
 }
 
 #[test]
@@ -170,7 +168,7 @@ fn a_variant_holds_values_for_declared_controls_only() {
     let (chosen, warnings) = with_variant(&theme, Some(&variant));
     // `--well` is a variable of the theme's own, not a control it declares: the variant cannot set it.
     assert!(warnings.iter().any(|w| w.contains("--well") && w.contains("declares no such control")), "{warnings:?}");
-    assert_eq!(chosen.colors.accent, parse_hex("#ABCDEF").unwrap());
+    assert_eq!(chosen.color("accent"), parse_hex("#ABCDEF").unwrap());
     assert!(!chosen.skin.variant.as_deref().unwrap().contains("--well"));
     let (_, warnings) = Variant::from_json("x", r##"{ "name": "X", "appearance": "light", "values": {} }"##).unwrap();
     assert!(warnings.iter().any(|w| w.contains("appearance")), "{warnings:?}");
@@ -205,15 +203,6 @@ fn a_theme_may_put_the_track_headers_on_a_side() {
 }
 
 #[test]
-fn a_list_of_placement_selectors_places_each_control() {
-    let mut theme = Theme::default();
-    let css = ".control-arrangement-send-1, .control-arrangement-send-2 { display: none; }";
-    assert!(theme_css::read_host_rules(&mut theme, css).is_empty());
-    assert!(theme.skin.controls["arrangement-send-1"].hidden);
-    assert!(theme.skin.controls["arrangement-send-2"].hidden);
-}
-
-#[test]
 fn a_toggle_that_is_on_has_artwork_of_its_own_or_the_pressed_one() {
     let mut theme = Theme::default();
     let css = "solo:on { image: url(\"assets/solo.on.svg\"); } arm:active { image: url(\"assets/arm.active.svg\"); }";
@@ -235,7 +224,7 @@ fn track_artwork_of_one_view_is_a_role_of_its_own() {
 }
 
 #[test]
-fn a_theme_may_keep_the_header_column_wide_enough_for_its_placements() {
+fn a_theme_may_keep_the_header_column_wide_enough_for_its_layout() {
     let sheet = |css: &str| crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() };
     crate::kit::skin::configure(&sheet("arrangement { header-min-width: 330px; }"));
     assert_eq!(crate::kit::style_class::theme_header_min_width(), Some(330.0));
@@ -260,17 +249,47 @@ fn a_button_may_have_artwork_of_its_own_per_state() {
     assert!(!crate::kit::skin::valid_role("button.nothing"));
 }
 
+/// Suhina Studio's accent, as the core sheet's initial value writes it.
+fn studio_accent() -> String {
+    core_values(&Theme::default()).remove("--accent").unwrap()
+}
+
 #[test]
-fn layout_css_holds_only_the_placements_that_differ_from_the_sheet() {
-    let sheet = ".control-mixer-pan { anchor-bottom: mixer-toggles top 6px; }\n\
-                 .control-mixer-name { width: 80px; }";
-    let (from_sheet, _) = crate::kit::theme::from_css(sheet);
-    let mut moved = from_sheet.clone();
-    let mut name = moved.skin.controls["mixer-name"];
-    name.set_offset(egui::vec2(0.0, 8.0));
-    moved.skin.controls.insert("mixer-name".into(), name);
-    let layout = theme_css::layout(&moved, &from_sheet);
-    assert!(layout.contains(".control-mixer-name"), "{layout}");
-    assert!(!layout.contains(".control-mixer-pan"), "the sheet's own placement is not copied: {layout}");
-    assert!(theme_css::layout(&from_sheet, &from_sheet).is_empty());
+fn a_variant_that_sets_a_colour_back_to_studios_value_paints_and_saves_it() {
+    let (theme, _) = from_sheet(":root { --accent: #5E81AC; }");
+    let studio = studio_accent();
+    let (variant, _) =
+        Variant::from_json("studio", &format!(r##"{{ "name": "Studio", "values": {{ "--accent": "{studio}" }} }}"##))
+            .unwrap();
+    let (mut chosen, warnings) = with_variant(&theme, Some(&variant));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    // Painted: Studio's accent, not the theme's.
+    assert_eq!(chosen.color("accent"), crate::kit::theme::studio("accent"));
+    // Saved: the variant keeps the value, so reading it back gives the same colour.
+    sync(&mut chosen);
+    assert_eq!(chosen.vars.values.get("--accent").map(String::as_str), Some(studio.as_str()));
+    let saved = Variant::of(&chosen).unwrap();
+    let (again, _) = with_variant(&theme, Some(&saved));
+    assert_eq!(again.color("accent"), chosen.color("accent"));
+    // The theme's own values are the theme's again, and nothing of the variant is left behind.
+    let (own, _) = with_variant(&chosen, None);
+    assert_eq!(own.color("accent"), parse_hex("#5E81AC").unwrap());
+}
+
+#[test]
+fn a_later_root_rule_that_sets_a_colour_back_to_studios_value_wins_over_an_earlier_one() {
+    let studio = studio_accent();
+    let (theme, _) = from_sheet(&format!(":root {{ --accent: #5E81AC; }}\n:root {{ --accent: {studio}; }}"));
+    assert_eq!(theme.color("accent"), crate::kit::theme::studio("accent"));
+    assert!(!theme.colors.contains_key("accent"));
+    let mut applied = Theme::default();
+    let warnings =
+        theme_css::apply(&mut applied, &format!(":root {{ --accent: #5E81AC; }}\n:root {{ --accent: {studio}; }}"));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(applied.color("accent"), crate::kit::theme::studio("accent"));
+    // A base theme's different value does not survive a sheet that sets Studio's.
+    let mut base = Theme::default();
+    base.set_color("accent", [1, 2, 3, 255]);
+    theme_css::apply(&mut base, &format!(":root {{ --accent: {studio}; }}"));
+    assert_eq!(base.color("accent"), crate::kit::theme::studio("accent"));
 }

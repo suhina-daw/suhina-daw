@@ -1127,9 +1127,10 @@ pub(super) fn drop_overlay(ui: &Ui, area: Rect) {
     painter.rect_filled(
         area,
         0.0,
-        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(DROP_DIM * shown),
+        crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window"))
+            .gamma_multiply(DROP_DIM * shown),
     );
-    let text = theme::text_primary().gamma_multiply(shown);
+    let text = crate::kit::element::name_ink().gamma_multiply(shown);
     // A file whose name is not known yet counts as both; a project is the likelier.
     let what = if themes && !project { "Drop to bring in the theme" } else { "Drop to open" };
     painter.text(area.center(), Align2::CENTER_CENTER, what, theme::ui_font(theme::TEXT + 2.0), text);
@@ -1152,18 +1153,23 @@ pub(super) fn name_taken(file: &Path, folder: &Path) -> bool {
 /// pointer takes the drop. The browser's item drags, a tag carry and the tags section's
 /// drops share it.
 fn drag_pill(ui: &Ui, pointer: Pos2, text: &str, accent: bool) {
+    pill(ui.ctx(), pointer, text, accent);
+}
+
+/// [`drag_pill`] where there is a context only.
+pub(super) fn pill(ctx: &egui::Context, pointer: Pos2, text: &str, accent: bool) {
     let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
-    let painter = ui.ctx().layer_painter(layer);
+    let painter = ctx.layer_painter(layer);
     let font = theme::ui_font(theme::TEXT_SMALL);
-    let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);
+    // A `tooltip`: its `background-color`, its `border-color` (its `accent-color` when what is under
+    // the pointer takes the drop) and its `color`.
+    let pill = crate::kit::element::TOOLTIP.look();
+    let ink = pill.color();
+    let galley = widgets::fitted(&painter, text, font, ink, 280.0);
     let rect = Rect::from_min_size(pointer + Vec2::new(14.0, 10.0), galley.size() + Vec2::new(PAD * 2.0, 6.0));
-    painter.rect_filled(rect, 0.0, theme::control_active());
-    painter.rect_stroke(
-        rect,
-        0.0,
-        theme::hairline(if accent { theme::accent() } else { theme::border_strong() }),
-        egui::StrokeKind::Inside,
-    );
-    widgets::paint_text(&painter, rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
-    ui.ctx().request_repaint();
+    painter.rect_filled(rect, 0.0, pill.background());
+    let edge = if accent { pill.accent() } else { pill.border() };
+    painter.rect_stroke(rect, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
+    widgets::paint_text(&painter, rect.min + Vec2::new(PAD, 3.0), galley, ink);
+    ctx.request_repaint();
 }

@@ -9,7 +9,7 @@ use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2, pos2};
 
 use crate::interaction::pick::PickField;
 use crate::kit::motion;
-use crate::kit::theme::{self, PAD, Palette};
+use crate::kit::theme::{self, Colors, PAD};
 use crate::kit::widgets;
 use crate::settings::keymap::{Keymap, Preset, Shortcut, actions};
 use crate::settings::workflow::Setting;
@@ -194,7 +194,7 @@ pub struct ThemesView {
     pub current: String,
     pub built_in: bool,
     pub name: String,
-    pub colors: Palette,
+    pub colors: Colors,
     pub liquid: Option<crate::kit::liquid::Options>,
     pub global_liquid: crate::kit::liquid::Options,
     pub gradients: crate::kit::gradient::Gradients,
@@ -225,9 +225,9 @@ pub enum ThemeRequest {
     /// A new variant of the theme in use, with its values, named.
     NewVariant(String),
     /// Use these colours; a built-in theme is copied first, since it does not change.
-    Edit(Palette),
+    Edit(Colors),
     EditRgba {
-        colors: Palette,
+        colors: Colors,
         transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
     },
     EditLiquid(Option<crate::kit::liquid::Options>),
@@ -237,7 +237,7 @@ pub enum ThemeRequest {
     ResetEdits {
         skin: Box<crate::kit::skin::Skin>,
         transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
-        colors: Palette,
+        colors: Colors,
         liquid: Option<crate::kit::liquid::Options>,
         gradients: crate::kit::gradient::Gradients,
         /// The theme's own settings, by property.
@@ -352,7 +352,7 @@ pub struct PageState {
     pub skin_editor: super::skin_editor::State,
     pub theme_original_liquid: Option<Option<crate::kit::liquid::Options>>,
     pub theme_original_gradients: Option<crate::kit::gradient::Gradients>,
-    pub theme_original: Option<Palette>,
+    pub theme_original: Option<Colors>,
     pub theme_original_rgb: Option<std::collections::BTreeMap<String, [u8; 3]>>,
     /// The theme's own settings when the editor opened, for Reset changes.
     pub theme_original_values: Option<std::collections::BTreeMap<String, String>>,
@@ -581,7 +581,7 @@ impl Cx<'_> {
                 Align2::LEFT_CENTER,
                 folder,
                 theme::ui_font(theme::TEXT_SMALL),
-                theme::text_primary(),
+                ink().name,
             );
             if widgets::button(self.ui, self.painter, button, "Remove", &format!("Remove MCP write folder {folder}")) {
                 remove = Some(index);
@@ -705,9 +705,7 @@ impl Cx<'_> {
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, self.name));
                 held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
                 ui.label(
-                    egui::RichText::new(theme::hex(colour))
-                        .font(theme::mono_font(theme::TEXT_SMALL))
-                        .color(theme::text_primary()),
+                    egui::RichText::new(theme::hex(colour)).font(theme::mono_font(theme::TEXT_SMALL)).color(ink().name),
                 );
             });
         });
@@ -856,8 +854,8 @@ impl Cx<'_> {
             Pos2::new(control_x(row), row.top()),
             Pos2::new((reset.left() - 4.0).max(control_x(row) + 40.0), row.top() + SEGMENT + 2.0),
         );
-        let (text, color) = if value.is_empty() { (hint, theme::text_hint()) } else { (value, theme::text_value()) };
-        self.painter.rect_stroke(rect, 2.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+        let (text, color) = if value.is_empty() { (hint, ink().hint) } else { (value, ink().value) };
+        self.painter.rect_stroke(rect, 2.0, theme::hairline(crate::kit::element::row_line()), egui::StrokeKind::Inside);
         crate::kit::widgets::text_in(
             self.painter,
             rect.shrink2(Vec2::new(6.0, 0.0)),
@@ -899,9 +897,100 @@ pub(crate) fn input_style(ui: &mut Ui) {
     visuals.text_edit_bg_color = Some(egui::Color32::TRANSPARENT);
 }
 
+/// The Settings page's words by how much they stand out, `label` and its kinds read once a frame
+/// inside the page's element (a row of a page is drawn a hundred times: its words are one kind of
+/// each, not one element each).
+#[derive(Clone, Copy)]
+pub(crate) struct Inks {
+    /// A setting's name and a value: `label`, inherited from the page's `color` too.
+    pub name: egui::Color32,
+    /// What it says under the name: `label[kind="caption"]`, its own `color`.
+    pub caption: egui::Color32,
+    /// Headings, notes and the dim: `label[kind="hint"]`, its own `color`.
+    pub hint: egui::Color32,
+    /// A value shown as words, a key: `label[kind="value"]`.
+    pub value: egui::Color32,
+    /// Something wrong: `label[kind="error"]`.
+    pub error: egui::Color32,
+}
+
+impl Inks {
+    /// The inks of the element that is entered now.
+    pub(crate) fn read() -> Self {
+        use crate::kit::element::{caption_ink, error_ink, hint_ink, name_ink, value_ink};
+        Self { name: name_ink(), caption: caption_ink(), hint: hint_ink(), value: value_ink(), error: error_ink() }
+    }
+}
+
+thread_local! {
+    /// The page's inks while it is drawn.
+    static INKS: std::cell::Cell<Option<Inks>> = const { std::cell::Cell::new(None) };
+}
+
+/// The page's inks: those `show` read this frame, else read now (a part drawn on its own).
+pub(crate) fn ink() -> Inks {
+    INKS.get().unwrap_or_else(Inks::read)
+}
+
+/// Clears the page's inks when the frame's drawing of it ends, however it ends.
+struct InksGuard;
+
+impl Drop for InksGuard {
+    fn drop(&mut self) {
+        INKS.set(None);
+    }
+}
+
+/// What the theme picker's cards and swatches paint, read once a frame for all of them: the
+/// `theme-card` (`[selected]` for the theme in use) and its `theme-swatch`es.
+#[derive(Clone, Copy)]
+struct Cards {
+    /// The tint under the theme in use.
+    tint: egui::Color32,
+    /// The card's edge: the theme in use, under the pointer, and otherwise.
+    in_use: egui::Color32,
+    hovered: egui::Color32,
+    plain: egui::Color32,
+    /// The word under the name of the active theme.
+    active: egui::Color32,
+}
+
+impl Cards {
+    fn read() -> Self {
+        use crate::kit::element::{Selected, THEME_CARD};
+        let in_use = THEME_CARD.attr(Selected, true).look();
+        let hovered = THEME_CARD.pointer(true, false, false).look();
+        let plain = THEME_CARD.look();
+        Self {
+            // The tint under the theme in use: its `background-color`, else a little of its accent.
+            tint: in_use.background_or(in_use.accent().gamma_multiply(0.14)),
+            in_use: in_use.border(),
+            hovered: hovered.border(),
+            plain: plain.border(),
+            active: in_use.accent(),
+        }
+    }
+}
+
+thread_local! {
+    /// The cards' colours while the picker is drawn.
+    static CARDS: std::cell::Cell<Option<Cards>> = const { std::cell::Cell::new(None) };
+}
+
+/// Clears the cards' colours when the picker's drawing ends, however it ends.
+struct CardsGuard;
+
+impl Drop for CardsGuard {
+    fn drop(&mut self) {
+        CARDS.set(None);
+    }
+}
+
 /// Draws the page into the space left in `ui`.
 pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &mut PageState) -> Outcome {
     let style_class = crate::kit::element::SETTINGS.enter();
+    INKS.set(Some(Inks::read()));
+    let _inks = InksGuard;
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let mut outcome = Outcome::default();
@@ -934,35 +1023,17 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         drag.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Move Settings"));
         outcome.move_by = drag.drag_delta();
     }
-    widgets::text_in(
-        &painter,
-        title,
-        Align2::LEFT_CENTER,
-        "Settings",
-        theme::ui_font(theme::TEXT + 2.0),
-        theme::text_primary(),
-    );
+    widgets::text_in(&painter, title, Align2::LEFT_CENTER, "Settings", theme::ui_font(theme::TEXT + 2.0), ink().name);
     let close = Rect::from_min_max(Pos2::new(title.right() - 52.0, title.top()), title.max);
     // Help, beside Close: how each setting's description is shown.
     let help = Rect::from_min_size(Pos2::new(close.left() - 58.0, close.top()), Vec2::new(52.0, close.height()));
     let help_response = widgets::button_area(ui, help, Id::unique("settings-help"), "Settings help");
-    let help_hover = widgets::hover(ui, &help_response);
-    painter.rect_filled(help, 0.0, motion::mix(theme::control_background(), theme::control_hover(), help_hover));
-    widgets::text_in(&painter, help, Align2::CENTER_CENTER, "Help", theme::ui_font(theme::TEXT), theme::text_primary());
+    widgets::flat_button(ui, &painter, help, &help_response, "Help", (theme::TEXT, None));
     if help_response.clicked() {
         state.help_open = true;
     }
     let response = widgets::button_area(ui, close, Id::unique("settings-close"), "Close settings");
-    let hover = widgets::hover(ui, &response);
-    painter.rect_filled(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
-    widgets::text_in(
-        &painter,
-        close,
-        Align2::CENTER_CENTER,
-        "Close",
-        theme::ui_font(theme::TEXT),
-        theme::text_primary(),
-    );
+    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT, None));
     // Undock or dock, left of Help.
     let toggle = Rect::from_min_max(pos2(help.left() - 116.0, title.top()), pos2(help.left() - 6.0, title.bottom()));
     let label = if state.window { "Dock" } else { "Open in window" };
@@ -1056,10 +1127,10 @@ const DESCRIPTION_CHOICES: [(Descriptions, &str); 3] = [
 fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome: &mut Outcome) {
     let modal = crate::kit::floating::modal(ui.ctx(), Id::unique("settings-help-dialog")).show(ui.ctx(), |ui| {
         ui.set_width(360.0);
-        ui.label(egui::RichText::new("Help").font(theme::ui_font(theme::TEXT + 2.0)).color(theme::text_primary()));
+        ui.label(egui::RichText::new("Help").font(theme::ui_font(theme::TEXT + 2.0)).color(ink().name));
         ui.add_space(6.0);
         let text = "Each setting's name says what it does. Choose how to see the longer description of each setting:";
-        ui.label(egui::RichText::new(text).font(theme::ui_font(theme::TEXT_SMALL)).color(theme::text_secondary()));
+        ui.label(egui::RichText::new(text).font(theme::ui_font(theme::TEXT_SMALL)).color(ink().caption));
         ui.add_space(6.0);
         for (choice, label) in DESCRIPTION_CHOICES {
             let text = egui::RichText::new(label).font(theme::ui_font(theme::TEXT_SMALL));
@@ -1159,9 +1230,9 @@ fn page_body(
                 let response =
                     widgets::button_area(cx.ui, rect, Id::unique(("settings-advanced", entry.page.name())), text);
                 let marker = if unfolded { "v  Advanced" } else { ">  Advanced" };
-                let color = motion::mix(theme::text_hint(), theme::text_secondary(), widgets::hover(cx.ui, &response));
+                let color = motion::mix(ink().hint, ink().caption, widgets::hover(cx.ui, &response));
                 widgets::text_in(&painter, rect, Align2::LEFT_CENTER, marker, theme::ui_font(theme::TEXT_SMALL), color);
-                painter.hline(page.x_range(), rect.bottom() + 3.5, theme::hairline(theme::border()));
+                painter.hline(page.x_range(), rect.bottom() + 3.5, theme::hairline(crate::kit::element::row_line()));
                 y = rect.bottom() + 8.0;
                 if response.clicked() {
                     if unfolded {
@@ -1212,7 +1283,7 @@ fn page_body(
                     egui::Shape::rect_filled(
                         panel,
                         0.0,
-                        crate::kit::style_class::surface_or(theme::panel_background()),
+                        crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")),
                     ),
                 );
                 y += 4.0;
@@ -1251,13 +1322,21 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         if let Some(own) = &own {
             painter.rect_filled(row, own.radius, own.background);
         } else {
-            painter.rect_filled(row, 0.0, theme::panel_hover().gamma_multiply(0.25 * hover));
-            painter.rect_filled(row, 0.0, theme::control_background().gamma_multiply(0.8 * selected));
+            painter.rect_filled(row, 0.0, crate::kit::element::app_fill("panel-hover").gamma_multiply(0.25 * hover));
+            painter.rect_filled(row, 0.0, crate::kit::element::app_fill("control").gamma_multiply(0.8 * selected));
         }
         // A page under another (Themes under Appearance) is stepped in.
         let indent = if page == Page::Theme { PAD * 2.0 } else { 0.0 };
         let text = Rect::from_min_max(Pos2::new(row.left() + PAD + indent, row.top()), row.max);
-        let color = nav.color_or(motion::mix(theme::text_secondary(), theme::text_primary(), selected));
+        // Its ink, `[checked]` for the page shown; while that changes, a fade between the two.
+        let settled = if Some(page) == shown { selected >= 1.0 } else { selected <= 0.0 };
+        let color = if settled {
+            nav.color()
+        } else {
+            use crate::kit::element::{Checked, SETTINGS_NAV};
+            let (off, on) = (SETTINGS_NAV.probe().color(), SETTINGS_NAV.attr(Checked, true).probe().color());
+            motion::mix(off, on, selected)
+        };
         widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), color);
     }
     picked
@@ -1309,7 +1388,7 @@ pub(crate) fn mouse_switches(cx: &mut Cx<'_>, y: &mut f32) {
         describe(cx.ui, cx.painter, r, setting.name(), setting.note(), how);
         *y = r.top() + height;
     }
-    let color = theme::text_secondary();
+    let color = ink().caption;
     let text = "Kept in keymap.json with the keys. Changing any of these makes the workflow Custom.";
     let galley = cx.painter.layout(text.to_string(), theme::ui_font(theme::TEXT_SMALL), color, cx.page.width() - 8.0);
     let height = galley.size().y;
@@ -1335,6 +1414,8 @@ fn theme_page(
     state: &mut PageState,
 ) -> Option<ThemeRequest> {
     state.theme_colour_held = false;
+    CARDS.set(Some(Cards::read()));
+    let _cards = CardsGuard;
     let mut request = None;
     ui.scope_builder(egui::UiBuilder::new().max_rect(Rect::from_min_max(pos2(page.left(), *at), page.max)), |ui| {
         ui.set_width(page.width());
@@ -1387,7 +1468,7 @@ fn theme_page(
                          its theme.css, so you can edit them.",
                     )
                     .small()
-                    .color(theme::text_secondary()),
+                    .color(ink().caption),
                 );
                 ui.horizontal(|ui| {
                     let label = if create.copy { "Duplicate" } else { "Create theme" };
@@ -1412,7 +1493,7 @@ fn theme_page(
                 ui.label(format!("Current theme: {}", themes.name));
                 if ui.button("Edit current theme…").clicked() {
                     state.theme_editor = true;
-                    state.theme_original = Some(themes.colors);
+                    state.theme_original = Some(themes.colors.clone());
                     state.theme_original_rgb = Some(themes.transparent_rgb.clone());
                     state.theme_original_values = Some(declared_values(themes));
                     state.theme_original_liquid = Some(themes.liquid);
@@ -1474,7 +1555,7 @@ fn theme_page(
             let mut others =
                 themes.list.iter().filter(|(id, name, _)| theme_matches(&query, id, name, &themes.variants)).peekable();
             if others.peek().is_none() && !query.is_empty() {
-                ui.label(egui::RichText::new("No themes match").color(theme::text_hint()));
+                ui.label(egui::RichText::new("No themes match").color(ink().hint));
             }
             while let Some(first) = others.next() {
                 let second = others.next();
@@ -1565,10 +1646,11 @@ fn theme_card(
         Some((_, variant)) if active => format!("{name} · {variant}"),
         _ => name.clone(),
     };
+    let cards = CARDS.get().unwrap_or_else(Cards::read);
     if ui.is_rect_visible(rect) {
         // The theme in use stands out, on the large card and in its place in the list.
         if in_use {
-            ui.painter().rect_filled(rect, 3.0, theme::accent().gamma_multiply(0.14));
+            ui.painter().rect_filled(rect, 3.0, cards.tint);
         }
         let swatch = swatch_of(themes, id);
         let preview = Rect::from_min_size(
@@ -1581,25 +1663,18 @@ fn theme_card(
             ui.painter().rect_filled(preview, 2.0, swatch);
         }
         let border = if in_use {
-            egui::Stroke::new(2.0, theme::accent())
+            egui::Stroke::new(2.0, cards.in_use)
         } else if response.hovered() {
-            theme::hairline(theme::border_strong())
+            theme::hairline(cards.hovered)
         } else {
-            theme::hairline(theme::border())
+            theme::hairline(cards.plain)
         };
         ui.painter().rect_stroke(rect, 3.0, border, egui::StrokeKind::Inside);
         let name_rect = Rect::from_min_size(
             pos2(rect.left() + 8.0, rect.top() + preview_height + 9.0),
             Vec2::new(width - 16.0, 18.0),
         );
-        widgets::text_in(
-            ui.painter(),
-            name_rect,
-            Align2::LEFT_CENTER,
-            &label,
-            theme::ui_font(theme::TEXT),
-            theme::text_primary(),
-        );
+        widgets::text_in(ui.painter(), name_rect, Align2::LEFT_CENTER, &label, theme::ui_font(theme::TEXT), ink().name);
         widgets::text_in(
             ui.painter(),
             name_rect.translate(Vec2::new(0.0, 18.0)),
@@ -1614,7 +1689,7 @@ fn theme_card(
                 "Custom"
             },
             theme::ui_font(theme::TEXT_SMALL),
-            if active { theme::accent() } else { theme::text_secondary() },
+            if active { cards.active } else { ink().caption },
         );
     }
     let response = match kept {
@@ -1647,11 +1722,11 @@ fn theme_card(
                 let radius = paint_swatch(painter, area, swatch_of(themes, variant));
                 let selected = *variant == themes.current;
                 let ring = if selected {
-                    theme::accent()
+                    cards.in_use
                 } else if swatch.hovered() {
-                    theme::border_strong()
+                    cards.hovered
                 } else {
-                    theme::border()
+                    cards.plain
                 };
                 painter.rect_stroke(
                     area,
@@ -1667,7 +1742,11 @@ fn theme_card(
 
 /// The swatch colour of the theme or variant `id`, or the panels' colour when it has none.
 fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
-    themes.swatches.iter().find(|(key, _)| key == id).map_or(themes.colors.panel_background, |(_, color)| *color)
+    themes
+        .swatches
+        .iter()
+        .find(|(key, _)| key == id)
+        .map_or_else(|| theme::color_in(&themes.colors, "panel-background"), |(_, color)| *color)
 }
 
 /// A swatch of `color`: a `theme-swatch` element with that `color` attribute, as the theme in use
@@ -1719,7 +1798,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
              controls or changing artwork of a built-in theme makes a custom copy.",
         )
         .small()
-        .color(theme::text_secondary()),
+        .color(ink().caption),
     );
     // With a variant in use, the name is the variant's, and a built-in theme's variant has one too.
     let (shown, renamable, label) = match &themes.variant {
@@ -1750,7 +1829,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
             request = Some(ThemeRequest::Duplicate { artwork: false });
             state.theme_rename_focus = true;
         }
-        let original = *state.theme_original.get_or_insert(themes.colors);
+        let original = state.theme_original.get_or_insert_with(|| themes.colors.clone()).clone();
         let original_rgb = state.theme_original_rgb.get_or_insert_with(|| themes.transparent_rgb.clone()).clone();
         let original_liquid = *state.theme_original_liquid.get_or_insert(themes.liquid);
         let original_gradients = state.theme_original_gradients.get_or_insert_with(|| themes.gradients.clone()).clone();
@@ -1788,7 +1867,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> Opti
                 "This theme offers no quick controls. A theme offers them in its theme.css with @property and \
                  a label.",
             )
-            .color(theme::text_secondary()),
+            .color(ink().caption),
         );
     }
     if let Some(edit) = super::skin_editor::declared(ui, themes, &mut state.skin_editor, &mut state.theme_colour_held) {
@@ -1878,9 +1957,7 @@ fn shortcuts_page(
         Pos2::new(head.right(), head.top() + 1.0 + SEGMENT),
     );
     let response = widgets::button_area(ui, reset, Id::unique("reset-keys"), "Reset all keys");
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(reset, 0.0, fill);
-    widgets::text_in(painter, reset, Align2::CENTER_CENTER, "Reset all", small.clone(), theme::text_primary());
+    widgets::flat_button(ui, painter, reset, &response, "Reset all", (theme::TEXT_SMALL, None));
     if response.clicked() {
         *keymap = Keymap::default();
         state.capture = None;
@@ -1893,14 +1970,7 @@ fn shortcuts_page(
     let mut top = head.bottom() + 4.0;
     let preset_row = Rect::from_min_size(Pos2::new(page.left(), top), Vec2::new(page.width(), 24.0));
     let preset_label = Rect::from_min_size(preset_row.min, Vec2::new(LABEL_WIDTH, 20.0));
-    widgets::text_in(
-        painter,
-        preset_label,
-        Align2::LEFT_CENTER,
-        "Preset",
-        theme::ui_font(theme::TEXT),
-        theme::text_primary(),
-    );
+    widgets::text_in(painter, preset_label, Align2::LEFT_CENTER, "Preset", theme::ui_font(theme::TEXT), ink().name);
     let current = keymap.preset();
     // 64 px a part, as the measurements give every segmented control in Settings.
     let control = Rect::from_min_size(
@@ -1917,12 +1987,12 @@ fn shortcuts_page(
         Pos2::new(preset_row.left(), preset_row.top() + SEGMENT + 3.0),
         Vec2::new(page.width(), 16.0),
     );
-    widgets::text_in(painter, note, Align2::LEFT_CENTER, current.note(), small.clone(), theme::text_secondary());
+    widgets::text_in(painter, note, Align2::LEFT_CENTER, current.note(), small.clone(), ink().caption);
     top += 30.0;
     for (key, ids) in keymap.conflicts() {
         let r = Rect::from_min_size(Pos2::new(page.left(), top), Vec2::new(page.width(), 16.0));
         let text = format!("{} runs {} at once", key.display(), ids.join(" and "));
-        widgets::text_in(painter, r, Align2::LEFT_CENTER, &text, small.clone(), theme::recording());
+        widgets::text_in(painter, r, Align2::LEFT_CENTER, &text, small.clone(), ink().error);
         top += 16.0;
     }
 
@@ -1946,7 +2016,7 @@ fn shortcuts_page(
                 if action.group != group {
                     group = action.group;
                     ui.add_space(6.0);
-                    ui.label(egui::RichText::new(group).font(small.clone()).color(theme::text_hint()));
+                    ui.label(egui::RichText::new(group).font(small.clone()).color(ink().hint));
                 }
                 ui.horizontal(|ui| {
                     let keys: Vec<String> = keymap.keys(&action.id).iter().map(Shortcut::display).collect();
@@ -1954,7 +2024,7 @@ fn shortcuts_page(
                     let left = egui::Layout::left_to_right(egui::Align::Center);
                     ui.allocate_ui_with_layout(Vec2::new(300.0, 18.0), left, |ui| {
                         ui.set_min_width(300.0);
-                        let text = egui::RichText::new(&action.label).font(small.clone()).color(theme::text_primary());
+                        let text = egui::RichText::new(&action.label).font(small.clone()).color(ink().name);
                         ui.add(egui::Label::new(text).truncate());
                     });
                     let shown = if capturing {
@@ -1964,7 +2034,7 @@ fn shortcuts_page(
                     } else {
                         keys.join(", ")
                     };
-                    let color = if capturing { theme::accent() } else { theme::text_value() };
+                    let color = if capturing { crate::kit::element::accent_ink() } else { ink().value };
                     ui.allocate_ui_with_layout(Vec2::new(130.0, 18.0), left, |ui| {
                         ui.set_min_width(130.0);
                         let text = egui::RichText::new(shown).font(theme::mono_font(theme::TEXT_SMALL)).color(color);
@@ -1986,9 +2056,7 @@ fn shortcuts_page(
                 });
             }
             if listed == 0 {
-                ui.label(
-                    egui::RichText::new("No action matches the filter").font(small.clone()).color(theme::text_hint()),
-                );
+                ui.label(egui::RichText::new("No action matches the filter").font(small.clone()).color(ink().hint));
             }
         });
     });
@@ -2029,7 +2097,7 @@ fn plugin_folders(
     // Folders: each on or off for scans, with the format taken from it; the added ones can be
     // removed.
     let r = line(y, 18.0);
-    widgets::text_in(painter, r, Align2::LEFT_CENTER, "Folders", theme::ui_font(theme::TEXT), theme::text_primary());
+    widgets::text_in(painter, r, Align2::LEFT_CENTER, "Folders", theme::ui_font(theme::TEXT), ink().name);
     for folder in &plugins.folders {
         let r = line(y, 18.0);
         let check = Rect::from_min_size(Pos2::new(r.left(), r.top() + 1.0), Vec2::splat(16.0));
@@ -2045,18 +2113,11 @@ fn plugin_folders(
         }
         let right = if folder.standard { r.right() } else { r.right() - 68.0 };
         let text = Rect::from_min_max(Pos2::new(check.right() + 6.0, r.top()), Pos2::new(right - 96.0, r.bottom()));
-        let color = if folder.enabled { theme::text_secondary() } else { theme::text_hint() };
+        let color = if folder.enabled { ink().caption } else { ink().hint };
         let shown = if folder.standard { format!("{}  (standard)", folder.path) } else { folder.path.clone() };
         widgets::text_in(painter, text, Align2::LEFT_CENTER, &shown, small.clone(), color);
         let format = Rect::from_min_max(Pos2::new(right - 92.0, r.top()), Pos2::new(right - 4.0, r.bottom()));
-        widgets::text_in(
-            painter,
-            format,
-            Align2::RIGHT_CENTER,
-            format_name(&folder.format),
-            small.clone(),
-            theme::text_hint(),
-        );
+        widgets::text_in(painter, format, Align2::RIGHT_CENTER, format_name(&folder.format), small.clone(), ink().hint);
         if !folder.standard {
             let remove =
                 Rect::from_min_max(Pos2::new(r.right() - 64.0, r.top() + 1.0), Pos2::new(r.right(), r.bottom() - 1.0));
@@ -2066,9 +2127,7 @@ fn plugin_folders(
                 Id::unique(("remove-folder", &folder.path)),
                 format!("Remove {}", folder.path),
             );
-            let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-            painter.rect_filled(remove, 0.0, fill);
-            widgets::text_in(painter, remove, Align2::CENTER_CENTER, "Remove", small.clone(), theme::text_secondary());
+            widgets::flat_button(ui, painter, remove, &response, "Remove", (theme::TEXT_SMALL, Some("secondary")));
             if response.clicked() {
                 request = Some(PluginRequest::RemoveFolder(folder.path.clone()));
             }
@@ -2117,15 +2176,12 @@ fn plugin_folders(
         if response.clicked() {
             plugins.new_format = format;
         }
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(cell, 0.0, if chosen { theme::control_selected() } else { idle });
-        let color = if chosen { theme::text_inverse() } else { theme::text_secondary() };
+        // A `button[kind="option"]`, `[checked]` for the format chosen.
+        let (_, color) = option_face(ui, painter, cell, &response, chosen, "option");
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(add, 0.0, fill);
-    widgets::text_in(painter, add, Align2::CENTER_CENTER, "Add", small.clone(), theme::text_primary());
+    widgets::flat_button(ui, painter, add, &response, "Add", (theme::TEXT_SMALL, None));
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     if response.clicked() || entered {
         // Nothing typed: the system's folder picker, so Add always does something.
@@ -2181,18 +2237,15 @@ fn plugin_actions(
             Vec2::new(half, buttons.height()),
         );
         let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
-        let base = if plugins.scanning {
-            crate::kit::style_class::surface_or(theme::panel_background())
+        let el = crate::kit::element::BUTTON.response(&response).enter();
+        // While a scan runs, the buttons stand back: the region's fill under the hint's ink.
+        let fill = if plugins.scanning {
+            el.background_or(crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")))
         } else {
-            theme::control_background()
+            el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background)
         };
-        let fill = motion::mix(
-            base,
-            theme::control_hover(),
-            if plugins.scanning { 0.0 } else { widgets::hover(ui, &response) },
-        );
         painter.rect_filled(cell, 0.0, fill);
-        let color = if plugins.scanning { theme::text_hint() } else { theme::text_primary() };
+        let color = if plugins.scanning { ink().hint } else { el.color() };
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !plugins.scanning {
             request = Some(PluginRequest::Scan { all });
@@ -2204,9 +2257,7 @@ fn plugin_actions(
     label(painter, r, "Plug-in manager", "Every plug-in found, switched on or off, and why files failed");
     let open = control_rect(r, 2);
     let response = widgets::button_area(ui, open, Id::unique("open-plugin-manager"), "Open the plug-in manager");
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(open, 0.0, fill);
-    widgets::text_in(painter, open, Align2::CENTER_CENTER, "Manage plug-ins", small, theme::text_primary());
+    widgets::flat_button(ui, painter, open, &response, "Manage plug-ins", (theme::TEXT_SMALL, None));
     if response.clicked() {
         plugins.manager.open = true;
     }
@@ -2357,16 +2408,7 @@ fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
     let rect = Rect::from_min_size(Pos2::new(r.right() - 150.0, r.top() + 1.0), Vec2::new(150.0, SEGMENT));
     let response =
         widgets::button_area(ui, rect, Id::unique("asio-control-panel"), "Open the active ASIO driver's control panel");
-    let hover = widgets::hover(ui, &response);
-    painter.rect_filled(rect, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
-    widgets::text_in(
-        painter,
-        rect,
-        Align2::CENTER_CENTER,
-        "Control panel…",
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_primary(),
-    );
+    widgets::flat_button(ui, painter, rect, &response, "Control panel…", (theme::TEXT_SMALL, None));
     response.clicked()
 }
 
@@ -2565,14 +2607,7 @@ fn output_rows(
             label(painter, r, name, "Set in the driver's own control panel (Control panel… above)");
             let value = Rect::from_min_size(Pos2::new(control_x(r), r.top() + 1.0), Vec2::new(260.0, SEGMENT));
             let text = format!("{frames} frames ({:.1} ms)", f64::from(frames) * 1000.0 / rate.max(1.0));
-            widgets::text_in(
-                painter,
-                value,
-                Align2::LEFT_CENTER,
-                &text,
-                theme::ui_font(theme::TEXT_SMALL),
-                theme::text_primary(),
-            );
+            widgets::text_in(painter, value, Align2::LEFT_CENTER, &text, theme::ui_font(theme::TEXT_SMALL), ink().name);
         }
         BufferRow::Choose => {
             label(painter, r, name, &note);
@@ -2766,16 +2801,7 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
     label(painter, r, "Playing on", &output);
     let refresh = Rect::from_min_size(Pos2::new(r.right() - 120.0, r.top() + 1.0), Vec2::new(120.0, SEGMENT));
     let response = widgets::button_area(ui, refresh, Id::unique("audio-refresh"), "List the audio devices again");
-    let hover = widgets::hover(ui, &response);
-    painter.rect_filled(refresh, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
-    widgets::text_in(
-        painter,
-        refresh,
-        Align2::CENTER_CENTER,
-        "List devices again",
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_primary(),
-    );
+    widgets::flat_button(ui, painter, refresh, &response, "List devices again", (theme::TEXT_SMALL, None));
     let r = row(y);
     label(painter, r, "Delay to the speakers", &format!("Measured from the engine to the speakers: {latency}"));
     let r = row(y);
@@ -2834,9 +2860,8 @@ fn preset_segmented(
         let chosen = *value == current;
         let response =
             widgets::button_area(ui, segment, Id::unique(("keymap-preset", *text)), format!("Preset: {text}"));
-        let fill = if chosen { theme::control_active() } else { theme::control_background() };
-        painter.rect_filled(segment, 0.0, motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response)));
-        let color = if chosen { theme::text_primary() } else { theme::text_secondary() };
+        // A `button[kind="preset"]`, `[checked]` for the chosen preset.
+        let (_, color) = option_face(ui, painter, segment, &response, chosen, "preset");
         widgets::text_in(painter, segment, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !chosen {
             picked = Some(*value);
@@ -2892,8 +2917,8 @@ fn midi_section(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, about
 /// A section's title over a hairline, as the other pages draw it.
 fn section_title(painter: &egui::Painter, page: Rect, y: &mut f32, name: &str) {
     let rect = Rect::from_min_size(Pos2::new(page.left(), *y), Vec2::new(page.width(), SIDEBAR_ROW));
-    widgets::text_in(painter, rect, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT_SMALL), theme::text_hint());
-    painter.hline(page.x_range(), rect.bottom() + 3.5, theme::hairline(theme::border()));
+    widgets::text_in(painter, rect, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT_SMALL), ink().hint);
+    painter.hline(page.x_range(), rect.bottom() + 3.5, theme::hairline(crate::kit::element::row_line()));
     *y = rect.bottom() + 8.0;
 }
 
@@ -2950,9 +2975,9 @@ fn choice_field<T: Clone + PartialEq>(
 fn wrapped_label(painter: &egui::Painter, row: Rect, name_rect: Rect, name: &str, status: Option<&str>) -> f32 {
     let width = name_rect.width().min(CONTROL_COLUMN - 8.0);
     let top = Rect::from_min_size(name_rect.min, Vec2::new(width, 16.0));
-    widgets::text_in(painter, top, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), theme::text_primary());
+    widgets::text_in(painter, top, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), ink().name);
     let Some(status) = status.filter(|s| !s.is_empty()) else { return LINE_ROW };
-    let color = theme::text_secondary();
+    let color = ink().caption;
     let galley =
         painter.layout(status.to_string(), theme::ui_font(theme::TEXT_SMALL), color, (row.width() - 8.0).max(40.0));
     let height = galley.size().y;
@@ -2971,14 +2996,14 @@ fn describe(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, description
         Descriptions::Icon => {
             let icon =
                 Rect::from_center_size(Pos2::new(row.left() + name_width + 12.0, row.top() + 8.0), Vec2::splat(12.0));
-            painter.circle_stroke(icon.center(), 5.5, egui::Stroke::new(1.0, theme::text_hint()));
+            painter.circle_stroke(icon.center(), 5.5, egui::Stroke::new(1.0, ink().hint));
             widgets::text_in(
                 painter,
                 icon,
                 Align2::CENTER_CENTER,
                 "?",
                 theme::ui_font(theme::TEXT_TINY),
-                theme::text_secondary(),
+                ink().caption,
             );
             icon.expand(3.0)
         }
@@ -2993,15 +3018,8 @@ fn describe(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, description
 fn label(painter: &egui::Painter, row: Rect, name: &str, note: &str) {
     let top = Rect::from_min_size(row.min, Vec2::new(row.width(), 16.0));
     let bottom = Rect::from_min_size(Pos2::new(row.left(), top.bottom()), Vec2::new(row.width() - LABEL_WIDTH, 14.0));
-    widgets::text_in(painter, top, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), theme::text_primary());
-    widgets::text_in(
-        painter,
-        bottom,
-        Align2::LEFT_CENTER,
-        note,
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
-    );
+    widgets::text_in(painter, top, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), ink().name);
+    widgets::text_in(painter, bottom, Align2::LEFT_CENTER, note, theme::ui_font(theme::TEXT_SMALL), ink().caption);
 }
 
 /// The most choices shown as option buttons; more are a drop-down.
@@ -3015,16 +3033,26 @@ fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> 
     let track = Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(SWITCH_WIDTH, SEGMENT));
     let response = ui.interact(track, Id::unique(("setting-switch", name)), Sense::click());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, name));
-    let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
-    let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(track, 0.0, motion::mix(idle, theme::text_value(), lit));
+    // A `button[kind="switch"]`, `[checked]` while on: its track's fill.
+    let lit = widgets::lit_toggle_kind(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.builder(),
+        &[crate::kit::element::Checked],
+        on,
+        "switch",
+    );
+    let (fill, _) = lit.colors();
+    lit.el.paint_over(painter, track, crate::kit::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
+    let widgets::Lit { el, lit, .. } = lit;
+    drop(el);
     let knob_width = SEGMENT - 4.0;
     let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
     let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
     // The knob's lit colour contrasts with the lit track: an opaque ground, else the inverse text.
-    let ground = crate::kit::style_class::opaque_surface_or(theme::window_background());
-    let ground = if ground.a() == u8::MAX { ground } else { theme::text_inverse() };
-    painter.rect_filled(knob, 0.0, motion::mix(theme::text_secondary(), ground, lit));
+    let ground = crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window"));
+    let ground = if ground.a() == u8::MAX { ground } else { crate::kit::element::app_fill("knob") };
+    painter.rect_filled(knob, 0.0, motion::mix(ink().caption, ground, lit));
     response.clicked().then_some(!on)
 }
 
@@ -3070,23 +3098,35 @@ fn segmented<T: Copy + PartialEq>(
         if response.clicked() && *value != current {
             picked = Some(*value);
         }
-        // A part is a `button` (`[checked]` when chosen), as the sheet's generic rules say.
-        let el = crate::kit::element::BUTTON
-            .response(&response)
-            .attr(crate::kit::element::Checked, *value == current)
-            .enter();
-        let selected = motion::toward(ui.ctx(), response.id.with("selected"), *value == current, motion::VALUE);
-        let hover = widgets::hover(ui, &response);
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), hover);
-        el.paint_with(
-            painter,
-            cell,
-            crate::kit::element::Native { radius: 0.0, fill: motion::mix(idle, theme::control_selected(), selected) },
-        );
-        let color = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), selected));
+        // A part is a `button[kind="option"]`, `[checked]` when chosen.
+        let (_, color) = option_face(ui, painter, cell, &response, *value == current, "option");
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked
+}
+
+/// One part of a row of choices, a `button` of `kind` (`option`, `preset`), `[checked]` while it
+/// is the one chosen: its face painted in `rect` and its fill and ink, which fade with the choice
+/// and the pointer.
+fn option_face(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    response: &egui::Response,
+    chosen: bool,
+    kind: &'static str,
+) -> (egui::Color32, egui::Color32) {
+    let lit = widgets::lit_toggle_kind(
+        ui,
+        response,
+        crate::kit::element::BUTTON.builder(),
+        &[crate::kit::element::Checked],
+        chosen,
+        kind,
+    );
+    let (fill, color) = lit.colors();
+    lit.el.paint_over(painter, rect, crate::kit::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
+    (fill, color)
 }
 
 #[cfg(test)]

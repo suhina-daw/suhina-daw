@@ -33,7 +33,16 @@ fn point(x: f32, y: f32, kind: Kind) -> MapPoint {
 
 #[test]
 fn the_density_waits_for_a_resize_to_settle_but_not_for_a_change_of_content() {
-    let key = DensityKey { points: None, zoom: 1.0, centre: [0.5, 0.5], legend: Vec::new(), similar: None, spread: 1 };
+    let key = DensityKey {
+        points: None,
+        zoom: 1.0,
+        centre: [0.5, 0.5],
+        legend: Vec::new(),
+        similar: None,
+        spread: 1,
+        hint: Color32::GRAY,
+        kind_colours: [Color32::WHITE; Kind::ALL.len()],
+    };
     let small = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0));
     let large = Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 300.0));
     assert_eq!(density_plan(None, &key, small, 0.0, 0.0), DensityPlan::Build, "nothing drawn yet");
@@ -44,6 +53,13 @@ fn the_density_waits_for_a_resize_to_settle_but_not_for_a_change_of_content() {
     assert_eq!(density_plan(Some((&key, small)), &zoomed, large, 1.0, 1.0), DensityPlan::Build, "zoomed");
     let filtered = DensityKey { legend: vec![Kind::Kick], ..key.clone() };
     assert_eq!(density_plan(Some((&key, small)), &filtered, small, 0.0, 0.0), DensityPlan::Build);
+    // The grey and the kinds' colours are baked into the raster: a theme change draws it again.
+    let regrey = DensityKey { hint: Color32::RED, ..key.clone() };
+    assert_eq!(density_plan(Some((&key, small)), &regrey, small, 0.0, 0.0), DensityPlan::Build, "hint");
+    let mut kinds = key.kind_colours;
+    kinds[0] = Color32::RED;
+    let recoloured = DensityKey { kind_colours: kinds, ..key.clone() };
+    assert_eq!(density_plan(Some((&key, small)), &recoloured, small, 0.0, 0.0), DensityPlan::Build, "kinds");
 }
 
 #[test]
