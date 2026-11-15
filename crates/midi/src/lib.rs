@@ -209,7 +209,10 @@ impl MidiSystem for Midi {
     }
 
     fn outputs(&self) -> Result<Vec<(String, String)>, String> {
-        let output = MidiOutput::new(CLIENT).map_err(|e| e.to_string())?;
+        let guard = self.output_client()?;
+        let Some(output) = guard.as_ref() else {
+            return Err("the output listing client is gone".into());
+        };
         Ok(output.ports().iter().filter_map(|port| Some((output.port_name(port).ok()?, port.id()))).collect())
     }
 
