@@ -47,7 +47,6 @@ jobs:
       prerelease: ${{ steps.version.outputs.prerelease }}
       nightly: ${{ steps.version.outputs.nightly }}
       name: ${{ steps.version.outputs.name }}
-      dated: ${{ steps.version.outputs.dated }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -73,7 +72,6 @@ jobs:
             exit 1
           fi
           nightly=false
-          dated=
           if [ "$NIGHTLY_INPUT" = "true" ]; then
             if [ "$GITHUB_REF" != "refs/heads/main" ]; then
               echo "::error::the nightly is built from main only"
@@ -84,14 +82,6 @@ jobs:
             # build metadata, so a hash with a leading zero is still a valid version.
             day=$(date -u +%Y%m%d)
             version="${version%%-*}-nightly.$day+${GITHUB_SHA::7}"
-            # The night's own release, kept after `nightly` has moved on. A second nightly on the
-            # same day is kept beside the first as nightly-YYYYMMDD-2, and so on.
-            dated="nightly-$day"
-            n=2
-            while [ -n "$(git ls-remote origin "refs/tags/$dated" | cut -f1)" ]; do
-              dated="nightly-$day-$n"
-              n=$((n + 1))
-            done
           fi
           # Release candidates and nightlies are pre-releases; a release, 0.x included, is the latest.
           if [[ "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
@@ -103,7 +93,6 @@ jobs:
             echo "prerelease=$prerelease"
             echo "nightly=$nightly"
             echo "name=$name"
-            echo "dated=$dated"
           } >> "$GITHUB_OUTPUT"
 
   build:
@@ -375,7 +364,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
-          DATED: ${{ needs.version.outputs.dated }}
           PREVIOUS: ${{ steps.previous.outputs.sha }}
         run: |
           ls -l dist
@@ -408,9 +396,34 @@ jobs:
             --title "Suhina nightly $VERSION" \
             --notes "$notes"
           # The same packages under the night's own tag, a pre-release that is never the latest.
-          # A second nightly on the same day has a tag of its own (nightly-YYYYMMDD-2).
-          gh release delete "$DATED" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
-          gh release create "$DATED" dist/* \
+          # The name is chosen here, inside the `nightly` concurrency group, from the tags as they
+          # are now, so a rerun of this job or a second run on the same day never acts on a stale
+          # name: a dated tag already on this commit is replaced (a rerun), otherwise the day's
+          # first free name is taken (nightly-YYYYMMDD, then -2, -3 ...). Another build's dated
+          # release is never deleted, and a failed tag lookup fails the job before anything changes.
+          day=${VERSION#*-nightly.}
+          day=${day%%+*}
+          tags=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/nightly-$day" \
+            --jq '.[] | "\(.ref | ltrimstr("refs/tags/")) \(.object.sha)"') || {
+            echo "::error::could not list the tags of $day"
+            exit 1
+          }
+          tags=$(grep -E "^nightly-$day(-[0-9]+)? " <<<"$tags" || true)
+          dated=$(grep " $GITHUB_SHA\$" <<<"$tags" | head -n 1 | cut -d' ' -f1 || true)
+          if [ -n "$dated" ]; then
+            echo "Replacing $dated, already on this commit"
+            gh release delete "$dated" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          else
+            names=$(cut -d' ' -f1 <<<"$tags")
+            dated="nightly-$day"
+            n=2
+            while grep -qxF "$dated" <<<"$names"; do
+              dated="nightly-$day-$n"
+              n=$((n + 1))
+            done
+            echo "Publishing $dated"
+          fi
+          gh release create "$dated" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease --latest=false \
