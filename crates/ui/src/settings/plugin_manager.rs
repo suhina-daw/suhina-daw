@@ -705,7 +705,13 @@ fn library(
         let mut on = state.formats.iter().any(|f| f == format);
         let check =
             Rect::from_min_size(Pos2::new(item.left() + 6.0, item.top()), Vec2::new(item.width() - 6.0, item.height()));
-        let response = ui.put(check, egui::Checkbox::new(&mut on, text));
+        // Laid out from the left of its line, as the sidebar's other items are, not centred in it.
+        let layout = egui::Layout::left_to_right(egui::Align::Center);
+        let response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(check).layout(layout), |ui| {
+                ui.add(egui::Checkbox::new(&mut on, text))
+            })
+            .inner;
         let label = format!("Show {text} plug-ins");
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
         if response.changed() {
