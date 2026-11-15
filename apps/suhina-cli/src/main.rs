@@ -32,6 +32,7 @@ usage: suhina-cli render (<project.als> | --demo) -o <out.wav> [--cue <cue.wav>]
        suhina-cli plugins (scan [--all] | scan-file <file> | list [--ignored] | folders
                              | add-folder <dir> [--format (any | vst3 | clap)] | remove-folder <dir>
                              | (folder-on | folder-off) <dir> | (enable | disable) <plug-in>
+                             | (own | disown) <plug-in>
                              | check <project.als> | set-hosting <plug-in> (binary | vendor | instance))
        suhina-cli plugin run <plug-in> (<in-audio> | -) <out.wav> [--tail <seconds>] [--state <file>]
        suhina-cli plugin run-device <project.als> <device> (<in-audio> | -) <out.wav> [--tail <seconds>]
@@ -60,7 +61,8 @@ commands:
             reads one file again), list shows what was found, what failed and what is built for
             another processor (--ignored: also the files that hold no plug-ins), folders shows
             where scans look, add-folder, remove-folder, folder-on and folder-off change that;
-            enable and disable switch a plug-in on or off (off: not offered, not loaded); check
+            enable and disable switch a plug-in on or off (off: not offered, not loaded); own and
+            disown mark a plug-in as the user's own or take the mark away; check
             lists a project's plug-ins and the installed plug-in found for each, or none;
             set-hosting chooses whether a plug-in's instances share a process per file (the
             default), per vendor, or each run in one of their own

@@ -145,6 +145,14 @@ fn plugins_are_switched_off_and_on_and_files_for_another_processor_are_listed() 
     let spec = listed["plugins"][0]["file"].as_str().map(|f| format!("clap:{f}#com.example.echo")).unwrap();
     run(&mut p, "plugin.setEnabled", json!({ "plugin": spec, "enabled": true })).unwrap();
     assert_eq!(p.plugin_env().catalog.plugins().count(), 1);
+
+    assert_eq!(listed["plugins"][0]["owned"], false, "not marked at first");
+    let marked = run(&mut p, "plugin.setOwned", json!({ "plugin": "Echo", "owned": true })).unwrap();
+    assert_eq!(marked["owned"], true);
+    let listed = run(&mut p, "plugin.list", json!({})).unwrap();
+    assert_eq!(listed["plugins"][0]["owned"], true, "listed as owned");
+    assert_eq!(p.plugin_env().catalog.plugins().count(), 1, "a mark leaves it offered");
+    assert!(run(&mut p, "plugin.setOwned", json!({ "plugin": "nothing", "owned": true })).is_err());
 }
 
 #[test]

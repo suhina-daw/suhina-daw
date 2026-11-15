@@ -53,6 +53,8 @@ pub enum Shelf {
     All,
     Enabled,
     Disabled,
+    /// The plug-ins marked as owned.
+    Owned,
     /// The files that failed and those built for another processor.
     Attention,
     Failed,
@@ -336,6 +338,7 @@ fn kept(line: &Line, plugins: &PluginsView, state: &ManagerState) -> bool {
         Shelf::All => true,
         Shelf::Enabled => line.state == State::Ready,
         Shelf::Disabled => line.state == State::Disabled,
+        Shelf::Owned => plugin.is_some_and(|p| p.owned),
         Shelf::Attention => line.state.warns(),
         Shelf::Failed => line.state == State::Failed,
         Shelf::Incompatible => line.state == State::WrongArchitecture,
@@ -380,6 +383,7 @@ struct Counts {
     plugins: usize,
     enabled: usize,
     disabled: usize,
+    owned: usize,
     failed: usize,
     incompatible: usize,
 }
@@ -391,6 +395,7 @@ impl Counts {
             plugins: plugins.found.len(),
             enabled,
             disabled: plugins.found.len() - enabled,
+            owned: plugins.found.iter().filter(|p| p.owned).count(),
             failed: plugins.failed.len(),
             incompatible: plugins.incompatible.len(),
         }
@@ -502,6 +507,12 @@ fn warn_mark(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
         egui::Stroke::new(1.2, ink),
     );
     painter.circle_filled(center + Vec2::new(0.0, h * 0.55), 0.7, ink);
+}
+
+/// The mark of a plug-in marked as owned: a small ring in the accent with a dot in it.
+fn owned_mark(painter: &egui::Painter, center: Pos2) {
+    painter.circle_stroke(center, 4.0, egui::Stroke::new(1.3, theme::accent()));
+    painter.circle_filled(center, 1.8, theme::accent());
 }
 
 /// The mark of a row's state: a dot, or the warning mark.
@@ -708,6 +719,7 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
         (Shelf::All, "All plug-ins", counts.plugins + counts.attention(), false),
         (Shelf::Enabled, "Enabled", counts.enabled, false),
         (Shelf::Disabled, "Disabled", counts.disabled, false),
+        (Shelf::Owned, "Owned", counts.owned, false),
         (Shelf::Attention, "Needs attention", counts.attention(), counts.attention() > 0),
     ];
     for (shelf, text, count, warn) in shelves {
@@ -850,6 +862,30 @@ fn scan_locations(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mu
     }
 }
 
+/// The plug-ins among `keys` (files left out) split into those marked as owned and the others,
+/// each in the order of `keys`.
+fn split_by_owned(keys: &[String], plugins: &PluginsView) -> (Vec<String>, Vec<String>) {
+    let mut owned = Vec::new();
+    let mut others = Vec::new();
+    for key in keys {
+        if let Some(plugin) = plugins.found.iter().find(|p| &p.spec == key) {
+            if plugin.owned { owned.push(key.clone()) } else { others.push(key.clone()) }
+        }
+    }
+    (owned, others)
+}
+
+/// **Turn off the rest** of `vendor`: its plug-ins switched on and not marked as owned. Nothing
+/// where none of the vendor's plug-ins is marked, so a vendor no one marked is never switched off
+/// whole by mistake.
+fn rest_of_vendor(vendor: &str, plugins: &PluginsView) -> Vec<String> {
+    let theirs = || plugins.found.iter().filter(|p| !vendor.is_empty() && p.vendor == vendor);
+    if !theirs().any(|p| p.owned) {
+        return Vec::new();
+    }
+    theirs().filter(|p| p.enabled && !p.owned).map(|p| p.spec.clone()).collect()
+}
+
 /// The plug-ins among `keys` (files left out) split into those switched on and those off, each in
 /// the order of `keys`.
 fn split_by_state(keys: &[String], plugins: &PluginsView) -> (Vec<String>, Vec<String>) {
@@ -881,6 +917,7 @@ fn scan_again_label(file: &str) -> String {
 struct Asked {
     toggled: Option<(String, bool)>,
     toggled_many: Option<(Vec<String>, bool)>,
+    owned_many: Option<(Vec<String>, bool)>,
     pick: Option<(String, bool, bool)>,
     again: Option<Vec<String>>,
     show: Option<String>,
@@ -996,6 +1033,8 @@ fn table(
     }
     if let Some((specs, enabled)) = asked.toggled_many {
         out.request = Some(PluginRequest::SetEnabledMany(specs, enabled));
+    } else if let Some((specs, owned)) = asked.owned_many {
+        out.request = Some(PluginRequest::SetOwnedMany(specs, owned));
     } else if let Some((spec, enabled)) = asked.toggled {
         out.request = Some(PluginRequest::SetEnabled(spec, enabled));
     } else if let Some(files) = asked.again {
@@ -1186,6 +1225,31 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
                     ui.close();
                 }
             }
+            ui.separator();
+            // Marked as owned: only the mark that changes something, as for the switch.
+            let (owned, others) = split_by_owned(&these, plugins);
+            for (specs, mark, verb) in [(others, true, "Mark"), (owned, false, "Unmark")] {
+                if specs.is_empty() {
+                    continue;
+                }
+                let what = if specs.len() > 1 { format!("{} plug-ins", specs.len()) } else { "the plug-in".into() };
+                let text = format!("{verb} {what} as owned");
+                if ui.add_enabled(!scanning, egui::Button::new(text)).clicked() {
+                    asked.owned_many = Some((specs, mark));
+                    ui.close();
+                }
+            }
+            if let Some(vendor) = plugin.map(|p| p.vendor.clone()) {
+                let rest = rest_of_vendor(&vendor, plugins);
+                if !rest.is_empty() {
+                    let text = format!("Turn off the rest of {vendor} ({})", rest.len());
+                    let tip = "Every one of this vendor's plug-ins that is not marked as owned is switched off";
+                    if ui.add_enabled(!scanning, egui::Button::new(text)).on_hover_text(tip).clicked() {
+                        asked.toggled_many = Some((rest, false));
+                        ui.close();
+                    }
+                }
+            }
         } else {
             let files: Vec<String> = these.iter().filter_map(|k| k.strip_prefix("file:")).map(str::to_string).collect();
             let what = if files.len() > 1 { format!("Scan {} files again", files.len()) } else { "Scan again".into() };
@@ -1219,6 +1283,10 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
         if index == 6 {
             state_mark(&painter, Pos2::new(cell.left() + 5.0, rect.center().y), line.state);
             cell.min.x += 14.0;
+        }
+        if index == 1 && plugin.is_some_and(|p| p.owned) {
+            owned_mark(&painter, Pos2::new(cell.left() + 4.0, rect.center().y));
+            cell.min.x += 13.0;
         }
         let galley = widgets::fitted(&painter, text, small.clone(), color, cell.width());
         let elided = galley.elided;
@@ -1386,6 +1454,32 @@ fn many_selected(
             Pos2::new(rect.right(), toggle.bottom()),
         );
         widgets::text_in(painter, text, Align2::LEFT_CENTER, &words, small.clone(), theme::text_primary());
+        // One mark for them all: on while every picked plug-in is marked; a click marks them all,
+        // or, when all are, takes every mark away.
+        let (owned, others) = split_by_owned(picked, plugins);
+        let all = others.is_empty();
+        let toggle = Rect::from_min_size(Pos2::new(rect.left(), toggle.bottom() + 10.0), Vec2::new(36.0, 20.0));
+        let label = format!("Owned: {plugin_count} plug-ins");
+        let response = switch(ui, painter, toggle, Id::unique("manager-owned-many"), all, &label, !plugins.scanning);
+        if response.clicked() {
+            out.request = Some(if all {
+                PluginRequest::SetOwnedMany(owned.clone(), false)
+            } else {
+                PluginRequest::SetOwnedMany(others.clone(), true)
+            });
+        }
+        let words = if all {
+            "Owned".to_string()
+        } else if owned.is_empty() {
+            "Not marked as owned".to_string()
+        } else {
+            format!("{} owned, {} not", owned.len(), others.len())
+        };
+        let text = Rect::from_min_max(
+            Pos2::new(toggle.right() + 10.0, toggle.top()),
+            Pos2::new(rect.right(), toggle.bottom()),
+        );
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, &words, small.clone(), theme::text_primary());
         y = toggle.bottom() + 12.0;
         rule(y);
         y += 12.0;
@@ -1474,6 +1568,18 @@ fn selected(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &PluginsV
             Pos2::new(rect.right(), toggle.bottom()),
         );
         widgets::text_in(painter, words, Align2::LEFT_CENTER, "Enabled", small.clone(), theme::text_primary());
+        let toggle = Rect::from_min_size(Pos2::new(rect.left(), toggle.bottom() + 10.0), Vec2::new(36.0, 20.0));
+        let label = format!("Owned: {}", plugin.name);
+        let id = Id::unique(("manager-owned", &plugin.spec));
+        let response = switch(ui, painter, toggle, id, plugin.owned, &label, !plugins.scanning);
+        if response.clicked() {
+            out.request = Some(PluginRequest::SetOwnedMany(vec![plugin.spec.clone()], !plugin.owned));
+        }
+        let words = Rect::from_min_max(
+            Pos2::new(toggle.right() + 10.0, toggle.top()),
+            Pos2::new(rect.right(), toggle.bottom()),
+        );
+        widgets::text_in(painter, words, Align2::LEFT_CENTER, "Owned", small.clone(), theme::text_primary());
         y = toggle.bottom() + 12.0;
         rule(y);
         y += 10.0;

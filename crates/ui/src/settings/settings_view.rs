@@ -153,6 +153,8 @@ pub struct PluginRow {
     /// How the commands name it (`plugin.setEnabled`).
     pub spec: String,
     pub enabled: bool,
+    /// Marked as the user's own (`plugin.setOwned`).
+    pub owned: bool,
 }
 
 /// What the page or the plug-in manager asks the app to do with the plug-in library.
@@ -172,6 +174,8 @@ pub enum PluginRequest {
     SetEnabled(String, bool),
     /// Switch several plug-ins (by spec) on or off together (#725).
     SetEnabledMany(Vec<String>, bool),
+    /// Mark several plug-ins (by spec) as owned, or take the mark away.
+    SetOwnedMany(Vec<String>, bool),
     /// Read these files again now, one after another.
     ScanFiles(Vec<String>),
     /// Show a file in the system's file manager (Explorer, Finder), picked in its folder.

@@ -183,6 +183,7 @@ impl App {
                             file,
                             spec,
                             enabled: p["enabled"].as_bool().unwrap_or(true),
+                            owned: p["owned"].as_bool().unwrap_or(false),
                         }
                     })
                     .collect();
@@ -210,6 +211,7 @@ impl App {
                     | PluginRequest::SetFolderEnabled(..)
                     | PluginRequest::SetEnabled(..)
                     | PluginRequest::SetEnabledMany(..)
+                    | PluginRequest::SetOwnedMany(..)
             )
         {
             self.status =
@@ -278,6 +280,27 @@ impl App {
                     self.status = Status::Done(format!("{done} plug-ins are {}", if enabled { "on" } else { "off" }));
                 }
                 self.browser.relist();
+                self.plugins_read = false;
+            }
+            PluginRequest::SetOwnedMany(specs, owned) => {
+                let mut done = 0;
+                for spec in &specs {
+                    match self.projects.execute("plugin.setOwned", &json!({ "plugin": spec, "owned": owned })) {
+                        Ok(_) => done += 1,
+                        Err(e) => {
+                            self.status = Status::Error(e.message().to_owned());
+                            break;
+                        }
+                    }
+                }
+                if done == specs.len() {
+                    let what = if done == 1 { "1 plug-in".to_string() } else { format!("{done} plug-ins") };
+                    self.status = Status::Done(if owned {
+                        format!("{what} marked as owned")
+                    } else {
+                        format!("{what} no longer marked as owned")
+                    });
+                }
                 self.plugins_read = false;
             }
             PluginRequest::ShowFile(file) => {

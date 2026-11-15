@@ -1,6 +1,6 @@
 ---
 description: The plug-in manager and the plug-in folders: every plug-in and every file that gave none in one table, plug-ins switched on and off, failed files scanned again, folders per format and switched off, and the scan results that are settled
-read_when: plug-in manager, manage plug-ins, switch a plug-in off, disable plug-in, blocklist, plug-in folders, VST2 folder, folder format, scan again, failed plug-ins, incompatible architecture, Intel plug-in on Apple silicon, plugin.setEnabled, plugin.setFolderEnabled, plugin.scanFile
+read_when: plug-in manager, owned plug-ins, mark as owned, plugin.setOwned, manage plug-ins, switch a plug-in off, disable plug-in, blocklist, plug-in folders, VST2 folder, folder format, scan again, failed plug-ins, incompatible architecture, Intel plug-in on Apple silicon, plugin.setEnabled, plugin.setFolderEnabled, plugin.scanFile
 type: spec
 status: current
 last_verified: 2026-11-15
@@ -28,8 +28,8 @@ current theme: switching the theme changes the manager with the rest of the app.
 - **Top bar:** the title and how many plug-ins were found on the left; **Scan for new** (drawn
   as the page's main button, in the theme's accent), **Rescan all** and **Close** on the right.
   While a scan runs the scan buttons wait.
-- **Library sidebar** on the left: **All plug-ins**, **Enabled**, **Disabled** and **Needs
-  attention** (the files that failed and those built for another processor), each with how
+- **Library sidebar** on the left: **All plug-ins**, **Enabled**, **Disabled**, **Owned** (the
+  plug-ins marked as owned, below) and **Needs attention** (the files that failed and those built for another processor), each with how
   many rows it holds; under **Needs attention**, **Failed** and **Other processor** apart. Below,
   the filters: **Type** (all types, effects, instruments), **Format** (CLAP, VST3, VST2
   checkboxes; none ticked shows every format, a file's format comes from its extension and a
@@ -116,6 +116,23 @@ plug-in the search hides, or a rescan removed, is left alone. When the row is no
 right-click picks it and the menu acts on that plug-in alone. Each plug-in goes through
 `plugin.setEnabled`; the first one that fails stops the rest and shows its error. The menu
 entries wait while a scan runs, as the checkbox does.
+
+## Marking a plug-in as owned
+
+`plugin.setOwned { plugin, owned }` (`suhina-cli plugins own <plug-in>`, `disown`). A vendor's
+installer often puts every plug-in of a bundle on the system, the ones the user bought and the
+rest, or keeps those of a subscription that ended. The user marks their own: a mark only, which
+changes nothing a session offers or loads, kept across starts (`plugin-owned.json` in the
+settings folder) and listed by `plugin.list` (`owned`).
+
+In the manager a plug-in marked as owned has a ring in the theme's accent before its name, and
+the **Owned** shelf lists them. A plug-in's right-click menu has **Mark as owned** for the picked
+plug-ins not marked and **Unmark as owned** for those marked (each saying how many, missing
+where there are none), and **Turn off the rest of** its vendor ("Turn off the rest of Waves
+(712)"), which switches off every plug-in of that vendor that is on and not marked; it is there
+only once at least one of the vendor's plug-ins is marked, so a vendor nobody marked is never
+switched off whole. The selected plug-in's panel has an **Owned** switch, and with several picked
+one switch marks them all (or, when all are marked, takes every mark away).
 
 ## Files that gave no plug-ins
 

@@ -24,7 +24,7 @@ const ENABLED: Param = param("enabled", ParamType::Bool, "true for on, false for
 static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
         id: "plugin.list",
-        label: "List the plug-ins the last scan found (id, name, vendor, type, version, features, whether it supports ARA, file, whether it is switched on), the files that failed, and those built for another processor; files that hold no plug-ins only with ignored",
+        label: "List the plug-ins the last scan found (id, name, vendor, type, version, features, whether it supports ARA, file, whether it is switched on, whether it is marked as owned), the files that failed, and those built for another processor; files that hold no plug-ins only with ignored",
         params: &[optional(
             "ignored",
             ParamType::Bool,
@@ -78,6 +78,14 @@ static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[PLUGIN, ENABLED],
         kind: CommandKind::on(crate::commands::Target::Plugins, crate::commands::Effect::Change),
         run: set_enabled,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
+        id: "plugin.setOwned",
+        label: "Mark an installed plug-in as owned, or take the mark away: a mark for the user's own plug-ins among a vendor's bundle that installs them all; what is offered and loaded does not change",
+        params: &[PLUGIN, param("owned", ParamType::Bool, "true to mark it as owned, false to take the mark away")],
+        kind: CommandKind::on(crate::commands::Target::Plugins, crate::commands::Effect::Change),
+        run: set_owned,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
@@ -146,6 +154,8 @@ fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
         specs.into_iter().map(|spec| (spec.clone(), library.hosting(&spec))).collect();
     let off: std::collections::HashSet<String> =
         hosting.keys().filter(|spec| !library.is_enabled(spec)).cloned().collect();
+    let owned: std::collections::HashSet<String> =
+        hosting.keys().filter(|spec| library.is_owned(spec)).cloned().collect();
     let catalog = projects.library_mut().catalog();
     let plugins: Vec<Value> = catalog
         .plugins()
@@ -162,6 +172,7 @@ fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
                 "file": p.path.display().to_string(),
                 "hosting": hosting.get(&p.spec()).copied().unwrap_or_default().name(),
                 "enabled": !off.contains(&p.spec()),
+                "owned": owned.contains(&p.spec()),
             })
         })
         .collect();
@@ -252,6 +263,21 @@ fn set_enabled(projects: &mut Projects, params: &Value) -> Result<Value, Command
     let (spec, shown) = (plugin.spec(), plugin.name.clone());
     library.set_enabled(&spec, enabled)?;
     Ok(json!({ "plugin": shown, "spec": spec, "enabled": enabled }))
+}
+
+fn set_owned(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let name = Args::new(params).raw_str("plugin").ok_or("plugin must be a plug-in name, id or spec")?;
+    let owned = Args::new(params).bool("owned")?;
+    let library = projects.library_mut();
+    let catalog = library.catalog();
+    let plugin = catalog
+        .plugins()
+        .find(|p| p.spec() == name)
+        .or_else(|| catalog.find(name))
+        .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugin.list lists them"))?;
+    let (spec, shown) = (plugin.spec(), plugin.name.clone());
+    library.set_owned(&spec, owned)?;
+    Ok(json!({ "plugin": shown, "spec": spec, "owned": owned }))
 }
 
 fn scan_file(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {

@@ -217,6 +217,23 @@ fn plugins_switched_off_are_kept_and_left_out_of_the_catalog_sessions_see() {
 }
 
 #[test]
+fn plugins_marked_as_owned_are_kept_marked_and_still_offered() {
+    let folder = scratch("owned");
+    let mut library = Library::new(Some(folder.clone()), PathBuf::from("host"));
+    library.catalog.insert(PathBuf::from("/p/Thing.clap"), vec![info("/p/Thing.clap", "Maker")]);
+    let spec = info("/p/Thing.clap", "Maker").spec();
+    assert!(!library.is_owned(&spec), "not marked at first");
+    library.set_owned(&spec, true).unwrap();
+    assert_eq!(library.enabled_catalog().plugins().count(), 1, "a mark leaves it offered");
+    let mut again = Library::new(Some(folder.clone()), PathBuf::from("host"));
+    assert!(again.is_owned(&spec), "kept across starts");
+    again.set_owned(&spec, false).unwrap();
+    assert!(!again.is_owned(&spec));
+    assert!(again.set_owned("", true).is_err());
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn groups_follow_the_hosting() {
     let plugin = info("C:/Plugins/Thing.vst3", "Example Audio");
     assert_eq!(group_for(Hosting::Binary, &plugin).as_deref(), Some("file:C:/Plugins/Thing.vst3"));

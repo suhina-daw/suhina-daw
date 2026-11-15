@@ -39,6 +39,7 @@ fn plugin(name: &str, vendor: &str, kind: &str, format: &str, enabled: bool) -> 
         file: format!("/{format}/{name}.{format}"),
         spec: format!("{format}:/{format}/{name}.{format}#00"),
         enabled,
+        owned: false,
     }
 }
 
@@ -240,4 +241,24 @@ fn one_switch_turns_every_picked_plug_in_on_or_off() {
     let on = vec![spec("Verb 10"), spec("Keys")];
     assert_eq!(switch_for_many(&on, &plugins), Some((true, on.clone(), false)), "all on: shows on, turns them all off");
     assert_eq!(switch_for_many(&[file_key("/vst3/Broken.vst3")], &plugins), None, "files only: no switch");
+}
+
+#[test]
+fn the_rest_of_a_vendor_is_what_is_on_and_not_marked_as_owned() {
+    let mut plugins = view();
+    let spec = |plugins: &PluginsView, name: &str| {
+        plugins.found.iter().find(|p| p.name == name).map(|p| p.spec.clone()).unwrap_or_default()
+    };
+    plugins.found.push(plugin("Comp", "Alpha", "effect", "vst3", true));
+    assert!(rest_of_vendor("Alpha", &plugins).is_empty(), "nothing marked: nothing is turned off");
+    if let Some(keys) = plugins.found.iter_mut().find(|p| p.name == "Keys") {
+        keys.owned = true;
+    }
+    assert_eq!(rest_of_vendor("Alpha", &plugins), [spec(&plugins, "Comp")], "on and not owned; Verb 9 is off already");
+    assert!(rest_of_vendor("Zeta", &plugins).is_empty(), "another vendor is left alone");
+    let state = ManagerState { shelf: Shelf::Owned, ..ManagerState::default() };
+    assert_eq!(names(&plugins, &state), ["Keys"], "the Owned shelf");
+    let keys = vec![spec(&plugins, "Keys"), spec(&plugins, "Comp")];
+    assert_eq!(split_by_owned(&keys, &plugins), (vec![spec(&plugins, "Keys")], vec![spec(&plugins, "Comp")]));
+    assert_eq!(Counts::of(&plugins).owned, 1);
 }

@@ -226,6 +226,8 @@ pub(crate) fn plugins(args: &[String]) -> Result<(), String> {
         }
         ["enable", plugin] => ("plugin.setEnabled", serde_json::json!({ "plugin": plugin, "enabled": true })),
         ["disable", plugin] => ("plugin.setEnabled", serde_json::json!({ "plugin": plugin, "enabled": false })),
+        ["own", plugin] => ("plugin.setOwned", serde_json::json!({ "plugin": plugin, "owned": true })),
+        ["disown", plugin] => ("plugin.setOwned", serde_json::json!({ "plugin": plugin, "owned": false })),
         ["scan-file", file] => ("plugin.scanFile", serde_json::json!({ "file": file })),
         ["remove-folder", folder] => ("plugin.removeFolder", serde_json::json!({ "folder": folder })),
         ["set-hosting", plugin, hosting] => {

@@ -24,6 +24,8 @@ const FOLDERS_FILE: &str = "plugin-folders.json";
 const CATALOG_FILE: &str = "plugin-catalog.json";
 const HOSTING_FILE: &str = "plugin-hosting.json";
 const DISABLED_FILE: &str = "plugin-disabled.json";
+/// The plug-ins the user marked as owned, by spec.
+const OWNED_FILE: &str = "plugin-owned.json";
 /// Plug-ins whose hosting may be set apart from the default.
 const MAX_HOSTING: usize = 4096;
 /// Longest hosting file read; a longer one is not Suhina's and is ignored.
@@ -248,6 +250,9 @@ pub struct Library {
     catalog: Catalog,
     /// Plug-ins (by spec) the user switched off: not offered, not loaded.
     disabled: BTreeSet<String>,
+    /// Plug-ins (by spec) the user marked as owned: theirs among a vendor's bundle that installs
+    /// every plug-in it has. A mark only; what is offered and loaded does not change.
+    owned: BTreeSet<String>,
     /// Whether scans look in the system's standard folders as well as the added ones.
     standard: bool,
     /// Plug-ins (by spec) hosted other than the default way.
@@ -272,6 +277,7 @@ impl Library {
             off: Vec::new(),
             catalog: Catalog::new(),
             disabled: BTreeSet::new(),
+            owned: BTreeSet::new(),
             standard: true,
             hosting: BTreeMap::new(),
         }
@@ -305,6 +311,9 @@ impl Library {
         }
         if let Some(text) = read_bounded(&folder.join(DISABLED_FILE), MAX_HOSTING_BYTES) {
             self.disabled = parse_disabled(&text);
+        }
+        if let Some(text) = read_bounded(&folder.join(OWNED_FILE), MAX_HOSTING_BYTES) {
+            self.owned = parse_disabled(&text);
         }
     }
 
@@ -456,6 +465,30 @@ impl Library {
         self.save(DISABLED_FILE, &json!(list).to_string())
     }
 
+    /// Whether the plug-in `plugin_spec` is marked as owned.
+    pub fn is_owned(&mut self, plugin_spec: &str) -> bool {
+        self.load();
+        self.owned.contains(plugin_spec)
+    }
+
+    /// Marks the plug-in `plugin_spec` as owned or takes the mark away, and saves it.
+    pub fn set_owned(&mut self, plugin_spec: &str, owned: bool) -> Result<(), String> {
+        self.load();
+        if plugin_spec.is_empty() || plugin_spec.len() > MAX_SPEC {
+            return Err("not a plug-in name".into());
+        }
+        if owned {
+            if !self.owned.contains(plugin_spec) && self.owned.len() >= MAX_HOSTING {
+                return Err(format!("at most {MAX_HOSTING} plug-ins can be marked as owned"));
+            }
+            self.owned.insert(plugin_spec.to_string());
+        } else {
+            self.owned.remove(plugin_spec);
+        }
+        let list: Vec<&String> = self.owned.iter().collect();
+        self.save(OWNED_FILE, &json!(list).to_string())
+    }
+
     /// The catalog without the plug-ins switched off: what sessions offer and load.
     pub fn enabled_catalog(&mut self) -> Catalog {
         self.load();
@@ -576,7 +609,8 @@ fn parse_folders(text: &str) -> (Vec<(PathBuf, FolderFormat)>, Vec<PathBuf>) {
     }
 }
 
-/// The plug-ins switched off in a `plugin-disabled.json` text: a list of specs.
+/// The plug-ins switched off in a `plugin-disabled.json` text, or marked in `plugin-owned.json`:
+/// a list of specs.
 fn parse_disabled(text: &str) -> BTreeSet<String> {
     let Ok(Value::Array(list)) = serde_json::from_str::<Value>(text) else { return BTreeSet::new() };
     list.iter()
