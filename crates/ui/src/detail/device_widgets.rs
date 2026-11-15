@@ -288,7 +288,8 @@ pub(crate) fn switch(
     } else {
         format!("Click to enable the {} again", label)
     });
-    // `button#control-device-on`, `[checked]` while it runs: only a rule for that state lights it.
+    // `button#control-device-on`, `[checked]` while it runs: the lit toggle's look, which a
+    // theme's rule for every `button` overrides as it does any button's (#1448).
     let lit = widgets::lit_toggle(
         ui,
         &response,

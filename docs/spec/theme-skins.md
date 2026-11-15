@@ -1539,8 +1539,10 @@ of bars, and a slider id per parameter.
   for every `button` states the lit looks of the kinds it shows (`button[kind="chip"][checked]`,
   `[kind="tag-check"][checked]`, `[kind="focus"][checked]`, `button[kind="more"]:hover`), as
   Suhina Meadow, Blocks, Sheet and Dark Gloss do. A device's on switch
-  (`button#control-device-on`), an expanded panel's × (`button[kind="close"]`) and the piano roll's
-  toolbar menus (`dropdown[kind="subtle"]`) still take only a rule for themselves. A device's own
+  (`button#control-device-on`, `[checked]` while it runs) is one of them: a theme's rule for every
+  `button` reaches it as it does any button. An expanded panel's × (`button[kind="close"]`) and
+  the piano roll's toolbar menus (`dropdown[kind="subtle"]`) still take only a rule for
+  themselves. A device's own
   drawings (its canvas, the EQ's display, a sampler's waveform and envelope) take the colours of
   `device-canvas` in the device's scope, read once a frame. A region's plain `color` no longer
   reaches what the base sheet colours with `--text-value` or a border variable (the piano roll's

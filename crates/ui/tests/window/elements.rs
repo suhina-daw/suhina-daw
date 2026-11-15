@@ -2168,3 +2168,18 @@ fn the_signature_s_numbers_and_arrow_and_the_piano_roll_ruler_s_line_take_their_
     let line = under(&mut h, css, |h| painted_at(h, odd(254)));
     assert!(line.iter().any(|rect| ruler.expand(1.0).contains_rect(*rect)), "the ruler's line: {line:?} in {ruler:?}");
 }
+
+/// A device's on switch in its header follows a theme's rule for every `button`, as any button
+/// does (#1448): its fill while the device runs, its outline once it is off.
+#[test]
+fn a_rule_for_every_button_reaches_a_device_s_on_switch() {
+    let mut h = keys_with_utility(false);
+    let switch = h.get_by_label("Bypass Utility").rect();
+    let css = format!("button {{ background-color: {}; border-color: {}; }}", hex(odd(255)), hex(odd(249)));
+    let lit = under(&mut h, css.clone(), |h| fills_at(h, switch));
+    assert!(lit.contains(&odd(255)), "the running device's switch: {lit:?}");
+    h.get_by_label("Bypass Utility").click();
+    h.run();
+    let off = under(&mut h, css, |h| painted_at(h, odd(249)));
+    assert!(off.iter().any(|rect| switch.expand(1.0).contains_rect(*rect)), "the switch off: {off:?} in {switch:?}");
+}

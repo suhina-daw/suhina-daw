@@ -931,9 +931,9 @@ fn hint(painter: &egui::Painter, area: Rect, text: &str) {
 }
 
 /// A device's on switch in its header, `on` while it runs: filled in `bright` (the header's
-/// `color`), else outlined in `dim`. It is `button#control-device-on`, `[checked]` while on, and
-/// only a rule for it, not one for every `button`, reaches it: its `background-color` while on, its
-/// `border-color` while off.
+/// `color`), else outlined in `dim`. It is `button#control-device-on`, `[checked]` while on, and a
+/// theme's rule that reaches it, one for every `button` as well as one for the switch, beats that
+/// look (#1448): its `background-color` while on, its `border-color` while off.
 pub(crate) fn device_switch(
     painter: &egui::Painter,
     switch: Rect,
@@ -941,16 +941,12 @@ pub(crate) fn device_switch(
     on: bool,
     (bright, dim): (egui::Color32, egui::Color32),
 ) {
-    let plain = crate::kit::element::BUTTON.response(response).probe();
     let own =
         crate::kit::element::BUTTON.id("device-on").response(response).attr(crate::kit::element::Checked, on).look();
-    // What only a rule for the switch gives: not what a rule for every button does.
-    let themed = |own: Option<egui::Color32>, plain: Option<egui::Color32>| own.filter(|own| Some(*own) != plain);
     if on {
-        painter.rect_filled(switch, 0.0, themed(own.themed_background(), plain.themed_background()).unwrap_or(bright));
+        painter.rect_filled(switch, 0.0, own.themed_background().unwrap_or(bright));
     } else {
-        let edge = themed(own.themed_border(), plain.themed_border()).unwrap_or(dim);
-        painter.rect_stroke(switch, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
+        painter.rect_stroke(switch, 0.0, theme::hairline(own.themed_border().unwrap_or(dim)), egui::StrokeKind::Inside);
     }
 }
 
