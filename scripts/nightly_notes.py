@@ -8,8 +8,8 @@
 The notes are written by a scheduled agent that may start workflows but not edit releases, so it
 hands them over as this workflow's input. Anyone who can start the workflow can hand in text that
 ends up on a public release page and in Discord, so the notes are checked first (`problems`):
-they start with the nightly heading, carry no HTML, images or @, and link only to this
-repository. Then:
+they start with the nightly heading, carry no HTML, images, @, character references or
+reference-style link definitions, and link only to this repository. Then:
 
   1. The dated release's notes section (from `### New since the previous nightly` to the hidden
      `nightly-range` line) is replaced and `<!-- notes: composed -->` added; the rolling `nightly`
@@ -41,6 +41,11 @@ RANGE = re.compile(r"^<!-- nightly-range: [0-9a-f]*\.\.[0-9a-f]+ -->$", re.MULTI
 URL = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s)\]]+|www\.[^\s)\]]+")
 # The target of a Markdown link, whatever its scheme.
 LINK = re.compile(r"\]\(\s*([^)\s]*)")
+# Markdown decodes character references in links (`https&#58;//…`) and resolves reference-style
+# links (`[x][r]` with `[r]: url`), and neither form is caught by URL or LINK, so both are refused:
+# the notes have no use for them.
+CHARACTER_REFERENCE = re.compile(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);")
+REFERENCE_DEFINITION = re.compile(r"^ {0,3}\[[^\]]+\]:", re.MULTILINE)
 ALLOWED_URL = "https://github.com/suhina-daw/suhina-daw/"
 NOTES_LIMIT = 20000
 # Discord allows 4096 characters in an embed's description; a little is kept free.
@@ -67,6 +72,10 @@ def problems(tag: str, notes: str) -> list[str]:
         found.append("the notes contain @, which could mention someone")
     if "![" in notes:
         found.append("the notes contain an image")
+    if CHARACTER_REFERENCE.search(notes):
+        found.append("the notes contain a character reference such as &#58;")
+    if REFERENCE_DEFINITION.search(notes):
+        found.append("the notes contain a reference-style link definition, [label]: …")
     for url in dict.fromkeys(URL.findall(notes) + LINK.findall(notes)):
         if not url.startswith(ALLOWED_URL):
             found.append(f"the notes link outside this repository: {url}")
@@ -121,8 +130,9 @@ def release(gh: Gh, repo: str, tag: str) -> dict:
     return json.loads(gh(["api", f"repos/{repo}/releases/tags/{tag}"], None))
 
 
-def commit(gh: Gh, repo: str, ref: str) -> str:
-    return gh(["api", f"repos/{repo}/commits/{ref}", "--jq", ".sha"], None).strip()
+def range_line(body: str) -> str:
+    found = RANGE.search(body)
+    return found.group(0) if found else ""
 
 
 def set_body(gh: Gh, repo: str, release_id: int, body: str) -> None:
@@ -137,10 +147,14 @@ def publish(tag: str, notes: str, repo: str, webhook: str, gh: Gh = run_gh, send
     set_body(gh, repo, dated["id"], body)
     done.append(f"notes published on {tag}")
     # The rolling nightly is a copy: a failure there is reported and does not hold up the post.
+    # Its release is read first and patched by its id, and only when its range line is the dated
+    # release's, so a nightly published meanwhile by release.yml (a new release with a new id)
+    # never gets these notes.
     try:
-        if commit(gh, repo, "nightly") == commit(gh, repo, tag):
-            rolling = release(gh, repo, "nightly")
-            set_body(gh, repo, rolling["id"], compose(rolling.get("body") or "", notes))
+        rolling = release(gh, repo, "nightly")
+        rolling_body = rolling.get("body") or ""
+        if range_line(rolling_body) == range_line(body):
+            set_body(gh, repo, rolling["id"], compose(rolling_body, notes))
             done.append("notes published on nightly, the same build")
     except (RuntimeError, ValueError, KeyError) as error:
         done.append(f"::warning::nightly not updated: {error}")

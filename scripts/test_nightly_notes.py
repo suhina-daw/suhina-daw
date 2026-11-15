@@ -51,9 +51,26 @@ class Problems(unittest.TestCase):
             "[x](/relative)",
             "see www.example.com",
             "ftp://example.com",
+            "[x](https&#58;//example.com)",
         ):
             with self.subTest(bad=bad):
                 self.assertTrue(nn.problems("nightly-20261115", NOTES + "\n\n" + bad))
+
+    def test_reference_links_and_character_references_fail(self):
+        # A reference-style definition with a decoded character reference renders as an external
+        # link on GitHub while URL and LINK see no link at all.
+        for bad in (
+            "[download][r]\n\n[r]: https&#58;//example.com/installer",
+            "[download][r]\n\n   [r]: https://example.com/installer",
+            "[r]: <https://example.com>",
+            "Tom &amp; Jerry",
+            "&#x3a;",
+        ):
+            with self.subTest(bad=bad):
+                self.assertTrue(nn.problems("nightly-20261115", NOTES + "\n\n" + bad))
+
+    def test_plain_ampersands_and_brackets_pass(self):
+        self.assertEqual(nn.problems("nightly-20261115", NOTES + "\n\n- Cut & paste of [selected] clips."), [])
 
     def test_too_long_notes_fail(self):
         self.assertTrue(nn.problems("nightly-20261115", NOTES + "\n\n" + "a" * nn.NOTES_LIMIT))
@@ -112,20 +129,26 @@ class Description(unittest.TestCase):
                 self.assertTrue(line.endswith("x"), line)
 
 
+OTHER_RANGE = "<!-- nightly-range: 2e98c93..7a23446 -->"
+
+
 class FakeGitHub:
-    def __init__(self, nightly_commit="2e98c93", posted=False):
+    def __init__(self, rolling_range=RANGE, posted=False, gone=()):
         dated_body = SCRIPT_BODY if not posted else nn.mark_posted(nn.compose(SCRIPT_BODY, NOTES))
         self.releases = {
             "nightly-20261115": {"id": 1, "name": "Suhina nightly 0.0.1-nightly.20261115+2e98c93", "body": dated_body},
-            "nightly": {"id": 2, "name": "Suhina nightly 0.0.1-nightly.20261115+2e98c93", "body": SCRIPT_BODY},
+            "nightly": {"id": 2, "name": "Suhina nightly", "body": SCRIPT_BODY.replace(RANGE, rolling_range)},
         }
-        self.commits = {"nightly": nightly_commit, "nightly-20261115": "2e98c93"}
+        # Release ids deleted after they were read, as release.yml does when it replaces nightly.
+        self.gone = set(gone)
         self.patched = []
 
     def __call__(self, args, stdin=None):
         path = next(a for a in args if a.startswith("repos/"))
         if "-X" in args:
             release_id = int(path.rsplit("/", 1)[1])
+            if release_id in self.gone:
+                raise RuntimeError("gh api -X: HTTP 404: Not Found")
             body = json.loads(stdin)["body"]
             self.patched.append((release_id, body))
             for item in self.releases.values():
@@ -134,8 +157,6 @@ class FakeGitHub:
             return "{}"
         if "/releases/tags/" in path:
             return json.dumps(self.releases[path.rsplit("/", 1)[1]])
-        if "/commits/" in path:
-            return self.commits[path.rsplit("/", 1)[1]] + "\n"
         raise AssertionError(args)
 
 
@@ -168,10 +189,18 @@ class Publish(unittest.TestCase):
         self.assertIn("already posted to Discord; not posted again", done)
 
     def test_the_rolling_nightly_is_left_alone_when_it_is_another_build(self):
-        gh = FakeGitHub(nightly_commit="ffffff0")
+        gh = FakeGitHub(rolling_range=OTHER_RANGE)
         nn.publish("nightly-20261115", NOTES, REPO, "", gh, self.send)
         self.assertNotIn(nn.COMPOSED, gh.releases["nightly"]["body"])
+        self.assertEqual([release_id for release_id, _ in gh.patched], [1])
         self.assertEqual(self.sent, [])
+
+    def test_a_rolling_nightly_replaced_meanwhile_is_reported_and_the_post_still_goes(self):
+        gh = FakeGitHub(gone={2})
+        done = nn.publish("nightly-20261115", NOTES, REPO, "https://discord.test/hook", gh, self.send)
+        self.assertTrue(any(line.startswith("::warning::nightly not updated") for line in done), done)
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn(nn.POSTED, gh.releases["nightly-20261115"]["body"])
 
     def test_a_failed_post_leaves_no_posted_marker(self):
         gh = FakeGitHub()

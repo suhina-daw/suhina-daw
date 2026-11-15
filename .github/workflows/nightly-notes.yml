@@ -4,7 +4,8 @@ name: Nightly notes
 # Discord's releases channel (docs/releasing.md › Nightly notes). The agent runs in a Claude cloud
 # session, which may start workflows but may not edit releases, so it hands the notes over as this
 # workflow's input. scripts/nightly_notes.py checks them before anything is published: the tag's
-# form, no HTML, images or @, and links to this repository only.
+# form, no HTML, images, @, character references or reference-style links, and links to this
+# repository only.
 
 on:
   workflow_dispatch:

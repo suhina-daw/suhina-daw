@@ -127,18 +127,20 @@ The workflow publishes the nightly with the list from
 [`scripts/release_notes.py`](../scripts/release_notes.py) (see [Release notes](#release-notes)) and
 ends the notes with a hidden line, `<!-- nightly-range: <previous nightly>..<this commit> -->`.
 A scheduled Claude agent (a routine on the maintainer's account, not in this repository) runs about
-an hour after each build. For every dated nightly of the last three days whose notes do not yet
-end with `<!-- notes: composed -->`, it reads the pull requests merged in that range (their titles
-and descriptions) and writes notes for users from them. A build that is still running is waited
-for, and a nightly the agent missed is caught up on its next run. Until then the nightly keeps the
+an hour after each build. It takes every dated nightly of the last three days whose notes do not
+yet say `<!-- discord: posted -->`: without `<!-- notes: composed -->` it reads the pull requests
+merged in that range (their titles and descriptions) and writes notes for users from them; with it
+(the notes are published but the Discord post failed) it hands over the published notes again. A
+build that is still running is waited for, and a nightly the agent missed is caught up on its next
+run. Until then the nightly keeps the
 script's list, and it is published either way.
 
 The agent runs in a Claude cloud session, which may start workflows but may not edit releases, so
 it hands the notes to **Actions › Nightly notes** ([`nightly-notes.yml`](../.github/workflows/nightly-notes.yml))
 as its `tag` and `notes` inputs. [`scripts/nightly_notes.py`](../scripts/nightly_notes.py) checks
 them before anything changes: the tag is `nightly-YYYYMMDD` or `nightly-YYYYMMDD-N`, the notes
-start with `### New since the previous nightly`, carry no HTML, images or `@`, and link only to
-this repository. It then replaces the notes section of that dated release (and of `nightly` when it
+start with `### New since the previous nightly`, carry no HTML, images, `@`, character references
+(`&#58;`) or reference-style link definitions (`[label]: …`), and link only to this repository. It then replaces the notes section of that dated release (and of `nightly` when it
 is the same build) and adds `<!-- notes: composed -->`, and posts the notes to Discord's releases
 channel (see [Discord](#discord)) as one embed whose title links to the dated release, so the link
 still leads to the build it announced after the next night. Only after Discord took the post is
