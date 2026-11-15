@@ -159,8 +159,11 @@ plug-ins. All shows everything.
 
 **Search text:** a flat list of matching items (the tree's place and category still narrow it),
 at most 500, from the index of every folder, the built-in effects and instruments, and the plug-ins. An item
-matches when every word of the search appears in its name or in its path below its folder,
-without regard to case. Exact name matches come first, then names that start with the
+matches when every word of the search appears in its name or in its path below its folder
+(for a plug-in, its vendor, its format and the name of its file), without regard to case and,
+when a word is not there as typed, with the spaces and punctuation of the name and the path left
+out: `grandpiano` finds `Grand Pianos`, `kick01` finds `Kick 01.wav`, and `grand pianos` finds
+`GrandPianos` word by word. Exact name matches come first, then names that start with the
 first word, then names with a word that starts with it, then the rest; shorter names first,
 then by name. Each row shows the folder it is in after the name.
 
