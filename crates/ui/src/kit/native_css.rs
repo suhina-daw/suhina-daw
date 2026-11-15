@@ -1170,6 +1170,13 @@ pub fn begin_frame(ui: &egui::Ui) {
             let native = suhina_plugins::trace::timed("style paint parse", || {
                 source.as_deref().and_then(|source| native::Paint::new(source, skin.base))
             });
+            // A sheet that does not parse with no working styles to keep (the app started on a
+            // theme whose sheet is broken) runs the engine on an empty theme sheet, so the
+            // user-agent and base tiers still give the window its text and fills.
+            let native = native.or_else(|| match engine.native {
+                None => native::Paint::new("", skin.base),
+                Some(_) => None,
+            });
             match native {
                 Some(native) => {
                     let motion = engine.motion;

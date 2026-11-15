@@ -1070,3 +1070,14 @@ fn a_probe_in_an_ancestor_takes_the_ancestor_s_rules_and_leaves_no_node() {
     });
     assert_eq!(seen, (rgb(0x40, 0x50, 0x60), token, Some(1)));
 }
+
+/// A theme whose sheet does not parse, with no working styles to keep (the app started on it),
+/// still gets the user-agent and base tiers: text and fills stay opaque (#1474 review).
+#[test]
+fn a_theme_sheet_that_does_not_parse_still_gets_the_base_design() {
+    // A thread of its own: its style engine has never had a working sheet to keep.
+    let (name, panel) =
+        std::thread::spawn(|| frames("}", || (name_ink(), app_fill("panel")))).join().expect("the frames ran");
+    assert_eq!(name.a(), 255, "the name ink: {name:?}");
+    assert_eq!(panel.a(), 255, "the panel fill: {panel:?}");
+}
