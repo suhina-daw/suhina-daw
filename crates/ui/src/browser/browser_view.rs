@@ -2681,7 +2681,8 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
         painter.rect_filled(
             rect,
             3.0,
-            hot.themed_background().unwrap_or_else(|| hot.background().gamma_multiply(hover)),
+            hot.themed(crate::kit::element::Paint::Background)
+                .unwrap_or_else(|| hot.background().gamma_multiply(hover)),
         );
     }
     let check = BUTTON.attribute("kind", "tag-check").response(&response).attr(Checked, on).look();
@@ -2699,7 +2700,8 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
     let swatch = Pos2::new(box_rect.right() + 6.0 + SWATCH / 2.0, rect.center().y);
     painter.circle_filled(swatch, SWATCH / 2.0, tag_color(&tag.color));
     let text_rect = Rect::from_min_max(Pos2::new(rect.left() + text_left, rect.top()), rect.right_bottom());
-    let color = hot.themed_color().unwrap_or_else(|| motion::mix(rest.color(), hot.color(), hover));
+    let color =
+        hot.themed(crate::kit::element::Paint::Color).unwrap_or_else(|| motion::mix(rest.color(), hot.color(), hover));
     widgets::text_in(painter, text_rect, Align2::LEFT_CENTER, &tag.name, font, color);
     response
 }
@@ -3447,7 +3449,7 @@ pub fn resize_handle(
     // `#browser-splitter` takes the element's `background-color`; without one, that of
     // `browser-fill[kind="splitter"]`: the border colour, stronger under the pointer.
     let fill =
-        divider.style.look().themed_background().unwrap_or_else(|| {
+        divider.style.look().themed(crate::kit::element::Paint::Background).unwrap_or_else(|| {
             BROWSER_FILL.attribute("kind", "splitter").response(&divider.response).look().background()
         });
     ui.painter().rect_filled(handle, 0.0, fill);

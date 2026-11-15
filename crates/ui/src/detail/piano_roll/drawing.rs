@@ -322,7 +322,9 @@ pub(super) fn draw(
         grid_painter.rect_filled(row, 0.0, fill);
         // The row under the pointer, so it can be followed to the strip that names it.
         if state.hover_key() == Some(key) {
-            let tint = hover_row.themed_background().unwrap_or_else(|| hover_row.background().gamma_multiply(0.05));
+            let tint = hover_row
+                .themed(crate::kit::element::Paint::Background)
+                .unwrap_or_else(|| hover_row.background().gamma_multiply(0.05));
             grid_painter.rect_filled(row, 0.0, tint);
         }
         grid_painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line_colour(key % 12 == 0)));
@@ -564,7 +566,9 @@ pub(super) fn draw(
             if cut.delete {
                 let (start, end) = edits::SliceCut::removed(note, at);
                 let gone = Rect::from_x_y_ranges(layout.x_of(start)..=layout.x_of(end), rect.y_range());
-                let fill = look.themed_background().unwrap_or_else(|| look.background().gamma_multiply(0.75));
+                let fill = look
+                    .themed(crate::kit::element::Paint::Background)
+                    .unwrap_or_else(|| look.background().gamma_multiply(0.75));
                 grid_painter.rect_filled(gone.intersect(rect), 0.0, fill);
             }
             grid_painter.vline(layout.x_of(at).round() + 0.5, rect.y_range().expand(1.0), Stroke::new(2.0, ink));

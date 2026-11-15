@@ -207,7 +207,7 @@ pub fn layout_in(
     let insets = row::insets(&bar).unwrap_or([0.0; 4]);
     let narrow = rect.width() - insets[1] - insets[3] <= theme::SCENE_COLUMN;
     bar = bar.flag("narrow", narrow);
-    let inner = shrink(rect, insets).shrink(PAD);
+    let inner = row::inset(rect, insets).shrink(PAD);
     let height = rect.height() - insets[0] - insets[2];
     let footer = height >= SENDS_AT;
     let input = (can_hear_input || shared.reserve_input) && height >= INPUT_AT;
@@ -240,21 +240,9 @@ pub fn layout_in(
     };
     let full = inner.width();
     let small = if matches!(strip, Strip::Track { armable: true }) { (full - 6.0) / 5.0 } else { (full - 4.0) / 4.0 };
-    let part = |name: &'static str, kind: &str| {
-        let item = Item::new(name).attribute("kind", kind);
-        match suhina_theme_package::elements::element_id(name, Some(kind)) {
-            Some(id) => item.id(&id),
-            None => item,
-        }
-    };
-    // The items in the tree's order, each remembering which part it is.
-    let mut items: Vec<Item> = Vec::new();
-    let mut slots: Vec<Slot> = Vec::new();
-    let mut add = |item: Item, slot: Slot| {
-        items.push(item);
-        slots.push(slot);
-        items.len() - 1
-    };
+    let part = Item::part;
+    let mut tree = row::Tree::default();
+    let mut add = |item: Item, slot: Slot| tree.add(item, slot);
     add(part("track-colour", "mixer-color").width(COLOUR_BAND), Slot::Band);
     let body = add(part("group", "mixer-body"), Slot::None);
     if name {
@@ -319,7 +307,6 @@ pub fn layout_in(
     if footer {
         add(part("group", "mixer-sends").height(SEND_HEIGHT).in_group(body), Slot::Sends);
     }
-    let laid = row::row(&bar, &items).unwrap_or_default();
     let mut parts = Layout {
         band: None,
         name: None,
@@ -344,8 +331,7 @@ pub fn layout_in(
         arm: None,
         metronome: None,
     };
-    for (index, slot) in slots.iter().enumerate() {
-        let at = laid.at(index, rect.min);
+    for (slot, at) in tree.lay_out(&bar, rect.min) {
         match slot {
             Slot::None | Slot::Input => {}
             Slot::Band => parts.band = at,
@@ -355,7 +341,7 @@ pub fn layout_in(
             Slot::Source => parts.audio_source = at,
             Slot::Monitor => parts.audio_monitor = at,
             Slot::MonitorButton(button) => {
-                if let Some(place) = parts.monitor_buttons.get_mut(*button) {
+                if let Some(place) = parts.monitor_buttons.get_mut(button) {
                     *place = at;
                 }
             }
@@ -413,14 +399,6 @@ enum Slot {
     Arm,
     Metronome,
     Sends,
-}
-
-/// `rect` less `insets` (top, right, bottom, left).
-fn shrink(rect: Rect, [top, right, bottom, left]: [f32; 4]) -> Rect {
-    Rect::from_min_max(
-        Pos2::new(rect.left() + left, rect.top() + top),
-        Pos2::new(rect.right() - right, rect.bottom() - bottom),
-    )
 }
 
 /// One column's strip in `rect`: what [`layout`] gives this height, drawn with `painter` (clipped

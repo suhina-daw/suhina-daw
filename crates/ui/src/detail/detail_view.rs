@@ -944,9 +944,14 @@ pub(crate) fn device_switch(
     let own =
         crate::kit::element::BUTTON.id("device-on").response(response).attr(crate::kit::element::Checked, on).look();
     if on {
-        painter.rect_filled(switch, 0.0, own.themed_background().unwrap_or(bright));
+        painter.rect_filled(switch, 0.0, own.themed(crate::kit::element::Paint::Background).unwrap_or(bright));
     } else {
-        painter.rect_stroke(switch, 0.0, theme::hairline(own.themed_border().unwrap_or(dim)), egui::StrokeKind::Inside);
+        painter.rect_stroke(
+            switch,
+            0.0,
+            theme::hairline(own.themed(crate::kit::element::Paint::Border).unwrap_or(dim)),
+            egui::StrokeKind::Inside,
+        );
     }
 }
 

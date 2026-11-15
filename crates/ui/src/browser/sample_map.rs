@@ -1206,7 +1206,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
         clusters.iter().zip(&galleys).map(|(c, g)| (transform.to_screen(c.spot), g.size())).collect();
     let shadow = crate::kit::element::SAMPLE_MAP
         .look()
-        .themed_background()
+        .themed(crate::kit::element::Paint::Background)
         .unwrap_or_else(|| browser_fill("window"))
         .gamma_multiply(fade);
     for (spot, galley) in crowd::place_labels(&sizes, painter.clip_rect()).into_iter().zip(galleys) {

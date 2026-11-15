@@ -72,11 +72,8 @@ pub fn is_token(key: &str) -> bool {
     TOKENS.iter().any(|(token, _)| *token == key)
 }
 
-/// Suhina Studio's value of the colour variable `variable` (a name without `--`): its initial
-/// value in the core sheet. `None` for a name that is not a core colour.
-pub fn default_color(variable: &str) -> Option<Color32> {
-    super::theme_vars::initial_color(variable)
-}
+/// Suhina Studio's value of a colour variable: its initial value in the core sheet.
+pub use super::theme_vars::initial_color as default_color;
 
 /// The value of the colour variable `variable` in the colour map `colors`, else Suhina Studio's
 /// ([`default_color`]); transparent for a name that is neither.
@@ -157,12 +154,8 @@ pub fn use_colors(ctx: &egui::Context, colors: &Colors) {
     ctx.request_repaint();
 }
 
-/// What the root's `Visuals` were last built from, kept in the context: the style engine's resets.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct VisualsSource {
-    styles: u64,
-}
-
+/// Where the context keeps what the root's `Visuals` were last built from: the style engine's
+/// resets ([`super::native_css::style_epoch`]).
 fn visuals_key() -> egui::Id {
     egui::Id::NULL.with("suhina-root-visuals")
 }
@@ -176,9 +169,9 @@ fn visuals_key() -> egui::Id {
 /// styles (`style_class::ui_for`) apply over these. It also tells egui whether the theme is light
 /// or dark, which egui passes on to the native window (its title bar).
 pub(super) fn sync_root_visuals(ctx: &egui::Context) {
-    let source = VisualsSource { styles: super::native_css::style_epoch() };
+    let source = super::native_css::style_epoch();
     let key = visuals_key();
-    if ctx.data(|data| data.get_temp::<VisualsSource>(key)) == Some(source) {
+    if ctx.data(|data| data.get_temp::<u64>(key)) == Some(source) {
         return;
     }
     ctx.data_mut(|data| data.insert_temp(key, source));
@@ -604,18 +597,23 @@ pub fn is_built_in(id: &str) -> bool {
     BUILT_IN_FOLDERS.iter().any(|(b, _)| id.eq_ignore_ascii_case(b))
 }
 
-/// The colours an older theme file may leave out, which [`Theme::from_json`] works out from others.
-const DERIVED: [&str; 9] = [
-    "text.inverse",
-    "control.selectedBackground",
-    "browser.text.primary",
-    "browser.text.secondary",
-    "browser.text.hint",
-    "browser.text.value",
-    "text.onColorLight",
-    "text.onColorDark",
-    "automation.pin",
+/// The colours an older theme file may leave out that [`Theme::from_json`] copies from another,
+/// each with the one it is copied from.
+const COPIED: [(&str, &str); 7] = [
+    ("browser.text.primary", "text.primary"),
+    ("browser.text.secondary", "text.secondary"),
+    ("browser.text.hint", "text.hint"),
+    ("browser.text.value", "text.value"),
+    ("text.onColorLight", "text.primary"),
+    ("text.onColorDark", "window.background"),
+    ("automation.pin", "accent"),
 ];
+
+/// Every colour an older theme file may leave out, which [`Theme::from_json`] works out from
+/// others: [`COPIED`]'s, and two it works out from a background and a text colour.
+fn derived() -> impl Iterator<Item = &'static str> {
+    ["text.inverse", "control.selectedBackground"].into_iter().chain(COPIED.iter().map(|(key, _)| *key))
+}
 
 /// A named set of colours, kept in a theme file:
 ///
@@ -788,15 +786,7 @@ impl Theme {
                     theme.derive("control.selectedBackground", value, rgb);
                 }
                 // Keep old themes visually identical until these independent roles are edited.
-                for (key, source) in [
-                    ("browser.text.primary", "text.primary"),
-                    ("browser.text.secondary", "text.secondary"),
-                    ("browser.text.hint", "text.hint"),
-                    ("browser.text.value", "text.value"),
-                    ("text.onColorLight", "text.primary"),
-                    ("text.onColorDark", "window.background"),
-                    ("automation.pin", "accent"),
-                ] {
+                for (key, source) in COPIED {
                     if !has(key) {
                         let value = theme.color(&variable_name(source));
                         let rgb = theme.transparent_rgb.get(&variable_name(source)).copied();
@@ -869,7 +859,7 @@ impl Theme {
             Self::from_json(&text).0
         };
         let reread = read(&colors);
-        for key in DERIVED {
+        for key in derived() {
             let variable = variable_name(key);
             let (mine, theirs) = (self.color(&variable), reread.color(&variable));
             let (mine, theirs) = (self.rgba(&variable, mine), reread.rgba(&variable, theirs));
@@ -909,7 +899,7 @@ pub fn template_readme() -> String {
     let mut text = String::from(include_str!("../../themes/THEME-PACKAGE-README.md"));
     text.push_str("\n\n## Colour token reference\n\n| Token | Suhina Studio | Used for |\n|---|---|---|\n");
     for (key, purpose) in TOKENS {
-        let color = default_color(&variable_name(key)).unwrap_or(Color32::TRANSPARENT);
+        let color = color_in(&Colors::new(), &variable_name(key));
         text.push_str(&format!("| `{key}` | `{}` | {purpose} |\n", hex(color)));
     }
     text
@@ -1088,7 +1078,7 @@ pub fn install(ctx: &egui::Context) {
         style.visuals = shaped(egui::Visuals::dark());
     });
     // egui's own visuals are in place: the next frame builds the sheet's over them.
-    ctx.data_mut(|data| data.remove::<VisualsSource>(visuals_key()));
+    ctx.data_mut(|data| data.remove::<u64>(visuals_key()));
 }
 
 /// `visuals` in Suhina's shape: square corners, no shadows, no outline on a widget at rest, and a

@@ -322,7 +322,7 @@ pub(super) fn group_panel(
         let fill = if lit {
             row_el.background()
         } else {
-            row_el.look().themed_background().unwrap_or_else(|| {
+            row_el.look().themed(crate::kit::element::Paint::Background).unwrap_or_else(|| {
                 motion::mix(
                     crate::detail::detail_fill("window"),
                     row_el.look_hovered(true).background(),

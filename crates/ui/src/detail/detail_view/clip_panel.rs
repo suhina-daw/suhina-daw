@@ -569,7 +569,8 @@ pub(super) fn drop_down(
     let text = Rect::from_min_max(rect.min + Vec2::new(6.0, 0.0), rect.max - Vec2::new(14.0, 0.0));
     widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, theme::ui_font(theme::TEXT_SMALL), ink);
     // The chevron is the list's own colour, unless a theme colours the list's text.
-    let themed = crate::kit::element::DROPDOWN.attribute("kind", "panel").look().themed_color();
+    let themed =
+        crate::kit::element::DROPDOWN.attribute("kind", "panel").look().themed(crate::kit::element::Paint::Color);
     let chevron =
         themed.unwrap_or_else(|| crate::kit::element::DROPDOWN_ARROW.attribute("kind", "panel").look().color());
     widgets::chevron(painter, Pos2::new(rect.right() - 8.0, rect.center().y), false, chevron);

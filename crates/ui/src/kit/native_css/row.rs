@@ -152,6 +152,51 @@ impl Item {
         self.parent = Some(group);
         self
     }
+
+    /// An item of element `name` with `kind`, and the id a theme selects it by where the registry
+    /// gives the pair one: a part of a box tree the app builds (a track header's, a mixer strip's).
+    pub fn part(name: &'static str, kind: &str) -> Self {
+        let item = Self::new(name).attribute("kind", kind);
+        match suhina_theme_package::elements::element_id(name, Some(kind)) {
+            Some(id) => item.id(&id),
+            None => item,
+        }
+    }
+}
+
+/// A box tree's items in their order, each with the part `S` it is for the app: what a header or a
+/// strip lays out with [`row`] and reads back by part.
+#[derive(Debug)]
+pub struct Tree<S> {
+    items: Vec<Item>,
+    slots: Vec<S>,
+}
+
+impl<S> Default for Tree<S> {
+    fn default() -> Self {
+        Self { items: Vec::new(), slots: Vec::new() }
+    }
+}
+
+impl<S> Tree<S> {
+    /// Adds `item` as the part `slot`; returns its index, which a group's items name.
+    pub fn add(&mut self, item: Item, slot: S) -> usize {
+        self.items.push(item);
+        self.slots.push(slot);
+        self.items.len() - 1
+    }
+
+    /// Lays the tree out in `bar` and gives each part its rectangle on screen, the bar's box at
+    /// `origin`: `None` for a part the sheet hides, every part's where there is no room.
+    pub fn lay_out(self, bar: &Bar, origin: egui::Pos2) -> impl Iterator<Item = (S, Option<Rect>)> {
+        let laid = row(bar, &self.items).unwrap_or_default();
+        self.slots.into_iter().enumerate().map(move |(index, slot)| (slot, laid.at(index, origin)))
+    }
+}
+
+/// `rect` less `insets` (top, right, bottom, left), the order [`Row::insets`] gives them in.
+pub fn inset(rect: Rect, [top, right, bottom, left]: [f32; 4]) -> Rect {
+    Rect::from_min_max(rect.min + Vec2::new(left, top), rect.max - Vec2::new(right, bottom))
 }
 
 /// Where a row's items went.

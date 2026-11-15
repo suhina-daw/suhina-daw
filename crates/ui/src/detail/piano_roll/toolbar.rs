@@ -344,9 +344,8 @@ pub(crate) fn menu_face(
         .attr(crate::kit::element::Checked, lit)
         .look();
     // What only a rule for the kind gives: not what a rule for every dropdown does.
-    let themed = |own: Option<Color32>, plain: Option<Color32>| own.filter(|own| Some(*own) != plain);
-    let fill = themed(own.themed_background(), plain.themed_background()).unwrap_or(fill);
-    let ink = themed(own.themed_color(), plain.themed_color()).unwrap_or_else(|| words.color());
+    let fill = own.unlike(&plain, crate::kit::element::Paint::Background, fill);
+    let ink = own.themed_unlike(&plain, crate::kit::element::Paint::Color).unwrap_or_else(|| words.color());
     let caption_ink = crate::detail::detail_view::hint_ink();
     let painter = ui.painter();
     painter.rect_filled(rect, 3.0, fill);

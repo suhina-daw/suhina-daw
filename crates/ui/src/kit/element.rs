@@ -397,16 +397,47 @@ pub struct Sides {
 #[derive(Clone, Debug, Default)]
 pub struct Look(Option<Computed>);
 
+/// Which of an element's colours a [`Look`] reads where a theme's rule gives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Paint {
+    /// Its text `color`, inherited from a sheet's rule around it too.
+    Color,
+    /// Its own `color`: one a rule on the element itself sets, even when it equals the inherited
+    /// one. A line or a mark does not take the text colour a view's rule gives everything in it.
+    OwnColor,
+    /// Its `background-color`.
+    Background,
+    /// Its `border-color`.
+    Border,
+    /// Its `accent-color`.
+    Accent,
+}
+
+impl Paint {
+    /// The colour `style` has for this paint, where a theme's rule gives it (the base sheet's does
+    /// not count).
+    fn themed(self, style: &Computed) -> Option<Color32> {
+        let (set, color) = match self {
+            Self::Color => (style.authored.color, style.color),
+            Self::OwnColor => (style.declared(Property::Color), style.color),
+            Self::Background => (style.authored.background, style.background),
+            Self::Border => (style.authored.border, style.border),
+            Self::Accent => (style.authored.accent, style.accent),
+        };
+        set.then_some(color)
+    }
+}
+
 impl Look {
     /// The item's computed `color`, the base sheet's where no theme gives one; transparent where
     /// no sheet styles the window.
     pub fn color(&self) -> Color32 {
-        self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::color)
+        self.computed_color_or(Color32::TRANSPARENT)
     }
 
     /// The item's computed `background-color` ([`Look::color`]).
     pub fn background(&self) -> Color32 {
-        self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::background)
+        self.computed_background_or(Color32::TRANSPARENT)
     }
 
     /// The item's computed `border-color` ([`Look::color`]).
@@ -419,51 +450,52 @@ impl Look {
         self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::accent)
     }
 
-    /// The item's `color`, where a theme's rule gives it one (the base sheet's does not count).
-    pub fn themed_color(&self) -> Option<Color32> {
-        self.0.as_ref().filter(|s| s.authored.color).map(|s| s.color)
+    /// The item's computed `color`, the base and user-agent sheets' included: for an element whose
+    /// colour those sheets give (`knob-body`, `fader-cap`, `sample-point[kind]`), so a colour a
+    /// theme gives an element around it does not reach it. `fallback` only where no sheet styles
+    /// the window.
+    pub fn computed_color_or(&self, fallback: Color32) -> Color32 {
+        self.0.as_ref().map_or(fallback, Computed::color)
     }
 
-    /// The item's `background-color`, where a theme's rule gives it one.
-    pub fn themed_background(&self) -> Option<Color32> {
-        self.0.as_ref().filter(|s| s.authored.background).map(|s| s.background)
+    /// The item's computed `background-color`, the base and user-agent sheets' included (often
+    /// through a variable): a background a theme gives an element around it does not reach it,
+    /// while a variable the theme sets and its own rule for the element do. `fallback` only where
+    /// no sheet styles the window.
+    pub fn computed_background_or(&self, fallback: Color32) -> Color32 {
+        self.0.as_ref().map_or(fallback, Computed::background)
     }
 
-    /// The item's `border-color`, where a theme's rule gives it one.
-    pub fn themed_border(&self) -> Option<Color32> {
-        self.0.as_ref().filter(|s| s.authored.border).map(|s| s.border)
+    /// The item's colour `paint`, where a theme's rule gives it one.
+    pub fn themed(&self, paint: Paint) -> Option<Color32> {
+        self.0.as_ref().and_then(|style| paint.themed(style))
     }
 
-    /// The item's own `color`, where a rule on the item sets one; else `token`. A line or a mark
-    /// does not take the text colour a view's rule gives everything in it.
+    /// The item's own `color` ([`Paint::OwnColor`]), else `token`.
     pub fn own_color_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|own| own.declared(Property::Color)).map_or(token, |own| own.color)
+        self.themed(Paint::OwnColor).unwrap_or(token)
     }
 
     /// The item's text colour, inherited from a sheet's rule around it too; else `token`.
     pub fn color_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|s| s.authored.color).map_or(token, |s| s.color)
+        self.themed(Paint::Color).unwrap_or(token)
     }
 
     /// The item's `background-color`, where the sheet sets one; else `token`.
     pub fn background_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|s| s.authored.background).map_or(token, |s| s.background)
+        self.themed(Paint::Background).unwrap_or(token)
     }
 
-    /// The item's computed `background-color`, the base sheet's included
-    /// ([`Entered::computed_background_or`]); `fallback` only where no sheet styles the window.
-    pub fn computed_background_or(&self, fallback: Color32) -> Color32 {
-        self.0.as_ref().map_or(fallback, |s| s.background)
-    }
-
-    /// The item's `border-color`, where the sheet sets one; else `token`.
+    /// The item's `border-color`, where the sheet sets one; else `token`: for a line the element
+    /// draws along its edge (a column's separator, a selected slot's frame).
     pub fn border_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|s| s.authored.border).map_or(token, |s| s.border)
+        self.themed(Paint::Border).unwrap_or(token)
     }
 
-    /// The item's `accent-color`, where the sheet sets one; else `token`.
+    /// The item's `accent-color`, where the sheet sets one; else `token`: a control's accent, such
+    /// as a dial's pointer or the line under a field that has the keys.
     pub fn accent_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|s| s.authored.accent).map_or(token, |s| s.accent)
+        self.themed(Paint::Accent).unwrap_or(token)
     }
 
     /// The item's computed style, when a sheet styles the window.
@@ -471,26 +503,16 @@ impl Look {
         self.0.as_ref()
     }
 
-    /// The item's `background-color` in a state (`[checked]`, `[queued]`) where it differs from
+    /// The item's colour `paint` in a state (`[checked]`, `[queued]`) where it differs from
     /// `plain`, the same item without the state; else `token`, the state's own colour. A rule for
     /// every `button` then does not hide which one is on: only a rule for the state does.
-    pub fn background_unlike(&self, plain: &Look, token: Color32) -> Color32 {
-        let own = self.0.as_ref().filter(|s| s.authored.background).map(|s| s.background);
-        own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.background).map(|s| s.background))
-            .unwrap_or(token)
+    pub fn unlike(&self, plain: &Look, paint: Paint, token: Color32) -> Color32 {
+        self.themed_unlike(plain, paint).unwrap_or(token)
     }
 
-    /// [`Look::background_unlike`] for the `border-color`.
-    pub fn border_unlike(&self, plain: &Look, token: Color32) -> Color32 {
-        let own = self.0.as_ref().filter(|s| s.authored.border).map(|s| s.border);
-        own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.border).map(|s| s.border))
-            .unwrap_or(token)
-    }
-
-    /// [`Look::background_unlike`] for the `accent-color`.
-    pub fn accent_unlike(&self, plain: &Look, token: Color32) -> Color32 {
-        let own = |look: &Look| look.0.as_ref().filter(|s| s.authored.accent).map(|s| s.accent);
-        own(self).filter(|accent| Some(*accent) != own(plain)).unwrap_or(token)
+    /// [`Look::unlike`] with no token: `None` where the state has no colour `paint` of its own.
+    pub fn themed_unlike(&self, plain: &Look, paint: Paint) -> Option<Color32> {
+        self.themed(paint).filter(|own| Some(*own) != plain.themed(paint))
     }
 
     /// Whether the item has a background image (`background-image`) that `plain` does not have:
@@ -501,19 +523,6 @@ impl Look {
             (Some(own), None) => own.has_gradient(),
             _ => false,
         }
-    }
-
-    /// [`Look::background_unlike`] for the item's text `color`, the one a rule around it gives too
-    /// ([`Look::color_or`]).
-    pub fn color_unlike(&self, plain: &Look, token: Color32) -> Color32 {
-        let own = |look: &Look| look.0.as_ref().filter(|s| s.authored.color).map(|s| s.color);
-        own(self).filter(|color| Some(*color) != own(plain)).unwrap_or(token)
-    }
-
-    /// [`Look::background_unlike`] for the item's own `color`.
-    pub fn own_color_unlike(&self, plain: &Look, token: Color32) -> Color32 {
-        let own = |look: &Look| look.0.as_ref().filter(|s| s.declared(Property::Color)).map(|s| s.color);
-        own(self).filter(|color| Some(*color) != own(plain)).unwrap_or(token)
     }
 }
 
@@ -735,75 +744,60 @@ impl Entered {
         self.style().map_or([0.0; 4], |style| style.insets_in(width))
     }
 
-    /// The element's computed `color`, the base sheet's where no theme gives one: a reader with
-    /// no fallback colour of its own. Transparent where no sheet styles the window.
-    pub fn color(&self) -> Color32 {
-        self.style().map_or(Color32::TRANSPARENT, |style| style.color())
-    }
-
-    /// The element's computed `background-color` ([`Entered::color`]).
-    pub fn background(&self) -> Color32 {
-        self.style().map_or(Color32::TRANSPARENT, |style| style.background())
-    }
-
-    /// The element's computed `border-color` ([`Entered::color`]).
-    pub fn border(&self) -> Color32 {
-        self.style().map_or(Color32::TRANSPARENT, |style| style.border())
-    }
-
-    /// The element's computed `accent-color` ([`Entered::color`]).
-    pub fn accent(&self) -> Color32 {
-        self.style().map_or(Color32::TRANSPARENT, |style| style.accent())
-    }
-
-    /// The element's `color`, or `fallback` where the sheet sets none.
-    pub fn color_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|s| s.authored.color).map_or(fallback, |s| s.color)
-    }
-
-    /// The element's `color` where a rule gives it one of its own, not the one it inherits (a
-    /// bar's `color` on its items), even when it equals the inherited one; else `fallback`, a
-    /// colour the app gives by state (an error, the shown tab).
-    pub fn own_color_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|own| own.declared(Property::Color)).map_or(fallback, |own| own.color)
-    }
-
     /// The element's node in this frame's style tree, while it is entered.
     pub(crate) fn node(&self) -> Option<usize> {
         self.scope.node
     }
 
-    /// The element's computed `color`, the user-agent tier's included: for an element whose
-    /// colour that tier gives (`knob-body`, `fader-cap`, `sample-point[kind]`), so a colour a
-    /// theme gives an element around it does not reach it. `fallback` only where no sheet styles
-    /// the window.
+    /// [`Look::color`] of the element.
+    pub fn color(&self) -> Color32 {
+        self.look().color()
+    }
+
+    /// [`Look::background`] of the element.
+    pub fn background(&self) -> Color32 {
+        self.look().background()
+    }
+
+    /// [`Look::border`] of the element.
+    pub fn border(&self) -> Color32 {
+        self.look().border()
+    }
+
+    /// [`Look::accent`] of the element.
+    pub fn accent(&self) -> Color32 {
+        self.look().accent()
+    }
+
+    /// [`Look::color_or`] of the element.
+    pub fn color_or(&self, fallback: Color32) -> Color32 {
+        self.look().color_or(fallback)
+    }
+
+    /// [`Look::own_color_or`] of the element: a colour the app gives by state (an error, the shown
+    /// tab) where no rule on the element gives one.
+    pub fn own_color_or(&self, fallback: Color32) -> Color32 {
+        self.look().own_color_or(fallback)
+    }
+
+    /// [`Look::computed_color_or`] of the element.
     pub fn computed_color_or(&self, fallback: Color32) -> Color32 {
-        self.style().map_or(fallback, |s| s.color)
+        self.look().computed_color_or(fallback)
     }
 
-    /// The element's computed `background-color`, the base and user-agent tiers' included: for an
-    /// element whose fill those tiers give (often through a variable), so a background a theme
-    /// gives an element around it does not reach it, while a variable the theme sets and its own
-    /// rule for the element do. `fallback` only where no sheet styles the window.
+    /// [`Look::computed_background_or`] of the element.
     pub fn computed_background_or(&self, fallback: Color32) -> Color32 {
-        self.style().map_or(fallback, |s| s.background)
+        self.look().computed_background_or(fallback)
     }
 
-    /// The element's `background-color`, or `fallback` where the sheet sets none.
+    /// [`Look::background_or`] of the element.
     pub fn background_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|s| s.authored.background).map_or(fallback, |s| s.background)
+        self.look().background_or(fallback)
     }
 
-    /// The element's `accent-color`, or `fallback` where the sheet sets none: a control's accent,
-    /// such as a dial's pointer or the line under a field that has the keys.
-    pub fn accent_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|s| s.authored.accent).map_or(fallback, |s| s.accent)
-    }
-
-    /// The element's `border-color`, or `fallback` where the sheet sets none: for a line the
-    /// element draws along its edge (a column's separator, a selected slot's frame).
+    /// [`Look::border_or`] of the element.
     pub fn border_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|s| s.authored.border).map_or(fallback, |s| s.border)
+        self.look().border_or(fallback)
     }
 
     /// The [`Look`] of the element, for the colours of what it draws inside itself.
@@ -919,8 +913,8 @@ impl Entered {
 
 /// `rect` less `insets` (top, right, bottom, left); an empty rectangle at its centre where they
 /// leave no room.
-fn shrink(rect: Rect, [top, right, bottom, left]: [f32; 4]) -> Rect {
-    let inner = Rect::from_min_max(rect.min + egui::vec2(left, top), rect.max - egui::vec2(right, bottom));
+fn shrink(rect: Rect, insets: [f32; 4]) -> Rect {
+    let inner = super::native_css::row::inset(rect, insets);
     if inner.is_positive() { inner } else { Rect::from_center_size(inner.center(), egui::Vec2::ZERO) }
 }
 

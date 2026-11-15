@@ -662,7 +662,7 @@ fn a_rule_for_every_button_does_not_hide_a_lit_one() {
         frames(css, || {
             let _view = SESSION.enter();
             let plain = BUTTON.id("main-metronome").probe();
-            BUTTON.id("main-metronome").attr(Checked, true).look().background_unlike(&plain, token)
+            BUTTON.id("main-metronome").attr(Checked, true).look().unlike(&plain, Paint::Background, token)
         })
     };
     assert_eq!(lit_fill("button { background-color: #102030; }"), token);
@@ -701,7 +701,7 @@ fn a_rule_for_every_slot_does_not_hide_a_queued_one() {
         frames(css, || {
             let _view = SESSION.enter();
             let plain = SLOT.attribute("kind", "stop").probe();
-            SLOT.attribute("kind", "stop").attr(Queued, true).look().own_color_unlike(&plain, token)
+            SLOT.attribute("kind", "stop").attr(Queued, true).look().unlike(&plain, Paint::OwnColor, token)
         })
     };
     assert_eq!(queued_ink("slot[kind=\"stop\"] { color: #102030; }"), token);
@@ -729,7 +729,7 @@ fn a_probe_is_its_own_style_with_motion_on() {
             let _frame = super::super::native_css::frame_with_motion(ui, true);
             let _view = ARRANGEMENT.enter();
             let plain = AUTOMATION_POINT.probe();
-            picked = AUTOMATION_POINT.attr(Selected, true).look().own_color_unlike(&plain, token);
+            picked = AUTOMATION_POINT.attr(Selected, true).look().unlike(&plain, Paint::OwnColor, token);
         })
         .textures_delta
         .clear();
@@ -788,7 +788,7 @@ fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
             let plain = CLIP.color(colour).probe();
             let drawn = CLIP.color(colour).attr(Muted, true).enter();
             let state = drawn.look();
-            seen = (state.background_unlike(&plain, token), state.border_unlike(&plain, token));
+            seen = (state.unlike(&plain, Paint::Background, token), state.unlike(&plain, Paint::Border, token));
         })
         .textures_delta
         .clear();
@@ -895,9 +895,9 @@ fn accent_or_reads_the_accent_colour() {
     let rgb = egui::Color32::from_rgb;
     let token = rgb(1, 2, 3);
     let (entered, look, unstyled) = frames("knob { accent-color: #102030; }", || {
-        let unstyled = SLIDER.enter().accent_or(token);
+        let unstyled = SLIDER.enter().look().accent_or(token);
         let el = KNOB.enter();
-        (el.accent_or(token), KNOB.look().accent_or(token), unstyled)
+        (el.look().accent_or(token), KNOB.look().accent_or(token), unstyled)
     });
     assert_eq!((entered, look, unstyled), (rgb(0x10, 0x20, 0x30), rgb(0x10, 0x20, 0x30), token));
 }
@@ -949,7 +949,7 @@ fn a_rule_s_background_image_does_not_cover_a_lit_toggle() {
     assert_eq!(meshes.1, 0, "none of it paints");
 }
 
-/// `accent_unlike` and `image_unlike` count only what differs from the plain look.
+/// `unlike` and `image_unlike` count only what differs from the plain look.
 #[test]
 fn a_look_s_accent_and_image_are_compared_with_the_plain_one() {
     let rgb = egui::Color32::from_rgb;
@@ -958,7 +958,7 @@ fn a_look_s_accent_and_image_are_compared_with_the_plain_one() {
     let (general, own, image) = frames(css, || {
         let plain = DROPDOWN.probe();
         let subtle = DROPDOWN.attribute("kind", "subtle").look();
-        (subtle.accent_unlike(&plain, token), subtle.accent_or(token), subtle.image_unlike(&plain))
+        (subtle.unlike(&plain, Paint::Accent, token), subtle.accent_or(token), subtle.image_unlike(&plain))
     });
     assert_eq!((general, own, image), (token, rgb(0x10, 0x20, 0x30), true));
 }
@@ -1017,7 +1017,7 @@ fn a_list_row_and_a_dialog_title_take_their_own_background() {
     );
 }
 
-/// `color_unlike` counts the text colour a rule around the item gives too, but only where it
+/// `unlike` of [`Paint::Color`] counts the text colour a rule around the item gives too, but only where it
 /// differs from the plain item's: a rule for every row does not hide the picked one (#1440 review).
 #[test]
 fn color_unlike_ignores_what_the_plain_item_has() {
@@ -1027,7 +1027,7 @@ fn color_unlike_ignores_what_the_plain_item_has() {
         frames(css, || {
             let _view = SESSION.enter();
             let plain = LIST_ROW.probe();
-            LIST_ROW.attr(Selected, true).look().color_unlike(&plain, token)
+            LIST_ROW.attr(Selected, true).look().unlike(&plain, Paint::Color, token)
         })
     };
     assert_eq!(picked_ink("list-row { color: #102030; }"), token);

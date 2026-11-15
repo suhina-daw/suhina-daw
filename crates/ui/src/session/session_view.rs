@@ -1490,9 +1490,9 @@ fn slot_cell(
             // The clip in its colour, lighter under the pointer; a deactivated clip is grey
             // (`clip[muted]`).
             let base = if !slot.enabled {
-                state.background_unlike(&plain, native.muted)
+                state.unlike(&plain, crate::kit::element::Paint::Background, native.muted)
             } else if slot.state == SlotState::Queued {
-                state.background_unlike(&plain, clip_color)
+                state.unlike(&plain, crate::kit::element::Paint::Background, clip_color)
             } else {
                 clip_color
             };

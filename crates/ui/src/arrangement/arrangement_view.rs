@@ -1393,7 +1393,7 @@ fn show_lanes(
         if let Some(plain) = &plain_lane {
             let lit = lane_el.look();
             // It lights the lane over what is painted there, so it blends and never makes it see-through.
-            if lit.background_unlike(plain, Color32::TRANSPARENT) == Color32::TRANSPARENT {
+            if lit.unlike(plain, crate::kit::element::Paint::Background, Color32::TRANSPARENT) == Color32::TRANSPARENT {
                 lanes_painter.rect_filled(row.time, 0.0, lit.background());
             }
             let edge = Rect::from_min_size(row.time.min, Vec2::new(2.0, row.time.height()));

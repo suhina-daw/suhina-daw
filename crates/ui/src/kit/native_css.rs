@@ -177,7 +177,7 @@ impl Computed {
 
     /// The element's outline, when it has one: its width, colour and offset in points.
     pub fn outline(&self) -> Option<(f32, Color32, f32)> {
-        use suhina_style::value::{Color, Length};
+        use suhina_style::value::Length;
         if self.value(Property::OutlineStyle) != Value::Keyword("solid") {
             return None;
         }
@@ -185,10 +185,7 @@ impl Computed {
             Value::Length(Length::Px(width)) if width.is_finite() && width > 0.0 => width.min(16.0),
             _ => return None,
         };
-        let color = match self.value(Property::OutlineColor) {
-            Value::Color(Color::Rgba([r, g, b, a])) => Color32::from_rgba_unmultiplied(r, g, b, a),
-            _ => self.color,
-        };
+        let color = value_color(&self.value(Property::OutlineColor)).unwrap_or(self.color);
         let offset = match self.value(Property::OutlineOffset) {
             Value::Length(Length::Px(offset)) if offset.is_finite() => offset.clamp(-64.0, 64.0),
             _ => 0.0,
@@ -240,10 +237,7 @@ impl Computed {
 
     /// The custom property `name` (with its `--`) as a colour, when it is one.
     pub fn colour_variable(&self, name: &str) -> Option<Color32> {
-        match suhina_style::value::Color::parse(self.variable(name)?.trim()) {
-            Ok(suhina_style::value::Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
-            _ => None,
-        }
+        color_of(self.variable(name)?)
     }
 
     /// Whether the sheet gives the element a `box-shadow`.
@@ -281,11 +275,8 @@ impl Computed {
     }
 
     fn set_animated(&mut self, property: Property, value: &Value) {
-        use suhina_style::value::{Color, Length};
-        let color = |v: &Value| match v {
-            Value::Color(Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(*r, *g, *b, *a)),
-            _ => None,
-        };
+        use suhina_style::value::Length;
+        let color = value_color;
         let px = |v: &Value| match v {
             Value::Length(Length::Px(n)) if n.is_finite() => Some(*n),
             _ => None,
@@ -1077,9 +1068,22 @@ pub fn root_color(name: &str) -> Option<Color32> {
 }
 
 /// A custom property's value as a colour, when it is one.
-fn color_of(value: &str) -> Option<Color32> {
-    match suhina_style::value::Color::parse(value.trim()) {
-        Ok(suhina_style::value::Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
+pub(in crate::kit) fn color_of(value: &str) -> Option<Color32> {
+    rgba(&suhina_style::value::Color::parse(value.trim()).ok()?)
+}
+
+/// A property's value as a colour, when it is one.
+pub(in crate::kit) fn value_color(value: &Value) -> Option<Color32> {
+    match value {
+        Value::Color(color) => rgba(color),
+        _ => None,
+    }
+}
+
+/// `color` as egui's colour, when it is a plain one.
+fn rgba(color: &suhina_style::value::Color) -> Option<Color32> {
+    match *color {
+        suhina_style::value::Color::Rgba([r, g, b, a]) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
         _ => None,
     }
 }

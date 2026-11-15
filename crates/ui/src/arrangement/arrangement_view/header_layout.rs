@@ -9,6 +9,8 @@
 use super::*;
 use crate::kit::native_css::row::{self, Bar, Item};
 
+type Tree = row::Tree<Slot>;
+
 /// What a header's layout depends on besides its size.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Header {
@@ -100,10 +102,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     let mut bar = el.map_or_else(|| Bar::strip("track-header", rect.size()), |el| Bar::kind_of(el, rect.size()));
     // The header's border and padding, as its layout gives them: what it holds goes inside.
     let insets = row::insets(&bar).unwrap_or([0.0; 4]);
-    let inside = Rect::from_min_max(
-        Pos2::new(rect.left() + insets[3], rect.top() + insets[0]),
-        Pos2::new(rect.right() - insets[1], rect.bottom() - insets[2]),
-    );
+    let inside = row::inset(rect, insets);
     let spacious = inside.height() >= 60.0;
     let tiny = inside.height() < 20.0;
     let header_row = if tiny {
@@ -192,13 +191,13 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     bar = bar.attribute("layout", shape.word()).attribute("size", size).flag("name-first", name_first);
     let mut tree = Tree::default();
     if header.ancestors > 0 {
-        tree.add(part("group", "header-indent").width(indent * indent_scale), Slot::Indent);
+        tree.add(Item::part("group", "header-indent").width(indent * indent_scale), Slot::Indent);
     }
-    tree.add(part("track-colour", "arrangement-color").width(band), Slot::Band);
-    let body = tree.add(part("group", "header-body"), Slot::None);
-    tree.add(part("meter", "arrangement-meter").width(meter::WIDTH).height(meter_height), Slot::Meter);
-    let first_line = tree.add(part("group", "header-first").in_group(body), Slot::None);
-    let second_line = tall.then(|| tree.add(part("group", "header-second").in_group(body), Slot::None));
+    tree.add(Item::part("track-colour", "arrangement-color").width(band), Slot::Band);
+    let body = tree.add(Item::part("group", "header-body"), Slot::None);
+    tree.add(Item::part("meter", "arrangement-meter").width(meter::WIDTH).height(meter_height), Slot::Meter);
+    let first_line = tree.add(Item::part("group", "header-first").in_group(body), Slot::None);
+    let second_line = tall.then(|| tree.add(Item::part("group", "header-second").in_group(body), Slot::None));
     let button = [Some(solo), Some(header_row)];
     let buttons = |tree: &mut Tree, line: usize| {
         tree.put("button", "track-on", [Some(on), Some(header_row)], line, Slot::TrackOn);
@@ -274,8 +273,6 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
             tree.put("dropdown", "arrangement-input", [None, Some(DROPDOWN)], body, Slot::Input);
         }
     }
-    let Tree { items, slots } = tree;
-    let laid = row::row(&bar, &items).unwrap_or_default();
     let mut parts = Parts {
         indent_scale,
         sends: vec![None; shown_sends],
@@ -291,8 +288,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
         },
         ..Parts::default()
     };
-    for (index, slot) in slots.iter().enumerate() {
-        let at = laid.at(index, rect.min);
+    for (slot, at) in tree.lay_out(&bar, rect.min) {
         match slot {
             Slot::None => {}
             Slot::Indent => parts.indent = at,
@@ -310,7 +306,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
             Slot::Volume => parts.volume = at,
             Slot::Pan => parts.pan = at,
             Slot::Send(send) => {
-                if let Some(place) = parts.sends.get_mut(*send) {
+                if let Some(place) = parts.sends.get_mut(send) {
                     *place = at;
                 }
             }
@@ -323,33 +319,10 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     parts
 }
 
-/// An item of the header's tree named `name`, with `kind`, and the id a theme selects it by where
-/// the registry gives it one.
-fn part(name: &'static str, kind: &str) -> Item {
-    let item = Item::new(name).attribute("kind", kind);
-    match suhina_theme_package::elements::element_id(name, Some(kind)) {
-        Some(id) => item.id(&id),
-        None => item,
-    }
-}
-
-/// The header's items, in the tree's order, each with the part it is.
-#[derive(Default)]
-struct Tree {
-    items: Vec<Item>,
-    slots: Vec<Slot>,
-}
-
 impl Tree {
-    fn add(&mut self, item: Item, slot: Slot) -> usize {
-        self.items.push(item);
-        self.slots.push(slot);
-        self.items.len() - 1
-    }
-
     /// A part `name` of `kind` with its content `size` on the line (or the body) at `line`.
     fn put(&mut self, name: &'static str, kind: &str, size: [Option<f32>; 2], line: usize, slot: Slot) {
-        let mut item = part(name, kind).in_group(line);
+        let mut item = Item::part(name, kind).in_group(line);
         item.size = size;
         self.add(item, slot);
     }

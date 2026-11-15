@@ -177,14 +177,9 @@ pub fn initial_color(variable: &str) -> Option<egui::Color32> {
             core()
                 .iter()
                 .filter_map(|property| {
-                    let initial = property.initial.as_deref()?;
-                    let Ok(suhina_style::value::Color::Rgba([r, g, b, a])) =
-                        suhina_style::value::Color::parse(initial.trim())
-                    else {
-                        return None;
-                    };
+                    let color = super::native_css::color_of(property.initial.as_deref()?)?;
                     let name = property.name.strip_prefix("--")?;
-                    Some((name.to_owned(), egui::Color32::from_rgba_unmultiplied(r, g, b, a)))
+                    Some((name.to_owned(), color))
                 })
                 .collect()
         })

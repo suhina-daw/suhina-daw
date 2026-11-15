@@ -83,7 +83,7 @@ pub(super) fn send_knob(
     if amount > 0.0 || response.has_focus() {
         let fill = hot.gamma_multiply(amount.max(0.3));
         let button = crate::kit::element::BUTTON.response(&response).enter();
-        widgets::track_button_face(ui, painter, rect, &button, &response, fill);
+        widgets::track_button_face(painter, rect, &button, &response, fill);
     }
     let letter = send.name.chars().next().map(String::from).unwrap_or_default();
     // `send { appearance: knob }` draws it as a knob, as in the mixer (`send.knob.*` artwork when

@@ -1854,9 +1854,15 @@ pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: 
 /// window, as the sample map's kind colours are.
 pub(crate) fn muted_clip_grey(selected: bool) -> Color32 {
     static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
-    let greys = GREYS.get_or_init(|| {
+    muted_grey(&GREYS, "clip", selected)
+}
+
+/// The background the base sheet gives `arrangement <element>[muted]` (`[muted][selected]` while
+/// `selected`), worked out once into `greys`.
+pub(super) fn muted_grey(greys: &std::sync::OnceLock<[Color32; 2]>, element: &str, selected: bool) -> Color32 {
+    let greys = greys.get_or_init(|| {
         let of = |attributes: &[(&str, &str)]| {
-            crate::kit::native_css::base_background(Some("arrangement"), "clip", attributes).unwrap_or(Color32::GRAY)
+            crate::kit::native_css::base_background(Some("arrangement"), element, attributes).unwrap_or(Color32::GRAY)
         };
         [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
     });

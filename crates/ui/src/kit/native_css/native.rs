@@ -129,11 +129,8 @@ fn base_property(within: Option<&str>, name: &str, attributes: &[(&str, &str)], 
     let sheets: Vec<AppliedSheet<'_>> =
         base_tier(true).into_iter().map(|sheet| AppliedSheet { sheet, layer: Layer::Base, root: None }).collect();
     let style = cascade::last_style(&tree, None, viewport, &sheets).ok()?;
-    match style.get(property) {
-        value if value == property.initial() => None,
-        Value::Color(Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
-        _ => None,
-    }
+    let value = style.get(property);
+    if value == property.initial() { None } else { super::value_color(&value) }
 }
 
 fn viewport(engine: &Engine) -> Viewport {
@@ -410,10 +407,7 @@ pub(super) fn computed(style: &ComputedStyle) -> Computed {
 /// [`computed`], keeping `style` itself.
 fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
     let style = resolved.as_ref();
-    let color = |property| match style.get(property) {
-        Value::Color(Color::Rgba([r, g, b, a])) => Color32::from_rgba_unmultiplied(r, g, b, a),
-        _ => Color32::TRANSPARENT,
-    };
+    let color = |property| super::value_color(&style.get(property)).unwrap_or(Color32::TRANSPARENT);
     let font = match style.get(Property::FontSize) {
         Value::Length(Length::Px(value)) => value,
         _ => super::theme::TEXT,

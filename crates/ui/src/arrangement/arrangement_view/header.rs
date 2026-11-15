@@ -644,7 +644,7 @@ pub(super) fn track_header(
                 )
                 .on_hover_text("Scroll sends with Shift + mouse wheel");
                 let el = crate::kit::element::BUTTON.response(&response).enter();
-                widgets::track_button_face(ui, painter, at, &el, &response, el.background());
+                widgets::track_button_face(painter, at, &el, &response, el.background());
                 widgets::text_in(
                     painter,
                     at,
@@ -704,12 +704,5 @@ pub(super) fn track_header(
 /// selected), worked out once: the fallback where no sheet styles the window.
 pub(super) fn muted_header_grey(selected: bool) -> Color32 {
     static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
-    let greys = GREYS.get_or_init(|| {
-        let of = |attributes: &[(&str, &str)]| {
-            crate::kit::native_css::base_background(Some("arrangement"), "track-header", attributes)
-                .unwrap_or(Color32::GRAY)
-        };
-        [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
-    });
-    greys[usize::from(selected)]
+    super::clip::muted_grey(&GREYS, "track-header", selected)
 }

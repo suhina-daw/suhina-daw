@@ -13,7 +13,7 @@ use egui::{
 use serde_json::Value;
 
 use crate::kit::element::{
-    Armed, BUTTON, Checked, DROPDOWN, DROPDOWN_ARROW, Entered, KNOB, Look, SLIDER, SLIDER_FILL, SLIDER_HANDLE,
+    Armed, BUTTON, Checked, DROPDOWN, DROPDOWN_ARROW, Entered, KNOB, Look, Paint, SLIDER, SLIDER_FILL, SLIDER_HANDLE,
     SLIDER_RAIL, Sides, TEXT_INPUT, TOGGLE, VALUE,
 };
 use crate::kit::{motion, theme};
@@ -275,7 +275,7 @@ pub fn hover(ui: &Ui, response: &Response) -> f32 {
 /// Shared track-button surface. Colors and focus outlines follow the active theme.
 /// Geometry stays inside the caller's hit target, including compact mixer strips.
 /// `el` is the button its caller entered (`button#solo`).
-pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, el: &Entered, response: &Response, fill: Color32) {
+pub fn track_button_face(painter: &Painter, rect: Rect, el: &Entered, response: &Response, fill: Color32) {
     let radius = el.radius_or((rect.height() * 0.25).min(5.0));
     surface(painter, rect, el, response, false, fill, radius, None);
     focus_ring(painter, rect, el, response, radius);
@@ -432,8 +432,8 @@ impl Toggle {
         let off = (plain.background_or(off.0), ink);
         match sides {
             Some(sides) => {
-                let fill = sides.lit.background_unlike(&sides.plain, on);
-                let ink = sides.lit.own_color_unlike(&sides.plain, ink_on(fill));
+                let fill = sides.lit.unlike(&sides.plain, Paint::Background, on);
+                let ink = sides.lit.unlike(&sides.plain, Paint::OwnColor, ink_on(fill));
                 Self { off, on: (fill, ink), own_image: sides.entered_lit && sides.lit.image_unlike(&sides.plain) }
             }
             None => Self { off, on: (on, ink_on(on)), own_image: false },
@@ -600,7 +600,7 @@ pub fn lit_toggle(
     attrs: &[super::element::Attr],
     on: bool,
 ) -> Lit {
-    lit_toggle_keeping(ui, response, builder, attrs, on, ("toggle", Readable::Always))
+    lit_toggle_of(ui, response, builder, attrs, on, (Some("toggle"), Readable::Always))
 }
 
 /// [`lit_toggle`] of a toggle of its own `kind` (a `button[kind="record"]`), whose lit ink the sheet
@@ -614,7 +614,7 @@ pub fn lit_toggle_kind(
     on: bool,
     kind: &'static str,
 ) -> Lit {
-    lit_toggle_keeping(ui, response, builder, attrs, on, (kind, Readable::OnThemeFill))
+    lit_toggle_of(ui, response, builder, attrs, on, (Some(kind), Readable::OnThemeFill))
 }
 
 /// [`lit_toggle_kind`] of a toggle with no `kind` of its own, whose states `attrs` (`[playing]`) the
@@ -639,18 +639,8 @@ enum Readable {
     OnThemeFill,
 }
 
-fn lit_toggle_keeping(
-    ui: &Ui,
-    response: &Response,
-    builder: super::element::Builder<'_>,
-    attrs: &[super::element::Attr],
-    on: bool,
-    (kind, keep): (&'static str, Readable),
-) -> Lit {
-    lit_toggle_of(ui, response, builder, attrs, on, (Some(kind), keep))
-}
-
-/// [`lit_toggle_keeping`] of a toggle with the `kind` its builder gives it, or none.
+/// [`Lit`] of a toggle of `kind`, or the one its builder gives it, whose ink is kept readable as
+/// `keep` says.
 fn lit_toggle_of(
     ui: &Ui,
     response: &Response,
@@ -697,9 +687,9 @@ fn sheet_toggle(
     }
     let lit = ends(true);
     let fill = at(&lit, Look::background);
-    let (ink, themed_ink, themed_fill) = lit.0.style().map_or((at(&lit, Look::color), false, false), |style| {
-        (at(&lit, Look::color), style.authored.color, style.authored.background)
-    });
+    let ink = at(&lit, Look::color);
+    let (themed_ink, themed_fill) =
+        lit.0.style().map_or((false, false), |style| (style.authored.color, style.authored.background));
     let ink = if themed_ink || (keep == Readable::OnThemeFill && !themed_fill) { ink } else { readable(ink, fill) };
     Toggle { off, on: (fill, ink), own_image: entered_lit && lit.0.image_unlike(&plain.0) }
 }
@@ -731,7 +721,7 @@ pub fn solo_button(
     let response = button_area(ui, rect, id, label);
     // `button#solo`, `[checked]` while soloed: only a rule for that state lights it.
     let Lit { el, toggle, lit } =
-        lit_toggle_keeping(ui, &response, BUTTON.id("solo"), &[Checked], solo, ("solo", Readable::Always));
+        lit_toggle_of(ui, &response, BUTTON.id("solo"), &[Checked], solo, (Some("solo"), Readable::Always));
     let (fill, text) = toggle.at(lit);
     toggle_face(painter, rect, &el, &response, fill, toggle.image(lit));
     if !super::skin::paint(painter, rect, "solo", super::skin::State::response(&response, solo), text, 0.0) {
@@ -808,8 +798,7 @@ pub fn arm_button(
     // `button#arm`, `[checked][armed]` while armed: only a rule for that state lights it, so the
     // plain button it is compared with has neither. The red dot on its dark red is the arm's look,
     // whatever their contrast; on a lit fill a rule gives, the red unless it does not read there.
-    let Lit { el, toggle, lit } =
-        lit_toggle_keeping(ui, &response, BUTTON.id("arm"), &[Checked, Armed], armed, ("arm", Readable::OnThemeFill));
+    let Lit { el, toggle, lit } = lit_toggle_kind(ui, &response, BUTTON.id("arm"), &[Checked, Armed], armed, "arm");
     let (fill, ring) = toggle.at(lit);
     toggle_face(painter, rect, &el, &response, fill, toggle.image(lit));
     let radius = (rect.height().min(rect.width()) * 0.22).clamp(2.5, 4.0);
@@ -966,11 +955,10 @@ pub fn subtle_dropdown(ui: &Ui, painter: &Painter, rect: Rect, response: &Respon
     let plain = DROPDOWN.response(response).probe();
     let own = DROPDOWN.response(response).attribute("kind", "subtle").look();
     // What only a rule for the kind gives: not what a rule for every dropdown does.
-    let themed = |own: Option<Color32>, plain: Option<Color32>| own.filter(|own| Some(*own) != plain);
     let amount = hover(ui, response);
     let mut surface = background;
     if amount > 0.0 || response.has_focus() {
-        surface = themed(own.themed_background(), plain.themed_background()).unwrap_or_else(|| {
+        surface = own.themed_unlike(&plain, Paint::Background).unwrap_or_else(|| {
             let hot = DROPDOWN.attribute("kind", "subtle").pointer(true, false, false).probe();
             motion::mix(background, hot.background(), amount.max(0.3))
         });
@@ -978,11 +966,11 @@ pub fn subtle_dropdown(ui: &Ui, painter: &Painter, rect: Rect, response: &Respon
     let line = if response.has_focus() {
         own.accent()
     } else {
-        themed(own.themed_border(), plain.themed_border())
+        own.themed_unlike(&plain, Paint::Border)
             .unwrap_or_else(|| motion::mix(background, theme::text_on(background), 0.25 + 0.25 * amount))
     };
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(line));
-    let ink = themed(own.themed_color(), plain.themed_color()).unwrap_or_else(|| theme::text_on(surface));
+    let ink = own.themed_unlike(&plain, Paint::Color).unwrap_or_else(|| theme::text_on(surface));
     dropdown_contents(painter, rect, text, ink, motion::mix(surface, ink, 0.65));
 }
 
