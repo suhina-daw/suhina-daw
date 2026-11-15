@@ -172,8 +172,10 @@ pub enum PluginRequest {
     SetEnabled(String, bool),
     /// Switch several plug-ins (by spec) on or off together (#725).
     SetEnabledMany(Vec<String>, bool),
-    /// Read one file again now.
-    ScanFile(String),
+    /// Read these files again now, one after another.
+    ScanFiles(Vec<String>),
+    /// Show a file in the system's file manager (Explorer, Finder), picked in its folder.
+    ShowFile(String),
 }
 
 /// The themes as the page shows them.

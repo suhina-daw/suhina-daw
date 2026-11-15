@@ -201,6 +201,7 @@ fn settings_survive_a_round_trip() {
         agents: true,
         mcp_project_folder: false,
         mcp_write_folders: vec![r"C:\Music\Mixes = mine".into(), "/tmp/renders".into()],
+        plugin_manager_columns: vec![28, 240, 150, 80, 64, 70, 140, 300, 84],
         auto_arm: true,
     };
     assert_eq!(Settings::from_text(&settings.to_text()), (settings, Vec::new()));

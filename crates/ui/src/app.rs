@@ -199,6 +199,9 @@ pub enum View {
 /// The Settings dialog at most: the page list, the page and their margins wide, and tall enough
 /// for the longest page on a common screen.
 const SETTINGS_SIZE: Vec2 = Vec2::new(772.0, 720.0);
+/// The plug-in manager's size where the window has room: wider than Settings, for its library
+/// sidebar, its table and the selected plug-in's panel side by side (#1461).
+const MANAGER_SIZE: Vec2 = Vec2::new(1180.0, 760.0);
 
 /// A project with unsaved changes the user is leaving, and what happens once they answered.
 #[derive(Debug, Clone, PartialEq)]

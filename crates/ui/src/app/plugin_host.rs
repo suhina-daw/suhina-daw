@@ -280,19 +280,43 @@ impl App {
                 self.browser.relist();
                 self.plugins_read = false;
             }
-            PluginRequest::ScanFile(file) => {
+            PluginRequest::ShowFile(file) => {
+                if let Err(e) = show_in_file_manager(std::path::Path::new(&file)) {
+                    self.status = Status::Error(format!("could not show {file}: {e}"));
+                }
+            }
+            PluginRequest::ScanFiles(files) => {
                 let mut library = self.projects.library_mut().clone();
                 let (done, receive) = std::sync::mpsc::channel();
+                let count = files.len();
                 let started = std::thread::Builder::new().name("suhina-plugin-scan".into()).spawn(move || {
-                    let report =
-                        library.scan_file_again(std::path::Path::new(&file)).map(|r| (r.read.len(), r.failed.len()));
-                    let _unheard = done.send(ScanDone { library, report });
+                    // Each file read again in turn; the first that cannot be stops the rest.
+                    let mut totals = Ok((0, 0));
+                    for file in &files {
+                        match library.scan_file_again(std::path::Path::new(file)) {
+                            Ok(r) => {
+                                if let Ok((read, failed)) = &mut totals {
+                                    *read += r.read.len();
+                                    *failed += r.failed.len();
+                                }
+                            }
+                            Err(e) => {
+                                totals = Err(e);
+                                break;
+                            }
+                        }
+                    }
+                    let _unheard = done.send(ScanDone { library, report: totals });
                 });
                 match started {
                     Ok(_) => {
                         self.scan = Some(receive);
                         self.plugins.scanning = true;
-                        self.status = Status::Hint("Scanning the file again".into());
+                        self.status = Status::Hint(if count == 1 {
+                            "Scanning the file again".into()
+                        } else {
+                            format!("Scanning {count} files again")
+                        });
                     }
                     Err(e) => self.status = Status::Error(format!("could not start the scan: {e}")),
                 }
@@ -360,4 +384,25 @@ impl App {
             self.show_editor();
         }
     }
+}
+
+/// Opens the system's file manager at `file`, picked in its folder where the system can do that:
+/// Explorer on Windows, Finder on macOS, the folder in the desktop's file manager elsewhere. The
+/// file manager runs on its own; nothing waits for it.
+#[cfg(target_os = "windows")]
+fn show_in_file_manager(file: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    // Explorer reads `/select,` with the path quoted after it, not the whole argument quoted,
+    // which is how a path with spaces would otherwise be passed.
+    std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", file.display())).spawn().map(drop)
+}
+
+#[cfg(target_os = "macos")]
+fn show_in_file_manager(file: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("open").arg("-R").arg(file).spawn().map(drop)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn show_in_file_manager(file: &std::path::Path) -> std::io::Result<()> {
+    std::process::Command::new("xdg-open").arg(file.parent().unwrap_or(file)).spawn().map(drop)
 }

@@ -225,7 +225,8 @@ impl App {
                 let clear = clear_of(window, self.status_bar_rect);
                 let mut bounds = largest(&clear).shrink(PAD);
                 bounds = bounds.intersect(window.shrink(PAD));
-                let size = Vec2::new(SETTINGS_SIZE.x.min(bounds.width()), SETTINGS_SIZE.y.min(bounds.height()));
+                let want = if self.plugins.manager.open { MANAGER_SIZE } else { SETTINGS_SIZE };
+                let size = Vec2::new(want.x.min(bounds.width()), want.y.min(bounds.height()));
                 let position = ui
                     .ctx()
                     .data(|data| data.get_temp::<Pos2>(Id::unique("settings-panel-position")))
@@ -259,6 +260,11 @@ impl App {
             if !self.plugins_read {
                 self.read_plugins();
             }
+            // The column widths as last dragged, from the UI settings.
+            if !self.plugins.manager.widths_read {
+                self.plugins.manager.widths = self.settings.plugin_manager_columns.clone();
+                self.plugins.manager.widths_read = true;
+            }
             let out = ui
                 .scope_builder(egui::UiBuilder::new().max_rect(panel), |ui| {
                     settings_view::input_style(ui);
@@ -267,6 +273,10 @@ impl App {
                 .inner;
             if out.close {
                 self.plugins.manager.open = false;
+            }
+            if let Some(widths) = out.widths {
+                self.settings.plugin_manager_columns = widths;
+                self.settings_changed = true;
             }
             if let Some(request) = out.request {
                 self.plugin_request(request);

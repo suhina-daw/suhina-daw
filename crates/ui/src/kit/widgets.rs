@@ -1440,15 +1440,38 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
 /// start panel's *Download update now* under Help › Check for updates…) gets a button of its own
 /// (#1229): egui keeps a widget in the layer it was first seen in that frame.
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
-    let response = button_area(ui, rect, Id::unique(("dialog-button", ui.layer_id(), label)), label);
-    let el = BUTTON.response(&response).enter();
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
+    let id = Id::unique(("dialog-button", ui.layer_id(), label));
+    button_with_id(ui, painter, rect, id, text, label, false).clicked()
+}
+
+/// A [`button`] with an id of the caller's: for buttons whose label two of them may share, such
+/// as a row's for a file whose name another row's file has too (#1461). `primary` draws it lit,
+/// in the theme's accent, as the one a page means most (`button[checked]` in a sheet).
+pub(crate) fn button_with_id(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    id: Id,
+    text: &str,
+    label: &str,
+    primary: bool,
+) -> Response {
+    let response = button_area(ui, rect, id, label);
+    let el = BUTTON.response(&response).attr(super::element::Checked, primary).enter();
+    let hovered = hover(ui, &response);
+    let (fill, ink) = if primary {
+        (motion::mix(theme::accent(), theme::control_hover(), hovered * 0.25), theme::text_inverse())
+    } else {
+        (motion::mix(theme::control_background(), theme::control_hover(), hovered), theme::text_primary())
+    };
     let radius = el.radius_or(0.0);
-    button_surface(painter, rect, &el, &response, false, fill, radius);
-    painter.rect_stroke(rect, radius, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    button_surface(painter, rect, &el, &response, primary, fill, radius);
+    if !primary {
+        painter.rect_stroke(rect, radius, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    }
     let small = theme::ui_font(theme::TEXT_SMALL);
-    text_in(painter, rect, Align2::CENTER_CENTER, text, small, theme::text_primary());
-    response.clicked()
+    text_in(painter, rect, Align2::CENTER_CENTER, text, small, ink);
+    response
 }
 
 /// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a

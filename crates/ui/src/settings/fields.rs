@@ -230,6 +230,20 @@ pub(super) const FIELDS: &[Field] = &[
             parse_window_rect(v).map(|rect| s.map_window_rect = Some(rect)).is_some()
         },
     },
+    Field {
+        key: "plugin_manager_columns",
+        write: |s| s.plugin_manager_columns.iter().map(u32::to_string).collect::<Vec<_>>().join(", "),
+        read: |s, v| {
+            let widths: Option<Vec<u32>> = v
+                .split(',')
+                .map(str::trim)
+                .filter(|w| !w.is_empty())
+                .map(|w| w.parse::<u32>().ok().map(|w| w.clamp(MANAGER_COLUMN.0, MANAGER_COLUMN.1)))
+                .collect();
+            // A list longer than the table's columns is from no version of Suhina: ignored.
+            widths.filter(|w| w.len() <= MANAGER_COLUMNS).map(|w| s.plugin_manager_columns = w).is_some()
+        },
+    },
     text!("audio_host", audio_host),
     text!("audio_device", audio_device),
     number!("audio_sample_rate", audio_sample_rate, u32, only |r: &u32| *r <= MAX_SAMPLE_RATE),

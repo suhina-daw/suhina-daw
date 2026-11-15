@@ -3,9 +3,10 @@ description: The plug-in manager and the plug-in folders: every plug-in and ever
 read_when: plug-in manager, manage plug-ins, switch a plug-in off, disable plug-in, blocklist, plug-in folders, VST2 folder, folder format, scan again, failed plug-ins, incompatible architecture, Intel plug-in on Apple silicon, plugin.setEnabled, plugin.setFolderEnabled, plugin.scanFile
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-15
 covers:
   - crates/ui/src/settings/plugin_manager.rs
+  - crates/ui/src/settings/plugin_manager_tests.rs
   - crates/ui/src/settings/settings_view.rs
   - crates/plugins/src/arch.rs
   - crates/plugins/src/library.rs
@@ -17,8 +18,37 @@ covers:
 
 Settings › Plug-ins holds the folders scans look in and the scan itself; everything the scans
 found is in the **plug-in manager**, opened with **Manage plug-ins** on that page. The manager
-takes the Settings dialog's place until **Close** (or Escape) shows Settings again. What it
-changes goes through the `plugin.*` commands, so an agent and `suhina-cli plugins` do the same.
+takes the Settings dialog's place, larger than it where the window has room, until **Close**
+(or Escape) shows Settings again. What it changes goes through the `plugin.*` commands, so an
+agent and `suhina-cli plugins` do the same. Every colour, font and surface in it comes from the
+current theme: switching the theme changes the manager with the rest of the app.
+
+## Layout
+
+- **Top bar:** the title and how many plug-ins were found on the left; **Scan for new** (drawn
+  as the page's main button, in the theme's accent), **Rescan all** and **Close** on the right.
+  While a scan runs the scan buttons wait.
+- **Library sidebar** on the left: **All plug-ins**, **Enabled**, **Disabled** and **Needs
+  attention** (the files that failed and those built for another processor), each with how
+  many rows it holds; under **Needs attention**, **Failed** and **Other processor** apart. Below,
+  the filters: **Type** (all types, effects, instruments), **Format** (CLAP, VST3, VST2
+  checkboxes; none ticked shows every format, a file's format comes from its extension and a
+  library file counts as VST2) and **Vendor** (a drop-down of every vendor found). A type or a
+  vendor leaves the files out, since they have neither. At the bottom **Scan locations**, which
+  shows Settings › Plug-ins with the folders scans look in, and **Reset filters**, which shows
+  every row again (the search too).
+- **In the middle:** the search field; under it, when files failed or are built for another
+  processor, a notice that says how many ("6 files failed to scan · 6 use an incompatible
+  architecture") with **Review issues**, which shows **Needs attention**; then the table.
+- **Selected plug-in** panel on the right: the row picked last, with its name and vendor (a
+  file's folder), its format and type as tags, an **Enabled** switch, its version and status,
+  the file's location with **Show in folder**, and **Rescan plug-in** (**Scan again** for a file),
+  which reads that file again now (`plugin.scanFile`). A plug-in switched off is hidden from the
+  browser, which the panel says.
+- **Status bar:** how many plug-ins, how many rows the filters show when not all, and how many
+  are picked on the left; whether a scan runs on the right.
+
+A dialog too narrow for all three drops the selected plug-in's panel first, then the sidebar.
 
 ## The table
 
@@ -27,20 +57,31 @@ one table (a file that loads and holds no plug-ins is not in it):
 
 | Column | What it shows |
 |---|---|
-| **On** | A checkbox for a plug-in: on (the default) or switched off; greyed out while a scan runs, since the scan's result replaces the list. Files have none. |
+| (checkbox) | A plug-in's switch: on (the default) or switched off; greyed out while a scan runs, since the scan's result replaces the list. Files have none. The heading's checkbox picks every row shown, or none. |
 | **Name** | The plug-in's name; for a file's row, the file's name. |
-| **Vendor**, **Type**, **Version** | From the scan; the type is `instrument` or `effect`. |
-| **Format** | `vst3`, `clap` or `vst2` (`vst2` where the host's `vst2` feature is on); for a file, its extension. |
-| **Status** | `on`, `switched off`, `failed` (in red) or `other processor`. |
-| **File** | The plug-in's file; for a file that gave none, why (in red for a failure). |
-| (action) | **Scan again** for a file that failed or is built for another processor. |
+| **Vendor**, **Type**, **Version** | From the scan; the type is *Instrument* or *Effect*. |
+| **Format** | VST3, CLAP or VST2 (VST2 where the host's `vst2` feature is on); for a file, from its extension. |
+| **Status** | A mark and a word: *Ready*, *Disabled*, *Failed* or *Wrong architecture* (the two last with a warning mark, in the theme's recording and warning colours). |
+| **File** | The plug-in's file; for a file that gave none, why. It takes the width the other columns leave. |
+| (action) | **Scan again** for a file that failed or is built for another processor; the column is there only while such a row is shown. |
 
 Each column heading sorts by it, again for the other direction (the name in natural order, the
-others by their text, the name breaking ties). The search field above keeps the rows whose
-name, vendor or file (or reason) hold every word typed. The counts beside the title say how
-many plug-ins, how many switched off, how many files failed and how many are built for another
-processor. **Scan** and **Rescan all** are there as on the Settings page; while a scan runs the
-buttons wait and "Scanning…" shows.
+others by their text, the name breaking ties). The edge between two headings, from **Name** to
+**Status**, is dragged to make the column on its left wider or narrower, with the resize pointer
+over it and no column narrower than its least width; a double-click on the edge fits the column
+to its heading and the rows the table shows. The widths are kept in the UI settings
+(`plugin_manager_columns` in `settings.txt`), so the manager opens with them again, after a
+restart too. Text a cell cuts ends with an ellipsis, and the pointer over the cell shows the whole
+text (the whole path, the whole reason); a file row's name shows the file's whole path.
+
+The search field keeps the rows whose name, vendor, file or reason hold every word typed, within
+what the sidebar shows. A plug-in switched off is drawn greyed out, and the row picked last has
+a mark in the theme's accent on its left.
+
+Each file row's **Scan again** button has an id of its own, made from the file's whole path, and
+a label that names the file and its folder ("Scan again d3dcompiler_47.dll in C:\Plugins\VST"),
+so two files of the same name in different folders get a button each and a click reaches its own
+row (#1461).
 
 ## Switching a plug-in off
 
@@ -52,7 +93,7 @@ it, and a project that uses it opens with the device missing, so it never loads.
 again, it is offered at once and a project opened after finds it.
 
 Several at once: a click on a row picks it (**Ctrl** or **Cmd** adds a row, **Shift** takes the
-run from the last one picked), and the right-click menu has **Turn off** and **Turn on**. When
+run from the last one picked), and a plug-in's right-click menu has **Turn off** and **Turn on**. When
 the right-clicked row is one of the picked ones, the menu acts on every picked plug-in the table
 shows (the menu says how many, "Turn off 3 plug-ins"), in the order they were picked; a picked
 plug-in the search hides, or a rescan removed, is left alone. When the row is not picked, the
@@ -66,13 +107,16 @@ What a scan gives for a file is one of four (ADR 0006 › 9):
 
 - **Plug-ins**: listed, and in the browser.
 - **Failed** (crashed, hung, could not load, no factory): may be passing, so it is read once
-  more in the same scan and later scans try it again (a hang at most once a day). Listed in red
-  with the reason's first line; **Scan again** (`plugin.scanFile { file }`, `suhina-cli plugins
-  scan-file <file>`) reads it again now.
+  more in the same scan and later scans try it again (a hang at most once a day). Listed as
+  *Failed* with the reason; **Scan again** (`plugin.scanFile { file }`, `suhina-cli plugins
+  scan-file <file>`) reads it again now. A file row's right-click menu has **Scan again**, for
+  every picked file row when the row is one of them ("Scan 3 files again"), and **Show in
+  Explorer** (**Show in Finder** on macOS, **Show in folder** elsewhere), which opens the system's
+  file manager with the file picked in its folder; a plug-in's menu has it too.
 - **Built for another processor**: the executable's header (Mach-O, PE or ELF) lists only other
   processors than the one Suhina runs on, such as an Intel-only plug-in on an Apple silicon Mac.
-  It is never loaded and is settled: not read again until the file changes. Listed with
-  `other processor` and the processors it is built for, apart from the failures
+  It is never loaded and is settled: not read again until the file changes. Listed as *Wrong
+  architecture* with the processors it is built for, apart from the failures
   (`plugin.list` › `incompatible`).
 - **No plug-ins**: the file loads and holds no audio plug-ins (a vendor's shell bundle with no
   classes). Settled and not in the table; `plugin.list` with `ignored: true` lists it.
