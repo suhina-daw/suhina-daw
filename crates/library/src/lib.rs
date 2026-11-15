@@ -11,6 +11,7 @@ pub mod index;
 pub mod store;
 mod worker;
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -953,6 +954,20 @@ fn compact(text: &str) -> String {
     text.chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
+/// Whether `text` starts with `prefix` when the spaces and punctuation of both are left out,
+/// compared without making either string. A prefix with no letter or digit starts nothing.
+fn compact_starts_with(text: &str, prefix: &str) -> bool {
+    let mut text = text.chars().filter(|c| c.is_alphanumeric());
+    let mut any = false;
+    for p in prefix.chars().filter(|c| c.is_alphanumeric()) {
+        if text.next() != Some(p) {
+            return false;
+        }
+        any = true;
+    }
+    any
+}
+
 /// How well an item called `name`, at `path` below its folder, matches `words` (lower-cased):
 /// `None` when a word is in neither; 0 for the exact name, 1 when the name starts with the
 /// first word, 2 when a word in the name does, 3 otherwise. No words match everything at 3.
@@ -970,9 +985,11 @@ pub fn rank(words: &[String], name: &str, path: &str) -> Option<u8> {
         if name_lower.contains(word.as_str()) || path_lower.contains(word.as_str()) {
             continue;
         }
-        let bare = compact(word);
+        // A word of letters and digits only, the usual one, is its own compacted form.
+        let bare: Cow<'_, str> =
+            if word.chars().all(char::is_alphanumeric) { Cow::Borrowed(word) } else { Cow::Owned(compact(word)) };
         let (name_bare, path_bare) = compacted.get_or_insert_with(|| (compact(&name_lower), compact(&path_lower)));
-        if bare.is_empty() || !(name_bare.contains(bare.as_str()) || path_bare.contains(bare.as_str())) {
+        if bare.is_empty() || !(name_bare.contains(&*bare) || path_bare.contains(&*bare)) {
             return None;
         }
     }
@@ -981,8 +998,7 @@ pub fn rank(words: &[String], name: &str, path: &str) -> Option<u8> {
     if words.len() == 1 && (stem == first || name_lower == first) {
         return Some(0);
     }
-    let first_bare = compact(first);
-    if name_lower.starts_with(first) || (!first_bare.is_empty() && compact(stem).starts_with(first_bare.as_str())) {
+    if name_lower.starts_with(first) || compact_starts_with(stem, first) {
         return Some(1);
     }
     let word_start =

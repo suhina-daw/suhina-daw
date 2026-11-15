@@ -106,6 +106,9 @@ fn a_search_finds_a_name_by_any_part_of_it_with_or_without_spaces() {
     assert_eq!(ranked("grandpianos", "Grand-Pianos x64", ""), Some(1));
     assert_eq!(ranked("grand pianos", "GrandPianos", ""), Some(1));
     assert_eq!(ranked("kick01", "Kick 01.wav", ""), Some(1));
+    assert_eq!(ranked("grand-pi", "Grand Pianos", ""), Some(1));
+    // A word longer than the name's stem is no prefix of it, though the path holds it.
+    assert_eq!(ranked("grandpianosx64", "Grand Pianos", "Keys/Grand Pianos x64.dll"), Some(3));
     assert_eq!(ranked("pianosx64", "Grand Pianos", "Keys/Grand Pianos x64.dll"), Some(3));
     // The path below the folder counts too, with or without its spaces.
     assert_eq!(ranked("grandpianos", "TP", "Keys/Grand Pianos x64.dll"), Some(3));
