@@ -76,13 +76,19 @@ impl Placement {
         {
             return None;
         }
-        let mut elapsed = content - self.offset;
+        // Where playback starts in the content: a start marker at or past the loop's end turns
+        // into the loop at once, as `content_beat` (and the engine) wrap it.
+        let offset = match self.loop_range {
+            Some((start, end)) if end > start && self.offset >= end => start + (self.offset - start) % (end - start),
+            _ => self.offset,
+        };
+        let mut elapsed = content - offset;
         if elapsed < 0.0 {
             // A beat before the offset is first played when the loop comes round to it: after the
             // stretch from the offset to the loop's end. Without a loop the clip never plays it.
             match self.loop_range {
-                Some((start, end)) if end > start && content >= start && self.offset < end => {
-                    elapsed = (end - self.offset) + (content - start);
+                Some((start, end)) if end > start && content >= start && offset < end => {
+                    elapsed = (end - offset) + (content - start);
                 }
                 _ => return None,
             }

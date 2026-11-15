@@ -7963,7 +7963,7 @@
         }
       },
       "sourceFingerprint": "a9f957ca99f7d332dd46dfaf6cced4f2469849aa0452310f7111123da721460a",
-      "description": "Raises the selected notes' velocity range by one: how far above its velocity each note may play, picked anew every time it plays.",
+      "description": "Raises the selected notes' velocity range by one. A positive range is how far above its velocity each note may play, a negative one how far below, picked anew every time it plays: raising a negative range narrows how much softer the notes may play.",
       "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
       "whenToUse": "Let a looped part vary in loudness from pass to pass.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
@@ -8050,7 +8050,7 @@
         }
       },
       "sourceFingerprint": "e51b205f168ce8e26a3e665181cd0e0773b0b8052ea45bdd1385c62ac371d12d",
-      "description": "Lowers the selected notes' velocity range by one; below 0 the notes may play softer than their velocity.",
+      "description": "Lowers the selected notes' velocity range by one: a positive range narrows how much louder the notes may play, and below 0 they may play softer than their velocity, picked anew every time they play.",
       "context": "Click the piano-roll note grid first; the key works only while the piano roll has the keyboard.",
       "whenToUse": "Narrow, or turn downwards, the variation of a note's loudness.",
       "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",

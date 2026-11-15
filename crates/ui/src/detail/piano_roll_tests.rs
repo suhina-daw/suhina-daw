@@ -201,6 +201,13 @@ fn an_arrangement_beat_is_the_inverse_of_the_content_beat() {
     // Past the clip's end it plays nothing.
     let short = Placement { length: 1.5, ..looped };
     assert_eq!(short.arrangement_beat(0.5), None);
+    // A start marker past the loop's end plays from inside the loop at once: the mapping stays
+    // the inverse of `content_beat` there.
+    let past = Placement { start: 0.0, length: 8.0, offset: 5.0, loop_range: Some((1.0, 3.0)) };
+    for at in [0.0, 0.5, 1.0, 1.5] {
+        let content = past.content_beat(at);
+        assert_eq!(content.and_then(|beat| past.arrangement_beat(beat)), Some(at), "at {at}");
+    }
     assert_eq!(looped.arrangement_beat(f64::NAN), None);
     // Round trip through both mappings where the clip plays.
     for at in [8.0, 9.5, 11.5] {

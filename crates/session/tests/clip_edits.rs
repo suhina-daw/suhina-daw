@@ -313,8 +313,12 @@ fn the_clip_edits_redo_and_refuse_malformed_parameters() {
         // Missing.
         ("note.join", at(json!({}))),
         ("note.fitToTime", at(json!({ "notes": [0, 1], "end": 4.0 }))),
+        ("note.fitToTime", at(json!({ "notes": [0, 1], "start": 0.0 }))),
+        ("note.fitToTime", at(json!({ "start": 0.0, "end": 4.0 }))),
         ("clip.crop", at(json!({ "start": 1.0 }))),
+        ("clip.crop", at(json!({ "end": 5.0 }))),
         ("clip.setOrigin", at(json!({}))),
+        ("clip.split", at(json!({}))),
         // The wrong type.
         ("note.join", at(json!({ "notes": "0, 1" }))),
         ("note.fitToTime", at(json!({ "notes": [0, 1], "start": "0", "end": 4.0 }))),

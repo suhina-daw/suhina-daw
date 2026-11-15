@@ -1180,7 +1180,7 @@ fn a_resumed_clip_rolls_the_velocities_the_uninterrupted_playback_rolls() {
     for block in expected.chunks_mut(2 * BLOCK) {
         reference.process(block);
     }
-    // The clip launches at beat 4; 14.3 beats in, it is more than two loops into its playback.
+    // The clip launches at beat 4; 14.3 beats of playback later it is more than two loops in.
     let mut old = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     start(&mut old);
     let split = 143 * BEAT / 10 / BLOCK;
@@ -1191,7 +1191,8 @@ fn a_resumed_clip_rolls_the_velocities_the_uninterrupted_playback_rolls() {
     let monitor = old.monitor();
     let (beat, marker) = (monitor.beat(), monitor.start_beat());
     let elapsed = monitor.elapsed_beats(0).unwrap();
-    assert!(elapsed > 8.0 && elapsed < 11.0, "{elapsed}");
+    // Played from the marker at beat 1, the clip launched at beat 4: 11.3 beats in, its third pass.
+    assert!(elapsed > 8.0 && elapsed < 12.0, "{elapsed}");
     let mut new = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
     for command in [
         LaunchCommand::SetPosition { beat: marker },

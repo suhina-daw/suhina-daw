@@ -219,6 +219,7 @@ fn two_quick_right_clicks_on_a_ghost_note_open_its_clip_and_no_menu() {
     let mut renderer = engine();
     let mut h = with_preset(&mut renderer, Preset::SelectFirst);
     let ghost = h.get_by_label(BASS_GHOST).rect().center();
+    let edited = h.state().selected_clip();
     h.hover_at(ghost);
     h.step();
     for _ in 0..2 {
@@ -229,6 +230,9 @@ fn two_quick_right_clicks_on_a_ghost_note_open_its_clip_and_no_menu() {
     h.run();
     assert!(!menu_open(&h), "the double right click goes into the clip");
     assert!(!h.state().piano_roll().menu_open());
+    let now = h.state().selected_clip();
+    assert!(now.is_some() && now != edited, "the ghost's clip is the one edited now: {now:?}");
+    assert!(h.query_by_label(BASS_GHOST).is_none(), "its notes are no longer ghosts");
 }
 
 #[test]
