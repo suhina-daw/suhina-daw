@@ -305,8 +305,16 @@ impl Projects {
             match &event {
                 programs::Event::Command { token: _, id, gesture, .. } => {
                     let same_stream = |(kept_program, kept_event): &(String, programs::Event)| match kept_event {
+                        // Only a gestured stream coalesces: a fader's drag arrives faster
+                        // than the looks and only its newest value matters. A gesture-less
+                        // command (a controller's toggle press) is a standalone event - every
+                        // one matters, and dropping the middle ones made a second solo press
+                        // vanish from the session.
                         programs::Event::Command { id: kept_id, gesture: kept_gesture, .. } => {
-                            kept_program == &program && kept_id == id && kept_gesture.as_deref() == gesture.as_deref()
+                            kept_program == &program
+                                && kept_id == id
+                                && gesture.is_some()
+                                && kept_gesture.as_deref() == gesture.as_deref()
                         }
                         _ => false,
                     };

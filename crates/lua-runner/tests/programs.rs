@@ -552,6 +552,37 @@ suhina.on_port_message(function(bytes, port, timestamp)
     end
 end)
 "#;
+/// A controller's toggle presses are standalone commands: two of the same press inside one
+/// look both dispatch, and the session ends at the second press's value. The storm coalescer
+/// only merges gestured streams - dropping the middle of a toggle made the second press
+/// vanish from the session while the hardware's LED (written at press time) had already
+/// flipped.
+const SCRIPT_TOGGLE: &str = r#"
+local sent = false
+suhina.on_port_message(function(bytes, port, timestamp)
+    local message = suhina.midi.parse(bytes)
+    if message ~= nil and message.kind == "note_on" and message.velocity > 0 and message.note == 49 then
+        sent = not sent
+        suhina.command("track.setSolo", { tracks = { 1 }, solo = sent })
+    end
+end)
+"#;
+
+#[test]
+fn toggle_presses_are_not_coalesced_away() {
+    let mut fixture = Fixture::claiming("toggles", SCRIPT_TOGGLE);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.test_extensions_pump_frames(5);
+    // Two presses inside one look.
+    fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
+    fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
+    fixture.projects.test_extensions_pump_frames(10);
+    // Both dispatched: the session ends at the second press's value, false.
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
+    assert_eq!(tracks[0]["solo"], json!(false), "{tracks}");
+}
+
 /// Stand-in MIDI ports: a claimed input port plays into the sink it was opened raw for, and a port that vanished and came back re-enumerates, and its
 /// connection is reopened fresh — the stale one died with the device, and the claim by token
 /// would otherwise keep holding it.
