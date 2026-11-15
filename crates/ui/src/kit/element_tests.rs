@@ -1039,7 +1039,8 @@ fn color_unlike_ignores_what_the_plain_item_has() {
 }
 
 /// The base sheet's muted grey is the Arrangement's: a muted Arrangement clip and track header are
-/// grey, and a deactivated Launcher clip, outside the Arrangement, is not (#1393 review). A base
+/// grey, and a deactivated Launcher clip, outside the Arrangement, keeps the look of its own
+/// `session clip[muted]` rule (#1393 review). A base
 /// sheet rule is never authored, so a drawn element's `background_or` keeps its fallback whatever
 /// the rule says; the host reads the grey through `base_background`.
 #[test]
@@ -1049,7 +1050,7 @@ fn the_muted_grey_reaches_the_arrangement_not_the_launcher() {
     let muted = [("muted", "")];
     assert_eq!(base_background(Some("arrangement"), "clip", &muted), grey, "arrangement clip[muted]");
     assert_eq!(base_background(Some("arrangement"), "track-header", &muted), grey, "arrangement track-header[muted]");
-    assert_eq!(base_background(Some("session"), "clip", &muted), None, "a Launcher clip");
+    assert_ne!(base_background(Some("session"), "clip", &muted), grey, "a Launcher clip keeps its own look");
     assert_eq!(base_background(None, "clip", &muted), None, "a clip outside the Arrangement");
 }
 

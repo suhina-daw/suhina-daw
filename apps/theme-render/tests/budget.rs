@@ -85,42 +85,46 @@ use suhina_theme_render::{Subject, scenes};
 ///
 /// #1269 (the time signature in the toolbar) raised them by 2 nodes and 1 identity in each scene:
 /// its two numbers are value controls a theme styles, as the tempo is, where it was plain text.
+/// With #1453's strips laid out in CSS and the stack's colours together (the combined #1023 pull
+/// request), every scene's counts are 5 nodes and 4 identities over #1452's, and the styles worked
+/// out after a theme or a colour change 4 more (459 and 460, 709 and 710; 471 and 472, 721 and 722
+/// on Windows, unmeasured there, moved by the same).
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 462,
-            identities: 456,
+            nodes: 465,
+            identities: 459,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 456,
+            theme_change_fresh: 459,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 457,
+            colour_change_fresh: 460,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 712,
-            identities: 706,
+            nodes: 715,
+            identities: 709,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 706,
+            theme_change_fresh: 709,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 707,
+            colour_change_fresh: 710,
         },
     ),
 ];
@@ -132,37 +136,37 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 474,
-            identities: 468,
+            nodes: 477,
+            identities: 471,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 468,
+            theme_change_fresh: 471,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 469,
+            colour_change_fresh: 472,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 724,
-            identities: 718,
+            nodes: 727,
+            identities: 721,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 718,
+            theme_change_fresh: 721,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 719,
+            colour_change_fresh: 722,
         },
     ),
 ];

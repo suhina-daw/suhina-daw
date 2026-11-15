@@ -2064,12 +2064,12 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_preset()
 }
 
 /// Colouring a region goes through its variables: `--text-secondary` given to the toolbar reaches
-/// its time signature, given to Settings the names of the pages not shown, which the base sheet
+/// its time signature's slash between the two numbers (#1269), given to Settings the names of the pages not shown, which the base sheet
 /// colours with that variable (#1452).
 #[test]
 fn a_region_s_variables_reach_the_toolbar_s_signature_and_settings_pages() {
     let mut h = window(demo_app());
-    let signature = words_under(&mut h, format!("toolbar {{ --text-secondary: {}; }}", hex(odd(250))), "4 / 4");
+    let signature = words_under(&mut h, format!("toolbar {{ --text-secondary: {}; }}", hex(odd(250))), "/");
     assert!(!signature.is_empty() && signature.iter().all(|c| *c == odd(250)), "the signature: {signature:?}");
     let mut h = settings_on("Keys");
     let page = words_under(&mut h, format!("settings {{ --text-secondary: {}; }}", hex(odd(251))), "Browser");
