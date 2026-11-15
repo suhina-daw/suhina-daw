@@ -589,3 +589,54 @@ fn a_themes_colours_are_suhina_studios_with_its_own_over_them() {
     }
     assert_eq!(theme.color("not-a-token"), Color32::TRANSPARENT);
 }
+
+/// A list's rows (`button[kind="entry"]`, a clip panel's drop-downs) paint as they did before
+/// they were elements in the built-in themes whose rule for every `button` would hide the base
+/// sheet's: the chosen row is the selected fill with the ink that reads on it, a hovered row the
+/// hover fill, and the words the window's text colour (#1451, #1474 review).
+#[test]
+fn a_list_s_rows_paint_as_before_in_the_themes_with_a_rule_for_every_button() {
+    use crate::kit::element::{BUTTON, Checked, DETAIL, WINDOW};
+    for (id, example) in [
+        ("suhina-studio", None),
+        ("suhina-meadow", None),
+        ("suhina-blocks", None),
+        ("suhina-sheet", None),
+        ("suhina-studio", Some(GLOSS_EXAMPLE)),
+    ] {
+        let theme = built_in_themes().into_iter().find(|(theme, _)| *theme == id).unwrap().1;
+        let ctx = egui::Context::default();
+        use_colors(&ctx, &theme.colors);
+        crate::kit::skin::configure(&theme.skin);
+        crate::kit::native_css::set_user_sheet(example.map(Arc::from));
+        let mut seen = None;
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let _window = WINDOW.enter();
+                let _detail = DETAIL.enter();
+                let entry = || BUTTON.attribute("kind", "entry");
+                let plain = entry().look();
+                let hovered = entry().pointer(true, false, false).look();
+                let chosen = entry().attr(Checked, true).look();
+                let chosen_ink = chosen.own_color_or(text_on(chosen.background()));
+                seen = Some((plain.color(), hovered.background(), hovered.color(), chosen.background(), chosen_ink));
+            })
+            .textures_delta
+            .clear();
+        }
+        crate::kit::native_css::set_user_sheet(None);
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        let (plain, hover_fill, hover_ink, chosen_fill, chosen_ink) = seen.unwrap();
+        let primary = theme.color("text-primary");
+        let selected = theme.color("control-selectedBackground");
+        let (light, dark) = (theme.color("text-onColorLight"), theme.color("text-onColorDark"));
+        let on_selected = if contrast(selected, light) >= contrast(selected, dark) { light } else { dark };
+        assert_eq!(plain, primary, "{id}: a row's words");
+        assert_eq!(hover_fill, theme.color("control-hoverBackground"), "{id}: a hovered row");
+        assert_eq!(hover_ink, primary, "{id}: a hovered row's words");
+        assert_eq!(chosen_fill, selected, "{id}: the chosen row");
+        assert_eq!(chosen_ink, on_selected, "{id}: the chosen row's words");
+    }
+    use_colors(&egui::Context::default(), &Colors::new());
+}

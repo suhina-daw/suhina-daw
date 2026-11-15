@@ -144,6 +144,12 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   button[kind="tag-check"][checked] { background-color: var(--text-value); color: var(--window-background); }
   button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
   button[kind="focus"][checked] { background-color: var(--accent); }
+  /* The rows of a list (a clip panel's drop-downs), which this theme's rule for every `button`
+     would give its fill and words: state them again, in the window's text colour, the hover fill
+     and, for the chosen row, the selected fill and the text that reads on it. */
+  button[kind="entry"] { color: color-mix(in oklab, white, black 79.8%); }
+  button[kind="entry"]:hover { color: color-mix(in oklab, white, black 79.8%); background-color: var(--control-hoverBackground); }
+  button[kind="entry"][checked] { color: white; background-color: var(--control-selectedBackground); }
   /* The lit looks of the app's own switches and choices (Suhina's base sheet gives them, and this
      theme's rule for every `button` overrides them: state them again): the key mapping's Map, a
      part of a row of choices in Settings, a preset, a yes/no switch's track and a tick box. */
