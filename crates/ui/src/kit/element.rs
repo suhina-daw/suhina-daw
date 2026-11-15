@@ -12,7 +12,7 @@
 //! let style = CLIP.color(clip.color).style(); // a drawn item
 //! ```
 //!
-//! An entered element stays in the style tree (and its palette scope) until the value is
+//! An entered element stays in the style tree (and its style scope) until the value is
 //! dropped. Its [`Entered::style`] is its own, worked out in the frame that enters it from its
 //! parent's and its own identity, never the style of an element that encloses it, so a part that
 //! forgets to enter its own element cannot paint as its parent. Kit's shared painters
@@ -254,7 +254,7 @@ impl<'a> Builder<'a> {
         self
     }
 
-    /// Puts the element in the style tree and the palette scope until the value is dropped. The
+    /// Puts the element in the style tree and the style scope until the value is dropped. The
     /// pointer states it was given are the pointer's: `.pointer(true, ..)` puts the pointer over
     /// it, so its ancestors are `:hover` too.
     pub fn enter(self) -> Entered {
@@ -398,9 +398,9 @@ pub struct Sides {
     pub entered_lit: bool,
 }
 
-/// What a sheet says about a kind of drawn item (a grid line, a slot's mark), each colour with the
-/// palette token it replaces as the fallback: where no rule of a theme reaches the item, it paints
-/// as it did with the token (#1417).
+/// What a sheet says about a kind of drawn item (a grid line, a slot's mark): its computed colours,
+/// the base sheet's included, or for a reader that asks for one, a fallback colour where no rule of
+/// a theme reaches the item (#1417).
 #[derive(Clone, Debug, Default)]
 pub struct Look(Option<Computed>);
 
@@ -743,7 +743,7 @@ impl Entered {
     }
 
     /// The element's computed `color`, the base sheet's where no theme gives one: a reader with
-    /// no palette fallback. Transparent where no sheet styles the window.
+    /// no fallback colour of its own. Transparent where no sheet styles the window.
     pub fn color(&self) -> Color32 {
         self.style().map_or(Color32::TRANSPARENT, |style| style.color())
     }

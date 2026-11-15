@@ -12,7 +12,7 @@ use suhina_theme_render::{Subject, scenes};
 /// The counts recorded for each scene. `fresh` is that of a settled frame; the `*_fresh` are
 /// summed over the frames a change takes to settle. The style engine works out an element's style
 /// in the frame that draws it (#1273), so it asks for no frame of its own after a change
-/// (`*_style_frames`); the frame left after a theme change is egui's own after a new palette, and
+/// (`*_style_frames`); the frame left after a theme change is egui's own after new `Visuals`, and
 /// those after a hover are its tooltip's. Every background blends (#1233), so a settled frame has
 /// no paint callbacks: only a menu's or dialog's backdrop clears the pixels under it.
 ///

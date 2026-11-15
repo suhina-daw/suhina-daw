@@ -1205,7 +1205,7 @@ Styles are computed after collecting a changed scope tree and repaint on the nex
 Only authored values override native defaults. Scoped colour, font size and radius also
 reach ordinary egui controls in connected panels; the style guard preserves widget ids
 and restores the caller's style. Remaining raw controls still need integration.
-Palette scopes track real theme revisions: a theme switch or live colour/opacity edit
+Colour scopes track real theme revisions: a theme switch or live colour/opacity edit
 made during rendering survives enclosing scope cleanup instead of restoring stale colours.
 
 Connected native surfaces paint linear, radial and conic gradients, including repeating
@@ -1524,9 +1524,9 @@ of bars, and a slider id per parameter.
   (`dropdown-arrow`), a routing field (`dropdown[kind="subtle"]`, which only a rule for the kind
   reaches) and a typed number (`text-input[kind="typed"]`; a rule for every `text-input` is its
   too, until it has its own) are the same. A switch a view draws itself with no `button` takes the
-  colours of `toggle`. The switches the views enter themselves and compare (`Toggle::of`: a
-  Settings switch) stay lit under a rule for every `button` until their views move onto the sheet
-  (#1450); the browser's chips and the follow action's switches have (#1451).
+  colours of `toggle`. A switch's lit look is the base sheet's rule for its `[checked]` state: a
+  theme with a rule for every `button` covers it and states the lit look of the kinds it shows
+  (#1450, #1451).
 - **The browser and the detail panels (#1023):** the browser, the clip panels, the follow action,
   a device's and a device group's panel (`device[kind="group"]`, its branches `device-row`), an
   expanded panel and the piano roll's keys, toolbar and corner draw from their elements the same
@@ -1558,11 +1558,12 @@ of bars, and a slider id per parameter.
   Close, Reset and Add buttons `button`, its theme picker's cards `theme-card`, `[selected]` for the
   theme in use) and every dialog (its title row `dialog-title`, its words `label` and `label[kind]`,
   its lists `list-row`, its buttons `button`, its progress bar `progress` and `progress-fill`) draw
-  from their elements, the base sheet's rules giving the colour tokens the palette did. The start page's tabs are
+  from their elements, the base sheet's rules giving their colours through the colour variables. The start page's tabs are
   `editor-tab#tab-recent` and `#tab-templates` and the colour picker's swatches `colour-swatch`
   (`border-color` outlines the chosen one). A Settings switch, a chosen segment of a Settings
-  choice, a plug-in folder's format and a keymap preset (`button[checked]`) stay lit under a rule
-  for every `button`; a track's on switch, the Arrangement's monitor and automation switches, the
+  choice, a plug-in folder's format and a keymap preset (`button[checked]`) take their lit look
+  from the base sheet, which a theme's rule for every `button` covers, so the theme states it; a
+  track's on switch, the Arrangement's monitor and automation switches, the
   computer keyboard, the browser's Auto and a device's On/Off take the lit look of
   `button[kind="toggle"][checked]` from the base sheet, which a rule for every `button` overrides
   (#1449). They take their colours from the base sheet (#1452), as the views do: a Settings

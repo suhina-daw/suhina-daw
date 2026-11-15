@@ -209,7 +209,7 @@ pub fn digest(text: &str) -> u64 {
 
 /// The listing of `scene` drawn in `subject`: driven, settled, then one more frame.
 ///
-/// Drawn on a thread of its own, whose window state (the palette, the style engine, the user
+/// Drawn on a thread of its own, whose window state (the colour map, the style engine, the user
 /// sheet) starts afresh and goes with it: one drawing never depends on the one before, and the
 /// caller's state is left alone. A scene that still repaints after the most frames a scene may
 /// take says so in its first line: with the fixed step that is the same each run, as long as no
