@@ -47,6 +47,9 @@ LINK = re.compile(r"\]\(\s*([^)\s]*)")
 # any `]:` is refused, not only one at the start of a line; the notes' own links are `](`.
 CHARACTER_REFERENCE = re.compile(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);")
 REFERENCE_DEFINITION = re.compile(r"\]:")
+# A Markdown escape: a backslash before ASCII punctuation, which the renderer drops. Before any
+# other character (`\d`) the backslash stays, so it is not removed either.
+ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
 ALLOWED_URL = "https://github.com/suhina-daw/suhina-daw/"
 NOTES_LIMIT = 20000
 # Discord allows 4096 characters in an embed's description; a little is kept free.
@@ -74,8 +77,8 @@ def problems(tag: str, notes: str) -> list[str]:
     if "![" in notes:
         found.append("the notes contain an image")
     # Markdown drops the backslash of an escape (`https\://` is `https://`), so the link checks read
-    # the notes without backslashes: what they find is at least what a renderer would link.
-    plain = notes.replace("\\", "")
+    # the notes with the escapes undone, as a renderer would.
+    plain = ESCAPE.sub(r"\1", notes)
     if CHARACTER_REFERENCE.search(plain):
         found.append("the notes contain a character reference such as &#58;")
     if REFERENCE_DEFINITION.search(plain):

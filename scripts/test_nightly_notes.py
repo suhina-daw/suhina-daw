@@ -55,6 +55,8 @@ class Problems(unittest.TestCase):
             "[x](https\\://example.com)",
             "see https\\://example.com",
             "see www\\.example.com",
+            # `\d` is no escape, so the backslash stays in the published link.
+            "[x](https://github.com/suhina-\\daw/suhina-daw/pull/1)",
         ):
             with self.subTest(bad=bad):
                 self.assertTrue(nn.problems("nightly-20261115", NOTES + "\n\n" + bad))
