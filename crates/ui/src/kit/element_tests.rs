@@ -751,3 +751,38 @@ fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
     super::super::skin::configure(&super::super::skin::Skin::default());
     assert_eq!(seen, (rgb(0x40, 0x50, 0x60), rgb(0x50, 0x60, 0x70)));
 }
+
+/// The user-agent sheet's muted grey is the Arrangement's: a muted Arrangement clip and track
+/// header are grey, and a deactivated Launcher clip, outside the Arrangement, is not (#1393
+/// review). A user-agent rule is never authored, so a drawn element's `background_or` keeps its
+/// fallback whatever the rule says; the host reads the grey through `user_agent_background`.
+#[test]
+fn the_muted_grey_reaches_the_arrangement_not_the_launcher() {
+    use super::super::native_css::user_agent_background;
+    let grey = Some(egui::Color32::from_rgb(0xA9, 0xA6, 0xA0));
+    let muted = [("muted", "")];
+    assert_eq!(user_agent_background(Some("arrangement"), "clip", &muted), grey, "arrangement clip[muted]");
+    assert_eq!(
+        user_agent_background(Some("arrangement"), "track-header", &muted),
+        grey,
+        "arrangement track-header[muted]"
+    );
+    assert_eq!(user_agent_background(Some("session"), "clip", &muted), None, "a Launcher clip");
+    assert_eq!(user_agent_background(None, "clip", &muted), None, "a clip outside the Arrangement");
+}
+
+/// `probe_in` looks an element up as if drawn inside an ancestor, so a rule that reaches it only
+/// there counts, and takes both out of the style tree again (#1393 review).
+#[test]
+fn a_probe_in_an_ancestor_takes_the_ancestor_s_rules_and_leaves_no_node() {
+    let rgb = egui::Color32::from_rgb;
+    let token = rgb(1, 2, 3);
+    let seen = frames("arrangement clip[muted] { background-color: #405060; }", || {
+        let before = BUTTON.enter().node();
+        let inside = CLIP.attr(Muted, true).probe_in(ARRANGEMENT).background_or(token);
+        let outside = CLIP.attr(Muted, true).probe().background_or(token);
+        let after = BUTTON.enter().node();
+        (inside, outside, before.zip(after).map(|(b, a)| a - b))
+    });
+    assert_eq!(seen, (rgb(0x40, 0x50, 0x60), token, Some(1)));
+}
