@@ -521,7 +521,23 @@ page's (ADR 0031, amendment of 2026-11-15).
   (`piano-grid`, `piano-row`, `piano-note[kind]`, `velocity`, `piano-slice`, `start-marker`,
   `playhead`, `ruler-number`, `loop-region[kind="clip"]`, `piano-key`, `piano-scale-strip`,
   `piano-clip-strip`, `piano-tool` with `[checked]`, `:hover` and `:disabled`, `bar-item[kind="menu"]`
-  and the Focus switch, `button[kind="focus"]`). The views move onto it area by
+  and the Focus switch, `button[kind="focus"]`); the app's bars', Settings' and the dialogs' section
+  (#1452): the window's own background (`window`), the fills the bars, Settings, the dialogs and
+  menus paint for themselves (`app-fill` by kind: `window`, `panel`, `panel-hover`, `control`,
+  `control-hover`, `control-active`, `knob`), the lines over and under the views
+  (`separator[kind="views-top"]`, `"views-bottom"`), words in the accent and the two inks of text
+  on a colour (`label[kind="accent"]`, `"on-light"`, `"on-dark"`), a menu's title on the menu bar
+  (`bar-item[kind="menu"]`), the status bar's counts, a project tab's edge, the toolbar's time
+  signature and launch quantisation (`toolbar-module[kind]`), the CPU meter's track
+  (`meter[kind="cpu"]`), the start page's notice line, the detail area's splitter
+  (`divider[kind="detail-splitter"]`), the toolbar's switches (`button[kind="map"]`, `"agent"`, `"play"`,
+  `"browser"`), Settings' edge and its pages' list (`settings`, `settings-nav[checked]`), the start
+  page's tabs (`editor-tab[kind="start"]`), a dialog's title row, the rows of a dialog's list, the
+  Plug-in manager's table and the colour picker (`list-row[kind="dialog"]`, `"plugin"`, `"picker"`),
+  the swatches, the theme picker's cards, the drag pill (`tooltip`), the buttons that add a track
+  (`add-track`), the buttons of Settings and the dialogs (`button[kind="secondary"]`, `"check"`,
+  `"option"`, `"preset"`, `"switch"`, lit with `[checked]`) and egui's own widgets (`widget`, below).
+  The views move onto it area by
   area (#1449 – #1452), each in a section of its own. Worked-out colours stay worked out from the
   element's own: the grid lines faded into the view, a send's value over its hover, a header's
   tint of its track's colour, and what a view draws over a region around it that has a
@@ -670,9 +686,19 @@ control's popup, the project switcher), `tooltip` and `dialog`.
 Settings, dialogs and the browser, styled by the generic `button` rules) draw one outline all round: a rule whose sides differ gives them its
 `border-color` and leaves their outline's width as it was, rather than a box of its widest side.
 
-**egui's own widgets at the root (#1442).** egui draws its buttons, check boxes, drop-downs, text
+**egui's own widgets at the root (#1442, #1452).** egui draws its buttons, check boxes, drop-downs, text
 fields, scroll bars, menus and pop-ups from `egui::Visuals`. The window builds them from the
-sheet, each value falling back to the palette's: `button` (plain, `:hover`, `:active`,
+sheet. Under every theme's rules they take the computed style of `widget`, looked up inside the
+`window` (so a backdrop's fading reaches them): `widget` at rest, `:hover`, `:active` and
+`:disabled` (fill, words and, disabled, the edge of egui's separators), `widget[checked]` the
+selection (fill, and its `accent-color` the outline), `widget[kind="window"]` the fill and edge of
+egui's windows and menus and of the panels, `widget[kind="field"]` the fill behind a text field;
+the base sheet gives them Suhina's colours. `widget`'s words at rest are `--text-value`, where a
+`button`'s are `--text-primary`: egui's widgets and Suhina's own push buttons are two elements,
+so one `button` rule need not give both. Whether the theme is light or dark, which egui passes to
+the native window (its title bar), is whether the window's computed `color` is dark: a background
+can be see-through, so its colour alone does not tell. Over `widget`, the rules a theme gives
+egui's widgets are written as before: `button` (plain, `:hover`, `:active`,
 `:disabled`; an open button is a pressed one) for the widget states, `button[checked]` for the
 selection (only what it says unlike the plain `button`), `text-input` for text fields (`text-input:focus`'s border for a focused field's
 outline), `menu` for every menu and pop-up that egui frames (`background-color`, border,
@@ -1555,7 +1581,17 @@ of bars, and a slider id per parameter.
   for every `button`; a track's on switch, the Arrangement's monitor and automation switches, the
   computer keyboard, the browser's Auto and a device's On/Off take the lit look of
   `button[kind="toggle"][checked]` from the base sheet, which a rule for every `button` overrides
-  (#1449).
+  (#1449). They take their colours from the base sheet (#1452), as the views do: a Settings
+  switch is `button[kind="switch"]`, a chosen segment or a plug-in folder's format
+  `button[kind="option"]`, a keymap preset `button[kind="preset"]`, a tick box `button[kind="check"]`,
+  each lit with `[checked]`, and the theme picker's card for the theme in use `theme-card[selected]`
+  and the shown start tab `editor-tab[kind="start"][checked]` have rules of their own; a theme's rule
+  for every `button`, `theme-card` or `editor-tab` overrides them, lit looks too, so such a theme
+  states them (Suhina Meadow, Blocks, Sheet and Dark Gloss state the lit looks of the buttons). A
+  bar's plain `color` no longer reaches what the base sheet colours itself (a menu's title on the
+  menu bar, the tabs' names, the time signature): colour the bar through its variables
+  (`--text-secondary`), or give them a rule, as Suhina Meadow and Sheet do for the menu bar's titles
+  and the tabs' names.
   `divider#detail-splitter` is `[closed]` while the detail area is closed. A dialog's `color` reaches
   its names, values and titles; its hints and captions keep to a colour given to them.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).

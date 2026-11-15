@@ -469,6 +469,27 @@ specific selector to win over Suhina's.
   longer reaches the piano roll's ruler numbers (`ruler-number`) and toolbar lines
   (`separator[kind="bar"]`) or a device's values (`device-control[kind="value"]`,
   `device-canvas[kind="value"]`): colour the region through `--text-value`, or give them a rule.
+- **The bars, Settings and the dialogs.** The base sheet colours the window's background
+  (`window`), the fills the bars, Settings, the dialogs and menus paint for themselves (`app-fill`),
+  the toolbar's words and switches (the time signature `toolbar-module[kind="signature"]`, the
+  launch quantisation `[kind="grid"]`, Map `button[kind="map"]`, Play `button[kind="play"]`, the
+  browser's switch `button[kind="browser"]`, a connected agent `button[kind="agent"]`), a menu's
+  title on the menu bar (`bar-item[kind="menu"]`), the status bar's counts
+  (`bar-item[kind="status-counts"]`), Settings' pages' list (`settings-nav`, `[checked]` for the page
+  shown), its switches, choices and presets (`button[kind="switch"]`, `"option"`, `"preset"`), a tick
+  box (`button[kind="check"]`), the start page's tabs (`editor-tab[kind="start"]`), the theme
+  picker's cards (`theme-card`), a dialog's title row and list rows (`dialog-title`,
+  `list-row[kind="dialog"]`) and the drag pill (`tooltip`). **A rule for every `button` hides their
+  lit looks too**: state `button[kind="map"][checked]`, `button[kind="option"][checked]`,
+  `button[kind="preset"][checked]`, `button[kind="switch"][checked]` and
+  `button[kind="check"][checked]`. A bar's plain `color` no longer reaches a menu's title or the
+  tabs' names: colour the bar through `--text-secondary`, or give them a rule
+  (`menu-bar bar-item[kind="menu"], project-tabs label[kind="caption"] { color: … }`).
+- **egui's own widgets** (the fields, drop-downs, check boxes and entries of Settings and the
+  menus) take `widget`: at rest, `:hover`, `:active`, `:disabled`, `[checked]` for the selection,
+  `[kind="window"]` for egui's windows and menus, `[kind="field"]` behind a text field. Its words
+  at rest are `--text-value`, a `button`'s `--text-primary`; your rules for `button`, `text-input`,
+  `menu` and `scroll-bar` still go over it.
 - **The base sheet's own colours** are variables as well: the browser's icons by kind
   (`--browser-icon-midi`, `--browser-icon-sample`, `--browser-icon-instrument`,
   `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …
@@ -684,7 +705,9 @@ Elements, by name:
 | `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob[kind="dial"]` with its rim in its `border-color`, the disc between rim and face in `knob-ring`'s `background-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
 | `meter`, `meter-level`, `meter-vertical`, `meter-horizontal` | level meters and their lit part |
 | `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs |
-| `label[kind]` | the browser's and the detail panels' words by how much they stand out: dim words (`hint`) and a control's or figure's name (`caption`) take only a colour given to them, not one around them; a panel's title (`title`), a value shown as words (`value`), a fault (`error`), a plug-in's state (`plugin-state`), a device parameter's name (`parameter`), a check box's words (`check`), the head of the MIDI tools' figures (`head`, `[selected]` in its `accent-color`); inside the browser `hint`, `caption` and `value` take the browser's own colours |
+| `app-fill` | the fills the bars, Settings, the dialogs and menus paint for themselves where the region behind gives none, by `kind` (`window`, `panel`, `panel-hover`, `control`, `control-hover`, `control-active`; `knob` the knob of a switch that is on over a see-through window) |
+| `widget` | egui's own widgets under your `button`, `text-input`, `menu` and `scroll-bar` rules: at rest, `:hover`, `:active`, `:disabled`, `[checked]` (the selection), `[kind="window"]`, `[kind="field"]` |
+| `label[kind]` | the browser's and the detail panels' words by how much they stand out: dim words (`hint`) and a control's or figure's name (`caption`) take only a colour given to them, not one around them; a panel's title (`title`), a value shown as words (`value`), a fault (`error`), a plug-in's state (`plugin-state`), a device parameter's name (`parameter`), a check box's words (`check`), the head of the MIDI tools' figures (`head`, `[selected]` in its `accent-color`), words or a mark in the accent (`accent`), and the light and dark inks of text on a colour (`on-light`, `on-dark`, from `--text-onColorLight` and `--text-onColorDark`); inside the browser `hint`, `caption` and `value` take the browser's own colours |
 | `browser-fill`, `detail-fill` | the fills the browser and the detail area paint for themselves where the region behind gives none, by `kind` (`panel`, `window`; the browser's splitter `splitter`, stronger under the pointer; the detail's `control` and `hover` for the hide and close buttons, `outline` the edge of a button that cannot be pressed) |
 | `device-canvas` | the colours a device's own drawings take, read in the device's scope: `color` the text, `background-color` the controls, `border-color` the lines, `accent-color` the accent; `kind="secondary"`, `"value"`, `"inverse"` (`color`) and `"panel"`, `"window"`, `"active"` (`background-color`) the others |
 | `#control-device-on`, `button[kind="close"]`, `button[kind="more"]` | a device's on switch (`[checked]` while it runs), an expanded panel's × and the browser's more tags: only a rule for them reaches them, not one for every `button` |
