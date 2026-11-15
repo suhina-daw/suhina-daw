@@ -423,6 +423,36 @@ specific selector to win over Suhina's.
   background-color: … }` a lit toggle takes that background as well, so write
   `button[kind="toggle"][checked] { background-color: … }`, and for a slider `slider-fill { … }`
   `slider[checked] slider-fill { … }`.
+- **The Launcher, the mixer and the Arrangement.** The base sheet gives these views their looks
+  too: a scene's button (`scene`, `[playing]`, `scene[kind="stop-all"]`), a track's stop button
+  (`slot[kind="stop"]`, `[queued]`), an empty slot (`session slot`, `[selected]`) and its
+  `slot-mark`, a deactivated, queued or selected clip in the Launcher (`session clip[muted]`,
+  `[queued]`, `[selected]`), the record button of an armed track's slot (`slot-record`,
+  `[recording]`), the key mapping's tint (`mapping-overlay`), Main's header
+  (`track-header[kind="main"]`), the lines between the Launcher's bands, columns and slots
+  (`separator[kind="band"]`, `"column"`, `"slot"`); a mixer strip's fill (`mixer`), its device
+  list and rows (`device-list device-row`, `[selected]`, `[muted]`), its fader's value (`fader`)
+  and `fader-scale`, a `send` and the control bar's and the strips' own switches
+  (`button[kind="record"]`, `"metronome"`, `"monitor"`, lit with `[checked]`); in the Arrangement
+  the colours under the grid (`arrangement`) and under its panels (`arrangement[kind="panel"]`),
+  the `ruler`, the grid lines (`grid-line[kind="bar"]`, `"beat"`), the `tempo-mark`, the
+  `start-marker`, the `playhead`, the loop (`loop-region`, `[checked]`, and `loop-line`), a
+  `marker` (`[checked]` while dragged), the tools (`arrangement-tool`, `[checked]`), the selected
+  time (`time-selection` and its kinds), a clip being recorded (`arrangement clip[recording]`),
+  the lane the piano roll edits (`arrangement track-lane[checked]`), a track's header
+  (`arrangement track-header`, `[selected]`; Main's `arrangement track-header[kind="main"]`), a
+  clip's gain field (`clip-gain`) and fade handles (`clip-fade-handle`), the automation lanes
+  (`automation-lane[kind="group"]`, `automation-header`, `[selected]`, `automation-line[muted]`,
+  `automation-point[selected]`, `automation-pin`) and the switches `button[kind="envelope"]`,
+  `"lanes"` and `"shape"`. **Your rule for an element overrides the base sheet's for each property
+  it sets, its states' too**: a theme with a rule for every `scene` or `clip` states `scene[playing]`
+  or `clip[muted]`, `[queued]` and `[selected]` as well. A rule for every `button` hides the lit looks of these switches as well:
+  Suhina Meadow, Blocks and Sheet and the Dark Gloss example state `button[kind="monitor"][checked]`
+  and the others again, and so does a theme of yours with such a rule. A plain `color` on `session`, `mixer` or
+  `arrangement` no longer reaches the parts above that the base sheet gives a `color`
+  (a send, a fader's value, a scene's text, a tool, a marker, a clip's gain field …): colour them
+  through the region's variables (`--text-primary`, `--text-value`) or give the part a rule
+  (`send { color: … }`).
 - **The base sheet's own colours** are variables as well: the browser's icons by kind
   (`--browser-icon-midi`, `--browser-icon-sample`, `--browser-icon-instrument`,
   `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …

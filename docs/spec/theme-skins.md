@@ -492,8 +492,25 @@ page's (ADR 0031, amendment of 2026-11-15).
   `dropdown-arrow`, a typed number (`text-input[kind="typed"]`), a routing field's `:hover`
   (`dropdown[kind="subtle"]`); a slider's rail, fill and handle; a fader cap's fill; a meter's
   levels and clip light; a dialog's edge; the rows of a floating list (`list-row`,
-  `list-row[selected]`). The views move onto it area by area (#1449 – #1452), each in a section of
-  its own. Two things are worked out from the colours around them and not given by a rule: the
+  `list-row[selected]`); the section of the Launcher, the mixer and the Arrangement (#1450): a
+  scene's button (`scene`, `:hover`, `[playing]`; `scene[kind="stop-all"]`), a track's stop button
+  (`slot[kind="stop"]`, `:hover`, `[queued]`), an empty slot (`session slot`, `[selected]`) and
+  `slot-mark`, the Launcher's clips by state (`session clip[muted]`, `[queued]`, `[selected]`),
+  `slot-record` (`:hover`, `[recording]`), `mapping-overlay`, Main's headers, the
+  Launcher's lines (`separator[kind="band"]`, `"column"`, `"slot"`), a splitter's `divider`, the
+  switches `button[kind="record"]`, `"metronome"`, `"monitor"`, `"lanes"`, `"envelope"` and
+  `"shape"` (lit with `[checked]`), a strip's `mixer`, `device-list` and its rows (`:hover`,
+  `[selected]`, `[muted]`), `fader`, `fader-scale`, `fader-rail`, `send` (`:hover`), `scroll-bar`
+  and the metronome's level popup (`popup[kind="level"]`, its slider's parts); and in the Arrangement `arrangement`
+  and `arrangement[kind="panel"]` (the colours under the grid and under the panels), `ruler`, the
+  grid lines, `tempo-mark`, `start-marker`, `playhead`, `loop-line`, `loop-region`, `marker`,
+  `arrangement-tool`, `time-selection` by kind (`ruler`, `draw`, `take`, `automation`, `editor`),
+  `marquee`, `clip[recording]`, `track-lane[checked]`, the track headers (`[selected]`; Main's),
+  `clip-gain`, `clip-fade-handle`, and the automation lanes' parts. The views move onto it area by
+  area (#1449 – #1452), each in a section of its own. Worked-out colours stay worked out from the
+  element's own: the grid lines faded into the view, a send's value over its hover, a header's
+  tint of its track's colour, and what a view draws over a region around it that has a
+  background of its own (`arrangement`, `arrangement[kind="panel"]`). Two things are worked out from the colours around them and not given by a rule: the
   subtle drop-down's line and ink (from the surface it is on) and the readable ink on a lit
   toggle's fill, where no rule gives it one.
 - **Opting out.** `"base": "none"` in `theme.json` leaves the base sheet out: the theme stands on
