@@ -944,3 +944,61 @@ fn a_clip_on_a_muted_track_is_drawn_muted_too() {
     assert!(clip::drawn_muted(false, false), "turned off");
     assert!(!clip::drawn_muted(false, true));
 }
+
+#[test]
+fn a_clip_too_low_for_a_name_bar_still_has_its_mute_mark() {
+    // #1399 review: the mark was drawn only inside the name bar, so a clip on a low lane turned
+    // off was the same as one on a muted track, or one whose colour is grey.
+    let low = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 24.0));
+    assert!(clip::clip_name_bar(low).is_none(), "24 points is below the name bar's least height");
+    let centre = clip::mute_mark_centre(low, None, 107.0).expect("a 24-point clip has room for the mark");
+    assert!(low.contains(centre), "{centre:?}");
+    assert!(centre.y < low.center().y, "in the upper left corner: {centre:?}");
+
+    // With a name bar, it stays before the name, in the middle of the bar.
+    let tall = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 60.0));
+    let bar = clip::clip_name_bar(tall).expect("a 60-point clip has a name bar");
+    let centre = clip::mute_mark_centre(tall, Some(bar), 107.0).expect("mark in the bar");
+    assert_eq!(centre.y, bar.center().y);
+
+    // A clip too small for it has none, rather than a mark spilling out of it.
+    let sliver = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 10.0));
+    assert_eq!(clip::mute_mark_centre(sliver, None, 107.0), None);
+    let narrow = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(12.0, 24.0));
+    assert_eq!(clip::mute_mark_centre(narrow, None, 107.0), None);
+}
+
+/// The name bar's look in one frame with `css` as the theme's sheet.
+fn name_bar_look_with(css: &str, bar_fill: Color32) -> clip::NameBarLook {
+    crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut look = None;
+    for _ in 0..3 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+            look = Some(clip::name_bar_look(bar_fill));
+        })
+        .textures_delta
+        .clear();
+    }
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    look.expect("ran a frame")
+}
+
+#[test]
+fn the_mute_mark_takes_the_ink_of_the_name_bar_as_drawn() {
+    // #1399 review: the mark's ink came from the clip's own bar colour, so on a theme's dark bar
+    // it was dark on dark while the name was readable.
+    let grey = clip::muted_clip_grey(false);
+    let dark = name_bar_look_with("clip-name { background-color: #000000; }", grey);
+    assert_eq!(dark.fill, Color32::BLACK);
+    assert_eq!(dark.ink, clip::ink_on(Color32::BLACK), "light ink on the theme's black bar");
+    assert_ne!(dark.ink, clip::ink_on(grey));
+
+    let coloured = name_bar_look_with("clip-name { background-color: #000000; color: #FFCC00; }", grey);
+    assert_eq!(coloured.ink, Color32::from_rgb(0xFF, 0xCC, 0x00), "the theme's own name colour");
+
+    // Unstyled, the bar is the clip's own colour and the ink reads on it, as before.
+    let plain = name_bar_look_with("", grey);
+    assert_eq!((plain.fill, plain.ink), (grey, clip::ink_on(grey)));
+}

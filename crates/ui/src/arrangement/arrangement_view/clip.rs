@@ -1443,17 +1443,20 @@ pub(super) fn paint_clip(
     painter.rect_filled(rect, radius, body);
     own.paint_background(painter, rect, radius);
     let bar = clip_name_bar(rect);
-    if let Some(bar) = bar {
-        let name_bar = crate::kit::element::CLIP_NAME.enter();
-        let fill = name_bar.background_or(bar_fill);
+    // The name bar as the sheet's `clip-name` styles it: its fill, and the ink of the name and
+    // the mute mark on that fill.
+    let name_look = bar.map(|bar| {
+        let look = name_bar_look(bar_fill);
         // The bar keeps the clip's rounded top corners.
         let top = radius.min(bar.height()).clamp(0.0, 255.0) as u8;
         painter.rect_filled(
             bar.shrink2(Vec2::new(2.0, 0.0)),
             egui::CornerRadius { nw: top, ne: top, sw: 0, se: 0 },
-            fill,
+            look.fill,
         );
-    } else {
+        look
+    });
+    if bar.is_none() {
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, body);
     }
     crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
@@ -1509,7 +1512,7 @@ pub(super) fn paint_clip(
     let wave_ink = if ara_notes.is_some() { motion::mix(body, content_ink, 0.75) } else { content_ink };
     let dim = |_: Color32| wave_ink;
     let color = ink;
-    let text_color = ink_on(if bar.is_some() { bar_fill } else { body });
+    let text_color = name_look.as_ref().map_or_else(|| ink_on(body), |look| look.ink);
     // The name's place, for a rename in place (Ctrl+R).
     let strip = Rect::from_min_max(
         Pos2::new(rect.left().max(view.left()), rect.top()),
@@ -1518,37 +1521,32 @@ pub(super) fn paint_clip(
     let pass = painter.ctx().cumulative_pass_nr();
     painter.ctx().data_mut(|d| {
         // The name bar's colour, as it is drawn above (a hair lighter or darker than the body).
-        let fill = if bar.is_some() { bar_fill } else { body };
+        let fill = name_look.as_ref().map_or(body, |look| look.fill);
         let size = own.font_size_or(theme::TEXT);
         let spot = crate::app::NameSpot { rect: strip, pass, fill, text: text_color, size };
         d.insert_temp(Id::unique((crate::app::NAME_RECT_CLIP, u64::from(clip.id.0))), spot);
     });
-    let has_name = bar.is_some();
-    if has_name {
-        // The name stays in view while the clip's start is scrolled off to the left; an audio
-        // clip's starts after its Edit gain envelope button.
-        let button = if clip.audio_view.is_some() && rect.width() >= ENVELOPE_BUTTON_LEAST {
-            crate::arrangement::envelope::BUTTON + 4.0
-        } else {
-            0.0
-        };
-        let mut left = rect.left().max(view.left()) + 7.0 + button;
-        // A clip turned off itself has the mute mark before its name: with it, it is never taken
-        // for a clip whose colour is grey, and a clip on a muted track (which has none) is told
-        // from one muted on its own.
-        if !clip.enabled {
-            let bar_rect = bar.unwrap_or(rect);
-            let centre = Pos2::new(left + MUTE_MARK / 2.0, bar_rect.center().y);
+    // The name stays in view while the clip's start is scrolled off to the left; an audio clip's
+    // starts after its Edit gain envelope button, which only a clip with a name bar has.
+    let button = if bar.is_some() && clip.audio_view.is_some() && rect.width() >= ENVELOPE_BUTTON_LEAST {
+        crate::arrangement::envelope::BUTTON + 4.0
+    } else {
+        0.0
+    };
+    let name_left = rect.left().max(view.left()) + 7.0 + button;
+    // A clip turned off itself has the mute mark before its name: with it, it is never taken for
+    // a clip whose colour is grey, and a clip on a muted track (which has none) is told from one
+    // muted on its own. A clip too low for a name bar has it too, drawn over its notes (below).
+    let mark = if clip.enabled { None } else { mute_mark_centre(rect, bar, name_left) };
+    if let (Some(bar), Some(look)) = (bar, name_look.as_ref()) {
+        let mut left = name_left;
+        if let Some(centre) = mark {
             paint_mute_mark(painter, centre, text_color);
             left += MUTE_MARK + 4.0;
         }
-        let name_rect = Rect::from_min_max(
-            Pos2::new(left, rect.top() + 3.0),
-            Pos2::new(rect.right() - 5.0, bar.map_or(rect.top(), |bar| bar.bottom()) - 3.0),
-        );
-        let name = crate::kit::element::CLIP_NAME.enter();
-        let font = theme::ui_font(name.font_size_or(theme::TEXT));
-        let text_color = name.color_or(text_color);
+        let name_rect =
+            Rect::from_min_max(Pos2::new(left, rect.top() + 3.0), Pos2::new(rect.right() - 5.0, bar.bottom() - 3.0));
+        let font = theme::ui_font(look.font_size);
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
     let marks = wave_area(rect);
@@ -1678,6 +1676,14 @@ pub(super) fn paint_clip(
             let from = (rect.right() - shown.fade_out as f32 * beat_width).max(rect.left());
             painter.line(fade_line(rect, FadeEdge::Out, from, rect.right(), shown.fade_out_curve), fade_stroke);
         }
+    }
+    // A clip too low for a name bar has its mute mark over its notes, on a spot of its body so
+    // the notes under it never hide it.
+    if bar.is_none()
+        && let Some(centre) = mark
+    {
+        painter.circle_filled(centre, MUTE_MARK / 2.0 + 1.5, body);
+        paint_mute_mark(painter, centre, ink);
     }
     if selected {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, motion::mix(body, ink, 0.45)), StrokeKind::Inside);
@@ -1824,8 +1830,39 @@ pub(super) fn name_bar_fill(
     motion::mix(body, ink_on(body), 0.045)
 }
 
+/// A clip's name bar as the sheet's `clip-name` styles it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct NameBarLook {
+    /// The bar's fill: the sheet's background, else the clip's own bar colour.
+    pub fill: Color32,
+    /// The name's and the mute mark's ink: the sheet's colour, else the ink that reads on `fill`.
+    pub ink: Color32,
+    pub font_size: f32,
+}
+
+/// The name bar of a clip whose own bar colour is `bar_fill`, as the sheet styles it. The ink is
+/// worked out from the fill the bar is drawn in, so a theme's dark bar gets light ink even where
+/// it gives the name no colour of its own.
+pub(super) fn name_bar_look(bar_fill: Color32) -> NameBarLook {
+    let name = crate::kit::element::CLIP_NAME.enter();
+    let fill = name.background_or(bar_fill);
+    NameBarLook { fill, ink: name.color_or(ink_on(fill)), font_size: name.font_size_or(theme::TEXT) }
+}
+
 /// The size of the mute mark, in points.
 const MUTE_MARK: f32 = 9.0;
+
+/// Where the mute mark of a clip turned off goes, its name starting at `left`: in the name bar
+/// before the name, or, on a clip too low for a name bar, in its upper left corner. `None` when
+/// the clip is too small to hold it.
+pub(super) fn mute_mark_centre(rect: Rect, bar: Option<Rect>, left: f32) -> Option<Pos2> {
+    let x = left + MUTE_MARK / 2.0;
+    match bar {
+        Some(bar) => Some(Pos2::new(x, bar.center().y)),
+        None => (rect.height() >= MUTE_MARK + 4.0 && rect.right() - left >= MUTE_MARK + 2.0)
+            .then(|| Pos2::new(x, rect.top() + 2.0 + MUTE_MARK / 2.0)),
+    }
+}
 
 /// The mark before the name of a clip turned off: a ring crossed by a slash, in the name's ink.
 fn paint_mute_mark(painter: &egui::Painter, centre: Pos2, ink: Color32) {

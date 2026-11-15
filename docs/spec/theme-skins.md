@@ -1211,7 +1211,8 @@ These native parts take the sheet (the theme package README lists every selector
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it).
 - **Clips:** `[color]`; `[selected]`, `[muted]` (turned off or on a muted track; grey from the
   user-agent sheet, the host draws its colour down the leading edge and a mute mark before the
-  name of a clip turned off itself), `[playing]` (the play position inside the
+  name of a clip turned off itself, in the ink of `clip-name` as the sheet styles it: its
+  `color`, else the ink that reads on its `background-color`), `[playing]` (the play position inside the
   clip while the transport runs), `[recording]` (a recording span over it on its track);
   `clip-gain`, `clip-fade-handle` (artwork `clip.fade-handle`).
 - **Level bars:** `font-size` for the value; `value-handle` with a `width` (or artwork
