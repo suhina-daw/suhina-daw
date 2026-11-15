@@ -186,21 +186,42 @@ fn a_mono_ir_feeds_both_sides() {
     }
 }
 
+/// A stereo 32-bit float `.wav` at `rate` whose frames are `left` and `right` (the shorter list
+/// is padded with zeros).
+fn stereo_wav(rate: u32, left: &[f32], right: &[f32]) -> Vec<u8> {
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: rate,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    let mut writer = hound::WavWriter::new(&mut bytes, spec).expect("the writer opens");
+    for n in 0..left.len().max(right.len()) {
+        writer.write_sample(left.get(n).copied().unwrap_or(0.0)).expect("the sample is written");
+        writer.write_sample(right.get(n).copied().unwrap_or(0.0)).expect("the sample is written");
+    }
+    writer.finalize().expect("the wav is finished");
+    bytes.into_inner()
+}
+
 #[test]
-fn an_ir_at_another_rate_does_not_run() {
-    let ir = Ir::from_interleaved(2, 4, 44_100, &[1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+fn an_ir_file_at_another_rate_is_resampled_and_convolved() {
+    // A 44.1 kHz file of 8 frames, a single impulse of one half, read for a 48 kHz project. It
+    // is shorter than the resampler's kernel; it must still convolve (the sound comes out at
+    // half its level) and not fall away to nothing, which would pass the sound through.
+    let wav = stereo_wav(44_100, &[0.5], &[0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    let ir = super::ir::read_bytes(&wav, 48_000).expect("the ir reads");
+    assert_eq!(ir.sample_rate, 48_000);
+    assert!(ir.frames() > 0);
     let mut l = CabLoader::with_ir(ir, 48_000.0).unwrap();
     l.set_param(param::HP, 0.0);
     l.prepare(SR).expect("prepare");
-    // Nothing but the trims: an identity stream, one chunk late, finite.
-    let input = sine(0.5, 700.0, 2_000);
-    let mut s = input.clone();
+    let mut s = sine(0.5, 700.0, 9_600);
     l.process(&ProcessContext::default(), &mut s);
-    for (n, frame) in frames(&s).iter().enumerate().skip(D + 64) {
-        let want = frames(&input)[n - D];
-        assert!(frame[0].is_finite());
-        assert!((f64::from(frame[0]) - f64::from(want[0])).abs() < 1e-5, "frame {n}");
-    }
+    assert!(s.iter().all(|v| v.is_finite()));
+    let level = level(frames(&s), 700.0, D + 4_800);
+    assert!((level - 0.25).abs() < 0.02, "level {level}");
 }
 
 #[test]

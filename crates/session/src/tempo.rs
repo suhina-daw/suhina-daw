@@ -187,6 +187,16 @@ pub(crate) fn add_signature(session: &mut Session, params: &Value) -> Result<Val
     Ok(signature_list(transport))
 }
 
+/// `transport.setTimeSignature`: the signature of bar 1. The changes keep their bars, so their
+/// beats move with the length of the bars before them.
+pub(crate) fn set_start_signature(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let numerator = signature_part(params, "numerator")?.ok_or("numerator must be a whole number")?;
+    let denominator = signature_part(params, "denominator")?.ok_or("denominator must be a whole number")?;
+    let time_signature = valid(TimeSignature { numerator, denominator })?;
+    session.project.transport.time_signature = time_signature;
+    Ok(signature_list(&session.project.transport))
+}
+
 /// The index of the change at `params.bar`.
 fn change_index(t: &Transport, params: &Value) -> Result<usize, CommandError> {
     let bar = bar_param(params, "bar")?;

@@ -288,3 +288,67 @@ fn an_ara_plug_in_is_listed_as_such_and_never_hosted_alone() {
     run(&mut p, "plugin.setHosting", json!({ "plugin": "Tune", "hosting": "vendor" })).unwrap();
     assert_eq!((p.plugin_env().group)(&tune), Some("vendor:Vendor".into()));
 }
+
+#[test]
+fn a_search_finds_an_installed_plug_in_by_any_part_of_its_name_or_its_file() {
+    use suhina_plugins::scan::{Catalog, PluginInfo};
+    use suhina_session::{Category, search_items};
+    let (_, dir) = projects("search");
+    let settings = dir.join("settings");
+    std::fs::create_dir_all(&settings).unwrap();
+    // A VST2 instrument whose file and reported name differ, and an effect in another format.
+    // A VST2 plug-in's file: a `.vst` bundle on macOS, a library elsewhere.
+    let extension = if cfg!(target_os = "macos") {
+        "vst"
+    } else if cfg!(windows) {
+        "dll"
+    } else {
+        "so"
+    };
+    let keys = PluginInfo {
+        path: PathBuf::from(format!("Plugins/Grand Keys/GrandKeys x64.{extension}")),
+        id: "34465450".into(),
+        name: "GK Piano".into(),
+        vendor: "Keymaker".into(),
+        version: "1".into(),
+        features: vec!["instrument".into()],
+        replaces: Vec::new(),
+        ara: false,
+    };
+    let verb = PluginInfo {
+        path: PathBuf::from("Grand Verb.vst3"),
+        id: "ABCDEF0123456789ABCDEF0123456781".into(),
+        name: "Grand Verb".into(),
+        vendor: "Vendor".into(),
+        version: "1".into(),
+        features: vec!["Fx".into()],
+        replaces: Vec::new(),
+        ara: false,
+    };
+    let mut catalog = Catalog::new();
+    catalog.insert(keys.path.clone(), vec![keys]);
+    catalog.insert(verb.path.clone(), vec![verb]);
+    std::fs::write(settings.join("plugin-catalog.json"), catalog.to_json()).unwrap();
+    let mut p = Projects::with_library(Library::new(Some(settings), dir.join("no-such-host")));
+    let names = |p: &mut Projects, text: &str, category: Category| -> Vec<String> {
+        let found = search_items(p, text, category, None, &[], 0).unwrap();
+        found.into_iter().filter(|f| f.plugin).map(|f| f.name).collect()
+    };
+    // By its own name, any part of it, with or without its spaces.
+    for text in ["GK Piano", "gk", "piano", "gkpiano", "GKPIA"] {
+        assert_eq!(names(&mut p, text, Category::All), ["GK Piano"], "{text:?}");
+    }
+    // By its file's name, with or without the spaces, and in every category that lists it.
+    for text in ["grandkeys", "Grand Keys", "keys x64", "GrandKeys x64"] {
+        assert_eq!(names(&mut p, text, Category::All), ["GK Piano"], "{text:?}");
+        assert_eq!(names(&mut p, text, Category::Instruments), ["GK Piano"], "{text:?}");
+        assert_eq!(names(&mut p, text, Category::Plugins), ["GK Piano"], "{text:?}");
+        assert!(names(&mut p, text, Category::Effects).is_empty(), "{text:?}");
+    }
+    // By its vendor and its format.
+    assert_eq!(names(&mut p, "keymaker", Category::All), ["GK Piano"]);
+    assert_eq!(names(&mut p, "vst2", Category::All), ["GK Piano"]);
+    // A word in both finds both; one in neither finds neither.
+    assert_eq!(names(&mut p, "grand", Category::All), ["Grand Verb", "GK Piano"]);
+    assert!(names(&mut p, "organ", Category::All).is_empty());
+}

@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-14
+last_verified: 2026-11-15
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -276,8 +276,9 @@ their existing semantics. Layout entry support is incremental and documented per
 Artwork can choose an interaction state: `track.name.hover` overrides the default
 `track.name`. The own state variant wins, then the own default, then the embedded fallback.
 Artwork is not chosen by a track's colour. In track artwork (`track.name`, `track.body`)
-`currentColor` is the fill Suhina draws there (the track's colour, dimmed while muted), or the
-element's own `color` where the sheet gives one, which a rule may take from its `[color]`. A sheet
+`currentColor` is the fill Suhina draws there (the track's colour, dimmed while muted; a muted
+track's arrangement header is the `arrangement track-header[muted]` grey instead), or the element's own
+`color` where the sheet gives one, which a rule may take from its `[color]`. A sheet
 that reads `--track-colour`, `--track-fill` or `--clip-colour`, or gives artwork for one colour
 (`track.body.color-ff9a3c`), is told they are no longer used.
 `track.body` covers the strip background. A contiguous sequence of `.frame-0` through
@@ -398,7 +399,11 @@ like before a theme styles it.
   the palette's tier (the lines over and under the views are `separator#views-top` and
   `#views-bottom`); the window's grid (*The window grid*);
   `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; the default
-  artwork; the sample map's colours; the theme swatch's rounded square.
+  artwork; the sample map's colours; the grey of a muted arrangement clip and track header,
+  `arrangement clip[muted] { background-color: #A9A6A0; }` (`#BDBAB4` with `[selected]`) and
+  `arrangement track-header[muted]` (`#A9A6A0`, `#B5B2AC` with `[selected]`, #1393), scoped to
+  the Arrangement so a deactivated Launcher clip keeps its own look; the theme swatch's rounded
+  square.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
   `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one
   too. Every theme gets the defaults for the controls it does not replace. The defaults take their
@@ -1204,7 +1209,10 @@ These native parts take the sheet (the theme package README lists every selector
 - **Ruler, loop region, play position:** `ruler` (background, `color`, `border-color`;
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it).
-- **Clips:** `[color]`; `[selected]`, `[muted]`, `[playing]` (the play position inside the
+- **Clips:** `[color]`; `[selected]`, `[muted]` (turned off or on a muted track; grey from the
+  user-agent sheet, the host draws its colour down the leading edge and a mute mark before the
+  name of a clip turned off itself, in the ink of `clip-name` as the sheet styles it: its
+  `color`, else the ink that reads on its `background-color`), `[playing]` (the play position inside the
   clip while the transport runs), `[recording]` (a recording span over it on its track);
   `clip-gain`, `clip-fade-handle` (artwork `clip.fade-handle`).
 - **Level bars:** `font-size` for the value; `value-handle` with a `width` (or artwork
@@ -1338,11 +1346,22 @@ of bars, and a slider id per parameter.
 - **Low tracks:** `compact-below` on `arrangement` (at most 200 points): a header
   lower than it resolves every placement natively (`control_layout::native_only`).
 - **Ruler:** `ruler-number` (`color`, `font-size`, `display`) and `ruler-tick` (`color`, `width`
-  0–4).
+  0–4) inside the Arrangement's `ruler`. The piano roll's bar numbers and ticks are inside its
+  `ruler` too, and take only their `color`.
 - **Browser:** `browser-play` (`[checked]` while playing), `browser-tag-dot` (`opacity`,
   border), `browser-preview-wave` (`color` played, `border-color` ahead), the search field
   `#browser-search`.
 - **Dialogs:** `settings-nav` (`[checked]` for the page shown), `progress`, `progress-fill`.
+- **The views' parts (#1417):** every colour the Launcher, its mixer strips and meters, the
+  Arrangement and the piano roll's grid, notes, ruler and loop row paint comes from the element
+  that draws it, with the palette token as its fallback, so a theme with no rule for an element
+  looks as before. The parts and their kinds are in the theme guide's selector reference and in
+  ADR 0031 › *Amendment: the Launcher, the mixer, the Arrangement and the piano roll draw from
+  their elements*. A line or a mark (`separator[kind]`, `grid-line`, `start-marker`) takes only a
+  `color` given to it; text inherits. While a toggle is on (`[checked]`), and for a slot clip's
+  `[queued]`, `[selected]` and `[muted]` and a picked automation point, a rule for that state
+  sets its own fill and outline. A `clip:hover` background still colours the clip's fill while the
+  pointer is over it. `[queued]` is an attribute.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
 - **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
   `theme.css`.

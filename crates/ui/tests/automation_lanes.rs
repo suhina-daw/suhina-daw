@@ -1733,3 +1733,43 @@ fn a_click_on_a_whole_number_slope_adds_a_point_between_numbers() {
     assert_eq!(points.len(), 3, "{points:?}");
     assert_eq!((points[1].beat, points[1].value), (4.0, 0.5), "{points:?}");
 }
+
+/// How many circles the window painted filled with `color`.
+fn circles_filled(harness: &Harness<'static, App>, color: egui::Color32) -> usize {
+    fn walk(shape: &egui::Shape, color: egui::Color32, found: &mut usize) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, color, found)),
+            egui::Shape::Circle(circle) if circle.fill == color => *found += 1,
+            _ => {}
+        }
+    }
+    let mut found = 0;
+    harness.output().shapes.iter().for_each(|shape| walk(&shape.shape, color, &mut found));
+    found
+}
+
+/// A rule for every automation point does not hide which are picked: the picked one keeps its
+/// native colour unless a `[selected]` rule gives it one (#1428 review).
+#[test]
+fn a_rule_for_every_point_keeps_the_picked_one_apart() {
+    let mut harness = with_lanes();
+    for x in [100.0, 200.0, 300.0] {
+        add_point(&mut harness, x);
+    }
+    let two = harness.get_by_label("Volume point 2 on Drums").rect().center();
+    click_at(&mut harness, two);
+    let points = |harness: &mut Harness<'static, App>, css: &str, color: egui::Color32| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            harness.step();
+        }
+        let filled = circles_filled(harness, color);
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        filled
+    };
+    let every = egui::Color32::from_rgb(0x13, 0x57, 0x51);
+    assert_eq!(points(&mut harness, "automation-point { color: #135751; }", every), 2, "the picked one stays apart");
+    let picked = egui::Color32::from_rgb(0x13, 0x57, 0x52);
+    let css = "automation-point { color: #135751; } automation-point[selected] { color: #135752; }";
+    assert_eq!(points(&mut harness, css, picked), 1, "a `[selected]` rule recolours it");
+}

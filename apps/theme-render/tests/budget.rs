@@ -25,19 +25,26 @@ use suhina_theme_render::{Subject, scenes};
 /// #1372 (the bars' rows) raised them again: the bars' items are elements a theme styles
 /// (`bar-item`, `project-tab`, `group`, `separator`), 5 more nodes and identities in each scene
 /// (10 and 9 on Windows, where the application bar has its items too).
+///
+/// #1417 (the views draw from their elements) raised them by 61 nodes and 54 identities in each
+/// scene: the Launcher's lines, stop buttons, scenes' numbers, its mixer's device lists, meters'
+/// levels and the other parts that are elements now, each kind read once a frame, not once an item.
+///
+/// #1269 (the time signature in the toolbar) raised them by 2 nodes and 1 identity in each scene:
+/// its two numbers are value controls a theme styles, as the tempo is, where it was plain text.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 326,
-            identities: 303,
+            nodes: 389,
+            identities: 358,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 303,
+            theme_change_fresh: 358,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 0,
@@ -46,14 +53,14 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 551,
-            identities: 526,
+            nodes: 614,
+            identities: 581,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 526,
+            theme_change_fresh: 581,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,
@@ -68,14 +75,14 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 338,
-            identities: 315,
+            nodes: 401,
+            identities: 370,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 315,
+            theme_change_fresh: 370,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,
@@ -84,14 +91,14 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 563,
-            identities: 538,
+            nodes: 626,
+            identities: 593,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 538,
+            theme_change_fresh: 593,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,
