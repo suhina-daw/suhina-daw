@@ -788,10 +788,10 @@ impl Entered {
         self.style().map_or(fallback, |s| s.color)
     }
 
-    /// The element's computed `background-color`, the base sheet's included: for an element whose
-    /// look the base sheet gives through a variable (`arrangement clip[muted]` and its
-    /// `--clip-mutedBackground`), so setting the variable reaches it and a theme's own rule still
-    /// wins. `fallback` only where no sheet styles the window.
+    /// The element's computed `background-color`, the base and user-agent tiers' included: for an
+    /// element whose fill those tiers give (often through a variable), so a background a theme
+    /// gives an element around it does not reach it, while a variable the theme sets and its own
+    /// rule for the element do. `fallback` only where no sheet styles the window.
     pub fn computed_background_or(&self, fallback: Color32) -> Color32 {
         self.style().map_or(fallback, |s| s.background)
     }

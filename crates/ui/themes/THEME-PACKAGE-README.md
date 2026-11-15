@@ -465,7 +465,9 @@ specific selector to win over Suhina's.
   the toolbar's words and switches (the time signature `toolbar-module[kind="signature"]`, the
   launch quantisation `[kind="grid"]`, Map `button[kind="map"]`, Play `button[kind="play"]`, the
   browser's switch `button[kind="browser"]`, a connected agent `button[kind="agent"]`), a menu's
-  title on the menu bar (`bar-item[kind="menu"]`), the status bar's counts
+  title on the menu bar (`bar-item[kind="menu"]`, which also names the words of the piano roll
+  toolbar's Grid, Workflow and Ghosts menus: scope a rule with `menu-bar` or
+  `piano-roll-toolbar` to reach one of them), the status bar's counts
   (`bar-item[kind="status-counts"]`), Settings' pages' list (`settings-nav`, `[checked]` for the page
   shown), its switches, choices and presets (`button[kind="switch"]`, `"option"`, `"preset"`), a tick
   box (`button[kind="check"]`), the start page's tabs (`editor-tab[kind="start"]`), the theme

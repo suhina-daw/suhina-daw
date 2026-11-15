@@ -77,9 +77,8 @@ fn shine(r: u8, g: u8, b: u8, alpha: f32) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, (alpha * 255.0).round() as u8)
 }
 
-/// What lights a key, from the sheet where it says: the `accent-color` of `piano-key`, what a
-/// playing or selected key is lit with, and the `color` of `piano-key[playing]` (where it differs
-/// from the plain key's), its name on that light.
+/// What lights a key, from the sheet: the `accent-color` of `piano-key`, what a playing or
+/// selected key is lit with, and the `color` of `piano-key[playing]`, its name on that light.
 fn key_lights() -> (Color32, Color32) {
     use crate::kit::element::{PIANO_KEY, Playing};
     let plain = PIANO_KEY.probe();
