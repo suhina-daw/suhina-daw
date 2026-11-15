@@ -979,7 +979,12 @@ fn a_clip_too_low_for_a_name_bar_still_has_its_mute_mark() {
     assert!(clip::clip_name_bar(low).is_none(), "24 points is below the name bar's least height");
     let centre = clip::mute_mark_centre(low, None, 107.0).expect("a 24-point clip has room for the mark");
     assert!(low.contains(centre), "{centre:?}");
-    assert!(centre.y < low.center().y, "in the upper left corner: {centre:?}");
+    // The body shows the name there (#1381): the mark goes before it, on its line, and the name
+    // starts after the mark, never under it.
+    assert_eq!(centre.y, low.center().y, "on the name's line: {centre:?}");
+    let name = clip::after_mute_mark(107.0, Some(centre));
+    assert!(name > centre.x + 4.5, "the name starts after the mark: {name} vs {centre:?}");
+    assert_eq!(clip::after_mute_mark(107.0, None), 107.0, "a clip turned on keeps its name's place");
 
     // With a name bar, it stays before the name, in the middle of the bar.
     let tall = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 60.0));
