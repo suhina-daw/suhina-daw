@@ -113,7 +113,9 @@ Each night is also kept as a pre-release of its own under the tag **`nightly-YYY
 (`nightly-20261013`), with the same packages and notes, published on the same commit and never
 the latest. A tester can go back to an earlier night to check when something broke, or return
 to a build that opens their project. A second nightly on the same day is kept as
-**`nightly-YYYYMMDD-2`** beside the first, and so on. The nightly job deletes the dated nightlies older than `NIGHTLY_KEEP_DAYS` (30) with
+**`nightly-YYYYMMDD-2`** beside the first, and so on; the name is chosen when the nightly is
+published, so a rerun of a failed run replaces only a dated release of its own commit and never
+another build's. The nightly job deletes the dated nightlies older than `NIGHTLY_KEEP_DAYS` (30) with
 their tags; it touches no other release, and a failure there leaves the new nightly published.
 
 ### Nightly notes
