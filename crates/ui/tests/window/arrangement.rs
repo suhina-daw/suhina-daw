@@ -3281,3 +3281,54 @@ fn a_selection_rectangle_past_the_edge_scrolls_and_picks_clips_out_of_view() {
     assert!(picked.contains(&root), "the clip where it began: {picked:?}");
     assert!(picked.contains(&chords), "a clip out of view when it began: {picked:?}");
 }
+
+/// A click on an unselected track's header outlines it from the first frame in the colour it
+/// keeps: the header's element is selected in the frame that selects the track, so its border is
+/// not the unselected look's for one frame (a flicker, #1023's combined pull request).
+#[test]
+fn a_clicked_header_s_outline_does_not_flicker() {
+    // The strokes of plain rectangles as wide as the header, inside it.
+    fn outlines(h: &Harness<'static, App>, inside: egui::Rect) -> Vec<egui::Color32> {
+        fn walk(shape: &egui::Shape, inside: egui::Rect, out: &mut Vec<egui::Color32>) {
+            match shape {
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, inside, out)),
+                egui::Shape::Rect(rect)
+                    if inside.expand(0.5).contains_rect(rect.rect)
+                        && rect.rect.width() > inside.width() * 0.6
+                        && rect.stroke.width > 0.0
+                        && rect.stroke.color != egui::Color32::TRANSPARENT =>
+                {
+                    out.push(rect.stroke.color)
+                }
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        h.output().shapes.iter().for_each(|s| walk(&s.shape, inside, &mut out));
+        out
+    }
+    let mut h = arrangement_app();
+    h.run();
+    let rect = h.get_by_label("Track Keys").rect();
+    // Over the header's body, clear of its controls on the left.
+    let at = rect.center() + egui::vec2(rect.width() * 0.3, 0.0);
+    h.event(egui::Event::PointerMoved(at));
+    h.step();
+    assert!(outlines(&h, rect).is_empty(), "an unselected header has no outline");
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        });
+        h.step();
+    }
+    let first = outlines(&h, rect);
+    for _ in 0..3 {
+        h.step();
+    }
+    let settled = outlines(&h, rect);
+    assert!(!settled.is_empty(), "the selected header is outlined");
+    assert_eq!(first, settled, "the frame of the click outlines it as the frames after do");
+}

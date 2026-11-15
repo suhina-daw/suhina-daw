@@ -171,6 +171,38 @@ pub(super) fn track_header(
     actions: &mut Vec<Action>,
 ) {
     let mut work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement track header");
+    // The click is taken before the header's element is entered, so the frame that selects the
+    // track paints it from `track-header[selected]`, border included, not from the unselected look.
+    let id = Id::unique(("arrangement-header", lane.track.0));
+    let clip = rect.intersect(lanes_area);
+
+    // The header itself: click selects (Ctrl adds, Shift takes a run), right-click opens the
+    // track's menu, a drag moves the track. Its controls, added after it, take their own clicks.
+    let body = ui.interact(clip, id.with("body"), Sense::click_and_drag());
+    body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Track {}", lane.name)));
+    if body.clicked() {
+        state.targeted = Some(lane.track);
+        let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
+        state.pick_track(lane.track, shift, command, order.tracks);
+        // The track, not a clip, is what Delete acts on now (#690); a clip on it stays selected,
+        // and the detail area shows the track's devices (#950).
+        state.track_focus = true;
+        state.devices_clicked = true;
+        state.automation.let_go();
+    }
+    // A double-click shows the track's devices in the detail area.
+    if body.double_clicked() {
+        state.open_devices = Some(lane.track);
+    }
+    if body.drag_started_by(egui::PointerButton::Primary) {
+        state.gesture.begin(Gesture::Track(lane.track));
+    }
+    if body.drag_stopped_by(egui::PointerButton::Primary)
+        && let Some(dragged) = state.gesture.end_track(|t| *t == lane.track)
+        && let Some(pointer) = body.interact_pointer_pos().or_else(|| ui.ctx().pointer_latest_pos())
+    {
+        state.track_drop = Some((dragged, pointer.y));
+    }
     let own = crate::kit::element::TRACK_HEADER
         .id(&format!("track-{}", lane.track.0))
         .color(rgb(lane.color))
@@ -205,36 +237,6 @@ pub(super) fn track_header(
             sends: lane.sends.len(),
         },
     );
-    let id = Id::unique(("arrangement-header", lane.track.0));
-    let clip = rect.intersect(lanes_area);
-
-    // The header itself: click selects (Ctrl adds, Shift takes a run), right-click opens the
-    // track's menu, a drag moves the track. Its controls, added after it, take their own clicks.
-    let body = ui.interact(clip, id.with("body"), Sense::click_and_drag());
-    body.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Track {}", lane.name)));
-    if body.clicked() {
-        state.targeted = Some(lane.track);
-        let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
-        state.pick_track(lane.track, shift, command, order.tracks);
-        // The track, not a clip, is what Delete acts on now (#690); a clip on it stays selected,
-        // and the detail area shows the track's devices (#950).
-        state.track_focus = true;
-        state.devices_clicked = true;
-        state.automation.let_go();
-    }
-    // A double-click shows the track's devices in the detail area.
-    if body.double_clicked() {
-        state.open_devices = Some(lane.track);
-    }
-    if body.drag_started_by(egui::PointerButton::Primary) {
-        state.gesture.begin(Gesture::Track(lane.track));
-    }
-    if body.drag_stopped_by(egui::PointerButton::Primary)
-        && let Some(dragged) = state.gesture.end_track(|t| *t == lane.track)
-        && let Some(pointer) = body.interact_pointer_pos().or_else(|| ui.ctx().pointer_latest_pos())
-    {
-        state.track_drop = Some((dragged, pointer.y));
-    }
     let selection = state.selected_tracks.clone();
     // Open until a click outside: its items close it themselves, and a colour dragged in its
     // picker does not (#712).
