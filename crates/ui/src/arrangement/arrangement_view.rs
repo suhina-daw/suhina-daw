@@ -30,6 +30,7 @@ use crate::kit::waveform;
 use crate::kit::widgets::{self, Action, Drag, VOLUME_RANGE, volume_position};
 
 mod clip;
+pub(crate) use clip::muted_clip_grey;
 mod header;
 mod lane_menu;
 mod markers_loop;

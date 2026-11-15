@@ -1011,7 +1011,9 @@ button opens its clip in the editor.
   first time round, not every pass on top of each other. Muted notes are not drawn.
 - **Drawing.** Ghost notes are drawn under the clip's own notes and over the grid's rows, as
   plain rectangles in their own track's colour at 25 % opacity: no name, no edge, no velocity
-  stem. A click, a double-click or a drag on a ghost note does what it does on the empty grid (a
+  stem. The notes of a clip that does not sound (turned off, or on a muted track) are the grey
+  the Arrangement draws such a clip in, at the same opacity, and so is its bar among several
+  picked clips (#1393). A click, a double-click or a drag on a ghost note does what it does on the empty grid (a
   click with the Select tool clears the selection, a double-click adds a note there), apart from a
   double-click of the right button, which opens its clip, and the clicks that give one of several
   picked clips the focus (› Several clips picked). A ghost is never selected, moved or listed by
