@@ -697,11 +697,9 @@ fn sheet_toggle(
     }
     let lit = ends(true);
     let fill = at(&lit, Look::background);
-    let ink = at(&lit, Look::color);
-    // A lit ink counts as the theme's only where it differs from the plain side's: one that a rule
-    // for every `button` gives both sides was not chosen for the lit fill, so it is made readable.
-    let themed_ink = lit.0.themed_color().is_some_and(|lit_ink| Some(lit_ink) != plain.0.themed_color());
-    let themed_fill = lit.0.themed_background().is_some();
+    let (ink, themed_ink, themed_fill) = lit.0.style().map_or((at(&lit, Look::color), false, false), |style| {
+        (at(&lit, Look::color), style.authored.color, style.authored.background)
+    });
     let ink = if themed_ink || (keep == Readable::OnThemeFill && !themed_fill) { ink } else { readable(ink, fill) };
     Toggle { off, on: (fill, ink), own_image: entered_lit && lit.0.image_unlike(&plain.0) }
 }
