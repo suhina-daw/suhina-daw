@@ -255,6 +255,34 @@ fn attr_colours_a_track_and_its_children_through_a_variable() {
 }
 
 #[test]
+fn a_registered_variable_dropped_by_substitution_takes_its_initial_value() {
+    let theme = Sheet::parse(
+        "@property --accent { syntax: '<color>'; initial-value: #0000ff; } \
+         @property --loop { syntax: '<color>'; initial-value: #00ff00; } \
+         @property --bare { syntax: '*'; }",
+    )
+    .unwrap();
+    assert!(theme.notices.is_empty(), "{:?}", theme.notices);
+    let user = Sheet::parse(
+        ":root { --accent: var(--missing); --loop: var(--other); --other: var(--loop); \
+         --bare: var(--missing); --reads: var(--accent); }",
+    )
+    .unwrap();
+    let sheets = [
+        AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+        AppliedSheet { sheet: &user, layer: Layer::User, root: None },
+    ];
+    let variables = root_variables(viewport(800.0), &sheets).unwrap();
+    assert_eq!(variables.get("--accent").map(String::as_str), Some("#0000ff"));
+    assert_eq!(variables.get("--loop").map(String::as_str), Some("#00ff00"));
+    // A variable that reads the dropped one sees its initial value.
+    assert_eq!(variables.get("--reads").map(String::as_str), Some("#0000ff"));
+    // With no initial value the registered variable is left out, as an unregistered one is.
+    assert!(!variables.contains_key("--bare"));
+    assert_eq!(resolve_color("var(--accent)", viewport(800.0), &sheets), Ok([0, 0, 255, 255]));
+}
+
+#[test]
 fn a_swatch_colour_resolves_for_each_variant_without_applying_the_sheet() {
     let theme = Sheet::parse(
         "@property --accent { syntax: '<color>'; initial-value: #0000ff; } \

@@ -416,6 +416,22 @@ fn cascade_variables<'a>(
         }
     }
     let mut resolved = crate::variables::resolve(&variables)?;
+    // A registered property that substitution dropped (a cycle, or a `var()` with nothing to
+    // stand for it) is invalid at computed-value time: it takes its initial value, and the
+    // variables that read it are resolved again with that value.
+    let mut dropped = false;
+    for registered in sheets.iter().flat_map(|applied| applied.sheet.properties.iter()) {
+        if variables.contains_key(&registered.name) && !resolved.contains_key(&registered.name) {
+            match &registered.initial {
+                Some(initial) => variables.insert(registered.name.clone(), initial.clone()),
+                None => variables.remove(&registered.name),
+            };
+            dropped = true;
+        }
+    }
+    if dropped {
+        resolved = crate::variables::resolve(&variables)?;
+    }
     // A registered property's value that does not match its syntax is invalid at
     // computed-value time: the property takes its initial value.
     for registered in sheets.iter().flat_map(|applied| applied.sheet.properties.iter()) {
