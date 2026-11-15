@@ -268,7 +268,7 @@ artwork behind Launcher slots; empty cells preserve it and native clip launches 
 unchanged. `off`/omission preserves native fills. Native custom properties inherit
 from the nearest authored ancestor, and a closer scope can override them.
 
-A track header and a mixer strip lay their parts out with Flexbox (and
+A track header, a mixer strip and the toolbar's transport lay their parts out with Flexbox (and
 Grid) in `theme.css`, like the window and the bars. The parts are the elements that paint them;
 the `group`s around them only lay them out. Suhina's own layout is the user-agent sheet's, so a
 theme changes only what it writes a rule for:
@@ -280,6 +280,7 @@ mixer-toggles { flex-direction: column; }              /* solo, cue and arm one 
 group#mixer-level { flex-direction: column; }          /* the fader lying across the strip */
 #mixer-volume { height: 20px; }
 #mixer-sends { display: none; }                        /* no sends in the strip */
+toolbar-module#transport { gap: 4px; }                 /* play, stop and record further apart */
 ```
 
 Which parts a strip has room for stays Suhina's: the mixer's height steps add the name, the
@@ -922,6 +923,9 @@ routing `dropdown`s. Which line holds what is `track-header[layout]`: `short` (o
 `narrow`, `side` or `stacked`; `[name-first]` when the name's line comes first, and `[size]`
 (`tiny`, `small`, `normal`, `spacious`) by the track's height. Keep the column as wide as your
 layout needs with `arrangement { header-min-width: 330px; }` (160 to 520).
+
+The transport (`toolbar-module#transport`) lays out `#control-play`, `#control-stop` and
+`#control-record`.
 
 ### Round 5 additions
 

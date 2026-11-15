@@ -136,6 +136,9 @@ group[kind="toolbar-start"],
 group[kind="toolbar-end"] { flex: 1; gap: 6px; }
 group[kind="toolbar-end"] { justify-content: flex-end; }
 toolbar-module[kind="browser"] { margin-right: -2px; }
+/* The transport lays out play, stop and record, a point apart (#1453). */
+toolbar-module[kind="transport"] { display: flex; gap: 1px; }
+toolbar-module[kind="transport"] > button { flex-shrink: 0; }
 /* The application bar: its start, its centre and its end (the window's buttons, where Suhina draws
    them, keep their own room past it). The start and the end share the room left, so the centre
    stays in the middle; the centre takes at most half the bar. */

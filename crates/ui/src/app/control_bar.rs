@@ -366,7 +366,7 @@ impl App {
             }
             "transport" => {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
-                self.transport(ui, painter, rect, grid, actions);
+                self.transport(ui, painter, (scope, outer), grid, actions);
             }
             "position" => {
                 scope.paint_with(painter, outer, surface(box_fill));
@@ -482,20 +482,26 @@ impl App {
         }
     }
 
-    /// Play, stop and record in the transport module's `rect`.
+    /// Play, stop and record in the transport module (`scope`, its whole box `outer`), where the
+    /// module lays them out (#1453): 28 points wide, a point apart, by the user-agent sheet.
     fn transport(
         &mut self,
         ui: &mut Ui,
         painter: &egui::Painter,
-        rect: Rect,
+        (scope, outer): (&crate::kit::element::Entered, Rect),
         grid: &TrackGrid,
         actions: &mut Vec<Action>,
     ) {
-        let button = |index: f32| {
-            Rect::from_min_size(Pos2::new(rect.left() + index * 29.0, rect.top()), Vec2::new(28.0, rect.height()))
-        };
-        let play = button(0.0);
-        {
+        use crate::kit::native_css::row::{self, Bar, Item};
+        let items: Vec<Item> = ["play", "stop", "record"]
+            .into_iter()
+            .map(|kind| Item::new("button").id(&format!("control-{kind}")).attribute("kind", kind).width(28.0))
+            .collect();
+        // Named as it is entered, for a frame the style engine does not run in.
+        let bar = Bar { id: Some("transport"), ..Bar::of(scope, outer.size()) }.attribute("kind", "transport");
+        let laid = row::row(&bar, &items).unwrap_or_default();
+        let [play, stop, record] = [0, 1, 2].map(|index| laid.at(index, outer.min));
+        if let Some(play) = play {
             let response = widgets::button_area(ui, play, Id::unique("play"), "Play");
             let play_style = crate::kit::element::BUTTON
                 .id("play")
@@ -545,8 +551,7 @@ impl App {
             }
             drop(play_style);
         }
-        let stop = button(1.0);
-        {
+        if let Some(stop) = stop {
             let response = widgets::button_area(ui, stop, Id::unique("stop"), "Stop");
             let stop_style = crate::kit::element::BUTTON.id("stop").response(&response).enter();
             if response.clicked() {
@@ -575,7 +580,9 @@ impl App {
             drop(stop_style);
         }
         let recording = self.session().is_some_and(|s| s.records_arrangement());
-        crate::session::record_controls::record_button(ui, painter, button(2.0), recording, actions);
+        if let Some(record) = record {
+            crate::session::record_controls::record_button(ui, painter, record, recording, actions);
+        }
     }
 
     /// The toolbar's button that shows or hides the browser (`#control-browser-toggle`), the same

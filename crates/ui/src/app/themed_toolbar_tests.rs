@@ -383,6 +383,25 @@ fn the_transport_stays_in_the_middle_and_a_narrow_toolbar_gives_way() {
     skin::configure(&skin::Skin::default());
 }
 
+/// The transport lays out play, stop and record in CSS (#1453): a gap moves stop and record, a
+/// hidden stop is neither drawn nor clicked and record closes up.
+#[test]
+fn the_transport_lays_its_buttons_out_from_the_sheet() {
+    let mut harness = native_bar();
+    let (play, stop) = (harness.get_by_label("Play").rect(), harness.get_by_label("Stop").rect());
+    assert_eq!(stop.left() - play.right(), 1.0, "a point apart");
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    harness.state_mut().app.use_test_skin(css("toolbar-module#transport { gap: 5px; }"));
+    harness.run();
+    let (play, stop) = (harness.get_by_label("Play").rect(), harness.get_by_label("Stop").rect());
+    assert_eq!(stop.left() - play.right(), 5.0);
+    harness.state_mut().app.use_test_skin(css("#transport > #control-stop { display: none; }"));
+    harness.run();
+    assert!(harness.query_by_label("Stop").is_none());
+    assert!(harness.query_by_label("Play").is_some());
+    skin::configure(&skin::Skin::default());
+}
+
 /// The transport, a gap and the position: the toolbar's middle.
 const TRANSPORT_AND_POSITION: f32 = 28.0 * 3.0 + 2.0 + 6.0 + 64.0;
 
