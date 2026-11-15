@@ -43,6 +43,15 @@ use suhina_theme_render::{Subject, scenes};
 /// styles worked out after a theme change, by 11 in each scene: the lookups the root's `Visuals`
 /// are built from (`button` in its four states and `[checked]`, `text-input` and its `:focus`,
 /// `menu`, `scroll-bar` in three states), once when the styles reset, with no node in the tree.
+///
+/// #1448 (a base style sheet under every theme) runs Suhina Studio on the style engine, and its
+/// scenes are counted here too: started from Glass, so choosing Studio resets the styles, it
+/// costs what Glass and the see-through theme cost, and no count went up. It added the counts
+/// after one colour of a theme's own map is edited (`colour_change_*`, the see-through theme's;
+/// a built-in theme is not edited in place): the colour map is the base tier's `:root` rule,
+/// and the base sheet reads every colour variable, so one change resets the styles once, as a
+/// theme change does (2 frames, and every identity worked out afresh: 386 and 618, 398 and 630 on
+/// Windows). Before, a colour the theme's own sheet did not read reset nothing.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -59,6 +68,8 @@ const RECORDED: [(&str, Counts); 2] = [
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 0,
+            colour_change_frames: 2,
+            colour_change_fresh: 386,
         },
     ),
     (
@@ -75,6 +86,8 @@ const RECORDED: [(&str, Counts); 2] = [
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,
+            colour_change_frames: 2,
+            colour_change_fresh: 618,
         },
     ),
 ];
@@ -97,6 +110,8 @@ const RECORDED: [(&str, Counts); 2] = [
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,
+            colour_change_frames: 2,
+            colour_change_fresh: 398,
         },
     ),
     (
@@ -113,6 +128,8 @@ const RECORDED: [(&str, Counts); 2] = [
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 0,
+            colour_change_frames: 2,
+            colour_change_fresh: 630,
         },
     ),
 ];
@@ -130,6 +147,8 @@ fn within(name: &str, theme: &str, counts: Counts, budget: Counts) -> Vec<String
         ("frames after a hover", counts.hover_frames, budget.hover_frames),
         ("style frames after a hover", counts.hover_style_frames, budget.hover_style_frames),
         ("fresh styles after a hover", counts.hover_fresh as u64, budget.hover_fresh as u64),
+        ("frames after a colour change", counts.colour_change_frames, budget.colour_change_frames),
+        ("fresh styles after a colour change", counts.colour_change_fresh as u64, budget.colour_change_fresh as u64),
     ];
     fields
         .into_iter()
@@ -142,8 +161,13 @@ fn within(name: &str, theme: &str, counts: Counts, budget: Counts) -> Vec<String
 
 #[test]
 fn the_demo_and_an_expanded_fm_synth_stay_within_the_budget() {
-    // Glass, a bundled see-through theme with a style sheet, and the see-through test theme.
-    let themes = [Subject::built_in("suhina-glass").expect("a built-in theme"), super::see_through().unwrap()];
+    // Suhina Studio, which runs the style engine like every theme (#1448); Glass, a bundled
+    // see-through theme with a style sheet; and the see-through test theme.
+    let themes = [
+        Subject::built_in(suhina_ui::kit::theme::BUILT_IN).expect("a built-in theme"),
+        Subject::built_in("suhina-glass").expect("a built-in theme"),
+        super::see_through().unwrap(),
+    ];
     let mut over = Vec::new();
     for theme in &themes {
         for (name, budget) in RECORDED {
