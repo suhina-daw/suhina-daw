@@ -112,6 +112,9 @@ pub(super) struct MenuCx<'a> {
     pub(super) keymap: &'a crate::settings::keymap::Keymap,
     pub(super) copied: Option<usize>,
     pub(super) grid: TimelineGrid,
+    /// Where playback is, in the clip's placement's input, as the keys get it: Paste with nothing
+    /// selected lands there when it is inside the clip.
+    pub(super) playhead: f64,
 }
 
 /// The height of one of the menu's rows, lower than the window's other rows.
@@ -296,7 +299,7 @@ impl MenuCx<'_> {
         let mut params = clip.address.clone();
         match pick {
             Pick::Key("pianoRoll.quantize") => state.quantize_selected(),
-            Pick::Key(action) => state.key_action(action, clip, 0.0, self.copied),
+            Pick::Key(action) => state.key_action(action, clip, self.playhead, self.copied),
             Pick::Delete => {
                 params["notes"] = json!(state.acting().iter().collect::<Vec<_>>());
                 state.selected.clear();

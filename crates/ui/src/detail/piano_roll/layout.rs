@@ -232,6 +232,13 @@ pub(super) fn tool_pointer(tool: Tool) -> Option<(IconButton, Vec2)> {
     }
 }
 
+/// The pointer a tool shows over the grid: its icon drawn in place of the hidden system cursor,
+/// or, while the right-click menu is open, the ordinary arrow and no icon, so the pointer never
+/// goes missing on the grid around the menu.
+pub(super) fn grid_pointer(tool: Tool, menu_open: bool) -> (Option<(IconButton, Vec2)>, Option<CursorIcon>) {
+    if menu_open { (None, None) } else { (tool_pointer(tool), cursor_for(tool)) }
+}
+
 /// The square a tool's icon is drawn in for a pointer at `pos`: `size` wide, its hotspot on `pos`.
 pub(super) fn tool_pointer_rect(pos: Pos2, hotspot: Vec2, size: f32) -> Rect {
     Rect::from_min_size(pos - hotspot * size, Vec2::splat(size))

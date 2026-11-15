@@ -665,6 +665,13 @@ impl ClipPlan {
         }
     }
 
+    /// The passes through the loop completed `elapsed` beats after the launch: what
+    /// [`Playing::passes`] counts by then, so a clip that resumes or takes over a position rolls
+    /// its notes as the uninterrupted playback would (ADR 0037).
+    fn pass_at(&self, elapsed: f64) -> u64 {
+        loop_passes(self.offset, self.loop_range, elapsed)
+    }
+
     /// Notes end here: the loop end, or the end marker.
     fn note_limit(&self) -> f64 {
         self.loop_range.map_or(self.offset + self.length, |(_, end)| end)
@@ -682,6 +689,16 @@ struct SlotPlan {
     /// it does nothing, rather than what an empty slot's stop button does.
     has_clip: bool,
     has_stop: bool,
+}
+
+/// The loop passes completed `elapsed` beats after a launch from `offset`: 0 before the loop's
+/// end is first reached, then one more each time it is.
+fn loop_passes(offset: f64, loop_range: Option<(f64, f64)>, elapsed: f64) -> u64 {
+    let beat = offset + elapsed;
+    match loop_range {
+        Some((start, end)) if beat >= end && end > start => 1 + ((beat - end) / (end - start)).floor() as u64,
+        _ => 0,
+    }
 }
 
 /// A clip that is playing or fading out.
@@ -1427,7 +1444,7 @@ impl Renderer {
                     elapsed_frames: elapsed * frames_per_beat_now,
                     last_clip_beat: beat,
                     next_note: plan.first_note_from(beat),
-                    passes: 0,
+                    passes: plan.pass_at(elapsed),
                     fade_left: 0.0,
                     stretched,
                     // A follow action whose time had come ran on the old output already; one

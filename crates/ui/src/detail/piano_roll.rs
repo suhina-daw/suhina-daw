@@ -394,9 +394,11 @@ pub fn show(
         ui.ctx().pointer_hover_pos().filter(|p| grid_rect.contains(*p) && ui.rect_contains_pointer(grid_rect))
     {
         let over = note_at(&layout, &clip.notes, pos);
+        let menu_open = state.menu.is_some();
         let mut drawn = |tool: Tool| {
-            tool_icon = tool_pointer(tool).map(|icon| (icon, pos));
-            cursor_for(tool)
+            let (icon, cursor) = grid_pointer(tool, menu_open);
+            tool_icon = icon.map(|icon| (icon, pos));
+            cursor
         };
         let cursor = match (&state.gesture, over, state.tool) {
             (Some(Gesture::Resize { .. } | Gesture::ResizeStart { .. }), _, _) => Some(CursorIcon::ResizeHorizontal),
@@ -836,8 +838,8 @@ pub fn show(
     let axis = ruler_view::Axis { origin: grid_rect.left() - state.scroll.x, beat_width: state.beat_width };
     ruler_view::draw(ui, ruler, &axis, &shape);
     state.live_span = draw_span_bar(ui, &layout, clip, state, selecting);
-    MenuCx { clip, keymap, copied, grid }.show(ui, state, actions);
-    if let Some(((icon, hotspot), pos)) = tool_icon.filter(|_| state.menu.is_none()) {
+    MenuCx { clip, keymap, copied, grid, playhead: playhead.unwrap_or(0.0) }.show(ui, state, actions);
+    if let Some(((icon, hotspot), pos)) = tool_icon {
         draw_tool_pointer(&ui.painter_at(whole), icon, tool_pointer_rect(pos, hotspot, TOOL_POINTER));
     }
     if state.magnifier

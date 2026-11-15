@@ -193,9 +193,13 @@ fn an_arrangement_beat_is_the_inverse_of_the_content_beat() {
     let looped = Placement { start: 0.0, length: 8.0, offset: 1.0, loop_range: Some((0.0, 2.0)) };
     assert_eq!(looped.arrangement_beat(1.5), Some(0.5));
     assert_eq!(looped.arrangement_beat(1.0), Some(0.0));
-    // Beat 2 of the content wraps into the loop's start, which the clip never plays (it
-    // starts at the offset).
-    assert_eq!(looped.arrangement_beat(2.0), None);
+    // Before the offset, inside the loop: where the loop first comes round to it, after the
+    // stretch from the offset to the loop's end. Beat 2 of the content wraps to the loop's start.
+    assert_eq!(looped.arrangement_beat(0.5), Some(1.5));
+    assert_eq!(looped.arrangement_beat(2.0), Some(1.0));
+    // Past the clip's end it plays nothing.
+    let short = Placement { length: 1.5, ..looped };
+    assert_eq!(short.arrangement_beat(0.5), None);
     assert_eq!(looped.arrangement_beat(f64::NAN), None);
     // Round trip through both mappings where the clip plays.
     for at in [8.0, 9.5, 11.5] {
@@ -1319,4 +1323,45 @@ fn the_velocity_range_keys_and_drag() {
     );
     let down = state.key_action("pianoRoll.rangeDown", &piano, 0.0, None).expect("a command");
     assert_eq!(down.params["by"], json!(-1));
+}
+
+/// The menu's Paste with nothing selected lands at the playhead, as Ctrl+V does: the clip plays
+/// from arrangement beat 16, so playback at beat 18 is its content's beat 2.
+#[test]
+fn the_menus_paste_lands_at_the_playhead_like_the_key() {
+    let piano = clip(vec![note(0.0, 1.0, 60)]);
+    let keymap = crate::settings::keymap::Keymap::default();
+    let grid = TimelineGrid::new(0.25, 40.0, 4.0, 4.0);
+    let menu = MenuCx { clip: &piano, keymap: &keymap, copied: Some(1), grid, playhead: 18.0 };
+    let at = MenuAt { pos: Pos2::ZERO, beat: 5.0, note: None, opened: true };
+    let mut by_menu = focused_on(&piano);
+    let pasted = menu.run(context_menu::Pick::Key("selection.paste"), at, &mut by_menu).expect("note.paste");
+    let mut by_key = focused_on(&piano);
+    let keyed = by_key.key_action("selection.paste", &piano, 18.0, Some(1)).expect("note.paste");
+    assert_eq!(pasted.params["time"], json!(2.0));
+    assert_eq!(pasted.params, keyed.params);
+}
+
+/// While the right-click menu is open the grid around it shows the ordinary arrow: the tool's
+/// icon is not drawn there, so the system cursor is not hidden either and the pointer never
+/// goes missing.
+#[test]
+fn the_grid_keeps_a_pointer_while_the_menu_is_open() {
+    for tool in [Tool::Draw, Tool::Paint, Tool::Erase, Tool::Slice, Tool::Mute] {
+        assert_eq!(grid_pointer(tool, true), (None, None), "{tool:?}");
+        let (icon, cursor) = grid_pointer(tool, false);
+        assert!(icon.is_some() && cursor == Some(CursorIcon::None), "{tool:?}");
+    }
+}
+
+/// Split clip at a time selection before the start marker of a looping clip cuts where the loop
+/// first plays it: offset 2 and loop 0 to 4, so content 0 to 1 plays at beats 2 to 3.
+#[test]
+fn split_clip_cuts_a_selection_before_the_start_marker_where_the_loop_plays_it() {
+    let mut piano = clip(vec![note(0.0, 1.0, 60)]);
+    piano.placement = Placement { start: 0.0, length: 16.0, offset: 2.0, loop_range: Some((0.0, 4.0)) };
+    let mut state = focused_on(&piano);
+    state.select_span(0.0, 1.0);
+    let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
+    assert_eq!(split.params["ats"], json!([2.0, 3.0]));
 }

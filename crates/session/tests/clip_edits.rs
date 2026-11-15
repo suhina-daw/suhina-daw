@@ -237,3 +237,103 @@ fn a_pattern_two_clips_play_is_neither_cropped_nor_given_a_new_first_beat() {
     assert!(shared(crop), "refused for the shared pattern");
     assert_eq!(*session.project(), before, "nothing changed for either clip");
 }
+
+#[test]
+fn a_new_first_beat_moves_the_notes_of_every_lane_of_a_pattern() {
+    let mut project = project(vec![]);
+    // Content 1 as a pattern with notes for track 1 and for another track, played by one clip.
+    let lane = |track: u32, at: f64| ContentLane {
+        target: Some(TrackId(track)),
+        data: LaneData::Notes(vec![note(at, 1.0, 60)].into()),
+    };
+    let content = project.contents.iter_mut().find(|c| c.id == ContentId(1)).unwrap();
+    content.lanes = vec![lane(1, 2.0), lane(2, 3.0)].into();
+    project.arrangement.lanes[0].clips[0].offset = 2.0;
+    let mut session = Session::new(project);
+    run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 2.0 })).unwrap();
+    let content = session.project().contents.iter().find(|c| c.id == ContentId(1)).unwrap();
+    let times: Vec<f64> = content
+        .lanes
+        .iter()
+        .flat_map(|l| match &l.data {
+            LaneData::Notes(notes) => notes.iter().map(|n| n.time).collect(),
+            LaneData::Audio(_) => vec![],
+        })
+        .collect();
+    assert_eq!(times, vec![0.0, 1.0], "both lanes keep where they play");
+    // A note of the other lane before the beat stands in the way too: track 1's note is at the
+    // beat, the other lane's before it.
+    let mut project = session.project().clone();
+    let content = project.contents.iter_mut().find(|c| c.id == ContentId(1)).unwrap();
+    content.lanes = vec![lane(1, 3.0), lane(2, 2.5)].into();
+    project.arrangement.lanes[0].clips[0].offset = 3.0;
+    let mut session = Session::new(project);
+    let before = session.project().clone();
+    let refused = run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 3.0 }));
+    assert!(refused.is_err_and(|e| e.contains("a note starts at content beat 2.5")));
+    assert_eq!(*session.project(), before);
+}
+
+/// Each clip edit redoes to what it made, and a malformed parameter (missing, the wrong type,
+/// out of range, a note or clip that does not exist) is refused with the project unchanged.
+#[test]
+fn the_clip_edits_redo_and_refuse_malformed_parameters() {
+    let notes = vec![note(1.0, 1.0, 60), note(2.5, 1.0, 60), note(4.0, 1.0, 64)];
+    let at = |extra: serde_json::Value| {
+        let mut params = json!({ "track": 1, "index": 0 });
+        if let (Some(p), Some(e)) = (params.as_object_mut(), extra.as_object()) {
+            p.extend(e.clone());
+        }
+        params
+    };
+    let edits = [
+        ("note.join", at(json!({ "notes": [0, 1] }))),
+        ("note.fitToTime", at(json!({ "notes": [0, 1], "start": 0.0, "end": 4.0 }))),
+        ("clip.crop", at(json!({ "start": 1.0, "end": 5.0 }))),
+        ("clip.setOrigin", at(json!({ "beat": 1.0 }))),
+        ("clip.split", at(json!({ "ats": [2.0, 6.0] }))),
+    ];
+    for (id, params) in &edits {
+        let mut session = Session::new(project(notes.clone()));
+        if *id == "clip.setOrigin" {
+            run(&mut session, "clip.setStart", at(json!({ "offset": 1.0 }))).unwrap();
+        }
+        let before = session.project().clone();
+        run(&mut session, id, params.clone()).unwrap_or_else(|e| panic!("{id}: {e}"));
+        let after = session.project().clone();
+        undo(&mut session);
+        assert_eq!(*session.project(), before, "{id}: undone");
+        run(&mut session, "edit.redo", json!({})).unwrap();
+        assert_eq!(*session.project(), after, "{id}: redone");
+    }
+    let malformed = [
+        // Missing.
+        ("note.join", at(json!({}))),
+        ("note.fitToTime", at(json!({ "notes": [0, 1], "end": 4.0 }))),
+        ("clip.crop", at(json!({ "start": 1.0 }))),
+        ("clip.setOrigin", at(json!({}))),
+        // The wrong type.
+        ("note.join", at(json!({ "notes": "0, 1" }))),
+        ("note.fitToTime", at(json!({ "notes": [0, 1], "start": "0", "end": 4.0 }))),
+        ("clip.crop", at(json!({ "start": 1.0, "end": [5.0] }))),
+        ("clip.setOrigin", at(json!({ "beat": true }))),
+        ("clip.split", at(json!({ "ats": 2.0 }))),
+        // Out of range.
+        ("note.fitToTime", at(json!({ "notes": [0, 1], "start": 4.0, "end": 1.0 }))),
+        ("clip.crop", at(json!({ "start": -1.0, "end": 5.0 }))),
+        ("clip.setOrigin", at(json!({ "beat": -2.0 }))),
+        ("clip.split", at(json!({ "ats": [100.0] }))),
+        // A note or a clip that does not exist.
+        ("note.join", at(json!({ "notes": [0, 99] }))),
+        ("note.fitToTime", at(json!({ "notes": [99], "start": 0.0, "end": 4.0 }))),
+        ("clip.crop", json!({ "track": 1, "index": 9, "start": 1.0, "end": 5.0 })),
+        ("clip.setOrigin", json!({ "track": 9, "index": 0, "beat": 1.0 })),
+        ("clip.split", json!({ "track": 1, "index": 9, "ats": [2.0] })),
+    ];
+    for (id, params) in malformed {
+        let mut session = Session::new(project(notes.clone()));
+        let before = session.project().clone();
+        assert!(run(&mut session, id, params.clone()).is_err(), "{id} {params}");
+        assert_eq!(*session.project(), before, "{id} {params}: unchanged");
+    }
+}

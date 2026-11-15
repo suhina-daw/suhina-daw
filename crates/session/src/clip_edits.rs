@@ -10,7 +10,7 @@
 //! them: it has no notes.
 
 use serde_json::{Value, json};
-use suhina_model::{LoopRange, Note, Notes};
+use suhina_model::{LaneData, LoopRange, Note, Notes};
 
 use crate::commands::Args;
 use crate::notes::{
@@ -290,15 +290,29 @@ pub(crate) fn set_origin(session: &mut Session, params: &Value) -> Result<Value,
         return Err(format!("the clip's loop starts at content beat {}, before beat {beat}", range.start).into());
     }
     copy_on_write(&mut session.project, params, |p| {
-        let notes = notes_mut(p, params)?;
-        if let Some(early) = notes.iter().map(|n| n.time).find(|t| *t < beat - EPSILON) {
+        // The beats move for the whole content, so the notes of every lane move with them: a
+        // pattern's lanes for other tracks play from the same start marker and loop.
+        notes_mut(p, params)?;
+        let (_, id, _) = locate(p, params)?;
+        let content = p.contents.iter_mut().find(|c| c.id == id).ok_or("the clip's content is missing")?;
+        let lanes = || {
+            content.lanes.iter().filter_map(|l| match &l.data {
+                LaneData::Notes(notes) => Some(notes),
+                LaneData::Audio(_) => None,
+            })
+        };
+        if let Some(early) = lanes().flat_map(|n| n.iter().map(|n| n.time)).find(|t| *t < beat - EPSILON) {
             return Err(format!(
                 "a note starts at content beat {early}, before beat {beat}; the content has no beats before its first"
             )
             .into());
         }
-        for note in notes.iter_mut() {
-            note.time = (note.time - beat).max(0.0);
+        for lane in content.lanes.iter_mut() {
+            if let LaneData::Notes(notes) = &mut lane.data {
+                for note in notes.iter_mut() {
+                    note.time = (note.time - beat).max(0.0);
+                }
+            }
         }
         let clip = clip_mut(p, at).ok_or("the clip is missing")?;
         clip.offset = (clip.offset - beat).max(0.0);

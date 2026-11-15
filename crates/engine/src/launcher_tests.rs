@@ -1139,3 +1139,18 @@ fn cancelling_a_restored_waiting_start_does_not_keep_the_resume_target() {
     assert_eq!(renderer.graph.launcher.beat, 1.0);
     assert!(renderer.graph.launcher.columns[0].playing.is_none());
 }
+
+/// A clip that resumes, or takes over a position with legato, counts the loop passes the
+/// uninterrupted playback would have made, so its notes roll the same velocities (ADR 0037).
+#[test]
+fn a_resumed_clip_counts_the_loop_passes_already_played() {
+    // Offset 0, loop 0 to 4: beat 8.5 is in the third pass.
+    assert_eq!(super::loop_passes(0.0, Some((0.0, 4.0)), 8.5), 2);
+    assert_eq!(super::loop_passes(0.0, Some((0.0, 4.0)), 3.9), 0);
+    assert_eq!(super::loop_passes(0.0, Some((0.0, 4.0)), 4.0), 1);
+    // A start marker before the loop: the first pass ends at the loop's end, 6 beats in.
+    assert_eq!(super::loop_passes(2.0, Some((4.0, 8.0)), 6.0), 1);
+    // No loop, or an empty one: one pass.
+    assert_eq!(super::loop_passes(0.0, None, 100.0), 0);
+    assert_eq!(super::loop_passes(0.0, Some((4.0, 4.0)), 100.0), 0);
+}

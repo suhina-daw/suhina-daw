@@ -74,11 +74,18 @@ impl Placement {
         {
             content = start + (content - start) % (end - start);
         }
-        let elapsed = content - self.offset;
-        // A beat before the clip's offset is not played by it; one past its end lands on the end.
+        let mut elapsed = content - self.offset;
         if elapsed < 0.0 {
-            return None;
+            // A beat before the offset is first played when the loop comes round to it: after the
+            // stretch from the offset to the loop's end. Without a loop the clip never plays it.
+            match self.loop_range {
+                Some((start, end)) if end > start && content >= start && self.offset < end => {
+                    elapsed = (end - self.offset) + (content - start);
+                }
+                _ => return None,
+            }
         }
+        // One past the clip's end lands on the end.
         let at = self.start + elapsed;
         (at < self.start + self.length).then_some(at.max(self.start))
     }

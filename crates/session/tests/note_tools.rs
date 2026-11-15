@@ -802,7 +802,22 @@ fn setting_a_velocity_range_absolutely_or_by_a_step() {
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(notes_of(&session, 1), before, "one undo step each");
-    let bad = |params| run(&mut Session::new(project(scale_notes())), "note.setVelocityRange", params).is_err();
+    for _ in 0..3 {
+        run(&mut session, "edit.redo", json!({})).unwrap();
+    }
+    assert_eq!(ranges(&session), vec![19, 127, -1, 0], "redone");
+    let bad = |params: serde_json::Value| {
+        let mut session = Session::new(project(scale_notes()));
+        let before = session.project().clone();
+        let refused = run(&mut session, "note.setVelocityRange", params).is_err();
+        refused && *session.project() == before
+    };
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": -128 })));
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": "20" })), "the wrong type");
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "by": [1] })), "the wrong type");
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": "0", "range": 4 })), "the wrong type");
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [99], "range": 4 })), "no such note");
+    assert!(bad(json!({ "track": 1, "index": 9, "notes": [0], "range": 4 })), "no such clip");
     assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": 128 })));
     assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": 1, "by": 1 })));
     assert!(bad(json!({ "track": 1, "index": 0, "notes": [0] })));
