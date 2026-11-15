@@ -87,8 +87,8 @@ use suhina_theme_render::{Subject, scenes};
 /// its two numbers are value controls a theme styles, as the tempo is, where it was plain text.
 /// With #1453's strips laid out in CSS and the stack's colours together (the combined #1023 pull
 /// request), every scene's counts are 5 nodes and 4 identities over #1452's, and the styles worked
-/// out after a theme or a colour change 4 more (459 and 460, 709 and 710; 471 and 472, 721 and 722
-/// on Windows, unmeasured there, moved by the same).
+/// out after a theme or a colour change 4 more (459 and 460, 709 and 710). On Windows each count is
+/// one more again (478 nodes and 472 identities, 472 and 473, 722 and 723), as CI measured it.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -136,37 +136,37 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 477,
-            identities: 471,
+            nodes: 478,
+            identities: 472,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 471,
+            theme_change_fresh: 472,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 472,
+            colour_change_fresh: 473,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 727,
-            identities: 721,
+            nodes: 728,
+            identities: 722,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 721,
+            theme_change_fresh: 722,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 722,
+            colour_change_fresh: 723,
         },
     ),
 ];
