@@ -46,6 +46,7 @@ covers:
   - crates/ui/src/kit/element.rs
   - crates/theme-package/src/elements.rs
   - crates/theme-package/src/user-agent.css
+  - crates/theme-package/src/base.css
   - crates/theme-package/src/lib.rs
   - crates/theme-package/src/meta.rs
   - crates/ui/src/detail/piano_roll.rs
@@ -379,26 +380,25 @@ Imports choose unused theme ids rather than overwriting existing themes.
 ## The user-agent sheet
 
 Suhina has a user-agent style sheet, as a browser does: `crates/theme-package/src/user-agent.css`
-(`suhina_theme_package::USER_AGENT_SHEET`), built into the app. It is what every element looks
-like before a theme styles it.
+(`suhina_theme_package::USER_AGENT_SHEET`), built into the app. It is the bare floor every
+element stands on: what keeps it usable, with no design and no colour of Suhina's.
 
 - **It selects elements by name, state and attribute only:** no classes (but the standard toolbar
-  group classes, `group.transport` and `group.display`, once the toolbar has groups), no ids and no
-  variables, no at-rules. A test in `suhina-theme-package` checks this, and that every element it
-  names is in the registry.
-- **The cascade** is: the user-agent sheet, the theme's `theme.css`, the chosen variant, device
-  panel sheets (each inside its panel), and the user's `user.css` (`suhina_style::cascade::Layer`).
-  Until the palette goes (#995 § 10), the palette's values (`:root { --accent: … }`), the text
-  colour of `html, body` and the palette colours of the parts below sit beside the user-agent
-  sheet in its tier; they are the host's, not the sheet's. A rule of this tier on an element
-  replaces what the element inherited from a theme's rule on an element around it.
+  group classes, `group.transport` and `group.display`, once the toolbar has groups), no ids, no
+  variables, no colours and no at-rules. Tests in `suhina-theme-package` check this, and that every
+  element it names is in the registry.
+- **The cascade** is: the user-agent sheet, the base tier (*The base sheet*), the theme's
+  `theme.css`, the chosen variant, device panel sheets (each inside its panel), and the user's
+  `user.css` (`suhina_style::cascade::Layer`). A rule of the user-agent or the base tier on an
+  element replaces what the element inherited from a theme's rule on an element around it, and
+  what it gives is not the theme's (`authored`).
 - **What it holds:** `overflow: hidden` on every region (the registry's `Region` kind); a 1 px
   `border-bottom-width` on the bars over the views (`application-bar`, `menu-bar`,
   `project-tabs`, `toolbar`) and a 1 px `border-top-width` on `status-bar`, in `--border` from
-  the palette's tier (the lines over and under the views are `separator#views-top` and
+  the base sheet (the lines over and under the views are `separator#views-top` and
   `#views-bottom`); the window's grid (*The window grid*);
   `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; the default
-  artwork; the sample map's colours; the theme swatch's rounded square.
+  artwork; the theme swatch's rounded square, in the colour its element carries.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
   `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one
   too. Every theme gets the defaults for the controls it does not replace. The defaults take their
@@ -406,10 +406,10 @@ like before a theme styles it.
   `data-suhina-ink` attribute any more, so a copy of the default artwork works in any theme. A
   control with two colours is two elements: `knob-body` and `knob-pointer`, `fader-cap` and
   `fader-rail`. Until a theme gives one of these elements a `color` of its own, each takes the
-  palette colour the default artwork had: `--control-background` for a knob's body, the control
+  colour the base sheet gives it: `--control-background` for a knob's body, the control
   colour darkened for a fader's rail, lit a little by the values' text for its cap
   (`--control-hoverBackground` instead while the pointer is on it or drags it), each a rule of the
-  palette's tier on the part itself, so a `color` a theme gives an element around it (`knob`,
+  base sheet on the part itself, so a `color` a theme gives an element around it (`knob`,
   `mixer`) does not reach it. A knob's pointer has no such rule: it takes the knob's colour. The
   parts are entered with their control's pointer states, so `knob-body:hover` and
   `fader-rail:active` apply.
@@ -429,11 +429,12 @@ like before a theme styles it.
   `fader-cap:active`, `button:disabled`, `button[checked]` (a toggle that is on). The earlier role
   form (`knob.body:hover`, `solo:on`) still reads; Suhina writes the element form. Roles without
   default artwork (`piano.draw`, `meter.frame-3`) are written as roles.
-- **Sample-map colours are not settings.** The user-agent sheet styles each sound by its kind,
-  `sample-point[kind="kick"] { color: #D06E5E; }` and so on for `snare`, `clap`, `closedHat`,
-  `openHat`, `hat`, `rim`, `tom`, `crash`, `ride`, `cymbal`, `percussion`, `bass`, `tonal`,
-  `vocal`, `effect` and `other`. A theme restyles them with rules of its own and may offer its own
-  quick controls for them. The `kind.*` palette tokens (`--kind-kick`, …) are gone.
+- **Sample-map colours are not settings.** The base sheet colours each sound by its kind from a
+  core variable of its own, `sample-point[kind="kick"] { color: var(--sample-kick); }` (`#D06E5E`)
+  and so on for `snare`, `clap`, `closedHat`, `openHat`, `hat`, `rim`, `tom`, `crash`, `ride`,
+  `cymbal`, `percussion`, `bass`, `tonal`, `vocal`, `effect` and `other`. A theme recolours them
+  by setting those variables or with rules of its own, and may offer its own quick controls for
+  them. The `kind.*` palette tokens (`--kind-kick`, …) are gone.
 - **`@media (prefers-color-scheme)` is not supported.** A theme with light and dark looks ships
   them as variants; a sheet that uses it gets a notice and the `@media` rule does not apply.
 - **What changes for a theme of an earlier version** (breaking changes, #1019):
@@ -449,7 +450,55 @@ like before a theme styles it.
   - *The `kind.*` palette tokens are not read.* A sheet's `--kind-kick` or a theme file's
     `"kind.kick"` gets a notice that names the rule to write instead,
     `sample-point[kind="kick"] { color: … }` (`theme::former_kind_token`); the sample map shows
-    the user-agent sheet's colour for the kind until the theme has that rule.
+    the base sheet's colour for the kind until the theme has that rule.
+
+## The base sheet
+
+Suhina's own design is a style sheet too, `crates/theme-package/src/base.css`
+(`suhina_theme_package::BASE_SHEET`), under every theme, as a browser's own look sits under a
+page's (ADR 0031, amendment of 2026-11-15).
+
+- **A tier of its own.** The base sheet is in the cascade's base tier (`Layer::Base`), between the
+  user-agent sheet and the theme. Every rule of a theme, its variant, a device panel's sheet and
+  `user.css` beats every base rule, whatever its specificity or `@layer`: nothing about the base
+  sheet's selectors matters to a theme author. A theme that restyles an element states the states
+  it wants for it as well: `button { … }` hides a base `button[checked]`, so the theme adds its
+  own `button[checked] { … }`. A theme that sets only colour variables keeps every state.
+- **Not the theme's.** What a base rule gives an element is not authored, as the user agent's is
+  not: the code that asks whether a theme styled something sees only the theme's rules.
+- **No fixed colour.** Every colour in the base sheet reads a variable (it may mix one with
+  `black` to shade it), so a theme's variables reach everything it styles and an element added in
+  a later version matches a theme that never heard of it. A test checks it.
+- **What else is in the tier.** First the core variables' registrations (`core.css`, with Suhina
+  Studio's values), so `var(--accent)` always resolves; then the base sheet; then the theme's
+  colour map (`Theme.colors`, the colours a JSON theme or the theme editor sets) as a `:root`
+  rule, so a `:root` in the theme's own sheet beats it; then, over a backdrop image, the window's
+  faded colours as a rule for `window` (*Window opacity*).
+- **What it holds now:** the text colour and size of `html, body`; the bars' border colour; the
+  colours of `knob-body`, `fader-rail` and `fader-cap`; the progress bar's (`progress`,
+  `progress-fill`); the drop targets' lines (`drop-target[kind="insert"]`,
+  `drop-target[kind="area"]`); the browser's icons by kind (`--browser-icon-midi`,
+  `--browser-icon-sample`, `--browser-icon-instrument`, `--browser-icon-effect`); the sample
+  map's kinds. The views move onto it area by area (#1449 – #1452), each in a section of its own.
+- **Opting out.** `"base": "none"` in `theme.json` leaves the base sheet out: the theme stands on
+  the user-agent sheet's bare look, under its own rules. The core registrations and its colour map
+  still apply.
+- **Colouring a region goes through its variables.** `mixer { --text-value: gold; }` reaches every
+  part inside the mixer the base sheet colours with `--text-value`. A plain `mixer { color: gold }`
+  reaches only what has no rule of its own, so it does not recolour parts the base sheet styles.
+  Until the palette goes (#1452), entering an element whose colour variables differ from its
+  parent's gives the palette's readers inside it those values too.
+- **The colour functions read the variables.** `theme::accent()` and the other colour functions
+  read a snapshot of the root's resolved colour variables, taken each time the styles reset
+  (`native_css::begin_frame`): Suhina Studio's values with the colour map, the theme's sheet, its
+  variant and `user.css` over them. A `user.css` that sets `--accent` reaches everything, Suhina
+  Studio included. `set_palette` only tells egui whether the theme is light or dark.
+- **Window opacity.** Over a backdrop image the window's own colours are faded to the theme's
+  backdrop opacity (or the Settings tint): the host writes `--window-background`,
+  `--panel-background` and `--border`, each `Color32::gamma_multiply`'d, in a rule for `window` in
+  the base tier (`native_css::set_window_opacity`), and the palette's snapshot takes the same
+  colours. A theme's own rule on `window` for one of them beats it.
+- **Suhina Studio runs the style engine** like every theme: its sheet sets only `:root` colours.
 
 **Including the default artwork.** *More › New theme…* and *More › Duplicate theme…* ask first,
 with an **Include the default artwork** checkbox (off by default). With it, the new theme gets a
@@ -887,12 +936,12 @@ deeply nested, unbalanced) keeps the last working styles. Not implemented: trans
 filters, other gradient interpolation spaces and hints, font families and weights,
 container queries and geometry animation.
 
-**Tiers.** Every style resolves through five tiers: the user-agent sheet, the theme's sheet, the variant,
-device panel sheets (`.sd` version 6 `style`, bounded to their panel; `#id` selects a control
-by its id) and the user's own `user.css` in the themes folder. A higher tier wins even over
+**Tiers.** Every style resolves through six tiers: the user-agent sheet, the base tier (*The base
+sheet*), the theme's sheet, the variant, device panel sheets (`.sd` version 6 `style`, bounded to
+their panel; `#id` selects a control by its id) and the user's own `user.css` in the themes folder. A higher tier wins even over
 `!important` in a lower one. `user.css` is read like a theme file (watched, at most 128 KiB, a
 sheet that does not parse is reported and the last working one stays) and stays when the theme
-changes. The engine runs whenever any of these sheets exists, also for a theme without one.
+changes. The engine always runs, also for a theme without a sheet of its own.
 See [sd-device-format.md](sd-device-format.md) › Panel style sheets.
 
 Trace spans `style paint parse` and `style paint resolve` mark the engine's UI-thread

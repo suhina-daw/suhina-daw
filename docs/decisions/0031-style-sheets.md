@@ -1203,7 +1203,8 @@ ordinary CSS, in a cascade tier of their own under the theme.
    it no longer recolours parts the base sheet styles. The built-in themes' region rules
    (Meadow's `window, session, arrangement` and `toolbar, status-bar`, Sheet's those and
    `detail, device-panel`, Blocks' `detail, device-panel`) set the text variables as well as
-   `color`.
+   `color` (all but `--text-value`, which the base sheet's fader caps mix in, so their caps
+   keep their look).
 5. **No colour in the base sheet is fixed:** every colour declaration reads a variable, so a
    theme's variables reach everything, and an element added later matches a theme that never
    heard of it (a test in `suhina-theme-package` checks it; mixing a variable with `black` to
@@ -1220,13 +1221,19 @@ With it:
   `user.css` that sets `--accent` reaches everything, Suhina Studio included. What is left of
   `set_palette` is egui's light or dark scheme, which #1452 removes with the palette.
 - **Suhina Studio runs the style engine** like every other theme: its sheet is no longer set
-  aside, and the engine never stops for want of a sheet.
+  aside, and the engine never stops for want of a sheet. It costs what Glass costs in the
+  budget's scenes. Editing one colour of a theme's map resets the styles once, as a theme
+  change does: the base sheet reads every colour variable, so no change is unread. Resetting
+  only the styles that read the changed variable was not built (it needs the cascade to record
+  which variables each style read, through inheritance); the budget holds the one reset.
 - **Window opacity is a value on `window`.** A backdrop image under a translucent window used to
   rewrite the palette's window, panel and border colours each frame. The host now writes those
   three variables, faded (`Color32::gamma_multiply`), in a base-tier rule for `window`
   (`native_css::set_window_opacity`), and the root snapshot carries the same faded colours, so
-  the palette's readers and the sheet's agree. `color-mix()` with `transparent` cannot give
-  `gamma_multiply`'s bytes for every colour, which the palette's readers keep until #1452.
+  the palette's readers and the sheet's agree, byte for byte with what the palette gave
+  (tested at 0, 37, 80 and 100 %). A base rule mixing them with `transparent` by a variable was
+  not taken: the palette's readers read the variables, and a variable cannot be mixed from its
+  own value on the same element.
 - **A transitional scope rule** (removed in #1452 with the palette): entering an element with
   its own style, the palette scope also takes that element's colour variables that differ from
   its parent's, so `mixer { --text-value: gold }` reaches the palette's readers inside the mixer
