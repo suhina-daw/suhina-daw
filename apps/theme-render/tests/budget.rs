@@ -88,7 +88,8 @@ use suhina_theme_render::{Subject, scenes};
 /// With #1453's strips laid out in CSS and the stack's colours together (the combined #1023 pull
 /// request), every scene's counts are 5 nodes and 4 identities over #1452's, and the styles worked
 /// out after a theme or a colour change 4 more (459 and 460, 709 and 710). On Windows each count is
-/// one more again (478 nodes and 472 identities, 472 and 473, 722 and 723), as CI measured it.
+/// one more again (478 nodes and 472 identities, 472 and 473, 722 and 723), as CI measured it; which
+/// element that extra one is has not been traced.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
