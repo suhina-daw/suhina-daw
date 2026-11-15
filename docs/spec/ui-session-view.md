@@ -253,7 +253,8 @@ fields for the name, the tempo (empty for none) and the time signature (`3/4`, e
 each applied with Enter, then **Insert scene below**, **Duplicate scene** and **Delete scene**
 (greyed out for the only scene). Every entry is a `scene.*` command, undone with Ctrl+Z. The
 control bar shows the time signature playing, and its position counts bars in it; a launched
-scene can change it.
+scene can change it. Dragging or typing into the control bar's time signature changes the project's
+([tempo map](tempo-map.md#editing-in-the-window)).
 
 ### Launch keys
 
