@@ -2977,7 +2977,7 @@ impl App {
         // image, at its strength). Each view, panel and bar paints only its own over it (#1233).
         let full_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
         let corner = if full_screen { 0 } else { self.window_corner };
-        let root = window_style.background_or(theme::window_background());
+        let root = window_style.background();
         ui.painter().rect_filled(ui.max_rect(), corner, root);
         window_style.paint_background(ui.painter(), ui.max_rect(), f32::from(corner));
         let liquid =
@@ -3194,7 +3194,7 @@ impl App {
                 ui.painter().rect_filled(
                     ui.max_rect(),
                     top,
-                    crate::kit::style_class::surface_or(theme::panel_background()),
+                    crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")),
                 );
             });
         }
@@ -3309,7 +3309,7 @@ impl App {
             if let Some(rect) = region(line) {
                 let style = crate::kit::element::SEPARATOR.id(id).attribute("kind", id).enter();
                 if !image {
-                    ui.painter().rect_filled(rect, 0.0, style.border_or(theme::border()));
+                    ui.painter().rect_filled(rect, 0.0, style.border());
                 }
                 style.paint_background(ui.painter(), rect, 0.0);
             }
@@ -3479,10 +3479,12 @@ impl App {
                 let response = widgets::button_area(ui, close, Id::unique("sample-map-close"), "Close sample map")
                     .on_hover_text("Close the sample map (Esc)");
                 let button = crate::kit::element::BUTTON.response(&response).enter();
-                let fill =
-                    motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-                over.rect_filled(close, 0.0, button.background_or(fill));
-                let ink = button.color_or(theme::text_primary());
+                over.rect_filled(
+                    close,
+                    0.0,
+                    button.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
+                );
+                let ink = button.color();
                 drop(button);
                 for (from, to) in
                     [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
@@ -4110,7 +4112,7 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
 fn bar_box(ui: &Ui, bar: &crate::kit::element::Entered, corners: egui::CornerRadius) -> Rect {
     let rect = ui.max_rect();
     let painter = ui.painter();
-    painter.rect_filled(rect, corners, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(rect, corners, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
     bar.paint_background(painter, rect, 0.0);
     if bar.style().is_some() {
         return bar.paint_border(painter, rect);
@@ -4123,10 +4125,10 @@ fn native_line(painter: &egui::Painter, bar: &crate::kit::element::Entered, rect
     let [top, _, bottom, _] = native_bar_line(bar);
     let line = |y: f32| Rect::from_x_y_ranges(rect.x_range(), egui::Rangef::new(y, y + 1.0));
     if top > 0.0 {
-        painter.rect_filled(line(rect.top()), 0.0, theme::border());
+        painter.rect_filled(line(rect.top()), 0.0, crate::kit::element::row_line());
     }
     if bottom > 0.0 {
-        painter.rect_filled(line(rect.bottom() - 1.0), 0.0, theme::border());
+        painter.rect_filled(line(rect.bottom() - 1.0), 0.0, crate::kit::element::row_line());
     }
     Rect::from_min_max(rect.min + Vec2::new(0.0, top), rect.max - Vec2::new(0.0, bottom))
 }

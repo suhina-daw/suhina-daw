@@ -168,7 +168,8 @@ impl App {
         ui.allocate_rect(whole, Sense::hover());
         let painter = ui.painter_at(whole);
         let active = self.projects.active();
-        let (ink, hint) = (style_class.color_or(theme::text_primary()), crate::kit::element::hint_ink());
+        let (ink, hint, caption) =
+            (style_class.color(), crate::kit::element::hint_ink(), crate::kit::element::caption_ink());
         // Each tab as wide as its name, its close button inside it, in one row (#1372).
         let tabs: Vec<_> = self
             .projects
@@ -207,15 +208,16 @@ impl App {
                 actions.push(Action::new("project.switch", json!({ "project": id.0 })));
             }
             let lit = motion::toward(ui.ctx(), response.id.with("active"), Some(id) == active, motion::VALUE);
+            let fill_of = crate::kit::element::app_fill;
             let idle = motion::mix(
-                crate::kit::style_class::surface_or(theme::window_background()),
-                theme::panel_hover(),
+                crate::kit::style_class::surface_or(fill_of("window")),
+                fill_of("panel-hover"),
                 widgets::hover(ui, &response),
             );
-            let fill = motion::mix(idle, crate::kit::style_class::surface_or(theme::panel_background()), lit);
+            let fill = motion::mix(idle, crate::kit::style_class::surface_or(fill_of("panel")), lit);
             element.paint_with(&painter, tab, crate::kit::element::Native { radius: 0.0, fill });
             // The shown tab stands out unless a rule colours the tab itself; the row's `color` does not.
-            let text = element.own_color_or(motion::mix(theme::text_secondary(), theme::text_primary(), lit));
+            let text = element.own_color_or(motion::mix(caption, ink, lit));
             widgets::paint_text(
                 &painter,
                 Pos2::new(content.left() + PAD, tab.center().y - galley.size().y / 2.0),
@@ -227,7 +229,7 @@ impl App {
             for (a, b) in [(Vec2::new(-3.0, -3.0), Vec2::new(3.0, 3.0)), (Vec2::new(-3.0, 3.0), Vec2::new(3.0, -3.0))] {
                 painter.line_segment([c + a, c + b], theme::hairline(cross));
             }
-            painter.vline(tab.right() + 0.5, tab.y_range(), theme::hairline(element.border_or(theme::border())));
+            painter.vline(tab.right() + 0.5, tab.y_range(), theme::hairline(element.border()));
         }
     }
 
@@ -235,7 +237,7 @@ impl App {
     pub(super) fn open_prompt_bar(&mut self, ui: &mut Ui) {
         let Some(path) = self.open_prompt.clone() else { return };
         let bar = ui.max_rect();
-        ui.painter().rect_filled(bar, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+        ui.painter().rect_filled(bar, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
         let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().to_string());
         let current = self.projects.active().and_then(|id| self.projects.name(id)).unwrap_or("the project").to_string();
         let mut choice = None;

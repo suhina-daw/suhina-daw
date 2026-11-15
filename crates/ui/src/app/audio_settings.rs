@@ -244,13 +244,13 @@ impl App {
                 if !previewing {
                     // The status bar stays undimmed: an error or a confirmation from the page is
                     // seen while the dialog is open, not only behind it.
-                    let ink =
-                        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6);
+                    let ink = crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window"))
+                        .gamma_multiply(0.6);
                     for (slot, part) in tint.into_iter().zip(&clear) {
                         ui.painter().set(slot, egui::Shape::rect_filled(*part, 0.0, ink));
                     }
                 }
-                let edge = crate::kit::element::SETTINGS.look().border_or(theme::border_strong());
+                let edge = crate::kit::element::SETTINGS.look().border();
                 ui.painter().rect_stroke(panel, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
             });
     }

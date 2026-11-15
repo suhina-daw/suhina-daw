@@ -7,7 +7,6 @@ use egui::{Align2, Id, Pos2, Rect, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::TrackId;
 
-use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, Action};
 
@@ -99,14 +98,14 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
         // `#add-return-track` one of them; `button.add-track` is their artwork.
         let name = format!("add-{kind}-track");
         let el = crate::kit::element::ADD_TRACK.id(&name).response(&response).enter();
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+        let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
         let state = crate::kit::skin::State::response(&response, false);
-        if !crate::kit::skin::paint_as(&el, painter, rect, "add-track", state, el.color_or(theme::text_secondary())) {
+        if !crate::kit::skin::paint_as(&el, painter, rect, "add-track", state, el.color()) {
             el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
         }
         let font =
             el.style().filter(|c| c.authored.font_size).map_or_else(|| font.clone(), |c| theme::ui_font(c.font_size));
-        widgets::text_in(painter, rect, Align2::CENTER_CENTER, label, font, el.color_or(theme::text_secondary()));
+        widgets::text_in(painter, rect, Align2::CENTER_CENTER, label, font, el.color());
         if response.clicked() {
             if kind == "return" {
                 actions.push(Action::new("return.add", json!({})));

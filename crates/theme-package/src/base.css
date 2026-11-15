@@ -428,3 +428,94 @@ piano-roll-toolbar bar-item[kind="menu"][checked] { color: var(--text-primary); 
 button[kind="focus"] { background-color: transparent; color: var(--text-secondary); }
 button[kind="focus"]:hover { background-color: transparent; }
 button[kind="focus"][checked], button[kind="focus"][checked]:hover { background-color: var(--accent); color: var(--text-inverse); }
+
+/* App bars, Settings and dialogs */
+
+/* The fills the app's bars, Settings, dialogs and menus paint for themselves where the region
+   behind them gives none, and the window under everything (faded over a backdrop). */
+window { background-color: var(--window-background); }
+app-fill[kind="window"] { background-color: var(--window-background); }
+app-fill[kind="panel"] { background-color: var(--panel-background); }
+app-fill[kind="panel-hover"] { background-color: var(--panel-hoverBackground); }
+app-fill[kind="control"] { background-color: var(--control-background); }
+app-fill[kind="control-hover"] { background-color: var(--control-hoverBackground); }
+app-fill[kind="control-active"] { background-color: var(--control-activeBackground); }
+app-fill[kind="knob"] { background-color: var(--text-inverse); }
+
+/* egui's own widgets (the fields, drop-downs, check boxes and entries of Settings and the menus):
+   their fills and words at rest, under the pointer, pressed and disabled, the selection, the
+   frames of windows and menus and the fill behind a text field. A theme's rules for `button`,
+   `text-input`, `menu` and `scroll-bar` go over these. */
+widget { background-color: var(--control-background); color: var(--text-value); border-color: var(--border); }
+widget:hover { background-color: var(--control-hoverBackground); color: var(--text-primary); }
+widget:active { background-color: var(--control-activeBackground); color: var(--text-primary); }
+widget:disabled { background-color: var(--panel-background); color: var(--text-secondary); }
+widget[checked] { background-color: var(--control-activeBackground); accent-color: var(--accent); }
+widget[kind="window"] { background-color: var(--panel-background); border-color: var(--border); }
+widget[kind="field"] { background-color: var(--window-background); }
+
+/* The bars: the lines over and under the views, words and marks in the accent, a menu's title on
+   the menu bar, the status bar's counts, a project tab's edge, the toolbar's time signature and
+   launch quantisation, the CPU meter's track, the start page's notice line and the detail area's
+   splitter. */
+separator[kind="views-top"], separator[kind="views-bottom"] { border-color: var(--border); }
+label[kind="accent"] { color: var(--accent); }
+label[kind="on-light"] { color: var(--text-onColorLight); }
+label[kind="on-dark"] { color: var(--text-onColorDark); }
+bar-item[kind="menu"] { color: var(--text-secondary); }
+bar-item[kind="status-counts"] { color: var(--text-hint); }
+project-tab { border-color: var(--border); }
+toolbar-module[kind="signature"] { color: var(--text-secondary); }
+toolbar-module[kind="grid"] { color: var(--text-value); }
+meter[kind="cpu"] { background-color: var(--control-background); }
+notice-bar { accent-color: var(--accent); }
+divider[kind="detail-splitter"] { background-color: var(--control-background); color: var(--text-hint); }
+
+/* The toolbar's switches: the key mapping's Map (dim, the accent while on, bright under the
+   pointer), a connected agent's name, Play while the transport runs and the browser's switch. */
+button[kind="map"] { color: var(--text-secondary); }
+button[kind="map"][checked] { color: var(--accent); }
+button[kind="map"]:hover { color: var(--text-primary); }
+button[kind="agent"] { color: var(--accent); }
+button[kind="agent"]:hover { color: var(--text-primary); }
+button[kind="play"][playing] { color: var(--accent); }
+button[kind="browser"] { color: var(--text-secondary); }
+button[kind="browser"][checked] { color: var(--text-primary); }
+
+/* Settings, the start page and the dialogs: Settings' edge and its pages' list, the start page's
+   Recent and Templates tabs, a dialog's title row, the rows of a dialog's list, the Plug-in
+   manager's table and the colour picker, the swatches, the theme picker's cards, the pill that
+   follows a drag, and the buttons that add a track. */
+settings { border-color: var(--border-strong); }
+settings-nav { color: var(--text-secondary); }
+settings-nav[checked] { color: var(--text-primary); }
+editor-tab[kind="start"] { color: var(--text-hint); accent-color: var(--accent); }
+editor-tab[kind="start"][checked] { color: var(--text-primary); }
+dialog-title { background-color: var(--control-background); }
+list-row[kind="dialog"] { background-color: transparent; color: var(--text-primary); }
+list-row[kind="dialog"]:hover { background-color: var(--panel-hoverBackground); }
+list-row[kind="plugin"][selected] { background-color: var(--control-activeBackground); }
+list-row[kind="plugin"]:hover { background-color: var(--panel-hoverBackground); }
+list-row[kind="picker"] { background-color: var(--panel-hoverBackground); color: var(--text-secondary); }
+colour-swatch { border-color: var(--text-primary); }
+colour-swatch[kind="square"] { border-color: var(--border); }
+theme-card { border-color: var(--border); }
+theme-card:hover { border-color: var(--border-strong); }
+theme-card[selected] { border-color: var(--accent); accent-color: var(--accent); }
+tooltip { background-color: var(--control-activeBackground); border-color: var(--border-strong); accent-color: var(--accent); }
+add-track { background-color: var(--control-background); color: var(--text-secondary); }
+add-track:hover { background-color: var(--control-hoverBackground); }
+
+/* The buttons of Settings and the dialogs: one that stands back (Remove), a tick box (its edge, a
+   step stronger under the pointer, and its mark), a part of a row of choices (`option`: the chosen
+   fill and its text; `preset`: the pressed fill) and a yes/no switch's track. */
+button[kind="secondary"] { color: var(--text-secondary); }
+button[kind="check"] { border-color: var(--border); }
+button[kind="check"]:hover { border-color: var(--border-strong); }
+button[kind="check"][checked] { background-color: var(--text-value); }
+button[kind="option"] { color: var(--text-secondary); }
+button[kind="option"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
+button[kind="preset"] { color: var(--text-secondary); }
+button[kind="preset"][checked] { background-color: var(--control-activeBackground); color: inherit; }
+button[kind="preset"][checked]:hover { background-color: var(--control-hoverBackground); }
+button[kind="switch"][checked] { background-color: var(--text-value); color: var(--text-inverse); }

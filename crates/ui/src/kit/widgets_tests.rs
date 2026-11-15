@@ -34,14 +34,13 @@ fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
     let ctx = egui::Context::default();
     theme::use_palette(&ctx, palette);
     motion::set_enabled(&ctx, false);
-    let mut output = ctx.run_ui(Default::default(), |ui| {
+    let (fill, text) = theme::in_style_frame(&ctx, |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
         let response = button_area(ui, rect, Id::unique("transparent-toggle"), "Track on");
-        let (fill, text) = toggle_colors(ui, &response, true);
-        assert_eq!(text.a(), 255);
-        assert!(theme::contrast(fill, text) >= 4.5);
+        toggle_colors(ui, &response, true)
     });
-    output.textures_delta.clear();
+    assert_eq!(text.a(), 255);
+    assert!(theme::contrast(fill, text) >= 4.5);
     theme::use_palette(&ctx, original);
 }
 
@@ -55,14 +54,13 @@ fn active_toggle_text_stays_visible_when_the_inverse_ink_is_translucent() {
     let ctx = egui::Context::default();
     theme::use_palette(&ctx, palette);
     motion::set_enabled(&ctx, false);
-    let mut output = ctx.run_ui(Default::default(), |ui| {
+    let (fill, text) = theme::in_style_frame(&ctx, |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
         let response = button_area(ui, rect, Id::unique("faint-ink-toggle"), "Track on");
-        let (fill, text) = toggle_colors(ui, &response, true);
-        assert_ne!(text, palette.text_inverse, "the faint ink is replaced");
-        assert!(theme::text_contrast(text, fill) >= 4.5, "{text:?} on {fill:?}");
+        toggle_colors(ui, &response, true)
     });
-    output.textures_delta.clear();
+    assert_ne!(text, palette.text_inverse, "the faint ink is replaced");
+    assert!(theme::text_contrast(text, fill) >= 4.5, "{text:?} on {fill:?}");
     theme::use_palette(&ctx, original);
 }
 
@@ -424,7 +422,7 @@ fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
                 let _frame = crate::kit::native_css::frame_with_motion(ui, false);
                 let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(60.0, 20.0));
                 let response = button_area(ui, rect, Id::unique("flat"), "Flat");
-                flat_button(ui, ui.painter(), rect, &response, "Flat", (theme::TEXT_SMALL, theme::text_primary()));
+                flat_button(ui, ui.painter(), rect, &response, "Flat", (theme::TEXT_SMALL, None));
             });
             for shape in &output.shapes {
                 match &shape.shape {

@@ -219,7 +219,7 @@ impl MissingFiles {
     /// Draws the bar that says files are missing in `rect`, while it should show.
     pub fn bar(&mut self, ui: &mut Ui, rect: Rect) {
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+        painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
         let count = self.rows.len();
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(PAD, 6.0))), |ui| {
             ui.horizontal_centered(|ui| {
@@ -273,7 +273,7 @@ impl MissingFiles {
         painter.rect_filled(
             area,
             0.0,
-            crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+            crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
         );
         let height = ROW + PAD * 4.0 + LINE * 3.0 + self.rows.len() as f32 * ROW_HEIGHT + BUTTON.y;
         let size = crate::kit::floating::dialog_size(dialog, area, Vec2::new(WIDTH, height));
@@ -282,7 +282,7 @@ impl MissingFiles {
             &painter,
             dialog,
             rect,
-            crate::kit::style_class::own_background_or(theme::panel_background()),
+            crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel")),
         );
         let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
         drop(super::project_dialog::title_bar(&painter, bar, &format!("Missing files · {project}")));
@@ -296,6 +296,7 @@ impl MissingFiles {
             hint: crate::kit::element::hint_ink(),
             missing: crate::kit::element::error_ink(),
             several: crate::kit::element::value_ink(),
+            found: crate::kit::element::accent_ink(),
         };
         ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
@@ -392,13 +393,14 @@ struct RowInks {
     hint: Color32,
     missing: Color32,
     several: Color32,
+    found: Color32,
 }
 
 fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId, inks: RowInks) {
     let (state, colour): (&str, Color32) = match (&row.chosen, row.candidates.len()) {
         (None, _) => ("missing", inks.missing),
         (Some(_), n) if n > 1 => ("several found", inks.several),
-        (Some(_), _) => ("found", theme::accent()),
+        (Some(_), _) => ("found", inks.found),
     };
     ui.horizontal(|ui| {
         let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
@@ -584,7 +586,11 @@ mod look {
             |ui, state: &mut MissingFiles| {
                 crate::kit::theme::install(ui.ctx());
                 let area = ui.max_rect();
-                ui.painter().rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
+                ui.painter().rect_filled(
+                    area,
+                    0.0,
+                    crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
+                );
                 let bar = Rect::from_min_size(area.min, Vec2::new(area.width(), theme::ROW + 12.0));
                 state.bar(ui, bar);
                 state.open = true;

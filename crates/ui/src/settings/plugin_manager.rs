@@ -188,7 +188,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let page = crate::kit::element::PLUGIN_MANAGER
         .native(crate::kit::element::Native {
             radius: 0.0,
-            fill: crate::kit::style_class::surface_or(theme::window_background()),
+            fill: crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
         })
         .enter();
     let mut styled_ui = page.ui(ui);
@@ -289,8 +289,8 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         };
         let color = if sorted == index { inks.name } else { inks.hint };
         let fill = motion::mix(
-            crate::kit::style_class::surface_or(theme::window_background()),
-            theme::panel_hover(),
+            crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
+            crate::kit::element::app_fill("panel-hover"),
             widgets::hover(ui, &response),
         );
         painter.rect_filled(rect, 0.0, fill);
@@ -327,14 +327,11 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         })
         .collect();
     let picked = plugins.manager.picked.clone();
-    // A `list-row`: its fill while picked and under the pointer.
+    // A `list-row[kind="plugin"]`: its fill while picked and under the pointer.
     let (row_picked, row_hovered) = {
         use crate::kit::element::{LIST_ROW, Selected};
-        let plain = LIST_ROW.probe();
-        (
-            LIST_ROW.attr(Selected, true).look().background_unlike(&plain, theme::control_active()),
-            LIST_ROW.pointer(true, false, false).look().background_unlike(&plain, theme::panel_hover()),
-        )
+        let row = || LIST_ROW.attribute("kind", "plugin");
+        (row().attr(Selected, true).look().background(), row().pointer(true, false, false).look().background())
     };
     let scanning = plugins.scanning;
     let mut again: Option<String> = None;

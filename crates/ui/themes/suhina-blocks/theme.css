@@ -131,6 +131,14 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   button[kind="tag-check"][checked] { background-color: var(--text-value); color: var(--window-background); }
   button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
   button[kind="focus"][checked] { background-color: var(--accent); }
+  /* The lit looks of the app's own switches and choices (Suhina's base sheet gives them, and this
+     theme's rule for every `button` overrides them: state them again): the key mapping's Map, a
+     part of a row of choices in Settings, a preset, a yes/no switch's track and a tick box. */
+  button[kind="map"][checked] { color: var(--accent); }
+  button[kind="option"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
+  button[kind="preset"][checked] { background-color: var(--control-activeBackground); color: inherit; }
+  button[kind="preset"][checked]:hover { background-color: var(--control-hoverBackground); }
+  button[kind="switch"][checked], button[kind="check"][checked] { background-color: var(--text-value); }
   value, dropdown, dropdown-arrow, text-input { color: var(--text-primary); --text-primary: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--ink) 97.7%), var(--highlight) 29.7%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: color-mix(in oklab, color-mix(in oklab, var(--highlight), white 33.7%), black 68%); border-radius: 0px; }
   text-input[kind="typed"] { background-color: var(--control-activeBackground); color: var(--text-value); }
   knob { color: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--ink) 81.9%), var(--highlight) 58.1%); background-color: var(--stone); }

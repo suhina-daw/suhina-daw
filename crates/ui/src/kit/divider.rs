@@ -66,7 +66,7 @@ pub fn show(ui: &Ui, divider: Divider<'_>) -> Dragged {
             (if grows_forward { from + moved } else { from - moved }).clamp(low, high)
         })
         .filter(|size| size.is_finite());
-    let style = DIVIDER.id(name).response(&response);
+    let style = DIVIDER.id(name).attribute("kind", name).response(&response);
     let style = if closed { style.attribute("closed", "") } else { style }.enter();
     Dragged { response, size, style }
 }

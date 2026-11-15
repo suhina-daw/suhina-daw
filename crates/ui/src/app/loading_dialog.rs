@@ -45,7 +45,7 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     painter.rect_filled(
         area,
         0.0,
-        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+        crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
     );
 
     let loading = progress.loading.len().min(LISTED) + usize::from(progress.loading.len() > LISTED);
@@ -57,7 +57,7 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
         &painter,
         dialog,
         rect,
-        crate::kit::style_class::own_background_or(theme::panel_background()),
+        crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel")),
     );
 
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));

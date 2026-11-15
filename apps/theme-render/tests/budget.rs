@@ -74,42 +74,50 @@ use suhina_theme_render::{Subject, scenes};
 /// and its six kinds, and the parts that fell back to different colours are told apart by kinds of
 /// their own (the expanded panel's fills, `detail-fill`, its parameters' `label`, `value` and
 /// `slider`), each read once a frame.
+/// #1452 (the app's bars, Settings and dialogs take their colours from the base sheet; egui's
+/// own widgets take theirs from `widget`) raised every scene's counts by 22 nodes and 30
+/// identities, and the styles worked out after a theme or a colour change by 30 (455 and 456, 705
+/// and 706; 467 and 468, 717 and 718 on Windows): the control bar's fills, switches and words
+/// (`app-fill`, `button[kind]`, `label[kind]`, `meter[kind="cpu"]`), the two inks of text on a
+/// colour (`label[kind="on-light"]` and `[kind="on-dark"]`, read once a frame for each set of
+/// variables in scope, not once a clip), and the lookups the root's `Visuals` are built from (`widget` in its
+/// states and kinds, inside a `window`), once when the styles reset, with no node left in the tree.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 438,
-            identities: 425,
+            nodes: 460,
+            identities: 455,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 425,
+            theme_change_fresh: 455,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 426,
+            colour_change_fresh: 456,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 688,
-            identities: 675,
+            nodes: 710,
+            identities: 705,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 675,
+            theme_change_fresh: 705,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 676,
+            colour_change_fresh: 706,
         },
     ),
 ];
@@ -121,37 +129,37 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 450,
-            identities: 437,
+            nodes: 472,
+            identities: 467,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 437,
+            theme_change_fresh: 467,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 438,
+            colour_change_fresh: 468,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 700,
-            identities: 687,
+            nodes: 722,
+            identities: 717,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 687,
+            theme_change_fresh: 717,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 688,
+            colour_change_fresh: 718,
         },
     ),
 ];

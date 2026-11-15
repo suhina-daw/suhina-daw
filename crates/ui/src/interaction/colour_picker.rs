@@ -39,7 +39,7 @@ pub fn color32(colour: Rgb) -> Color32 {
 /// What a track's colour area is filled with: the colour, dimmed while the track is off.
 pub fn fill(colour: Rgb, muted: bool) -> Color32 {
     let colour = color32(colour);
-    if muted { motion::mix(theme::control_background(), colour, MUTED) } else { colour }
+    if muted { motion::mix(crate::kit::element::app_fill("control"), colour, MUTED) } else { colour }
 }
 
 /// Sets `track`'s colour.
@@ -70,7 +70,7 @@ impl Pick {
 fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     let mut picked = None;
     // A `colour-swatch`'s `border-color` outlines the chosen swatch and the one under the pointer.
-    let ring = crate::kit::element::COLOUR_SWATCH.look().border_or(theme::text_primary());
+    let ring = crate::kit::element::COLOUR_SWATCH.look().border();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = Vec2::splat(SWATCH_GAP);
         for colour in swatches() {
@@ -116,15 +116,18 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Pick> {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, any_open, "Any colour"));
     let any = crate::kit::element::BUTTON.response(&response).enter();
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    ui.painter().rect_filled(rect, 0.0, any.background_or(fill));
+    ui.painter().rect_filled(
+        rect,
+        0.0,
+        any.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
+    );
     widgets::text_in(
         ui.painter(),
         rect,
         egui::Align2::CENTER_CENTER,
         "+",
         theme::ui_font(theme::TEXT_SMALL),
-        any.color_or(theme::text_primary()),
+        any.color(),
     );
     drop(any);
     if response.clicked() {
@@ -203,9 +206,10 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, SWATCH + 8.0), Sense::click());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, text.clone()));
     let fill = widgets::hover(ui, &response);
-    let row = crate::kit::element::LIST_ROW.response(&response).enter();
+    // A `list-row[kind="picker"]`: its fill, shown as the pointer comes over it, and its words.
+    let row = crate::kit::element::LIST_ROW.attribute("kind", "picker").response(&response).enter();
     if fill > 0.0 {
-        ui.painter().rect_filled(rect, 3.0, row.background_or(theme::panel_hover()).gamma_multiply(fill));
+        ui.painter().rect_filled(rect, 3.0, row.background().gamma_multiply(fill));
     }
     let square =
         Rect::from_center_size(Pos2::new(rect.left() + 6.0 + SWATCH / 2.0, rect.center().y), Vec2::splat(SWATCH));
@@ -213,7 +217,7 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
     ui.painter().rect_stroke(
         square,
         2.0,
-        Stroke::new(0.5, crate::kit::element::COLOUR_SWATCH.look().border_or(theme::border())),
+        Stroke::new(0.5, crate::kit::element::COLOUR_SWATCH.attribute("kind", "square").look().border()),
         StrokeKind::Inside,
     );
     ui.painter().text(
@@ -221,7 +225,7 @@ pub fn select_colour_row(ui: &mut Ui, id: Id, current: Option<Rgb>, label: &str)
         egui::Align2::LEFT_CENTER,
         &text,
         theme::ui_font(theme::TEXT_SMALL),
-        row.color_or(theme::text_secondary()),
+        row.color(),
     );
     drop(row);
     if response.clicked() {

@@ -156,7 +156,8 @@ impl App {
         let (main, laid, follows) = geometry;
         // The room the view and the detail area share.
         let area = main.union(laid);
-        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-detail").attribute("kind", "detail").enter();
+        let panel_style =
+            crate::kit::element::WORKSPACE_PANEL.id("panel-detail").attribute("kind", "detail-splitter").enter();
         let styled_ui = panel_style.ui(ui);
         // The splitter lies in the gap beside the area: drawn and taking the pointer there too
         // (#1240).
@@ -439,7 +440,11 @@ impl App {
             } else {
                 self.side_drag = None;
             }
-            let style = crate::kit::element::DIVIDER.id("detail-splitter").response(&response).enter();
+            let style = crate::kit::element::DIVIDER
+                .id("detail-splitter")
+                .attribute("kind", "detail-splitter")
+                .response(&response)
+                .enter();
             paint_splitter(ui, side_splitter, &style, true);
             (
                 Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())),
@@ -471,8 +476,12 @@ impl App {
                 self.side_drag = None;
             }
             // Closed: `divider#detail-splitter[closed]`.
-            let style =
-                crate::kit::element::DIVIDER.id("detail-splitter").response(&response).attribute("closed", "").enter();
+            let style = crate::kit::element::DIVIDER
+                .id("detail-splitter")
+                .attribute("kind", "detail-splitter")
+                .response(&response)
+                .attribute("closed", "")
+                .enter();
             paint_splitter(ui, side_splitter, &style, true);
             (Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())), None)
         } else {
@@ -1218,9 +1227,9 @@ fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
 /// the grip its `color`; without them, the control background and the hint colour.
 fn paint_splitter(ui: &Ui, splitter: Rect, style: &crate::kit::element::Entered, stacked: bool) {
     let painter = ui.painter_at(splitter);
-    painter.rect_filled(splitter, 0.0, style.background_or(theme::control_background()));
+    painter.rect_filled(splitter, 0.0, style.background());
     let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
-    painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color_or(theme::text_hint()));
+    painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color());
 }
 
 /// What the detail area edits a clip in, for [`DetailInsets::around`].

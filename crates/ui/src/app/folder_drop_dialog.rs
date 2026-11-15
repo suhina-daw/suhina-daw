@@ -68,15 +68,16 @@ fn draw(
     let check = Rect::from_min_size(Pos2::new(line.left(), line.bottom()), Vec2::new(line.width() * 0.6, LINE));
     let response = widgets::button_area(ui, check, Id::unique("folder-drop-remember"), "Remember my choice");
     let mark = Rect::from_center_size(Pos2::new(check.left() + 6.0, check.center().y), Vec2::splat(11.0));
-    // A `button`, `[checked]` while remembered: its `border-color` for the box, and its mark only
-    // from a rule for the checked state, not one for every `button`.
-    let (el, plain) =
-        crate::kit::element::BUTTON.response(&response).enter_against_plain(crate::kit::element::Checked, *remember);
-    let look = el.look();
-    let stroke = if response.hovered() { theme::border_strong() } else { theme::border() };
-    painter.rect_stroke(mark, 0.0, theme::hairline(look.border_or(stroke)), egui::StrokeKind::Inside);
-    if let Some(plain) = plain {
-        painter.rect_filled(mark.shrink(2.5), 0.0, look.background_unlike(&plain, theme::text_value()));
+    // A `button[kind="check"]`, `[checked]` while remembered: its `border-color` for the box (a step
+    // stronger under the pointer), and its `background-color` for the mark while it is checked.
+    let el = crate::kit::element::BUTTON
+        .attribute("kind", "check")
+        .response(&response)
+        .attr(crate::kit::element::Checked, *remember)
+        .enter();
+    painter.rect_stroke(mark, 0.0, theme::hairline(el.border()), egui::StrokeKind::Inside);
+    if *remember {
+        painter.rect_filled(mark.shrink(2.5), 0.0, el.background());
     }
     drop(el);
     let label = Rect::from_min_max(Pos2::new(mark.right() + 6.0, check.top()), check.max);

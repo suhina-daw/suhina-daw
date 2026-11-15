@@ -298,11 +298,9 @@ pub(super) fn set_base_palette(palette: Palette) {
     PALETTE.with(|p| p.set(palette));
 }
 
-/// What the root's `Visuals` were last built from, kept in the context: the palette and the
-/// style engine's resets.
+/// What the root's `Visuals` were last built from, kept in the context: the style engine's resets.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct VisualsSource {
-    palette: u64,
     styles: u64,
 }
 
@@ -310,24 +308,29 @@ fn visuals_key() -> egui::Id {
     egui::Id::NULL.with("suhina-root-visuals")
 }
 
-/// Builds egui's `Visuals` for the whole window from the sheet: the palette's own
-/// ([`palette_visuals`]) with what the rules for egui's widgets say over them
+/// Builds egui's `Visuals` for the whole window from the sheet: the computed styles of `widget`
+/// and its states ([`sheet_visuals`]), with what the rules for egui's widgets say over them
 /// ([`super::style_class::root_visuals`]). Run at the start of a frame, it works only when the
-/// palette or the engine's styles were reset since the last time (a theme, variant, `user.css`,
-/// width `@media`, contrast, a palette drag or the window's opacity), not on every frame; the
-/// change shows in every `Ui` made after it, and in the root's once it takes them
-/// ([`follow_root_visuals`]). Scoped styles (`style_class::ui_for`) apply over these.
+/// engine's styles were reset since the last time (a theme, variant, `user.css`, width `@media`,
+/// contrast, a colour drag or the window's opacity), not on every frame; the change shows in every
+/// `Ui` made after it, and in the root's once it takes them ([`follow_root_visuals`]). Scoped
+/// styles (`style_class::ui_for`) apply over these. It also tells egui whether the theme is light
+/// or dark, which egui passes on to the native window (its title bar).
 pub(super) fn sync_root_visuals(ctx: &egui::Context) {
-    let source = VisualsSource { palette: palette_revision(), styles: super::native_css::style_epoch() };
+    let source = VisualsSource { styles: super::native_css::style_epoch() };
     let key = visuals_key();
     if ctx.data(|data| data.get_temp::<VisualsSource>(key)) == Some(source) {
         return;
     }
     ctx.data_mut(|data| data.insert_temp(key, source));
-    let fallback = palette_visuals(&palette());
+    let Some((fallback, light)) = sheet_visuals() else { return };
     let built = super::style_class::root_visuals(fallback);
     if ctx.global_style().visuals != built {
         ctx.all_styles_mut(|style| style.visuals = built.clone());
+    }
+    let scheme = if light { egui::Theme::Light } else { egui::Theme::Dark };
+    if ctx.theme() != scheme {
+        ctx.set_theme(scheme);
     }
 }
 
@@ -340,10 +343,51 @@ pub fn follow_root_visuals(ui: &mut egui::Ui) {
     }
 }
 
-/// egui's `Visuals` as the root has them with no rule in the sheet, for the tests.
+/// egui's `Visuals` as the palette gave them before the sheet did, for the tests that check the
+/// sheet's `widget` gives the same: what the root has with no rule of a theme for egui's widgets.
 #[cfg(test)]
 pub(super) fn palette_visuals_for(p: &Palette) -> egui::Visuals {
-    palette_visuals(p)
+    let mut visuals = shaped(if light(p) { egui::Visuals::light() } else { egui::Visuals::dark() });
+    visuals.panel_fill = p.panel_background;
+    visuals.window_fill = p.panel_background;
+    visuals.extreme_bg_color = p.window_background;
+    visuals.faint_bg_color = p.panel_background;
+    visuals.window_stroke = hairline(p.border);
+    visuals.selection.bg_fill = p.control_active;
+    visuals.selection.stroke = hairline(p.accent);
+    for (widget, fill) in [
+        (&mut visuals.widgets.noninteractive, p.panel_background),
+        (&mut visuals.widgets.inactive, p.control_background),
+        (&mut visuals.widgets.hovered, p.control_hover),
+        (&mut visuals.widgets.active, p.control_active),
+        (&mut visuals.widgets.open, p.control_active),
+    ] {
+        widget.bg_fill = fill;
+        widget.weak_bg_fill = fill;
+    }
+    visuals.widgets.noninteractive.bg_stroke = hairline(p.border);
+    visuals.widgets.noninteractive.fg_stroke = hairline(p.text_secondary);
+    visuals.widgets.inactive.fg_stroke = hairline(p.text_value);
+    visuals.widgets.hovered.fg_stroke = hairline(p.text_primary);
+    visuals.widgets.active.fg_stroke = hairline(p.text_primary);
+    visuals.widgets.open.fg_stroke = hairline(p.text_primary);
+    visuals
+}
+
+/// What `read` gives in a frame of the style engine on `ctx`, drawn with the colours set (a theme's
+/// colour map applies from the frame after it is set, so a frame runs first): for the tests that
+/// read what elements say.
+#[cfg(test)]
+pub(crate) fn in_style_frame<R>(ctx: &egui::Context, read: impl Fn(&mut egui::Ui) -> R) -> R {
+    let mut out = None;
+    for _ in 0..2 {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let _frame = super::native_css::frame_with_motion(ui, false);
+            out = Some(read(ui));
+        });
+        output.textures_delta.clear();
+    }
+    out.unwrap_or_else(|| panic!("the frame ran"))
 }
 
 /// The id of the default theme, Suhina Studio, in the settings file.
@@ -1020,11 +1064,44 @@ pub fn parse_rgba(text: &str) -> Option<[u8; 4]> {
     })
 }
 
-/// Text drawn on `fill`: the independent light or dark coloured-surface text role, whichever stands out more from
-/// it, so a name stays readable on any track colour of any theme.
+/// Text drawn on `fill`: the light or the dark ink for text on a colour, whichever stands out more
+/// from it, so a name stays readable on any track colour of any theme. The two inks are the
+/// `color`s of `label[kind="on-light"]` and `label[kind="on-dark"]` where the text is drawn.
 pub fn text_on(fill: Color32) -> Color32 {
-    let (light, dark) = (text_on_color_light(), text_on_color_dark());
+    let (light, dark) = on_colour_inks();
     if contrast(fill, light) >= contrast(fill, dark) { light } else { dark }
+}
+
+thread_local! {
+    /// The inks [`text_on`] read last, with the style engine's frame and the custom properties in
+    /// scope they were read with (held, so the map is not freed and its address taken by another).
+    #[allow(clippy::type_complexity)]
+    static ON_COLOUR: std::cell::RefCell<Option<(u64, Arc<std::collections::BTreeMap<String, String>>, (Color32, Color32))>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The light and the dark ink for text on a colour where the text is drawn: the `color`s of
+/// `label[kind="on-light"]` and `label[kind="on-dark"]`. Looked up again only when the custom
+/// properties in scope changed since the last time in the same frame, so a view that names many
+/// clips adds two elements to the style tree, not two a clip; each frame looks them up afresh, so
+/// every frame's tree holds the same elements.
+fn on_colour_inks() -> (Color32, Color32) {
+    use super::element::LABEL;
+    let epoch = super::native_css::frame_number();
+    let variables = super::style_class::with_inherited(|style| style.map(|style| style.shared_variables()))
+        .unwrap_or_else(super::native_css::root_variables);
+    let kept = ON_COLOUR.with(|kept| {
+        kept.borrow()
+            .as_ref()
+            .filter(|(at, held, _)| *at == epoch && Arc::ptr_eq(held, &variables))
+            .map(|(_, _, inks)| *inks)
+    });
+    kept.unwrap_or_else(|| {
+        let inks =
+            (LABEL.attribute("kind", "on-light").look().color(), LABEL.attribute("kind", "on-dark").look().color());
+        ON_COLOUR.with(|kept| *kept.borrow_mut() = Some((epoch, variables, inks)));
+        inks
+    })
 }
 
 /// The contrast ratio of two colours, 1 … 21 (WCAG 2's relative luminance).
@@ -1115,8 +1192,6 @@ fn fonts() -> egui::FontDefinitions {
 /// the views use.
 pub fn install(ctx: &egui::Context) {
     ctx.set_fonts(fonts());
-    let palette = palette();
-    ctx.set_theme(scheme(&palette));
     ctx.all_styles_mut(|style| {
         style.text_styles = [
             (TextStyle::Heading, ui_font(TEXT)),
@@ -1131,55 +1206,78 @@ pub fn install(ctx: &egui::Context) {
         style.spacing.interact_size.y = ROW;
         // Text is read, not selected: no text cursor over labels.
         style.interaction.selectable_labels = false;
-        style.visuals = palette_visuals(&palette);
+        style.visuals = shaped(egui::Visuals::dark());
     });
-    // The palette's visuals are in place: the next frame builds the sheet's over them.
+    // egui's own visuals are in place: the next frame builds the sheet's over them.
     ctx.data_mut(|data| data.remove::<VisualsSource>(visuals_key()));
 }
 
-/// egui's visuals in the colours of `p`: what the root has where no rule of the sheet says
-/// otherwise.
-fn palette_visuals(p: &Palette) -> egui::Visuals {
-    let mut visuals = egui::Visuals::default();
-    visuals_in(&mut visuals, p);
-    visuals
-}
-
-fn visuals_in(visuals: &mut egui::Visuals, p: &Palette) {
-    // egui's own light or dark defaults under the tokens.
-    *visuals = if light(p) { egui::Visuals::light() } else { egui::Visuals::dark() };
-    visuals.panel_fill = p.panel_background;
-    visuals.window_fill = p.panel_background;
-    visuals.extreme_bg_color = p.window_background;
+/// `visuals` in Suhina's shape: square corners, no shadows, no outline on a widget at rest, and a
+/// text field that shows what is behind it.
+fn shaped(mut visuals: egui::Visuals) -> egui::Visuals {
     visuals.text_edit_bg_color = Some(Color32::TRANSPARENT);
-    visuals.faint_bg_color = p.panel_background;
-    visuals.window_stroke = hairline(p.border);
     visuals.window_corner_radius = egui::CornerRadius::ZERO;
     visuals.menu_corner_radius = egui::CornerRadius::ZERO;
     visuals.window_shadow = egui::epaint::Shadow::NONE;
     visuals.popup_shadow = egui::epaint::Shadow::NONE;
-    visuals.selection.bg_fill = p.control_active;
-    visuals.selection.stroke = hairline(p.accent);
     visuals.override_text_color = None;
-    for (widget, fill) in [
-        (&mut visuals.widgets.noninteractive, p.panel_background),
-        (&mut visuals.widgets.inactive, p.control_background),
-        (&mut visuals.widgets.hovered, p.control_hover),
-        (&mut visuals.widgets.active, p.control_active),
-        (&mut visuals.widgets.open, p.control_active),
+    for widget in [
+        &mut visuals.widgets.noninteractive,
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+        &mut visuals.widgets.open,
     ] {
-        widget.bg_fill = fill;
-        widget.weak_bg_fill = fill;
         widget.corner_radius = egui::CornerRadius::ZERO;
         widget.bg_stroke = Stroke::NONE;
         widget.expansion = 0.0;
     }
-    visuals.widgets.noninteractive.bg_stroke = hairline(p.border);
-    visuals.widgets.noninteractive.fg_stroke = hairline(p.text_secondary);
-    visuals.widgets.inactive.fg_stroke = hairline(p.text_value);
-    visuals.widgets.hovered.fg_stroke = hairline(p.text_primary);
-    visuals.widgets.active.fg_stroke = hairline(p.text_primary);
-    visuals.widgets.open.fg_stroke = hairline(p.text_primary);
+    visuals
+}
+
+/// egui's visuals from the sheet, where no rule of a theme for egui's widgets says otherwise: the
+/// computed styles of `widget` (at rest, `:hover`, `:active` and `:disabled`; `[checked]` the
+/// selection; `[kind="window"]` the frames of windows and menus and the panels; `[kind="field"]`
+/// behind a text field), each looked up inside the `window`, so a backdrop's fading reaches them.
+/// Light or dark as the theme is: whether the window's text (its computed `color`) is dark. A
+/// background can be see-through, so its colour alone does not tell; text is always made to read
+/// on what the theme looks like. `None` where no sheet styles the window.
+fn sheet_visuals() -> Option<(egui::Visuals, bool)> {
+    use super::element::{Checked, Look, WIDGET, WINDOW};
+    let light = luminance(WINDOW.probe().style()?.color()) < 0.18;
+    let window = WINDOW.enter();
+    let look = |builder: super::element::Builder<'static>| builder.probe();
+    let rest = look(WIDGET.builder());
+    let hovered = look(WIDGET.pointer(true, false, false));
+    let pressed = look(WIDGET.pointer(true, true, false));
+    let disabled = look(WIDGET.pointer(false, false, true));
+    let chosen = look(WIDGET.attr(Checked, true));
+    let frame = look(WIDGET.attribute("kind", "window"));
+    let field = look(WIDGET.attribute("kind", "field"));
+    let node = window.node();
+    drop(window);
+    super::native_css::discard(node);
+    let mut visuals = shaped(if light { egui::Visuals::light() } else { egui::Visuals::dark() });
+    visuals.panel_fill = frame.background();
+    visuals.window_fill = frame.background();
+    visuals.faint_bg_color = frame.background();
+    visuals.window_stroke = hairline(frame.border());
+    visuals.extreme_bg_color = field.background();
+    visuals.selection.bg_fill = chosen.background();
+    visuals.selection.stroke = hairline(chosen.accent());
+    for (widget, own) in [
+        (&mut visuals.widgets.noninteractive, &disabled),
+        (&mut visuals.widgets.inactive, &rest),
+        (&mut visuals.widgets.hovered, &hovered),
+        (&mut visuals.widgets.active, &pressed),
+        (&mut visuals.widgets.open, &pressed),
+    ] {
+        widget.bg_fill = Look::background(own);
+        widget.weak_bg_fill = Look::background(own);
+        widget.fg_stroke = hairline(Look::color(own));
+    }
+    visuals.widgets.noninteractive.bg_stroke = hairline(disabled.border());
+    Some((visuals, light))
 }
 
 #[cfg(test)]

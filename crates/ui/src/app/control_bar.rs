@@ -4,7 +4,7 @@
 //! The control bar at the top of the window and the status bar at the bottom.
 
 use super::*;
-use crate::kit::element::{caption_ink, error_ink, hint_ink, value_ink};
+use crate::kit::element::{Look, caption_ink, error_ink, hint_ink, value_ink};
 
 /// Seconds between the tempo sent while the tempo field is dragged.
 const TEMPO_SEND: f64 = 0.1;
@@ -39,7 +39,7 @@ impl App {
                 Align2::LEFT_CENTER,
                 "Suhina",
                 theme::ui_font(theme::TEXT),
-                bar.color_or(theme::text_secondary()),
+                caption_ink(),
             );
             self.toolbar_edit_overlay(ui, rect);
             return;
@@ -257,7 +257,7 @@ impl App {
         let ModuleCx { grid, cpu, ram, scope } = cx;
         let rect = scope.content_in(outer);
         let surface = |fill| crate::kit::element::Native { radius: 0.0, fill };
-        let box_fill = crate::kit::style_class::surface_or(theme::window_background());
+        let box_fill = crate::kit::style_class::surface_or(crate::kit::element::app_fill("window"));
         match module {
             "browser" => {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
@@ -277,7 +277,7 @@ impl App {
                     Align2::CENTER_CENTER,
                     &format!("{} / {}", ts.numerator, ts.denominator),
                     theme::mono_font(theme::TEXT),
-                    scope.color_or(theme::text_secondary()),
+                    scope.color(),
                 );
             }
             "keys" => {
@@ -327,11 +327,7 @@ impl App {
                             .width(menu.width())
                             // Tall enough for every value at once, without a scroll bar.
                             .height(QUANTIZATION.len() as f32 * 2.0 * theme::ROW)
-                            .selected_text(
-                                egui::RichText::new(chosen)
-                                    .font(mono.clone())
-                                    .color(scope.color_or(theme::text_value())),
-                            ),
+                            .selected_text(egui::RichText::new(chosen).font(mono.clone()).color(scope.color())),
                         |ui| {
                             for q in QUANTIZATION {
                                 ui.selectable_value(&mut chosen, q, egui::RichText::new(q).font(mono.clone()));
@@ -376,7 +372,7 @@ impl App {
                     Align2::LEFT_CENTER,
                     &grid.position(),
                     theme::mono_font(theme::TEXT),
-                    scope.color_or(theme::text_primary()),
+                    scope.color(),
                 );
             }
             "mapping" => {
@@ -387,14 +383,14 @@ impl App {
                 if response.clicked() {
                     self.toggle_mapping_mode();
                 }
-                // A `button`, `[checked]` while on: its lit ink only from a rule for that state.
-                let (el, plain) = crate::kit::element::BUTTON
+                // A `button[kind="map"]`, `[checked]` while on: its ink, lit and under the pointer.
+                let el = crate::kit::element::BUTTON
+                    .attribute("kind", "map")
                     .response(&response)
-                    .enter_against_plain(crate::kit::element::Checked, on);
-                let (lit, unlit) = (theme::accent(), theme::text_secondary());
-                let (_, color) = widgets::toggle_inks(&el, plain.as_ref(), (lit, unlit), (lit, unlit));
+                    .attr(crate::kit::element::Checked, on)
+                    .enter();
+                let color = el.hover_fade(widgets::hover(ui, &response), Look::color);
                 drop(el);
-                let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
                 widgets::text_in(painter, rect, Align2::LEFT_CENTER, "Map", theme::ui_font(theme::TEXT), color);
             }
             "performance" => {
@@ -424,7 +420,7 @@ impl App {
                 let carrying = self.carrying_clip(ui.ctx());
                 let pointer = ui.ctx().pointer_latest_pos();
                 let mut left = rect.left();
-                let (shown_ink, other_ink) = (scope.color_or(theme::text_primary()), caption_ink());
+                let (shown_ink, other_ink) = (scope.color(), caption_ink());
                 let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look().color();
                 for (view, name) in [(View::Session, "Launcher"), (View::Arrangement, "Arrangement")] {
                     let color = if self.shown == view { shown_ink } else { other_ink };
@@ -457,11 +453,8 @@ impl App {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 // Each agent the person let in (ADR 0028), lit; a click disconnects it.
                 let mut left = rect.left();
-                let plain = crate::kit::element::BUTTON.attr(crate::kit::element::Checked, false).probe();
-                let lit = crate::kit::element::BUTTON
-                    .attr(crate::kit::element::Checked, true)
-                    .look()
-                    .own_color_unlike(&plain, theme::accent());
+                // Each a `button[kind="agent"]`: its ink, and under the pointer.
+                let lit = crate::kit::element::BUTTON.attribute("kind", "agent").look().color();
                 for (connection, client) in self.agents.clone() {
                     let text = format!("Disconnect {client}");
                     let galley = widgets::fitted(painter, &text, theme::ui_font(theme::TEXT), lit, 200.0);
@@ -473,7 +466,9 @@ impl App {
                         self.agent_disconnects.push(connection);
                         self.status = Status::Done(format!("Disconnected {client}"));
                     }
-                    let color = motion::mix(lit, scope.color_or(theme::text_primary()), widgets::hover(ui, &response));
+                    let el = crate::kit::element::BUTTON.attribute("kind", "agent").response(&response).enter();
+                    let color = el.hover_fade(widgets::hover(ui, &response), Look::color);
+                    drop(el);
                     widgets::paint_text(painter, Pos2::new(at.left(), at.center().y - size.y / 2.0), galley, color);
                 }
             }
@@ -498,6 +493,7 @@ impl App {
             let response = widgets::button_area(ui, play, Id::unique("play"), "Play");
             let play_style = crate::kit::element::BUTTON
                 .id("play")
+                .attribute("kind", "play")
                 .response(&response)
                 .attr(crate::kit::element::Playing, grid.running)
                 .attr(crate::kit::element::Checked, grid.running)
@@ -506,14 +502,18 @@ impl App {
                 actions.push(self.play_action());
             }
             let running = motion::toward(ui.ctx(), response.id.with("running"), grid.running, motion::VALUE);
-            let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            let hover = motion::mix(
+                crate::kit::element::app_fill("control"),
+                crate::kit::element::app_fill("control-hover"),
+                widgets::hover(ui, &response),
+            );
             widgets::button_surface(
                 painter,
                 play,
                 &play_style,
                 &response,
                 grid.running,
-                motion::mix(hover, theme::control_active(), running),
+                motion::mix(hover, crate::kit::element::app_fill("control-active"), running),
                 0.0,
             );
             // A seek from the ruler waiting for its boundary flashes the triangle (#657).
@@ -522,10 +522,24 @@ impl App {
             if pending {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(125));
             }
+            // Its ink at rest, `[playing]` while the transport runs (the accent), fading between them;
+            // a pending seek flashes the ink at rest.
+            let rest = || crate::kit::element::BUTTON.id("play").attribute("kind", "play").probe().color();
             let glyph = if flash {
-                play_style.color_or(theme::text_primary())
+                rest()
+            } else if running < 1.0 && grid.running {
+                motion::mix(rest(), play_style.color(), running)
+            } else if running > 0.0 && !grid.running {
+                let playing = crate::kit::element::BUTTON
+                    .id("play")
+                    .attribute("kind", "play")
+                    .attr(crate::kit::element::Playing, true)
+                    .attr(crate::kit::element::Checked, true)
+                    .probe()
+                    .color();
+                motion::mix(play_style.color(), playing, running)
             } else {
-                play_style.color_or(motion::mix(theme::text_primary(), theme::accent(), running))
+                play_style.color()
             };
             let c = play.center();
             if !crate::kit::skin::paint_as(
@@ -557,10 +571,10 @@ impl App {
                 &stop_style,
                 &response,
                 false,
-                motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+                stop_style.hover_fade(widgets::hover(ui, &response), Look::background),
                 0.0,
             );
-            let stop_ink = stop_style.color_or(theme::text_primary());
+            let stop_ink = stop_style.color();
             if !crate::kit::skin::paint_as(
                 &stop_style,
                 painter,
@@ -588,6 +602,7 @@ impl App {
         };
         let browser_style = crate::kit::element::BUTTON
             .id("browser-toggle")
+            .attribute("kind", "browser")
             .response(&response)
             .attr(crate::kit::element::Checked, self.settings.browser_open)
             .enter();
@@ -597,16 +612,13 @@ impl App {
             &browser_style,
             &response,
             self.settings.browser_open,
-            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+            browser_style.hover_fade(widgets::hover(ui, &response), Look::background),
             0.0,
         );
         // A panel with its left part filled while the browser shows.
         let icon = Rect::from_center_size(browser_rect.center(), Vec2::new(14.0, 11.0));
-        let ink = browser_style.color_or(if self.settings.browser_open {
-            theme::text_primary()
-        } else {
-            theme::text_secondary()
-        });
+        // `button[kind="browser"]`'s ink, `[checked]` while the browser shows.
+        let ink = browser_style.color();
         painter.rect_stroke(icon, 0.0, theme::hairline(ink), egui::StrokeKind::Inside);
         let side = Rect::from_min_size(icon.min, Vec2::new(5.0, icon.height()));
         if self.settings.browser_open {
@@ -659,7 +671,7 @@ impl App {
         if let (Some(counts), Some(rect)) = (counts, laid.at(1, bar.min)) {
             let item = crate::kit::element::BAR_ITEM.id("status-counts").attribute("kind", "status-counts").enter();
             let content = item.paint(&painter, rect).content;
-            let ink = item.own_color_or(theme::text_hint());
+            let ink = item.color();
             widgets::text_in(&painter, content, Align2::RIGHT_CENTER, &counts, font, ink);
         }
     }
@@ -702,7 +714,11 @@ impl App {
         let tempo_text = format!("{tempo_shown:.3}");
         let response = widgets::value_area(ui, tempo_rect, Id::unique("tempo"), "Tempo", tempo_text.clone());
         if let Some(module) = native {
-            let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            let fill = motion::mix(
+                crate::kit::element::app_fill("control"),
+                crate::kit::element::app_fill("control-hover"),
+                widgets::hover(ui, &response),
+            );
             module.paint_with(painter, tempo_rect, crate::kit::element::Native { radius: 0.0, fill });
         }
         let mono = theme::mono_font(theme::TEXT);
@@ -710,7 +726,7 @@ impl App {
         let content = native.map_or(tempo_rect, |module| module.content_in(tempo_rect));
         let text_area = content.shrink2(Vec2::new(PAD, 0.0));
         let ink = match native {
-            Some(module) => module.color_or(theme::text_primary()),
+            Some(module) => module.color(),
             None => value_ink(),
         };
         widgets::text_in(painter, text_area, Align2::RIGHT_CENTER, &tempo_text, mono.clone(), ink);
@@ -731,7 +747,7 @@ impl App {
             let len = tempo_text.chars().count() as f32;
             let underline =
                 egui::Rangef::new(right - (len - from as f32) * char_width, right - (len - to as f32) * char_width);
-            let line = if held.is_some() { theme::accent() } else { caption_ink() };
+            let line = if held.is_some() { crate::kit::element::accent_ink() } else { caption_ink() };
             painter.hline(underline, content.bottom() - 3.0, egui::Stroke::new(1.0, line));
         }
         // Four points of drag a step of the place grabbed; the arrow keys and the wheel 1 BPM.
@@ -847,13 +863,13 @@ fn cpu_block(ui: &Ui, painter: &egui::Painter, rect: Rect, milli: u32) {
         Pos2::new(rect.left() + 1.0, rect.bottom() - 3.0),
         Pos2::new(rect.right() - 1.0, rect.bottom() - 1.0),
     );
-    painter.rect_filled(track, 0.0, crate::kit::element::METER.look().background_or(theme::control_background()));
+    painter.rect_filled(track, 0.0, crate::kit::element::METER.attribute("kind", "cpu").look().background());
     let fill = track.width() * milli.min(1000) as f32 / 1000.0;
     let full = Rect::from_min_max(track.min, Pos2::new(track.left() + fill, track.bottom()));
     let color = if milli >= 800 {
-        crate::kit::element::METER_LEVEL.attribute("kind", "hot").look().own_color_or(theme::meter_hot())
+        crate::kit::element::METER_LEVEL.attribute("kind", "hot").look().color()
     } else {
-        crate::kit::element::METER_LEVEL.look().own_color_or(theme::meter_normal())
+        crate::kit::element::METER_LEVEL.look().color()
     };
     painter.rect_filled(full, 0.0, color);
     let response = ui.interact(rect, Id::unique("cpu-load"), Sense::hover());

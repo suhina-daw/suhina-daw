@@ -13,8 +13,7 @@ use std::path::{Path, PathBuf};
 
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 
-use crate::kit::element::{LIST_ROW, caption_ink, error_ink, hint_ink, name_ink, row_line};
-use crate::kit::motion;
+use crate::kit::element::{LIST_ROW, Look, caption_ink, error_ink, hint_ink, name_ink, row_line};
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, button};
 
@@ -768,20 +767,20 @@ pub(crate) fn panel<T: CloseChoice>(
     painter.rect_filled(
         area,
         0.0,
-        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+        crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
     );
     let rect = Rect::from_center_size(area.center(), crate::kit::floating::dialog_size(dialog, area, size));
     let rect = crate::kit::floating::dialog(
         &painter,
         dialog,
         rect,
-        crate::kit::style_class::own_background_or(theme::panel_background()),
+        crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel")),
     );
     let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     let title_row = title_bar(&painter, bar, title);
     let close = Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, ROW));
     let response = widgets::button_area(ui, close, Id::unique(("dialog-close", title)), format!("Close {title}"));
-    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT_SMALL, theme::text_primary()));
+    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT_SMALL, None));
     drop(title_row);
     if response.clicked() {
         *closed = Some(T::close());
@@ -793,7 +792,7 @@ pub(crate) fn panel<T: CloseChoice>(
 /// The element stays entered for what its caller puts on the row (a Close button).
 pub(crate) fn title_bar(painter: &egui::Painter, bar: Rect, title: &str) -> crate::kit::element::Entered {
     let row = crate::kit::element::DIALOG_TITLE.enter();
-    painter.rect_filled(bar, 0.0, row.background_or(theme::control_background()));
+    painter.rect_filled(bar, 0.0, row.background());
     widgets::text_in(
         painter,
         bar.shrink2(Vec2::new(PAD, 0.0)),
@@ -871,13 +870,12 @@ pub(crate) fn row(
 ) -> egui::Response {
     let response = widgets::button_area(ui, rect, Id::unique(("dialog-row", key, label)), label);
     // Over the dialog's own background: only the hover paints.
-    let el = LIST_ROW.response(&response).enter();
-    let fill = motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(rect, 0.0, el.background_or(fill));
+    let el = LIST_ROW.attribute("kind", "dialog").response(&response).enter();
+    painter.rect_filled(rect, 0.0, el.hover_fade(widgets::hover(ui, &response), Look::background));
     let inner = rect.shrink2(Vec2::new(PAD, 0.0));
     let font = theme::ui_font(theme::TEXT);
     let name_width = widgets::text_width(ui, name, font.clone()).min(inner.width() * 0.6);
-    widgets::text_in(painter, inner, Align2::LEFT_CENTER, name, font, el.color_or(theme::text_primary()));
+    widgets::text_in(painter, inner, Align2::LEFT_CENTER, name, font, el.color());
     let rest = Rect::from_min_max(Pos2::new(inner.left() + name_width + 8.0, inner.top()), inner.max);
     let small = theme::ui_font(theme::TEXT_SMALL);
     widgets::text_in(painter, rest, Align2::RIGHT_CENTER, note, small, note_ink);

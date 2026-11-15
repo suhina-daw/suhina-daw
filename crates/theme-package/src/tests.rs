@@ -374,8 +374,12 @@ fn the_base_sheet_colours_everything_from_variables() {
         assert!(!name.starts_with("--"), "the base sheet declares {name}");
         if colour_property(name) {
             colours += 1;
-            // `transparent` is no colour of a theme's: nothing to read from a variable.
-            assert!(value.contains("var(--") || value.trim() == "transparent", "{name}: {value} is a fixed colour");
+            // `transparent` is no colour of a theme's, and `inherit` the colour around: nothing to
+            // read from a variable.
+            assert!(
+                value.contains("var(--") || matches!(value.trim(), "transparent" | "inherit"),
+                "{name}: {value} is a fixed colour"
+            );
         }
     }
     assert!(colours > 25, "{colours}");

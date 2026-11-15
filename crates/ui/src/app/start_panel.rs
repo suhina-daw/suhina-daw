@@ -185,8 +185,8 @@ pub fn show(
 /// The update line: its text, a progress bar while downloading, and its buttons on the right.
 pub(crate) fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: &Notice) -> Option<StartChoice> {
     let mut choice = None;
-    painter.rect_filled(line, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    let edge = if notice.error { error_ink() } else { NOTICE_BAR.look().accent_or(theme::accent()) };
+    painter.rect_filled(line, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
+    let edge = if notice.error { error_ink() } else { NOTICE_BAR.look().accent() };
     painter.rect_filled(Rect::from_min_size(line.min, Vec2::new(3.0, line.height())), 0.0, edge);
     let mut right = line.right() - PAD;
     if let Some(text) = notice.button {
@@ -229,7 +229,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         return None;
     }
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
     painter.rect_stroke(area, 0.0, theme::hairline(row_line()), egui::StrokeKind::Inside);
     let inner = area.shrink(PAD);
     let mut choice = None;
@@ -243,22 +243,17 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
         let response =
             widgets::button_area(ui, rect, egui::Id::unique(("start-tab", text)), format!("{text} projects"));
         let on = state.tab == tab;
-        // The palette's inks, read before the tab is entered: inside it they follow its `color`.
-        let (shown_ink, hint) = (theme::text_primary(), theme::text_hint());
-        // An `editor-tab` (`[checked]` for the one shown), `#tab-recent` and `#tab-templates`.
-        let (el, plain) = EDITOR_TAB
+        // An `editor-tab[kind="start"]` (`[checked]` for the one shown), `#tab-recent` and
+        // `#tab-templates`: its ink, and its `accent-color` under the one shown.
+        let el = EDITOR_TAB
             .id(&format!("tab-{}", text.to_lowercase()))
+            .attribute("kind", "start")
             .response(&response)
-            .enter_against_plain(crate::kit::element::Checked, on);
-        // The shown tab's ink comes from a rule for `[checked]` only, so a rule for every tab
-        // does not make both the same.
-        let color = match &plain {
-            Some(plain) => el.look().own_color_unlike(plain, shown_ink),
-            None => el.own_color_or(hint),
-        };
-        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, text, font, color);
+            .attr(crate::kit::element::Checked, on)
+            .enter();
+        widgets::text_in(&painter, rect, Align2::CENTER_CENTER, text, font, el.color());
         if on {
-            painter.hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(2.0, el.accent_or(theme::accent())));
+            painter.hline(rect.x_range(), rect.bottom() - 1.0, egui::Stroke::new(2.0, el.accent()));
         }
         if response.clicked() {
             state.tab = tab;
@@ -366,7 +361,7 @@ fn audio_card(ui: &Ui, area: Rect, audio: &AudioSummary) -> bool {
         return false;
     }
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
     painter.rect_stroke(area, 0.0, theme::hairline(row_line()), egui::StrokeKind::Inside);
     let inner = area.shrink(PAD);
     heading(&painter, Rect::from_min_size(inner.min, Vec2::new(inner.width(), 0.0)), "Audio");

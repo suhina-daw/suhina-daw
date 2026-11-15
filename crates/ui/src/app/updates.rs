@@ -414,7 +414,7 @@ fn bar_line(ui: &Ui, rect: Rect, phase: Phase) -> Option<BarChoice> {
     let notice = notice_of(phase)?;
     let painter = ui.painter_at(rect);
     // Painted as the missing-files bar beside it, so a theme styles both alike.
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
     let inner = rect.shrink2(Vec2::new(PAD, 6.0));
     let later = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.center().y - BUTTON.y / 2.0), BUTTON);
     let line = match later_label {

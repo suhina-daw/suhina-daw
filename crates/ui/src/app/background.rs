@@ -174,7 +174,7 @@ impl Background {
     fn draw(&self, ui: &Ui) {
         let Some(texture) = &self.texture else { return };
         let rect = ui.max_rect();
-        ui.painter().rect_filled(rect, 0.0, crate::kit::theme::window_background().to_opaque());
+        ui.painter().rect_filled(rect, 0.0, crate::kit::element::app_fill("window").to_opaque());
         ui.painter().image(
             texture.id(),
             rect,

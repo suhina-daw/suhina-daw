@@ -1071,7 +1071,7 @@ fn settings_words_and_buttons_take_their_own_rules() {
 }
 
 #[test]
-fn a_rule_for_every_button_keeps_settings_chosen_segment_lit() {
+fn a_rule_for_every_button_needs_a_checked_rule_to_keep_settings_chosen_preset_lit() {
     let mut h = window(demo_app());
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
@@ -1079,27 +1079,37 @@ fn a_rule_for_every_button_keeps_settings_chosen_segment_lit() {
     h.run();
     h.get_by_label("Preset: Mouse-first").click();
     h.run();
-    let css = format!("button {{ background-color: {}; }}", hex(odd(141)));
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
-    for _ in 0..4 {
-        h.step();
-    }
-    let lit = fills_at(&h, h.get_by_label("Preset: Mouse-first").rect());
-    let unlit = fills_at(&h, h.get_by_label("Preset: Draw-first").rect());
-    suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(!lit.is_empty() && !lit.contains(&odd(141)), "the chosen preset keeps its fill: {lit:?}");
-    assert!(unlit.contains(&odd(141)), "an unchosen one takes the rule: {unlit:?}");
+    let general = format!("button {{ background-color: {}; }}", hex(odd(141)));
+    let presets = |h: &mut Harness<'static, App>, css: String| {
+        under(h, css, |h| {
+            (
+                fills_at(h, h.get_by_label("Preset: Mouse-first").rect()),
+                fills_at(h, h.get_by_label("Preset: Draw-first").rect()),
+            )
+        })
+    };
+    let (lit, unlit) = presets(&mut h, general.clone());
+    assert!(lit.contains(&odd(141)), "the chosen preset takes the rule for every button: {lit:?}");
+    assert!(unlit.contains(&odd(141)), "an unchosen one takes it too: {unlit:?}");
+    let stated = format!("{general} button[kind=\"preset\"][checked] {{ background-color: {}; }}", hex(odd(146)));
+    let (lit, unlit) = presets(&mut h, stated);
+    assert!(lit.contains(&odd(146)) && !lit.contains(&odd(141)), "the chosen preset's own rule: {lit:?}");
+    assert!(unlit.contains(&odd(141)), "an unchosen one keeps the rule: {unlit:?}");
 }
 
 /// A yes/no setting's switch is lit by a rule for `[checked]` only: a rule for every `button`
 /// colours the unlit ones and leaves the lit ones lit (#1440).
 #[test]
-fn a_rule_for_every_button_keeps_settings_switches_lit() {
+fn a_rule_for_every_button_needs_a_checked_rule_to_keep_settings_switches_lit() {
     use egui_kittest::kittest::NodeT;
     let mut h = window(demo_app());
     h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     h.run();
-    let css = format!("button {{ background-color: {}; }}", hex(odd(142)));
+    let css = format!(
+        "button {{ background-color: {}; }} button[kind=\"switch\"][checked] {{ background-color: {}; }}",
+        hex(odd(142)),
+        hex(odd(147))
+    );
     let (mut lit, mut unlit) = (0, 0);
     for page in ["Projects and backups", "Appearance", "Browser", "Launcher and mixer", "Arrangement"] {
         h.get_by_label(&format!("Settings page: {page}")).click();
@@ -1115,7 +1125,7 @@ fn a_rule_for_every_button_keeps_settings_switches_lit() {
             }
             if switch.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True) {
                 lit += 1;
-                assert!(!fills.contains(&odd(142)), "a lit switch keeps its fill: {fills:?}");
+                assert!(fills.contains(&odd(147)), "a lit switch takes the lit state's rule: {fills:?}");
             } else {
                 unlit += 1;
                 assert!(fills.contains(&odd(142)), "an unlit switch takes the rule: {fills:?}");
@@ -1215,25 +1225,36 @@ fn a_rule_for_every_list_row_needs_a_selected_rule_to_keep_the_picked_row_lit() 
     assert!(other.contains(&odd(150)), "an other row keeps the rule: {other:?}");
 }
 
-/// A rule for every `editor-tab` does not make the shown start tab look like the other: it keeps
-/// its own ink (#1440 review).
+/// A rule for every `editor-tab` is the shown start tab's too, until the theme states the shown
+/// one's: its rule for `editor-tab[checked]` sets it apart again (#1452: the base sheet's state
+/// rules are hidden by a theme's rule, as a theme's own would be).
 #[test]
-fn a_rule_for_every_tab_keeps_the_shown_start_tab_apart() {
+fn a_rule_for_every_tab_needs_a_checked_rule_to_keep_the_shown_start_tab_apart() {
     let mut app = App::new();
     app.set_browser_open(false);
     let mut h = window(app);
-    let css = format!("editor-tab {{ color: {}; }}", hex(odd(151)));
-    let (shown, other) = under(&mut h, css, |h| {
-        (inks_in(h, h.get_by_label("Recent projects").rect()), inks_in(h, h.get_by_label("Templates projects").rect()))
-    });
-    assert!(!shown.contains(&odd(151)), "the shown tab keeps its ink: {shown:?}");
+    let general = format!("editor-tab {{ color: {}; }}", hex(odd(151)));
+    let tabs = |h: &mut Harness<'static, App>, css: String| {
+        under(h, css, |h| {
+            (
+                inks_in(h, h.get_by_label("Recent projects").rect()),
+                inks_in(h, h.get_by_label("Templates projects").rect()),
+            )
+        })
+    };
+    let (shown, other) = tabs(&mut h, general.clone());
+    assert!(shown.contains(&odd(151)), "the shown tab takes the rule for every tab: {shown:?}");
     assert!(other.contains(&odd(151)), "the other tab takes the rule: {other:?}");
+    let stated = format!("{general} editor-tab[checked] {{ color: {}; }}", hex(odd(153)));
+    let (shown, other) = tabs(&mut h, stated);
+    assert!(shown.contains(&odd(153)), "the shown tab's own rule: {shown:?}");
+    assert!(other.contains(&odd(151)), "the other tab keeps the rule: {other:?}");
 }
 
-/// A rule for every `theme-card` does not take the edge of the theme in use: its 2-point edge
-/// keeps its own colour (#1440 review).
+/// A rule for every `theme-card` is the edge of the theme in use too, until the theme states the
+/// selected card's: its rule for `theme-card[selected]` marks it again (#1452).
 #[test]
-fn a_rule_for_every_theme_card_keeps_the_theme_in_use_marked() {
+fn a_rule_for_every_theme_card_needs_a_selected_rule_to_keep_the_theme_in_use_marked() {
     fn edges(shape: &egui::Shape, found: &mut Vec<egui::Color32>) {
         match shape {
             egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| edges(shape, found)),
@@ -1246,14 +1267,19 @@ fn a_rule_for_every_theme_card_keeps_the_theme_in_use_marked() {
     h.run();
     h.get_by_label("Settings page: Themes").click();
     h.run();
-    let css = format!("theme-card {{ border-color: {}; }}", hex(odd(152)));
-    let found = under(&mut h, css, |h| {
-        let mut found = Vec::new();
-        h.output().shapes.iter().for_each(|shape| edges(&shape.shape, &mut found));
-        found
-    });
+    let general = format!("theme-card {{ border-color: {}; }}", hex(odd(152)));
+    let edged = |h: &mut Harness<'static, App>, css: String| {
+        under(h, css, |h| {
+            let mut found = Vec::new();
+            h.output().shapes.iter().for_each(|shape| edges(&shape.shape, &mut found));
+            found
+        })
+    };
+    let found = edged(&mut h, general.clone());
     assert!(!found.is_empty(), "the theme in use has its edge");
-    assert!(!found.contains(&odd(152)), "the edge stays its own: {found:?}");
+    assert!(found.contains(&odd(152)), "the edge takes the rule for every card: {found:?}");
+    let found = edged(&mut h, format!("{general} theme-card[selected] {{ border-color: {}; }}", hex(odd(154))));
+    assert!(found.contains(&odd(154)) && !found.contains(&odd(152)), "the selected card's own rule: {found:?}");
 }
 
 /// Frames of a window holding one bare egui widget, outside any style scope, under the user sheet
@@ -1925,4 +1951,124 @@ fn a_region_s_variables_reach_the_ruler_s_numbers_a_device_s_values_and_the_brow
     assert!(!values.is_empty() && values.iter().all(|c| *c == odd(222)), "a device's value: {values:?}");
     let mut h = browser_with_chips();
     assert_eq!(missing(&mut h, &[("browser", "--browser-text-secondary", odd(223))]), Vec::<String>::new());
+}
+
+/// The window with Settings open on `page`.
+fn settings_on(page: &str) -> Harness<'static, App> {
+    let mut h = window(demo_app());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    h.run();
+    h.get_by_label(&format!("Settings page: {page}")).click();
+    h.run();
+    h
+}
+
+/// A theme's rule beats each rule the base sheet gives the app's bars, Settings, the dialogs and
+/// egui's own widgets (#1452): every one paints in the colour the theme gives it.
+#[test]
+fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_bars_settings_and_dialogs() {
+    type Scene = (&'static str, Harness<'static, App>, Vec<(&'static str, &'static str)>);
+    let dialog = {
+        let mut h = window(demo_app());
+        h.state_mut().open_project_dialog(false);
+        h.run();
+        h
+    };
+    let scenes: Vec<Scene> = vec![
+        (
+            "the bars",
+            window(demo_app()),
+            vec![
+                ("app-fill", "background-color"),
+                ("bar-item", "color"),
+                ("toolbar-module", "color"),
+                ("button[kind=\"map\"]", "color"),
+                ("separator", "border-color"),
+            ],
+        ),
+        (
+            "Settings",
+            settings_on("Keys"),
+            vec![
+                ("settings", "border-color"),
+                ("settings-nav", "color"),
+                ("button[kind=\"preset\"]", "color"),
+                ("widget", "background-color"),
+            ],
+        ),
+        ("a dialog", dialog, vec![("dialog-title", "background-color")]),
+    ];
+    let mut shade = 230u8;
+    for (name, mut h, rules) in scenes {
+        let rules: Vec<_> = rules
+            .into_iter()
+            .map(|(selector, property)| {
+                shade += 1;
+                (selector, property, odd(shade))
+            })
+            .collect();
+        assert_eq!(missing(&mut h, &rules), Vec::<String>::new(), "{name}");
+    }
+}
+
+/// A built-in theme with a rule for every `button` still shows which part of a row of choices in
+/// Settings is chosen: Suhina Meadow, Blocks and Sheet and the Dark Gloss example state the lit
+/// fills of `button[kind="preset"]` and the others their rule for every button would hide (#1452).
+#[test]
+fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_preset() {
+    for (id, example) in [
+        ("suhina-meadow", None),
+        ("suhina-blocks", None),
+        ("suhina-sheet", None),
+        ("suhina-studio", Some(suhina_ui::kit::theme::GLOSS_EXAMPLE)),
+    ] {
+        let mut h = settings_on("Keys");
+        h.get_by_label("Preset: Mouse-first").click();
+        h.run();
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, id);
+        suhina_ui::kit::native_css::set_user_sheet(example.map(|css| css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        // What is painted over the preset: a fill, or the artwork a fill is drawn in, and its words.
+        let faces = |label: &str| {
+            let rect = h.get_by_label(label).rect();
+            let mut found = Vec::new();
+            for shape in &h.output().shapes {
+                if let egui::Shape::Mesh(mesh) = &shape.shape
+                    && mesh.vertices.iter().all(|v| rect.expand(0.5).contains(v.pos))
+                {
+                    found.push(format!("{:?}", mesh.vertices.first().map(|v| v.color)));
+                }
+                if let egui::Shape::Rect(shape) = &shape.shape
+                    && rect.expand(0.5).contains_rect(shape.rect)
+                {
+                    found.push(format!(
+                        "{:?} {:?}",
+                        shape.fill,
+                        shape.brush.as_ref().map(|brush| brush.fill_texture_id)
+                    ));
+                }
+            }
+            (found, inks_in(&h, rect))
+        };
+        let (lit, unlit) = (faces("Preset: Mouse-first"), faces("Preset: Draw-first"));
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        assert!(!lit.0.is_empty() && !unlit.0.is_empty(), "{id}: both are painted");
+        assert_ne!(lit, unlit, "{id}: the chosen preset shows it is chosen");
+    }
+}
+
+/// Colouring a region goes through its variables: `--text-secondary` given to the toolbar reaches
+/// its time signature, given to Settings the names of the pages not shown, which the base sheet
+/// colours with that variable (#1452).
+#[test]
+fn a_region_s_variables_reach_the_toolbar_s_signature_and_settings_pages() {
+    let mut h = window(demo_app());
+    let signature = words_under(&mut h, format!("toolbar {{ --text-secondary: {}; }}", hex(odd(250))), "4 / 4");
+    assert!(!signature.is_empty() && signature.iter().all(|c| *c == odd(250)), "the signature: {signature:?}");
+    let mut h = settings_on("Keys");
+    let page = words_under(&mut h, format!("settings {{ --text-secondary: {}; }}", hex(odd(251))), "Browser");
+    assert!(page.contains(&odd(251)), "a page's name in the list: {page:?}");
 }

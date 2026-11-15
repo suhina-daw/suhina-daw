@@ -419,11 +419,14 @@ fn every_token_has_its_own_name() {
 #[test]
 fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
     // The default track colours are light: names on them are dark.
+    let ctx = egui::Context::default();
+    use_palette(&ctx, Palette::DARK);
     for fill in [rgb(0xFF9A3C), rgb(0x2FD9C4)] {
-        assert_eq!(text_on(fill), window_background(), "{fill:?}");
-        assert!(contrast(fill, text_on(fill)) >= 4.5, "{fill:?}");
+        let on = in_style_frame(&ctx, |_| text_on(fill));
+        assert_eq!(on, Palette::DARK.window_background, "{fill:?}");
+        assert!(contrast(fill, on) >= 4.5, "{fill:?}");
     }
-    assert_eq!(text_on(rgb(0x202020)), text_primary());
+    assert_eq!(in_style_frame(&ctx, |_| text_on(rgb(0x202020))), Palette::DARK.text_primary);
     assert!((contrast(rgb(0x000000), rgb(0xFFFFFF)) - 21.0).abs() < 0.01);
     let faint_white = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
     assert!(text_contrast(faint_white, rgb(0x000000)) < 1.5, "faint text counts as faint");
@@ -462,8 +465,8 @@ fn independent_text_roles_round_trip_and_old_themes_keep_their_colours() {
     assert_eq!(restored.colors, theme.colors);
     let ctx = egui::Context::default();
     use_palette(&ctx, restored.palette());
-    assert_eq!(text_on(rgb(0xFFFFFF)), rgb(0x445566));
-    assert_eq!(browser_text_primary(), rgb(0x55AAFF));
+    assert_eq!(in_style_frame(&ctx, |_| text_on(rgb(0xFFFFFF))), rgb(0x445566));
+    assert_eq!(restored.palette().browser_text_primary, rgb(0x55AAFF));
     use_palette(&ctx, Palette::DARK);
 }
 

@@ -1674,21 +1674,27 @@ pub(crate) fn push_face(painter: &Painter, rect: Rect, el: &Entered, hover: f32,
     text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(theme::TEXT_SMALL), el.color());
 }
 
-/// A button the view paints itself, in a flat fill: `button` entered with its `response`, its fill
-/// its `background-color`, fading to the one it has under the pointer; its text its `color` where
-/// a theme gives one, else `ink`, in a font of `size`.
+/// A button the view paints itself, in a flat fill: `button` entered with its `response` (of its
+/// `kind`, when it has one: `button[kind="secondary"]` for one that stands back), its fill its
+/// `background-color`, fading to the one it has under the pointer; its text its `color`, in a font
+/// of `size`.
 pub(crate) fn flat_button(
     ui: &Ui,
     painter: &Painter,
     rect: Rect,
     response: &Response,
     label: &str,
-    (size, ink): (f32, Color32),
+    (size, kind): (f32, Option<&str>),
 ) {
-    let el = BUTTON.response(response).enter();
+    let builder = BUTTON.response(response);
+    let el = match kind {
+        Some(kind) => builder.attribute("kind", kind),
+        None => builder,
+    }
+    .enter();
     let fill = el.hover_fade(hover(ui, response), Look::background);
     painter.rect_filled(rect, 0.0, fill);
-    text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(size), el.color_or(ink));
+    text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(size), el.color());
 }
 
 /// A button with `text` on it, `label` for screen readers and tests; true when clicked. Its id is

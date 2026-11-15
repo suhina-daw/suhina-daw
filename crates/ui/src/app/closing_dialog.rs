@@ -37,7 +37,7 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[S
     let behind = ui.interact(area, Id::unique("closing-behind"), Sense::click_and_drag());
     let _swallowed = behind.clicked();
     let painter = ui.painter_at(area);
-    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
+    painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")));
 
     let listed = waiting.len().min(LISTED) + usize::from(waiting.len() > LISTED);
     let height = ROW + PAD * 2.0 + (1 + listed) as f32 * LINE;
@@ -47,7 +47,7 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[S
         &painter,
         dialog,
         rect,
-        crate::kit::style_class::surface_or(theme::panel_background()),
+        crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")),
     );
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     drop(super::project_dialog::title_bar(&painter, title, "Closing Suhina"));

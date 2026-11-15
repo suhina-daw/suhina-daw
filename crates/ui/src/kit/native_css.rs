@@ -526,6 +526,16 @@ thread_local! {
 /// Most device panel sheets kept parsed at once.
 const MAX_DEVICE_SHEETS: usize = 32;
 
+thread_local! {
+    /// Counts the frames of the style engine: what a value kept for the frame is keyed by.
+    static FRAME: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The style engine's frame now: it changes as each frame begins.
+pub(super) fn frame_number() -> u64 {
+    FRAME.with(std::cell::Cell::get)
+}
+
 /// How many times the styles were reset: unchanged, the sheet's answers are too.
 pub(super) fn style_epoch() -> u64 {
     STYLE_EPOCH.with(std::cell::Cell::get)
@@ -592,6 +602,7 @@ pub fn frame(ui: &egui::Ui) -> Frame {
 
 /// Disabling motion suppresses CSS transitions/keyframes as well as extra ticks.
 pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
+    FRAME.with(|frame| frame.set(frame.get().wrapping_add(1)));
     begin_frame(ui);
     ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();

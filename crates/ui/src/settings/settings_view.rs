@@ -958,16 +958,16 @@ struct Cards {
 impl Cards {
     fn read() -> Self {
         use crate::kit::element::{Selected, THEME_CARD};
-        let plain_probe = THEME_CARD.probe();
         let in_use = THEME_CARD.attr(Selected, true).look();
         let hovered = THEME_CARD.pointer(true, false, false).look();
         let plain = THEME_CARD.look();
         Self {
-            tint: in_use.background_or(theme::accent().gamma_multiply(0.14)),
-            in_use: in_use.border_unlike(&plain_probe, theme::accent()),
-            hovered: hovered.border_or(theme::border_strong()),
-            plain: plain.border_or(theme::border()),
-            active: in_use.accent_or(theme::accent()),
+            // The tint under the theme in use: its `background-color`, else a little of its accent.
+            tint: in_use.background_or(in_use.accent().gamma_multiply(0.14)),
+            in_use: in_use.border(),
+            hovered: hovered.border(),
+            plain: plain.border(),
+            active: in_use.accent(),
         }
     }
 }
@@ -1028,12 +1028,12 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     // Help, beside Close: how each setting's description is shown.
     let help = Rect::from_min_size(Pos2::new(close.left() - 58.0, close.top()), Vec2::new(52.0, close.height()));
     let help_response = widgets::button_area(ui, help, Id::unique("settings-help"), "Settings help");
-    widgets::flat_button(ui, &painter, help, &help_response, "Help", (theme::TEXT, theme::text_primary()));
+    widgets::flat_button(ui, &painter, help, &help_response, "Help", (theme::TEXT, None));
     if help_response.clicked() {
         state.help_open = true;
     }
     let response = widgets::button_area(ui, close, Id::unique("settings-close"), "Close settings");
-    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT, theme::text_primary()));
+    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT, None));
     // Undock or dock, left of Help.
     let toggle = Rect::from_min_max(pos2(help.left() - 116.0, title.top()), pos2(help.left() - 6.0, title.bottom()));
     let label = if state.window { "Dock" } else { "Open in window" };
@@ -1283,7 +1283,7 @@ fn page_body(
                     egui::Shape::rect_filled(
                         panel,
                         0.0,
-                        crate::kit::style_class::surface_or(theme::panel_background()),
+                        crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")),
                     ),
                 );
                 y += 4.0;
@@ -1322,13 +1322,21 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
         if let Some(own) = &own {
             painter.rect_filled(row, own.radius, own.background);
         } else {
-            painter.rect_filled(row, 0.0, theme::panel_hover().gamma_multiply(0.25 * hover));
-            painter.rect_filled(row, 0.0, theme::control_background().gamma_multiply(0.8 * selected));
+            painter.rect_filled(row, 0.0, crate::kit::element::app_fill("panel-hover").gamma_multiply(0.25 * hover));
+            painter.rect_filled(row, 0.0, crate::kit::element::app_fill("control").gamma_multiply(0.8 * selected));
         }
         // A page under another (Themes under Appearance) is stepped in.
         let indent = if page == Page::Theme { PAD * 2.0 } else { 0.0 };
         let text = Rect::from_min_max(Pos2::new(row.left() + PAD + indent, row.top()), row.max);
-        let color = nav.color_or(motion::mix(theme::text_secondary(), theme::text_primary(), selected));
+        // Its ink, `[checked]` for the page shown; while that changes, a fade between the two.
+        let settled = if Some(page) == shown { selected >= 1.0 } else { selected <= 0.0 };
+        let color = if settled {
+            nav.color()
+        } else {
+            use crate::kit::element::{Checked, SETTINGS_NAV};
+            let (off, on) = (SETTINGS_NAV.probe().color(), SETTINGS_NAV.attr(Checked, true).probe().color());
+            motion::mix(off, on, selected)
+        };
         widgets::text_in(painter, text, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT), color);
     }
     picked
@@ -1943,7 +1951,7 @@ fn shortcuts_page(
         Pos2::new(head.right(), head.top() + 1.0 + SEGMENT),
     );
     let response = widgets::button_area(ui, reset, Id::unique("reset-keys"), "Reset all keys");
-    widgets::flat_button(ui, painter, reset, &response, "Reset all", (theme::TEXT_SMALL, theme::text_primary()));
+    widgets::flat_button(ui, painter, reset, &response, "Reset all", (theme::TEXT_SMALL, None));
     if response.clicked() {
         *keymap = Keymap::default();
         state.capture = None;
@@ -2020,7 +2028,7 @@ fn shortcuts_page(
                     } else {
                         keys.join(", ")
                     };
-                    let color = if capturing { theme::accent() } else { ink().value };
+                    let color = if capturing { crate::kit::element::accent_ink() } else { ink().value };
                     ui.allocate_ui_with_layout(Vec2::new(130.0, 18.0), left, |ui| {
                         ui.set_min_width(130.0);
                         let text = egui::RichText::new(shown).font(theme::mono_font(theme::TEXT_SMALL)).color(color);
@@ -2113,14 +2121,7 @@ fn plugin_folders(
                 Id::unique(("remove-folder", &folder.path)),
                 format!("Remove {}", folder.path),
             );
-            widgets::flat_button(
-                ui,
-                painter,
-                remove,
-                &response,
-                "Remove",
-                (theme::TEXT_SMALL, theme::text_secondary()),
-            );
+            widgets::flat_button(ui, painter, remove, &response, "Remove", (theme::TEXT_SMALL, Some("secondary")));
             if response.clicked() {
                 request = Some(PluginRequest::RemoveFolder(folder.path.clone()));
             }
@@ -2169,28 +2170,12 @@ fn plugin_folders(
         if response.clicked() {
             plugins.new_format = format;
         }
-        // A `button`, `[checked]` for the format chosen, lit only by a rule for that state.
-        let (hovered, lit) = widgets::toggle_motion(ui, &response, chosen);
-        let (el, sides) = crate::kit::element::BUTTON.response(&response).enter_toggle(
-            &[crate::kit::element::Checked],
-            chosen,
-            lit > 0.0,
-        );
-        let off = (motion::mix(theme::control_background(), theme::control_hover(), hovered), theme::text_secondary());
-        let toggle = widgets::Toggle::of(
-            &el,
-            sides.as_ref(),
-            widgets::UnlitInk::Inherited,
-            off,
-            theme::control_selected(),
-            |_| theme::text_inverse(),
-        );
-        let (fill, color) = toggle.at(lit);
-        el.paint_over(painter, cell, crate::kit::element::Native { radius: 0.0, fill }, toggle.image(lit));
+        // A `button[kind="option"]`, `[checked]` for the format chosen.
+        let (_, color) = option_face(ui, painter, cell, &response, chosen, "option");
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
-    widgets::flat_button(ui, painter, add, &response, "Add", (theme::TEXT_SMALL, theme::text_primary()));
+    widgets::flat_button(ui, painter, add, &response, "Add", (theme::TEXT_SMALL, None));
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     if response.clicked() || entered {
         // Nothing typed: the system's folder picker, so Add always does something.
@@ -2246,19 +2231,15 @@ fn plugin_actions(
             Vec2::new(half, buttons.height()),
         );
         let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
-        let base = if plugins.scanning {
-            crate::kit::style_class::surface_or(theme::panel_background())
-        } else {
-            theme::control_background()
-        };
-        let fill = motion::mix(
-            base,
-            theme::control_hover(),
-            if plugins.scanning { 0.0 } else { widgets::hover(ui, &response) },
-        );
         let el = crate::kit::element::BUTTON.response(&response).enter();
-        painter.rect_filled(cell, 0.0, el.background_or(fill));
-        let color = if plugins.scanning { ink().hint } else { el.color_or(theme::text_primary()) };
+        // While a scan runs, the buttons stand back: the region's fill under the hint's ink.
+        let fill = if plugins.scanning {
+            el.background_or(crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")))
+        } else {
+            el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background)
+        };
+        painter.rect_filled(cell, 0.0, fill);
+        let color = if plugins.scanning { ink().hint } else { el.color() };
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !plugins.scanning {
             request = Some(PluginRequest::Scan { all });
@@ -2270,7 +2251,7 @@ fn plugin_actions(
     label(painter, r, "Plug-in manager", "Every plug-in found, switched on or off, and why files failed");
     let open = control_rect(r, 2);
     let response = widgets::button_area(ui, open, Id::unique("open-plugin-manager"), "Open the plug-in manager");
-    widgets::flat_button(ui, painter, open, &response, "Manage plug-ins", (theme::TEXT_SMALL, theme::text_primary()));
+    widgets::flat_button(ui, painter, open, &response, "Manage plug-ins", (theme::TEXT_SMALL, None));
     if response.clicked() {
         plugins.manager.open = true;
     }
@@ -2421,7 +2402,7 @@ fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
     let rect = Rect::from_min_size(Pos2::new(r.right() - 150.0, r.top() + 1.0), Vec2::new(150.0, SEGMENT));
     let response =
         widgets::button_area(ui, rect, Id::unique("asio-control-panel"), "Open the active ASIO driver's control panel");
-    widgets::flat_button(ui, painter, rect, &response, "Control panel…", (theme::TEXT_SMALL, theme::text_primary()));
+    widgets::flat_button(ui, painter, rect, &response, "Control panel…", (theme::TEXT_SMALL, None));
     response.clicked()
 }
 
@@ -2814,14 +2795,7 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
     label(painter, r, "Playing on", &output);
     let refresh = Rect::from_min_size(Pos2::new(r.right() - 120.0, r.top() + 1.0), Vec2::new(120.0, SEGMENT));
     let response = widgets::button_area(ui, refresh, Id::unique("audio-refresh"), "List the audio devices again");
-    widgets::flat_button(
-        ui,
-        painter,
-        refresh,
-        &response,
-        "List devices again",
-        (theme::TEXT_SMALL, theme::text_primary()),
-    );
+    widgets::flat_button(ui, painter, refresh, &response, "List devices again", (theme::TEXT_SMALL, None));
     let r = row(y);
     label(painter, r, "Delay to the speakers", &format!("Measured from the engine to the speakers: {latency}"));
     let r = row(y);
@@ -2880,24 +2854,8 @@ fn preset_segmented(
         let chosen = *value == current;
         let response =
             widgets::button_area(ui, segment, Id::unique(("keymap-preset", *text)), format!("Preset: {text}"));
-        // A `button`, `[checked]` for the chosen preset, lit only by a rule for that state.
-        let (hovered, lit) = widgets::toggle_motion(ui, &response, chosen);
-        let (el, sides) = crate::kit::element::BUTTON.response(&response).enter_toggle(
-            &[crate::kit::element::Checked],
-            chosen,
-            lit > 0.0,
-        );
-        let hover_fill = |fill| motion::mix(fill, theme::control_hover(), hovered);
-        let toggle = widgets::Toggle::of(
-            &el,
-            sides.as_ref(),
-            widgets::UnlitInk::Inherited,
-            (hover_fill(theme::control_background()), ink().caption),
-            hover_fill(theme::control_active()),
-            |_| ink().name,
-        );
-        let (fill, color) = toggle.at(lit);
-        el.paint_over(painter, segment, crate::kit::element::Native { radius: 0.0, fill }, toggle.image(lit));
+        // A `button[kind="preset"]`, `[checked]` for the chosen preset.
+        let (_, color) = option_face(ui, painter, segment, &response, chosen, "preset");
         widgets::text_in(painter, segment, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !chosen {
             picked = Some(*value);
@@ -3069,24 +3027,25 @@ fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> 
     let track = Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(SWITCH_WIDTH, SEGMENT));
     let response = ui.interact(track, Id::unique(("setting-switch", name)), Sense::click());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, name));
-    // A `button`, `[checked]` while on: its track lit only by a rule for that state.
-    let (hovered, lit) = widgets::toggle_motion(ui, &response, on);
-    let (el, sides) =
-        crate::kit::element::BUTTON.response(&response).enter_toggle(&[crate::kit::element::Checked], on, lit > 0.0);
-    let off = (motion::mix(theme::control_background(), theme::control_hover(), hovered), theme::text_secondary());
-    let toggle =
-        widgets::Toggle::of(&el, sides.as_ref(), widgets::UnlitInk::Inherited, off, theme::text_value(), |_| {
-            theme::text_inverse()
-        });
-    let (fill, _) = toggle.at(lit);
-    el.paint_over(painter, track, crate::kit::element::Native { radius: 0.0, fill }, toggle.image(lit));
+    // A `button[kind="switch"]`, `[checked]` while on: its track's fill.
+    let lit = widgets::lit_toggle_kind(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.builder(),
+        &[crate::kit::element::Checked],
+        on,
+        "switch",
+    );
+    let (fill, _) = lit.colors();
+    lit.el.paint_over(painter, track, crate::kit::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
+    let widgets::Lit { el, lit, .. } = lit;
     drop(el);
     let knob_width = SEGMENT - 4.0;
     let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
     let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
     // The knob's lit colour contrasts with the lit track: an opaque ground, else the inverse text.
-    let ground = crate::kit::style_class::opaque_surface_or(theme::window_background());
-    let ground = if ground.a() == u8::MAX { ground } else { theme::text_inverse() };
+    let ground = crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window"));
+    let ground = if ground.a() == u8::MAX { ground } else { crate::kit::element::app_fill("knob") };
     painter.rect_filled(knob, 0.0, motion::mix(ink().caption, ground, lit));
     response.clicked().then_some(!on)
 }
@@ -3133,28 +3092,35 @@ fn segmented<T: Copy + PartialEq>(
         if response.clicked() && *value != current {
             picked = Some(*value);
         }
-        // A part is a `button` (`[checked]` when chosen), lit only by a rule for that state: a
-        // rule for every `button` does not hide which part is chosen.
-        let (hovered, lit) = widgets::toggle_motion(ui, &response, *value == current);
-        let (el, sides) = crate::kit::element::BUTTON.response(&response).enter_toggle(
-            &[crate::kit::element::Checked],
-            *value == current,
-            lit > 0.0,
-        );
-        let off = (motion::mix(theme::control_background(), theme::control_hover(), hovered), theme::text_secondary());
-        let toggle = widgets::Toggle::of(
-            &el,
-            sides.as_ref(),
-            widgets::UnlitInk::Inherited,
-            off,
-            theme::control_selected(),
-            |_| theme::text_inverse(),
-        );
-        let (fill, color) = toggle.at(lit);
-        el.paint_over(painter, cell, crate::kit::element::Native { radius: 0.0, fill }, toggle.image(lit));
+        // A part is a `button[kind="option"]`, `[checked]` when chosen.
+        let (_, color) = option_face(ui, painter, cell, &response, *value == current, "option");
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked
+}
+
+/// One part of a row of choices, a `button` of `kind` (`option`, `preset`), `[checked]` while it
+/// is the one chosen: its face painted in `rect` and its fill and ink, which fade with the choice
+/// and the pointer.
+fn option_face(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    response: &egui::Response,
+    chosen: bool,
+    kind: &'static str,
+) -> (egui::Color32, egui::Color32) {
+    let lit = widgets::lit_toggle_kind(
+        ui,
+        response,
+        crate::kit::element::BUTTON.builder(),
+        &[crate::kit::element::Checked],
+        chosen,
+        kind,
+    );
+    let (fill, color) = lit.colors();
+    lit.el.paint_over(painter, rect, crate::kit::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
+    (fill, color)
 }
 
 #[cfg(test)]

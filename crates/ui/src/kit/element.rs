@@ -932,6 +932,12 @@ pub(crate) fn value_ink() -> Color32 {
     LABEL.attribute("kind", "value").look().color()
 }
 
+/// Words or a mark in the accent (a file found, a key being set, the toolbar editor's grid):
+/// `label[kind="accent"]`'s `color`.
+pub(crate) fn accent_ink() -> Color32 {
+    LABEL.attribute("kind", "accent").look().color()
+}
+
 /// Words that say something went wrong: `label[kind="error"]`'s `color`.
 pub(crate) fn error_ink() -> Color32 {
     LABEL.attribute("kind", "error").look().color()
@@ -940,6 +946,14 @@ pub(crate) fn error_ink() -> Color32 {
 /// A name or a line of text: `label`'s `color`.
 pub(crate) fn name_ink() -> Color32 {
     LABEL.look().color()
+}
+
+/// The fill the app's bars, Settings, dialogs and menus paint for themselves, of `kind`
+/// (`window`, `panel`, `panel-hover`, `control`, `control-hover`, `control-active`): the
+/// `background-color` of `app-fill[kind]`, read where it is painted, so a region's variables reach
+/// it.
+pub(crate) fn app_fill(kind: &str) -> Color32 {
+    APP_FILL.attribute("kind", kind).look().background()
 }
 
 /// The registry's element named `name`, for code that has a name at run time.
@@ -1125,6 +1139,8 @@ names! {
     EXPORT = "export";
     THEME_CARD = "theme-card";
     THEME_SWATCH = "theme-swatch";
+    APP_FILL = "app-fill";
+    WIDGET = "widget";
 }
 
 #[cfg(test)]

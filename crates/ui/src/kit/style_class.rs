@@ -229,7 +229,7 @@ pub(super) fn readable_on(
     style: Option<super::native_css::Computed>,
     background: egui::Color32,
 ) -> Option<egui::Color32> {
-    let inherited = style.map_or_else(theme::text_primary, |style| style.color());
+    let inherited = style?.color();
     if theme::contrast(inherited, background) >= 3.0 {
         return None;
     }

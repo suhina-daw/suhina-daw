@@ -390,7 +390,7 @@ fn a_rule_for_every_button_is_not_the_selection_s() {
 }
 
 #[test]
-fn the_root_visuals_are_built_again_only_when_the_styles_or_the_palette_changed() {
+fn the_root_visuals_are_built_again_only_when_the_styles_or_the_colours_changed() {
     let ctx = egui::Context::default();
     let css = "menu { border-radius: 4px; }";
     root_after(&ctx, css, 800.0);
@@ -400,7 +400,10 @@ fn the_root_visuals_are_built_again_only_when_the_styles_or_the_palette_changed(
     assert_eq!(frames_in(&ctx, 800.0).window_fill, mark, "frames with nothing changed leave them");
     assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a new width resets the styles");
     ctx.all_styles_mut(|style| style.visuals.window_fill = mark);
-    theme::use_palette(&ctx, theme::palette());
-    assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a palette change rebuilds them");
+    let mut changed = theme::palette();
+    changed.accent = rgb(4, 5, 6);
+    theme::use_palette(&ctx, changed);
+    assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a colour change rebuilds them");
+    theme::use_palette(&ctx, theme::Palette::DARK);
     skin::configure(&skin::Skin::default());
 }

@@ -107,7 +107,7 @@ impl App {
                 overlay.set_min_size(bar.size());
                 overlay.set_clip_rect(bar);
                 let painter = overlay.painter();
-                let ink = crate::kit::element::TOOLBAR.look().accent_or(theme::accent());
+                let ink = crate::kit::element::accent_ink();
                 for x in (0..=(bar.width().min(16384.0) / 8.0) as usize).map(|n| bar.left() + n as f32 * 8.0) {
                     painter.vline(x, bar.y_range(), egui::Stroke::new(0.5, ink.gamma_multiply(0.18)));
                 }

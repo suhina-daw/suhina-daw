@@ -127,13 +127,21 @@ impl Splash {
         let _swallowed = behind.clicked();
         let fade = |color: Color32| color.gamma_multiply(opacity);
         let painter = ui.painter_at(area);
-        painter.rect_filled(area, 0.0, fade(crate::kit::style_class::surface_or(theme::window_background())));
+        painter.rect_filled(
+            area,
+            0.0,
+            fade(crate::kit::style_class::surface_or(crate::kit::element::app_fill("window"))),
+        );
 
         // The card is a `dialog`: its edge in its `border-color`, its words as a dialog's.
         let card = crate::kit::element::DIALOG.enter();
         let rect = Rect::from_center_size(area.center(), SIZE.min(area.size()));
-        painter.rect_filled(rect, 0.0, fade(crate::kit::style_class::surface_or(theme::panel_background())));
-        let edge = card.border_or(theme::border_strong());
+        painter.rect_filled(
+            rect,
+            0.0,
+            fade(crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel"))),
+        );
+        let edge = card.border();
         painter.rect_stroke(rect, 0.0, theme::hairline(fade(edge)), egui::StrokeKind::Inside);
 
         let line = |center_y: f32, height: f32| {
