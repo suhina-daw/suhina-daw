@@ -135,3 +135,121 @@ meter-clip { background-color: var(--recording); }
 dialog { border-color: var(--border-strong); }
 list-row { color: var(--text-secondary); }
 list-row[selected] { color: var(--text-primary); }
+
+/* Launcher, mixer and Arrangement */
+
+/* The switches these views draw: the control bar's Record and the metronomes, a strip's monitor
+   picks, a clip's envelope buttons, a track's automation switch and the automation shapes. Each
+   is a `button` of its own `kind`, lit with `[checked]`; the fill at rest and under the pointer is
+   the button's. */
+button[kind="record"] { color: var(--text-primary); }
+button[kind="record"][checked] { background-color: var(--recording-background); color: var(--recording); }
+button[kind="metronome"] { color: var(--text-primary); }
+button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
+button[kind="monitor"] { color: var(--text-secondary); }
+button[kind="monitor"][checked] { background-color: var(--control-activeBackground); color: var(--text-primary); }
+button[kind="lanes"] { color: var(--text-secondary); }
+button[kind="lanes"][checked] { background-color: var(--control-activeBackground); color: var(--text-primary); }
+button[kind="envelope"] { background-color: transparent; color: var(--text-secondary); }
+button[kind="envelope"]:hover { background-color: color-mix(in srgb, var(--text-secondary) 18%, transparent); }
+button[kind="envelope"][checked] { background-color: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+button[kind="shape"] { background-color: var(--window-background); color: var(--text-secondary); }
+button[kind="shape"]:hover { background-color: var(--control-hoverBackground); }
+button[kind="shape"][checked] { background-color: var(--control-activeBackground); }
+
+/* The lines of the Launcher between its bands, its columns and its slots. */
+separator[kind="band"], separator[kind="column"] { color: var(--border-strong); }
+separator[kind="slot"] { color: var(--border); }
+
+/* A splitter's line while the pointer is on it. */
+divider { color: var(--accent); }
+
+/* The Launcher: a scene's button, a slot's stop button and mark, the record button of an armed
+   track's empty slot, the clips' states, the tint of the key mapping and Main's header. */
+scene { background-color: var(--control-background); color: var(--text-secondary); }
+scene:hover { background-color: var(--control-hoverBackground); color: var(--text-primary); }
+scene[playing] { background-color: var(--control-playingBackground); color: var(--text-primary); }
+scene[kind="stop-all"] { background-color: var(--panel-background); color: var(--text-secondary); }
+scene[kind="stop-all"]:hover { background-color: var(--panel-hoverBackground); }
+slot[kind="stop"] { background-color: var(--panel-background); color: var(--text-secondary); }
+slot[kind="stop"]:hover { background-color: var(--panel-hoverBackground); }
+slot[kind="stop"][queued] { color: var(--accent); }
+session slot { background-color: var(--window-background); }
+session slot[selected] { border-color: var(--text-primary); }
+slot-mark { color: var(--slot-empty); }
+slot-record { color: var(--text-secondary); }
+slot-record:hover { color: var(--recording); }
+slot-record[recording] { background-color: var(--recording-background); color: var(--recording); }
+session clip[muted] { background-color: var(--control-background); color: var(--text-hint); }
+session clip[selected] { border-color: var(--text-primary); }
+session clip[queued] { border-color: var(--accent); }
+mapping-overlay { accent-color: var(--accent); border-color: var(--accent); color: var(--text-primary); }
+session track-header[kind="main"] { background-color: var(--control-background); color: var(--text-primary); border-color: var(--accent); }
+label[kind="scene-number"] { color: var(--text-hint); }
+
+/* The mixer: a strip's fill, its device list and the rows in it, its fader's value and scale, the
+   rail of a horizontal fader, a send, the bar of how far the sends are scrolled, the compact
+   volume bar's lit part, and the metronome's level slider. */
+mixer { background-color: var(--panel-background); }
+device-list { background-color: var(--window-background); }
+device-list device-row { background-color: transparent; color: var(--text-secondary); }
+device-list device-row:hover { background-color: var(--control-hoverBackground); }
+device-list device-row[selected] { background-color: var(--control-activeBackground); }
+device-list device-row[muted] { color: var(--text-hint); }
+fader { color: var(--text-value); }
+fader:hover { color: var(--text-primary); }
+fader-scale { color: var(--text-hint); }
+fader-rail { background-color: var(--control-background); }
+value[kind="bar"] value-fill { background-color: var(--control-playingBackground); }
+send { color: var(--text-value); }
+send:hover { background-color: var(--control-hoverBackground); color: var(--text-primary); }
+scroll-bar { background-color: var(--text-hint); }
+popup[kind="level"] { background-color: var(--panel-background); border-color: var(--border-strong); }
+popup[kind="level"] slider { color: var(--text-value); }
+popup[kind="level"] slider-fill { background-color: var(--control-playingBackground); }
+popup[kind="level"] slider-handle { background-color: var(--text-primary); }
+
+/* The Arrangement: the colours under its grid and under its panels, its ruler, grid lines and the
+   marks on it, the playhead, the loop, the markers and tools, and what is selected or dragged. */
+arrangement { background-color: var(--window-background); accent-color: var(--accent); }
+arrangement[kind="panel"] { background-color: var(--panel-background); }
+ruler { background-color: var(--panel-background); border-color: var(--border); }
+slider[kind="zoom"] { color: var(--text-hint); }
+slider[kind="zoom"]:hover { color: var(--text-secondary); }
+grid-line[kind="bar"] { color: var(--grid-major); }
+grid-line[kind="beat"] { color: var(--grid-minor); }
+tempo-mark { color: var(--accent); }
+arrangement playhead { color: var(--accent); }
+start-marker { color: var(--text-primary); }
+loop-line { color: var(--accent); }
+loop-region { background-color: var(--control-background); color: var(--text-hint); }
+loop-region[checked] { background-color: var(--control-activeBackground); color: var(--text-secondary); }
+marker { background-color: var(--control-background); border-color: var(--text-secondary); color: var(--text-value); }
+marker:hover { background-color: var(--control-hoverBackground); }
+marker[checked] { background-color: var(--control-activeBackground); }
+arrangement-tool { background-color: var(--control-background); color: var(--text-secondary); }
+arrangement-tool[checked] { background-color: var(--control-activeBackground); color: var(--text-primary); }
+arrangement-tool:hover { background-color: var(--control-hoverBackground); }
+time-selection { color: var(--accent); }
+time-selection[kind="draw"], time-selection[kind="take"] { color: var(--selection); }
+arrangement marquee { color: var(--accent); }
+arrangement track-lane[checked] { background-color: var(--panel-hoverBackground); border-color: var(--accent); }
+arrangement track-header[selected] { border-color: var(--border-strong); }
+arrangement track-header[kind="main"] { background-color: var(--panel-background); color: var(--text-primary); }
+arrangement track-header[kind="main"][selected] { background-color: var(--control-activeBackground); }
+arrangement track-number { color: var(--text-secondary); }
+arrangement clip[recording] { border-color: var(--recording); color: var(--text-primary); }
+clip-gain { background-color: var(--control-background); color: var(--text-value); }
+clip-gain:hover { background-color: var(--control-hoverBackground); }
+clip-fade-handle { background-color: var(--text-secondary); }
+clip-fade-handle:hover { background-color: var(--text-primary); }
+clip-fade[kind="crossfade"] { color: var(--text-primary); }
+
+/* The automation lanes: a group's lane and header, a lane's header picked, its line while it is
+   off, its points picked and its pin. */
+automation-lane[kind="group"] { color: var(--accent); }
+automation-header { accent-color: var(--accent); }
+automation-header[kind="group"], automation-header[kind="group"][selected] { background-color: var(--control-background); }
+automation-line[muted] { color: var(--text-hint); }
+automation-point[selected] { color: var(--text-primary); }
+automation-pin { color: var(--automation-pin); }

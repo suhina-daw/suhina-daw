@@ -618,7 +618,8 @@ fn a_look_takes_its_own_rules_and_the_token_elsewhere() {
     let (slot_line, column_line, column_text, mark) = frames(css, || {
         let _view = SESSION.enter();
         let slot = SEPARATOR.attribute("kind", "slot").look();
-        let column = SEPARATOR.attribute("kind", "column").look();
+        // A kind with no rule of the base sheet's: those take their own colour, not the view's.
+        let column = SEPARATOR.attribute("kind", "lane").look();
         let mark = SLOT_MARK.look();
         (slot.own_color_or(token), column.own_color_or(token), column.color_or(token), mark)
     });

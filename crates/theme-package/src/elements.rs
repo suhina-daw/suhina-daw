@@ -302,7 +302,7 @@ pub const ELEMENTS: &[Element] = &[
     element("slot-mark", Drawn, "The mark in an empty slot that holds a stop button."),
     element("drop-target", Drawn, "Where a drop lands: the outline of the area (`kind=\"area\"`) or the line a moved track goes to (`kind=\"insert\"`).")
         .attributes(&["kind"]),
-    element("arrangement", Region, "The Arrangement view: tracks as rows along a timeline.")
+    element("arrangement", Region, "The Arrangement view: tracks as rows along a timeline. Its `background-color` is the colour under the grid and the empty lanes; `arrangement[kind=\"panel\"]`'s is the one under its ruler, rows, headers and toolbar, and both are what the view draws over a region around it that has a background of its own.")
         .parts(&[
             "track-header",
             "track-lane",
@@ -315,6 +315,7 @@ pub const ELEMENTS: &[Element] = &[
             "marquee",
             "start-marker",
         ])
+        .attributes(&["kind"])
         .settings(&["track-headers", "track-height", "header-min-width", "header-tint", "compact-below"]),
     element("track-header", Container, "A track's header, in the Arrangement view and over a Launcher column; Main's over the Launcher's scenes is `track-header[kind=\"main\"]`.")
         .parts(&["track-name", "track-number", "fold"])
@@ -482,9 +483,9 @@ pub const ELEMENTS: &[Element] = &[
     element("xy-control", Control, "A two-dimensional control of a device panel."),
     element("envelope", Drawn, "An envelope a device panel shows."),
     element("waveform", Drawn, "A waveform a panel shows."),
-    element("slider", Control, "A parameter's slider; the MIDI tools' quantise amount, as a knob; a swing amount, `[checked]` while it is the clip's own.")
+    element("slider", Control, "A parameter's slider; the MIDI tools' quantise amount, as a knob; a swing amount, `[checked]` while it is the clip's own; the Arrangement's waveform zoom is `slider[kind=\"zoom\"]`, the metronome's level slider is in `popup[kind=\"level\"]`.")
         .parts(&["slider-rail", "slider-fill", "slider-handle"])
-        .attributes(&["checked"])
+        .attributes(&["checked", "kind"])
         .ids(Ids::Listed { prefix: "", names: &["quantise-amount", "waveform-zoom"] })
         .settings(VALUE_SETTINGS)
         .artwork(&[own("slider.rail"), own("slider.fill"), own("slider.handle")]),
@@ -492,7 +493,7 @@ pub const ELEMENTS: &[Element] = &[
     element("slider-fill", Part, "A slider's fill up to its value."),
     element("slider-handle", Part, "A slider's handle."),
     // Controls everywhere.
-    element("button", Control, "A button or switch; also egui's check boxes and drop-downs. A device's on switch is `#control-device-on`; an expanded panel's × `button[kind=\"close\"]` and the browser's more tags `button[kind=\"more\"]` take only a rule for their kind. The toggles Suhina's own views draw (a track's on switch, cue, a view's switches) are `button[kind=\"toggle\"]`, solo `button[kind=\"solo\"]` and arm `button[kind=\"arm\"]`, lit with `[checked]`: their base look is dim words on the control fill, and the chosen fill and its text when lit; a rule for every `button` overrides it for the properties it sets, lit ones too, so state the lit look as well.")
+    element("button", Control, "A button or switch; also egui's check boxes and drop-downs. A device's on switch is `#control-device-on`; an expanded panel's × `button[kind=\"close\"]` and the browser's more tags `button[kind=\"more\"]` take only a rule for their kind. The toggles Suhina's own views draw (a track's on switch, cue, a view's switches) are `button[kind=\"toggle\"]`, solo `button[kind=\"solo\"]` and arm `button[kind=\"arm\"]`, lit with `[checked]`: their base look is dim words on the control fill, and the chosen fill and its text when lit; a rule for every `button` overrides it for the properties it sets, lit ones too, so state the lit look as well. The Launcher's, the mixer's and the Arrangement's own switches are `button[kind=\"record\"]` (the control bar's Record, `[checked]` while it records), `button[kind=\"metronome\"]` (the metronome's switches, `[checked]` while it clicks), `button[kind=\"monitor\"]` (a strip's In, Auto and Off, `[checked]` on the one chosen), `button[kind=\"envelope\"]` (a clip's Edit gain envelope and Free move), `button[kind=\"lanes\"]` (a track's automation switch, `[checked]` while its lanes show) and `button[kind=\"shape\"]` (an automation lane's shape pick, `[checked]` on the chosen one).")
         .ids(Ids::Listed { prefix: "control-", names: CONTROL_IDS })
         .attributes(&["checked", "playing", "recording", "armed", "muted", "kind"])
         .artwork(&[
@@ -574,8 +575,9 @@ pub const ELEMENTS: &[Element] = &[
     element("separator", Drawn, "A rule between parts, by its `kind`: the window's lines over and under the views; a divider between a bar's items (`bar`); the Launcher's lines between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's and the piano roll's under their rows (`row`), between their bands (`band`) and under each lane (`lane`); a line in a clip panel's list (`menu`); the lines over a device inside a device group (`group`); an expanded panel's lines between its columns (`column`); the browser's lines between its parts (`row`).")
         .ids(Ids::Listed { prefix: "", names: &["views-top", "views-bottom"] })
         .attributes(&["kind"]),
-    element("popup", Region, "A menu, right-click menu, dropdown list or control's popup.")
+    element("popup", Region, "A menu, right-click menu, dropdown list or control's popup; the metronome's level, with its slider, is `popup[kind=\"level\"]`.")
         .ids(Ids::Listed { prefix: "", names: &["metronome-level"] })
+        .attributes(&["kind"])
         .settings(FLOATING),
     element("tooltip", Region, "A tooltip, and the pill that follows the pointer while something is dragged.").settings(FLOATING),
     element("progress", Drawn, "A progress bar: a dialog's, the sample map's busy card and the MIDI panel's range bar.").parts(&["progress-fill"]),

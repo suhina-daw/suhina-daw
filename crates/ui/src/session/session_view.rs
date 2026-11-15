@@ -505,7 +505,7 @@ pub fn show(
         // Main's header over the scene column: `track-header[kind="main"]`.
         let main_header =
             crate::kit::element::TRACK_HEADER.attribute("kind", "main").attr(Selected, main_selected).enter();
-        let native = crate::kit::element::Native { radius: 0.0, fill: theme::control_background() };
+        let native = crate::kit::element::Native { radius: 0.0, fill: main_header.background() };
         let content = main_header.paint_with(&painter, header_rect, native).content;
         widgets::text_in(
             &painter,
@@ -513,10 +513,10 @@ pub fn show(
             Align2::LEFT_CENTER,
             "Main",
             theme::ui_font(theme::TEXT),
-            main_header.color_or(theme::text_primary()),
+            main_header.color(),
         );
         if main_selected {
-            let outline = main_header.border_or(theme::accent());
+            let outline = main_header.border();
             painter.rect_stroke(header_rect.shrink(0.5), 0.0, egui::Stroke::new(1.0, outline), StrokeKind::Inside);
         }
     }
@@ -551,7 +551,7 @@ pub fn show(
     {
         probe.offer(header_rect.union(main_mixer), DropTarget::Track(TrackId::MAIN));
     }
-    let main_fill = crate::kit::style_class::surface_or(theme::panel_background());
+    let main_fill = crate::kit::style_class::surface_or(crate::kit::element::MIXER.look().background());
     painter.rect_filled(main_mixer, 0.0, main_fill);
     crate::kit::liquid::paint(&painter, main_mixer, &style_class, main_fill, crate::kit::liquid::Surface::Track);
     let level = state.meters.main;
@@ -617,14 +617,16 @@ fn main_metronome(
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
-    let (el, plain) =
-        crate::kit::element::BUTTON.id("main-metronome").response(&response).enter_against_plain(Checked, on);
-    let (fill, glyph) = crate::kit::widgets::toggle_inks(
-        &el,
-        plain.as_ref(),
-        (theme::control_active(), theme::control_background()),
-        (theme::accent(), theme::text_primary()),
+    // `button#main-metronome` as the control bar's: `button[kind="metronome"]`, `[checked]` while on.
+    let crate::kit::widgets::Lit { el, toggle, lit } = crate::kit::widgets::lit_toggle_kind(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.id("main-metronome"),
+        &[Checked],
+        on,
+        "metronome",
     );
+    let (fill, glyph) = toggle.at(lit);
     painter.rect_filled(rect, 0.0, fill);
     crate::session::record_controls::metronome_glyph(painter, rect, glyph);
     // The level's slider is a popup of its own, not a part of the button.
@@ -690,7 +692,7 @@ fn mixer_edge(
         state.mixer_height = height.round();
     }
     if response.hovered() || response.dragged() {
-        painter.hline(area.x_range(), line, egui::Stroke::new(2.0, divider.style.own_color_or(theme::accent())));
+        painter.hline(area.x_range(), line, egui::Stroke::new(2.0, divider.style.color()));
     }
 }
 
@@ -706,11 +708,7 @@ struct Lines {
 impl Lines {
     fn read() -> Self {
         let line = |kind| crate::kit::element::SEPARATOR.attribute("kind", kind).look();
-        Self {
-            band: line("band").own_color_or(theme::border_strong()),
-            column: line("column").own_color_or(theme::border_strong()),
-            slot: line("slot").own_color_or(theme::border()),
-        }
+        Self { band: line("band").color(), column: line("column").color(), slot: line("slot").color() }
     }
 }
 
@@ -1022,6 +1020,9 @@ fn column_body(
     let scenes = bands.scenes;
     let mapping = state.launch_keys.mode.on && column.kind != ColumnKind::Return;
     let label = |target: MappingTarget| bands.mapped.iter().find(|(t, _)| *t == target).map(|(_, l)| l.as_str());
+    // The clip's colours for the states a rule for every clip hides, read before the slots and
+    // their clips are entered.
+    let native = SlotNative::read();
     for (scene, slot) in column.slots.iter().enumerate() {
         let rect = Rect::from_x_y_ranges(
             span,
@@ -1031,9 +1032,6 @@ fn column_body(
             continue;
         }
         let number = scene + 1;
-        // The clip's native colours, read before the slot and its clip are entered: inside them the
-        // palette's colours are their own, which would put a rule for every clip on a stated one.
-        let native = SlotNative::read();
         let slot_style = crate::kit::element::SLOT
             .id(&format!("slot-{}-{number}", column.track.0))
             .attr(Selected, state.selected_slot == Some((column.track, scene)))
@@ -1272,7 +1270,7 @@ fn column_body(
             );
         }
         if selected && !selectable {
-            let outline = slot_style.border_or(theme::text_primary());
+            let outline = slot_style.border();
             painter.rect_stroke(rect, 0.0, theme::hairline(outline), StrokeKind::Inside);
         }
         painter.hline(span, rect.bottom() + 0.5, theme::hairline(bands.lines.slot));
@@ -1305,24 +1303,20 @@ fn column_body(
             actions.push(Action::new("track.stop", json!({ "track": column.track.0 })));
         }
     }
-    // The stop button is `slot[kind="stop"]`, `[queued]` while its stop waits for the beat.
-    // A rule for every stop button must not hide which one is queued: only a `[queued]` rule does.
-    let (el, plain) = crate::kit::element::SLOT
+    // The stop button is `slot[kind="stop"]`, `[queued]` while its stop waits for the beat. A rule
+    // for every stop button hides the base sheet's `[queued]` one, so a theme states it too.
+    let el = crate::kit::element::SLOT
         .attribute("kind", "stop")
         .response(&response)
-        .enter_against_plain(Queued, column.stop_queued);
+        .attr(Queued, column.stop_queued)
+        .enter();
+    // Over the region it is in, as the panels are: a step brighter under the pointer.
     let native_fill = motion::mix(
-        crate::kit::style_class::surface_or(theme::panel_background()),
-        theme::panel_hover(),
+        crate::kit::style_class::surface_or(el.look_hovered(false).background()),
+        el.look_hovered(true).background(),
         widgets::hover(ui, &response),
     );
-    let (fill, color) = match &plain {
-        Some(plain) => {
-            let lit = el.look();
-            (lit.background_unlike(plain, native_fill), lit.own_color_unlike(plain, theme::accent()))
-        }
-        None => (el.background_or(native_fill), el.own_color_or(theme::text_secondary())),
-    };
+    let (fill, color) = (el.background_or(native_fill), el.color());
     painter.rect_filled(stop_rect, 0.0, fill);
     let square = Rect::from_center_size(stop_rect.center(), Vec2::splat(7.0));
     painter.rect_stroke(square, 0.0, theme::hairline(color), StrokeKind::Inside);
@@ -1415,19 +1409,17 @@ fn plain_clip(
     })
 }
 
-/// The colours a slot's clip falls back on where no rule for its state gives one, read before
-/// the slot and the clip are entered.
+/// The colour a slot's clip takes while it is deactivated, read before the slot and the clip are
+/// entered: the `background-color` of `clip[muted]`.
 #[derive(Clone, Copy)]
 struct SlotNative {
     /// A deactivated clip's grey, and what a muted track's clips are mixed toward.
     muted: Color32,
-    /// A selected clip's outline.
-    outline: Color32,
 }
 
 impl SlotNative {
     fn read() -> Self {
-        Self { muted: theme::control_background(), outline: theme::text_primary() }
+        Self { muted: crate::kit::element::CLIP.attr(Muted, true).look().background() }
     }
 }
 
@@ -1453,7 +1445,7 @@ fn slot_cell(
     // An empty slot is tinted with its track's colour, unless the sheet gives it a background
     // (`slot { background-color }`).
     let empty = el.background_or(motion::mix(
-        crate::kit::style_class::surface_or(theme::window_background()),
+        crate::kit::style_class::surface_or(el.background()),
         track_color,
         if column.mute { EMPTY_TINT / 2.0 } else { EMPTY_TINT },
     ));
@@ -1475,6 +1467,9 @@ fn slot_cell(
         Some(fill) => motion::mix(motion::mix(base, Color32::WHITE, light), fill, hover),
         None => motion::mix(base, Color32::WHITE, light + 0.14 * hover),
     };
+    // The stop button's slot over the region it is in, as the stop button under the slots is.
+    let stop_surface =
+        crate::kit::style_class::surface_or(crate::kit::element::SLOT.attribute("kind", "stop").look().background());
     match slot.state {
         SlotState::Empty => {
             if !textured {
@@ -1485,19 +1480,11 @@ fn slot_cell(
             if textured {
                 // Blend hover over artwork; a replacement-alpha background fill
                 // would erase the texture on native GPU surfaces.
-                painter.rect_filled(
-                    rect,
-                    0.0,
-                    crate::kit::style_class::surface_or(theme::panel_background()).gamma_multiply(hover),
-                );
+                painter.rect_filled(rect, 0.0, stop_surface.gamma_multiply(hover));
             } else {
-                painter.rect_filled(
-                    rect,
-                    0.0,
-                    motion::mix(empty, crate::kit::style_class::surface_or(theme::panel_background()), hover),
-                );
+                painter.rect_filled(rect, 0.0, motion::mix(empty, stop_surface, hover));
             }
-            let mark = crate::kit::element::SLOT_MARK.look().own_color_or(theme::slot_empty());
+            let mark = crate::kit::element::SLOT_MARK.look().color();
             painter.rect_filled(mark_rect(EMPTY_MARK), 0.0, mark);
         }
         SlotState::Stopped | SlotState::Queued => {
@@ -1515,13 +1502,13 @@ fn slot_cell(
             painter.rect_filled(rect, 0.0, fill);
             crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
             // The clip's own `color`, not the text colour a view's rule gives everything in it.
-            let ink = el.own_color_or(if slot.enabled { theme::text_on(fill) } else { theme::text_hint() });
+            let ink = el.own_color_or(if slot.enabled { theme::text_on(fill) } else { el.color() });
             let (mark, text) = (ink, ink);
             if slot.state == SlotState::Queued {
                 painter.rect_filled(mark_rect(CLIP_MARK), 0.0, mark.gamma_multiply(0.5));
                 // The outline breathes while the clip waits for its launch (`clip[queued]`'s
                 // border colour).
-                let accent = state.border_unlike(&plain, theme::accent()).gamma_multiply(0.45 + 0.55 * pulse);
+                let accent = state.border().gamma_multiply(0.45 + 0.55 * pulse);
                 painter.rect_stroke(mark_rect(CLIP_MARK), 0.0, theme::hairline(accent), StrokeKind::Outside);
                 painter.rect_stroke(rect, 0.0, theme::hairline(accent), StrokeKind::Inside);
             } else {
@@ -1563,7 +1550,7 @@ fn slot_cell(
     // A selected clip is outlined as a selected arrangement clip is; a queued one keeps its
     // breathing outline.
     if selected && slot.state != SlotState::Queued {
-        let outline = state.border_unlike(&plain, native.outline);
+        let outline = state.border();
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0, outline), StrokeKind::Inside);
     }
 }
@@ -1608,15 +1595,18 @@ fn scene_column(
         egui::Popup::context_menu(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| menus::scene_menu(ui, &scene.menu(grid.scenes.len() == 1), actions));
-        // The scene's button, entered with its pointer state and `[playing]`.
-        let el = crate::kit::element::SCENE
-            .id(&format!("scene-{}", scene.number))
-            .response(&response)
-            .attr(Playing, scene.playing)
-            .enter();
-        let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        let playing = motion::toward(ui.ctx(), response.id.with("playing"), scene.playing, motion::VALUE);
-        let fill = el.background_or(motion::mix(hover, theme::control_playing(), playing));
+        // The scene's button `scene#scene-N`, `[playing]` while its row plays: its fill a step
+        // brighter under the pointer and the playing one faded in, its glyph's ink likewise.
+        // The name's ink, read outside the button, whose own `color` a label inside it would inherit.
+        let name_ink = crate::kit::element::name_ink();
+        let crate::kit::widgets::Lit { el, toggle, lit: playing } = crate::kit::widgets::lit_toggle_state(
+            ui,
+            &response,
+            crate::kit::element::SCENE.id(&format!("scene-{}", scene.number)),
+            &[Playing],
+            scene.playing,
+        );
+        let (fill, glyph_ink) = toggle.at(playing);
         painter.rect_filled(rect, 0.0, fill);
         // The row's glyph: the play arrow while its clips wait for a launch, the stop square
         // while the row plays — the click does what the glyph says.
@@ -1624,17 +1614,7 @@ fn scene_column(
             Pos2::new(rect.left() + PAD, rect.center().y - SLOT_GLYPH / 2.0),
             Vec2::splat(SLOT_GLYPH),
         );
-        crate::kit::widgets::play_glyph(
-            painter,
-            glyph.center(),
-            scene.playing,
-            el.own_color_or(motion::mix(
-                theme::text_secondary(),
-                theme::text_primary(),
-                widgets::hover(ui, &response).max(playing),
-            )),
-            SLOT_GLYPH,
-        );
+        crate::kit::widgets::play_glyph(painter, glyph.center(), scene.playing, el.own_color_or(glyph_ink), SLOT_GLYPH);
         let inner = rect.shrink2(Vec2::new(PAD, 0.0));
         let mut name = scene.name.clone();
         if let Some(tempo) = scene.tempo_bpm {
@@ -1650,7 +1630,7 @@ fn scene_column(
             Align2::RIGHT_CENTER,
             &number,
             theme::mono_font(theme::TEXT_SMALL),
-            crate::kit::element::LABEL.attribute("kind", "scene-number").look().color_or(theme::text_hint()),
+            crate::kit::element::LABEL.attribute("kind", "scene-number").look().color(),
         );
         let name_rect = Rect::from_min_max(
             Pos2::new(glyph.right() + PAD, inner.top()),
@@ -1662,7 +1642,7 @@ fn scene_column(
             Align2::LEFT_CENTER,
             &name,
             theme::ui_font(theme::TEXT),
-            el.color_or(theme::text_primary()),
+            el.color_or(name_ink),
         );
         if keys.mode.on {
             crate::session::launch_keys::overlay(
@@ -1688,12 +1668,12 @@ fn scene_column(
             rect,
             0.0,
             el.background_or(motion::mix(
-                crate::kit::style_class::surface_or(theme::panel_background()),
-                theme::panel_hover(),
+                crate::kit::style_class::surface_or(el.look_hovered(false).background()),
+                el.look_hovered(true).background(),
                 widgets::hover(ui, &response),
             )),
         );
-        let ink = el.color_or(theme::text_secondary());
+        let ink = el.color();
         let square = Rect::from_min_size(Pos2::new(rect.left() + PAD, rect.center().y - 3.5), Vec2::splat(7.0));
         painter.rect_stroke(square, 0.0, theme::hairline(ink), StrokeKind::Inside);
         let text = Rect::from_min_max(Pos2::new(square.right() + PAD, rect.top()), rect.max);

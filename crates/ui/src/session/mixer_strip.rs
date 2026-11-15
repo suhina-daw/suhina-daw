@@ -425,7 +425,7 @@ pub fn show(
         .enter();
     // The strip in a shade of its track's colour, as the column above it.
     let tint = style_class.background_or(motion::mix(
-        crate::kit::style_class::surface_or(theme::panel_background()),
+        crate::kit::style_class::surface_or(style_class.background()),
         egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
         0.16,
     ));
@@ -548,7 +548,7 @@ fn divider(ui: &Ui, painter: &egui::Painter, strip: Rect, rect: Rect, fader: f32
         state.strip_fader = fader.round();
     }
     if response.hovered() || response.dragged() {
-        painter.hline(rect.x_range(), line, egui::Stroke::new(2.0, divider.style.color_or(theme::accent())));
+        painter.hline(rect.x_range(), line, egui::Stroke::new(2.0, divider.style.color()));
     }
 }
 
@@ -603,7 +603,7 @@ fn output_row(
 ) {
     let current = column.output.and_then(|t| groups.iter().find(|(g, _)| *g == t)).map_or("Main", |(_, name)| name);
     let arrow = Rect::from_min_size(rect.min, Vec2::new(ARROW, rect.height()));
-    let hint = crate::kit::element::LABEL.look().color_or(theme::text_hint());
+    let hint = crate::kit::element::hint_ink();
     widgets::text_in(painter, arrow, Align2::LEFT_CENTER, "→", theme::ui_font(theme::TEXT_SMALL), hint);
     let field = Rect::from_min_max(Pos2::new(arrow.right(), rect.top()), rect.max);
     let response = widgets::button_area(
@@ -666,8 +666,8 @@ fn device_list(
 ) {
     // The strip's `device-list`, a `device-row` for each device in it.
     let list = crate::kit::element::DEVICE_LIST.enter();
-    painter.rect_filled(rect, 0.0, list.background_or(crate::kit::style_class::surface_or(theme::window_background())));
-    let hint = crate::kit::element::LABEL.look().color_or(theme::text_hint());
+    painter.rect_filled(rect, 0.0, list.background_or(crate::kit::style_class::surface_or(list.background())));
+    let hint = crate::kit::element::hint_ink();
     if devices.is_empty() {
         widgets::text_in(
             painter,
@@ -731,14 +731,12 @@ fn device_list(
             .attr(Selected, lit)
             .attr(crate::kit::element::Muted, !device.enabled)
             .enter();
-        let fill = el.background_or(if lit {
-            theme::control_active()
-        } else {
-            motion::mix(egui::Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response))
-        });
+        // Its fill fades in under the pointer; `[selected]` and `[muted]` give the lit fill and the
+        // dim ink.
+        let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
         list_painter.rect_filled(row, 0.0, fill);
         let text = row.shrink2(Vec2::new(4.0, 0.0));
-        let color = el.color_or(if device.enabled { theme::text_secondary() } else { theme::text_hint() });
+        let color = el.color();
         let tag = match device.group {
             Some(count) => Some(format!("group {count}")),
             None => device.plugin.then(|| "plug-in".to_owned()),
@@ -806,7 +804,7 @@ fn audio_block(
         Align2::LEFT_CENTER,
         "Audio From",
         theme::ui_font(theme::TEXT_SMALL),
-        crate::kit::element::LABEL.look().color_or(theme::text_hint()),
+        crate::kit::element::hint_ink(),
     );
     let pick = source;
     let current = match column.audio_input.channels {
@@ -867,18 +865,12 @@ fn audio_block(
             id.with(("strip-monitor", value)),
             format!("{} monitor {word}", column.name),
         );
-        // The lit label's native ink, read before the button is entered: inside it the palette's
-        // text colours are the button's own `color`.
-        let lit_ink = theme::text_primary();
-        let (el, plain) = crate::kit::element::BUTTON.id(&name).response(&response).enter_against_plain(Checked, on);
-        let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        let (fill, ink) = widgets::toggle_inks(
-            &el,
-            plain.as_ref(),
-            (theme::control_active(), off),
-            (lit_ink, el.color_or(theme::text_secondary())),
-        );
+        // `button#mixer-monitor-…` as `button[kind="monitor"]`, `[checked]` for the one lit.
+        let widgets::Lit { el, toggle, lit } =
+            widgets::lit_toggle_kind(ui, &response, crate::kit::element::BUTTON.id(&name), &[Checked], on, "monitor");
+        let (fill, ink) = toggle.at(lit);
         painter.rect_filled(area, 0.0, fill);
+        drop(el);
         widgets::text_in(
             painter,
             area.shrink2(Vec2::new(3.0, 0.0)),
@@ -1102,7 +1094,7 @@ fn paint_fader(
     widgets::value_drag_pointer(ui.ctx(), response, &style);
     style.paint_background(painter, fader, 0.0);
     let hover = widgets::hover(ui, response);
-    let value_color = style.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
+    let value_color = style.hover_fade(hover, crate::kit::element::Look::color);
     if readout.is_positive() {
         let placed = horizontal_volume() || control_layout::placement("mixer-volume-readout") != Default::default();
         let area = if placed {
@@ -1149,7 +1141,7 @@ fn paint_fader(
     }
     drop(rail_el);
     let scale_style = crate::kit::element::FADER_SCALE.enter();
-    let ink = scale_style.color_or(theme::text_hint());
+    let ink = scale_style.color();
     let native_scale = Rect::from_min_size(
         egui::pos2(if centred { fader.left() - SCALE_WIDTH - 2.0 } else { fader.right() }, fader.top()),
         egui::vec2(SCALE_WIDTH, fader.height()),
@@ -1202,7 +1194,7 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
         painter.rect_filled(
             Rect::from_center_size(fader.center(), Vec2::new(fader.width(), 5.0)),
             2.0,
-            rail_el.background_or(theme::control_background()),
+            rail_el.background(),
         );
     }
     drop(rail_el);
@@ -1210,7 +1202,7 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     let native_scale = Rect::from_min_size(egui::pos2(fader.left(), fader.bottom()), egui::vec2(fader.width(), 12.0));
     let scale = control_layout::place("mixer-volume-scale", native_scale, painter.clip_rect());
     let scale_style = crate::kit::element::FADER_SCALE.enter();
-    let ink = scale_style.color_or(theme::text_hint());
+    let ink = scale_style.color();
     for value in
         [-70.0, -24.0, -12.0, -6.0, 0.0].into_iter().filter(|_| !control_layout::placement("mixer-volume-scale").hidden)
     {
@@ -1244,13 +1236,9 @@ fn paint_horizontal_fader(painter: &egui::Painter, fader: Rect, db: f64, hover: 
     let cap_ink = crate::kit::mixer_controls::cap_ink(&cap_style, state);
     if !crate::kit::skin::paint(painter, cap, "fader.cap", state, cap_ink, std::f32::consts::FRAC_PI_2) {
         let cap = Rect::from_center_size(centre, Vec2::new(length, thickness));
-        let fill = cap_style.background_or(motion::mix(theme::control_background(), theme::text_value(), hover * 0.3));
+        let fill = cap_style.hover_fade(hover, crate::kit::element::Look::background);
         painter.rect_filled(cap, 2.0, fill);
-        painter.vline(
-            centre.x,
-            cap.shrink(2.0).y_range(),
-            theme::hairline(cap_style.own_color_or(theme::text_value())),
-        );
+        painter.vline(centre.x, cap.shrink(2.0).y_range(), theme::hairline(crate::kit::element::value_ink()));
     }
 }
 
@@ -1280,7 +1268,9 @@ fn compact_volume(
     let text = rect.shrink2(Vec2::new(4.0, 0.0));
     let font = theme::mono_font(theme::TEXT_SMALL);
     // `value#mixer-volume`, its lit part `value-fill`.
-    let el = crate::kit::element::VALUE.id("mixer-volume").response(&response).enter();
+    // Drawn as a bar, it is `value[kind="bar"]`.
+    let el = crate::kit::element::VALUE.id("mixer-volume").response(&response);
+    let el = if state.knobs { el } else { el.attribute("kind", "bar") }.enter();
     if state.knobs {
         let size = rect.height();
         let center = Pos2::new(rect.left() + size / 2.0, rect.center().y);
@@ -1289,17 +1279,18 @@ fn compact_volume(
             center,
             size,
             position,
-            el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover)),
+            el.color_or(motion::mix(crate::kit::element::value_ink(), crate::kit::element::name_ink(), hover)),
             Some(&response),
         );
     } else {
-        let fill = el.background_or(motion::mix(theme::control_background(), theme::control_hover(), hover));
+        // A step brighter under the pointer; its lit part is `value-fill`.
+        let fill = el.hover_fade(hover, crate::kit::element::Look::background);
         painter.rect_filled(rect, 0.0, fill);
         let x = rect.left() + rect.width() * position;
-        let lit = crate::kit::element::VALUE_FILL.look().background_or(theme::control_playing());
+        let lit = crate::kit::element::VALUE_FILL.look().background();
         painter.rect_filled(Rect::from_min_max(rect.min, Pos2::new(x, rect.bottom())), 0.0, lit);
     }
-    let ink = el.color_or(theme::text_primary());
+    let ink = el.color();
     widgets::text_in(painter, text, Align2::RIGHT_CENTER, &widgets::format_db(db), font, ink);
 }
 
@@ -1353,7 +1344,7 @@ fn pan_row(
             Pos2::new(row.left() + size / 2.0, row.center().y),
             size,
             ((pan.clamp(-1.0, 1.0) + 1.0) / 2.0) as f32,
-            style.color_or(theme::text_value()),
+            style.color_or(crate::kit::element::value_ink()),
             Some(&pan_response),
         );
         if row.width() >= size + 20.0 {
@@ -1363,7 +1354,7 @@ fn pan_row(
                 Align2::CENTER_CENTER,
                 &widgets::format_pan(pan),
                 theme::mono_font(theme::TEXT_SMALL),
-                style.color_or(theme::text_primary()),
+                style.color(),
             );
         }
     } else {
@@ -1394,7 +1385,7 @@ fn send_knobs(
         send.style()
     };
     // The bar that shows how far the sends are scrolled is the row's `scroll-bar`.
-    let bar = crate::kit::element::SCROLL_BAR.look().background_or(theme::text_hint());
+    let bar = crate::kit::element::SCROLL_BAR.look().background();
     let width =
         sheet.as_ref().and_then(|s| s.width).map_or((row.width() - SEND_GAP) / 2.0, |w| w.clamp(8.0, row.width()));
     let height = sheet.as_ref().and_then(|s| s.height).map_or(row.height() - 2.0, |h| h.clamp(8.0, row.height()));
@@ -1486,8 +1477,7 @@ fn send_knobs(
         // knob.
         let el = crate::kit::element::SEND.id(&name).response(&response).enter();
         widgets::value_drag_pointer(ui.ctx(), &response, &el);
-        let pointer =
-            el.color_or(motion::mix(theme::text_value(), theme::text_primary(), widgets::hover(ui, &response)));
+        let pointer = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::color);
         if crate::kit::style_class::knob_preference(&el, false) {
             // The value under the knob unless `value-position` says otherwise.
             let text = format!("{letter} {}", widgets::format_db(shown));

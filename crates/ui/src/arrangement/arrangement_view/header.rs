@@ -281,10 +281,21 @@ pub(super) fn track_header(
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
     // Preserve track identity when selected: a small brightness lift and outline, without
     // replacing the track colour with the global selection accent.
-    let background = if selected { theme::track_header_selected() } else { theme::track_header_background() };
+    // The theme's header colours (`--track-headerBackground`, `--track-headerSelectedBackground`),
+    // which the track's colour is worked into; a rule for `track-header` paints over the result.
+    let background = own
+        .style()
+        .and_then(|style| {
+            style.colour_variable(if selected {
+                "--track-headerSelectedBackground"
+            } else {
+                "--track-headerBackground"
+            })
+        })
+        .unwrap_or(egui::Color32::TRANSPARENT);
     let strength = crate::kit::style_class::theme_header_tint().unwrap_or(state.header_colour_strength);
     let surface = colour_surface(background, rgb(lane.color), strength, lane.mute);
-    let header_fill = if selected { motion::mix(surface, theme::text_primary(), 0.07) } else { surface };
+    let header_fill = if selected { motion::mix(surface, crate::kit::element::name_ink(), 0.07) } else { surface };
     if !crate::kit::skin::paint_in_view(
         painter,
         rect,
@@ -305,7 +316,7 @@ pub(super) fn track_header(
     let header_fill = own.background_or(header_fill);
     if selected {
         // `track-header[selected]`'s border colour, else a shade of the track's own.
-        let outline = own.border_or(motion::mix(theme::border_strong(), saturated(rgb(lane.color)), 0.5));
+        let outline = own.border_or(motion::mix(own.border(), saturated(rgb(lane.color)), 0.5));
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, outline), StrokeKind::Inside);
     }
     work_trace.mark("background");
@@ -701,10 +712,7 @@ pub(super) fn track_header(
         // placed as `arrangement-number`), which turns nothing off.
         let at = crate::kit::control_layout::place("arrangement-number", toggle, clip);
         if at.intersects(clip) {
-            let ink = crate::kit::element::TRACK_NUMBER
-                .attr(crate::kit::element::Muted, lane.mute)
-                .look()
-                .color_or(theme::text_secondary());
+            let ink = crate::kit::element::TRACK_NUMBER.attr(crate::kit::element::Muted, lane.mute).look().color();
             widgets::track_number_text(painter, at, &number, ink, lane.mute);
         }
     }
@@ -833,14 +841,14 @@ pub(super) fn track_header(
                 )
                 .on_hover_text("Scroll sends with Shift + mouse wheel");
                 let el = crate::kit::element::BUTTON.response(&response).enter();
-                widgets::track_button_face(ui, painter, at, &el, &response, theme::control_background());
+                widgets::track_button_face(ui, painter, at, &el, &response, el.background());
                 widgets::text_in(
                     painter,
                     at,
                     Align2::CENTER_CENTER,
                     glyph,
                     theme::ui_font(theme::TEXT + 2.0),
-                    el.color_or(if enabled { theme::text_primary() } else { theme::text_hint() }),
+                    el.color_or(if enabled { el.color() } else { crate::kit::element::hint_ink() }),
                 );
                 if enabled && response.clicked() {
                     offset = if index == 0 { offset.saturating_sub(1) } else { (offset + 1).min(max_offset) };

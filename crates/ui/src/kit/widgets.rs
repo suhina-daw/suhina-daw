@@ -603,6 +603,32 @@ pub fn lit_toggle(
     lit_toggle_keeping(ui, response, builder, attrs, on, ("toggle", Readable::Always))
 }
 
+/// [`lit_toggle`] of a toggle of its own `kind` (a `button[kind="record"]`), whose lit ink the sheet
+/// gives and which stays the sheet's where only the sheet's fill is under it: the record and
+/// metronome buttons of the control bar and the Launcher.
+pub fn lit_toggle_kind(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+    kind: &'static str,
+) -> Lit {
+    lit_toggle_keeping(ui, response, builder, attrs, on, (kind, Readable::OnThemeFill))
+}
+
+/// [`lit_toggle_kind`] of a toggle with no `kind` of its own, whose states `attrs` (`[playing]`) the
+/// sheet colours: a scene's launch button.
+pub fn lit_toggle_state(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+) -> Lit {
+    lit_toggle_of(ui, response, builder, attrs, on, (None, Readable::OnThemeFill))
+}
+
 /// How a lit toggle's ink is kept readable on its fill: a rule's ink is its own, else the sheet's
 /// ink is moved off a fill it does not read on.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -621,8 +647,23 @@ fn lit_toggle_keeping(
     on: bool,
     (kind, keep): (&'static str, Readable),
 ) -> Lit {
+    lit_toggle_of(ui, response, builder, attrs, on, (Some(kind), keep))
+}
+
+/// [`lit_toggle_keeping`] of a toggle with the `kind` its builder gives it, or none.
+fn lit_toggle_of(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+    (kind, keep): (Option<&'static str>, Readable),
+) -> Lit {
     let (hover, lit) = toggle_motion(ui, response, on);
-    let builder = builder.attribute("kind", kind);
+    let builder = match kind {
+        Some(kind) => builder.attribute("kind", kind),
+        None => builder,
+    };
     let fading = lit > 0.0;
     let touched = response.hovered() || response.dragged();
     // The sheet's colours are looked up (before the element is entered, as comparisons are) unless

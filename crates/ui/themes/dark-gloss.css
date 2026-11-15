@@ -74,6 +74,15 @@
     background-color: var(--recording-background);
     background-image: linear-gradient(#ffffff33, #ffffff00 52%, #00000044);
   }
+  /* The lit looks of the Launcher's, the mixer's and the Arrangement's own switches, and the
+     automation shapes' fills (Suhina's base sheet gives them, and this theme's rule for every
+     `button` overrides them: state them again, as these switches showed them before). */
+  button[kind="shape"] { background-color: var(--window-background); }
+  button[kind="shape"]:hover { background-color: var(--control-hoverBackground); }
+  button[kind="monitor"][checked], button[kind="lanes"][checked], button[kind="shape"][checked] { background-color: var(--control-activeBackground); }
+  button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
+  button[kind="envelope"][checked] { background-color: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  button[kind="record"][checked] { color: var(--recording); }
   /* A figure shown as words in a bar takes the bar's ink, as it did before the sheet gave it one. */
   toolbar label[kind="value"], application-bar label[kind="value"], menu-bar label[kind="value"],
   project-tabs label[kind="value"], status-bar label[kind="value"] { color: var(--gloss-ink); }

@@ -58,42 +58,50 @@ use suhina_theme_render::{Subject, scenes};
 /// identity, and one style worked out the first time the pointer reaches a control whose colours
 /// fade (`hover_fresh` 0 to 1 in each scene, and one more after a colour change: 387 and 619, 399
 /// and 631 on Windows): the look it fades to is a style of its own, looked up while it fades.
+///
+/// #1450 (the Launcher, the mixer and the Arrangement take their colours from the base sheet) added
+/// 39 nodes and 39 identities to each scene (the Windows numbers move by the same): the looks the
+/// views read their colours from, each a style of its own, once for the whole view or per control
+/// (the switches' lit looks, the scenes' and the device rows' fades, a clip's states, the surface
+/// colours of the Launcher and of the Arrangement). The theme change and the colour change work
+/// those identities out afresh, so their counts move by the same 39: 425 and 657, 426 and 658
+/// (437 and 669, 438 and 670 on Windows).
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 399,
-            identities: 386,
+            nodes: 438,
+            identities: 425,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 386,
+            theme_change_fresh: 425,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 387,
+            colour_change_fresh: 426,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 631,
-            identities: 618,
+            nodes: 670,
+            identities: 657,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 618,
+            theme_change_fresh: 657,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 619,
+            colour_change_fresh: 658,
         },
     ),
 ];
@@ -105,37 +113,37 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 411,
-            identities: 398,
+            nodes: 450,
+            identities: 437,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 398,
+            theme_change_fresh: 437,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 399,
+            colour_change_fresh: 438,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 643,
-            identities: 630,
+            nodes: 682,
+            identities: 669,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 630,
+            theme_change_fresh: 669,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 631,
+            colour_change_fresh: 670,
         },
     ),
 ];

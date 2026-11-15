@@ -114,6 +114,15 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   button[kind="toggle"][checked]:hover { background-color: color-mix(in srgb, var(--control-selectedBackground), white 20%); }
   button[kind="solo"][checked] { background-color: var(--accent); }
   button[kind="arm"][checked] { background-color: var(--recording-background); color: var(--recording); }
+  /* The lit looks of the Launcher's, the mixer's and the Arrangement's own switches, and the
+     automation shapes' fills (Suhina's base sheet gives them, and this theme's rule for every
+     `button` overrides them: state them again, as these switches showed them before). */
+  button[kind="shape"] { background-color: var(--window-background); }
+  button[kind="shape"]:hover { background-color: var(--control-hoverBackground); }
+  button[kind="monitor"][checked], button[kind="lanes"][checked], button[kind="shape"][checked] { background-color: var(--control-activeBackground); }
+  button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
+  button[kind="envelope"][checked] { background-color: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  button[kind="record"][checked] { color: var(--recording); }
   value, dropdown, dropdown-arrow, text-input { color: var(--text-primary); --text-primary: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--ink) 97.7%), var(--highlight) 29.7%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: color-mix(in oklab, color-mix(in oklab, var(--highlight), white 33.7%), black 68%); border-radius: 0px; }
   text-input[kind="typed"] { background-color: var(--control-activeBackground); color: var(--text-value); }
   knob { color: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--ink) 81.9%), var(--highlight) 58.1%); background-color: var(--stone); }

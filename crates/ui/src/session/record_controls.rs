@@ -10,7 +10,7 @@ use egui::{Align2, Id, Painter, Pos2, Rect, Stroke, Ui, Vec2};
 use serde_json::json;
 
 use crate::kit::element::{BUTTON, Checked, POPUP, Recording, SLIDER, SLIDER_FILL, SLIDER_HANDLE, SLIDER_RAIL};
-use crate::kit::widgets::{self, Action};
+use crate::kit::widgets::{self, Action, Lit};
 use crate::kit::{motion, theme};
 
 /// The count-in menu's accessible name.
@@ -27,34 +27,28 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
     let rect = crate::kit::control_layout::place("transport-record", rect, ui.max_rect());
     let label = if recording { "Stop recording" } else { "Record into the arrangement" };
     let response = widgets::button_area(ui, rect, Id::unique("record"), label);
-    let el = BUTTON.id("record").response(&response).attr(Recording, recording).attr(Checked, recording).enter();
     if response.clicked() {
         actions.push(Action::new("transport.record", json!({ "on": !recording })));
     }
-    let lit = motion::toward(ui.ctx(), response.id.with("on"), recording, motion::VALUE);
-    let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    widgets::button_surface(
-        painter,
-        rect,
-        &el,
-        &response,
-        recording,
-        motion::mix(hover, theme::recording_background(), lit),
-        0.0,
-    );
-    let ring = motion::mix(theme::text_primary(), theme::recording(), lit);
+    // `button#record`, `[checked][recording]` while it records: the sheet's `button[kind="record"]`
+    // gives its fill and ring at rest and lit. The dot's ink is the lit one, at rest too.
+    let dot = BUTTON.id("record").attribute("kind", "record").attr(Checked, true).attr(Recording, true).look().color();
+    let Lit { el, toggle, lit } =
+        widgets::lit_toggle_kind(ui, &response, BUTTON.id("record"), &[Checked, Recording], recording, "record");
+    let (fill, ring) = toggle.at(lit);
+    widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 0.0);
     if crate::kit::skin::paint(
         painter,
         rect,
         "record",
         crate::kit::skin::State::response(&response, recording),
-        el.color_or(theme::recording()),
+        el.color_or(dot),
         0.0,
     ) {
         return;
     }
     painter.circle_stroke(rect.center(), 4.5, Stroke::new(1.2, ring));
-    painter.circle_filled(rect.center(), 4.5, theme::recording().gamma_multiply(0.35 + 0.65 * lit));
+    painter.circle_filled(rect.center(), 4.5, dot.gamma_multiply(0.35 + 0.65 * lit));
 }
 
 /// The metronome's level in dB, lowest and highest, as its slider sets it.
@@ -81,7 +75,6 @@ pub fn metronome_button(
         "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound",
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
-    let style = BUTTON.id("metronome-toggle").response(&response).attr(Checked, on).enter();
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
@@ -98,16 +91,14 @@ pub fn metronome_button(
             }
         }
     });
-    let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
-    let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    let fill = motion::mix(hover, theme::control_active(), lit);
-    widgets::button_surface(painter, rect, &style, &response, on, fill, 0.0);
-    // The glyph keeps reading on a fill the sheet gives (`[checked] { background-color }`).
-    let shown = style.background_or(fill);
-    let ink = motion::mix(theme::text_primary(), theme::accent(), lit);
-    let ink = if theme::contrast(shown, ink) < 3.0 { theme::text_on(shown) } else { ink };
-    metronome_glyph(painter, rect, style.color_or(ink));
-    drop(style);
+    // `button#metronome-toggle`, `[checked]` while it clicks: the sheet's `button[kind="metronome"]`.
+    // The glyph keeps reading on a lit fill the sheet gives (`widgets::lit_toggle_kind`).
+    let Lit { el, toggle, lit } =
+        widgets::lit_toggle_kind(ui, &response, BUTTON.id("metronome-toggle"), &[Checked], on, "metronome");
+    let (fill, ink) = toggle.at(lit);
+    widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 0.0);
+    metronome_glyph(painter, rect, ink);
+    drop(el);
     // The level's slider is a popup of its own (`#metronome-level`), not part of the button.
     metronome_level(ui, &response, rect, (on, db), actions);
 }
@@ -157,20 +148,19 @@ pub fn metronome_level(
     }
     let over = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, response.id.with("level")));
     // `popup#metronome-level`, with a `slider` and its rail, fill and handle in it.
-    let popup = POPUP.id("metronome-level").enter();
-    over.rect_filled(slider, 0.0, popup.background_or(crate::kit::style_class::surface_or(theme::panel_background())));
-    let edge = popup.border_or(theme::border_strong());
-    over.rect_stroke(slider, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
+    let popup = POPUP.id("metronome-level").attribute("kind", "level").enter();
+    over.rect_filled(slider, 0.0, popup.background());
+    over.rect_stroke(slider, 0.0, theme::hairline(popup.border()), egui::StrokeKind::Inside);
     let el = SLIDER.enter();
-    over.rect_filled(track, 0.0, SLIDER_RAIL.look().background_or(theme::control_background()));
+    over.rect_filled(track, 0.0, SLIDER_RAIL.look().background());
     let position = ((level - low) / (high - low)) as f32;
     let y = track.bottom() - track.height() * position;
-    let fill = SLIDER_FILL.look().background_or(theme::control_playing());
+    let fill = SLIDER_FILL.look().background();
     over.rect_filled(Rect::from_min_max(Pos2::new(track.left(), y), track.max), 0.0, fill);
     over.rect_filled(
         Rect::from_center_size(Pos2::new(track.center().x, y), Vec2::new(18.0, 5.0)),
         0.0,
-        SLIDER_HANDLE.look().background_or(theme::text_primary()),
+        SLIDER_HANDLE.look().background(),
     );
     widgets::text_in(
         &over,
@@ -178,7 +168,7 @@ pub fn metronome_level(
         Align2::CENTER_CENTER,
         &format!("{level:.0}"),
         theme::mono_font(theme::TEXT_SMALL),
-        el.color_or(theme::text_value()),
+        el.color(),
     );
 }
 
@@ -201,7 +191,7 @@ pub fn count_in_menu(ui: &mut Ui, rect: Rect, bars: u8, actions: &mut Vec<Action
             ui,
             egui::ComboBox::from_id_salt("count-in")
                 .width(rect.width())
-                .selected_text(egui::RichText::new(shown).font(mono.clone()).color(theme::text_value())),
+                .selected_text(egui::RichText::new(shown).font(mono.clone()).color(crate::kit::element::value_ink())),
             |ui| {
                 for (value, name) in COUNT_INS {
                     ui.selectable_value(&mut chosen, value, egui::RichText::new(name).font(mono.clone()));
@@ -248,22 +238,17 @@ pub fn slot_record(
     // its `background-color` over the slot while it records.
     let el = crate::kit::element::SLOT_RECORD.response(&response).attr(Recording, recording).enter();
     if recording {
-        painter.rect_filled(rect, 0.0, el.background_or(theme::recording_background()));
+        painter.rect_filled(rect, 0.0, el.background());
         widgets::text_in(
             painter,
             rect.shrink2(Vec2::new(width, 0.0)),
             Align2::LEFT_CENTER,
             "Recording",
             theme::ui_font(theme::TEXT_SMALL),
-            el.own_color_or(theme::recording()),
+            el.color(),
         );
     }
-    let hover = widgets::hover(ui, &response);
-    let color = el.own_color_or(motion::mix(
-        theme::text_secondary(),
-        theme::recording(),
-        hover.max(f32::from(u8::from(recording))),
-    ));
+    let color = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::color);
     let radius = (rect.height() * 0.2).clamp(2.5, 4.0);
     painter.circle_filled(button.center(), radius, color.gamma_multiply(pulse));
 }

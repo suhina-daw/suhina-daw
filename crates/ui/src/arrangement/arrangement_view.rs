@@ -132,21 +132,44 @@ fn loop_row_height() -> f32 {
 const LOOP_BAR: f32 = 6.0;
 const LOOP_GRAB: f32 = 4.0;
 
+thread_local! {
+    /// The `background-color` of `arrangement` and of `arrangement[kind="panel"]`, read once a
+    /// frame ([`read_surfaces`]): what the view draws over the region it is in.
+    static SURFACES: std::cell::Cell<(Color32, Color32)> =
+        const { std::cell::Cell::new((Color32::TRANSPARENT, Color32::TRANSPARENT)) };
+}
+
+/// Reads the view's two surfaces from the sheet, with `arrangement` in scope: the window's colour
+/// and the panels'.
+fn read_surfaces() {
+    let window = crate::kit::element::ARRANGEMENT.look().background();
+    let panel = crate::kit::element::ARRANGEMENT.attribute("kind", "panel").look().background();
+    SURFACES.with(|cell| cell.set((window, panel)));
+}
+
+/// What the view draws under its grid, empty lanes and dimmed rows: the colour of the region it
+/// is in where that has one, else the base sheet's `arrangement` background.
+pub(crate) fn window_surface() -> Color32 {
+    crate::kit::style_class::surface_or(SURFACES.with(std::cell::Cell::get).0)
+}
+
+/// What the view draws its panels, headers and rows over ([`window_surface`]): `arrangement[kind="panel"]`.
+pub(crate) fn panel_surface() -> Color32 {
+    crate::kit::style_class::surface_or(SURFACES.with(std::cell::Cell::get).1)
+}
+
 /// The colour of the grid's lines on a bar (`major`) or between bars: `grid-line[kind="bar"]`
-/// and `grid-line[kind="beat"]`'s own `color`, or the palette's grid colour faded into the view
-/// so the lines stay under the clips. Read once a frame, for every line of its kind.
+/// and `grid-line[kind="beat"]`'s own `color`, else the sheet's grid colour (their base `color`)
+/// faded into the view so the lines stay under the clips. Read once a frame, for every line of
+/// its kind.
 fn grid_color(major: bool) -> Color32 {
     let look = crate::kit::element::GRID_LINE.attribute("kind", if major { "bar" } else { "beat" }).look();
-    look.own_color_or(motion::mix(
-        crate::kit::style_class::surface_or(theme::window_background()),
-        if major { theme::grid_major() } else { theme::grid_minor() },
-        if major { 0.55 } else { 0.35 },
-    ))
+    look.own_color_or(motion::mix(window_surface(), look.color(), if major { 0.55 } else { 0.35 }))
 }
 
 /// The colour of a line of `kind` between the view's rows and bands, `separator[kind]`.
-fn line_color(kind: &str, token: Color32) -> Color32 {
-    crate::kit::element::SEPARATOR.attribute("kind", kind).look().own_color_or(token)
+fn line_color(kind: &str) -> Color32 {
+    crate::kit::element::SEPARATOR.attribute("kind", kind).look().color()
 }
 
 /// The height of a clip's name bar, and the least a clip's height must be to have a body under
@@ -335,6 +358,7 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 /// `actions`.
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
     let arrangement = crate::kit::element::ARRANGEMENT.enter();
+    read_surfaces();
     let mut styled_ui = arrangement.ui(ui);
     let ui = &mut *styled_ui;
 
@@ -568,19 +592,19 @@ fn show_lanes(
         ruler,
         "ruler",
         crate::kit::skin::State::Normal,
-        theme::text_secondary(),
+        ruler_style.color_or(crate::kit::element::caption_ink()),
     ) {
         ruler_style.paint_with(
             &painter,
             ruler,
             crate::kit::element::Native {
                 radius: 0.0,
-                fill: crate::kit::style_class::surface_or(theme::panel_background()),
+                fill: crate::kit::style_class::surface_or(ruler_style.background()),
             },
         );
     }
-    let ruler_ink = ruler_style.color_or(theme::text_secondary());
-    let ruler_line = ruler_style.style().filter(|c| c.authored.border).map_or_else(theme::border, |c| c.border);
+    let ruler_ink = ruler_style.color_or(crate::kit::element::caption_ink());
+    let ruler_line = ruler_style.border();
     // `ruler-number` (its `color`, `font-size`, `display: none`) and `ruler-tick` (its `color`
     // and `width`, `width: 0` hides it) inside `ruler`.
     let (number_ink, number_size, number_shown) = {
@@ -615,7 +639,7 @@ fn show_lanes(
     {
         let band = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(top + 2.0, (top + 42.0).min(bottom)));
         let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
-        painter.rect_filled(band, 2.0, target.background_or(theme::accent().gamma_multiply(0.12)));
+        painter.rect_filled(band, 2.0, target.background_or(target.color().gamma_multiply(0.12)));
         let outline = target.color();
         painter.rect_stroke(band, 2.0, theme::hairline(outline), egui::StrokeKind::Inside);
         widgets::text_in(
@@ -624,7 +648,7 @@ fn show_lanes(
             Align2::LEFT_CENTER,
             "New track",
             theme::ui_font(theme::TEXT_SMALL),
-            target.color_or(theme::text_secondary()),
+            target.color_or(crate::kit::element::caption_ink()),
         );
     }
     let grid_bands =
@@ -702,7 +726,7 @@ fn show_lanes(
     // Tempo and time-signature changes: a line in the accent colour and what changes, after
     // room for the bar number.
     // `tempo-mark`: its `color`, line and text.
-    let tempo_ink = crate::kit::element::TEMPO_MARK.look().own_color_or(theme::accent());
+    let tempo_ink = crate::kit::element::TEMPO_MARK.look().color();
     for mark in timeline.marks.iter().filter(|m| m.beat >= first_beat - 64.0 && m.beat <= last_beat) {
         let x = x_of(mark.beat).round() + 0.5;
         ruler_painter.vline(x, ruler.y_range(), theme::hairline(tempo_ink));
@@ -716,11 +740,11 @@ fn show_lanes(
             tempo_ink,
         );
     }
-    let (row_line, band_line) = (line_color("row", theme::border()), line_color("band", theme::border_strong()));
+    let (row_line, band_line) = (line_color("row"), line_color("band"));
     painter.hline(area.x_range(), ruler.bottom() + 0.5, theme::hairline(row_line));
-    painter.rect_filled(loop_row, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(loop_row, 0.0, panel_surface());
     painter.hline(area.x_range(), loop_row.bottom() + 0.5, theme::hairline(row_line));
-    painter.rect_filled(marker_row, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(marker_row, 0.0, panel_surface());
     painter.hline(area.x_range(), marker_row.bottom() + 0.5, theme::hairline(band_line));
 
     // A click on the ruler moves the play start marker there, on the clip grid (Alt: free); while
@@ -734,11 +758,11 @@ fn show_lanes(
             // `time-selection[kind="ruler"]`: its band's `color` and its `background-color`.
             let look = crate::kit::element::TIME_SELECTION.attribute("kind", "ruler").look();
             let band = Rect::from_x_y_ranges(span, egui::Rangef::new(ruler.bottom() - 6.0, ruler.bottom()));
-            painter.rect_filled(band, 0.0, look.own_color_or(theme::accent()));
+            painter.rect_filled(band, 0.0, look.color());
             painter.rect_filled(
                 Rect::from_x_y_ranges(span, ruler.y_range()),
                 0.0,
-                look.background_or(theme::accent().gamma_multiply(0.18)),
+                look.background_or(look.color().gamma_multiply(0.18)),
             );
         }
     }
@@ -758,7 +782,7 @@ fn show_lanes(
         if time.x_range().contains(x) {
             // Blinking while it waits, as the Play button does.
             let on = (ui.input(|i| i.time) * 4.0).floor() as i64 % 2 == 0;
-            let ink = crate::kit::element::PLAYHEAD.attribute("kind", "pending").look().own_color_or(theme::accent());
+            let ink = crate::kit::element::PLAYHEAD.attribute("kind", "pending").look().color();
             let colour = if on { ink } else { ink.gamma_multiply(0.4) };
             painter.vline(x, ruler.y_range(), egui::Stroke::new(2.0, colour));
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(125));
@@ -846,17 +870,13 @@ fn show_lanes(
             actions.push(Action::new("launcher.backToArrangement", json!({})));
         }
         let el = crate::kit::element::BUTTON.id("back-to-arrangement").response(&response).enter();
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+        // A button: its fill a step brighter under the pointer.
         painter.rect_filled(
             back,
             0.0,
-            el.background_or(motion::mix(
-                idle,
-                theme::control_selected(),
-                motion::toward(ui.ctx(), response.id.with("on"), false, motion::VALUE),
-            )),
+            el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
         );
-        back_glyph(&painter, back, el.own_color_or(theme::text_primary()));
+        back_glyph(&painter, back, el.color());
     }
     // The marker: a small triangle hanging from the ruler's lower edge.
     let marker_x = x_of(timeline.start_beat).round() + 0.5;
@@ -864,14 +884,14 @@ fn show_lanes(
         let (top, half) = (ruler.bottom() - MARKER.y, MARKER.x / 2.0);
         ruler_painter.add(egui::Shape::convex_polygon(
             vec![Pos2::new(marker_x - half, top), Pos2::new(marker_x + half, top), Pos2::new(marker_x, ruler.bottom())],
-            crate::kit::element::START_MARKER.look().own_color_or(theme::text_primary()),
+            crate::kit::element::START_MARKER.look().color(),
             egui::Stroke::NONE,
         ));
     }
 
     // Header column top, beside the ruler: right-click moves the headers to the other side.
     let corner = Rect::from_x_y_ranges(headers, egui::Rangef::new(ruler.top(), marker_row.bottom()));
-    painter.rect_filled(corner, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(corner, 0.0, panel_surface());
     let corner_response = ui.interact(corner, Id::unique("arrangement-header-corner"), Sense::click());
     corner_response.context_menu(|ui| {
         let text = if state.headers_left { "Track headers on the right" } else { "Track headers on the left" };
@@ -885,14 +905,7 @@ fn show_lanes(
         if state.headers_left && corner.width() >= 210.0 { corner.right() - 102.0 } else { corner.left() + 6.0 };
     let resize = Rect::from_min_size(Pos2::new(resize_x, corner.top() + 4.0), Vec2::new(96.0, 18.0)).intersect(corner);
     let response = widgets::button_area(ui, resize, Id::unique("arrangement-resize-all"), "Resize all tracks");
-    widgets::subtle_dropdown(
-        ui,
-        &painter,
-        resize,
-        &response,
-        "Resize all",
-        crate::kit::style_class::surface_or(theme::panel_background()),
-    );
+    widgets::subtle_dropdown(ui, &painter, resize, &response, "Resize all", panel_surface());
     egui::Popup::menu(&response).show(|ui| {
         for size in TrackSize::ALL {
             let height = f32::from(state.sizes.height(size));
@@ -963,8 +976,8 @@ fn show_lanes(
         ));
         let hover = widgets::hover(ui, &response);
         // `slider#waveform-zoom`: its `color`, its rail and its handle.
-        let el = crate::kit::element::SLIDER.id("waveform-zoom").response(&response).enter();
-        let ink = el.color_or(motion::mix(theme::text_hint(), theme::text_secondary(), hover));
+        let el = crate::kit::element::SLIDER.id("waveform-zoom").attribute("kind", "zoom").response(&response).enter();
+        let ink = el.hover_fade(hover, crate::kit::element::Look::color);
         // The mark: a small waveform, so the slider says what it zooms.
         let c = mark.center();
         let wave: Vec<Pos2> =
@@ -978,22 +991,18 @@ fn show_lanes(
         let handle_x = track.left() + track.width() * share_of(state.waveform_zoom);
         painter.line_segment(
             [Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)],
-            egui::Stroke::new(2.0, crate::kit::element::SLIDER_RAIL.look().background_or(theme::control_background())),
+            egui::Stroke::new(2.0, crate::kit::element::SLIDER_RAIL.look().background()),
         );
         painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], egui::Stroke::new(2.0, ink));
         let handle = crate::kit::element::SLIDER_HANDLE.look();
-        painter.circle_filled(
-            Pos2::new(handle_x, mid),
-            4.5,
-            handle.background_or(motion::mix(theme::text_secondary(), theme::text_value(), hover)),
-        );
+        painter.circle_filled(Pos2::new(handle_x, mid), 4.5, handle.background());
         widgets::text_in(
             &painter,
             value,
             Align2::LEFT_CENTER,
             &format!("×{:.1}", state.waveform_zoom),
             theme::mono_font(theme::TEXT_TINY),
-            el.color_or(theme::text_hint()),
+            el.color_or(crate::kit::element::hint_ink()),
         );
     }
     // The project's swing, on the corner's lower line opposite the waveform zoom: every MIDI clip
@@ -1017,7 +1026,7 @@ fn show_lanes(
                 Align2::LEFT_CENTER,
                 "Swing",
                 font,
-                label.color_or(theme::text_secondary()),
+                label.color_or(crate::kit::element::caption_ink()),
             );
             let percent = (timeline.swing * 100.0).round();
             let id = Id::unique("arrangement-swing");
@@ -1031,7 +1040,7 @@ fn show_lanes(
                 }
                 actions.push(Action::new("transport.setSwing", params));
             }
-            let ink = label.color_or(theme::text_value());
+            let ink = label.color_or(crate::kit::element::value_ink());
             widgets::text_in(&painter, value, Align2::RIGHT_CENTER, &format!("{percent} %"), mono, ink);
         }
     }
@@ -1050,9 +1059,16 @@ fn show_lanes(
         let response = widgets::button_area(ui, button, Id::unique("arrangement-returns-toggle"), label);
         let hover = widgets::hover(ui, &response);
         let el = crate::kit::element::BUTTON.id("returns-toggle").response(&response).enter();
-        let fill = el.background_or(motion::mix(theme::control_background(), theme::control_hover(), hover));
+        let fill = el.hover_fade(hover, crate::kit::element::Look::background);
         painter.rect_filled(button, 2.0, fill);
-        widgets::text_in(&painter, button, Align2::CENTER_CENTER, label, font, el.color_or(theme::text_secondary()));
+        widgets::text_in(
+            &painter,
+            button,
+            Align2::CENTER_CENTER,
+            label,
+            font,
+            el.color_or(crate::kit::element::caption_ink()),
+        );
         if response.clicked() {
             state.returns_hidden = !state.returns_hidden;
         }
@@ -1146,7 +1162,7 @@ fn show_lanes(
     let mut rows_seen: Vec<(TrackId, Rect)> = Vec::new();
     let mut clip_rects: Vec<((TrackId, ClipId), Rect)> = Vec::new();
     // The line under each track's lane, `separator[kind="lane"]`: a bar line's colour by default.
-    let lane_line = line_color("lane", grid_bar);
+    let lane_line = crate::kit::element::SEPARATOR.attribute("kind", "lane").look().own_color_or(grid_bar);
     for shown in &drawn {
         let Some(lane) = timeline.lanes.get(shown.lane) else { continue };
         // A folded group's row draws the clips of the track it stands in for, and that track's
@@ -1227,8 +1243,8 @@ fn show_lanes(
             );
             // `time-selection[kind="draw"]`: the clip the Draw tool's drag will make.
             let look = crate::kit::element::TIME_SELECTION.attribute("kind", "draw").look();
-            lanes_painter.rect_filled(shown, 0.0, look.background_or(theme::selection().gamma_multiply(0.25)));
-            let edge = look.own_color_or(theme::selection());
+            lanes_painter.rect_filled(shown, 0.0, look.background_or(look.color().gamma_multiply(0.25)));
+            let edge = look.color();
             lanes_painter.rect_stroke(shown, 0.0, Stroke::new(1.0, edge), StrokeKind::Inside);
             if body.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
                 state.gesture.end_draw(|_| true);
@@ -1302,10 +1318,10 @@ fn show_lanes(
             let lit = lane_el.look();
             // It lights the lane over what is painted there, so it blends and never makes it see-through.
             if lit.background_unlike(plain, Color32::TRANSPARENT) == Color32::TRANSPARENT {
-                lanes_painter.rect_filled(row.time, 0.0, theme::panel_hover());
+                lanes_painter.rect_filled(row.time, 0.0, lit.background());
             }
             let edge = Rect::from_min_size(row.time.min, Vec2::new(2.0, row.time.height()));
-            lanes_painter.rect_filled(edge, 0.0, lit.border_unlike(plain, theme::accent()));
+            lanes_painter.rect_filled(edge, 0.0, lit.border());
         }
         // A folded group's lane: every track inside it, a thin row each with its clips in their
         // colours, so it shows how much is in there and where.
@@ -1366,8 +1382,8 @@ fn show_lanes(
                 if rect.is_positive() {
                     // `clip[recording]`: the take being recorded, before it is a clip.
                     let look = crate::kit::element::CLIP.attr(crate::kit::element::Recording, true).look();
-                    lanes_painter.rect_filled(rect, 0.0, look.background_or(theme::recording().gamma_multiply(0.35)));
-                    let edge = theme::hairline(look.border_or(theme::recording()));
+                    lanes_painter.rect_filled(rect, 0.0, look.background_or(look.border().gamma_multiply(0.35)));
+                    let edge = theme::hairline(look.border());
                     lanes_painter.rect_stroke(rect, 0.0, edge, egui::StrokeKind::Inside);
                     widgets::text_in(
                         &lanes_painter,
@@ -1375,7 +1391,7 @@ fn show_lanes(
                         Align2::LEFT_TOP,
                         "Recording…",
                         theme::ui_font(theme::TEXT_SMALL),
-                        look.own_color_or(theme::text_primary()),
+                        look.color(),
                     );
                 }
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
@@ -1389,10 +1405,7 @@ fn show_lanes(
             let x = x_of(beat).round() + 0.5;
             // In the timeline only: never over the track headers beside it (#1197).
             if time.x_range().contains(x) {
-                let ink = crate::kit::element::START_MARKER
-                    .attribute("kind", "insert")
-                    .look()
-                    .own_color_or(theme::text_primary());
+                let ink = crate::kit::element::START_MARKER.attribute("kind", "insert").look().color();
                 lanes_painter.vline(x, row.time.y_range(), egui::Stroke::new(1.0, ink));
             }
         }
@@ -1418,19 +1431,11 @@ fn show_lanes(
         // The track plays launched clips instead of its arrangement clips: the lane dims
         // until Back to arrangement returns it.
         if lane.overrides {
-            lanes_painter.rect_filled(
-                lane_rect,
-                0.0,
-                crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(0.45),
-            );
+            lanes_painter.rect_filled(lane_rect, 0.0, window_surface().gamma_multiply(0.45));
         }
         // A take lane is soloed: the track's own clips are not heard, so they grey (#989).
         if state.take_solo.is_some_and(|(t, _)| t == lane.track) {
-            lanes_painter.rect_filled(
-                lane_rect,
-                0.0,
-                crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(0.6),
-            );
+            lanes_painter.rect_filled(lane_rect, 0.0, window_surface().gamma_multiply(0.6));
         }
         lanes_painter.hline(area.x_range(), lane_rect.bottom() + 0.5, theme::hairline(lane_line));
         // The track's take lanes, under it, then its automation lanes.
@@ -1461,8 +1466,7 @@ fn show_lanes(
     if let Some(selection) = &state.time_selection {
         // `time-selection`: its `background-color` over the lanes, its `color` at its edges.
         let look = crate::kit::element::TIME_SELECTION.look();
-        let (lit_fill, edge_ink) =
-            (look.background_or(theme::accent().gamma_multiply(0.38)), look.own_color_or(theme::accent()));
+        let (lit_fill, edge_ink) = (look.background_or(look.color().gamma_multiply(0.38)), look.color());
         // Within the timeline: the track headers beside it are not lit.
         let span = egui::Rangef::new(x_of(selection.start), x_of(selection.end)).intersection(time.x_range());
         for (at, (track, row)) in rows_seen.iter().enumerate().filter(|(_, (t, _))| selection.tracks.contains(t)) {
@@ -1542,8 +1546,8 @@ fn show_lanes(
             // A rectangle that picks the clips it touches, whole.
             // `marquee`: the rectangle that picks clips.
             let look = crate::kit::element::MARQUEE.look();
-            lanes_painter.rect_filled(rect, 0.0, look.background_or(theme::accent().gamma_multiply(0.12)));
-            let edge = theme::hairline(look.own_color_or(theme::accent()));
+            lanes_painter.rect_filled(rect, 0.0, look.background_or(look.color().gamma_multiply(0.12)));
+            let edge = theme::hairline(look.color());
             lanes_painter.rect_stroke(rect, 0.0, edge, egui::StrokeKind::Inside);
             if done {
                 state.gesture.end_marquee(|_| true);
@@ -1692,11 +1696,7 @@ fn show_lanes(
             .enter();
         // Its box, as a track's header paints it: the sheet's background and gradients, or the
         // native fill.
-        let fill = if selected {
-            theme::control_active()
-        } else {
-            crate::kit::style_class::surface_or(theme::panel_background())
-        };
+        let fill = if selected { main_header.background() } else { panel_surface() };
         main_header.paint_with(&fixed_painter, header, crate::kit::element::Native { radius: 0.0, fill });
         if let Some(probe) = state.drop.as_mut()
             && probe.devices
@@ -1723,14 +1723,7 @@ fn show_lanes(
             Pos2::new(header.right() - PAD, header.top() + ROW - 2.0),
         );
         let font = theme::ui_font(theme::TEXT);
-        widgets::text_in(
-            &fixed_painter,
-            inner,
-            Align2::LEFT_CENTER,
-            "Main",
-            font,
-            main_header.color_or(theme::text_primary()),
-        );
+        widgets::text_in(&fixed_painter, inner, Align2::LEFT_CENTER, "Main", font, main_header.color());
         // The header holds its name only: Main's volume, meter and lanes are not inside it, as a
         // track's are not.
         drop(main_header);
@@ -1864,7 +1857,7 @@ fn show_lanes(
         if let Some((start, end)) = shown {
             let line = crate::kit::element::LOOP_LINE.enter();
             let style = line.style();
-            let colour = line.color_or(theme::accent());
+            let colour = line.color();
             let width = style.as_ref().and_then(|s| s.width).map_or(1.5, |w| w.clamp(0.5, 6.0));
             let down = egui::Rangef::new(lanes_area.top(), fixed.bottom());
             // The timeline's width, not the view's: a beat under the track headers, on either
@@ -1907,11 +1900,7 @@ fn show_lanes(
                 rect: wave_area(rect),
                 origin: x_of(start),
                 beat_width: state.beat_width,
-                ink: ink_on(motion::mix(
-                    crate::kit::style_class::surface_or(theme::panel_background()),
-                    rgb(clip.color),
-                    0.82,
-                )),
+                ink: ink_on(motion::mix(panel_surface(), rgb(clip.color), 0.82)),
             };
             let snap = |elapsed: f64| elapsed;
             crate::arrangement::envelope::show(
@@ -2002,7 +1991,7 @@ fn show_lanes(
             if probe.separate && matches!(probe.target, Some(DropTarget::Lane { .. })) && empty.height() > 4.0 {
                 let x = probe.pointer.x.clamp(time.left(), time.right());
                 let below = Rect::from_x_y_ranges(egui::Rangef::new(x, time.right()), empty.y_range());
-                painter.rect_filled(below, 0.0, target.background_or(theme::accent().gamma_multiply(0.12)));
+                painter.rect_filled(below, 0.0, target.background_or(target.color().gamma_multiply(0.12)));
                 painter.rect_stroke(below.shrink(0.5), 0.0, egui::Stroke::new(1.0, outline), egui::StrokeKind::Inside);
             }
         }
@@ -2039,7 +2028,7 @@ fn show_lanes(
         if x >= time.left() && x <= time.right() {
             // `playhead { color; width }`: its colour and thickness.
             let el = crate::kit::element::PLAYHEAD.enter();
-            let color = el.color_or(theme::accent());
+            let color = el.color();
             match el.style().and_then(|c| c.width) {
                 Some(width) if width > 0.0 => {
                     painter.vline(x, time.y_range(), egui::Stroke::new(width.min(8.0), color));
@@ -2054,7 +2043,8 @@ fn show_lanes(
     // With the toolbar on, the view says when it has the focus (the tool keys act on it): a ring
     // over its contents, all round.
     if state.toolbar && state.has_focus {
-        ui.painter().rect_stroke(inside, 0.0, Stroke::new(1.0, theme::accent()), StrokeKind::Inside);
+        let ring = crate::kit::element::ARRANGEMENT.look().accent();
+        ui.painter().rect_stroke(inside, 0.0, Stroke::new(1.0, ring), StrokeKind::Inside);
     }
 }
 

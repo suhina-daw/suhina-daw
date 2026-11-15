@@ -35,7 +35,7 @@ const GRID_MENU: f32 = 96.0;
 /// its right end the grid menu.
 pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState) {
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(rect, 0.0, crate::arrangement::arrangement_view::panel_surface());
     let line = crate::kit::element::row_line();
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(line));
     let mut x = rect.left() + 6.0;
@@ -51,22 +51,17 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
             widgets::button_area(ui, area, Id::unique(("arrangement-tool", name)), &label).on_hover_text(&hint);
         let chosen = state.tool == tool;
         response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &label));
-        // The native inks, read before the tool is entered: inside it the palette's text colours
-        // are the tool's own `color`, which would put a rule for every tool on the chosen one.
-        let inks = (theme::text_primary(), theme::text_secondary());
-        // `arrangement-tool`, `[checked]` on the chosen one.
-        let (el, plain) = crate::kit::element::ARRANGEMENT_TOOL
-            .response(&response)
-            .enter_against_plain(crate::kit::element::Checked, chosen);
-        let hover = widgets::hover(ui, &response);
-        let mix = |fill| crate::kit::motion::mix(fill, theme::control_hover(), hover);
-        // A rule for every tool must not hide the chosen one: only a `[checked]` rule does.
-        let (fill, ink) = widgets::toggle_inks(
-            &el,
-            plain.as_ref(),
-            (mix(theme::control_active()), mix(theme::control_background())),
-            inks,
+        // `arrangement-tool`, `[checked]` on the chosen one. A rule for every tool hides the base
+        // sheet's `[checked]` one, so a theme states it too.
+        let widgets::Lit { el, toggle, lit } = widgets::lit_toggle_state(
+            ui,
+            &response,
+            crate::kit::element::ARRANGEMENT_TOOL.builder(),
+            &[crate::kit::element::Checked],
+            chosen,
         );
+        let (fill, ink) = toggle.at(lit);
+        drop(el);
         painter.rect_filled(area, 0.0, fill);
         match tool {
             ArrangementTool::Select => IconButton::Select.draw(&painter, area, ink, 1.0),
@@ -91,14 +86,14 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
         let shown = grid.label();
         let mono = theme::mono_font(theme::TEXT_SMALL);
         ui.scope_builder(egui::UiBuilder::new().max_rect(menu), |ui| {
-            let text = egui::RichText::new(format!("{shown}   ")).font(mono).color(theme::text_value());
+            let text = egui::RichText::new(format!("{shown}   ")).font(mono).color(crate::kit::element::value_ink());
             let response = ui.menu_button(text, |ui| {
                 if let Some(picked) = crate::interaction::grid_menu::grid_entries(ui, grid, &keys, &|_| true) {
                     state.grid = picked;
                     ui.close();
                 }
             });
-            crate::interaction::toolbar::menu_arrow(ui, response.response.rect, theme::text_value());
+            crate::interaction::toolbar::menu_arrow(ui, response.response.rect, crate::kit::element::value_ink());
             let label = format!("Arrangement grid {shown}");
             response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
             response.response.on_hover_text(

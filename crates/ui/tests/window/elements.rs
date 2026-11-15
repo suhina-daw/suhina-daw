@@ -98,10 +98,10 @@ fn count(h: &Harness<'static, App>, color: egui::Color32) -> usize {
     painted(h).into_iter().filter(|shown| *shown == color).count()
 }
 
-/// A rule for every Arrangement tool does not hide the chosen one: only a `[checked]` rule gives
-/// it a colour of its own (#1428 review).
+/// A rule for every Arrangement tool is the chosen one's fill too, as the base sheet's `[checked]`
+/// rule is hidden by it: a theme that wants the chosen tool apart states `[checked]` (#1450).
 #[test]
-fn a_rule_for_every_arrangement_tool_keeps_the_chosen_one_lit() {
+fn a_rule_for_every_arrangement_tool_needs_a_checked_rule_to_keep_the_chosen_one_lit() {
     let mut h = arrangement_app();
     let mut settings = suhina_ui::settings::Settings::default();
     settings.view.arrangement_toolbar = true;
@@ -120,7 +120,7 @@ fn a_rule_for_every_arrangement_tool_keeps_the_chosen_one_lit() {
         shown
     };
     let general = format!("arrangement-tool {{ background-color: {}; }}", hex(odd(31)));
-    assert_eq!(fills(&mut h, &general), (tools - 1, 0), "the chosen tool keeps its native fill");
+    assert_eq!(fills(&mut h, &general), (tools, 0), "a rule for every tool is the chosen one's fill too");
     let chosen = format!("{general} arrangement-tool[checked] {{ background-color: {}; }}", hex(odd(32)));
     assert_eq!(fills(&mut h, &chosen), (tools - 1, 1), "a rule for `[checked]` recolours it");
 }
@@ -218,10 +218,10 @@ fn the_lit_envelope_button_takes_its_checked_fill() {
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
 }
 
-/// A hover rule is not the chosen tool's colour: hovered, the chosen tool keeps its native fill
-/// unless a `[checked]` rule gives it one (#1428 review).
+/// A hover rule is the hovered chosen tool's fill too: the base sheet's `[checked]` look is hidden by
+/// a rule for every hovered tool, so a theme that wants it apart states `[checked]:hover` (#1450).
 #[test]
-fn a_hover_rule_does_not_light_the_chosen_tool() {
+fn a_hover_rule_is_the_hovered_chosen_tool_s_fill_too() {
     let mut h = arrangement_app();
     let mut settings = suhina_ui::settings::Settings::default();
     settings.view.arrangement_toolbar = true;
@@ -232,7 +232,7 @@ fn a_hover_rule_does_not_light_the_chosen_tool() {
     h.hover_at(chosen);
     h.run();
     let hover = format!("arrangement-tool:hover {{ background-color: {}; }}", hex(odd(45)));
-    assert_eq!(count_with(&mut h, &hover, odd(45)), 0, "the hovered chosen tool keeps its native fill");
+    assert_eq!(count_with(&mut h, &hover, odd(45)), 1, "the hovered chosen tool takes the hover rule");
     let lit = format!("{hover} arrangement-tool[checked]:hover {{ background-color: {}; }}", hex(odd(46)));
     assert_eq!(count_with(&mut h, &lit, odd(46)), 1, "a rule for the hovered `[checked]` tool recolours it");
 }
@@ -276,10 +276,11 @@ fn a_clip_picked_in_its_body_keeps_its_own_background_with_a_transition() {
     assert_eq!(count_with(&mut h, &css, odd(51)), 0, "the body is not drawn as selected");
 }
 
-/// A hovered selected slot clip is compared with the same clip hovered: a `clip:hover` rule is not
-/// taken for its selection's outline (#1428 review).
+/// A `clip:hover` rule's border colour is the hovered selected slot clip's outline too: the base
+/// sheet's `clip[selected]` outline is hidden by it, so a theme states `clip[selected]:hover`
+/// (#1450).
 #[test]
-fn a_hover_rule_is_not_a_slot_clip_s_selected_outline() {
+fn a_hover_rule_is_a_slot_clip_s_selected_outline_too() {
     let mut h = window(demo_app());
     h.get_by_label("Select Walk on Bass (scene 2)").click();
     h.run();
@@ -287,16 +288,16 @@ fn a_hover_rule_is_not_a_slot_clip_s_selected_outline() {
     h.hover_at(at);
     h.run();
     let hover = format!("clip:hover {{ border-color: {}; }}", hex(odd(52)));
-    assert_eq!(strokes_with(&mut h, &hover, odd(52)), 0, "the outline keeps its native colour");
+    assert_eq!(strokes_with(&mut h, &hover, odd(52)), 1, "the outline takes the hover rule");
     let selected = format!("{hover} clip[selected]:hover {{ border-color: {}; }}", hex(odd(53)));
     assert_eq!(strokes_with(&mut h, &selected, odd(53)), 1, "a `[selected]` rule recolours it");
 }
 
-/// A slot clip's native state colours are read before the clip is entered: a rule for every clip's
-/// `color` is not a selected clip's outline, and its `background-color` not a deactivated clip's
-/// grey (#1428 review).
+/// A rule for every clip's `color` is not a selected clip's outline, but its `background-color` is
+/// the deactivated clip's fill too: the base sheet's `clip[muted]` is hidden by it, so a theme
+/// states `clip[muted]` (#1450).
 #[test]
-fn a_rule_for_every_slot_clip_keeps_the_native_state_colours() {
+fn a_rule_for_every_slot_clip_needs_a_muted_rule_to_keep_the_deactivated_clip_grey() {
     let mut project = demo_project();
     if let Some(clip) = project.launcher.columns[1].slots[1].clip.as_mut() {
         clip.enabled = false;
@@ -312,12 +313,13 @@ fn a_rule_for_every_slot_clip_keeps_the_native_state_colours() {
     let ink = format!("clip {{ color: {}; }}", hex(odd(54)));
     assert_eq!(strokes_with(&mut h, &ink, odd(54)), 0, "the outline is not the clips' colour");
     let fill = format!("clip {{ background-color: {}; }}", hex(odd(55)));
-    assert_eq!(count_with(&mut h, &fill, odd(55)), 0, "the deactivated clip is not the clips' fill");
+    assert_eq!(count_with(&mut h, &fill, odd(55)), 1, "the deactivated clip takes the clips' fill");
 }
 
-/// The chosen tool's icon keeps its native ink under a `color` rule for every tool (#1428 review).
+/// A `color` rule for every tool is the chosen tool's ink too: a theme that wants it apart states
+/// `arrangement-tool[checked]` (#1450).
 #[test]
-fn a_colour_rule_for_every_tool_keeps_the_chosen_one_s_ink() {
+fn a_colour_rule_for_every_tool_is_the_chosen_one_s_ink_too() {
     let mut h = arrangement_app();
     let mut settings = suhina_ui::settings::Settings::default();
     settings.view.arrangement_toolbar = true;
@@ -369,14 +371,13 @@ fn a_colour_rule_for_every_tool_keeps_the_chosen_one_s_ink() {
     for rect in found.iter().filter(|r| r.center().y >= range.top() && r.center().y <= range.bottom()) {
         inked.insert(((rect.center().x - left) / pitch).floor() as i32);
     }
-    assert_eq!(inked.len(), tools - 1, "every tool but the chosen one takes the colour: {inked:?}");
-    assert!(!inked.contains(&0), "the chosen tool (Select) keeps its native ink");
+    assert_eq!(inked.len(), tools, "every tool takes the colour: {inked:?}");
 }
 
-/// The lit monitor button's label keeps its native ink under a `color` rule for the plain button
-/// (#1428 review).
+/// A `color` rule for the monitor buttons is the lit one's label ink too: a theme that wants it
+/// apart states `[checked]` (#1450).
 #[test]
-fn the_lit_monitor_button_keeps_its_label_ink() {
+fn a_colour_rule_for_the_monitor_buttons_is_the_lit_one_s_label_ink_too() {
     let mut project = demo_project();
     project.tracks[0].content = suhina_engine::model::ContentKinds { notes: false, audio: true };
     let mut app = App::new();
@@ -404,7 +405,7 @@ fn the_lit_monitor_button_keeps_its_label_ink() {
         }
     }
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert_eq!(inked.len(), 2, "the two off buttons take the colour, the lit one does not: {inked:?}");
+    assert_eq!(inked.len(), 3, "all three take the colour: {inked:?}");
 }
 
 /// The fills of the rectangles painted exactly over `rect` in the last frame.
@@ -1548,6 +1549,54 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_its_lit_buttons() {
     }
 }
 
+/// A built-in theme with a rule for every `button` still shows which of a mixer strip's monitor
+/// picks is chosen: Suhina Meadow, Blocks and Sheet and the Dark Gloss example state the lit look
+/// of `button[kind="monitor"]` that their rule for every button would hide (#1450).
+#[test]
+fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_monitor_pick() {
+    for (id, example) in [
+        ("suhina-meadow", None),
+        ("suhina-blocks", None),
+        ("suhina-sheet", None),
+        ("suhina-studio", Some(suhina_ui::kit::theme::GLOSS_EXAMPLE)),
+    ] {
+        let mut project = demo_project();
+        project.tracks[0].content = suhina_engine::model::ContentKinds { notes: false, audio: true };
+        let track = project.tracks[0].name.clone();
+        let mut app = App::new();
+        app.set_browser_open(false);
+        app.set_session(Session::new(project), &[]);
+        let mut settings = suhina_ui::settings::Settings::default();
+        settings.view.mixer_height = 320;
+        app.set_settings(&egui::Context::default(), settings);
+        let mut h = window(app);
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, id);
+        suhina_ui::kit::native_css::set_user_sheet(example.map(|css| css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        // The fills painted exactly over each pick.
+        let fills = |word: &str| {
+            let rect = h.get_by_label(&format!("{track} monitor {word}")).rect();
+            let mut found = Vec::new();
+            for shape in &h.output().shapes {
+                if let egui::Shape::Rect(shape) = &shape.shape
+                    && (shape.rect.min - rect.min).length() < 0.5
+                    && (shape.rect.max - rect.max).length() < 0.5
+                {
+                    found.push(shape.fill);
+                }
+            }
+            found
+        };
+        let (auto, off) = (fills("Auto"), fills("Off"));
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        assert!(!auto.is_empty() && !off.is_empty(), "{id}: both are painted");
+        assert_ne!(auto, off, "{id}: the chosen pick (Auto) shows it is chosen");
+    }
+}
+
 /// Colouring a region goes through its variables: `window { --text-hint: … }` reaches the hint
 /// words inside it (an empty detail panel's note) and a switch's dim words, which the base sheet
 /// colours with the same variable: a track that is off, its number (#1449).
@@ -1584,4 +1633,108 @@ fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(!toggle.is_empty() && toggle.iter().all(|c| *c == odd(151)), "the off switch's number: {toggle:?}");
     assert!(!hint.is_empty() && hint.iter().all(|c| *c == odd(151)), "the hint's words: {hint:?}");
+}
+
+/// The Launcher with a mixer tall enough for its strips' device lists.
+fn tall_mixer() -> Harness<'static, App> {
+    let mut app = demo_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.mixer_height = 320;
+    app.set_settings(&egui::Context::default(), settings);
+    window(app)
+}
+
+/// A theme's rule for each element the base sheet colours in the Launcher, the mixer, the control
+/// bar and the Arrangement (#1450) is painted: a rule beats the base sheet's, whatever it says.
+/// Each rule has a colour of its own, so a rule that reaches nothing is named.
+#[test]
+fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_launcher_the_mixer_and_the_arrangement() {
+    type Scene = (&'static str, Harness<'static, App>, Vec<(&'static str, &'static str)>);
+    let scenes: Vec<Scene> = vec![
+        (
+            "launcher",
+            window(demo_app()),
+            vec![
+                ("scene", "background-color"),
+                ("scene", "color"),
+                ("scene[kind=\"stop-all\"]", "background-color"),
+                ("scene[kind=\"stop-all\"]", "color"),
+                ("slot[kind=\"stop\"]", "background-color"),
+                ("slot[kind=\"stop\"]", "color"),
+                ("session slot", "background-color"),
+                ("label[kind=\"scene-number\"]", "color"),
+                ("track-header[kind=\"main\"]", "color"),
+                ("button[kind=\"metronome\"]", "color"),
+            ],
+        ),
+        (
+            "mixer",
+            lit_drums(),
+            vec![
+                ("mixer", "background-color"),
+                ("fader", "color"),
+                ("fader-scale", "color"),
+                ("send", "color"),
+                ("slot-mark", "color"),
+            ],
+        ),
+        ("device lists", tall_mixer(), vec![("device-list", "background-color")]),
+        (
+            "arrangement",
+            {
+                // Zoomed in with a finer grid, so the lines between bars are drawn too.
+                let mut h = arrangement_app();
+                zoom_in_at_beat_b(&mut h);
+                h.get_by_label("Lane Drums").click();
+                h.run();
+                h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num1);
+                h.run();
+                h
+            },
+            vec![
+                ("arrangement[kind=\"panel\"]", "background-color"),
+                ("ruler", "background-color"),
+                ("grid-line[kind=\"beat\"]", "color"),
+                ("slider#waveform-zoom", "color"),
+                ("button[kind=\"lanes\"]", "color"),
+                ("arrangement track-header[kind=\"main\"]", "color"),
+            ],
+        ),
+    ];
+    let mut shade = 160u8;
+    for (name, mut h, rules) in scenes {
+        let rules: Vec<_> = rules
+            .into_iter()
+            .map(|(selector, property)| {
+                shade += 1;
+                (selector, property, odd(shade))
+            })
+            .collect();
+        assert_eq!(missing(&mut h, &rules), Vec::<String>::new(), "{name}");
+    }
+}
+
+/// Colouring a region goes through its variables in the Launcher and the mixer too: a scene's
+/// number, a fader's value and a pan field's value take the variables of the region they are in
+/// (#1450).
+#[test]
+fn a_region_s_variables_reach_the_launcher_s_and_the_mixer_s_parts() {
+    let mut h = window(demo_app());
+    let css = format!(
+        "session {{ --text-hint: {}; }} mixer {{ --text-value: {}; --text-primary: {}; }}",
+        hex(odd(181)),
+        hex(odd(182)),
+        hex(odd(183))
+    );
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let shown = painted(&h);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    for (what, colour) in
+        [("the scene numbers", odd(181)), ("a fader's value", odd(182)), ("a pan field's value", odd(183))]
+    {
+        assert!(shown.contains(&colour), "{what} take their region's variable");
+    }
 }

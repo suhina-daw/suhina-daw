@@ -859,27 +859,35 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
     let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(160.0, 60.0));
     let tint = theme::accent().gamma_multiply(0.45);
     let lit = |span: Option<(ClipId, f64, f64)>| {
+        // The base sheet's colours, as the style engine gives them over a few frames.
+        crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some("".into()), ..Default::default() });
         let ctx = egui::Context::default();
         let mut found = Vec::new();
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * 20.0;
-            let look = ClipLook { editor_span: span, ..ArrangementViewState::default().clip_look() };
-            paint_clip(
-                ui.painter(),
-                rect,
-                lane,
-                &clip,
-                Shown::of(&clip),
-                clip.start,
-                &x_of,
-                20.0,
-                &timeline,
-                true,
-                &look,
-            );
-        });
-        output.textures_delta.clear();
-        for shape in output.shapes {
+        let mut shown = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * 20.0;
+                let look = ClipLook { editor_span: span, ..ArrangementViewState::default().clip_look() };
+                paint_clip(
+                    ui.painter(),
+                    rect,
+                    lane,
+                    &clip,
+                    Shown::of(&clip),
+                    clip.start,
+                    &x_of,
+                    20.0,
+                    &timeline,
+                    true,
+                    &look,
+                );
+            });
+            output.textures_delta.clear();
+            shown = output.shapes;
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        for shape in shown {
             if let egui::Shape::Rect(r) = shape.shape
                 && r.fill == tint
             {

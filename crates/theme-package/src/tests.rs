@@ -287,7 +287,7 @@ fn the_user_agent_sheet_selects_by_name_state_and_attribute_only() {
             rules += 1;
             // Each element of a descendant or child chain (`application-bar group`).
             for compound in selector.split([' ', '>']).filter(|part| !part.is_empty()) {
-                let name = compound.split(['[', ':']).next().unwrap();
+                let name = compound.split(['[', ':', '#']).next().unwrap();
                 assert!(elements::is_element(name), "{selector}: {name} is not an element");
             }
             // No classes yet: the standard toolbar group classes the spec allows come with the
@@ -374,7 +374,8 @@ fn the_base_sheet_colours_everything_from_variables() {
         assert!(!name.starts_with("--"), "the base sheet declares {name}");
         if colour_property(name) {
             colours += 1;
-            assert!(value.contains("var(--"), "{name}: {value} is a fixed colour");
+            // `transparent` is no colour of a theme's: nothing to read from a variable.
+            assert!(value.contains("var(--") || value.trim() == "transparent", "{name}: {value} is a fixed colour");
         }
     }
     assert!(colours > 25, "{colours}");
@@ -389,7 +390,7 @@ fn the_base_sheet_colours_everything_from_variables() {
         let close = rest.find('}').unwrap();
         for selector in rest[..open].split(',').map(str::trim) {
             for compound in selector.split([' ', '>']).filter(|part| !part.is_empty()) {
-                let name = compound.split(['[', ':']).next().unwrap();
+                let name = compound.split(['[', ':', '#']).next().unwrap();
                 assert!(
                     matches!(name, "html" | "body") || elements::is_element(name),
                     "{selector}: {name} is not an element"

@@ -117,6 +117,19 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   button[kind="toggle"][checked]:hover { background-color: color-mix(in srgb, var(--control-selectedBackground), white 20%); }
   button[kind="solo"][checked] { background-color: var(--accent); }
   button[kind="arm"][checked] { background-color: var(--recording-background); color: var(--recording); }
+  /* The lit looks of the Launcher's, the mixer's and the Arrangement's own switches, and the
+     automation shapes' fills (Suhina's base sheet gives them, and this theme's rule for every
+     `button` overrides them: state them again, as these switches showed them before). */
+  button[kind="shape"] { background-color: var(--window-background); }
+  button[kind="shape"]:hover { background-color: var(--control-hoverBackground); }
+  button[kind="monitor"][checked], button[kind="lanes"][checked], button[kind="shape"][checked] { background-color: var(--control-activeBackground); }
+  button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
+  button[kind="envelope"][checked] { background-color: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  button[kind="record"][checked] { color: var(--recording); }
+  /* A send's pointer and value take the text colour of the region it is in, as the other words do. */
+  send { color: var(--text-primary); }
+  /* A clip's gain figure takes the text colour of the region it is in, as the other words do. */
+  clip-gain { color: var(--text-primary); }
   knob { color: var(--tint); background-color: var(--paper); }
   value, dropdown, dropdown-arrow, text-input { color: var(--text-primary); --text-primary: color-mix(in oklab, white, black 79.8%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: white; border-radius: 0px; }
   text-input[kind="typed"] { background-color: var(--control-activeBackground); color: var(--text-value); }

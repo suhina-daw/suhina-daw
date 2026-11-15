@@ -82,11 +82,12 @@ pub(super) fn send_knob(
     let el = crate::kit::element::SEND.response(&response).enter();
     widgets::value_drag_pointer(ui.ctx(), &response, &el);
     let amount = widgets::hover(ui, &response);
-    let surface = motion::mix(background, theme::control_hover(), amount);
+    let hot = el.look_hovered(true).background();
+    let surface = motion::mix(background, hot, amount);
     el.paint(painter, rect);
     let pointer = el.color_or(theme::text_on(surface));
     if amount > 0.0 || response.has_focus() {
-        let fill = theme::control_hover().gamma_multiply(amount.max(0.3));
+        let fill = hot.gamma_multiply(amount.max(0.3));
         let button = crate::kit::element::BUTTON.response(&response).enter();
         widgets::track_button_face(ui, painter, rect, &button, &response, fill);
     }
@@ -252,10 +253,10 @@ pub(super) fn volume_knob(
     hover: f32,
     response: Option<&egui::Response>,
 ) {
-    let pointer = el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
+    let pointer = el.color_or(motion::mix(crate::kit::element::value_ink(), crate::kit::element::name_ink(), hover));
     let text = widgets::format_db(db);
     let right = widgets::ValuePosition::Right;
-    let ink = el.color_or(theme::text_primary());
+    let ink = el.color_or(crate::kit::element::name_ink());
     widgets::knob_with_value(
         painter,
         rect,
@@ -281,7 +282,8 @@ pub(super) fn pan_knob(
 ) {
     let position = ((pan + 1.0) / 2.0) as f32;
     let text = widgets::format_pan(pan);
-    let (pointer, ink) = (el.color_or(theme::text_primary()), el.color_or(theme::text_secondary()));
+    let (pointer, ink) =
+        (el.color_or(crate::kit::element::name_ink()), el.color_or(crate::kit::element::caption_ink()));
     let right = widgets::ValuePosition::Right;
     widgets::knob_with_value(painter, rect, el, position, pointer, response, &text, ink, right, theme::TEXT_SMALL);
 }
@@ -353,7 +355,7 @@ pub(super) fn volume_field(
 /// A volume as a plain value, for the compact return and main rows, drawn as `el`, the value its
 /// caller entered.
 pub(super) fn volume_text(painter: &egui::Painter, rect: Rect, el: &crate::kit::element::Entered, db: f64, hover: f32) {
-    let color = el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
+    let color = el.color_or(motion::mix(crate::kit::element::value_ink(), crate::kit::element::name_ink(), hover));
     widgets::text_in(
         painter,
         rect,
