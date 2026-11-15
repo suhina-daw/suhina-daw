@@ -52,6 +52,11 @@ class Problems(unittest.TestCase):
             "see www.example.com",
             "ftp://example.com",
             "[x](https&#58;//example.com)",
+            "[x](https\\://example.com)",
+            "see https\\://example.com",
+            "see www\\.example.com",
+            # `\d` is no escape, so the backslash stays in the published link.
+            "[x](https://github.com/suhina-\\daw/suhina-daw/pull/1)",
         ):
             with self.subTest(bad=bad):
                 self.assertTrue(nn.problems("nightly-20261115", NOTES + "\n\n" + bad))
@@ -65,6 +70,10 @@ class Problems(unittest.TestCase):
             "[r]: <https://example.com>",
             "Tom &amp; Jerry",
             "&#x3a;",
+            # A definition inside a block quote or a list item, with an escaped destination.
+            "> [r]: https\\://example.com/installer\n>\n> [download][r]",
+            "- [r]: https\\://example.com/installer\n- [download][r]",
+            "1. [r]: example.com",
         ):
             with self.subTest(bad=bad):
                 self.assertTrue(nn.problems("nightly-20261115", NOTES + "\n\n" + bad))

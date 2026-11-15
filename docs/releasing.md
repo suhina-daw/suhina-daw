@@ -140,7 +140,8 @@ it hands the notes to **Actions › Nightly notes** ([`nightly-notes.yml`](../.g
 as its `tag` and `notes` inputs. [`scripts/nightly_notes.py`](../scripts/nightly_notes.py) checks
 them before anything changes: the tag is `nightly-YYYYMMDD` or `nightly-YYYYMMDD-N`, the notes
 start with `### New since the previous nightly`, carry no HTML, images, `@`, character references
-(`&#58;`) or reference-style link definitions (`[label]: …`), and link only to this repository. It then replaces the notes section of that dated release (and of `nightly` when it
+(`&#58;`) or `]:` (which starts a reference-style link definition, `[label]: …`), and link only
+to this repository, also once Markdown's backslash escapes are undone. It then replaces the notes section of that dated release (and of `nightly` when it
 is the same build) and adds `<!-- notes: composed -->`, and posts the notes to Discord's releases
 channel (see [Discord](#discord)) as one embed whose title links to the dated release, so the link
 still leads to the build it announced after the next night. Only after Discord took the post is
