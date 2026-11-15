@@ -406,18 +406,38 @@ fn the_base_sheet_colours_everything_from_variables() {
     }
 }
 
-/// A muted clip and a muted track's header are grey in the user-agent sheet, whatever their colour,
-/// in the Arrangement only, so a deactivated Launcher clip keeps its own look (#1393).
+/// A muted clip and a muted track's header are grey in the base sheet, whatever their colour, in
+/// the Arrangement only, so a deactivated Launcher clip keeps its own look (#1393); each grey is a
+/// core variable with its earlier value, and the user-agent sheet holds none of them.
 #[test]
-fn the_user_agent_sheet_greys_muted_clips_and_headers() {
-    for rule in [
-        "arrangement clip[muted] { background-color: #A9A6A0; }",
-        "arrangement clip[muted][selected] { background-color: #BDBAB4; }",
-        "arrangement track-header[muted] { background-color: #A9A6A0; }",
-        "arrangement track-header[muted][selected] { background-color: #B5B2AC; }",
+fn the_base_sheet_greys_muted_clips_and_headers() {
+    for (rule, variable, value) in [
+        (
+            "arrangement clip[muted] { background-color: var(--clip-mutedBackground); }",
+            "--clip-mutedBackground",
+            "#A9A6A0",
+        ),
+        (
+            "arrangement clip[muted][selected] { background-color: var(--clip-mutedSelectedBackground); }",
+            "--clip-mutedSelectedBackground",
+            "#BDBAB4",
+        ),
+        (
+            "arrangement track-header[muted] { background-color: var(--track-headerMutedBackground); }",
+            "--track-headerMutedBackground",
+            "#A9A6A0",
+        ),
+        (
+            "arrangement track-header[muted][selected] { background-color: var(--track-headerMutedSelectedBackground); }",
+            "--track-headerMutedSelectedBackground",
+            "#B5B2AC",
+        ),
     ] {
-        assert!(USER_AGENT_SHEET.contains(rule), "the user-agent sheet lacks {rule}");
+        assert!(BASE_SHEET.contains(rule), "the base sheet lacks {rule}");
+        let registration = format!("@property {variable} {{ syntax: \"<color>\"; initial-value: {value}; }}");
+        assert!(CORE_SHEET.contains(&registration), "the core sheet lacks {registration}");
     }
+    assert!(!USER_AGENT_SHEET.contains("[muted]"), "the user-agent sheet colours nothing muted");
 }
 
 #[test]
