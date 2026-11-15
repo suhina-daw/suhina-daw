@@ -3,7 +3,7 @@ description: Tempo and time-signature changes over the song (the tempo map): ste
 read_when: tempo map, tempo change, tempo ramp, time signature, time-signature change, change the time signature, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, transport.setTimeSignature, bar ruler, control bar signature
 type: spec
 status: current
-last_verified: 2026-11-03
+last_verified: 2026-11-15
 covers:
   - crates/model/src/tempo.rs
   - crates/engine/src/tempo.rs
