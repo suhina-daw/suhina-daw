@@ -822,6 +822,17 @@ impl LoopRange {
     }
 }
 
+/// The content beat a clip starts playing from: its start marker `offset`, or, for a marker at or
+/// past the end of the clip's loop `(start, end)`, the beat the loop turns it into at once. The
+/// engine, the piano roll and the clip edits all start a clip here, so they agree on where its
+/// content plays.
+pub fn played_from(offset: f64, loop_range: Option<(f64, f64)>) -> f64 {
+    match loop_range {
+        Some((start, end)) if end > start && offset >= end => start + (offset - start) % (end - start),
+        _ => offset,
+    }
+}
+
 /// What a launched clip does after it has played for its follow time: action A or action B,
 /// picked by chance with their weights (`docs/spec/clip-launching.md` › Follow actions).
 #[derive(Debug, Clone, Copy, PartialEq)]

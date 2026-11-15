@@ -839,8 +839,9 @@ notes are untouched, and a clip that holds audio refuses them.
 - **Join notes** (`note.join`, **Ctrl+J**): the selected notes on one key become one note, from the
   first's start to the last's end: the first reaches over any gap to the next, as legato does, and
   joins it. It keeps the first's velocity and release velocity; notes on different keys join per
-  key, and a key with one selected note keeps it. Without two selected notes on one key it does
-  nothing.
+  key, and a key with one selected note keeps it. A note on the key that the joined note covers,
+  selected or not, goes, and one that runs on past its end starts where it ends, so no note sounds
+  twice under it. Without two selected notes on one key it does nothing.
 - **Fit to time selection** (`note.fitToTime`, **Ctrl+Alt+J**): the selected notes (or those that
   start in the time selection) are stretched or squeezed, starts and lengths alike, so they fill the
   time selection exactly: the first start at its start, the last end at its end. Nothing without a
@@ -848,9 +849,13 @@ notes are untouched, and a clip that holds audio refuses them.
 - **Crop clip to time selection** (`clip.crop`, **Ctrl+Shift+J**): the clip keeps only the time
   selection: its start marker and length become the selection's, its loop is clipped to it (off
   where they do not meet), notes outside it are deleted and notes across an edge are cut at it
-  (a piece shorter than a hundredth of a beat goes). An arrangement clip moves with its start
-  marker, so what is left plays where it played; a looping one keeps its end and goes on looping
-  over what is left. A time selection outside the part of the clip that plays is refused.
+  (a piece shorter than a hundredth of a beat goes), in every lane of a pattern. A selection that
+  runs past what the clip plays (before its start marker, after its end or its loop's end) is cut
+  to what it plays, so nothing unheard comes to play. An arrangement clip moves with its start
+  marker, so what is left plays where it played (a marker past the loop's end counts from where
+  the loop turns it); one whose loop meets the selection keeps its end and goes on looping over
+  what is left, one whose loop it misses plays once and is as long as the selection. A time
+  selection outside the part of the clip that plays is refused.
 - **Split clip** (`clip.split` with `ats`, **Ctrl+E**, the split key, which the piano roll takes
   while it has the keyboard): the clip is cut at the time selection's
   edges (where the clip first plays them), into clips of their own on the same lane, as the
@@ -1169,8 +1174,8 @@ button opens its clip in the editor.
   the same for named notes at one beat or a beat each, so the CLI and MCP can split too. One stroke
   is one command, one undo step.
 - **Later ([#349](https://github.com/suhina-daw/suhina-daw/issues/349)):** a command that chops the
-  selection into notes of one grid step each; glue (join) touching notes of the same key into one
-  note (Ctrl+G); legato (each note lasts until the next one starts); the command `note.join`.
+  selection into notes of one grid step each. Joining notes of one key into one is built (`note.join`,
+  Ctrl+J, › Joining, fitting, cropping and splitting), and so is legato (the Notes tab).
 
 ## Chords
 

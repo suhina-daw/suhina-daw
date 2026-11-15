@@ -246,14 +246,18 @@ impl MenuCx<'_> {
     }
 
     /// Whether the clicked point can become the clip's first beat: past 0, and nothing of the clip
-    /// (a note, the start marker, the loop's start) lies before it (`clip.setOrigin` refuses).
-    fn origin_ok(&self, at: MenuAt) -> bool {
+    /// (a note of any of its lanes, the start marker, the loop's start) lies before it
+    /// (`clip.setOrigin` refuses).
+    pub(super) fn origin_ok(&self, at: MenuAt) -> bool {
         let beat = self.beat(at);
         let shape = self.clip.shape;
         beat > EPSILON
             && shape.offset >= beat - EPSILON
             && shape.loop_range.is_none_or(|(start, _)| start >= beat - EPSILON)
             && self.clip.notes.iter().all(|n| n.time >= beat - EPSILON)
+            // A pattern's notes for other tracks move with the first beat too, and the command
+            // refuses one before it.
+            && self.clip.others_first.is_none_or(|first| first >= beat - EPSILON)
     }
 
     fn acting_notes<'s>(&'s self, state: &'s PianoRollState) -> impl Iterator<Item = &'s Note> + 's {

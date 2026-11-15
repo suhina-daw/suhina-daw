@@ -391,8 +391,13 @@ pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, Comma
 /// One note `note.add` reads: `{time, length, key, velocity?}`.
 fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
     let object: &Map<String, Value> = value.as_object().ok_or_else(|| format!("note {at} must be an object"))?;
-    if let Some(unknown) = object.keys().find(|k| !matches!(k.as_str(), "time" | "length" | "key" | "velocity")) {
-        return Err(format!("note {at}: unknown field {unknown:?}; expected time, length, key, velocity").into());
+    if let Some(unknown) =
+        object.keys().find(|k| !matches!(k.as_str(), "time" | "length" | "key" | "velocity" | "velocityRange"))
+    {
+        return Err(format!(
+            "note {at}: unknown field {unknown:?}; expected time, length, key, velocity, velocityRange"
+        )
+        .into());
     }
     let number = |key: &str| object.get(key).and_then(Value::as_f64).filter(|n| n.is_finite());
     let time = number("time").ok_or_else(|| format!("note {at}: time must be a number of beats"))?;
@@ -416,6 +421,15 @@ fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
             .filter(|v| (1.0..=127.0).contains(v))
             .ok_or_else(|| format!("note {at}: velocity must be 1 to 127"))?,
     };
+    // As `note.list` gives it, so a note read and written back keeps how its velocity rolls.
+    let velocity_range = match object.get("velocityRange") {
+        None | Some(Value::Null) => 0,
+        Some(v) => v
+            .as_i64()
+            .and_then(|r| i8::try_from(r).ok())
+            .filter(|r| *r >= -127)
+            .ok_or_else(|| format!("note {at}: velocityRange must be a whole number from -127 to 127"))?,
+    };
     Ok(Note {
         time,
         duration: length,
@@ -424,7 +438,7 @@ fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
         release_velocity: RELEASE_VELOCITY,
         channel: 0,
         muted: false,
-        velocity_range: 0,
+        velocity_range,
     })
 }
 

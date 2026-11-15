@@ -31,6 +31,9 @@ pub struct PianoClip {
     pub ghosts: Ghosts,
     /// The scale of the clip's content, whose keys the rows mark (› Scale and key).
     pub scale: Option<Scale>,
+    /// Where the first note of the content's other lanes starts (a pattern's notes for other
+    /// tracks), which `clip.setOrigin` checks as it checks this clip's own notes.
+    pub others_first: Option<f64>,
 }
 
 /// Where a clip plays its content on the arrangement.
@@ -78,10 +81,7 @@ impl Placement {
         }
         // Where playback starts in the content: a start marker at or past the loop's end turns
         // into the loop at once, as `content_beat` (and the engine) wrap it.
-        let offset = match self.loop_range {
-            Some((start, end)) if end > start && self.offset >= end => start + (self.offset - start) % (end - start),
-            _ => self.offset,
-        };
+        let offset = suhina_engine::model::played_from(self.offset, self.loop_range);
         let mut elapsed = content - offset;
         if elapsed < 0.0 {
             // A beat before the offset is first played when the loop comes round to it: after the
@@ -147,6 +147,21 @@ pub(super) fn piano_clip_from(project: &Project, track: TrackId, clip: &Clip) ->
     if content.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))) {
         return None;
     }
+    // The other lanes' notes: a pattern's for other tracks, which a new first beat moves too.
+    let mut own = true;
+    let others_first = content
+        .lanes
+        .iter()
+        .filter(|l| {
+            let mine = own && l.target.is_none_or(|t| t == track) && matches!(l.data, LaneData::Notes(_));
+            own &= !mine;
+            !mine
+        })
+        .filter_map(|l| match &l.data {
+            LaneData::Notes(n) => n.iter().map(|n| n.time).reduce(f64::min),
+            LaneData::Audio(_) => None,
+        })
+        .reduce(f64::min);
     let position = project.tracks.iter().position(|t| t.id == track)?;
     let color = project
         .tracks
@@ -178,6 +193,7 @@ pub(super) fn piano_clip_from(project: &Project, track: TrackId, clip: &Clip) ->
         },
         ghosts: Ghosts::default(),
         scale: content.scale,
+        others_first,
     })
 }
 

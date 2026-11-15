@@ -823,3 +823,23 @@ fn setting_a_velocity_range_absolutely_or_by_a_step() {
     assert!(bad(json!({ "track": 1, "index": 0, "notes": [0] })));
     assert!(bad(json!({ "track": 1, "index": 2, "notes": [0], "range": 4 })), "an audio clip has no notes");
 }
+
+/// A note read with `note.list` and written back with `note.add` keeps its velocity range, and a
+/// range out of bounds is refused.
+#[test]
+fn a_velocity_range_survives_a_list_and_add_round_trip() {
+    let mut session = Session::new(project(scale_notes()));
+    run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0], "range": -20 })).unwrap();
+    let listed = run(&mut session, "note.list", json!({ "track": 1, "index": 0 })).unwrap();
+    let first = &listed[0];
+    let copy = json!({
+        "time": first["time"], "length": first["length"], "key": first["key"],
+        "velocity": first["velocity"], "velocityRange": first["velocityRange"],
+    });
+    run(&mut session, "note.add", json!({ "track": 1, "index": 0, "notes": [copy] })).unwrap();
+    let ranges: Vec<i8> = notes_of(&session, 1).iter().map(|n| n.velocity_range).collect();
+    assert_eq!(ranges.last(), Some(&-20), "{ranges:?}");
+    let bad =
+        json!({ "track": 1, "index": 0, "notes": [{ "time": 0.0, "length": 1.0, "key": 60, "velocityRange": 200 }] });
+    assert!(run(&mut session, "note.add", bad).is_err());
+}

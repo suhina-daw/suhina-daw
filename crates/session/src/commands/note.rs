@@ -39,7 +39,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
-            param("notes", ParamType::Notes, "the notes, each {time, length, key, velocity?}; at most 10000"),
+            param(
+                "notes",
+                ParamType::Notes,
+                "the notes, each {time, length, key, velocity?, velocityRange?}; at most 10000",
+            ),
             REPLACE,
             COVERED,
         ],

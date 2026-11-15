@@ -344,3 +344,85 @@ fn the_clip_edits_redo_and_refuse_malformed_parameters() {
         assert_eq!(*session.project(), before, "{id} {params}: unchanged");
     }
 }
+
+/// The project with the arrangement clip (index 0) and the slot's clip set to `offset`, `length`
+/// and `loop_range`.
+fn shaped(notes: Vec<Note>, offset: f64, length: f64, loop_range: Option<(f64, f64)>) -> Project {
+    let mut project = project(notes);
+    let range = loop_range.map(|(start, end)| LoopRange { start, end });
+    let arranged = &mut project.arrangement.lanes[0].clips[0];
+    (arranged.offset, arranged.length, arranged.loop_range) = (offset, length, range);
+    let slot = project.launcher.columns[0].slots[0].clip.as_mut().unwrap();
+    (slot.offset, slot.length, slot.loop_range) = (offset, length, range);
+    project
+}
+
+/// A crop that misses the loop leaves a clip that plays once, as long as the selection, on the
+/// arrangement and in a slot (not the old end with silence after the notes).
+#[test]
+fn a_crop_that_misses_the_loop_is_as_long_as_the_selection() {
+    let mut session = Session::new(shaped(vec![note(1.5, 1.0, 60)], 0.0, 8.0, Some((4.0, 6.0))));
+    run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 3.0 })).unwrap();
+    let clip = arranged(&session);
+    assert_eq!((clip.start, clip.length, clip.loop_range), (1.0, 2.0, None));
+    run(&mut session, "clip.crop", json!({ "track": 1, "scene": 0, "start": 1.0, "end": 3.0 })).unwrap();
+    let slot = session.project().launcher.columns[0].slots[0].clip.clone().unwrap();
+    assert_eq!((slot.length, slot.loop_range), (2.0, None));
+}
+
+/// A start marker past the loop's end plays from inside the loop at once: a crop moves the clip
+/// to where that content plays (loop 1 to 3, marker 5 plays from 1, so content 2 plays 1 beat in).
+#[test]
+fn a_crop_with_the_start_marker_past_the_loop_lands_where_the_content_plays() {
+    let mut session = Session::new(shaped(vec![note(2.0, 0.5, 60)], 5.0, 8.0, Some((1.0, 3.0))));
+    run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 2.0, "end": 2.5 })).unwrap();
+    let clip = arranged(&session);
+    assert_eq!((clip.start, clip.offset), (1.0, 2.0));
+}
+
+/// A selection that runs past a clip's markers keeps only what the clip plays: hidden notes
+/// before the start marker and after the end stay unheard and go.
+#[test]
+fn a_crop_past_the_markers_keeps_only_what_plays() {
+    let notes = vec![note(0.5, 1.0, 60), note(3.0, 1.0, 62), note(6.5, 1.0, 64)];
+    let mut session = Session::new(shaped(notes, 2.0, 4.0, None));
+    run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 0.0, "end": 8.0 })).unwrap();
+    let clip = arranged(&session);
+    assert_eq!((clip.start, clip.offset, clip.length), (0.0, 2.0, 4.0), "where and as long as it played");
+    assert_eq!(notes(&session, 1), vec![(3.0, 1.0, 62)]);
+}
+
+/// A pattern placed once is cut in every lane: another track's note across the new start is cut
+/// there too, so it goes on playing.
+#[test]
+fn a_crop_cuts_every_lane_of_a_pattern() {
+    let mut project = project(vec![]);
+    let lane = |track: u32| ContentLane {
+        target: Some(TrackId(track)),
+        data: LaneData::Notes(vec![note(0.5, 1.5, 60)].into()),
+    };
+    let content = project.contents.iter_mut().find(|c| c.id == ContentId(1)).unwrap();
+    content.lanes = vec![lane(1), lane(2)].into();
+    project.tracks.push(Track::new(TrackId(2), "Bass"));
+    let mut session = Session::new(project);
+    run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 3.0 })).unwrap();
+    let content = session.project().contents.iter().find(|c| c.id == ContentId(1)).unwrap();
+    let spans: Vec<(f64, f64)> = content
+        .lanes
+        .iter()
+        .flat_map(|l| match &l.data {
+            LaneData::Notes(notes) => notes.iter().map(|n| (n.time, n.duration)).collect(),
+            LaneData::Audio(_) => vec![],
+        })
+        .collect();
+    assert_eq!(spans, vec![(1.0, 1.0), (1.0, 1.0)], "both lanes cut at the new start");
+}
+
+/// Joining two notes with an unselected one between them on the key takes that one in: no note
+/// is left under the joined one to sound twice.
+#[test]
+fn a_join_takes_in_the_unselected_notes_it_covers() {
+    let mut session = Session::new(project(vec![note(0.0, 0.25, 60), note(1.0, 0.25, 60), note(2.0, 0.25, 60)]));
+    run(&mut session, "note.join", json!({ "track": 1, "index": 0, "notes": [0, 2] })).unwrap();
+    assert_eq!(notes(&session, 1), vec![(0.0, 2.25, 60)]);
+}

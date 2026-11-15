@@ -27,22 +27,20 @@ const MIN_LENGTH: f64 = 0.01;
 /// `note.join`: the named notes on one key become one note, from the first's start to the last's end
 /// (the first reaching over any gap, as legato does), with the first's velocity, release velocity,
 /// channel and mute. Notes on different keys join per key; a key with one named note keeps it.
+/// The joined note takes the place of whatever it covers on its key, named or not: no note is
+/// left under it to sound twice, and one that runs on past its end starts where it ends.
 pub(crate) fn join(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     edit_notes(&mut session.project, params, |notes| {
         let named = indices(params, notes)?;
-        let (kept, removed) = joined(notes, &named)?;
+        let kept = joined(notes, &named)?;
         for (index, end) in &kept {
             if let Some(note) = notes.get_mut(*index) {
                 note.duration = end - note.time;
             }
         }
-        let mut gone = removed.clone();
-        gone.sort_unstable();
-        gone.dedup();
-        for &index in gone.iter().rev() {
-            notes.remove(index);
-        }
         let joined: Vec<usize> = kept.iter().map(|(index, _)| *index).collect();
+        // The other named notes lie under the joined one, so they go with any it covers.
+        let gone = replace_under(notes, &joined, false);
         Ok(json!({
             "notes": after_removal(&joined, &gone),
             "removed": gone,
@@ -51,26 +49,20 @@ pub(crate) fn join(session: &mut Session, params: &Value) -> Result<Value, Comma
     })
 }
 
-/// Each joined note's index with its new end, and the indices of the notes it took in.
-type Joined = (Vec<(usize, f64)>, Vec<usize>);
-
-/// What `note.join` does to `named` among `notes`: each joined note's index with its new end, and
-/// the indices of the notes it took in. On each key the first named note reaches, as legato does,
-/// over any gap, to the last one's end and takes in the others.
-fn joined(notes: &Notes, named: &[usize]) -> Result<Joined, CommandError> {
+/// What `note.join` does to `named` among `notes`: each joined note's index with its new end. On
+/// each key the first named note reaches, as legato does, over any gap, to the last one's end.
+fn joined(notes: &Notes, named: &[usize]) -> Result<Vec<(usize, f64)>, CommandError> {
     let mut by_key: std::collections::BTreeMap<u8, Vec<(f64, usize)>> = std::collections::BTreeMap::new();
     for &index in named {
         let note = notes.get(index).ok_or("a note is missing")?;
         by_key.entry(note.key).or_default().push((note.time, index));
     }
     let mut kept = Vec::new();
-    let mut removed = Vec::new();
     for line in by_key.values_mut().filter(|line| line.len() > 1) {
         line.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         let Some(&(_, first)) = line.first() else { continue };
         let end = line.iter().filter_map(|(_, i)| notes.get(*i)).map(|n| n.time + n.duration).fold(f64::MIN, f64::max);
         kept.push((first, end));
-        removed.extend(line.iter().skip(1).map(|(_, i)| *i));
     }
     if kept.is_empty() {
         return Err("no notes to join: give at least two notes on one key".into());
@@ -78,7 +70,7 @@ fn joined(notes: &Notes, named: &[usize]) -> Result<Joined, CommandError> {
     if kept.iter().any(|(_, end)| !end.is_finite() || *end > MAX_BEAT) {
         return Err(format!("a joined note would end after beat {MAX_BEAT}").into());
     }
-    Ok((kept, removed))
+    Ok(kept)
 }
 
 /// `note.fitToTime`: the named notes are stretched or squeezed, starts and lengths alike, so they
@@ -165,78 +157,80 @@ pub(crate) fn crop(session: &mut Session, params: &Value) -> Result<Value, Comma
         );
     }
     check_unshared_pattern(&session.project, params)?;
-    let (at, _, _) = locate(&session.project, params)?;
+    let (at, content, track) = locate(&session.project, params)?;
     let clip = clip_at(&session.project, at).ok_or("the clip is missing")?.clone();
-    let played = match clip.loop_range {
-        Some(range) => (clip.offset.min(range.start), range.end),
+    let looped = clip.loop_range.map(|range| (range.start, range.end)).filter(|(s, e)| e > s);
+    // Where the clip starts playing in its content, a start marker past the loop's end turned
+    // into the loop as the engine turns it.
+    let from = suhina_model::played_from(clip.offset, looped);
+    let played = match looped {
+        Some((loop_start, loop_end)) => (from.min(loop_start), loop_end),
         None => (clip.offset, clip.offset + clip.length),
     };
-    if end <= played.0 + EPSILON || start >= played.1 - EPSILON {
+    // The clip keeps only what it plays of the selection: a selection that runs past the start or
+    // end marker (or the loop's end) is cut to what is heard, so nothing silent comes to play.
+    let (start, end) = (start.max(played.0), end.min(played.1));
+    if end <= start + MIN_LENGTH {
         return Err(format!(
-            "the time selection, beats {start} to {end}, is outside the part of the clip that plays ({} to {})",
+            "the time selection is outside the part of the clip that plays ({} to {})",
             played.0, played.1
         )
         .into());
     }
-    // A looping clip goes on looping over what is left and keeps its end on the arrangement; one
-    // that plays once is as long as the stretch.
+    // The loop as the crop leaves it: cut to the selection, off where they do not meet.
+    let new_loop = looped
+        .map(|(loop_start, loop_end)| (loop_start.max(start), loop_end.min(end)))
+        .filter(|(loop_start, loop_end)| *loop_end > loop_start + EPSILON);
+    // A clip that still loops goes on looping over what is left and keeps its end on the
+    // arrangement; one that plays once is as long as the stretch.
     let (new_start, new_length) = match at {
         ClipAt::Arrangement(..) => {
             // Where the clip first plays content beat `start`: after the start marker on the first
             // pass, or, for a loop that starts before the marker, once the loop has come round.
-            let into = match clip.loop_range {
-                Some(range) if start < clip.offset - EPSILON && start >= range.start - EPSILON => {
-                    (range.end - clip.offset) + (start - range.start)
+            let into = match looped {
+                Some((loop_start, loop_end)) if start < from - EPSILON && start >= loop_start - EPSILON => {
+                    (loop_end - from) + (start - loop_start)
                 }
-                _ => start - clip.offset,
+                _ => start - from,
             };
             let moved = clip.start + into;
             if moved < -EPSILON {
                 return Err("the clip would start before the beginning of the song".into());
             }
             let moved = moved.max(0.0);
-            let length = if clip.loop_range.is_some() { clip.start + clip.length - moved } else { end - start };
+            let length = if new_loop.is_some() { clip.start + clip.length - moved } else { end - start };
             if length.partial_cmp(&MIN_LENGTH) != Some(std::cmp::Ordering::Greater) {
                 return Err("the cropped clip would have no length left".into());
             }
             check_neighbours(&session.project, at, moved, length)?;
             (moved, length)
         }
-        ClipAt::Slot(..) => (clip.start, if clip.loop_range.is_some() { clip.length } else { end - start }),
+        ClipAt::Slot(..) => (clip.start, if new_loop.is_some() { clip.length } else { end - start }),
     };
     copy_on_write(&mut session.project, params, |p| {
-        let notes = notes_mut(p, params)?;
-        let mut deleted = Vec::new();
-        let mut cut = Vec::new();
-        for index in (0..notes.len()).rev() {
-            let Some(note) = notes.get(index).copied() else { continue };
-            match cropped(&note, start, end) {
-                None => {
-                    notes.remove(index);
-                    deleted.push(index);
-                }
-                Some((time, length)) => {
-                    if (time - note.time).abs() > EPSILON || (length - note.duration).abs() > EPSILON {
-                        if let Some(note) = notes.get_mut(index) {
-                            note.time = time;
-                            note.duration = length;
-                        }
-                        cut.push(index);
-                    }
+        // The edited track's lane, as the other note commands find it (made for an empty clip).
+        notes_mut(p, params)?;
+        let content = p.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
+        let edited = content
+            .lanes
+            .iter()
+            .position(|l| l.target.is_none_or(|t| t == track) && matches!(l.data, LaneData::Notes(_)));
+        // Every lane is cut, not only the edited track's: a pattern's lanes for other tracks play
+        // from the same start marker and loop. What the result names is the edited lane's.
+        let (mut deleted, mut cut) = (Vec::new(), Vec::new());
+        for (lane, data) in content.lanes.iter_mut().enumerate() {
+            if let LaneData::Notes(notes) = &mut data.data {
+                let (gone, changed) = crop_notes(notes, start, end);
+                if Some(lane) == edited {
+                    (deleted, cut) = (gone, changed);
                 }
             }
         }
-        deleted.reverse();
-        cut.sort_unstable();
-        let cut = after_removal(&cut, &deleted);
         let clip = clip_mut(p, at).ok_or("the clip is missing")?;
         clip.start = new_start;
         clip.offset = start;
         clip.length = new_length;
-        clip.loop_range = clip
-            .loop_range
-            .map(|range| LoopRange { start: range.start.max(start), end: range.end.min(end) })
-            .filter(|range| range.end > range.start + EPSILON);
+        clip.loop_range = new_loop.map(|(start, end)| LoopRange { start, end });
         clip.fit_fades();
         Ok(json!({
             "start": start,
@@ -246,6 +240,35 @@ pub(crate) fn crop(session: &mut Session, params: &Value) -> Result<Value, Comma
             "loop": clip.loop_range.is_some(),
         }))
     })
+}
+
+/// Cuts `notes` to `start` … `end` (`clip.crop`): those outside go, those across an edge are cut at
+/// it. Returns the deleted notes' indices as they were and the cut notes' indices as they are now.
+fn crop_notes(notes: &mut Notes, start: f64, end: f64) -> (Vec<usize>, Vec<usize>) {
+    let mut deleted = Vec::new();
+    let mut cut = Vec::new();
+    for index in (0..notes.len()).rev() {
+        let Some(note) = notes.get(index).copied() else { continue };
+        match cropped(&note, start, end) {
+            None => {
+                notes.remove(index);
+                deleted.push(index);
+            }
+            Some((time, length)) => {
+                if (time - note.time).abs() > EPSILON || (length - note.duration).abs() > EPSILON {
+                    if let Some(note) = notes.get_mut(index) {
+                        note.time = time;
+                        note.duration = length;
+                    }
+                    cut.push(index);
+                }
+            }
+        }
+    }
+    deleted.reverse();
+    cut.sort_unstable();
+    let cut = after_removal(&cut, &deleted);
+    (deleted, cut)
 }
 
 /// Fails when an arrangement clip moved to `start`, `length` beats long, would overlap another clip

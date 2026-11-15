@@ -270,6 +270,7 @@ fn clip(notes: Vec<Note>) -> PianoClip {
         shape: ClipShape { offset: 0.0, length: 8.0, loop_range: None, room: None },
         ghosts: Ghosts::default(),
         scale: None,
+        others_first: None,
     }
 }
 
@@ -1407,4 +1408,39 @@ fn split_clip_leaves_a_selection_past_the_loop_end_alone() {
     state.select_span(3.0, 4.0);
     let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
     assert_eq!(split.params["ats"], json!([3.0, 4.0]));
+}
+
+/// A pattern's notes for other tracks move with a new first beat too: the piano roll knows where
+/// the first of them starts, and the menu's Set the clip's first beat here is greyed out before
+/// it, as `clip.setOrigin` refuses there.
+#[test]
+fn the_first_beat_item_counts_a_patterns_other_lanes() {
+    use suhina_engine::model::{ClipContent, ContentId, ContentLane, Extensions, Track};
+    let lane = |track: u32, at: f64| ContentLane {
+        target: Some(TrackId(track)),
+        data: LaneData::Notes(vec![note(at, 0.5, 60)].into()),
+    };
+    let project = Project {
+        tracks: vec![Track::new(TrackId(1), "Keys"), Track::new(TrackId(2), "Bass")],
+        contents: vec![ClipContent {
+            id: ContentId(1),
+            name: "C1".into(),
+            length: 8.0,
+            lanes: vec![lane(1, 1.0), lane(2, 0.25)].into(),
+            extensions: Extensions::default(),
+            scale: None,
+        }],
+        ..Project::default()
+    };
+    // The start marker at beat 1, so only the other track's note stands in the way there.
+    let placed = Clip { offset: 1.0, ..Clip::new(ContentId(1), 0.0, 8.0) };
+    let piano = super::clip::piano_clip_from(&project, TrackId(1), &placed).expect("a MIDI clip");
+    assert_eq!(piano.notes.len(), 1, "its own lane's notes");
+    assert_eq!(piano.others_first, Some(0.25), "the other track's first note");
+    let keymap = crate::settings::keymap::Keymap::default();
+    let grid = TimelineGrid::new(0.25, 40.0, 4.0, 4.0);
+    let menu = MenuCx { clip: &piano, keymap: &keymap, copied: None, grid, playhead: 0.0 };
+    let at = |beat: f64| MenuAt { pos: Pos2::ZERO, beat, note: None, opened: true };
+    assert!(!menu.origin_ok(at(1.0)), "the other track's note at 0.25 lies before beat 1");
+    assert!(menu.origin_ok(at(0.25)));
 }

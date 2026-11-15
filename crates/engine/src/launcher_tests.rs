@@ -1153,6 +1153,10 @@ fn a_resumed_clip_counts_the_loop_passes_already_played() {
     // No loop, or an empty one: one pass.
     assert_eq!(super::loop_passes(0.0, None, 100.0), 0);
     assert_eq!(super::loop_passes(0.0, Some((4.0, 4.0)), 100.0), 0);
+    // A start marker past the loop turns into it at once, one pass, as a fresh launch counts:
+    // loop 1 to 3, marker 7 plays from 1.
+    assert_eq!(super::loop_passes(7.0, Some((1.0, 3.0)), 0.1), 1);
+    assert_eq!(super::loop_passes(7.0, Some((1.0, 3.0)), 2.5), 2);
     // A loop vanishingly short for the time played: the count saturates, never wraps.
     assert_eq!(super::loop_passes(0.0, Some((0.0, 1e-20)), 1e6), u64::MAX);
 }
@@ -1162,12 +1166,22 @@ fn a_resumed_clip_counts_the_loop_passes_already_played() {
 /// would play other velocities.
 #[test]
 fn a_resumed_clip_rolls_the_velocities_the_uninterrupted_playback_rolls() {
-    const BLOCK: usize = 512;
     let rolled = |time: f64, key: u8| Note { velocity: 0.5, velocity_range: 60, ..note(time, key) };
-    let p = project(
-        vec![notes(1, vec![rolled(0.0, 60), rolled(1.0, 62), rolled(2.0, 64), rolled(3.0, 65)])],
-        vec![vec![with(clip(1, 4.0, true))]],
+    resumed_rolls_as_uninterrupted(
+        vec![rolled(0.0, 60), rolled(1.0, 62), rolled(2.0, 64), rolled(3.0, 65)],
+        clip(1, 4.0, true),
     );
+    // A start marker two loop lengths past the loop's end: the clip turns into the loop at once,
+    // and a resume counts that pass as the launch did.
+    let past = Clip { offset: 7.0, loop_range: Some(LoopRange { start: 1.0, end: 3.0 }), ..clip(1, 8.0, true) };
+    resumed_rolls_as_uninterrupted(vec![rolled(1.0, 60), rolled(1.5, 62), rolled(2.0, 64), rolled(2.5, 65)], past);
+}
+
+/// Renders `clip` of `notes` uninterrupted, and again resumed in a new renderer more than two
+/// loops in, and checks each note after the resume plays as loud as it did uninterrupted.
+fn resumed_rolls_as_uninterrupted(notes_of_clip: Vec<Note>, clip: Clip) {
+    const BLOCK: usize = 512;
+    let p = project(vec![notes(1, notes_of_clip)], vec![vec![with(clip)]]);
     let blocks = 17 * BEAT / BLOCK;
     let start = |renderer: &mut Renderer| {
         renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });

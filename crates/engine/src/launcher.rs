@@ -691,18 +691,20 @@ struct SlotPlan {
     has_stop: bool,
 }
 
-/// The loop passes completed `elapsed` beats after a launch from `offset`: 0 before the loop's
-/// end is first reached, then one more each time it is.
+/// The loop passes completed `elapsed` beats after a launch from `offset`, counted as a launch
+/// counts them: one more each time playback reaches the loop's end, and, for a start marker at or
+/// past that end, one at once, as the clip turns into the loop as soon as it starts.
 fn loop_passes(offset: f64, loop_range: Option<(f64, f64)>, elapsed: f64) -> u64 {
-    let beat = offset + elapsed;
-    match loop_range {
-        Some((start, end)) if beat >= end && end > start => {
-            // `as` saturates a quotient past u64 (a loop vanishingly short for the time played),
-            // and the pass after it saturates too rather than wrapping.
-            (((beat - end) / (end - start)).floor() as u64).saturating_add(1)
-        }
-        _ => 0,
+    let Some((start, end)) = loop_range.filter(|(start, end)| end > start) else { return 0 };
+    let from = suhina_model::played_from(offset, loop_range);
+    let turned = u64::from(offset >= end);
+    let beat = from + elapsed;
+    if beat < end {
+        return turned;
     }
+    // `as` saturates a quotient past u64 (a loop vanishingly short for the time played), and the
+    // passes after it saturate too rather than wrapping.
+    (((beat - end) / (end - start)).floor() as u64).saturating_add(1).saturating_add(turned)
 }
 
 /// A clip that is playing or fading out.

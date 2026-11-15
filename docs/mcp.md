@@ -255,7 +255,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Notes.** `note.list {track, index | scene}` lists a MIDI clip's notes (index, `id`, time and
   length in beats, key with 60 as C3, velocity 1 to 127, and `muted`); `note.add {..., notes: [{time, length, key,
-  velocity?}]}` appends notes and returns their indices and `ids`; `note.delete`, `note.move {beats?,
+  velocity?, velocityRange?}]}` (`velocityRange` as `note.list` gives it) appends notes and returns their indices and `ids`; `note.delete`, `note.move {beats?,
   semitones?}`, `note.resize {length? | by? | startBy?}` (`startBy` moves each start and keeps
   each end) and `note.setVelocity {velocity? | by? | velocities?}` (`velocities`: one value per
   entry of `notes`) take
