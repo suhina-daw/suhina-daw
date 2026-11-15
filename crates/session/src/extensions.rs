@@ -570,12 +570,10 @@ impl Extensions {
     }
 
     /// The programs' shared event queue and its signal, for the tests' frame pump.
-    pub(crate) fn event_queue(&self) -> Shared {
-        self.known
-            .iter()
-            .filter_map(|extension| extension.program.as_ref())
-            .find_map(|program| Some(program.shared()))
-            .expect("a running program")
+    /// The first running program's shared event queue and signal, for the tests' frame pump:
+    /// none while no program runs.
+    pub(crate) fn event_queue(&self) -> Option<Shared> {
+        self.known.iter().filter_map(|extension| extension.program.as_ref()).find_map(|program| Some(program.shared()))
     }
 
     /// Whether the queue already holds an event that answers `which`, without waiting: the

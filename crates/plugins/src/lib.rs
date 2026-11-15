@@ -1659,7 +1659,10 @@ fn take_in_edit(edits: &EditInbox, instance: u32, id: u32, value: f64) {
     }
 }
 
-fn wake() {
+/// Wakes the window when news it shows arrived from outside its frames: a plug-in host's
+/// unasked message (#714), or a surface program's event (a controller's command, a send-back)
+/// queued for the next look. A no-op when nothing installed a waker (the tests).
+pub fn wake() {
     if let Some(waker) = lock(&WAKER).clone() {
         waker();
     }

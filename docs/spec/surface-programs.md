@@ -93,6 +93,9 @@ Rules the message set keeps:
 - **One undo step per command run**, as for every front end; `gesture` makes a stream one step.
 - **Tokens** are chosen by the script, unique among its live ones; a token's answer or updates
   carry it back unchanged.
+- **A look answers the queue.** Commands, reads and send-backs are taken at the session's next
+  look — the window's frame. A program's event wakes the window, so the look comes at once,
+  also while the transport is stopped and no meters are asking for frames.
 - A message the other side does not know, or one whose fields are missing or of the wrong kind,
   is an `error` naming the reason; the sender decides whether to keep going.
 

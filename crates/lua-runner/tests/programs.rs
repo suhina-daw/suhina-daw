@@ -453,35 +453,42 @@ fn a_fader_storm_through_the_pipeline_lands_at_its_last_value() {
         let cc = 64 + (value % 64);
         fixture.midi.play("APC in", 1, &[0xB0, 0x07, cc]);
     }
-    // The frame pump: each frame services the session at the app's pace; the storm's last
-    // marker (the send-back that says CC 99 ran) ends the wait.
-    let ran = fixture.projects.test_extensions_pump_until(
-        |e| matches!(e, programs::Event::SendBack { bytes, .. } if bytes.as_slice() == [0xB1, 99, 1]),
-        4000,
-    );
-    if !ran {
-        // Where the chain stopped: the highest value whose marker made it into the queue, and
-        // how many of the storm's commands are still sitting there unanswered.
-        let mut highest = None;
-        for value in (64..99).rev() {
-            let marker = [0xB1, value, 1];
-            if fixture.projects.test_extensions_has_event(
-                |e| matches!(e, programs::Event::SendBack { bytes, .. } if bytes.as_slice() == &marker),
-            ) {
-                highest = Some(value);
-                break;
-            }
-        }
-        let commands = fixture.projects.test_extensions_has_event(|e| matches!(e, programs::Event::Command { .. }));
-        let info = fixture.projects.execute("extensions.info", &json!({ "id": "pipeline" })).expect("info");
-        panic!(
-            "the storm's last command never ran: the highest marker {highest:?}, commands still queued: {commands}, state: {}, lastError: {:?}",
-            info["state"], info["lastError"]
-        );
-    }
+    // The frame pump: enough looks for the storm's round trips (each command answers before
+    // the runner takes the next CC). What lands is the oracle: CC 99 is -60 + 99/127 of the
+    // fader's range, -8.6 dB — a send-back marker could not be waited on, being drained by
+    // the very look that writes it out.
+    fixture.projects.test_extensions_pump_frames(2000);
     let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
-    // CC 99 is -60 + 99/127 of the fader's range: -8.6 dB.
     assert_eq!(tracks[0]["volume_db"], json!(-8.6), "{tracks}");
+}
+
+/// A controller's command wakes the window when it queues, the way the plug-in host wakes it
+/// for unasked news (#714): while nothing plays the window asks for no frames of its own, and
+/// without the wake the command would sit until the background repaints — the fader's lag when
+/// the transport is stopped. The window's waker is the process's one, so a parallel test's
+/// events count too; the assertion can only ever pass early, never fail a working wake.
+#[test]
+fn a_programs_command_wakes_the_window() {
+    let woken = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    suhina_plugins::set_waker({
+        let woken = std::sync::Arc::clone(&woken);
+        move || {
+            woken.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    });
+    let mut fixture = Fixture::claiming("pipeline", SCRIPT_FADER_PIPELINE);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    let before = woken.load(std::sync::atomic::Ordering::Relaxed);
+    fixture.midi.play("APC in", 1, &[0xB0, 0x07, 64]);
+    // A few looks at the app's pace; CC 64 is -60 + 64/127 of the fader's range, -26.8 dB.
+    // The landed volume is the oracle: the runner's marker for the command is drained by the
+    // very look that writes it out, so a queue check would depend on the order threads ran in.
+    fixture.projects.test_extensions_pump_frames(50);
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
+    assert_eq!(tracks[0]["volume_db"], json!(-26.8), "{tracks}");
+    let after = woken.load(std::sync::atomic::Ordering::Relaxed);
+    assert!(after > before, "the command's queueing woke no frame");
 }
 
 /// The fader through the pipeline: each CC of one gesture runs the volume command and marks

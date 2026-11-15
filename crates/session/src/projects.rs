@@ -856,29 +856,25 @@ impl Projects {
     }
 
     /// The tests' frame pump: services the session (`poll_plugins`) at the app's frame pace —
-    /// the idle wait is the programs' own event signal with the frame's timeout — until the
-    /// queue holds an event that answers `which`, or the frames run out. What it asserts about
-    /// is the event's arrival and what the session does with it, neither of which depends on
-    /// when the threads run.
-    pub fn test_extensions_pump_until(
-        &mut self,
-        mut which: impl FnMut(&crate::extensions::programs::Event) -> bool,
-        max_frames: usize,
-    ) -> bool {
+    /// the idle wait is the programs' own event signal with the frame's timeout — for `frames`
+    /// looks. What a test asserts about afterwards is the state the looks left (a command's
+    /// landed volume), not an event in the queue: a send-back is drained by the very look that
+    /// writes it out, so a queue check would depend on the order the threads ran in.
+    pub fn test_extensions_pump_frames(&mut self, frames: usize) {
         let shared = self.extensions.event_queue();
-        for _ in 0..max_frames {
+        for _ in 0..frames {
             self.poll_plugins();
-            if self.extensions.has_event(&mut which) {
-                return true;
-            }
-            let (queue, signal) = &*shared;
+            // Nothing to wait on while no program runs: the looks service the rest of the
+            // session all the same.
+            let Some((queue, signal)) = shared.as_deref() else {
+                continue;
+            };
             let guard = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let _ = signal
                 .wait_timeout(guard, std::time::Duration::from_millis(10))
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
         }
         self.poll_plugins();
-        self.extensions.has_event(&mut which)
     }
 
     /// The plug-in library. Taking it for changing counts as changing it: sessions get a new

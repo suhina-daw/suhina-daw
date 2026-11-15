@@ -614,6 +614,11 @@ fn report(events: &Shared, event: Event) {
     let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     queue.push_back(event);
     signal.notify_one();
+    // The window is woken now, not at its next frame: while nothing plays, its meters ask for
+    // no frames, and a controller's command (a fader's, on the return trip) would wait for the
+    // background repaints — a moment when playing, a visible lag when stopped. The same wake
+    // the plug-in host gives its unasked news (#714).
+    suhina_plugins::wake();
 }
 
 /// A fresh name for a control socket, the plug-in host's scheme.
