@@ -44,6 +44,11 @@ start marker does not change which sixteenths are delayed. A pass ends where the
 that swing would start at or past the loop end (a loop ending off an eighth, the note in its last
 sixteenth) is left out of that pass, in the Arrangement and in the Launcher alike.
 
+Because swing follows the content's beats, moving every note of a clip that swings by a part of an
+eighth would change which of them are delayed. The piano roll's Set the clip's first beat here
+(`clip.setOrigin`) therefore takes only a beat on an eighth on such a clip
+([clip editor](ui-clip-editor.md) › Joining, fitting, cropping and splitting).
+
 ## The project's swing and a clip's own
 
 - The project has one swing amount (0 % at first). Every MIDI clip follows it until it gets its

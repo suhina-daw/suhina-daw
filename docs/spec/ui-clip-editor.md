@@ -866,6 +866,15 @@ notes are untouched, and a clip that holds audio refuses them.
   it together, so the clip keeps its sound and its place in the song while its own ruler starts
   there. The content has no beats before its first, so it is greyed out (and the command refused)
   where a note, the start marker or the loop's start lies before the point.
+  - **Swing:** swing delays the second sixteenth of each eighth of the content
+    ([swing](swing.md)), so on a clip that plays with swing (its own or the project's) the item is
+    greyed out, and the command refused, off an eighth: a shift by anything else would change which
+    notes are delayed and so the groove. On an eighth every note keeps its place within its eighth
+    and its swing.
+  - **Velocity ranges:** a note's rolled velocity depends on its content beat
+    ([ADR 0037](../decisions/0037-rolled-note-values.md)), so after the move each note with a range
+    rolls a new, equally repeatable series of velocities within the same range. The clip keeps no
+    record of the move.
 
 ## Muting
 

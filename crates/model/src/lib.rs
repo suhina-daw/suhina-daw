@@ -69,7 +69,7 @@ pub use overlap::{AudioOverlap, AudioOverlaps, MAX_AUDIO_OVERLAPS, OverlapClip, 
 pub use roll::{RollFor, RollPlace, note_roll, played_velocity};
 pub use scale::{ROOT_NAMES, Scale, ScaleMode};
 pub use shared::{Bytes, Shared};
-pub use swing::{ClipSwing, SWING_RANGE, swung};
+pub use swing::{ClipSwing, SWING_RANGE, on_eighth, swung};
 
 /// Identifies a [`Track`] within a project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

@@ -325,8 +325,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   marker and length become it, the loop is cut to it, notes outside are deleted and those across an
   edge cut; an arrangement clip moves with its start marker so what is left plays where it played.
   `clip.setOrigin {track, index | scene, beat}` makes content beat `beat` the first (1.1.1): the notes,
-  start marker and loop move back by it together and the clip sounds as before; it fails when
-  anything of the clip lies before the beat. Each is one undo step and refuses an audio clip
+  start marker and loop move back by it together and the clip sounds as before (velocity ranges
+  roll anew); it fails when anything of the clip lies before the beat, or, on a clip that swings,
+  when the beat is not on an eighth (a multiple of 0.5). Each is one undo step and refuses an audio clip
   ([spec](spec/ui-clip-editor.md) › Joining, fitting, cropping and splitting).
 - **Splitting notes.** `note.split {track, index | scene, notes, at | times, keepLonger?}` splits
   each named note that spans the beat `at` into two at `at` (the first keeps the start, the second

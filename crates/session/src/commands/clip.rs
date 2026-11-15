@@ -590,7 +590,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setOrigin",
-        label: "Make a content beat of a MIDI clip its first beat (1.1.1 on the clip's own ruler): every note, the start marker and the loop move back by it together, so the clip sounds and sits in the song as before. Refused when a note, the start marker or the loop's start lies before the beat",
+        label: "Make a content beat of a MIDI clip its first beat (1.1.1 on the clip's own ruler): every note, the start marker and the loop move back by it together, so the clip sounds and sits in the song as before. Refused when a note, the start marker or the loop's start lies before the beat, and on a clip that swings when the beat is not on an eighth (a multiple of 0.5)",
         params: &[
             CLIP_TRACK,
             CLIP,

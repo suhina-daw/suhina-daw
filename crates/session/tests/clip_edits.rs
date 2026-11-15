@@ -189,6 +189,31 @@ fn setting_the_first_beat_moves_the_content_and_keeps_the_sound() {
     assert!(run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 2.5 })).is_err());
 }
 
+/// Swing delays the second sixteenth of each content eighth, so on a clip that swings the first
+/// beat goes only on an eighth, where every note keeps its place within its eighth and its swing.
+#[test]
+fn a_clip_that_swings_takes_a_first_beat_only_on_an_eighth() {
+    let mut swinging = project(vec![note(1.0, 0.25, 60), note(1.75, 0.25, 62)]);
+    swinging.transport.swing = 0.5;
+    let mut session = Session::new(swinging);
+    run(&mut session, "clip.setStart", json!({ "track": 1, "index": 0, "offset": 1.0 })).unwrap();
+    let refused = run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 0.75 }));
+    assert!(refused.unwrap_err().contains("eighth"), "off an eighth the groove would change");
+    assert_eq!(notes(&session, 1), vec![(1.0, 0.25, 60), (1.75, 0.25, 62)], "nothing moved");
+    run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 0.5 })).unwrap();
+    assert_eq!(notes(&session, 1), vec![(0.5, 0.25, 60), (1.25, 0.25, 62)]);
+    undo(&mut session);
+
+    // A clip with its own swing of 0 plays straight, so any point will do.
+    let mut straight = project(vec![note(1.0, 0.25, 60)]);
+    straight.transport.swing = 0.5;
+    straight.arrangement.lanes[0].clips[0].swing = ClipSwing { amount: 0.0, own: true };
+    let mut session = Session::new(straight);
+    run(&mut session, "clip.setStart", json!({ "track": 1, "index": 0, "offset": 1.0 })).unwrap();
+    run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 0.75 })).unwrap();
+    assert_eq!(notes(&session, 1), vec![(0.25, 0.25, 60)]);
+}
+
 #[test]
 fn splitting_at_two_cuts_is_one_undo_step() {
     let mut session = Session::new(project(vec![note(0.0, 1.0, 60)]));

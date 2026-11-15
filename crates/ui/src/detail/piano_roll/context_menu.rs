@@ -246,8 +246,8 @@ impl MenuCx<'_> {
     }
 
     /// Whether the clicked point can become the clip's first beat: past 0, and nothing of the clip
-    /// (a note of any of its lanes, the start marker, the loop's start) lies before it
-    /// (`clip.setOrigin` refuses).
+    /// (a note of any of its lanes, the start marker, the loop's start) lies before it, and on an
+    /// eighth when the clip swings (`clip.setOrigin` refuses otherwise).
     pub(super) fn origin_ok(&self, at: MenuAt) -> bool {
         let beat = self.beat(at);
         let shape = self.clip.shape;
@@ -258,6 +258,8 @@ impl MenuCx<'_> {
             // A pattern's notes for other tracks move with the first beat too, and the command
             // refuses one before it.
             && self.clip.others_first.is_none_or(|first| first >= beat - EPSILON)
+            // Swing works within each eighth: a first beat off one would change the groove.
+            && (!self.clip.swings || suhina_engine::model::on_eighth(beat))
     }
 
     fn acting_notes<'s>(&'s self, state: &'s PianoRollState) -> impl Iterator<Item = &'s Note> + 's {

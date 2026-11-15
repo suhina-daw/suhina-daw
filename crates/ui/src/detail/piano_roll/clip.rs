@@ -34,6 +34,9 @@ pub struct PianoClip {
     /// Where the first note of the content's other lanes starts (a pattern's notes for other
     /// tracks), which `clip.setOrigin` checks as it checks this clip's own notes.
     pub others_first: Option<f64>,
+    /// Whether the clip plays with swing (its own or the project's), so that `clip.setOrigin`
+    /// takes only a first beat on an eighth.
+    pub swings: bool,
 }
 
 /// Where a clip plays its content on the arrangement.
@@ -194,6 +197,7 @@ pub(super) fn piano_clip_from(project: &Project, track: TrackId, clip: &Clip) ->
         ghosts: Ghosts::default(),
         scale: content.scale,
         others_first,
+        swings: clip.swing.effective(project.transport.swing) > 0.0,
     })
 }
 

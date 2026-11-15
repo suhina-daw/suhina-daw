@@ -271,6 +271,7 @@ fn clip(notes: Vec<Note>) -> PianoClip {
         ghosts: Ghosts::default(),
         scale: None,
         others_first: None,
+        swings: false,
     }
 }
 
@@ -1443,4 +1444,43 @@ fn the_first_beat_item_counts_a_patterns_other_lanes() {
     let at = |beat: f64| MenuAt { pos: Pos2::ZERO, beat, note: None, opened: true };
     assert!(!menu.origin_ok(at(1.0)), "the other track's note at 0.25 lies before beat 1");
     assert!(menu.origin_ok(at(0.25)));
+}
+
+/// Swing works within each content eighth, so on a clip that swings Set the clip's first beat here
+/// is greyed out off an eighth, where `clip.setOrigin` refuses: the groove would change.
+#[test]
+fn the_first_beat_item_takes_only_an_eighth_on_a_clip_that_swings() {
+    use suhina_engine::model::{ClipContent, ContentId, ContentLane, Extensions, Track};
+    let project = Project {
+        tracks: vec![Track::new(TrackId(1), "Keys")],
+        contents: vec![ClipContent {
+            id: ContentId(1),
+            name: "C1".into(),
+            length: 8.0,
+            lanes: vec![ContentLane {
+                target: Some(TrackId(1)),
+                data: LaneData::Notes(vec![note(2.0, 0.5, 60)].into()),
+            }]
+            .into(),
+            extensions: Extensions::default(),
+            scale: None,
+        }],
+        ..Project::default()
+    };
+    let mut placed = Clip { offset: 2.0, ..Clip::new(ContentId(1), 0.0, 8.0) };
+    let keymap = crate::settings::keymap::Keymap::default();
+    let grid = TimelineGrid::new(0.25, 40.0, 4.0, 4.0);
+    let at = |beat: f64| MenuAt { pos: Pos2::ZERO, beat, note: None, opened: true };
+
+    let straight = super::clip::piano_clip_from(&project, TrackId(1), &placed).expect("a MIDI clip");
+    assert!(!straight.swings);
+    let menu = MenuCx { clip: &straight, keymap: &keymap, copied: None, grid, playhead: 0.0 };
+    assert!(menu.origin_ok(at(0.75)), "a straight clip takes any point");
+
+    placed.swing = suhina_engine::model::ClipSwing { amount: 0.5, own: true };
+    let swung = super::clip::piano_clip_from(&project, TrackId(1), &placed).expect("a MIDI clip");
+    assert!(swung.swings);
+    let menu = MenuCx { clip: &swung, keymap: &keymap, copied: None, grid, playhead: 0.0 };
+    assert!(!menu.origin_ok(at(0.75)), "off an eighth the groove would change");
+    assert!(menu.origin_ok(at(1.5)), "on an eighth every note keeps its swing");
 }

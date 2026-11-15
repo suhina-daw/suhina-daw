@@ -10,7 +10,7 @@
 //! them: it has no notes.
 
 use serde_json::{Value, json};
-use suhina_model::{LaneData, LoopRange, Note, Notes};
+use suhina_model::{LaneData, LoopRange, Note, Notes, on_eighth};
 
 use crate::commands::Args;
 use crate::notes::{
@@ -291,7 +291,9 @@ fn check_neighbours(p: &suhina_model::Project, at: ClipAt, start: f64, length: f
 /// `clip.setOrigin`: content beat `beat` becomes the content's beat 0 (1.1.1 on the clip's own
 /// ruler): every note, the start marker and the loop move back by it together, so the clip sounds
 /// and sits in the song as before. Nothing of the clip may lie before the beat, as the content has
-/// no beats before 0: no note, not the start marker, not the loop's start.
+/// no beats before 0: no note, not the start marker, not the loop's start. On a clip that swings
+/// the beat must lie on an eighth: swing delays the second sixteenth of each content eighth, so a
+/// shift by anything else would move which notes it delays and change the groove.
 pub(crate) fn set_origin(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let beat = Args::new(params).opt_f64("beat")?.ok_or("give beat, the content beat that becomes the first")?;
     if !(0.0..=MAX_BEAT).contains(&beat) {
@@ -302,6 +304,12 @@ pub(crate) fn set_origin(session: &mut Session, params: &Value) -> Result<Value,
     let clip = clip_at(&session.project, at).ok_or("the clip is missing")?.clone();
     if beat == 0.0 {
         return Ok(json!({ "beat": 0.0, "offset": clip.offset }));
+    }
+    if clip.swing.effective(session.project.transport.swing) > 0.0 && !on_eighth(beat) {
+        return Err(format!(
+            "the clip swings, so its first beat must lie on an eighth (a multiple of 0.5), got {beat}"
+        )
+        .into());
     }
     if clip.offset < beat - EPSILON {
         return Err(format!(
