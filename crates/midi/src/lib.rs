@@ -123,9 +123,9 @@ impl Drop for Port {
 }
 
 impl MidiSystem for Midi {
-    fn ports(&self) -> Result<Vec<String>, String> {
+    fn ports(&self) -> Result<Vec<(String, String)>, String> {
         let input = client()?;
-        Ok(input.ports().iter().filter_map(|port| input.port_name(port).ok()).collect())
+        Ok(input.ports().iter().filter_map(|port| Some((input.port_name(port).ok()?, port.id()))).collect())
     }
 
     fn open(&self, name: &str, input: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String> {
@@ -163,9 +163,9 @@ impl MidiSystem for Midi {
         Ok(Box::new(Port { connection: Some(connection), input, port: id }))
     }
 
-    fn outputs(&self) -> Result<Vec<String>, String> {
+    fn outputs(&self) -> Result<Vec<(String, String)>, String> {
         let output = MidiOutput::new(CLIENT).map_err(|e| e.to_string())?;
-        Ok(output.ports().iter().filter_map(|port| output.port_name(port).ok()).collect())
+        Ok(output.ports().iter().filter_map(|port| Some((output.port_name(port).ok()?, port.id()))).collect())
     }
 
     fn open_output(&self, name: &str) -> Result<Box<dyn MidiOut>, String> {
@@ -329,7 +329,7 @@ mod tests {
         // Without a MIDI system (a container without the ALSA sequencer) this is an error, not a
         // crash; with one it lists what is there.
         match Midi::new().ports() {
-            Ok(ports) => assert!(ports.iter().all(|p| !p.is_empty())),
+            Ok(ports) => assert!(ports.iter().all(|(name, id)| !name.is_empty() && !id.is_empty())),
             Err(e) => assert!(!e.is_empty()),
         }
         let input = Arc::new(LiveInput::default());

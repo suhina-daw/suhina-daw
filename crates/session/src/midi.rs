@@ -44,15 +44,18 @@ pub trait RawSink: Send + Sync {
 /// The MIDI input ports of the system, and opening one of them; made by the MIDI layer, which
 /// is the only code that opens a MIDI device.
 pub trait MidiSystem: Send + Sync {
-    /// The input ports there are now, by name.
-    fn ports(&self) -> Result<Vec<String>, String>;
+    /// The input ports there are now, each by name and the system's unique id for it: the id
+    /// changes when the device re-enumerates, even when the port was absent too briefly for a
+    /// scan to see it gone.
+    fn ports(&self) -> Result<Vec<(String, String)>, String>;
 
     /// Opens the input port `name`; what it plays goes to `input` until the returned value is
     /// dropped, which closes the port.
     fn open(&self, name: &str, input: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String>;
 
-    /// The output ports there are now, by name; a system with none lists none.
-    fn outputs(&self) -> Result<Vec<String>, String> {
+    /// The output ports there are now, each by name and the system's unique id for it; a system
+    /// with none lists none.
+    fn outputs(&self) -> Result<Vec<(String, String)>, String> {
         Ok(Vec::new())
     }
 
@@ -160,12 +163,17 @@ pub(crate) struct MidiInputs {
     pub(crate) checked: Option<std::time::Instant>,
     /// The ports there were then, by name.
     pub(crate) ports: Vec<String>,
+    /// The system's unique id for each port there was then: a port that shows up again with a
+    /// different id re-enumerated, even when it was gone too briefly for a scan to see.
+    ids: std::collections::BTreeMap<String, String>,
     /// The claims epoch the last look synced at, so a changed claim set is seen at once
     /// ([`crate::extensions::Extensions::claims_epoch`]).
     pub(crate) synced_epoch: u64,
     /// The output ports there were at the last look, so a port that vanished and came back is
     /// told from one that stayed.
     last_outputs: Vec<String>,
+    /// The system's unique id for each output port there was then, as [`Self::ids`] for inputs.
+    out_ids: std::collections::BTreeMap<String, String>,
 }
 
 /// How often the ports are looked at again for controllers plugged in or taken out.
@@ -195,12 +203,29 @@ impl MidiInputs {
         let outputs = system.outputs().unwrap_or_default();
         // A port that vanished and came back between looks re-enumerated: its old connection
         // died with the device, so every entry it held is dropped here and reopened fresh
-        // below — the claim by token would otherwise keep a connection to nothing.
-        let returned: BTreeSet<String> = ports.iter().filter(|p| !self.ports.contains(*p)).cloned().collect();
+        // below — the claim by token would otherwise keep a connection to nothing. A port that
+        // never left the list but answers with a new unique id re-enumerated inside one scan —
+        // the same death, invisible to a look that only reads names, so the id tells it.
+        let port_names: Vec<String> = ports.iter().map(|(n, _)| n.clone()).collect();
+        let out_names: Vec<String> = outputs.iter().map(|(n, _)| n.clone()).collect();
+        let returned: BTreeSet<String> =
+            ports.iter().filter(|(p, _)| !self.ports.contains(p)).map(|(p, _)| p.clone()).collect();
         let returned_outs: BTreeSet<String> =
-            outputs.iter().filter(|p| !self.last_outputs.contains(*p)).cloned().collect();
-        self.ports.clone_from(&ports);
-        self.last_outputs.clone_from(&outputs);
+            outputs.iter().filter(|(p, _)| !self.last_outputs.contains(p)).map(|(p, _)| p.clone()).collect();
+        let renumbered: BTreeSet<String> = ports
+            .iter()
+            .filter(|(p, id)| self.ids.get(p).is_some_and(|held| held != id))
+            .map(|(p, _)| p.clone())
+            .collect();
+        let renumbered_outs: BTreeSet<String> = outputs
+            .iter()
+            .filter(|(p, id)| self.out_ids.get(p).is_some_and(|held| held != id))
+            .map(|(p, _)| p.clone())
+            .collect();
+        self.ports = port_names.clone();
+        self.last_outputs = out_names.clone();
+        self.ids = ports.iter().cloned().collect();
+        self.out_ids = outputs.iter().cloned().collect();
         // What each running program claims: the ports its patterns match, the first program
         // whose patterns match a port taking it (two manifests may both name one port).
         let mut taken: BTreeSet<String> = BTreeSet::new();
@@ -208,17 +233,20 @@ impl MidiInputs {
         for claim in claims {
             let free =
                 |name: &&String| !taken.contains(*name) && claim.patterns.iter().any(|pat| port_matches(pat, name));
-            let inputs: Vec<String> = ports.iter().filter(free).cloned().collect();
-            let outs: Vec<String> = outputs.iter().filter(free).cloned().collect();
+            let inputs: Vec<String> = port_names.iter().filter(free).cloned().collect();
+            let outs: Vec<String> = out_names.iter().filter(free).cloned().collect();
             taken.extend(inputs.iter().cloned());
             taken.extend(outs.iter().cloned());
             matched.push((claim.id, inputs, outs));
         }
         let mut notices = Vec::new();
-        // A returned port's stale entries go first: its old connection died with the device.
-        self.raw.retain(|(name, ..)| !returned.contains(name));
-        self.outs.retain(|(name, ..)| !returned_outs.contains(name) && !returned.contains(name));
-        self.open.retain(|(name, _)| !returned.contains(name));
+        // A returned or re-enumerated port's stale entries go first: its old connection died
+        // with the device either way.
+        let stale: BTreeSet<String> = returned.union(&renumbered).cloned().collect();
+        let stale_outs: BTreeSet<String> = returned_outs.union(&renumbered_outs).cloned().collect();
+        self.raw.retain(|(name, ..)| !stale.contains(name));
+        self.outs.retain(|(name, ..)| !stale_outs.contains(name) && !stale.contains(name));
+        self.open.retain(|(name, _)| !stale.contains(name));
         // Programs that stopped: their ports close first, so a port another program claims
         // now can be opened for it.
         self.raw.retain(|(_, id, _, _)| matched.iter().any(|(id2, _, _)| id2 == id));
@@ -280,9 +308,9 @@ impl MidiInputs {
         // The usual pass: every port that is on, unclaimed, and not open yet.
         let off = &self.off;
         let claimed = &taken;
-        self.open.retain(|(name, _)| ports.contains(name) && !off.contains(name) && !claimed.contains(name));
-        self.failed.retain(|(name, _)| ports.contains(name) && !off.contains(name));
-        for name in &ports {
+        self.open.retain(|(name, _)| port_names.contains(name) && !off.contains(name) && !claimed.contains(name));
+        self.failed.retain(|(name, _)| port_names.contains(name) && !off.contains(name));
+        for name in &port_names {
             if self.off.contains(name) || claimed.contains(name) || self.open.iter().any(|(open, _)| open == name) {
                 continue;
             }
@@ -322,17 +350,20 @@ impl MidiInputs {
     }
 
     /// Every port there is, with whether it is on, open (by the session, or claimed raw by a
-    /// running program), and why it could not be opened.
+    /// running program), and why it could not be opened. The system's unique id rides along:
+    /// it changes when the device re-enumerates, which is how a port that blinked off the bus
+    /// too briefly for a scan is told after the fact.
     fn describe(&self) -> Result<Value, CommandError> {
         let system = self.system.as_ref().ok_or_else(no_midi)?;
         let ports = system.ports().map_err(|e| CommandError(format!("the MIDI inputs could not be listed: {e}")))?;
         Ok(Value::Array(
             ports
                 .iter()
-                .map(|name| {
+                .map(|(name, id)| {
                     let claimed = self.raw.iter().any(|(p, _, _, _)| p == name);
                     json!({
                         "name": name,
+                        "id": id,
                         "enabled": !self.off.contains(name),
                         "open": self.open.iter().any(|(open, _)| open == name) || claimed,
                         "claimed": claimed,
@@ -392,7 +423,7 @@ fn set_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandEr
     let system = midi.system.clone().ok_or_else(no_midi)?;
     let ports = system.ports().map_err(|e| CommandError(format!("the MIDI inputs could not be listed: {e}")))?;
     // A port may be turned off while it is unplugged, so it stays off when it comes back.
-    if enabled && !ports.iter().any(|p| p == port) && !midi.off.contains(port) {
+    if enabled && !ports.iter().any(|(p, _)| p == port) && !midi.off.contains(port) {
         return Err(format!("no MIDI input is called {port:?}; midi.inputs lists them").into());
     }
     if enabled {

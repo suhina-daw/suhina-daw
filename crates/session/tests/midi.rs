@@ -23,7 +23,7 @@ const SR: u32 = 48_000;
 /// records the close.
 #[derive(Default)]
 struct Ports {
-    ports: Mutex<Vec<String>>,
+    ports: Mutex<Vec<(String, String)>>,
     /// A port that cannot be opened.
     broken: Option<String>,
     opened: Mutex<Vec<String>>,
@@ -40,7 +40,7 @@ impl Drop for Open {
 }
 
 impl MidiSystem for Ports {
-    fn ports(&self) -> Result<Vec<String>, String> {
+    fn ports(&self) -> Result<Vec<(String, String)>, String> {
         Ok(self.ports.lock().unwrap().clone())
     }
 
@@ -99,7 +99,7 @@ impl Stand {
 
 fn ports(names: &[&str], broken: Option<&str>) -> Arc<Ports> {
     Arc::new(Ports {
-        ports: Mutex::new(names.iter().map(|n| n.to_string()).collect()),
+        ports: Mutex::new(names.iter().map(|n| (n.to_string(), format!("{n}#1"))).collect()),
         broken: broken.map(String::from),
         ..Ports::default()
     })
@@ -145,7 +145,7 @@ fn every_port_opens_until_turned_off() {
     let listed = run(&mut projects, "midi.inputs", json!({})).unwrap();
     assert_eq!(
         listed["inputs"][0],
-        json!({ "name": "Keys", "enabled": true, "open": true, "claimed": false, "error": null })
+        json!({ "name": "Keys", "id": "Keys#1", "enabled": true, "open": true, "claimed": false, "error": null })
     );
     assert_eq!(listed["connected"], json!(false), "no project plays");
 
@@ -159,8 +159,8 @@ fn every_port_opens_until_turned_off() {
     assert!(projects.midi_inputs_off().is_empty());
 
     // A port plugged in later opens the next time the ports are looked at; one taken out closes.
-    midi.ports.lock().unwrap().retain(|p| p != "Keys");
-    midi.ports.lock().unwrap().push("Drums".into());
+    midi.ports.lock().unwrap().retain(|(p, _)| p != "Keys");
+    midi.ports.lock().unwrap().push(("Drums".into(), "Drums#1".into()));
     let listed = run(&mut projects, "midi.inputs", json!({})).unwrap();
     let names: Vec<&str> = listed["inputs"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["Pads", "Drums"]);

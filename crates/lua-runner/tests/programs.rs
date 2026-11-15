@@ -105,8 +105,8 @@ impl Fixture {
         });
         std::fs::write(root.join(id).join("extension.json"), manifest.to_string()).expect("the manifest is written");
         let midi = Arc::new(Midi {
-            inputs: Arc::new(Mutex::new(inputs.iter().map(|n| n.to_string()).collect())),
-            outputs: Arc::new(Mutex::new(outputs.iter().map(|n| n.to_string()).collect())),
+            inputs: Arc::new(Mutex::new(inputs.iter().map(|n| (n.to_string(), format!("{n}#1"))).collect())),
+            outputs: Arc::new(Mutex::new(outputs.iter().map(|n| (n.to_string(), format!("{n}#1"))).collect())),
             ..Midi::default()
         });
         let system: Arc<dyn MidiSystem> = midi.clone();
@@ -519,14 +519,37 @@ fn a_returned_port_is_reopened_fresh() {
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
     assert_eq!(fixture.midi.raw_opens("APC in"), 1);
     // The device vanishes: the port leaves the system's list.
-    fixture.midi.inputs.lock().unwrap().retain(|p| p != "APC in");
+    fixture.midi.inputs.lock().unwrap().retain(|(p, _)| p != "APC in");
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
     assert!(fixture.midi.was_closed("APC in"), "the port closed with the device");
     // The device comes back: the same name re-enumerates.
-    fixture.midi.inputs.lock().unwrap().push("APC in".to_string());
+    fixture.midi.inputs.lock().unwrap().push(("APC in".into(), "APC in#2".into()));
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
     assert_eq!(fixture.midi.raw_opens("APC in"), 2, "reopened fresh");
     // And it still plays into the program.
+    fixture.midi.play("APC in", 1, &[0x90, 60, 100]);
+    fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
+    fixture.projects.poll_plugins();
+    assert_eq!(fixture.midi.written_for("APC out").len(), 1);
+}
+
+/// A port that re-enumerates without ever leaving the system's list — the device blinked off
+/// the bus and back inside one scan's window, so the name never went away — is reopened fresh
+/// all the same: the system's unique id for the name changed, and the old connection died
+/// with the device either way. The program's ports are told again, so its LED cache resets
+/// and the lights come back without a restart by hand.
+#[test]
+fn a_port_that_re_enumerates_under_the_scan_is_reopened_fresh() {
+    let mut fixture = Fixture::claiming("blink", SCRIPT_ECHO);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
+    assert_eq!(fixture.midi.raw_opens("APC in"), 1);
+    // The blink: the same name, the system's id for it renewed.
+    *fixture.midi.inputs.lock().unwrap() = vec![("APC in".into(), "APC in#9".into())];
+    fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
+    assert_eq!(fixture.midi.raw_opens("APC in"), 2, "reopened without the name ever leaving");
+    // And the fresh connection plays into the program, whose ports were told again.
     fixture.midi.play("APC in", 1, &[0x90, 60, 100]);
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
@@ -537,8 +560,8 @@ fn a_returned_port_is_reopened_fresh() {
 /// what a program writes to an output port is recorded with the port's name.
 #[derive(Default)]
 struct Midi {
-    inputs: Arc<Mutex<Vec<String>>>,
-    outputs: Arc<Mutex<Vec<String>>>,
+    inputs: Arc<Mutex<Vec<(String, String)>>>,
+    outputs: Arc<Mutex<Vec<(String, String)>>>,
     /// The input ports opened raw for a program now, with the sink each plays into.
     raw: RawOpen,
     /// Every raw open, ever: a restart opens the port again for the new process.
@@ -593,11 +616,11 @@ impl MidiOut for Out {
 }
 
 impl MidiSystem for Midi {
-    fn ports(&self) -> Result<Vec<String>, String> {
+    fn ports(&self) -> Result<Vec<(String, String)>, String> {
         Ok(self.inputs.lock().unwrap().clone())
     }
 
-    fn outputs(&self) -> Result<Vec<String>, String> {
+    fn outputs(&self) -> Result<Vec<(String, String)>, String> {
         Ok(self.outputs.lock().unwrap().clone())
     }
 

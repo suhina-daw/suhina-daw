@@ -573,7 +573,7 @@ impl Extensions {
     /// The first running program's shared event queue and signal, for the tests' frame pump:
     /// none while no program runs.
     pub(crate) fn event_queue(&self) -> Option<Shared> {
-        self.known.iter().filter_map(|extension| extension.program.as_ref()).find_map(|program| Some(program.shared()))
+        self.known.iter().filter_map(|extension| extension.program.as_ref()).map(|program| program.shared()).next()
     }
 
     /// Whether the queue already holds an event that answers `which`, without waiting: the
@@ -582,7 +582,7 @@ impl Extensions {
         self.known.iter().filter_map(|extension| extension.program.as_ref()).any(|program| {
             let (queue, _) = &*program.shared();
             let queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            queue.iter().any(|e| which(e))
+            queue.iter().any(&mut which)
         })
     }
 
