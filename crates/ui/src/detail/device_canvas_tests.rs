@@ -235,7 +235,7 @@ fn a_themes_device_knob_replaces_a_dials_own_face_in_the_states_it_covers() {
     let theme_green = Color32::from_rgb(0x12, 0xAB, 0x34);
     let frame = |pointer: Option<Pos2>| {
         let events = pointer.map(egui::Event::PointerMoved).into_iter().collect();
-        let output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+        let mut output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
             let _frame = crate::kit::native_css::frame(ui);
             show(
                 ui,
@@ -248,9 +248,13 @@ fn a_themes_device_knob_replaces_a_dials_own_face_in_the_states_it_covers() {
                 &mut Vec::new(),
             )
         });
-        output.textures_delta.set.values().flat_map(|deltas| deltas.iter()).any(|delta| match &delta.image {
-            egui::ImageData::Color(image) => image.pixels.contains(&theme_green),
-        })
+        let painted =
+            output.textures_delta.set.values().flat_map(|deltas| deltas.iter()).any(|delta| match &delta.image {
+                egui::ImageData::Color(image) => image.pixels.contains(&theme_green),
+            });
+        // egui asserts in debug builds that a frame's texture deltas were handled before they drop.
+        output.textures_delta.clear();
+        painted
     };
     assert!(!frame(None), "not hovered: the device's own face, not the theme's hover artwork");
     let centre = Pos2::new(30.0, 40.0);
