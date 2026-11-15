@@ -46,6 +46,8 @@ pub(super) fn single_click(
         }
         // Draw and Paint add a note; so does Select when a click on empty grid draws (the
         // Mouse-first setting, › Workflow modes).
+        // Ctrl (Cmd) makes them select: a click on an empty spot adds nothing.
+        (None, Tool::Draw | Tool::Paint) if inputs.command => {}
         (None, Tool::Draw | Tool::Paint) => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Select) if workflow.empty_click_draws => click_adds(gesture, state, actions, pos, inputs),
         (None, Tool::Slice) => {}

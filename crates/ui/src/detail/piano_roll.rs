@@ -409,6 +409,10 @@ pub fn show(
             (Some(Gesture::Slice { .. }), _, _) | (None, _, Tool::Slice) => drawn(Tool::Slice),
             (Some(Gesture::Erase), _, _) | (None, _, Tool::Erase) => drawn(Tool::Erase),
             (Some(Gesture::Mute), _, _) | (None, _, Tool::Mute) => drawn(Tool::Mute),
+            // Ctrl (Cmd) makes Draw and Paint select: the ordinary pointer over the empty grid,
+            // and while their selecting rectangle is dragged (› Drawing notes).
+            (Some(Gesture::Select { .. }), _, _) => None,
+            (None, None, Tool::Draw | Tool::Paint) if ui.input(|i| i.modifiers.command) => None,
             (Some(Gesture::Paint), _, _) | (None, _, Tool::Paint) => drawn(Tool::Paint),
             (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, Tool::Draw) => drawn(Tool::Draw),
             // A note drawn with the Select tool (a double-click, or Left click draws) keeps the
@@ -588,6 +592,7 @@ pub fn show(
         let sounded = match (note_at(&layout, &clip.notes, pos), state.tool) {
             (_, Tool::Erase | Tool::Mute | Tool::Slice) => None,
             (Some((index, _)), _) => clip.notes.get(index).map(|n| n.key),
+            (None, Tool::Draw | Tool::Paint) if inputs.command => None,
             (None, Tool::Draw | Tool::Paint) => state.new_note(&layout, clip, grid, pos, inputs.alt).map(|n| n.key),
             (None, Tool::Select) if workflow.empty_click_draws || state.press_draw => {
                 state.new_note(&layout, clip, grid, pos, inputs.alt).map(|n| n.key)
@@ -623,6 +628,16 @@ pub fn show(
                 Gesture::Mute
             }
             (None, Tool::Mute) => Gesture::Mute,
+            // Ctrl (Cmd) with Draw or Paint, from an empty spot, drags a selecting rectangle as
+            // Select does, so notes are picked without changing tools; Shift adds to what is
+            // selected (› Drawing notes).
+            (None, Tool::Draw | Tool::Paint) if inputs.command => {
+                let add = inputs.shift;
+                if !add {
+                    state.clear_span();
+                }
+                Gesture::Select { from, add }
+            }
             // Shift and Draw repeat the last note's length along the row the drag started in:
             // the first note now, the rest as the drag reaches ([`Gestures::draw_run`]); the
             // whole stroke is one `note.add` when the drag ends.

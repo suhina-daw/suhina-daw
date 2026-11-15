@@ -116,6 +116,9 @@ fn ctrl_j_consolidates_the_selected_clip_and_undo_brings_it_back() {
     let (old, new) = (fill(&before), fill(&after));
     assert_eq!(new.map(|(_, length)| length), Some(16.0));
     assert_ne!(old.map(|(content, _)| content), new.map(|(content, _)| content), "a new content");
+    // The new clip is selected in place of the old, so its notes stay in the detail area.
+    let made = after.iter().find(|c| c.start == 112.0).map(|c| c.id.0);
+    assert_eq!(harness.state().arrangement().selected_clip().map(|(_, id)| id.0), made);
 
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();

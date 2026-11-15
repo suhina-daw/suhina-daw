@@ -479,11 +479,11 @@ pub(super) fn draw(
             continue;
         }
         let velocity = f32::from(suhina_session::midi_velocity(note.velocity));
-        // A note an erase stroke has passed over is nearly gone; a muted note, and one a mute
-        // stroke holds, is faded with a dashed edge, so it is clearly there and clearly not
-        // playing (› Muting).
-        let muted = note.muted || (state.muting.contains(&i) && state.mute_target);
-        let unmuting = state.muting.contains(&i) && !state.mute_target;
+        // A note an erase stroke has passed over is nearly gone; a muted note is faded with a
+        // dashed edge, so it is clearly there and clearly not playing. A note a mute stroke has
+        // passed over is drawn as the stroke leaves it, muted or unmuted, before the button is
+        // up (› Muting).
+        let muted = if state.muting.contains(&i) { state.mute_target } else { note.muted };
         let erasing = state.erasing.contains(&i);
         let selected = state.selected.contains(&i) || selecting.is_some_and(|r| r.intersects(rect));
         let alpha = note_alpha(velocity, NoteLook { erasing, muted, selected, outside: outside(&note) });
@@ -507,11 +507,6 @@ pub(super) fn draw(
         }
         if selected && style.border.is_none() {
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, outline), StrokeKind::Inside);
-        }
-        if unmuting {
-            // The stroke is bringing this note back: a solid edge says so before the button is up.
-            let edge = muted_style.border.unwrap_or(dashes);
-            grid_painter.rect_stroke(rect, 0.0, Stroke::new(1.0, edge), StrokeKind::Inside);
         }
         // Every note says which it is; on a block too small for its name, as much as fits.
         let readable = if alpha >= 0.55 { name_on_light } else { name_on_dark };

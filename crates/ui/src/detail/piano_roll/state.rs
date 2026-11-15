@@ -289,6 +289,9 @@ pub struct PianoRollState {
     /// Frames left to keep the selected notes in view: a key moved or sized them, and the view
     /// follows them on the frame the command lands and the one after.
     pub(super) reveal_selection: u8,
+    /// Where Ctrl+Shift and an arrow are anchored, with the selection their last step left: a
+    /// selection changed any other way is anchored afresh.
+    pub(super) step_anchor: Option<(BTreeSet<usize>, super::select_steps::Anchor)>,
     /// The key the key column is playing, if any, and where the pointer last was on it: the
     /// window turns a change into `preview.noteOn` and `preview.noteOff`.
     pub(super) playing_key: Option<u8>,
@@ -403,6 +406,7 @@ impl Default for PianoRollState {
             scrolled_by_hand: false,
             centred_for: 0.0,
             reveal_selection: 0,
+            step_anchor: None,
             playing_key: None,
             hover_key: None,
             last_click: None,
@@ -679,7 +683,7 @@ impl PianoRollState {
             }
             // Join, Fit to time range, Crop and Split clip (› Joining, fitting, cropping and
             // splitting): one command each.
-            "pianoRoll.join" | "pianoRoll.fitToTime" | "pianoRoll.crop" | "pianoRoll.splitClip" => {
+            "pianoRoll.join" | "pianoRoll.fitToTime" | "pianoRoll.crop" | "pianoRoll.splitNotes" => {
                 return self.clip_edit(action, clip, &acting);
             }
             _ if chosen.is_empty() => return None,
@@ -697,6 +701,12 @@ impl PianoRollState {
         };
         let (id, beats, keys) = match action {
             "selection.copy" => return Some(Action::new("note.copy", params)),
+            // The mute key (0): the selected notes muted, or unmuted when every one of them is
+            // muted, one `note.setMuted` (› Muting).
+            "selection.mute" => {
+                params["muted"] = json!(!chosen.iter().all(|n| n.muted));
+                return Some(Action::new("note.setMuted", params));
+            }
             // Alt+Shift+Up and Down: the selection's velocity range by one step (› Velocity range).
             "pianoRoll.rangeUp" | "pianoRoll.rangeDown" => {
                 params["by"] = json!(if action == "pianoRoll.rangeUp" { 1 } else { -1 });
@@ -800,8 +810,8 @@ impl PianoRollState {
     }
 
     /// The command a clip edit key runs on `clip`, with `acting` the notes the edit keys act on;
-    /// `None` where it has nothing to act on: Join without two notes, Fit, Crop and Split clip
-    /// without a time selection (Split clip never splits at the playhead), Split clip in a slot.
+    /// `None` where it has nothing to act on: Join without two notes, Fit and Crop without a time
+    /// selection, Split notes with nothing to cut.
     pub(super) fn clip_edit(&mut self, action: &str, clip: &PianoClip, acting: &BTreeSet<usize>) -> Option<Action> {
         let mut params = clip.address.clone();
         let span = self.span.as_ref().map(|s| (round_beat(s.start), round_beat(s.end))).filter(|(s, e)| e > s);
@@ -841,12 +851,17 @@ impl PianoRollState {
                 // refused crop (a stretch too short, a neighbour in the way) leaves it as it was.
                 Some(Action::new("clip.crop", params))
             }
-            "pianoRoll.splitClip" => {
-                let (start, end) = span?;
-                self.split_clip_at(clip, &[(start, false), (end, true)])
-            }
+            "pianoRoll.splitNotes" => split_notes(clip, acting, span, self.beat_width),
             _ => None,
         }
+    }
+
+    /// Split clip at the time selection (the menu): the clip cut at the selection's edges, as
+    /// [`Self::split_clip_at`] cuts it; `None` without a time selection.
+    pub(super) fn split_clip_span(&mut self, clip: &PianoClip) -> Option<Action> {
+        let (start, end) =
+            self.span.as_ref().map(|s| (round_beat(s.start), round_beat(s.end))).filter(|(s, e)| e > s)?;
+        self.split_clip_at(clip, &[(start, false), (end, true)])
     }
 
     /// Whether `note.join` has something to join among `acting`: two of them on one key, however far
@@ -1065,4 +1080,47 @@ pub struct Context<'a> {
     pub start_marker: Option<f64>,
     /// The clip is on the arrangement: a click on the ruler sets where playback starts (#951).
     pub seeks: bool,
+}
+
+/// The most cuts Split notes makes on the grid in one go.
+const MAX_CHOPS: usize = 1024;
+
+/// Split notes (Ctrl+E): with a time selection that runs across notes, those notes (the acting
+/// ones, or with none every note of the clip) are cut at its edges; otherwise the acting notes are
+/// cut at every grid line inside them. One `note.split` with `ats`, one undo step; `None` with
+/// nothing to cut (no notes, or no grid line or edge inside one).
+fn split_notes(
+    clip: &PianoClip,
+    acting: &BTreeSet<usize>,
+    span: Option<(f64, f64)>,
+    beat_width: f32,
+) -> Option<Action> {
+    let spans = |n: &Note, at: f64| n.time < at - EPSILON && n.time + n.duration > at + EPSILON;
+    let action = |notes: Vec<usize>, ats: Vec<f64>| {
+        let mut params = clip.address.clone();
+        params["notes"] = json!(notes);
+        params["ats"] = json!(ats);
+        Action::new("note.split", params)
+    };
+    if let Some((start, end)) = span {
+        let named: Vec<usize> =
+            if acting.is_empty() { (0..clip.notes.len()).collect() } else { acting.iter().copied().collect() };
+        let cut: Vec<usize> = named
+            .into_iter()
+            .filter(|i| clip.notes.get(*i).is_some_and(|n| spans(n, start) || spans(n, end)))
+            .collect();
+        if !cut.is_empty() {
+            return Some(action(cut, vec![start, end]));
+        }
+    }
+    let chosen: Vec<&Note> = acting.iter().filter_map(|i| clip.notes.get(*i)).collect();
+    let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
+    let last = chosen.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
+    let ats: Vec<f64> = note_grid(clip, beat_width)
+        .lines(first, last, MAX_CHOPS)
+        .into_iter()
+        .map(|(beat, _)| round_beat(beat))
+        .filter(|beat| chosen.iter().any(|n| spans(n, *beat)))
+        .collect();
+    (!ats.is_empty()).then(|| action(acting.iter().copied().collect(), ats))
 }

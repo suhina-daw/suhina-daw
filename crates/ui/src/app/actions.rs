@@ -209,6 +209,8 @@ impl App {
             {
                 actions.extend(self.piano_key(action))
             }
+            // The mute key mutes the selected notes, or unmutes them when every one is muted.
+            "selection.mute" if self.piano_has_keyboard() => actions.extend(self.piano_key(action)),
             // Notes copied last paste into the clip the piano roll shows, even when a click on
             // that clip in the view took the other keys: copy notes, pick another clip, paste.
             "selection.paste" if self.piano_takes_paste() => {
@@ -218,8 +220,7 @@ impl App {
                 self.piano_roll.focused = paste.is_some();
                 actions.extend(paste)
             }
-            "selection.mute"
-            | "selection.rename"
+            "selection.rename"
             | "selection.split"
             | "selection.consolidate"
             | "selection.takeUp"

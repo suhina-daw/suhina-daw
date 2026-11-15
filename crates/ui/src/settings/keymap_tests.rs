@@ -439,7 +439,7 @@ fn the_clip_edit_keys_are_piano_roll_keys() {
         ("pianoRoll.join", "Ctrl+J"),
         ("pianoRoll.fitToTime", "Ctrl+Alt+J"),
         ("pianoRoll.crop", "Ctrl+Shift+J"),
-        ("pianoRoll.splitClip", "Ctrl+E"),
+        ("pianoRoll.splitNotes", "Ctrl+E"),
     ] {
         let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
         assert_eq!(action.group, PIANO_ROLL);
@@ -447,13 +447,13 @@ fn the_clip_edit_keys_are_piano_roll_keys() {
         assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
     }
     assert!(Keymap::default().conflicts().is_empty());
-    assert!(!overlap("pianoRoll.splitClip", "view.editor"), "the piano roll's own scope");
-    assert!(overlap("pianoRoll.splitClip", "pianoRoll.join"));
+    assert!(!overlap("pianoRoll.splitNotes", "view.editor"), "the piano roll's own scope");
+    assert!(overlap("pianoRoll.splitNotes", "pianoRoll.join"));
     // A window key the piano roll takes while it has the keyboard: its own action runs, not the
     // window's.
     let mut keymap = Keymap::default();
     keymap.set(
-        "pianoRoll.splitClip",
+        "pianoRoll.splitNotes",
         vec![Shortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::E)],
     );
     assert!(keymap.conflicts().is_empty(), "Hide editor's key, taken in the piano roll, is no conflict");
@@ -471,7 +471,7 @@ fn the_clip_edit_keys_are_piano_roll_keys() {
         fired = ui.input_mut(|i| keymap.pressed(i, |id| !not_in_piano_roll(id)));
     });
     output.textures_delta.clear();
-    assert_eq!(fired, vec!["pianoRoll.splitClip".to_string()]);
+    assert_eq!(fired, vec!["pianoRoll.splitNotes".to_string()]);
 }
 
 /// Ctrl and the arrow keys step and grow the piano roll's note selection: keymap actions read only

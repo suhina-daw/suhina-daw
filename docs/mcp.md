@@ -329,10 +329,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   roll anew); it fails when anything of the clip lies before the beat, or, on a clip that swings,
   when the beat is not on an eighth (a multiple of 0.5). Each is one undo step and refuses an audio clip
   ([spec](spec/ui-clip-editor.md) › Joining, fitting, cropping and splitting).
-- **Splitting notes.** `note.split {track, index | scene, notes, at | times, keepLonger?}` splits
-  each named note that spans the beat `at` into two at `at` (the first keeps the start, the second
-  the end); `times` instead gives each note a beat of its own, one per entry of `notes` (the piano
-  roll's slanted cut). A note that starts or ends exactly at its beat is left alone, so a second
+- **Splitting notes.** `note.split {track, index | scene, notes, at | times | ats, keepLonger?}`
+  splits each named note that spans the beat `at` into two at `at` (the first keeps the start, the
+  second the end); `times` instead gives each note a beat of its own, one per entry of `notes` (the
+  piano roll's slanted cut), and `ats` cuts each note at every one of several beats it spans (the
+  piano roll's Ctrl+E), not with `keepLonger`. A note that starts or ends exactly at its beat is left alone, so a second
   split at the same beat changes nothing. One undo step; it returns the indices and `ids` of the
   notes it made (each first half keeps its note's id), and every beat is from 0 to 120 000. With
   `keepLonger: true` each note split keeps only its longer piece (the first when they are as

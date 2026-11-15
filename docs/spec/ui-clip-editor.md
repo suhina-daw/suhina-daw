@@ -484,6 +484,12 @@ pull up.
   - **Draw**: a click on an empty spot adds a note there; pressing and dragging sideways sets its
     length, its end on the grid (Alt: free), at least one grid step. A click on a note selects it,
     and dragging a note moves or resizes it as with Select. A double-click does nothing more.
+  - **Draw and Paint with Ctrl** (Cmd on macOS) held select instead of drawing, so notes are picked
+    without changing tools: a drag from an empty spot draws a selecting rectangle (with Shift too it
+    adds to the selection), a click on a note adds it to the selection or takes it out, and a click
+    on an empty spot adds nothing. The pointer is the ordinary one while Ctrl is held over the empty
+    grid. With the Draw-first preset the right button already deletes in Draw and Paint, a drag
+    deleting every note it passes over (› Workflow modes).
   - **Draw with Shift held** draws notes **back to back**: the drag stays in the row it started in,
     and the notes it draws follow one another from the press position, each as long as the note
     last drawn or clicked (one grid step until then), the first starting where the press was
@@ -680,11 +686,16 @@ keys do.
   one selected note, Up takes the first of them in that order (a chord's lowest note) and Down the
   last (its highest). At the clip's last (first) note the note stays selected.
 - **Ctrl+Shift+Right, Ctrl+Shift+Left** (`pianoRoll.growSelectionOnKey`, `.shrinkSelectionOnKey`):
-  each key with a selected note takes in the note after its last selected one, or lets go of its
-  last selected one; a key with one selected note keeps it.
-- **Ctrl+Shift+Up, Ctrl+Shift+Down** (`pianoRoll.growSelection`, `.shrinkSelection`): the selection
-  takes in the note after its last one in the Ctrl+Up order, or lets go of its last one; the last
-  note left stays.
+  as Shift and an arrow do to text, each key's selection has an **anchor** (where it started: its
+  first selected note, for a selection made any other way) and a moving end, which the key steps
+  one note later (Right) or earlier (Left) along the key: away from the anchor the selection takes
+  in the next note, towards it it lets the end note go. So from a key's last note Ctrl+Shift+Left
+  selects back along the key, and a selection grown to the right shrinks back with it first. At the
+  key's first or last note the end stays.
+- **Ctrl+Shift+Up, Ctrl+Shift+Down** (`pianoRoll.growSelection`, `.shrinkSelection`): the same in
+  the Ctrl+Up order, with one anchor for the selection.
+- The anchor holds while the selection is the one the last of these keys left; a selection changed
+  any other way (a click, a rectangle, Ctrl+Right) is anchored afresh.
 - **Nothing selected:** Ctrl+Right or Ctrl+Up (with Shift too) selects the clip's first note in the
   Ctrl+Up order, Ctrl+Left or Ctrl+Down its last.
 - **What follows the selection:** the view scrolls to keep the selected notes on screen; the time
@@ -817,7 +828,8 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
     here and Set loop start here, at the clicked point on the grid, as a drag of that marker on the
     ruler to there would leave it (`clip.setStart`, `clip.setLoop`);
   - Join notes, Fit to time selection, Crop clip to time selection, Split clip (at the time
-    selection, or here at the clicked point without one) and Set the clip's first beat here
+    selection, or here at the clicked point without one; Ctrl+E splits notes, not the clip) and
+    Set the clip's first beat here
     (› Joining, fitting, cropping and splitting);
   - the toolbar's grid menu right in the menu, with no submenu (Snap, Adaptive, Fixed, Narrow,
     Widen, Triplet).
@@ -826,7 +838,9 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
   quicker than the menu, which the grid's entries already make long.
 - Its rows are lower than the window's others (16 pixels, with no gap between them), so the menu
   stays short.
-- Escape, a click outside it or a pick closes it; another clip shown closes it too.
+- Escape, a click outside it or a pick closes it; another clip shown closes it too. While it is
+  open it holds the keys: Escape closes the menu alone (the selection stays), and no other shortcut
+  acts behind it.
 
 ## Joining, fitting, cropping and splitting
 
@@ -856,11 +870,17 @@ notes are untouched, and a clip that holds audio refuses them.
   the loop turns it); one whose loop meets the selection keeps its end and goes on looping over
   what is left, one whose loop it misses plays once and is as long as the selection. A time
   selection outside the part of the clip that plays is refused.
-- **Split clip** (`clip.split` with `ats`, **Ctrl+E**, the split key, which the piano roll takes
-  while it has the keyboard): the clip is cut at the time selection's
+- **Split notes** (`note.split` with `ats`, **Ctrl+E**, the split key, which the piano roll takes
+  while it has the keyboard): with a time selection that runs across notes, those notes (the
+  selected ones, or with none selected every note across it) are cut at its two edges; otherwise
+  the selected notes are cut at every grid line inside them, into grid-long pieces (a rectangle's
+  time selection is the selected notes' own span, so its edges cut nothing and the grid does). One
+  undo step; nothing selected and no time selection across a note, or snapping with no grid lines,
+  does nothing. It never splits at the playhead and never splits the clip.
+- **Split clip** (`clip.split` with `ats`, the menu): the clip is cut at the time selection's
   edges (where the clip first plays them), into clips of their own on the same lane, as the
-  Arrangement's split does, in one undo step. Without a time selection the key does nothing (it
-  never splits at the playhead); the menu's Split clip here cuts at the clicked point.
+  Arrangement's split does, in one undo step; without a time selection, **Split clip here** cuts
+  at the clicked point.
 - **Set the clip's first beat here** (`clip.setOrigin`, the menu): the clicked point on the grid
   becomes beat 1.1.1 of the clip's content: every note, the start marker and the loop move back by
   it together, so the clip keeps its sound and its place in the song while its own ruler starts
@@ -882,6 +902,9 @@ notes are untouched, and a clip that holds audio refuses them.
   the clip and does not play: the engine emits no voice for it, exactly as if the note were not
   there, through the arrangement, the launcher and an offline render. It keeps its time, length,
   key and velocity.
+- The **mute key 0** (`selection.mute`), while the piano roll has the keyboard, mutes the selected
+  notes, or unmutes them when every one of them is muted: one `note.setMuted`, one undo step. The
+  right-click menu's Mute item shows the key.
 - The **Mute** tool (key **6**) mutes and unmutes the note under the pointer (› Drawing notes); a
   click toggles one note, and a drag sets every note it passes over to the state the first note the
   stroke touched takes, so a run is muted in one go without each note flipping on its own. The drag
@@ -1303,8 +1326,8 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Alt+Left, Alt+Right; Alt+Shift+Left, Alt+Shift+Right | Moves the selection, or changes its length, by a 1/128 note, off the grid (› Moving, › Resizing) |
 | Ctrl+Right, Ctrl+Left | Each selected key's selection goes to its next, previous note; the notes stay (› Selecting from the keyboard) |
 | Ctrl+Up, Ctrl+Down | Selects the clip's next, previous note, in time and then by key; from a chord its lowest, highest note |
-| Ctrl+Shift+Right, Ctrl+Shift+Left | Adds the next note on each selected key to the selection, takes the last one out |
-| Ctrl+Shift+Up, Ctrl+Shift+Down | Adds the clip's next note (in the Ctrl+Up order) to the selection, takes the last one out |
+| Ctrl+Shift+Right, Ctrl+Shift+Left | Moves each selected key's selection end one note later, earlier: away from where it started it grows, back towards it it shrinks |
+| Ctrl+Shift+Up, Ctrl+Shift+Down | The same in the Ctrl+Up order |
 | Ctrl+C, Ctrl+X, Ctrl+V | Copies, cuts, pastes notes |
 | Ctrl+D, or Ctrl+B with Draw-first | Duplicates the selected notes (› Keymap presets) |
 | Ctrl+Z, Ctrl+Shift+Z | Undo, redo (as everywhere) |
@@ -1336,7 +1359,7 @@ the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.desel
 `.selectNextOnKey`, `.selectPreviousOnKey`, `.selectNextNote`, `.selectPreviousNote`,
 `.growSelectionOnKey`, `.shrinkSelectionOnKey`, `.growSelection`, `.shrinkSelection`, `.draw`,
 `.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection`,
-`.zoomClip`, `.legato`, `.loop`, `.join`, `.fitToTime`, `.crop`, `.splitClip`, `.rangeUp` and
+`.zoomClip`, `.legato`, `.loop`, `.join`, `.fitToTime`, `.crop`, `.splitNotes`, `.rangeUp` and
 `.rangeDown`, which are read only
 while the piano roll has the keyboard, so they can be changed like the rest. `pianoRoll.quantize`
 (Ctrl+U) means nothing elsewhere, so it works whenever the piano roll shows a clip.
@@ -1478,7 +1501,7 @@ note another writer deletes leaves it.
 | `note.paste` | clip, `time?`, `replace?` | Adds the copied notes, the first at `time` (default: right after the copied notes); returns their indices and ids |
 | `note.duplicate` | clip, `notes`, `beats?`, `semitones?` or `keys?`, `replace?` | Adds a copy right after the notes' end; with `beats` or `semitones`, that far from the notes instead (`keys`: the key each copy goes to, one per entry of `notes`, as a copy through folded rows) (a copy made by dragging; the copies keep length, velocity and mute). Returns the copies' indices and ids |
 | `note.makeRoom` | clip, `notes` | Makes room under the named notes as `replace` does (a note of their key covered whole goes, one partly covered is cut); a named note no longer in the clip is left out; returns the removed notes as `replaced`. The piano roll sends it when notes edited while selected are let go |
-| `note.split` | clip, `notes`, `at` or `times`, `keepLonger?` | Splits each named note that spans the beat `at` (or its own entry of `times`, one per entry of `notes`) into two there; a note that starts or ends at its beat is left alone; the first half keeps the note's id; returns the indices and ids of the second halves. With `keepLonger` each note keeps only its longer piece (the first when they are as long), in its place, and `trimmed` lists them |
+| `note.split` | clip, `notes`, `at`, `times` or `ats`, `keepLonger?` | Splits each named note that spans the beat `at` (or its own entry of `times`, one per entry of `notes`) into two there; with `ats` each note is cut at every one of those beats it spans (not with `keepLonger`); a note that starts or ends at its beat is left alone; the first half keeps the note's id; returns the indices and ids of the second halves. With `keepLonger` each note keeps only its longer piece (the first when they are as long), in its place, and `trimmed` lists them |
 | `clip.scale` | clip | The clip's scale, `{ "root": "D", "mode": "dorian" }` or `null`, and the project's `default_scale` the same way; changes nothing |
 | `clip.setScale` | clip, `root?`, `mode?`, `off?` | Sets the clip's scale: `root` (a key name such as `"C"`, `"F#"` or `"Bb"`, or 0 to 11) and `mode` (one of the names `note.fitToScale` takes as `scale`), the one left out kept from the scale the clip has (C, major when it has none); `off: true` clears it, and is an error with `root` or `mode`; one of them is needed. A content other clips play is copied for this clip first (› Scale and key). Returns the scale and whether it changed; the same scale again changes nothing and is no undo step |
 | `project.setDefaultScale` | `root?`, `mode?`, `off?` | The same for the scale new MIDI clips take; clips that exist keep theirs |

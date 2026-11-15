@@ -219,7 +219,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.split",
-        label: "Split notes of a MIDI clip at a beat, each note that spans it into two; the result gives the new notes' indices and ids; each first half keeps its note's id",
+        label: "Split notes of a MIDI clip at a beat (or at several), each note that spans it into two; the result gives the new notes' indices and ids; each first half keeps its note's id",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -231,6 +231,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "times",
                 ParamType::Numbers,
                 "instead of at: the beat to split each note at, one per entry of notes (a slanted cut)",
+            ),
+            optional(
+                "ats",
+                ParamType::Numbers,
+                "instead of at: several beats, each named note cut at every one of them it spans (not with keepLonger)",
             ),
             optional(
                 "keepLonger",

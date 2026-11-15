@@ -102,6 +102,8 @@ pub(super) enum Pick {
     Grid(PianoGrid),
     /// Split clip at the clicked point, with no time selection.
     SplitClipHere,
+    /// Split clip at the time selection's edges.
+    SplitClipSpan,
     /// Set the clip's first beat here (`clip.setOrigin`).
     Origin,
 }
@@ -117,6 +119,11 @@ pub(super) struct MenuCx<'a> {
     pub(super) playhead: f64,
 }
 
+/// The menu popup's id.
+fn menu_id() -> Id {
+    Id::unique("piano-roll-context-menu")
+}
+
 /// The height of one of the menu's rows, lower than the window's other rows.
 const MENU_ROW: f32 = 16.0;
 
@@ -128,7 +135,7 @@ impl MenuCx<'_> {
     /// one change to the view.
     pub(super) fn show(&self, ui: &Ui, state: &mut PianoRollState, actions: &mut Vec<Action>) {
         let Some(at) = state.menu else { return };
-        let id = Id::unique("piano-roll-context-menu");
+        let id = menu_id();
         let open = (!at.opened).then_some(SetOpenCommand::Bool(true));
         let mut picked = None;
         let shown = egui::Popup::new(id, ui.ctx().clone(), at.pos, ui.layer_id())
@@ -193,7 +200,7 @@ impl MenuCx<'_> {
         item(ui, "Quantize settings…", None, true, Pick::QuantizeSettings);
         let muted = self.acting_notes(state).all(|n| n.muted);
         let (word, mute) = if acting && muted { ("Unmute", false) } else { ("Mute", true) };
-        item(ui, word, None, acting, Pick::Mute(mute));
+        item(ui, word, Some("selection.mute"), acting, Pick::Mute(mute));
         item(ui, "Split here", None, !self.split_notes(state, at).is_empty(), Pick::Split);
         // Reverse turns the notes round in time (the Notes tab's Reverse); Invert selection above
         // changes what is selected, not the notes.
@@ -218,12 +225,12 @@ impl MenuCx<'_> {
         item(ui, "Crop clip to time selection", Some("pianoRoll.crop"), span, Pick::Key("pianoRoll.crop"));
         let arranged = clip.address.get("scene").is_none();
         let (name, pick) = if span {
-            ("Split clip at the time selection", Pick::Key("pianoRoll.splitClip"))
+            ("Split clip at the time selection", Pick::SplitClipSpan)
         } else {
             ("Split clip here", Pick::SplitClipHere)
         };
         let splits = arranged && (span || self.split_here(at).is_some());
-        item(ui, name, span.then_some("pianoRoll.splitClip"), splits, pick);
+        item(ui, name, None, splits, pick);
         item(ui, "Set the clip's first beat here", None, self.origin_ok(at), Pick::Origin);
         // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
         ui.add(egui::Separator::default().spacing(4.0));
@@ -358,6 +365,7 @@ impl MenuCx<'_> {
                 state.grid_picked = Some(grid);
                 None
             }
+            Pick::SplitClipSpan => state.split_clip_span(clip),
             Pick::SplitClipHere => {
                 let beat = self.beat(at);
                 state.split_clip_at(clip, &[(beat, false)])
@@ -381,5 +389,12 @@ impl PianoRollState {
     /// Whether the right-click menu is open (or waiting for the double-click time on a ghost note).
     pub fn menu_open(&self) -> bool {
         self.menu.is_some() || self.menu_waiting.is_some()
+    }
+
+    /// Closes the right-click menu (Escape), and one waiting to open on a ghost note.
+    pub fn close_menu(&mut self, ctx: &egui::Context) {
+        self.menu = None;
+        self.menu_waiting = None;
+        egui::Popup::close_id(ctx, menu_id());
     }
 }

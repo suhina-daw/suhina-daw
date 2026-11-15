@@ -107,7 +107,7 @@ The zoom level is remembered the next time Suhina starts.
 | Ctrl+V | `selection.paste` | Selection | Pastes what you copied. Clips go right after the selected clip, or at the playhead on the selected track. Notes go right after the selected notes, or at the playhead when it is inside the clip. |
 | Ctrl+D | `selection.duplicate` | Selection | Puts a copy of the selected clips or notes right after them. With the Draw-first preset this is Ctrl+B. |
 | Delete or Backspace | `selection.delete` | Selection | Deletes the selected clips, or in the piano roll the selected notes. |
-| 0 | `selection.mute` | Selection | Mutes the selected clips, or unmutes them if they are muted. A muted clip stays in place but makes no sound. |
+| 0 | `selection.mute` | Selection | Mutes the selected clips, or unmutes them if they are muted. A muted clip stays in place but makes no sound. In the piano roll (after a click in it) it mutes or unmutes the selected notes. |
 | Ctrl+A | `selection.selectAll` | Anywhere | Selects every clip in the arrangement. In the piano roll, after a click in it, selects every note instead. |
 | Ctrl+E | `selection.split` | Selection | Splits the selected clip in two where you clicked inside it, while playing too. It never splits at the playhead. |
 | Ctrl+J | `selection.consolidate` | Selection | Joins the selected clips on the track of the clip clicked last, and the space between them, into one new clip. With a time selection, consolidates the selected time on each of its tracks. |
@@ -192,16 +192,16 @@ Settings go on working. Click in the Arrangement or the Launcher to give the key
 | Ctrl+Left | `pianoRoll.selectPreviousOnKey` | Piano roll | Selects the previous note on each selected note's key. With nothing selected it selects the clip's last note. |
 | Ctrl+Up | `pianoRoll.selectNextNote` | Piano roll | Selects the clip's next note, one note at a time: in time order, and among notes that start together from the lowest key up. From a chord it takes the chord's lowest note. |
 | Ctrl+Down | `pianoRoll.selectPreviousNote` | Piano roll | Selects the clip's previous note, the same order backwards. From a chord it takes the chord's highest note. |
-| Ctrl+Shift+Right | `pianoRoll.growSelectionOnKey` | Piano roll | Adds the next note on each selected key to the selection. |
-| Ctrl+Shift+Left | `pianoRoll.shrinkSelectionOnKey` | Piano roll | Takes the last selected note on each key out of the selection; a key keeps its last note. |
-| Ctrl+Shift+Up | `pianoRoll.growSelection` | Piano roll | Adds the clip's next note (in the Ctrl+Up order) to the selection. |
-| Ctrl+Shift+Down | `pianoRoll.shrinkSelection` | Piano roll | Takes the last selected note out of the selection; the last note left stays. |
+| Ctrl+Shift+Right | `pianoRoll.growSelectionOnKey` | Piano roll | Moves the moving end of each selected key's selection one note later, as Shift and an arrow do in text: away from where the selection started it takes in the next note, back towards it it lets one go. |
+| Ctrl+Shift+Left | `pianoRoll.shrinkSelectionOnKey` | Piano roll | Moves the moving end of each selected key's selection one note earlier: from a key's last note it takes in the notes before it, and a selection grown to the right shrinks back first. |
+| Ctrl+Shift+Up | `pianoRoll.growSelection` | Piano roll | Moves the selection's moving end one note later in the Ctrl+Up order, growing it away from where it started or shrinking it back. |
+| Ctrl+Shift+Down | `pianoRoll.shrinkSelection` | Piano roll | Moves the selection's moving end one note earlier in the Ctrl+Up order, shrinking a selection grown forward or growing it backward. |
 | Ctrl+L | `pianoRoll.loop` | Piano roll | Loops the clip you are editing. With a time selection (a stretch of time dragged in the piano roll) the clip's loop goes exactly over it; press again on the same stretch to turn the loop off. With no time selection it turns the clip's loop on or off, like a click on the loop bar in the piano roll's ruler. |
 | Alt+L | `pianoRoll.legato` | Piano roll | Legato: makes each selected note last until the next one starts, so there are no gaps between them. With no note selected it does this to the notes that start in the time selection, or, without one, to every note in the clip. The same as **Legato** in the Notes tab of the clip panel's note tools. |
 | Ctrl+J | `pianoRoll.join` | Piano roll | Joins the selected notes on the same key into one note, from the first one's start to the last one's end, bridging any gap between them as legato does. Notes on different keys are joined key by key. |
 | Ctrl+Alt+J | `pianoRoll.fitToTime` | Piano roll | Stretches or squeezes the selected notes so they exactly fill the time selection (a stretch of time dragged in the piano roll). |
 | Ctrl+Shift+J | `pianoRoll.crop` | Piano roll | Crops the clip to the time selection: what is outside it is removed, and notes across its edges are cut there. |
-| Ctrl+E | `pianoRoll.splitClip` | Piano roll | Splits the clip at the two edges of the time selection, into separate clips on the same lane. It never splits at the playhead. |
+| Ctrl+E | `pianoRoll.splitNotes` | Piano roll | Splits notes: at the two edges of the time selection where it runs across notes, otherwise the selected notes at every grid line inside them. It never splits the clip (the right-click menu's Split clip does). |
 | Alt+Shift+Up | `pianoRoll.rangeUp` | Piano roll | Raises the selected notes' velocity range by one. A positive range is how far above its velocity each note may play, a negative one how far below, picked anew every time it plays. |
 | Alt+Shift+Down | `pianoRoll.rangeDown` | Piano roll | Lowers the selected notes' velocity range by one; below 0 the notes may play softer than their velocity. |
 | Ctrl+U | `pianoRoll.quantize` | Anywhere | Quantises the piano roll's notes: moves them onto the grid, with the settings of Quantise in the Transform tab of the clip panel's note tools. With notes selected it moves only those; with none, those that start in a time selection, otherwise every note. |
