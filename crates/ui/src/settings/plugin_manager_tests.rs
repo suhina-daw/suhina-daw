@@ -214,3 +214,30 @@ fn columns_are_hidden_and_shown_again_and_a_wide_table_scrolls_sideways() {
     assert_eq!(all.content_width(400.0, true), others + FILE_WANT);
     assert_eq!(all.content_width(5000.0, true), 5000.0, "wide enough: the table fills the room");
 }
+
+#[test]
+fn the_menu_offers_only_the_switch_that_changes_something() {
+    let plugins = view();
+    let spec = |name: &str| plugins.found.iter().find(|p| p.name == name).map(|p| p.spec.clone()).unwrap_or_default();
+    let keys = vec![spec("Verb 10"), spec("Verb 9"), spec("Keys"), file_key("/vst3/Broken.vst3")];
+    let (on, off) = split_by_state(&keys, &plugins);
+    assert_eq!(on, [spec("Verb 10"), spec("Keys")], "Turn off: the ones on");
+    assert_eq!(off, [spec("Verb 9")], "Turn on: the ones off; the file is neither");
+    let (on, off) = split_by_state(&[spec("Verb 9")], &plugins);
+    assert!(on.is_empty() && off.len() == 1, "every one picked is off: no Turn off");
+}
+
+#[test]
+fn one_switch_turns_every_picked_plug_in_on_or_off() {
+    let plugins = view();
+    let spec = |name: &str| plugins.found.iter().find(|p| p.name == name).map(|p| p.spec.clone()).unwrap_or_default();
+    let mixed = vec![spec("Verb 10"), spec("Verb 9")];
+    assert_eq!(
+        switch_for_many(&mixed, &plugins),
+        Some((false, vec![spec("Verb 9")], true)),
+        "some off: shows off, turns them on"
+    );
+    let on = vec![spec("Verb 10"), spec("Keys")];
+    assert_eq!(switch_for_many(&on, &plugins), Some((true, on.clone(), false)), "all on: shows on, turns them all off");
+    assert_eq!(switch_for_many(&[file_key("/vst3/Broken.vst3")], &plugins), None, "files only: no switch");
+}

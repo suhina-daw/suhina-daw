@@ -89,6 +89,8 @@ pub struct ManagerState {
     pub widths: Vec<u32>,
     /// The columns hidden, by heading (`Vendor`, `File` …), from the columns menu.
     pub hidden: Vec<String>,
+    /// The middle shows the folders scans look in (**Scan locations**) instead of the table.
+    pub locations: bool,
     /// The widths and the hidden columns were read from the UI settings.
     pub widths_read: bool,
 }
@@ -467,7 +469,7 @@ fn fit_width(ui: &Ui, column: usize, lines: &[Line]) -> f32 {
 #[derive(Debug, Default)]
 pub struct ManagerOut {
     pub request: Option<PluginRequest>,
-    /// Close (or Escape, or Scan locations) was clicked: Settings shows again.
+    /// Close (or Escape) was clicked: Settings shows again.
     pub close: bool,
     /// The column widths changed (a drag let go, a double-click): the UI settings keep them.
     pub widths: Option<Vec<u32>>,
@@ -627,10 +629,14 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
 
     top_bar(ui, &painter, parts.top, plugins, &counts, &mut out);
     if let Some(sidebar) = parts.sidebar {
-        library(ui, &painter, sidebar.shrink(PAD * 1.5), plugins, &counts, &mut out);
+        library(ui, &painter, sidebar.shrink(PAD * 1.5), plugins, &counts);
     }
     let lines = lines(plugins, &plugins.manager);
-    table(ui, &painter, parts.middle.shrink(PAD * 1.5), plugins, &counts, &lines, &mut out);
+    if plugins.manager.locations {
+        scan_locations(ui, &painter, parts.middle.shrink(PAD * 1.5), plugins, &mut out);
+    } else {
+        table(ui, &painter, parts.middle.shrink(PAD * 1.5), plugins, &counts, &lines, &mut out);
+    }
     if let Some(detail) = parts.detail {
         selected(ui, &painter, detail.shrink2(Vec2::new(PAD * 2.5, PAD * 2.0)), plugins, &mut out);
     }
@@ -677,14 +683,7 @@ fn top_bar(ui: &Ui, painter: &egui::Painter, rect: Rect, plugins: &PluginsView, 
 
 /// The library sidebar: the shelves with their counts, the type, format and vendor filters, then
 /// Scan locations and Reset filters at the bottom.
-fn library(
-    ui: &mut Ui,
-    painter: &egui::Painter,
-    rect: Rect,
-    plugins: &mut PluginsView,
-    counts: &Counts,
-    out: &mut ManagerOut,
-) {
+fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut PluginsView, counts: &Counts) {
     // The vendor list is made from every plug-in found, whatever the filters keep.
     let names = vendors(plugins);
     let folders = plugins.folders.iter().filter(|f| f.enabled).count();
@@ -714,6 +713,7 @@ fn library(
     for (shelf, text, count, warn) in shelves {
         if side_item(ui, painter, row(&mut y, ITEM), text, text, Some(count), state.shelf == shelf, warn) {
             state.shelf = shelf;
+            state.locations = false;
         }
     }
     // The two kinds of file that need attention, under it.
@@ -725,6 +725,7 @@ fn library(
             let item = Rect::from_min_max(Pos2::new(item.left() + 16.0, item.top()), item.max);
             if side_item(ui, painter, item, text, text, Some(count), state.shelf == shelf, false) {
                 state.shelf = shelf;
+                state.locations = false;
             }
         }
     }
@@ -737,6 +738,7 @@ fn library(
     {
         if side_item(ui, painter, row(&mut y, ITEM), text, text, None, state.types == types, false) {
             state.types = types;
+            state.locations = false;
         }
     }
     y += 8.0;
@@ -790,12 +792,12 @@ fn library(
         Rect::from_min_max(Pos2::new(rect.left(), reset.top() - 34.0), Pos2::new(rect.right(), reset.top() - 6.0));
     if locations.top() > y + 8.0 {
         let id = Id::unique("manager-scan-locations");
-        let label = "Scan locations: the plug-in folders in Settings";
-        let response = widgets::button_with_id(ui, painter, locations, id, "Scan locations", label, false);
-        let response =
-            response.on_hover_text(format!("{folders} folders are scanned; change them in Settings › Plug-ins"));
+        let label = "Scan locations: the folders scans look in";
+        let lit = state.locations;
+        let response = widgets::button_with_id(ui, painter, locations, id, "Scan locations", label, lit);
+        let response = response.on_hover_text(format!("{folders} folders are scanned"));
         if response.clicked() {
-            out.close = true;
+            state.locations = !state.locations;
         }
         if link(
             ui,
@@ -809,6 +811,56 @@ fn library(
             state.reset_filters();
         }
     }
+}
+
+/// The folders scans look in, in the middle in the table's place: each on or off, the added ones
+/// removed, a folder added with the format it holds, as on the Settings page, which draws the same
+/// list. Escape, or **Back to the plug-ins**, shows the table again.
+fn scan_locations(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut PluginsView, out: &mut ManagerOut) {
+    let small = theme::ui_font(theme::TEXT_SMALL);
+    let top = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 24.0));
+    let title = theme::ui_font(theme::TEXT + 1.0);
+    widgets::text_in(painter, top, Align2::LEFT_CENTER, "Scan locations", title, theme::text_primary());
+    let back = Rect::from_min_max(Pos2::new(top.right() - 160.0, top.top()), top.max);
+    let id = Id::unique("manager-back");
+    if link(ui, painter, back, id, "Back to the plug-ins", "Back to the plug-ins", Align2::RIGHT_CENTER) {
+        plugins.manager.locations = false;
+    }
+    let hint = Rect::from_min_size(Pos2::new(rect.left(), top.bottom() + 2.0), Vec2::new(rect.width(), 20.0));
+    let words = "Scan for new looks in the folders ticked; a folder switched off leaves the list with the next scan.";
+    widgets::text_in(painter, hint, Align2::LEFT_CENTER, words, small, theme::text_hint());
+    let list = Rect::from_min_max(Pos2::new(rect.left(), hint.bottom() + 10.0), rect.max);
+    let rows = plugins.folders.len() as f32;
+    // The list's own height: its heading, a line per folder, the add row and the space after.
+    let height = 18.0 + rows * 18.0 + 4.0 + 20.0 + 8.0;
+    let mut request = None;
+    ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
+        egui::ScrollArea::vertical().id_salt("plugin-manager-folders").auto_shrink([false, false]).show(ui, |ui| {
+            let (page, _) = ui.allocate_exact_size(Vec2::new(list.width() - 12.0, height), Sense::hover());
+            let page_painter = ui.painter_at(page.expand2(Vec2::new(0.0, 2.0)));
+            let mut y = page.top();
+            request = super::settings_view::plugin_folders(ui, &page_painter, page, &mut y, page.bottom(), plugins);
+        });
+    });
+    if request.is_some() {
+        out.request = request;
+    }
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !ui.ctx().egui_wants_keyboard_input() {
+        plugins.manager.locations = false;
+    }
+}
+
+/// The plug-ins among `keys` (files left out) split into those switched on and those off, each in
+/// the order of `keys`.
+fn split_by_state(keys: &[String], plugins: &PluginsView) -> (Vec<String>, Vec<String>) {
+    let mut on = Vec::new();
+    let mut off = Vec::new();
+    for key in keys {
+        if let Some(plugin) = plugins.found.iter().find(|p| &p.spec == key) {
+            if plugin.enabled { on.push(key.clone()) } else { off.push(key.clone()) }
+        }
+    }
+    (on, off)
 }
 
 /// The id of a file row's **Scan again**: from the file's whole path, so two files of the same
@@ -1121,15 +1173,18 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
     response.context_menu(|ui| {
         let these = batch(shown.picked, &line.key, shown.order);
         if plugin.is_some() {
-            let specs: Vec<String> = these.into_iter().filter(|k| !k.starts_with("file:")).collect();
-            let what = if specs.len() > 1 { format!("{} plug-ins", specs.len()) } else { "the plug-in".into() };
-            if ui.add_enabled(!scanning, egui::Button::new(format!("Turn off {what}"))).clicked() {
-                asked.toggled_many = Some((specs.clone(), false));
-                ui.close();
-            }
-            if ui.add_enabled(!scanning, egui::Button::new(format!("Turn on {what}"))).clicked() {
-                asked.toggled_many = Some((specs, true));
-                ui.close();
+            // Only what a switch would change: Turn off for the ones on, Turn on for the ones off,
+            // each counting those it acts on, and neither where there are none.
+            let (on, off) = split_by_state(&these, plugins);
+            for (specs, enabled, verb) in [(on, false, "Turn off"), (off, true, "Turn on")] {
+                if specs.is_empty() {
+                    continue;
+                }
+                let what = if specs.len() > 1 { format!("{} plug-ins", specs.len()) } else { "the plug-in".into() };
+                if ui.add_enabled(!scanning, egui::Button::new(format!("{verb} {what}"))).clicked() {
+                    asked.toggled_many = Some((specs, enabled));
+                    ui.close();
+                }
             }
         } else {
             let files: Vec<String> = these.iter().filter_map(|k| k.strip_prefix("file:")).map(str::to_string).collect();
@@ -1255,10 +1310,128 @@ fn wrapped(painter: &egui::Painter, left: f32, top: f32, width: f32, text: &str,
     top + height
 }
 
+/// What the one switch for several picked plug-ins does: on where every one is on, and a click
+/// switches them all off; otherwise it shows off, and a click switches on every one that is off.
+/// `None` where no plug-in is picked (files only).
+fn switch_for_many(keys: &[String], plugins: &PluginsView) -> Option<(bool, Vec<String>, bool)> {
+    let (on, off) = split_by_state(keys, plugins);
+    if on.is_empty() && off.is_empty() {
+        return None;
+    }
+    Some(if off.is_empty() { (true, on, false) } else { (false, off, true) })
+}
+
+/// The panel with several rows picked: how many, one switch for every picked plug-in, the files'
+/// **Scan again**, and the list of what is picked with each one's state.
+fn many_selected(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    plugins: &PluginsView,
+    lines: &[Line],
+    out: &mut ManagerOut,
+) {
+    let small = theme::ui_font(theme::TEXT_SMALL);
+    let picked = &plugins.manager.picked;
+    let line_at = |y: f32, height: f32| Rect::from_min_size(Pos2::new(rect.left(), y), Vec2::new(rect.width(), height));
+    let rule = |y: f32| painter.hline(rect.x_range(), y, theme::hairline(theme::border()));
+    let mut y = rect.top();
+    heading(painter, line_at(y, 18.0), "Selection");
+    y += 18.0;
+    let name_font = theme::ui_font(theme::TEXT + 6.0);
+    let count = format!("{} selected", picked.len());
+    widgets::text_in(painter, line_at(y, 30.0), Align2::LEFT_CENTER, &count, name_font, theme::text_primary());
+    y += 30.0;
+    let plugin_count = picked.iter().filter(|k| !k.starts_with("file:")).count();
+    let files: Vec<String> = picked.iter().filter_map(|k| k.strip_prefix("file:")).map(str::to_string).collect();
+    let mut parts = Vec::new();
+    if plugin_count > 0 {
+        parts.push(format!("{plugin_count} plug-ins"));
+    }
+    if !files.is_empty() {
+        parts.push(format!("{} files", files.len()));
+    }
+    widgets::text_in(
+        painter,
+        line_at(y, 20.0),
+        Align2::LEFT_CENTER,
+        &parts.join(" · "),
+        small.clone(),
+        theme::text_secondary(),
+    );
+    y += 28.0;
+    rule(y);
+    y += 12.0;
+    if let Some((on, specs, enable)) = switch_for_many(picked, plugins) {
+        let toggle = Rect::from_min_size(Pos2::new(rect.left(), y), Vec2::new(36.0, 20.0));
+        let label = format!("Enabled: {plugin_count} plug-ins");
+        let id = Id::unique("manager-enabled-many");
+        let response = switch(ui, painter, toggle, id, on, &label, !plugins.scanning);
+        if response.clicked() {
+            out.request = Some(PluginRequest::SetEnabledMany(specs, enable));
+        }
+        let (on_count, off_count) = {
+            let (a, b) = split_by_state(picked, plugins);
+            (a.len(), b.len())
+        };
+        let words = if off_count == 0 {
+            "Enabled".to_string()
+        } else if on_count == 0 {
+            "Disabled".to_string()
+        } else {
+            format!("{on_count} enabled, {off_count} disabled")
+        };
+        let text = Rect::from_min_max(
+            Pos2::new(toggle.right() + 10.0, toggle.top()),
+            Pos2::new(rect.right(), toggle.bottom()),
+        );
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, &words, small.clone(), theme::text_primary());
+        y = toggle.bottom() + 12.0;
+        rule(y);
+        y += 12.0;
+    }
+    if !files.is_empty() {
+        let text = format!("Scan {} files again", files.len());
+        let id = Id::unique("manager-rescan-many");
+        if widgets::button_with_id(ui, painter, line_at(y, 28.0), id, &text, &text, false).clicked()
+            && !plugins.scanning
+        {
+            out.request = Some(PluginRequest::ScanFiles(files.clone()));
+        }
+        y += 40.0;
+        rule(y);
+        y += 10.0;
+    }
+    // The picked rows, in the order they were picked, each with its state.
+    let list = Rect::from_min_max(Pos2::new(rect.left(), y), rect.max);
+    ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
+        egui::ScrollArea::vertical().id_salt("plugin-manager-picked").auto_shrink([false, false]).show_rows(
+            ui,
+            ROW,
+            picked.len(),
+            |ui, range| {
+                for key in picked.get(range).unwrap_or_default() {
+                    let (row, _) = ui.allocate_exact_size(Vec2::new(list.width() - 12.0, ROW), Sense::hover());
+                    let Some(line) = lines.iter().find(|l| &l.key == key) else { continue };
+                    let row_painter = ui.painter_at(row);
+                    state_mark(&row_painter, Pos2::new(row.left() + 5.0, row.center().y), line.state);
+                    let words = Rect::from_min_max(Pos2::new(row.left() + 16.0, row.top()), row.max);
+                    let ink = if line.state == State::Disabled { theme::text_hint() } else { theme::text_secondary() };
+                    widgets::text_in(&row_painter, words, Align2::LEFT_CENTER, &line.cells[1], small.clone(), ink);
+                }
+            },
+        );
+    });
+}
+
 /// The panel on the right: the row picked last.
 fn selected(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &PluginsView, out: &mut ManagerOut) {
     let small = theme::ui_font(theme::TEXT_SMALL);
     let lines = all_lines(plugins);
+    if plugins.manager.picked.len() > 1 {
+        many_selected(ui, painter, rect, plugins, &lines, out);
+        return;
+    }
     let Some(line) = plugins.manager.anchor.as_ref().and_then(|key| lines.iter().find(|l| &l.key == key)) else {
         let at = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 20.0));
         widgets::text_in(painter, at, Align2::LEFT_CENTER, "Pick a row to see it here", small, theme::text_hint());

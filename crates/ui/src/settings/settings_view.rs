@@ -2004,7 +2004,8 @@ fn action_matches(label: &str, id: &str, group: &str, keys: &str, words: &[Strin
 }
 
 /// The plug-in folders, each on or off, and a field to add one. Returns what the user asked for.
-fn plugin_folders(
+/// The plug-in manager's Scan locations draws the same list.
+pub(crate) fn plugin_folders(
     ui: &mut Ui,
     painter: &egui::Painter,
     page: Rect,

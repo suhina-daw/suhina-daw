@@ -35,16 +35,25 @@ current theme: switching the theme changes the manager with the rest of the app.
   checkboxes; none ticked shows every format, a file's format comes from its extension and a
   library file counts as VST2) and **Vendor** (a drop-down of every vendor found). A type or a
   vendor leaves the files out, since they have neither. At the bottom **Scan locations**, which
-  shows Settings › Plug-ins with the folders scans look in, and **Reset filters**, which shows
-  every row again (the search too).
+  shows the folders scans look in in the table's place (below), and **Reset filters**, which
+  shows every row again (the search too).
 - **In the middle:** the search field; under it, when files failed or are built for another
   processor, a notice that says how many ("6 files failed to scan · 6 use an incompatible
   architecture") with **Review issues**, which shows **Needs attention**; then the table.
+- **Scan locations**, in the middle in the table's place: the folder list of Settings ›
+  Plug-ins (below, *Folders*), the same list with the same controls: each folder on or off, an
+  added one removed, a folder added with its format, **Add** with nothing typed showing the
+  system's folder picker. **Back to the plug-ins**, Escape, or any shelf or type in the sidebar
+  shows the table again.
 - **Selected plug-in** panel on the right: the row picked last, with its name and vendor (a
   file's folder), its format and type as tags, an **Enabled** switch, its version and status,
   the file's location with **Show in folder**, and **Rescan plug-in** (**Scan again** for a file),
   which reads that file again now (`plugin.scanFile`). A plug-in switched off is hidden from the
-  browser, which the panel says.
+  browser, which the panel says. With several rows picked, the panel says how many ("14
+  selected", so many plug-ins and so many files), has one **Enabled** switch for every picked
+  plug-in (on while every one is on, and a click switches them all off; otherwise off, and a
+  click switches on the ones that are off, as `plugin.setEnabled` each), **Scan N files again**
+  for the picked files, and the list of what is picked with each one's state.
 - **Status bar:** how many plug-ins, how many rows the filters show when not all, and how many
   are picked on the left; whether a scan runs on the right.
 
@@ -98,7 +107,9 @@ it, and a project that uses it opens with the device missing, so it never loads.
 again, it is offered at once and a project opened after finds it.
 
 Several at once: a click on a row picks it (**Ctrl** or **Cmd** adds a row, **Shift** takes the
-run from the last one picked), and a plug-in's right-click menu has **Turn off** and **Turn on**. When
+run from the last one picked), and a plug-in's right-click menu has **Turn off** for the ones
+switched on and **Turn on** for the ones switched off, each saying how many it acts on and
+missing where there are none (with every picked plug-in off, only **Turn on**). When
 the right-clicked row is one of the picked ones, the menu acts on every picked plug-in the table
 shows (the menu says how many, "Turn off 3 plug-ins"), in the order they were picked; a picked
 plug-in the search hides, or a rescan removed, is left alone. When the row is not picked, the
