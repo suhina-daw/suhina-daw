@@ -1869,6 +1869,39 @@ fn an_opacity_change_reaches_the_window_panel_and_border_colours() {
     set_window_opacity(&ctx, 1.0);
 }
 
+/// A translucent theme colour fades as `gamma_multiply` fades it, to the same bytes in the
+/// palette's readers and in the sheet's variable, at every opacity (#1448).
+#[test]
+fn a_translucent_colour_fades_alike_for_the_palette_and_the_sheet() {
+    let ctx = egui::Context::default();
+    skin::configure(&skin::Skin::default());
+    let mut colors = theme::Colors::new();
+    colors.insert("panel-background".into(), Color32::from_rgba_unmultiplied(0x23, 0x6b, 0xd1, 0x80));
+    colors.insert("window-background".into(), Color32::from_rgba_unmultiplied(0xf0, 0x11, 0x47, 0x3c));
+    set_colors(&colors);
+    let mut off = Vec::new();
+    for percent in 0..=100u8 {
+        let opacity = f32::from(percent) / 100.0;
+        set_window_opacity(&ctx, opacity);
+        let window = window_frame(&ctx);
+        for (name, read) in
+            [("--window-background", theme::window_background()), ("--panel-background", theme::panel_background())]
+        {
+            let sheet = match window.variable(name).map(|v| suhina_style::value::Color::parse(v.trim())) {
+                Some(Ok(suhina_style::value::Color::Rgba([r, g, b, a]))) => Color32::from_rgba_unmultiplied(r, g, b, a),
+                other => panic!("{name}: {other:?}"),
+            };
+            let faded = root_color(name).map(|base| base.gamma_multiply(opacity));
+            if sheet != read || Some(read) != faded {
+                off.push(format!("{name} at {percent} %: palette {read:?}, sheet {sheet:?}"));
+            }
+        }
+    }
+    set_window_opacity(&ctx, 1.0);
+    set_colors(&theme::Colors::new());
+    assert!(off.is_empty(), "{}", off.join("\n"));
+}
+
 /// `"base": "none"` leaves the base sheet out: its parts' colours are gone and the user-agent
 /// sheet's bare look is left, the variables still resolving. A base rule alone leaves the element
 /// unauthored (#1448).

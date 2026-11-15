@@ -906,6 +906,40 @@ fn a_theme_with_a_background_image_lets_the_window_rest() {
     assert!(h.try_run().is_ok(), "the window settles within a second of frames: {:?}", ctx.repaint_causes());
 }
 
+/// The frame a theme's backdrop image first shows in paints the window faded to the theme's
+/// opacity already, never one opaque frame over the image (#1448).
+#[test]
+fn the_first_frame_with_a_backdrop_paints_the_window_faded() {
+    use suhina_ui::settings::themes::ThemeEntry;
+    fn fills(shape: &egui::Shape, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, out)),
+            egui::Shape::Rect(rect) if rect.rect.width() > SIZE.0 * 0.9 && rect.rect.height() > SIZE.1 * 0.9 => {
+                out.push(rect.fill);
+            }
+            _ => {}
+        }
+    }
+    let mut h = window(demo_app());
+    let ctx = h.ctx.clone();
+    let base = egui::Color32::from_rgb(0x10, 0x20, 0x30);
+    let mut paper = theme::Theme { name: "Private paper".into(), ..Default::default() };
+    paper.colors.insert("window-background".into(), base);
+    paper.skin.background = Some("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQ6nD5DwADrAHuJHH6EQAAAABJRU5ErkJggg==".into());
+    paper.skin.background_opacity = 50;
+    h.state_mut().put_theme(&ctx, ThemeEntry { id: "private-paper".into(), theme: paper });
+    h.state_mut().use_theme(&ctx, "private-paper");
+    // The first frame starts loading the image; the next one, after the load, shows it.
+    h.step();
+    h.state_mut().wait_for_background();
+    h.step();
+    assert!(suhina_ui::kit::liquid::background_image(&ctx).is_some(), "the background image shows");
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| fills(&s.shape, &mut seen));
+    // Over the image (drawn on its opaque window colour), the window's own fill is faded.
+    assert_eq!(seen.last(), Some(&base.gamma_multiply(0.5)), "the window over the image: {seen:?}");
+}
+
 /// Main's volume field in the Arrangement view is an element of its own, `#main-volume`: it does
 /// not paint `arrangement`'s style as its own, and a `#main-volume` rule reaches it (#1237).
 #[test]

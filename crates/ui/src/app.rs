@@ -2948,6 +2948,8 @@ impl App {
             crate::kit::skin::configure(&crate::kit::skin::Skin::default());
             crate::kit::native_css::set_colors(&theme::Colors::new());
         }
+        // The backdrop's opacity before the styles: the frame an image first shows in is faded.
+        let backdrop = self.background.prepare(ui, &self.settings);
         let _css_frame = crate::kit::native_css::frame_with_motion(
             ui,
             self.settings.animations && self.settings.theme != "high-contrast",
@@ -2967,9 +2969,10 @@ impl App {
         let window_style = window_builder.enter();
         let mut styled_ui = window_style.ui(ui);
         let ui = &mut *styled_ui;
-        if let Err(error) = self.background.update(ui, &self.settings) {
+        if let Err(error) = backdrop {
             self.status = Status::Error(error);
         }
+        self.background.update(ui);
         // The root: the window's background, painted once under everything (over a private
         // image, at its strength). Each view, panel and bar paints only its own over it (#1233).
         let full_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));

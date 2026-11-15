@@ -50,13 +50,11 @@ impl Background {
         }
     }
 
-    /// Paints the backdrop image, if there is one, and gives the window's opacity over it to the
-    /// style engine, which fades the window's, the panels' and the lines' colours by it.
-    pub(super) fn update(&mut self, ui: &Ui, settings: &crate::settings::Settings) -> Result<(), String> {
-        // The theme's own window colour, before the opacity fades it.
-        let base = crate::kit::native_css::root_color("--window-background")
-            .unwrap_or_else(crate::kit::theme::window_background);
-        crate::kit::liquid::set_panel_base(ui.ctx(), base);
+    /// Takes in a backdrop image that finished loading (or starts loading one) and gives the
+    /// window's opacity over it to the style engine, which fades the window's, the panels' and the
+    /// lines' colours by it. Called before the frame's styles are worked out
+    /// (`native_css::frame_with_motion`), so the frame an image first shows in is faded already.
+    pub(super) fn prepare(&mut self, ui: &Ui, settings: &crate::settings::Settings) -> Result<(), String> {
         let skin = crate::kit::skin::current();
         let themed = skin.background.as_ref();
         let path: Arc<str> = if settings.theme == "high-contrast" {
@@ -65,7 +63,7 @@ impl Background {
             themed.cloned().unwrap_or_else(|| Arc::from(settings.background_image.as_str()))
         };
         let blur = if themed.is_some() { skin.background_blur } else { settings.view.background_blur };
-        let result = self.paint(ui, path, blur);
+        let result = self.poll(ui, path, blur);
         let visible = result.as_ref().copied().unwrap_or(false);
         let opacity = if visible {
             f32::from(if themed.is_some() { skin.background_opacity } else { settings.view.background_tint }.min(100))
@@ -77,7 +75,25 @@ impl Background {
         result.map(|_| ())
     }
 
+    /// Paints the backdrop image [`Self::prepare`] took in, if there is one, under the window.
+    pub(super) fn update(&mut self, ui: &Ui) {
+        // The theme's own window colour, before the opacity fades it.
+        let base = crate::kit::native_css::root_color("--window-background")
+            .unwrap_or_else(crate::kit::theme::window_background);
+        crate::kit::liquid::set_panel_base(ui.ctx(), base);
+        self.draw(ui);
+    }
+
+    /// Takes in a load that finished and paints the image: whether there is one.
+    #[cfg(test)]
     fn paint(&mut self, ui: &Ui, path: Arc<str>, blur: u8) -> Result<bool, String> {
+        let shown = self.poll(ui, path, blur)?;
+        self.draw(ui);
+        Ok(shown)
+    }
+
+    /// Takes in a load that finished, or starts the one `path` needs: whether an image shows.
+    fn poll(&mut self, ui: &Ui, path: Arc<str>, blur: u8) -> Result<bool, String> {
         let rect = ui.max_rect();
         let request =
             Request { path: path.clone(), blur, size: [rect.width().max(1.0) as u32, rect.height().max(1.0) as u32] };
@@ -151,17 +167,20 @@ impl Background {
         if self.worker.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
-        if let Some(texture) = &self.texture {
-            ui.painter().rect_filled(rect, 0.0, crate::kit::theme::window_background().to_opaque());
-            ui.painter().image(
-                texture.id(),
-                rect,
-                placement::cover_uv(texture.size_vec2(), rect.size()),
-                egui::Color32::WHITE,
-            );
-            return Ok(true);
-        }
-        Ok(false)
+        Ok(self.texture.is_some())
+    }
+
+    /// Paints the image taken in, if there is one, over the window's opaque colour.
+    fn draw(&self, ui: &Ui) {
+        let Some(texture) = &self.texture else { return };
+        let rect = ui.max_rect();
+        ui.painter().rect_filled(rect, 0.0, crate::kit::theme::window_background().to_opaque());
+        ui.painter().image(
+            texture.id(),
+            rect,
+            placement::cover_uv(texture.size_vec2(), rect.size()),
+            egui::Color32::WHITE,
+        );
     }
 }
 
