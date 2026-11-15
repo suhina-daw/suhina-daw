@@ -337,11 +337,26 @@ fn a_control_storm_drops_messages_instead_of_dying() {
     // The runner is alive through the storm: the ping is answered.
     runner.send(json!({ "op": "ping", "id": 9 }));
     assert_eq!(runner.line(), json!({ "op": "pong", "id": 9 }), "alive through the storm");
-    // The answer lands; the handler completes and the runner carries on.
+    // The answer lands, and one more line wakes the drain: the queued storm's commands
+    // emit in one burst — 1023 fast answers as the queue drains, and the last queued
+    // message waiting on its answer like the first. A ping rides wherever the runner's
+    // reading finds it; the harness counts the burst's 1024 commands, skips the pong,
+    // and answers only the last command, the one that waited. The runner never dies.
     runner.send(json!({ "op": "command_result", "token": command["token"], "ok": true, "error": null }));
-    runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": 10_000, "bytes": "803c00" }));
-    let next = runner.line();
-    assert_eq!(next["op"], "command", "the handler ran again after the storm");
-    runner.send(json!({ "op": "command_result", "token": next["token"], "ok": true, "error": null }));
+    runner.send(json!({ "op": "ping", "id": 10 }));
+    let mut last = None;
+    let mut commands = 0;
+    while commands < 1024 {
+        let line = runner.line();
+        if line["op"] == "pong" {
+            continue;
+        }
+        assert_eq!(line["op"], "command", "the storm drains as commands");
+        last = Some(line);
+        commands += 1;
+    }
+    runner.send(
+        json!({ "op": "command_result", "token": last.expect("the last command")["token"], "ok": true, "error": null }),
+    );
     runner.quit();
 }
