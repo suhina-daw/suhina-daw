@@ -224,7 +224,7 @@ fn track_artwork_of_one_view_is_a_role_of_its_own() {
 }
 
 #[test]
-fn a_theme_may_keep_the_header_column_wide_enough_for_its_placements() {
+fn a_theme_may_keep_the_header_column_wide_enough_for_its_layout() {
     let sheet = |css: &str| crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() };
     crate::kit::skin::configure(&sheet("arrangement { header-min-width: 330px; }"));
     assert_eq!(crate::kit::style_class::theme_header_min_width(), Some(330.0));

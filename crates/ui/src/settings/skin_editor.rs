@@ -214,7 +214,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             }
         });
         ui.collapsing("Native CSS", |ui| {
-            ui.label("Settings and layout in the form of earlier versions: :root colours, Launcher density, meter style/segments/intensity, toolbar order/hidden, .control-NAME placement, artwork frame rate. Applying it saves the settings in the variant in use and the layout in theme.css. Place connected elements by hand with .control-NAME rules for now.");
+            ui.label("Settings in the form of earlier versions: :root colours, Launcher density, meter style/segments/intensity, toolbar order/hidden, artwork frame rate. Applying it saves the settings in the variant in use and the toolbar in theme.json. Lay out the track headers' and mixer strips' parts (track-header, mixer and the groups in them) with CSS rules in theme.css.");
             if ui.button("Load compact Launcher geometry").clicked() { state.css = crate::kit::theme::COMPACT_SESSION_EXAMPLE.into(); }
             if ui.button("Load current style as CSS").clicked() {
                 let theme = crate::kit::theme::Theme { name: themes.name.clone(), colors: themes.colors.clone(), skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };

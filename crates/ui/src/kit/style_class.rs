@@ -268,8 +268,8 @@ pub fn theme_track_height() -> Option<f32> {
 }
 
 /// The narrowest the theme lets the Arrangement view's header column be (`arrangement {
-/// header-min-width: 330px }`): the width its placements were made for, which the header's
-/// narrower layouts would break. From 160 to 520 points.
+/// header-min-width: 330px }`): the width its header layout was made for, which the header's
+/// narrower layouts would change. From 160 to 520 points.
 pub fn theme_header_min_width() -> Option<f32> {
     arrangement()?.points(Property::HeaderMinWidth).filter(|v| (160.0..=520.0).contains(v))
 }

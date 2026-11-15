@@ -247,6 +247,12 @@ the sends; `stacked`: the buttons and the name, then the volume, the sends and t
 `spacious`) for the room around and between the lines. Every part with an id in the tree has a
 `kind` equal to it, as the bars' items do, which the user-agent sheet selects.
 
+The app reads the strip's own border and padding before it chooses these attributes, so they
+are the strip's without them: a `padding` or `border` on `track-header[layout]`, `[size]`,
+`[name-first]` or `mixer[narrow]` moves the parts once the attribute is chosen but does not
+change which parts the strip has room for or which attribute it gets (choosing them again from
+it could go round in a loop).
+
 | Strip | Its parts |
 |---|---|
 | Mixer strip (`mixer`) | `track-colour`, `group#mixer-body` with `track-name`, `group#mixer-output`, `device-list`, `divider#mixer-divider`, `pan#mixer-pan`, `value#mixer-volume-readout`, `group#mixer-level` (`fader-scale`, `fader#mixer-volume`, `meter`), `value#mixer-volume` (low strips), `group#mixer-input` (its caption `label`, the source `dropdown`, `group#mixer-monitor` of `#control-mixer-monitor-in`, `-auto`, `-off`), `group#mixer-buttons` (`#control-track-on`, `mixer-toggles` of `#control-solo`, `#control-cue`, `#control-arm`; Main's `#control-main-metronome`), `group#mixer-sends` |
@@ -1306,10 +1312,10 @@ of bars, and a slider id per parameter.
 - **Packages brought in again:** a package whose id names a theme here is not written; the app
   asks **Replace** (the theme's folder goes, the package is written under its id) or **Copy**
   (a new id, even when it looks the same).
-- **Arrangement header:** `#control-track-on` (`[checked]`, `[muted]`, artwork `track-on`),
-  `track-number` (placed as `arrangement-number` when `arrangement-enable` is hidden),
-  `#control-automation` (artwork `automation`), `fold` (artwork `fold`), `#control-monitor`
-  (artwork `monitor`, placed as `arrangement-monitor`).
+- **Arrangement header:** `#control-track-on` (`[checked]`, `[muted]`, artwork `track-on`) with
+  the track's number on it as `track-number`, `#control-automation` (artwork `automation`), `fold`
+  (artwork `fold`), `#control-monitor` (artwork `monitor`), laid out in the header's lines
+  (› The strips).
 - **Artwork variables:** before rasterising, `var()` in artwork takes the theme's resolved root
   variables; a track's colour reaches artwork as `currentColor`.
 - **Knob values:** `value-position` (`right` by default, `left`, `top`, `bottom`,

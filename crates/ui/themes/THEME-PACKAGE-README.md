@@ -289,7 +289,10 @@ its width and height. Suhina gives each part its size (a fader's length, a meter
 button's width); a `width` or `height` in the sheet wins. A part hidden with `display: none` is
 neither drawn nor clicked, and the parts after it close up. A fader laid out wider than tall lies
 down and is dragged sideways. Every strip of one kind shares one layout, so a rule cannot single
-out one track's strip by its colour or id. The selector reference below lists each strip's parts
+out one track's strip by its colour or id. Suhina decides which parts fit from the strip's own
+padding and border without `[layout]`, `[size]`, `[name-first]` or `[narrow]`: give the padding
+on `track-header` or `mixer` itself, as padding under one of those attributes moves the parts but
+does not make room for them. The selector reference below lists each strip's parts
 (*The strips' parts*). A device panel's controls keep Suhina's layout for now.
 
 Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds, with a
