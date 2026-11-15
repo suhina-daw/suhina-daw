@@ -193,6 +193,72 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     assert!(actions.iter().any(|action| action.id == "device.setParam" && action.params["param"] == "enabled"));
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
 }
+/// A theme's `device.knob.body` replaces a dial's own face in the states it has artwork for, even
+/// with none for the plain state, and the device's image stays where it has none.
+#[test]
+fn a_themes_device_knob_replaces_a_dials_own_face_in_the_states_it_covers() {
+    let face = suhina_device_sdk::ui::ImageAsset::from_bytes(
+        "face",
+        include_bytes!("../../../../devices/nam-amp-modeler/panel/knob-dark.png"),
+    )
+    .unwrap();
+    let canvas = Arc::new(DeviceUi {
+        size: [60.0, 80.0],
+        assets: vec![face],
+        controls: vec![CustomControl {
+            id: "gain".into(),
+            name: "gain".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, 60.0, 80.0],
+            widget: Some(Widget::Dial {
+                label: "Gain".into(),
+                decimals: 1,
+                format: Default::default(),
+                image: Some("face".into()),
+            }),
+            visible_when: None,
+            gesture: UiGesture::Drag,
+            x: None,
+            y: Some(UiBinding::new("gain")),
+            drawing: Vec::new(),
+        }],
+        ..Default::default()
+    });
+    let parameters = [parameter("gain", false)];
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#12AB34\"/></svg>";
+    // Artwork for the hovered knob only.
+    crate::kit::skin::configure(&crate::kit::skin::Skin {
+        assets: [("device.knob.body.hover".into(), svg.into())].into(),
+        ..Default::default()
+    });
+    let ctx = egui::Context::default();
+    let theme_green = Color32::from_rgb(0x12, 0xAB, 0x34);
+    let frame = |pointer: Option<Pos2>| {
+        let events = pointer.map(egui::Event::PointerMoved).into_iter().collect();
+        let output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(60.0, 80.0)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            )
+        });
+        output.textures_delta.set.values().flat_map(|deltas| deltas.iter()).any(|delta| match &delta.image {
+            egui::ImageData::Color(image) => image.pixels.contains(&theme_green),
+        })
+    };
+    assert!(!frame(None), "not hovered: the device's own face, not the theme's hover artwork");
+    let centre = Pos2::new(30.0, 40.0);
+    let hovered = frame(Some(centre)) | frame(Some(centre)) | frame(Some(centre));
+    assert!(hovered, "hovered: the theme's device.knob.body.hover replaces the face");
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+}
+
 /// A token drawing in a translucent theme colour keeps the theme's alpha, times its own (#1235).
 #[test]
 fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {

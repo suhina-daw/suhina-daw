@@ -79,6 +79,21 @@ pub fn raster(source: &str, width: u32, height: u32) -> Option<egui::ColorImage>
     Some(egui::ColorImage::from_rgba_unmultiplied([pixels.width() as usize, pixels.height() as usize], pixels.as_raw()))
 }
 
+/// [`raster`] for a role whose artwork keeps its proportions (a knob's face): scaled to fit
+/// `width` × `height` and centred, transparent around it, as a contained SVG is.
+pub fn raster_contained(source: &str, width: u32, height: u32) -> Option<egui::ColorImage> {
+    let image = decode(source).ok()?;
+    let (width, height) = (width.clamp(1, 1024), height.clamp(1, 1024));
+    let (w, h) = (image.width().max(1) as f32, image.height().max(1) as f32);
+    let scale = (width as f32 / w).min(height as f32 / h);
+    let fit = |side: f32, room: u32| ((side * scale).round() as u32).clamp(1, room);
+    let (fit_w, fit_h) = (fit(w, width), fit(h, height));
+    let scaled = image::imageops::resize(&image, fit_w, fit_h, image::imageops::FilterType::Triangle);
+    let mut canvas = image::RgbaImage::new(width, height);
+    image::imageops::overlay(&mut canvas, &scaled, i64::from((width - fit_w) / 2), i64::from((height - fit_h) / 2));
+    Some(egui::ColorImage::from_rgba_unmultiplied([width as usize, height as usize], canvas.as_raw()))
+}
+
 #[cfg(test)]
 pub(super) fn fixture(width: u32, height: u32, color: [u8; 4]) -> String {
     let image = image::RgbaImage::from_pixel(width, height, image::Rgba(color));
@@ -100,5 +115,18 @@ mod tests {
         assert!(decode(&fixture(2049, 2049, [0, 0, 0, 255])).is_err());
         let invalid = super::super::skin::encode_png(b"\x89PNG\r\n\x1a\ninvalid").unwrap();
         assert!(decode(&invalid).is_err());
+    }
+
+    #[test]
+    fn a_contained_png_keeps_its_proportions_centred_in_the_rectangle() {
+        // A 2:1 image in a square: full width, half the height, transparent above and below.
+        let image = raster_contained(&fixture(20, 10, [200, 30, 40, 255]), 40, 40).unwrap();
+        assert_eq!(image.size, [40, 40]);
+        let at = |x: usize, y: usize| image.pixels[y * 40 + x];
+        assert_eq!(at(20, 20), egui::Color32::from_rgb(200, 30, 40), "the image in the middle");
+        assert_eq!(at(0, 20), egui::Color32::from_rgb(200, 30, 40), "it fills the width");
+        assert_eq!(at(20, 2), egui::Color32::TRANSPARENT, "nothing stretched into the top");
+        assert_eq!(at(20, 37), egui::Color32::TRANSPARENT, "nor into the bottom");
+        assert!(raster_contained(&fixture(4097, 1, [0, 0, 0, 255]), 8, 8).is_none());
     }
 }

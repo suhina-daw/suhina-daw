@@ -1990,18 +1990,16 @@ fn paint_control(
                 let min = point(&[r[0].clone(), r[1].clone()]);
                 let rect = Rect::from_min_size(min, Vec2::new(value(&r[2]), value(&r[3])) * scale);
                 face = Some(rect);
-                if crate::kit::skin::has_own("device.knob.body") {
-                    let body_ink = crate::kit::element::KNOB_BODY
-                        .response_if(response)
-                        .enter()
-                        .computed_color_or(colours().control_background);
-                    if crate::kit::skin::paint_as(&scope, painter, rect, "device.knob.body", state, body_ink) {
-                        continue;
-                    }
+                // The roles have no default artwork, so `paint_as` paints only a theme's own, in
+                // whichever state it has artwork for (`device.knob.body.hover` alone included).
+                let body_ink = crate::kit::element::KNOB_BODY
+                    .response_if(response)
+                    .enter()
+                    .computed_color_or(colours().control_background);
+                if crate::kit::skin::paint_as(&scope, painter, rect, "device.knob.body", state, body_ink) {
+                    continue;
                 }
-            } else if let (Draw::Line { from, to, .. }, Some(rect)) = (draw, face)
-                && crate::kit::skin::has_own("device.knob.pointer")
-            {
+            } else if let (Draw::Line { from, to, .. }, Some(rect)) = (draw, face) {
                 let direction = point(to) - point(from);
                 let angle = direction.x.atan2(-direction.y);
                 let pointer_ink = crate::kit::element::KNOB_POINTER.response_if(response).enter().color_or(ink);
