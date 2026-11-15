@@ -189,7 +189,9 @@ pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actio
     ui.allocate_ui(egui::vec2(280.0, 30.0), |ui| {
         ui.add(
             egui::Label::new(
-                egui::RichText::new(midi_monitor_explanation(explained)).small().color(theme::text_secondary()),
+                egui::RichText::new(midi_monitor_explanation(explained))
+                    .small()
+                    .color(crate::kit::element::caption_ink()),
             )
             .wrap(),
         );

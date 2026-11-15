@@ -73,6 +73,8 @@ move its rules into `theme.css`.
   A theme whose swatch does not give a colour for every variant is refused on import.
 - `toolbar` (optional) suggests a toolbar arrangement:
   `{ "items": ["browser", "tempo", "transport"], "hidden": ["agents"] }`.
+- `base` (optional): `"none"` leaves Suhina's base sheet out from under your theme (*Suhina's base
+  sheet* below), for a theme that styles everything itself.
 
 ### Swatches and the thumbnail
 
@@ -102,17 +104,18 @@ extension hidden). A theme made for the format before `theme.json` needs one add
 folder within about a second, or at once with **More › Reload themes**; a folder that is not a
 theme is named in the status bar with what it is missing. The folder's name is the theme's id:
 it stays when the theme is renamed. Two themes with the same name show their folder names on
-their cards. **Duplicate theme** copies the whole theme, its placements included; delete the
-copy's `.control-NAME` rules to start from Suhina's own placements. Built-in themes cannot be
+their cards. **Duplicate theme** copies the whole theme, its layout rules included. Built-in themes cannot be
 edited, only duplicated.
 The template ZIP also has the built-in themes as reference folders in `examples/`;
 the importable example is `my-theme/`, with an example variant.
 
 ### Settings and variants
 
-A theme's colours are custom properties: every theme has each palette token (`--accent`,
-`--window-background`, `--track-headerBackground`: the palette keys with hyphens), set in
-`:root`. A token colours many things at once; in the Launcher, the mixer and the Arrangement
+A theme's colours are custom properties: every theme has each colour token (`--accent`,
+`--window-background`, `--track-headerBackground`: the token names with hyphens), set in
+`:root`. A theme needs to set only the colours it changes: any other is Suhina Studio's, and a
+theme Suhina saves writes only the colours it sets. Token names from the first versions
+(`--surface-0`, `--line`, …) are no longer read; use the names in the table below. A token colours many things at once; in the Launcher, the mixer and the Arrangement
 each thing is also an element of its own (the selector reference below), and a rule for it
 replaces the token there alone: `slot[kind="stop"] { background-color: … }`,
 `grid-line[kind="beat"] { color: … }`. A line or a mark takes only a `color` given to it, not the
@@ -249,7 +252,7 @@ In `theme.css`, `meter-level { opacity: .5; }` additionally dims native bars, ho
 needles and CSS fills/glow. Transparent CSS fills suppress native fill fallback.
 Generic CSS `filter: brightness()` / `saturate()` is not connected to native painting.
 
-## Native element placement and artwork variants
+## Laying out the strips, and artwork variants
 
 The built-in **Suhina Sheet** is a complete green-and-white worksheet-style example
 with original SVG artwork for all 16 base roles. Select it in Themes, duplicate it
@@ -267,41 +270,32 @@ artwork behind Launcher slots; empty cells preserve it and native clip launches 
 unchanged. `off`/omission preserves native fills. Native custom properties inherit
 from the nearest authored ancestor, and a closer scope can override them.
 
-Controls are placed with `.control-NAME` rules; matching instances share the rule and the
-containing panel bounds each element. The visual placement editor (**Edit interface**) has been
-removed for now, while layout moves to plain CSS
-([issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)), so write these rules by
-hand in `theme.css`:
+A track header, a mixer strip and the toolbar's transport lay their parts out with Flexbox (and
+Grid) in `theme.css`, like the window and the bars. The parts are the elements that paint them;
+the `group`s around them only lay them out. Suhina's own layout is the user-agent sheet's, so a
+theme changes only what it writes a rule for:
 
 ```css
-.control-mixer-name { bottom: 0px; }
-.control-mixer-color { display: none; }
-.control-mixer-volume { width: 100px; height: 20px; direction: horizontal; }
-.control-mixer-meter { width: 80px; height: 10px; left: 0px; top: 0px; }
+mixer track-colour { display: none; }                  /* no colour band */
+mixer meter { order: -1; margin: 0 8px 0 0; }          /* the meter before the fader */
+mixer-toggles { flex-direction: column; }              /* solo, cue and arm one above the other */
+group#mixer-level { flex-direction: column; }          /* the fader lying across the strip */
+#mixer-volume { height: 20px; }
+#mixer-sends { display: none; }                        /* no sends in the strip */
+toolbar-module#transport { gap: 4px; }                 /* play, stop and record further apart */
 ```
 
-Offsets are relative to the native anchor, in logical points, bounded to ±16384;
-sizes are `auto` or 1–4096px. `bottom` anchors to the containing panel. This explicit
-native positioning contract is separate from the Flex/Grid layout in `theme.css`.
-Placement overrides do not automatically resolve overlaps with neighbouring elements;
-when moving a name into the footer, arrange the toggles and sends to leave it room.
-Changing direction changes the native drag axis, rail, cap and scale together.
-The dB labels/ticks can also be moved, resized or hidden independently with
-`.control-mixer-volume-scale`; `fader-scale` styles their ink. This keeps a swapped
-meter/fader layout from forcing the scale to remain on the fader's original side.
-Native compact-height thresholds remain in force. Placement coverage is still growing:
-toolbar modules/transport, the Launcher mixer sections, solo/cue/arm/type glyphs and
-Arrangement name/colour/volume/pan/meter are connected. Device SDK controls, captions,
-panels and other typed elements use `device-<control-id>` names; moving/resizing them
-keeps their existing parameter commands and hit targets. Long/non-ASCII ids get a stable
-bounded slug/hash name, visible in the editor. Knobs preserve their circular aspect;
-other drawing coordinates scale with the control. Raw widgets, clip/scene cells,
-browser elements and floating-window geometry still need adapters.
-Arrangement fold, enable, automation, output/input routing and send navigation are
-also connected (`arrangement-fold`, `arrangement-enable`, `arrangement-automation`,
-`arrangement-output`, `arrangement-input`, `arrangement-sends-previous/next`).
-Individual send slots use `mixer-send-1` and `arrangement-send-1`, then `-2`, etc.,
-following native return order. Launcher sends stay inside their movable sends region.
+Which parts a strip has room for stays Suhina's: the mixer's height steps add the name, the
+output, the device list and the sends as the strip grows, and a header takes one or two lines by
+its width and height. Suhina gives each part its size (a fader's length, a meter's width, a
+button's width); a `width` or `height` in the sheet wins. A part hidden with `display: none` is
+neither drawn nor clicked, and the parts after it close up. A fader laid out wider than tall lies
+down and is dragged sideways. Every strip of one kind shares one layout, so a rule cannot single
+out one track's strip by its colour or id. Suhina decides which parts fit from the strip's own
+padding and border without `[layout]`, `[size]`, `[name-first]` or `[narrow]`: give the padding
+on `track-header` or `mixer` itself, as padding under one of those attributes moves the parts but
+does not make room for them. The selector reference below lists each strip's parts
+(*The strips' parts*). A device panel's controls keep Suhina's layout for now.
 
 Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds, with a
 variant for a state if you like. Artwork is not chosen by a track's colour; an SVG that draws in
@@ -383,10 +377,127 @@ suhina-cli theme validate out.theme.suhina   # or a folder; lists the notices
 A package is not signed. Sign the file with a key of your own, outside Suhina, when the
 receiver needs to know it came from you.
 
+## Suhina's base sheet, and colouring a region
+
+Under your theme sits Suhina's own design, the **base sheet** (built into the app), and under it
+the **user-agent sheet**, the bare floor that keeps every element usable. Every rule of your theme
+beats every rule of the base sheet, whatever its specificity or `@layer`: you never need a more
+specific selector to win over Suhina's.
+
+- **Set variables, keep every state.** The base sheet takes every colour from the colour variables
+  (`--accent`, `--control-background` …). A theme that sets only `:root` variables keeps every look
+  it gives, its states included. A rule of yours for an element overrides the base sheet's rules
+  for that element, its states' too, for each property your rule sets: `button {
+  background-color: … }` overrides the background of the base sheet's `button[checked]`, so write
+  the states you want for that property as well (`button[checked] { background-color: … }`).
+  A property you do not set keeps the base sheet's value.
+- **Colour a region through its variables.** `mixer { --text-value: gold; }` reaches every part
+  inside the mixer that Suhina colours with `--text-value`. A plain `mixer { color: gold; }`
+  colours only the text that has no rule of its own: it no longer reaches buttons, value fields,
+  drop-downs, knobs, list rows and the label kinds (`hint`, `caption`, `value`, `error`), which the
+  base sheet colours with a rule of their own. Colour a region through its variables
+  (`--text-primary`, `--text-value`, `--control-background` …), or write a rule for the part.
+- **Your own sheet too.** `:root { --accent: #FF8A00; }` in `user.css` reaches everything, in
+  Suhina Studio as in any theme.
+- **Shared controls.** The base sheet gives Suhina's own controls their looks: a `button` (its
+  fill, text, edge and the ring while it has the keys, a step brighter under the pointer), the
+  toggles (`button[kind="toggle"]`, and `toggle` for a switch a view draws itself: dim words, and
+  when `[checked]` the chosen fill and the text on it; solo, `button[kind="solo"]`, is lit in the
+  accent, arm, `button[kind="arm"]`, in the recording colours), `knob`, the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) and their
+  `value-fill` and `value-handle`, the pan field and its `pan-centre`, `send`, the line under a
+  field (`text-input`, `value`, `dropdown`), a drop-down's `dropdown-arrow`, a typed number
+  (`text-input[kind="typed"]`), a slider's `slider-rail`, `slider-fill` and `slider-handle`, a
+  fader cap's fill, a meter's `meter-level` (`meter-level[kind="hot"]` near the top) and
+  `meter-clip`, a `dialog`'s edge, a floating list's `list-row` (`[selected]` for the picked one),
+  and the words (`label[kind="hint"]`, `"caption"`, `"value"`, `"error"`). **Your rule for any of
+  these overrides the base sheet's for each property it sets, its states' too**: after `button {
+  background-color: … }` a lit toggle takes that background as well, so write
+  `button[kind="toggle"][checked] { background-color: … }`, and for a slider `slider-fill { … }`
+  `slider[checked] slider-fill { … }`.
+- **The Launcher, the mixer and the Arrangement.** The base sheet gives these views their looks
+  too: a scene's button (`scene`, `[playing]`, `scene[kind="stop-all"]`), a track's stop button
+  (`slot[kind="stop"]`, `[queued]`), an empty slot (`session slot`, `[selected]`) and its
+  `slot-mark`, a deactivated, queued or selected clip in the Launcher (`session clip[muted]`,
+  `[queued]`, `[selected]`), the record button of an armed track's slot (`slot-record`,
+  `[recording]`), the key mapping's tint (`mapping-overlay`), Main's header
+  (`track-header[kind="main"]`), the lines between the Launcher's bands, columns and slots
+  (`separator[kind="band"]`, `"column"`, `"slot"`); a mixer strip's fill (`mixer`), its device
+  list and rows (`device-list device-row`, `[selected]`, `[muted]`), its fader's value (`fader`)
+  and `fader-scale`, a `send` and the control bar's and the strips' own switches
+  (`button[kind="record"]`, `"metronome"`, `"monitor"`, lit with `[checked]`); in the Arrangement
+  the colours under the grid (`arrangement`) and under its panels (`arrangement[kind="panel"]`),
+  the `ruler`, the grid lines (`grid-line[kind="bar"]`, `"beat"`), the `tempo-mark`, the
+  `start-marker`, the `playhead`, the loop (`loop-region`, `[checked]`, and `loop-line`), a
+  `marker` (`[checked]` while dragged), the tools (`arrangement-tool`, `[checked]`), the selected
+  time (`time-selection` and its kinds), a clip being recorded (`arrangement clip[recording]`),
+  the lane the piano roll edits (`arrangement track-lane[checked]`), a track's header
+  (`arrangement track-header`, `[selected]`; Main's `arrangement track-header[kind="main"]`), a
+  clip's gain field (`clip-gain`) and fade handles (`clip-fade-handle`), the automation lanes
+  (`automation-lane[kind="group"]`, `automation-header`, `[selected]`, `automation-line[muted]`,
+  `automation-point[selected]`, `automation-pin`) and the switches `button[kind="envelope"]`,
+  `"lanes"` and `"shape"`. **Your rule for an element overrides the base sheet's for each property
+  it sets, its states' too**: a theme with a rule for every `scene` or `clip` states `scene[playing]`
+  or `clip[muted]`, `[queued]` and `[selected]` as well. A rule for every `button` hides the lit looks of these switches as well:
+  Suhina Meadow, Blocks and Sheet and the Dark Gloss example state `button[kind="monitor"][checked]`
+  and the others again, and so does a theme of yours with such a rule. A plain `color` on `session`, `mixer` or
+  `arrangement` no longer reaches the parts above that the base sheet gives a `color`
+  (a send, a fader's value, a scene's text, a tool, a marker, a clip's gain field …): colour them
+  through the region's variables (`--text-primary`, `--text-value`) or give the part a rule
+  (`send { color: … }`).
+- **The detail area and the browser.** The base sheet colours the browser (its text, its words by
+  kind from the `--browser-text-*` variables, its rows and places under the pointer, picked and
+  where a drop lands, its filter chips `button[kind="chip"]`, a tag's box
+  `button[kind="tag-check"]`, the preview's play `button[kind="preview"]`, the "…" of the tags that
+  did not fit `button[kind="more"]`, and the fills it paints itself, `browser-fill`), the detail
+  panels (their fills `detail-fill`, a device's header, nodes, outline, lines, parameters and
+  canvas colours `device-canvas`, a group's branches `device-row[kind="branch"]`, the fields
+  `value[kind="field"]`, the buttons `button[kind="panel"]`, switches `button[kind="panel-toggle"]`
+  and lists `dropdown[kind="panel"]`, the Clip and Devices switch `editor-tab[kind="switch"]`) and
+  the piano roll (its grid, rows, notes, velocities, ruler, loop bar, keys, strips, tools and
+  toolbar menus). **A rule for every `button` hides their lit looks too**: state
+  `button[kind="chip"][checked]`, `button[kind="tag-check"][checked]`,
+  `button[kind="focus"][checked]` and `button[kind="more"]:hover`. A region's plain `color` no
+  longer reaches the piano roll's ruler numbers (`ruler-number`) and toolbar lines
+  (`separator[kind="bar"]`) or a device's values (`device-control[kind="value"]`,
+  `device-canvas[kind="value"]`): colour the region through `--text-value`, or give them a rule.
+- **The bars, Settings and the dialogs.** The base sheet colours the window's background
+  (`window`), the fills the bars, Settings, the dialogs and menus paint for themselves (`app-fill`),
+  the toolbar's words and switches (the time signature `toolbar-module[kind="signature"]`, the
+  launch quantisation `[kind="grid"]`, Map `button[kind="map"]`, Play `button[kind="play"]`, the
+  browser's switch `button[kind="browser"]`, a connected agent `button[kind="agent"]`), a menu's
+  title on the menu bar (`bar-item[kind="menu"]`, which also names the words of the piano roll
+  toolbar's Grid, Workflow and Ghosts menus: scope a rule with `menu-bar` or
+  `piano-roll-toolbar` to reach one of them), the status bar's counts
+  (`bar-item[kind="status-counts"]`), Settings' pages' list (`settings-nav`, `[checked]` for the page
+  shown), its switches, choices and presets (`button[kind="switch"]`, `"option"`, `"preset"`), a tick
+  box (`button[kind="check"]`), the start page's tabs (`editor-tab[kind="start"]`), the theme
+  picker's cards (`theme-card`), a dialog's title row and list rows (`dialog-title`,
+  `list-row[kind="dialog"]`) and the drag pill (`tooltip`). **A rule for every `button` hides their
+  lit looks too**: state `button[kind="map"][checked]`, `button[kind="option"][checked]`,
+  `button[kind="preset"][checked]`, `button[kind="switch"][checked]` and
+  `button[kind="check"][checked]`. A bar's plain `color` no longer reaches a menu's title or the
+  tabs' names: colour the bar through `--text-secondary`, or give them a rule
+  (`menu-bar bar-item[kind="menu"], project-tabs label[kind="caption"] { color: … }`).
+- **egui's own widgets** (the fields, drop-downs, check boxes and entries of Settings and the
+  menus) take `widget`: at rest, `:hover`, `:active`, `:disabled`, `[checked]` for the selection,
+  `[kind="window"]` for egui's windows and menus, `[kind="field"]` behind a text field. Its words
+  at rest are `--text-value`, a `button`'s `--text-primary`; your rules for `button`, `text-input`,
+  `menu` and `scroll-bar` still go over it.
+- **The base sheet's own colours** are variables as well: the grey of a muted Arrangement clip
+  and track header (`--clip-mutedBackground`, `--clip-mutedSelectedBackground`,
+  `--track-headerMutedBackground`, `--track-headerMutedSelectedBackground`), the browser's icons by kind
+  (`--browser-icon-midi`, `--browser-icon-sample`, `--browser-icon-instrument`,
+  `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …
+  `--sample-other`).
+- **Opting out.** `"base": "none"` in `theme.json` leaves the base sheet out: your theme stands on
+  the user-agent sheet, whose window has plain light text on an opaque dark background and no
+  other colours, and styles the rest itself. The colour variables still resolve, so your rules can
+  use them.
+
 ## SVG inheritance and safe defaults
 
-Suhina's user-agent style sheet, the first sheet under your theme, gives every control its
-default artwork, on the element that draws it:
+Suhina's user-agent style sheet, the first sheet under the base sheet and your theme, gives every
+control its default artwork, on the element that draws it:
 
 | Element | File |
 |---|---|
@@ -425,8 +536,8 @@ A theme made for an earlier version: artwork of its own for `knob.body`, `fader.
 `fader.cap` that uses `currentColor` drew in the knob's pointer colour or the values' text colour,
 and now draws in the part's `color`. Give the part that colour to keep the look
 (`knob-body { color: var(--accent); }`, `fader-cap, fader-rail { color: var(--text-value); }`).
-The `--kind-*` colours of the sample map are no longer read: write
-`sample-point[kind="kick"] { color: #D06E5E; }` and so on instead.
+The `--kind-*` colours of the sample map are no longer read: set `--sample-kick` and the others,
+or write `sample-point[kind="kick"] { color: #D06E5E; }` and so on instead.
 
 *More › New theme…* and *More › Duplicate theme…* have an **Include the default artwork**
 checkbox: it copies every default SVG into the new theme's `assets/` and writes a rule for each
@@ -449,7 +560,7 @@ Portable exports include inherited artwork so another machine receives the same 
 | Artwork | SVG/PNG roles, colour/state variants and frame sequences, moving faders and rotating knob pointers |
 | Meters | `continuous`, `segmented` (4–64 segments), `needle`, signal-driven `frames`; signal remains dBFS |
 | Materials | Optional bounded PNG background, opacity/blur; panel/track/clip gradient and liquid settings |
-| Toolbar | Native layout plus anchored offsets, explicit order/visibility, connected Flex/Grid |
+| Toolbar | Native layout plus offsets, explicit order/visibility, connected Flex/Grid |
 | Window | One CSS grid of the bars and the panels on `window`, which a theme rearranges |
 | Styles | Connected foreground/font size/radius, linear/radial/conic and repeating gradients, bounded inset/outset box shadows and shared native text shadows |
 | Motion | Connected paint transitions/keyframes; native animation-off/high-contrast settings suppress motion |
@@ -550,7 +661,7 @@ control is dragged or shows the arrow of the drag's direction; `auto` keeps the 
 | Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `tempo-mark`, `loop-region`, `loop-line`, `marker`, `playhead`, `start-marker`, `grid-line`, `time-selection`, `marquee`, `track-lane`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade`, `clip-fade-handle`, `clip-envelope`, `take-header`, `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `arrangement-tool`, `add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
 | Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `slot-mark`, `slot-record`, `scene`, `scene-column`, `mapping-overlay`, `#mixer-volume`, `#mixer-pan`, `pan-centre`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `meter-level`, `meter-clip`, `device-list`, `device-row`, `scroll-bar`, `#mixer-divider`, `#mixer-splitter` |
 | Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-slice`, `start-marker`, `loop-region`, `ruler-number`, `ruler-tick`, `piano-tool` with `#piano-<tool>`, `midi-tools` (with `slider#quantise-amount`), `clip-info`, `editor-tab` (`#tab-clip`, `#tab-devices`, `#tab-notes`, `#tab-transform`) |
-| Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search` (`text-input`) |
+| Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search`, `#browser-new-folder` (`text-input`) |
 | Devices `device`, `#device-<id>` | `device-header`, `device-control`, `slider`, `slider-rail`, `slider-fill`, `slider-handle`, `knob`, `value` |
 | Dialogs `settings`, `dialog`, `start-page`, `plugin-manager` | `button` (also egui's check boxes and drop-downs), `button[checked]` (a chosen item), `text-input`, `settings-nav`, `progress`, `progress-fill`, `menu`, `popup` |
 
@@ -583,32 +694,46 @@ Elements, by name:
 | `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]` |
 | `waveform`, `envelope` | what a clip shows |
 | `device-panel`, `device-section`, `device-control`, `xy-control` | device panels; `#id` selects a device control |
-| `button`, `value`, `value-fill`, `dropdown`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields |
+| `button`, `value`, `value-fill`, `dropdown`, `dropdown-arrow`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a drop-down's arrow keeps its own `color`, so a rule for the field's text names `dropdown-arrow` too; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` is its too, until `text-input[kind="typed"]` has its own) |
+| `button[kind="toggle"]`, `#control-solo`, `#control-cue`, `#control-arm` | a track's solo, cue and arm buttons and the other switches Suhina draws as buttons (`[kind="solo"]`, `[kind="arm"]`, `[kind="toggle"]`), `[checked]` while on (the arm `[armed]` too): a rule for every `button` (its colour or its background image) is the lit button's too, so state its lit look (`button[kind="toggle"][checked] { background-color: … }`, and for solo and arm `button[kind="solo"][checked]`, `button[kind="arm"][checked]`); under the pointer they are ringed in their `border-color`, and in their `accent-color` while they have the keys |
+| `toggle` | a switch a view draws itself, not as a button (the detail panels' switches), `[checked]` while on: its `color` and `background-color`, a step brighter under the pointer; the base sheet gives it the colours of `button[kind="toggle"]` |
+| `slider`, `slider-rail`, `slider-fill`, `slider-handle` | a slider and its parts' `background-color`; a swing amount is `slider[checked]` while it is the clip's own, its fill then the accent: a rule for every `slider-fill` is the lit one's too, so state `slider[checked] slider-fill` |
 | `menu`, `popup` | an open menu of the menu bar; a control's popup (`#metronome-level`, the metronome's level) |
-| `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls |
+| `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob[kind="dial"]` with its rim in its `border-color`, the disc between rim and face in `knob-ring`'s `background-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
 | `meter`, `meter-level`, `meter-vertical`, `meter-horizontal` | level meters and their lit part |
 | `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs |
+| `app-fill` | the fills the bars, Settings, the dialogs and menus paint for themselves where the region behind gives none, by `kind` (`window`, `panel`, `panel-hover`, `control`, `control-hover`, `control-active`; `knob` the knob of a switch that is on over a see-through window) |
+| `widget` | egui's own widgets under your `button`, `text-input`, `menu` and `scroll-bar` rules: at rest, `:hover`, `:active`, `:disabled`, `[checked]` (the selection), `[kind="window"]`, `[kind="field"]` |
+| `label[kind]` | the browser's and the detail panels' words by how much they stand out: dim words (`hint`) and a control's or figure's name (`caption`) take only a colour given to them, not one around them; a panel's title (`title`), a value shown as words (`value`), a fault (`error`), a plug-in's state (`plugin-state`), a device parameter's name (`parameter`), a check box's words (`check`), the head of the MIDI tools' figures (`head`, `[selected]` in its `accent-color`), words or a mark in the accent (`accent`), and the light and dark inks of text on a colour (`on-light`, `on-dark`, from `--text-onColorLight` and `--text-onColorDark`); inside the browser `hint`, `caption` and `value` take the browser's own colours |
+| `browser-fill`, `detail-fill` | the fills the browser and the detail area paint for themselves where the region behind gives none, by `kind` (`panel`, `window`; the browser's splitter `splitter`, stronger under the pointer; the detail's `control` and `hover` for the hide and close buttons, `outline` the edge of a button that cannot be pressed) |
+| `device-canvas` | the colours a device's own drawings take, read in the device's scope: `color` the text, `background-color` the controls, `border-color` the lines, `accent-color` the accent; `kind="secondary"`, `"value"`, `"inverse"` (`color`) and `"panel"`, `"window"`, `"active"` (`background-color`) the others |
+| `#control-device-on` | a device's on switch (`[checked]` while it runs): a rule for every `button` reaches it, as it does any button, so a theme with one states `#control-device-on[checked]` |
+| `button[kind="close"]`, `button[kind="more"]` | an expanded panel's × and the browser's more tags: only a rule for them reaches them, not one for every `button` |
+| `device[kind="group"]`, `device-row` | a device group's panel, and its branches (`[selected]` while shown, `[muted]` while muted); its `+ Branch` is `add-track[kind="branch"]`; a device's `accent-color` outlines it while selected |
+| `icon[kind]` in the piano roll | its tool pointer (`pointer`, the ring its `background-color`) and the strip's magnifier (`magnifier`); a clip's colour swatch is `icon[kind="swatch"]` |
 | `start-page`, `plugin-manager` | the page with no project open, the Plug-in manager |
+| `dialog-title`, `list-row`, `colour-swatch`, `theme-card` | a dialog's title row (`background-color`; its words `label[kind="title"]`); a row of a list a click picks, in a dialog, on the start page, in the quick-add and project switcher lists and the Plug-in manager (`[selected]` for the picked one); a swatch of the colour picker (`border-color` outlines the chosen one); a theme's card in the picker (`[selected]` for the theme in use: `border-color`, `background-color` for its tint, `accent-color` for the word *Active*) |
+| Control bar, tabs, Settings and dialogs | their words are `label` by kind (`hint` for headings and notes, `caption`, `title`, `value`, `error`), their rules, and the outlines of the start page's cards, `separator[kind="row"]`, their buttons `button` (lit ones `[checked]`: a rule for every `button` leaves them lit), the start page's tabs `editor-tab#tab-recent` and `#tab-templates`, the toolbar's RAM and CPU bars `meter` and `meter-level` (`[kind="hot"]`); `divider#detail-splitter[closed]` while the detail area is closed |
 | `send` | a send, in a mixer strip and in a track header |
 | `add-track` | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons after the last track |
-| `ruler`, `loop-region`, `playhead` | the Arrangement view's ruler, its loop bar and the play position line |
-| `divider` | the line between a strip's device list and its controls (`#mixer-divider`), the Launcher mixer's top line (`#mixer-splitter`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) |
+| `ruler`, `loop-region`, `playhead` | the Arrangement view's ruler, its loop bar and the play position line (also the piano roll's and the browser preview strip's) |
+| `divider` | the line between a strip's device list and its controls (`#mixer-divider`), the Launcher mixer's top line (`#mixer-splitter`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) and the Arrangement's track header edge (`#arrangement-header-splitter`, painted only where a theme gives it a `background-color`) |
 | `separator[kind]` | the views' lines: the Launcher's between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's under its rows (`row`), between its bands (`band`) and under each lane (`lane`), in their `color` |
 | `slot-mark`, `slot-record`, `mapping-overlay`, `drop-target` | the mark in an empty slot with a stop button; an armed slot's record button (`[recording]`); the tint over a control while keys are mapped (`[selected]` on the picked one); where a drop lands (`kind="area"`, `kind="insert"`) |
 | `grid-line`, `tempo-mark`, `start-marker`, `marker` | the Arrangement's grid lines (`kind="bar"`, `kind="beat"`), a tempo or time-signature change, the play start marker, a marker's tag |
-| `time-selection`, `marquee` | selected time (`background-color` over the lanes, `color` at its edges; `kind="ruler"`, `"draw"`, `"editor"`, `"take"`, `"automation"`), and the rectangle that picks clips |
+| `time-selection`, `marquee` | selected time (`background-color` over the lanes, `color` at its edges; `kind="ruler"`, `"draw"`, `"editor"`, `"take"`, `"automation"`), and the rectangle that picks clips, notes (piano roll) or sample-map points |
 | `clip-fade`, `clip-envelope`, `take-header` | a fade's line (`kind="crossfade"` between takes), a clip's gain envelope while it is edited, a take lane's header |
 | `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin` | an automation lane's header (`kind="group"` for a group's), a group's time, the envelope (`[muted]` while off), its points (`[selected]`) and the pin |
-| `device-list`, `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
+| `device-list`, `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends (or the device chain) are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
 | `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
-| `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail |
-| `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-note`, `velocity` | the piano roll's grid, its rows (`kind="hover"` under the pointer), its keys (with `[selected]` and `[playing]`), the notes (`kind="draft"` while a drag makes them) and their velocity stems (`[selected]`, `[muted]`; `kind="line"` for a velocity drag's line) |
+| `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail (the mixer's and the clip gain fader's) |
+| `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-note`, `velocity` | the piano roll's grid (`kind="strong"` on an octave and a bar), its rows (`kind="hover"` under the pointer), its keys (with `[selected]` and `[playing]`), the notes (`kind="draft"` while a drag makes them; their own inks `kind="outline"`, `"dashes"` and `"name"`, `[checked]` on a strong note) and their velocity stems (`[selected]`, `[muted]`; `kind="line"` for a velocity drag's line) |
 | `piano-slice` | a slice drag's line (`kind="cut"`, `kind="delete"` for the right button's, with a `background-color` over what it deletes) |
 | `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark` | a C key, a key under the pointer, the line between white keys, the mark on a key in the clip's scale |
 | `piano-scale-strip`, `piano-range` | the strip left of the keys that names the octaves and the row under the pointer, and the range a drag on the keys is selecting |
 | `piano-clip-strip` | the strip over the ruler that shows several picked clips (background) |
 | `piano-time-selection`, `piano-insert-mark` | what is selected in time (background over the rows, `border-color` for its edges and the bar on the ruler), and the mark a click leaves where a paste goes (background) |
-| `piano-tool`, `midi-tools`, `clip-info`, `editor-tab` | the piano roll's tool buttons, the MIDI tools part of a MIDI clip's panel, the clip's column, and the **Clip** / **Devices** and **Notes** / **Transform** tabs |
+| `piano-tool`, `midi-tools`, `clip-info`, `editor-tab` | the piano roll's tool buttons (`[checked]`, `:hover`, `:disabled`), the MIDI tools part of a MIDI clip's panel, the clip's column, and the **Clip** / **Devices** switch (`editor-tab[kind="switch"]`) and **Notes** / **Transform** tabs (`kind="tab-notes"`, `"tab-transform"`) |
 | `device`, `device-header` | a device's panel in the device chain, and its header row |
 
 Ids:
@@ -832,6 +957,17 @@ different widths (`border-width: 0 0 2px`) give these widgets only the `border-c
 browser's search field and Settings' theme swatches draw each side. Settings' choices of several parts (Ask, Panel,
 On) are `button` parts too, the chosen one `[checked]`.
 
+A rule that is not scoped reaches egui's own widgets everywhere, wherever a view draws one
+outside a style scope: `button` (`:hover`, `:active`, `:disabled`) their states, `button[checked]`
+the selection, `text-input` their fill and text colour (`text-input:focus`'s `border-color` a
+focused field's outline), `menu` the fill, border, `border-radius` and outer `box-shadow` of every
+menu and pop-up egui frames (egui's own windows share them), and `scroll-bar` (`:hover`,
+`:active`) a scroll handle's fill, which egui's sliders and check marks use too. egui has no
+value of its own for tooltips: `tooltip` styles the frame painted over them. A theme with no such
+rule keeps the colours of its tokens. A rule with a `border-color` and no `border-width` keeps the width
+egui draws with (its separators included); only a width, `0` too, changes it. `button[checked]` gives the
+selection only what it says unlike the plain `button`.
+
 ```css
 button { background-color: #24272B; border-width: 0; border-radius: 4px; }
 button:hover { background-color: #2E3238; }
@@ -893,31 +1029,32 @@ tints its Arrangement header, over the user's header colour strength: 0 leaves t
 
 ### One sheet
 
-There is one sheet, `theme.css`. When you place controls or choose artwork in the app, Suhina
+There is one sheet, `theme.css`. When you choose artwork in the app, Suhina
 changes that declaration in it, or adds it at the end when the sheet has none.
 
-### Placement names
+### The strips' parts
 
-Each control has a placement name; a placement rule is `.control-NAME`, and a list of
-them (`.control-a, .control-b`) places each. The Arrangement header has `arrangement-name`,
-`arrangement-volume`, `arrangement-pan`, `arrangement-send-1`, `arrangement-send-2`,
-`arrangement-sends-previous`, `arrangement-sends-next`, `arrangement-meter`,
-`arrangement-input`, `arrangement-output`, `arrangement-automation`, `arrangement-color`,
-`arrangement-enable`, `arrangement-fold`, `arrangement-monitor` (the MIDI monitoring chip),
-`arrangement-number` (the track number, drawn as a label of its own while `arrangement-enable`
-is hidden), `solo`, `cue`, `arm` and `track-type`; a mixer strip
-`mixer-name`, `mixer-color`, `mixer-enable` (the track number), `mixer-toggles`,
-`mixer-devices`, `mixer-divider`, `mixer-input`, `mixer-input-caption`, `mixer-monitor`, `mixer-output`,
-`mixer-sends` (all of a strip's sends), `mixer-pan`, `mixer-volume`, `mixer-volume-readout`,
-`mixer-volume-scale`, `mixer-compact-volume`, `mixer-meter` and `mixer-metronome`; the toolbar
-`transport-play`, `transport-stop`, `transport-record`, `transport-metronome` and
-`toolbar-MODULE`.
+A mixer strip (`mixer`; `mixer[narrow]` at 96 points or less, Main's `mixer[kind="main"]`) is a
+row of `track-colour` and `group#mixer-body`, a column from the bottom up: `track-name`,
+`group#mixer-output`, `device-list`, `divider#mixer-divider`, `pan#mixer-pan`,
+`value#mixer-volume-readout`, `group#mixer-level` (`fader#mixer-volume`, `fader-scale`, `meter`),
+`value#mixer-volume` (a low strip's volume), `group#mixer-input` (its caption, the source and
+`group#mixer-monitor`), `group#mixer-buttons` (`#control-track-on` with the track's number, and
+`mixer-toggles` of `#control-solo`, `#control-cue` and `#control-arm`; Main's
+`#control-main-metronome`) and `group#mixer-sends`.
 
-The Arrangement header changes its layout as its column narrows (about 315, 280, 240 and 160
-points: names move to the lower row, the pan and then names are dropped, the volume moves).
-Placements made at one width do not hold at another. Keep the column as wide as your
-placements need with `arrangement { header-min-width: 330px; }` (160 to 520). A
-control with no room left is not drawn, without a notice: check narrow tracks and strips too.
+A track header (`track-header`) is a row of `group#header-indent` (the groups' bands),
+`track-colour`, `group#header-body` and `meter`. The body holds `group#header-first` and
+`group#header-second`, the lines of `fold`, `#control-automation`, the take lanes' button,
+`#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-monitor`,
+`track-name`, `#arrangement-volume`, `#arrangement-pan`, the `send`s and their ‹ ›, then the
+routing `dropdown`s. Which line holds what is `track-header[layout]`: `short` (one line),
+`narrow`, `side` or `stacked`; `[name-first]` when the name's line comes first, and `[size]`
+(`tiny`, `small`, `normal`, `spacious`) by the track's height. Keep the column as wide as your
+layout needs with `arrangement { header-min-width: 330px; }` (160 to 520).
+
+The transport (`toolbar-module#transport`) lays out `#control-play`, `#control-stop` and
+`#control-record`.
 
 ### Round 5 additions
 
@@ -974,15 +1111,12 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   its name. A switch that is on keeps Suhina's
   lit look unless `button[checked]` has a background or colour of its own, and a button that
   cannot be pressed keeps Suhina's look.
-- **Low tracks:** `arrangement { compact-below: 48px }`: a track lower than that keeps
-  Suhina's own header layout instead of the placements, so nothing overlaps.
 - **Settings folder:** Settings › Projects and backups › Projects › Settings folder moves all of Suhina's
   data. Changing it or the themes folder asks first, backs the files up beside the old folder
   and moves them.
-- **A copy of a theme** says how many placed controls it keeps in its `theme.css`.
 - **Choosing a theme** keeps the Themes page where it was.
-- **Layers:** `.control-*` and artwork rules work inside `@layer` blocks too; inside `@media`
-  they do not (use plain CSS properties there).
+- **Layers:** artwork rules work inside `@layer` blocks too; inside `@media` they do not (use
+  plain CSS properties there).
 - **Mixer volume readout:** `#mixer-volume-readout { background-color: #1E1E1E; border-radius: 6px;
   font-size: 11px; }`.
 - **Empty slots:** `slot { background-color: #262626; }`.
@@ -994,8 +1128,8 @@ control with no room left is not drawn, without a notice: check narrow tracks an
   faces and pointers of the knobs a device draws with its own artwork (the Amp Modeler's
   knobs): `device.knob.body { image: url("assets/my-knob.png"); }`. The pointer turns with the
   value; the arc around the knob keeps the knob's `accent-color`.
-- **The mixer's colour strip:** `.control-mixer-color { display: none; }` hides it; `top`, `height`
-  and `width` move it (to the bottom, say).
+- **The mixer's colour strip:** `mixer track-colour { display: none; }` hides it; `width`
+  sizes it.
 
 ## What a theme cannot set
 
@@ -1117,52 +1251,15 @@ Current specifications: https://github.com/suhina-daw/suhina-daw/blob/main/docs/
 and https://github.com/suhina-daw/suhina-daw/blob/main/docs/decisions/0030-native-theme-css.md
 (on a development branch, use that branch's corresponding documents).
 
-### Full-height controls and symbol proportions
+### Full-height meters and symbol proportions
 
-Use `height: 100%` to stretch a control with its containing panel.
-`top` is then the top inset and `bottom` the bottom inset (zero by default).
-For example, a meter with four-point margins uses:
-
-```css
-.control-arrangement-meter { height: 100%; top: 4px; bottom: 4px; }
-```
-
-`height: auto` restores native height. Arrangement meter geometry follows the whole
-track, so scrolling does not rescale its level. SVG symbol roles preserve their aspect
-ratio and are centred; surface artwork such as button and track backgrounds stretches.
-
-### Anchoring one control to another
-
-A persistent anchor makes one edge of a control follow an edge of another control in
-the same container, with a gap. The value is `<control> <edge> [<gap>px]`; the target's edge must lie on the
-same axis (left/right, or top/bottom). For example, a meter that fills the track's
-height but ends four points above the volume control under it:
+A part stretches with `align-self: stretch`; its margins keep it off the edges. For example, a
+header's meter as tall as the track, four points from its top and bottom:
 
 ```css
-.control-arrangement-meter {
-  height: 100%; top: 4px;
-  anchor-bottom: arrangement-volume top 4px;
-}
+track-header > meter { align-self: stretch; margin: 4px 6px 4px 0; }
 ```
 
-Opposite edges keep the gap between the two controls (a bottom edge above a top edge);
-matching edges inset by it (a top edge 4 points below another top edge). With one edge
-anchored, a full-width or full-height control keeps its other edge and stretches;
-otherwise it moves and keeps its size. Anchoring both edges of an axis sets both.
-`anchor-bottom: none` removes an anchor. A placement's `left`, `top`, `right`, `bottom`,
-`direction` and `anchor-*` are read only in `.control-*` rules: anywhere else
-(`arrangement { direction: vertical; }`) nothing reads them, and the theme gets a notice.
-
-When the target is hidden, absent, or in another container, the anchored edge keeps the
-control's own placement. Anchors that form a cycle (including a control anchored to
-itself) or a chain longer than eight links are ignored with a warning. A control never leaves its container, and an anchor that leaves no room
-draws nothing: in a mixer strip too short for the chains from its top and its bottom, the
-anchored control that would stand on another one is not drawn. A strip without an audio input
-(a MIDI track's) keeps the room its input would take, so a control anchored to `mixer-monitor`
-or `mixer-input` lines up across every strip. The divider is a control as well:
-`.control-mixer-devices { anchor-bottom: mixer-divider top 0px; }` ends the device
-list where the theme puts the divider, and its drag area follows it.
-
-**Full width** uses `width: 100%`, with `left` and `right` as panel insets.
-For example `.control-mixer-name { width: 100%; left: 4px; right: 4px; }`.
-Fractional left/top offsets survive saving; existing integer offsets remain valid.
+Arrangement meter geometry follows the whole track, so scrolling does not rescale its level. SVG
+symbol roles preserve their aspect ratio and are centred; surface artwork such as button and
+track backgrounds stretches.

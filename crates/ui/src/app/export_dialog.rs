@@ -272,10 +272,12 @@ fn draw_export(
     let label_width = 76.0;
     let mut y = panel.top() + ROW + PAD;
     let mut entered = false;
+    let (caption, hint, fault) =
+        (crate::kit::element::caption_ink(), crate::kit::element::hint_ink(), crate::kit::element::error_ink());
 
     // The file, with Browse… beside it.
     let file_row = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
-    widgets::text_in(&painter, file_row, Align2::LEFT_CENTER, "File", small.clone(), theme::text_secondary());
+    widgets::text_in(&painter, file_row, Align2::LEFT_CENTER, "File", small.clone(), caption);
     let browse =
         Rect::from_min_size(Pos2::new(file_row.right() - 64.0, file_row.top() + 1.0), Vec2::new(64.0, BUTTON.y));
     let browse_clicked = button(ui, &painter, browse, "Browse…", "Browse for the file to export to");
@@ -295,7 +297,7 @@ fn draw_export(
     // A label on the left; the widget goes over the rest of the row, in a scoped `Ui`.
     let label_row = |y: &mut f32, label: &str| {
         let whole = Rect::from_min_size(Pos2::new(panel.left() + PAD, *y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
-        widgets::text_in(&painter, whole, Align2::LEFT_CENTER, label, small.clone(), theme::text_secondary());
+        widgets::text_in(&painter, whole, Align2::LEFT_CENTER, label, small.clone(), caption);
         let widget = Rect::from_min_max(
             Pos2::new(whole.left() + label_width, whole.top() + 1.0),
             Pos2::new(whole.left() + label_width + 170.0, whole.bottom() - 1.0),
@@ -361,7 +363,7 @@ fn draw_export(
         && matches!(format, "ogg" | "mp3")
     {
         let why = if format == "mp3" { "mp3 takes no bit depth" } else { "ogg takes no bit depth" };
-        widgets::text_in(&painter, depth_at, Align2::LEFT_CENTER, why, small.clone(), theme::text_hint());
+        widgets::text_in(&painter, depth_at, Align2::LEFT_CENTER, why, small.clone(), hint);
     } else {
         let depth_shown = depth.0;
         let mut chosen_depth = state.depth;
@@ -436,15 +438,15 @@ fn draw_export(
     let path = Path::new(state.path.trim());
     let empty = path.as_os_str().is_empty();
     let (text, colour) = if state.busy {
-        ("Exporting…".to_string(), theme::text_hint())
+        ("Exporting…".to_string(), hint)
     } else if let Some(said) = state.refusal().filter(|_| !empty) {
-        (said.to_string(), theme::recording())
+        (said.to_string(), fault)
     } else if empty {
-        ("Name the file to write".to_string(), theme::text_hint())
+        ("Name the file to write".to_string(), hint)
     } else if state.resolved_format().is_none() {
-        ("The file name decides: .wav, .flac, .ogg or .mp3".to_string(), theme::text_hint())
+        ("The file name decides: .wav, .flac, .ogg or .mp3".to_string(), hint)
     } else if path.exists() && !state.overwrite {
-        (format!("{} is there already; overwrite replaces it", path.display()), theme::recording())
+        (format!("{} is there already; overwrite replaces it", path.display()), fault)
     } else {
         let format = state.resolved_format().unwrap_or_default();
         let rate = state.sample_rate();
@@ -455,7 +457,7 @@ fn draw_export(
         } else {
             String::new()
         };
-        (format!("{} at {} Hz{}", format.to_uppercase(), rate, what), theme::text_hint())
+        (format!("{} at {} Hz{}", format.to_uppercase(), rate, what), hint)
     };
     widgets::text_in(&painter, note, Align2::LEFT_CENTER, &text, small, colour);
 

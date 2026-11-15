@@ -1487,7 +1487,7 @@ impl App {
             self.sample_map.set_window(true, &mut self.browser);
         }
         self.settings = settings;
-        theme::set_palette(ctx, self.themes.palette(&self.settings.theme));
+        ctx.request_repaint();
     }
 
     /// Uses the themes read from the theme files in `folder`, and draws with the one the settings
@@ -1507,7 +1507,7 @@ impl App {
             self.settings.theme = base.to_owned();
             self.settings_changed = true;
         }
-        theme::set_palette(ctx, self.themes.palette(&self.settings.theme));
+        ctx.request_repaint();
     }
 
     /// Draws with the theme `id` from now on and saves that in the settings, if there is such a
@@ -1527,7 +1527,7 @@ impl App {
         if self.themes.get(id).is_some() {
             self.settings.theme = id.to_string();
             self.settings_changed = true;
-            theme::set_palette(ctx, self.themes.palette(id));
+            ctx.request_repaint();
         }
     }
 
@@ -2539,7 +2539,7 @@ impl App {
     /// theme in use.
     pub fn put_theme(&mut self, ctx: &egui::Context, entry: ThemeEntry) {
         if self.themes.put(entry) {
-            theme::set_palette(ctx, self.themes.palette(&self.settings.theme));
+            ctx.request_repaint();
         }
     }
 
@@ -2933,8 +2933,6 @@ impl App {
         if self.settings.track_headers.is_none() {
             self.arrangement.headers_left = headers_left(None);
         }
-        // The frame's placed controls, for anchors between them (`anchor-*`).
-        let _capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
         crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
     }
@@ -2943,13 +2941,19 @@ impl App {
         application_bar::resize_edges(ui);
         if let Some(theme) = self.themes.get(&self.settings.theme) {
             crate::kit::skin::configure(&theme.skin);
+            crate::kit::native_css::set_colors(&theme.colors);
         } else {
             crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+            crate::kit::native_css::set_colors(&theme::Colors::new());
         }
+        // The backdrop's opacity before the styles: the frame an image first shows in is faded.
+        let backdrop = self.background.prepare(ui, &self.settings);
         let _css_frame = crate::kit::native_css::frame_with_motion(
             ui,
             self.settings.animations && self.settings.theme != "high-contrast",
         );
+        // egui's widgets follow the sheet: the root's `Visuals` the frame's setup rebuilt.
+        theme::follow_root_visuals(ui);
         // The layout settings, as the window's grid reads them (#1370), so a theme's rules for
         // them paint as they lay out.
         let (detail_place, browser_side) = self.window_place(self.session().is_some());
@@ -2963,14 +2967,15 @@ impl App {
         let window_style = window_builder.enter();
         let mut styled_ui = window_style.ui(ui);
         let ui = &mut *styled_ui;
-        if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
+        if let Err(error) = backdrop {
             self.status = Status::Error(error);
         }
+        self.background.update(ui);
         // The root: the window's background, painted once under everything (over a private
         // image, at its strength). Each view, panel and bar paints only its own over it (#1233).
         let full_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
         let corner = if full_screen { 0 } else { self.window_corner };
-        let root = window_style.background_or(theme::window_background());
+        let root = window_style.background();
         ui.painter().rect_filled(ui.max_rect(), corner, root);
         window_style.paint_background(ui.painter(), ui.max_rect(), f32::from(corner));
         let liquid =
@@ -3072,11 +3077,8 @@ impl App {
         suhina_plugins::trace::timed("sample map analysis poll", || self.projects.poll_sound_map());
         self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
-        let placing = crate::kit::control_layout::editing(ui.ctx());
-        if !placing {
-            keys_for_shortcuts(ui.ctx());
-            self.launch_keys(ui, &mut actions);
-        }
+        keys_for_shortcuts(ui.ctx());
+        self.launch_keys(ui, &mut actions);
         // A menu bar item chosen while a dialog asks something is passed over, as its key is.
         let queued = std::mem::take(&mut self.queued);
         let menu_items = std::mem::take(&mut self.queued_menu_items);
@@ -3088,9 +3090,7 @@ impl App {
                 self.run_menu_item(&id, ui.ctx(), &mut actions);
             }
         }
-        if !placing {
-            self.shortcuts(ui, &mut actions);
-        }
+        self.shortcuts(ui, &mut actions);
         self.apply_zoom(ui.ctx());
         self.frame_trace.mark("keys");
         self.sample_map_window(ui.ctx(), &mut actions);
@@ -3187,7 +3187,7 @@ impl App {
                 ui.painter().rect_filled(
                     ui.max_rect(),
                     top,
-                    crate::kit::style_class::surface_or(theme::panel_background()),
+                    crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")),
                 );
             });
         }
@@ -3302,7 +3302,7 @@ impl App {
             if let Some(rect) = region(line) {
                 let style = crate::kit::element::SEPARATOR.id(id).attribute("kind", id).enter();
                 if !image {
-                    ui.painter().rect_filled(rect, 0.0, theme::border());
+                    ui.painter().rect_filled(rect, 0.0, style.border());
                 }
                 style.paint_background(ui.painter(), rect, 0.0);
             }
@@ -3471,10 +3471,14 @@ impl App {
                     ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::unique("sample-map-close")));
                 let response = widgets::button_area(ui, close, Id::unique("sample-map-close"), "Close sample map")
                     .on_hover_text("Close the sample map (Esc)");
-                let fill =
-                    motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-                over.rect_filled(close, 0.0, fill);
-                let ink = theme::text_primary();
+                let button = crate::kit::element::BUTTON.response(&response).enter();
+                over.rect_filled(
+                    close,
+                    0.0,
+                    button.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
+                );
+                let ink = button.color();
+                drop(button);
                 for (from, to) in
                     [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
                 {
@@ -4055,20 +4059,7 @@ impl App {
 /// The label beside the pointer while something is dragged: outlined in the accent colour when
 /// it can land where the pointer is.
 fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
-    let layer = egui::LayerId::new(egui::Order::Tooltip, Id::unique("browser-drag"));
-    let painter = ctx.layer_painter(layer);
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    let galley = widgets::fitted(&painter, text, font, theme::text_primary(), 280.0);
-    let rect = Rect::from_min_size(pointer + Vec2::new(14.0, 10.0), galley.size() + Vec2::new(PAD * 2.0, 6.0));
-    painter.rect_filled(rect, 0.0, theme::control_active());
-    painter.rect_stroke(
-        rect,
-        0.0,
-        theme::hairline(if lands { theme::accent() } else { theme::border_strong() }),
-        egui::StrokeKind::Inside,
-    );
-    widgets::paint_text(&painter, rect.min + Vec2::new(PAD, 3.0), galley, theme::text_primary());
-    ctx.request_repaint();
+    drops::pill(ctx, pointer, text, lands);
 }
 
 /// Where an arrangement clip's name is drawn, by (track, index): the inline rename's place.
@@ -4114,7 +4105,7 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
 fn bar_box(ui: &Ui, bar: &crate::kit::element::Entered, corners: egui::CornerRadius) -> Rect {
     let rect = ui.max_rect();
     let painter = ui.painter();
-    painter.rect_filled(rect, corners, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(rect, corners, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
     bar.paint_background(painter, rect, 0.0);
     if bar.style().is_some() {
         return bar.paint_border(painter, rect);
@@ -4127,10 +4118,10 @@ fn native_line(painter: &egui::Painter, bar: &crate::kit::element::Entered, rect
     let [top, _, bottom, _] = native_bar_line(bar);
     let line = |y: f32| Rect::from_x_y_ranges(rect.x_range(), egui::Rangef::new(y, y + 1.0));
     if top > 0.0 {
-        painter.rect_filled(line(rect.top()), 0.0, theme::border());
+        painter.rect_filled(line(rect.top()), 0.0, crate::kit::element::row_line());
     }
     if bottom > 0.0 {
-        painter.rect_filled(line(rect.bottom() - 1.0), 0.0, theme::border());
+        painter.rect_filled(line(rect.bottom() - 1.0), 0.0, crate::kit::element::row_line());
     }
     Rect::from_min_max(rect.min + Vec2::new(0.0, top), rect.max - Vec2::new(0.0, bottom))
 }

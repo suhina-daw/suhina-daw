@@ -153,7 +153,7 @@ pub(crate) fn dialog(painter: &Painter, dialog: &Entered, rect: Rect, fill: Colo
     }
     let content = dialog.paint_with(painter, rect, element::Native { radius: 0.0, fill }).content;
     if !dialog.style().is_some_and(|style| style.authored.border_width) {
-        painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+        painter.rect_stroke(rect, 0.0, theme::hairline(dialog.border()), egui::StrokeKind::Inside);
     }
     content
 }

@@ -27,43 +27,39 @@ fn a_pan_and_a_send_take_their_own_knob_artwork_and_other_knobs_do_not() {
 
 #[test]
 fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
-    let original = theme::palette();
-    let mut palette = original;
-    palette.window_background = Color32::TRANSPARENT;
-    palette.text_value = Color32::from_rgb(220, 230, 220);
+    let colors = [
+        ("window-background".to_owned(), Color32::TRANSPARENT),
+        ("text-value".to_owned(), Color32::from_rgb(220, 230, 220)),
+    ];
     let ctx = egui::Context::default();
-    theme::set_palette(&ctx, palette);
+    theme::use_colors(&ctx, &colors.into());
     motion::set_enabled(&ctx, false);
-    let mut output = ctx.run_ui(Default::default(), |ui| {
+    let (fill, text) = theme::in_style_frame(&ctx, |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
         let response = button_area(ui, rect, Id::unique("transparent-toggle"), "Track on");
-        let (fill, text) = toggle_colors(ui, &response, true);
-        assert_eq!(text.a(), 255);
-        assert!(theme::contrast(fill, text) >= 4.5);
+        toggle_colors(ui, &response, true)
     });
-    output.textures_delta.clear();
-    theme::set_palette(&ctx, original);
+    assert_eq!(text.a(), 255);
+    assert!(theme::contrast(fill, text) >= 4.5);
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
 fn active_toggle_text_stays_visible_when_the_inverse_ink_is_translucent() {
-    let original = theme::palette();
-    let mut palette = original;
     // Nearly transparent white ink on a black lit fill: opaque white would read, this does not.
-    palette.control_selected = Color32::BLACK;
-    palette.text_inverse = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
+    let faint = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
+    let colors = [("control-selectedBackground".to_owned(), Color32::BLACK), ("text-inverse".to_owned(), faint)];
     let ctx = egui::Context::default();
-    theme::set_palette(&ctx, palette);
+    theme::use_colors(&ctx, &colors.into());
     motion::set_enabled(&ctx, false);
-    let mut output = ctx.run_ui(Default::default(), |ui| {
+    let (fill, text) = theme::in_style_frame(&ctx, |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
         let response = button_area(ui, rect, Id::unique("faint-ink-toggle"), "Track on");
-        let (fill, text) = toggle_colors(ui, &response, true);
-        assert_ne!(text, palette.text_inverse, "the faint ink is replaced");
-        assert!(theme::text_contrast(text, fill) >= 4.5, "{text:?} on {fill:?}");
+        toggle_colors(ui, &response, true)
     });
-    output.textures_delta.clear();
-    theme::set_palette(&ctx, original);
+    assert_ne!(text, faint, "the faint ink is replaced");
+    assert!(theme::text_contrast(text, fill) >= 4.5, "{text:?} on {fill:?}");
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
@@ -386,4 +382,64 @@ fn a_silent_value_steps_up_from_the_scale_end_and_stays_when_stepped_down() {
     assert_eq!(stepped(f64::NEG_INFINITY, range, -1.0), f64::NEG_INFINITY);
     assert_eq!(stepped(-10.0, range, -1.0), -11.0);
     assert_eq!(stepped(5.5, range, 3.0), 6.0);
+}
+
+/// A lit toggle's colours, as the view takes them with a sheet that has no rule, are the palette's
+/// (`toggle_colors`): moving a switch onto its element changes nothing where no theme says so
+/// (#1440).
+#[test]
+fn a_lit_toggle_is_the_palette_s_where_no_rule_reaches_it() {
+    let ctx = egui::Context::default();
+    motion::set_enabled(&ctx, false);
+    let mut output = ctx.run_ui(Default::default(), |ui| {
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
+        for on in [false, true] {
+            let response = button_area(ui, rect, Id::unique(("lit-toggle", on)), "Track on");
+            let lit =
+                lit_toggle(ui, &response, crate::kit::element::BUTTON.builder(), &[crate::kit::element::Checked], on);
+            assert_eq!(lit.colors(), toggle_colors(ui, &response, on), "on = {on}");
+        }
+    });
+    output.textures_delta.clear();
+}
+
+/// A flat button paints its fill and its words in the palette's colours where no rule reaches it,
+/// and the colours of a rule for `button` where one does.
+#[test]
+fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
+    let rgb = egui::Color32::from_rgb;
+    let colours = |css: &str| {
+        crate::kit::skin::configure(&crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(css)),
+            ..Default::default()
+        });
+        let ctx = egui::Context::default();
+        let mut found = (Color32::TRANSPARENT, Color32::TRANSPARENT);
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(60.0, 20.0));
+                let response = button_area(ui, rect, Id::unique("flat"), "Flat");
+                flat_button(ui, ui.painter(), rect, &response, "Flat", (theme::TEXT_SMALL, None));
+            });
+            for shape in &output.shapes {
+                match &shape.shape {
+                    egui::Shape::Rect(rect) if rect.fill.a() > 0 => found.0 = rect.fill,
+                    egui::Shape::Text(text) => found.1 = text.fallback_color,
+                    _ => {}
+                }
+            }
+            output.textures_delta.clear();
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        found
+    };
+    assert_eq!(
+        colours(""),
+        (crate::kit::theme::studio("control-background"), crate::kit::theme::studio("text-primary"))
+    );
+    assert_eq!(
+        colours("button { background-color: #102030; color: #405060; }"),
+        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60))
+    );
 }

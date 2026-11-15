@@ -24,6 +24,7 @@ pub fn grid_entries(
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mono = theme::mono_font(theme::TEXT_SMALL);
     let picked = std::cell::Cell::new(None);
+    let hint = crate::kit::element::hint_ink();
     ui.set_min_width(220.0);
     // A tick before a chosen entry, the room for one before the others, so names line up.
     let ticked = |on: bool, name: &str| format!("{} {name}", if on { "\u{2713}" } else { "\u{2002}" });
@@ -31,9 +32,8 @@ pub fn grid_entries(
     let row = |ui: &mut Ui, name: &str, key: &str, on: Option<bool>, result: PianoGrid| {
         let allowed = enabled(&result);
         let text = egui::RichText::new(ticked(on.unwrap_or(false), name)).font(font.clone());
-        let button = egui::Button::new(text)
-            .frame(false)
-            .shortcut_text(egui::RichText::new(key).font(mono.clone()).color(theme::text_hint()));
+        let button =
+            egui::Button::new(text).frame(false).shortcut_text(egui::RichText::new(key).font(mono.clone()).color(hint));
         let response = ui.add_enabled(allowed, button);
         let label = if key.is_empty() { name.to_string() } else { format!("{name} ({key})") };
         response.widget_info(|| match on {
@@ -48,7 +48,7 @@ pub fn grid_entries(
     // A heading, then `cells` in rows of `columns`: a short name, ticked when chosen, the grid
     // it picks and its accessible label.
     let table = |ui: &mut Ui, title: &str, columns: usize, cells: Vec<(String, bool, PianoGrid, String)>| {
-        ui.label(egui::RichText::new(title).font(font.clone()).color(theme::text_hint()));
+        ui.label(egui::RichText::new(title).font(font.clone()).color(hint));
         egui::Grid::new(("grid-menu", title)).spacing(egui::vec2(10.0, 2.0)).show(ui, |ui| {
             for (index, (name, on, result, label)) in cells.into_iter().enumerate() {
                 let allowed = enabled(&result);

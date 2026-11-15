@@ -53,11 +53,10 @@ one module restores the previous palette/font before drawing its sibling. These
 overrides preserve native response ids, commands and layout unless CSS explicitly
 requests layout changes; see [theme skins](../spec/theme-skins.md).
 
-Supported adapters use one resolved rectangle for paint and input; theme offsets/sizes can
-place the mixer name at the bottom, turn its side colour into a top stripe, resize meters and
-render volume faders horizontally. Matching instances share a rule. The visual placement editor
-(**Edit interface**) was removed for now
-([issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)).
+Track headers, mixer strips and the transport lay their parts out in CSS (#1453): painting and
+input read one laid-out rectangle, and a theme can reorder the mixer's parts, stack its toggles,
+hide its colour band, resize meters and lay the volume fader across the strip. Every strip of
+one kind shares one layout.
 Type glyphs use replaceable `track.midi`/`track.audio` SVGs (notes and waveform). Track name
 and strip artwork can select raw-colour/state variants and bounded frame sequences.
 `.meter-level`, `.fader-cap` and `.knob` expose native CSS box shadows for level/cap/dial glow.

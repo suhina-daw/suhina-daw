@@ -246,7 +246,11 @@ impl App {
                 ui.max_rect()
             };
             ui.allocate_rect(rect, egui::Sense::hover());
-            ui.painter().rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
+            ui.painter().rect_filled(
+                rect,
+                0.0,
+                crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
+            );
             let changed = panel.show(ui, rect, browser, projects, &mut settings, revision);
             // The window has its own keyboard: its keys run the same actions as the main window's,
             // unless a field in it is being typed in. Embedded, the main window reads them.

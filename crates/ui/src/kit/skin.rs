@@ -127,10 +127,11 @@ pub struct Skin {
     pub toolbar: Option<Toolbar>,
     /// Horizontal offsets from each module's native/CSS anchor, in logical points.
     pub toolbar_offsets: BTreeMap<String, i32>,
-    /// Semantic native controls; offsets and sizes are shared by paint and hit testing.
-    pub controls: BTreeMap<String, super::control_layout::Placement>,
     /// The resolved `:root` variables, substituted into artwork that writes `var(--name)`.
     pub variables: Arc<BTreeMap<String, String>>,
+    /// Whether Suhina's base sheet applies under the theme's (`suhina_theme_package::BASE_SHEET`):
+    /// `theme.json`'s `"base": "none"` turns it off.
+    pub base: bool,
 }
 impl Default for Skin {
     fn default() -> Self {
@@ -148,8 +149,8 @@ impl Default for Skin {
             session: Default::default(),
             toolbar: None,
             toolbar_offsets: BTreeMap::new(),
-            controls: BTreeMap::new(),
             variables: Arc::default(),
+            base: true,
         }
     }
 }
@@ -275,7 +276,6 @@ impl Skin {
                     | "artwork-fps"
                     | "toolbar"
                     | "toolbar-offsets"
-                    | "controls"
                     | "session"
             ) {
                 warnings.push(format!("skin.{key} is unknown"));
@@ -468,21 +468,6 @@ impl Skin {
                 warnings.push("skin.toolbar-offsets must be a bounded object".into());
             }
         }
-        if let Some(value) = root.get("controls") {
-            if let Some(controls) = value.as_object().filter(|v| v.len() <= 256) {
-                for (name, value) in controls {
-                    if super::control_layout::valid_name(name) {
-                        skin.controls
-                            .insert(name.clone(), super::control_layout::Placement::from_json(value, warnings));
-                    } else {
-                        warnings.push(format!("invalid control name {name}"));
-                    }
-                }
-            } else {
-                warnings.push("skin.controls must be an object of at most 256 controls".into());
-            }
-            super::control_layout::validate_anchors(&mut skin.controls, warnings);
-        }
         if let Some(value) = root.get("session") {
             skin.session = super::session_geometry::SessionGeometry::from_json(value, warnings);
         }
@@ -502,9 +487,6 @@ impl Skin {
         }
         if !self.toolbar_offsets.is_empty() {
             value["toolbar-offsets"] = json!(self.toolbar_offsets);
-        }
-        if !self.controls.is_empty() {
-            value["controls"] = self.controls.iter().map(|(name, p)| (name.clone(), p.to_json())).collect();
         }
         if let Some(background) = &self.background {
             value["background"] = Value::String(background.to_string());

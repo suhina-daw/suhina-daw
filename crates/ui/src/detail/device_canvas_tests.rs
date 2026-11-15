@@ -60,8 +60,8 @@ fn sample_pan_and_zoom_stay_inside_the_file() {
 }
 
 #[test]
-fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispatch() {
-    use crate::kit::{control_layout::Placement, skin};
+fn a_device_control_is_drawn_and_clicked_where_the_sdk_lays_it_out() {
+    // A theme no longer places a device's controls (#1453): they keep the SDK's layout until #1009.
     let canvas = Arc::new(DeviceUi {
         size: [240.0, 120.0],
         controls: vec![CustomControl {
@@ -79,12 +79,6 @@ fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispat
         ..Default::default()
     });
     let parameters = [GraphParameter { value: 0.0, ..parameter("enabled", false) }];
-    let mut skin = skin::Skin::default();
-    skin.controls.insert(
-        "device-enabled".into(),
-        Placement { x: 80, y: 30, width: Some(80), height: Some(40), ..Default::default() },
-    );
-    skin::configure(&skin);
     let ctx = egui::Context::default();
     let mut output = ctx.run_ui(Default::default(), |ui| {
         show(
@@ -99,21 +93,16 @@ fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispat
         )
     });
     output.textures_delta.clear();
-    let expected = Rect::from_min_size(egui::pos2(100.0, 50.0), Vec2::new(80.0, 40.0));
+    let expected = Rect::from_min_size(egui::pos2(20.0, 20.0), Vec2::new(40.0, 20.0));
     assert!(
         output.shapes.iter().any(
             |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == expected && rect.brush.is_some())
         )
     );
     assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text == "On" && expected.contains(text.pos))));
-    assert!(click(&canvas, &parameters, egui::pos2(40.0, 30.0)).is_empty());
     let actions = click(&canvas, &parameters, expected.center());
     assert!(actions.iter().any(|action| action.id == "device.setParam" && action.params["param"] == "enabled"));
-    skin.controls.get_mut("device-enabled").unwrap().hidden = true;
-    skin::configure(&skin);
-    assert!(click(&canvas, &parameters, expected.center()).is_empty());
-    skin::configure(&skin::Skin::default());
-    assert!(click(&canvas, &parameters, egui::pos2(40.0, 30.0)).iter().any(|action| action.id == "device.setParam"));
+    assert!(click(&canvas, &parameters, egui::pos2(120.0, 70.0)).is_empty());
 }
 
 #[test]
@@ -217,11 +206,10 @@ fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
     });
     let ctx = egui::Context::default();
     let faint = Color32::from_rgba_unmultiplied(255, 255, 255, 0x14);
-    crate::kit::theme::set_palette(
-        &ctx,
-        crate::kit::theme::Palette { border: faint, ..crate::kit::theme::Palette::DARK },
-    );
+    crate::kit::theme::use_colors(&ctx, &[("border".to_owned(), faint)].into());
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        // The canvas reads its colours from the sheet, whose variables the colour map sets.
+        let _frame = crate::kit::native_css::frame(ui);
         show(
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 60.0)),
@@ -233,7 +221,7 @@ fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
             &mut Vec::new(),
         )
     });
-    crate::kit::theme::set_palette(&ctx, crate::kit::theme::Palette::DARK);
+    crate::kit::theme::use_colors(&ctx, &crate::kit::theme::Colors::new());
     output.textures_delta.clear();
     let fill = |at: Rect| {
         output.shapes.iter().find_map(|shape| match &shape.shape {
@@ -301,6 +289,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
     let ctx = egui::Context::default();
     let mut output = ctx.run_ui(Default::default(), |ui| {
         crate::kit::theme::install(ui.ctx());
+        let _frame = crate::kit::native_css::frame(ui);
         let mut positions = [None::<f32>; 32];
         positions[0] = Some(0.2);
         positions[7] = Some(0.7);
@@ -323,7 +312,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
         .iter()
         .filter(|s| {
             matches!(&s.shape,
-                egui::Shape::LineSegment { points, stroke } if *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary)
+                egui::Shape::LineSegment { points, stroke } if *stroke == Stroke::new(1., crate::kit::theme::studio("text-primary"))
                     && points[0].x == points[1].x && points[0].y == 4.
             )
         })
@@ -1009,7 +998,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             .build_ui(move |ui| {
                 crate::kit::theme::install(ui.ctx());
                 if filename.contains("light") {
-                    crate::kit::theme::set_palette(ui.ctx(), light);
+                    crate::kit::theme::use_colors(ui.ctx(), &light);
                 }
                 let data = Arc::new(suhina_engine::AudioData {
                     sample_rate: 48000,
@@ -1046,7 +1035,7 @@ fn sampler_tabs_render_with_sdk_controls_and_dispatch() {
             }
             snapshot(&mut harness, "sampler-warp-menu.png");
         }
-        crate::kit::theme::set_palette(&harness.ctx, crate::kit::theme::Palette::DARK);
+        crate::kit::theme::use_colors(&harness.ctx, &crate::kit::theme::Colors::new());
         if view == 2. {
             harness.get_by_label("lfo shape").click();
             harness.run_steps(4);
@@ -1119,10 +1108,10 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     snapshot(&mut harness, "delay-panel.png");
     let nord =
         crate::kit::theme::built_in_themes().into_iter().find(|(id, _)| *id == "nord").map(|(_, theme)| theme).unwrap();
-    crate::kit::theme::set_palette(&harness.ctx, nord.colors);
+    crate::kit::theme::use_colors(&harness.ctx, &nord.colors);
     harness.run();
     snapshot(&mut harness, "delay-panel-nord.png");
-    crate::kit::theme::set_palette(&harness.ctx, crate::kit::theme::Palette::DARK);
+    crate::kit::theme::use_colors(&harness.ctx, &crate::kit::theme::Colors::new());
     use egui_kittest::kittest::Queryable;
     let mut narrow_parameters = parameters.clone();
     for p in &mut narrow_parameters {
@@ -1489,6 +1478,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
             },
             |ui| {
                 crate::kit::theme::install(ui.ctx());
+                let _frame = crate::kit::native_css::frame(ui);
                 show(
                     ui,
                     Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
@@ -1531,7 +1521,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
         output
             .shapes
             .iter()
-            .any(|s| matches!(&s.shape,egui::Shape::LineSegment {stroke,..} if stroke.color==crate::kit::theme::palette().text_primary.gamma_multiply(0.18)))
+            .any(|s| matches!(&s.shape,egui::Shape::LineSegment {stroke,..} if stroke.color==crate::kit::theme::studio("text-primary").gamma_multiply(0.18)))
     );
     frame(line, Some(true));
     let moved = Pos2::new(SampleView::default().x(0.6, field), 80.);
@@ -1788,6 +1778,7 @@ fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
         let context = egui::Context::default();
         let mut output = context.run_ui(Default::default(), |ui| {
             crate::kit::theme::install(ui.ctx());
+            let _frame = crate::kit::native_css::frame(ui);
             ui.ctx().data_mut(|data| {
                 data.insert_temp(
                     sample_source_id(TrackId(1), 0),
@@ -1806,7 +1797,7 @@ fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
                 None,
             );
         });
-        let lines = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::LineSegment { points, stroke } if points[0].x == points[1].x && *stroke == Stroke::new(1., crate::kit::theme::palette().text_primary.gamma_multiply(0.09)))).count();
+        let lines = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::LineSegment { points, stroke } if points[0].x == points[1].x && *stroke == Stroke::new(1., crate::kit::theme::studio("text-primary").gamma_multiply(0.09)))).count();
         output.textures_delta.clear();
         // The times sit on their lines, so the lines stay with Grid off too.
         assert!(lines > 2, "grid setting {grid}: {lines} lines");
@@ -2138,12 +2129,20 @@ fn built_in_widget_colors_follow_the_active_theme_and_refresh_the_cache() {
         }],
         ..DeviceUi::default()
     });
-    let dark = crate::kit::theme::Palette::DARK;
-    crate::kit::theme::set_palette(&context, dark);
+    // The canvas reads its colours from the sheet, whose variables the colour map sets: in a frame.
+    let images = |context: &egui::Context, canvas: &Arc<DeviceUi>| {
+        let mut loaded = None;
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            loaded = Some(images(ui.ctx(), canvas));
+        });
+        output.textures_delta.clear();
+        loaded.unwrap()
+    };
+    crate::kit::theme::use_colors(&context, &crate::kit::theme::Colors::new());
     let dark_loaded = images(&context, &canvas);
-    let mut alternate = dark;
-    alternate.accent = Color32::from_rgb(12, 34, 56);
-    crate::kit::theme::set_palette(&context, alternate);
+    let accent = Color32::from_rgb(12, 34, 56);
+    crate::kit::theme::use_colors(&context, &[("accent".to_owned(), accent)].into());
     let alternate_loaded = images(&context, &canvas);
     assert!(!Arc::ptr_eq(&dark_loaded, &alternate_loaded));
     assert!(
@@ -2155,24 +2154,25 @@ fn built_in_widget_colors_follow_the_active_theme_and_refresh_the_cache() {
     let themed = images(&context, &delay);
     let cutoff = delay.controls.iter().position(|c| c.id == "cutoff").unwrap();
     assert!(themed.controls[cutoff].iter().any(|draw| matches!(
-        draw, Draw::Text { color, .. } if *color == rgba(alternate.text_primary)
+        draw, Draw::Text { color, .. } if *color == rgba(crate::kit::theme::studio("text-primary"))
     )));
     let button = delay.controls.iter().position(|c| matches!(c.widget, Some(Widget::Button { .. }))).unwrap();
     assert!(themed.controls[button].iter().any(|draw| matches!(
-        draw, Draw::Rect { color, .. } if *color == rgba(alternate.accent)
+        draw, Draw::Rect { color, .. } if *color == rgba(accent)
     )));
-    crate::kit::theme::set_palette(&context, dark);
+    crate::kit::theme::use_colors(&context, &crate::kit::theme::Colors::new());
 }
 
 #[test]
 fn default_canvas_background_follows_the_theme_and_authored_background_stays_fixed() {
     let context = egui::Context::default();
-    let mut palette = crate::kit::theme::Palette::DARK;
-    palette.panel_background = Color32::from_rgb(11, 22, 33);
-    crate::kit::theme::set_palette(&context, palette);
+    let panel = Color32::from_rgb(11, 22, 33);
+    crate::kit::theme::use_colors(&context, &[("panel-background".to_owned(), panel)].into());
     let default = Arc::new(DeviceUi::default());
     let authored = Arc::new(DeviceUi { background: [44, 55, 66, 255], ..DeviceUi::default() });
     let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+        // The canvas reads its colours from the sheet, whose variables the colour map sets.
+        let _frame = crate::kit::native_css::frame(ui);
         let mut actions = Vec::new();
         for (x, canvas) in [(8.0, &default), (56.0, &authored)] {
             show(
@@ -2189,14 +2189,14 @@ fn default_canvas_background_follows_the_theme_and_authored_background_stays_fix
     });
     assert!(output.shapes.iter().any(|shape| matches!(
         &shape.shape,
-        egui::Shape::Rect(rect) if rect.fill == palette.panel_background
+        egui::Shape::Rect(rect) if rect.fill == panel
     )));
     assert!(output.shapes.iter().any(|shape| matches!(
         &shape.shape,
         egui::Shape::Rect(rect) if rect.fill == Color32::from_rgb(44, 55, 66)
     )));
     output.textures_delta.clear();
-    crate::kit::theme::set_palette(&context, crate::kit::theme::Palette::DARK);
+    crate::kit::theme::use_colors(&context, &crate::kit::theme::Colors::new());
 }
 #[test]
 fn a_negative_that_rounds_to_zero_shows_no_minus_sign() {
@@ -2618,9 +2618,10 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     assert!(parameters[0].value <= 0.5 + 1e-6, "no further than the pointer went, got {}", parameters[0].value);
 }
 
-/// The sample markers' colour with no sheet: the palette's accent.
+/// The sample markers' colour with no rule of a theme: the accent, which the base sheet gives the
+/// canvas (`device-canvas`'s `accent-color`).
 fn marker_color() -> Color32 {
-    color(styled_palette(widget_palette(), None).accent)
+    crate::kit::theme::studio("accent")
 }
 
 /// The pack dropdown lists a collection's capture folders under their group's name, a line

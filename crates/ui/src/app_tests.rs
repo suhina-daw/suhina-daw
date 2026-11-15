@@ -830,7 +830,9 @@ fn without_a_sheet_the_project_tabs_have_their_line() {
             .iter()
             .filter_map(|shape| match &shape.shape {
                 egui::Shape::Rect(rect)
-                    if rect.fill == theme::border() && rect.rect.width() > 1000.0 && rect.rect.height() == 1.0 =>
+                    if rect.fill == crate::kit::theme::studio("border")
+                        && rect.rect.width() > 1000.0
+                        && rect.rect.height() == 1.0 =>
                 {
                     Some(rect.rect.bottom())
                 }

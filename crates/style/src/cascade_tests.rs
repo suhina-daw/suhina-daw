@@ -255,6 +255,34 @@ fn attr_colours_a_track_and_its_children_through_a_variable() {
 }
 
 #[test]
+fn a_registered_variable_dropped_by_substitution_takes_its_initial_value() {
+    let theme = Sheet::parse(
+        "@property --accent { syntax: '<color>'; initial-value: #0000ff; } \
+         @property --loop { syntax: '<color>'; initial-value: #00ff00; } \
+         @property --bare { syntax: '*'; }",
+    )
+    .unwrap();
+    assert!(theme.notices.is_empty(), "{:?}", theme.notices);
+    let user = Sheet::parse(
+        ":root { --accent: var(--missing); --loop: var(--other); --other: var(--loop); \
+         --bare: var(--missing); --reads: var(--accent); }",
+    )
+    .unwrap();
+    let sheets = [
+        AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+        AppliedSheet { sheet: &user, layer: Layer::User, root: None },
+    ];
+    let variables = root_variables(viewport(800.0), &sheets).unwrap();
+    assert_eq!(variables.get("--accent").map(String::as_str), Some("#0000ff"));
+    assert_eq!(variables.get("--loop").map(String::as_str), Some("#00ff00"));
+    // A variable that reads the dropped one sees its initial value.
+    assert_eq!(variables.get("--reads").map(String::as_str), Some("#0000ff"));
+    // With no initial value the registered variable is left out, as an unregistered one is.
+    assert!(!variables.contains_key("--bare"));
+    assert_eq!(resolve_color("var(--accent)", viewport(800.0), &sheets), Ok([0, 0, 255, 255]));
+}
+
+#[test]
 fn a_swatch_colour_resolves_for_each_variant_without_applying_the_sheet() {
     let theme = Sheet::parse(
         "@property --accent { syntax: '<color>'; initial-value: #0000ff; } \
@@ -374,6 +402,100 @@ fn a_user_agent_rule_on_a_child_is_not_authored_though_its_parent_is() {
     assert!(!styles[2].authored(Property::Color));
     assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 176, 0, 255])));
     assert!(styles[3].authored(Property::Color));
+}
+
+/// The base tier (#1448): every theme rule beats every base rule, a less specific one and one
+/// inside `@layer` too, a base rule beats the user agent's, and a base rule alone leaves the
+/// element unauthored, as the user agent's does.
+#[test]
+fn a_theme_rule_beats_a_base_rule_whatever_its_specificity_or_layer() {
+    let tree = Tree::new(vec![
+        Element::new("window", None),
+        Element::new("button", Some(0)).with_attribute("checked", ""),
+        Element::new("progress", Some(0)),
+        Element::new("knob", Some(0)),
+    ])
+    .unwrap();
+    let agent = Sheet::parse("progress { background-color: #010101; color: #010101; }").unwrap();
+    let base = Sheet::parse(
+        "window button[checked] { background-color: #020202; } progress { background-color: #030303; } \
+         knob { color: #040404; }",
+    )
+    .unwrap();
+    let theme = Sheet::parse("@layer looks { button { background-color: #ffb000; } }").unwrap();
+    let styles = compute(
+        &tree,
+        viewport(800.0),
+        &[
+            AppliedSheet { sheet: &agent, layer: Layer::UserAgent, root: None },
+            AppliedSheet { sheet: &base, layer: Layer::Base, root: None },
+            AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+        ],
+    )
+    .unwrap();
+    // The theme's plain `button`, in a layer, beats the base's more specific state rule.
+    assert_eq!(styles[1].get(Property::BackgroundColor), Value::Color(Color::Rgba([255, 176, 0, 255])));
+    assert!(styles[1].authored(Property::BackgroundColor));
+    // A base rule beats the user agent's, and is not authored: no theme wrote it.
+    assert_eq!(styles[2].get(Property::BackgroundColor), Value::Color(Color::Rgba([3, 3, 3, 255])));
+    assert!(!styles[2].authored(Property::BackgroundColor) && !styles[2].declared(Property::BackgroundColor));
+    assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([1, 1, 1, 255])));
+    assert!(!styles[3].authored(Property::Color) && !styles[3].declared(Property::Color));
+}
+
+/// The cascade goes property by property (#1448): a theme rule for an element overrides a base
+/// state rule only in the properties it sets; another property keeps the base value.
+#[test]
+fn a_theme_rule_overrides_a_base_rule_only_in_the_properties_it_sets() {
+    let tree =
+        Tree::new(vec![Element::new("window", None), Element::new("button", Some(0)).with_attribute("checked", "")])
+            .unwrap();
+    let base = Sheet::parse("button[checked] { background-color: #020202; color: #050505; }").unwrap();
+    let theme = Sheet::parse("button { background-color: #ffb000; }").unwrap();
+    let styles = compute(
+        &tree,
+        viewport(800.0),
+        &[
+            AppliedSheet { sheet: &base, layer: Layer::Base, root: None },
+            AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+        ],
+    )
+    .unwrap();
+    assert_eq!(styles[1].get(Property::BackgroundColor), Value::Color(Color::Rgba([255, 176, 0, 255])));
+    assert_eq!(styles[1].get(Property::Color), Value::Color(Color::Rgba([5, 5, 5, 255])));
+    assert!(!styles[1].authored(Property::Color));
+}
+
+/// A base rule on an element replaces the colour a theme's rule around it gives, and what it
+/// gives is not authored, as a user-agent rule's is not; a theme rule on the element itself beats
+/// it.
+#[test]
+fn a_base_rule_on_a_child_is_not_authored_though_its_parent_is() {
+    let tree = Tree::new(vec![
+        Element::new("window", None),
+        Element::new("mixer", Some(0)),
+        Element::new("drop-target", Some(1)),
+        Element::new("drop-target", Some(1)).with_attribute("kind", "insert"),
+    ])
+    .unwrap();
+    let base = Sheet::parse(":root { --accent: #a6a3ff; } drop-target { color: var(--accent); }").unwrap();
+    let theme =
+        Sheet::parse("mixer { color: #ffb000; --accent: #00ff00; } drop-target[kind] { color: #ff0000; }").unwrap();
+    let styles = compute(
+        &tree,
+        viewport(800.0),
+        &[
+            AppliedSheet { sheet: &base, layer: Layer::Base, root: None },
+            AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+        ],
+    )
+    .unwrap();
+    // The base rule reads the variable the mixer's rule sets: a region is coloured through it.
+    assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([0, 255, 0, 255])));
+    assert!(!styles[2].authored(Property::Color));
+    assert!(styles[1].authored(Property::Color));
+    assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
+    assert!(styles[3].declared(Property::Color));
 }
 
 #[test]

@@ -26,7 +26,14 @@ use suhina_session::{Category, Found, Projects};
 use crate::interaction::drop::{BrowserItem, ItemKind};
 
 use crate::kit::waveform::{Peaks, peaks};
+
 use egui::Pos2;
+
+/// The fill the browser paints for itself, of `kind` (`panel` or `window`): the region's own
+/// background where it gives one, else the `background-color` of `browser-fill[kind]`.
+pub(crate) fn browser_fill(kind: &str) -> egui::Color32 {
+    crate::kit::style_class::surface_or(crate::kit::element::BROWSER_FILL.attribute("kind", kind).look().background())
+}
 
 /// What the sidebar can show instead of the whole tree.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

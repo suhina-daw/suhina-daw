@@ -33,6 +33,7 @@ fn start_panel_under_the_dialog(phase: Phase) -> Harness<'static, Chosen> {
     let mut state = StartState::default();
     Harness::builder().allow_missing_glyphs().with_size(Vec2::new(1000.0, 700.0)).build_ui_state(
         move |ui, (start, dialog): &mut Chosen| {
+            let _frame = crate::kit::native_css::frame_with_motion(ui, false);
             let area = ui.max_rect();
             let notice = notice_of(phase.clone());
             let lists = Lists::default();
@@ -197,4 +198,29 @@ fn a_press_that_cannot_install_opens_the_dialog_with_the_reason() {
     assert_eq!(updates.pressed(&egui::Context::default(), offer), None);
     assert!(updates.open);
     assert!(updates.note.as_deref().is_some_and(|note| note.contains("gh")), "{:?}", updates.note);
+}
+
+/// `progress-fill` is read inside the `progress` bar it is the done part of, so a rule for
+/// `progress progress-fill` reaches the fill of the start page's update line and of the update
+/// dialog (#1440 review).
+#[test]
+fn a_descendant_rule_reaches_the_progress_fill() {
+    let fill = egui::Color32::from_rgb(0x13, 0x57, 0x99);
+    let css = "progress progress-fill { background-color: #135799; }";
+    crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
+    let mut harness = start_panel_under_the_dialog(Phase::Downloading { build: build(), done: 500_000 });
+    for _ in 0..4 {
+        harness.step();
+    }
+    fn walk(shape: &egui::Shape, fill: egui::Color32, count: &mut usize) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, fill, count)),
+            egui::Shape::Rect(rect) if rect.fill == fill => *count += 1,
+            _ => {}
+        }
+    }
+    let mut count = 0;
+    harness.output().shapes.iter().for_each(|shape| walk(&shape.shape, fill, &mut count));
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    assert!(count >= 2, "the line's fill and the dialog's fill take the rule: {count}");
 }

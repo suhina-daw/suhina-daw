@@ -10,10 +10,12 @@
 //! written twice: `<scene>.raw.png`, the window's own pixels, and `<scene>.png`, those pixels over
 //! the backdrop, blurred where the system blurs behind the window.
 //!
-//! [`budget`] counts the style engine's work in a scene, for the tests that hold it.
+//! [`budget`] counts the style engine's work in a scene, for the tests that hold it, and
+//! [`painted`] lists what a scene paints, for the test that holds every built-in theme's look.
 
 pub mod budget;
 pub mod composite;
+pub mod painted;
 pub mod scenes;
 
 use std::path::Path;
@@ -68,10 +70,43 @@ impl Subject {
     }
 }
 
+/// The plug-ins every scene's catalogue holds: made-up ones, so the browser's and the Settings'
+/// plug-in lists draw the same on every machine (#1438).
+const PLUGIN_CATALOG: &str = include_str!("../fixtures/plugin-catalog.json");
+
+/// The plug-in library's folder holding [`PLUGIN_CATALOG`] as a scan leaves it, written once per run.
+fn fixture_settings() -> Option<&'static Path> {
+    static FOLDER: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    FOLDER
+        .get_or_init(|| {
+            let folder = std::env::temp_dir().join(format!("suhina-theme-render-{}", std::process::id()));
+            std::fs::create_dir_all(&folder).ok()?;
+            std::fs::write(folder.join("plugin-catalog.json"), PLUGIN_CATALOG).ok()?;
+            Some(folder)
+        })
+        .as_deref()
+}
+
+/// The window every scene starts from, the same on every machine: the plug-in library is the
+/// fixture catalogue alone (no scan, no standard plug-in folders, no settings folder of the
+/// person's), and the browser's file library is kept nowhere, so it holds no folder, place or
+/// recent project of theirs. The app reads nothing else of the machine at start: settings,
+/// themes and the keymap are the defaults, as the window loads them only in `apps/suhina`.
+pub fn fixed_app() -> App {
+    let library = suhina_plugins::library::Library::new(
+        fixture_settings().map(Path::to_path_buf),
+        suhina_plugins::library::host_next_to_this_program(),
+    )
+    .without_standard_folders();
+    let mut app = App::with_library(library);
+    app.set_file_library(suhina_library::Library::new(None));
+    app
+}
+
 /// The demo project, as the window tests open it: the browser hidden so the views have the whole
 /// width.
 pub fn demo_app() -> App {
-    let mut app = App::new();
+    let mut app = fixed_app();
     app.set_browser_open(false);
     app.set_session(suhina_session::Session::new(suhina_ui::demo::demo_project()), &[]);
     app
@@ -223,7 +258,7 @@ pub fn shoot(harness: &mut Harness<'static, App>) -> Result<Shot, String> {
     harness.state_mut().wait_for_background();
     harness.run_steps(2);
     let pixels = harness.render()?;
-    let see_through = theme::window_background().a() < u8::MAX;
+    let see_through = theme::window_fill().a() < u8::MAX;
     let [r, g, b, _] = harness.ctx.global_style().visuals.panel_fill.to_array();
     Ok(Shot { pixels, see_through: see_through && theme::see_through(), clear: [r, g, b, 255] })
 }

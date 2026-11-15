@@ -299,22 +299,10 @@ pub const MAX_GROUP_CLASSES: usize = 64;
 /// material.
 pub const HOST_PROPERTIES: &[&str] = &["image", "name", "background-opacity", "background-blur"];
 
-/// Properties the host reads only from a control placement's rules (`.control-*`): the placement
-/// offsets `layout.css` writes (`left`, `top`, `right`, `bottom`), the direction and the anchors.
-/// The engine leaves them alone there; anywhere else nothing reads them, and they get a notice.
-pub const PLACEMENT_PROPERTIES: &[&str] =
-    &["left", "top", "right", "bottom", "direction", "anchor-left", "anchor-top", "anchor-right", "anchor-bottom"];
-
 /// The elements whose children the CSS layout places: only there does a padding in percent, which
 /// CSS takes of the width of the box around the element, mean anything. Everywhere else the app
 /// paints the element's content box itself, without that box, so a percentage is refused.
 pub const PERCENT_PADDING_ELEMENTS: &[&str] = &["window", "toolbar"];
-
-/// Whether a rule's selector list (`header`) holds a control placement (`.control-play`), whose
-/// [`PLACEMENT_PROPERTIES`] the host reads.
-fn placement(header: &str) -> bool {
-    header.split(',').any(|selector| selector.trim().starts_with(".control-"))
-}
 
 /// The frames of one `@keyframes` rule: offsets from 0 to 1 and their declarations.
 pub(crate) type KeyframeRule = Vec<(f32, Vec<Declaration>)>;
@@ -344,6 +332,13 @@ impl Sheet {
                 })
             })
     }
+    /// Every declaration of the sheet's rules, `@media` and `@layer` ones included, as its
+    /// property's name and its value as written: for checks of a whole sheet (that a sheet gives
+    /// no fixed colour).
+    pub fn declarations(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.rules.iter().flat_map(|rule| rule.declarations.iter().map(|d| (d.name.as_str(), d.value.as_str())))
+    }
+
     /// Classes the sheet declares with `@group-class` but no rule styles as `group.<class>`:
     /// probably a typo, which an import warns about.
     pub fn unstyled_group_classes(&self) -> Vec<&str> {
@@ -639,10 +634,8 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                 } else {
                     match Selector::parse_list(header) {
                         Ok(selectors) => {
-                            let rule = RuleKind {
-                                placement: placement(header),
-                                layout: selectors.iter().all(|s| s.subject_is(PERCENT_PADDING_ELEMENTS)),
-                            };
+                            let rule =
+                                RuleKind { layout: selectors.iter().all(|s| s.subject_is(PERCENT_PADDING_ELEMENTS)) };
                             let declarations = nested(parser, |parser| declarations(parser, source, sheet, rule))?;
                             if declarations.iter().any(|d| d.name == "backdrop-filter")
                                 && !selectors.iter().all(|s| {
@@ -748,8 +741,6 @@ fn frames(parser: &mut Parser<'_>, source: &str, sheet: &mut Sheet) -> Result<Ve
 /// What a rule's selectors say about the declarations it may hold.
 #[derive(Clone, Copy, Default)]
 struct RuleKind {
-    /// A control placement's rule ([`placement`]).
-    placement: bool,
     /// A rule for CSS-layout containers only ([`PERCENT_PADDING_ELEMENTS`]).
     layout: bool,
 }
@@ -778,7 +769,6 @@ fn declarations(
     sheet: &mut Sheet,
     rule: RuleKind,
 ) -> Result<Vec<Declaration>, String> {
-    let placement = rule.placement;
     let mut declarations = Vec::new();
     while !parser.is_exhausted() {
         parser.skip_whitespace();
@@ -857,12 +847,6 @@ fn declarations(
             continue;
         }
         if HOST_PROPERTIES.contains(&name.as_str()) {
-            continue;
-        }
-        if PLACEMENT_PROPERTIES.contains(&name.as_str()) {
-            if !placement {
-                sheet.notice(at, format!("{name} is read only in a control placement's rule (.control-*)"));
-            }
             continue;
         }
         if !name.starts_with("--") && Property::from_name(&name).is_none() {
@@ -1002,22 +986,16 @@ mod tests {
     }
 
     #[test]
-    fn a_placement_s_properties_are_left_to_the_host_only_in_a_placement_s_rule() {
+    fn the_placements_properties_are_unknown_everywhere() {
+        // Control placements went with #1453: a `.control-*` rule is a rule like any other, and
+        // its offsets, direction and anchors are properties no element has.
         let sheet = Sheet::parse(
             ".control-play { direction: vertical; anchor-left: 4px; left: 2px; } \
-             arrangement, .control-stop { anchor-top: 1px; } \
-             button { image: url(\"b.svg\"); }",
+             button { top: 1px; }",
         )
         .unwrap();
-        assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
-        let sheet =
-            Sheet::parse("arrangement { direction: vertical; } button { anchor-left: 4px; top: 1px; }").unwrap();
-        assert_eq!(sheet.notices.len(), 3, "{:?}", sheet.notices);
-        assert!(
-            sheet.notices[0].message.contains("direction is read only in a control placement"),
-            "{:?}",
-            sheet.notices
-        );
+        assert_eq!(sheet.notices.len(), 4, "{:?}", sheet.notices);
+        assert!(sheet.notices.iter().all(|notice| notice.message.starts_with("Unknown native property")));
         assert!(sheet.rules.iter().all(|rule| rule.declarations.is_empty()), "the engine keeps none of them");
     }
 }

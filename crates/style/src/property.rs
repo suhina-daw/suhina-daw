@@ -218,7 +218,6 @@ properties! {
     TrackHeight, "track-height", Length, Value::Length(Length::Auto), false, "The height of an Arrangement track that has none of its own, 20 to 400 points.";
     HeaderMinWidth, "header-min-width", Length, Value::Length(Length::Auto), false, "The least width of the Arrangement view's header column, 160 to 520 points.";
     HeaderTint, "header-tint", Integer, Value::Integer(-1), false, "How strongly a track's colour tints its Arrangement header, 0 to 100.";
-    CompactBelow, "compact-below", Length, Value::Length(Length::Auto), false, "A track lower than this keeps Suhina's own header layout, up to 200 points.";
     ParamLabel, "param-label", Keyword(PARAM_LABEL), Value::Keyword(""), true, "Where a device's generated parameters show their names: left, top or hidden.";
     MeterStyle, "meter-style", Keyword(METER_STYLE), Value::Keyword(""), false, "How level meters draw: continuous, segmented, needle or frames (artwork).";
     MeterSegments, "meter-segments", Integer, Value::Integer(0), false, "Segments of a segmented meter, 4 to 64.";
@@ -325,7 +324,6 @@ impl Property {
                     self,
                     Self::TrackHeight
                         | Self::HeaderMinWidth
-                        | Self::CompactBelow
                         | Self::SessionTrackWidth
                         | Self::SessionReturnWidth
                         | Self::SessionSceneWidth

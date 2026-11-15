@@ -33,7 +33,7 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
     ui.label(
         egui::RichText::new("Settings this theme offers. They are saved in the variant in use.")
             .small()
-            .color(crate::kit::theme::text_secondary()),
+            .color(crate::kit::element::caption_ink()),
     );
     let mut group: Option<&str> = None;
     for property in &themes.declared {
@@ -214,10 +214,10 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             }
         });
         ui.collapsing("Native CSS", |ui| {
-            ui.label("Settings and layout in the form of earlier versions: :root colours, Launcher density, meter style/segments/intensity, toolbar order/hidden, .control-NAME placement, artwork frame rate. Applying it saves the settings in the variant in use and the layout in theme.css. Place connected elements by hand with .control-NAME rules for now.");
+            ui.label("Settings in the form of earlier versions: :root colours, Launcher density, meter style/segments/intensity, toolbar order/hidden, artwork frame rate. Applying it saves the settings in the variant in use and the toolbar in theme.json. Lay out the track headers' and mixer strips' parts (track-header, mixer and the groups in them) with CSS rules in theme.css.");
             if ui.button("Load compact Launcher geometry").clicked() { state.css = crate::kit::theme::COMPACT_SESSION_EXAMPLE.into(); }
             if ui.button("Load current style as CSS").clicked() {
-                let theme = crate::kit::theme::Theme { name: themes.name.clone(), colors: themes.colors, skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };
+                let theme = crate::kit::theme::Theme { name: themes.name.clone(), colors: themes.colors.clone(), skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };
                 state.css = theme_css::export(&theme);
                 // The in-app editor keeps images in the model; relative paths are for package files.
                 state.css = state.css.lines().filter(|line| !line.contains("image: url(")).collect::<Vec<_>>().join("\n");
@@ -225,7 +225,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             let editor = ui.add(egui::TextEdit::multiline(&mut state.css).code_editor().desired_rows(8).desired_width(f32::INFINITY));
             editor.widget_info(|| egui::WidgetInfo::labeled(egui::Role::MultilineTextInput, true, "Native CSS"));
             if ui.button("Apply CSS").clicked() {
-                let mut theme = crate::kit::theme::Theme { colors: themes.colors, skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };
+                let mut theme = crate::kit::theme::Theme { colors: themes.colors.clone(), skin: themes.skin.clone(), transparent_rgb: themes.transparent_rgb.clone(), ..Default::default() };
                 let warnings = theme_css::apply(&mut theme, &state.css);
                 // Filesystem paths need a package loader, not the GUI thread.
                 if theme.skin.assets.values().any(|s| !s.trim_start().starts_with('<') && !skin::png_artwork(s)) { state.error = "Import CSS image URLs in a theme ZIP package, or paste SVG in the SVG editor.".into(); }
@@ -247,7 +247,7 @@ pub fn show(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State) -> Option
             if state.notices.is_empty() { ui.label("The sheet reads without notices."); }
             for notice in &state.notices { ui.label(notice); }
         });
-        if !state.error.is_empty() { ui.colored_label(crate::kit::theme::recording(), &state.error); }
+        if !state.error.is_empty() { ui.colored_label(crate::kit::element::error_ink(), &state.error); }
     });
     request
 }

@@ -21,6 +21,11 @@ pub(super) struct Gradient {
 }
 
 impl Gradient {
+    /// What tells one gradient from another: the same key, the same gradient.
+    pub(super) fn key(&self) -> u64 {
+        self.key
+    }
+
     #[cfg(test)]
     pub(super) fn pixel_samples(&self, basis: f32) -> Vec<Color32> {
         let points = self.positions(basis);
@@ -202,8 +207,8 @@ pub(in crate::kit) fn box_begin(
     if fill.a() > 0 {
         painter.rect_filled(rect, radius, fill);
     }
-    for gradient in style.gradients.iter().rev() {
-        draw(painter, rect, gradient, radius, style.opacity);
+    for gradient in style.gradients.iter().rev().filter(|_| style.image > 0.0) {
+        draw(painter, rect, gradient, radius, style.opacity * style.image);
     }
     edge(painter, rect, radius, style);
     radius
@@ -373,8 +378,8 @@ pub fn background_with(painter: &Painter, rect: Rect, style: &super::Computed) -
     for shadow in style.shadows.iter().rev().filter(|s| !s.inset) {
         painted |= shadow.paint(painter, rect, style.radius, style.opacity);
     }
-    for gradient in style.gradients.iter().rev() {
-        painted |= draw(painter, rect, gradient, style.radius, style.opacity);
+    for gradient in style.gradients.iter().rev().filter(|_| style.image > 0.0) {
+        painted |= draw(painter, rect, gradient, style.radius, style.opacity * style.image);
     }
     for shadow in style.shadows.iter().rev().filter(|s| s.inset) {
         painted |= shadow.paint(painter, rect, style.radius, style.opacity);
