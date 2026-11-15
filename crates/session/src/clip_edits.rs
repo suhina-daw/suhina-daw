@@ -163,9 +163,12 @@ pub(crate) fn crop(session: &mut Session, params: &Value) -> Result<Value, Comma
     // Where the clip starts playing in its content, a start marker past the loop's end turned
     // into the loop as the engine turns it.
     let from = suhina_model::played_from(clip.offset, looped);
-    let played = match looped {
-        Some((loop_start, loop_end)) => (from.min(loop_start), loop_end),
-        None => (clip.offset, clip.offset + clip.length),
+    let played = match (looped, at) {
+        // An arrangement clip that ends before it reaches its loop's end never loops: it plays
+        // from its start marker for its length, as a clip without a loop does.
+        (Some((_, loop_end)), ClipAt::Arrangement(..)) if from + clip.length <= loop_end => (from, from + clip.length),
+        (Some((loop_start, loop_end)), _) => (from.min(loop_start), loop_end),
+        (None, _) => (clip.offset, clip.offset + clip.length),
     };
     // The clip keeps only what it plays of the selection: a selection that runs past the start or
     // end marker (or the loop's end) is cut to what is heard, so nothing silent comes to play.

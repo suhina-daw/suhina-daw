@@ -426,3 +426,14 @@ fn a_join_takes_in_the_unselected_notes_it_covers() {
     run(&mut session, "note.join", json!({ "track": 1, "index": 0, "notes": [0, 2] })).unwrap();
     assert_eq!(notes(&session, 1), vec![(0.0, 2.25, 60)]);
 }
+
+/// An arrangement clip that ends before its loop comes round plays once: a crop past its end
+/// keeps only what it plays (offset 0, 2 beats long, loop 4 to 6: content 2.5 was never heard).
+#[test]
+fn a_crop_of_a_clip_that_never_reaches_its_loop_keeps_only_what_plays() {
+    let mut session = Session::new(shaped(vec![note(1.5, 0.25, 60), note(2.5, 0.25, 62)], 0.0, 2.0, Some((4.0, 6.0))));
+    run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 1.0, "end": 3.0 })).unwrap();
+    let clip = arranged(&session);
+    assert_eq!((clip.start, clip.offset, clip.length, clip.loop_range), (1.0, 1.0, 1.0, None));
+    assert_eq!(notes(&session, 1), vec![(1.5, 0.25, 60)]);
+}

@@ -1181,7 +1181,11 @@ fn a_resumed_clip_rolls_the_velocities_the_uninterrupted_playback_rolls() {
 /// loops in, and checks each note after the resume plays as loud as it did uninterrupted.
 fn resumed_rolls_as_uninterrupted(notes_of_clip: Vec<Note>, clip: Clip) {
     const BLOCK: usize = 512;
-    let p = project(vec![notes(1, notes_of_clip)], vec![vec![with(clip)]]);
+    let p = suhina_test_support::ProjectBuilder::new()
+        .midi_track(1, "T1")
+        .notes(1, "c1", 8.0, notes_of_clip)
+        .slot(1, 0, clip)
+        .build();
     let blocks = 17 * BEAT / BLOCK;
     let start = |renderer: &mut Renderer| {
         renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
