@@ -104,8 +104,19 @@ impl Default for Utility {
 
 impl Utility {
     pub fn new() -> Self {
+        Self::at(DEFAULT_SAMPLE_RATE)
+    }
+
+    /// The same, made for `sample_rate` (ADR 0004 › Amendment: a device is made at its rate);
+    /// fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(Self::at)
+    }
+
+    /// Everything for `sample_rate`, which has been checked.
+    fn at(sample_rate: f64) -> Self {
         let params = ParamBank::new(&PARAMS);
-        let sr = DEFAULT_SAMPLE_RATE;
+        let sr = sample_rate;
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
         let frequency = params.get(param::BASS_MONO_FREQUENCY);
         let mut utility = Self {

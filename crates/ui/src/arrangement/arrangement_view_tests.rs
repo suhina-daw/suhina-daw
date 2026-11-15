@@ -178,18 +178,78 @@ fn a_dragged_gain_or_fade_is_what_the_clip_shows() {
         Shown { gain_db: 0.0, fade_in: 1.0, fade_out: 0.0, fade_in_curve: linear, fade_out_curve: linear }
     );
     // A curve being dragged bends that fade only.
-    state.curve_drag = Some(CurveDrag { key, edge: FadeEdge::In, curve: 0.4, grab: 0.0 });
+    assert!(state.gesture.begin(Gesture::FadeCurve(CurveDrag { key, edge: FadeEdge::In, curve: 0.4, grab: 0.0 })));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_in_curve.curve, 0.4);
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_out_curve.curve, 0.0);
-    state.curve_drag = None;
+    state.gesture.settle(false);
     // The waveform is drawn with the gain being dragged, not the one in the project.
-    state.gain_drag = Some((key, -12.0));
+    assert!(state.gesture.begin(Gesture::Gain((key, -12.0))));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).gain_db, -12.0);
     assert_eq!(state.shown((TrackId(1), ClipId(2)), &clip, Some(beats(1.0))).gain_db, 0.0, "only on the dragged clip");
     // A fade being dragged: on the grid, or free with Alt.
-    state.fade_drag = Some(FadeDrag { key, edge: FadeEdge::Out, raw: 2.6, from: 0.0 });
+    state.gesture.settle(false);
+    assert!(state.gesture.begin(Gesture::Fade(FadeDrag { key, edge: FadeEdge::Out, raw: 2.6, from: 0.0 })));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_out, 3.0);
     assert!((state.shown(key, &clip, None).fade_out - 2.6).abs() < 1e-9);
+}
+
+#[test]
+fn a_second_drag_cannot_start_while_one_is_under_way() {
+    let key = (TrackId(1), ClipId(1));
+    let mut slot = GestureSlot::default();
+    let edge = EdgeDrag { key, grab: EdgeGrab::Right, raw: 4.0, from: 4.0, origin: 100.0 };
+    assert!(slot.begin(Gesture::Edge(edge)));
+    // A fade handle, a marker or the loop pressed meanwhile starts nothing: the edge drag stays.
+    assert!(!slot.begin(Gesture::Fade(FadeDrag { key, edge: FadeEdge::In, raw: 0.0, from: 0.0 })));
+    assert!(!slot.begin(Gesture::Marker((0, 2.0))));
+    assert_eq!(slot.edge(), Some(&edge));
+    assert_eq!(slot.fade(), None);
+    // Another clip's edge does not end it; its own does, handing back what it carried.
+    let other = (TrackId(1), ClipId(2));
+    assert_eq!(slot.end_edge(|d| d.key == other), None);
+    assert!(slot.is_some());
+    assert_eq!(slot.end_edge(|d| d.key == key), Some(edge));
+    // Then the next drag starts.
+    assert!(slot.begin(Gesture::Marker((0, 2.0))));
+    // Escape ends it without handing anything back, and the rest of its press starts nothing.
+    assert!(slot.cancel());
+    assert!(!slot.is_some());
+    assert!(slot.cancelled());
+    assert!(!slot.begin(Gesture::Marker((1, 3.0))), "the press Escape let go of starts no drag");
+    slot.settle(true);
+    assert!(slot.cancelled(), "a button still held keeps it so");
+    // Once every button is up the next press may start one; a drag that lost its release ends then.
+    slot.settle(false);
+    assert!(!slot.cancelled());
+    assert!(slot.begin(Gesture::Marker((1, 3.0))));
+    slot.settle(false);
+    assert!(!slot.is_some());
+}
+
+#[test]
+fn losing_the_window_focus_ends_the_drag_and_holds_no_press_back() {
+    let mut slot = GestureSlot::default();
+    assert!(slot.begin(Gesture::Marker((0, 2.0))));
+    slot.lose_focus();
+    assert!(!slot.is_some());
+    assert!(!slot.cancelled());
+    assert!(slot.begin(Gesture::Marker((1, 3.0))), "the first press after the focus returns starts a drag");
+    // Escape, then the focus lost with the button still reported down: the press is over too.
+    assert!(slot.cancel());
+    slot.lose_focus();
+    assert!(slot.begin(Gesture::Marker((2, 4.0))));
+}
+
+#[test]
+fn escape_ends_the_drag_and_its_held_press() {
+    let mut state = ArrangementViewState::default();
+    assert!(!state.gesture_under_way());
+    assert!(state.gesture.begin(Gesture::Track(TrackId(3))));
+    state.pressed_clip = Some((TrackId(1), ClipId(1)));
+    assert!(state.gesture_under_way());
+    assert!(state.cancel_gesture());
+    assert!(!state.gesture_under_way());
+    assert_eq!(state.dragged_clip(), None);
 }
 
 #[test]
@@ -696,6 +756,32 @@ fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
     assert_eq!(clip::drag_place(5.6, 5.3, grid, false), 5.3);
     assert_eq!(clip::drag_place(6.2, 5.3, grid, false), 6.0);
     assert_eq!(clip::drag_place(5.6, 5.3, grid, true), 5.6);
+}
+
+#[test]
+fn crowded_clip_notes_give_way_as_the_view_zooms_out() {
+    // Sixteenths over four bars: 64 starts.
+    let sixteenths: Vec<f64> = (0..64).map(|i| f64::from(i) * 0.25).collect();
+    assert!(!clip::notes_crowded(sixteenths.clone(), 640.0), "10 points apart: drawn");
+    // A beat about 5 points wide, as at the opening zoom: sixteenths stay drawn.
+    assert!(!clip::notes_crowded(sixteenths.clone(), 80.0), "1.25 points apart: drawn");
+    assert!(clip::notes_crowded(sixteenths, 48.0), "0.75 points apart: the name instead");
+    // A four-note chord on each beat counts once per beat.
+    let chords: Vec<f64> = (0..16).flat_map(|beat| [f64::from(beat); 4]).collect();
+    assert!(!clip::notes_crowded(chords, 16.0), "16 chords a point apart");
+    assert!(!clip::notes_crowded(Vec::new(), 10.0));
+}
+
+#[test]
+fn a_clips_notes_get_a_row_per_pitch_they_use_and_give_way_when_rows_are_too_thin() {
+    // A drum part: kick, snare and hat, each a row, whatever lies between them.
+    assert_eq!(clip::used_keys([42, 36, 38, 36, 42].into_iter()), vec![36, 38, 42]);
+    // The 13 points under the name bar of a 36 px lane hold thirteen pitches; a pluck's twenty
+    // fit in 30 points, rows overlapping a little; forty do not.
+    assert!(!clip::pitch_rows_crowded(4, 13.0), "4 rows of 3.25 points");
+    assert!(!clip::pitch_rows_crowded(20, 30.0), "20 rows of 1.5 points");
+    assert!(clip::pitch_rows_crowded(40, 30.0), "40 rows of 0.75 points");
+    assert!(!clip::pitch_rows_crowded(0, 13.0));
 }
 
 #[test]

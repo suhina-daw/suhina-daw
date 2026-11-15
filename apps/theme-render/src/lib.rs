@@ -94,6 +94,8 @@ fn harness(
     app.set_arrangement_grid(suhina_ui::arrangement::arrangement_view::PianoGrid::from_value("1 bar"));
     // The RAM in the control bar is measured; a fixed figure keeps the renders the same.
     app.hold_ram(Some(96 << 20));
+    // Still scenes, with the blur behind what floats (#1234) and the glass a theme asks for.
+    app.effects_when_still(true);
     let mut builder = Harness::builder()
         .allow_missing_glyphs()
         .with_size((width, SIZE.1))

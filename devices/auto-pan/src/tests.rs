@@ -52,7 +52,7 @@ fn assert_period(gain: &[f32], frames: usize, cycles: usize) {
     }
 }
 
-suhina_device_api::conformance_test!(AutoPan::new());
+suhina_device_api::conformance_test!(AutoPan::with_rate);
 
 #[test]
 fn no_amount_passes_the_signal_through_exactly() {

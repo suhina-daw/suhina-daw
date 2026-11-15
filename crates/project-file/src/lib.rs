@@ -122,22 +122,41 @@ pub fn from_json(text: &str) -> Result<Project, ProjectFileError> {
     Ok(project)
 }
 
+/// Where a project's audio file was read from, for [`rebase_audio`]: given the path a clip or
+/// device names (relative to the folder it is moved from) and its absolute path, the file that
+/// was decoded for it, or `None` when none was.
+pub type FoundAudio<'a> = &'a dyn Fn(&str, Option<&str>) -> Option<PathBuf>;
+
 /// Moves the audio file paths of `project` from `from` (the folder they are relative to now)
 /// to `to` (the folder of the file it is saved in): each relative path is written relative to
 /// `to` where both are on one drive, and the absolute path is kept for when it does not resolve.
-pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path) {
+///
+/// Where each file is comes from `found`, the file that was decoded for it: this looks at nothing
+/// on disk, so a path a project names that was never read (a network share, a device path) is
+/// not touched when it is saved, or backed up while it is open (#617). A file `found` does not
+/// know is moved by its name alone, its absolute path kept as the project has it.
+pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path, found: FoundAudio<'_>) {
+    let to = normalise(&std::path::absolute(to).unwrap_or_else(|_| to.into()));
+    // The absolute path to write and the file to make the relative path from.
+    let place = |source: &str, absolute: Option<&str>| -> (PathBuf, Option<String>) {
+        match found(source, absolute) {
+            Some(file) => {
+                let file = normalise(&std::path::absolute(&file).unwrap_or(file));
+                let text = file.display().to_string();
+                (file, Some(text))
+            }
+            None => {
+                let here = from.join(source);
+                (normalise(&std::path::absolute(&here).unwrap_or(here)), absolute.map(str::to_owned))
+            }
+        }
+    };
     for device in project.channels.iter_mut().flat_map(|c| &mut c.devices) {
-        let Some(source) = device.sample_file() else { continue };
-        let here = from.join(source);
-        let file = if here.is_file() {
-            here
-        } else {
-            device.sample_absolute_file().map(PathBuf::from).filter(|p| p.is_file()).unwrap_or(here)
-        };
-        let absolute = normalise(&std::path::absolute(&file).unwrap_or(file));
-        let relative = relative_to(&absolute, &normalise(&std::path::absolute(to).unwrap_or(to.into())))
-            .map_or_else(|| source.to_owned(), |p| slashes(&p));
-        device.set_sample_reference(&relative, &absolute.display().to_string());
+        let Some(source) = device.sample_file().map(str::to_owned) else { continue };
+        let (file, absolute) = place(&source, device.sample_absolute_file());
+        let relative = relative_to(&file, &to).map_or_else(|| source.clone(), |p| slashes(&p));
+        let absolute = absolute.unwrap_or_else(|| file.display().to_string());
+        device.set_sample_reference(&relative, &absolute);
     }
     for content in &mut project.contents {
         for lane in &mut content.lanes {
@@ -146,20 +165,11 @@ pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path) {
             if region.file.is_empty() {
                 continue;
             }
-            let here = from.join(&region.file);
-            let file = if here.is_file() {
-                here
-            } else {
-                match region.absolute_file.as_deref().map(PathBuf::from) {
-                    Some(absolute) if absolute.is_file() => absolute,
-                    _ => here,
-                }
-            };
-            let absolute = normalise(&std::path::absolute(&file).unwrap_or(file));
-            if let Some(relative) = relative_to(&absolute, &normalise(&std::path::absolute(to).unwrap_or(to.into()))) {
+            let (file, absolute) = place(&region.file, region.absolute_file.as_deref());
+            if let Some(relative) = relative_to(&file, &to) {
                 region.file = slashes(&relative);
             }
-            region.absolute_file = Some(absolute.display().to_string());
+            region.absolute_file = Some(absolute.unwrap_or_else(|| file.display().to_string()));
         }
     }
 }

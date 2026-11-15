@@ -450,7 +450,10 @@ fn a_file_device_in_a_group_is_known_by_its_file() {
             frames_per_beat: 24_000.0,
         };
         let built = outer.as_group().and_then(|g| builder.group(&outer, g, 0, &[0])).map(|b| b.id);
-        (built, crate::chain::device_identity("nam-cab-loader", &cab, &audio, &*suhina_device_registry::factory()))
+        (
+            built,
+            crate::chain::device_identity("nam-cab-loader", &cab, &audio, &*suhina_device_registry::factory(), None),
+        )
     };
     let (first, chain_first) = identity(b"one.wav");
     let (again, _) = identity(b"one.wav");

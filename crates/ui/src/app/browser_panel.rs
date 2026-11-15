@@ -22,53 +22,47 @@ impl App {
         }
     }
 
-    /// Lays out the browser at the side of `area`, draws it with its handle, and returns what is
-    /// left for the view. With `geometry` the theme's layout places it: its rectangle, the view's,
-    /// and whether its width follows the handle (`Workspace::browser_follows`).
-    pub(super) fn browser_panel(&mut self, ui: &mut Ui, area: Rect, geometry: Option<(Rect, Rect, bool)>) -> Rect {
-        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-browser").enter();
+    /// The browser's width in a window `room` wide: the saved width, within its bounds and the
+    /// share of the window it may take.
+    pub(super) fn browser_width_in(&self, room: f32) -> f32 {
         let (low, high) = crate::settings::BROWSER_WIDTHS;
-        let widest = (high as f32).min(area.width() * crate::settings::BROWSER_SHARE).max(low as f32);
-        let width = (self.settings.browser_width as f32).clamp(low as f32, widest);
-        let left = self.settings.browser_side == Side::Left;
+        let widest = (high as f32).min(room * crate::settings::BROWSER_SHARE).max(low as f32);
+        (self.settings.browser_width as f32).clamp(low as f32, widest)
+    }
+
+    /// Draws the browser in `panel`, the rectangle the window's grid gives it beside the `main`
+    /// view, with its handle in the gap between them while its width follows the handle
+    /// (`Window::browser_follows`). `room` is the window's, which bounds the width a drag sets.
+    pub(super) fn browser_panel(&mut self, ui: &mut Ui, room: Rect, panel: Rect, main: Rect, follows: bool) {
+        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-browser").attribute("kind", "browser").enter();
+        let (low, high) = crate::settings::BROWSER_WIDTHS;
+        let widest = (high as f32).min(room.width() * crate::settings::BROWSER_SHARE).max(low as f32);
+        let width = self.browser_width_in(room.width());
         // While it slides (#708) only `part` of it shows: it moves in from its side whole, not
         // squeezed, and its handle takes hold only once it is all there.
         let part = self.browser_part.clamp(0.0, 1.0);
-        let (shown, handle_width) = (width * part, BROWSER_HANDLE * part);
-        // In a themed layout the panel is where the sheet puts it, which need not be the setting's
-        // side (the native grid has it on the left): its handle drags towards where it is.
-        let left = geometry.map_or(left, |(panel, rest, _)| panel.center().x <= rest.center().x);
-        let (panel, handle, rest) = if let Some((panel, rest, follows)) = geometry {
-            let handle = if follows {
-                crate::kit::native_css::splitter_between(panel, rest, handle_width)
+        // The panel is where the sheet puts it, which need not be the setting's side: its handle
+        // drags towards where it is.
+        let left = panel.center().x <= main.center().x;
+        let handle =
+            if follows { crate::kit::native_css::splitter_between(panel, main, BROWSER_HANDLE) } else { Rect::NOTHING };
+        // Sliding, the browser is drawn whole at its width, its inner edge at the panel's.
+        let area = panel;
+        // Its width is its content's: its own padding and border come round it.
+        let [_, right, _, left_inset] = panel_style.insets();
+        let whole = width + right + left_inset;
+        let panel = if follows && part < 1.0 {
+            if left {
+                Rect::from_min_max(Pos2::new(panel.right() - whole, panel.top()), panel.max)
             } else {
-                Rect::NOTHING
-            };
-            (panel, handle, rest)
-        } else if left {
-            let panel = Rect::from_min_max(
-                Pos2::new(area.left() + shown - width, area.top()),
-                Pos2::new(area.left() + shown, area.bottom()),
-            );
-            let handle = Rect::from_min_max(
-                Pos2::new(panel.right(), area.top()),
-                Pos2::new(panel.right() + handle_width, area.bottom()),
-            );
-            (panel, handle, Rect::from_min_max(Pos2::new(handle.right(), area.top()), area.max))
+                Rect::from_min_max(panel.min, Pos2::new(panel.left() + whole, panel.bottom()))
+            }
         } else {
-            let panel = Rect::from_min_max(
-                Pos2::new(area.right() - shown, area.top()),
-                Pos2::new(area.right() - shown + width, area.bottom()),
-            );
-            let handle = Rect::from_min_max(
-                Pos2::new(panel.left() - handle_width, area.top()),
-                Pos2::new(panel.left(), area.bottom()),
-            );
-            (panel, handle, Rect::from_min_max(area.min, Pos2::new(handle.left(), area.bottom())))
+            panel
         };
         let default_width = crate::settings::Settings::default().browser_width;
         let (resized, done) = if part >= 1.0 && handle.is_positive() {
-            browser_view::resize_handle(ui, handle, width, left, default_width as f32)
+            browser_view::resize_handle(ui, handle, width, left, default_width as f32, (low as f32, widest))
         } else {
             (None, false)
         };
@@ -78,7 +72,7 @@ impl App {
         }
         // The panel's own box, its background and border, once its handle beside it is drawn; it
         // clips what the browser paints (`overflow`), and the browser goes in its content box.
-        let inside = panel_style.paint(ui.painter(), panel).content;
+        let inside = panel_style.paint(&ui.painter().with_clip_rect(area.intersect(ui.clip_rect())), panel).content;
         // Saved once the handle is let go: writing the settings file on every frame of a drag
         // made the drag lag.
         if done {
@@ -154,7 +148,6 @@ impl App {
         if !out.add.is_empty() {
             self.add_to_selected(out.add);
         }
-        rest
     }
 
     /// Shows the sample map large in the main area, or closes it back into the browser.

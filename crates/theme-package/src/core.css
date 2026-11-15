@@ -36,13 +36,3 @@
 @property --track-mutedBackground { syntax: "<color>"; initial-value: #21201D; }
 @property --pan-background { syntax: "<color>"; initial-value: #1F1E1C; }
 @property --pan-centre { syntax: "<color>"; initial-value: #817F7A; }
-@property --clip-midiDefault { syntax: "<color>"; initial-value: #4FC3F7; }
-@property --clip-audioDefault { syntax: "<color>"; initial-value: #FF9A3C; }
-@property --track-1 { syntax: "<color>"; initial-value: #FF9A3C; }
-@property --track-2 { syntax: "<color>"; initial-value: #F2D541; }
-@property --track-3 { syntax: "<color>"; initial-value: #4FC3F7; }
-@property --track-4 { syntax: "<color>"; initial-value: #B38BFF; }
-@property --track-5 { syntax: "<color>"; initial-value: #7FDB5A; }
-@property --track-6 { syntax: "<color>"; initial-value: #FF6FA8; }
-@property --track-7 { syntax: "<color>"; initial-value: #5C8DFF; }
-@property --track-8 { syntax: "<color>"; initial-value: #2FD9C4; }

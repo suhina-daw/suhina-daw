@@ -1054,7 +1054,7 @@ const DESCRIPTION_CHOICES: [(Descriptions, &str); 3] = [
 /// Help over the Settings window: what the names and descriptions are, and how a description is
 /// shown, one choice per line. Escape or Close closes it.
 fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome: &mut Outcome) {
-    let modal = egui::Modal::new(Id::unique("settings-help-dialog")).show(ui.ctx(), |ui| {
+    let modal = crate::kit::floating::modal(ui.ctx(), Id::unique("settings-help-dialog")).show(ui.ctx(), |ui| {
         ui.set_width(360.0);
         ui.label(egui::RichText::new("Help").font(theme::ui_font(theme::TEXT + 2.0)).color(theme::text_primary()));
         ui.add_space(6.0);
@@ -1814,11 +1814,17 @@ fn shortcuts_page(
     let mut changed = false;
     let small = theme::ui_font(theme::TEXT_SMALL);
 
-    // A key being set: the next key pressed (with its modifiers) is the action's key.
+    // A key being set: the next key pressed (with its modifiers) is the action's key. Shift,
+    // Ctrl and Alt going down are pressed keys of their own: the capture waits for the key they
+    // are held with.
     if let Some(action) = state.capture.clone() {
         let pressed = ui.input(|i| {
             i.events.iter().find_map(|e| match e {
-                egui::Event::Key { key, pressed: true, modifiers, .. } => Some(Shortcut::new(*modifiers, *key)),
+                egui::Event::Key { key, pressed: true, modifiers, .. }
+                    if !crate::settings::keymap::is_modifier(*key) =>
+                {
+                    Some(Shortcut::new(*modifiers, *key))
+                }
                 _ => None,
             })
         });

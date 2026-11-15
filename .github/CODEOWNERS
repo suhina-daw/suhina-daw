@@ -9,10 +9,9 @@
 # the one that permits its licence.
 /deny.toml @juhamikael
 
-# The updater installs and runs what it downloads, so where it looks needs the same approval
-# (docs/spec/updates.md › Where builds come from). Keep in step with WATCHED in
-# scripts/updater_source.py.
+# The updater installs and runs what it downloads, so the crate that decides where it looks and
+# which builds it trusts needs the same approval (docs/spec/updates.md › Where builds come from).
+# The window's update dialog and settings only show what the crate found and follow the usual
+# review. Keep in step with WATCHED in scripts/updater_source.py.
 /crates/update/ @juhamikael
-/crates/ui/src/app/updates.rs @juhamikael
-/crates/ui/src/settings/update_settings.rs @juhamikael
 

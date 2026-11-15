@@ -17,6 +17,11 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   scrolls; `kit/` the theme, widgets and motion), with a module file beside each folder
   (`app.rs`, `browser.rs`, ...). A helper two views use goes in `interaction/`, not in one
   view's module for the other to reach into.
+- *The window's layout* is one CSS grid on `window` (`kit/native_css/window.rs`, its default in
+  `crates/theme-package/src/user-agent.css`): `App::window_input` (`app/window_layout.rs`) says
+  which regions are there and the content sizes the app knows, and each bar and panel is drawn in
+  the rectangle the grid gives it, input included. There is no other layout path: a region the
+  grid gives no rectangle is not drawn. A strip that resizes something is a `kit::divider`.
 
 ## The house style
 

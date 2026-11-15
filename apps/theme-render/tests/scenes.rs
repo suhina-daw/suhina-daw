@@ -44,9 +44,20 @@ fn drive_every_scene(theme: &Subject) -> Vec<String> {
 #[test]
 fn the_scenes_cover_the_views_the_devices_and_the_floating_surfaces() {
     let names: Vec<String> = scenes::scenes().into_iter().map(|s| s.name).collect();
-    for wanted in
-        ["launcher", "launcher-hover", "launcher-selected", "arrangement", "piano-roll", "menu", "settings", "tooltip"]
-    {
+    for wanted in [
+        "launcher",
+        "launcher-hover",
+        "launcher-selected",
+        "arrangement",
+        "piano-roll",
+        "menu",
+        "context-menu",
+        "settings",
+        "settings-menu",
+        "tooltip",
+        "export-dialog",
+        "about-dialog",
+    ] {
         assert!(names.iter().any(|n| n == wanted), "{wanted} in {names:?}");
     }
     assert!(names.iter().any(|n| n == "launcher-scrolled"), "the launcher scrolled: {names:?}");

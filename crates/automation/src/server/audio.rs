@@ -12,9 +12,11 @@ use super::*;
 pub(super) fn start_audio(projects: &mut Projects, id: ProjectId, warnings: &mut Vec<String>) -> Value {
     let Ok(session) = projects.session_mut(Some(id)) else { return Value::Null };
     let project = session.project().clone();
-    let (audio, audio_warnings) = project_audio(session, &project);
+    let (audio, audio_warnings, found) = audio_snapshot(session).complete_found(&project);
     warnings.extend(audio_warnings);
-    session.set_audio(audio);
+    // With where each file decoded now was read from, so a save uses that file and not one of
+    // its name that turns up in the folder later (#617).
+    session.set_audio_found(audio, found);
     match projects.open_output(Some(id)) {
         Ok(notice) => {
             warnings.extend(notice);
@@ -25,15 +27,10 @@ pub(super) fn start_audio(projects: &mut Projects, id: ProjectId, warnings: &mut
     }
 }
 
-/// The audio `project` (the session's, or a scene of it) plays: its files decoded from where
-/// the session's project file is, with what the session has decoded already (files added since
-/// it opened, ADR 0011) for the rest.
-pub(super) fn project_audio(session: &Session, project: &Project) -> (suhina_media::AudioPool, Vec<String>) {
-    audio_snapshot(session).complete(project)
-}
-
-/// What [`project_audio`] needs from the session, taken quickly so that decoding the files it
-/// lacks can run off the window's thread.
+/// What the audio a project (the session's, or a scene of it) plays needs from the session,
+/// taken quickly so that decoding the files it lacks can run off the window's thread: its files
+/// are decoded from where the session's project file is, with what the session has decoded
+/// already (files added since it opened, ADR 0011) for the rest.
 pub(super) struct AudioSnapshot {
     folder: Option<PathBuf>,
     have: suhina_media::AudioPool,
@@ -52,7 +49,18 @@ pub(super) fn audio_snapshot(session: &Session) -> AudioSnapshot {
 impl AudioSnapshot {
     /// The pool `project` plays, decoding the files the session has not, and the warnings.
     pub(super) fn complete(self, project: &Project) -> (suhina_media::AudioPool, Vec<String>) {
+        let (pool, warnings, _) = self.complete_found(project);
+        (pool, warnings)
+    }
+
+    /// [`AudioSnapshot::complete`], with the file each name decoded here was read from: only the
+    /// names it adds, not the ones the session had decoded already.
+    pub(super) fn complete_found(
+        self,
+        project: &Project,
+    ) -> (suhina_media::AudioPool, Vec<String>, std::collections::HashMap<String, PathBuf>) {
         let AudioSnapshot { folder, mut have, trusted } = self;
+        let mut found = std::collections::HashMap::new();
         let missing = project
             .contents
             .iter()
@@ -62,13 +70,18 @@ impl AudioSnapshot {
         if missing {
             // Trusted as the session trusts it, so a render reads what the project plays.
             let folder = folder.as_deref().unwrap_or(Path::new("."));
-            let (loaded, found) = suhina_media::load_project_audio_trusted(project, folder, &trusted);
-            for (key, data) in loaded.files {
-                have.files.entry(key).or_insert(data);
+            let decoded = suhina_media::decode_project_audio_found(project, folder, &trusted);
+            for (key, data) in decoded.pool.files {
+                if let std::collections::hash_map::Entry::Vacant(slot) = have.files.entry(key.clone()) {
+                    slot.insert(data);
+                    if let Some(file) = decoded.found.get(&key) {
+                        found.insert(key, file.clone());
+                    }
+                }
             }
-            warnings = found;
+            warnings = decoded.warnings;
         }
-        (have, warnings)
+        (have, warnings, found)
     }
 }
 

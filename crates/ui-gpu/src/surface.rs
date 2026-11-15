@@ -4,10 +4,13 @@
 //! The clears of `suhina_ui::kit::surface`: a paint callback drawn with no blending, so its colour
 //! and alpha replace what is under it. Only a menu's or dialog's blurred backdrop asks for one, to
 //! clear the window's pixels under it; every background blends. All of a frame's clears share one
-//! instance buffer, written once after every callback has been prepared.
+//! instance buffer per renderer, written once after every callback has been prepared. A capture
+//! (`liquid`) that keeps the window's alpha replays them in its own renderer ([`replay`]), so a
+//! menu over a see-through dialog gets the dialog's backdrop as the window shows it.
 
-use std::sync::Arc;
+use std::any::Any;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
 use egui::{Color32, CornerRadius, Rect, Shape};
 use egui_wgpu::wgpu;
@@ -68,78 +71,115 @@ fn fs_main(in: Out) -> @location(0) vec4<f32> {
 ";
 
 pub struct Surfaces {
-    /// Whether the framebuffer is sRGB, so colours are written linear.
-    linear: bool,
+    /// The clears made, so a capture can tell them from foreign paint callbacks.
+    made: Arc<Made>,
+}
+
+/// The clears this window's provider made that are still painted somewhere: a capture
+/// (`liquid`) recognises them by their callback, replays them in its own renderer and leaves
+/// every other paint callback out. Kept in the window renderer's callback resources.
+#[derive(Default)]
+struct Made(Mutex<Vec<Clear>>);
+
+struct Clear {
+    /// The paint callback's own allocation, kept so no other callback can take its address.
+    callback: Weak<dyn Any + Send + Sync>,
+    corner_radius: CornerRadius,
+    color: Color32,
 }
 
 impl Surfaces {
     /// Builds the pipeline for the window's framebuffer and keeps it with egui's renderer.
     pub fn new(gpu: &egui_wgpu::RenderState) -> Self {
-        let device = &gpu.device;
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("background fills"),
-            source: wgpu::ShaderSource::Wgsl(SHADER.into()),
-        });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("background fills"),
-            bind_group_layouts: &[],
-            immediate_size: 0,
-        });
-        let attributes = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("background fills"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: STRIDE,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &attributes,
-                })],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                // No blend state: the fill's colour and alpha replace the pixel's.
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: gpu.target_format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        gpu.renderer.write().callback_resources.insert(Resources {
-            pipeline,
-            buffer: None,
-            fills: Vec::new(),
-            written: false,
-        });
-        Self { linear: gpu.target_format.is_srgb() }
+        let made = Arc::new(Made::default());
+        let mut renderer = gpu.renderer.write();
+        prepare(&mut renderer, &gpu.device, gpu.target_format);
+        renderer.callback_resources.insert(Arc::clone(&made));
+        Self { made }
     }
+}
+
+/// Gives `renderer`, drawing into `format`, what the clears need to be drawn in it.
+pub(crate) fn prepare(renderer: &mut egui_wgpu::Renderer, device: &wgpu::Device, format: wgpu::TextureFormat) {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("background fills"),
+        source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("background fills"),
+        bind_group_layouts: &[],
+        immediate_size: 0,
+    });
+    let attributes = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4];
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("background fills"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: STRIDE,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &attributes,
+            })],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            // No blend state: the fill's colour and alpha replace the pixel's.
+            targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+    renderer.callback_resources.insert(Resources {
+        pipeline,
+        linear: format.is_srgb(),
+        buffer: None,
+        fills: Vec::new(),
+        written: false,
+    });
+}
+
+/// The clear `callback` is, made again at `rect` (in the capture's points) for a capture's
+/// renderer; `None` for any other paint callback. `window` is the window's renderer.
+pub(crate) fn replay(
+    window: &egui_wgpu::Renderer,
+    callback: &egui::PaintCallback,
+    rect: Rect,
+) -> Option<egui::PaintCallback> {
+    let made = window.callback_resources.get::<Arc<Made>>()?;
+    let made = made.0.lock().ok()?;
+    let clear =
+        made.iter().find(|clear| std::ptr::addr_eq(clear.callback.as_ptr(), Arc::as_ptr(&callback.callback)))?;
+    Some(fill(rect, clear.corner_radius, clear.color))
+}
+
+fn fill(rect: Rect, corner_radius: CornerRadius, color: Color32) -> egui::PaintCallback {
+    egui_wgpu::Callback::new_paint_callback(rect, Fill { rect, corner_radius, color, slot: AtomicU32::new(u32::MAX) })
 }
 
 impl Provider for Surfaces {
     fn shape(&self, rect: Rect, corner_radius: CornerRadius, color: Color32) -> Shape {
-        let color = if self.linear {
-            egui::Rgba::from(color).to_array()
-        } else {
-            color.to_array().map(|c| f32::from(c) / 255.0)
-        };
-        let fill = Fill { rect, corner_radius, color, slot: AtomicU32::new(u32::MAX) };
-        Shape::Callback(egui_wgpu::Callback::new_paint_callback(rect, fill))
+        let callback = fill(rect, corner_radius, color);
+        if let Ok(mut made) = self.made.0.lock() {
+            // A frame's clears are dropped with the frame: forget them then.
+            made.retain(|clear| clear.callback.strong_count() > 0);
+            made.push(Clear { callback: Arc::downgrade(&callback.callback), corner_radius, color });
+        }
+        Shape::Callback(callback)
     }
 }
 
 struct Resources {
     pipeline: wgpu::RenderPipeline,
+    /// Whether the target is sRGB, so colours are written linear.
+    linear: bool,
     buffer: Option<(wgpu::Buffer, u64)>,
     /// This frame's fills, as they are prepared.
     fills: Vec<[f32; FLOATS]>,
@@ -150,7 +190,8 @@ struct Resources {
 struct Fill {
     rect: Rect,
     corner_radius: CornerRadius,
-    color: [f32; 4],
+    /// Premultiplied, as egui keeps it.
+    color: Color32,
     /// Where this fill is in the frame's buffer, once prepared.
     slot: AtomicU32,
 }
@@ -177,7 +218,11 @@ impl egui_wgpu::CallbackTrait for Fill {
         let r = |radius: u8| f32::from(radius) * ppp;
         let c = self.corner_radius;
         let [w, h] = screen.size_in_pixels.map(|n| n as f32);
-        let [cr, cg, cb, ca] = self.color;
+        let [cr, cg, cb, ca] = if resources.linear {
+            egui::Rgba::from(self.color).to_array()
+        } else {
+            self.color.to_array().map(|c| f32::from(c) / 255.0)
+        };
         resources.fills.push([
             min.x,
             min.y,

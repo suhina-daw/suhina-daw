@@ -60,7 +60,7 @@ fn frequency(signal: &[f32], sample_rate: f64) -> f64 {
     (crossings.len() - 1) as f64 * sample_rate / (last - first) as f64
 }
 
-suhina_device_api::conformance_test!(FmSynth::new());
+suhina_device_api::conformance_test!(FmSynth::with_rate);
 
 #[test]
 fn the_initial_voice_is_a_sine_at_the_key_pitch() {

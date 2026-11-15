@@ -35,6 +35,9 @@ pub mod start_panel;
 mod tabs;
 mod themed_toolbar;
 mod typing_keys;
+mod window_layout;
+
+use crate::kit::native_css::Region;
 pub mod updates;
 
 use std::collections::HashMap;
@@ -78,7 +81,8 @@ use crate::settings::{
 
 use self::actions::*;
 use self::browser_panel::*;
-use self::control_bar::*;
+#[cfg(test)]
+use self::control_bar::ram_text;
 use self::drops::*;
 use self::keys::*;
 
@@ -509,6 +513,14 @@ pub struct App {
     /// The detail area is showing, and its height (in a row) or width (stacked).
     detail_open: bool,
     detail_height: f32,
+    /// The detail area's content size as it was shown last (its width beside the view, its height
+    /// under it), under the Arrangement view's pull to the top or a track's one height for its
+    /// devices: what the window's grid lays it out at.
+    detail_shown: Vec2,
+    /// The size along its axis the detail area asked the grid for last, so it asks once.
+    detail_asked: f32,
+    /// Where the window's grid put the status bar last, which Settings keeps clear of.
+    status_bar_rect: Option<Rect>,
     /// Where each frame's time goes, written to the trace log when tracing is on.
     frame_trace: crate::kit::frame_trace::FrameTrace,
     /// What auto-arm (Settings › MIDI) last saw and armed.
@@ -536,10 +548,12 @@ pub struct App {
     /// The Arrangement's clip selection last frame: when it changes while stopped, the play
     /// start marker goes to its first clip.
     clips_before: Vec<(TrackId, ClipId)>,
-    /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top),
-    /// and the detail area's height a splitter drag has reached so far, unclamped.
+    /// Where the last pick of clips put the play start marker (`None`: it left the marker
+    /// alone), and whether something else has moved the marker since: a click on a ruler, a
+    /// marker, a lane. Moved, Play starts at the marker and not at the selected clip.
+    pick_start: (Option<f64>, bool),
+    /// The piano roll is pulled to the top (`docs/spec/ui-clip-editor.md` › Pulled to the top).
     detail_max: bool,
-    detail_drag: Option<f32>,
     /// The width a drag of the stacked devices' column splitter has reached so far.
     side_drag: Option<f32>,
     /// What was copied or cut last: Ctrl+V pastes notes into the clip the piano roll shows and
@@ -686,6 +700,8 @@ pub struct App {
     /// bar shows it and once a second is often enough for a number that moves that slowly.
     ram: Option<u64>,
     next_ram: Option<f64>,
+    /// Blur and glass even with animations off (`suhina-theme-render`, whose scenes are still).
+    effects_when_still: bool,
     /// The audio's health counters last traced: device underruns, late stretched frames and late
     /// plug-in blocks, and the input's.
     audio_traced: (u64, u64, u64, u64, u64),
@@ -783,6 +799,9 @@ impl App {
             pending_device_remove: None,
             detail_open: true,
             detail_height: DETAIL_HEIGHT,
+            detail_shown: Vec2::new(detail_view::STACK_WIDTH, DETAIL_HEIGHT),
+            detail_asked: 0.0,
+            status_bar_rect: None,
             frame_trace: crate::kit::frame_trace::FrameTrace::default(),
             auto_arm: AutoArm::default(),
             fitted_editors: std::collections::HashSet::new(),
@@ -794,10 +813,10 @@ impl App {
             quick_add_filter: quick_add::Filter::default(),
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
+            pick_start: (None, false),
             detail_max: false,
             last_escape: None,
             escape_twice: false,
-            detail_drag: None,
             side_drag: None,
             copied_last: CopiedLast::Other,
             window: None,
@@ -862,6 +881,7 @@ impl App {
             reveal: None,
             ram: None,
             next_ram: None,
+            effects_when_still: false,
             audio_traced: (0, 0, 0, 0, 0),
             carry: None,
             device_carry: None,
@@ -1263,7 +1283,10 @@ impl App {
         // Picking clips clears the time selection, so one there now was painted after the pick:
         // Play starts at it (#937).
         let painted = self.shown == View::Arrangement && self.arrangement.time_selection().is_some();
-        let clip = (self.settings.play_from == PlayFrom::Clip && !painted)
+        // The marker moved since the pick (a click on the ruler, a marker, a lane): the user chose
+        // where play starts after picking the clip, and Play starts there.
+        let moved = self.pick_start.1;
+        let clip = (self.settings.play_from == PlayFrom::Clip && !painted && !moved)
             .then(|| self.selected_arrangement_clip())
             .flatten()
             .filter(|_| self.arrangement.picked_whole)
@@ -1271,6 +1294,23 @@ impl App {
         match clip {
             Some((_, clip)) => Action::new("transport.play", json!({ "from": "clip", "clip": clip.0 })),
             None => Action::new("transport.play", json!({})),
+        }
+    }
+
+    /// Notes a command that moves the play start marker anywhere but where the last pick of
+    /// clips put it: from then on Play starts at the marker, not at the selected clip.
+    fn note_marker_moved(&mut self, action: &Action) {
+        let beats = action.params.get("beats").and_then(serde_json::Value::as_f64);
+        let moved = match action.id {
+            "transport.jump" | "transport.setStart" | "transport.setPosition" => {
+                // The pick's own move to its first clip is not one.
+                !matches!((self.pick_start.0, beats), (Some(pick), Some(beats)) if (pick - beats).abs() <= 1e-9)
+            }
+            "marker.jump" => true,
+            _ => false,
+        };
+        if moved {
+            self.pick_start.1 = true;
         }
     }
 
@@ -1300,6 +1340,12 @@ impl App {
     pub fn hold_ram(&mut self, bytes: Option<u64>) {
         self.ram = bytes;
         self.next_ram = Some(f64::INFINITY);
+    }
+
+    /// Keeps blur and glass on while animations are off, so that still renders of the window show
+    /// them (`suhina-theme-render`). Off, the animations setting turns them off with motion.
+    pub fn effects_when_still(&mut self, on: bool) {
+        self.effects_when_still = on;
     }
 
     /// Turns animations on or off (a setting; on by default).
@@ -1610,14 +1656,12 @@ impl App {
     fn nam_names(&self) -> HashMap<String, String> {
         let mut names = HashMap::new();
         if let Some(session) = self.session() {
-            let project = session.project();
-            // Every channel's devices, the tracks' and the main's (a NAM effect on Main has a
-            // shown name and a fault note as a track's does).
-            for channel in project.channels.iter() {
-                for device in channel.devices.iter() {
-                    if let Some(path) = device_file_path(device) {
-                        names.insert(path.clone(), session.device_asset_name(&path).unwrap_or_default());
-                    }
+            // Every channel's devices, the tracks' and the main's, and those inside a group's
+            // branches (a NAM effect on Main or in a group has a shown name and a fault note as
+            // one on a track's chain does).
+            for device in session.project().all_devices() {
+                if let Some(path) = device_file_path(device) {
+                    names.insert(path.clone(), session.device_asset_name(&path).unwrap_or_default());
                 }
             }
         }
@@ -1628,15 +1672,11 @@ impl App {
     fn nam_notes(&self) -> HashMap<String, String> {
         let mut notes = HashMap::new();
         if let Some(session) = self.session() {
-            let project = session.project();
-            for channel in project.channels.iter() {
-                for device in channel.devices.iter() {
-                    if let Some(path) =
-                        device_file_path(device).filter(|path| session.device_asset_note(path).is_some())
-                        && let Some(note) = session.device_asset_note(&path)
-                    {
-                        notes.insert(path, note.to_owned());
-                    }
+            for device in session.project().all_devices() {
+                if let Some(path) = device_file_path(device)
+                    && let Some(note) = session.device_asset_note(&path)
+                {
+                    notes.insert(path, note.to_owned());
                 }
             }
         }
@@ -2185,70 +2225,74 @@ impl App {
                     // The field takes the name's own place and colours, with no frame of its
                     // own, the whole name selected to type over (#916).
                     let rect = spot.rect;
-                    egui::Area::new(egui::Id::unique("inline-rename"))
-                        .order(egui::Order::Foreground)
-                        .fixed_pos(rect.min)
-                        .show(ui.ctx(), |ui| {
-                            // An opaque back in the name's own colour, so the name the view drew
-                            // under the field does not show through it.
-                            let back = ui.painter().add(egui::Shape::Noop);
-                            // The selected name is a shade of its own ink on its own colour, not
-                            // the theme's selection colour, which on a coloured header reads as a
-                            // box of its own.
-                            let selection = &mut ui.visuals_mut().selection;
-                            selection.bg_fill = motion::mix(spot.fill.to_opaque(), spot.text, 0.28);
-                            selection.stroke.color = spot.text;
-                            let field_id = egui::Id::unique("inline-rename-field");
-                            let field = ui.put(
-                                rect,
-                                egui::TextEdit::singleline(&mut draft)
-                                    .id(field_id)
-                                    .frame(egui::Frame::NONE)
-                                    .margin(egui::Margin::ZERO)
-                                    .font(theme::ui_font(spot.size))
-                                    .text_color(spot.text)
-                                    .align(egui::Align2::LEFT_CENTER)
-                                    .min_size(rect.size())
-                                    .desired_width(rect.width()),
-                            );
-                            field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, what));
-                            let covered = field.rect.union(rect);
-                            ui.painter().set(back, egui::Shape::rect_filled(covered, 2.0, spot.fill.to_opaque()));
-                            if !focused {
-                                field.request_focus();
-                                if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), field_id) {
-                                    let all = egui::text::CCursorRange::two(
-                                        egui::text::CCursor::new(0),
-                                        egui::text::CCursor::new(draft.chars().count()),
-                                    );
-                                    state.cursor.set_char_range(Some(all));
-                                    state.store(ui.ctx(), field_id);
+                    crate::kit::floating::area(
+                        ui.ctx(),
+                        egui::Id::unique("inline-rename"),
+                        crate::kit::floating::Kind::Own,
+                    )
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(rect.min)
+                    .show(ui.ctx(), |ui| {
+                        // An opaque back in the name's own colour, so the name the view drew
+                        // under the field does not show through it.
+                        let back = ui.painter().add(egui::Shape::Noop);
+                        // The selected name is a shade of its own ink on its own colour, not
+                        // the theme's selection colour, which on a coloured header reads as a
+                        // box of its own.
+                        let selection = &mut ui.visuals_mut().selection;
+                        selection.bg_fill = motion::mix(spot.fill.to_opaque(), spot.text, 0.28);
+                        selection.stroke.color = spot.text;
+                        let field_id = egui::Id::unique("inline-rename-field");
+                        let field = ui.put(
+                            rect,
+                            egui::TextEdit::singleline(&mut draft)
+                                .id(field_id)
+                                .frame(egui::Frame::NONE)
+                                .margin(egui::Margin::ZERO)
+                                .font(theme::ui_font(spot.size))
+                                .text_color(spot.text)
+                                .align(egui::Align2::LEFT_CENTER)
+                                .min_size(rect.size())
+                                .desired_width(rect.width()),
+                        );
+                        field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, what));
+                        let covered = field.rect.union(rect);
+                        ui.painter().set(back, egui::Shape::rect_filled(covered, 2.0, spot.fill.to_opaque()));
+                        if !focused {
+                            field.request_focus();
+                            if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), field_id) {
+                                let all = egui::text::CCursorRange::two(
+                                    egui::text::CCursor::new(0),
+                                    egui::text::CCursor::new(draft.chars().count()),
+                                );
+                                state.cursor.set_char_range(Some(all));
+                                state.store(ui.ctx(), field_id);
+                            }
+                        }
+                        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                        if escape {
+                            keep = false;
+                        } else if field.lost_focus() && focused {
+                            let name = draft.trim();
+                            apply = match (renamed_track, target.get("clips")) {
+                                // A track keeps a name: an empty one leaves it as it was.
+                                (Some(_), _) if name.is_empty() => None,
+                                (Some(track), _) => {
+                                    Some(Action::new("track.rename", json!({ "track": track, "name": name })))
                                 }
-                            }
-                            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                            if escape {
-                                keep = false;
-                            } else if field.lost_focus() && focused {
-                                let name = draft.trim();
-                                apply = match (renamed_track, target.get("clips")) {
-                                    // A track keeps a name: an empty one leaves it as it was.
-                                    (Some(_), _) if name.is_empty() => None,
-                                    (Some(track), _) => {
-                                        Some(Action::new("track.rename", json!({ "track": track, "name": name })))
-                                    }
-                                    (None, Some(clips)) => Some(Action::new(
-                                        "clip.renameMany",
-                                        json!({ "clips": clips.clone(), "name": name }),
-                                    )),
-                                    (None, None) => {
-                                        let mut params = target.clone();
-                                        params["name"] = json!(name);
-                                        Some(Action::new("clip.rename", params))
-                                    }
-                                };
-                                keep = false;
-                            }
-                        });
+                                (None, Some(clips)) => Some(Action::new(
+                                    "clip.renameMany",
+                                    json!({ "clips": clips.clone(), "name": name }),
+                                )),
+                                (None, None) => {
+                                    let mut params = target.clone();
+                                    params["name"] = json!(name);
+                                    Some(Action::new("clip.rename", params))
+                                }
+                            };
+                            keep = false;
+                        }
+                    });
                 }
             }
             if keep {
@@ -2627,6 +2671,7 @@ impl App {
         }
         // A control moved by hand shows its parameter in the track's open lanes (#1205).
         self.focus_touched_lane(action);
+        self.note_marker_moved(action);
         // A fader or a send dragged on one of several selected tracks moves them together.
         if let Some(wider) = self.drag_to_selection(action) {
             return self.run(&wider);
@@ -2905,7 +2950,17 @@ impl App {
             ui,
             self.settings.animations && self.settings.theme != "high-contrast",
         );
-        let window_style = crate::kit::element::WINDOW.enter();
+        // The layout settings, as the window's grid reads them (#1370), so a theme's rules for
+        // them paint as they lay out.
+        let (detail_place, browser_side) = self.window_place(self.session().is_some());
+        let mut window_builder = crate::kit::element::WINDOW.attribute("detail", detail_place.attribute());
+        if let Some(side) = browser_side {
+            window_builder = window_builder.attribute("browser", side.attribute());
+        }
+        if self.settings.view.menu_bar {
+            window_builder = window_builder.attribute("menu-bar", "");
+        }
+        let window_style = window_builder.enter();
         let mut styled_ui = window_style.ui(ui);
         let ui = &mut *styled_ui;
         if let Err(error) = self.background.update(ui, &self.settings, self.themes.palette(&self.settings.theme)) {
@@ -2927,7 +2982,7 @@ impl App {
         );
         crate::kit::liquid::set_effects_allowed(
             ui.ctx(),
-            self.settings.animations && self.settings.theme != "high-contrast",
+            (self.settings.animations || self.effects_when_still) && self.settings.theme != "high-contrast",
         );
         self.frame_trace.start();
         self.frame_trace.causes(ui.ctx());
@@ -3164,59 +3219,74 @@ impl App {
                 .show_separator_line(false)
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
-                    let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                    // Its items are laid out in its whole box, inside its border and padding (#1372).
+                    bar_box(ui, &bar, egui::CornerRadius::ZERO);
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(ui.max_rect()), |ui| {
                         application_bar::show(ui, &bar, self.settings.view, &project_info, &timing)
                     })
                 });
         }
-        // The window's own menu bar, unless Settings turns it off (by default on macOS, whose bar
-        // at the top of the screen has the same menus).
-        if self.settings.view.menu_bar {
+        // The window is one grid (#1370): the bars, the lines over and under the views, the notice
+        // strip and the panels, where the sheets put them (the user-agent sheet's grid unless a
+        // theme moves them). Each region draws in its rectangle and takes input only there; a
+        // region the grid gives none is not drawn.
+        self.missing.sync(&mut self.projects, self.revision);
+        let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
+        // A newer build is offered in a bar over an open project; the start panel has its own
+        // line (`docs/spec/updates.md` › With a project open).
+        let update_bar =
+            self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
+        // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
+        // its value for when a project opens. It slides in and out from its side, with animations
+        // on (#708).
+        let browser_wanted = self.settings.browser_open && !self.start_panel_open();
+        self.browser_part = motion::toward(ui.ctx(), Id::unique("browser-shown"), browser_wanted, BROWSER_SLIDE);
+        let room = ui.available_rect_before_wrap();
+        // The grid takes the whole room, as the panels it replaced did: what the window holds
+        // reaches its edges, for what is painted behind it.
+        ui.advance_cursor_after_rect(room);
+        let input =
+            self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar || update_bar);
+        let layout = crate::kit::native_css::window(&input)
+            .map(|layout| layout.translated(room.min.to_vec2()))
+            .unwrap_or_default();
+        let region = |region: Region| layout.rect(region).filter(|rect| rect.is_positive());
+        if let Some(rect) = region(Region::MenuBar) {
             let bar = crate::kit::element::MENU_BAR.enter();
-            egui::Panel::top("menu-bar")
-                .exact_size(bar_height(ui, &bar, theme::MENU_BAR))
-                .show_separator_line(false)
-                .frame(egui::Frame::NONE)
-                .show(ui, |ui| {
-                    // The menus keep 4 points from the bar's sides.
-                    let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO).shrink2(Vec2::new(4.0, 0.0));
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
-                        self.menu_bar(ui, &bar, &mut actions)
-                    })
-                });
+            in_region(ui, rect, |ui| {
+                // The menus keep 4 points from the bar's sides.
+                let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO).shrink2(Vec2::new(4.0, 0.0));
+                ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.menu_bar(ui, &bar, &mut actions))
+            });
         }
         self.frame_trace.mark("menu bar");
-        if self.projects.len() >= 2 {
+        if let Some(rect) = region(Region::Tabs) {
             let bar = crate::kit::element::PROJECT_TABS.enter();
-            egui::Panel::top("tabs")
-                .exact_size(bar_height(ui, &bar, TABS))
-                .show_separator_line(false)
-                .frame(egui::Frame::NONE)
-                .show(ui, |ui| self.tab_row(ui, &bar, &mut actions));
+            in_region(ui, rect, |ui| self.tab_row(ui, &bar, &mut actions));
         }
-        let bar = crate::kit::element::TOOLBAR.enter();
-        egui::Panel::top("control-bar")
-            .exact_size(bar_height(ui, &bar, theme::CONTROL_BAR))
-            .show_separator_line(false)
-            .frame(egui::Frame::NONE)
-            .show(ui, |ui| {
+        if let Some(rect) = region(Region::Toolbar) {
+            let bar = crate::kit::element::TOOLBAR.enter();
+            in_region(ui, rect, |ui| {
                 let inside = bar_box(ui, &bar, egui::CornerRadius::ZERO);
                 self.control_bar(ui, &bar, inside, grid.as_ref(), cpu, ram, &mut actions)
             });
-        drop(bar);
+        }
         self.frame_trace.mark("control bar");
-        let bar = crate::kit::element::STATUS_BAR.enter();
-        egui::Panel::bottom("status-bar")
-            .exact_size(bar_height(ui, &bar, theme::STATUS_BAR))
-            .show_separator_line(false)
-            .frame(egui::Frame::NONE)
-            .show(ui, |ui| {
-                let bottom = egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner };
-                let inside = bar_box(ui, &bar, bottom);
-                ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| self.status_bar(ui, &bar, grid.as_ref()))
+        self.status_bar_rect = region(Region::StatusBar);
+        if let Some(rect) = region(Region::StatusBar) {
+            let bar = crate::kit::element::STATUS_BAR.enter();
+            in_region(ui, rect, |ui| {
+                // The window's bottom corners are the bar's where it lies along the bottom.
+                let bottom = if rect.bottom() >= room.bottom() - 0.5 {
+                    egui::CornerRadius { nw: 0, ne: 0, sw: corner, se: corner }
+                } else {
+                    egui::CornerRadius::ZERO
+                };
+                // Its items are laid out in its whole box, inside its border and padding (#1372).
+                bar_box(ui, &bar, bottom);
+                self.status_bar(ui, &bar, grid.as_ref())
             });
-        drop(bar);
+        }
         self.frame_trace.mark("bars");
         // Samples and MIDI files from the system: dropped this frame, or still over the window.
         let system = match (self.browser.drag.is_some(), dropped.is_empty()) {
@@ -3224,81 +3294,38 @@ impl App {
             (false, false) => Some((dropped, true)),
             (false, true) => Some((self.hovered_files(ui), false)).filter(|(items, _)| !items.is_empty()),
         };
-        // A private image is already painted underneath the workspace. Keep its
-        // transparent regions visible instead of covering them with separator ink.
-        let workspace_line = if crate::kit::liquid::background_image(ui.ctx()).is_some() {
-            egui::Color32::TRANSPARENT
-        } else {
-            // `#workspace { border-color }` is this line's own colour.
-            let _workspace = crate::kit::element::WORKSPACE.id("workspace").enter();
-            theme::border()
-        };
-        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
-            let _workspace_style = crate::kit::element::WORKSPACE.id("workspace").enter();
-            let area = ui.available_rect_before_wrap();
-            // A 1 px line between the bars and the view, in the line colour: drawn in the gap
-            // only, since a fill under the views would show through a translucent one.
-            let inner = Rect::from_min_max(area.min + Vec2::new(0.0, 1.0), area.max - Vec2::new(0.0, 1.0));
-            for y in [area.top(), inner.bottom()] {
-                let line = Rect::from_x_y_ranges(area.x_range(), egui::Rangef::new(y, y + 1.0));
-                ui.painter().rect_filled(line, 0.0, workspace_line);
-            }
-            self.missing.sync(&mut self.projects, self.revision);
-            let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
-            // A newer build is offered in a bar over an open project; the start panel has its own
-            // line (`docs/spec/updates.md` › With a project open).
-            let update_bar =
-                self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
-            let prompt_height =
-                if self.open_prompt.is_some() || missing_bar || update_bar { theme::ROW + 12.0 } else { 0.0 };
-            let (prompt, inner) = (
-                Rect::from_min_size(inner.min, Vec2::new(inner.width(), prompt_height)),
-                Rect::from_min_max(inner.min + Vec2::new(0.0, prompt_height), inner.max),
-            );
-            if self.open_prompt.is_some() {
-                ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.open_prompt_bar(ui));
-            } else if missing_bar {
-                ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.missing.bar(ui, prompt));
-            } else if update_bar
-                && let Some(wanted) =
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(prompt), |ui| self.updates.bar(ui, prompt)).inner
-            {
-                self.updates_wanted(ui.ctx(), wanted);
-            }
-            // With the detail area across the full width, the browser takes its side of what is
-            // left above it (Settings › Devices › Detail area width).
-            let full_width = grid.is_some()
-                && self.settings.view.detail_layout == crate::settings::view_settings::DetailLayout::FullWidth
-                && self.settings.device_layout != DeviceLayout::Stack;
-            // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
-            // its value for when a project opens.
-            let browser_wanted = self.settings.browser_open && !self.start_panel_open();
-            // It slides in and out from its side, with animations on (#708).
-            self.browser_part = motion::toward(ui.ctx(), Id::unique("browser-shown"), browser_wanted, BROWSER_SLIDE);
-            let browser_shown = self.browser_part > 0.001;
-            let stacked = self.settings.device_layout == DeviceLayout::Stack;
-            let css_workspace = crate::kit::native_css::workspace(
-                inner.size(),
-                browser_shown.then_some(self.settings.browser_width as f32),
-                (grid.is_some() && self.detail_open)
-                    .then_some((stacked, if stacked { self.detail_width } else { self.detail_height })),
-            )
-            .map(|layout| layout.translated(inner.min.to_vec2()));
-            self.frame_trace.mark("bars");
-            let inner = if let Some(layout) = &css_workspace {
-                if let Some(panel) = layout.browser {
-                    over_view(ui, "panel-browser", panel, layout.main, |ui| {
-                        self.browser_panel(ui, inner, Some((panel, layout.main, layout.browser_follows)));
-                    });
+        // The lines over and under the views, in their `border-color` (the palette's line colour).
+        // A private image is already painted underneath the window: its transparent regions stay
+        // visible instead of being covered with separator ink.
+        let image = crate::kit::liquid::background_image(ui.ctx()).is_some();
+        for (line, id) in [(Region::TopLine, "views-top"), (Region::BottomLine, "views-bottom")] {
+            if let Some(rect) = region(line) {
+                let style = crate::kit::element::SEPARATOR.id(id).attribute("kind", id).enter();
+                if !image {
+                    ui.painter().rect_filled(rect, 0.0, theme::border());
                 }
-                inner
-            } else if browser_shown && !full_width {
-                self.browser_panel(ui, inner, None)
-            } else {
-                inner
-            };
+                style.paint_background(ui.painter(), rect, 0.0);
+            }
+        }
+        {
+            if let Some(rect) = region(Region::Notice) {
+                let style = crate::kit::element::NOTICE_BAR.enter();
+                let inside = style.paint(ui.painter(), rect).content;
+                if self.open_prompt.is_some() {
+                    in_region(ui, inside, |ui| self.open_prompt_bar(ui));
+                } else if missing_bar {
+                    in_region(ui, inside, |ui| self.missing.bar(ui, inside));
+                } else if update_bar && let Some(wanted) = in_region(ui, inside, |ui| self.updates.bar(ui, inside)) {
+                    self.updates_wanted(ui.ctx(), wanted);
+                }
+            }
+            let main = layout.rect(Region::Main).unwrap_or(Rect::from_min_size(room.min, Vec2::ZERO));
+            if let Some(panel) = region(Region::Browser) {
+                over_view(ui, "panel-browser", panel, main, |ui| {
+                    self.browser_panel(ui, room, panel, main, layout.browser_follows);
+                });
+            }
             self.frame_trace.mark("browser");
-            let mut view_area = inner;
             self.detail_drop = None;
             self.sample_drops.clear();
             ui.ctx().data_mut(|d| {
@@ -3344,55 +3371,35 @@ impl App {
                     d.remove::<std::sync::Arc<suhina_engine::MeterMonitor>>(egui::Id::unique("eq-spectrum"));
                 }
             });
-            let inner = if grid.is_some()
-                && self.detail_open
-                && css_workspace.as_ref().is_none_or(|layout| layout.detail.is_some())
-            {
-                let geometry = css_workspace
-                    .as_ref()
-                    .and_then(|layout| layout.detail.map(|detail| (layout.main, detail, layout.detail_follows)));
-                match geometry {
-                    Some((main, detail, _)) => over_view(ui, "panel-detail", detail, main, |ui| {
-                        self.detail_area(ui, inner, &mut actions, geometry)
-                    }),
-                    None => self.detail_area(ui, inner, &mut actions, geometry),
+            let detail_rect = layout.rect(Region::Detail);
+            let inner = match detail_rect.filter(|_| grid.is_some()) {
+                Some(detail) if self.detail_open => {
+                    let geometry = (main, detail, layout.detail_follows);
+                    over_view(ui, "panel-detail", detail, main, |ui| self.detail_area(ui, &mut actions, geometry))
                 }
-            } else {
-                self.place_editors(&[]);
-                // A hidden piano roll does not keep the keyboard, nor the view to one track, and
-                // a note its audition sounds goes off.
-                self.piano_roll.focused = false;
-                actions.extend(self.piano_roll.stop_audition());
-                actions.extend(self.piano_roll.settle_on_hide());
-                self.arrangement.focus = None;
-                // In a row under the view, the splitter stays along the bottom, to drag it open.
-                if let Some(layout) = &css_workspace {
-                    layout.main
-                } else if grid.is_some() && self.editor_along_bottom() {
-                    self.collapsed_splitter(ui, inner)
-                } else if grid.is_some() {
-                    // Stacked beside the view, it stays along the right edge, to drag it open.
-                    self.collapsed_side_splitter(ui, inner)
-                } else {
-                    inner
+                closed => {
+                    self.place_editors(&[]);
+                    // A hidden piano roll does not keep the keyboard, nor the view to one track, and
+                    // a note its audition sounds goes off.
+                    self.piano_roll.focused = false;
+                    actions.extend(self.piano_roll.stop_audition());
+                    actions.extend(self.piano_roll.settle_on_hide());
+                    self.arrangement.focus = None;
+                    // Closed, the area keeps its splitter in the gap beside the view, to drag it open.
+                    if let Some(detail) = closed.filter(|_| layout.detail_follows) {
+                        self.collapsed_splitter(ui, main, detail);
+                    }
+                    main
                 }
             };
             self.frame_trace.mark("detail");
-            let inner = if browser_shown && full_width && css_workspace.is_none() {
-                let rest = self.browser_panel(ui, inner, None);
-                view_area = Rect::from_min_max(
-                    Pos2::new(rest.left(), view_area.top()),
-                    Pos2::new(rest.right(), view_area.bottom()),
-                );
-                rest
-            } else {
-                inner
-            };
-            if css_workspace.is_some() {
-                view_area = inner;
-            }
-            self.frame_trace.mark("browser");
-            let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").enter();
+            // What a drop over the views lands on: the view and the detail area under it.
+            // The room beside the browser only, as a detail area across the full width also lies
+            // under it.
+            let view_area = detail_rect
+                .filter(|rect| self.detail_open && rect.is_positive())
+                .map_or(main, |d| Rect::from_x_y_ranges(main.x_range(), main.union(d).y_range()));
+            let main_style = crate::kit::element::WORKSPACE_PANEL.id("panel-main").attribute("kind", "main").enter();
             // The panel's own box, as every element's: its background and border (none unless the
             // sheet gives them), then it clips what the view paints (`overflow`); the view goes in
             // its content box (#1336).
@@ -3449,7 +3456,7 @@ impl App {
             // The large sample map takes the main area, except while something is dragged, so
             // the drop can land on a track.
             let styled_ui = main_style.ui(ui);
-            let mut styled_ui = if css_workspace.is_some() { styled_ui.clipped_to(inner) } else { styled_ui };
+            let mut styled_ui = styled_ui.clipped_to(inner);
             let ui = &mut *styled_ui;
             if self.sample_map.view.large && dragged.is_none() && inner.is_positive() {
                 let (panel, browser, projects, settings) =
@@ -3671,6 +3678,10 @@ impl App {
                             // that click put it.
                             let body = !self.arrangement.picked_whole;
                             let changed = clicked || picked != self.clips_before.as_slice();
+                            // A new pick: Play starts at it again until the marker moves elsewhere.
+                            if changed {
+                                self.pick_start = (None, false);
+                            }
                             if changed && (!self.settings.view.play_from_clip || body) {
                                 self.clips_before = picked.to_vec();
                             } else if changed {
@@ -3688,6 +3699,7 @@ impl App {
                                             .map(|c| c.start)
                                     })
                                     .fold(f64::INFINITY, f64::min);
+                                self.pick_start.0 = first.is_finite().then_some(first);
                                 if first.is_finite() && (first - timeline.start_beat).abs() > 1e-9 {
                                     // While playing, playback goes on and the next start begins there.
                                     let id =
@@ -3728,7 +3740,7 @@ impl App {
                 detail_view::show_expanded(ui, inner, track, &device, &mut actions);
             }
             drop_overlay(ui, view_area);
-        });
+        }
         self.browser_drag(ui);
         self.tag_drag(ui);
         self.device_drag(ui);
@@ -3772,35 +3784,7 @@ impl App {
             if let Some(project) = closing {
                 self.check_plugin_edits(project);
             }
-            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
-            if action.id == "view.focusClip" {
-                let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
-                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
-                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
-                    self.piano_roll.selected.clear();
-                }
-                continue;
-            }
-            // The ARA editor's Float and Dock: the window's own, not an undo step.
-            if action.id == "view.araFloat" {
-                let number = |key: &str| action.params[key].as_u64();
-                let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId);
-                let device = number("device").and_then(|d| usize::try_from(d).ok());
-                let float = action.params["float"].as_bool().unwrap_or(false);
-                if let (Some(track), Some(device), Ok(session)) = (track, device, self.projects.session_mut(None))
-                    && let Err(e) = session.set_ara_floating(track, device, float)
-                {
-                    self.status = Status::Error(e.message().to_owned());
-                }
-                continue;
-            }
-            // A clip's menu opens it in its track's plug-in that edits clips: the window does it.
-            if action.id == "view.araEditor" {
-                let id = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
-                if let (Some(track), Some(clip)) = (id("track"), id("clip")) {
-                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
-                }
-                self.open_ara_editor();
+            if self.window_action(action) {
                 continue;
             }
             if let Some(project) = closing
@@ -3904,6 +3888,45 @@ impl App {
 
     /// What the Launcher view asked for this frame that the window keeps: the mixer's height,
     /// saved in Settings, and the detail area opened from a strip's device list.
+    /// Runs `action` when it is the window's own, not a session command (no undo step), and says
+    /// whether it was: the views put these among their actions, and the session does not know
+    /// them ("unknown command").
+    fn window_action(&mut self, action: &Action) -> bool {
+        let number = |key: &str| action.params[key].as_u64().and_then(|n| u32::try_from(n).ok());
+        match action.id {
+            // A picked clip's row in the clip column: it gets the piano roll's focus (#1054).
+            "view.focusClip" => {
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.focus_clip((TrackId(track), ClipId(clip)));
+                    self.piano_roll.selected.clear();
+                }
+            }
+            // The ARA editor's Float and Dock.
+            "view.araFloat" => {
+                let device = action.params["device"].as_u64().and_then(|d| usize::try_from(d).ok());
+                let float = action.params["float"].as_bool().unwrap_or(false);
+                if let (Some(track), Some(device), Ok(session)) =
+                    (number("track").map(TrackId), device, self.projects.session_mut(None))
+                    && let Err(e) = session.set_ara_floating(track, device, float)
+                {
+                    self.status = Status::Error(e.message().to_owned());
+                }
+            }
+            // The ARA editor's ×: hides the editor as the piano roll's × does (View › Hide
+            // editor); the plug-in keeps the clip and its edits.
+            "view.editor" => self.hide_editor(),
+            // A clip's menu opens it in its track's plug-in that edits clips.
+            "view.araEditor" => {
+                if let (Some(track), Some(clip)) = (number("track"), number("clip")) {
+                    self.arrangement.select_clip(TrackId(track), ClipId(clip));
+                }
+                self.open_ara_editor();
+            }
+            _ => return false,
+        }
+        true
+    }
+
     fn session_view_done(&mut self) {
         let height = self.view.mixer_height.round() as u32;
         if height != self.settings.view.mixer_height {
@@ -4131,9 +4154,22 @@ fn native_bar_line(bar: &crate::kit::element::Entered) -> [f32; 4] {
 
 /// Draws a workspace panel with `draw`; when the theme's grid lays `panel` over the `main` view
 /// (both in the same cells), on a layer above the view, so it shows and takes the pointer there.
+/// Draws `draw` in a region of the window's grid at `rect`: what it lays out past the region's
+/// edge is neither painted nor takes the pointer (#1370). `UiBuilder::max_rect` alone keeps the
+/// window's clip, under which a widget past the edge would still take clicks.
+fn in_region<R>(ui: &mut Ui, rect: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+        ui.set_clip_rect(ui.clip_rect().intersect(rect));
+        draw(ui)
+    })
+    .inner
+}
+
 fn over_view<R>(ui: &mut Ui, name: &str, panel: Rect, main: Rect, draw: impl FnOnce(&mut Ui) -> R) -> R {
     if panel.intersect(main).is_positive() {
         let layer = egui::LayerId::new(egui::Order::Middle, Id::unique(("workspace-overlay", name)));
+        // Painted on without an area: said, so that the captures behind a menu hold it.
+        crate::kit::floating::window_layer(ui.ctx(), layer);
         ui.scope_builder(egui::UiBuilder::new().layer_id(layer), draw).inner
     } else {
         draw(ui)

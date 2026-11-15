@@ -146,8 +146,8 @@ refused or suspended, never by losing its edits.
 - Audio settings can open the active ASIO driver's native control panel, and
   show the engine block separately from the measured driver callback size.
 
-- Theme skins: editable SVG/PNG controls with colour/state variants and image sequences, configurable level-meter presentation including signal-driven artwork frames and theme-owned intensity, theme-owned toolbar layouts and native element placement, and portable CSS/JSON/SVG/PNG packages with live literal-value synchronization. Suhina's own style engine (`suhina-style`, no browser engine) adds a retained native style tree, cascade layers, variables, calc(), media ranges, linear/radial/conic gradients, color-mix(), bounded box shadows, paint transitions/keyframes, Flex/Grid toolbar/workspace panel layout and persistent anchors between controls. Bar/window geometry, remaining raw controls and further CSS effects still need integration.
-- Theme states and tracks: `:checked`, `:selected`, `:playing`, `:recording`, `:armed` and `:muted` in theme CSS, a track's colour as `--track-colour`, name colours, per-view track artwork, each bar's own separator line, styled menus, and a least Arrangement header width; a crash leaves a file in the data folder's `crashes/`.
+- Theme skins: editable SVG/PNG controls with state variants and image sequences, configurable level-meter presentation including signal-driven artwork frames and theme-owned intensity, theme-owned toolbar layouts and native element placement, and portable CSS/JSON/SVG/PNG packages with live literal-value synchronization. Suhina's own style engine (`suhina-style`, no browser engine) adds a retained native style tree, cascade layers, variables, calc(), media ranges, linear/radial/conic gradients, color-mix(), bounded box shadows, paint transitions/keyframes, Flex/Grid toolbar/workspace panel layout and persistent anchors between controls. Bar/window geometry, remaining raw controls and further CSS effects still need integration.
+- Theme states and tracks: `:checked`, `:selected`, `:playing`, `:recording`, `:armed` and `:muted` in theme CSS, a track's or clip's colour as a `color` attribute, name colours, per-view track artwork, each bar's own separator line, styled menus, and a least Arrangement header width; a crash leaves a file in the data folder's `crashes/`.
 - Theme control shapes: buttons, the toolbar's fields and the volume and pan fields take their background, border, corner radius, thickness and shadows from the theme's CSS (`#arrangement-volume`, `.value-fill`, `volume.track` artwork and the rest); a workspace panel can float over the view; a theme can put the Arrangement track headers on a side; Settings › Themes has a search.
 - Theme presentation: native Launcher column widths and row heights come from the theme's CSS; mixer/name backgrounds consume authored materials, and stereo meter gradients retain fixed dBFS colour positions with native peak/RMS opacity and lit-region glow. Fader scales move independently of the rail/cap.
 
@@ -243,6 +243,17 @@ refused or suspended, never by losing its edits.
   file when dragged or quick-added. `device.add {stock}` and `track.add {stock}` add one by its
   key, dragging one from the browser does the same, and each is one undo step.
 
+- Track and clip colours are the project's own in every theme: the colour picker and new tracks
+  and clips (from the window, the CLI or MCP) take Suhina's colours, and a theme draws a track's
+  header, column, strip, lane, its clips and the piano roll from their `color` attribute
+  (`attr(color type(<color>))`), with each Arrangement row a `track-lane` of its own.
+
+- Themes style each part of the Launcher, the mixer, the Arrangement and the piano roll on its own: slots, the
+  stop buttons, scenes, the lines between columns and slots, the grid lines, markers, the time
+  selection, take lanes, automation lanes and points, meters and the strips' device lists are
+  elements with their states (`slot[kind="stop"][queued]`, `grid-line[kind="beat"]`), and a
+  theme that leaves them alone looks as before.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
@@ -333,6 +344,15 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A launched scene's tempo or time signature overrides the tempo map until
   `transport.followTempoMap`, the next start of the transport or an edit to the map
   ([spec](docs/spec/tempo-map.md#scenes-and-the-tempo-map)).
+
+- The time signature is changed in the window: the control bar's numerator and denominator
+  drag up and down on their own (the denominator through 1, 2, 4, 8, 16) with the grids
+  following, take a typed `6/8`, `6-8` or `6 8` that steps from one number to the other, and a
+  chevron lists the common ones, for the song's start signature
+  (`transport.setTimeSignature`) or the change at the playhead; the Arrangement ruler's
+  right-click menu sets the signature from the nearest bar line or removes a change there, and a
+  change's line on the ruler drags to another bar
+  ([#1259](https://github.com/suhina-daw/suhina-daw/issues/1259)).
 
 ### M3 Commands and agents (in progress)
 - Every edit is a command with an id, typed parameters and one undo step; failed or invalid edits
@@ -698,8 +718,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([spec](docs/spec/window-zoom.md)).
 - **Themes**: every colour comes from the theme in use, a folder with a `theme.css` in the
   `themes` folder (`theme { name: …; } :root { --accent: #A6A3FF; … }`), which Suhina never
-  rewrites; themes from earlier versions are converted once, keeping the originals; track colours and the sample map's
-  kind colours are theme tokens too (`track.1`–`track.8`, `kind.*`). Among those that come with Suhina are Suhina
+  rewrites; themes from earlier versions are converted once, keeping the originals; track and clip colours are the
+  project's own, which a theme draws from their `color` attribute but never chooses. Among those that come with Suhina are Suhina
   Studio and Suhina Light, High Contrast, Nord, Catppuccin Mocha and Latte). Settings › Appearance › Theme picks one, changes its colours, renames, duplicates, reads
   the files again, backs every theme up into a zip and exports a template zip with a README an AI
   agent can make a theme from; a theme file or backup dropped on the window is added, and a file
@@ -1087,4 +1107,21 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   the running build and offers **Restart now**; **Later** hides the offer until a newer build is
   out. A tester never has to look for the new build on GitHub
   ([spec](https://github.com/suhina-daw/suhina-daw/blob/main/docs/spec/updates.md)).
+
+- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever colour a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
+
+- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever colour a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
+- The window as one grid in themes: the menu bar, the tabs, the toolbar, the status bar and the browser, view and detail panels are laid out by one CSS grid on `window`, which Suhina's own sheet states, so a theme can move the status bar to the top, put the toolbar under the views or hide a bar with `grid-template-areas`, `grid-area` and `display: none`; the layout settings are attributes on `window` (`[detail]`, `[browser]`, `[menu-bar]`).
+
+- The bars' items in themes: the toolbar, the status bar, the project tabs, the application bar, the piano roll's toolbar and the MIDI tools' tabs lay out their items in one CSS row, so a theme sets their gaps, padding, alignment and sizes and hides an item with `display: none`, which takes its input away too; a narrow bar still gives way in Suhina's order.
+
+- One drag at a time in the Arrangement: Escape lets go of the drag under way (a clip, an edge, a
+  fade, a header's control, a marker, the loop, time being painted, a take, an automation point,
+  curve, range or lane header) without doing what its release would, and a drag let go of while
+  the view was not drawn ends instead of staying stuck.
+
+- **Recording from the keyboard:** F9 starts and stops recording into the arrangement
+  (`transport.toggleRecord`, as the record button), and `selection.arm` arms or disarms the
+  selected tracks; both can be given any key in Settings › Keys
+  (`docs/shortcuts.md`).
 

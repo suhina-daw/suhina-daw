@@ -32,7 +32,7 @@ fn parsed(model_rate: Option<f64>) -> Arc<NamModel> {
 
 fn loader(model: Option<Arc<NamModel>>, settings: &[(usize, f64)]) -> NamAmp {
     let mut amp = match model {
-        Some(model) => NamAmp::with_model(model),
+        Some(model) => NamAmp::with_model(model, 48_000.0).unwrap(),
         None => NamAmp::new(),
     };
     for &(index, value) in settings {
@@ -57,15 +57,15 @@ fn frames(signal: &[f32]) -> &[[f32; 2]] {
 
 #[test]
 fn passes_the_device_conformance_checks() {
-    let failures = check(&|| Box::new(NamAmp::new()));
+    let failures = check(&|rate| NamAmp::with_rate(rate).map(|amp| Box::new(amp) as Box<dyn Device>));
     assert!(failures.is_empty(), "{failures:#?}");
     let model = parsed(Some(48_000.0));
-    let make = move || -> Box<dyn Device> { Box::new(NamAmp::with_model(model.clone())) };
+    let make = move |rate| NamAmp::with_model(model.clone(), rate).map(|amp| Box::new(amp) as Box<dyn Device>);
     let failures = check(&make);
     assert!(failures.is_empty(), "{failures:#?}");
     // And with a model the device's own rate rejects — the legs may do the work then.
     let model = parsed(Some(44_100.0));
-    let make = move || -> Box<dyn Device> { Box::new(NamAmp::with_model(model.clone())) };
+    let make = move |rate| NamAmp::with_model(model.clone(), rate).map(|amp| Box::new(amp) as Box<dyn Device>);
     let failures = check(&make);
     assert!(failures.is_empty(), "{failures:#?}");
 }
@@ -150,7 +150,7 @@ fn the_stages_run_over_varied_calls() {
     // frames, with the delivered stream the reference bit for bit.
     const MODEL_HZ: f64 = 44_100.0;
     let parsed = parsed(Some(MODEL_HZ));
-    let mut amp = NamAmp::with_model(parsed.clone());
+    let mut amp = NamAmp::with_model(parsed.clone(), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(SR).expect("prepare");
     let sizes = [3usize, 1, 513, 7, 512, 963];
@@ -280,7 +280,7 @@ fn a_model_at_a_higher_rate_delivers_the_legs_stream_too() {
     // A 48 kHz model in a 44.1 kHz project: the legs run the other way round; the schedule has
     // to hold back for that rate pair the same way.
     let parsed = parsed(Some(48_000.0));
-    let mut amp = NamAmp::with_model(Arc::clone(&parsed));
+    let mut amp = NamAmp::with_model(Arc::clone(&parsed), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(44_100.0).expect("prepare");
     let want_hold = (f64::from((HALF_TAPS + 3) as u32) * (1.0 + 44_100.0 / 48_000.0) + 4.0).ceil() as u32;
@@ -335,7 +335,7 @@ fn a_rate_matched_model_delivers_the_models_dc_stream() {
         "sample_rate": 48000.0
     }"#;
     let parsed = Arc::new(NamModel::from_json_str(TINY).expect("the rate-matched model parses"));
-    let mut amp = NamAmp::with_model(Arc::clone(&parsed));
+    let mut amp = NamAmp::with_model(Arc::clone(&parsed), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(SR).expect("prepare");
     assert_eq!(amp.latency(), D as u32, "no legs, no holdback");
@@ -381,7 +381,8 @@ fn a_refused_model_at_another_rate_keeps_the_chunk_schedule() {
     let mut model = NamModel::from_json_str(REFUSED).expect("the refused model parses");
     model.sample_rate = Some(44_100.0);
     let parsed = Arc::new(model);
-    let mut amp = loader(Some(parsed), &[(param::EQ_ON, 0.0)]);
+    // Mono off: the two sides carry different frames through their own stages.
+    let mut amp = loader(Some(parsed), &[(param::EQ_ON, 0.0), (param::MONO, 0.0)]);
     assert_eq!(amp.latency(), D as u32, "no legs, no holdback");
     // The first frames stand out (0.5, -0.5): startup must read silence, not a copy of
     // frame 0.
@@ -404,10 +405,11 @@ fn a_hostile_rate_cannot_bound_the_staging_or_overflow() {
     // must be refused before the staging lists are sized: sizing asked no questions, a
     // rate of 0.0001 Hz asked for staging of ~30 000 000 000 frames a list, and rates
     // beyond the numbers overflowed the count on the way there. Through the public
-    // constructor, like the engine's rate-change prepare builds devices:
+    // constructor, as the engine makes devices:
     for rate in [0.000_1, 0.001, 1e300, 1e-300] {
-        let mut amp = NamAmp::with_model(parsed(Some(rate)));
+        let mut amp = NamAmp::with_model(parsed(Some(rate)), 48_000.0).unwrap();
         amp.set_param(param::EQ_ON, 0.0);
+        amp.set_param(param::MONO, 0.0);
         amp.prepare(SR).expect("prepare");
         assert_eq!(amp.latency(), D as u32, "{rate} refused: no holdback");
         // Every staging list is the count a passthrough pair needs, not the ratio's.
@@ -436,7 +438,7 @@ fn the_sixteen_to_one_boundary_runs_bit_exact_with_one_frame_calls() {
     const MODEL_HZ: f64 = 24_000.0;
     const PROJECT_HZ: f64 = 384_000.0;
     let parsed = parsed(Some(MODEL_HZ));
-    let mut amp = NamAmp::with_model(parsed.clone());
+    let mut amp = NamAmp::with_model(parsed.clone(), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(PROJECT_HZ).expect("prepare");
     let hold_frames = hold(&amp);
@@ -476,14 +478,14 @@ fn a_model_with_an_unrunnable_rate_is_refused() {
     // ...or too far from the project's: an 8 kHz model at 384 kHz sits 48 times off, a
     // 1 kHz model 384. The device passes the signal through here as well, with no legs.
     for (model, project) in [(8_000.0_f64, 384_000.0_f64), (1_000.0, 384_000.0)] {
-        let mut amp = NamAmp::with_model(parsed(Some(model)));
+        let mut amp = NamAmp::with_model(parsed(Some(model)), 48_000.0).unwrap();
         amp.prepare(project).expect("prepare");
         assert_eq!(amp.latency(), D as u32, "{model} at {project}: refused, no holdback");
     }
     // And the gate does not refuse what it should run: the same 8 kHz model at the 48 kHz
     // default resamples like any other.
     let parsed = parsed(Some(8_000.0));
-    let mut amp = NamAmp::with_model(parsed.clone());
+    let mut amp = NamAmp::with_model(parsed.clone(), 48_000.0).unwrap();
     amp.set_param(param::EQ_ON, 0.0);
     amp.prepare(SR).expect("prepare");
     assert!(amp.latency() > D as u32, "an 8 kHz model at a 48 kHz project runs");
@@ -528,4 +530,181 @@ fn hostile_numbers_stay_finite() {
     for &v in s.iter() {
         assert!(v.is_finite() || v == 0.0, "{v}");
     }
+}
+
+/// Shipped models with streaming state (a standard WaveNet with dilations up to 512, an LSTM),
+/// for the joined sides' tests: the tiny model above keeps no history.
+const STANDARD_WAVENET: &str = include_str!("../../../packs/nam-amp-modeler/Tim R JCM2000 Crunch.nam");
+const OWN_LSTM: &str = include_str!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam");
+
+/// `input` (interleaved stereo) through an amp made at `rate` with **Mono** off, in calls of
+/// `block` frames; `parted` runs the two sides apart from the start, as two instances always
+/// did.
+fn joined_render(json: &str, rate: f64, block: usize, input: &[f32], parted: bool) -> (Vec<f32>, bool) {
+    let model = Arc::new(NamModel::from_json_str(json).expect("the shipped model parses"));
+    let mut amp = NamAmp::with_model(model, rate).expect("a rate a device runs at");
+    amp.set_param(param::MONO, 0.0);
+    if parted {
+        amp.part_sides();
+    }
+    let mut out = input.to_vec();
+    for call in out.chunks_mut(block * 2) {
+        amp.process(&ProcessContext::default(), call);
+    }
+    (out, amp.sides_joined())
+}
+
+/// A guitar-like test signal: the same on both sides for `mono_frames`, then the right side
+/// drifts off (half the level and a second tone), so the sides part there.
+fn parting_signal(rate: f64, frames: usize, mono_frames: usize) -> Vec<f32> {
+    (0..frames)
+        .flat_map(|n| {
+            let t = n as f64 / rate;
+            let left = (0.4 * (2.0 * std::f64::consts::PI * 110.0 * t).sin() * (-3.0 * (t % 0.5)).exp()) as f32;
+            let right = if n < mono_frames {
+                left
+            } else {
+                0.5 * left + (0.1 * (2.0 * std::f64::consts::PI * 330.0 * t).sin()) as f32
+            };
+            [left, right]
+        })
+        .collect()
+}
+
+#[test]
+fn joined_sides_render_bit_for_bit_as_two_instances() {
+    for (name, json) in [("standard WaveNet", STANDARD_WAVENET), ("LSTM", OWN_LSTM)] {
+        // 44.1 kHz runs the resampler legs around a 48 kHz model; 48 kHz runs it directly.
+        for rate in [44_100.0, 48_000.0] {
+            let frames = (rate * 0.6) as usize;
+            // The sides part mid-call and mid-chunk, after the model's history has filled.
+            let input = parting_signal(rate, frames, 9_999);
+            for block in [64, 1024] {
+                let (joined, still_joined) = joined_render(json, rate, block, &input, false);
+                let (parted, _) = joined_render(json, rate, block, &input, true);
+                assert!(!still_joined, "{name} at {rate} Hz: the sides part when their frames differ");
+                let first_diff = joined.iter().zip(&parted).position(|(a, b)| a.to_bits() != b.to_bits());
+                assert_eq!(first_diff, None, "{name} at {rate} Hz, {block}-frame calls");
+                assert!(joined.iter().any(|s| s.abs() > 1e-3), "{name} at {rate} Hz renders sound");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_mono_signal_keeps_the_sides_joined_and_both_sides_equal() {
+    let rate = 44_100.0;
+    let frames = (rate * 0.5) as usize;
+    let input = parting_signal(rate, frames, frames);
+    let (out, still_joined) = joined_render(STANDARD_WAVENET, rate, 512, &input, false);
+    assert!(still_joined, "a mono signal never parts the sides");
+    assert!(frames_equal(&out), "both sides carry the one instance's output");
+    let (parted, _) = joined_render(STANDARD_WAVENET, rate, 512, &input, true);
+    assert_eq!(out.iter().zip(&parted).position(|(a, b)| a.to_bits() != b.to_bits()), None);
+}
+
+fn frames_equal(signal: &[f32]) -> bool {
+    frames(signal).iter().all(|[l, r]| l.to_bits() == r.to_bits())
+}
+
+#[test]
+fn a_reset_joins_the_sides_again() {
+    let model = Arc::new(NamModel::from_json_str(STANDARD_WAVENET).expect("parses"));
+    let mut amp = NamAmp::with_model(model, SR).expect("a rate a device runs at");
+    amp.set_param(param::MONO, 0.0);
+    let mut stereo = parting_signal(SR, 4_096, 0);
+    amp.process(&ProcessContext::default(), &mut stereo);
+    assert!(!amp.sides_joined());
+    amp.reset();
+    assert!(amp.sides_joined(), "a reset clears both instances, so they stand as one again");
+}
+
+/// The mean of the two sides on both, as **Mono** feeds the model.
+fn mean_of_sides(signal: &[f32]) -> Vec<f32> {
+    frames(signal)
+        .iter()
+        .flat_map(|[l, r]| {
+            let mean = ((f64::from(*l) + f64::from(*r)) * 0.5) as f32;
+            [mean, mean]
+        })
+        .collect()
+}
+
+#[test]
+fn mono_is_on_by_default() {
+    let info = &INFO.params[param::MONO];
+    assert_eq!(info.id, "mono");
+    assert_eq!(info.default, 1.0);
+    assert!(NamAmp::new().mono());
+}
+
+#[test]
+fn mono_runs_one_instance_on_the_mean_of_a_stereo_source() {
+    for (name, json) in [("standard WaveNet", STANDARD_WAVENET), ("LSTM", OWN_LSTM)] {
+        for rate in [44_100.0, 48_000.0] {
+            let input = parting_signal(rate, (rate * 0.4) as usize, 0);
+            let model = Arc::new(NamModel::from_json_str(json).expect("parses"));
+            let mut amp = NamAmp::with_model(model, rate).expect("a rate a device runs at");
+            let mut out = input.clone();
+            for call in out.chunks_mut(1024) {
+                amp.process(&ProcessContext::default(), call);
+            }
+            assert!(amp.sides_joined(), "{name} at {rate} Hz: Mono keeps one instance running");
+            assert!(frames_equal(&out), "{name} at {rate} Hz: both sides carry the one output");
+            // The same as the mean fed to both sides with Mono off, bit for bit.
+            let (reference, _) = joined_render(json, rate, 512, &mean_of_sides(&input), false);
+            let first_diff = out.iter().zip(&reference).position(|(a, b)| a.to_bits() != b.to_bits());
+            assert_eq!(first_diff, None, "{name} at {rate} Hz");
+            assert!(out.iter().any(|s| s.abs() > 1e-3), "{name} at {rate} Hz renders sound");
+        }
+    }
+}
+
+#[test]
+fn mono_switched_off_parts_the_sides_from_the_one_instance() {
+    let rate = 44_100.0;
+    let input = parting_signal(rate, (rate * 0.6) as usize, 0);
+    let switch_at = 12 * 1024;
+    let model = Arc::new(NamModel::from_json_str(STANDARD_WAVENET).expect("parses"));
+    let mut amp = NamAmp::with_model(model, rate).expect("a rate a device runs at");
+    let mut out = input.clone();
+    for (n, call) in out.chunks_mut(1024 * 2).enumerate() {
+        if n * 1024 == switch_at {
+            assert!(amp.sides_joined());
+            amp.set_param(param::MONO, 0.0);
+        }
+        amp.process(&ProcessContext::default(), call);
+    }
+    assert!(!amp.sides_joined(), "a stereo source parts the sides once Mono is off");
+    // The reference: the mean on both sides up to the switch, the stereo source after, all with
+    // Mono off, so its sides part at the switch from the one instance's state.
+    let mut fed = mean_of_sides(&input[..switch_at * 2]);
+    fed.extend_from_slice(&input[switch_at * 2..]);
+    let (reference, _) = joined_render(STANDARD_WAVENET, rate, 1024, &fed, false);
+    assert_eq!(out.iter().zip(&reference).position(|(a, b)| a.to_bits() != b.to_bits()), None);
+}
+
+#[test]
+fn mono_switched_on_joins_parted_sides() {
+    let rate = 48_000.0;
+    let input = parting_signal(rate, (rate * 1.2) as usize, 0);
+    let model = Arc::new(NamModel::from_json_str(STANDARD_WAVENET).expect("parses"));
+    let mut amp = NamAmp::with_model(model, rate).expect("a rate a device runs at");
+    amp.set_param(param::MONO, 0.0);
+    let mut out = input.clone();
+    let half = out.len() / 2;
+    let (first, second) = out.split_at_mut(half);
+    amp.process(&ProcessContext::default(), first);
+    assert!(!amp.sides_joined());
+    amp.set_param(param::MONO, 1.0);
+    for call in second.chunks_mut(1024) {
+        amp.process(&ProcessContext::default(), call);
+    }
+    assert!(amp.sides_joined(), "Mono runs one instance again");
+    // The sides' own tails (DC blocker) settle onto the one output within a fraction of a
+    // second; the last 0.3 s carry the same signal on both sides.
+    let tail = &out[out.len() - (rate * 0.3) as usize * 2..];
+    let worst = frames(tail).iter().map(|[l, r]| (l - r).abs()).fold(0.0_f32, f32::max);
+    assert!(worst < 1e-4, "both sides settle onto the one instance's output: {worst}");
+    assert!(tail.iter().all(|s| s.is_finite()));
 }

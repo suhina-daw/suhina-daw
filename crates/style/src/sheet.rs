@@ -308,7 +308,7 @@ pub const PLACEMENT_PROPERTIES: &[&str] =
 /// The elements whose children the CSS layout places: only there does a padding in percent, which
 /// CSS takes of the width of the box around the element, mean anything. Everywhere else the app
 /// paints the element's content box itself, without that box, so a percentage is refused.
-pub const PERCENT_PADDING_ELEMENTS: &[&str] = &["workspace", "toolbar"];
+pub const PERCENT_PADDING_ELEMENTS: &[&str] = &["window", "toolbar"];
 
 /// Whether a rule's selector list (`header`) holds a control placement (`.control-play`), whose
 /// [`PLACEMENT_PROPERTIES`] the host reads.
@@ -644,6 +644,20 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                                 layout: selectors.iter().all(|s| s.subject_is(PERCENT_PADDING_ELEMENTS)),
                             };
                             let declarations = nested(parser, |parser| declarations(parser, source, sheet, rule))?;
+                            if declarations.iter().any(|d| d.name == "backdrop-filter")
+                                && !selectors.iter().all(|s| {
+                                    s.bare_kind().is_some_and(|kind| crate::property::BARE_FILTERED.contains(&kind))
+                                        || s.subject_is(&["dialog"])
+                                })
+                            {
+                                sheet.notice(
+                                    location,
+                                    "backdrop-filter is read only on dialog and in a rule for popup, menu or \
+                                     tooltip alone: other elements sit in the window, which the system blurs \
+                                     behind"
+                                        .into(),
+                                );
+                            }
                             if sheet.rules.len() >= 1024 {
                                 return Err("Style sheet exceeds 1024 rules".into());
                             }
@@ -882,13 +896,13 @@ mod tests {
     use super::*;
 
     /// Padding in percent is taken only where the CSS layout places an element's children (the
-    /// workspace, the toolbar): elsewhere the app paints the content box without the box around
+    /// window, the toolbar): elsewhere the app paints the content box without the box around
     /// the element, so it is refused with a notice rather than read as no padding (#1336).
     #[test]
     fn padding_in_percent_is_read_only_on_a_layout_container() {
         // `:is()` and `:where()` that hold only layout containers name them too; `:not()` does not.
         let named = Sheet::parse(
-            ":is(toolbar, #workspace) { padding: 1%; } :where(toolbar) { padding-top: 2%; } \
+            ":is(toolbar, #window) { padding: 1%; } :where(toolbar) { padding-top: 2%; } \
              :is(toolbar, device) { padding: 1%; } :not(device) { padding: 1%; }",
         )
         .unwrap();
@@ -896,7 +910,7 @@ mod tests {
         let kept: Vec<_> = named.rules.iter().map(|r| r.declarations.len()).collect();
         assert_eq!(kept, [4, 1, 0, 0]);
         let sheet = Sheet::parse(
-            "workspace { padding: 2%; } #workspace, toolbar { padding-left: 5%; } \
+            "window { padding: 2%; } #window, toolbar { padding-left: 5%; } \
              device { padding: 5%; } browser { padding-top: 10%; } toolbar, device { padding: 1% 4px; } \
              device { padding: 4px 1em; }",
         )
@@ -956,6 +970,35 @@ mod tests {
         );
         assert_eq!(sheet.notices.len(), 2, "{:?}", sheet.notices);
         assert_eq!(sheet.unstyled_group_classes(), ["typo"]);
+    }
+
+    #[test]
+    fn backdrop_filter_is_read_on_floating_elements_and_named_elsewhere() {
+        let sheet = Sheet::parse(
+            "popup, menu { backdrop-filter: blur(20px); } dialog[kind=\"x\"] { backdrop-filter: none; } \
+             tooltip { backdrop-filter: blur(0); } window dialog { backdrop-filter: blur(4.5px); }",
+        )
+        .unwrap();
+        assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+        let sheet = Sheet::parse(
+            "workspace-panel { backdrop-filter: blur(8px); } popup, browser { backdrop-filter: none; } \
+             popup button { backdrop-filter: none; } :is(popup, tooltip) { backdrop-filter: none; } \
+             menu-bar menu { backdrop-filter: none; } popup#metronome-level { backdrop-filter: none; }",
+        )
+        .unwrap();
+        assert_eq!(sheet.notices.len(), 6, "{:?}", sheet.notices);
+        assert!(
+            sheet.notices.iter().all(|n| n.message.contains("backdrop-filter is read only")),
+            "{:?}",
+            sheet.notices
+        );
+        for bad in ["blur()", "blur(2em)", "sepia(1)", "blur(-1px)", "blur(NaNpx)"] {
+            let sheet = Sheet::parse(&format!("popup {{ backdrop-filter: {bad}; }}")).unwrap();
+            assert_eq!(sheet.notices.len(), 1, "{bad}: {:?}", sheet.notices);
+        }
+        use crate::property::blurs;
+        assert!(blurs("blur(20px)") && blurs(" blur( 0.5px ) "));
+        assert!(!blurs(" none ") && !blurs("blur(0)") && !blurs("blur(0px)") && !blurs("sepia(1)"));
     }
 
     #[test]

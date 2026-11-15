@@ -38,6 +38,28 @@ pub enum IconButton {
 }
 
 impl IconButton {
+    /// Every button, in the order of the enum.
+    pub(crate) const ALL: [Self; 18] = [
+        Self::Select,
+        Self::Draw,
+        Self::Paint,
+        Self::Erase,
+        Self::Slice,
+        Self::Mute,
+        Self::Cut,
+        Self::Copy,
+        Self::Paste,
+        Self::Duplicate,
+        Self::Quantise,
+        Self::MidiTools,
+        Self::Audition,
+        Self::Hide,
+        Self::Fold,
+        Self::Scale,
+        Self::Highlight,
+        Self::More,
+    ];
+
     /// What the button is called, for its tooltip and its accessible label.
     pub fn name(self) -> &'static str {
         match self {
