@@ -55,6 +55,9 @@ pub(crate) enum ToProgram {
     /// End the process, as a crash does (the tests use it first); the supervisor kills only
     /// the process it started, the one named by `pid`.
     TestKill { pid: u32 },
+    /// The host's heartbeat on the tests' cue; production sends it on the health rhythm in
+    /// the serve loop.
+    TestTick,
     /// The user (or the session going away) stops the program.
     Stop,
     /// The session's answer to the script's `command`.
@@ -178,6 +181,11 @@ impl Handle {
     /// port.
     pub fn test_port_message(&self, port: &str, bytes: &[u8]) {
         self.port_message(port, 0, bytes);
+    }
+
+    /// The host's heartbeat, on the tests' cue: production sends it on the health rhythm.
+    pub fn test_tick(&self) {
+        let _ = self.to.send(ToProgram::TestTick);
     }
 
     /// A command the tests put straight into the program's event queue — the event the
@@ -369,6 +377,9 @@ fn apply(order: ToProgram, link: &mut Link, child: &mut Child, ports: &mut (Vec<
             if child.child.id() == pid {
                 let _ = child.child.kill();
             }
+        }
+        ToProgram::TestTick => {
+            let _ = link.send(&Message::Tick);
         }
         ToProgram::Stop => {
             suhina_plugins::trace!("surface stop order: quit sent");
@@ -611,6 +622,12 @@ fn watch(
         if last_ping.elapsed() >= HEALTH_EVERY {
             ping += 1;
             let _ = link.send(&Message::Ping { id: ping });
+            // The script's heartbeat rides the health rhythm: a controller's lights the device
+            // drives itself (its press flashes and release darkenings, some releases dropped
+            // whole) drift from what the software says, and the script's periodic re-assert
+            // heals them. The runner drops a tick freely while a handler is busy; the next is
+            // never far.
+            let _ = link.send(&Message::Tick);
             last_ping = Instant::now();
         }
         std::thread::sleep(POLL);

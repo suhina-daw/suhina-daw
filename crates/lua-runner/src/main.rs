@@ -72,6 +72,7 @@ struct Run {
     port_message: Option<Function>,
     state: Option<Function>,
     ports: Option<Function>,
+    tick: Option<Function>,
     script_dead: bool,
     next_token: u64,
     /// The wait: its token, and whether it is a command's (`true`) or a read's.
@@ -95,6 +96,7 @@ impl Run {
             port_message: None,
             state: None,
             ports: None,
+            tick: None,
             dropped_while_waiting: 0,
             script_dead: false,
             next_token: 0,
@@ -355,7 +357,7 @@ fn step_message(
             // Suhina refused something of ours and closed; the report goes to the stderr.
             return Err(format!("Suhina refused a message: {message}"));
         }
-        Message::PortMessage { .. } | Message::State { .. } => deliver(link, runner, lua, message)?,
+        Message::PortMessage { .. } | Message::State { .. } | Message::Tick => deliver(link, runner, lua, message)?,
         Message::CommandResult { token, ok, error } => {
             let mut runner = runner.borrow_mut();
             if runner.waiting == Some((*token, true)) {
@@ -405,7 +407,7 @@ fn deliver(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, message: &Messa
                 // droppable ones are dropped and counted (the way a mapped control's full
                 // queue drops), and the last one stands in for its run. The pings are what
                 // makes a real wedge — a handler that never returns — visible.
-                let droppable = matches!(message, Message::PortMessage { .. } | Message::State { .. });
+                let droppable = matches!(message, Message::PortMessage { .. } | Message::State { .. } | Message::Tick);
                 if droppable {
                     runner.dropped_while_waiting += 1;
                     Decision::Skip
@@ -420,6 +422,7 @@ fn deliver(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, message: &Messa
             match message {
                 Message::PortMessage { .. } => Decision::Call(runner.port_message.clone(), "port_message"),
                 Message::State { .. } => Decision::Call(runner.state.clone(), "state"),
+                Message::Tick => Decision::Call(runner.tick.clone(), "tick"),
                 _ => Decision::Skip,
             }
         };
@@ -450,6 +453,7 @@ fn deliver(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, message: &Messa
                 vm::json_to_lua(lua, value).map_err(|e| e.to_string())?,
             ]
         }
+        Message::Tick => vec![],
         _ => return Ok(()),
     };
     match handler.call::<()>(MultiValue::from_vec(arguments)) {
@@ -542,9 +546,11 @@ fn register_api(lua: &Lua, runner: &Shared<Run>, link: &Shared<Link>) -> Result<
     let port_message_slot: fn(&mut Run) -> &mut Option<Function> = |run| &mut run.port_message;
     let state_slot: fn(&mut Run) -> &mut Option<Function> = |run| &mut run.state;
     let ports_slot: fn(&mut Run) -> &mut Option<Function> = |run| &mut run.ports;
+    let tick_slot: fn(&mut Run) -> &mut Option<Function> = |run| &mut run.tick;
     set(&suhina, "on_port_message", set_handler(port_message_slot)?)?;
     set(&suhina, "on_state", set_handler(state_slot)?)?;
     set(&suhina, "on_ports", set_handler(ports_slot)?)?;
+    set(&suhina, "on_tick", set_handler(tick_slot)?)?;
 
     let send = {
         let runner = Rc::clone(runner);

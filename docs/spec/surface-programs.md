@@ -67,6 +67,7 @@ Every message is an object with an `op`; the names below are the op's value. Suh
 | `command_result` | `token`, `ok`, `error` | The answer to a `command`: `error` names the reason when `ok` is false. |
 | `read_result` | `token`, `ok`, `value`, `error` | The answer to a `read`: the reading command's value, or the reason. |
 | `ping` | `id` | Answered with `pong`, same `id`. |
+| `tick` | — | The host's heartbeat, some times a second, also while nothing plays. Never answered; the runner drops it freely while a handler is busy — the next tick is never far. A script's periodic work (a controller's light re-assert) rides it. |
 | `quit` | — | The runner stops the script and exits. Never answered; the exit is the answer. |
 | `error` | `message` | Why the handshake failed or the last message was refused; either side sends it, then closes. |
 
@@ -138,6 +139,7 @@ library — the usual modes, layers and session, mixer and device components —
 | `suhina.on_port_message(handler)` | Sets the handler for `port_message`: `(bytes, port, timestamp)`, the bytes a Lua string (binary). `nil` clears it. |
 | `suhina.on_state(handler)` | Sets the handler for `state`: `(token, value)`. `nil` clears it. |
 | `suhina.on_ports(handler)` | Sets the handler for the claimed ports: `(inputs, outputs)`, two arrays of port names, called once the script has registered — the ports as they are — and again each time they change. `nil` clears it. |
+| `suhina.on_tick(handler)` | Sets the handler for `tick`: `()`, the host's heartbeat some times a second, also while nothing plays. A script's periodic work (re-asserting a controller's lights) rides it; the rate is not promised, so a script counts ticks, not time. `nil` clears it. |
 | `suhina.send(port, bytes)` | Queues a send-back: true, or false and nothing sent when the queue is full or `port` is not an open output port. |
 | `suhina.command(id, params, gesture)` | Runs a command and returns `ok, error`. `params` is a table or `nil`; `gesture` a string or `nil`. |
 | `suhina.read(id, params)` | Runs a reading command and returns `value, error`. |

@@ -76,6 +76,10 @@ pub enum Message {
     Ping {
         id: u64,
     },
+    /// The host's heartbeat, some times a second: a script's periodic work (a controller's
+    /// light re-assert) rides it. Never answered; the runner drops it freely while a handler
+    /// is busy - the next tick is never far.
+    Tick,
     /// The runner stops the script and exits; the exit is the answer.
     Quit,
     /// The script loaded and registered its handlers; port messages may start.
@@ -145,6 +149,7 @@ impl Message {
                 json!({ "op": "read_result", "token": token, "ok": ok, "value": value, "error": error })
             }
             Self::Ping { id } => json!({ "op": "ping", "id": id }),
+            Self::Tick => json!({ "op": "tick" }),
             Self::Quit => json!({ "op": "quit" }),
             Self::Ready => json!({ "op": "ready" }),
             Self::Send { port, bytes } => json!({ "op": "send", "port": port, "bytes": hex(bytes) }),
@@ -222,6 +227,7 @@ impl Message {
                 error: optional_text("error", MAX_LINE)?,
             },
             "ping" => Self::Ping { id: number("id")? },
+            "tick" => Self::Tick,
             "quit" => Self::Quit,
             "ready" => Self::Ready,
             "send" => Self::Send { port: text("port", MAX_NAME)?, bytes: bytes("bytes")? },

@@ -152,6 +152,10 @@ impl Fixture {
         self.projects.test_extensions_program().expect("running").test_port_message(port, bytes);
     }
 
+    fn tick(&mut self) {
+        self.projects.test_extensions_program().expect("running").test_tick();
+    }
+
     /// The runner process's id: the program is running, so the supervisor has spawned it.
     fn pid(&self) -> u32 {
         self.projects.test_extensions_program().and_then(|h| h.pid()).expect("the runner's pid")
@@ -198,6 +202,28 @@ fn a_port_message_comes_back_as_a_send_back_event() {
     );
     let programs::Event::SendBack { port, .. } = event else { unreachable!() };
     assert_eq!(port, "Pad");
+}
+
+/// The host's heartbeat reaches the script: the tick the supervisor sends on the health
+/// rhythm — on the tests' cue here, with the rhythm itself as the backstop — and the script's
+/// periodic work (a controller's light re-assert) rides it out as a send-back.
+const SCRIPT_TICK: &str = r#"
+suhina.on_tick(function()
+    suhina.send("Pad", "\176\7\100")
+end)
+"#;
+
+#[test]
+fn a_tick_reaches_the_script() {
+    let mut fixture = Fixture::new("heart", SCRIPT_TICK);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.ports(vec![], vec!["Pad".into()]);
+    fixture.tick();
+    fixture.expect(
+        |e| matches!(e, programs::Event::SendBack { bytes, .. } if bytes == &vec![0xb0, 0x07, 0x64]),
+        "the tick's send-back",
+    );
 }
 
 /// A script's error is reported and the process stays up; `extensions.restart` brings it back.
