@@ -1361,6 +1361,26 @@ fn the_workspace_panels_draw_their_border_and_background() {
     assert!(seen.iter().any(|r| r.fill == blue && Some(r.rect) == under), "the detail panel's background");
 }
 
+/// The detail area's panel carries `kind="detail"`, as the guide documents: a rule on
+/// `workspace-panel[kind="detail"]` paints its background (a slip had given it the splitter's kind).
+#[test]
+fn the_detail_panel_answers_to_its_kind() {
+    fn rects(shape: &egui::Shape, out: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| rects(s, out)),
+            egui::Shape::Rect(rect) => out.push(rect.clone()),
+            _ => {}
+        }
+    }
+    let blue = egui::Color32::from_rgb(0, 0, 0xFF);
+    let h = open_with_clip("workspace-panel[kind=\"detail\"] { background-color: #0000FF; }", false);
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| rects(&s.shape, &mut seen));
+    let detail = h.get_by_label("Detail area splitter").rect();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(seen.iter().any(|r| r.fill == blue && r.rect.top() >= detail.bottom() - 0.5), "the detail panel's fill");
+}
+
 /// A theme that pads every region and container, gives it a border and makes it hide its
 /// overflow: every view lays its children out in its content box (its box less its border and
 /// padding), so no element's clip cuts anything painted in it (#1336). Each screen in turn: the

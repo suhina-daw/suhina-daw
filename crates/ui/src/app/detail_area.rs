@@ -156,8 +156,7 @@ impl App {
         let (main, laid, follows) = geometry;
         // The room the view and the detail area share.
         let area = main.union(laid);
-        let panel_style =
-            crate::kit::element::WORKSPACE_PANEL.id("panel-detail").attribute("kind", "detail-splitter").enter();
+        let panel_style = crate::kit::element::WORKSPACE_PANEL.id("panel-detail").attribute("kind", "detail").enter();
         let styled_ui = panel_style.ui(ui);
         // The splitter lies in the gap beside the area: drawn and taking the pointer there too
         // (#1240).
