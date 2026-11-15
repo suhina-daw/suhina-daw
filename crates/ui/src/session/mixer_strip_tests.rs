@@ -4,73 +4,47 @@
 use super::*;
 use egui::Color32;
 
+/// Where `paint_fader` draws the scale's labels for a fader in `fader` with its scale in `scale`.
+fn scale_labels(fader: Rect, scale: Option<Rect>) -> Vec<Pos2> {
+    let ctx = egui::Context::default();
+    theme::install(&ctx);
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let response = ui.interact(fader, Id::unique("scale-test"), egui::Sense::hover());
+        paint_fader(ui, ui.painter(), Rect::NOTHING, fader, scale, -6.0, &response);
+    });
+    output.textures_delta.clear();
+    output
+        .shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) => Some(text.pos),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn volume_scale_labels_move_independently_and_can_be_hidden_in_both_directions() {
-    use crate::kit::skin;
-    for horizontal in [false, true] {
-        for hidden in [false, true] {
-            let ctx = egui::Context::default();
-            theme::install(&ctx);
-            let mut skin = skin::Skin::default();
-            skin.controls.insert(
-                "mixer-volume-scale".into(),
-                control_layout::Placement { x: 10, y: 5, hidden, ..Default::default() },
-            );
-            if horizontal {
-                skin.controls.insert(
-                    "mixer-volume".into(),
-                    control_layout::Placement {
-                        direction: control_layout::Direction::Horizontal,
-                        ..Default::default()
-                    },
-                );
-            }
-            skin::configure(&skin);
-            let draw = || {
-                ctx.run_ui(egui::RawInput::default(), |ui| {
-                    let fader = Rect::from_min_size(
-                        egui::pos2(40.0, 40.0),
-                        if horizontal { egui::vec2(120.0, 20.0) } else { egui::vec2(18.0, 120.0) },
-                    );
-                    let response = ui.interact(fader, Id::unique("scale-test"), egui::Sense::hover());
-                    paint_fader(ui, ui.painter(), Rect::NOTHING, fader, -6.0, &response, false);
-                })
-            };
-            let mut output = draw();
-            let text: Vec<_> = output
-                .shapes
-                .iter()
-                .filter_map(|shape| match &shape.shape {
-                    egui::Shape::Text(text) => Some(text.pos),
-                    _ => None,
-                })
-                .collect();
-            output.textures_delta.clear();
-            assert_eq!(text.is_empty(), hidden);
-            if !hidden {
-                skin.controls.remove("mixer-volume-scale");
-                skin::configure(&skin);
-                let mut baseline = draw();
-                let native: Vec<_> = baseline
-                    .shapes
-                    .iter()
-                    .filter_map(|shape| match &shape.shape {
-                        egui::Shape::Text(text) => Some(text.pos),
-                        _ => None,
-                    })
-                    .collect();
-                baseline.textures_delta.clear();
-                assert_eq!(text.len(), native.len());
-                for (moved, native) in text.iter().zip(native) {
-                    assert!(
-                        (*moved - native - egui::vec2(10.0, 5.0)).length() < 0.01,
-                        "{horizontal}: {moved:?} vs {native:?}"
-                    );
-                }
-            }
+fn the_scale_is_drawn_where_it_is_laid_out_and_not_at_all_when_hidden() {
+    // Standing up, beside the fader; lying down (a fader laid out wider than tall), under it.
+    for (fader, scale) in [
+        (
+            Rect::from_min_size(Pos2::new(40.0, 40.0), Vec2::new(20.0, 120.0)),
+            Rect::from_min_size(Pos2::new(60.0, 40.0), Vec2::new(14.0, 120.0)),
+        ),
+        (
+            Rect::from_min_size(Pos2::new(40.0, 40.0), Vec2::new(120.0, 20.0)),
+            Rect::from_min_size(Pos2::new(40.0, 60.0), Vec2::new(120.0, 12.0)),
+        ),
+    ] {
+        let native = scale_labels(fader, Some(scale));
+        assert!(!native.is_empty());
+        let moved = scale_labels(fader, Some(scale.translate(Vec2::new(10.0, 5.0))));
+        assert_eq!(moved.len(), native.len());
+        for (moved, native) in moved.iter().zip(&native) {
+            assert!((*moved - *native - Vec2::new(10.0, 5.0)).length() < 0.01, "{moved:?} vs {native:?}");
         }
+        assert!(scale_labels(fader, None).is_empty(), "a hidden scale draws no labels");
     }
-    skin::configure(&skin::Skin::default());
 }
 
 #[test]
@@ -133,38 +107,121 @@ fn mixer_and_name_css_materials_override_native_tint_and_paint_gradients() {
     skin::configure(&skin::Skin::default());
 }
 
-#[test]
-fn main_edit_handles_only_include_sections_the_main_strip_draws() {
+/// A strip `height` tall laid out under `css` (its parts by the theme's sheet over the user-agent
+/// sheet), as the Launcher lays one out.
+fn styled(css: &str, width: f32, height: f32) -> Layout {
+    use crate::kit::{native_css, skin};
+    skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
     let ctx = egui::Context::default();
-    let capture = control_layout::Capture::begin(&ctx);
-    control_layout::draft(&ctx, Some(Default::default()));
-    layout_main(Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::SCENE_COLUMN, 340.0)), Shared::default());
-    let entries = capture.entries();
-    assert!(entries.iter().any(|entry| entry.name == "mixer-volume"));
-    assert!(entries.iter().any(|entry| entry.name == "mixer-meter"));
-    assert!(!entries.iter().any(|entry| matches!(entry.name.as_str(), "mixer-name" | "mixer-pan" | "mixer-output")));
-    control_layout::draft(&ctx, None);
+    let mut parts = None;
+    for _ in 0..2 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = native_css::frame(ui);
+            let el = crate::kit::element::MIXER.id("track-1").enter();
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height));
+            parts =
+                Some(layout_in(Host::Strip(&el), rect, true, false, Shared::default(), Strip::Track { armable: true }));
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    parts.unwrap()
 }
 
 #[test]
-fn theme_repositions_name_pan_and_meter_and_rotates_the_volume_layout() {
-    use crate::kit::{skin, theme_css};
-    let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, 340.0));
-    let original = layout(bounds, true, false);
-    let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-volume { direction: horizontal; } .control-mixer-name { bottom: 0px; } .control-mixer-meter { width: 80px; height: 10px; } .control-mixer-pan { left: 5px; width: 80px; }").is_empty());
-    skin::configure(&theme.skin);
-    let moved = layout(bounds, true, false);
-    let fader = moved.fader.unwrap();
-    assert!(fader.width() > fader.height());
-    assert_eq!(moved.name.unwrap().bottom(), bounds.bottom() - PAD);
-    assert_eq!(moved.meter.unwrap().size(), Vec2::new(80.0, 10.0));
-    assert_eq!(moved.pan.unwrap().left(), original.pan.unwrap().left() + 5.0);
-    for rect in [moved.name, moved.pan, moved.fader, moved.meter].into_iter().flatten() {
-        assert!(bounds.contains_rect(rect));
-    }
-    skin::configure(&skin::Skin::default());
-    assert_eq!(layout(bounds, true, false), original);
+fn mixer_toggles_standing_up_stack_solo_cue_and_arm() {
+    // #995: the S, cue and arm row stands up; the track-on switch with the number is its own part.
+    let row = styled("", theme::TRACK_COLUMN, 300.0);
+    let column = styled("mixer-toggles { flex-direction: column; }", theme::TRACK_COLUMN, 300.0);
+    let [solo, cue, arm] = [column.solo, column.cue, column.arm].map(Option::unwrap);
+    assert_eq!((solo.left(), cue.left()), (arm.left(), arm.left()), "one above the other");
+    assert!(solo.bottom() <= cue.top() && cue.bottom() <= arm.top());
+    assert_eq!(solo.size(), row.solo.unwrap().size(), "each as big as before");
+    // The column is taller than the row was, and the fader gives up the room.
+    assert!(column.fader.unwrap().height() < row.fader.unwrap().height(), "{column:#?} {row:#?}");
+    assert!(column.fader.unwrap().bottom() <= solo.top());
+    // The track number stays a part of its own beside them, as tall as their column.
+    let on = column.track_on.unwrap();
+    assert!(on.right() <= solo.left());
+    assert_eq!(on.y_range(), column.toggles.y_range());
+    let hidden = styled("#control-track-on { display: none; }", theme::TRACK_COLUMN, 300.0);
+    assert!(hidden.track_on.is_none());
+    assert!(hidden.solo.is_some() && hidden.cue.is_some() && hidden.arm.is_some());
+}
+
+#[test]
+fn a_theme_lays_the_parts_out_and_hides_them() {
+    let original = styled("", theme::TRACK_COLUMN, 340.0);
+    let moved = styled(
+        "mixer meter { order: -1; margin: 0 4px 0 0; } mixer track-colour { display: none; } \
+         #mixer-pan { margin-left: 5px; width: 40px; }",
+        theme::TRACK_COLUMN,
+        340.0,
+    );
+    let (fader, meter) = (moved.fader.unwrap(), moved.meter.unwrap());
+    assert_eq!(meter.left(), original.fader.unwrap().left(), "the meter before the fader");
+    assert_eq!(fader.left(), meter.right() + 4.0);
+    assert!(moved.band.is_none());
+    let pan = moved.pan.unwrap();
+    assert_eq!((pan.left(), pan.width()), (original.pan.unwrap().left() + 5.0, 40.0));
+    // A fader laid out wider than tall lies down, and drags across.
+    let lying = styled(
+        "group#mixer-level { flex-direction: column; } #mixer-volume { height: 20px; }",
+        theme::TRACK_COLUMN,
+        340.0,
+    );
+    let fader = lying.fader.unwrap();
+    assert!(lies(fader), "{fader:?}");
+    assert_eq!(fader.width(), theme::TRACK_COLUMN - 2.0 * PAD);
+    assert!(!lies(original.fader.unwrap()));
+}
+
+#[test]
+fn every_strip_of_a_kind_shares_one_layout_worked_out_once() {
+    use crate::kit::native_css::row;
+    styled("mixer { padding: 1px; }", theme::TRACK_COLUMN, 300.0);
+    let before = row::computed();
+    // The same strip again, for another track: nothing is laid out anew.
+    let again = || {
+        crate::kit::skin::configure(&crate::kit::skin::Skin {
+            css: Some("mixer { padding: 1px; }".into()),
+            ..Default::default()
+        });
+        let ctx = egui::Context::default();
+        let mut laid = Vec::new();
+        for _ in 0..2 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _frame = crate::kit::native_css::frame(ui);
+                laid.clear();
+                for track in 0..4 {
+                    let el = crate::kit::element::MIXER
+                        .id(&format!("track-{track}"))
+                        .color(Color32::from_rgb(track * 40, 0, 0))
+                        .enter();
+                    let rect = Rect::from_min_size(Pos2::new(f32::from(track) * 116.0, 0.0), Vec2::new(116.0, 300.0));
+                    laid.push(layout_in(
+                        Host::Strip(&el),
+                        rect,
+                        true,
+                        false,
+                        Shared::default(),
+                        Strip::Track { armable: true },
+                    ));
+                }
+            })
+            .textures_delta
+            .clear();
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        laid
+    };
+    let laid = again();
+    let computed = row::computed() - before;
+    // A strip and its insets: one layout each for the four tracks over both frames.
+    assert!(computed <= 2, "{computed} layouts for four strips of one kind");
+    let fader = laid[0].fader.unwrap();
+    assert_eq!(laid[3].fader.unwrap(), fader.translate(Vec2::new(3.0 * 116.0, 0.0)));
 }
 
 fn strip(height: f32) -> Layout {
@@ -224,7 +281,7 @@ fn parts_never_overlap_and_the_fader_is_never_shorter_than_its_least() {
             assert!(fader.height() >= LEAST_FADER, "{height}: {fader:?}");
             let meter = parts.meter.unwrap_or(Rect::NOTHING);
             assert_eq!(meter.y_range(), fader.y_range());
-            assert!(meter.left() >= fader.right() + METER_GAP);
+            assert!(meter.left() >= fader.right() + 4.0);
             assert_eq!(meter.width(), METER_WIDTH);
         }
         if let Some(list) = parts.devices {
@@ -244,7 +301,7 @@ fn wide_meters_fit_track_return_and_main_strips() {
                 let fader = parts.fader.unwrap_or(Rect::NOTHING);
                 let meter = parts.meter.unwrap_or(Rect::NOTHING);
                 assert!(fader.width() >= CAP.x);
-                assert!(meter.left() >= fader.right() + METER_GAP);
+                assert!(meter.left() >= fader.right() + 4.0);
                 assert!(meter.right() <= rect.right() - PAD);
                 assert_eq!(meter.width(), METER_WIDTH);
                 if width <= theme::SCENE_COLUMN {
@@ -331,58 +388,21 @@ fn a_send_takes_its_class_and_its_own_id() {
 }
 
 #[test]
-fn the_divider_is_a_control_a_theme_places_and_others_anchor_to() {
-    use crate::kit::{skin, theme_css};
+fn the_divider_lies_over_the_gap_under_the_device_list() {
     let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, DEVICES_AT + 120.0));
-    let original = layout(bounds, true, false);
-    let divider = original.divider.expect("a strip with devices has a divider");
-    assert!(divider.top() >= original.devices.unwrap().bottom() - 3.0);
-    let mut theme = theme::Theme::default();
-    assert!(
-        theme_css::apply(
-            &mut theme,
-            ".control-mixer-divider { top: -10px; } \
-             .control-mixer-devices { anchor-top: mixer-output bottom 4px; \
-                                      anchor-bottom: mixer-divider top 0px; }"
-        )
-        .is_empty()
-    );
-    skin::configure(&theme.skin);
-    let ctx = egui::Context::default();
-    let capture = crate::kit::control_layout::Capture::begin(&ctx);
-    let moved = layout(bounds, true, false);
-    drop(capture);
-    assert_eq!(moved.divider.unwrap().top(), divider.top() - 10.0);
-    assert_eq!(moved.devices.unwrap().bottom(), moved.divider.unwrap().top());
-    skin::configure(&skin::Skin::default());
+    let parts = layout(bounds, true, false);
+    let (list, divider, pan) = (parts.devices.unwrap(), parts.divider.unwrap(), parts.pan.unwrap());
+    assert_eq!((divider.top(), divider.bottom()), (list.bottom() - 1.0, pan.top() + 1.0));
+    assert_eq!(divider.x_range(), list.x_range());
 }
 
 #[test]
-fn an_anchored_part_with_no_room_left_draws_nothing() {
-    use crate::kit::{skin, theme_css};
-    let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-pan { anchor-top: mixer-name top 0px; }").is_empty());
-    skin::configure(&theme.skin);
-    let ctx = egui::Context::default();
-    let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, NAME_AT + 40.0));
-    let frame = || {
-        let _capture = crate::kit::control_layout::Capture::begin(&ctx);
-        layout(bounds, true, false)
-    };
-    frame();
-    let parts = frame();
-    skin::configure(&skin::Skin::default());
-    assert!(parts.name.is_some());
-    assert!(parts.pan.is_none(), "the pan stood on the name: {:?}", parts.pan);
-}
-
-#[test]
-fn a_strip_without_an_input_keeps_its_room_for_anchors() {
+fn a_strip_without_an_input_keeps_its_room() {
     let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(theme::TRACK_COLUMN, INPUT_AT + 200.0));
     let with = layout_shared(bounds, true, true, Shared { reserve_input: true, ..Default::default() });
     let without = layout_shared(bounds, true, false, Shared { reserve_input: true, ..Default::default() });
-    assert!(without.audio_monitor.is_none());
-    assert_eq!(without.reserved_input.map(|r| r[2]), with.audio_monitor);
+    assert!(without.audio_monitor.is_none() && without.monitor_buttons.iter().all(Option::is_none));
+    assert_eq!(without.fader, with.fader, "the controls stay in line across the mixer");
 }
 
 #[test]

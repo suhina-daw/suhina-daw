@@ -7,13 +7,35 @@
 //! geometry (gaps, padding, alignment, sizes, `flex-grow`) and may hide an item with
 //! `display: none`, which leaves it out of input as well as painting. Under the theme's sheets,
 //! or the user-agent sheet alone when their layout fails, as the window's grid is.
+//!
+//! The track headers, the mixer strips and the transport lay their parts out through it too
+//! (#1453): a strip is a bar whose items are its parts and the groups they are in, and every strip
+//! of one kind shares one layout ([`Bar::kind_of`]), worked out once a size and a sheet.
 use egui::{Rect, Vec2};
+use std::cell::Cell;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use suhina_style::property::Property;
 
 /// Most items one bar lays out.
 pub const MAX_ITEMS: usize = 256;
-/// Most laid-out rows kept, for every bar together; past it the cache starts again.
-const MAX_ROWS: usize = 64;
+/// Laid-out rows kept, for every bar and strip together, before the ones no frame used lately are
+/// dropped.
+const MAX_ROWS: usize = 256;
+/// Most laid-out rows kept at all: past it, even rows used lately go (a frame laying out more
+/// than this many kinds of strip lays some out again each frame).
+const MOST_ROWS: usize = 4096;
+
+thread_local! {
+    /// How many rows this thread has laid out, not taken from the cache: for the tests that a
+    /// settled frame lays nothing out again.
+    static COMPUTED: Cell<u64> = const { Cell::new(0) };
+}
+
+/// How many rows have been laid out on this thread so far, cached ones not counted.
+pub fn computed() -> u64 {
+    COMPUTED.with(Cell::get)
+}
 
 /// The bar an item row is laid out in: its element and the box the window gave it.
 #[derive(Clone, Debug, PartialEq)]
@@ -26,11 +48,20 @@ pub struct Bar {
     /// The bar's node in this frame's style tree, when it is entered: its items are then laid out
     /// under the elements around it, as they paint.
     pub node: Option<usize>,
+    /// Whether the bar stands for every element of its kind: laid out without what differs from
+    /// one track to the next (its id, project object and `color`), so they share one layout.
+    pub shared: bool,
+    /// Whether its items are laid out by their `order`, as a strip's parts are; a bar's items keep
+    /// the app's order.
+    pub by_order: bool,
+    /// Whether [`Bar::node`] is the element the bar is in, not the bar itself: a strip that is not
+    /// entered as an element of its own (Main's, under the Launcher).
+    pub inside: bool,
 }
 
 impl Bar {
     pub fn new(name: &'static str, size: Vec2) -> Self {
-        Self { name, id: None, attributes: Vec::new(), size, node: None }
+        Self { name, id: None, attributes: Vec::new(), size, node: None, shared: false, by_order: false, inside: false }
     }
 
     /// The bar as `element`, entered, has it: its attributes and the elements around it.
@@ -38,9 +69,32 @@ impl Bar {
         Self { node: element.node(), ..Self::new(element.name().name(), size) }
     }
 
+    /// A strip of parts (a track header, a mixer strip) as `element`, entered, has it, less what
+    /// tells one track from another, its parts laid out by `order` (#1453). Every strip of the
+    /// same kind, under the same elements, then shares one layout: worked out once a size.
+    pub fn kind_of(element: &crate::kit::element::Entered, size: Vec2) -> Self {
+        Self { shared: true, by_order: true, ..Self::of(element, size) }
+    }
+
+    /// [`Bar::kind_of`] for a strip named `name` in `parent`, entered, that is not entered itself.
+    pub fn under(parent: &crate::kit::element::Entered, name: &'static str, size: Vec2) -> Self {
+        Self { node: parent.node(), inside: true, ..Self::strip(name, size) }
+    }
+
+    /// [`Bar::kind_of`] for a strip that is not entered (no style engine runs): `name`, under
+    /// `html` and `body`.
+    pub fn strip(name: &'static str, size: Vec2) -> Self {
+        Self { shared: true, by_order: true, ..Self::new(name, size) }
+    }
+
     pub fn attribute(mut self, name: &'static str, value: impl Into<String>) -> Self {
         self.attributes.push((name, value.into()));
         self
+    }
+
+    /// The attribute `name` with no value, when `on`: `[narrow]`.
+    pub fn flag(self, name: &'static str, on: bool) -> Self {
+        if on { self.attribute(name, "") } else { self }
     }
 }
 
@@ -98,6 +152,51 @@ impl Item {
         self.parent = Some(group);
         self
     }
+
+    /// An item of element `name` with `kind`, and the id a theme selects it by where the registry
+    /// gives the pair one: a part of a box tree the app builds (a track header's, a mixer strip's).
+    pub fn part(name: &'static str, kind: &str) -> Self {
+        let item = Self::new(name).attribute("kind", kind);
+        match suhina_theme_package::elements::element_id(name, Some(kind)) {
+            Some(id) => item.id(&id),
+            None => item,
+        }
+    }
+}
+
+/// A box tree's items in their order, each with the part `S` it is for the app: what a header or a
+/// strip lays out with [`row`] and reads back by part.
+#[derive(Debug)]
+pub struct Tree<S> {
+    items: Vec<Item>,
+    slots: Vec<S>,
+}
+
+impl<S> Default for Tree<S> {
+    fn default() -> Self {
+        Self { items: Vec::new(), slots: Vec::new() }
+    }
+}
+
+impl<S> Tree<S> {
+    /// Adds `item` as the part `slot`; returns its index, which a group's items name.
+    pub fn add(&mut self, item: Item, slot: S) -> usize {
+        self.items.push(item);
+        self.slots.push(slot);
+        self.items.len() - 1
+    }
+
+    /// Lays the tree out in `bar` and gives each part its rectangle on screen, the bar's box at
+    /// `origin`: `None` for a part the sheet hides, every part's where there is no room.
+    pub fn lay_out(self, bar: &Bar, origin: egui::Pos2) -> impl Iterator<Item = (S, Option<Rect>)> {
+        let laid = row(bar, &self.items).unwrap_or_default();
+        self.slots.into_iter().enumerate().map(move |(index, slot)| (slot, laid.at(index, origin)))
+    }
+}
+
+/// `rect` less `insets` (top, right, bottom, left), the order [`Row::insets`] gives them in.
+pub fn inset(rect: Rect, [top, right, bottom, left]: [f32; 4]) -> Rect {
+    Rect::from_min_max(rect.min + Vec2::new(left, top), rect.max - Vec2::new(right, bottom))
 }
 
 /// Where a row's items went.
@@ -111,6 +210,9 @@ pub struct Row {
     pub inside: Vec<bool>,
     /// Whether every item is [`Row::inside`].
     pub fits: bool,
+    /// The room the bar's border and padding take (top, right, bottom, left), as the layout gave
+    /// it: the user-agent sheet's where no theme's runs.
+    pub insets: [f32; 4],
 }
 
 impl Row {
@@ -127,7 +229,7 @@ impl Row {
 
 /// Lays `items` out in `bar`. `None` only when there is no room (an empty or non-finite box) or
 /// the items are malformed (too many, a group after its item).
-pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
+pub fn row(bar: &Bar, items: &[Item]) -> Option<Arc<Row>> {
     if !bar.size.is_finite()
         || bar.size.x <= 0.0
         || bar.size.y <= 0.0
@@ -142,19 +244,51 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
         let themed = engine.source.is_some() && super::same_source(engine.source.as_ref());
         // The bar and the elements around it: this frame's chain when the bar is entered, else
         // `html` and `body`.
-        let mut all = bar.node.and_then(|node| super::native::chain(&engine, node)).unwrap_or_else(|| {
-            let mut element = super::native::element(bar.name, bar.id, None, Some(1));
-            element.attributes =
-                bar.attributes.iter().map(|(name, value)| ((*name).to_owned(), value.clone())).collect();
-            let mut all = super::native::roots(false);
-            all.push(element);
-            all
-        });
+        let mut all = bar
+            .node
+            .and_then(|node| super::native::chain(&engine, node))
+            .map(|mut all| {
+                if bar.inside {
+                    let parent = all.len().checked_sub(1);
+                    all.push(super::native::element(bar.name, None, None, parent));
+                }
+                all
+            })
+            .unwrap_or_else(|| {
+                let mut element = super::native::element(bar.name, bar.id, None, Some(1));
+                element.attributes =
+                    bar.attributes.iter().map(|(name, value)| ((*name).to_owned(), value.clone())).collect();
+                let mut all = super::native::roots(false);
+                all.push(element);
+                all
+            });
         let at = all.len().checked_sub(1)?;
-        let key = format!("{themed}:{:?}:{:?}:{items:?}", bar.size, all);
-        if let Some(row) = engine.rows.get(&key) {
-            return Some(row.clone());
+        if let Some(own) = all.last_mut() {
+            if bar.shared {
+                own.id = bar.id.map(str::to_owned);
+                own.object = None;
+                own.attributes.retain(|(name, _)| name != "color");
+            }
+            for (name, value) in &bar.attributes {
+                own.attributes.retain(|(had, _)| had != name);
+                own.attributes.push(((*name).to_owned(), value.clone()));
+            }
         }
+        let key = {
+            let mut key = std::hash::DefaultHasher::new();
+            (themed, bar.by_order, bar.size.x.to_bits(), bar.size.y.to_bits(), &all).hash(&mut key);
+            for item in items {
+                (item.name, &item.id, &item.attributes, item.parent).hash(&mut key);
+                item.size.map(|size| size.map(f32::to_bits)).hash(&mut key);
+            }
+            key.finish()
+        };
+        let frame = engine.row_frame;
+        if let Some((row, used)) = engine.rows.get_mut(&key) {
+            *used = frame;
+            return Some(Arc::clone(row));
+        }
+        COMPUTED.with(|count| count.set(count.get().wrapping_add(1)));
         let size = [bar.size.x.min(16384.0), bar.size.y.min(16384.0)];
         let mut sizes = vec![None; at];
         sizes.push(Some([Some(size[0]), Some(size[1])]));
@@ -166,7 +300,7 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
             all.push(element);
             sizes.push(Some(item.size));
         }
-        let laid = super::native::tree_layout(themed.then_some(&*engine), all, at, &sizes, size, false)?;
+        let laid = super::native::tree_layout(themed.then_some(&*engine), all, at, &sizes, size, bar.by_order)?;
         let (bar_rect, bar_style) = laid.first()?;
         let origin = bar_rect.map_or(Vec2::ZERO, |rect| rect.min.to_vec2());
         let [top, right, bottom, left] = bar_style.insets_in(size[0]);
@@ -201,19 +335,30 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
             })
             .collect();
         let fits = inside.iter().all(|inside| *inside);
-        let row = Row { items: rects, inside, fits };
+        let row = Arc::new(Row { items: rects, inside, fits, insets: [top, right, bottom, left] });
         if engine.rows.len() >= MAX_ROWS {
-            engine.rows.clear();
+            // Only what this frame and the one before did not use goes.
+            engine.rows.retain(|_, (_, used)| used.wrapping_add(1) >= frame);
+            if engine.rows.len() >= MOST_ROWS {
+                engine.rows.clear();
+            }
         }
-        engine.rows.insert(key, row.clone());
+        engine.rows.insert(key, (Arc::clone(&row), frame));
         Some(row)
     })
+}
+
+/// The room inside `bar`'s border and padding (top, right, bottom, left), as the sheet lays it
+/// out: the user-agent sheet's where no theme's runs, which [`super::super::element::Entered::insets`]
+/// has no style to read then. `None` where the bar has no room.
+pub fn insets(bar: &Bar) -> Option<[f32; 4]> {
+    Some(row(bar, &[])?.insets)
 }
 
 /// Lays out the first of `candidates` that fits `bar` ([`Row::fits`]): the app lists them from
 /// the fullest to the sparsest, so a narrow bar gives way in the app's order while the sheet keeps
 /// the geometry. The last when none fits, its overflow clipped. Returns its index and its row.
-pub fn fitting(bar: &Bar, candidates: &[Vec<Item>]) -> Option<(usize, Row)> {
+pub fn fitting(bar: &Bar, candidates: &[Vec<Item>]) -> Option<(usize, Arc<Row>)> {
     fitting_with(bar, candidates, |_, _, row| row.fits)
 }
 
@@ -223,7 +368,7 @@ pub fn fitting_with(
     bar: &Bar,
     candidates: &[Vec<Item>],
     fits: impl Fn(usize, &[Item], &Row) -> bool,
-) -> Option<(usize, Row)> {
+) -> Option<(usize, Arc<Row>)> {
     let mut last = None;
     for (index, items) in candidates.iter().enumerate() {
         let laid = row(bar, items)?;

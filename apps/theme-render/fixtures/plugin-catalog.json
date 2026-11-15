@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "entries": [
+    { "path": "/Fixture/CLAP/Test Synth.clap", "modified": 1760000000, "size": 10, "plugins": [
+      { "id": "test.synth", "name": "Test Synth", "vendor": "Test Vendor", "version": "1.0", "features": ["instrument", "synthesizer"], "replaces": [] }] },
+    { "path": "/Fixture/VST3/Test Delay.vst3", "modified": 1760100000, "size": 10, "plugins": [
+      { "id": "ABCDEF019182FAEB49746D78426E6476", "name": "Test Delay", "vendor": "Test Vendor", "version": "1.0", "features": ["Fx", "Delay"], "replaces": [] }] },
+    { "path": "/Fixture/VST3/Test Sampler.vst3", "modified": 1760200000, "size": 10, "plugins": [
+      { "id": "ABCDEF019182FAEB49746D78426E6477", "name": "Test Sampler", "vendor": "Test Vendor", "version": "1.0", "features": ["Instrument", "Sampler"], "replaces": [] }] }
+  ]
+}

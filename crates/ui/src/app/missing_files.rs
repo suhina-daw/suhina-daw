@@ -9,12 +9,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 
-use egui::{Align2, Color32, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
+use egui::{Color32, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 use suhina_library::find::{Found, Walked, rank_candidates, walk_for_names};
 use suhina_session::{ProjectId, Projects};
 
 use crate::kit::theme::{self, PAD, ROW};
-use crate::kit::widgets;
 
 const WIDTH: f32 = 600.0;
 const LINE: f32 = 18.0;
@@ -220,12 +219,12 @@ impl MissingFiles {
     /// Draws the bar that says files are missing in `rect`, while it should show.
     pub fn bar(&mut self, ui: &mut Ui, rect: Rect) {
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+        painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
         let count = self.rows.len();
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect.shrink2(Vec2::new(PAD, 6.0))), |ui| {
             ui.horizontal_centered(|ui| {
                 let text = format!("{count} audio file{} missing", if count == 1 { " is" } else { "s are" });
-                ui.label(egui::RichText::new(text).color(theme::text_primary()));
+                ui.label(egui::RichText::new(text).color(crate::kit::element::name_ink()));
                 if ui.button("Find…").clicked() {
                     self.open = true;
                 }
@@ -274,7 +273,7 @@ impl MissingFiles {
         painter.rect_filled(
             area,
             0.0,
-            crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+            crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
         );
         let height = ROW + PAD * 4.0 + LINE * 3.0 + self.rows.len() as f32 * ROW_HEIGHT + BUTTON.y;
         let size = crate::kit::floating::dialog_size(dialog, area, Vec2::new(WIDTH, height));
@@ -283,22 +282,22 @@ impl MissingFiles {
             &painter,
             dialog,
             rect,
-            crate::kit::style_class::own_background_or(theme::panel_background()),
+            crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel")),
         );
         let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-        painter.rect_filled(bar, 0.0, theme::control_background());
-        widgets::text_in(
-            &painter,
-            bar.shrink2(Vec2::new(PAD, 0.0)),
-            Align2::LEFT_CENTER,
-            &format!("Missing files · {project}"),
-            theme::ui_font(theme::TEXT),
-            theme::text_primary(),
-        );
+        drop(super::project_dialog::title_bar(&painter, bar, &format!("Missing files · {project}")));
 
         let mut outcome = None;
         let inner = Rect::from_min_max(Pos2::new(rect.left() + PAD, bar.bottom() + PAD), rect.max - Vec2::splat(PAD));
         let small = theme::ui_font(theme::TEXT_SMALL);
+        let caption = crate::kit::element::caption_ink();
+        let inks = RowInks {
+            name: crate::kit::element::name_ink(),
+            hint: crate::kit::element::hint_ink(),
+            missing: crate::kit::element::error_ink(),
+            several: crate::kit::element::value_ink(),
+            found: crate::kit::element::accent_ink(),
+        };
         ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             // Searching.
@@ -306,7 +305,7 @@ impl MissingFiles {
                 if ui.button("Search the browser's folders").clicked() {
                     self.checked = None;
                 }
-                ui.label(egui::RichText::new("or a folder:").color(theme::text_secondary()).font(small.clone()));
+                ui.label(egui::RichText::new("or a folder:").color(caption).font(small.clone()));
                 let field = crate::kit::widgets::text_input(
                     ui,
                     egui::TextEdit::singleline(&mut self.folder)
@@ -346,13 +345,13 @@ impl MissingFiles {
                 Some(note) => format!("{found} of {} found · {note}", self.rows.len()),
                 None => format!("{found} of {} found", self.rows.len()),
             };
-            ui.label(egui::RichText::new(note).color(theme::text_secondary()).font(small.clone()));
+            ui.label(egui::RichText::new(note).color(caption).font(small.clone()));
             ui.separator();
 
             let list_height = (inner.height() - LINE * 3.0 - BUTTON.y - PAD * 2.0).max(ROW_HEIGHT);
             egui::ScrollArea::vertical().max_height(list_height).auto_shrink([false, true]).show(ui, |ui| {
                 for (i, row) in self.rows.iter_mut().enumerate() {
-                    row_view(ui, i, row, &small);
+                    row_view(ui, i, row, &small, inks);
                 }
             });
             ui.separator();
@@ -387,18 +386,28 @@ impl MissingFiles {
     }
 }
 
-fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
+/// The inks of a missing file's row, read once for the rows.
+#[derive(Clone, Copy)]
+struct RowInks {
+    name: Color32,
+    hint: Color32,
+    missing: Color32,
+    several: Color32,
+    found: Color32,
+}
+
+fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId, inks: RowInks) {
     let (state, colour): (&str, Color32) = match (&row.chosen, row.candidates.len()) {
-        (None, _) => ("missing", theme::recording()),
-        (Some(_), n) if n > 1 => ("several found", theme::text_value()),
-        (Some(_), _) => ("found", theme::accent()),
+        (None, _) => ("missing", inks.missing),
+        (Some(_), n) if n > 1 => ("several found", inks.several),
+        (Some(_), _) => ("found", inks.found),
     };
     ui.horizontal(|ui| {
         let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
         ui.painter().circle_filled(dot.center(), 3.5, colour);
-        ui.label(egui::RichText::new(row.name()).color(theme::text_primary())).on_hover_text(state);
+        ui.label(egui::RichText::new(row.name()).color(inks.name)).on_hover_text(state);
         let clips = format!("{} clip{}", row.clips, if row.clips == 1 { "" } else { "s" });
-        ui.label(egui::RichText::new(clips).color(theme::text_hint()).font(small.clone()));
+        ui.label(egui::RichText::new(clips).color(inks.hint).font(small.clone()));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let field = crate::kit::widgets::text_input(
                 ui,
@@ -425,15 +434,14 @@ fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
     });
     ui.horizontal(|ui| {
         ui.add_space(14.0);
-        ui.label(
-            egui::RichText::new(row.last_path.display().to_string()).color(theme::text_hint()).font(small.clone()),
-        );
+        ui.label(egui::RichText::new(row.last_path.display().to_string()).color(inks.hint).font(small.clone()));
     });
     ui.horizontal(|ui| {
         ui.add_space(14.0);
-        ui.label(egui::RichText::new("→").color(theme::text_hint()).font(small.clone()));
+        ui.label(egui::RichText::new("→").color(inks.hint).font(small.clone()));
         let shown = row.chosen.as_ref().map_or_else(|| "not found".to_string(), |p| p.display().to_string());
-        crate::kit::widgets::combo_box(
+        let label = format!("Where {} is: {shown}", row.file);
+        let response = crate::kit::widgets::combo_box(
             ui,
             egui::ComboBox::from_id_salt(("missing-candidate", index))
                 .selected_text(egui::RichText::new(shown).font(small.clone()))
@@ -452,6 +460,7 @@ fn row_view(ui: &mut Ui, index: usize, row: &mut Row, small: &egui::FontId) {
                 }
             },
         );
+        response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
     });
     ui.add_space(4.0);
 }
@@ -577,7 +586,11 @@ mod look {
             |ui, state: &mut MissingFiles| {
                 crate::kit::theme::install(ui.ctx());
                 let area = ui.max_rect();
-                ui.painter().rect_filled(area, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
+                ui.painter().rect_filled(
+                    area,
+                    0.0,
+                    crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
+                );
                 let bar = Rect::from_min_size(area.min, Vec2::new(area.width(), theme::ROW + 12.0));
                 state.bar(ui, bar);
                 state.open = true;

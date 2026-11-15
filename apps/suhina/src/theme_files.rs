@@ -7,7 +7,7 @@
 //! - `theme.json`, the theme's metadata: its name, author, description, swatch and so on
 //!   (`suhina_theme_package::meta`). Suhina writes it when the theme is renamed.
 //! - `theme.css`, the theme's style and layout. What Suhina's theme editors set beyond settings
-//!   (placements, the toolbar, artwork) goes into it through the source-preserving editor
+//!   (the toolbar, artwork) goes into it through the source-preserving editor
 //!   (`suhina_style::edit`), which changes only the declarations it edits.
 //! - `variants/<id>.json`, values for the theme's declared controls (`theme_vars::Variant`). The
 //!   settings editors write these.
@@ -759,7 +759,7 @@ fn lone_sheet(
     let name = if name == "theme" { "Theme" } else { name };
     let (mut theme, warnings) = theme::from_folder(theme::ThemeMeta::new(name, theme::DEFAULT_SWATCH), text);
     // The swatch as the colour it is here, since the sheet alone may not say every value it needs.
-    theme.meta.swatch = theme::hex(theme.swatch.unwrap_or(theme.colors.panel_background));
+    theme.meta.swatch = theme::hex(theme.swatch.unwrap_or(theme.color("panel-background")));
     theme::resolve_resources(&mut theme, &mut resource)?;
     Ok((theme, warnings))
 }
@@ -1111,7 +1111,7 @@ fn resource_files(
     Ok(files)
 }
 
-/// `sheet` with what Suhina's theme editors set that it does not say yet (placements, the toolbar,
+/// `sheet` with what Suhina's theme editors set that it does not say yet (the toolbar,
 /// artwork) appended, for a theme written anew.
 fn with_editor_rules(theme: &Theme, sheet: String) -> String {
     use suhina_ui::kit::theme_css;
@@ -1169,7 +1169,7 @@ fn holds_other_files(dir: &Path, variants_too: bool) -> bool {
 }
 
 /// Writes the theme `id`'s own files from `theme`. A theme without a `theme.css` yet gets all of
-/// them. Otherwise what its editors changed (placements, the toolbar, artwork) is edited into its
+/// them. Otherwise what its editors changed (the toolbar, artwork) is edited into its
 /// `theme.css` in place, leaving the rest of the author's text as it is; `theme.json` is written
 /// when the name changed; artwork and the background are written. Unchanged files and an
 /// installed README are left alone.

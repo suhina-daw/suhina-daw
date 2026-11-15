@@ -50,11 +50,16 @@ pub const MAX_FILES: usize = 512;
 /// core_sheet()`, which this crate cannot depend on; a test in `suhina-ui` keeps the two equal.
 pub const CORE_SHEET: &str = include_str!("core.css");
 
-/// Suhina's user-agent style sheet: the first sheet of every cascade, under the theme, its variant,
-/// device panel sheets and the user's sheet (`docs/spec/theme-skins.md` › The user-agent sheet).
-/// It styles elements by name, state and attribute only, with no classes, ids or variables, and
-/// holds the default artwork (`knob-body { image: url("suhina:knob.body.svg"); }`).
+/// Suhina's user-agent style sheet: the first sheet of every cascade, under the base sheet, the
+/// theme, its variant, device panel sheets and the user's sheet (`docs/spec/theme-skins.md` › The
+/// user-agent sheet). It styles elements by name, state and attribute only, with no classes, ids,
+/// variables, and gives only `window` a plain text and background colour, and holds the default artwork (`knob-body { image: url("suhina:knob.body.svg"); }`).
 pub const USER_AGENT_SHEET: &str = include_str!("user-agent.css");
+
+/// Suhina's base sheet: Suhina's own design under every theme, in the cascade's base tier between
+/// the user-agent sheet and the theme (`docs/spec/theme-skins.md` › The base sheet). Every colour
+/// in it reads a variable; a theme leaves it out with `"base": "none"` in its `theme.json`.
+pub const BASE_SHEET: &str = include_str!("base.css");
 
 /// The scheme of a URL that names artwork built into Suhina: `url("suhina:knob.body.svg")`.
 pub const BUILT_IN_SCHEME: &str = "suhina:";

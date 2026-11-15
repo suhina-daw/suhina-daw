@@ -161,21 +161,16 @@ pub fn key_events(events: &[Event]) -> Vec<(usize, KeyEvent)> {
 /// It is `mapping-overlay`, `[selected]` while picked.
 pub fn overlay(painter: &Painter, rect: Rect, label: Option<&str>, picked: bool, inset: f32) {
     let look = crate::kit::element::MAPPING_OVERLAY.attr(crate::kit::element::Selected, picked).look();
-    painter.rect_filled(
-        rect,
-        0.0,
-        look.background_or(theme::accent().gamma_multiply(if picked { 0.30 } else { 0.12 })),
-    );
+    painter.rect_filled(rect, 0.0, look.background_or(look.accent().gamma_multiply(if picked { 0.30 } else { 0.12 })));
     if picked {
-        let outline = look.border_or(theme::accent());
-        painter.rect_stroke(rect.shrink(0.5), 0.0, egui::Stroke::new(1.5, outline), StrokeKind::Inside);
+        painter.rect_stroke(rect.shrink(0.5), 0.0, egui::Stroke::new(1.5, look.border()), StrokeKind::Inside);
     }
     if let Some(label) = label {
         let font = theme::mono_font(theme::TEXT_SMALL);
         let width = (rect.width() * 0.6).max(0.0);
         let right = rect.right() - PAD - inset;
         let area = Rect::from_min_max(egui::pos2(right - width, rect.top()), egui::pos2(right, rect.bottom()));
-        widgets::text_in(painter, area, Align2::RIGHT_CENTER, label, font, look.color_or(theme::text_primary()));
+        widgets::text_in(painter, area, Align2::RIGHT_CENTER, label, font, look.color());
     }
 }
 

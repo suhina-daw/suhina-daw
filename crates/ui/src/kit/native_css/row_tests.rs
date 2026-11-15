@@ -12,7 +12,7 @@ fn laid(css: &str, bar: &'static str, width: f32, items: &[Item]) -> Row {
     ctx.run_ui(Default::default(), |ui| crate::kit::native_css::begin_frame(ui)).textures_delta.clear();
     let row = row(&Bar::new(bar, Vec2::new(width, 30.0)), items);
     skin::configure(&skin::Skin::default());
-    row.unwrap_or_default()
+    row.map(|row| (*row).clone()).unwrap_or_default()
 }
 
 fn three() -> Vec<Item> {
@@ -115,4 +115,46 @@ fn css_order_does_not_reorder_a_bar_s_items() {
     let plain = laid("", "status-bar", 400.0, &three());
     let ordered = laid("#a { order: 1; } #c { order: -1; }", "status-bar", 400.0, &three());
     assert_eq!(ordered.items, plain.items, "the app's order is the bar's");
+}
+
+#[test]
+fn a_bar_gives_the_room_its_padding_takes_and_its_attributes_choose_the_rules() {
+    // Where no theme's sheet runs, the user-agent sheet's padding (#1023): the room a bar's items
+    // are measured for is the room the layout gives them.
+    skin::configure(&skin::Skin::default());
+    let bar = Bar::new("piano-roll-toolbar", Vec2::new(400.0, 28.0));
+    assert_eq!(insets(&bar), Some([3.0, 4.0, 3.0, 8.0]));
+    // A bar given its Toolbar size lays out with that size's gap.
+    let items = three();
+    let normal = row(&bar, &items).unwrap_or_default();
+    let large = row(&bar.clone().attribute("size", "large"), &items).unwrap_or_default();
+    let step = |row: &Row| row.items[1].zip(row.items[0]).map(|(b, a)| b.left() - a.left());
+    assert_eq!(step(&normal), Some(43.0));
+    assert_eq!(step(&large), Some(43.75));
+    assert_eq!(insets(&Bar::new("piano-roll-toolbar", Vec2::ZERO)), None, "no room, no layout");
+}
+
+/// A frame that lays out more rows than the cache keeps lays none of them out again the next
+/// frame: a full cache drops only the rows no frame used lately.
+#[test]
+fn a_settled_frame_lays_out_nothing_again_even_past_the_cache_bound() {
+    let ctx = egui::Context::default();
+    skin::configure(&skin::Skin { css: Some(Arc::from("status-bar { gap: 3px; }")), ..Default::default() });
+    let frame = |ctx: &egui::Context| {
+        ctx.run_ui(Default::default(), |ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            for width in 0..MAX_ROWS + 44 {
+                let bar = Bar::new("status-bar", Vec2::new(100.0 + width as f32, 30.0));
+                assert!(row(&bar, &three()).is_some());
+            }
+        })
+        .textures_delta
+        .clear();
+    };
+    frame(&ctx);
+    let before = computed();
+    frame(&ctx);
+    let again = computed() - before;
+    skin::configure(&skin::Skin::default());
+    assert_eq!(again, 0, "{} rows laid out again", again);
 }

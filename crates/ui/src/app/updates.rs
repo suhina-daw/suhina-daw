@@ -13,6 +13,7 @@ use suhina_update::{Build, BuildKind, Channel, Phase, Updater};
 
 use crate::app::project_dialog::{self, BUTTON, LINE, VERSION};
 use crate::app::start_panel::{self, Notice, StartChoice};
+use crate::kit::element::{PROGRESS, PROGRESS_FILL, error_ink, hint_ink, name_ink};
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, button};
 use crate::settings::update_settings::UpdateSettings;
@@ -245,10 +246,11 @@ impl Updates {
             *y += LINE;
             rect
         };
+        let (hint, ink, fault) = (hint_ink(), name_ink(), error_ink());
         let fact = |rect: Rect, name: &str, value: &str| {
-            widgets::text_in(&painter, rect, Align2::LEFT_CENTER, name, font.clone(), theme::text_hint());
+            widgets::text_in(&painter, rect, Align2::LEFT_CENTER, name, font.clone(), hint);
             let value_at = Rect::from_min_max(Pos2::new(rect.left() + 90.0, rect.top()), rect.max);
-            widgets::text_in(&painter, value_at, Align2::LEFT_CENTER, value, font.clone(), theme::text_primary());
+            widgets::text_in(&painter, value_at, Align2::LEFT_CENTER, value, font.clone(), ink);
         };
         fact(line(&mut y), "This build", VERSION);
         let channel_name = match channel {
@@ -293,19 +295,21 @@ impl Updates {
         };
         let error = matches!(phase, Phase::CheckFailed(_) | Phase::InstallFailed { .. });
         let status_line = line(&mut y);
-        let colour = if error { theme::recording() } else { theme::text_primary() };
+        let colour = if error { fault } else { ink };
         widgets::text_in(&painter, status_line, Align2::LEFT_CENTER, &status, font.clone(), colour);
         if let Phase::Downloading { build, done } = &phase
             && build.size > 0
         {
             let bar = line(&mut y).shrink2(Vec2::new(0.0, 7.0));
-            painter.rect_filled(bar, 0.0, theme::control_background());
+            let track = PROGRESS.enter();
+            painter.rect_filled(bar, 0.0, track.background());
             let part = (*done as f32 / build.size as f32).clamp(0.0, 1.0);
             painter.rect_filled(
                 Rect::from_min_size(bar.min, Vec2::new(bar.width() * part, bar.height())),
                 0.0,
-                theme::accent(),
+                PROGRESS_FILL.enter().background(),
             );
+            drop(track);
         } else {
             y += LINE;
         }
@@ -323,7 +327,7 @@ impl Updates {
                     ("Downloading a test build needs the GitHub CLI (gh), signed in with gh auth login", None)
                 }
             };
-            widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, font.clone(), theme::text_hint());
+            widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, font.clone(), hint);
             if let Some((text, choice)) = toggle {
                 // Wide enough for its words, never narrower than the row's two buttons (#716).
                 let width = (widgets::text_width(ui, text, font.clone()) + 24.0).max(WIDE_BUTTON.x);
@@ -347,7 +351,7 @@ impl Updates {
                 build.version,
                 if mine { "  (running)" } else { "" }
             );
-            widgets::text_in(&painter, rect, Align2::LEFT_CENTER, &text, font.clone(), theme::text_primary());
+            widgets::text_in(&painter, rect, Align2::LEFT_CENTER, &text, font.clone(), ink);
             // Pull request and Install side by side at the right, the same width; without a
             // connection only Pull request, in Install's place (#716).
             let half = Vec2::new((WIDE_BUTTON.x - PAD) / 2.0, BUTTON.y);
@@ -363,7 +367,7 @@ impl Updates {
             }
         }
         if let Some(note) = &self.note {
-            widgets::text_in(&painter, line(&mut y), Align2::LEFT_CENTER, note, font.clone(), theme::recording());
+            widgets::text_in(&painter, line(&mut y), Align2::LEFT_CENTER, note, font.clone(), fault);
         }
 
         // The buttons along the bottom.
@@ -410,7 +414,7 @@ fn bar_line(ui: &Ui, rect: Rect, phase: Phase) -> Option<BarChoice> {
     let notice = notice_of(phase)?;
     let painter = ui.painter_at(rect);
     // Painted as the missing-files bar beside it, so a theme styles both alike.
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
     let inner = rect.shrink2(Vec2::new(PAD, 6.0));
     let later = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.center().y - BUTTON.y / 2.0), BUTTON);
     let line = match later_label {

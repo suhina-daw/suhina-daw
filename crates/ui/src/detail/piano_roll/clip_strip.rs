@@ -21,11 +21,7 @@ pub(super) fn show(
 ) {
     let painter = ui.painter_at(row);
     let style = part_style("piano-clip-strip", &[]);
-    painter.rect_filled(
-        row,
-        0.0,
-        style.background.unwrap_or_else(|| crate::kit::style_class::surface_or(theme::panel_background())),
-    );
+    painter.rect_filled(row, 0.0, style.background.unwrap_or_else(|| crate::detail::detail_fill("panel")));
 
     // The Focus switch, over the keys.
     let switch = Rect::from_min_max(row.min, Pos2::new(layout.grid.left(), row.bottom())).shrink(1.0);
@@ -35,22 +31,25 @@ pub(super) fn show(
     }
     let on = state.focus_first;
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, "Focus on the first clip"));
-    // The label's native inks, read before the button is entered: inside it the palette's text
-    // colours are the button's own `color`, which would put a rule for the plain button on the lit
-    // one's label after all.
-    let inks = (theme::text_inverse(), theme::text_secondary());
-    // `button#control-focus-first`, `[checked]` while on.
-    let (el, plain) = crate::kit::element::BUTTON
-        .id("focus-first")
-        .response(&response)
-        .enter_against_plain(crate::kit::element::Checked, on);
-    let (fill, ink) =
-        crate::kit::widgets::toggle_inks(&el, plain.as_ref(), (theme::accent(), Color32::TRANSPARENT), inks);
+    // `button#control-focus-first[kind="focus"]`, `[checked]` while on: the sheet's fills and inks,
+    // lit by a rule for the lit state.
+    let lit = crate::kit::widgets::lit_toggle_kind(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.id("focus-first"),
+        &[crate::kit::element::Checked],
+        on,
+        "focus",
+    );
+    let (fill, ink) = lit.colors();
+    drop(lit);
     painter.rect_filled(switch, 0.0, fill);
     painter.text(switch.center(), Align2::CENTER_CENTER, "Focus", theme::mono_font(theme::TEXT_TINY), ink);
-    drop(el);
 
-    // The clips, over the grid.
+    // The clips, over the grid; their names `piano-clip-strip`'s `color`, `[selected]` on the one
+    // being edited.
+    let strip = crate::kit::element::PIANO_CLIP_STRIP;
+    let names = (strip.attr(crate::kit::element::Selected, true).look().color(), strip.look().color());
     let bars = Rect::from_x_y_ranges(layout.grid.x_range(), row.y_range());
     let painter = ui.painter_at(bars);
     let height = row.height() / clip.ghosts.strip_rows().max(1) as f32;
@@ -62,7 +61,7 @@ pub(super) fn show(
         .shrink2(Vec2::new(0.0, 1.0));
         let color = if bar.edited { bar.color } else { bar.color.gamma_multiply(OTHER_BAR) };
         painter.rect_filled(rect, 0.0, color);
-        let name_color = if bar.edited { theme::text_inverse() } else { theme::text_primary() };
+        let name_color = if bar.edited { names.0 } else { names.1 };
         painter.with_clip_rect(rect.intersect(bars)).text(
             Pos2::new(rect.left().max(bars.left()) + 3.0, rect.center().y),
             Align2::LEFT_CENTER,

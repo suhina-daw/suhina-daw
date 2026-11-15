@@ -188,7 +188,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let page = crate::kit::element::PLUGIN_MANAGER
         .native(crate::kit::element::Native {
             radius: 0.0,
-            fill: crate::kit::style_class::surface_or(theme::window_background()),
+            fill: crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
         })
         .enter();
     let mut styled_ui = page.ui(ui);
@@ -199,6 +199,8 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let area = page.paint(&painter, area).content;
     let inner = area.shrink(2.0 * PAD);
     let small = theme::ui_font(theme::TEXT_SMALL);
+    // The words by how much they stand out, `label` and its kinds, read once for all the rows.
+    let inks = super::settings_view::Inks::read();
 
     // The title and the counts, the search, then Scan, Rescan all and Close on the right.
     let title = Rect::from_min_size(inner.min, Vec2::new(inner.width(), 20.0));
@@ -208,7 +210,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         Align2::LEFT_CENTER,
         "Plug-in manager",
         theme::ui_font(theme::TEXT),
-        theme::text_primary(),
+        crate::kit::element::title_ink(),
     );
     let off = plugins.found.iter().filter(|p| !p.enabled).count();
     let counts = format!(
@@ -221,7 +223,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         Pos2::new(inner.left() + 130.0, title.top()),
         Pos2::new(inner.right() - 250.0, title.bottom()),
     );
-    widgets::text_in(&painter, note, Align2::LEFT_CENTER, &counts, small.clone(), theme::text_secondary());
+    widgets::text_in(&painter, note, Align2::LEFT_CENTER, &counts, small.clone(), inks.caption);
     let mut x = inner.right();
     for (text, label) in
         [("Close", "Close the plug-in manager"), ("Rescan all", "Rescan all plug-ins"), ("Scan", "Scan for plug-ins")]
@@ -254,7 +256,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
             Pos2::new(search.right() + 12.0, search.top()),
             Pos2::new(inner.right(), search.bottom()),
         );
-        widgets::text_in(&painter, hint, Align2::LEFT_CENTER, "Scanning…", small.clone(), theme::text_hint());
+        widgets::text_in(&painter, hint, Align2::LEFT_CENTER, "Scanning…", small.clone(), inks.hint);
     }
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !edit.has_focus() {
         out.close = true;
@@ -263,7 +265,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     // The column headings: a click sorts by one, again the other way.
     let header = Rect::from_min_size(Pos2::new(inner.left(), inner.top() + TOP), Vec2::new(inner.width(), ROW));
     let columns = spans(header);
-    painter.hline(header.x_range(), header.bottom() - 0.5, theme::hairline(theme::border()));
+    painter.hline(header.x_range(), header.bottom() - 0.5, theme::hairline(crate::kit::element::row_line()));
     for (index, (name, (left, right))) in COLUMNS.iter().zip(columns).enumerate() {
         if name.is_empty() || right - left < 8.0 {
             continue;
@@ -285,10 +287,10 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         } else {
             (*name).to_string()
         };
-        let color = if sorted == index { theme::text_primary() } else { theme::text_hint() };
+        let color = if sorted == index { inks.name } else { inks.hint };
         let fill = motion::mix(
-            crate::kit::style_class::surface_or(theme::window_background()),
-            theme::panel_hover(),
+            crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
+            crate::kit::element::app_fill("panel-hover"),
             widgets::hover(ui, &response),
         );
         painter.rect_filled(rect, 0.0, fill);
@@ -311,7 +313,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         } else {
             "Nothing found"
         };
-        widgets::text_in(&painter, body.shrink(PAD), Align2::CENTER_TOP, text, small.clone(), theme::text_hint());
+        widgets::text_in(&painter, body.shrink(PAD), Align2::CENTER_TOP, text, small.clone(), inks.hint);
         return out;
     }
     let mut toggled: Option<(String, bool)> = None;
@@ -325,6 +327,12 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         })
         .collect();
     let picked = plugins.manager.picked.clone();
+    // A `list-row[kind="plugin"]`: its fill while picked and under the pointer.
+    let (row_picked, row_hovered) = {
+        use crate::kit::element::{LIST_ROW, Selected};
+        let row = || LIST_ROW.attribute("kind", "plugin");
+        (row().attr(Selected, true).look().background(), row().pointer(true, false, false).look().background())
+    };
     let scanning = plugins.scanning;
     let mut again: Option<String> = None;
     ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
@@ -339,9 +347,9 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
                 };
                 let lit = spec.as_ref().is_some_and(|s| picked.contains(s));
                 if lit {
-                    row_painter.rect_filled(rect, 0.0, theme::control_active());
+                    row_painter.rect_filled(rect, 0.0, row_picked);
                 } else if ui.rect_contains_pointer(rect) {
-                    row_painter.rect_filled(rect, 0.0, theme::panel_hover());
+                    row_painter.rect_filled(rect, 0.0, row_hovered);
                 }
                 // A click picks the row (Ctrl adds, Shift takes the run); the right-click menu
                 // switches every picked plug-in off or on (#725).
@@ -375,10 +383,10 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
                         continue;
                     }
                     let color = match (index, line.kind) {
-                        (1, Kind::Plugin(i)) if plugins.found.get(i).is_some_and(|p| p.enabled) => theme::text_value(),
-                        (6 | 7, Kind::Failed(_)) => theme::recording(),
-                        (1, _) => theme::text_secondary(),
-                        _ => theme::text_hint(),
+                        (1, Kind::Plugin(i)) if plugins.found.get(i).is_some_and(|p| p.enabled) => inks.value,
+                        (6 | 7, Kind::Failed(_)) => inks.error,
+                        (1, _) => inks.caption,
+                        _ => inks.hint,
                     };
                     let galley = widgets::fitted(&row_painter, text, small.clone(), color, cell.width());
                     crate::kit::widgets::paint_text(

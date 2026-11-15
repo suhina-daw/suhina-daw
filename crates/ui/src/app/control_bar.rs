@@ -4,6 +4,7 @@
 //! The control bar at the top of the window and the status bar at the bottom.
 
 use super::*;
+use crate::kit::element::{Look, caption_ink, error_ink, hint_ink, value_ink};
 use suhina_engine::model::TimeSignature;
 
 /// Seconds between the tempo sent while the tempo field is dragged.
@@ -39,7 +40,7 @@ impl App {
                 Align2::LEFT_CENTER,
                 "Suhina",
                 theme::ui_font(theme::TEXT),
-                theme::text_secondary(),
+                caption_ink(),
             );
             self.toolbar_edit_overlay(ui, rect);
             return;
@@ -260,7 +261,7 @@ impl App {
         let ModuleCx { grid, cpu, ram, scope } = cx;
         let rect = scope.content_in(outer);
         let surface = |fill| crate::kit::element::Native { radius: 0.0, fill };
-        let box_fill = crate::kit::style_class::surface_or(theme::window_background());
+        let box_fill = crate::kit::style_class::surface_or(crate::kit::element::app_fill("window"));
         match module {
             "browser" => {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
@@ -286,8 +287,17 @@ impl App {
                 if response.clicked() {
                     self.toggle_typing_keys();
                 }
-                let (fill, ink) = widgets::toggle_colors(ui, &response, self.typing.on);
+                // A `button`, `[checked]` while on: only a rule for that state lights it.
+                let lit = widgets::lit_toggle(
+                    ui,
+                    &response,
+                    crate::kit::element::BUTTON.builder(),
+                    &[crate::kit::element::Checked],
+                    self.typing.on,
+                );
+                let (fill, ink) = lit.colors();
                 scope.paint_with(painter, outer, surface(fill));
+                drop(lit);
                 let text = if self.typing.on { self.typing.label() } else { "Keys".into() };
                 widgets::text_in(painter, rect, Align2::CENTER_CENTER, &text, theme::ui_font(theme::TEXT_SMALL), ink);
             }
@@ -300,7 +310,7 @@ impl App {
                     Align2::LEFT_CENTER,
                     "Quantize",
                     theme::ui_font(theme::TEXT_SMALL),
-                    theme::text_hint(),
+                    hint_ink(),
                 );
                 let mono = theme::mono_font(theme::TEXT);
                 // When launched clips start; the Arrangement has a grid of its own (its toolbar, Ctrl+1 to 4).
@@ -313,7 +323,7 @@ impl App {
                             .width(menu.width())
                             // Tall enough for every value at once, without a scroll bar.
                             .height(QUANTIZATION.len() as f32 * 2.0 * theme::ROW)
-                            .selected_text(egui::RichText::new(chosen).font(mono.clone()).color(theme::text_value())),
+                            .selected_text(egui::RichText::new(chosen).font(mono.clone()).color(scope.color())),
                         |ui| {
                             for q in QUANTIZATION {
                                 ui.selectable_value(&mut chosen, q, egui::RichText::new(q).font(mono.clone()));
@@ -337,7 +347,7 @@ impl App {
                     Align2::LEFT_CENTER,
                     "Count-in",
                     theme::ui_font(theme::TEXT_SMALL),
-                    theme::text_hint(),
+                    hint_ink(),
                 );
                 let bars = self.session().map_or(0, |s| s.count_in_bars());
                 crate::session::record_controls::count_in_menu(ui, menu, bars, actions);
@@ -348,7 +358,7 @@ impl App {
             }
             "transport" => {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
-                self.transport(ui, painter, rect, grid, actions);
+                self.transport(ui, painter, (scope, outer), grid, actions);
             }
             "position" => {
                 scope.paint_with(painter, outer, surface(box_fill));
@@ -358,19 +368,25 @@ impl App {
                     Align2::LEFT_CENTER,
                     &grid.position(),
                     theme::mono_font(theme::TEXT),
-                    theme::text_primary(),
+                    scope.color(),
                 );
             }
             "mapping" => {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 // The mapping mode's button, lit while the mode is on.
                 let on = self.view.launch_keys.mode.on;
-                let color = if on { theme::accent() } else { theme::text_secondary() };
                 let response = widgets::button_area(ui, rect, Id::unique("map-keys"), "Map keys to slots and scenes");
                 if response.clicked() {
                     self.toggle_mapping_mode();
                 }
-                let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
+                // A `button[kind="map"]`, `[checked]` while on: its ink, lit and under the pointer.
+                let el = crate::kit::element::BUTTON
+                    .attribute("kind", "map")
+                    .response(&response)
+                    .attr(crate::kit::element::Checked, on)
+                    .enter();
+                let color = el.hover_fade(widgets::hover(ui, &response), Look::color);
+                drop(el);
                 widgets::text_in(painter, rect, Align2::LEFT_CENTER, "Map", theme::ui_font(theme::TEXT), color);
             }
             "performance" => {
@@ -400,8 +416,10 @@ impl App {
                 let carrying = self.carrying_clip(ui.ctx());
                 let pointer = ui.ctx().pointer_latest_pos();
                 let mut left = rect.left();
+                let (shown_ink, other_ink) = (scope.color(), caption_ink());
+                let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look().color();
                 for (view, name) in [(View::Session, "Launcher"), (View::Arrangement, "Arrangement")] {
-                    let color = if self.shown == view { theme::text_primary() } else { theme::text_secondary() };
+                    let color = if self.shown == view { shown_ink } else { other_ink };
                     let galley = widgets::fitted(painter, name, theme::ui_font(theme::TEXT), color, 120.0);
                     let size = galley.size();
                     let at = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(left + size.x, rect.bottom()));
@@ -417,18 +435,13 @@ impl App {
                         && pointer.is_some_and(|p| at.expand(4.0).contains(p) && shown_at.contains(p))
                     {
                         *hovered_switch = Some(view);
-                        painter.rect_stroke(
-                            at.expand(3.0),
-                            0.0,
-                            theme::hairline(theme::accent()),
-                            egui::StrokeKind::Inside,
-                        );
+                        painter.rect_stroke(at.expand(3.0), 0.0, theme::hairline(target), egui::StrokeKind::Inside);
                     }
-                    let color = motion::mix(color, theme::text_primary(), widgets::hover(ui, &response));
+                    let color = motion::mix(color, shown_ink, widgets::hover(ui, &response));
                     let pos = Pos2::new(at.left(), at.center().y - size.y / 2.0);
                     widgets::paint_text(painter, pos, galley, color);
                     if self.shown == view {
-                        *underline = Some((pos.x, pos.y + size.y + 1.0, size.x, theme::text_primary()));
+                        *underline = Some((pos.x, pos.y + size.y + 1.0, size.x, shown_ink));
                     }
                 }
             }
@@ -436,9 +449,11 @@ impl App {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
                 // Each agent the person let in (ADR 0028), lit; a click disconnects it.
                 let mut left = rect.left();
+                // Each a `button[kind="agent"]`: its ink, and under the pointer.
+                let lit = crate::kit::element::BUTTON.attribute("kind", "agent").look().color();
                 for (connection, client) in self.agents.clone() {
                     let text = format!("Disconnect {client}");
-                    let galley = widgets::fitted(painter, &text, theme::ui_font(theme::TEXT), theme::accent(), 200.0);
+                    let galley = widgets::fitted(painter, &text, theme::ui_font(theme::TEXT), lit, 200.0);
                     let size = galley.size();
                     let at = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(left + size.x, rect.bottom()));
                     left = at.right() + PAD;
@@ -447,7 +462,9 @@ impl App {
                         self.agent_disconnects.push(connection);
                         self.status = Status::Done(format!("Disconnected {client}"));
                     }
-                    let color = motion::mix(theme::accent(), theme::text_primary(), widgets::hover(ui, &response));
+                    let el = crate::kit::element::BUTTON.attribute("kind", "agent").response(&response).enter();
+                    let color = el.hover_fade(widgets::hover(ui, &response), Look::color);
+                    drop(el);
                     widgets::paint_text(painter, Pos2::new(at.left(), at.center().y - size.y / 2.0), galley, color);
                 }
             }
@@ -455,23 +472,30 @@ impl App {
         }
     }
 
-    /// Play, stop and record in the transport module's `rect`.
+    /// Play, stop and record in the transport module (`scope`, its whole box `outer`), where the
+    /// module lays them out (#1453): 28 points wide, a point apart, by the user-agent sheet.
     fn transport(
         &mut self,
         ui: &mut Ui,
         painter: &egui::Painter,
-        rect: Rect,
+        (scope, outer): (&crate::kit::element::Entered, Rect),
         grid: &TrackGrid,
         actions: &mut Vec<Action>,
     ) {
-        let button = |index: f32| {
-            Rect::from_min_size(Pos2::new(rect.left() + index * 29.0, rect.top()), Vec2::new(28.0, rect.height()))
-        };
-        let play = crate::kit::control_layout::place("transport-play", button(0.0), rect);
-        if !crate::kit::control_layout::placement("transport-play").hidden {
+        use crate::kit::native_css::row::{self, Bar, Item};
+        let items: Vec<Item> = ["play", "stop", "record"]
+            .into_iter()
+            .map(|kind| Item::new("button").id(&format!("control-{kind}")).attribute("kind", kind).width(28.0))
+            .collect();
+        // Named as it is entered, for a frame the style engine does not run in.
+        let bar = Bar { id: Some("transport"), ..Bar::of(scope, outer.size()) }.attribute("kind", "transport");
+        let laid = row::row(&bar, &items).unwrap_or_default();
+        let [play, stop, record] = [0, 1, 2].map(|index| laid.at(index, outer.min));
+        if let Some(play) = play {
             let response = widgets::button_area(ui, play, Id::unique("play"), "Play");
             let play_style = crate::kit::element::BUTTON
                 .id("play")
+                .attribute("kind", "play")
                 .response(&response)
                 .attr(crate::kit::element::Playing, grid.running)
                 .attr(crate::kit::element::Checked, grid.running)
@@ -480,14 +504,18 @@ impl App {
                 actions.push(self.play_action());
             }
             let running = motion::toward(ui.ctx(), response.id.with("running"), grid.running, motion::VALUE);
-            let hover = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            let hover = motion::mix(
+                crate::kit::element::app_fill("control"),
+                crate::kit::element::app_fill("control-hover"),
+                widgets::hover(ui, &response),
+            );
             widgets::button_surface(
                 painter,
                 play,
                 &play_style,
                 &response,
                 grid.running,
-                motion::mix(hover, theme::control_active(), running),
+                motion::mix(hover, crate::kit::element::app_fill("control-active"), running),
                 0.0,
             );
             // A seek from the ruler waiting for its boundary flashes the triangle (#657).
@@ -496,10 +524,24 @@ impl App {
             if pending {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(125));
             }
+            // Its ink at rest, `[playing]` while the transport runs (the accent), fading between them;
+            // a pending seek flashes the ink at rest.
+            let rest = || crate::kit::element::BUTTON.id("play").attribute("kind", "play").probe().color();
             let glyph = if flash {
-                theme::text_primary()
+                rest()
+            } else if running < 1.0 && grid.running {
+                motion::mix(rest(), play_style.color(), running)
+            } else if running > 0.0 && !grid.running {
+                let playing = crate::kit::element::BUTTON
+                    .id("play")
+                    .attribute("kind", "play")
+                    .attr(crate::kit::element::Playing, true)
+                    .attr(crate::kit::element::Checked, true)
+                    .probe()
+                    .color();
+                motion::mix(play_style.color(), playing, running)
             } else {
-                play_style.color_or(motion::mix(theme::text_primary(), theme::accent(), running))
+                play_style.color()
             };
             let c = play.center();
             if !crate::kit::skin::paint_as(
@@ -518,8 +560,7 @@ impl App {
             }
             drop(play_style);
         }
-        let stop = crate::kit::control_layout::place("transport-stop", button(1.0), rect);
-        if !crate::kit::control_layout::placement("transport-stop").hidden {
+        if let Some(stop) = stop {
             let response = widgets::button_area(ui, stop, Id::unique("stop"), "Stop");
             let stop_style = crate::kit::element::BUTTON.id("stop").response(&response).enter();
             if response.clicked() {
@@ -531,27 +572,26 @@ impl App {
                 &stop_style,
                 &response,
                 false,
-                motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+                stop_style.hover_fade(widgets::hover(ui, &response), Look::background),
                 0.0,
             );
+            let stop_ink = stop_style.color();
             if !crate::kit::skin::paint_as(
                 &stop_style,
                 painter,
                 stop,
                 "stop",
                 crate::kit::skin::State::response(&response, false),
-                theme::text_primary(),
+                stop_ink,
             ) {
-                painter.rect_filled(
-                    Rect::from_center_size(stop.center(), Vec2::splat(8.0)),
-                    0.0,
-                    theme::text_primary(),
-                );
+                painter.rect_filled(Rect::from_center_size(stop.center(), Vec2::splat(8.0)), 0.0, stop_ink);
             }
             drop(stop_style);
         }
         let recording = self.session().is_some_and(|s| s.records_arrangement());
-        crate::session::record_controls::record_button(ui, painter, button(2.0), recording, actions);
+        if let Some(record) = record {
+            crate::session::record_controls::record_button(ui, painter, record, recording, actions);
+        }
     }
 
     /// The toolbar's button that shows or hides the browser (`#control-browser-toggle`), the same
@@ -565,6 +605,7 @@ impl App {
         };
         let browser_style = crate::kit::element::BUTTON
             .id("browser-toggle")
+            .attribute("kind", "browser")
             .response(&response)
             .attr(crate::kit::element::Checked, self.settings.browser_open)
             .enter();
@@ -574,16 +615,13 @@ impl App {
             &browser_style,
             &response,
             self.settings.browser_open,
-            motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
+            browser_style.hover_fade(widgets::hover(ui, &response), Look::background),
             0.0,
         );
         // A panel with its left part filled while the browser shows.
         let icon = Rect::from_center_size(browser_rect.center(), Vec2::new(14.0, 11.0));
-        let ink = browser_style.color_or(if self.settings.browser_open {
-            theme::text_primary()
-        } else {
-            theme::text_secondary()
-        });
+        // `button[kind="browser"]`'s ink, `[checked]` while the browser shows.
+        let ink = browser_style.color();
         painter.rect_stroke(icon, 0.0, theme::hairline(ink), egui::StrokeKind::Inside);
         let side = Rect::from_min_size(icon.min, Vec2::new(5.0, icon.height()));
         if self.settings.browser_open {
@@ -606,9 +644,9 @@ impl App {
         let bar = ui.max_rect();
         let painter = ui.painter_at(bar);
         let (text, color) = match &self.status {
-            Status::Hint(t) => (t.as_str(), theme::text_secondary()),
-            Status::Done(t) => (t.as_str(), theme::text_secondary()),
-            Status::Error(t) => (t.as_str(), theme::recording()),
+            Status::Hint(t) => (t.as_str(), caption_ink()),
+            Status::Done(t) => (t.as_str(), caption_ink()),
+            Status::Error(t) => (t.as_str(), error_ink()),
         };
         let backed_up = self
             .session()
@@ -636,7 +674,7 @@ impl App {
         if let (Some(counts), Some(rect)) = (counts, laid.at(1, bar.min)) {
             let item = crate::kit::element::BAR_ITEM.id("status-counts").attribute("kind", "status-counts").enter();
             let content = item.paint(&painter, rect).content;
-            let ink = item.own_color_or(theme::text_hint());
+            let ink = item.color();
             widgets::text_in(&painter, content, Align2::RIGHT_CENTER, &counts, font, ink);
         }
     }
@@ -679,14 +717,21 @@ impl App {
         let tempo_text = format!("{tempo_shown:.3}");
         let response = widgets::value_area(ui, tempo_rect, Id::unique("tempo"), "Tempo", tempo_text.clone());
         if let Some(module) = native {
-            let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            let fill = motion::mix(
+                crate::kit::element::app_fill("control"),
+                crate::kit::element::app_fill("control-hover"),
+                widgets::hover(ui, &response),
+            );
             module.paint_with(painter, tempo_rect, crate::kit::element::Native { radius: 0.0, fill });
         }
         let mono = theme::mono_font(theme::TEXT);
         // The module's text goes in its content box, inside its border and padding.
         let content = native.map_or(tempo_rect, |module| module.content_in(tempo_rect));
         let text_area = content.shrink2(Vec2::new(PAD, 0.0));
-        let ink = if native.is_some() { theme::text_primary() } else { theme::text_value() };
+        let ink = match native {
+            Some(module) => module.color(),
+            None => value_ink(),
+        };
         widgets::text_in(painter, text_area, Align2::RIGHT_CENTER, &tempo_text, mono.clone(), ink);
         // The place under the pointer, or the one the drag holds: the integer part steps 1 BPM,
         // each decimal a tenth of the one before (#829).
@@ -705,7 +750,7 @@ impl App {
             let len = tempo_text.chars().count() as f32;
             let underline =
                 egui::Rangef::new(right - (len - from as f32) * char_width, right - (len - to as f32) * char_width);
-            let line = if held.is_some() { theme::accent() } else { theme::text_secondary() };
+            let line = if held.is_some() { crate::kit::element::accent_ink() } else { caption_ink() };
             painter.hline(underline, content.bottom() - 3.0, egui::Stroke::new(1.0, line));
         }
         // Four points of drag a step of the place grabbed; the arrow keys and the wheel 1 BPM.
@@ -790,14 +835,14 @@ fn captioned(rect: Rect, caption: f32, menu: f32) -> (Rect, Rect) {
 /// The RAM block in `rect`: the program's resident memory.
 fn ram_block(ui: &Ui, painter: &egui::Painter, rect: Rect, bytes: u64) {
     let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
-    widgets::text_in(painter, inner, Align2::LEFT_CENTER, "RAM", theme::ui_font(theme::TEXT_TINY), theme::text_hint());
+    widgets::text_in(painter, inner, Align2::LEFT_CENTER, "RAM", theme::ui_font(theme::TEXT_TINY), hint_ink());
     widgets::text_in(
         painter,
         inner,
         Align2::RIGHT_CENTER,
         &ram_text(bytes),
         theme::mono_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
+        caption_ink(),
     );
     let response = ui.interact(rect, Id::unique("ram-usage"), Sense::hover());
     response
@@ -808,23 +853,27 @@ fn ram_block(ui: &Ui, painter: &egui::Painter, rect: Rect, bytes: u64) {
 fn cpu_block(ui: &Ui, painter: &egui::Painter, rect: Rect, milli: u32) {
     let percent = f64::from(milli.min(1000)) / 10.0;
     let inner = rect.shrink2(Vec2::new(PAD - 2.0, 0.0));
-    widgets::text_in(painter, inner, Align2::LEFT_CENTER, "CPU", theme::ui_font(theme::TEXT_TINY), theme::text_hint());
+    widgets::text_in(painter, inner, Align2::LEFT_CENTER, "CPU", theme::ui_font(theme::TEXT_TINY), hint_ink());
     widgets::text_in(
         painter,
         inner,
         Align2::RIGHT_CENTER,
         &format!("{percent:.0}%"),
         theme::mono_font(theme::TEXT_SMALL),
-        theme::text_secondary(),
+        caption_ink(),
     );
     let track = Rect::from_min_max(
         Pos2::new(rect.left() + 1.0, rect.bottom() - 3.0),
         Pos2::new(rect.right() - 1.0, rect.bottom() - 1.0),
     );
-    painter.rect_filled(track, 0.0, theme::control_background());
+    painter.rect_filled(track, 0.0, crate::kit::element::METER.attribute("kind", "cpu").look().background());
     let fill = track.width() * milli.min(1000) as f32 / 1000.0;
     let full = Rect::from_min_max(track.min, Pos2::new(track.left() + fill, track.bottom()));
-    let color = if milli >= 800 { theme::meter_hot() } else { theme::meter_normal() };
+    let color = if milli >= 800 {
+        crate::kit::element::METER_LEVEL.attribute("kind", "hot").look().color()
+    } else {
+        crate::kit::element::METER_LEVEL.look().color()
+    };
     painter.rect_filled(full, 0.0, color);
     let response = ui.interact(rect, Id::unique("cpu-load"), Sense::hover());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("CPU load {percent:.1}%")));
@@ -1002,7 +1051,11 @@ pub(super) fn signature_field(
     if let Some(module) = native {
         let hovered =
             [&numerator, &denominator, &chevron].into_iter().map(|r| widgets::hover(ui, r)).fold(0.0, f32::max);
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), hovered);
+        let fill = motion::mix(
+            crate::kit::element::app_fill("control"),
+            crate::kit::element::app_fill("control-hover"),
+            hovered,
+        );
         module.paint_with(painter, outer, crate::kit::element::Native { radius: 0.0, fill });
     }
 
@@ -1125,7 +1178,7 @@ pub(super) fn signature_field(
 
     // The numbers: while one is typed into, what was typed (the other dimmed until typed).
     let mono = theme::mono_font(theme::TEXT);
-    let ink = if native.is_some() { theme::text_primary() } else { theme::text_secondary() };
+    let ink = native.map_or_else(caption_ink, |module| module.color());
     let half_slash = widgets::text_width(ui, " / ", mono.clone()) / 2.0;
     let left = Rect::from_min_max(numbers.min, Pos2::new(middle - half_slash, numbers.bottom()));
     let right = Rect::from_min_max(Pos2::new(middle + half_slash, numbers.top()), numbers.max);
@@ -1134,8 +1187,8 @@ pub(super) fn signature_field(
     // A number not typed into yet shows its value dimmed, the outlined one too, so the arrow keys'
     // steps show while it holds the keys; the first digit replaces it.
     let part = |typed: Option<&String>, now: String| match typed {
-        Some(t) if !t.is_empty() => (t.clone(), theme::text_value()),
-        Some(_) => (now, theme::text_hint()),
+        Some(t) if !t.is_empty() => (t.clone(), value_ink()),
+        Some(_) => (now, hint_ink()),
         None => (now, ink),
     };
     let (numerator_text, numerator_ink) = part(typing.as_ref().map(|t| &t.numerator), numerator_now);
@@ -1149,7 +1202,7 @@ pub(super) fn signature_field(
         painter.rect_stroke(
             half.shrink2(Vec2::new(1.0, 2.0)),
             3.0,
-            egui::Stroke::new(1.0, theme::text_secondary()),
+            egui::Stroke::new(1.0, caption_ink()),
             egui::StrokeKind::Inside,
         );
     }
@@ -1166,7 +1219,7 @@ pub(super) fn signature_field(
             } else {
                 egui::Rangef::new(area.left(), area.left() + width)
             };
-            let line = if dragged { theme::accent() } else { theme::text_secondary() };
+            let line = if dragged { crate::kit::element::accent_ink() } else { caption_ink() };
             painter.hline(span, rect.bottom() - 3.0, egui::Stroke::new(1.0, line));
         }
     }
@@ -1174,7 +1227,7 @@ pub(super) fn signature_field(
     // Only the chevron opens the list of common signatures.
     let menu_id = chevron.id.with("menu");
     let open = egui::Popup::is_id_open(ui.ctx(), menu_id);
-    let chevron_ink = if chevron.hovered() || open { theme::text_primary() } else { theme::text_secondary() };
+    let chevron_ink = if chevron.hovered() || open { crate::kit::element::name_ink() } else { caption_ink() };
     widgets::chevron(painter, chevron_rect.center(), true, chevron_ink);
     egui::Popup::menu(&chevron)
         .id(menu_id)
