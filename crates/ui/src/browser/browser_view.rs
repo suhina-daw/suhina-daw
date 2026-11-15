@@ -2916,7 +2916,8 @@ fn preview_strip(
     if response.clicked() {
         out.toggle_autoplay = true;
     }
-    // Lit only by a rule for `[checked]`: one for every `button` does not hide that it is on.
+    // Lit by the `[checked]` rules; a theme's rule for every `button` overrides them (#1448), so such a
+    // theme states the lit look itself.
     let lit = widgets::lit_toggle(ui, &response, BUTTON.builder(), &[Checked], settings.preview_autoplay);
     let (fill, text) = lit.colors();
     let auto_style = lit.el;
