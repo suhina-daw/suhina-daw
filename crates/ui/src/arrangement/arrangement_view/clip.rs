@@ -1536,20 +1536,21 @@ pub(super) fn paint_clip(
     let name_left = rect.left().max(view.left()) + 7.0 + button;
     // A clip turned off itself has the mute mark before its name: with it, it is never taken for
     // a clip whose colour is grey, and a clip on a muted track (which has none) is told from one
-    // muted on its own. A clip too low for a name bar has it too, drawn over its notes (below).
+    // muted on its own. A clip too low for a name bar has it too, before the name its body shows
+    // (below).
     let mark = if clip.enabled { None } else { mute_mark_centre(rect, bar, name_left) };
     if let (Some(bar), Some(look)) = (bar, name_look.as_ref()) {
-        let mut left = name_left;
         if let Some(centre) = mark {
             paint_mute_mark(painter, centre, text_color);
-            left += MUTE_MARK + 4.0;
         }
+        let left = after_mute_mark(name_left, mark);
         let name_rect =
             Rect::from_min_max(Pos2::new(left, rect.top() + 3.0), Pos2::new(rect.right() - 5.0, bar.bottom() - 3.0));
         let font = theme::ui_font(look.font_size);
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
     let marks = wave_area(rect);
+    let has_name = bar.is_some();
     // On a lane too low for a name bar the strip under the name is too thin for a waveform or
     // notes to read, so the clip shows its name there instead. On a taller lane, notes that crowd
     // into a smear give way too, the name staying in its bar. One or the other, never the name
@@ -1637,11 +1638,15 @@ pub(super) fn paint_clip(
     // A clip with a name bar already shows its name; a low lane's clip shows it in the body.
     if content_hidden && !has_name {
         let name = if clip.name.is_empty() { lane.name.as_str() } else { clip.name.as_str() };
-        let left = rect.left().max(view.left()) + 7.0;
-        let name_rect = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
         let el = crate::kit::element::CLIP_NAME.enter();
         let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
         let ink = el.color_or(text_color);
+        // A clip turned off has its mute mark first, the name after it, as in a name bar.
+        if let Some(centre) = mark {
+            paint_mute_mark(painter, centre, ink);
+        }
+        let left = after_mute_mark(name_left, mark);
+        let name_rect = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, name, theme::ui_font(size), ink);
     }
     if let Some((notes, tempo)) = ara_notes
@@ -1707,14 +1712,6 @@ pub(super) fn paint_clip(
             let from = (rect.right() - shown.fade_out as f32 * beat_width).max(rect.left());
             painter.line(fade_line(rect, FadeEdge::Out, from, rect.right(), shown.fade_out_curve), fade_stroke);
         }
-    }
-    // A clip too low for a name bar has its mute mark over its notes, on a spot of its body so
-    // the notes under it never hide it.
-    if bar.is_none()
-        && let Some(centre) = mark
-    {
-        painter.circle_filled(centre, MUTE_MARK / 2.0 + 1.5, body);
-        paint_mute_mark(painter, centre, ink);
     }
     if selected {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, motion::mix(body, ink, 0.45)), StrokeKind::Inside);
@@ -1914,16 +1911,22 @@ pub(super) fn name_bar_look(bar_fill: Color32) -> NameBarLook {
 /// The size of the mute mark, in points.
 const MUTE_MARK: f32 = 9.0;
 
-/// Where the mute mark of a clip turned off goes, its name starting at `left`: in the name bar
-/// before the name, or, on a clip too low for a name bar, in its upper left corner. `None` when
-/// the clip is too small to hold it.
+/// Where the mute mark of a clip turned off goes, its name starting at `left`: before the name,
+/// in the middle of the name bar or, on a clip too low for one, of the body that shows the name.
+/// `None` when the clip is too small to hold it.
 pub(super) fn mute_mark_centre(rect: Rect, bar: Option<Rect>, left: f32) -> Option<Pos2> {
     let x = left + MUTE_MARK / 2.0;
     match bar {
         Some(bar) => Some(Pos2::new(x, bar.center().y)),
         None => (rect.height() >= MUTE_MARK + 4.0 && rect.right() - left >= MUTE_MARK + 2.0)
-            .then(|| Pos2::new(x, rect.top() + 2.0 + MUTE_MARK / 2.0)),
+            .then(|| Pos2::new(x, rect.center().y)),
     }
+}
+
+/// Where a clip's name starts when it would start at `left`: after the mute mark, when the clip
+/// has one there, so the mark is never drawn over the name.
+pub(super) fn after_mute_mark(left: f32, mark: Option<Pos2>) -> f32 {
+    if mark.is_some() { left + MUTE_MARK + 4.0 } else { left }
 }
 
 /// The mark before the name of a clip turned off: a ring crossed by a slash, in the name's ink.
