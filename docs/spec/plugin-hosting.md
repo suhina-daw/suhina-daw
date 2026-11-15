@@ -461,8 +461,13 @@ format, whatever its name.
 stays in the catalog and in `plugin.list`, but sessions get the catalog without it: it is
 not offered in the browser, not found by name, and a project that uses it finds it
 missing, so it never loads.
+- Plug-ins can be marked as owned (`plugin.setOwned`, the plug-in manager): a mark only, listed
+by `plugin.list` (`owned`), that changes nothing a session offers or loads; the manager's
+**Turn off the rest** of a vendor switches off its plug-ins not marked
+([plugin-manager.md](plugin-manager.md) › Marking a plug-in as owned).
 The `plugin.*` commands run scans and choose the added folders (ADR 0002 amendment); the
-folders, the catalog, the plug-ins switched off and the hosting choices are kept as JSON in
+folders, the catalog, the plug-ins switched off and marked as owned, and the hosting choices
+are kept as JSON in
 Suhina's settings folder.
 
 ## Editors
