@@ -633,7 +633,7 @@ enum Target {
 
 /// One row of the sidebar's Pinned, Library and Folders sections: selected when its place is
 /// the one shown, a `×` while the place is chosen, and a click that shows it. The row is
-/// `Row` tall and consumes that of `y`.
+/// `Row` tall and consumes that of `y`. `tier` is the sidebar's inks, read once for all its rows.
 #[allow(clippy::too_many_arguments)]
 fn entry_row(
     ui: &mut Ui,
@@ -641,11 +641,11 @@ fn entry_row(
     area: Rect,
     y: &mut f32,
     state: &mut BrowserState,
+    tier: Inks,
     target: Target,
     label: &str,
     note: Option<&str>,
 ) -> egui::Response {
-    let tier = inks();
     let rect = Rect::from_min_size(Pos2::new(area.left(), *y), Vec2::new(area.width(), ROW));
     *y += ROW;
     let key = match &target {
@@ -778,8 +778,18 @@ fn sidebar_view(
         if section.open {
             match section.kind {
                 SectionKind::Pinned => {
-                    entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Pinned), "Pinned", None);
-                    entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Recent(None)), "Recent", None);
+                    entry_row(ui, &painter, area, &mut y, state, tier, Target::Place(Place::Pinned), "Pinned", None);
+                    entry_row(
+                        ui,
+                        &painter,
+                        area,
+                        &mut y,
+                        state,
+                        tier,
+                        Target::Place(Place::Recent(None)),
+                        "Recent",
+                        None,
+                    );
                     if !recent_chips {
                         for group in Group::ALL {
                             entry_row(
@@ -788,6 +798,7 @@ fn sidebar_view(
                                 area,
                                 &mut y,
                                 state,
+                                tier,
                                 Target::Place(Place::Recent(Some(group))),
                                 &format!("    {}", group.title()),
                                 None,
@@ -804,6 +815,7 @@ fn sidebar_view(
                             area,
                             &mut y,
                             state,
+                            tier,
                             Target::Category(category),
                             category.title(),
                             None,
@@ -878,6 +890,7 @@ fn sidebar_view(
             area,
             &mut y,
             state,
+            tier,
             Target::Place(Place::Folder(folder.path.clone())),
             &name,
             note,
