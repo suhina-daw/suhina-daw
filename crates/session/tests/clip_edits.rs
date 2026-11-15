@@ -384,8 +384,8 @@ fn a_crop_with_the_start_marker_past_the_loop_lands_where_the_content_plays() {
 /// before the start marker and after the end stay unheard and go.
 #[test]
 fn a_crop_past_the_markers_keeps_only_what_plays() {
-    let notes = vec![note(0.5, 1.0, 60), note(3.0, 1.0, 62), note(6.5, 1.0, 64)];
-    let mut session = Session::new(shaped(notes, 2.0, 4.0, None));
+    let hidden_and_heard = vec![note(0.5, 1.0, 60), note(3.0, 1.0, 62), note(6.5, 1.0, 64)];
+    let mut session = Session::new(shaped(hidden_and_heard, 2.0, 4.0, None));
     run(&mut session, "clip.crop", json!({ "track": 1, "index": 0, "start": 0.0, "end": 8.0 })).unwrap();
     let clip = arranged(&session);
     assert_eq!((clip.start, clip.offset, clip.length), (0.0, 2.0, 4.0), "where and as long as it played");
