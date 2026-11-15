@@ -290,14 +290,14 @@ fn chain_row(
     let list = crate::interaction::drop::DeviceSlots { track: chain.track, area, slots, vertical: false, pass };
     crate::interaction::drop::note_device_slots(ui.ctx(), list);
     if let Some(bar) = bar {
-        // `scroll-bar`: its `background-color` for the track, its `color` for the thumb.
-        let look = crate::kit::element::SCROLL_BAR.look();
-        painter.rect_filled(bar, 0.0, look.background_or(theme::control_background()));
+        // `scroll-bar[kind="chain"]`: its `background-color` for the track, its `color` for the thumb.
+        let look = crate::kit::element::SCROLL_BAR.attribute("kind", "chain").look();
+        painter.rect_filled(bar, 0.0, look.background());
         let thumb_width = (area.width() / total * bar.width()).max(24.0);
         let thumb_left = bar.left() + offset / most * (bar.width() - thumb_width);
         let thumb =
             Rect::from_min_size(Pos2::new(thumb_left, bar.top() + 1.0), Vec2::new(thumb_width, bar.height() - 2.0));
-        painter.rect_filled(thumb, 0.0, look.own_color_or(theme::text_hint()));
+        painter.rect_filled(thumb, 0.0, look.color());
     }
     // Right of the last panel, what a drop does.
     if x < area.right() - 80.0 {
@@ -835,19 +835,19 @@ pub fn show_ara_editor(
                     "Hide editor: {} keeps the clip and its edits; select the clip to show it again",
                     device.name
                 ));
-        let fill = crate::kit::motion::mix(
-            theme::control_background(),
-            theme::control_hover(),
-            crate::kit::widgets::hover(ui, &response),
-        );
         // `piano-tool#piano-hide`, as the piano roll's own ×.
         let el = crate::kit::element::PIANO_TOOL
             .id("piano-hide")
             .attribute("kind", "piano-hide")
             .response(&response)
             .enter();
+        let fill = crate::kit::motion::mix(
+            crate::detail::fill_of("control"),
+            el.look_hovered(true).background(),
+            crate::kit::widgets::hover(ui, &response),
+        );
         el.paint_with(&painter, hide, crate::kit::element::Native { radius: 0.0, fill });
-        let ink = el.color_or(theme::text_secondary());
+        let ink = el.color();
         crate::interaction::toolbar::IconButton::Hide.draw(&painter, hide, ink, 1.0);
         drop(el);
         if response.clicked() {
@@ -930,9 +930,10 @@ fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), hint_ink());
 }
 
-/// A device's on switch in its header, `on` while it runs: filled in `bright`, else outlined in
-/// `dim`. It is `button#control-device-on`, `[checked]` while on, and only a rule for it, not one
-/// for every `button`, reaches it: its `background-color` while on, its `border-color` while off.
+/// A device's on switch in its header, `on` while it runs: filled in `bright` (the header's
+/// `color`), else outlined in `dim`. It is `button#control-device-on`, `[checked]` while on, and
+/// only a rule for it, not one for every `button`, reaches it: its `background-color` while on, its
+/// `border-color` while off.
 pub(crate) fn device_switch(
     painter: &egui::Painter,
     switch: Rect,
@@ -943,10 +944,12 @@ pub(crate) fn device_switch(
     let plain = crate::kit::element::BUTTON.response(response).probe();
     let own =
         crate::kit::element::BUTTON.id("device-on").response(response).attr(crate::kit::element::Checked, on).look();
+    // What only a rule for the switch gives: not what a rule for every button does.
+    let themed = |own: Option<egui::Color32>, plain: Option<egui::Color32>| own.filter(|own| Some(*own) != plain);
     if on {
-        painter.rect_filled(switch, 0.0, own.background_unlike(&plain, bright));
+        painter.rect_filled(switch, 0.0, themed(own.themed_background(), plain.themed_background()).unwrap_or(bright));
     } else {
-        let edge = own.border_unlike(&plain, dim);
+        let edge = themed(own.themed_border(), plain.themed_border()).unwrap_or(dim);
         painter.rect_stroke(switch, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
     }
 }
@@ -1007,10 +1010,7 @@ fn device_panel(
         .paint_with(
             painter,
             rect,
-            crate::kit::element::Native {
-                radius: 0.0,
-                fill: crate::kit::style_class::surface_or(theme::panel_background()),
-            },
+            crate::kit::element::Native { radius: 0.0, fill: crate::detail::detail_fill("panel") },
         )
         .content;
     // The selection outline, over everything the panel draws — on every path out of here. Along
@@ -1020,7 +1020,7 @@ fn device_panel(
         if selected {
             device_style.close_box();
             // `device[selected]`'s `accent-color`.
-            let edge = device_style.accent_or(theme::selection());
+            let edge = device_style.accent();
             painter.rect_stroke(panel_box, 1.0, theme::hairline(edge), egui::StrokeKind::Inside);
         }
     };
@@ -1028,12 +1028,8 @@ fn device_panel(
     // `device-header`, in scope while its switch, name and buttons are drawn: its `color` is the
     // name's and its buttons' under the pointer, `label[kind="hint"]` the dim ones.
     let header_el = crate::kit::element::DEVICE_HEADER.enter();
-    header_el.paint_with(
-        painter,
-        header,
-        crate::kit::element::Native { radius: 0.0, fill: theme::control_background() },
-    );
-    let (bright, dim) = (header_el.color_or(theme::text_primary()), hint_ink());
+    header_el.paint_with(painter, header, crate::kit::element::Native { radius: 0.0, fill: header_el.background() });
+    let (bright, dim) = (header_el.color(), hint_ink());
     let switch = Rect::from_min_size(
         Pos2::new(header.left() + PAD, header.center().y - ON_SWITCH / 2.0),
         Vec2::splat(ON_SWITCH),
@@ -1161,9 +1157,7 @@ fn device_panel(
         // `label[kind="plugin-state"]`; a crash is `label[kind="error"]`.
         let color = match plugin.state {
             PluginState::Crashed => error_ink(),
-            PluginState::Running => {
-                crate::kit::element::LABEL.attribute("kind", "plugin-state").look().color_or(theme::text_secondary())
-            }
+            PluginState::Running => crate::kit::element::LABEL.attribute("kind", "plugin-state").look().color(),
             PluginState::Stopped | PluginState::Loading | PluginState::Missing => hint_ink(),
         };
         widgets::text_in(
@@ -1223,8 +1217,8 @@ fn device_panel(
     }
     // A parameter's name, `label`, and its value, `value`: read once for every row.
     let (name_ink, value_ink) = (
-        crate::kit::element::LABEL.look().color_or(theme::text_secondary()),
-        crate::kit::element::VALUE.look().color_or(theme::text_value()),
+        crate::kit::element::LABEL.attribute("kind", "parameter").look().color(),
+        crate::kit::element::VALUE.attribute("kind", "parameter").look().color(),
     );
     for (index, (id, value)) in device.params.iter().enumerate() {
         let row = Rect::from_min_size(

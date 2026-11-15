@@ -241,9 +241,9 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Listed { prefix: "", names: GROUP_IDS })
         .attributes(&["kind"]),
     element("flexible-space", Drawn, "A gap in a bar that takes the room left over."),
-    element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id.")
+    element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id; the words of the piano roll toolbar's menus (Grid, Workflow, Ghosts) are `bar-item[kind=\"menu\"]`, `[muted]` while what it names is off and `[checked]` while the menu is hovered or open.")
         .ids(Ids::Listed { prefix: "", names: BAR_ITEM_IDS })
-        .attributes(&["kind"]),
+        .attributes(&["kind", "muted", "checked"]),
     element("status-bar", Region, "The bar at the bottom of the window.").parts(&["bar-item"]),
     element("notice-bar", Region, "The strip over the views that asks about an opened project or names missing files."),
     element("workspace-panel", Region, "A panel of the window: the browser, the main view, the detail area.")
@@ -270,9 +270,9 @@ pub const ELEMENTS: &[Element] = &[
         "browser-tag-dot",
         "browser-preview-wave",
     ]),
-    element("browser-place", Control, "A place or kind on the browser's left.").attributes(&["checked", "selected"]),
-    element("browser-row", Control, "A row of the browser's list.").attributes(&["selected"]),
-    element("browser-play", Control, "The button that previews a browser row."),
+    element("browser-place", Control, "A place or kind on the browser's left, `[kind=\"drop\"]` while what is dragged would land on it.").attributes(&["checked", "selected", "kind"]),
+    element("browser-row", Control, "A row of the browser's list, `[kind=\"drop\"]` while what is dragged would land on it; a heading of the list's columns is `browser-row[kind=\"header\"]` and a tag in a row's tag menu `browser-row[kind=\"menu\"]`.").attributes(&["selected", "kind"]),
+    element("browser-play", Control, "The button that previews a browser row, and the preview strip's play glyph, `[checked]` while it plays.").attributes(&["checked"]),
     element(
         "browser-icon",
         Drawn,
@@ -281,6 +281,8 @@ pub const ELEMENTS: &[Element] = &[
     .attributes(&["kind"]),
     element("browser-tag-dot", Drawn, "The coloured dot of a tag in the browser."),
     element("browser-preview-wave", Drawn, "The waveform of the sound being previewed."),
+    element("browser-fill", Drawn, "The fill the browser paints for itself where the region behind it gives none: its `background-color`, `browser-fill[kind=\"panel\"]` under the list, the sample map's cards and its similar strip, `browser-fill[kind=\"window\"]` behind the search field, the preview strip and a cluster's name on the sample map; the browser's splitter takes it too (`browser-fill[kind=\"splitter\"]`, stronger under the pointer) where `#browser-splitter` has none.")
+        .attributes(&["kind"]),
     element("session", Region, "The Launcher view: tracks as columns of clip slots.")
         .parts(&["track-column", "scene-column"])
         .settings(&["track-width", "return-width", "scene-width", "slot-height", "header-height"]),
@@ -364,7 +366,7 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["kind"]),
     element("take-header", Container, "A take lane's header, with the take's `color`, `[selected]` while it is picked.")
         .attributes(&["color", "selected"]),
-    element("ruler", Drawn, "The Arrangement view's ruler.")
+    element("ruler", Drawn, "The Arrangement view's ruler, and the piano roll's.")
         .parts(&["ruler-number", "ruler-tick"])
         .artwork(&[own("ruler")]),
     element("ruler-number", Drawn, "A bar number on the ruler."),
@@ -374,10 +376,11 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["kind"]),
     element("time-selection", Drawn, "Selected time: its `background-color` over the lanes and its `color` at its edges; along the ruler (`kind=\"ruler\"`); the clip the Draw tool's drag makes (`kind=\"draw\"`); the piano roll's selection lit on its clip (`kind=\"editor\"`); what is picked or painted on take lanes (`kind=\"take\"`) and on automation lanes (`kind=\"automation\"`).")
         .attributes(&["kind"]),
-    element("marquee", Drawn, "The rectangle a drag draws to pick whole clips, the piano roll's notes and the sample map's points."),
-    element("start-marker", Drawn, "The play start marker under the ruler, and its line in the lane clicked (`kind=\"insert\"`); a clip's start and end markers in the piano roll (`kind=\"clip\"`).")
+    element("marquee", Drawn, "The rectangle a drag draws to pick whole clips; the piano roll's notes (`kind=\"notes\"`) and the sample map's points (`kind=\"points\"`).")
         .attributes(&["kind"]),
-    element("loop-region", Control, "The loop bar.").attributes(&["checked"]).artwork(&[own("loop-region")]),
+    element("start-marker", Drawn, "The play start marker under the ruler, and its line in the lane clicked (`kind=\"insert\"`); a clip's start and end markers in the piano roll (`kind=\"clip\"`) and its play start (`kind=\"piano\"`).")
+        .attributes(&["kind"]),
+    element("loop-region", Control, "The loop bar; the clip's loop bar in the piano roll's ruler is `loop-region[kind=\"clip\"]`, `[checked]` while the clip loops.").attributes(&["checked", "kind"]).artwork(&[own("loop-region")]),
     element("loop-line", Drawn, "The lines at the loop's ends."),
     element("automation-header", Container, "An automation lane's header, `[selected]` while it is picked; a group of lanes' is `automation-header[kind=\"group\"]`.")
         .attributes(&["selected", "kind"]),
@@ -391,23 +394,25 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["checked"]),
     element("arrangement-tool", Control, "A tool button of the Arrangement's own toolbar, `[checked]` on the chosen tool.")
         .attributes(&["checked"]),
-    element("playhead", Drawn, "The play position line, in the arrangement, the piano roll and the browser's preview strip; where a jump waits for its beat is `playhead[kind=\"pending\"]`.")
+    element("playhead", Drawn, "The play position line, in the arrangement, the piano roll and the browser's preview strip; where a jump waits for its beat is `playhead[kind=\"pending\"]`; the piano roll's is `playhead[kind=\"piano\"]` and the preview strip's `playhead[kind=\"preview\"]`.")
         .attributes(&["kind"]),
     element("mixer", Region, "The mixer, and a mixer strip in any view.")
         .parts(&["fader", "pan", "send", "meter", "device-list"])
         .attributes(&["color", "selected", "muted"]),
     element("device-list", Container, "A mixer strip's list of its track's devices.").parts(&["device-row", "label"]),
-    element("device-row", Control, "A device in a mixer strip's list: `[selected]` while it is picked, `[muted]` while it is off; a device group's branch in its panel, `[selected]` while its devices show, `[muted]` while it is muted.")
-        .attributes(&["selected", "muted"]),
+    element("device-row", Control, "A device in a mixer strip's list: `[selected]` while it is picked, `[muted]` while it is off; a device group's branch in its panel, `device-row[kind=\"branch\"]`, `[selected]` while its devices show, `[muted]` while it is muted.")
+        .attributes(&["selected", "muted", "kind"]),
     element("detail", Region, "The detail area under the main view."),
+    element("detail-fill", Drawn, "The fill the detail panels and the piano roll paint for themselves where the region behind them gives none: its `background-color`, `detail-fill[kind=\"panel\"]` for a panel, a column, a ruler row or a header, `detail-fill[kind=\"window\"]` for the rows behind the notes and the rows between a branch's names.")
+        .attributes(&["kind"]),
     element("clip-editor", Region, "The clip editor in the detail area.").parts(&["editor-tab"]),
     element(
         "editor-tab",
         Control,
-        "The clip editor's Clip and Devices tabs, the MIDI tools part's Notes and Transform tabs and the start page's Recent and Templates tabs (`#tab-recent`, `#tab-templates`).",
+        "The clip editor's Clip and Devices tabs, the MIDI tools part's Notes and Transform tabs and the start page's Recent and Templates tabs (`#tab-recent`, `#tab-templates`). The Clip and Devices switch is `editor-tab[kind=\"switch\"]`; the Notes and Transform tabs are `editor-tab[kind=\"tab-notes\"]` and `[kind=\"tab-transform\"]`.",
     )
     .ids(Ids::Prefixed("tab-"))
-    .attributes(&["checked"]),
+    .attributes(&["checked", "kind"]),
     element("piano-roll", Region, "The piano roll, with the edited clip's `color`.").attributes(&["color"]).parts(&[
         "piano-grid",
         "piano-key",
@@ -420,7 +425,8 @@ pub const ELEMENTS: &[Element] = &[
     element("piano-roll-toolbar", Region, "The toolbar along the top of the piano roll.")
         .parts(&["piano-tool", "group", "bar-item", "separator", "flexible-space"])
         .attributes(&["size"]),
-    element("piano-grid", Drawn, "The piano roll's grid."),
+    element("piano-grid", Drawn, "The piano roll's grid: its `border-color` the lines between rows and beats, `piano-grid[kind=\"strong\"]`'s those on an octave and a bar.")
+        .attributes(&["kind"]),
     element("piano-row", Drawn, "A row of the piano roll; the row under the pointer is `piano-row[kind=\"hover\"]`.")
         .attributes(&["kind"]),
     element("piano-row-black", Drawn, "A row of a black key."),
@@ -434,18 +440,19 @@ pub const ELEMENTS: &[Element] = &[
     element("piano-scale-strip", Drawn, "The strip left of the keys naming the octaves; the name of the row under the pointer is `piano-scale-strip[kind=\"pointer\"]`.")
         .attributes(&["kind"]),
     element("piano-range", Drawn, "The range a drag on the keys selects, in its `accent-color` where it gives no colours of its own."),
-    element("piano-clip-strip", Drawn, "The strip over the ruler showing several picked clips."),
+    element("piano-clip-strip", Drawn, "The strip over the ruler showing several picked clips: its `color` a clip's name, `[selected]`'s the edited clip's.")
+        .attributes(&["selected"]),
     element("piano-time-selection", Drawn, "What is selected in time, in its `accent-color` where it gives no colours of its own."),
     element("piano-insert-mark", Drawn, "The mark a click leaves where a paste goes."),
-    element("piano-note", Drawn, "A note; a note a draw or paint drag is making is `piano-note[kind=\"draft\"]`; a selected note with no background of its own is lit with `piano-note[selected]`'s `accent-color`.")
-        .attributes(&["selected", "muted", "kind"]),
+    element("piano-note", Drawn, "A note; a note a draw or paint drag is making is `piano-note[kind=\"draft\"]`; a selected note with no background of its own is lit with `piano-note[selected]`'s `accent-color`. A note's own inks: `kind=\"outline\"` a selected note's edge, `kind=\"dashes\"` a muted note's, `kind=\"name\"` the name on a note (`[checked]` on a strong note).")
+        .attributes(&["selected", "muted", "kind", "checked"]),
     element("velocity", Drawn, "A note's velocity stem, `[selected]` and `[muted]` as its note; the line a velocity drag draws is `velocity[kind=\"line\"]`; the figure shown while a velocity is dragged `velocity[kind=\"label\"]`.")
         .attributes(&["selected", "muted", "kind"]),
     element("piano-slice", Drawn, "The line a slice drag cuts along, `kind=\"cut\"` or `kind=\"delete\"` for the right button's; its `background-color` over what a delete takes away.")
         .attributes(&["kind"]),
-    element("piano-tool", Control, "A tool button of the piano roll.")
+    element("piano-tool", Control, "A tool button of the piano roll, `[checked]` while chosen, `:disabled` while it cannot be used; `kind` is its id without `#` (`piano-fold`).")
         .ids(Ids::Prefixed("piano-"))
-        .attributes(&["checked"])
+        .attributes(&["checked", "kind"])
         .artwork(&[
             own("piano.select"),
             own("piano.draw"),
@@ -477,13 +484,17 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Prefixed("device-"))
         .attributes(&["selected", "muted", "kind"])
         .settings(&["param-label"]),
-    element("device-header", Part, "A device panel's header row."),
-    element("device-section", Part, "A section of a device panel."),
-    element("device-control", Control, "A control of a device panel, by its id.").ids(Ids::Any),
+    element("device-canvas", Drawn, "The colours a device panel's own drawings take from the theme, read once a frame in the device's scope: its `color` the text, its `background-color` the controls, its `border-color` the lines, its `accent-color` the accent; `device-canvas[kind=\"secondary\"]`, `[kind=\"value\"]` and `[kind=\"inverse\"]` (`color`) the other texts, `[kind=\"panel\"]`, `[kind=\"window\"]` and `[kind=\"active\"]` (`background-color`) the other fills; a control's own rule colours its drawing over these.")
+        .attributes(&["kind"]),
+    element("device-header", Part, "A device panel's header row: its `background-color`, and its `color` for the name."),
+    element("device-section", Part, "A section of a device panel; a node of an expanded graph."),
+    element("device-control", Control, "A control of a device panel, by its id; where the device gives no colours, a parameter's name is `device-control[kind=\"name\"]`, its value `[kind=\"value\"]` and a knob `[kind=\"knob\"]` (its disc the `background-color`, its ring the `color`, its pointer the `accent-color`).")
+        .ids(Ids::Any)
+        .attributes(&["kind"]),
     element("xy-control", Control, "A two-dimensional control of a device panel."),
     element("envelope", Drawn, "An envelope a device panel shows."),
     element("waveform", Drawn, "A waveform a panel shows."),
-    element("slider", Control, "A parameter's slider; the MIDI tools' quantise amount, as a knob; a swing amount, `[checked]` while it is the clip's own; the Arrangement's waveform zoom is `slider[kind=\"zoom\"]`, the metronome's level slider is in `popup[kind=\"level\"]`.")
+    element("slider", Control, "A parameter's slider (`slider[kind=\"parameter\"]`); the MIDI tools' quantise amount, as a knob (`slider[kind=\"quantise\"]`, its value's `color` and its pointer's `accent-color`); a swing amount, `[checked]` while it is the clip's own; the Arrangement's waveform zoom is `slider[kind=\"zoom\"]`, the metronome's level slider is in `popup[kind=\"level\"]`.")
         .parts(&["slider-rail", "slider-fill", "slider-handle"])
         .attributes(&["checked", "kind"])
         .ids(Ids::Listed { prefix: "", names: &["quantise-amount", "waveform-zoom"] })
@@ -493,7 +504,7 @@ pub const ELEMENTS: &[Element] = &[
     element("slider-fill", Part, "A slider's fill up to its value."),
     element("slider-handle", Part, "A slider's handle."),
     // Controls everywhere.
-    element("button", Control, "A button or switch; also egui's check boxes and drop-downs. A device's on switch is `#control-device-on`; an expanded panel's × `button[kind=\"close\"]` and the browser's more tags `button[kind=\"more\"]` take only a rule for their kind. The toggles Suhina's own views draw (a track's on switch, cue, a view's switches) are `button[kind=\"toggle\"]`, solo `button[kind=\"solo\"]` and arm `button[kind=\"arm\"]`, lit with `[checked]`: their base look is dim words on the control fill, and the chosen fill and its text when lit; a rule for every `button` overrides it for the properties it sets, lit ones too, so state the lit look as well. The Launcher's, the mixer's and the Arrangement's own switches are `button[kind=\"record\"]` (the control bar's Record, `[checked]` while it records), `button[kind=\"metronome\"]` (the metronome's switches, `[checked]` while it clicks), `button[kind=\"monitor\"]` (a strip's In, Auto and Off, `[checked]` on the one chosen), `button[kind=\"envelope\"]` (a clip's Edit gain envelope and Free move), `button[kind=\"lanes\"]` (a track's automation switch, `[checked]` while its lanes show) and `button[kind=\"shape\"]` (an automation lane's shape pick, `[checked]` on the chosen one).")
+    element("button", Control, "A button or switch; also egui's check boxes and drop-downs. A device's on switch is `#control-device-on`; an expanded panel's × `button[kind=\"close\"]` and the browser's more tags `button[kind=\"more\"]` take only a rule for their kind. The toggles Suhina's own views draw (a track's on switch, cue, a view's switches) are `button[kind=\"toggle\"]`, solo `button[kind=\"solo\"]` and arm `button[kind=\"arm\"]`, lit with `[checked]`: their base look is dim words on the control fill, and the chosen fill and its text when lit; a rule for every `button` overrides it for the properties it sets, lit ones too, so state the lit look as well. The Launcher's, the mixer's and the Arrangement's own switches are `button[kind=\"record\"]` (the control bar's Record, `[checked]` while it records), `button[kind=\"metronome\"]` (the metronome's switches, `[checked]` while it clicks), `button[kind=\"monitor\"]` (a strip's In, Auto and Off, `[checked]` on the one chosen), `button[kind=\"envelope\"]` (a clip's Edit gain envelope and Free move), `button[kind=\"lanes\"]` (a track's automation switch, `[checked]` while its lanes show) and `button[kind=\"shape\"]` (an automation lane's shape pick, `[checked]` on the chosen one). The detail panels' and the browser's own: a panel's push button `button[kind=\"panel\"]` and switch `[kind=\"panel-toggle\"]`, an entry of a panel's list `[kind=\"entry\"]` (`[checked]` the chosen one), the browser's filter chips `[kind=\"chip\"]`, a tag's tick box `[kind=\"tag-check\"]`, the preview's play `[kind=\"preview\"]` and the piano roll's Focus switch `[kind=\"focus\"]`, each lit with `[checked]`.")
         .ids(Ids::Listed { prefix: "control-", names: CONTROL_IDS })
         .attributes(&["checked", "playing", "recording", "armed", "muted", "kind"])
         .artwork(&[
@@ -510,7 +521,7 @@ pub const ELEMENTS: &[Element] = &[
         ]),
     element("toggle", Drawn, "The colours of a switch its view draws itself, with no `button` of its own (a clip panel's On and Off, a device group's Mute): dim words, `[checked]` when it is on; the `button[kind=\"toggle\"]` of a switch drawn as a button is looked up the same way.")
         .attributes(&["checked"]),
-    element("value", Control, "A value field, such as a volume bar or a clip panel's number field; drawn as a bar, its track is `value[kind=\"bar\"]`.")
+    element("value", Control, "A value field, such as a volume bar or a clip panel's number field; drawn as a bar, its track is `value[kind=\"bar\"]`; a field of the clip, MIDI and follow panels and of a device group is `value[kind=\"field\"]` (tinted under the pointer, stronger while dragged), a device's parameter's value `value[kind=\"parameter\"]`.")
         .parts(&["value-fill", "value-handle"])
         .attributes(&["kind"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
@@ -537,8 +548,10 @@ pub const ELEMENTS: &[Element] = &[
         .settings(VALUE_SETTINGS)
         .artwork(&[default_svg!("fader.cap", "fader-cap"), default_svg!("fader.rail", "fader-rail")]),
     element("fader-cap", Part, "A fader's cap; its artwork takes its `color`."),
-    element("fader-rail", Part, "A fader's rail, the mixer's and the clip gain fader's; its artwork takes its `color`."),
-    element("fader-scale", Part, "The scale beside a fader, the mixer's and the clip gain fader's."),
+    element("fader-rail", Part, "A fader's rail, the mixer's and the clip gain fader's (`fader-rail[kind=\"clip\"]`, its slot the `background-color`); its artwork takes its `color`.")
+        .attributes(&["kind"]),
+    element("fader-scale", Part, "The scale beside a fader, the mixer's and the clip gain fader's (`fader-scale[kind=\"clip\"]`).")
+        .attributes(&["kind"]),
     element("send", Control, "A send, in a mixer strip and in a track header.")
         .ids(Ids::Prefixed("mixer-send-"))
         .settings(VALUE_SETTINGS)
@@ -551,7 +564,8 @@ pub const ELEMENTS: &[Element] = &[
     element("knob-body", Part, "A knob's body; its artwork takes its `color`."),
     element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),
     element("knob-ring", Part, "The disc between a dial's rim and its inner disc: its `background-color`, where the region the dial is in gives none."),
-    element("icon", Part, "The symbol on a button or a track header, by its `kind` attribute (`play`, `midi`); the piano roll's tool pointer (`pointer`, its ring the `background-color`) and its magnifier (`magnifier`), a clip's colour swatch (`swatch`), a device's folder (`folder`)."),
+    element("icon", Part, "The symbol on a button or a track header, by its `kind` attribute (`play`, `midi`); the piano roll's tool pointer (`pointer`, its ring the `background-color`) and its magnifier (`magnifier`), a clip's colour swatch (`swatch`), a device's folder (`folder`).")
+        .attributes(&["kind"]),
     element("meter", Control, "A level meter.")
         .parts(&["meter-level", "meter-clip"])
         .settings(&["meter-style", "meter-segments", "meter-intensity"])
@@ -561,20 +575,22 @@ pub const ELEMENTS: &[Element] = &[
     element("meter-clip", Drawn, "A meter's clip light; its `background-color` while it is lit."),
     element("meter-vertical", Part, "A meter standing up, around its level."),
     element("meter-horizontal", Part, "A meter lying down, around its level."),
-    element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists. A routing field in a track header, which takes the colours of what it is on, is `dropdown[kind=\"subtle\"]`: only a rule for that kind reaches it.")
+    element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists. A routing field in a track header, which takes the colours of what it is on, is `dropdown[kind=\"subtle\"]`: only a rule for that kind reaches it. A clip panel's list is `dropdown[kind=\"panel\"]`.")
         .parts(&["dropdown-arrow"])
         .attributes(&["kind"])
         .artwork(&[default_svg!("folder", "icon[kind=\"folder\"]")]),
-    element("dropdown-arrow", Part, "The arrow of a drop-down field, in its `color`; a rule for the field's `color` does not reach it."),
+    element("dropdown-arrow", Part, "The arrow of a drop-down field, in its `color`; a rule for the field's `color` does not reach it. A clip panel's list's is `dropdown-arrow[kind=\"panel\"]`.")
+        .attributes(&["kind"]),
     element("text-input", Control, "A text field; a number typed into a value control is `text-input[kind=\"typed\"]`; the browser's fields are `#browser-search` and `#browser-new-folder`.")
         .attributes(&["kind"])
         .ids(Ids::Listed { prefix: "", names: &["browser-search", "browser-new-folder"] }),
-    element("scroll-bar", Drawn, "The mark of how far a row is scrolled, such as a mixer strip's sends or the device chain."),
-    element("label", Drawn, "A label, its `color` inherited; a scene's number is `label[kind=\"scene-number\"]`. The browser's and the detail panels' words by how much they stand out: dim words `hint`, a control's or a figure's name `caption` (these two take only a colour a rule gives them, not one around them), a panel's title `title`, a value shown as words `value`, a fault `error`, a plug-in's state `plugin-state`, and the head of the MIDI tools' figures `head` (`[selected]` while a selection is what they act on, in its `accent-color`).")
-        .attributes(&["kind", "selected"]),
-    element("separator", Drawn, "A rule between parts, by its `kind`: the window's lines over and under the views; a divider between a bar's items (`bar`); the Launcher's lines between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's and the piano roll's under their rows (`row`), between their bands (`band`) and under each lane (`lane`); a line in a clip panel's list (`menu`); the lines over a device inside a device group (`group`); an expanded panel's lines between its columns (`column`); the browser's lines between its parts (`row`).")
-        .ids(Ids::Listed { prefix: "", names: &["views-top", "views-bottom"] })
+    element("scroll-bar", Drawn, "The mark of how far a row is scrolled, such as a mixer strip's sends or the device chain (`scroll-bar[kind=\"chain\"]`): its `background-color` the track, its `color` the thumb.")
         .attributes(&["kind"]),
+    element("label", Drawn, "A label, its `color` inherited; a scene's number is `label[kind=\"scene-number\"]`. The browser's and the detail panels' words by how much they stand out: dim words `hint`, a control's or a figure's name `caption` (these two take only a colour a rule gives them, not one around them), a panel's title `title`, a value shown as words `value`, a fault `error`, a plug-in's state `plugin-state`, a device's parameter's name `parameter`, a check box's words `check`, and the head of the MIDI tools' figures `head` (`[selected]` while a selection is what they act on, in its `accent-color`). Inside the browser, `hint`, `caption` and `value` take the browser's own colours.")
+        .attributes(&["kind", "selected"]),
+    element("separator", Drawn, "A rule between parts, by its `kind`: the window's lines over and under the views; a divider between a bar's items (`bar`); the Launcher's lines between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's and the piano roll's under their rows (`row`), between their bands (`band`) and under each lane (`lane`); a line in a clip panel's list (`menu`); the lines over a device inside a device group (`group`); an expanded panel's lines between its columns (`column`); the browser's lines between its parts (`row`); the line under the place of a number a drag steps (`step`, `[selected]` while it is held).")
+        .ids(Ids::Listed { prefix: "", names: &["views-top", "views-bottom"] })
+        .attributes(&["kind", "selected"]),
     element("popup", Region, "A menu, right-click menu, dropdown list or control's popup; the metronome's level, with its slider, is `popup[kind=\"level\"]`.")
         .ids(Ids::Listed { prefix: "", names: &["metronome-level"] })
         .attributes(&["kind"])

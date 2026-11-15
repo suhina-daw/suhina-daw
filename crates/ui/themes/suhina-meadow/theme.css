@@ -111,6 +111,10 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   /* A figure shown as words takes the text colour of the region it is in (not `--text-value`, which
      the fader caps' colour mixes in). */
   label[kind="value"] { color: var(--text-primary); }
+  /* What the base sheet colours with `--text-value` or `--border-strong` inside the detail area
+     takes the region's text, as it did before the sheet gave it a colour: the piano roll's ruler
+     numbers and the lines of its toolbar, a device's values. */
+  piano-roll ruler-number, piano-roll-toolbar separator[kind="bar"], device-control[kind="value"], device-canvas[kind="value"] { color: var(--text-primary); }
   /* The lit fills of the toggles (Suhina's base sheet gives them, and this theme's rule for every
      `button` overrides them: state them again). The text stays the button's. */
   button[kind="toggle"][checked] { background-color: var(--control-selectedBackground); }
@@ -130,6 +134,14 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   send { color: var(--text-primary); }
   /* A clip's gain figure takes the text colour of the region it is in, as the other words do. */
   clip-gain { color: var(--text-primary); }
+  /* The lit fill of the browser's filter chips, as the toggles'. */
+  button[kind="chip"][checked] { background-color: var(--control-selectedBackground); }
+  /* The detail area's and the browser's own lit and hovered buttons, which this theme's rule for
+     every `button` hides: a tag's ticked box, the "…" of the tags that did not fit under the
+     pointer, the piano roll's Focus switch while on. */
+  button[kind="tag-check"][checked] { background-color: var(--text-value); color: var(--window-background); }
+  button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
+  button[kind="focus"][checked] { background-color: var(--accent); }
   knob { color: var(--tint); background-color: var(--paper); }
   value, dropdown, dropdown-arrow, text-input { color: var(--text-primary); --text-primary: color-mix(in oklab, white, black 79.8%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: white; border-radius: 0px; }
   text-input[kind="typed"] { background-color: var(--control-activeBackground); color: var(--text-value); }

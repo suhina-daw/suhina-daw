@@ -39,7 +39,7 @@ pub(super) fn toolbar(
     let size_word = cx.size.word();
     let bar_el = crate::kit::element::PIANO_ROLL_TOOLBAR.attribute("size", size_word).enter();
     let painter = ui.painter_at(rect);
-    let fill = crate::kit::style_class::surface_or(theme::panel_background());
+    let fill = crate::detail::detail_fill("panel");
     bar_el.paint_with(&painter, rect, crate::kit::element::Native { radius: 0.0, fill });
     // The line under it: `separator[kind="row"]`, as under the ruler's loop row.
     let line = crate::kit::element::row_line();
@@ -103,7 +103,7 @@ pub(super) fn toolbar(
         match item.name {
             "separator" => {
                 let line = crate::kit::element::SEPARATOR.attribute("kind", "bar").enter();
-                let ink = line.color_or(theme::border_strong());
+                let ink = line.color();
                 painter.vline(area.center().x, area.top() + 2.0..=area.bottom() - 2.0, theme::hairline(ink));
             }
             "group" => rows_group = Some(area),
@@ -321,13 +321,14 @@ pub(crate) fn menu_width(ui: &Ui, (caption, word): (Option<&str>, &str)) -> f32 
 ///
 /// It is `dropdown[kind="subtle"]`, quiet on the bar as a track header's routing fields are: only
 /// a rule for that kind reaches it (its `background-color` while hovered or open, its `color`),
-/// not one for every `dropdown`. Its caption is `label[kind="hint"]`.
+/// not one for every `dropdown`. Its words are `bar-item[kind="menu"]`'s `color`, `[muted]` while
+/// `dim`, `[checked]` while it is lit. Its caption is `label[kind="hint"]`.
 pub(crate) fn menu_face(
     ui: &Ui,
     rect: Rect,
     id: Id,
     (caption, word): (Option<&str>, &str),
-    ink: Color32,
+    dim: bool,
     label: &str,
 ) -> egui::Response {
     let rect =
@@ -336,12 +337,16 @@ pub(crate) fn menu_face(
     let lit = response.hovered() || egui::Popup::menu(&response).is_open();
     let plain = crate::kit::element::DROPDOWN.response(&response).probe();
     let own = crate::kit::element::DROPDOWN.response(&response).attribute("kind", "subtle").look();
-    let (fill, ink) = if lit {
-        (ui.visuals().widgets.hovered.weak_bg_fill, theme::text_primary())
-    } else {
-        (Color32::TRANSPARENT, ink)
-    };
-    let (fill, ink) = (own.background_unlike(&plain, fill), own.own_color_unlike(&plain, ink));
+    let fill = if lit { ui.visuals().widgets.hovered.weak_bg_fill } else { Color32::TRANSPARENT };
+    let words = crate::kit::element::BAR_ITEM
+        .attribute("kind", "menu")
+        .attr(crate::kit::element::Muted, dim)
+        .attr(crate::kit::element::Checked, lit)
+        .look();
+    // What only a rule for the kind gives: not what a rule for every dropdown does.
+    let themed = |own: Option<Color32>, plain: Option<Color32>| own.filter(|own| Some(*own) != plain);
+    let fill = themed(own.themed_background(), plain.themed_background()).unwrap_or(fill);
+    let ink = themed(own.themed_color(), plain.themed_color()).unwrap_or_else(|| words.color());
     let caption_ink = crate::detail::detail_view::hint_ink();
     let painter = ui.painter();
     painter.rect_filled(rect, 3.0, fill);
@@ -398,7 +403,7 @@ fn rows_toggles(
     let clip = cx.clip;
     let element = crate::kit::element::GROUP.id("piano-roll-rows").attribute("kind", "piano-roll-rows").enter();
     element.paint(painter, group);
-    painter.rect_stroke(group, 4.0, theme::hairline(element.border_or(theme::border_strong())), StrokeKind::Inside);
+    painter.rect_stroke(group, 4.0, theme::hairline(element.border()), StrokeKind::Inside);
     // Fold folds to the notes, Scale to the clip's scale: each lit while the rows are folded its way.
     let folded = state.fold == Fold::Notes;
     let scaled = state.fold == Fold::Scale && clip.scale.is_some();
@@ -464,17 +469,14 @@ fn row_toggle(
     // `piano-tool#piano-fold` (and the others), `[checked]` while on: only a rule for the lit
     // state lights it, so one for every `piano-tool` does not hide which is on.
     let visuals = ui.visuals();
-    let off = if response.hovered() {
-        (visuals.widgets.hovered.weak_bg_fill, theme::text_primary())
-    } else {
-        (Color32::TRANSPARENT, theme::text_secondary())
-    };
+    let tool = || crate::kit::element::PIANO_TOOL.id(button.id()).attribute("kind", button.id()).response(&response);
+    // Its words are `piano-tool`'s `color`, brighter under the pointer.
+    let off = (
+        if response.hovered() { visuals.widgets.hovered.weak_bg_fill } else { Color32::TRANSPARENT },
+        tool().look().color(),
+    );
     let (lit_fill, lit_ink) = (visuals.selection.bg_fill, visuals.selection.stroke.color);
-    let (el, sides) = crate::kit::element::PIANO_TOOL
-        .id(button.id())
-        .attribute("kind", button.id())
-        .response(&response)
-        .enter_toggle(&[crate::kit::element::Checked], on, false);
+    let (el, sides) = tool().enter_toggle(&[crate::kit::element::Checked], on, false);
     let toggle = widgets::Toggle::of(&el, sides.as_ref(), widgets::UnlitInk::Own, off, lit_fill, |_| lit_ink);
     let (fill, ink) = toggle.at(if on { 1.0 } else { 0.0 });
     painter.rect_filled(rect, 3.0, fill);
@@ -495,12 +497,12 @@ fn row_toggle(
 fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<IconButton> {
     let ui = paint.ui;
     let response = widgets::button_area(ui, area, Id::unique("piano-roll-edit-menu"), "Edit");
-    let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
     // The item's box is painted, and its icon and chevron lie in the content box, inside its
     // border and padding.
     let item =
         crate::kit::element::PIANO_TOOL.id("piano-edit").attribute("kind", "piano-edit").response(&response).enter();
-    let ink = item.color_or(theme::text_secondary());
+    let fill = item.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
+    let ink = item.color();
     let content = item.paint_with(paint.painter, area, crate::kit::element::Native { radius: 3.0, fill }).content;
     let icon = Rect::from_min_size(content.min, Vec2::splat(content.height()));
     IconButton::Copy.draw(paint.painter, icon, ink, paint.scale * ICON_IN_BUTTON);
@@ -536,7 +538,7 @@ pub(super) fn grid_menu(
     let label = format!("Grid value {shown}");
     let id = Id::unique("piano-roll-grid-menu");
     let words = (caption.then_some("Grid"), shown.as_str());
-    let response = menu_face(ui, rect, id, words, theme::text_secondary(), &label);
+    let response = menu_face(ui, rect, id, words, false, &label);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
         let keys = grid_key_labels(keymap, &PIANO_GRID_KEYS);
@@ -563,7 +565,7 @@ fn workflow_menu(
     let label = format!("Workflow {}", mode.name());
     let word = if named { mode.name() } else { "" };
     let id = Id::unique("piano-roll-workflow-menu");
-    let response = menu_face(ui, rect, id, (None, word), theme::text_secondary(), &label);
+    let response = menu_face(ui, rect, id, (None, word), false, &label);
     egui::Popup::menu(&response).show(|ui| workflow_entries(ui, keymap, state));
     response.on_hover_text("How clicks, right-clicks and double-clicks work: a preset, or Custom");
 }
@@ -691,15 +693,10 @@ impl ButtonPaint<'_> {
             .id(button.id())
             .attribute("kind", button.id())
             .response(&response)
-            .attr(crate::kit::element::Checked, chosen)
-            .enter();
-        let color = el.color_or(if !active {
-            theme::text_hint()
-        } else if chosen {
-            theme::text_primary()
-        } else {
-            theme::text_secondary()
-        });
+            .attr(crate::kit::element::Checked, chosen);
+        // Not usable now: `:disabled`, dim.
+        let el = if active { el } else { el.pointer(false, false, true) }.enter();
+        let color = el.color();
         let state = if !active {
             crate::kit::skin::State::Disabled
         } else {
@@ -708,8 +705,7 @@ impl ButtonPaint<'_> {
         let role = format!("piano.{}", button.id().trim_start_matches("piano-"));
         if active {
             // Only the chosen tool or an open part has a fill; the others show one on hover.
-            let fill = if chosen { theme::control_active() } else { Color32::TRANSPARENT };
-            let fill = crate::kit::motion::mix(fill, theme::control_hover(), widgets::hover(ui, &response));
+            let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
             el.paint_with(painter, area, crate::kit::element::Native { radius: 3.0, fill });
         }
         if !(crate::kit::skin::has_own(&role) && crate::kit::skin::paint_as(&el, painter, area, &role, state, color)) {

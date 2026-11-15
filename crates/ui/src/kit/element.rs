@@ -992,6 +992,7 @@ names! {
     BROWSER_ICON = "browser-icon";
     BROWSER_TAG_DOT = "browser-tag-dot";
     BROWSER_PREVIEW_WAVE = "browser-preview-wave";
+    BROWSER_FILL = "browser-fill";
     SESSION = "session";
     TRACK_COLUMN = "track-column";
     SCENE_COLUMN = "scene-column";
@@ -1039,6 +1040,7 @@ names! {
     DEVICE_LIST = "device-list";
     DEVICE_ROW = "device-row";
     DETAIL = "detail";
+    DETAIL_FILL = "detail-fill";
     CLIP_EDITOR = "clip-editor";
     EDITOR_TAB = "editor-tab";
     PIANO_ROLL = "piano-roll";
@@ -1069,6 +1071,7 @@ names! {
     SAMPLE_POINT = "sample-point";
     DEVICE_PANEL = "device-panel";
     DEVICE = "device";
+    DEVICE_CANVAS = "device-canvas";
     DEVICE_HEADER = "device-header";
     DEVICE_SECTION = "device-section";
     DEVICE_CONTROL = "device-control";

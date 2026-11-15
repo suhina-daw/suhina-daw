@@ -84,7 +84,7 @@ fn key_lights() -> (Color32, Color32) {
     use crate::kit::element::{PIANO_KEY, Playing};
     let plain = PIANO_KEY.probe();
     let playing = PIANO_KEY.attr(Playing, true).probe();
-    (plain.accent_or(theme::accent()), playing.own_color_unlike(&plain, theme::text_inverse()))
+    (plain.accent(), playing.color())
 }
 
 /// The values of a built-in key style, lit with `accent` and its names on it in `dark`.
@@ -395,14 +395,11 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
         return;
     }
     let style = part_style("piano-scale-strip", &[]);
+    let look = crate::kit::element::PIANO_SCALE_STRIP.look();
     let painter = ui.painter_at(strip);
-    painter.rect_filled(
-        strip,
-        0.0,
-        style.background.unwrap_or_else(|| crate::kit::style_class::surface_or(theme::panel_background())),
-    );
-    painter.vline(strip.right() - 0.5, strip.y_range(), theme::hairline(style.border.unwrap_or_else(theme::border)));
-    let text = style.color.unwrap_or_else(theme::text_secondary);
+    painter.rect_filled(strip, 0.0, style.background.unwrap_or_else(|| crate::detail::detail_fill("panel")));
+    painter.vline(strip.right() - 0.5, strip.y_range(), theme::hairline(look.border()));
+    let text = look.color();
     let font = theme::mono_font(theme::TEXT_TINY);
     let first = layout.key_at(layout.grid.bottom() - 0.5).unwrap_or(0);
     let last = layout.key_at(layout.grid.top() + 0.5).unwrap_or(127);
@@ -415,13 +412,12 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     if let Some(key) = pointer.filter(|k| layout.rows.shows(*k)) {
         let centre = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
         let chip = Rect::from_center_size(centre, POINTER_NAME);
-        // `piano-scale-strip[kind="pointer"]`: its `background-color` and `color` where they
-        // differ from the strip's own, so the chip stands out on a strip a theme colours.
-        let plain = crate::kit::element::PIANO_SCALE_STRIP.probe();
-        let own = crate::kit::element::PIANO_SCALE_STRIP.attribute("kind", "pointer").probe();
-        painter.rect_filled(chip, 1.0, own.background_unlike(&plain, theme::text_primary()));
+        // `piano-scale-strip[kind="pointer"]`: its `background-color` and `color`, so the chip
+        // stands out on a strip a theme colours.
+        let own = crate::kit::element::PIANO_SCALE_STRIP.attribute("kind", "pointer").look();
+        painter.rect_filled(chip, 1.0, own.background());
         let name = key_name(key);
-        let ink = own.own_color_unlike(&plain, theme::text_inverse());
+        let ink = own.color();
         painter.text(centre, Align2::CENTER_CENTER, &name, font, ink);
         let response = ui.interact(chip.intersect(strip), Id::unique("piano-roll-pointer-key"), Sense::hover());
         response.widget_info(|| {
@@ -475,8 +471,8 @@ pub(super) fn draw_magnifier(ui: &Ui, pos: Pos2) {
     ui.ctx().set_cursor_icon(CursorIcon::None);
     let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("piano-roll-magnifier")));
     // `icon[kind="magnifier"]`: its `color`.
-    let line = crate::kit::element::ICON.attribute("kind", "magnifier").look().own_color_or(theme::text_primary());
-    let halo = crate::kit::style_class::surface_or(theme::window_background());
+    let line = crate::kit::element::ICON.attribute("kind", "magnifier").look().color();
+    let halo = crate::detail::detail_fill("window");
     let handle = [pos + Vec2::splat(MAGNIFIER_RADIUS * 0.7), pos + Vec2::splat(MAGNIFIER_RADIUS * 1.7)];
     painter.line_segment(handle, Stroke::new(4.0, halo));
     painter.circle_stroke(pos, MAGNIFIER_RADIUS, Stroke::new(3.5, halo));
@@ -493,7 +489,7 @@ pub(super) fn draw_ranges(painter: &egui::Painter, layout: &Layout, state: &Pian
     let Some((low, high)) = state.key_live else { return };
     let style = part_style("piano-range", &[]);
     // Its `accent-color` where it gives one, else the theme's, is what it is drawn in.
-    let accent = crate::kit::element::PIANO_RANGE.look().accent_or(theme::accent());
+    let accent = crate::kit::element::PIANO_RANGE.look().accent();
     let edge = style.border.unwrap_or(accent);
     let tint = style.background.unwrap_or_else(|| accent.gamma_multiply(RANGE_TINT));
     let tops = (low..=high).filter(|k| layout.rows.shows(*k)).map(|k| layout.y_of(k));
@@ -536,12 +532,12 @@ pub(super) fn corner(
         }
     }
     let response = widgets::button_area(ui, more, Id::unique("piano-roll-settings"), IconButton::More.name());
-    let fill = crate::kit::motion::mix(Color32::TRANSPARENT, theme::control_hover(), widgets::hover(ui, &response));
     // `piano-tool#piano-more`, as the toolbar's buttons.
     let el =
         crate::kit::element::PIANO_TOOL.id("piano-more").attribute("kind", "piano-more").response(&response).enter();
-    let ink = el.color_or(theme::text_secondary());
-    painter.rect_filled(more, el.radius_or(3.0), el.background_or(fill));
+    let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
+    let ink = el.color();
+    painter.rect_filled(more, el.radius_or(3.0), fill);
     IconButton::More.draw(&painter, more, ink, scale);
     drop(el);
     let font = theme::ui_font(theme::TEXT_SMALL);

@@ -66,6 +66,14 @@ use suhina_theme_render::{Subject, scenes};
 /// colours of the Launcher and of the Arrangement). The theme change and the colour change work
 /// those identities out afresh, so their counts move by the same 39: 425 and 657, 426 and 658
 /// (437 and 669, 438 and 670 on Windows).
+///
+/// #1451 (the detail panels, the piano roll and the browser take their colours from the base sheet)
+/// raised the FM synth's counts by 18 nodes and 18 identities over #1450's, and the styles worked
+/// out after a theme or a colour change by as many (675 and 676, 687 and 688 on Windows); the
+/// Launcher's did not move. The colours a device's canvas draws with are read from `device-canvas`
+/// and its six kinds, and the parts that fell back to different colours are told apart by kinds of
+/// their own (the expanded panel's fills, `detail-fill`, its parameters' `label`, `value` and
+/// `slider`), each read once a frame.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -89,19 +97,19 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 670,
-            identities: 657,
+            nodes: 688,
+            identities: 675,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 657,
+            theme_change_fresh: 675,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 658,
+            colour_change_fresh: 676,
         },
     ),
 ];
@@ -131,19 +139,19 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 682,
-            identities: 669,
+            nodes: 700,
+            identities: 687,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 669,
+            theme_change_fresh: 687,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 670,
+            colour_change_fresh: 688,
         },
     ),
 ];

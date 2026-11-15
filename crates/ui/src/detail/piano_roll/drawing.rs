@@ -85,8 +85,8 @@ pub(super) fn draw_start_marker(ui: &Ui, layout: &Layout, beat: f64) {
     }
     let area = layout.ruler.union(layout.grid);
     let painter = ui.painter_at(area);
-    // `start-marker`, as in the Arrangement.
-    let ink = crate::kit::element::START_MARKER.look().own_color_or(theme::text_secondary());
+    // `start-marker[kind="piano"]`, as in the Arrangement.
+    let ink = crate::kit::element::START_MARKER.attribute("kind", "piano").look().color();
     painter.vline(x, area.y_range(), Stroke::new(1.0, ink.gamma_multiply(0.6)));
     // A small flag on the ruler, so it reads as the start, not the playhead.
     let top = layout.ruler.top();
@@ -111,7 +111,7 @@ pub(super) fn draw_playhead(ui: &Ui, layout: &Layout, beat: f64) {
         return;
     }
     let painter = ui.painter_at(area);
-    let ink = crate::kit::element::PLAYHEAD.look().own_color_or(theme::accent());
+    let ink = crate::kit::element::PLAYHEAD.attribute("kind", "piano").look().color();
     painter.vline(x, area.y_range(), Stroke::new(1.0, ink));
     let response = ui.interact(
         Rect::from_center_size(Pos2::new(x, area.center().y), Vec2::new(3.0, area.height())),
@@ -269,7 +269,16 @@ pub(super) fn draw(
     let selected_style = part_style("piano-note", &[Attr::Selected]);
     let muted_style = part_style("piano-note", &[Attr::Muted]);
     // What a selected note is lit with where the sheet gives it no background: its `accent-color`.
-    let selected_accent = crate::kit::element::PIANO_NOTE.attr(Attr::Selected, true).look().accent_or(theme::accent());
+    let selected_accent = crate::kit::element::PIANO_NOTE.attr(Attr::Selected, true).look().accent();
+    // The notes' own inks, which a theme's rule for a note's text does not reach: the outline and
+    // the plain colour of a selected note, the dashes of a muted one, the name on a note.
+    let outline = crate::kit::element::PIANO_NOTE.attribute("kind", "outline").look().color();
+    let dashes = crate::kit::element::PIANO_NOTE.attribute("kind", "dashes").look().color();
+    let name_ink = |strong: bool| {
+        crate::kit::element::PIANO_NOTE.attribute("kind", "name").attr(Attr::Checked, strong).look().color()
+    };
+    let (name_on_light, name_on_dark) = (name_ink(true), name_ink(false));
+    let rows = scale_view::RowBase::look();
     // The velocity stems: a line takes only the colour its own rule declares, not the text
     // colour of the `piano-roll` around it, so muted and selected stems keep their distinction.
     let velocity_look = crate::kit::element::VELOCITY.look();
@@ -277,9 +286,13 @@ pub(super) fn draw(
     let selected_stem = crate::kit::element::VELOCITY.attr(crate::kit::element::Selected, true).look();
     // The row under the pointer: `piano-row[kind="hover"]`'s background.
     let hover_row = crate::kit::element::PIANO_ROW.attribute("kind", "hover").look();
+    let (weak_line, strong_line) = (
+        crate::kit::element::PIANO_GRID.look().border(),
+        crate::kit::element::PIANO_GRID.attribute("kind", "strong").look().border(),
+    );
     let line_colour = |strong: bool| {
         grid_style.border.map_or_else(
-            || if strong { theme::border_strong() } else { theme::border() },
+            || if strong { strong_line } else { weak_line },
             |c| {
                 if strong { c } else { c.gamma_multiply(0.6) }
             },
@@ -289,7 +302,7 @@ pub(super) fn draw(
     painter.rect_filled(
         layout.grid,
         0.0,
-        grid_style.background.unwrap_or_else(|| crate::kit::style_class::surface_or(theme::window_background())),
+        grid_style.background.unwrap_or_else(|| crate::detail::detail_fill("window")),
     );
     el.paint_background(&painter, layout.grid, 0.0);
     for key in (first_key..=last_key).filter(|k| layout.rows.shows(*k)) {
@@ -304,12 +317,13 @@ pub(super) fn draw(
         let highlighted = clip.scale.filter(|_| state.highlight_scale);
         let fill = match (highlighted, own) {
             (None, Some(own)) => own,
-            _ => scale_view::row_fill(highlighted, key, is_black(key), clip.color),
+            _ => scale_view::row_fill(highlighted, key, is_black(key), clip.color, rows),
         };
         grid_painter.rect_filled(row, 0.0, fill);
         // The row under the pointer, so it can be followed to the strip that names it.
         if state.hover_key() == Some(key) {
-            grid_painter.rect_filled(row, 0.0, hover_row.background_or(theme::text_primary().gamma_multiply(0.05)));
+            let tint = hover_row.themed_background().unwrap_or_else(|| hover_row.background().gamma_multiply(0.05));
+            grid_painter.rect_filled(row, 0.0, tint);
         }
         grid_painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line_colour(key % 12 == 0)));
     }
@@ -330,15 +344,10 @@ pub(super) fn draw(
     // lines and numbers are drawn: `ruler-tick` and `ruler-number` inside it, as in the
     // Arrangement, so `ruler > ruler-number` reaches them and they inherit its text colour.
     let ruler = crate::kit::element::RULER.enter();
-    painter.rect_filled(
-        layout.ruler,
-        0.0,
-        ruler.background_or(crate::kit::style_class::surface_or(theme::panel_background())),
-    );
+    painter.rect_filled(layout.ruler, 0.0, ruler.background_or(crate::detail::detail_fill("panel")));
     let ruler_painter = painter.with_clip_rect(layout.ruler);
     let (tick, number) = (crate::kit::element::RULER_TICK.look(), crate::kit::element::RULER_NUMBER.look());
-    let (tick, number) =
-        (tick.own_color_or(ruler.border_or(theme::border_strong())), number.color_or(theme::text_value()));
+    let (tick, number) = (tick.own_color_or(ruler.border()), number.color());
     let bar_points = (clip.bar_beats as f32 * layout.beat_width).max(1.0);
     let label_every = (36.0 / bar_points).ceil().max(1.0) as u64;
     let first_bar = (first_beat / bar).floor() as u64;
@@ -415,7 +424,7 @@ pub(super) fn draw(
     };
     // The velocity line being drawn, over the lane.
     if let Some(Effect::VelocityLine { from, to, .. }) = &preview {
-        let ink = crate::kit::element::VELOCITY.attribute("kind", "line").look().own_color_or(theme::accent());
+        let ink = crate::kit::element::VELOCITY.attribute("kind", "line").look().color();
         lane_painter.line_segment([*from, *to], Stroke::new(1.0, ink));
     }
     // A copying drag (Ctrl): the selected notes stay where they are, their copies move.
@@ -481,8 +490,7 @@ pub(super) fn draw(
             note_style
         };
         let radius = style.radius.unwrap_or(0.0);
-        let own =
-            if selected { selected_note_color(clip.color, selected_accent, theme::text_primary()) } else { clip.color };
+        let own = if selected { selected_note_color(clip.color, selected_accent, outline) } else { clip.color };
         grid_painter.rect_filled(rect, radius, style.background.unwrap_or(own).gamma_multiply(alpha));
         // A muted note's edge is its dashes alone: a solid edge under them in the same colour would
         // hide them. A selected one keeps its selection's edge.
@@ -490,18 +498,18 @@ pub(super) fn draw(
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
         }
         if muted {
-            dashed_outline(&grid_painter, rect, muted_style.border.unwrap_or_else(theme::text_hint));
+            dashed_outline(&grid_painter, rect, muted_style.border.unwrap_or(dashes));
         }
         if selected && style.border.is_none() {
-            grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, theme::text_primary()), StrokeKind::Inside);
+            grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, outline), StrokeKind::Inside);
         }
         if unmuting {
             // The stroke is bringing this note back: a solid edge says so before the button is up.
-            let edge = muted_style.border.unwrap_or_else(theme::text_hint);
+            let edge = muted_style.border.unwrap_or(dashes);
             grid_painter.rect_stroke(rect, 0.0, Stroke::new(1.0, edge), StrokeKind::Inside);
         }
         // Every note says which it is; on a block too small for its name, as much as fits.
-        let readable = if alpha >= 0.55 { theme::text_inverse() } else { theme::text_primary() };
+        let readable = if alpha >= 0.55 { name_on_light } else { name_on_dark };
         grid_painter.with_clip_rect(rect.intersect(layout.grid)).text(
             Pos2::new(rect.left() + 2.0, rect.center().y),
             Align2::LEFT_CENTER,
@@ -513,9 +521,9 @@ pub(super) fn draw(
         let x = rect.left().round() + 0.5;
         let top = layout.lane.bottom() - 2.0 - velocity_height(note.velocity, layout.lane);
         let stem = if muted {
-            muted_stem.own_color_or(theme::text_hint())
+            muted_stem.color()
         } else if selected {
-            selected_stem.own_color_or(theme::text_primary())
+            selected_stem.color()
         } else {
             velocity_look.own_color_or(clip.color)
         };
@@ -523,7 +531,7 @@ pub(super) fn draw(
         lane_painter.rect_filled(Rect::from_min_size(Pos2::new(x - 2.5, top), Vec2::new(5.0, 2.0)), 0.0, stem);
     }
     if let Some(rect) = selecting {
-        let edge = crate::kit::element::MARQUEE.look().own_color_or(theme::text_secondary());
+        let edge = crate::kit::element::MARQUEE.attribute("kind", "notes").look().color();
         grid_painter.rect_stroke(rect, 0.0, theme::hairline(edge), StrokeKind::Inside);
     }
     // Notes a draw or paint drag is making, outlined until they are added.
@@ -533,8 +541,8 @@ pub(super) fn draw(
     };
     // `piano-note[kind="draft"]`.
     let draft = (!drawn.is_empty()).then(|| crate::kit::element::PIANO_NOTE.attribute("kind", "draft").look());
-    let (draft_fill, draft_edge) = draft.map_or((clip.color.gamma_multiply(0.7), theme::text_primary()), |look| {
-        (look.background_or(clip.color.gamma_multiply(0.7)), look.border_or(theme::text_primary()))
+    let (draft_fill, draft_edge) = draft.map_or((clip.color.gamma_multiply(0.7), outline), |look| {
+        (look.background_or(clip.color.gamma_multiply(0.7)), look.border())
     });
     for note in &drawn {
         let rect = layout.note_rect(note);
@@ -548,7 +556,7 @@ pub(super) fn draw(
         // `piano-slice`, `[kind="delete"]` for the right button's: its `color` and, over what it
         // deletes, its `background-color`.
         let look = crate::kit::element::PIANO_SLICE.attribute("kind", if cut.delete { "delete" } else { "cut" }).look();
-        let ink = look.own_color_or(if cut.delete { theme::recording() } else { theme::accent() });
+        let ink = look.color();
         grid_painter.line_segment(cut.line, Stroke::new(1.5, ink));
         for &(index, at) in &cut.cuts {
             let Some(note) = clip.notes.get(index) else { continue };
@@ -556,13 +564,13 @@ pub(super) fn draw(
             if cut.delete {
                 let (start, end) = edits::SliceCut::removed(note, at);
                 let gone = Rect::from_x_y_ranges(layout.x_of(start)..=layout.x_of(end), rect.y_range());
-                let fill = look.background_or(theme::window_background().gamma_multiply(0.75));
+                let fill = look.themed_background().unwrap_or_else(|| look.background().gamma_multiply(0.75));
                 grid_painter.rect_filled(gone.intersect(rect), 0.0, fill);
             }
             grid_painter.vline(layout.x_of(at).round() + 0.5, rect.y_range().expand(1.0), Stroke::new(2.0, ink));
         }
     }
-    let band = crate::kit::element::SEPARATOR.attribute("kind", "band").look().own_color_or(theme::border_strong());
+    let band = crate::kit::element::SEPARATOR.attribute("kind", "band").look().color();
     painter.hline(layout.lane.x_range(), layout.lane.top() + 0.5, theme::hairline(band));
 
     draw_keys(&painter, layout, clip, state);
@@ -570,15 +578,15 @@ pub(super) fn draw(
         Pos2::new(layout.strip.left(), layout.ruler.top()),
         Pos2::new(layout.keys.right(), layout.ruler.bottom()),
     );
-    painter.rect_filled(corner, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(corner, 0.0, crate::detail::detail_fill("panel"));
     let lane_keys = Rect::from_min_max(
         Pos2::new(layout.strip.left(), layout.lane.top()),
         Pos2::new(layout.keys.right(), layout.lane.bottom()),
     );
-    painter.rect_filled(lane_keys, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(lane_keys, 0.0, crate::detail::detail_fill("panel"));
     if lane_keys.height() >= 24.0 {
         let font = theme::mono_font(theme::TEXT_TINY);
-        let hint = crate::kit::element::LABEL.look().color_or(theme::text_hint());
+        let hint = crate::kit::element::LABEL.attribute("kind", "hint").look().color();
         widgets::text_in(
             &painter,
             Rect::from_min_size(lane_keys.min, Vec2::new(lane_keys.width() - 3.0, 10.0)),

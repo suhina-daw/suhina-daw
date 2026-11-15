@@ -243,9 +243,9 @@ pub(super) fn tool_pointer_rect(pos: Pos2, hotspot: Vec2, size: f32) -> Rect {
 /// It is `icon[kind="pointer"]`: its `color`, and its `background-color` for the ring.
 pub(super) fn draw_tool_pointer(painter: &egui::Painter, icon: IconButton, rect: Rect) {
     let look = crate::kit::element::ICON.attribute("kind", "pointer").look();
-    let ink = look.own_color_or(theme::text_primary());
+    let ink = look.color();
     if let Some(svg) = icon.svg() {
-        let ring = look.background_or(theme::window_background());
+        let ring = look.background();
         for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
             crate::kit::skin::paint_icon(painter, rect.translate(Vec2::new(x, y)), svg, ring);
         }

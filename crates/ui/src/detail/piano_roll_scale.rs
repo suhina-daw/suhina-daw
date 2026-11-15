@@ -14,7 +14,6 @@ use suhina_engine::model::Scale;
 
 use crate::detail::piano_roll::PianoClip;
 use crate::interaction::key_name::key_name;
-use crate::kit::theme;
 
 /// Which key rows the piano roll shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -139,17 +138,42 @@ pub fn rows(clip: &PianoClip, fold: Fold) -> KeyRows {
     }
 }
 
+/// The plain rows' own fills, read once for a frame: the `background-color` of `piano-row` (the
+/// lighter row) and of `piano-row-black` (the darker one, the colour a scale's rows are tinted
+/// from).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RowBase {
+    pub light: egui::Color32,
+    pub dark: egui::Color32,
+}
+
+impl RowBase {
+    /// The fills the sheet gives the plain rows.
+    pub(crate) fn look() -> Self {
+        Self {
+            light: crate::kit::element::PIANO_ROW.look().background(),
+            dark: crate::kit::element::PIANO_ROW_BLACK.look().background(),
+        }
+    }
+}
+
 /// How a key row is filled: with a scale, every row dark and the keys in it tinted with the
 /// clip's `color` (a little, [`SCALE_TINT`]; the root more, [`ROOT_TINT`]); without one, white
 /// keys lighter than black keys.
-pub(crate) fn row_fill(scale: Option<Scale>, key: u8, black: bool, color: egui::Color32) -> egui::Color32 {
-    let tinted = |amount: f32| theme::window_background().lerp_to_gamma(color.to_opaque(), amount);
+pub(crate) fn row_fill(
+    scale: Option<Scale>,
+    key: u8,
+    black: bool,
+    color: egui::Color32,
+    base: RowBase,
+) -> egui::Color32 {
+    let tinted = |amount: f32| base.dark.lerp_to_gamma(color.to_opaque(), amount);
     match scale {
         Some(scale) if scale.contains(key) && key % 12 == scale.root() => tinted(ROOT_TINT),
         Some(scale) if scale.contains(key) => tinted(SCALE_TINT),
-        Some(_) => dark_row(),
-        None if black => dark_row(),
-        None => light_row(),
+        Some(_) => dark_row(base),
+        None if black => dark_row(base),
+        None => light_row(base),
     }
 }
 
@@ -159,19 +183,19 @@ const ROOT_TINT: f32 = 0.14;
 
 /// The lighter plain row. Under an authored surface it paints nothing: the region already painted
 /// that surface, and painting it again would stack its alpha; else it is the panel colour.
-fn light_row() -> egui::Color32 {
-    if crate::kit::style_class::has_surface() { egui::Color32::TRANSPARENT } else { theme::panel_background() }
+fn light_row(base: RowBase) -> egui::Color32 {
+    if crate::kit::style_class::has_surface() { egui::Color32::TRANSPARENT } else { base.light }
 }
 
 /// The darker plain row: the window colour; under an authored surface, that surface pulled toward
 /// the window colour (black, then white, where that leaves it as it is), painted over it so it reads
 /// darker than the light row, which paints nothing.
-fn dark_row() -> egui::Color32 {
+fn dark_row(base: RowBase) -> egui::Color32 {
     if !crate::kit::style_class::has_surface() {
-        return theme::window_background();
+        return base.dark;
     }
-    let surface = crate::kit::style_class::surface_or(theme::window_background());
-    [theme::window_background(), egui::Color32::BLACK, egui::Color32::WHITE]
+    let surface = crate::kit::style_class::surface_or(base.dark);
+    [base.dark, egui::Color32::BLACK, egui::Color32::WHITE]
         .into_iter()
         .map(|toward| surface.lerp_to_gamma(toward, 0.5))
         .find(|row| *row != egui::Color32::TRANSPARENT && *row != surface)
@@ -220,6 +244,7 @@ pub(crate) fn key_readers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kit::theme;
     use suhina_engine::model::ScaleMode;
 
     fn scale(root: u8, mode: ScaleMode) -> Scale {
@@ -267,26 +292,30 @@ mod tests {
         let c = Some(scale(0, ScaleMode::Major));
         let red = egui::Color32::from_rgb(220, 40, 40);
         let dark = theme::window_background();
-        let (root, inside) = (row_fill(c, 60, false, red), row_fill(c, 62, false, red));
+        let base = RowBase { light: theme::panel_background(), dark };
+        let (root, inside) = (row_fill(c, 60, false, red, base), row_fill(c, 62, false, red, base));
         assert_eq!(root, dark.lerp_to_gamma(red, ROOT_TINT), "the root, the clip's colour a little more");
         assert_eq!(inside, dark.lerp_to_gamma(red, SCALE_TINT), "in the scale, a little of the clip's colour");
         assert_ne!(root, inside, "the root stands out");
-        assert_eq!(row_fill(c, 61, true, red), dark, "outside it");
-        assert_eq!(row_fill(c, 61, false, red), dark, "white or black alike");
-        assert_eq!(row_fill(None, 61, true, red), theme::window_background());
-        assert_eq!(row_fill(None, 60, false, red), theme::panel_background());
+        assert_eq!(row_fill(c, 61, true, red, base), dark, "outside it");
+        assert_eq!(row_fill(c, 61, false, red, base), dark, "white or black alike");
+        assert_eq!(row_fill(None, 61, true, red, base), theme::window_background());
+        assert_eq!(row_fill(None, 60, false, red, base), theme::panel_background());
     }
 
     #[test]
     fn plain_rows_stay_distinct_under_an_authored_surface() {
         let surface = egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100);
+        let base = RowBase { light: theme::panel_background(), dark: theme::window_background() };
         crate::kit::style_class::with_surface(surface, || {
-            let (white, black) =
-                (row_fill(None, 60, false, egui::Color32::RED), row_fill(None, 61, true, egui::Color32::RED));
+            let (white, black) = (
+                row_fill(None, 60, false, egui::Color32::RED, base),
+                row_fill(None, 61, true, egui::Color32::RED, base),
+            );
             assert_eq!(white, egui::Color32::TRANSPARENT, "the light row paints nothing over the surface");
             assert_ne!(white, black, "the dark row is a tint");
             assert_eq!(
-                row_fill(Some(scale(0, ScaleMode::Major)), 61, true, egui::Color32::RED),
+                row_fill(Some(scale(0, ScaleMode::Major)), 61, true, egui::Color32::RED, base),
                 black,
                 "outside a scale too"
             );
@@ -305,6 +334,7 @@ mod tests {
     #[test]
     fn plain_rows_look_different_on_any_surface() {
         let opaque_window = theme::window_background().to_opaque();
+        let base = RowBase { light: theme::panel_background(), dark: theme::window_background() };
         let surfaces = [
             theme::window_background(),
             opaque_window,
@@ -316,8 +346,8 @@ mod tests {
         for surface in surfaces {
             crate::kit::style_class::with_surface(surface, || {
                 // The region paints the surface, then each row paints its fill over it.
-                let white = over(row_fill(None, 60, false, egui::Color32::RED), surface);
-                let black = over(row_fill(None, 61, true, egui::Color32::RED), surface);
+                let white = over(row_fill(None, 60, false, egui::Color32::RED, base), surface);
+                let black = over(row_fill(None, 61, true, egui::Color32::RED, base), surface);
                 assert_ne!(white, black, "surface {surface:?}");
             });
         }

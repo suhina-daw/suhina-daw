@@ -262,7 +262,7 @@ fn tools_part(
     }
     // What it holds goes in its content box, inside its border and padding (#1336).
     let part = el
-        .paint_with(painter, part, crate::kit::element::Native { radius: 0.0, fill: theme::panel_background() })
+        .paint_with(painter, part, crate::kit::element::Native { radius: 0.0, fill: crate::detail::fill_of("panel") })
         .content;
     let tab_row = Rect::from_min_size(part.min, Vec2::new(part.width(), TAB_ROW));
     tab_row_of(ui, painter, tab_row, state);
@@ -326,12 +326,7 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
             .response(&response)
             .attr(crate::kit::element::Checked, on)
             .enter();
-        let ink = if on {
-            theme::text_primary()
-        } else {
-            motion::mix(theme::text_hint(), theme::text_secondary(), widgets::hover(ui, &response))
-        };
-        let ink = el.own_color_or(ink);
+        let ink = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::color);
         // The tab's box is painted, and its word lies in the content box, inside its border and
         // padding.
         let content = el.paint(painter, cell).content;
@@ -341,7 +336,7 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
                 Pos2::new(cell.left() + 4.0, cell.bottom() - 2.0),
                 Pos2::new(cell.right() - 4.0, cell.bottom()),
             );
-            painter.rect_filled(line, 0.0, el.accent_or(theme::accent()));
+            painter.rect_filled(line, 0.0, el.accent());
         }
         if response.clicked() && !on {
             state.tools_tab = tab;
@@ -354,9 +349,7 @@ fn tool_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: 
     let response = widgets::button_area(ui, rect, Id::unique(("midi-tools-button", label)), label);
     // A `button` to the theme, as the column's buttons were.
     let ink = if enabled {
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        button_face(crate::kit::element::BUTTON, painter, rect, &response, false, fill, true)
-            .unwrap_or_else(theme::text_primary)
+        button_face(ui, crate::kit::element::BUTTON, "panel", painter, rect, &response, false, None, true)
     } else {
         disabled_face(painter, rect);
         super::hint_ink()
@@ -404,8 +397,9 @@ fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, short: &st
     let response = widgets::button_area(ui, row, Id::unique(("midi-tools-check", name)), format!("{name}: {state}"));
     let side = CHECK.min(row.height());
     let mark = Rect::from_min_size(Pos2::new(row.left(), row.center().y - side / 2.0), Vec2::splat(side));
-    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
-    let ink = button_face(crate::kit::element::BUTTON, painter, mark, &response, on, fill, !on).unwrap_or(ink);
+    let colours = widgets::toggle_colors(ui, &response, on);
+    let ink =
+        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, mark, &response, on, Some(colours), !on);
     if on {
         let at = |x: f32, y: f32| Pos2::new(mark.left() + side * x, mark.top() + side * y);
         let line = egui::Stroke::new(1.5, ink);
@@ -414,11 +408,11 @@ fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, short: &st
     }
     let text = Rect::from_min_max(Pos2::new(mark.right() + 6.0, row.top()), row.max);
     // Its words: `label`'s own `color` where a rule gives one, else brightening under the pointer.
-    let colour = crate::kit::element::LABEL.response(&response).look().own_color_or(motion::mix(
-        theme::text_secondary(),
-        theme::text_primary(),
-        widgets::hover(ui, &response),
-    ));
+    let colour = crate::kit::element::LABEL
+        .attribute("kind", "check")
+        .response(&response)
+        .enter()
+        .hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::color);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let shown = check_text(name, short, text.width(), |t| widgets::text_width(ui, t, font.clone()));
     widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, font, colour);
@@ -611,11 +605,8 @@ fn chip(ui: &Ui, painter: &egui::Painter, rect: Rect, tools: &Tools<'_>) {
     // `accent-color` then, else its own `color`.
     let look =
         crate::kit::element::LABEL.attribute("kind", "head").attr(crate::kit::element::Selected, selected).look();
-    let (head_ink, count_ink) = if selected {
-        (look.accent_or(theme::accent()), super::title_ink())
-    } else {
-        (look.own_color_or(theme::text_hint()), super::caption_ink())
-    };
+    let (head_ink, count_ink) =
+        if selected { (look.accent(), super::title_ink()) } else { (look.color(), super::caption_ink()) };
     let tiny = theme::ui_font(theme::TEXT_TINY);
     let mono = theme::mono_font(theme::TEXT_TINY);
     let count_width = widgets::text_width(ui, &count, mono.clone());
@@ -823,8 +814,8 @@ fn transform_tab(
     let response =
         widgets::button_area(ui, apply, Id::unique("midi-tools-apply"), &apply_text).on_hover_text(chosen.hint());
     let ink = if enabled {
-        let (fill, ink) = widgets::toggle_colors(ui, &response, true);
-        button_face(crate::kit::element::BUTTON, painter, apply, &response, false, fill, false).unwrap_or(ink)
+        let colours = widgets::toggle_colors(ui, &response, true);
+        button_face(ui, crate::kit::element::BUTTON, "panel", painter, apply, &response, false, Some(colours), false)
     } else {
         disabled_face(painter, apply);
         super::hint_ink()
@@ -860,16 +851,17 @@ fn amount_knob(ui: &Ui, painter: &egui::Painter, rect: Rect, amount: f64) -> f64
         info.current_text_value = Some(text.clone());
         info
     });
-    let slider = crate::kit::element::SLIDER.id(QUANTISE_AMOUNT).response(&response).enter();
+    let slider =
+        crate::kit::element::SLIDER.id(QUANTISE_AMOUNT).attribute("kind", "quantise").response(&response).enter();
     widgets::knob_with_value(
         painter,
         rect,
         &slider,
         (amount / 100.0) as f32,
-        slider.accent_or(theme::text_primary()),
+        slider.accent(),
         Some(&response),
         &text,
-        slider.own_color_or(theme::text_secondary()),
+        slider.color(),
         widgets::ValuePosition::Right,
         10.0,
     );

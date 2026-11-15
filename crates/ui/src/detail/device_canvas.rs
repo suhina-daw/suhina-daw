@@ -276,7 +276,7 @@ fn sample_waveform(
     });
     let source = ui.ctx().data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(sample_source_id(track, device)));
     let painter = ui.painter_at(visible);
-    let mut colors = crate::kit::theme::palette();
+    let mut colors = colours();
     let scoped = styled_palette(widget_palette(), style);
     colors.accent = color(scoped.accent);
     colors.text_primary = color(scoped.text);
@@ -847,7 +847,7 @@ fn sample_waveform(
                     wave_painter.rect_filled(
                         band,
                         0.,
-                        crate::kit::style_class::surface_or(crate::kit::theme::panel_background()).gamma_multiply(0.6),
+                        crate::kit::style_class::surface_or(colours().panel_background).gamma_multiply(0.6),
                     );
                     continue;
                 }
@@ -1061,7 +1061,7 @@ fn envelope(
     let values = [a.value, d.value, normalized(l, false), r.map_or(0., |p| p.value)];
     let max_time = (a.max + d.max + r.map_or(0., |p| p.max)).max(0.01);
     let plot = EnvelopePlot::new(bounds, values, max_time, adsr);
-    let mut palette = crate::kit::theme::palette();
+    let mut palette = colours();
     let scoped = styled_palette(widget_palette(), style);
     palette.accent = color(scoped.accent);
     palette.border = color(scoped.border);
@@ -1192,8 +1192,74 @@ fn accent_text(accent: egui::Color32) -> [u8; 4] {
     let luminance = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
     if luminance > 145.0 { [29, 28, 26, 255] } else { [255, 255, 255, 255] }
 }
+/// The colours a device's canvas draws with, read from the `device-canvas` element in the scope of
+/// the device's panel: its `color` the text, its `background-color` the controls, its
+/// `border-color` the lines and its `accent-color` the accent; its kinds `secondary`, `value` and
+/// `inverse` (`color`) the other texts, `panel`, `window` and `active` (`background-color`) the
+/// other fills. A canvas reads them once a frame ([`Colours::enter`]), so its drawings take them
+/// from one place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Colours {
+    pub text_primary: Color32,
+    pub text_secondary: Color32,
+    pub text_value: Color32,
+    pub text_inverse: Color32,
+    pub window_background: Color32,
+    pub panel_background: Color32,
+    pub control_background: Color32,
+    pub control_active: Color32,
+    pub border: Color32,
+    pub accent: Color32,
+}
+
+thread_local! {
+    /// The colours of the canvas being drawn, while one is.
+    static COLOURS: std::cell::Cell<Option<Colours>> = const { std::cell::Cell::new(None) };
+}
+
+impl Colours {
+    /// What the sheet gives a canvas drawn here.
+    fn look() -> Self {
+        use crate::kit::element::DEVICE_CANVAS;
+        let kind = |kind| DEVICE_CANVAS.attribute("kind", kind).look();
+        let canvas = DEVICE_CANVAS.look();
+        Self {
+            text_primary: canvas.color(),
+            text_secondary: kind("secondary").color(),
+            text_value: kind("value").color(),
+            text_inverse: kind("inverse").color(),
+            window_background: kind("window").background(),
+            panel_background: kind("panel").background(),
+            control_background: canvas.background(),
+            control_active: kind("active").background(),
+            border: canvas.border(),
+            accent: canvas.accent(),
+        }
+    }
+
+    /// Reads the colours for the canvas about to be drawn, and keeps them until the value is
+    /// dropped.
+    fn enter() -> ColoursScope {
+        ColoursScope(COLOURS.with(|colours| colours.replace(Some(Self::look()))))
+    }
+}
+
+/// Puts back the colours of the canvas that was being drawn before.
+struct ColoursScope(Option<Colours>);
+
+impl Drop for ColoursScope {
+    fn drop(&mut self) {
+        COLOURS.with(|colours| colours.set(self.0));
+    }
+}
+
+/// The colours of the canvas being drawn; read afresh where none is.
+pub(crate) fn colours() -> Colours {
+    COLOURS.with(std::cell::Cell::get).unwrap_or_else(Colours::look)
+}
+
 fn widget_palette() -> WidgetPalette {
-    let colors = crate::kit::theme::palette();
+    let colors = colours();
     WidgetPalette {
         text: rgba(colors.text_primary),
         panel: rgba(colors.panel_background),
@@ -1438,10 +1504,7 @@ fn handle(
             if hollow {
                 painter.circle_stroke(center, if hot { 4.0 } else { 3.0 }, Stroke::new(1.5, color(line_color)));
             } else {
-                let ring = Stroke::new(
-                    1.0,
-                    crate::kit::style_class::surface_or(crate::kit::theme::palette().panel_background),
-                );
+                let ring = Stroke::new(1.0, crate::kit::style_class::surface_or(colours().panel_background));
                 painter.circle(center, if hot { 5.5 } else { 4.0 }, color(line_color), ring);
             }
         }
@@ -1582,7 +1645,7 @@ fn color(c: [u8; 4]) -> Color32 {
     let [r, g, b, a] = c;
     // The theme's own colours by token ([3, 1, k]): text, panel, control, border, accent.
     if [r, g] == [3, 1] {
-        let palette = crate::kit::theme::palette();
+        let palette = colours();
         let base = match b {
             1 => palette.text_primary,
             2 => palette.panel_background,
@@ -1910,7 +1973,7 @@ fn paint_control(
         paint_sample_mode(painter, &scope, bounds, label, on, state, palette);
         return;
     }
-    let ink = scope.color_or(crate::kit::theme::text_value());
+    let ink = scope.color_or(colours().text_value);
     let mut body = None;
     let mut knob_effects = false;
     for draw in drawings.iter() {
@@ -1921,7 +1984,7 @@ fn paint_control(
                     let body_ink = crate::kit::element::KNOB_BODY
                         .response_if(response)
                         .enter()
-                        .computed_color_or(crate::kit::theme::control_background());
+                        .computed_color_or(colours().control_background);
                     crate::kit::skin::paint_as(&scope, painter, rect, "knob.body", state, body_ink)
                 });
                 if replaced {
@@ -1950,11 +2013,11 @@ fn paint_control(
                 // A canvas may fill an on button with the accent, so it reads at a glance and the
                 // SDK's dark label for an on button stays legible on it.
                 let fill = scope.background_or(if on && accent_on {
-                    crate::kit::theme::accent()
+                    colours().accent
                 } else if on {
-                    crate::kit::theme::control_active()
+                    colours().control_active
                 } else {
-                    crate::kit::theme::control_background()
+                    colours().control_background
                 });
                 let radius = scope.radius_or(*radius * scale.x.min(scale.y));
                 let painted = crate::kit::skin::button(painter, bounds, &scope, state, fill, radius);
@@ -2127,11 +2190,13 @@ pub(crate) fn show(
     // The Sampler's own commands name a device on the track by its index (#600); a device inside
     // a group (#672) is named by its last step.
     let device = at.0.last().copied().unwrap_or(0);
+    // What its drawings take from the theme, read once in the panel's scope.
+    let _colours = Colours::enter();
     let loaded = images(ui.ctx(), canvas);
     let tokens = Tokens::resolve(&panel);
     let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
     let background = if canvas.background == DeviceUi::default().background {
-        crate::kit::style_class::surface_or(crate::kit::theme::palette().panel_background)
+        crate::kit::style_class::surface_or(colours().panel_background)
     } else {
         tokens.color(canvas.background)
     };
@@ -2637,11 +2702,7 @@ pub(crate) fn show(
                                     points,
                                     Stroke::new(
                                         1.,
-                                        if selected {
-                                            ui.visuals().selection.stroke.color
-                                        } else {
-                                            crate::kit::theme::accent()
-                                        },
+                                        if selected { ui.visuals().selection.stroke.color } else { colours().accent },
                                     ),
                                 ));
                                 response.clicked()

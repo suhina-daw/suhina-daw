@@ -19,8 +19,8 @@ use crate::browser::{BrowserState, Place, Row, duration_text};
 use crate::interaction::drop::{BrowserItem, ItemKind};
 use crate::interaction::status::Status;
 use crate::kit::element::{
-    BROWSER, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, Entered, Native,
-    Selected,
+    BROWSER, BROWSER_FILL, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, Entered,
+    Native, Selected,
 };
 use crate::kit::theme::{self, BROWSER_ROW as ROW, PAD};
 use crate::kit::widgets::play_glyph;
@@ -157,10 +157,10 @@ pub struct Context<'a> {
 }
 
 /// The browser's words, by how much they stand out, each read once where a part of the browser is
-/// drawn: `label[kind="hint"]` (dim words: notes, headings, hints) and `label[kind="caption"]`
-/// (secondary words) take only a colour a rule gives them, so a colour a theme gives the whole
-/// browser keeps them dimmer than its names; `label` (names) and `label[kind="value"]` (values)
-/// inherit it.
+/// drawn: `label[kind="hint"]` (dim words: notes, headings, hints), `label[kind="caption"]`
+/// (secondary words) and `label[kind="value"]` (values), each with the colour the base sheet gives
+/// it in the browser (`browser label[kind="hint"]`), so a colour a theme gives the whole browser
+/// keeps them apart; `label` (names) takes the browser's own text colour.
 #[derive(Clone, Copy)]
 pub(crate) struct Inks {
     pub(crate) hint: Color32,
@@ -169,7 +169,7 @@ pub(crate) struct Inks {
     pub(crate) value: Color32,
 }
 
-/// A line between the browser's parts: `separator[kind="row"]`'s own `color`, else the border.
+/// A line between the browser's parts: `separator[kind="row"]`'s `color`.
 pub(crate) fn rule() -> Color32 {
     crate::kit::element::row_line()
 }
@@ -177,10 +177,10 @@ pub(crate) fn rule() -> Color32 {
 pub(crate) fn inks() -> Inks {
     use crate::kit::element::LABEL;
     Inks {
-        hint: LABEL.attribute("kind", "hint").look().own_color_or(theme::browser_text_hint()),
-        secondary: LABEL.attribute("kind", "caption").look().own_color_or(theme::browser_text_secondary()),
-        primary: LABEL.look().color_or(theme::browser_text_primary()),
-        value: LABEL.attribute("kind", "value").look().color_or(theme::browser_text_value()),
+        hint: LABEL.attribute("kind", "hint").look().color(),
+        secondary: LABEL.attribute("kind", "caption").look().color(),
+        primary: LABEL.look().color(),
+        value: LABEL.attribute("kind", "value").look().color(),
     }
 }
 
@@ -267,7 +267,7 @@ fn icon(painter: &egui::Painter, rect: Rect, kind: ItemKind, color: Color32) {
 }
 
 fn tag_color(text: &str) -> Color32 {
-    theme::parse_hex(text).unwrap_or_else(theme::browser_text_hint)
+    theme::parse_hex(text).unwrap_or_else(|| inks().hint)
 }
 
 /// Runs a library or preview command for the browser; an error goes to the status bar.
@@ -315,8 +315,6 @@ fn reveal_added_tag(state: &mut BrowserState, projects: &mut Projects, name: &st
 /// Draws the browser in `area`.
 pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) -> BrowserOut {
     let style = BROWSER.enter();
-    // Read inside the entered browser, so a rule scoped to it reaches the inks.
-    let tier = inks();
     let mut styled_ui = style.ui(ui);
     let ui = &mut *styled_ui;
 
@@ -326,13 +324,8 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let painter = ui.painter_at(area);
     // The panel's own background, over the window's (#1233); the browser is laid out in its
     // content box, inside its border and padding (#1336).
-    let area = style
-        .paint_with(
-            &painter,
-            area,
-            Native { radius: 0.0, fill: crate::kit::style_class::surface_or(theme::panel_background()) },
-        )
-        .content;
+    let area =
+        style.paint_with(&painter, area, Native { radius: 0.0, fill: crate::browser::browser_fill("panel") }).content;
     state.poll();
     suhina_plugins::trace::timed("library poll", || projects.file_library_mut().poll());
 
@@ -387,8 +380,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             Chip::List => !showing_map,
             Chip::Map => showing_map,
         };
-        let (hovered, lit) = widgets::toggle_motion(ui, &response, chosen);
-        let (el, sides) = BUTTON.response(&response).enter_toggle(&[Checked], chosen, lit > 0.0);
+        let lit = widgets::lit_toggle_kind(ui, &response, BUTTON.builder(), &[Checked], chosen, "chip");
         if response.clicked() {
             match chip {
                 Chip::Recent(group) => {
@@ -401,19 +393,10 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             }
             state.scroll = 0.0;
         }
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), hovered);
-        // Lit, only a rule for `button[checked]` colours it, in fill and in image: one for every
-        // `button` does not hide which chip is chosen.
-        let toggle = widgets::Toggle::of(
-            &el,
-            sides.as_ref(),
-            widgets::UnlitInk::Own,
-            (idle, tier.secondary),
-            theme::control_selected(),
-            |_| theme::text_inverse(),
-        );
-        let (fill, text) = toggle.at(lit);
-        widgets::toggle_surface(&painter, rect, &el, &response, fill, toggle.image(lit), 0.0);
+        // `button[kind="chip"]`, `[checked]` while chosen: its colours are the base sheet's, in fill
+        // and in image, and only a rule for the lit state lights it.
+        let (fill, text) = lit.colors();
+        widgets::toggle_surface(&painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, title, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }
@@ -494,7 +477,7 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
     let painter = ui.painter_at(rect);
     // `.browser-search` (or `browser text-input`): its background, border, radius and `color`.
     let search_style = crate::kit::element::TEXT_INPUT.id("browser-search").enter();
-    paint_row(&painter, &search_style, rect, crate::kit::style_class::surface_or(theme::window_background()));
+    paint_row(&painter, &search_style, rect, crate::browser::browser_fill("window"));
     // Each side at its own width (an underline: `border-width: 0 0 1px`).
     if let Some(style) = search_style.style() {
         crate::kit::native_css::border(&painter, rect, style.radius, &style);
@@ -692,13 +675,8 @@ fn entry_row(
                 state.scroll = 0.0;
             }
             if rect.intersects(area) {
-                let style = place_style(&response, chosen);
-                let fill = if chosen {
-                    theme::control_active()
-                } else {
-                    motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
-                };
-                paint_row(painter, &style, rect.intersect(area), fill);
+                let style = place_style(&response, chosen, false);
+                paint_faded_row(painter, &style, rect.intersect(area), widgets::hover(ui, &response));
                 let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
                 let color = if chosen { tier.primary } else { tier.secondary };
                 let color = style.color_or(color);
@@ -707,14 +685,9 @@ fn entry_row(
             return response;
         }
     };
-    let fill = if chosen {
-        theme::control_active()
-    } else {
-        motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
-    };
-    let style = place_style(&response, chosen);
+    let style = place_style(&response, chosen, false);
     if rect.intersects(area) {
-        paint_row(painter, &style, rect.intersect(area), fill);
+        paint_faded_row(painter, &style, rect.intersect(area), widgets::hover(ui, &response));
         let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
         let color = if chosen { tier.primary } else { tier.secondary };
         let color = style.color_or(color);
@@ -1120,8 +1093,6 @@ fn results_view(
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Browser {}", row.item.name)));
         let selected = state.selected.iter().any(|s| s.key == row.item.key);
-        // `browser-row`, with `:hover`, `:active` and `[selected]`; its `color` is the name's.
-        let row_style = BROWSER_ROW_ELEMENT.response(&response).attr(Selected, selected).enter();
         let drop_here = dragging_samples
             && row.item.kind == ItemKind::Folder
             && pointer.is_some_and(|p| shown.contains(p))
@@ -1139,14 +1110,11 @@ fn results_view(
         if tag_here {
             state.drop_item = Some(row.item.clone());
         }
-        let fill = if drop_here || tag_here {
-            theme::control_hover()
-        } else if selected {
-            theme::control_active()
-        } else {
-            motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
-        };
-        paint_row(&painter, &row_style, shown, fill);
+        // `browser-row`, with `:hover`, `:active` and `[selected]`, `[kind="drop"]` while a drop
+        // lands on it; its `color` is the name's.
+        let row_style = BROWSER_ROW_ELEMENT.response(&response).attr(Selected, selected);
+        let row_style = if drop_here || tag_here { row_style.attribute("kind", "drop") } else { row_style }.enter();
+        paint_faded_row(&painter, &row_style, shown, widgets::hover(ui, &response));
         let mut x = rect.left() + 4.0 + row.depth as f32 * INDENT;
         let lead = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(10.0, ROW));
         let previewable = matches!(row.item.kind, ItemKind::Sample | ItemKind::Midi);
@@ -1777,16 +1745,9 @@ fn tags_section(
         // What a drop of dragged items lands on lights as it would under the pointer
         // ([#1254] review: which tag a drop goes to shows the same highlight).
         let items_here = !is_folder && state.drag.is_some() && state.drop_tag.as_deref() == Some(name.as_str());
-        let fill = if move_here || items_here {
-            theme::control_hover()
-        } else if chosen {
-            theme::control_active()
-        } else {
-            motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
-        };
-        let style = place_style(&response, chosen);
+        let style = place_style(&response, chosen, move_here || items_here);
         if rect.intersects(area) {
-            paint_row(painter, &style, rect.intersect(area), fill);
+            paint_faded_row(painter, &style, rect.intersect(area), widgets::hover(ui, &response));
             // The section's rows sit a step in from its title: a top-level folder's chevron
             // under the title's name, not under the title's own chevron ([#1254] review: Tags
             // and its first folder read as one level). Each level a step further.
@@ -2700,20 +2661,19 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &tag.name));
     let painter = ui.painter();
     let hover = widgets::hover(ui, &response);
-    // The row is a `browser-row` under the pointer; its box a `button`, `[checked]` while ticked.
-    let row = crate::kit::element::BROWSER_ROW.response(&response).look();
+    // The row is a `browser-row[kind="menu"]` under the pointer; its box a `button`
+    // `[kind="tag-check"]`, `[checked]` while ticked.
+    let (rest, hot) = crate::kit::element::BROWSER_ROW.attribute("kind", "menu").hover_ends(hover);
     if hover > 0.0 {
-        painter.rect_filled(rect, 3.0, row.background_or(theme::panel_hover().gamma_multiply(hover)));
+        painter.rect_filled(
+            rect,
+            3.0,
+            hot.themed_background().unwrap_or_else(|| hot.background().gamma_multiply(hover)),
+        );
     }
-    let plain = BUTTON.response(&response).probe();
-    let check = BUTTON.response(&response).attr(Checked, on).look();
+    let check = BUTTON.attribute("kind", "tag-check").response(&response).attr(Checked, on).look();
     let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 6.0, rect.center().y - BOX / 2.0), Vec2::splat(BOX));
-    let box_fill = if on {
-        check.background_unlike(&plain, theme::text_value())
-    } else {
-        check.background_or(theme::control_background())
-    };
-    painter.rect_filled(box_rect, 3.0, box_fill);
+    painter.rect_filled(box_rect, 3.0, check.background());
     if on {
         let r = box_rect.shrink(2.5);
         let tick = [
@@ -2721,18 +2681,12 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
             Pos2::new(r.left() + r.width() * 0.4, r.bottom()),
             Pos2::new(r.right(), r.top()),
         ];
-        painter.add(egui::Shape::line(
-            tick.to_vec(),
-            Stroke::new(
-                1.5,
-                check.own_color_unlike(&plain, crate::kit::style_class::surface_or(theme::window_background())),
-            ),
-        ));
+        painter.add(egui::Shape::line(tick.to_vec(), Stroke::new(1.5, check.color())));
     }
     let swatch = Pos2::new(box_rect.right() + 6.0 + SWATCH / 2.0, rect.center().y);
     painter.circle_filled(swatch, SWATCH / 2.0, tag_color(&tag.color));
     let text_rect = Rect::from_min_max(Pos2::new(rect.left() + text_left, rect.top()), rect.right_bottom());
-    let color = row.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
+    let color = hot.themed_color().unwrap_or_else(|| motion::mix(rest.color(), hot.color(), hover));
     widgets::text_in(painter, text_rect, Align2::LEFT_CENTER, &tag.name, font, color);
     response
 }
@@ -2777,7 +2731,6 @@ fn plugins_view_switch(
     chosen: suhina_library::store::PluginsView,
     out: &mut BrowserOut,
 ) {
-    let tier = inks();
     let painter = ui.painter_at(area);
     painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(rule()));
     let small = theme::ui_font(theme::TEXT_SMALL);
@@ -2795,19 +2748,9 @@ fn plugins_view_switch(
         if response.clicked() && chosen != view {
             run(projects, "library.setPluginsView", json!({ "view": view.name() }), out);
         }
-        let (hovered, lit) = widgets::toggle_motion(ui, &response, chosen == view);
-        let (style, sides) = BUTTON.response(&response).enter_toggle(&[Checked], chosen == view, lit > 0.0);
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), hovered);
-        let toggle = widgets::Toggle::of(
-            &style,
-            sides.as_ref(),
-            widgets::UnlitInk::Own,
-            (idle, tier.secondary),
-            theme::control_selected(),
-            |_| theme::text_inverse(),
-        );
-        let (fill, text) = toggle.at(lit);
-        widgets::toggle_surface(&painter, rect, &style, &response, fill, toggle.image(lit), 0.0);
+        let lit = widgets::lit_toggle_kind(ui, &response, BUTTON.builder(), &[Checked], chosen == view, "chip");
+        let (fill, text) = lit.colors();
+        widgets::toggle_surface(&painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }
@@ -2863,8 +2806,14 @@ fn columns_header(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
         let label =
             if chosen { format!("{name} {}", if descending { "▼" } else { "▲" }) } else { name.to_string() };
         let color = if chosen { tier.primary } else { tier.hint };
-        let hover = motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(rect, 0.0, hover);
+        // A heading's cell is a `browser-row[kind="header"]`, tinted under the pointer.
+        let cell = crate::kit::element::BROWSER_ROW.attribute("kind", "header").response(&response).enter();
+        painter.rect_filled(
+            rect,
+            0.0,
+            cell.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
+        );
+        drop(cell);
         let align = if index == 0 { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
         widgets::text_in(&painter, rect, align, &label, small.clone(), color);
     }
@@ -2939,7 +2888,7 @@ fn preview_strip(
     // one, the surface `show` painted already is its background, and painting it again would
     // stack its alpha.
     if !crate::kit::style_class::has_surface() {
-        painter.rect_filled(area, 0.0, theme::window_background());
+        painter.rect_filled(area, 0.0, crate::browser::browser_fill("window"));
     }
     painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(rule()));
     // The Auto switch at the top right: a selected sample plays by itself while it is lit
@@ -2978,11 +2927,12 @@ fn preview_strip(
                 let stop = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::splat(PLAY));
                 let response = widgets::button_area(ui, stop, Id::unique("browser-preview-play"), "Stop preview");
                 {
-                    let el = BUTTON.response(&response).attr(Checked, true).enter();
-                    widgets::button_surface(&painter, stop, &el, &response, true, theme::control_background(), 0.0);
+                    let el = BUTTON.attribute("kind", "preview").response(&response).attr(Checked, true).enter();
+                    let fill = el.hover_fade(0.0, crate::kit::element::Look::background);
+                    widgets::button_surface(&painter, stop, &el, &response, true, fill, 0.0);
                 }
                 let ink = BROWSER_PLAY.id("browser-play").response(&response).attr(Checked, true).look();
-                play_glyph(&painter, stop.center(), true, ink.own_color_or(theme::accent()), 7.0);
+                play_glyph(&painter, stop.center(), true, ink.color(), 7.0);
                 if response.clicked() {
                     stop_preview(state, projects);
                 }
@@ -3013,17 +2963,11 @@ fn preview_strip(
     let top = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::new(area.width() - PAD * 2.0, PLAY));
     let play = Rect::from_min_size(top.min, Vec2::splat(PLAY));
     let response = widgets::button_area(ui, play, Id::unique("browser-preview-play"), "Preview");
-    let play_style = BUTTON.response(&response).attr(Checked, playing_this).enter();
-    widgets::button_surface(
-        &painter,
-        play,
-        &play_style,
-        &response,
-        playing_this,
-        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-        0.0,
-    );
-    let ink = play_style.color_or(if playing_this { theme::accent() } else { tier.primary });
+    // `button[kind="preview"]`, `[checked]` while it plays.
+    let play_style = BUTTON.attribute("kind", "preview").response(&response).attr(Checked, playing_this).enter();
+    let fill = play_style.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
+    widgets::button_surface(&painter, play, &play_style, &response, playing_this, fill, 0.0);
+    let ink = play_style.color();
     if !crate::kit::skin::paint(
         &painter,
         play,
@@ -3122,7 +3066,7 @@ fn preview_strip(
         widgets::text_in(&painter, wave, Align2::LEFT_CENTER, "Reading…", theme::ui_font(theme::TEXT_SMALL), tier.hint);
     }
     if playing_this {
-        let at = crate::kit::element::PLAYHEAD.look().own_color_or(theme::accent());
+        let at = crate::kit::element::PLAYHEAD.attribute("kind", "preview").look().color();
         painter.vline(played_x, wave.y_range(), Stroke::new(1.0, at));
     }
     // A click on the waveform previews from there.
@@ -3416,10 +3360,9 @@ fn footer_overflow(
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "More tags".to_string()));
     let fill = widgets::hover(ui, &response);
-    // `button[kind="more"]`: only a rule for that kind fills it under the pointer.
-    let plain = BUTTON.response(&response).probe();
-    let own = BUTTON.attribute("kind", "more").response(&response).look();
-    painter.rect_filled(clipped, 0.0, own.background_unlike(&plain, theme::panel_hover().gamma_multiply(fill)));
+    // `button[kind="more"]`: its `background-color` under the pointer, fading in with it.
+    let hot = BUTTON.attribute("kind", "more").hover_ends(fill).1;
+    painter.rect_filled(clipped, 0.0, hot.background().gamma_multiply(fill));
     painter.text(clipped.center(), Align2::CENTER_CENTER, "…", theme::ui_font(theme::TEXT_SMALL), tier.secondary);
     if tags.iter().any(|t| state.tag_filter.contains(&t.id)) {
         painter.circle_stroke(clipped.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, tier.primary));
@@ -3488,12 +3431,14 @@ pub fn resize_handle(
     if divider.response.double_clicked() {
         return (Some(default), true);
     }
-    // `#browser-splitter` takes the element's `background-color`; without one, the border colour,
-    // stronger under the pointer.
-    let response = &divider.response;
-    let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
-    ui.painter().rect_filled(handle, 0.0, divider.style.background_or(native));
-    (divider.size, response.drag_stopped())
+    // `#browser-splitter` takes the element's `background-color`; without one, that of
+    // `browser-fill[kind="splitter"]`: the border colour, stronger under the pointer.
+    let fill =
+        divider.style.look().themed_background().unwrap_or_else(|| {
+            BROWSER_FILL.attribute("kind", "splitter").response(&divider.response).look().background()
+        });
+    ui.painter().rect_filled(handle, 0.0, fill);
+    (divider.size, divider.response.drag_stopped())
 }
 
 /// The active project's session.
@@ -3503,8 +3448,17 @@ fn active(projects: &Projects) -> Option<&suhina_session::Session> {
 
 /// A place or kind in the browser's left column, `browser-place`: `:hover`, `:active`, and
 /// `[checked]` and `[selected]` while it is the one shown.
-fn place_style(response: &egui::Response, chosen: bool) -> Entered {
-    BROWSER_PLACE.response(response).attr(Checked, chosen).attr(Selected, chosen).enter()
+/// `[kind="drop"]` while a drop lands on it.
+fn place_style(response: &egui::Response, chosen: bool, drop: bool) -> Entered {
+    let place = BROWSER_PLACE.response(response).attr(Checked, chosen).attr(Selected, chosen);
+    if drop { place.attribute("kind", "drop") } else { place }.enter()
+}
+
+/// A row's background: `el`'s `background-color`, `hover` (0 to 1) of the way from the one it has
+/// at rest to the one it has under the pointer, and its gradients and shadows.
+fn paint_faded_row(painter: &egui::Painter, el: &Entered, rect: Rect, hover: f32) {
+    painter.rect_filled(rect, 0.0, el.hover_fade(hover, crate::kit::element::Look::background));
+    el.paint_background(painter, rect, 0.0);
 }
 
 /// A row's background: the sheet's `background-color` for `el`, the row's element, else `fill`,

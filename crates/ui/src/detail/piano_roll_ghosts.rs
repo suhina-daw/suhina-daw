@@ -560,11 +560,11 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
     // The button is short, so it fits beside the workflow menu, and drawn as the toolbar's other
     // menus are; it is dimmed while nothing shows, and its tooltip and accessible label name what
     // does. Short of room, the arrow alone (› Layout).
-    let color = if *source == GhostSource::None { theme::text_hint() } else { theme::text_secondary() };
+    let dim = *source == GhostSource::None;
     let label = format!("Ghost notes {}", source.name(ghosts));
     let id = Id::unique("piano-roll-ghost-menu");
     let response =
-        crate::detail::piano_roll::menu_face(ui, rect, id, (None, if word { "Ghosts" } else { "" }), color, &label);
+        crate::detail::piano_roll::menu_face(ui, rect, id, (None, if word { "Ghosts" } else { "" }), dim, &label);
     let shown = response.rect;
     egui::Popup::menu(&response).show(|ui| {
         let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {

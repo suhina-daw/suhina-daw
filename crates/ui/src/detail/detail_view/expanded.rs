@@ -123,13 +123,13 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             // The panel takes the pointer, so the views under it get no clicks.
             let (rect, _) = ui.allocate_exact_size(slice.size(), Sense::click());
             let painter = ui.painter_at(rect);
-            let fill = device_style.background_or(crate::kit::style_class::surface_or(theme::panel_background()));
+            let fill = device_style.background_or(crate::detail::detail_fill("panel"));
             painter.rect_filled(rect, 0.0, fill);
             let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW + PAD));
             // `device-header`: its background, and its `color` for the name and the ×.
             let header_el = crate::kit::element::DEVICE_HEADER.enter();
-            painter.rect_filled(header, 0.0, header_el.background_or(theme::control_background()));
-            let ink = header_el.color_or(theme::text_primary());
+            painter.rect_filled(header, 0.0, header_el.background());
+            let ink = header_el.color();
             drop(header_el);
             if canvas.strip {
                 // The header is the strip's handle: dragged up it grows, down it shrinks; a double
@@ -158,12 +158,18 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 Rect::from_min_size(Pos2::new(header.right() - 28.0, header.top() + 3.0), Vec2::new(24.0, 20.0));
             let response = widgets::button_area(ui, close, Id::unique("device-expanded-close"), "Close expanded panel")
                 .on_hover_text("Close the expanded panel (Esc)");
-            let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
+            let fill = motion::mix(
+                crate::detail::fill_of("control"),
+                crate::detail::fill_of("hover"),
+                widgets::hover(ui, &response),
+            );
             // `button[kind="close"]`: only a rule for that kind reaches it, not one for every `button`.
             let plain = crate::kit::element::BUTTON.response(&response).probe();
             let own = crate::kit::element::BUTTON.attribute("kind", "close").response(&response).look();
-            painter.rect_filled(close, 0.0, own.background_unlike(&plain, fill));
-            let cross = own.own_color_unlike(&plain, ink);
+            let themed =
+                |own: Option<egui::Color32>, plain: Option<egui::Color32>| own.filter(|own| Some(*own) != plain);
+            painter.rect_filled(close, 0.0, themed(own.themed_background(), plain.themed_background()).unwrap_or(fill));
+            let cross = themed(own.themed_color(), plain.themed_color()).unwrap_or(ink);
             for (from, to) in
                 [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
             {
@@ -259,8 +265,7 @@ pub(super) fn graph_controls(
                 crate::detail::device_canvas::show(ui, rect, canvas, state, &graph.parameters, track, at, actions);
             }
             let origin = Vec2::new(body.left(), body.top() + nodes_height);
-            let line =
-                crate::kit::element::SEPARATOR.attribute("kind", "column").look().own_color_or(theme::border_strong());
+            let line = crate::kit::element::SEPARATOR.attribute("kind", "column").look().color();
             for x in &separators {
                 painter.vline(origin.x + x, body.y_range(), theme::hairline(line));
             }
@@ -279,8 +284,7 @@ pub(super) fn node_rows(painter: &egui::Painter, body: Rect, graph: &GraphBox) {
     let mut row_top = body.top();
     // A node is a `device-section`: its background and `color`; the arrows `label[kind="hint"]`.
     let look = crate::kit::element::DEVICE_SECTION.look();
-    let (fill, ink, arrow) =
-        (look.background_or(theme::control_background()), look.color_or(theme::text_secondary()), super::hint_ink());
+    let (fill, ink, arrow) = (look.background(), look.color(), super::hint_ink());
     for (index, node) in graph.nodes.iter().enumerate() {
         let row = Rect::from_min_size(Pos2::new(body.left(), row_top), Vec2::new(body.width(), NODE_ROW));
         if row.bottom() > body.bottom() + 0.5 {

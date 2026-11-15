@@ -11,6 +11,7 @@ use egui::{Color32, CornerRadius, Key, PointerButton, Pos2, Rect, Response, Sens
 use suhina_soundmap::grid::Grid;
 use suhina_soundmap::kinds::Kind;
 
+use crate::browser::browser_fill;
 use crate::browser::sample_map_crowd::{self as crowd, Cluster};
 use crate::kit::theme;
 
@@ -625,11 +626,11 @@ fn busy_card(ui: &Ui, area: Rect, busy: &Busy) {
     }
     let card = Rect::from_center_size(area.center(), Vec2::new(width, HEIGHT));
     let painter = ui.painter().with_clip_rect(area);
-    painter.rect_filled(card, CornerRadius::ZERO, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(card, CornerRadius::ZERO, browser_fill("panel"));
     painter.rect_stroke(
         card,
         CornerRadius::ZERO,
-        Stroke::new(1.0, crate::kit::element::SAMPLE_MAP.look().border_or(theme::border_strong())),
+        Stroke::new(1.0, crate::kit::element::SAMPLE_MAP.look().border()),
         StrokeKind::Inside,
     );
     let inner = card.shrink(2.0 * theme::PAD);
@@ -846,7 +847,7 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
     if let Some(start) = view.rubber_band {
         let end = pointer.or_else(|| response.interact_pointer_pos()).unwrap_or(start);
         let band = Rect::from_two_pos(start, end);
-        let edge = crate::kit::element::MARQUEE.look().own_color_or(theme::accent());
+        let edge = crate::kit::element::MARQUEE.attribute("kind", "points").look().color();
         painter.rect_stroke(band, CornerRadius::ZERO, Stroke::new(1.0, edge), StrokeKind::Inside);
         if response.drag_stopped() {
             let items: Vec<usize> =
@@ -1063,7 +1064,7 @@ fn draw_points(
     // previewed points its `accent-color`.
     let rings = {
         let look = crate::kit::element::SAMPLE_POINT.attr(crate::kit::element::Selected, true).look();
-        (look.own_color_or(theme::text_primary()), look.accent_or(theme::accent()))
+        (look.color(), look.accent())
     };
     let area = painter.clip_rect();
     let visible = area.expand(8.0);
@@ -1205,7 +1206,8 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
         clusters.iter().zip(&galleys).map(|(c, g)| (transform.to_screen(c.spot), g.size())).collect();
     let shadow = crate::kit::element::SAMPLE_MAP
         .look()
-        .background_or(crate::kit::style_class::surface_or(theme::window_background()))
+        .themed_background()
+        .unwrap_or_else(|| browser_fill("window"))
         .gamma_multiply(fade);
     for (spot, galley) in crowd::place_labels(&sizes, painter.clip_rect()).into_iter().zip(galleys) {
         let Some(spot) = spot else { continue };
@@ -1218,7 +1220,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
 fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint], events: &mut Vec<MapEvent>) {
     let tier = crate::browser::browser_view::inks();
     let Some((of, items)) = view.similar.clone() else { return };
-    ui.painter().rect_filled(rect, CornerRadius::ZERO, crate::kit::style_class::surface_or(theme::panel_background()));
+    ui.painter().rect_filled(rect, CornerRadius::ZERO, browser_fill("panel"));
     let mut child = ui.new_child(
         egui::UiBuilder::new().max_rect(rect.shrink(theme::PAD)).layout(egui::Layout::top_down(egui::Align::Min)),
     );

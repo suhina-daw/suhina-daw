@@ -189,10 +189,7 @@ pub(super) fn clip_properties(
         .paint_with(
             painter,
             column,
-            crate::kit::element::Native {
-                radius: 0.0,
-                fill: crate::kit::style_class::surface_or(theme::panel_background()),
-            },
+            crate::kit::element::Native { radius: 0.0, fill: crate::detail::detail_fill("panel") },
         )
         .content;
     // Rows that do not fit under the column's bottom are left out rather than cut in half, the
@@ -295,10 +292,10 @@ pub(super) fn clip_edit_row(
 ) {
     widgets::text_in(painter, row, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), super::caption_ink());
     let id = Id::unique(("clip-edit", label));
-    // The value is a `value` field to the theme: its background, border and `color`.
+    // The value is a `value[kind="field"]` to the theme: its background, border and `color`.
     let draw_value = |response: &egui::Response, text: &str| {
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
-        let el = crate::kit::element::VALUE.response(response).enter();
+        let el = crate::kit::element::VALUE.attribute("kind", "field").response(response).enter();
+        let fill = el.hover_fade(widgets::hover(ui, response), crate::kit::element::Look::background);
         el.paint_with(painter, value_rect, crate::kit::element::Native { radius: 2.0, fill });
         widgets::text_in(
             painter,
@@ -306,7 +303,7 @@ pub(super) fn clip_edit_row(
             Align2::RIGHT_CENTER,
             text,
             theme::mono_font(theme::TEXT_SMALL),
-            el.color_or(theme::text_value()),
+            el.color(),
         );
     };
     if let ClipEdit::Focus(index) = edit {

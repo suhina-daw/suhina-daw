@@ -222,6 +222,8 @@ fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
         crate::kit::theme::Palette { border: faint, ..crate::kit::theme::Palette::DARK },
     );
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        // The canvas reads its colours from the sheet, whose variables the palette sets.
+        let _frame = crate::kit::native_css::frame(ui);
         show(
             ui,
             Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 60.0)),
@@ -301,6 +303,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
     let ctx = egui::Context::default();
     let mut output = ctx.run_ui(Default::default(), |ui| {
         crate::kit::theme::install(ui.ctx());
+        let _frame = crate::kit::native_css::frame(ui);
         let mut positions = [None::<f32>; 32];
         positions[0] = Some(0.2);
         positions[7] = Some(0.7);
@@ -1489,6 +1492,7 @@ fn waveform_manual_edit_navigation_and_inactive_colors() {
             },
             |ui| {
                 crate::kit::theme::install(ui.ctx());
+                let _frame = crate::kit::native_css::frame(ui);
                 show(
                     ui,
                     Rect::from_min_size(Pos2::ZERO, Vec2::new(900., 220.)),
@@ -1788,6 +1792,7 @@ fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
         let context = egui::Context::default();
         let mut output = context.run_ui(Default::default(), |ui| {
             crate::kit::theme::install(ui.ctx());
+            let _frame = crate::kit::native_css::frame(ui);
             ui.ctx().data_mut(|data| {
                 data.insert_temp(
                     sample_source_id(TrackId(1), 0),
@@ -2138,6 +2143,16 @@ fn built_in_widget_colors_follow_the_active_theme_and_refresh_the_cache() {
         }],
         ..DeviceUi::default()
     });
+    // The canvas reads its colours from the sheet, whose variables the palette sets: in a frame.
+    let images = |context: &egui::Context, canvas: &Arc<DeviceUi>| {
+        let mut loaded = None;
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            loaded = Some(images(ui.ctx(), canvas));
+        });
+        output.textures_delta.clear();
+        loaded.unwrap()
+    };
     let dark = crate::kit::theme::Palette::DARK;
     crate::kit::theme::use_palette(&context, dark);
     let dark_loaded = images(&context, &canvas);
@@ -2173,6 +2188,8 @@ fn default_canvas_background_follows_the_theme_and_authored_background_stays_fix
     let default = Arc::new(DeviceUi::default());
     let authored = Arc::new(DeviceUi { background: [44, 55, 66, 255], ..DeviceUi::default() });
     let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+        // The canvas reads its colours from the sheet, whose variables the palette sets.
+        let _frame = crate::kit::native_css::frame(ui);
         let mut actions = Vec::new();
         for (x, canvas) in [(8.0, &default), (56.0, &authored)] {
             show(
@@ -2618,7 +2635,8 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     assert!(parameters[0].value <= 0.5 + 1e-6, "no further than the pointer went, got {}", parameters[0].value);
 }
 
-/// The sample markers' colour with no sheet: the palette's accent.
+/// The sample markers' colour with no rule of a theme: the accent, which the base sheet gives the
+/// canvas (`device-canvas`'s `accent-color`).
 fn marker_color() -> Color32 {
-    color(styled_palette(widget_palette(), None).accent)
+    crate::kit::theme::palette().accent
 }

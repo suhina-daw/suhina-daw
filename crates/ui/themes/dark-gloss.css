@@ -83,6 +83,16 @@
   button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
   button[kind="envelope"][checked] { background-color: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   button[kind="record"][checked] { color: var(--recording); }
+  button[kind="chip"][checked] {
+    background-color: var(--control-selectedBackground);
+    background-image: linear-gradient(#ffffff55, #ffffff00 52%, #00000033);
+  }
+  /* The detail area's and the browser's own lit and hovered buttons, which this theme's rule for
+     every `button` hides: a tag's ticked box, the "…" of the tags that did not fit under the
+     pointer, the piano roll's Focus switch while on. */
+  button[kind="tag-check"][checked] { background-color: var(--text-value); color: var(--window-background); }
+  button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
+  button[kind="focus"][checked] { background-color: var(--accent); }
   /* A figure shown as words in a bar takes the bar's ink, as it did before the sheet gave it one. */
   toolbar label[kind="value"], application-bar label[kind="value"], menu-bar label[kind="value"],
   project-tabs label[kind="value"], status-bar label[kind="value"] { color: var(--gloss-ink); }

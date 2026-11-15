@@ -490,30 +490,30 @@ fn a_rule_for_every_button_needs_lit_rules_to_keep_solo_cue_and_arm_lit() {
     suhina_ui::kit::native_css::set_user_sheet(None);
 }
 
-/// A rule for every `button` does not hide which of the browser's chips is chosen: the lit chip
-/// keeps its lit fill, an unlit one takes the rule's (#1023).
+/// The browser's chips are `button[kind="chip"]`, `[checked]` while chosen: a rule for every
+/// `button` is the chosen chip's too, so a theme states the lit look, which then shows which chip
+/// is chosen (#1023, #1451).
 #[test]
-fn a_rule_for_every_button_keeps_the_browser_s_chosen_chip_lit() {
-    let mut app = demo_app();
-    app.set_browser_open(true);
-    let mut h = window(app);
-    // Recent's kinds as chips, Recent chosen: its "All" chip is the lit one.
-    let ctx = h.ctx.clone();
-    let mut chips = h.state().settings().clone();
-    chips.view.recent_chips = true;
-    h.state_mut().set_settings(&ctx, chips);
-    h.get_by_label("Place Recent").click();
-    h.run();
-    let css = format!("button {{ background-color: {}; }}", hex(odd(97)));
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
-    for _ in 0..4 {
-        h.step();
-    }
-    let lit = fills_at(&h, h.get_by_label("Recent All").rect());
-    let unlit = fills_at(&h, h.get_by_label("Recent Samples").rect());
-    suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(!lit.is_empty() && !lit.contains(&odd(97)), "the chosen chip keeps its lit fill: {lit:?}");
+fn a_rule_for_every_button_needs_a_lit_rule_to_keep_the_browser_s_chosen_chip_lit() {
+    let mut h = browser_with_chips();
+    let general = format!("button {{ background-color: {}; }}", hex(odd(97)));
+    let lit_and_unlit = |h: &mut Harness<'static, App>, css: &str| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        let lit = fills_at(h, h.get_by_label("Recent All").rect());
+        let unlit = fills_at(h, h.get_by_label("Recent Samples").rect());
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        (lit, unlit)
+    };
+    let (lit, unlit) = lit_and_unlit(&mut h, &general);
+    assert!(lit.contains(&odd(97)), "the chosen chip takes the rule too: {lit:?}");
     assert!(unlit.contains(&odd(97)), "an unlit chip takes the rule: {unlit:?}");
+    let stated = format!("{general} button[kind=\"chip\"][checked] {{ background-color: {}; }}", hex(odd(98)));
+    let (lit, unlit) = lit_and_unlit(&mut h, &stated);
+    assert!(lit.contains(&odd(98)) && !lit.contains(&odd(97)), "the chosen chip is lit: {lit:?}");
+    assert!(unlit.contains(&odd(97)), "an unlit chip keeps the rule: {unlit:?}");
 }
 
 /// The Arrangement's swing is a `slider`, `[checked]` while it is lit: its rail, its fill and its
@@ -761,20 +761,33 @@ fn a_colour_for_a_whole_clip_column_leaves_its_dim_words_dim() {
     assert!(shown.contains(&caption) && shown.contains(&hint), "the captions and hints stay dim");
 }
 
-/// A rule for every `button` does not hide which of the follow action's switches is on (#1023).
+/// The follow action's switches are `button[kind="toggle"]` (its own On, `button[kind="solo"]`),
+/// lit with `[checked]`: a rule for every `button` is the lit switch's too, so a theme states the
+/// lit look, which then shows which switch is on (#1023, #1451).
 #[test]
-fn a_rule_for_every_button_keeps_the_follow_action_s_switch_lit() {
+fn a_rule_for_every_button_needs_a_lit_rule_to_keep_the_follow_action_s_switch_lit() {
     let mut h = walk_picked();
-    let css = format!("button {{ background-color: {}; }}", hex(odd(80)));
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
-    for _ in 0..4 {
-        h.step();
-    }
-    let lit = fills_at(&h, h.get_by_label("Linked to the clip's length").rect());
-    let unlit = fills_at(&h, h.get_by_label("Follow action off").rect());
-    suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(!lit.is_empty() && !lit.contains(&odd(80)), "the lit switch keeps its fill: {lit:?}");
+    let general = format!("button {{ background-color: {}; }}", hex(odd(80)));
+    let lit_and_unlit = |h: &mut Harness<'static, App>, css: &str| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        let lit = fills_at(h, h.get_by_label("Linked to the clip's length").rect());
+        let unlit = fills_at(h, h.get_by_label("Follow action off").rect());
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        (lit, unlit)
+    };
+    let (lit, unlit) = lit_and_unlit(&mut h, &general);
+    assert!(lit.contains(&odd(80)), "the lit switch takes the rule too: {lit:?}");
     assert!(unlit.contains(&odd(80)), "the unlit switch takes the rule: {unlit:?}");
+    let stated = format!(
+        "{general} button[kind=\"toggle\"][checked], button[kind=\"solo\"][checked] {{ background-color: {}; }}",
+        hex(odd(88))
+    );
+    let (lit, unlit) = lit_and_unlit(&mut h, &stated);
+    assert!(lit.contains(&odd(88)) && !lit.contains(&odd(80)), "the lit switch is lit: {lit:?}");
+    assert!(unlit.contains(&odd(80)), "the unlit switch keeps the rule: {unlit:?}");
 }
 
 /// A device group's panel: its branch's row, its add button and its on switch take their own
@@ -875,20 +888,12 @@ fn the_browser_s_new_folder_field_takes_its_own_id_s_text_colour() {
 }
 
 /// The browser's filter chips are drawn inside the browser: a rule scoped to it reaches their
-/// words (#1438).
+/// words, which are the chip's own colour, `button[kind="chip"]` (#1438, #1451).
 #[test]
 fn a_rule_scoped_to_the_browser_reaches_the_filter_chips_words() {
-    let mut app = demo_app();
-    app.set_browser_open(true);
-    let mut h = window(app);
-    let ctx = h.ctx.clone();
-    let mut chips = h.state().settings().clone();
-    chips.view.recent_chips = true;
-    h.state_mut().set_settings(&ctx, chips);
-    h.get_by_label("Place Recent").click();
-    h.run();
+    let mut h = browser_with_chips();
     suhina_ui::kit::native_css::set_user_sheet(Some(
-        format!("browser label[kind=\"caption\"] {{ color: {}; }}", hex(odd(111))).into(),
+        format!("browser button[kind=\"chip\"] {{ color: {}; }}", hex(odd(111))).into(),
     ));
     for _ in 0..4 {
         h.step();
@@ -1448,14 +1453,23 @@ fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
         (
             "clip panel",
             walk_picked(),
-            vec![("toggle", "background-color"), ("toggle[checked]", "background-color"), ("dropdown-arrow", "color")],
+            vec![
+                ("toggle", "background-color"),
+                ("button[kind=\"toggle\"][checked]", "background-color"),
+                ("dropdown-arrow", "color"),
+            ],
         ),
         ("dialog", dialog, vec![("dialog", "border-color"), ("text-input", "border-color")]),
         ("list", list, vec![("list-row", "color"), ("list-row[selected]", "color")]),
         (
             "audio clip",
             audio_clip(),
-            vec![("knob", "background-color"), ("knob-ring", "background-color"), ("label[kind=\"value\"]", "color")],
+            vec![
+                ("knob", "background-color"),
+                ("knob-ring", "background-color"),
+                ("label[kind=\"value\"]", "color"),
+                ("toggle[checked]", "background-color"),
+            ],
         ),
     ];
     let mut shade = 140u8;
@@ -1737,4 +1751,178 @@ fn a_region_s_variables_reach_the_launcher_s_and_the_mixer_s_parts() {
     {
         assert!(shown.contains(&colour), "{what} take their region's variable");
     }
+}
+
+/// Keys with a Utility, grouped when `group`, its panel shown in the detail area.
+fn keys_with_utility(group: bool) -> Harness<'static, App> {
+    let mut session = suhina_session::Session::new(demo_project());
+    assert!(session.execute("device.add", &serde_json::json!({ "track": "Keys", "id": "utility" })).is_ok());
+    if group {
+        assert!(session.execute("device.group", &serde_json::json!({ "track": "Keys", "device": 0 })).is_ok());
+    }
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    let mut h = window(app);
+    h.get_by_label("Track Keys").click();
+    h.run();
+    h
+}
+
+/// The browser open on Recent, its kinds as chips, Recent chosen: its "All" chip the lit one.
+fn browser_with_chips() -> Harness<'static, App> {
+    let mut app = demo_app();
+    app.set_browser_open(true);
+    let mut h = window(app);
+    let ctx = h.ctx.clone();
+    let mut chips = h.state().settings().clone();
+    chips.view.recent_chips = true;
+    h.state_mut().set_settings(&ctx, chips);
+    h.get_by_label("Place Recent").click();
+    h.run();
+    h
+}
+
+/// A theme's rule beats each rule the base sheet gives the detail panels, the piano roll and the
+/// browser, whatever its specificity: one rule for each element the sheet gives colours to, in a
+/// window that shows it, and its colour is painted (#1451).
+#[test]
+fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_detail_area_and_the_browser() {
+    type Scene = (&'static str, Harness<'static, App>, Vec<(&'static str, &'static str)>);
+    let scenes: Vec<Scene> = vec![
+        (
+            "a MIDI clip and its piano roll",
+            walk_picked(),
+            vec![
+                ("detail-fill", "background-color"),
+                ("value[kind=\"field\"]", "background-color"),
+                ("value[kind=\"field\"]", "color"),
+                ("editor-tab", "background-color"),
+                ("piano-grid", "border-color"),
+                ("ruler-number", "color"),
+                ("separator[kind=\"bar\"]", "color"),
+                ("piano-tool", "color"),
+                ("bar-item", "color"),
+                ("loop-region", "background-color"),
+                ("start-marker", "color"),
+            ],
+        ),
+        (
+            "a device",
+            keys_with_utility(false),
+            vec![("device-header", "background-color"), ("device-header", "color"), ("device-control", "color")],
+        ),
+        (
+            "a device group",
+            keys_with_utility(true),
+            vec![("device-row", "color"), ("separator[kind=\"group\"]", "color")],
+        ),
+        (
+            "the browser",
+            browser_with_chips(),
+            vec![
+                ("browser-fill", "background-color"),
+                ("label[kind=\"caption\"]", "color"),
+                ("button", "color"),
+                ("button[checked]", "background-color"),
+            ],
+        ),
+    ];
+    let mut shade = 200u8;
+    for (name, mut h, rules) in scenes {
+        let rules: Vec<_> = rules
+            .into_iter()
+            .map(|(selector, property)| {
+                shade += 1;
+                (selector, property, odd(shade))
+            })
+            .collect();
+        assert_eq!(missing(&mut h, &rules), Vec::<String>::new(), "{name}");
+    }
+}
+
+/// A built-in theme with a rule for every `button` still shows which of the browser's chips is
+/// chosen: Suhina Meadow, Blocks and Sheet and the Dark Gloss example state the chip's lit fill
+/// their rule for every button would hide (#1451).
+#[test]
+fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_chip() {
+    for (id, example) in [
+        ("suhina-meadow", None),
+        ("suhina-blocks", None),
+        ("suhina-sheet", None),
+        ("suhina-studio", Some(suhina_ui::kit::theme::GLOSS_EXAMPLE)),
+    ] {
+        let mut h = browser_with_chips();
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, id);
+        suhina_ui::kit::native_css::set_user_sheet(example.map(|css| css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        // What is painted exactly over the chip: a fill, or the artwork a fill is drawn in.
+        let faces = |label: &str| {
+            let rect = h.get_by_label(label).rect();
+            let mut found = Vec::new();
+            for shape in &h.output().shapes {
+                if let egui::Shape::Rect(shape) = &shape.shape
+                    && (shape.rect.min - rect.min).length() < 0.5
+                    && (shape.rect.max - rect.max).length() < 0.5
+                {
+                    found.push(format!(
+                        "{:?} {:?}",
+                        shape.fill,
+                        shape.brush.as_ref().map(|brush| brush.fill_texture_id)
+                    ));
+                }
+            }
+            found
+        };
+        let (lit, unlit) = (faces("Recent All"), faces("Recent Samples"));
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        assert!(!lit.is_empty() && !unlit.is_empty(), "{id}: both are painted");
+        assert_ne!(lit, unlit, "{id}: the chosen chip shows it is chosen");
+    }
+}
+
+/// The colours of the words `words` painted in the last frame.
+fn colours_of_words(h: &Harness<'static, App>, words: &str) -> Vec<egui::Color32> {
+    fn walk(shape: &egui::Shape, words: &str, found: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, words, found)),
+            egui::Shape::Text(text) if text.galley.text() == words => {
+                found.extend(text.galley.job.sections.iter().map(|section| section.format.color));
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    h.output().shapes.iter().for_each(|shape| walk(&shape.shape, words, &mut found));
+    found
+}
+
+/// Shows `h` with `css` as the user's sheet, then the colours of the words `words`.
+fn words_under(h: &mut Harness<'static, App>, css: String, words: &str) -> Vec<egui::Color32> {
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let found = colours_of_words(h, words);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    found
+}
+
+/// Colouring a region goes through its variables: `--text-value` given to the piano roll reaches
+/// its ruler's bar numbers, given to a device's panel its values, which the base sheet
+/// colours with that variable; `--browser-text-secondary` given to the browser its secondary words
+/// (#1451).
+#[test]
+fn a_region_s_variables_reach_the_ruler_s_numbers_a_device_s_values_and_the_browser_s_words() {
+    let mut h = walk_picked();
+    let numbers = words_under(&mut h, format!("piano-roll {{ --text-value: {}; }}", hex(odd(221))), "2");
+    assert!(numbers.contains(&odd(221)), "the ruler's bar numbers: {numbers:?}");
+    let mut h = keys_with_utility(false);
+    let values = words_under(&mut h, format!("device {{ --text-value: {}; }}", hex(odd(222))), "0.00 dB");
+    assert!(!values.is_empty() && values.iter().all(|c| *c == odd(222)), "a device's value: {values:?}");
+    let mut h = browser_with_chips();
+    assert_eq!(missing(&mut h, &[("browser", "--browser-text-secondary", odd(223))]), Vec::<String>::new());
 }

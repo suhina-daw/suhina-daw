@@ -187,33 +187,42 @@ fn thousandth(v: f64) -> f64 {
 }
 
 /// A field's surface. Fields keep the panel's gaps between them, so none touch (the grey box of
-/// #1190). It is a `value` to the theme (`:hover`, `:active`): the sheet's background, border
-/// and radius where it sets them. Returns the sheet's `color` for its text, if it sets one.
-fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response) -> Option<egui::Color32> {
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, response));
-    let el = crate::kit::element::VALUE.response(response).enter();
+/// #1190). It is a `value[kind="field"]` to the theme (`:hover`, `:active`): its background,
+/// border and radius. Returns its `color` for its text.
+fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response) -> egui::Color32 {
+    let el = crate::kit::element::VALUE.attribute("kind", "field").response(response).enter();
+    let fill = el.hover_fade(widgets::hover(ui, response), crate::kit::element::Look::background);
     el.paint_with(painter, rect, crate::kit::element::Native { radius: 3.0, fill });
-    el.style().filter(|s| s.authored.color).map(|s| s.color)
+    el.color()
 }
 
-/// A button's or switch's surface (`element` `button`), or a list's (`dropdown`), as the theme's
-/// rules for it paint it (`:hover`, `:active`, `[checked]` while `checked`): the sheet's
-/// background, border and radius where it sets them, else `fill`, 3-point corners and, with
-/// `outline`, a hairline. A switch that is on keeps its lit `fill` unless the sheet gives
-/// `[checked]` a background or colour of its own, so a theme that styles every button alike does
-/// not hide which switches are on. Returns the sheet's `color` for its text, if it sets one.
+/// A button's or switch's surface (`element` `button`), or a list's (`dropdown`), of `kind` (`panel`
+/// a button or a list, `panel-toggle` a switch), as the sheet paints it (`:hover`, `:active`,
+/// `[checked]` while `checked`): its background, fading to the one it has under the pointer, its
+/// border and radius, 3-point corners where it sets none and, with `outline`, a hairline in its
+/// `border-color`. `colours` are a switch's fill and ink where the sheet gives none
+/// ([`widgets::toggle_colors`]): a switch that is on keeps them unless the sheet gives `[checked]` a
+/// background or colour of its own, so a theme that styles every button alike does not hide which
+/// switches are on. Returns the sheet's `color` for its text, else the switch's, else the
+/// element's own.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn button_face(
+    ui: &Ui,
     element: crate::kit::element::Name,
+    kind: &'static str,
     painter: &egui::Painter,
     rect: Rect,
     response: &egui::Response,
     checked: bool,
-    fill: egui::Color32,
+    colours: Option<(egui::Color32, egui::Color32)>,
     outline: bool,
-) -> Option<egui::Color32> {
+) -> egui::Color32 {
+    use crate::kit::element::{Checked, Look, Native};
     // The element alone, to tell a `[checked]` rule from the one every button has.
-    let plain = if checked { element.native(crate::kit::element::Native::default()).style() } else { None };
-    let el = element.response(response).attr(crate::kit::element::Checked, checked).enter();
+    let plain = if checked { element.native(Native::default()).style() } else { None };
+    let el = element.attribute("kind", kind).response(response).attr(Checked, checked).enter();
+    let fill = colours.map_or_else(|| el.hover_fade(widgets::hover(ui, response), Look::background), |c| c.0);
+    let ink = colours.map_or_else(|| el.hover_fade(widgets::hover(ui, response), Look::color), |c| c.1);
     let style = el.style().filter(|s| {
         plain.as_ref().is_none_or(|p| {
             (s.authored.background && s.background != p.background) || (s.authored.color && s.color != p.color)
@@ -222,21 +231,26 @@ pub(super) fn button_face(
     let Some(style) = style else {
         painter.rect_filled(rect, 3.0, fill);
         if outline {
-            painter.rect_stroke(rect, 3.0, theme::hairline(el.border_or(theme::border())), egui::StrokeKind::Inside);
+            painter.rect_stroke(rect, 3.0, theme::hairline(el.border()), egui::StrokeKind::Inside);
         }
-        return None;
+        return ink;
     };
-    let boxed = el.paint_with(painter, rect, crate::kit::element::Native { radius: 3.0, fill });
+    let boxed = el.paint_with(painter, rect, Native { radius: 3.0, fill });
     if outline && !(style.authored.border || style.authored.border_width) {
-        painter.rect_stroke(rect, boxed.radius, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+        painter.rect_stroke(rect, boxed.radius, theme::hairline(el.border()), egui::StrokeKind::Inside);
     }
-    style.authored.color.then_some(style.color)
+    if style.authored.color { style.color } else { ink }
 }
 
 /// A button that cannot be pressed now: the panel's own look, which the theme does not restyle.
 pub(super) fn disabled_face(painter: &egui::Painter, rect: Rect) {
-    painter.rect_filled(rect, 3.0, crate::kit::style_class::surface_or(theme::panel_background()));
-    painter.rect_stroke(rect, 3.0, theme::hairline(theme::border()), egui::StrokeKind::Inside);
+    painter.rect_filled(rect, 3.0, crate::detail::detail_fill("panel"));
+    painter.rect_stroke(
+        rect,
+        3.0,
+        theme::hairline(crate::kit::element::DETAIL_FILL.attribute("kind", "outline").look().border()),
+        egui::StrokeKind::Inside,
+    );
 }
 
 /// The places of a text a drag steps: each a range of characters and its step.
@@ -339,10 +353,10 @@ pub(super) fn number_field(
         info.current_text_value = Some(shown.clone());
         info
     });
-    let sheet_ink = field_surface(ui, painter, rect, &response);
+    let field_ink = field_surface(ui, painter, rect, &response);
     let text_area = rect.shrink2(Vec2::new(PAD / 2.0, 0.0));
     let mono = theme::mono_font(theme::TEXT_SMALL);
-    let ink = if field.dim { super::hint_ink() } else { sheet_ink.unwrap_or_else(theme::text_value) };
+    let ink = if field.dim { super::hint_ink() } else { field_ink };
     widgets::text_in(painter, text_area, field.align, &shown, mono.clone(), ink);
     // One click opens the text field (a drag moves the value instead): a double-click was
     // needed before, and a click that only took the keys was easy to miss.
@@ -383,9 +397,11 @@ pub(super) fn number_field(
         let right = text_area.right();
         let span = egui::Rangef::new(right - (len - from) as f32 * char_width, right - (len - to) as f32 * char_width);
         // The `value`'s `accent-color` while held, else its own `color`.
-        let look = crate::kit::element::VALUE.response(&response).look();
-        let ink =
-            if held.is_some() { look.accent_or(theme::accent()) } else { look.own_color_or(theme::text_secondary()) };
+        let ink = crate::kit::element::SEPARATOR
+            .attribute("kind", "step")
+            .attr(crate::kit::element::Selected, held.is_some())
+            .look()
+            .color();
         painter.hline(span, rect.bottom() - 2.0, egui::Stroke::new(1.0, ink));
     }
     // Four points of drag a step of the place grabbed; the arrow keys the hovered place's step.
@@ -483,9 +499,7 @@ pub(super) fn small_button(
 ) -> bool {
     let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-button", label)), label);
     let ink = if enabled {
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        button_face(crate::kit::element::BUTTON, painter, rect, &response, false, fill, true)
-            .unwrap_or_else(theme::text_primary)
+        button_face(ui, crate::kit::element::BUTTON, "panel", painter, rect, &response, false, None, true)
     } else {
         disabled_face(painter, rect);
         super::hint_ink()
@@ -499,8 +513,9 @@ pub(super) fn small_button(
 pub(super) fn toggle(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, text: &str, on: bool) -> bool {
     let state = if on { "On" } else { "Off" };
     let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-switch", name)), format!("{name}: {state}"));
-    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
-    let ink = button_face(crate::kit::element::BUTTON, painter, rect, &response, on, fill, !on).unwrap_or(ink);
+    let colours = widgets::toggle_colors(ui, &response, on);
+    let ink =
+        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, rect, &response, on, Some(colours), !on);
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
     response.clicked()
 }
@@ -511,8 +526,9 @@ fn scale_switch(ui: &Ui, painter: &egui::Painter, rect: Rect, on: bool) -> bool 
     let state = if on { "On" } else { "Off" };
     let response =
         widgets::button_area(ui, rect, Id::unique("clip-panel-scale-switch"), format!("Scale switch: {state}"));
-    let (fill, ink) = widgets::toggle_colors(ui, &response, on);
-    let ink = button_face(crate::kit::element::BUTTON, painter, rect, &response, on, fill, !on).unwrap_or(ink);
+    let colours = widgets::toggle_colors(ui, &response, on);
+    let ink =
+        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, rect, &response, on, Some(colours), !on);
     let keys = Rect::from_center_size(rect.center(), Vec2::new(12.0, 10.0));
     let line = egui::Stroke::new(1.0, ink);
     painter.rect_stroke(keys, 1.0, line, egui::StrokeKind::Inside);
@@ -549,12 +565,13 @@ pub(super) fn drop_down(
     list_width: f32,
 ) -> Option<usize> {
     let response = widgets::button_area(ui, rect, id, format!("{name}: {shown}"));
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    let sheet_ink = button_face(crate::kit::element::DROPDOWN, painter, rect, &response, false, fill, false);
+    let ink = button_face(ui, crate::kit::element::DROPDOWN, "panel", painter, rect, &response, false, None, false);
     let text = Rect::from_min_max(rect.min + Vec2::new(6.0, 0.0), rect.max - Vec2::new(14.0, 0.0));
-    let ink = sheet_ink.unwrap_or_else(theme::text_value);
     widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, theme::ui_font(theme::TEXT_SMALL), ink);
-    let chevron = sheet_ink.unwrap_or_else(theme::text_secondary);
+    // The chevron is the list's own colour, unless a theme colours the list's text.
+    let themed = crate::kit::element::DROPDOWN.attribute("kind", "panel").look().themed_color();
+    let chevron =
+        themed.unwrap_or_else(|| crate::kit::element::DROPDOWN_ARROW.attribute("kind", "panel").look().color());
     widgets::chevron(painter, Pos2::new(rect.right() - 8.0, rect.center().y), false, chevron);
     let mut picked = None;
     // The arrow keys, once the field was clicked: the entries they step through (no lines), the
@@ -592,25 +609,30 @@ pub(super) fn drop_down(
         for (index, entry) in entries.iter().enumerate() {
             let Some((label, selected)) = entry else {
                 let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 5.0), Sense::hover());
-                let ink = crate::kit::element::SEPARATOR.attribute("kind", "menu").look().own_color_or(theme::border());
+                let ink = crate::kit::element::SEPARATOR.attribute("kind", "menu").look().color();
                 ui.painter().hline(line.x_range(), line.center().y, theme::hairline(ink));
                 continue;
             };
             let (row, item) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::click());
             item.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, *selected, *label));
             let lit = *selected || item.hovered() || lit_entry == Some(index);
-            // A row is a `button`, `[checked]` while chosen: as egui's own lists in a menu are.
-            let look = crate::kit::element::BUTTON.response(&item).attr(crate::kit::element::Checked, *selected).look();
-            let chosen = look.background_or(theme::control_selected());
+            // A row is a `button[kind="entry"]`, `[checked]` while chosen: as egui's own lists in a
+            // menu are, lit with the pointer's fill and the chosen one's.
+            let entry = crate::kit::element::BUTTON.attribute("kind", "entry");
+            let look = entry.response(&item).attr(crate::kit::element::Checked, *selected).look();
             if lit {
-                let fill = if *selected { chosen } else { look.background_or(theme::control_hover()) };
+                let fill = if *selected {
+                    look.background()
+                } else {
+                    crate::kit::element::BUTTON
+                        .attribute("kind", "entry")
+                        .pointer(true, false, false)
+                        .look()
+                        .background()
+                };
                 ui.painter().rect_filled(row, 2.0, fill);
             }
-            let ink = if *selected {
-                look.own_color_or(theme::text_on(chosen))
-            } else {
-                look.color_or(theme::text_primary())
-            };
+            let ink = if *selected { look.own_color_or(theme::text_on(look.background())) } else { look.color() };
             let inset = row.shrink2(Vec2::new(6.0, 0.0));
             widgets::text_in(ui.painter(), inset, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), ink);
             if item.clicked() {
@@ -660,9 +682,9 @@ pub(super) fn title_row(
     let swatch = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 6.0, rect.center().y), Vec2::splat(12.0));
     // `icon[kind="swatch"]`: its `color` where the clip has none, its `border-color` round it.
     let look = crate::kit::element::ICON.attribute("kind", "swatch").look();
-    let colour = panel.color.map_or_else(|| look.own_color_or(theme::text_hint()), colour_picker::color32);
+    let colour = panel.color.map_or_else(|| look.color(), colour_picker::color32);
     painter.rect_filled(swatch, 2.0, colour);
-    painter.rect_stroke(swatch, 2.0, theme::hairline(look.border_or(theme::border_strong())), egui::StrokeKind::Inside);
+    painter.rect_stroke(swatch, 2.0, theme::hairline(look.border()), egui::StrokeKind::Inside);
     // `clip.setColor` names arrangement clips: a slot's clip shows its colour without the palette.
     if matches!(at, ClipRef::Arrangement(..)) {
         let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
@@ -1035,10 +1057,8 @@ fn audio_part(
     name_over(painter, name, "Tempo", Align2::LEFT_BOTTOM);
     let find = set_button(name);
     let response = widgets::button_area(ui, find, Id::unique(("clip-panel-find", panel.clip.0)), "Find tempo");
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
     // A `button`, as the panel's other buttons.
-    let ink = button_face(crate::kit::element::BUTTON, painter, find, &response, false, fill, true)
-        .unwrap_or_else(theme::text_primary);
+    let ink = button_face(ui, crate::kit::element::BUTTON, "panel", painter, find, &response, false, None, true);
     widgets::text_in(painter, find, Align2::CENTER_CENTER, "Find", theme::ui_font(theme::TEXT_TINY), ink);
     let mut set: Option<(f64, TempoSource, bool)> = None;
     let open = egui::Popup::menu(&response).show(|ui| {
@@ -1240,13 +1260,13 @@ fn gain_part(
     let y_of = |db: f64| track.bottom() - fader_position(db) as f32 * track.height();
     let scale = theme::ui_font(theme::TEXT_TINY);
     // The marks and the 0 dB line are `fader-scale`'s `color`, the slot `fader-rail`'s background.
-    let marks = crate::kit::element::FADER_SCALE.look().color_or(theme::text_hint());
+    let marks = crate::kit::element::FADER_SCALE.attribute("kind", "clip").look().color();
     for (text, at) in [("24", track.top()), ("0", y_of(0.0)), ("-inf", track.bottom())] {
         let mark = Rect::from_min_max(Pos2::new(area.left(), at - 6.0), Pos2::new(track.left() - 2.0, at + 6.0));
         widgets::text_in(painter, mark, Align2::LEFT_CENTER, text, scale.clone(), marks);
     }
     let slot = Rect::from_center_size(track.center(), Vec2::new(4.0, track.height()));
-    let rail = crate::kit::element::FADER_RAIL.look().background_or(theme::control_background());
+    let rail = crate::kit::element::FADER_RAIL.attribute("kind", "clip").look().background();
     painter.rect_filled(slot, 2.0, rail);
     painter.hline(egui::Rangef::new(track.left() - 1.0, track.right() + 1.0), y_of(0.0), theme::hairline(marks));
     let cap = Rect::from_center_size(Pos2::new(track.center().x, y_of(shown_db)), Vec2::new(FADER_WIDTH, 8.0));

@@ -253,3 +253,178 @@ automation-header[kind="group"], automation-header[kind="group"][selected] { bac
 automation-line[muted] { color: var(--text-hint); }
 automation-point[selected] { color: var(--text-primary); }
 automation-pin { color: var(--automation-pin); }
+
+/* Detail panels and browser */
+
+/* The browser: the text it is in (its names), its words by how much they stand out (inside it the
+   dim, secondary and value words take the browser's own colours), the fills it paints for itself
+   where the region behind it gives none, and the sample map's card's edge. */
+browser { color: var(--browser-text-primary); }
+browser label[kind="hint"] { color: var(--browser-text-hint); }
+browser label[kind="caption"] { color: var(--browser-text-secondary); }
+browser label[kind="value"] { color: var(--browser-text-value); }
+browser-fill[kind="panel"] { background-color: var(--panel-background); }
+browser-fill[kind="window"] { background-color: var(--window-background); }
+sample-map { border-color: var(--border-strong); }
+marquee[kind="points"] { color: var(--accent); }
+sample-point[selected] { color: var(--text-primary); accent-color: var(--accent); }
+
+/* A browser row and a place: tinted under the pointer, picked, and where a drop lands, each a step
+   stronger than the one before (the later rule wins where they meet). */
+browser-row:hover, browser-place:hover { background-color: var(--panel-hoverBackground); }
+browser-row[selected], browser-place[selected] { background-color: var(--control-activeBackground); }
+browser-row[kind="drop"], browser-place[kind="drop"] { background-color: var(--control-hoverBackground); }
+browser-row[kind="menu"] { color: var(--text-value); }
+browser-row[kind="menu"]:hover { color: var(--text-primary); }
+browser-play[checked] { color: var(--accent); }
+playhead[kind="preview"] { color: var(--accent); }
+
+/* The browser's buttons: its filter chips (dim words, the chosen fill and its text when picked), a
+   tag's tick box, the preview's play and stop, and the "…" of the tags that did not fit. */
+button[kind="chip"] { color: var(--browser-text-secondary); }
+button[kind="chip"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
+button[kind="tag-check"][checked] { background-color: var(--text-value); color: var(--window-background); }
+button[kind="preview"] { color: var(--browser-text-primary); }
+button[kind="preview"][checked] { color: var(--accent); }
+button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
+
+/* The browser's splitter: the border colour, stronger under the pointer. */
+browser-fill[kind="splitter"] { background-color: var(--border); }
+browser-fill[kind="splitter"]:hover, browser-fill[kind="splitter"]:active { background-color: var(--border-strong); }
+
+/* The detail area: the fills its panels, the piano roll and its toolbar paint for themselves where
+   the region behind them gives none (`outline` is the border of a button that cannot be pressed,
+   `control` and `hover` the fills of the editor's hide button and an expanded panel's close button,
+   at rest and under the pointer). */
+detail-fill[kind="panel"] { background-color: var(--panel-background); }
+detail-fill[kind="window"] { background-color: var(--window-background); }
+detail-fill[kind="control"] { background-color: var(--control-background); }
+detail-fill[kind="hover"] { background-color: var(--control-hoverBackground); }
+detail-fill[kind="outline"] { border-color: var(--border); }
+
+/* A device panel: its header, the nodes of an expanded graph, a selected panel's outline, the
+   on switch (outlined in the hint colour, filled with the text's when on), the scroll bar of the
+   device chain and the lines of an expanded panel and of a group. */
+device-header { background-color: var(--control-background); color: var(--text-primary); }
+device-section { background-color: var(--control-background); color: var(--text-secondary); }
+device[selected] { accent-color: var(--selection); }
+scroll-bar[kind="chain"] { background-color: var(--control-background); color: var(--text-hint); }
+device separator[kind="column"] { color: var(--border-strong); }
+separator[kind="group"] { color: var(--accent); }
+label[kind="plugin-state"] { color: var(--text-secondary); }
+label[kind="parameter"] { color: var(--text-secondary); }
+value[kind="parameter"] { color: var(--text-value); }
+
+/* A device group's branches: a row in its list (dim words, tinted under the pointer, a step
+   stronger while its devices show) and the button that adds one. */
+device-row[kind="branch"] { color: var(--text-secondary); }
+device-row[kind="branch"]:hover { background-color: var(--control-hoverBackground); }
+device-row[kind="branch"][selected] { background-color: var(--control-activeBackground); }
+add-track[kind="branch"]:hover { background-color: var(--control-hoverBackground); }
+
+/* The clip and MIDI panels' fields (a value's text, tinted under the pointer, stronger while it is
+   dragged, its share lit in the playing colour), the line under the place of a number a drag
+   steps, the words of a check box, the head of the MIDI tools' figures and a clip's colour swatch. */
+value[kind="field"] { background-color: var(--control-background); color: var(--text-value); }
+value[kind="field"]:hover { background-color: var(--control-hoverBackground); }
+value[kind="field"]:active { background-color: var(--control-activeBackground); }
+value[kind="field"] value-fill { background-color: var(--control-playingBackground); }
+separator[kind="step"] { color: var(--text-secondary); }
+separator[kind="step"][selected] { color: var(--accent); }
+separator[kind="menu"] { color: var(--border); }
+label[kind="check"] { color: var(--text-secondary); }
+label[kind="check"]:hover { color: var(--text-primary); }
+label[kind="head"] { color: var(--text-hint); accent-color: var(--accent); }
+icon[kind="swatch"] { color: var(--text-hint); border-color: var(--border-strong); }
+icon[kind="folder"] { color: var(--text-secondary); }
+slider[kind="quantise"] { accent-color: var(--text-primary); color: var(--text-secondary); }
+fader-scale[kind="clip"] { color: var(--text-hint); }
+fader-rail[kind="clip"] { background-color: var(--control-background); }
+
+/* The panels' buttons: a push button, a switch (dim words, the chosen fill and its text when on),
+   the one that does the panel's work (lit), the Clip and Devices switch, the entries of a list
+   and its field, the MIDI tools' tabs. */
+button[kind="panel"] { color: var(--text-primary); border-color: var(--border); }
+button[kind="panel-toggle"] { border-color: var(--border); }
+button[kind="entry"] { color: var(--text-primary); }
+button[kind="entry"][checked] { background-color: var(--control-selectedBackground); }
+dropdown[kind="panel"] { background-color: var(--control-background); color: var(--text-value); }
+dropdown[kind="panel"]:hover { background-color: var(--control-hoverBackground); }
+dropdown-arrow[kind="panel"] { color: var(--text-secondary); }
+editor-tab[kind="switch"] { background-color: var(--control-background); color: var(--text-secondary); }
+editor-tab[kind="switch"]:hover { background-color: var(--control-hoverBackground); }
+editor-tab[kind="switch"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
+editor-tab[kind="tab-notes"], editor-tab[kind="tab-transform"] { color: var(--text-hint); accent-color: var(--accent); }
+editor-tab[kind="tab-notes"]:hover, editor-tab[kind="tab-transform"]:hover { color: var(--text-secondary); }
+editor-tab[kind="tab-notes"][checked], editor-tab[kind="tab-transform"][checked] { color: var(--text-primary); }
+
+/* The parameters of a device panel: a slider's parts, a knob's colours where the device gives none,
+   and a parameter's name and value where it gives no text colour. */
+slider[kind="parameter"] slider-rail { background-color: var(--control-background); color: var(--text-hint); }
+slider[kind="parameter"] slider-fill { background-color: var(--control-selectedBackground); color: var(--accent); }
+slider[kind="parameter"] slider-handle { background-color: var(--text-primary); color: var(--text-primary); }
+device-control[kind="name"] { color: var(--text-secondary); }
+device-control[kind="value"] { color: var(--text-value); }
+device-control[kind="knob"] { background-color: var(--control-background); color: var(--text-hint); accent-color: var(--text-primary); }
+
+/* A device's own drawings: the colours their theme tokens take, by the element's `color`,
+   `background-color`, `border-color` and `accent-color` and its kinds. */
+device-canvas { color: var(--text-primary); background-color: var(--control-background); border-color: var(--border); accent-color: var(--accent); }
+device-canvas[kind="secondary"] { color: var(--text-secondary); }
+device-canvas[kind="value"] { color: var(--text-value); }
+device-canvas[kind="inverse"] { color: var(--text-inverse); }
+device-canvas[kind="panel"] { background-color: var(--panel-background); }
+device-canvas[kind="window"] { background-color: var(--window-background); }
+device-canvas[kind="active"] { background-color: var(--control-activeBackground); }
+
+/* The piano roll: its grid's lines and rows, its notes' inks, its ruler and loop bar, its keys and
+   the strip naming them, what a drag marks and its toolbar's tools and menus. */
+piano-grid { border-color: var(--border); }
+piano-grid[kind="strong"] { border-color: var(--border-strong); }
+piano-row { background-color: var(--panel-background); }
+piano-row-black { background-color: var(--window-background); }
+piano-row[kind="hover"] { background-color: var(--text-primary); }
+piano-note[selected] { accent-color: var(--accent); }
+piano-note[kind="outline"] { color: var(--text-primary); }
+piano-note[kind="dashes"] { color: var(--text-hint); }
+piano-note[kind="name"] { color: var(--text-primary); }
+piano-note[kind="name"][checked] { color: var(--text-inverse); }
+piano-note[kind="draft"] { border-color: var(--text-primary); }
+velocity[muted] { color: var(--text-hint); }
+velocity[selected] { color: var(--text-primary); }
+velocity[kind="line"] { color: var(--accent); }
+velocity[kind="label"] { background-color: var(--control-background); color: var(--text-primary); }
+piano-slice[kind="cut"] { color: var(--accent); }
+piano-slice[kind="delete"] { color: var(--recording); background-color: var(--window-background); }
+marquee[kind="notes"] { color: var(--text-secondary); }
+start-marker[kind="piano"] { color: var(--text-secondary); }
+start-marker[kind="clip"] { color: var(--text-primary); }
+playhead[kind="piano"] { color: var(--accent); }
+piano-roll separator[kind="band"] { color: var(--border-strong); }
+piano-roll ruler { border-color: var(--border-strong); }
+piano-roll ruler-number { color: var(--text-value); }
+loop-region[kind="clip"] { background-color: var(--control-background); border-color: var(--text-hint); color: var(--text-hint); }
+loop-region[kind="clip"][checked] { background-color: var(--control-activeBackground); border-color: var(--text-secondary); color: var(--text-primary); }
+piano-key { accent-color: var(--accent); }
+piano-key[playing] { color: var(--text-inverse); }
+piano-scale-strip { border-color: var(--border); color: var(--text-secondary); }
+piano-scale-strip[kind="pointer"] { background-color: var(--text-primary); color: var(--text-inverse); }
+icon[kind="magnifier"] { color: var(--text-primary); }
+icon[kind="pointer"] { color: var(--text-primary); background-color: var(--window-background); }
+piano-range, piano-time-selection { accent-color: var(--accent); }
+piano-insert-mark { background-color: var(--text-primary); }
+piano-clip-strip { color: var(--text-primary); }
+piano-clip-strip[selected] { color: var(--text-inverse); }
+group[kind="piano-roll-rows"] { border-color: var(--border-strong); }
+piano-roll-toolbar separator[kind="bar"] { color: var(--border-strong); }
+piano-tool { color: var(--text-secondary); }
+piano-tool[checked] { color: var(--text-primary); background-color: var(--control-activeBackground); }
+piano-tool:hover { background-color: var(--control-hoverBackground); }
+piano-tool:disabled { color: var(--text-hint); }
+group[kind="piano-roll-rows"] piano-tool:hover { color: var(--text-primary); }
+piano-roll-toolbar bar-item[kind="menu"] { color: var(--text-secondary); }
+piano-roll-toolbar bar-item[kind="menu"][muted] { color: var(--text-hint); }
+piano-roll-toolbar bar-item[kind="menu"][checked] { color: var(--text-primary); }
+button[kind="focus"] { background-color: transparent; color: var(--text-secondary); }
+button[kind="focus"]:hover { background-color: transparent; }
+button[kind="focus"][checked], button[kind="focus"][checked]:hover { background-color: var(--accent); color: var(--text-inverse); }
