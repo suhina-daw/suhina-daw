@@ -13,13 +13,18 @@
 //! of one kind shares one layout ([`Bar::kind_of`]), worked out once a size and a sheet.
 use egui::{Rect, Vec2};
 use std::cell::Cell;
-use std::hash::Hasher;
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 use suhina_style::property::Property;
 
 /// Most items one bar lays out.
 pub const MAX_ITEMS: usize = 256;
-/// Most laid-out rows kept, for every bar and strip together; past it the cache starts again.
+/// Laid-out rows kept, for every bar and strip together, before the ones no frame used lately are
+/// dropped.
 const MAX_ROWS: usize = 256;
+/// Most laid-out rows kept at all: past it, even rows used lately go (a frame laying out more
+/// than this many kinds of strip lays some out again each frame).
+const MOST_ROWS: usize = 4096;
 
 thread_local! {
     /// How many rows this thread has laid out, not taken from the cache: for the tests that a
@@ -179,7 +184,7 @@ impl Row {
 
 /// Lays `items` out in `bar`. `None` only when there is no room (an empty or non-finite box) or
 /// the items are malformed (too many, a group after its item).
-pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
+pub fn row(bar: &Bar, items: &[Item]) -> Option<Arc<Row>> {
     if !bar.size.is_finite()
         || bar.size.x <= 0.0
         || bar.size.y <= 0.0
@@ -225,16 +230,18 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
             }
         }
         let key = {
-            let mut key = Key::default();
-            // Writing to a hasher cannot fail.
-            let _ = std::fmt::Write::write_fmt(
-                &mut key,
-                format_args!("{themed}:{}:{:?}:{:?}:{items:?}", bar.by_order, bar.size, all),
-            );
-            key.0.finish()
+            let mut key = std::hash::DefaultHasher::new();
+            (themed, bar.by_order, bar.size.x.to_bits(), bar.size.y.to_bits(), &all).hash(&mut key);
+            for item in items {
+                (item.name, &item.id, &item.attributes, item.parent).hash(&mut key);
+                item.size.map(|size| size.map(f32::to_bits)).hash(&mut key);
+            }
+            key.finish()
         };
-        if let Some(row) = engine.rows.get(&key) {
-            return Some(row.clone());
+        let frame = engine.row_frame;
+        if let Some((row, used)) = engine.rows.get_mut(&key) {
+            *used = frame;
+            return Some(Arc::clone(row));
         }
         COMPUTED.with(|count| count.set(count.get().wrapping_add(1)));
         let size = [bar.size.x.min(16384.0), bar.size.y.min(16384.0)];
@@ -283,30 +290,17 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
             })
             .collect();
         let fits = inside.iter().all(|inside| *inside);
-        let row = Row { items: rects, inside, fits, insets: [top, right, bottom, left] };
+        let row = Arc::new(Row { items: rects, inside, fits, insets: [top, right, bottom, left] });
         if engine.rows.len() >= MAX_ROWS {
-            engine.rows.clear();
+            // Only what this frame and the one before did not use goes.
+            engine.rows.retain(|_, (_, used)| used.wrapping_add(1) >= frame);
+            if engine.rows.len() >= MOST_ROWS {
+                engine.rows.clear();
+            }
         }
-        engine.rows.insert(key, row.clone());
+        engine.rows.insert(key, (Arc::clone(&row), frame));
         Some(row)
     })
-}
-
-/// A row's cache key: what it was laid out from, hashed as it is written, so looking a row up
-/// writes no string.
-struct Key(std::collections::hash_map::DefaultHasher);
-
-impl Default for Key {
-    fn default() -> Self {
-        Self(std::collections::hash_map::DefaultHasher::new())
-    }
-}
-
-impl std::fmt::Write for Key {
-    fn write_str(&mut self, text: &str) -> std::fmt::Result {
-        self.0.write(text.as_bytes());
-        Ok(())
-    }
 }
 
 /// The room inside `bar`'s border and padding (top, right, bottom, left), as the sheet lays it
@@ -319,7 +313,7 @@ pub fn insets(bar: &Bar) -> Option<[f32; 4]> {
 /// Lays out the first of `candidates` that fits `bar` ([`Row::fits`]): the app lists them from
 /// the fullest to the sparsest, so a narrow bar gives way in the app's order while the sheet keeps
 /// the geometry. The last when none fits, its overflow clipped. Returns its index and its row.
-pub fn fitting(bar: &Bar, candidates: &[Vec<Item>]) -> Option<(usize, Row)> {
+pub fn fitting(bar: &Bar, candidates: &[Vec<Item>]) -> Option<(usize, Arc<Row>)> {
     fitting_with(bar, candidates, |_, _, row| row.fits)
 }
 
@@ -329,7 +323,7 @@ pub fn fitting_with(
     bar: &Bar,
     candidates: &[Vec<Item>],
     fits: impl Fn(usize, &[Item], &Row) -> bool,
-) -> Option<(usize, Row)> {
+) -> Option<(usize, Arc<Row>)> {
     let mut last = None;
     for (index, items) in candidates.iter().enumerate() {
         let laid = row(bar, items)?;
