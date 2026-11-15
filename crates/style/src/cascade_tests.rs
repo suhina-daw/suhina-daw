@@ -415,6 +415,29 @@ fn a_theme_rule_beats_a_base_rule_whatever_its_specificity_or_layer() {
     assert!(!styles[3].authored(Property::Color) && !styles[3].declared(Property::Color));
 }
 
+/// The cascade goes property by property (#1448): a theme rule for an element overrides a base
+/// state rule only in the properties it sets; another property keeps the base value.
+#[test]
+fn a_theme_rule_overrides_a_base_rule_only_in_the_properties_it_sets() {
+    let tree =
+        Tree::new(vec![Element::new("window", None), Element::new("button", Some(0)).with_attribute("checked", "")])
+            .unwrap();
+    let base = Sheet::parse("button[checked] { background-color: #020202; color: #050505; }").unwrap();
+    let theme = Sheet::parse("button { background-color: #ffb000; }").unwrap();
+    let styles = compute(
+        &tree,
+        viewport(800.0),
+        &[
+            AppliedSheet { sheet: &base, layer: Layer::Base, root: None },
+            AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+        ],
+    )
+    .unwrap();
+    assert_eq!(styles[1].get(Property::BackgroundColor), Value::Color(Color::Rgba([255, 176, 0, 255])));
+    assert_eq!(styles[1].get(Property::Color), Value::Color(Color::Rgba([5, 5, 5, 255])));
+    assert!(!styles[1].authored(Property::Color));
+}
+
 /// A base rule on an element replaces the colour a theme's rule around it gives, and what it
 /// gives is not authored, as a user-agent rule's is not; a theme rule on the element itself beats
 /// it.
