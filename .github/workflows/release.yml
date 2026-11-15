@@ -6,7 +6,8 @@ name: Release
 # release under the tag `nightly` that each new one replaces, so people can try the current state,
 # and kept for NIGHTLY_KEEP_DAYS as its own pre-release `nightly-YYYYMMDD`, so a tester can go back
 # to an earlier night. The workflow has no schedule: the nightly is started from outside, by hand
-# or by a scheduled agent. See docs/releasing.md.
+# or by a scheduled agent, and a second agent rewrites its notes and posts it to Discord. See
+# docs/releasing.md.
 # The binaries are not signed yet (ROADMAP, M8): macOS Gatekeeper and Windows SmartScreen warn
 # about them.
 
@@ -83,9 +84,14 @@ jobs:
             # build metadata, so a hash with a leading zero is still a valid version.
             day=$(date -u +%Y%m%d)
             version="${version%%-*}-nightly.$day+${GITHUB_SHA::7}"
-            # The night's own release, kept after `nightly` has moved on. A second run on the same
-            # day replaces that day's one.
+            # The night's own release, kept after `nightly` has moved on. A second nightly on the
+            # same day is kept beside the first as nightly-YYYYMMDD-2, and so on.
             dated="nightly-$day"
+            n=2
+            while [ -n "$(git ls-remote origin "refs/tags/$dated" | cut -f1)" ]; do
+              dated="nightly-$day-$n"
+              n=$((n + 1))
+            done
           fi
           # Release candidates and nightlies are pre-releases; a release, 0.x included, is the latest.
           if [[ "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
@@ -335,11 +341,6 @@ jobs:
     needs: [version, build]
     if: needs.version.outputs.nightly == 'true'
     runs-on: ubuntu-latest
-    # DISCORD_WEBHOOK_RELEASES is in the environment `discord`, which main may use; the nightly
-    # runs from main only.
-    environment:
-      name: discord
-      deployment: false
     permissions:
       contents: write
     concurrency:
@@ -388,6 +389,8 @@ jobs:
           Talk about it on Discord: https://discord.com/invite/e5JAZYMU. Bugs and ideas: https://github.com/$GITHUB_REPOSITORY/issues (say which nightly: \`$VERSION\`).
 
           $changes
+
+          <!-- nightly-range: $PREVIOUS..$GITHUB_SHA -->
           EOF
           )
           # Until Suhina has a release of its own (published, not a candidate), the nightly is the
@@ -405,7 +408,7 @@ jobs:
             --title "Suhina nightly $VERSION" \
             --notes "$notes"
           # The same packages under the night's own tag, a pre-release that is never the latest.
-          # A second nightly on the same day replaces the day's first.
+          # A second nightly on the same day has a tag of its own (nightly-YYYYMMDD-2).
           gh release delete "$DATED" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
           gh release create "$DATED" dist/* \
             --repo "$GITHUB_REPOSITORY" \
@@ -433,24 +436,3 @@ jobs:
                   gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
                 fi
               done
-      # Posts the new nightly to the Discord releases channel, the secret DISCORD_WEBHOOK_RELEASES
-      # in the environment `discord` (Discord: channel settings > Integrations > Webhooks); without the secret nothing is
-      # posted. A failed post leaves the nightly published.
-      - name: Tell Discord
-        continue-on-error: true
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-          DATED: ${{ needs.version.outputs.dated }}
-          PREVIOUS: ${{ steps.previous.outputs.sha }}
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
-        run: |
-          if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "No DISCORD_WEBHOOK_RELEASES secret; nothing posted."
-            exit 0
-          fi
-          python3 scripts/release_notes.py --repo "$GITHUB_REPOSITORY" \
-            --base "$PREVIOUS" --head "$GITHUB_SHA" --style discord --version "$VERSION" --tag "$DATED" > post.txt
-          cat post.txt
-          # allowed_mentions: a commit title never pings anyone.
-          jq -Rs '{content: ., allowed_mentions: {parse: []}}' post.txt \
-            | curl -fsS -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
