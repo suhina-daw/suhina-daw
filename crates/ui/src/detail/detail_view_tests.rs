@@ -852,7 +852,9 @@ fn a_selected_device_s_outline_runs_along_its_panel_s_edge() {
         harness.run_steps(3);
         let panel = harness.get_by_label("Device Verb").rect();
         let outline = harness.output().shapes.iter().find_map(|s| match &s.shape {
-            egui::Shape::Rect(r) if r.stroke.color == theme::selection() && r.stroke.width > 0.0 => {
+            egui::Shape::Rect(r)
+                if r.stroke.color == crate::kit::theme::studio("selection") && r.stroke.width > 0.0 =>
+            {
                 Some((r.rect, s.clip_rect))
             }
             _ => None,

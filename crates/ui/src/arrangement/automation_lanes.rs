@@ -1195,7 +1195,7 @@ fn stretch_slider(
     // Around: the points' middle, or the bottom of the lane (a share of each value).
     let mut bottom = state.scale_bottom;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Around").color(theme::text_hint()).size(theme::TEXT_SMALL));
+        ui.label(egui::RichText::new("Around").color(crate::kit::element::hint_ink()).size(theme::TEXT_SMALL));
         ui.selectable_value(&mut bottom, false, "Middle")
             .on_hover_text("Around half-way between the lowest and highest point, so the shape swings more or less");
         ui.selectable_value(&mut bottom, true, "Bottom")
@@ -2087,15 +2087,16 @@ pub fn header_button(
         state.toggle(track, params);
     }
     // `#control-automation`, `[checked]` while the lanes show, and `automation` artwork.
-    let el = crate::kit::element::BUTTON
-        .id("automation")
-        .response(&response)
-        .attr(crate::kit::element::Checked, open)
-        .enter();
-    let hover = widgets::hover(ui, &response);
-    let off = crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover);
-    widgets::track_button_face(ui, painter, rect, &el, &response, if open { theme::control_active() } else { off });
-    let ink = el.color_or(if open { theme::text_primary() } else { theme::text_secondary() });
+    let widgets::Lit { el, toggle, lit } = widgets::lit_toggle_kind(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.id("automation"),
+        &[crate::kit::element::Checked],
+        open,
+        "lanes",
+    );
+    let (fill, ink) = toggle.at(lit);
+    widgets::toggle_face(painter, rect, &el, &response, fill, toggle.image(lit));
     if crate::kit::skin::paint_as(
         &el,
         painter,
@@ -2199,9 +2200,7 @@ pub(crate) fn show(
             continue;
         }
         // The line under each automation lane, `separator[kind="row"]`, read once.
-        let row_line = *row_line.get_or_insert_with(|| {
-            crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border())
-        });
+        let row_line = *row_line.get_or_insert_with(crate::kit::element::row_line);
         match row {
             LaneRow::Group(index) => {
                 group_heading(ui, painter, geometry, lanes, index, header, time, state, gesture, params, actions);
@@ -2244,7 +2243,7 @@ fn empty_lane(
             Align2::CENTER_CENTER,
             "Choose a parameter, or move a control, to show it here",
             theme::ui_font(theme::TEXT_SMALL),
-            crate::kit::element::LABEL.look().color_or(theme::text_hint()),
+            crate::kit::element::hint_ink(),
         );
     }
     let clip = header.intersect(geometry.visible);
@@ -2252,7 +2251,7 @@ fn empty_lane(
         return;
     }
     let painter = painter.with_clip_rect(clip);
-    painter.rect_filled(header, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    painter.rect_filled(header, 0.0, super::arrangement_view::panel_surface());
     let inner = header.shrink2(Vec2::new(PAD, 5.0));
     let row = Rect::from_min_size(inner.min, Vec2::new(inner.width(), HEADER_ROW));
     let id = Id::unique(("automation-empty", track.0));
@@ -2316,8 +2315,8 @@ fn drop_headers(
         Some((_, top, bottom)) => {
             let area = Rect::from_x_y_ranges(across, egui::Rangef::new(top, bottom));
             let target = crate::kit::element::DROP_TARGET.attribute("kind", "area").look();
-            painter.rect_filled(area, 0.0, target.background_or(theme::accent().gamma_multiply(0.2)));
-            painter.rect_stroke(area, 0.0, Stroke::new(2.0, target.own_color_or(theme::accent())), StrokeKind::Inside);
+            painter.rect_filled(area, 0.0, target.background_or(target.color().gamma_multiply(0.2)));
+            painter.rect_stroke(area, 0.0, Stroke::new(2.0, target.color()), StrokeKind::Inside);
         }
         None => {
             let line_y = match landing {
@@ -2328,7 +2327,7 @@ fn drop_headers(
             // the lanes go (in the group or out of it) shows before they are let go of.
             let joins = !drag.group && matches!(place, Place::Before { join: true, .. });
             let line = if joins { egui::Rangef::new(across.min + GROUP_INDENT, across.max) } else { across };
-            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().own_color_or(theme::accent());
+            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color();
             painter.hline(line, line_y, Stroke::new(2.0, ink));
         }
     }
@@ -2384,11 +2383,7 @@ fn group_heading(
     // A group's lane under it is `automation-lane[kind="group"]`; its header,
     // `automation-header[kind="group"]`, is `[selected]` while picked.
     let band = crate::kit::element::AUTOMATION_LANE.attribute("kind", "group").look();
-    painter.rect_filled(
-        time.intersect(geometry.visible),
-        0.0,
-        band.background_or(theme::accent().gamma_multiply(0.06)),
-    );
+    painter.rect_filled(time.intersect(geometry.visible), 0.0, band.background_or(band.color().gamma_multiply(0.06)));
     let el = crate::kit::element::AUTOMATION_HEADER
         .attribute("kind", "group")
         .attr(crate::kit::element::Selected, picked)
@@ -2398,9 +2393,9 @@ fn group_heading(
             painter.rect_filled(header, 0.0, style.background);
         }
         None => {
-            painter.rect_filled(header, 0.0, theme::control_background());
+            painter.rect_filled(header, 0.0, el.background());
             if picked {
-                painter.rect_filled(header, 0.0, theme::accent().gamma_multiply(0.25));
+                painter.rect_filled(header, 0.0, el.accent().gamma_multiply(0.25));
             }
         }
     }
@@ -2472,7 +2467,7 @@ fn group_heading(
         Align2::CENTER_CENTER,
         if group.folded { "▸" } else { "▾" },
         theme::ui_font(theme::TEXT_SMALL),
-        el.color_or(theme::text_secondary()),
+        el.color_or(crate::kit::element::caption_ink()),
     );
     match state.renaming.clone().filter(|(t, i, _)| *t == track && *i == index) {
         Some((_, _, mut text)) => {
@@ -2510,7 +2505,7 @@ fn group_heading(
                 Align2::LEFT_CENTER,
                 &text,
                 theme::ui_font(theme::TEXT_SMALL),
-                el.color_or(theme::text_primary()),
+                el.color_or(crate::kit::element::name_ink()),
             );
         }
     }
@@ -3136,10 +3131,8 @@ fn lane(
         state.drawn_drag = Some(Dragged { track, key: key.clone(), points: points.clone(), at });
     }
     // The envelope's line: the track's colour, `automation-line[muted]`'s while it is off.
-    let ink = crate::kit::element::AUTOMATION_LINE
-        .attr(crate::kit::element::Muted, !param.enabled)
-        .look()
-        .own_color_or(if param.enabled { color(lanes.color) } else { theme::text_hint() });
+    let line_look = crate::kit::element::AUTOMATION_LINE.attr(crate::kit::element::Muted, !param.enabled).look();
+    let ink = line_look.own_color_or(if param.enabled { color(lanes.color) } else { line_look.color() });
     let line = envelope(&points, &param.scale, plot, geometry);
     // A finished bend asks for its command only now, after the envelope above drew it: the
     // project has the new curve only once the command has run, after this frame, so dropping
@@ -3216,8 +3209,8 @@ fn lane(
     if let Some(drag) = gesture.lane_box().filter(|d| d.select && d.track == track && &d.key == key) {
         let area = Rect::from_two_pos(drag.from, drag.to);
         let look = crate::kit::element::TIME_SELECTION.attribute("kind", "automation").look();
-        lane_painter.rect_filled(area, 0.0, look.background_or(theme::accent().gamma_multiply(0.15)));
-        lane_painter.rect_stroke(area, 0.0, theme::hairline(look.own_color_or(theme::accent())), StrokeKind::Inside);
+        lane_painter.rect_filled(area, 0.0, look.background_or(look.color().gamma_multiply(0.15)));
+        lane_painter.rect_stroke(area, 0.0, theme::hairline(look.color()), StrokeKind::Inside);
     }
     // A range painted from another lane over this one is on this one too (#1322).
     let painting =
@@ -3244,8 +3237,8 @@ fn lane(
             area.max.y += LINE;
         }
         let look = crate::kit::element::TIME_SELECTION.attribute("kind", "automation").look();
-        lane_painter.rect_filled(area, 0.0, look.background_or(theme::accent().gamma_multiply(0.15)));
-        let stroke = theme::hairline(look.own_color_or(theme::accent()));
+        lane_painter.rect_filled(area, 0.0, look.background_or(look.color().gamma_multiply(0.15)));
+        let stroke = theme::hairline(look.color());
         let inner = area.shrink(0.5);
         lane_painter.line_segment([inner.left_top(), Pos2::new(inner.left(), area.bottom())], stroke);
         lane_painter.line_segment([inner.right_top(), Pos2::new(inner.right(), area.bottom())], stroke);
@@ -3323,11 +3316,7 @@ fn lane(
                 }
             }
             let hover = widgets::hover(ui, &response);
-            lane_painter.circle_filled(
-                center,
-                CURVE_HANDLE + hover,
-                crate::kit::style_class::surface_or(theme::window_background()),
-            );
+            lane_painter.circle_filled(center, CURVE_HANDLE + hover, super::arrangement_view::window_surface());
             lane_painter.circle_stroke(center, CURVE_HANDLE + hover, Stroke::new(1.2, ink));
         }
     }
@@ -3340,9 +3329,11 @@ fn lane(
         let picked = crate::kit::element::AUTOMATION_POINT.attr(crate::kit::element::Selected, true).look();
         // A rule for every point does not hide which are picked: only a `[selected]` rule
         // recolours them.
-        let selected = picked.own_color_unlike(&plain, theme::text_primary());
+        // A rule's colour beats every base rule, so a rule for every point reaches the picked
+        // ones too: where it does, they take the words' colour, the base sheet's own.
         let plain =
             plain.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
+        let selected = Some(picked.color()).filter(|c| plain != Some(*c)).unwrap_or_else(crate::kit::element::name_ink);
         (plain, selected)
     };
     for (index, point) in param.points.iter().enumerate() {
@@ -3537,11 +3528,7 @@ fn lane(
         // `automation-point`, `[selected]` while picked: its `color`, the line's where none.
         let fill = if selected { selected_point } else { point_ink.unwrap_or(ink) };
         lane_painter.circle_filled(center, radius, fill);
-        lane_painter.circle_stroke(
-            center,
-            radius,
-            Stroke::new(1.0, crate::kit::style_class::surface_or(theme::window_background())),
-        );
+        lane_painter.circle_stroke(center, radius, Stroke::new(1.0, super::arrangement_view::window_surface()));
     }
 }
 
@@ -3566,7 +3553,7 @@ fn range_menu(
     let shown = if (bars - bars.round()).abs() < 1e-6 { format!("{}", bars.round()) } else { format!("{bars:.2}") };
     ui.label(
         egui::RichText::new(format!("{shown} bar{} selected", if (bars - 1.0).abs() < 1e-6 { "" } else { "s" }))
-            .color(theme::text_hint())
+            .color(crate::kit::element::hint_ink())
             .size(theme::TEXT_SMALL),
     );
     // The range's span loops, over every lane it reaches, as Ctrl+L does.
@@ -3648,13 +3635,13 @@ fn range_menu(
         None => {
             ui.label(
                 egui::RichText::new("Depth and Rate apply to the next shape inserted here")
-                    .color(theme::text_hint())
+                    .color(crate::kit::element::hint_ink())
                     .size(theme::TEXT_SMALL),
             );
         }
     }
     ui.separator();
-    ui.label(egui::RichText::new("Points in the range").color(theme::text_hint()).size(theme::TEXT_SMALL));
+    ui.label(egui::RichText::new("Points in the range").color(crate::kit::element::hint_ink()).size(theme::TEXT_SMALL));
     let of = format!("{}/{key:?}/range {start} {end}", track.0);
     let middle = middle_of(points, scale, start, end);
     if let Some((factor, again)) = stretch_slider(ui, state, (track, key), of.clone(), middle) {
@@ -3706,7 +3693,7 @@ fn range_menu(
         );
     ui.label(
         egui::RichText::new(format!("{before} \u{2192} {now} points"))
-            .color(theme::text_hint())
+            .color(crate::kit::element::hint_ink())
             .size(theme::TEXT_SMALL),
     );
     let amount = amount / 100.0;
@@ -3745,7 +3732,7 @@ fn picked_menu(
     let count = points.len();
     ui.label(
         egui::RichText::new(format!("{count} point{} selected", if count == 1 { "" } else { "s" }))
-            .color(theme::text_hint())
+            .color(crate::kit::element::hint_ink())
             .size(theme::TEXT_SMALL),
     );
     let beats = points.iter().filter_map(|&i| param.points.get(i)).map(|p| p.beat);
@@ -3791,7 +3778,7 @@ fn grid_menu(ui: &mut Ui, state: &mut LanesState, _actions: &mut Vec<Action>) {
 /// A menu's shapes under `title`, drawn as small pictures in rows of five, `chosen` lit; the one
 /// clicked, by name.
 fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static str> {
-    ui.label(egui::RichText::new(title).color(theme::text_hint()).size(theme::TEXT_SMALL));
+    ui.label(egui::RichText::new(title).color(crate::kit::element::hint_ink()).size(theme::TEXT_SMALL));
     let mut picked = None;
     for row in suhina_session::AUTOMATION_SHAPES.chunks(5) {
         ui.horizontal(|ui| {
@@ -3801,18 +3788,25 @@ fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
                 let response = response.on_hover_text(&label);
                 let painter = ui.painter();
+                // `button[kind="shape"]`, `[checked]` on the chosen one: over the window, a step
+                // brighter under the pointer.
+                let el = crate::kit::element::BUTTON
+                    .attribute("kind", "shape")
+                    .attr(crate::kit::element::Checked, chosen == Some(name))
+                    .enter();
                 let fill = if chosen == Some(name) {
-                    theme::control_active()
+                    el.background()
                 } else {
                     crate::kit::motion::mix(
-                        crate::kit::style_class::surface_or(theme::window_background()),
-                        theme::control_hover(),
+                        crate::kit::style_class::surface_or(el.look_hovered(false).background()),
+                        el.look_hovered(true).background(),
                         widgets::hover(ui, &response),
                     )
                 };
                 painter.rect_filled(rect, 2.0, fill);
                 let line = shape_icon(name, rect.shrink2(Vec2::new(5.0, 4.0)));
-                painter.add(Shape::line(line, Stroke::new(1.3, theme::text_secondary())));
+                painter.add(Shape::line(line, Stroke::new(1.3, el.color())));
+                drop(el);
                 if response.clicked() {
                     picked = Some(name);
                 }
@@ -3944,13 +3938,13 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
         if toggles && response.hovered() {
             painter.rect_filled(rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
         }
-        widgets::chevron(painter, Pos2::new(rect.left() + 6.0, rect.center().y), open, theme::text_hint());
+        widgets::chevron(painter, Pos2::new(rect.left() + 6.0, rect.center().y), open, crate::kit::element::hint_ink());
         let font = egui::TextStyle::Button.resolve(ui.style());
         let text = Pos2::new(rect.left() + 14.0, rect.center().y);
         painter.text(text, Align2::LEFT_CENTER, name, font.clone(), ui.visuals().text_color());
         let count = format!("{count}{}", if marked { " •" } else { "" });
         let end = Pos2::new(rect.right() - 4.0, rect.center().y);
-        painter.text(end, Align2::RIGHT_CENTER, count, font, theme::text_hint());
+        painter.text(end, Align2::RIGHT_CENTER, count, font, crate::kit::element::hint_ink());
     }
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::DisclosureTriangle, true, open, name));
     response
@@ -4062,12 +4056,12 @@ fn parameter_menu(
     ui.allocate_ui(Vec2::new(ui.available_width(), height), |ui| {
         egui::ScrollArea::vertical().max_height(height).auto_shrink([true, true]).show(ui, |ui| {
             if sections.is_empty() {
-                ui.label(egui::RichText::new("No parameter matches").color(theme::text_hint()));
+                ui.label(egui::RichText::new("No parameter matches").color(crate::kit::element::hint_ink()));
             }
             // Every parameter with points, again at the top: their devices may be closed.
             if !automated.is_empty() {
                 ui.separator();
-                ui.label(egui::RichText::new("Automated").color(theme::text_hint()));
+                ui.label(egui::RichText::new("Automated").color(crate::kit::element::hint_ink()));
                 for choice in &automated {
                     if automated_row(ui, choice, current, free(choice), first_frame && to_top) {
                         chosen = Some((choice.key.clone(), true));
@@ -4240,17 +4234,17 @@ fn lane_header(
     // The header's own look, picked or not: its background and its text colour.
     let picked = state.is_picked(track, &param.key);
     let look = crate::kit::element::AUTOMATION_HEADER.attr(crate::kit::element::Selected, picked).look();
-    let surface = crate::kit::style_class::surface_or(theme::panel_background());
+    let surface = super::arrangement_view::panel_surface();
     if picked {
         // The picked tint lies over the header's own background.
         let plain = crate::kit::element::AUTOMATION_HEADER.probe();
         painter.rect_filled(rect, 0.0, plain.background_or(surface));
         // A rule for every header must not hide the pick: only a `[selected]` rule changes the tint.
-        painter.rect_filled(rect, 0.0, look.background_unlike(&plain, theme::accent().gamma_multiply(0.18)));
+        painter.rect_filled(rect, 0.0, look.background_or(look.accent().gamma_multiply(0.18)));
     } else {
         painter.rect_filled(rect, 0.0, look.background_or(surface));
     }
-    let name_ink = look.color_or(theme::text_primary());
+    let name_ink = look.color_or(crate::kit::element::name_ink());
     let id = Id::unique(("automation-header", track.0, param.key.device, param.key.param.as_str()));
     let background = ui.interact(clip, id.with("background"), Sense::click_and_drag());
     if background.clicked() && !top {
@@ -4346,11 +4340,25 @@ fn lane_header(
         } else {
             response.on_hover_text("A manual change turned this automation off; click to follow it again")
         };
-        let (fill, ink) = widgets::toggle_colors(ui, &response, param.enabled);
-        painter.rect_filled(toggle, 0.0, fill);
+        // `button#control-automation`, `[checked]` while it follows: only a rule for that state lights it.
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.id("automation"),
+            &[crate::kit::element::Checked],
+            param.enabled,
+        );
+        let (fill, ink) = lit.colors();
+        lit.el.paint_over(
+            &painter,
+            toggle,
+            crate::kit::element::Native { radius: 0.0, fill },
+            lit.toggle.image(lit.lit),
+        );
         if !param.enabled {
-            painter.rect_stroke(toggle, 0.0, theme::hairline(theme::accent()), StrokeKind::Inside);
+            painter.rect_stroke(toggle, 0.0, theme::hairline(lit.el.accent()), StrokeKind::Inside);
         }
+        drop(lit);
         widgets::text_in(&painter, toggle, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
     }
 
@@ -4408,9 +4416,9 @@ fn lane_header(
     // Second row: the value at the playhead's side of things, the lane's first point, or a hint.
     let second = Rect::from_min_size(Pos2::new(inner.left(), row.bottom() + 3.0), Vec2::new(inner.width(), HEADER_ROW));
     let (text, ink) = match (param.points.first(), param.enabled) {
-        (None, _) => ("Click the lane to add a point".to_string(), theme::text_hint()),
-        (Some(_), false) => ("Off: set by hand".to_string(), theme::text_secondary()),
-        (Some(_), true) => (format!("{} points", param.points.len()), theme::text_hint()),
+        (None, _) => ("Click the lane to add a point".to_string(), crate::kit::element::hint_ink()),
+        (Some(_), false) => ("Off: set by hand".to_string(), crate::kit::element::caption_ink()),
+        (Some(_), true) => (format!("{} points", param.points.len()), crate::kit::element::hint_ink()),
     };
     widgets::text_in(&painter, second, Align2::LEFT_CENTER, &text, theme::ui_font(theme::TEXT_SMALL), ink);
 }
@@ -4444,11 +4452,12 @@ const PIN_NEEDLE: [(f32, f32); 2] = [(8.0, 8.7), (8.0, 13.5)];
 fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response, glyph: Glyph) {
     let hover = widgets::hover(ui, response);
     if hover > 0.0 {
-        painter.rect_filled(rect, 3.0, theme::control_hover().gamma_multiply(hover));
+        let hot = crate::kit::element::BUTTON.builder().pointer(true, false, false).probe().background();
+        painter.rect_filled(rect, 3.0, hot.gamma_multiply(hover));
     }
     let ink = match glyph {
-        Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().own_color_or(theme::automation_pin()),
-        _ => crate::kit::motion::mix(theme::text_hint(), theme::text_primary(), hover),
+        Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().color(),
+        _ => crate::kit::motion::mix(crate::kit::element::hint_ink(), crate::kit::element::name_ink(), hover),
     };
     let stroke = Stroke::new(1.25, ink);
     let side = (rect.width().min(rect.height()) - 1.0).max(4.0);

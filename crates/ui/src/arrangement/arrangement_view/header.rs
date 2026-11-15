@@ -123,36 +123,22 @@ pub(super) fn lying_meter(right: f32, y: f32) -> Rect {
     Rect::from_min_max(Pos2::new(right - LYING_METER, y - meter::WIDTH / 2.0), Pos2::new(right, y + meter::WIDTH / 2.0))
 }
 
-fn nesting_band_width(depth: usize) -> f32 {
-    match depth {
-        0 => COLOUR_BAND,
-        1 => 4.0,
-        2 => 3.0,
-        _ => 2.0,
-    }
-}
-
-/// A header's colour band: the track's colour down its left edge, the full height of the header,
-/// at full strength while the track is off too, as the one place its colour stays beside the grey
-/// header (#1393). A click opens the palette; gives the band's rectangle.
+/// A header's colour band in `band`, where its layout puts it: the track's colour down its left
+/// edge, the full height of the header, at full strength while the track is off too, as the one
+/// place its colour stays beside the grey header (#1393). A click opens the palette.
 pub(super) fn colour_band(
     ui: &Ui,
     painter: &egui::Painter,
-    rect: Rect,
+    band: Rect,
     clip: Rect,
     lane: &Lane,
     id: Id,
     actions: &mut Vec<Action>,
-) -> Rect {
-    let band = Rect::from_min_size(rect.min, Vec2::new(nesting_band_width(lane.depth), rect.height()));
-    let at = crate::kit::control_layout::place("arrangement-color", band, clip);
-    if !crate::kit::control_layout::placement("arrangement-color").hidden {
-        painter.rect_filled(at, 0.0, colour_picker::fill(lane.color, false));
-        if at.intersects(clip) {
-            colour_picker::area(ui, at.intersect(clip), id.with("colour"), lane.track, &lane.name, lane.color, actions);
-        }
+) {
+    painter.rect_filled(band, 0.0, colour_picker::fill(lane.color, false));
+    if band.intersects(clip) {
+        colour_picker::area(ui, band.intersect(clip), id.with("colour"), lane.track, &lane.name, lane.color, actions);
     }
-    band
 }
 
 /// Where a header stands among the drawn lanes: how many lanes are inside it (a group's fold
@@ -184,47 +170,9 @@ pub(super) fn track_header(
     state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
 ) {
-    // A track lower than the theme allows for its placements keeps Suhina's own layout.
-    let low = crate::kit::style_class::theme_compact_below().is_some_and(|below| rect.height() < below);
-    let _native = crate::kit::control_layout::native_only(low);
     let mut work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement track header");
-    let own = crate::kit::element::TRACK_HEADER
-        .id(&format!("track-{}", lane.track.0))
-        .color(rgb(lane.color))
-        .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
-        .attr(crate::kit::element::Muted, lane.mute)
-        .attr(crate::kit::element::Armed, lane.armed)
-        .enter();
-    work_trace.mark("style");
-    // What the header holds goes in its content box, inside its border and padding (#1336), and
-    // its rows are as tall as that box allows.
-    let inside = own.content_in(rect);
-    let spacious = inside.height() >= 60.0;
-    let tiny = inside.height() < 20.0;
-    let header_row = if tiny {
-        (inside.height() - 2.0).max(1.0)
-    } else if spacious {
-        20.0
-    } else {
-        HEADER_ROW
-    };
-    let field_height = if spacious { 20.0 } else { FIELD };
-    let header_pad = if tiny {
-        1.0
-    } else if inside.height() < 48.0 {
-        2.0
-    } else if spacious {
-        6.0
-    } else {
-        HEADER_PAD_Y
-    };
-    let header_gap = if inside.height() < 48.0 {
-        4.0
-    } else if spacious {
-        10.0
-    } else {
-        PAD
-    };
+    // The click is taken before the header's element is entered, so the frame that selects the
+    // track paints it from `track-header[selected]`, border included, not from the unselected look.
     let id = Id::unique(("arrangement-header", lane.track.0));
     let clip = rect.intersect(lanes_area);
 
@@ -255,6 +203,50 @@ pub(super) fn track_header(
     {
         state.track_drop = Some((dragged, pointer.y));
     }
+    let own = crate::kit::element::TRACK_HEADER
+        .id(&format!("track-{}", lane.track.0))
+        .color(rgb(lane.color))
+        .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
+        .attr(crate::kit::element::Muted, lane.mute)
+        .attr(crate::kit::element::Armed, lane.armed)
+        .enter();
+    work_trace.mark("style");
+    // What the header holds goes in its content box, inside its border and padding (#1336), and
+    // its rows are as tall as that box allows.
+    let inside = own.content_in(rect);
+    // A track inside groups has their colours down its indent, the outermost first, so a group and
+    // its tracks read as one block: the group's colour runs from its header down all of them.
+    let mut ancestors = Vec::new();
+    let mut parent = lane.parent;
+    while let Some(group) = parent.filter(|_| ancestors.len() < lane.depth) {
+        let Some(group_lane) = timeline.lanes.iter().find(|l| l.track == group) else { break };
+        ancestors.push(group_lane.color);
+        parent = group_lane.parent;
+    }
+    // Its parts, as the sheet lays them out for a header of its kind and size (#1453).
+    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track);
+    let mut parts = super::header_layout::layout(
+        Some(&own),
+        rect,
+        super::header_layout::Header {
+            depth: lane.depth,
+            ancestors: ancestors.len(),
+            armable: lane.armable,
+            notes: lane.plays_notes,
+            takes: has_takes,
+            sends: lane.sends.len(),
+        },
+    );
+    // A presentation folder (an imported playlist group) has no mixer channel: no meter, track
+    // switch, solo, cue, volume, pan, sends or routing, only its name and its fold.
+    if lane.folder {
+        (parts.meter, parts.track_on, parts.solo, parts.cue) = (None, None, None, None);
+        (parts.volume, parts.pan, parts.output, parts.input) = (None, None, None, None);
+        (parts.previous, parts.next) = (None, None);
+        parts.sends.clear();
+        parts.shown_sends = 0;
+        parts.navigation = false;
+    }
     let selection = state.selected_tracks.clone();
     // Open until a click outside: its items close it themselves, and a colour dragged in its
     // picker does not (#712).
@@ -282,15 +274,27 @@ pub(super) fn track_header(
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
     // Preserve track identity when selected: a small brightness lift and outline, without
     // replacing the track colour with the global selection accent.
-    let background = if selected { theme::track_header_selected() } else { theme::track_header_background() };
+    // The theme's header colours (`--track-headerBackground`, `--track-headerSelectedBackground`),
+    // which the track's colour is worked into; a rule for `track-header` paints over the result.
+    let background = own
+        .style()
+        .and_then(|style| {
+            style.colour_variable(if selected {
+                "--track-headerSelectedBackground"
+            } else {
+                "--track-headerBackground"
+            })
+        })
+        .unwrap_or(egui::Color32::TRANSPARENT);
     let strength = crate::kit::style_class::theme_header_tint().unwrap_or(state.header_colour_strength);
-    // A muted track's header is the user-agent sheet's `track-header[muted]` grey, as its clips
-    // are, not a dimmer shade of its colour (#1393); its colour stays in the band down its edge.
+    // A muted track's header is the `track-header[muted]` grey, as its clips are, not a dimmer
+    // shade of its colour (#1393); its colour stays in the band down its edge. The grey is the
+    // computed background, so `--track-headerMutedBackground` reaches it.
     let header_fill = if lane.mute {
-        muted_header_grey(selected)
+        own.computed_background_or(muted_header_grey(selected))
     } else {
         let surface = colour_surface(background, rgb(lane.color), strength);
-        if selected { motion::mix(surface, theme::text_primary(), 0.07) } else { surface }
+        if selected { motion::mix(surface, crate::kit::element::name_ink(), 0.07) } else { surface }
     };
     if !crate::kit::skin::paint_in_view(
         painter,
@@ -312,57 +316,28 @@ pub(super) fn track_header(
     let header_fill = own.background_or(header_fill);
     if selected {
         // `track-header[selected]`'s border colour, else a shade of the track's own.
-        let outline = own.border_or(motion::mix(theme::border_strong(), saturated(rgb(lane.color)), 0.5));
+        let outline = own.border_or(motion::mix(own.border(), saturated(rgb(lane.color)), 0.5));
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, outline), StrokeKind::Inside);
     }
     work_trace.mark("background");
-    // A track inside groups has their colours down its indent, the outermost first, so a group and
-    // its tracks read as one block: the group's colour runs from its header down all of them.
-    let mut ancestors = Vec::new();
-    let mut parent = lane.parent;
-    while let Some(group) = parent.filter(|_| ancestors.len() < lane.depth) {
-        let Some(group_lane) = timeline.lanes.iter().find(|l| l.track == group) else { break };
-        ancestors.push(group_lane.color);
-        parent = group_lane.parent;
-    }
-    let mut band_left = rect.left();
-    // Deep groups must not consume the controls' entire width in a narrow column.
-    let indent = (0..ancestors.len()).map(|level| nesting_band_width(level) + 2.0).sum::<f32>();
-    let indent_room = (rect.width() - COLOUR_BAND - 3.0 * PAD - meter::WIDTH - 114.0).max(0.0);
-    let indent_scale = if indent > 0.0 { (indent_room / indent).min(1.0) } else { 1.0 };
-    for (level, color) in ancestors.iter().rev().enumerate() {
-        let width = nesting_band_width(level) * indent_scale;
-        let strip = Rect::from_min_size(Pos2::new(band_left, rect.top()), Vec2::new(width, rect.height()));
-        if strip.intersects(clip) {
-            painter.rect_filled(strip.intersect(clip), 0.0, rgb(*color));
+    // The groups' bands down the indent, at the scale the layout gave them.
+    if let Some(indent) = parts.indent {
+        let mut band_left = indent.left();
+        for (level, color) in ancestors.iter().rev().enumerate() {
+            let width = super::header_layout::nesting_band_width(level) * parts.indent_scale;
+            let strip = Rect::from_min_size(Pos2::new(band_left, indent.top()), Vec2::new(width, indent.height()));
+            if strip.intersects(clip) {
+                painter.rect_filled(strip.intersect(clip), 0.0, rgb(*color));
+            }
+            band_left += width + 2.0 * parts.indent_scale;
         }
-        band_left += width + 2.0 * indent_scale;
     }
     // The track's own band follows its ancestors and opens its colour palette.
-    let band_rect = Rect::from_min_max(Pos2::new(band_left, rect.top()), rect.max);
-    let band = colour_band(ui, painter, band_rect, clip, lane, id, actions);
-    // The meter stands at the right edge; the rows keep clear of it.
-    let meter_x = rect.right() - PAD - meter::WIDTH;
-    let inner = Rect::from_min_max(
-        Pos2::new(band.right() + PAD, rect.top() + header_pad),
-        Pos2::new(meter_x - PAD, rect.bottom() - header_pad),
-    );
-    let narrow = rect.height() >= SHOWS_MIXER
-        && inner.width() < FOLD + 2.0 + SOLO + PAD + ON_TOGGLE + 3.0 * (SOLO + 2.0) + PAD + LEAST_NAME;
-    let solo_width = if narrow || rect.height() < SHOWS_MIXER { 18.0 } else { SOLO };
-    let on_width = if narrow || rect.height() < SHOWS_MIXER { 24.0 } else { ON_TOGGLE };
-    let meter_bottom = if rect.height() >= SHOWS_MIXER {
-        inner.top() + header_row + header_gap + field_height
-    } else {
-        inner.top() + header_row
-    };
-    let at = Rect::from_min_max(
-        Pos2::new(meter_x, inner.top()),
-        Pos2::new(meter_x + meter::WIDTH, meter_bottom.min(inner.bottom())),
-    );
+    if let Some(band) = parts.band {
+        colour_band(ui, painter, band, clip, lane, id, actions);
+    }
     let level = state.meters.track(lane.track);
-    let at = crate::kit::control_layout::place("arrangement-meter", at, rect);
-    if !lane.folder && !crate::kit::control_layout::placement("arrangement-meter").hidden {
+    if let Some(at) = parts.meter {
         meter::show(
             ui,
             &painter.with_clip_rect(painter.clip_rect().intersect(clip)),
@@ -379,9 +354,7 @@ pub(super) fn track_header(
     // selection while this track is part of one.
     let controlled: Vec<u32> = state.controlled_tracks(lane.track).iter().map(|t| t.0).collect();
     let group_fold = lane.kind == ColumnKind::Group && order.children > 0;
-    let fold = Some(Rect::from_min_size(inner.min, Vec2::new(FOLD, header_row)));
-    if let Some(fold) = fold.filter(|_| !crate::kit::control_layout::placement("arrangement-fold").hidden) {
-        let fold = crate::kit::control_layout::place("arrangement-fold", fold, clip);
+    if let Some(fold) = parts.fold {
         let folded = if group_fold {
             state.folds.is_folded(lane.track)
         } else {
@@ -431,75 +404,8 @@ pub(super) fn track_header(
             ui.ctx().request_repaint();
         }
     }
-    // Every header keeps the fold triangle's room, so a group's tracks line up under it and their
-    // indent shows; a group without the triangle (no tracks yet) lines up the same.
-    let first_x = inner.left() + FOLD + 2.0;
-    // On a roomy header the name gets the top line; buttons and level controls sit below.
-    // Narrow/short headers retain their compact arrangement, including send overflow rules.
-    let name_first = rect.height() >= SHOWS_MIXER
-        && inner.width() - FOLD - 2.0 - on_width - 3.0 * (solo_width + 2.0) - PAD - PAN_FIELD - 4.0 >= LEAST_VOLUME;
-    let automation_x = first_x;
-    let first_x = if narrow {
-        inner.left()
-    } else if name_first {
-        first_x
-    } else {
-        first_x + solo_width + PAD
-    };
-    let row_top = if name_first || narrow { inner.top() + header_row + header_gap } else { inner.top() };
-    let row = Rect::from_min_max(Pos2::new(first_x, row_top), Pos2::new(inner.right(), row_top + header_row));
-    let toggle = Rect::from_min_size(row.min, Vec2::new(on_width, header_row));
-    let solo = Rect::from_min_size(Pos2::new(toggle.right() + 2.0, row.top()), Vec2::new(solo_width, header_row));
-    let cue = Rect::from_min_size(Pos2::new(solo.right() + 2.0, row.top()), Vec2::new(solo_width, header_row));
-    // A track that can be armed has its arm button after cue, as wide.
-    let arm = lane
-        .armable
-        .then(|| Rect::from_min_size(Pos2::new(cue.right() + 2.0, row.top()), Vec2::new(solo_width, header_row)));
-    let monitor_width = if rect.height() < SHOWS_MIXER { 24.0 } else { 32.0 };
-    // A track with take lanes has a button beside it that hides and shows them (#953).
-    let has_takes = timeline.takes.iter().any(|t| t.track == lane.track);
-    // Only where it ends inside its row, before the take lanes' button when that ends the row
-    // (#876); a narrower or lower header leaves the monitoring to the MIDI input menu.
-    let monitor_end = if has_takes && !narrow { row.right() - solo_width - 4.0 } else { row.right() };
-    let monitor = lane
-        .plays_notes
-        .then(|| {
-            Rect::from_min_size(
-                Pos2::new(arm.unwrap_or(cue).right() + 2.0, row.top()),
-                Vec2::new(monitor_width, header_row),
-            )
-        })
-        .filter(|at| at.right() <= monitor_end);
-    let controls_end = monitor.unwrap_or(arm.unwrap_or(cue)).right();
-    // A lane tall enough for two rows has its volume and pan beside the buttons, where the
-    // other level controls are, and the automation button, the name and the sends on the row
-    // below, the button under the track-on toggle; a short lane keeps one row of buttons, name
-    // and automation button.
-    let tall = rect.height() >= SHOWS_MIXER;
-    // Beside the buttons only where the volume bar keeps its room; a narrow header has the name
-    // on the first row and the volume, the sends and the pan across the second, the bar as wide
-    // as it can be.
-    let beside_room = row.right() - PAN_FIELD - 4.0 - (controls_end + PAD);
-    let side = tall && beside_room >= LEAST_VOLUME;
-    let stacked = tall && !side;
-    let below_top = if name_first || narrow { inner.top() } else { row.bottom() + header_gap };
-    // In the stacked layout the level row also uses the space below automation.
-    let below_left = if stacked { automation_x } else { first_x };
-    let below =
-        Rect::from_min_max(Pos2::new(below_left, below_top), Pos2::new(inner.right(), below_top + field_height));
     // The automation button shows and hides the track's lanes.
-    let lanes_button = if narrow {
-        Rect::from_min_size(Pos2::new(inner.right() - solo_width, inner.top()), Vec2::new(solo_width, header_row))
-    } else if side {
-        Rect::from_min_size(
-            Pos2::new(below.left() + (on_width - solo_width) / 2.0, below.top()),
-            Vec2::new(solo_width, header_row),
-        )
-    } else {
-        Rect::from_min_size(Pos2::new(automation_x, row.top()), Vec2::new(solo_width, header_row))
-    };
-    if lanes_button.intersects(clip) && !crate::kit::control_layout::placement("arrangement-automation").hidden {
-        let lanes_button = crate::kit::control_layout::place("arrangement-automation", lanes_button, clip);
+    if let Some(lanes_button) = parts.automation.filter(|b| b.intersects(clip)) {
         automation::header_button(
             ui,
             painter,
@@ -512,16 +418,7 @@ pub(super) fn track_header(
     }
     // Beside the automation button below the buttons, left of it at a narrow header's right end,
     // and at the right end of a one-row header, where the automation button starts the row.
-    let takes_button = has_takes.then(|| {
-        if side {
-            lanes_button.translate(Vec2::new(SOLO + 2.0, 0.0))
-        } else if narrow {
-            lanes_button.translate(Vec2::new(-(SOLO + 2.0), 0.0))
-        } else {
-            Rect::from_min_size(Pos2::new(row.right() - solo_width, row.top()), Vec2::new(solo_width, header_row))
-        }
-    });
-    if let Some(button) = takes_button.filter(|b| b.intersects(clip)) {
+    if let Some(button) = parts.takes.filter(|b| b.intersects(clip)) {
         let hidden = state.takes_hidden.contains(&lane.track);
         let label = if hidden {
             format!("Show take lanes of {}", lane.name)
@@ -532,8 +429,22 @@ pub(super) fn track_header(
         if response.clicked() && !state.takes_hidden.remove(&lane.track) {
             state.takes_hidden.insert(lane.track);
         }
-        let (fill, text) = widgets::toggle_colors(ui, &response, !hidden);
-        painter.rect_filled(button, 0.0, fill);
+        // A `button`, `[checked]` while the take lanes show: only a rule for that state lights it.
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.builder(),
+            &[crate::kit::element::Checked],
+            !hidden,
+        );
+        let (fill, text) = lit.colors();
+        lit.el.paint_over(
+            painter,
+            button,
+            crate::kit::element::Native { radius: 0.0, fill },
+            lit.toggle.image(lit.lit),
+        );
+        drop(lit);
         // Three stacked lines: the lanes under the track.
         let glyph = button.shrink2(Vec2::new(4.0, 4.0));
         for i in 0..3 {
@@ -541,53 +452,8 @@ pub(super) fn track_header(
             painter.hline(glyph.x_range(), y, egui::Stroke::new(1.0, text));
         }
     }
-    let lanes_right = takes_button.filter(|_| side).unwrap_or(lanes_button).right();
-    // Two rows: the sends at the end of the lower row, as many as leave the name its room.
-    let step = SEND_WIDTH + SEND_GAP;
-    let stacked_pan =
-        Rect::from_min_max(Pos2::new(below.right() - PAN_FIELD, below.top()), Pos2::new(below.right(), below.bottom()));
-    let send_room = if side {
-        below.right() - lanes_right - PAD - LEAST_NAME
-    } else if stacked {
-        stacked_pan.left() - 4.0 - below.left() - LEAST_VOLUME
-    } else {
-        0.0
-    };
-    let overflow = lane.sends.len() > (send_room / step).floor().max(0.0) as usize;
-    let navigation = if overflow && send_room >= step + 36.0 { 36.0 } else { 0.0 };
-    let shown_sends = lane.sends.len().min(((send_room - navigation) / step).floor().max(0.0) as usize);
-    let sends_left = if stacked {
-        stacked_pan.left() - 4.0 - step * shown_sends as f32 - navigation + SEND_GAP
-    } else {
-        below.right() - step * shown_sends as f32 - navigation + SEND_GAP
-    };
-    let mut name = if narrow {
-        Rect::from_min_max(
-            Pos2::new(automation_x, inner.top()),
-            Pos2::new(lanes_button.left() - PAD, inner.top() + header_row),
-        )
-    } else if side {
-        Rect::from_min_max(
-            Pos2::new(lanes_right + PAD, below.top()),
-            Pos2::new(sends_left - SEND_GAP - 4.0, below.top() + header_row),
-        )
-    } else {
-        // The take lanes' button, when there is one, ends the row and the name stops before it.
-        let end = takes_button.map_or(row.right(), |b| b.left() - 4.0);
-        Rect::from_min_max(Pos2::new(controls_end + PAD, row.top()), Pos2::new(end, row.bottom()))
-    };
-    // Keep a usable level control even on a single-row lane. Reserve the name's
-    // minimum first; sends and pan stay in the expanded layout.
-    let compact_volume = if !tall && name.width() >= 28.0 + PAD + 48.0 {
-        let width = (name.width() * 0.45).clamp(48.0, 80.0);
-        let volume = Rect::from_min_max(Pos2::new(name.right() - width, row.top()), name.right_bottom());
-        name.max.x = volume.left() - PAD;
-        Some(volume)
-    } else {
-        None
-    };
-    name = crate::kit::control_layout::place("arrangement-name", name, clip);
-    let name_visible = !crate::kit::control_layout::placement("arrangement-name").hidden;
+    let name_visible = parts.name.is_some();
+    let mut name = parts.name.unwrap_or(Rect::NOTHING);
     let name_style = crate::kit::element::TRACK_NAME.id(&format!("track-{}", lane.track.0)).enter();
     if name_visible {
         crate::kit::skin::paint_in_view(
@@ -619,13 +485,7 @@ pub(super) fn track_header(
         );
         name.min.x = (type_rect.right() + 3.0).min(name.right());
     }
-    let name_size = if tiny {
-        10.0
-    } else if spacious {
-        theme::TEXT + 2.0
-    } else {
-        theme::TEXT
-    };
+    let name_size = parts.name_size;
     if name_visible {
         widgets::text_in(painter, name, Align2::LEFT_CENTER, &lane.name, theme::ui_font(name_size), name_color);
     }
@@ -643,20 +503,18 @@ pub(super) fn track_header(
         };
         d.insert_temp(Id::unique((crate::app::NAME_RECT_TRACK, u64::from(lane.track.0))), spot);
     });
-    if !lane.folder
-        && solo.intersects(clip)
+    if let Some(solo) = parts.solo.filter(|r| r.intersects(clip))
         && let Some(action) =
             widgets::solo_button(ui, painter, solo, id.with("solo"), &controlled, &lane.name, lane.solo)
     {
         actions.push(action);
     }
-    if !lane.folder
-        && cue.intersects(clip)
+    if let Some(cue) = parts.cue.filter(|r| r.intersects(clip))
         && let Some(action) = widgets::cue_button(ui, painter, cue, id.with("cue"), lane.track.0, &lane.name, lane.cue)
     {
         actions.push(action);
     }
-    if let Some(arm) = arm.filter(|a| a.intersects(clip))
+    if let Some(arm) = parts.arm.filter(|a| a.intersects(clip))
         && let Some(action) =
             widgets::arm_button(ui, painter, arm, id.with("arm"), lane.track.0, &lane.name, lane.armed)
     {
@@ -667,45 +525,32 @@ pub(super) fn track_header(
     } else {
         track_number.to_string()
     };
-    if !lane.folder && toggle.intersects(clip) && !crate::kit::control_layout::placement("arrangement-enable").hidden {
-        let toggle = crate::kit::control_layout::place("arrangement-enable", toggle, clip);
+    if let Some(toggle) = parts.track_on.filter(|r| r.intersects(clip)) {
         let label = if lane.mute { format!("Turn {} on", lane.name) } else { format!("Turn {} off", lane.name) };
         let response = widgets::button_area(ui, toggle.intersect(clip), id.with("on"), label);
         // `#control-track-on`, as in the mixer: `[checked]` while the track is on, `[muted]` while
         // it is off, and `track-on` artwork (`.on`).
-        let el = crate::kit::element::BUTTON
-            .id("track-on")
-            .response(&response)
-            .attr(crate::kit::element::Muted, lane.mute)
-            .attr(crate::kit::element::Checked, !lane.mute)
-            .enter();
         if response.clicked() {
             actions.push(Action::new("track.setMute", json!({ "tracks": controlled, "mute": !lane.mute })));
         }
-        let (fill, text) = widgets::toggle_colors(ui, &response, !lane.mute);
-        widgets::button_surface(painter, toggle, &el, &response, !lane.mute, fill, 0.0);
-        let text = el.color_or(text);
+        // Lit only by a rule for `[checked]`: one for every `button` does not hide which tracks are on.
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.id("track-on").attr(crate::kit::element::Muted, lane.mute),
+            &[crate::kit::element::Checked],
+            !lane.mute,
+        );
+        let (fill, text) = lit.colors();
+        let el = lit.el;
+        widgets::toggle_surface(painter, toggle, &el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         let state = crate::kit::skin::State::response(&response, !lane.mute);
         if !crate::kit::skin::paint_as(&el, painter, toggle, "track-on", state, text) {
             widgets::track_number_text(painter, toggle, &number, text, lane.mute);
         }
-    } else if !crate::kit::control_layout::placement("arrangement-number").hidden {
-        // With the toggle hidden, the number can stay as a label of its own (`track-number`,
-        // placed as `arrangement-number`), which turns nothing off.
-        let at = crate::kit::control_layout::place("arrangement-number", toggle, clip);
-        if at.intersects(clip) {
-            let ink = crate::kit::element::TRACK_NUMBER
-                .attr(crate::kit::element::Muted, lane.mute)
-                .look()
-                .color_or(theme::text_secondary());
-            widgets::track_number_text(painter, at, &number, ink, lane.mute);
-        }
     }
 
-    let monitor = monitor
-        .filter(|_| !crate::kit::control_layout::placement("arrangement-monitor").hidden)
-        .map(|at| crate::kit::control_layout::place("arrangement-monitor", at, clip));
-    if let Some(at) = monitor.filter(|at| at.intersects(clip)) {
+    if let Some(at) = parts.monitor.filter(|at| at.intersects(clip)) {
         let mode = lane.midi_input.monitor;
         let text = menus::monitor_name(mode);
         let response = widgets::button_area(
@@ -717,14 +562,16 @@ pub(super) fn track_header(
         .on_hover_text("Choose when you hear the MIDI input");
         let active = mode == suhina_engine::model::Monitor::In;
         // `#control-monitor`, `[checked]` while monitoring is In, and `monitor` artwork.
-        let el = crate::kit::element::BUTTON
-            .id("monitor")
-            .response(&response)
-            .attr(crate::kit::element::Checked, active)
-            .enter();
-        let (fill, ink) = widgets::toggle_colors(ui, &response, active);
-        widgets::button_surface(painter, at, &el, &response, active, fill, 0.0);
-        let ink = el.color_or(ink);
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.id("monitor"),
+            &[crate::kit::element::Checked],
+            active,
+        );
+        let (fill, ink) = lit.colors();
+        let el = lit.el;
+        widgets::toggle_surface(painter, at, &el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         if !crate::kit::skin::paint_as(
             &el,
             painter,
@@ -745,39 +592,27 @@ pub(super) fn track_header(
         egui::Popup::menu(&response).show(|ui| menus::midi_monitor_choices(ui, lane.track, mode, actions));
     }
 
-    if let Some(volume) = compact_volume.filter(|_| !lane.folder) {
+    // The volume where the layout puts it (at the end of a one-row header, after the buttons or
+    // under them), and the pan.
+    if let Some(volume) = parts.volume {
         value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
     }
-
-    if narrow && !lane.folder {
-        // Name and automation are above; the second row keeps the four track controls
-        // and a draggable volume field. Pan and sends return when the column is widened.
-        let volume = Rect::from_min_max(Pos2::new(controls_end + PAD, row.top()), row.right_bottom());
-        value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
-    }
-
-    // Two rows: volume and pan beside the buttons, the sends after the name below; or, narrow,
-    // the volume, the sends and the pan across the second row.
-    if tall && !narrow && !lane.folder {
-        let (volume, pan) = if side {
-            let left = controls_end + PAD;
-            let pan =
-                Rect::from_min_max(Pos2::new(row.right() - PAN_FIELD, row.top()), Pos2::new(row.right(), row.bottom()));
-            (Rect::from_min_max(Pos2::new(left, row.top()), Pos2::new((pan.left() - 4.0).max(left), row.bottom())), pan)
-        } else {
-            let right = (sends_left - SEND_GAP).max(below.left());
-            (Rect::from_min_max(below.min, Pos2::new(right, below.bottom())), stacked_pan)
-        };
-        value_control(ui, painter, volume, clip, lane, Control::Volume, false, id, state, actions);
+    if let Some(pan) = parts.pan {
         value_control(ui, painter, pan, clip, lane, Control::Pan, false, id, state, actions);
+    }
+    // The sends the header has room for, scrolled with ‹ and › where it has room for only some.
+    let shown_sends = parts.shown_sends;
+    if shown_sends > 0 {
         let offset_id = id.with("send-scroll-offset");
         let max_offset = lane.sends.len().saturating_sub(shown_sends);
         let mut offset = ui.ctx().data(|d| d.get_temp::<usize>(offset_id)).unwrap_or(0).min(max_offset);
-        if navigation > 0.0 && shown_sends > 0 {
-            let viewport = Rect::from_min_max(
-                Pos2::new(sends_left, below.top()),
-                Pos2::new(sends_left + step * shown_sends as f32 + navigation - SEND_GAP, below.bottom()),
-            );
+        if parts.navigation {
+            let viewport = parts
+                .sends
+                .iter()
+                .chain([&parts.previous, &parts.next])
+                .flatten()
+                .fold(Rect::NOTHING, |all, at| all.union(*at));
             state.send_scroll_areas.push(viewport.intersect(clip));
             if ui.rect_contains_pointer(viewport.intersect(clip)) {
                 let scroll = ui.input_mut(|i| {
@@ -804,18 +639,13 @@ pub(super) fn track_header(
                     offset = offset.saturating_sub(1);
                 }
             }
-            for (index, (glyph, label, enabled)) in
-                [("‹", "Previous sends", offset > 0), ("›", "Next sends", offset < max_offset)].into_iter().enumerate()
+            for (index, ((glyph, label, enabled), at)) in
+                [("‹", "Previous sends", offset > 0), ("›", "Next sends", offset < max_offset)]
+                    .into_iter()
+                    .zip([parts.previous, parts.next])
+                    .enumerate()
             {
-                let at = Rect::from_min_size(
-                    Pos2::new(sends_left + step * shown_sends as f32 + index as f32 * 18.0, below.top()),
-                    Vec2::new(16.0, field_height),
-                );
-                let name = if index == 0 { "arrangement-sends-previous" } else { "arrangement-sends-next" };
-                if crate::kit::control_layout::placement(name).hidden {
-                    continue;
-                }
-                let at = crate::kit::control_layout::place(name, at, clip);
+                let Some(at) = at else { continue };
                 let response = widgets::button_area(
                     ui,
                     at.intersect(clip),
@@ -824,14 +654,14 @@ pub(super) fn track_header(
                 )
                 .on_hover_text("Scroll sends with Shift + mouse wheel");
                 let el = crate::kit::element::BUTTON.response(&response).enter();
-                widgets::track_button_face(ui, painter, at, &el, &response, theme::control_background());
+                widgets::track_button_face(painter, at, &el, &response, el.background());
                 widgets::text_in(
                     painter,
                     at,
                     Align2::CENTER_CENTER,
                     glyph,
                     theme::ui_font(theme::TEXT + 2.0),
-                    el.color_or(if enabled { theme::text_primary() } else { theme::text_hint() }),
+                    el.color_or(if enabled { el.color() } else { crate::kit::element::hint_ink() }),
                 );
                 if enabled && response.clicked() {
                     offset = if index == 0 { offset.saturating_sub(1) } else { (offset + 1).min(max_offset) };
@@ -840,44 +670,28 @@ pub(super) fn track_header(
         }
         ui.ctx().data_mut(|d| d.insert_temp(offset_id, offset));
         for (index, send) in lane.sends.iter().skip(offset).take(shown_sends).enumerate() {
-            let knob = Rect::from_min_size(
-                Pos2::new(sends_left + step * index as f32, below.top()),
-                Vec2::new(SEND_WIDTH, field_height),
-            );
-            send_knob(ui, painter, knob, clip, lane, send, offset + index, id, state, header_fill, actions);
+            if let Some(knob) = parts.sends.get(index).copied().flatten() {
+                send_knob(ui, painter, knob, clip, lane, send, id, state, header_fill, actions);
+            }
         }
     }
 
-    // Row 3, taller still: where the track's audio goes.
-    if rect.height() >= SHOWS_ROUTING && !lane.folder {
-        let top = row.bottom().max(below.bottom()) + PAD + 4.0;
-        let line = Rect::from_min_max(Pos2::new(inner.left(), top), Pos2::new(inner.right(), top + DROPDOWN));
-        if line.bottom() <= inner.bottom()
-            && line.intersects(clip)
-            && !crate::kit::control_layout::placement("arrangement-output").hidden
-        {
-            let line = crate::kit::control_layout::place("arrangement-output", line, clip);
-            let outputs: Vec<_> = nest
-                .groups
-                .iter()
-                .filter(|(id, _)| timeline.lanes.iter().any(|l| l.track == *id && !l.folder))
-                .cloned()
-                .collect();
-            routing(ui, painter, line, lane, &outputs, header_fill, actions);
-        }
-        // Taller still, on a track that plays notes: which controllers it hears when armed.
-        let input = line.translate(Vec2::new(0.0, DROPDOWN + PAD));
-        if rect.height() >= SHOWS_MIDI_INPUT
-            && input.bottom() <= inner.bottom()
-            && input.intersects(clip)
-            && !crate::kit::control_layout::placement("arrangement-input").hidden
-        {
-            let input = crate::kit::control_layout::place("arrangement-input", input, clip);
-            if lane.plays_notes {
-                midi_input(ui, painter, input, lane, &timeline.midi_ports, header_fill, actions);
-            } else if lane.plays_audio {
-                audio_input(ui, painter, input, lane, timeline.input_channels, header_fill, actions);
-            }
+    // Taller still: where the track's audio goes, and under it, on a track that plays notes,
+    // which controllers it hears when armed. A presentation folder is no place to send audio.
+    if let Some(line) = parts.output.filter(|line| line.intersects(clip)) {
+        let outputs: Vec<_> = nest
+            .groups
+            .iter()
+            .filter(|(id, _)| timeline.lanes.iter().any(|l| l.track == *id && !l.folder))
+            .cloned()
+            .collect();
+        routing(ui, painter, line, lane, &outputs, header_fill, actions);
+    }
+    if let Some(input) = parts.input.filter(|input| input.intersects(clip)) {
+        if lane.plays_notes {
+            midi_input(ui, painter, input, lane, &timeline.midi_ports, header_fill, actions);
+        } else if lane.plays_audio {
+            audio_input(ui, painter, input, lane, timeline.input_channels, header_fill, actions);
         }
     }
 
@@ -902,16 +716,9 @@ pub(super) fn track_header(
     }
 }
 
-/// The background the user-agent sheet gives `arrangement track-header[muted]` (`[muted][selected]` while
+/// The background the base sheet gives `arrangement track-header[muted]` (`[muted][selected]` while
 /// selected), worked out once: the fallback where no sheet styles the window.
 pub(super) fn muted_header_grey(selected: bool) -> Color32 {
     static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
-    let greys = GREYS.get_or_init(|| {
-        let of = |attributes: &[(&str, &str)]| {
-            crate::kit::native_css::user_agent_background(Some("arrangement"), "track-header", attributes)
-                .unwrap_or(Color32::GRAY)
-        };
-        [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
-    });
-    greys[usize::from(selected)]
+    super::clip::muted_grey(&GREYS, "track-header", selected)
 }

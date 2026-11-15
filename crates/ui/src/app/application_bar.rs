@@ -77,7 +77,7 @@ pub(super) fn show(
             let Some(rect) = laid.at(*index, body.min) else { continue };
             let item = crate::kit::element::BAR_ITEM.id(id).attribute("kind", id).enter();
             let content = item.paint(ui.painter(), rect).content;
-            group(ui, content, text.clone(), item.own_color_or(theme::text_primary()));
+            group(ui, content, text.clone(), item.color());
         }
     }
     if !custom_controls {

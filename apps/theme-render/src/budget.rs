@@ -39,6 +39,11 @@ pub struct Counts {
     pub hover_style_frames: u64,
     /// Styles worked out afresh over those frames.
     pub hover_fresh: usize,
+    /// Frames from one colour of the theme's colour map edited, as the theme editor does, to a
+    /// still window (#1448). None for a built-in theme, which is not edited in place.
+    pub colour_change_frames: u64,
+    /// Styles worked out afresh over those frames: one reset's at most.
+    pub colour_change_fresh: usize,
 }
 
 /// A stand-in for the GPU's clears: each becomes a callback as on the GPU, so the callbacks can be
@@ -80,11 +85,15 @@ fn frames(h: &mut Harness<'static, App>) -> (u64, u64, usize) {
     (crate::MAX_STEPS, asked, fresh)
 }
 
-/// The counts for `subject` in `scene`: the scene driven with the built-in theme, `subject`
-/// chosen, then the pointer moved onto a clip.
+/// The counts for `subject` in `scene`: the scene driven with the built-in theme (Glass for
+/// Suhina Studio itself, so choosing it resets the styles kept while the scene was driven),
+/// `subject` chosen, then the pointer moved onto a clip, then one colour of a theme's own map
+/// edited.
 pub fn count(subject: &Subject, scene: &crate::scenes::Scene) -> Result<Counts, String> {
-    let built_in = Subject { id: suhina_ui::kit::theme::BUILT_IN.to_owned(), theme: None };
-    let mut h = crate::headless((scene.app)()?, &built_in, scene.width);
+    let start =
+        if subject.id == suhina_ui::kit::theme::BUILT_IN { "suhina-glass" } else { suhina_ui::kit::theme::BUILT_IN };
+    let start = Subject { id: start.to_owned(), theme: None };
+    let mut h = crate::headless((scene.app)()?, &start, scene.width);
     suhina_ui::kit::surface::install(&h.ctx, Arc::new(CountedClears));
     (scene.drive)(&mut h)?;
     frames(&mut h);
@@ -106,6 +115,8 @@ pub fn count(subject: &Subject, scene: &crate::scenes::Scene) -> Result<Counts, 
         hover_frames: 0,
         hover_style_frames: 0,
         hover_fresh: 0,
+        colour_change_frames: 0,
+        colour_change_fresh: 0,
     };
     // A clip in the Arrangement view, or a clip slot in the launcher.
     let clip = ["Clip ", "Launch "]
@@ -114,6 +125,16 @@ pub fn count(subject: &Subject, scene: &crate::scenes::Scene) -> Result<Counts, 
     if let Some(at) = clip {
         h.hover_at(at);
         (counts.hover_frames, counts.hover_style_frames, counts.hover_fresh) = frames(&mut h);
+    }
+    // One colour of the theme's map edited: the base tier's `:root` rule changes.
+    if let Some(theme) = subject.theme.as_ref().filter(|_| !suhina_ui::kit::theme::is_built_in(&subject.id)) {
+        let mut edited = theme.clone();
+        edited.set_color("accent", [0x12, 0x34, 0x56, 0xFF]);
+        let ctx = h.ctx.clone();
+        let entry = suhina_ui::settings::themes::ThemeEntry { id: subject.id.clone(), theme: edited };
+        h.state_mut().put_theme(&ctx, entry);
+        let (frames, _, fresh) = frames(&mut h);
+        (counts.colour_change_frames, counts.colour_change_fresh) = (frames, fresh);
     }
     Ok(counts)
 }

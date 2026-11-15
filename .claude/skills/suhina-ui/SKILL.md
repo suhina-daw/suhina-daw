@@ -28,9 +28,18 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
 - **Labels are the test and accessibility API.** An interactive thing sets
   `widget_info(|| WidgetInfo::labeled(...))` with a label as a user would say it ("Launch Walk on
   Bass (scene 2)"). Tests find it with `get_by_label`, so keep labels stable.
-- **Theme colours are tokens** (`palette!` in `crates/ui/src/kit/theme.rs`), never a raw
-  `Color32` for a semantic colour. A new token gets a value in every theme in
-  `crates/ui/themes/`; the theme tests check that.
+- **Theme colours are variables and base-sheet rules**, never a raw `Color32` for a semantic
+  colour. The colour variables are registered in `crates/theme-package/src/core.css` with Suhina
+  Studio's values, and the base sheet (`crates/theme-package/src/base.css`) gives them to the
+  elements; a view reads its colours from its element (`crate::kit::element`), so a theme's
+  variable or its own rule reaches what it paints.
+- **A change to what the views paint is checked in every built-in theme.** `suhina-theme-render`'s
+  `painted` test digests what each scene paints in each built-in theme and variant
+  (`apps/theme-render/tests/painted/<system>.txt`). Moving a view onto elements must leave every
+  digest as it is; a change meant to alter a look records them with
+  `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` and says why. Compare
+  listings with `SUHINA_PAINTED_DUMP=<folder>` before and after. Linux's file comes from its CI
+  run, which prints the whole file when it differs.
 - **What a theme styles is an element** of the registry (`suhina_theme_package::elements`):
   enter it with `kit::element` (`KNOB.id("send").response(&response).attr(Checked, on).enter()`)
   and read its style with `el.style()`, `el.color_or(..)`, `el.background_or(..)` and the other

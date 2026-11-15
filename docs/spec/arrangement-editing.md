@@ -463,8 +463,9 @@ still known by it, and its notes and waveform step back. The two kinds of muted 
 - **A clip turned off itself** is grey to its name bar, with a mute mark (a ring crossed by a
   slash) before its name, in the name's ink on the bar as it is drawn (a theme's `clip-name`
   background and colour included). The mark tells it from a clip whose colour is grey. A clip
-  too low for a name bar has the mark in its upper left corner, over its notes on a spot of its
-  body, so a low lane tells the two kinds apart too; a clip too small to hold it has none.
+  too low for a name bar shows its name in its body, and the mark goes before that name on its
+  line, the name starting after it, so a low lane tells the two kinds apart too; a clip too small
+  to hold it has none.
 - **A clip that plays on a muted track** keeps its colour in its name bar, as it has it when the
   track plays, and has no mark: the track's header says the track is off.
 

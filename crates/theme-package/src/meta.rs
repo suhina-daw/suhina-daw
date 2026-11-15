@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `theme.json`, a theme's metadata (`docs/spec/theme-skins.md` › Theme folders): the format
-//! version, name, author, description, the default variant's name, the swatch colour and an
-//! optional suggested toolbar arrangement. The theme's name comes from here, not from its CSS.
+//! version, name, author, description, the default variant's name, the swatch colour, an
+//! optional suggested toolbar arrangement and, with `"base": "none"`, the opt-out of Suhina's
+//! base sheet. The theme's name comes from here, not from its CSS.
 //!
 //! ```json
 //! {
@@ -54,6 +55,9 @@ pub struct ThemeMeta {
     pub swatch: String,
     /// The suggested toolbar arrangement, kept as written (#1021 reads it).
     pub toolbar: Option<serde_json::Value>,
+    /// Whether Suhina's base sheet ([`crate::BASE_SHEET`]) applies under the theme: `false` for
+    /// `"base": "none"`, which leaves the theme on the user-agent sheet's bare look (plain text on an opaque window).
+    pub base: bool,
     /// Keys the file has that Suhina does not read (`$schema`, or those of a newer feature), kept
     /// so that rewriting the file does not drop them.
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -69,6 +73,7 @@ impl ThemeMeta {
             default_variant: None,
             swatch: swatch.to_owned(),
             toolbar: None,
+            base: true,
             extra: serde_json::Map::new(),
         }
     }
@@ -129,7 +134,15 @@ impl ThemeMeta {
             }
             None => None,
         };
-        let known = ["format", "name", "author", "description", "default-variant", "swatch", "toolbar"];
+        let base = match root.get("base") {
+            None => true,
+            Some(serde_json::Value::String(value)) if value.trim() == "none" => false,
+            Some(_) => {
+                warnings.push(format!("{FILE}: base is \"none\", or left out for Suhina's base sheet"));
+                true
+            }
+        };
+        let known = ["format", "name", "author", "description", "default-variant", "swatch", "toolbar", "base"];
         let mut extra = serde_json::Map::new();
         for (key, value) in root.iter().filter(|(key, _)| !known.contains(&key.as_str())) {
             if key != "$schema" {
@@ -137,7 +150,7 @@ impl ThemeMeta {
             }
             extra.insert(key.clone(), value.clone());
         }
-        Ok((Self { name, author, description, default_variant, swatch, toolbar, extra }, warnings))
+        Ok((Self { name, author, description, default_variant, swatch, toolbar, base, extra }, warnings))
     }
 
     /// The file's text, as Suhina writes it.
@@ -155,6 +168,9 @@ impl ThemeMeta {
         root.insert("swatch".into(), self.swatch.clone().into());
         if let Some(toolbar) = &self.toolbar {
             root.insert("toolbar".into(), toolbar.clone());
+        }
+        if !self.base {
+            root.insert("base".into(), "none".into());
         }
         serde_json::to_string_pretty(&serde_json::Value::Object(root)).unwrap_or_default() + "\n"
     }
@@ -199,7 +215,7 @@ pub fn swatch_color_at(
     viewport: Viewport,
 ) -> Result<[u8; 4], String> {
     let mut sheets: Vec<AppliedSheet<'_>> =
-        defaults.iter().map(|sheet| AppliedSheet { sheet, layer: Layer::UserAgent, root: None }).collect();
+        defaults.iter().map(|sheet| AppliedSheet { sheet, layer: Layer::Base, root: None }).collect();
     sheets.push(AppliedSheet { sheet: theme, layer: Layer::Theme, root: None });
     sheets.extend(variant.map(|sheet| AppliedSheet { sheet, layer: Layer::Variant, root: None }));
     suhina_style::cascade::resolve_color(swatch, viewport, &sheets).map_err(|error| {

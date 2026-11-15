@@ -16,17 +16,11 @@ pub(super) fn send_knob(
     clip: Rect,
     lane: &Lane,
     send: &crate::interaction::grid::SendKnob,
-    slot: usize,
     id: Id,
     state: &mut ArrangementViewState,
     background: Color32,
     actions: &mut Vec<Action>,
 ) {
-    let name = format!("arrangement-send-{}", slot + 1);
-    if crate::kit::control_layout::placement(&name).hidden {
-        return;
-    }
-    let rect = crate::kit::control_layout::place(&name, rect, clip);
     if !rect.intersects(clip) {
         return;
     }
@@ -82,13 +76,14 @@ pub(super) fn send_knob(
     let el = crate::kit::element::SEND.response(&response).enter();
     widgets::value_drag_pointer(ui.ctx(), &response, &el);
     let amount = widgets::hover(ui, &response);
-    let surface = motion::mix(background, theme::control_hover(), amount);
+    let hot = el.look_hovered(true).background();
+    let surface = motion::mix(background, hot, amount);
     el.paint(painter, rect);
     let pointer = el.color_or(theme::text_on(surface));
     if amount > 0.0 || response.has_focus() {
-        let fill = theme::control_hover().gamma_multiply(amount.max(0.3));
+        let fill = hot.gamma_multiply(amount.max(0.3));
         let button = crate::kit::element::BUTTON.response(&response).enter();
-        widgets::track_button_face(ui, painter, rect, &button, &response, fill);
+        widgets::track_button_face(painter, rect, &button, &response, fill);
     }
     let letter = send.name.chars().next().map(String::from).unwrap_or_default();
     // `send { appearance: knob }` draws it as a knob, as in the mixer (`send.knob.*` artwork when
@@ -109,7 +104,7 @@ pub(super) fn send_knob(
             theme::TEXT_SMALL,
         );
     } else {
-        crate::kit::mixer_controls::send_field(painter, rect, &letter, shown, send.pre_fader, pointer, position);
+        crate::kit::mixer_controls::send_field(painter, rect, &el, &letter, shown, send.pre_fader, pointer, position);
     }
 }
 
@@ -133,11 +128,7 @@ pub(super) fn value_control(
         Control::Volume => "arrangement-volume",
         Control::Pan => "arrangement-pan",
     };
-    if crate::kit::control_layout::placement(name).hidden {
-        return;
-    }
-    let rect = crate::kit::control_layout::place(name, rect, clip);
-    // Named by their placement names, so a theme selects one by id (`#arrangement-volume`).
+    // Named by their places, so a theme selects one by id (`#arrangement-volume`).
     let value_style = crate::kit::element::VALUE.id(name).enter();
     let pan_style = matches!(control, Control::Pan).then(|| crate::kit::element::PAN.enter());
     // The innermost of the two, which the field or knob is drawn as.
@@ -169,14 +160,12 @@ pub(super) fn value_control(
             Control::Pan => (format!("{} pan", lane.name), widgets::format_pan(shown)),
         };
         // A field drawn as a bar is dragged either way: up or right raises it, whichever the drag
-        // moves along first. A knob turns with an up or down drag, unless the theme lays it out
-        // horizontally.
+        // moves along first. A knob turns with an up or down drag.
         let knob = match control {
             Control::Volume => state.knobs,
             Control::Pan => crate::kit::style_class::knob_preference(el, state.knobs),
         };
-        let axis =
-            if knob { crate::kit::control_layout::placement(name).direction.into() } else { widgets::DragAxis::Both };
+        let axis = if knob { widgets::DragAxis::Vertical } else { widgets::DragAxis::Both };
         let response = widgets::value_area_axis(ui, rect.intersect(clip), id.with(label.as_str()), &label, text, axis);
         widgets::value_drag_pointer(ui.ctx(), &response, el);
         control_response = Some(response.clone());
@@ -252,10 +241,10 @@ pub(super) fn volume_knob(
     hover: f32,
     response: Option<&egui::Response>,
 ) {
-    let pointer = el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
+    let pointer = el.color_or(motion::mix(crate::kit::element::value_ink(), crate::kit::element::name_ink(), hover));
     let text = widgets::format_db(db);
     let right = widgets::ValuePosition::Right;
-    let ink = el.color_or(theme::text_primary());
+    let ink = el.color_or(crate::kit::element::name_ink());
     widgets::knob_with_value(
         painter,
         rect,
@@ -281,7 +270,8 @@ pub(super) fn pan_knob(
 ) {
     let position = ((pan + 1.0) / 2.0) as f32;
     let text = widgets::format_pan(pan);
-    let (pointer, ink) = (el.color_or(theme::text_primary()), el.color_or(theme::text_secondary()));
+    let (pointer, ink) =
+        (el.color_or(crate::kit::element::name_ink()), el.color_or(crate::kit::element::caption_ink()));
     let right = widgets::ValuePosition::Right;
     widgets::knob_with_value(painter, rect, el, position, pointer, response, &text, ink, right, theme::TEXT_SMALL);
 }
@@ -353,7 +343,7 @@ pub(super) fn volume_field(
 /// A volume as a plain value, for the compact return and main rows, drawn as `el`, the value its
 /// caller entered.
 pub(super) fn volume_text(painter: &egui::Painter, rect: Rect, el: &crate::kit::element::Entered, db: f64, hover: f32) {
-    let color = el.color_or(motion::mix(theme::text_value(), theme::text_primary(), hover));
+    let color = el.color_or(motion::mix(crate::kit::element::value_ink(), crate::kit::element::name_ink(), hover));
     widgets::text_in(
         painter,
         rect,

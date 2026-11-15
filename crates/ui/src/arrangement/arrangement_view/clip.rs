@@ -1047,8 +1047,7 @@ pub(super) fn clip_box<'a>(
     };
     let mut envelope_place = None;
     // The envelope's ink: what reads on the clip's colour, as its name does.
-    let envelope_ink =
-        ink_on(motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82));
+    let envelope_ink = ink_on(motion::mix(super::panel_surface(), rgb(clip.color), 0.82));
     let result = match state.gesture.clip().copied() {
         Some(drag) if mine(&drag) && drag.target != lane.track => {
             if drag.copy || copy_key {
@@ -1159,7 +1158,7 @@ pub(super) fn clip_box<'a>(
     // outlined, so the clip the editor and the keys work on is plain to see.
     if selected && !lit && state.gesture.clip().is_none() {
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
-        let body = motion::mix(crate::kit::style_class::surface_or(theme::panel_background()), rgb(clip.color), 0.82);
+        let body = motion::mix(super::panel_surface(), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
         let id = clip_element_id(clip);
         // A comparison lookup, taken out of the tree again: the clip's body is drawn under the
@@ -1169,7 +1168,7 @@ pub(super) fn clip_box<'a>(
         painter.with_clip_rect(row.clip).rect_stroke(
             rect,
             0.0,
-            egui::Stroke::new(1.0, outline.border_or(theme::text_primary())),
+            egui::Stroke::new(1.0, outline.border()),
             StrokeKind::Inside,
         );
     }
@@ -1219,7 +1218,8 @@ pub(super) fn clip_box<'a>(
         let gain_painter = painter.with_clip_rect(row.clip);
         // `clip-gain`: its background, border, radius and text.
         let el = crate::kit::element::CLIP_GAIN.enter();
-        let fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
+        let (rest, hot) = crate::kit::element::CLIP_GAIN.builder().hover_ends(hover);
+        let fill = motion::mix(rest.background(), hot.background(), hover);
         el.paint_with(&gain_painter, field, crate::kit::element::Native { radius: 0.0, fill });
         let text = format!("{} dB", widgets::format_db(db));
         let font =
@@ -1230,7 +1230,7 @@ pub(super) fn clip_box<'a>(
             Align2::RIGHT_CENTER,
             &text,
             font,
-            el.color_or(theme::text_value()),
+            el.color(),
         );
     }
     // The handles sit on top of everything on the clip, where the fades now end.
@@ -1252,14 +1252,9 @@ pub(super) fn clip_box<'a>(
     for (edge, hover) in curves {
         let length = if edge == FadeEdge::In { shown.fade_in } else { shown.fade_out };
         let center = curve_handle(rect, edge, length as f32 * state.beat_width, shown.curve(edge));
-        let look = crate::kit::element::CLIP_FADE_HANDLE.attribute("kind", "curve").look();
-        let fill = look.background_or(motion::mix(theme::text_secondary(), theme::text_primary(), hover));
-        handle_painter.circle(
-            center,
-            CURVE_HANDLE / 2.0,
-            fill,
-            theme::hairline(crate::kit::style_class::surface_or(theme::window_background())),
-        );
+        let (rest, hot) = crate::kit::element::CLIP_FADE_HANDLE.attribute("kind", "curve").hover_ends(hover);
+        let fill = motion::mix(rest.background(), hot.background(), hover);
+        handle_painter.circle(center, CURVE_HANDLE / 2.0, fill, theme::hairline(super::window_surface()));
     }
     result
 }
@@ -1268,7 +1263,8 @@ pub(super) fn clip_box<'a>(
 /// or the `clip.fade-handle` artwork does.
 fn paint_fade_handle(painter: &egui::Painter, handle: Rect, hover: f32) {
     let el = crate::kit::element::CLIP_FADE_HANDLE.enter();
-    let fill = motion::mix(theme::text_secondary(), theme::text_primary(), hover);
+    let (rest, hot) = crate::kit::element::CLIP_FADE_HANDLE.builder().hover_ends(hover);
+    let fill = motion::mix(rest.background(), hot.background(), hover);
     let state = if hover > 0.5 { crate::kit::skin::State::Hover } else { crate::kit::skin::State::Normal };
     if crate::kit::skin::paint_as(&el, painter, handle, "clip.fade-handle", state, fill) {
         return;
@@ -1278,12 +1274,7 @@ fn paint_fade_handle(painter: &egui::Painter, handle: Rect, hover: f32) {
         el.paint_with(painter, handle, crate::kit::element::Native { radius: 0.0, fill });
     } else {
         painter.rect_filled(handle, 0.0, fill);
-        painter.rect_stroke(
-            handle,
-            0.0,
-            theme::hairline(crate::kit::style_class::surface_or(theme::window_background())),
-            StrokeKind::Outside,
-        );
+        painter.rect_stroke(handle, 0.0, theme::hairline(super::window_surface()), StrokeKind::Outside);
     }
 }
 
@@ -1435,8 +1426,12 @@ pub(super) fn paint_clip(
     // A muted clip is the sheet's `clip[muted]` grey, not a dimmer shade of its colour (#1393):
     // its own colour stays only down its leading edge, and on a muted track in its name bar.
     let strength = if clip.audio { look.audio_colour_strength } else { 82 };
-    let surface = crate::kit::style_class::surface_or(theme::panel_background());
-    let body = own.background_or(clip_body(surface, rgb(clip.color), strength, off, selected));
+    let surface = super::panel_surface();
+    // A muted clip's grey is the computed `arrangement clip[muted]` background: the base sheet's
+    // rule reads `--clip-mutedBackground`, so a theme that sets only the variable reaches it, and
+    // a theme's own rule for the clip still wins.
+    let fallback = clip_body(surface, rgb(clip.color), strength, off, selected);
+    let body = if off { own.computed_background_or(fallback) } else { own.background_or(fallback) };
     let bar_fill = name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected);
     let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never
@@ -1547,14 +1542,14 @@ pub(super) fn paint_clip(
     let name_left = rect.left().max(view.left()) + 7.0 + button;
     // A clip turned off itself has the mute mark before its name: with it, it is never taken for
     // a clip whose colour is grey, and a clip on a muted track (which has none) is told from one
-    // muted on its own. A clip too low for a name bar has it too, drawn over its notes (below).
+    // muted on its own. A clip too low for a name bar has it too, before the name its body shows
+    // (below).
     let mark = if clip.enabled { None } else { mute_mark_centre(rect, bar, name_left) };
     if let (Some(bar), Some(look)) = (bar, name_look.as_ref()) {
-        let mut left = name_left;
         if let Some(centre) = mark {
             paint_mute_mark(painter, centre, text_color);
-            left += MUTE_MARK + 4.0;
         }
+        let left = after_mute_mark(name_left, mark);
         let name_rect =
             Rect::from_min_max(Pos2::new(left, rect.top() + 3.0), Pos2::new(rect.right() - 5.0, bar.bottom() - 3.0));
         let font = theme::ui_font(look.font_size);
@@ -1649,11 +1644,15 @@ pub(super) fn paint_clip(
     // A clip with a name bar already shows its name; a low lane's clip shows it in the body.
     if content_hidden && !has_name {
         let name = if clip.name.is_empty() { lane.name.as_str() } else { clip.name.as_str() };
-        let left = rect.left().max(view.left()) + 7.0;
-        let name_rect = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
         let el = crate::kit::element::CLIP_NAME.enter();
         let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
         let ink = el.color_or(text_color);
+        // A clip turned off has its mute mark first, the name after it, as in a name bar.
+        if let Some(centre) = mark {
+            paint_mute_mark(painter, centre, ink);
+        }
+        let left = after_mute_mark(name_left, mark);
+        let name_rect = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, name, theme::ui_font(size), ink);
     }
     if let Some((notes, tempo)) = ara_notes
@@ -1678,7 +1677,7 @@ pub(super) fn paint_clip(
             let top = bar.map_or(rect.top(), |bar| bar.bottom());
             let lit = Rect::from_x_y_ranges(x, egui::Rangef::new(top, rect.bottom()));
             let look = crate::kit::element::TIME_SELECTION.attribute("kind", "editor").look();
-            painter.rect_filled(lit, 0.0, look.background_or(theme::accent().gamma_multiply(EDITOR_SPAN_TINT)));
+            painter.rect_filled(lit, 0.0, look.background_or(look.color().gamma_multiply(0.45)));
         }
     }
     // Loop boundaries share the leading edge's contrast, with a small top notch so they
@@ -1703,14 +1702,14 @@ pub(super) fn paint_clip(
         painter.with_clip_rect(painter.clip_rect().intersect(rect)).circle_filled(
             Pos2::new(x, rect.top() - notch * 0.5),
             notch,
-            crate::kit::style_class::surface_or(theme::window_background()),
+            super::window_surface(),
         );
     }
     // A fade is a line over the waveform, from the clip's bottom corner to where it ends at
     // the top, following its shape and curve.
     if clip.audio {
         let fade_stroke =
-            theme::hairline(crate::kit::element::CLIP_FADE.look().own_color_or(dim(theme::text_secondary())));
+            theme::hairline(crate::kit::element::CLIP_FADE.look().own_color_or(dim(Color32::TRANSPARENT)));
         if shown.fade_in > 0.0 {
             let end = (rect.left() + shown.fade_in as f32 * beat_width).min(rect.right());
             painter.line(fade_line(rect, FadeEdge::In, rect.left(), end, shown.fade_in_curve), fade_stroke);
@@ -1720,14 +1719,6 @@ pub(super) fn paint_clip(
             painter.line(fade_line(rect, FadeEdge::Out, from, rect.right(), shown.fade_out_curve), fade_stroke);
         }
     }
-    // A clip too low for a name bar has its mute mark over its notes, on a spot of its body so
-    // the notes under it never hide it.
-    if bar.is_none()
-        && let Some(centre) = mark
-    {
-        painter.circle_filled(centre, MUTE_MARK / 2.0 + 1.5, body);
-        paint_mute_mark(painter, centre, ink);
-    }
     if selected {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, motion::mix(body, ink, 0.45)), StrokeKind::Inside);
     }
@@ -1735,9 +1726,6 @@ pub(super) fn paint_clip(
         paint_take_marker(painter, rect, ink);
     }
 }
-
-/// How strongly the piano roll's time selection tints the clip it edits.
-const EDITOR_SPAN_TINT: f32 = 0.45;
 
 /// The piano roll's time selection on `clip`, in beats from the clip's start and within it:
 /// the content's beats less where the clip starts playing them. `None` on any other clip.
@@ -1850,7 +1838,7 @@ pub(super) fn paint_ara_activity(
     painter.rect_filled(track, 0.0, motion::mix(body, ink, 0.2));
     if let Some(p) = progress {
         let done = Rect::from_min_max(track.min, Pos2::new(track.left() + track.width() * p, track.bottom()));
-        painter.rect_filled(done, 0.0, crate::kit::element::PROGRESS_FILL.look().background_or(theme::accent()));
+        painter.rect_filled(done, 0.0, crate::kit::element::PROGRESS_FILL.look().background());
     }
 }
 
@@ -1860,7 +1848,7 @@ pub(super) fn drawn_muted(track_muted: bool, enabled: bool) -> bool {
 }
 
 /// A clip's body where no sheet styles it. A muted clip (turned off, or on a muted track) is the
-/// user-agent sheet's `clip[muted]` grey whatever its colour, so it never reads as a darker shade
+/// base sheet's `clip[muted]` grey whatever its colour, so it never reads as a darker shade
 /// of a clip that plays (#1393); its colour stays in the project, down its leading edge, and in
 /// its name bar on a muted track. Selection lifts the brightness either way and never changes
 /// the hue.
@@ -1872,15 +1860,20 @@ pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: 
     colour_surface(surface, colour, strength)
 }
 
-/// The background the user-agent sheet gives `arrangement clip[muted]` (`[muted][selected]` while
-/// selected), worked out once: the fallback where no sheet styles the window, as the sample map's
-/// kind colours are.
+/// The background the base sheet gives `arrangement clip[muted]` (`[muted][selected]` while
+/// selected), with Suhina Studio's colours, worked out once: the fallback where no sheet styles the
+/// window, as the sample map's kind colours are.
 pub(crate) fn muted_clip_grey(selected: bool) -> Color32 {
     static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
-    let greys = GREYS.get_or_init(|| {
+    muted_grey(&GREYS, "clip", selected)
+}
+
+/// The background the base sheet gives `arrangement <element>[muted]` (`[muted][selected]` while
+/// `selected`), worked out once into `greys`.
+pub(super) fn muted_grey(greys: &std::sync::OnceLock<[Color32; 2]>, element: &str, selected: bool) -> Color32 {
+    let greys = greys.get_or_init(|| {
         let of = |attributes: &[(&str, &str)]| {
-            crate::kit::native_css::user_agent_background(Some("arrangement"), "clip", attributes)
-                .unwrap_or(Color32::GRAY)
+            crate::kit::native_css::base_background(Some("arrangement"), element, attributes).unwrap_or(Color32::GRAY)
         };
         [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
     });
@@ -1926,16 +1919,22 @@ pub(super) fn name_bar_look(bar_fill: Color32) -> NameBarLook {
 /// The size of the mute mark, in points.
 const MUTE_MARK: f32 = 9.0;
 
-/// Where the mute mark of a clip turned off goes, its name starting at `left`: in the name bar
-/// before the name, or, on a clip too low for a name bar, in its upper left corner. `None` when
-/// the clip is too small to hold it.
+/// Where the mute mark of a clip turned off goes, its name starting at `left`: before the name,
+/// in the middle of the name bar or, on a clip too low for one, of the body that shows the name.
+/// `None` when the clip is too small to hold it.
 pub(super) fn mute_mark_centre(rect: Rect, bar: Option<Rect>, left: f32) -> Option<Pos2> {
     let x = left + MUTE_MARK / 2.0;
     match bar {
         Some(bar) => Some(Pos2::new(x, bar.center().y)),
         None => (rect.height() >= MUTE_MARK + 4.0 && rect.right() - left >= MUTE_MARK + 2.0)
-            .then(|| Pos2::new(x, rect.top() + 2.0 + MUTE_MARK / 2.0)),
+            .then(|| Pos2::new(x, rect.center().y)),
     }
+}
+
+/// Where a clip's name starts when it would start at `left`: after the mute mark, when the clip
+/// has one there, so the mark is never drawn over the name.
+pub(super) fn after_mute_mark(left: f32, mark: Option<Pos2>) -> f32 {
+    if mark.is_some() { left + MUTE_MARK + 4.0 } else { left }
 }
 
 /// The mark before the name of a clip turned off: a ring crossed by a slash, in the name's ink.
@@ -2003,7 +2002,7 @@ pub(super) fn take_lanes(
     // What is picked or painted on take lanes, read once for every lane.
     let take_sel = take_selection();
     // The line under each take lane, `separator[kind="row"]`.
-    let line = crate::kit::element::SEPARATOR.attribute("kind", "row").look().own_color_or(theme::border());
+    let line = crate::kit::element::row_line();
     // Which part of a piece moves it, as for a clip (`docs/spec/arrangement-editing.md`): the name
     // bar, or the lower half; only the name bar when Ctrl selects time, so a drag can still comp;
     // the whole piece when it is too low for either.
@@ -2070,18 +2069,14 @@ pub(super) fn take_lanes(
         // The take's header, `take-header` with the take's `[color]`, `[selected]` while picked.
         let take_header =
             crate::kit::element::TAKE_HEADER.color(swatch).attr(crate::kit::element::Selected, picked).enter();
-        let shade = take_header.background_or(motion::mix(
-            crate::kit::style_class::surface_or(theme::window_background()),
-            swatch,
-            0.35,
-        ));
-        painter.rect_filled(whole_header, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
+        let shade = take_header.background_or(motion::mix(super::window_surface(), swatch, 0.35));
+        painter.rect_filled(whole_header, 0.0, super::window_surface());
         painter.rect_filled(header, 0.0, shade);
         let strip = Rect::from_min_size(header.min, Vec2::new(4.0, header.height()));
         painter.rect_filled(strip, 0.0, swatch);
         state.take_headers.push(header.intersect(at.visible));
         if picked {
-            let outline = take_header.border_or(take_sel.own_color_or(theme::selection()));
+            let outline = take_header.border_or(take_sel.color());
             painter.rect_stroke(header, 0.0, Stroke::new(1.5, outline), StrokeKind::Inside);
         }
         // The name's ink, and its buttons' where no rule of theirs sets one: the header's text
@@ -2144,7 +2139,7 @@ pub(super) fn take_lanes(
             };
             let r = clicked(delete, "Delete take", format!("Delete {}", take.name));
             let el = crate::kit::element::BUTTON.id("take-delete").response(&r).enter();
-            let fill = el.background_or(motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
+            let fill = el.background_or(motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r)));
             painter.rect_filled(delete, 2.0, fill);
             let delete_ink = el.color_or(ink);
             drop(el);
@@ -2161,8 +2156,8 @@ pub(super) fn take_lanes(
                 .id("take-solo")
                 .response(&r)
                 .enter_against_plain(crate::kit::element::Checked, soloed);
-            let off = motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r));
-            let (fill, _) = widgets::toggle_inks(&el, plain.as_ref(), (theme::accent(), off), (ink, ink));
+            let off = motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r));
+            let (fill, _) = widgets::toggle_inks(&el, plain.as_ref(), (el.accent(), off), (ink, ink));
             let (_, text) = widgets::toggle_inks(&el, plain.as_ref(), (fill, fill), (ink_on(fill), ink));
             painter.rect_filled(solo, 2.0, fill);
             widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", small.clone(), text);
@@ -2185,7 +2180,7 @@ pub(super) fn take_lanes(
             });
             let r = clicked(promote, "Put the whole take on the track", format!("Put {} on the track", take.name));
             let el = crate::kit::element::BUTTON.id("take-promote").response(&r).enter();
-            let fill = el.background_or(motion::mix(shade, theme::control_hover(), widgets::hover(ui, &r)));
+            let fill = el.background_or(motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r)));
             painter.rect_filled(promote, 2.0, fill);
             let promote_ink = el.color_or(ink);
             drop(el);
@@ -2222,11 +2217,7 @@ pub(super) fn take_lanes(
                 false,
                 &state.clip_look(),
             );
-            painter.rect_filled(
-                rect.intersect(row),
-                0.0,
-                crate::kit::style_class::surface_or(theme::window_background()).gamma_multiply(0.6),
-            );
+            painter.rect_filled(rect.intersect(row), 0.0, super::window_surface().gamma_multiply(0.6));
             for &(start, end) in &take.used {
                 let span = Rect::from_x_y_ranges(egui::Rangef::new(x_of(start), x_of(end)), row.y_range());
                 let span = span.intersect(rect).intersect(painter.clip_rect());
@@ -2272,12 +2263,7 @@ pub(super) fn take_lanes(
         for &(_, _, piece) in state.take_selected.iter().filter(|(t, n, _)| *t == lane.track && *n == take.number) {
             if let Some(clip) = take.clips.get(piece) {
                 let rect = clip_rect(row, clip.start, clip.length, x_of);
-                painter.rect_stroke(
-                    rect,
-                    0.0,
-                    Stroke::new(1.5, take_sel.own_color_or(theme::selection())),
-                    StrokeKind::Inside,
-                );
+                painter.rect_stroke(rect, 0.0, Stroke::new(1.5, take_sel.color()), StrokeKind::Inside);
             }
         }
         // Ctrl and a click picks a piece, or takes it out of what is picked, so Delete deletes
@@ -2312,12 +2298,7 @@ pub(super) fn take_lanes(
                 if moves_at(rect, pointer.y) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                 }
-                painter.rect_stroke(
-                    rect,
-                    0.0,
-                    Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
-                    StrokeKind::Inside,
-                );
+                painter.rect_stroke(rect, 0.0, Stroke::new(1.0, take_sel.color()), StrokeKind::Inside);
             }
         }
         // With Ctrl a drag only paints an area, wherever it starts (#1078).
@@ -2366,13 +2347,8 @@ pub(super) fn take_lanes(
                 if let Some(edge) = held {
                     let (from, to) = if end { (clip.start, edge.at) } else { (edge.at, clip.start + clip.length) };
                     let shown = clip_rect(row, from, (to - from).max(0.0), x_of);
-                    painter.rect_filled(shown, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
-                    painter.rect_stroke(
-                        shown,
-                        0.0,
-                        Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
-                        StrokeKind::Inside,
-                    );
+                    painter.rect_filled(shown, 0.0, take_sel.background_or(take_sel.color().gamma_multiply(0.25)));
+                    painter.rect_stroke(shown, 0.0, Stroke::new(1.0, take_sel.color()), StrokeKind::Inside);
                 }
                 let span = if end {
                     egui::Rangef::new(rect.right() - 6.0, rect.right() + 2.0)
@@ -2439,13 +2415,8 @@ pub(super) fn take_lanes(
             let to = beat_of(pointer.x);
             let (start, end) = (from.min(to), from.max(to));
             let picked = Rect::from_min_max(Pos2::new(x_of(start), row.top()), Pos2::new(x_of(end), row.bottom()));
-            painter.rect_filled(picked, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
-            painter.rect_stroke(
-                picked,
-                0.0,
-                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
-                StrokeKind::Inside,
-            );
+            painter.rect_filled(picked, 0.0, take_sel.background_or(take_sel.color().gamma_multiply(0.25)));
+            painter.rect_stroke(picked, 0.0, Stroke::new(1.0, take_sel.color()), StrokeKind::Inside);
             if body.drag_stopped() {
                 state.gesture.end_take(|_| true);
                 if end - start > 1e-6 {
@@ -2484,13 +2455,8 @@ pub(super) fn take_lanes(
         let (start, end) = (from.min(to), from.max(to));
         for (_, row) in covered {
             let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(start), x_of(end)), row.y_range());
-            painter.rect_filled(lit, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
-            painter.rect_stroke(
-                lit,
-                0.0,
-                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
-                StrokeKind::Inside,
-            );
+            painter.rect_filled(lit, 0.0, take_sel.background_or(take_sel.color().gamma_multiply(0.25)));
+            painter.rect_stroke(lit, 0.0, Stroke::new(1.0, take_sel.color()), StrokeKind::Inside);
         }
         if !down {
             state.gesture.end_take_area(|_| true);
@@ -2515,13 +2481,8 @@ pub(super) fn take_lanes(
     if let Some(area) = state.take_area.as_ref().filter(|a| a.track == lane.track) {
         for (_, row) in rows.iter().filter(|(n, _)| area.takes.contains(n)) {
             let lit = Rect::from_x_y_ranges(egui::Rangef::new(x_of(area.start), x_of(area.end)), row.y_range());
-            painter.rect_filled(lit, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
-            painter.rect_stroke(
-                lit,
-                0.0,
-                Stroke::new(1.0, take_sel.own_color_or(theme::selection())),
-                StrokeKind::Inside,
-            );
+            painter.rect_filled(lit, 0.0, take_sel.background_or(take_sel.color().gamma_multiply(0.25)));
+            painter.rect_stroke(lit, 0.0, Stroke::new(1.0, take_sel.color()), StrokeKind::Inside);
         }
     }
     // Pieces being moved, shown where they would land: on the grid, Alt for no grid, and as many
@@ -2548,13 +2509,8 @@ pub(super) fn take_lanes(
                 lane_of(number).and_then(|at| usize::try_from(at + lanes_by).ok()).and_then(|at| rows.get(at));
             if let Some((_, row)) = landing_row {
                 let landing = clip_rect(*row, clip.start + by, clip.length, x_of);
-                painter.rect_filled(landing, 0.0, take_sel.background_or(theme::selection().gamma_multiply(0.25)));
-                painter.rect_stroke(
-                    landing,
-                    0.0,
-                    Stroke::new(1.5, take_sel.own_color_or(theme::selection())),
-                    StrokeKind::Inside,
-                );
+                painter.rect_filled(landing, 0.0, take_sel.background_or(take_sel.color().gamma_multiply(0.25)));
+                painter.rect_stroke(landing, 0.0, Stroke::new(1.5, take_sel.color()), StrokeKind::Inside);
             }
         }
         if !down {
@@ -2701,7 +2657,7 @@ pub(super) fn comp_crossfade(
         bend_handle = Some(this);
     }
     // A comp's crossfade between two pieces, `clip-fade[kind="crossfade"]`.
-    let ink = crate::kit::element::CLIP_FADE.attribute("kind", "crossfade").look().own_color_or(theme::text_primary());
+    let ink = crate::kit::element::CLIP_FADE.attribute("kind", "crossfade").look().color();
     let active = if dragging { 1.0 } else { hover };
     painter.rect_filled(span, 0.0, ink.gamma_multiply(0.08 + 0.10 * active));
     let line = Stroke::new(1.0, ink.gamma_multiply(0.85));
@@ -2719,14 +2675,9 @@ pub(super) fn comp_crossfade(
             paint_fade_handle(painter, handle, hover);
         }
         if let Some(hover) = bend_handle {
-            let look = crate::kit::element::CLIP_FADE_HANDLE.attribute("kind", "curve").look();
-            let fill = look.background_or(motion::mix(theme::text_secondary(), theme::text_primary(), hover));
-            painter.circle(
-                center,
-                CURVE_HANDLE / 2.0,
-                fill,
-                theme::hairline(crate::kit::style_class::surface_or(theme::window_background())),
-            );
+            let (rest, hot) = crate::kit::element::CLIP_FADE_HANDLE.attribute("kind", "curve").hover_ends(hover);
+            let fill = motion::mix(rest.background(), hot.background(), hover);
+            painter.circle(center, CURVE_HANDLE / 2.0, fill, theme::hairline(super::window_surface()));
         }
     }
 }
@@ -2826,7 +2777,8 @@ pub(super) fn paint_live_take(
     if take.audio && !take.peaks.is_empty() && take.peaks_end > take.start {
         let body = Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 14.0), rect.max);
         let step = (take.peaks_end - take.start) / take.peaks.len() as f64;
-        let ink = crate::kit::element::CLIP_WAVEFORM.look().own_color_or(theme::text_primary()).gamma_multiply(0.8);
+        let ink =
+            crate::kit::element::CLIP_WAVEFORM.look().own_color_or(crate::kit::element::name_ink()).gamma_multiply(0.8);
         let mut last = f32::NEG_INFINITY;
         for (i, peak) in take.peaks.iter().enumerate() {
             let x = x_of(take.start + i as f64 * step).round() + 0.5;
@@ -2843,7 +2795,6 @@ pub(super) fn paint_live_take(
             );
         }
     }
-    let edge =
-        crate::kit::element::CLIP.attr(crate::kit::element::Recording, true).look().border_or(theme::recording());
+    let edge = crate::kit::element::CLIP.attr(crate::kit::element::Recording, true).look().border();
     painter.rect_stroke(rect, 0.0, Stroke::new(1.5, edge), StrokeKind::Inside);
 }

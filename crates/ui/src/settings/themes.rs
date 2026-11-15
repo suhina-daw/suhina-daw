@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use crate::kit::theme::{self, BUILT_IN, Palette, Theme};
+use crate::kit::theme::{self, BUILT_IN, Theme};
 use crate::settings::settings_view::{ThemeRequest, ThemesView};
 
 /// A theme and its id: a built-in id or the name of its folder for the theme's own values, and
@@ -121,11 +121,6 @@ impl Themes {
 
     pub fn get(&self, id: &str) -> Option<&Theme> {
         self.entries.iter().find(|e| same_id(&e.id, id)).map(|e| &e.theme)
-    }
-
-    /// The colours of the theme `id`, or Suhina Studio's when there is no such theme.
-    pub fn palette(&self, id: &str) -> Palette {
-        self.get(id).map_or(Palette::DARK, |t| t.colors)
     }
 
     /// What Settings shows, with `current` in use.
@@ -265,7 +260,7 @@ impl Themes {
                 }
                 let switched = self.request(
                     current,
-                    ThemeRequest::EditRgba { colors: theme.colors, transparent_rgb: theme.transparent_rgb },
+                    ThemeRequest::EditRgba { colors: theme.colors.clone(), transparent_rgb: theme.transparent_rgb },
                 );
                 let id = switched.as_deref().unwrap_or(current).to_string();
                 self.request(&id, ThemeRequest::EditSkin(theme.skin)).or(switched)
@@ -330,15 +325,6 @@ impl Themes {
                 let id = self.copy(current, &name);
                 if artwork {
                     self.add_default_artwork(&id);
-                }
-                // The copy keeps the controls placed in the theme it came from: say so, as they
-                // can look out of place in a theme made from it.
-                let placed = self.get(&id).map_or(0, |t| t.skin.controls.len());
-                if placed > 0 {
-                    let controls = if placed == 1 { "control" } else { "controls" };
-                    self.notice = Some(format!(
-                        "{name} keeps the {placed} placed {controls} of the theme it copies, in its theme.css"
-                    ));
                 }
                 self.actions.push(Pending::Save(id.clone()));
                 Some(id)
@@ -522,7 +508,6 @@ impl Themes {
         // The copy is a theme of its own: its variant's values become part of its sheet.
         original.vars.variant = None;
         original.vars.variant_name = None;
-        original.skin.css = original.skin.css.or_else(|| original.vars.sheet.take());
         let id = self.free_id(name);
         self.entries.push(ThemeEntry { id: id.clone(), theme: Theme { name: name.to_string(), ..original } });
         id
@@ -567,16 +552,10 @@ pub fn slug(name: &str) -> String {
     if id.is_empty() { "theme".into() } else { id.to_string() }
 }
 
-/// What of a skin is its structure rather than settings: artwork, the toolbar, placements, and
-/// the background image itself.
+/// What of a skin is its structure rather than settings: artwork, the toolbar and the background
+/// image itself.
 fn structure(skin: &crate::kit::skin::Skin) -> impl PartialEq + use<> {
-    (
-        skin.assets.clone(),
-        skin.toolbar.clone(),
-        skin.toolbar_offsets.clone(),
-        skin.controls.clone(),
-        skin.background.clone(),
-    )
+    (skin.assets.clone(), skin.toolbar.clone(), skin.toolbar_offsets.clone(), skin.background.clone())
 }
 
 /// Ids name files, and file names do not differ by case on every system.

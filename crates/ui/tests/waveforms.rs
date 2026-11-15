@@ -53,7 +53,11 @@ fn render_waveforms_at_several_zooms() {
                 let mut y = 10.0;
                 for (from, per_point, height, scale) in rows {
                     let rect = Rect::from_min_size(Pos2::new(20.0, y), vec2(600.0, height));
-                    ui.painter().rect_filled(rect, 0.0, theme::control_background());
+                    ui.painter().rect_filled(
+                        rect,
+                        0.0,
+                        suhina_ui::kit::theme::default_color("control-background").unwrap(),
+                    );
                     let columns = steady_columns(rect.left(), 600, from, per_point, 1.0);
                     let shape = geometry(&peaks, rect, &columns, scale);
                     paint(ui.painter(), &shape, Colors::from(Color32::from_rgb(0x8B, 0xC4, 0x8A)));

@@ -29,7 +29,7 @@ pub const STATES: &[&str] = &[
 pub const HOST_ATTRIBUTES: &[&str] = &["checked", "selected", "playing", "queued", "recording", "armed", "muted"];
 
 /// Presentation identity only. Parameter bindings and audio data never enter this tree.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Element {
     pub kind: String,
     pub id: Option<String>,

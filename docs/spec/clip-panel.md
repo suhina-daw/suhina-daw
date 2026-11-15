@@ -3,7 +3,7 @@ description: Functional spec of the audio clip's panel in the detail area (the c
 read_when: clip panel, clip column, audio clip properties, gain fader, pitch knob, cents, clip tempo, find tempo, tempo source, Set to playhead, audio clip scale, lists under a field, gain envelope, clip.setEnvelope, clip.setTempo, per-clip gain
 type: spec
 status: draft
-last_verified: 2026-11-11
+last_verified: 2026-11-16
 covers:
   - crates/ui/src/detail/detail_view/clip_properties.rs
   - crates/ui/src/detail/detail_view/clip_panel.rs
@@ -58,8 +58,8 @@ the list, a click elsewhere closes it.
 **Theme.** To a theme the panel's buttons and switches are `button` (`:hover`, `:active`,
 `[checked]` for a switch that is on), its lists `dropdown` and its number fields `value`: a rule
 sets their background, border, radius and `color`, else they keep the panel's own look. A switch
-that is on stays lit unless `button[checked]` has a background or colour of its own (a theme that
-styles every button alike does not hide which switches are on), and a button that cannot be
+that is on is lit by the base sheet's `[checked]` rules; a theme's rule for every `button` beats
+them (#1448), so a theme that has one states the lit look itself, and a button that cannot be
 pressed keeps the panel's look.
 
 **Scale.** An audio clip's scale says the key of its audio, as a MIDI clip's says the key its notes

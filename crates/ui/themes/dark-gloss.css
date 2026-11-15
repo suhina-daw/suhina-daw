@@ -50,6 +50,60 @@
     background-image: linear-gradient(#6c614b, #3b352a 55%, #26231e);
     border-color: var(--gloss-brass);
   }
+  /* A rule for every `button` hides the lit looks of Suhina's base sheet: state them again, in the
+     gloss's own style, from the palette's lit colours and the text that reads on them. A lit
+     button keeps the rule's edge, shadows and, over the lit colour, a gloss. */
+  button[kind="toggle"][checked] {
+    color: var(--text-inverse);
+    background-color: var(--control-selectedBackground);
+    background-image: linear-gradient(#ffffff55, #ffffff00 52%, #00000033);
+    text-shadow: none;
+  }
+  button[kind="toggle"][checked]:hover {
+    background-color: color-mix(in srgb, var(--control-selectedBackground), white 20%);
+    background-image: linear-gradient(#ffffff55, #ffffff00 52%, #00000033);
+  }
+  button[kind="solo"][checked] {
+    color: var(--text-inverse);
+    background-color: var(--accent);
+    background-image: linear-gradient(#ffffff55, #ffffff00 52%, #00000033);
+    text-shadow: none;
+  }
+  button[kind="arm"][checked] {
+    color: var(--recording);
+    background-color: var(--recording-background);
+    background-image: linear-gradient(#ffffff33, #ffffff00 52%, #00000044);
+  }
+  /* The lit looks of the Launcher's, the mixer's and the Arrangement's own switches, and the
+     automation shapes' fills (Suhina's base sheet gives them, and this theme's rule for every
+     `button` overrides them: state them again, as these switches showed them before). */
+  button[kind="shape"] { background-color: var(--window-background); }
+  button[kind="shape"]:hover { background-color: var(--control-hoverBackground); }
+  button[kind="monitor"][checked], button[kind="lanes"][checked], button[kind="shape"][checked] { background-color: var(--control-activeBackground); }
+  button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
+  button[kind="envelope"][checked] { background-color: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  button[kind="record"][checked] { color: var(--recording); }
+  button[kind="chip"][checked] {
+    background-color: var(--control-selectedBackground);
+    background-image: linear-gradient(#ffffff55, #ffffff00 52%, #00000033);
+  }
+  /* The detail area's and the browser's own lit and hovered buttons, which this theme's rule for
+     every `button` hides: a tag's ticked box, the "…" of the tags that did not fit under the
+     pointer, the piano roll's Focus switch while on. */
+  button[kind="tag-check"][checked] { background-color: var(--text-value); color: var(--window-background); }
+  button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
+  button[kind="focus"][checked] { background-color: var(--accent); }
+  /* The lit looks of the app's own switches and choices (Suhina's base sheet gives them, and this
+     theme's rule for every `button` overrides them: state them again): the key mapping's Map, a
+     part of a row of choices in Settings, a preset, a yes/no switch's track and a tick box. */
+  button[kind="map"][checked] { color: var(--accent); }
+  button[kind="option"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
+  button[kind="preset"][checked] { background-color: var(--control-activeBackground); color: inherit; }
+  button[kind="preset"][checked]:hover { background-color: var(--control-hoverBackground); }
+  button[kind="switch"][checked], button[kind="check"][checked] { background-color: var(--text-value); }
+  /* A figure shown as words in a bar takes the bar's ink, as it did before the sheet gave it one. */
+  toolbar label[kind="value"], application-bar label[kind="value"], menu-bar label[kind="value"],
+  project-tabs label[kind="value"], status-bar label[kind="value"] { color: var(--gloss-ink); }
   #control-play { color: #b9eb7b; box-shadow: inset 0 1px 0 #fff3, 0 0 3px #8bd74666; }
   #control-record { color: #f18d75; }
   knob { color: #c4d5d8; background-color: #28383f; }

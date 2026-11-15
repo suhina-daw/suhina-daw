@@ -12,7 +12,7 @@ use suhina_theme_render::{Subject, scenes};
 /// The counts recorded for each scene. `fresh` is that of a settled frame; the `*_fresh` are
 /// summed over the frames a change takes to settle. The style engine works out an element's style
 /// in the frame that draws it (#1273), so it asks for no frame of its own after a change
-/// (`*_style_frames`); the frame left after a theme change is egui's own after a new palette, and
+/// (`*_style_frames`); the frame left after a theme change is egui's own after new `Visuals`, and
 /// those after a hover are its tooltip's. Every background blends (#1233), so a settled frame has
 /// no paint callbacks: only a menu's or dialog's backdrop clears the pixels under it.
 ///
@@ -30,40 +30,102 @@ use suhina_theme_render::{Subject, scenes};
 /// scene: the Launcher's lines, stop buttons, scenes' numbers, its mixer's device lists, meters'
 /// levels and the other parts that are elements now, each kind read once a frame, not once an item.
 ///
+/// #1023 (the browser and the detail panels draw from their elements) raised them by 1 node and 1
+/// identity in the Launcher (the empty detail area's note, `label[kind="hint"]`) and by 8 nodes and
+/// 10 identities in the FM synth (its header's words and on switch, its expanded panel's header, ×
+/// and lines, each read once a frame).
+///
+/// #1023 (the control bar, tabs, menus, Settings and the dialogs draw from their elements) raised
+/// them by 11 nodes and 17 identities in each scene: the control bar's words, meters and lit
+/// switches, each read once a frame (`label[kind]`, `meter`, `button`, `drop-target`).
+///
+/// #1442 (egui's own widgets take their look from the style sheet) raised the identities, and the
+/// styles worked out after a theme change, by 11 in each scene: the lookups the root's `Visuals`
+/// are built from (`button` in its four states and `[checked]`, `text-input` and its `:focus`,
+/// `menu`, `scroll-bar` in three states), once when the styles reset, with no node in the tree.
+///
+/// #1448 (a base style sheet under every theme) runs Suhina Studio on the style engine, and its
+/// scenes are counted here too: started from Glass, so choosing Studio resets the styles, it
+/// costs what Glass and the see-through theme cost, and no count went up. It added the counts
+/// after one colour of a theme's own map is edited (`colour_change_*`, the see-through theme's;
+/// a built-in theme is not edited in place): the colour map is the base tier's `:root` rule,
+/// and the base sheet reads every colour variable, so one change resets the styles once, as a
+/// theme change does (2 frames, and every identity worked out afresh: 386 and 618, 398 and 630 on
+/// Windows). Before, a colour the theme's own sheet did not read reset nothing. Resetting only the
+/// styles that read the changed variable is #1456.
+///
+/// #1449 (the shared controls take their colours from the base sheet) added no node and no
+/// identity, and one style worked out the first time the pointer reaches a control whose colours
+/// fade (`hover_fresh` 0 to 1 in each scene, and one more after a colour change: 387 and 619, 399
+/// and 631 on Windows): the look it fades to is a style of its own, looked up while it fades.
+///
+/// #1450 (the Launcher, the mixer and the Arrangement take their colours from the base sheet) added
+/// 39 nodes and 39 identities to each scene (the Windows numbers move by the same): the looks the
+/// views read their colours from, each a style of its own, once for the whole view or per control
+/// (the switches' lit looks, the scenes' and the device rows' fades, a clip's states, the surface
+/// colours of the Launcher and of the Arrangement). The theme change and the colour change work
+/// those identities out afresh, so their counts move by the same 39: 425 and 657, 426 and 658
+/// (437 and 669, 438 and 670 on Windows).
+///
+/// #1451 (the detail panels, the piano roll and the browser take their colours from the base sheet)
+/// raised the FM synth's counts by 18 nodes and 18 identities over #1450's, and the styles worked
+/// out after a theme or a colour change by as many (675 and 676, 687 and 688 on Windows); the
+/// Launcher's did not move. The colours a device's canvas draws with are read from `device-canvas`
+/// and its six kinds, and the parts that fell back to different colours are told apart by kinds of
+/// their own (the expanded panel's fills, `detail-fill`, its parameters' `label`, `value` and
+/// `slider`), each read once a frame.
+/// #1452 (the app's bars, Settings and dialogs take their colours from the base sheet; egui's
+/// own widgets take theirs from `widget`) raised every scene's counts by 22 nodes and 30
+/// identities, and the styles worked out after a theme or a colour change by 30 (455 and 456, 705
+/// and 706; 467 and 468, 717 and 718 on Windows): the control bar's fills, switches and words
+/// (`app-fill`, `button[kind]`, `label[kind]`, `meter[kind="cpu"]`), the two inks of text on a
+/// colour (`label[kind="on-light"]` and `[kind="on-dark"]`, read once a frame for each set of
+/// variables in scope, not once a clip), and the lookups the root's `Visuals` are built from (`widget` in its
+/// states and kinds, inside a `window`), once when the styles reset, with no node left in the tree.
+///
 /// #1269 (the time signature in the toolbar) raised them by 2 nodes and 1 identity in each scene:
 /// its two numbers are value controls a theme styles, as the tempo is, where it was plain text.
+/// With #1453's strips laid out in CSS and the stack's colours together (the combined #1023 pull
+/// request), every scene's counts are 5 nodes and 4 identities over #1452's, and the styles worked
+/// out after a theme or a colour change 4 more (459 and 460, 709 and 710). On Windows each count is
+/// one more again (478 nodes and 472 identities, 472 and 473, 722 and 723), as CI measured it; which
+/// element that extra one is has not been traced.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 389,
-            identities: 358,
+            nodes: 465,
+            identities: 459,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 358,
+            theme_change_fresh: 459,
             hover_frames: 3,
             hover_style_frames: 0,
-            hover_fresh: 0,
+            hover_fresh: 1,
+            colour_change_frames: 2,
+            colour_change_fresh: 460,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 614,
-            identities: 581,
+            nodes: 715,
+            identities: 709,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 581,
+            theme_change_fresh: 709,
             hover_frames: 4,
             hover_style_frames: 0,
-            hover_fresh: 0,
+            hover_fresh: 1,
+            colour_change_frames: 2,
+            colour_change_fresh: 710,
         },
     ),
 ];
@@ -75,33 +137,37 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 401,
-            identities: 370,
+            nodes: 478,
+            identities: 472,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 370,
+            theme_change_fresh: 472,
             hover_frames: 4,
             hover_style_frames: 0,
-            hover_fresh: 0,
+            hover_fresh: 1,
+            colour_change_frames: 2,
+            colour_change_fresh: 473,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 626,
-            identities: 593,
+            nodes: 728,
+            identities: 722,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 593,
+            theme_change_fresh: 722,
             hover_frames: 4,
             hover_style_frames: 0,
-            hover_fresh: 0,
+            hover_fresh: 1,
+            colour_change_frames: 2,
+            colour_change_fresh: 723,
         },
     ),
 ];
@@ -119,6 +185,8 @@ fn within(name: &str, theme: &str, counts: Counts, budget: Counts) -> Vec<String
         ("frames after a hover", counts.hover_frames, budget.hover_frames),
         ("style frames after a hover", counts.hover_style_frames, budget.hover_style_frames),
         ("fresh styles after a hover", counts.hover_fresh as u64, budget.hover_fresh as u64),
+        ("frames after a colour change", counts.colour_change_frames, budget.colour_change_frames),
+        ("fresh styles after a colour change", counts.colour_change_fresh as u64, budget.colour_change_fresh as u64),
     ];
     fields
         .into_iter()
@@ -131,8 +199,13 @@ fn within(name: &str, theme: &str, counts: Counts, budget: Counts) -> Vec<String
 
 #[test]
 fn the_demo_and_an_expanded_fm_synth_stay_within_the_budget() {
-    // Glass, a bundled see-through theme with a style sheet, and the see-through test theme.
-    let themes = [Subject::built_in("suhina-glass").expect("a built-in theme"), super::see_through().unwrap()];
+    // Suhina Studio, which runs the style engine like every theme (#1448); Glass, a bundled
+    // see-through theme with a style sheet; and the see-through test theme.
+    let themes = [
+        Subject::built_in(suhina_ui::kit::theme::BUILT_IN).expect("a built-in theme"),
+        Subject::built_in("suhina-glass").expect("a built-in theme"),
+        super::see_through().unwrap(),
+    ];
     let mut over = Vec::new();
     for theme in &themes {
         for (name, budget) in RECORDED {

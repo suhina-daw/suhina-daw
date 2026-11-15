@@ -12,7 +12,10 @@ use egui::{
 };
 use serde_json::Value;
 
-use crate::kit::element::{Armed, BUTTON, Checked, DROPDOWN, Entered, KNOB, TEXT_INPUT, VALUE};
+use crate::kit::element::{
+    Armed, BUTTON, Checked, DROPDOWN, DROPDOWN_ARROW, Entered, KNOB, Look, Paint, SLIDER, SLIDER_FILL, SLIDER_HANDLE,
+    SLIDER_RAIL, Sides, TEXT_INPUT, TOGGLE, VALUE,
+};
 use crate::kit::{motion, theme};
 
 /// The arrow of a row that opens: pointing right while closed, down while open.
@@ -272,11 +275,41 @@ pub fn hover(ui: &Ui, response: &Response) -> f32 {
 /// Shared track-button surface. Colors and focus outlines follow the active theme.
 /// Geometry stays inside the caller's hit target, including compact mixer strips.
 /// `el` is the button its caller entered (`button#solo`).
-pub fn track_button_face(_ui: &Ui, painter: &Painter, rect: Rect, el: &Entered, response: &Response, fill: Color32) {
+pub fn track_button_face(painter: &Painter, rect: Rect, el: &Entered, response: &Response, fill: Color32) {
     let radius = el.radius_or((rect.height() * 0.25).min(5.0));
-    button_surface(painter, rect, el, response, false, fill, radius);
+    surface(painter, rect, el, response, false, fill, radius, None);
+    focus_ring(painter, rect, el, response, radius);
+}
+
+/// [`track_button_face`] for a toggle whose `fill` its caller worked out from `el` already
+/// ([`Toggle`]): the fill is painted as it is, with `image` (0 to 1, [`Toggle::image`]) of the
+/// sheet's background image, so neither the colour nor the image of a rule for every `button`
+/// covers the lit one's.
+pub fn toggle_face(painter: &Painter, rect: Rect, el: &Entered, response: &Response, fill: Color32, image: f32) {
+    let radius = el.radius_or((rect.height() * 0.25).min(5.0));
+    surface(painter, rect, el, response, false, fill, radius, Some(image));
+    focus_ring(painter, rect, el, response, radius);
+}
+
+/// [`toggle_face`] of a toggle that has no ring under the pointer and whose radius is `radius`
+/// unless the sheet gives one (a chip, a view switch): the same fill and image as the lit one's.
+pub fn toggle_surface(
+    painter: &Painter,
+    rect: Rect,
+    el: &Entered,
+    response: &Response,
+    fill: Color32,
+    image: f32,
+    radius: f32,
+) {
+    surface(painter, rect, el, response, false, fill, radius, Some(image));
+}
+
+/// The ring of a track button under the pointer, in its `border-color`, and while it has the keys,
+/// in its `accent-color`.
+fn focus_ring(painter: &Painter, rect: Rect, el: &Entered, response: &Response, radius: f32) {
     if response.has_focus() || response.hovered() {
-        let edge = if response.has_focus() { theme::accent() } else { theme::border_strong() };
+        let edge = if response.has_focus() { el.accent() } else { el.border() };
         painter.rect_stroke(rect, radius, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     }
 }
@@ -292,6 +325,23 @@ pub fn button_surface(
     fill: Color32,
     radius: f32,
 ) {
+    surface(painter, rect, el, response, on, fill, radius, None);
+}
+
+/// [`button_surface`]; with `decided`, `fill` is the button's whole fill, its caller's from the
+/// element already, painted over the sheet's `background-color`, with that much (0 to 1) of the
+/// sheet's background image.
+#[allow(clippy::too_many_arguments)]
+fn surface(
+    painter: &Painter,
+    rect: Rect,
+    el: &Entered,
+    response: &Response,
+    on: bool,
+    fill: Color32,
+    radius: f32,
+    decided: Option<f32>,
+) {
     let style = el.style();
     // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
     let shaped = style
@@ -299,34 +349,113 @@ pub fn button_surface(
         .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
     let role = super::skin::button_role(el);
     if !shaped || role != "button" || super::skin::has_own("button") {
-        let fill = el.background_or(fill);
+        let fill = if decided.is_some() { fill } else { el.background_or(fill) };
         let radius = el.radius_or(radius);
         if super::skin::button(painter, rect, el, super::skin::State::response(response, on), fill, radius) {
             // The artwork cast the shadows already, in its own shape.
-            el.paint_gradients(painter, rect, radius);
+            el.paint_gradients_with(painter, rect, radius, decided.unwrap_or(1.0));
             return;
         }
     }
-    el.paint_with(painter, rect, super::element::Native { radius, fill });
+    let native = super::element::Native { radius, fill };
+    match decided {
+        Some(image) => el.paint_over(painter, rect, native, image),
+        None => el.paint_with(painter, rect, native),
+    };
 }
 
-/// The fill and the ink of a toggle drawn as `el` (a `button` entered with `[checked]` while on):
-/// the sheet's where it gives them, else `fills` and `inks` (on, off). `plain` is the same button
-/// without `[checked]`, looked up before `el` is entered, and given only while it is on: then only
-/// a rule for the lit state counts (`button[checked]`), so a rule for every `button` does not hide
-/// which one is on.
+/// The fill and the ink of a toggle drawn as `el` (a `button` entered with `[checked]` while on),
+/// lit or not, with no fade: [`Toggle`] with `fills` and `inks` (on, off) as its tokens and the
+/// unlit ink its own ([`UnlitInk::Own`]). `plain` is the same button without `[checked]`, looked
+/// up before `el` is entered and given only while it is on
+/// ([`super::element::Builder::enter_against_plain`]).
 pub fn toggle_inks(
     el: &Entered,
     plain: Option<&super::element::Look>,
     fills: (Color32, Color32),
     inks: (Color32, Color32),
 ) -> (Color32, Color32) {
-    match plain {
-        Some(plain) => {
-            let lit = el.look();
-            (lit.background_unlike(plain, fills.0), lit.own_color_unlike(plain, inks.0))
+    let sides = plain.map(|plain| Sides { lit: el.look(), plain: plain.clone(), entered_lit: true });
+    let toggle = Toggle::of(el, sides.as_ref(), UnlitInk::Own, (fills.1, inks.1), fills.0, |_| inks.0);
+    if plain.is_some() { toggle.on } else { toggle.off }
+}
+
+/// Which colour a toggle's unlit ink takes from the sheet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnlitInk {
+    /// Only a `color` a rule gives the button itself ([`super::element::Look::own_color_or`]): a
+    /// glyph or a mark, which the text colour of a view around it does not reach.
+    Own,
+    /// Its text colour, inherited too ([`super::element::Look::color_or`]): a letter or a number
+    /// on the button, which reads in the colour the scoped palette gave it before.
+    Inherited,
+}
+
+/// A toggle's fill and ink while off and while on, which [`Toggle::at`] fades between.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Toggle {
+    /// The fill and the ink while off.
+    pub off: (Color32, Color32),
+    /// The fill and the ink while on.
+    pub on: (Color32, Color32),
+    /// Whether the lit button shown has a background image of its own, a lit state's rule's.
+    pub own_image: bool,
+}
+
+impl Toggle {
+    /// The colours of a toggle drawn as `el` with its two [`Sides`], lit and plain, from
+    /// [`super::element::Builder::enter_toggle`] (given while it is lit at all, fading out
+    /// included, so its fade runs between the same two colours both ways). Off, it takes the plain
+    /// button's `background-color` where the sheet gives one, else `off.0`, and its ink as `unlit`
+    /// says, else `off.1`. On, only a rule for the lit state counts (`button[checked]`), so a rule
+    /// for every `button` does not hide which one is on: the lit fill where it differs from the
+    /// plain button's, else `on`; the lit ink where it differs, else `ink_on` of the fill. With no
+    /// sides (off, not fading), the lit side is `on` and its ink.
+    ///
+    /// A hovered lit button where a `button:hover` rule and a `button[checked]` rule are equally
+    /// specific takes the hover rule's fill on both sides, which then counts as no lit colour: the
+    /// token's stands.
+    pub fn of(
+        el: &Entered,
+        sides: Option<&Sides>,
+        unlit: UnlitInk,
+        off: (Color32, Color32),
+        on: Color32,
+        ink_on: impl Fn(Color32) -> Color32,
+    ) -> Self {
+        let own = el.look();
+        let plain = sides.map_or(&own, |sides| &sides.plain);
+        let ink = match unlit {
+            UnlitInk::Own => plain.own_color_or(off.1),
+            UnlitInk::Inherited => plain.color_or(off.1),
+        };
+        let off = (plain.background_or(off.0), ink);
+        match sides {
+            Some(sides) => {
+                let fill = sides.lit.unlike(&sides.plain, Paint::Background, on);
+                let ink = sides.lit.unlike(&sides.plain, Paint::OwnColor, ink_on(fill));
+                Self { off, on: (fill, ink), own_image: sides.entered_lit && sides.lit.image_unlike(&sides.plain) }
+            }
+            None => Self { off, on: (on, ink_on(on)), own_image: false },
         }
-        None => (el.background_or(fills.1), el.own_color_or(inks.1)),
+    }
+
+    /// The colours of `el`'s own style, off and on alike: a toggle at rest.
+    fn flat(el: &Entered) -> Self {
+        let colors = (el.background(), el.color());
+        Self { off: colors, on: colors, own_image: false }
+    }
+
+    /// The fill and the ink `lit` of the way on (0 off, 1 on).
+    pub fn at(&self, lit: f32) -> (Color32, Color32) {
+        (motion::mix(self.off.0, self.on.0, lit), motion::mix(self.off.1, self.on.1, lit))
+    }
+
+    /// How much of the sheet's background image shows on the button `lit` of the way on
+    /// ([`toggle_face`]): a lit state's own image all of it; the plain button's image fades out as
+    /// the lit fill fades in, so it does not cover that fill.
+    pub fn image(&self, lit: f32) -> f32 {
+        if self.own_image { 1.0 } else { 1.0 - lit.clamp(0.0, 1.0) }
     }
 }
 
@@ -436,21 +565,144 @@ pub fn knob_with_value(
     }
 }
 
-/// Fill and text of a track-on toggle: light when on, dark when off, a step brighter hovered.
+/// Fill and text of a track-on toggle: light when on, dark when off, a step brighter hovered. The
+/// colours of `toggle` in the sheet, as a toggle drawn as a button takes its own with
+/// [`lit_toggle`].
 pub fn toggle_colors(ui: &Ui, response: &Response, on: bool) -> (Color32, Color32) {
-    let hover = hover(ui, response);
-    let lit = motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE);
-    let off_fill = motion::mix(theme::control_background(), theme::control_hover(), hover);
-    let off_text = motion::mix(theme::text_hint(), theme::text_secondary(), hover);
-    let on_fill = motion::mix(theme::control_selected(), Color32::WHITE, 0.2 * hover);
-    // The inverse ink, unless a variant's lit fill leaves it unreadable (white on a light fill,
-    // or ink so translucent it fades into the fill).
-    let on_text = if theme::text_contrast(theme::text_inverse(), on_fill) < 3.0 {
-        theme::text_on(on_fill)
-    } else {
-        theme::text_inverse()
+    let (hover, lit) = toggle_motion(ui, response, on);
+    sheet_toggle(&TOGGLE.builder(), &[Checked], on || lit > 0.0, on, hover, Readable::Always).at(lit)
+}
+
+/// A toggle drawn as `builder` (a `button` with its id, say), entered with `attrs` while it is on
+/// and its colours ([`lit_toggle`]): what a lit switch of a view takes, from the sheet's
+/// `button[kind="toggle"]` and its `[checked]` state.
+pub struct Lit {
+    /// The entered element.
+    pub el: Entered,
+    /// The colours it fades between.
+    pub toggle: Toggle,
+    /// How far on it is, 0 to 1, fading.
+    pub lit: f32,
+}
+
+impl Lit {
+    /// The fill and the ink now.
+    pub fn colors(&self) -> (Color32, Color32) {
+        self.toggle.at(self.lit)
+    }
+}
+
+/// [`Lit`] of the toggle `on` that `response` belongs to.
+pub fn lit_toggle(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+) -> Lit {
+    lit_toggle_of(ui, response, builder, attrs, on, (Some("toggle"), Readable::Always))
+}
+
+/// [`lit_toggle`] of a toggle of its own `kind` (a `button[kind="record"]`), whose lit ink the sheet
+/// gives and which stays the sheet's where only the sheet's fill is under it: the record and
+/// metronome buttons of the control bar and the Launcher.
+pub fn lit_toggle_kind(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+    kind: &'static str,
+) -> Lit {
+    lit_toggle_of(ui, response, builder, attrs, on, (Some(kind), Readable::OnThemeFill))
+}
+
+/// [`lit_toggle_kind`] of a toggle with no `kind` of its own, whose states `attrs` (`[playing]`) the
+/// sheet colours: a scene's launch button.
+pub fn lit_toggle_state(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+) -> Lit {
+    lit_toggle_of(ui, response, builder, attrs, on, (None, Readable::OnThemeFill))
+}
+
+/// How a lit toggle's ink is kept readable on its fill: a rule's ink is its own, else the sheet's
+/// ink is moved off a fill it does not read on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Readable {
+    /// On every fill.
+    Always,
+    /// Only on a fill a theme's rule gave, the sheet's own pair being the design's.
+    OnThemeFill,
+}
+
+/// [`Lit`] of a toggle of `kind`, or the one its builder gives it, whose ink is kept readable as
+/// `keep` says.
+fn lit_toggle_of(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+    (kind, keep): (Option<&'static str>, Readable),
+) -> Lit {
+    let (hover, lit) = toggle_motion(ui, response, on);
+    let builder = match kind {
+        Some(kind) => builder.attribute("kind", kind),
+        None => builder,
     };
-    (motion::mix(off_fill, on_fill, lit), motion::mix(off_text, on_text, lit))
+    let fading = lit > 0.0;
+    let touched = response.hovered() || response.dragged();
+    // The sheet's colours are looked up (before the element is entered, as comparisons are) unless
+    // the button is off, still and with no pointer: then the element's own style is all of it.
+    let looked_up =
+        (on || fading || hover > 0.0 || touched).then(|| sheet_toggle(&builder, attrs, on || fading, on, hover, keep));
+    let el = attrs.iter().fold(builder.response(response), |builder, attr| builder.attr(*attr, on)).enter();
+    let toggle = looked_up.unwrap_or_else(|| Toggle::flat(&el));
+    Lit { el, toggle, lit }
+}
+
+/// A toggle's colours from the sheet: `builder`'s element (no response), with its states `attrs`
+/// off and, when `lit_side`, on, each `hover` of the way from its style at rest to its style under
+/// the pointer. Only a rule for the lit state lights it, so a theme that styles every `button`
+/// states the lit one too. `entered_lit`: the button is on, not fading out.
+fn sheet_toggle(
+    builder: &super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    lit_side: bool,
+    entered_lit: bool,
+    hover: f32,
+    keep: Readable,
+) -> Toggle {
+    use super::element::Look;
+    let ends = |on: bool| attrs.iter().fold(builder.clone(), |builder, attr| builder.attr(*attr, on)).hover_ends(hover);
+    let at = |ends: &(Look, Look), read: fn(&Look) -> Color32| motion::mix(read(&ends.0), read(&ends.1), hover);
+    let plain = ends(false);
+    let off = (at(&plain, Look::background), at(&plain, Look::color));
+    if !lit_side {
+        return Toggle { off, on: off, own_image: false };
+    }
+    let lit = ends(true);
+    let fill = at(&lit, Look::background);
+    let ink = at(&lit, Look::color);
+    let (themed_ink, themed_fill) =
+        lit.0.style().map_or((false, false), |style| (style.authored.color, style.authored.background));
+    let ink = if themed_ink || (keep == Readable::OnThemeFill && !themed_fill) { ink } else { readable(ink, fill) };
+    Toggle { off, on: (fill, ink), own_image: entered_lit && lit.0.image_unlike(&plain.0) }
+}
+
+/// `ink` on `fill`, unless the fill leaves it unreadable: then the ink that reads on the fill.
+fn readable(ink: Color32, fill: Color32) -> Color32 {
+    if theme::text_contrast(ink, fill) < 3.0 { theme::text_on(fill) } else { ink }
+}
+
+/// How hovered a toggle is and how far on, each fading (0 to 1): worked out before its element is
+/// entered, which while it is lit at all needs its colours looked up first.
+pub fn toggle_motion(ui: &Ui, response: &Response, on: bool) -> (f32, f32) {
+    (hover(ui, response), motion::toward(ui.ctx(), response.id.with("on"), on, motion::VALUE))
 }
 
 /// A track's solo button: draws it in `rect` and returns the command a click asks for. A click
@@ -465,17 +717,13 @@ pub fn solo_button(
     name: &str,
     solo: bool,
 ) -> Option<Action> {
-    if super::control_layout::placement("solo").hidden {
-        return None;
-    }
-    let rect = super::control_layout::place("solo", rect, painter.clip_rect());
     let label = if solo { format!("End solo on {name}") } else { format!("Solo {name}") };
     let response = button_area(ui, rect, id, label);
-    let el = BUTTON.id("solo").response(&response).attr(Checked, solo).enter();
-    let lit = motion::toward(ui.ctx(), response.id.with("on"), solo, motion::VALUE);
-    let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    track_button_face(ui, painter, rect, &el, &response, motion::mix(off, theme::accent(), lit));
-    let text = el.color_or(motion::mix(theme::text_secondary(), theme::text_inverse(), lit));
+    // `button#solo`, `[checked]` while soloed: only a rule for that state lights it.
+    let Lit { el, toggle, lit } =
+        lit_toggle_of(ui, &response, BUTTON.id("solo"), &[Checked], solo, (Some("solo"), Readable::Always));
+    let (fill, text) = toggle.at(lit);
+    toggle_face(painter, rect, &el, &response, fill, toggle.image(lit));
     if !super::skin::paint(painter, rect, "solo", super::skin::State::response(&response, solo), text, 0.0) {
         text_in(painter, rect, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
     }
@@ -501,16 +749,11 @@ pub fn cue_button(
     name: &str,
     cue: bool,
 ) -> Option<Action> {
-    if super::control_layout::placement("cue").hidden {
-        return None;
-    }
-    let rect = super::control_layout::place("cue", rect, painter.clip_rect());
     let label = if cue { format!("Stop cueing {name}") } else { format!("Cue {name} on the headphones") };
     let response = button_area(ui, rect, id, label);
-    let el = BUTTON.id("cue").response(&response).attr(Checked, cue).enter();
-    let (fill, text) = toggle_colors(ui, &response, cue);
-    let text = el.color_or(text);
-    track_button_face(ui, painter, rect, &el, &response, fill);
+    let Lit { el, toggle, lit } = lit_toggle(ui, &response, BUTTON.id("cue"), &[Checked], cue);
+    let (fill, text) = toggle.at(lit);
+    toggle_face(painter, rect, &el, &response, fill, toggle.image(lit));
     if !super::skin::paint(painter, rect, "cue", super::skin::State::response(&response, cue), text, 0.0) {
         headphones(painter, rect, text);
     }
@@ -550,22 +793,20 @@ pub fn arm_button(
     name: &str,
     armed: bool,
 ) -> Option<Action> {
-    if super::control_layout::placement("arm").hidden {
-        return None;
-    }
-    let rect = super::control_layout::place("arm", rect, painter.clip_rect());
     let label = if armed { format!("Disarm {name}") } else { format!("Arm {name} for recording") };
     let response = button_area(ui, rect, id, label).on_hover_text("Make this track ready to record");
-    let el = BUTTON.id("arm").response(&response).attr(Checked, armed).attr(Armed, armed).enter();
-    let lit = motion::toward(ui.ctx(), response.id.with("on"), armed, motion::VALUE);
-    let off = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
-    track_button_face(ui, painter, rect, &el, &response, motion::mix(off, theme::recording_background(), lit));
+    // `button#arm`, `[checked][armed]` while armed: only a rule for that state lights it, so the
+    // plain button it is compared with has neither. The red dot on its dark red is the arm's look,
+    // whatever their contrast; on a lit fill a rule gives, the red unless it does not read there.
+    let Lit { el, toggle, lit } = lit_toggle_kind(ui, &response, BUTTON.id("arm"), &[Checked, Armed], armed, "arm");
+    let (fill, ring) = toggle.at(lit);
+    toggle_face(painter, rect, &el, &response, fill, toggle.image(lit));
     let radius = (rect.height().min(rect.width()) * 0.22).clamp(2.5, 4.0);
-    let ring = el.color_or(motion::mix(theme::text_secondary(), theme::recording(), lit));
     if !super::skin::paint(painter, rect, "arm", super::skin::State::response(&response, armed), ring, 0.0) {
         painter.circle_stroke(rect.center(), radius, Stroke::new(1.2, ring));
         if lit > 0.0 {
-            painter.circle_filled(rect.center(), radius, theme::recording().gamma_multiply(lit));
+            // The dot in the lit ink.
+            painter.circle_filled(rect.center(), radius, toggle.on.1.gamma_multiply(lit));
         }
     }
     if !response.clicked() {
@@ -595,7 +836,7 @@ pub fn text_input(ui: &mut Ui, edit: egui::TextEdit<'_>) -> Response {
     let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let response = ui.add(edit.frame(input_frame()));
-    input_line(ui, &response);
+    input_line_of(ui, &response, &el);
     response
 }
 
@@ -605,7 +846,7 @@ pub fn text_input_at(ui: &mut Ui, rect: Rect, edit: egui::TextEdit<'_>) -> Respo
     let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let response = ui.put(rect, edit.frame(input_frame()));
-    input_line(ui, &response);
+    input_line_of(ui, &response, &el);
     response
 }
 
@@ -629,7 +870,7 @@ pub fn combo_box<R>(
             ui.set_style(menu_style);
             contents(ui)
         });
-        input_line(ui, &response.response);
+        input_line_of(ui, &response.response, &el);
         response
     })
     .inner
@@ -657,7 +898,7 @@ pub fn number_input(ui: &mut Ui, size: Option<egui::Vec2>, number: egui::DragVal
     ui.scope(|ui| {
         transparent_control(ui);
         let response = if let Some(size) = size { ui.add_sized(size, number) } else { ui.add(number) };
-        input_line(ui, &response);
+        input_line_of(ui, &response, &el);
         response
     })
     .inner
@@ -670,50 +911,66 @@ pub fn number_input_at(ui: &mut Ui, rect: Rect, number: egui::DragValue<'_>) -> 
     ui.scope(|ui| {
         transparent_control(ui);
         let response = ui.put(rect, number);
-        input_line(ui, &response);
+        input_line_of(ui, &response, &el);
         response
     })
     .inner
 }
 
-/// A quiet underline, stronger on hover and accented while editing.
+/// A quiet underline, stronger on hover and accented while editing, in the colours of
+/// `text-input`: a field drawn as another element takes its own with [`input_line_of`].
 pub fn input_line(ui: &Ui, response: &Response) {
-    let amount = hover(ui, response);
-    let color = if response.has_focus() {
-        theme::accent()
-    } else {
-        motion::mix(theme::border(), theme::border_strong(), amount)
-    };
-    ui.painter().hline(response.rect.x_range(), response.rect.bottom() - 0.5, theme::hairline(color));
+    let el = TEXT_INPUT.response(response).enter();
+    input_line_of(ui, response, &el);
+}
+
+/// [`input_line`] of a field drawn as `el` (`text-input`, `value`, `dropdown`): its `border-color`,
+/// growing stronger under the pointer, and its `accent-color` while it is edited.
+pub fn input_line_of(ui: &Ui, response: &Response, el: &Entered) {
+    underline(ui.painter(), response.rect, response.has_focus(), el, hover(ui, response));
+}
+
+/// The line under a field in `rect`: `el`'s `accent-color` while `focused`, else its
+/// `border-color`, `hovered` (0 to 1) of the way to the one it has under the pointer.
+fn underline(painter: &Painter, rect: Rect, focused: bool, el: &Entered, hovered: f32) {
+    let color = if focused { el.accent() } else { el.hover_fade(hovered, Look::border) };
+    painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(color));
 }
 
 /// A form field whose surrounding surface shows through, with only an underline.
+/// `dropdown`: its underline ([`input_line_of`]), and its choice and chevron in its `color`.
 pub fn form_dropdown(ui: &Ui, painter: &Painter, rect: Rect, response: &Response, text: &str) {
-    let _el = DROPDOWN.response(response).enter();
-    let hover = hover(ui, response);
-    let border = if response.has_focus() {
-        theme::accent()
-    } else {
-        motion::mix(theme::border(), theme::border_strong(), hover)
-    };
-    painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(border));
-    dropdown_contents(painter, rect, text, theme::text_value(), theme::text_hint());
+    let el = DROPDOWN.response(response).enter();
+    underline(painter, rect, response.has_focus(), &el, hover(ui, response));
+    // The arrow is a part of the field, in its own colour: a rule for the field's text leaves it.
+    dropdown_contents(painter, rect, text, el.color(), DROPDOWN_ARROW.look().color());
 }
 
-/// A secondary routing field: quiet until hovered, with the same menu and hit area.
+/// A secondary routing field: quiet until hovered, with the same menu and hit area. It takes the
+/// colours of the surface it is on (`background`), so a theme's rule for every `dropdown` leaves
+/// it alone: only one for `dropdown[kind="subtle"]` gives its `background-color` while hovered,
+/// its `border-color` for the line and its `color`. Its `accent-color` is the line while it has
+/// the keys, and the sheet's `:hover` colour what the surface fades toward.
 pub fn subtle_dropdown(ui: &Ui, painter: &Painter, rect: Rect, response: &Response, text: &str, background: Color32) {
+    let plain = DROPDOWN.response(response).probe();
+    let own = DROPDOWN.response(response).attribute("kind", "subtle").look();
+    // What only a rule for the kind gives: not what a rule for every dropdown does.
     let amount = hover(ui, response);
     let mut surface = background;
     if amount > 0.0 || response.has_focus() {
-        surface = motion::mix(background, theme::control_hover(), amount.max(0.3));
+        surface = own.themed_unlike(&plain, Paint::Background).unwrap_or_else(|| {
+            let hot = DROPDOWN.attribute("kind", "subtle").pointer(true, false, false).probe();
+            motion::mix(background, hot.background(), amount.max(0.3))
+        });
     }
     let line = if response.has_focus() {
-        theme::accent()
+        own.accent()
     } else {
-        motion::mix(background, theme::text_on(background), 0.25 + 0.25 * amount)
+        own.themed_unlike(&plain, Paint::Border)
+            .unwrap_or_else(|| motion::mix(background, theme::text_on(background), 0.25 + 0.25 * amount))
     };
     painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(line));
-    let ink = theme::text_on(surface);
+    let ink = own.themed_unlike(&plain, Paint::Color).unwrap_or_else(|| theme::text_on(surface));
     dropdown_contents(painter, rect, text, ink, motion::mix(surface, ink, 0.65));
 }
 
@@ -992,15 +1249,19 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
     // Keep the target ring outside the surface: custom value painters run after key handling
     // and would cover an inset rectangle, leaving only sharp yellow corners behind.
     let radius = if response.rect.width() > response.rect.height() * 4.0 { response.rect.height() * 0.5 } else { 4.0 };
-    painter.rect_stroke(response.rect, radius, Stroke::new(1.0, theme::text_secondary()), egui::StrokeKind::Outside);
+    // What is typed is `text-input[kind="typed"]`: its ring in its `border-color`, its
+    // `background-color` and its `color`. It is drawn over the value control, not as a text field,
+    // so only a rule for the kind reaches it, not one for every `text-input`.
+    let look = TEXT_INPUT.attribute("kind", "typed").look();
+    painter.rect_stroke(response.rect, radius, Stroke::new(1.0, look.border()), egui::StrokeKind::Outside);
     if !typed.is_empty() {
-        painter.rect_filled(response.rect.shrink(1.0), 0.0, theme::control_active());
+        painter.rect_filled(response.rect.shrink(1.0), 0.0, look.background());
         painter.text(
             response.rect.center(),
             egui::Align2::CENTER_CENTER,
             &typed,
             theme::mono_font(theme::TEXT_SMALL),
-            theme::text_value(),
+            look.color(),
         );
     }
     (steps, fine, None)
@@ -1078,16 +1339,6 @@ fn along_chosen_axis(ui: &Ui, id: egui::Id, moved: Vec2) -> f32 {
         value_drag_shows(ui.ctx(), icon);
     }
     along
-}
-
-impl From<crate::kit::control_layout::Direction> for DragAxis {
-    /// A theme's `direction` for a control.
-    fn from(direction: crate::kit::control_layout::Direction) -> Self {
-        match direction {
-            crate::kit::control_layout::Direction::Vertical => Self::Vertical,
-            crate::kit::control_layout::Direction::Horizontal => Self::Horizontal,
-        }
-    }
 }
 
 /// A number changed by dragging vertically (up raises it), by the wheel over it and by a
@@ -1280,11 +1531,12 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
     // A knob is two elements, each colouring its own artwork (`currentColor`), with the knob's
     // pointer states. The body's colour is its own (the palette's tier gives it one), never one
     // inherited from the knob; the pointer takes the knob's.
-    let body_ink =
-        super::element::KNOB_BODY.response_if(response).enter().computed_color_or(theme::control_background());
+    let body_ink = super::element::KNOB_BODY.response_if(response).enter().color();
     if !super::skin::paint(painter, rect, body, state, body_ink, 0.0) {
-        painter.circle_filled(center, radius, theme::control_background());
-        painter.circle_stroke(center, radius, theme::hairline(theme::text_hint()));
+        // Without artwork, a disc in the knob's `background-color`, ringed in its own `color` (a
+        // line takes only a colour given to it, not one inherited).
+        painter.circle_filled(center, radius, el.background());
+        painter.circle_stroke(center, radius, theme::hairline(el.color()));
     }
     el.paint_background(painter, rect, size * 0.5);
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
@@ -1301,7 +1553,9 @@ pub fn knob(painter: &Painter, center: Pos2, size: f32, position: f32, pointer: 
 /// same scope the canvases' dials take theirs from, so a theme's own colouring applies — and
 /// no artwork stands for the face, as a canvas has none.
 pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response: Option<&Response>) {
-    let _el = response.map_or_else(|| KNOB.enter(), |response| KNOB.response(response).enter());
+    // The `knob`'s colours: its `border-color` for the rim, its `background-color` for the inner
+    // disc and its `accent-color` for the pointer.
+    let el = KNOB.response_if(response).attribute("kind", "dial").enter();
     let radius = (size * 0.5).max(1.0);
     // The face: the rim arc (2.35 to 7.05 rad as an `.sd` dial's is, i.e. 135° past each side
     // over the top), the ring disc inside it, the inner disc — the theme's tokens.
@@ -1311,20 +1565,18 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
             center + Vec2::new(a.sin(), -a.cos()) * (radius - 2.0).max(0.0)
         })
         .collect();
-    painter.add(egui::Shape::line(points, Stroke::new(4.0, theme::border())));
+    painter.add(egui::Shape::line(points, Stroke::new(4.0, el.border())));
     painter.circle_filled(
         center,
         (radius - 4.0).max(0.0),
-        crate::kit::style_class::surface_or(theme::panel_background()),
+        crate::kit::style_class::surface_or(super::element::KNOB_RING.look().background()),
     );
-    painter.circle_filled(center, (radius - 8.0).max(0.0), theme::control_background());
+    painter.circle_filled(center, (radius - 8.0).max(0.0), el.background());
     // The pointer: a quarter in, three quarters to the rim, in the accent token.
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
     let dir = Vec2::new(angle.sin(), -angle.cos());
-    painter.line_segment(
-        [center + dir * (radius * 0.25), center + dir * (radius * 0.72)],
-        Stroke::new(2.0, theme::accent()),
-    );
+    painter
+        .line_segment([center + dir * (radius * 0.25), center + dir * (radius * 0.72)], Stroke::new(2.0, el.accent()));
 }
 
 /// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
@@ -1435,6 +1687,48 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
     }
 }
 
+/// A plain push button's face: `button` with `id` (none: any button), entered with its `response`.
+/// Its fill fades from its `background-color` to the one it has under the pointer; its edge is its
+/// `border-color`; its label its `color`.
+pub(crate) fn push_button(ui: &Ui, painter: &Painter, rect: Rect, id: &str, response: &Response, label: &str) {
+    let hover = hover(ui, response);
+    let el = BUTTON.id(id).response(response).enter();
+    push_face(painter, rect, &el, hover, label);
+}
+
+/// [`push_button`] of the button `el`, its caller entered.
+pub(crate) fn push_face(painter: &Painter, rect: Rect, el: &Entered, hover: f32, label: &str) {
+    let fill = el.hover_fade(hover, Look::background);
+    el.paint_with(painter, rect, super::element::Native { radius: 0.0, fill });
+    if !el.style().is_some_and(|s| s.authored.border || s.authored.border_width) {
+        painter.rect_stroke(rect, 0.0, theme::hairline(el.border()), egui::StrokeKind::Inside);
+    }
+    text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(theme::TEXT_SMALL), el.color());
+}
+
+/// A button the view paints itself, in a flat fill: `button` entered with its `response` (of its
+/// `kind`, when it has one: `button[kind="secondary"]` for one that stands back), its fill its
+/// `background-color`, fading to the one it has under the pointer; its text its `color`, in a font
+/// of `size`.
+pub(crate) fn flat_button(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    response: &Response,
+    label: &str,
+    (size, kind): (f32, Option<&str>),
+) {
+    let builder = BUTTON.response(response);
+    let el = match kind {
+        Some(kind) => builder.attribute("kind", kind),
+        None => builder,
+    }
+    .enter();
+    let fill = el.hover_fade(hover(ui, response), Look::background);
+    painter.rect_filled(rect, 0.0, fill);
+    text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(size), el.color());
+}
+
 /// A button with `text` on it, `label` for screen readers and tests; true when clicked. Its id is
 /// its label in its layer, so a dialog drawn over a panel with a button of the same label (the
 /// start panel's *Download update now* under Help › Check for updates…) gets a button of its own
@@ -1442,12 +1736,13 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
     let response = button_area(ui, rect, Id::unique(("dialog-button", ui.layer_id(), label)), label);
     let el = BUTTON.response(&response).enter();
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), hover(ui, &response));
+    let fill = el.hover_fade(hover(ui, &response), Look::background);
     let radius = el.radius_or(0.0);
     button_surface(painter, rect, &el, &response, false, fill, radius);
-    painter.rect_stroke(rect, radius, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    // Its edge in its `border-color`, its text in its `color`.
+    painter.rect_stroke(rect, radius, theme::hairline(el.border()), egui::StrokeKind::Inside);
     let small = theme::ui_font(theme::TEXT_SMALL);
-    text_in(painter, rect, Align2::CENTER_CENTER, text, small, theme::text_primary());
+    text_in(painter, rect, Align2::CENTER_CENTER, text, small, el.color());
     response.clicked()
 }
 
@@ -1478,14 +1773,24 @@ pub fn percent_slider(
     let track = rect.shrink2(Vec2::new(4.0, 0.0));
     let mid = rect.center().y;
     let handle_x = track.left() + track.width() * (shown / 100.0) as f32;
-    painter.line_segment(
-        [Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)],
-        Stroke::new(3.0, theme::control_background()),
-    );
-    let fill = if lit { theme::accent() } else { motion::mix(theme::text_hint(), theme::text_secondary(), hovered) };
+    // `slider`, `[checked]` while lit: the `background-color` of its `slider-rail`, `slider-fill`
+    // and `slider-handle`. A fill and a handle fade toward the colour they have under the pointer,
+    // looked up (as comparisons are) before the slider is entered.
+    let slider = |pointer: bool| SLIDER.pointer(pointer, false, false).attr(Checked, lit);
+    let part_fade = |part: super::element::Name| {
+        let rest = part.probe_in(slider(false)).background();
+        if hovered > 0.0 { motion::mix(rest, part.probe_in(slider(true)).background(), hovered) } else { rest }
+    };
+    let (unlit_fill, handle) = (part_fade(SLIDER_FILL), part_fade(SLIDER_HANDLE));
+    let el = SLIDER.response(&response).attr(Checked, lit).enter();
+    let rail = SLIDER_RAIL.look().background();
+    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)], Stroke::new(3.0, rail));
+    // Lit, the fill is the lit slider's own colour whatever the pointer does.
+    let fill = if lit { SLIDER_FILL.look().background() } else { unlit_fill };
     painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], Stroke::new(3.0, fill));
     let cap = Rect::from_center_size(Pos2::new(handle_x, mid), Vec2::new(8.0, 12.0));
-    painter.rect_filled(cap, 2.0, motion::mix(theme::text_secondary(), theme::text_value(), hovered));
+    painter.rect_filled(cap, 2.0, handle);
+    drop(el);
     let sent = id.with("sent");
     if response.double_clicked() {
         ui.data_mut(|d| d.remove::<bool>(sent));

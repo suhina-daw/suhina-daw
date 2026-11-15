@@ -17,6 +17,9 @@ path = "src/main.rs"
 suhina-ui.workspace = true
 suhina-ui-gpu.workspace = true
 suhina-session.workspace = true
+suhina-plugins.workspace = true
+suhina-library.workspace = true
+suhina-model.workspace = true
 suhina-theme-package.workspace = true
 suhina-device-registry.workspace = true
 suhina-device-api.workspace = true
@@ -33,3 +36,6 @@ path = "tests/main.rs"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+suhina-test-support.workspace = true

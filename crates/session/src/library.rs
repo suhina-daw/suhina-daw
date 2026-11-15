@@ -482,8 +482,10 @@ fn file_kind_name(kind: FileKind) -> &'static str {
     if kind == FileKind::Effect { "audio_effect" } else { kind.name() }
 }
 
-/// What an item key is, for a search over pins or recent items.
-fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
+/// What an item key is, for a search over pins or recent items, with the text a search looks
+/// through besides its name: a file's path, or a plug-in's [`plugin_haystack`], found in the
+/// same look-up of the catalog as the plug-in itself.
+fn describe(projects: &mut Projects, item: Item) -> Option<(Found, String)> {
     // A folder of the library, a top one or a sub-folder its index holds: a pinned or tagged
     // folder lists as a folder ([#1254] review: a tagged folder was counted on its tag's row
     // and left out of the tag's place).
@@ -491,15 +493,9 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
         && let Some(root) = projects.file_library_mut().folder_root_of(path)
     {
         let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
-        return Some(Found {
-            name,
-            kind: "folder",
-            detail: None,
-            plugin: false,
-            format: None,
-            folder: Some(root),
-            item,
-        });
+        let haystack = path.display().to_string();
+        let found = Found { name, kind: "folder", detail: None, plugin: false, format: None, folder: Some(root), item };
+        return Some((found, haystack));
     }
     match &item {
         Item::File(path) | Item::Voice(path, _) => {
@@ -508,28 +504,16 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
             if let Item::Voice(_, voice) = &item {
                 name = format!("{name} #{voice}");
             }
-            Some(Found {
-                name,
-                kind: file_kind_name(kind),
-                detail: None,
-                plugin: false,
-                format: None,
-                folder: None,
-                item,
-            })
+            let haystack = path.display().to_string();
+            let kind = file_kind_name(kind);
+            let found = Found { name, kind, detail: None, plugin: false, format: None, folder: None, item };
+            Some((found, haystack))
         }
         Item::Device(id) => {
             let info = suhina_device_registry::info(id)?;
             let kind = role_name(info.role);
-            Some(Found {
-                name: info.name.to_string(),
-                kind,
-                detail: None,
-                plugin: false,
-                format: None,
-                folder: None,
-                item,
-            })
+            let name = info.name.to_string();
+            Some((Found { name, kind, detail: None, plugin: false, format: None, folder: None, item }, String::new()))
         }
         Item::Plugin(spec) => {
             let env = projects.plugin_env();
@@ -537,13 +521,28 @@ fn describe(projects: &mut Projects, item: Item) -> Option<Found> {
             let kind = if crate::is_instrument(plugin) { "instrument" } else { "effect" };
             let detail = Some(format!("{} {}", plugin.format(), plugin.vendor).trim().to_string());
             let format = Some(plugin.plugin_format());
-            Some(Found { name: plugin.name.clone(), kind, detail, plugin: true, format, folder: None, item })
+            let haystack = plugin_haystack(plugin);
+            Some((
+                Found { name: plugin.name.clone(), kind, detail, plugin: true, format, folder: None, item },
+                haystack,
+            ))
         }
         Item::Stock(key) => {
             let name = suhina_device_registry::stock_preset(key)?.preset.name.clone();
-            Some(Found { name, kind: "preset", detail: None, plugin: false, format: None, folder: None, item })
+            Some((
+                Found { name, kind: "preset", detail: None, plugin: false, format: None, folder: None, item },
+                String::new(),
+            ))
         }
     }
+}
+
+/// What a search looks through for a plug-in besides its name: its vendor, its format and the
+/// name of its file. The name a plug-in reports can differ from the one its file and its
+/// installer use (a short code, the vendor's own product name), and a search for either finds it.
+fn plugin_haystack(plugin: &suhina_plugins::scan::PluginInfo) -> String {
+    let file = plugin.path.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
+    format!("{} {} {file}", plugin.vendor, plugin.format())
 }
 
 fn fits(found: &Found, category: Category) -> bool {
@@ -737,11 +736,7 @@ pub fn prepare_search(
         let mut out = Vec::new();
         for key in keys {
             let Some(item) = Item::parse(&key) else { continue };
-            let Some(found) = describe(projects, item) else { continue };
-            let path = match &found.item {
-                Item::File(p) | Item::Voice(p, _) => p.display().to_string(),
-                _ => String::new(),
-            };
+            let Some((found, path)) = describe(projects, item) else { continue };
             if fits(&found, category)
                 && suhina_library::rank(&words, &found.name, &path).is_some()
                 && tagged(projects.file_library_mut(), &key)
@@ -840,8 +835,7 @@ pub fn prepare_search(
                 format: Some(plugin.plugin_format()),
                 folder: None,
             };
-            let haystack = format!("{} {}", plugin.vendor, plugin.format());
-            if let Some(rank) = suhina_library::rank(&words, &plugin.name, &haystack)
+            if let Some(rank) = suhina_library::rank(&words, &plugin.name, &plugin_haystack(plugin))
                 && fits(&found, category)
                 && tagged(projects.file_library_mut(), &found.item.key())
             {
