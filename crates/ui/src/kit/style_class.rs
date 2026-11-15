@@ -281,12 +281,6 @@ pub fn theme_header_tint() -> Option<u8> {
     arrangement()?.integer(Property::HeaderTint).and_then(|v| u8::try_from(v).ok()).filter(|v| *v <= 100)
 }
 
-/// The height under which an Arrangement header keeps Suhina's own layout instead of the theme's
-/// placements (`arrangement { compact-below: 48px }`), so a low track does not overlap.
-pub fn theme_compact_below() -> Option<f32> {
-    arrangement()?.points(Property::CompactBelow).filter(|v| (0.0..=200.0).contains(v))
-}
-
 /// How a device panel's generated parameter list is laid out: the columns of the device's grid
 /// (`device { grid-template-columns: repeat(3, 1fr); }`, at most 8) side by side, each cell as
 /// tall as `device-control`'s `height` (16 to 160 points).

@@ -541,21 +541,19 @@ fn an_editor_change_is_edited_into_the_authors_sheet_and_a_rename_into_theme_jso
     let root = folder("editor-into-sheet");
     let themes = root.join("themes");
     let source = "/* Mine: keep me */\n:root { --accent: #12AB34; }\n\
-                  @media (width < 800px) { browser { display: none; } }\n\
-                  .control-mixer-pan { left: 4px; top: 0px; }\n";
+                  @media (width < 800px) { browser { display: none; } }\n";
     super::tests::hand_written(&themes.join("ink"), "Ink", source);
     let mut files = ThemeFiles::new(Some(themes.clone()));
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
     let mut ink = entry(&entries, "ink").clone();
-    assert_eq!(ink.skin.controls["mixer-pan"].offset().x, 4.0);
-    // A control moved in the app changes only its own declaration in the author's sheet.
-    ink.skin.controls.get_mut("mixer-pan").unwrap().set_offset(eframe::egui::vec2(12.0, 0.0));
+    // Artwork added in the app is a rule added to the author's sheet, which keeps the rest.
+    ink.skin.assets.insert("knob.body".into(), PNG.into());
     ink.name = "Ink Two".into();
     files.write("ink", &ink).unwrap();
     let css = std::fs::read_to_string(themes.join("ink/theme.css")).unwrap();
     assert!(css.starts_with("/* Mine: keep me */\n") && css.contains("@media (width < 800px)"), "{css}");
-    assert!(css.contains("left: 12px") && !css.contains("left: 4px"), "{css}");
+    assert!(css.contains("--accent: #12AB34") && css.contains("assets/knob.body.png"), "{css}");
     assert!(!css.contains("Ink Two") && !themes.join("ink/layout.css").exists(), "{css}");
     // The name is theme.json's; the rest of it stays as it was.
     let (meta, _) = theme::ThemeMeta::parse(&std::fs::read(themes.join("ink/theme.json")).unwrap()).unwrap();

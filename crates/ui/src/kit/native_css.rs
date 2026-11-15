@@ -381,7 +381,7 @@ struct Engine {
     /// Whether this frame hit a limit of the tree, which the trace was told of.
     limited: bool,
     /// Laid-out bar rows by their input (#1372), bounded.
-    rows: HashMap<String, row::Row>,
+    rows: HashMap<u64, row::Row>,
     window: Option<(String, Window)>,
     /// Whether the browser and the detail area follow their splitters, by the window's size and
     /// which regions are there: a splitter drag changes only the content sizes, which lays the

@@ -494,8 +494,8 @@ impl App {
         let button = |index: f32| {
             Rect::from_min_size(Pos2::new(rect.left() + index * 29.0, rect.top()), Vec2::new(28.0, rect.height()))
         };
-        let play = crate::kit::control_layout::place("transport-play", button(0.0), rect);
-        if !crate::kit::control_layout::placement("transport-play").hidden {
+        let play = button(0.0);
+        {
             let response = widgets::button_area(ui, play, Id::unique("play"), "Play");
             let play_style = crate::kit::element::BUTTON
                 .id("play")
@@ -545,8 +545,8 @@ impl App {
             }
             drop(play_style);
         }
-        let stop = crate::kit::control_layout::place("transport-stop", button(1.0), rect);
-        if !crate::kit::control_layout::placement("transport-stop").hidden {
+        let stop = button(1.0);
+        {
             let response = widgets::button_area(ui, stop, Id::unique("stop"), "Stop");
             let stop_style = crate::kit::element::BUTTON.id("stop").response(&response).enter();
             if response.clicked() {

@@ -1486,24 +1486,6 @@ fn a_level_bar_s_fill_can_take_the_track_s_colour() {
     assert!(rects(&shapes).iter().any(|r| r.fill == orange), "the lit part is the track's colour");
 }
 
-#[test]
-fn a_low_track_keeps_its_native_layout() {
-    use crate::kit::control_layout::{native_only, placement};
-    let (theme, _) = super::super::theme::from_css(
-        "arrangement { compact-below: 48px; }\n.control-arrangement-enable { left: -30px; }",
-    );
-    skin::configure(&theme.skin);
-    assert_eq!(super::super::style_class::theme_compact_below(), Some(48.0));
-    let placed = placement("arrangement-enable");
-    assert_ne!(placed, Default::default());
-    {
-        let _low = native_only(true);
-        assert_eq!(placement("arrangement-enable"), Default::default(), "a low track: native");
-    }
-    assert_eq!(placement("arrangement-enable"), placed, "the next track places it again");
-    skin::configure(&skin::Skin::default());
-}
-
 /// The surface of `el`, as a control painted inside it draws it.
 fn surface_now(
     painter: &egui::Painter,

@@ -647,10 +647,6 @@ pub fn solo_button(
     name: &str,
     solo: bool,
 ) -> Option<Action> {
-    if super::control_layout::placement("solo").hidden {
-        return None;
-    }
-    let rect = super::control_layout::place("solo", rect, painter.clip_rect());
     let label = if solo { format!("End solo on {name}") } else { format!("Solo {name}") };
     let response = button_area(ui, rect, id, label);
     // `button#solo`, `[checked]` while soloed: only a rule for that state lights it.
@@ -686,10 +682,6 @@ pub fn cue_button(
     name: &str,
     cue: bool,
 ) -> Option<Action> {
-    if super::control_layout::placement("cue").hidden {
-        return None;
-    }
-    let rect = super::control_layout::place("cue", rect, painter.clip_rect());
     let label = if cue { format!("Stop cueing {name}") } else { format!("Cue {name} on the headphones") };
     let response = button_area(ui, rect, id, label);
     let (hovered, lit) = toggle_motion(ui, &response, cue);
@@ -736,10 +728,6 @@ pub fn arm_button(
     name: &str,
     armed: bool,
 ) -> Option<Action> {
-    if super::control_layout::placement("arm").hidden {
-        return None;
-    }
-    let rect = super::control_layout::place("arm", rect, painter.clip_rect());
     let label = if armed { format!("Disarm {name}") } else { format!("Arm {name} for recording") };
     let response = button_area(ui, rect, id, label).on_hover_text("Make this track ready to record");
     // `button#arm`, `[checked][armed]` while armed: only a rule for that state lights it, so the
@@ -1265,16 +1253,6 @@ fn along_chosen_axis(ui: &Ui, id: egui::Id, moved: Vec2) -> f32 {
         value_drag_shows(ui.ctx(), icon);
     }
     along
-}
-
-impl From<crate::kit::control_layout::Direction> for DragAxis {
-    /// A theme's `direction` for a control.
-    fn from(direction: crate::kit::control_layout::Direction) -> Self {
-        match direction {
-            crate::kit::control_layout::Direction::Vertical => Self::Vertical,
-            crate::kit::control_layout::Direction::Horizontal => Self::Horizontal,
-        }
-    }
 }
 
 /// A number changed by dragging vertically (up raises it), by the wheel over it and by a

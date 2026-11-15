@@ -8,7 +8,7 @@ covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
   - crates/ui/src/kit/artwork.rs
-  - crates/ui/src/kit/control_layout.rs
+  - crates/ui/src/arrangement/arrangement_view/header_layout.rs
   - crates/ui/src/kit/floating.rs
   - assets/themes/default/*.svg
   - assets/themes/examples/*.svg

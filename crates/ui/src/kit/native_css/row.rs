@@ -7,13 +7,30 @@
 //! geometry (gaps, padding, alignment, sizes, `flex-grow`) and may hide an item with
 //! `display: none`, which leaves it out of input as well as painting. Under the theme's sheets,
 //! or the user-agent sheet alone when their layout fails, as the window's grid is.
+//!
+//! The track headers, the mixer strips and the transport lay their parts out through it too
+//! (#1453): a strip is a bar whose items are its parts and the groups they are in, and every strip
+//! of one kind shares one layout ([`Bar::kind_of`]), worked out once a size and a sheet.
 use egui::{Rect, Vec2};
+use std::cell::Cell;
+use std::hash::Hasher;
 use suhina_style::property::Property;
 
 /// Most items one bar lays out.
 pub const MAX_ITEMS: usize = 256;
-/// Most laid-out rows kept, for every bar together; past it the cache starts again.
-const MAX_ROWS: usize = 64;
+/// Most laid-out rows kept, for every bar and strip together; past it the cache starts again.
+const MAX_ROWS: usize = 256;
+
+thread_local! {
+    /// How many rows this thread has laid out, not taken from the cache: for the tests that a
+    /// settled frame lays nothing out again.
+    static COMPUTED: Cell<u64> = const { Cell::new(0) };
+}
+
+/// How many rows have been laid out on this thread so far, cached ones not counted.
+pub fn computed() -> u64 {
+    COMPUTED.with(Cell::get)
+}
 
 /// The bar an item row is laid out in: its element and the box the window gave it.
 #[derive(Clone, Debug, PartialEq)]
@@ -26,11 +43,20 @@ pub struct Bar {
     /// The bar's node in this frame's style tree, when it is entered: its items are then laid out
     /// under the elements around it, as they paint.
     pub node: Option<usize>,
+    /// Whether the bar stands for every element of its kind: laid out without what differs from
+    /// one track to the next (its id, project object and `color`), so they share one layout.
+    pub shared: bool,
+    /// Whether its items are laid out by their `order`, as a strip's parts are; a bar's items keep
+    /// the app's order.
+    pub by_order: bool,
+    /// Whether [`Bar::node`] is the element the bar is in, not the bar itself: a strip that is not
+    /// entered as an element of its own (Main's, under the Launcher).
+    pub inside: bool,
 }
 
 impl Bar {
     pub fn new(name: &'static str, size: Vec2) -> Self {
-        Self { name, id: None, attributes: Vec::new(), size, node: None }
+        Self { name, id: None, attributes: Vec::new(), size, node: None, shared: false, by_order: false, inside: false }
     }
 
     /// The bar as `element`, entered, has it: its attributes and the elements around it.
@@ -38,9 +64,32 @@ impl Bar {
         Self { node: element.node(), ..Self::new(element.name().name(), size) }
     }
 
+    /// A strip of parts (a track header, a mixer strip) as `element`, entered, has it, less what
+    /// tells one track from another, its parts laid out by `order` (#1453). Every strip of the
+    /// same kind, under the same elements, then shares one layout: worked out once a size.
+    pub fn kind_of(element: &crate::kit::element::Entered, size: Vec2) -> Self {
+        Self { shared: true, by_order: true, ..Self::of(element, size) }
+    }
+
+    /// [`Bar::kind_of`] for a strip named `name` in `parent`, entered, that is not entered itself.
+    pub fn under(parent: &crate::kit::element::Entered, name: &'static str, size: Vec2) -> Self {
+        Self { node: parent.node(), inside: true, ..Self::strip(name, size) }
+    }
+
+    /// [`Bar::kind_of`] for a strip that is not entered (no style engine runs): `name`, under
+    /// `html` and `body`.
+    pub fn strip(name: &'static str, size: Vec2) -> Self {
+        Self { shared: true, by_order: true, ..Self::new(name, size) }
+    }
+
     pub fn attribute(mut self, name: &'static str, value: impl Into<String>) -> Self {
         self.attributes.push((name, value.into()));
         self
+    }
+
+    /// The attribute `name` with no value, when `on`: `[narrow]`.
+    pub fn flag(self, name: &'static str, on: bool) -> Self {
+        if on { self.attribute(name, "") } else { self }
     }
 }
 
@@ -145,19 +194,49 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
         let themed = engine.source.is_some() && super::same_source(engine.source.as_ref());
         // The bar and the elements around it: this frame's chain when the bar is entered, else
         // `html` and `body`.
-        let mut all = bar.node.and_then(|node| super::native::chain(&engine, node)).unwrap_or_else(|| {
-            let mut element = super::native::element(bar.name, bar.id, None, Some(1));
-            element.attributes =
-                bar.attributes.iter().map(|(name, value)| ((*name).to_owned(), value.clone())).collect();
-            let mut all = super::native::roots(false);
-            all.push(element);
-            all
-        });
+        let mut all = bar
+            .node
+            .and_then(|node| super::native::chain(&engine, node))
+            .map(|mut all| {
+                if bar.inside {
+                    let parent = all.len().checked_sub(1);
+                    all.push(super::native::element(bar.name, None, None, parent));
+                }
+                all
+            })
+            .unwrap_or_else(|| {
+                let mut element = super::native::element(bar.name, bar.id, None, Some(1));
+                element.attributes =
+                    bar.attributes.iter().map(|(name, value)| ((*name).to_owned(), value.clone())).collect();
+                let mut all = super::native::roots(false);
+                all.push(element);
+                all
+            });
         let at = all.len().checked_sub(1)?;
-        let key = format!("{themed}:{:?}:{:?}:{items:?}", bar.size, all);
+        if let Some(own) = all.last_mut() {
+            if bar.shared {
+                own.id = bar.id.map(str::to_owned);
+                own.object = None;
+                own.attributes.retain(|(name, _)| name != "color");
+            }
+            for (name, value) in &bar.attributes {
+                own.attributes.retain(|(had, _)| had != name);
+                own.attributes.push(((*name).to_owned(), value.clone()));
+            }
+        }
+        let key = {
+            let mut key = Key::default();
+            // Writing to a hasher cannot fail.
+            let _ = std::fmt::Write::write_fmt(
+                &mut key,
+                format_args!("{themed}:{}:{:?}:{:?}:{items:?}", bar.by_order, bar.size, all),
+            );
+            key.0.finish()
+        };
         if let Some(row) = engine.rows.get(&key) {
             return Some(row.clone());
         }
+        COMPUTED.with(|count| count.set(count.get().wrapping_add(1)));
         let size = [bar.size.x.min(16384.0), bar.size.y.min(16384.0)];
         let mut sizes = vec![None; at];
         sizes.push(Some([Some(size[0]), Some(size[1])]));
@@ -169,7 +248,7 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
             all.push(element);
             sizes.push(Some(item.size));
         }
-        let laid = super::native::tree_layout(themed.then_some(&*engine), all, at, &sizes, size, false)?;
+        let laid = super::native::tree_layout(themed.then_some(&*engine), all, at, &sizes, size, bar.by_order)?;
         let (bar_rect, bar_style) = laid.first()?;
         let origin = bar_rect.map_or(Vec2::ZERO, |rect| rect.min.to_vec2());
         let [top, right, bottom, left] = bar_style.insets_in(size[0]);
@@ -211,6 +290,23 @@ pub fn row(bar: &Bar, items: &[Item]) -> Option<Row> {
         engine.rows.insert(key, row.clone());
         Some(row)
     })
+}
+
+/// A row's cache key: what it was laid out from, hashed as it is written, so looking a row up
+/// writes no string.
+struct Key(std::collections::hash_map::DefaultHasher);
+
+impl Default for Key {
+    fn default() -> Self {
+        Self(std::collections::hash_map::DefaultHasher::new())
+    }
+}
+
+impl std::fmt::Write for Key {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.0.write(text.as_bytes());
+        Ok(())
+    }
 }
 
 /// The room inside `bar`'s border and padding (top, right, bottom, left), as the sheet lays it

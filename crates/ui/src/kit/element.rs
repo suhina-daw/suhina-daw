@@ -908,6 +908,7 @@ names! {
     TRACK_HEADER = "track-header";
     TRACK_NAME = "track-name";
     TRACK_NUMBER = "track-number";
+    TRACK_COLOUR = "track-colour";
     FOLD = "fold";
     ADD_TRACK = "add-track";
     TRACK_LANE = "track-lane";
@@ -940,6 +941,7 @@ names! {
     PLAYHEAD = "playhead";
     MIXER = "mixer";
     DEVICE_LIST = "device-list";
+    MIXER_TOGGLES = "mixer-toggles";
     DEVICE_ROW = "device-row";
     DETAIL = "detail";
     CLIP_EDITOR = "clip-editor";

@@ -327,10 +327,6 @@ pub fn track_type(
     color: Color32,
 ) {
     let (notes, audio) = content;
-    if super::control_layout::placement("track-type").hidden {
-        return;
-    }
-    let rect = super::control_layout::place("track-type", rect, painter.clip_rect());
     let label = match content {
         (true, true) => "MIDI and audio track",
         (true, false) => "MIDI track",

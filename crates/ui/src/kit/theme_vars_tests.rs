@@ -157,8 +157,6 @@ fn host_rules_are_read_from_a_sheet_and_the_rest_is_left_to_the_engine() {
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.name, Theme::default().name, "a theme's name is its theme.json's, not its sheet's");
     assert_eq!(theme.skin.assets.get("knob.body").map(String::as_str), Some("assets/knob.body.svg"));
-    assert_eq!(theme.skin.controls["mixer-pan"].offset().x, 4.0);
-    assert!(!theme.skin.controls["mixer-pan"].hidden, "a rule in @media is not a placement");
 }
 
 #[test]
@@ -202,15 +200,6 @@ fn a_theme_may_put_the_track_headers_on_a_side() {
     assert_eq!(crate::kit::style_class::theme_track_headers_left(), Some(true));
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
     assert_eq!(crate::kit::style_class::theme_track_headers_left(), None);
-}
-
-#[test]
-fn a_list_of_placement_selectors_places_each_control() {
-    let mut theme = Theme::default();
-    let css = ".control-arrangement-send-1, .control-arrangement-send-2 { display: none; }";
-    assert!(theme_css::read_host_rules(&mut theme, css).is_empty());
-    assert!(theme.skin.controls["arrangement-send-1"].hidden);
-    assert!(theme.skin.controls["arrangement-send-2"].hidden);
 }
 
 #[test]
@@ -258,21 +247,6 @@ fn a_button_may_have_artwork_of_its_own_per_state() {
     assert!(theme.skin.assets.contains_key("button.record.on"), "{:?}", theme.skin.assets.keys().collect::<Vec<_>>());
     assert!(crate::kit::skin::valid_role("button.play.hover"));
     assert!(!crate::kit::skin::valid_role("button.nothing"));
-}
-
-#[test]
-fn layout_css_holds_only_the_placements_that_differ_from_the_sheet() {
-    let sheet = ".control-mixer-pan { anchor-bottom: mixer-toggles top 6px; }\n\
-                 .control-mixer-name { width: 80px; }";
-    let (from_sheet, _) = crate::kit::theme::from_css(sheet);
-    let mut moved = from_sheet.clone();
-    let mut name = moved.skin.controls["mixer-name"];
-    name.set_offset(egui::vec2(0.0, 8.0));
-    moved.skin.controls.insert("mixer-name".into(), name);
-    let layout = theme_css::layout(&moved, &from_sheet);
-    assert!(layout.contains(".control-mixer-name"), "{layout}");
-    assert!(!layout.contains(".control-mixer-pan"), "the sheet's own placement is not copied: {layout}");
-    assert!(theme_css::layout(&from_sheet, &from_sheet).is_empty());
 }
 
 /// Suhina Studio's accent, as the core sheet's initial value writes it.

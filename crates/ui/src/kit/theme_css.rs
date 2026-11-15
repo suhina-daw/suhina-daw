@@ -188,23 +188,6 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                     }
                     None => Err("artwork fps must be 1..30"),
                 },
-                _ if selector.starts_with(".control-") => {
-                    let name = selector.trim_start_matches(".control-");
-                    if !super::control_layout::valid_name(name)
-                        || (!theme.skin.controls.contains_key(name) && theme.skin.controls.len() >= 256)
-                    {
-                        Err("invalid or excessive native control placement")
-                    } else {
-                        let mut next = theme.skin.controls.get(name).copied().unwrap_or_default();
-                        match next.set(property, value) {
-                            Ok(()) => {
-                                theme.skin.controls.insert(name.into(), next);
-                                Ok(())
-                            }
-                            Err(error) => Err(error),
-                        }
-                    }
-                }
                 // A track colour an earlier version kept in the theme: tracks keep their own now,
                 // so it is left behind without a word, and the theme still converts.
                 ":root" if super::theme::is_former_track_colour(property.trim_start_matches("--")) => Ok(()),
@@ -356,7 +339,6 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
             }
         }
     }
-    super::control_layout::validate_anchors(&mut theme.skin.controls, &mut warnings);
     warnings
 }
 
@@ -401,40 +383,6 @@ pub fn export(theme: &Theme) -> String {
         if let Some(value) = value {
             css.push_str(&format!("session {{ {name}: {value}px; }}\n"));
         }
-    }
-    for (name, placement) in &theme.skin.controls {
-        css.push_str(&format!(".control-{name} {{ left: {}px; top: {}px;", placement.offset().x, placement.offset().y));
-        css.push_str(&format!(
-            " bottom: {}; display: {};",
-            placement.bottom.map_or("auto".into(), |v| format!("{v}px")),
-            if placement.hidden { "none" } else { "block" }
-        ));
-        css.push_str(&format!(" right: {};", placement.right.map_or("auto".into(), |v| format!("{v}px"))));
-        for (key, value) in [("width", placement.width), ("height", placement.height)] {
-            if key == "width" && placement.full_width {
-                css.push_str(" width: 100%;");
-                continue;
-            }
-            if key == "height" && placement.full_height {
-                css.push_str(" height: 100%;");
-                continue;
-            }
-            // The host-drawn EQ curve keeps its own size everywhere: its display and its
-            // strips are in the control's own points, so a theme's `width` or `height` for
-            // it would stretch the placed rectangle past them.
-            if name == "eq-curve" && (key == "width" || key == "height") {
-                continue;
-            }
-            css.push_str(&format!(" {key}: {};", value.map_or("auto".into(), |v| format!("{v}px"))));
-        }
-        css.push_str(&format!(
-            " direction: {};",
-            if placement.direction == super::control_layout::Direction::Horizontal { "horizontal" } else { "vertical" }
-        ));
-        for (edge, anchor) in placement.anchors.iter() {
-            css.push_str(&format!(" {}: {anchor};", super::control_layout::anchor_property(edge)));
-        }
-        css.push_str(" }\n");
     }
     if let Some(toolbar) = &theme.skin.toolbar {
         css.push_str(&format!(
@@ -529,11 +477,9 @@ pub fn artwork_selector(role: &str) -> String {
     suhina_theme_package::elements::selector_of_role(role)
 }
 
-/// What Suhina's own editors set beyond settings and `sheet_theme` does not say: control
-/// placements and anchors, styles and artwork, as rules for `theme.css`. Empty when
-/// there is nothing to write.
+/// What Suhina's own editors set beyond settings and `sheet_theme` does not say: artwork, as
+/// rules for `theme.css`. Empty when there is nothing to write.
 pub fn layout(theme: &Theme, sheet_theme: &Theme) -> String {
-    let full = export(theme);
     let mut css = String::new();
     // Artwork is compared by where it is kept: an edited image keeps its file, so only artwork
     // the sheet does not name needs a rule here.
@@ -549,20 +495,6 @@ pub fn layout(theme: &Theme, sheet_theme: &Theme) -> String {
             css.push_str(&artwork_rule(role, "none").replace("url(\"none\")", "none"));
         }
     }
-    let structure = |text: &str| -> Vec<String> {
-        text.lines()
-            // The toolbar's arrangement is `theme.json`'s (`theme::file_meta`), not the sheet's.
-            .filter(|line| line.starts_with(".control-") || is_style_line(line))
-            .map(str::to_owned)
-            .collect()
-    };
-    // Only the rules that differ from the sheet's: a control moved in the app, not a copy of
-    // every placement the sheet already makes.
-    let theirs: std::collections::BTreeSet<String> = structure(&export(sheet_theme)).into_iter().collect();
-    for line in structure(&full).into_iter().filter(|line| !theirs.contains(line)) {
-        css.push_str(&line);
-        css.push('\n');
-    }
     css
 }
 
@@ -571,22 +503,6 @@ pub fn layout(theme: &Theme, sheet_theme: &Theme) -> String {
 /// comments, `@media` rules and hand-written parts stay as they are (`suhina_style::edit`).
 pub fn edit_sheet(source: &str, before: &str, after: &str) -> Result<String, String> {
     suhina_style::edit::update(source, before, after)
-}
-
-fn is_style_line(line: &str) -> bool {
-    line.split_once(" {").is_some_and(|(selector, rest)| {
-        !rest.contains("image:") && element_selector(selector) && !selector.starts_with(".control-")
-    }) && !line.starts_with(":root")
-        && !line.starts_with("meter ")
-        && !line.starts_with("artwork ")
-        && !line.starts_with("theme ")
-        && !line.starts_with("liquid ")
-        && !line.starts_with("gradient-")
-        && !line.starts_with("session ")
-        && !line.starts_with("window ")
-        // The toolbar's arrangement (`order`, `hidden`, `offset-*`) is `theme.json`'s, not a
-        // style; any other rule on `toolbar` is one.
-        && !line.strip_prefix("toolbar { ").is_some_and(|rest| rest.starts_with("order:") || rest.starts_with("offset-"))
 }
 
 /// `css` with each `@layer NAME { … }` block replaced by its rules, nested layers too (at most
@@ -649,7 +565,6 @@ pub fn former_property(property: &str) -> Option<&'static str> {
         "--suhina-track-height" => "track-height",
         "--suhina-header-min-width" => "header-min-width",
         "--suhina-header-tint" => "header-tint",
-        "--suhina-compact-below" => "compact-below",
         "--suhina-param-label" => "param-label",
         "--suhina-gap" => "gap",
         _ => return None,
@@ -696,8 +611,8 @@ pub fn legacy_rule(selector: &str, key: &str, value: &str) -> Option<String> {
         .then(|| format!("{selector} {{ {name}: {value}; }}"))
 }
 
-/// Reads the rules of a theme's own sheet that Suhina reads itself (its name, artwork, control
-/// placements and the toolbar); everything else is for the style engine
+/// Reads the rules of a theme's own sheet that Suhina reads itself (its name, artwork and the
+/// toolbar); everything else is for the style engine
 /// and is left alone. Rules inside `@layer` blocks count like the rest (a layer orders rules, it
 /// does not make them conditional); conditional groups (`@media`, `@supports`) are skipped.
 pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
@@ -743,7 +658,7 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
         if rules > 1024 || selector.starts_with('@') || body.contains('{') {
             continue;
         }
-        // A list of selectors (`.control-a, .control-b`) is each of them.
+        // A list of selectors (`play, stop`) is each of them.
         for selector in selector.split(',').map(str::trim).filter(|s| !s.is_empty()).take(64) {
             for declaration in body.split(';').filter(|d| !d.trim().is_empty()) {
                 let Some((property, _)) = declaration.split_once(':') else { continue };
@@ -774,8 +689,7 @@ pub fn read_host_rules(theme: &mut Theme, css: &str) -> Vec<String> {
                     });
                     continue;
                 }
-                let wanted = property == "image" || selector.starts_with(".control-");
-                if wanted {
+                if property == "image" {
                     host.push_str(&format!("{selector} {{ {declaration}; }}\n"));
                 }
             }

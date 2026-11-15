@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Suhina's style language: bounded text in, values out. No GUI or file I/O.
-pub mod anchor;
 pub mod artwork;
 pub mod cascade;
 pub mod edit;
