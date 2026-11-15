@@ -254,6 +254,41 @@ refused or suspended, never by losing its edits.
   elements with their states (`slot[kind="stop"][queued]`, `grid-line[kind="beat"]`), and a
   theme that leaves them alone looks as before.
 
+- Themes style the control bar, the tabs, the menus, Settings, the start page and the dialogs on
+  their own: their words are `label` kinds, their title rows, lists, colour swatches and theme cards
+  are elements, every lit switch (a track's on switch, the computer keyboard, a Settings switch or
+  chosen segment) has a lit look a theme states, and the detail area's splitter takes
+  `[closed]` while the area is closed; a theme that leaves them alone looks as before.
+- Themes style the browser, the clip panels, the follow action, device and device group panels,
+  expanded panels and the piano roll's keys and toolbar on their own: their dim words, captions,
+  titles and values are `label` kinds, a theme states their switches' lit look, and
+  the Arrangement's header edge is a divider a theme can colour; a theme that leaves them alone
+  looks as before.
+- Themes style egui's own widgets everywhere: a rule for `button` (`:hover`, `:active`,
+  `:disabled`, `[checked]`), `text-input` (`:focus`), `menu` or `scroll-bar` reaches the scroll
+  bars, text fields, drop-downs, check boxes, menus and pop-ups the views draw outside a style
+  scope too, rebuilt only when the styles reset; a theme that leaves them alone looks as before.
+- Suhina's own look is a base style sheet under every theme: a theme's rules always win over it, a
+  theme that sets only colour variables keeps every state, a rule like `mixer { --text-value: gold; }`
+  colours a region through its variables, `"base": "none"` in `theme.json` leaves it out, and a
+  `user.css` that sets `--accent` recolours Suhina Studio too. Every built-in theme looks as before, bar a few lit states in the layout showcase themes (Suhina Meadow, Blocks and Sheet), which are rewritten with the layout system.
+- A theme keeps only the colours it sets, as the custom properties of its style sheet
+  (`--accent`, `--window-background`): any other is Suhina Studio's, a saved or copied theme writes
+  just those, and the old token names (`--surface-0`, `--line`) are no longer read. Every built-in
+  theme looks as before, bar a few lit states in the layout showcase themes (Suhina Meadow, Blocks
+  and Sheet), which are rewritten with the layout system.
+- Themes lay out the track headers, the mixer strips and the transport in CSS, as the window and
+  the bars: `mixer meter { order: -1 }` puts the meter before the fader,
+  `mixer-toggles { flex-direction: column }` stacks solo, cue and arm, `display: none` takes a
+  part away from painting and the pointer, and a fader laid out across the strip drags sideways.
+  A theme with no rule lays out as before. Control placements (`.control-*` rules with offsets
+  and anchors) are gone.
+- Themes style more shared controls on their own: a theme states the lit look of a track's
+  solo, cue and arm (a rule for every button reaches them too), and dials, the swing slider, text
+  fields' underlines, routing fields (`dropdown[kind="subtle"]`), dialog buttons and a typed
+  number (`text-input[kind="typed"]`) take their elements' rules; a theme that leaves them alone
+  looks as before.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
