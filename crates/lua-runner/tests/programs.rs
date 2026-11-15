@@ -453,11 +453,12 @@ fn a_fader_storm_through_the_pipeline_lands_at_its_last_value() {
         let cc = 64 + (value % 64);
         fixture.midi.play("APC in", 1, &[0xB0, 0x07, cc]);
     }
-    // The frame pump: enough looks for the storm's round trips (each command answers before
-    // the runner takes the next CC). What lands is the oracle: CC 99 is -60 + 99/127 of the
-    // fader's range, -8.6 dB — a send-back marker could not be waited on, being drained by
-    // the very look that writes it out.
-    fixture.projects.test_extensions_pump_frames(2000);
+    // The frame pump: the storm drains in a look or two now — the runner answers queued
+    // commands at once (the storm fast path), so the session's coalescing finally sees the
+    // whole stream and keeps the newest per gesture. What lands is the oracle: CC 99 is
+    // -60 + 99/127 of the fader's range, -8.6 dB — a send-back marker could not be waited on,
+    // being drained by the very look that writes it out.
+    fixture.projects.test_extensions_pump_frames(50);
     let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
     assert_eq!(tracks[0]["volume_db"], json!(-8.6), "{tracks}");
 }

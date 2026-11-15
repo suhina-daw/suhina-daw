@@ -578,12 +578,26 @@ fn register_api(lua: &Lua, runner: &Shared<Run>, link: &Shared<Link>) -> Result<
                 _ => return Err(mlua::Error::runtime("the gesture is a string or nil")),
             };
             let token = new_token(&runner);
-            runner.borrow_mut().waiting = Some((token, true));
+            // A storm queued while the last handler waited: answer at once as accepted, and
+            // let the real answers arrive to no one. Waiting here would meter the storm out at
+            // one round trip per answer — a fader's drag replaying for seconds, one value per
+            // look — while the session's coalescing, made for exactly this, never sees more
+            // than one command queued. With the fast answer the queued messages emit their
+            // commands in one burst, the session keeps the newest per gesture, and the storm
+            // drains in a look or two.
+            let storm = !runner.borrow().queued.is_empty();
+            if !storm {
+                runner.borrow_mut().waiting = Some((token, true));
+            }
             protocol(emit(&link, &runner, &Message::Command { token, id, params, gesture }))?;
-            let (ok, error) = match protocol(pump(&link, &runner, lua))? {
-                Answer::Command { ok, error } => (ok, error),
-                Answer::Read { .. } => {
-                    return Err(mlua::Error::runtime("the answer was another kind's"));
+            let (ok, error) = if storm {
+                (true, None)
+            } else {
+                match protocol(pump(&link, &runner, lua))? {
+                    Answer::Command { ok, error } => (ok, error),
+                    Answer::Read { .. } => {
+                        return Err(mlua::Error::runtime("the answer was another kind's"));
+                    }
                 }
             };
             Ok((ok, error))

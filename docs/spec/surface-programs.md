@@ -77,7 +77,7 @@ Runner → Suhina:
 | `hello` | `version` | The handshake's answer. |
 | `ready` | — | The script loaded and registered its handlers; Suhina may start delivering `port_message`s. |
 | `send` | `port`, `bytes` | Raw bytes (hex) to write on one of the program's output ports. Never answered: Suhina queues it and drains the queue; the script never waits on a send-back. Send-backs leave in the order the script made them, ahead of any later message from the runner. |
-| `command` | `token`, `id`, `params`, `gesture` | Run the command `id` with the parameters object, the same command the window, CLI and MCP dispatch, undo included. `gesture`, when present, groups the stream into one undo step (ADR 0019 › Amendment: one gesture), ended by the command `history.endGesture` like any caller's. |
+| `command` | `token`, `id`, `params`, `gesture` | Run the command `id` with the parameters object, the same command the window, CLI and MCP dispatch, undo included. `gesture`, when present, groups the stream into one undo step (ADR 0019 › Amendment: one gesture), ended by the command `history.endGesture` like any caller's. While the runner's wait queue already holds a storm, the runner answers `command`s at once as accepted and does not wait: their real answers arrive to no one, and the session coalesces the storm to its newest value per look, so a fader's drag drains in a look or two instead of one round trip each. |
 | `read` | `token`, `id`, `params` | Run a reading command and answer its value. |
 | `subscribe` | `token`, `id`, `params` | Watch a reading command's result: the first `state` answers with the value now, then one comes each time the result changes from the last one sent. |
 | `unsubscribe` | `token` | Stop watching; never answered. |
