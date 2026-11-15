@@ -43,9 +43,10 @@ URL = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s)\]]+|www\.[^\s)\]]+")
 LINK = re.compile(r"\]\(\s*([^)\s]*)")
 # Markdown decodes character references in links (`https&#58;//…`) and resolves reference-style
 # links (`[x][r]` with `[r]: url`), and neither form is caught by URL or LINK, so both are refused:
-# the notes have no use for them.
+# the notes have no use for them. A definition can follow a block quote's `>` or a list marker, so
+# any `]:` is refused, not only one at the start of a line; the notes' own links are `](`.
 CHARACTER_REFERENCE = re.compile(r"&(#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);")
-REFERENCE_DEFINITION = re.compile(r"^ {0,3}\[[^\]]+\]:", re.MULTILINE)
+REFERENCE_DEFINITION = re.compile(r"\]:")
 ALLOWED_URL = "https://github.com/suhina-daw/suhina-daw/"
 NOTES_LIMIT = 20000
 # Discord allows 4096 characters in an embed's description; a little is kept free.
@@ -72,11 +73,14 @@ def problems(tag: str, notes: str) -> list[str]:
         found.append("the notes contain @, which could mention someone")
     if "![" in notes:
         found.append("the notes contain an image")
-    if CHARACTER_REFERENCE.search(notes):
+    # Markdown drops the backslash of an escape (`https\://` is `https://`), so the link checks read
+    # the notes without backslashes: what they find is at least what a renderer would link.
+    plain = notes.replace("\\", "")
+    if CHARACTER_REFERENCE.search(plain):
         found.append("the notes contain a character reference such as &#58;")
-    if REFERENCE_DEFINITION.search(notes):
-        found.append("the notes contain a reference-style link definition, [label]: …")
-    for url in dict.fromkeys(URL.findall(notes) + LINK.findall(notes)):
+    if REFERENCE_DEFINITION.search(plain):
+        found.append("the notes contain ]:, as in a reference-style link definition [label]: …")
+    for url in dict.fromkeys(URL.findall(plain) + LINK.findall(plain)):
         if not url.startswith(ALLOWED_URL):
             found.append(f"the notes link outside this repository: {url}")
     return found
