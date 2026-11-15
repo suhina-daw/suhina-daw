@@ -342,7 +342,12 @@ pub struct Extensions {
 /// parameters, and the value last pushed — none yet, for a fresh one.
 struct Sub {
     program: String,
+    /// The script's own token, echoed back on every push.
     token: u64,
+    /// The program handle's generation the subscribe came from: a restart's fresh script
+    /// subscribes with the same script tokens, and the old handle's records would swallow
+    /// its first push (their `last` already holds the value) if they lived on.
+    handle: u64,
     cmd: String,
     params: Value,
     last: Option<Value>,
@@ -524,7 +529,13 @@ impl Extensions {
             // subscribe past it, so this one only guards what crosses the wire.
             let live = self.subs.iter().filter(|sub| sub.program == program).count();
             if live < programs::MAX_SUBSCRIPTIONS {
-                self.subs.push(Sub { program, token, cmd, params, last: None });
+                // The subscribe binds to the handle that is running now; an older
+                // generation's records go — a restart's fresh script re-subscribes with the
+                // same script tokens, and the old `last` values would swallow its first
+                // push, leaving its reads nil (the controller dark) until something moved.
+                let handle = self.program(&program).map(|h| h.token()).unwrap_or(0);
+                self.subs.retain(|sub| !(sub.program == program && sub.handle != handle));
+                self.subs.push(Sub { program, token, handle, cmd, params, last: None });
             }
         }
         for (program, token) in unsubscribed {

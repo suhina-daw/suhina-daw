@@ -282,6 +282,24 @@ fn a_restarted_program_hears_its_first_state_again() {
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1], vec![0xB1, 1, 1]]);
 }
 
+/// `extensions.restart` replaces the handle without the old one going away first: the fresh
+/// script's subscriptions (the same script tokens) must not bind to the old handle's records,
+/// whose `last` values would swallow the first push — the controller dark until something
+/// moved in the project.
+#[test]
+fn a_restarted_by_hand_program_hears_its_first_state_again() {
+    let mut fixture = Fixture::claiming("handrestart", SCRIPT_SUBSCRIBE);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.test_extensions_pump_frames(5);
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1]]);
+    // The user's restart: the command a button and the CLI run.
+    fixture.projects.execute("extensions.restart", &json!({ "id": "handrestart" })).expect("restarted");
+    fixture.projects.test_extensions_pump_frames(20);
+    // The fresh script heard the grid again, though nothing had moved.
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1], vec![0xB1, 1, 1]]);
+}
+
 fn find(listed: &Value, id: &str) -> Option<Value> {
     listed["extensions"].as_array()?.iter().find(|e| e["id"] == id).cloned()
 }
