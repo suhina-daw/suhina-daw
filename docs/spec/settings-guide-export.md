@@ -3,7 +3,7 @@ description: Source-owned settings help, its versioned website export and the co
 read_when: website settings, settings.json export, settings help, web guide, documentation synchronization, settings-guide CI
 type: spec
 status: current
-last_verified: 2026-10-21
+last_verified: 2026-11-15
 covers:
   - scripts/settings_guide.py
   - scripts/test_settings_guide.py
