@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-13
+last_verified: 2026-11-14
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -1193,8 +1193,9 @@ ordinary CSS, in a cascade tier of their own under the theme.
    every cascade, so `var(--accent)` always resolves. The base sheet moves in what was the host's
    beside the user-agent sheet (the text colour and size of `html, body`, the colours of
    `knob-body`, `fader-cap` and `fader-rail`, the bars' border colour) and the user-agent sheet's
-   colours (the browser's icons and the sample map's kinds), each of those now a core variable
-   of its own (`--browser-icon-midi`, `--sample-kick` …) with its earlier value.
+   colours (the browser's icons, the sample map's kinds and the muted Arrangement clip's and
+   track header's grey), each of those now a core variable of its own (`--browser-icon-midi`,
+   `--sample-kick`, `--clip-mutedBackground` …) with its earlier value.
 3. **A theme can opt out** of the base sheet with `"base": "none"` in its `theme.json`
    (`ThemeMeta::base`): it then gets the user-agent sheet's bare look under its own rules. The
    theme's colour map and the core registrations still apply.

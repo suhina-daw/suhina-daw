@@ -36,6 +36,10 @@
 @property --track-mutedBackground { syntax: "<color>"; initial-value: #21201D; }
 @property --pan-background { syntax: "<color>"; initial-value: #1F1E1C; }
 @property --pan-centre { syntax: "<color>"; initial-value: #817F7A; }
+@property --clip-mutedBackground { syntax: "<color>"; initial-value: #A9A6A0; }
+@property --clip-mutedSelectedBackground { syntax: "<color>"; initial-value: #BDBAB4; }
+@property --track-headerMutedBackground { syntax: "<color>"; initial-value: #A9A6A0; }
+@property --track-headerMutedSelectedBackground { syntax: "<color>"; initial-value: #B5B2AC; }
 @property --browser-icon-midi { syntax: "<color>"; initial-value: #F2D541; }
 @property --browser-icon-sample { syntax: "<color>"; initial-value: #4FC3F7; }
 @property --browser-icon-instrument { syntax: "<color>"; initial-value: #B38BFF; }

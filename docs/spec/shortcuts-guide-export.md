@@ -3,7 +3,7 @@ description: Source-owned version-one shortcut data for the Suhina website, its 
 read_when: website shortcuts, shortcuts.json, keyboard guide export, shortcut documentation coverage
 type: spec
 status: current
-last_verified: 2026-10-21
+last_verified: 2026-11-15
 covers:
   - scripts/shortcuts_guide.py
   - scripts/test_shortcuts_guide.py
@@ -53,6 +53,9 @@ invalidates all authored fingerprints so a reviewer must verify those rules befo
 implementation/spec `references` and the checked fingerprint. Read `keymap.rs`, action dispatch
 in `app.rs`, relevant piano-roll and command implementations, and `docs/shortcuts.md` and the
 matching specs. Where implementation differs from older prose, document the implementation.
+A description longer than a few sentences is split into paragraphs by topic, separated by a blank
+line, and a long one gets headings: a paragraph that starts with `## ` is a heading over the
+paragraphs after it. The website sets each paragraph and heading on its own.
 The fingerprint detects keymap metadata and algorithm changes, not every downstream behavioral
 change: implementation changes still require a documentation review.
 

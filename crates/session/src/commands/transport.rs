@@ -30,6 +30,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "transport.setTimeSignature",
+        label: "Set the time signature the song starts in (bar 1); later changes stay at their bars",
+        params: &[
+            param("numerator", ParamType::Integer, "beats in a bar, 1 to 99"),
+            param("denominator", ParamType::Integer, "the note value of a beat: 1, 2, 4, 8 or 16"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::tempo::set_start_signature,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "transport.setLoop",
         label: "Set the arrangement's loop region, the span playback repeats while looping is on",
         params: &[

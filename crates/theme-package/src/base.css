@@ -239,6 +239,13 @@ arrangement track-header[kind="main"] { background-color: var(--panel-background
 arrangement track-header[kind="main"][selected] { background-color: var(--control-activeBackground); }
 arrangement track-number { color: var(--text-secondary); }
 arrangement clip[recording] { border-color: var(--recording); color: var(--text-primary); }
+/* A muted clip (turned off, or on a muted track) and a muted track's header are grey whatever
+   their colour, a little lighter while selected, so they never read as a darker shade of what
+   plays (#1393). In the Arrangement only: a deactivated Launcher clip keeps its own look. */
+arrangement clip[muted] { background-color: var(--clip-mutedBackground); }
+arrangement clip[muted][selected] { background-color: var(--clip-mutedSelectedBackground); }
+arrangement track-header[muted] { background-color: var(--track-headerMutedBackground); }
+arrangement track-header[muted][selected] { background-color: var(--track-headerMutedSelectedBackground); }
 clip-gain { background-color: var(--control-background); color: var(--text-value); }
 clip-gain:hover { background-color: var(--control-hoverBackground); }
 clip-fade-handle { background-color: var(--text-secondary); }

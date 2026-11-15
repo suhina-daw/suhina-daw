@@ -13,6 +13,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             param("bar", ParamType::Integer, "bar number, from 2 (bar 1 has the start signature)"),
             param("numerator", ParamType::Integer, "beats in a bar, 1 to 99"),
             param("denominator", ParamType::Integer, "the note value of a beat: 1, 2, 4, 8 or 16"),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::tempo::add_signature,

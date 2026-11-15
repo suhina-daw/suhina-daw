@@ -85,3 +85,65 @@ fn the_control_bar_records_into_the_arrangement_and_sets_the_count_in() {
     harness.run_steps(3);
     assert_eq!(harness.state().session().map(Session::count_in_bars), Some(2));
 }
+
+#[test]
+fn the_record_key_records_into_the_arrangement_and_ends_the_take() {
+    let mut renderer =
+        Renderer::stopped(&demo_project(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+    let mut harness = app_with_engine(&mut renderer);
+    let records = |h: &Harness<'static, App>| h.state().session().is_some_and(Session::records_arrangement);
+    assert_eq!(harness.state().keymap().binding_text("transport.toggleRecord").as_deref(), Some("F9"));
+    harness.get_by_label("Arm Keys for recording").click();
+    harness.run_steps(3);
+    harness.key_press(egui::Key::F9);
+    harness.run_steps(3);
+    assert!(records(&harness), "the key starts recording, as the record button does");
+    render_a_block(&mut renderer);
+    harness.key_press(egui::Key::F9);
+    harness.run_steps(3);
+    assert!(!records(&harness), "and ends the take");
+}
+
+#[test]
+fn the_arm_key_arms_the_selected_track_and_disarms_it() {
+    use suhina_engine::model::TrackId;
+    use suhina_ui::settings::keymap::{Keymap, Shortcut};
+    let mut renderer =
+        Renderer::stopped(&demo_project(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+    let mut harness = app_with_engine(&mut renderer);
+    let key = Shortcut::new(egui::Modifiers::SHIFT, egui::Key::R);
+    let mut keymap = Keymap::default();
+    keymap.set("selection.arm", vec![key]);
+    harness.state_mut().set_keymap(keymap);
+    harness.run();
+    let armed = |h: &Harness<'static, App>| {
+        let mut armed = h.state().session().map(Session::armed).unwrap_or_default();
+        armed.sort();
+        armed
+    };
+    let press = |h: &mut Harness<'static, App>| {
+        h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::R);
+        h.run_steps(3);
+    };
+    let select = |h: &mut Harness<'static, App>, name: &str| {
+        h.get_by_label(&format!("Track {name}")).click();
+        h.run_steps(3);
+    };
+    select(&mut harness, "Keys");
+    press(&mut harness);
+    assert_eq!(armed(&harness), [TrackId(3)]);
+    // Arming another track disarms the one armed before, as a click on its arm button does.
+    select(&mut harness, "Bass");
+    press(&mut harness);
+    assert_eq!(armed(&harness), [TrackId(2)]);
+    press(&mut harness);
+    assert_eq!(armed(&harness), [], "pressed again, it disarms");
+    // A return track records nothing: the key leaves the arm and says why.
+    select(&mut harness, "A Reverb");
+    press(&mut harness);
+    assert_eq!(armed(&harness), []);
+    match harness.state().status() {
+        suhina_ui::Status::Hint(message) => assert!(message.contains("arm"), "{message}"),
+        other => panic!("expected a hint, got {other:?}"),
+    }
+}

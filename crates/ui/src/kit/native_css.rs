@@ -24,8 +24,8 @@ mod diagnostics;
 mod geometry;
 mod native;
 
-pub use native::base_color;
 pub(super) use native::user_agent;
+pub use native::{base_background, base_color};
 mod paint;
 pub mod row;
 mod shadows;

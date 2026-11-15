@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-14
+last_verified: 2026-11-15
 covers:
   - crates/session/src/commands.rs
   - crates/session/src/colours.rs
@@ -182,9 +182,10 @@ selection (a double-click there still makes a clip, › Making an empty clip). T
 selection stays, so the detail area shows the selected track's devices (or its hint); it does not
 close or hide the detail area ([clip editor](ui-clip-editor.md) › Least height and closing).
 
-A clip shows what it holds at every lane height, down to the lane's least 20 px: a MIDI clip draws
-a line per note in the strip it has under its name, and from below 30 px over the name's row; an
-audio clip its waveform the same way ([components](../design/components.md) › MIDI marks).
+A clip on a lane tall enough for a name bar (36 px) shows what it holds under its name: a MIDI clip
+a line per note, an audio clip its waveform ([components](../design/components.md) › MIDI marks).
+On a lower lane, down to the least 20 px, the strip is too thin for either to read, so the clip
+shows its name in the body instead (› Clip edges).
 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
@@ -308,6 +309,14 @@ Let go, it is
   drawn as the clip itself, in its colour, one colour all along; where each pass starts it has a
   small notch at its top edge and a continuous vertical line in the leading edge's shade, so the repeats read as
   blocks even in an empty clip (#700). A MIDI clip's notes are drawn in every pass.
+- On a lane too low for a name bar (under 36 px), a clip shows its name in its body, the track's
+  name when the clip has none, and neither notes nor a waveform: the strip is too thin for them to
+  read. On a taller lane the name stays in its bar, and a MIDI clip's notes, a row per pitch the clip
+  uses (the keys between take no room), give way once the strip under the name leaves a row under
+  a point (rows under 2 points let the 2-point notes overlap a little), or once they crowd into a
+  smear, their starts in view under a point apart (sixteenths at the opening zoom stay) (notes that start together, a
+  chord, count once); an audio clip keeps its waveform. One or the other is drawn, never the name
+  over faint notes.
 - The right edge is one handle over the clip's full height; there is no separate loop handle
   at the corner (#700). The loop is turned on in the clip column (› Clip column in
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then
@@ -441,8 +450,26 @@ replaces what it covers unless stacked. Both are `clip.copy` then `clip.paste`
 
 ## Clips off
 
-`clip.setEnabled {clips, enabled}` turns clips on or off: an off clip is drawn dimmed, plays
-nothing and does not sound in a render, so it works as a clip mute. The 0 key turns the selection off,
+`clip.setEnabled {clips, enabled}` turns clips on or off: an off clip plays nothing and does not
+sound in a render, so it works as a clip mute. An off clip, and every clip on a muted track, is
+drawn grey whatever its colour, so it never reads as a darker shade of a clip that plays (#1393):
+the user-agent sheet's `arrangement clip[muted]` background (`#A9A6A0`, `#BDBAB4` with
+`[selected]`), which a theme restyles with a rule of its own; the rule is the Arrangement's, so a
+deactivated Launcher clip keeps its own look
+([theme skins](theme-skins.md) › The user-agent sheet). Its colour stays in the project and comes
+back when it plays again; while it is grey it stays down the clip's leading edge, so the clip is
+still known by it, and its notes and waveform step back. The two kinds of muted clip differ:
+
+- **A clip turned off itself** is grey to its name bar, with a mute mark (a ring crossed by a
+  slash) before its name, in the name's ink on the bar as it is drawn (a theme's `clip-name`
+  background and colour included). The mark tells it from a clip whose colour is grey. A clip
+  too low for a name bar shows its name in its body, and the mark goes before that name on its
+  line, the name starting after it, so a low lane tells the two kinds apart too; a clip too small
+  to hold it has none.
+- **A clip that plays on a muted track** keeps its colour in its name bar, as it has it when the
+  track plays, and has no mark: the track's header says the track is off.
+
+A muted clip never shows as playing. The 0 key turns the selection off,
 or back on when nothing in it plays; a clip's menu says Mute or Unmute for the clip it fell on.
 ## Splitting
 
@@ -758,7 +785,9 @@ that marker to the next one and turns looping on (`transport.setLoop {start, end
 so a section loops with one click; the last marker only jumps. Dragging it moves it (`marker.move` when let go) on the same grid a
 ruler click uses (Alt held: free). A right-click on a marker opens its menu: a field with its name
 and **Rename** (or Enter), **Jump to marker**, **Delete marker**. A right-click on the ruler or on
-an empty part of the marker row offers **Add marker here**, on that grid. The key **M** (the action
+an empty part of the marker row offers **Add marker here**, on that grid, and **Time signature
+from bar N** for the bar line nearest the click ([tempo map](tempo-map.md#editing-in-the-window)).
+The key **M** (the action
 `marker.addAtPlayhead`, in the keymap) adds a marker where the playhead is while playing, and at the
 play start marker while stopped.
 
@@ -862,8 +891,10 @@ Launcher view's menu share), **Cut**, **Copy**, **Duplicate** (the selected trac
 is among them) and **Paste** (after this track, enabled once tracks are copied), delete. A group's header starts with a triangle that
 folds its tracks away (Folded groups). The Launcher view's column headers have the same menu.
 
-A header's left edge is a 6 px band of the track's colour, the header's full height (dimmed while
-the track is off); return rows have one too. A click on the band opens the colour palette under
+A header's left edge is a 6 px band of the track's colour, the header's full height; return rows
+have one too. While the track is off its header is grey, the user-agent sheet's
+`arrangement track-header[muted]` background (`#A9A6A0`, `#B5B2AC` while selected), as its clips are, and the
+band keeps the track's colour at full strength (#1393). A click on the band opens the colour palette under
 it, the same swatches as the menu's; a swatch sets the colour (`track.setColor`, one undo step).
 A press on the band that drags still resizes the header column where the band meets its inner
 edge ([Launcher view](ui-session-view.md) › Track colour).

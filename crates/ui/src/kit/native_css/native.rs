@@ -109,15 +109,28 @@ pub(in crate::kit) fn user_agent() -> Option<&'static Sheet> {
 /// (`sample-point[kind="kick"]`), with Suhina Studio's colours, as the element's own rule: what it
 /// looks like where no sheet styles the window. `None` where the sheet gives it no colour.
 pub fn base_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color32> {
-    let element =
-        attributes.iter().fold(Element::new(name, None), |element, (name, value)| element.with_attribute(name, value));
-    let tree = Tree::new(vec![element]).ok()?;
+    base_property(None, name, attributes, Property::Color)
+}
+
+/// The `background-color` Suhina's base sheet alone gives the element `name` with `attributes`
+/// inside the element `within` (`arrangement clip[muted]`), as [`base_color`] does for `color`.
+/// `None` where it gives none.
+pub fn base_background(within: Option<&str>, name: &str, attributes: &[(&str, &str)]) -> Option<Color32> {
+    base_property(within, name, attributes, Property::BackgroundColor)
+}
+
+fn base_property(within: Option<&str>, name: &str, attributes: &[(&str, &str)], property: Property) -> Option<Color32> {
+    let parent = within.map(|ancestor| Element::new(ancestor, None));
+    let element = attributes.iter().fold(Element::new(name, parent.as_ref().map(|_| 0)), |element, (name, value)| {
+        element.with_attribute(name, value)
+    });
+    let tree = Tree::new(parent.into_iter().chain(std::iter::once(element)).collect()).ok()?;
     let viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
     let sheets: Vec<AppliedSheet<'_>> =
         base_tier(true).into_iter().map(|sheet| AppliedSheet { sheet, layer: Layer::Base, root: None }).collect();
     let style = cascade::last_style(&tree, None, viewport, &sheets).ok()?;
-    match style.get(Property::Color) {
-        color if color == Property::Color.initial() => None,
+    match style.get(property) {
+        value if value == property.initial() => None,
         Value::Color(Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
         _ => None,
     }

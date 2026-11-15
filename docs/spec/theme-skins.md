@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-14
+last_verified: 2026-11-15
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -277,8 +277,9 @@ their existing semantics. Layout entry support is incremental and documented per
 Artwork can choose an interaction state: `track.name.hover` overrides the default
 `track.name`. The own state variant wins, then the own default, then the embedded fallback.
 Artwork is not chosen by a track's colour. In track artwork (`track.name`, `track.body`)
-`currentColor` is the fill Suhina draws there (the track's colour, dimmed while muted), or the
-element's own `color` where the sheet gives one, which a rule may take from its `[color]`. A sheet
+`currentColor` is the fill Suhina draws there (the track's colour, dimmed while muted; a muted
+track's arrangement header is the `arrangement track-header[muted]` grey instead), or the element's own
+`color` where the sheet gives one, which a rule may take from its `[color]`. A sheet
 that reads `--track-colour`, `--track-fill` or `--clip-colour`, or gives artwork for one colour
 (`track.body.color-ff9a3c`), is told they are no longer used.
 `track.body` covers the strip background. A contiguous sequence of `.frame-0` through
@@ -482,7 +483,12 @@ page's (ADR 0031, amendment of 2026-11-15).
   `progress-fill`); the drop targets' lines (`drop-target[kind="insert"]`,
   `drop-target[kind="area"]`); the browser's icons by kind (`--browser-icon-midi`,
   `--browser-icon-sample`, `--browser-icon-instrument`, `--browser-icon-effect`); the sample
-  map's kinds; the shared controls' section (#1449): the label kinds' inks (`label[kind="hint"]`,
+  map's kinds; the grey of a muted Arrangement clip and track header (#1393),
+  `arrangement clip[muted] { background-color: var(--clip-mutedBackground); }` (`#A9A6A0`, and
+  `--clip-mutedSelectedBackground`, `#BDBAB4`, with `[selected]`) and `arrangement
+  track-header[muted]` (`--track-headerMutedBackground`, `#A9A6A0`, and
+  `--track-headerMutedSelectedBackground`, `#B5B2AC`), scoped to the Arrangement so a
+  deactivated Launcher clip keeps its own look; the shared controls' section (#1449): the label kinds' inks (`label[kind="hint"]`,
   `"caption"`, `"value"`, `"error"`) and the rows' line (`separator[kind="row"]`); `button` (fill,
   text, edge, ring, `:hover`) and the toggles, `button[kind="toggle"]` and `toggle` with their `[checked]` look
   (solo, `button[kind="solo"]`, in the accent; arm, `button[kind="arm"]`, in the recording colours);
@@ -1370,7 +1376,10 @@ These native parts take the sheet (the theme package README lists every selector
 - **Ruler, loop region, play position:** `ruler` (background, `color`, `border-color`;
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it; the piano roll and the browser's preview strip draw it too).
-- **Clips:** `[color]`; `[selected]`, `[muted]`, `[playing]` (the play position inside the
+- **Clips:** `[color]`; `[selected]`, `[muted]` (turned off or on a muted track; grey from the
+  base sheet, the host draws its colour down the leading edge and a mute mark before the
+  name of a clip turned off itself, in the ink of `clip-name` as the sheet styles it: its
+  `color`, else the ink that reads on its `background-color`), `[playing]` (the play position inside the
   clip while the transport runs), `[recording]` (a recording span over it on its track);
   `clip-gain`, `clip-fade-handle` (artwork `clip.fade-handle`).
 - **Level bars:** `font-size` for the value; `value-handle` with a `width` (or artwork

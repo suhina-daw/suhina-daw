@@ -118,10 +118,14 @@ pub fn token_property(key: &str) -> String {
 }
 
 /// The colours Suhina's base sheet (`suhina_theme_package::BASE_SHEET`) reads beyond the
-/// colour tokens, with Suhina Studio's values: the browser's icons by the kind of item and the sample
-/// map's sounds by kind. They are core properties a theme's sheet may set (`--sample-kick`), not
+/// colour tokens, with Suhina Studio's values: the Arrangement's muted clips and track headers, the
+/// browser's icons by the kind of item and the sample map's sounds by kind. They are core properties a theme's sheet may set (`--sample-kick`), not
 /// colour tokens: the model and the theme editor do not hold them.
 pub const BASE_COLOURS: &[(&str, &str)] = &[
+    ("--clip-mutedBackground", "#A9A6A0"),
+    ("--clip-mutedSelectedBackground", "#BDBAB4"),
+    ("--track-headerMutedBackground", "#A9A6A0"),
+    ("--track-headerMutedSelectedBackground", "#B5B2AC"),
     ("--browser-icon-midi", "#F2D541"),
     ("--browser-icon-sample", "#4FC3F7"),
     ("--browser-icon-instrument", "#B38BFF"),

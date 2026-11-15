@@ -309,7 +309,8 @@ following native return order. Launcher sends stay inside their movable sends re
 
 Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds, with a
 variant for a state if you like. Artwork is not chosen by a track's colour; an SVG that draws in
-`currentColor` takes the track's colour as Suhina draws it (dimmed while muted), or the element's
+`currentColor` takes the track's colour as Suhina draws it (dimmed while muted, and grey in a
+muted track's arrangement header), or the element's
 own `color` where your sheet gives one, which a rule can take from the track's colour (see
 *Tracks* below):
 
@@ -490,7 +491,9 @@ specific selector to win over Suhina's.
   `[kind="window"]` for egui's windows and menus, `[kind="field"]` behind a text field. Its words
   at rest are `--text-value`, a `button`'s `--text-primary`; your rules for `button`, `text-input`,
   `menu` and `scroll-bar` still go over it.
-- **The base sheet's own colours** are variables as well: the browser's icons by kind
+- **The base sheet's own colours** are variables as well: the grey of a muted Arrangement clip
+  and track header (`--clip-mutedBackground`, `--clip-mutedSelectedBackground`,
+  `--track-headerMutedBackground`, `--track-headerMutedSelectedBackground`), the browser's icons by kind
   (`--browser-icon-midi`, `--browser-icon-sample`, `--browser-icon-instrument`,
   `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …
   `--sample-other`).

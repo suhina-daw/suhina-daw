@@ -82,42 +82,45 @@ use suhina_theme_render::{Subject, scenes};
 /// colour (`label[kind="on-light"]` and `[kind="on-dark"]`, read once a frame for each set of
 /// variables in scope, not once a clip), and the lookups the root's `Visuals` are built from (`widget` in its
 /// states and kinds, inside a `window`), once when the styles reset, with no node left in the tree.
+///
+/// #1269 (the time signature in the toolbar) raised them by 2 nodes and 1 identity in each scene:
+/// its two numbers are value controls a theme styles, as the tempo is, where it was plain text.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 460,
-            identities: 455,
+            nodes: 462,
+            identities: 456,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 455,
+            theme_change_fresh: 456,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 456,
+            colour_change_fresh: 457,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 710,
-            identities: 705,
+            nodes: 712,
+            identities: 706,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 705,
+            theme_change_fresh: 706,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 706,
+            colour_change_fresh: 707,
         },
     ),
 ];
@@ -129,37 +132,37 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 472,
-            identities: 467,
+            nodes: 474,
+            identities: 468,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 467,
+            theme_change_fresh: 468,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 468,
+            colour_change_fresh: 469,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 722,
-            identities: 717,
+            nodes: 724,
+            identities: 718,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 717,
+            theme_change_fresh: 718,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 718,
+            colour_change_fresh: 719,
         },
     ),
 ];

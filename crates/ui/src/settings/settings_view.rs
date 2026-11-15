@@ -678,7 +678,7 @@ impl Cx<'_> {
     pub fn liquid_strength(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut u8) {
         let inherited = self.themes.liquid.is_none();
         if !inherited {
-            self.note("Theme override active. Themes > Edit current theme > Use global liquid settings");
+            self.note("The theme in use sets its own liquid strengths, so these sliders are off");
         }
         let value = field(self.settings);
         let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
@@ -1893,11 +1893,17 @@ fn shortcuts_page(
     let mut changed = false;
     let small = theme::ui_font(theme::TEXT_SMALL);
 
-    // A key being set: the next key pressed (with its modifiers) is the action's key.
+    // A key being set: the next key pressed (with its modifiers) is the action's key. Shift,
+    // Ctrl and Alt going down are pressed keys of their own: the capture waits for the key they
+    // are held with.
     if let Some(action) = state.capture.clone() {
         let pressed = ui.input(|i| {
             i.events.iter().find_map(|e| match e {
-                egui::Event::Key { key, pressed: true, modifiers, .. } => Some(Shortcut::new(*modifiers, *key)),
+                egui::Event::Key { key, pressed: true, modifiers, .. }
+                    if !crate::settings::keymap::is_modifier(*key) =>
+                {
+                    Some(Shortcut::new(*modifiers, *key))
+                }
                 _ => None,
             })
         });
