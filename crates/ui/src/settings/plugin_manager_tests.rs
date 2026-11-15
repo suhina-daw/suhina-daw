@@ -130,10 +130,15 @@ fn the_file_fills_what_the_other_columns_leave() {
     let area = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, ROW));
     let spans = spans(area, &WIDTHS, true, true);
     assert_eq!(spans[0].0, 0.0);
-    assert!((spans[ACTION].1 - 1000.0).abs() < 0.01, "the columns fill the width");
-    assert!(spans.windows(2).all(|w| (w[0].1 - w[1].0).abs() < 0.01), "no gaps");
+    assert!((spans[FILE].1 - 1000.0).abs() < 0.01, "the columns fill the width, the file last");
+    let laid: Vec<(f32, f32)> = LAYOUT.iter().map(|&c| spans[c]).collect();
+    assert!(laid.windows(2).all(|w| (w[0].1 - w[1].0).abs() < 0.01), "no gaps");
+    assert!(spans[ACTION].1 <= spans[FILE].0 + 0.01, "Scan again before the file, beside the status");
     let without = spans_of_file(area, false);
     assert!(without > spans[FILE].1 - spans[FILE].0, "no file rows: the action column gives its room to the file");
+    let hidden = super::spans(area, &WIDTHS, true, false);
+    assert!((hidden[ACTION].1 - 1000.0).abs() < 0.01, "a hidden file: the name takes its room");
+    assert!(hidden[1].1 - hidden[1].0 > WIDTHS[1]);
 }
 
 fn spans_of_file(area: Rect, actions: bool) -> f32 {
@@ -159,14 +164,15 @@ fn a_dragged_width_is_kept_no_narrower_than_the_column_allows() {
 
 #[test]
 fn files_of_the_same_name_in_two_folders_get_a_scan_again_each() {
-    let (one, two) = (r"C:\Windows\System32\d3dcompiler_47.dll", r"C:\Plugins\VST\d3dcompiler_47.dll");
+    let (one, two) = ("/system/d3dcompiler_47.dll", "/plugins/vst/d3dcompiler_47.dll");
     assert_ne!(scan_again_id(one), scan_again_id(two), "the id is made from the whole path (#1461)");
     assert_ne!(scan_again_label(one), scan_again_label(two), "the label names the folder too");
     assert!(scan_again_label(one).starts_with("Scan again d3dcompiler_47.dll"), "and still the file");
+    assert!(scan_again_label(two).ends_with("/plugins/vst"), "{}", scan_again_label(two));
 }
 
 #[test]
-fn the_second_of_two_same_named_files_is_scanned_again_by_its_own_button() {
+fn each_of_two_same_named_files_is_scanned_again_by_its_own_button() {
     use egui_kittest::{Harness, kittest::Queryable};
     let one = "/one/d3dcompiler_47.dll".to_string();
     let two = "/two/d3dcompiler_47.dll".to_string();
@@ -175,7 +181,8 @@ fn the_second_of_two_same_named_files_is_scanned_again_by_its_own_button() {
         incompatible: vec![(two.clone(), "built for x86 only".into())],
         ..PluginsView::default()
     };
-    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(1180.0, 600.0)).build_ui_state(
+    // Wide enough for the table to show every column up to Scan again without scrolling.
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(1600.0, 600.0)).build_ui_state(
         |ui, state: &mut (PluginsView, Option<PluginRequest>)| {
             crate::kit::theme::install(ui.ctx());
             let area = ui.max_rect();
@@ -189,9 +196,13 @@ fn the_second_of_two_same_named_files_is_scanned_again_by_its_own_button() {
     let first = harness.get_by_label(&scan_again_label(&one)).rect();
     let second = harness.get_by_label(&scan_again_label(&two)).rect();
     assert_ne!(first, second, "two buttons, one in each row");
+    // Both, so a shared id, which would hand every click to one of them, fails here.
+    harness.get_by_label(&scan_again_label(&one)).click();
+    harness.run();
+    assert_eq!(harness.state().1, Some(PluginRequest::ScanFiles(vec![one])), "the first row's own file");
     harness.get_by_label(&scan_again_label(&two)).click();
     harness.run();
-    assert_eq!(harness.state().1, Some(PluginRequest::ScanFiles(vec![two])), "the click reaches its own row");
+    assert_eq!(harness.state().1, Some(PluginRequest::ScanFiles(vec![two])), "the second row's own file");
 }
 
 #[test]
@@ -282,4 +293,45 @@ fn owned_first_lists_the_marked_plug_ins_above_the_rest_each_in_its_sort() {
     );
     state.owned_first = false;
     assert_eq!(names(&plugins, &state)[0], "Verb 10", "off: the plain sort");
+}
+
+#[test]
+fn the_panel_shows_only_a_row_that_is_picked() {
+    let order: Vec<String> = ["a", "b", "c"].map(String::from).to_vec();
+    let mut state = ManagerState::default();
+    state.pick("a", false, false, &order);
+    state.pick("b", true, false, &order);
+    assert_eq!(state.shown_row(), Some("b"));
+    state.pick("b", true, false, &order);
+    assert_eq!(state.picked, ["a"]);
+    assert_eq!(state.shown_row(), Some("a"), "Ctrl took b out: the panel shows a, not b");
+    state.pick("c", false, true, &order);
+    assert_eq!(state.picked, ["b", "c"], "Shift still runs from the row clicked last");
+    state.picked.clear();
+    assert_eq!(state.shown_row(), None, "nothing picked, nothing shown");
+}
+
+#[test]
+fn picks_of_rows_a_rescan_took_away_are_let_go() {
+    let mut state = ManagerState {
+        picked: vec!["a".into(), "gone".into()],
+        anchor: Some("gone".into()),
+        ..ManagerState::default()
+    };
+    let keys: std::collections::HashSet<&str> = ["a", "b"].into_iter().collect();
+    state.keep_picks_of(&keys);
+    assert_eq!(state.picked, ["a"]);
+    assert_eq!(state.anchor.as_deref(), Some("a"));
+}
+
+#[test]
+fn the_shelves_count_what_the_other_filters_leave() {
+    let plugins = view();
+    let all = all_lines(&plugins);
+    let state = ManagerState { vendor: Some("Alpha".into()), ..ManagerState::default() };
+    let counts = Counts::shown(&all, &plugins, &state);
+    assert_eq!((counts.plugins, counts.enabled, counts.disabled), (2, 1, 1), "Alpha's two plug-ins");
+    assert_eq!(counts.attention(), 0, "a vendor leaves the files out, so Needs attention says 0");
+    let searched = ManagerState { search: "x86".into(), ..ManagerState::default() };
+    assert_eq!(Counts::shown(&all, &plugins, &searched).incompatible, 1);
 }

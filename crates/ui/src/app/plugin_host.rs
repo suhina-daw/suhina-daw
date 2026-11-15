@@ -266,48 +266,41 @@ impl App {
                 self.plugins_read = false;
             }
             PluginRequest::SetEnabledMany(specs, enabled) => {
-                let mut done = 0;
-                for spec in &specs {
-                    match self.projects.execute("plugin.setEnabled", &json!({ "plugin": spec, "enabled": enabled })) {
-                        Ok(_) => done += 1,
-                        Err(e) => {
-                            self.status = Status::Error(e.message().to_owned());
-                            break;
-                        }
+                // One command and one save for them all, however many.
+                match self.projects.execute("plugin.setEnabled", &json!({ "plugins": specs, "enabled": enabled })) {
+                    Ok(_) => {
+                        let what = if specs.len() == 1 {
+                            "1 plug-in is".to_string()
+                        } else {
+                            format!("{} plug-ins are", specs.len())
+                        };
+                        self.status = Status::Done(format!("{what} {}", if enabled { "on" } else { "off" }));
                     }
-                }
-                if done == specs.len() {
-                    self.status = Status::Done(format!("{done} plug-ins are {}", if enabled { "on" } else { "off" }));
+                    Err(e) => self.status = Status::Error(e.message().to_owned()),
                 }
                 self.browser.relist();
                 self.plugins_read = false;
             }
             PluginRequest::SetOwnedMany(specs, owned) => {
-                let mut done = 0;
-                for spec in &specs {
-                    match self.projects.execute("plugin.setOwned", &json!({ "plugin": spec, "owned": owned })) {
-                        Ok(_) => done += 1,
-                        Err(e) => {
-                            self.status = Status::Error(e.message().to_owned());
-                            break;
-                        }
+                match self.projects.execute("plugin.setOwned", &json!({ "plugins": specs, "owned": owned })) {
+                    Ok(_) => {
+                        let what = if specs.len() == 1 {
+                            "1 plug-in".to_string()
+                        } else {
+                            format!("{} plug-ins", specs.len())
+                        };
+                        self.status = Status::Done(if owned {
+                            format!("{what} marked as owned")
+                        } else {
+                            format!("{what} no longer marked as owned")
+                        });
                     }
-                }
-                if done == specs.len() {
-                    let what = if done == 1 { "1 plug-in".to_string() } else { format!("{done} plug-ins") };
-                    self.status = Status::Done(if owned {
-                        format!("{what} marked as owned")
-                    } else {
-                        format!("{what} no longer marked as owned")
-                    });
+                    Err(e) => self.status = Status::Error(e.message().to_owned()),
                 }
                 self.plugins_read = false;
             }
-            PluginRequest::ShowFile(file) => {
-                if let Err(e) = show_in_file_manager(std::path::Path::new(&file)) {
-                    self.status = Status::Error(format!("could not show {file}: {e}"));
-                }
-            }
+            // The desktop app shows it in the system's file manager, as it does a backup.
+            PluginRequest::ShowFile(file) => self.reveal = Some(std::path::PathBuf::from(file)),
             PluginRequest::ScanFiles(files) => {
                 let mut library = self.projects.library_mut().clone();
                 let (done, receive) = std::sync::mpsc::channel();
@@ -407,25 +400,4 @@ impl App {
             self.show_editor();
         }
     }
-}
-
-/// Opens the system's file manager at `file`, picked in its folder where the system can do that:
-/// Explorer on Windows, Finder on macOS, the folder in the desktop's file manager elsewhere. The
-/// file manager runs on its own; nothing waits for it.
-#[cfg(target_os = "windows")]
-fn show_in_file_manager(file: &std::path::Path) -> std::io::Result<()> {
-    use std::os::windows::process::CommandExt;
-    // Explorer reads `/select,` with the path quoted after it, not the whole argument quoted,
-    // which is how a path with spaces would otherwise be passed.
-    std::process::Command::new("explorer").raw_arg(format!("/select,\"{}\"", file.display())).spawn().map(drop)
-}
-
-#[cfg(target_os = "macos")]
-fn show_in_file_manager(file: &std::path::Path) -> std::io::Result<()> {
-    std::process::Command::new("open").arg("-R").arg(file).spawn().map(drop)
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-fn show_in_file_manager(file: &std::path::Path) -> std::io::Result<()> {
-    std::process::Command::new("xdg-open").arg(file.parent().unwrap_or(file)).spawn().map(drop)
 }

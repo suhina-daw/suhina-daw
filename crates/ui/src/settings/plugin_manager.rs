@@ -127,6 +127,23 @@ impl ManagerState {
         self.anchor = Some(key.to_string());
     }
 
+    /// The row the panel shows: the one clicked last while it is picked (Ctrl takes a row out and
+    /// leaves Shift's run starting from it), else the one picked last; none with nothing picked.
+    fn shown_row(&self) -> Option<&str> {
+        self.anchor
+            .as_deref()
+            .filter(|anchor| self.picked.iter().any(|k| k == anchor))
+            .or_else(|| self.picked.last().map(String::as_str))
+    }
+
+    /// Picks only rows that are still there (`keys`): a rescan may have taken some away.
+    fn keep_picks_of(&mut self, keys: &std::collections::HashSet<&str>) {
+        self.picked.retain(|k| keys.contains(k.as_str()));
+        if self.anchor.as_deref().is_some_and(|a| !keys.contains(a)) {
+            self.anchor = self.picked.last().cloned();
+        }
+    }
+
     /// Every filter back to showing all rows: the shelf, type, formats, vendor and the search.
     pub fn reset_filters(&mut self) {
         self.shelf = Shelf::All;
@@ -361,14 +378,30 @@ fn kept(line: &Line, plugins: &PluginsView, state: &ManagerState) -> bool {
     shelf && kind && format && vendor
 }
 
+/// The search's words, lower case; none when nothing is typed.
+fn search_words(state: &ManagerState) -> Vec<String> {
+    state.search.split_whitespace().map(str::to_lowercase).collect()
+}
+
+/// Whether `line`'s name, vendor, file or reason holds every one of `words`.
+fn found_by(line: &Line, words: &[String]) -> bool {
+    if words.is_empty() {
+        return true;
+    }
+    let text = format!("{} {} {} {}", line.cells[1], line.cells[2], line.cells[FILE], line.file).to_lowercase();
+    words.iter().all(|w| text.contains(w.as_str()))
+}
+
 /// Every row the filters and the search keep, sorted.
+#[cfg(test)]
 fn lines(plugins: &PluginsView, state: &ManagerState) -> Vec<Line> {
-    let mut lines = all_lines(plugins);
-    let words: Vec<String> = state.search.split_whitespace().map(str::to_lowercase).collect();
-    lines.retain(|line| {
-        let text = format!("{} {} {} {}", line.cells[1], line.cells[2], line.cells[FILE], line.file).to_lowercase();
-        words.iter().all(|w| text.contains(w.as_str())) && kept(line, plugins, state)
-    });
+    lines_of(all_lines(plugins), plugins, state)
+}
+
+/// [`lines`] from the rows built already.
+fn lines_of(mut lines: Vec<Line>, plugins: &PluginsView, state: &ManagerState) -> Vec<Line> {
+    let words = search_words(state);
+    lines.retain(|line| found_by(line, &words) && kept(line, plugins, state));
     let (column, descending) = state.sort;
     lines.sort_by(|a, b| {
         let key = |line: &Line| line.cells.get(column).cloned().unwrap_or_default().to_lowercase();
@@ -419,6 +452,32 @@ impl Counts {
         self.failed + self.incompatible
     }
 
+    /// How many rows each shelf would show with the type, format and vendor filters and the search
+    /// as they are: the counts beside the shelves, so a shelf never says more than it shows.
+    fn shown(all: &[Line], plugins: &PluginsView, state: &ManagerState) -> Self {
+        let words = search_words(state);
+        let every = ManagerState { shelf: Shelf::All, ..state.clone() };
+        let mut counts = Self::default();
+        for line in all.iter().filter(|l| found_by(l, &words) && kept(l, plugins, &every)) {
+            match line.kind {
+                Kind::Plugin(i) => {
+                    counts.plugins += 1;
+                    if line.state == State::Ready {
+                        counts.enabled += 1;
+                    } else {
+                        counts.disabled += 1;
+                    }
+                    if plugins.found.get(i).is_some_and(|p| p.owned) {
+                        counts.owned += 1;
+                    }
+                }
+                Kind::Failed(_) => counts.failed += 1,
+                Kind::Incompatible(_) => counts.incompatible += 1,
+            }
+        }
+        counts
+    }
+
     /// The notice over the table: "6 files failed to scan · 6 use an incompatible architecture".
     fn notice(&self) -> Option<String> {
         let plural = |n: usize, one: &str, many: &str| if n == 1 { one.to_string() } else { many.to_string() };
@@ -444,20 +503,32 @@ fn vendors(plugins: &PluginsView) -> Vec<String> {
     vendors
 }
 
-/// The left and right edge of each column across `area`, with `widths` as kept (0 for a hidden
-/// one); the file, where `file` shows it, takes what the others leave, at least its narrowest, and
-/// the action column is left out (no width) when no file row is shown.
+/// The order the columns are laid out in: the action before the file, so a file row's **Scan
+/// again** sits beside its status, in view, and the file, the widest, last.
+const LAYOUT: [usize; COLUMN_COUNT] = [0, 1, 2, 3, 4, 5, 6, ACTION, FILE];
+
+/// The left and right edge of each column (by index) across `area`, with `widths` as kept (0 for
+/// a hidden one); the file, where `file` shows it, takes what the others leave, at least its
+/// narrowest, and where it is hidden the name takes that room. The action column is left out (no
+/// width) when no file row is shown.
 fn spans(area: Rect, widths: &[f32; COLUMN_COUNT], actions: bool, file: bool) -> [(f32, f32); COLUMN_COUNT] {
     let mut widths = *widths;
     if !actions {
         widths[ACTION] = 0.0;
     }
     let others: f32 = widths.iter().enumerate().filter(|(i, _)| *i != FILE).map(|(_, w)| w).sum();
-    widths[FILE] = if file { (area.width() - others).max(MIN_WIDTHS[FILE]) } else { 0.0 };
+    let left = (area.width() - others).max(0.0);
+    if file {
+        widths[FILE] = left.max(MIN_WIDTHS[FILE]);
+    } else {
+        widths[FILE] = 0.0;
+        widths[1] += left;
+    }
     let mut x = area.left();
     let mut spans = [(0.0, 0.0); COLUMN_COUNT];
-    for (span, width) in spans.iter_mut().zip(widths) {
-        *span = (x, x + width);
+    for index in LAYOUT {
+        let width = widths[index];
+        spans[index] = (x, x + width);
         x += width;
     }
     spans
@@ -653,19 +724,26 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
         painter.vline(detail.left() + 0.5, detail.y_range(), line);
     }
     let counts = Counts::of(plugins);
+    // The rows, built once a frame for the table, the counts and the panel.
+    let all = all_lines(plugins);
+    {
+        let keys: std::collections::HashSet<&str> = all.iter().map(|l| l.key.as_str()).collect();
+        plugins.manager.keep_picks_of(&keys);
+    }
 
     top_bar(ui, &painter, parts.top, plugins, &counts, &mut out);
     if let Some(sidebar) = parts.sidebar {
-        library(ui, &painter, sidebar.shrink(PAD * 1.5), plugins, &counts);
+        let shown = Counts::shown(&all, plugins, &plugins.manager);
+        library(ui, &painter, sidebar.shrink(PAD * 1.5), plugins, &shown);
     }
-    let lines = lines(plugins, &plugins.manager);
+    let lines = lines_of(all_lines(plugins), plugins, &plugins.manager);
     if plugins.manager.locations {
         scan_locations(ui, &painter, parts.middle.shrink(PAD * 1.5), plugins, &mut out);
     } else {
         table(ui, &painter, parts.middle.shrink(PAD * 1.5), plugins, &counts, &lines, &mut out);
     }
     if let Some(detail) = parts.detail {
-        selected(ui, &painter, detail.shrink2(Vec2::new(PAD * 2.5, PAD * 2.0)), plugins, &mut out);
+        selected(ui, &painter, detail.shrink2(Vec2::new(PAD * 2.5, PAD * 2.0)), plugins, &all, &mut out);
     }
     status_bar(&painter, parts.status.shrink2(Vec2::new(PAD * 2.0, 0.0)), plugins, &lines);
     out
@@ -801,7 +879,7 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
     heading(painter, row(&mut y, 18.0), "Vendor");
     let vendor_row = row(&mut y, 24.0);
     let shown = state.vendor.clone().unwrap_or_else(|| "All vendors".into());
-    ui.scope_builder(egui::UiBuilder::new().max_rect(vendor_row), |ui| {
+    let combo = ui.scope_builder(egui::UiBuilder::new().max_rect(vendor_row), |ui| {
         egui::ComboBox::from_id_salt("plugin-manager-vendor")
             .selected_text(shown)
             .width(vendor_row.width())
@@ -814,6 +892,8 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
                 }
             })
     });
+    let vendor_label = format!("Vendor: {}", state.vendor.as_deref().unwrap_or("All vendors"));
+    combo.inner.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &vendor_label));
 
     // At the bottom: the folders scans look in (Settings › Plug-ins), and the filters undone.
     let reset = Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - 20.0), rect.max);
@@ -874,18 +954,29 @@ fn scan_locations(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mu
     if request.is_some() {
         out.request = request;
     }
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !ui.ctx().egui_wants_keyboard_input() {
+    if ui.input(|i| i.key_pressed(egui::Key::Escape))
+        && !ui.ctx().egui_wants_keyboard_input()
+        && !egui::Popup::is_any_open(ui.ctx())
+    {
         plugins.manager.locations = false;
     }
+}
+
+/// The plug-ins found, by spec, to look each one up once.
+fn plugins_by_spec(
+    plugins: &PluginsView,
+) -> std::collections::HashMap<&str, &crate::settings::settings_view::PluginRow> {
+    plugins.found.iter().map(|p| (p.spec.as_str(), p)).collect()
 }
 
 /// The plug-ins among `keys` (files left out) split into those marked as owned and the others,
 /// each in the order of `keys`.
 fn split_by_owned(keys: &[String], plugins: &PluginsView) -> (Vec<String>, Vec<String>) {
+    let by_spec = plugins_by_spec(plugins);
     let mut owned = Vec::new();
     let mut others = Vec::new();
     for key in keys {
-        if let Some(plugin) = plugins.found.iter().find(|p| &p.spec == key) {
+        if let Some(plugin) = by_spec.get(key.as_str()) {
             if plugin.owned { owned.push(key.clone()) } else { others.push(key.clone()) }
         }
     }
@@ -906,10 +997,11 @@ fn rest_of_vendor(vendor: &str, plugins: &PluginsView) -> Vec<String> {
 /// The plug-ins among `keys` (files left out) split into those switched on and those off, each in
 /// the order of `keys`.
 fn split_by_state(keys: &[String], plugins: &PluginsView) -> (Vec<String>, Vec<String>) {
+    let by_spec = plugins_by_spec(plugins);
     let mut on = Vec::new();
     let mut off = Vec::new();
     for key in keys {
-        if let Some(plugin) = plugins.found.iter().find(|p| &p.spec == key) {
+        if let Some(plugin) = by_spec.get(key.as_str()) {
             if plugin.enabled { on.push(key.clone()) } else { off.push(key.clone()) }
         }
     }
@@ -982,7 +1074,9 @@ fn table(
     );
     edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Find a plug-in"));
     widgets::input_line(ui, &edit);
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !edit.has_focus() {
+    // Escape closes the manager, but not when it closes a menu or a drop-down: egui closes those
+    // on Escape without taking the key.
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !edit.has_focus() && !egui::Popup::is_any_open(ui.ctx()) {
         out.close = true;
     }
     let mut y = search.bottom() + 8.0;
@@ -1003,7 +1097,13 @@ fn table(
         );
         let id = Id::unique("manager-review");
         if link(ui, painter, review, id, "Review issues", "Review issues", Align2::RIGHT_CENTER) {
-            plugins.manager.shelf = Shelf::Attention;
+            // Files have no type or vendor, so those filters would hide every one.
+            let state = &mut plugins.manager;
+            state.shelf = Shelf::Attention;
+            state.types = TypeFilter::All;
+            state.formats.clear();
+            state.vendor = None;
+            state.search.clear();
         }
         y = notice.bottom() + 8.0;
     }
@@ -1017,7 +1117,7 @@ fn table(
         let text =
             if nothing { "No plug-ins found yet: Scan for new looks for them" } else { "Nothing matches the filters" };
         let header = Rect::from_min_size(table.min, Vec2::new(table.width(), ROW + 4.0));
-        headings(ui, painter, header, plugins, lines, &order, out);
+        headings(ui, painter, header, header, plugins, lines, &order, out);
         let below = Rect::from_min_max(Pos2::new(table.left(), header.bottom()), table.max);
         widgets::text_in(painter, below.shrink(PAD * 2.0), Align2::CENTER_TOP, text, small, theme::text_hint());
         return;
@@ -1025,27 +1125,29 @@ fn table(
     let actions = lines.iter().any(|l| !matches!(l.kind, Kind::Plugin(_)));
     let total = plugins.manager.content_width(table.width(), actions);
     let mut asked = Asked::default();
-    ui.scope_builder(egui::UiBuilder::new().max_rect(table), |ui| {
-        egui::ScrollArea::horizontal().id_salt("plugin-manager-across").auto_shrink([false, false]).show(ui, |ui| {
-            let (header, _) = ui.allocate_exact_size(Vec2::new(total, ROW + 4.0), Sense::hover());
-            let header_painter = ui.painter_at(header);
-            headings(ui, &header_painter, header, plugins, lines, &order, out);
-            let widths = plugins.manager.shown_widths();
-            let file = plugins.manager.shows(FILE);
-            let picked = plugins.manager.picked.clone();
-            let anchor = plugins.manager.anchor.clone();
-            let scanning = plugins.scanning;
-            let shown = Shown {
-                picked: &picked,
-                anchor: anchor.as_deref(),
-                order: &order,
-                widths: &widths,
-                actions,
-                file,
-                scanning,
-            };
-            let view: &PluginsView = plugins;
-            egui::ScrollArea::vertical().id_salt("plugin-manager-down").auto_shrink([false, false]).show_rows(
+    // The rows scroll both ways in one area, its scroll bars at the table's own edges; the
+    // headings above follow its sideways scroll, drawn after it with this frame's offset.
+    let strip = Rect::from_min_size(table.min, Vec2::new(table.width(), ROW + 4.0));
+    let body = Rect::from_min_max(Pos2::new(table.left(), strip.bottom() + 1.0), table.max);
+    let widths = plugins.manager.shown_widths();
+    let file = plugins.manager.shows(FILE);
+    let picked = plugins.manager.picked.clone();
+    let anchor = plugins.manager.shown_row().map(str::to_string);
+    let scanning = plugins.scanning;
+    let shown = Shown {
+        picked: &picked,
+        picked_set: picked.iter().map(String::as_str).collect(),
+        anchor: anchor.as_deref(),
+        order: &order,
+        widths: &widths,
+        actions,
+        file,
+        scanning,
+    };
+    let view: &PluginsView = plugins;
+    let across = ui
+        .scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+            egui::ScrollArea::both().id_salt("plugin-manager-rows").auto_shrink([false, false]).show_rows(
                 ui,
                 ROW,
                 lines.len(),
@@ -1054,9 +1156,15 @@ fn table(
                         row(ui, line, total, view, &shown, &mut asked);
                     }
                 },
-            );
-        });
-    });
+            )
+        })
+        .inner
+        .state
+        .unclamped_offset()
+        .x;
+    let header = Rect::from_min_size(Pos2::new(strip.left() - across, strip.top()), Vec2::new(total, strip.height()));
+    let header_painter = painter.with_clip_rect(strip.intersect(painter.clip_rect()));
+    headings(ui, &header_painter, header, strip, plugins, lines, &order, out);
     if let Some((key, command, shift)) = asked.pick {
         plugins.manager.pick(&key, command, shift, &order);
     }
@@ -1076,6 +1184,11 @@ fn table(
 /// The columns that can be hidden, by index: all but the checkbox, the name and the action.
 const HIDEABLE: [usize; 6] = [2, 3, 4, 5, 6, FILE];
 
+/// The headings of the columns that can be hidden, as the UI settings keep them.
+pub fn hideable_headings() -> impl Iterator<Item = &'static str> {
+    HIDEABLE.into_iter().filter_map(|index| COLUMNS.get(index).copied())
+}
+
 /// The menu that shows or hides columns: on a right-click on the headings, and under **Columns**.
 fn columns_menu(ui: &mut Ui, state: &mut ManagerState, out: &mut ManagerOut) {
     for index in HIDEABLE {
@@ -1094,26 +1207,31 @@ fn columns_menu(ui: &mut Ui, state: &mut ManagerState, out: &mut ManagerOut) {
     }
 }
 
-/// The headings across `header`: the checkbox that picks every row shown, a button per column
-/// that sorts by it, and the edges dragged to resize the columns. A right-click on them shows
-/// or hides columns.
+/// The headings across `header` (as wide as the rows, moved by their sideways scroll), seen
+/// through `strip`: the checkbox that picks every row shown, a button per column that sorts by
+/// it, and the edges dragged to resize the columns. A right-click on them shows or hides columns.
+/// Nothing outside `strip` takes the pointer.
+#[allow(clippy::too_many_arguments)]
 fn headings(
     ui: &mut Ui,
     painter: &egui::Painter,
     header: Rect,
+    strip: Rect,
     plugins: &mut PluginsView,
     lines: &[Line],
     order: &[String],
     out: &mut ManagerOut,
 ) {
+    // A control's rectangle where the strip shows it, if enough of it does to be used.
+    let seen = |rect: Rect| Some(rect.intersect(strip)).filter(|r| r.width() >= 4.0 && r.height() > 0.0);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let actions = lines.iter().any(|l| !matches!(l.kind, Kind::Plugin(_)));
     let raw = plugins.manager.column_widths();
     let widths = plugins.manager.shown_widths();
     let columns = spans(header, &widths, actions, plugins.manager.shows(FILE));
-    painter.hline(header.x_range(), header.bottom() - 0.5, theme::hairline(theme::border()));
+    painter.hline(strip.x_range(), header.bottom() - 0.5, theme::hairline(theme::border()));
     // Beneath the headings: a right-click between them opens the columns menu too.
-    let under = ui.interact(header, Id::unique("manager-headings"), Sense::click());
+    let under = ui.interact(strip, Id::unique("manager-headings"), Sense::click());
     // Stays open while columns are ticked: a click inside would close a plain context menu.
     egui::Popup::context_menu(&under)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -1121,17 +1239,22 @@ fn headings(
     {
         let (left, right) = columns[0];
         let state = &mut plugins.manager;
-        let all = !order.is_empty() && order.iter().all(|k| state.picked.contains(k));
+        let picked: std::collections::HashSet<&str> = state.picked.iter().map(String::as_str).collect();
+        let all = !order.is_empty() && order.iter().all(|k| picked.contains(k.as_str()));
         let mut every = all;
         let check = Rect::from_center_size(Pos2::new((left + right) / 2.0, header.center().y), Vec2::splat(16.0));
-        let response = ui.put(check, egui::Checkbox::without_text(&mut every));
-        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, all, "Pick every row shown"));
-        if response.changed() {
-            if every {
-                state.picked = order.to_vec();
-                state.anchor = order.first().cloned();
-            } else {
-                state.picked.clear();
+        if seen(check).is_some_and(|r| r.width() >= check.width() - 0.5) {
+            let response = ui.put(check, egui::Checkbox::without_text(&mut every));
+            response
+                .widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, all, "Pick every row shown"));
+            if response.changed() {
+                if every {
+                    state.picked = order.to_vec();
+                    state.anchor = order.first().cloned();
+                } else {
+                    state.picked.clear();
+                    state.anchor = None;
+                }
             }
         }
     }
@@ -1140,8 +1263,9 @@ fn headings(
             continue;
         }
         let cell = Rect::from_min_max(Pos2::new(left, header.top()), Pos2::new(right, header.bottom()));
+        let Some(hit) = seen(cell) else { continue };
         let id = Id::unique(("manager-column", index));
-        let response = widgets::button_area(ui, cell, id, format!("Sort the plug-ins by {name}"));
+        let response = widgets::button_area(ui, hit, id, format!("Sort the plug-ins by {name}"));
         if response.clicked() {
             let (sorted, descending) = plugins.manager.sort;
             plugins.manager.sort = (index, if sorted == index { !descending } else { false });
@@ -1169,6 +1293,7 @@ fn headings(
     for index in edges {
         let (_, right) = columns[index];
         let edge = Rect::from_min_max(Pos2::new(right - 4.0, header.top()), Pos2::new(right + 4.0, header.bottom()));
+        let Some(edge) = seen(edge) else { continue };
         let response = ui
             .interact(edge, Id::unique(("manager-edge", index)), Sense::click_and_drag())
             .on_hover_cursor(egui::CursorIcon::ResizeColumn);
@@ -1196,6 +1321,8 @@ fn headings(
 /// column widths, whether the action column is there, and whether a scan runs.
 struct Shown<'a> {
     picked: &'a [String],
+    /// The same, to look up in.
+    picked_set: std::collections::HashSet<&'a str>,
     anchor: Option<&'a str>,
     order: &'a [String],
     widths: &'a [f32; COLUMN_COUNT],
@@ -1213,7 +1340,7 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, ROW), Sense::click());
     let columns = spans(rect, shown.widths, shown.actions, shown.file);
     let painter = ui.painter_at(rect);
-    let lit = shown.picked.contains(&line.key);
+    let lit = shown.picked_set.contains(line.key.as_str());
     if lit {
         painter.rect_filled(rect, 0.0, theme::control_active());
     } else if ui.rect_contains_pointer(rect) {
@@ -1548,14 +1675,20 @@ fn many_selected(
 }
 
 /// The panel on the right: the row picked last.
-fn selected(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &PluginsView, out: &mut ManagerOut) {
+fn selected(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    plugins: &PluginsView,
+    lines: &[Line],
+    out: &mut ManagerOut,
+) {
     let small = theme::ui_font(theme::TEXT_SMALL);
-    let lines = all_lines(plugins);
     if plugins.manager.picked.len() > 1 {
-        many_selected(ui, painter, rect, plugins, &lines, out);
+        many_selected(ui, painter, rect, plugins, lines, out);
         return;
     }
-    let Some(line) = plugins.manager.anchor.as_ref().and_then(|key| lines.iter().find(|l| &l.key == key)) else {
+    let Some(line) = plugins.manager.shown_row().and_then(|key| lines.iter().find(|l| l.key == key)) else {
         let at = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 20.0));
         widgets::text_in(painter, at, Align2::LEFT_CENTER, "Pick a row to see it here", small, theme::text_hint());
         return;
@@ -1632,6 +1765,11 @@ fn selected(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &PluginsV
         && !plugin.version.is_empty()
     {
         pair(&mut y, "Version", &plugin.version, None);
+    }
+    // A plug-in that loaded is built for the processor Suhina runs on; a file built for another
+    // says which in its reason, below.
+    if plugin.is_some() {
+        pair(&mut y, "Architecture", std::env::consts::ARCH, None);
     }
     pair(&mut y, "Status", line.state.word(), Some(line.state));
     if plugin.is_none() {

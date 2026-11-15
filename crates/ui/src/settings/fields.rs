@@ -238,7 +238,10 @@ pub(super) const FIELDS: &[Field] = &[
                 .split(',')
                 .map(str::trim)
                 .filter(|w| !w.is_empty())
-                .map(|w| w.parse::<u32>().ok().map(|w| w.clamp(MANAGER_COLUMN.0, MANAGER_COLUMN.1)))
+                // 0 is a column at its width at first (the file's, which fills the rest).
+                .map(|w| {
+                    w.parse::<u32>().ok().map(|w| if w == 0 { 0 } else { w.clamp(MANAGER_COLUMN.0, MANAGER_COLUMN.1) })
+                })
                 .collect();
             // A list longer than the table's columns is from no version of Suhina: ignored.
             widths.filter(|w| w.len() <= MANAGER_COLUMNS).map(|w| s.plugin_manager_columns = w).is_some()
@@ -249,9 +252,18 @@ pub(super) const FIELDS: &[Field] = &[
         key: "plugin_manager_hidden",
         write: |s| s.plugin_manager_hidden.join(", "),
         read: |s, v| {
-            // Headings only, no commas in them; anything longer is from no version of Suhina.
-            s.plugin_manager_hidden =
-                v.split(',').map(str::trim).filter(|h| !h.is_empty() && h.len() <= 16).map(str::to_string).collect();
+            // Only the headings that can be hidden, each once; anything else is from no version
+            // of Suhina and left out.
+            let mut hidden: Vec<String> = Vec::new();
+            for heading in v.split(',').map(str::trim) {
+                if let Some(known) =
+                    crate::settings::plugin_manager::hideable_headings().find(|h| h.eq_ignore_ascii_case(heading))
+                    && !hidden.iter().any(|h| h == known)
+                {
+                    hidden.push(known.to_string());
+                }
+            }
+            s.plugin_manager_hidden = hidden;
             true
         },
     },

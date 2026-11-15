@@ -476,3 +476,22 @@ fn a_saved_built_in_theme_that_went_is_read_as_what_took_its_place() {
     assert_eq!(settings.theme, Settings::default().theme);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
 }
+
+#[test]
+fn the_plug_in_managers_saved_table_reads_only_what_it_can_use() {
+    let (settings, _) = Settings::from_text(
+        "plugin_manager_columns = 28, 0, 99999, 3\nplugin_manager_hidden = file, Vendor, nonsense, File, \nplugin_manager_owned_first = maybe\n",
+    );
+    assert_eq!(
+        settings.plugin_manager_columns,
+        [28, 0, MANAGER_COLUMN.1, MANAGER_COLUMN.0],
+        "0 kept, the rest clamped"
+    );
+    assert_eq!(settings.plugin_manager_hidden, ["File", "Vendor"], "known headings, each once");
+    assert!(!settings.plugin_manager_owned_first, "an unknown value leaves the default");
+    let too_many = format!("plugin_manager_columns = {}\n", ["50"; MANAGER_COLUMNS + 1].join(", "));
+    assert!(Settings::from_text(&too_many).0.plugin_manager_columns.is_empty(), "more widths than columns: ignored");
+    assert!(Settings::from_text("plugin_manager_columns = 1, x\n").0.plugin_manager_columns.is_empty());
+    let kept = Settings { plugin_manager_columns: vec![28, 0, 140], ..Settings::default() };
+    assert_eq!(Settings::from_text(&kept.to_text()).0.plugin_manager_columns, [28, 0, 140], "a 0 round-trips");
+}

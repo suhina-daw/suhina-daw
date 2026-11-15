@@ -37,17 +37,24 @@ current theme: switching the theme changes the manager with the rest of the app.
   library file counts as VST2) and **Vendor** (a drop-down of every vendor found). A type or a
   vendor leaves the files out, since they have neither. At the bottom **Scan locations**, which
   shows the folders scans look in in the table's place (below), and **Reset filters**, which
-  shows every row again (the search too).
+  shows every row again (the search too). The
+  counts beside the shelves follow the type, format and vendor filters and the search, so a
+  shelf never says more rows than it shows.
 - **In the middle:** the search field; under it, when files failed or are built for another
   processor, a notice that says how many ("6 files failed to scan · 6 use an incompatible
-  architecture") with **Review issues**, which shows **Needs attention**; then the table.
+  architecture") with **Review issues**, which shows **Needs attention** and lets go of the type,
+  format, vendor and search filters, which files have nothing for; then the table. Escape closes
+  the manager, except while it closes an open menu or drop-down.
 - **Scan locations**, in the middle in the table's place: the folder list of Settings ›
   Plug-ins (below, *Folders*), the same list with the same controls: each folder on or off, an
   added one removed, a folder added with its format, **Add** with nothing typed showing the
   system's folder picker. **Back to the plug-ins**, Escape, or any shelf or type in the sidebar
   shows the table again.
-- **Selected plug-in** panel on the right: the row picked last, with its name and vendor (a
-  file's folder), its format and type as tags, an **Enabled** switch, its version and status,
+- **Selected plug-in** panel on the right: the row clicked last while it is picked (else the one
+  picked last; nothing with no row picked), with its name and vendor (a file's folder), its
+  format and type as tags, **Enabled** and **Owned** switches, its version, its architecture (a
+  plug-in that loaded is built for the processor Suhina runs on; a file built for another names
+  its processors in its reason) and status,
   the file's location with **Show in folder**, and **Rescan plug-in** (**Scan again** for a file),
   which reads that file again now (`plugin.scanFile`). A plug-in switched off is hidden from the
   browser, which the panel says. With several rows picked, the panel says how many ("14
@@ -86,7 +93,10 @@ gives (the file column gets at least room for a path), the table scrolls sideway
 with its rows. **Columns**, beside the search, and a right-click on the headings show or hide
 every column but the checkbox, the name and the action (**Show every column** brings them all
 back); the hidden ones are kept in the UI settings too (`plugin_manager_hidden`), and a hidden
-**File** leaves the room to the other columns. Text a cell cuts ends with an ellipsis, and the pointer over the cell shows the whole
+**File** leaves its room to the name. The action column
+(**Scan again**) sits before **File**, beside the status, so it is in view without scrolling.
+The rows scroll down and sideways in one area with its scroll bars at the table's edges, and the
+headings follow the sideways scroll. Text a cell cuts ends with an ellipsis, and the pointer over the cell shows the whole
 text (the whole path, the whole reason); a file row's name shows the file's whole path.
 
 The search field keeps the rows whose name, vendor, file or reason hold every word typed, within
@@ -100,7 +110,7 @@ row (#1461).
 
 ## Switching a plug-in off
 
-`plugin.setEnabled { plugin, enabled }` (the checkbox; `suhina-cli plugins disable <plug-in>`,
+`plugin.setEnabled { plugin, enabled }`, or `{ plugins: [...], enabled }` for several at once with one save (the checkbox; `suhina-cli plugins disable <plug-in>`,
 `enable`). A plug-in switched off stays in the catalog and in `plugin.list` (`enabled: false`),
 and is kept off across starts (`plugin-disabled.json` in the settings folder). Sessions get the
 catalog without it: the browser does not offer it, `device.addPlugin` and `track.add` do not find
@@ -114,22 +124,27 @@ missing where there are none (with every picked plug-in off, only **Turn on**). 
 the right-clicked row is one of the picked ones, the menu acts on every picked plug-in the table
 shows (the menu says how many, "Turn off 3 plug-ins"), in the order they were picked; a picked
 plug-in the search hides, or a rescan removed, is left alone. When the row is not picked, the
-right-click picks it and the menu acts on that plug-in alone. Each plug-in goes through
-`plugin.setEnabled`; the first one that fails stops the rest and shows its error. The menu
+right-click picks it and the menu acts on that plug-in alone. They go through one
+`plugin.setEnabled` with the list, saved once; a name not found changes none of them and shows its error. The menu
 entries wait while a scan runs, as the checkbox does.
 
 ## Marking a plug-in as owned
 
-`plugin.setOwned { plugin, owned }` (`suhina-cli plugins own <plug-in>`, `disown`). A vendor's
+`plugin.setOwned { plugin, owned }`, or `{ plugins: [...], owned }` for several saved at once
+(`suhina-cli plugins own <plug-in>`, `disown`). A vendor's
 installer often puts every plug-in of a bundle on the system, the ones the user bought and the
 rest, or keeps those of a subscription that ended. The user marks their own: a mark only, which
 changes nothing a session offers or loads, kept across starts (`plugin-owned.json` in the
-settings folder) and listed by `plugin.list` (`owned`).
+settings folder) and listed by `plugin.list` (`owned`). A mark names the product, its vendor and
+name, not one file of it: a plug-in installed both as CLAP and as VST3 is owned in both formats,
+so **Turn off the rest** never switches off one of the user's own, and a mark outlives an update
+that moves the file. A mark of a plug-in no longer installed is taken away by its name
+(`disown <name>`).
 
 In the manager a plug-in marked as owned has a ring in the theme's accent before its name, and
 the **Owned** shelf lists them. A plug-in's right-click menu has **Mark as owned** for the picked
 plug-ins not marked and **Unmark as owned** for those marked (each saying how many, missing
-where there are none), and **Turn off the rest of** its vendor ("Turn off the rest of Waves
+where there are none), and **Turn off the rest of** its vendor ("Turn off the rest of Alpha
 (712)"), which switches off every plug-in of that vendor that is on and not marked; it is there
 only once at least one of the vendor's plug-ins is marked, so a vendor nobody marked is never
 switched off whole. **Owned first**, beside the search, lists the marked plug-ins above the rest, each
@@ -148,7 +163,8 @@ What a scan gives for a file is one of four (ADR 0006 › 9):
   scan-file <file>`) reads it again now. A file row's right-click menu has **Scan again**, for
   every picked file row when the row is one of them ("Scan 3 files again"), and **Show in
   Explorer** (**Show in Finder** on macOS, **Show in folder** elsewhere), which opens the system's
-  file manager with the file picked in its folder; a plug-in's menu has it too.
+  file manager at the file, picked in its folder on Windows and macOS (on Linux the folder
+  opens); a plug-in's menu has it too.
 - **Built for another processor**: the executable's header (Mach-O, PE or ELF) lists only other
   processors than the one Suhina runs on, such as an Intel-only plug-in on an Apple silicon Mac.
   It is never loaded and is settled: not read again until the file changes. Listed as *Wrong

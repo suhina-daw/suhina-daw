@@ -676,9 +676,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   filters; the folders scans look in under **Scan locations**; a panel for the plug-in picked,
   or one switch for several; a plug-in switched off is not offered and does not load, and a
   failed file is read again with its **Scan again** or from its right-click menu, which also
-  shows it in the file manager. Plug-ins are **marked as owned** (`plugin.setOwned`), listed
-  first on request, and **Turn off the rest** of a vendor switches off its unmarked ones
-  ([spec](docs/spec/plugin-manager.md)).
+  shows it in the file manager ([spec](docs/spec/plugin-manager.md)).
 - Plug-in **folders per format**: each added folder for CLAP, VST3 or both, any folder switched
   off without removing it (`plugin.setFolderEnabled`); VST2 folders are ready for when VST2
   plug-ins are hosted.

@@ -18,8 +18,12 @@ use crate::projects::project_param;
 use crate::{Agents, CommandError, PathKind, Policy, Projects};
 
 const FOLDER: Param = param("folder", ParamType::Path(PathKind::Folder), "a folder that holds plug-ins");
-const PLUGIN: Param = param("plugin", ParamType::Text, "plug-in name, id or spec, from plugin.list");
 const ENABLED: Param = param("enabled", ParamType::Bool, "true for on, false for off");
+/// One plug-in, or with [`PLUGINS`] a list of them saved at once.
+const PLUGIN_ONE: Param =
+    optional("plugin", ParamType::Text, "plug-in name, id or spec, from plugin.list (or plugins)");
+const PLUGINS: Param =
+    optional("plugins", ParamType::Texts, "several plug-ins (names, ids or specs), changed and saved at once");
 
 static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     CommandSpec {
@@ -74,16 +78,20 @@ static PLUGIN_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "plugin.setEnabled",
-        label: "Switch an installed plug-in on or off: one switched off is not offered in the browser and does not load, and a project that uses it finds it missing",
-        params: &[PLUGIN, ENABLED],
+        label: "Switch installed plug-ins on or off, one or a list: one switched off is not offered in the browser and does not load, and a project that uses it finds it missing",
+        params: &[PLUGIN_ONE, PLUGINS, ENABLED],
         kind: CommandKind::on(crate::commands::Target::Plugins, crate::commands::Effect::Change),
         run: set_enabled,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
         id: "plugin.setOwned",
-        label: "Mark an installed plug-in as owned, or take the mark away: a mark for the user's own plug-ins among a vendor's bundle that installs them all; what is offered and loaded does not change",
-        params: &[PLUGIN, param("owned", ParamType::Bool, "true to mark it as owned, false to take the mark away")],
+        label: "Mark an installed plug-in as owned, or take the mark away: a mark for the user's own plug-ins among a vendor's bundle that installs them all, naming the product (vendor and name), so every format of it is owned; what is offered and loaded does not change",
+        params: &[
+            PLUGIN_ONE,
+            PLUGINS,
+            param("owned", ParamType::Bool, "true to mark it as owned, false to take the mark away"),
+        ],
         kind: CommandKind::on(crate::commands::Target::Plugins, crate::commands::Effect::Change),
         run: set_owned,
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
@@ -154,8 +162,8 @@ fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
         specs.into_iter().map(|spec| (spec.clone(), library.hosting(&spec))).collect();
     let off: std::collections::HashSet<String> =
         hosting.keys().filter(|spec| !library.is_enabled(spec)).cloned().collect();
-    let owned: std::collections::HashSet<String> =
-        hosting.keys().filter(|spec| library.is_owned(spec)).cloned().collect();
+    // A mark names the product (vendor and name), so every format of it is owned.
+    let marks: std::collections::HashSet<String> = library.owned_keys().into_iter().collect();
     let catalog = projects.library_mut().catalog();
     let plugins: Vec<Value> = catalog
         .plugins()
@@ -172,7 +180,7 @@ fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
                 "file": p.path.display().to_string(),
                 "hosting": hosting.get(&p.spec()).copied().unwrap_or_default().name(),
                 "enabled": !off.contains(&p.spec()),
-                "owned": owned.contains(&p.spec()),
+                "owned": marks.contains(&suhina_plugins::library::product_key(&p.vendor, &p.name)),
             })
         })
         .collect();
@@ -250,34 +258,83 @@ fn set_folder_enabled(projects: &mut Projects, params: &Value) -> Result<Value, 
     Ok(json!({ "changed": changed, "enabled": enabled }))
 }
 
+/// The plug-ins a switch or a mark acts on: `plugin`, one name, id or spec, or `plugins`, a list
+/// of them (one save for them all). Each found as `plugin.list` names it; the first not found is
+/// an error and nothing changes.
+fn named_plugins(
+    projects: &mut Projects,
+    params: &Value,
+) -> Result<Vec<(String, String, String, String)>, CommandError> {
+    let names: Vec<&str> = match (params.get("plugin"), params.get("plugins")) {
+        (Some(one), None) => vec![one.as_str().ok_or("plugin must be a plug-in name, id or spec")?],
+        (None, Some(Value::Array(list))) => list
+            .iter()
+            .map(|v| v.as_str().ok_or("plugins must be a list of plug-in names, ids or specs"))
+            .collect::<Result<_, _>>()?,
+        (None, Some(_)) => return Err("plugins must be a list of plug-in names, ids or specs".into()),
+        _ => return Err("give plugin (one plug-in) or plugins (a list), not both".into()),
+    };
+    if names.len() > 4096 {
+        return Err("at most 4096 plug-ins at a time".into());
+    }
+    let catalog = projects.library_mut().catalog();
+    // Each spec worked out once, not once per name looked up.
+    let by_spec: std::collections::HashMap<String, &suhina_plugins::scan::PluginInfo> =
+        catalog.plugins().map(|p| (p.spec(), p)).collect();
+    names
+        .into_iter()
+        .map(|name| {
+            let plugin = by_spec
+                .get(name)
+                .copied()
+                .or_else(|| catalog.find(name))
+                .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugin.list lists them"))?;
+            Ok((plugin.spec(), plugin.name.clone(), plugin.vendor.clone(), name.to_string()))
+        })
+        .collect()
+}
+
+/// What a switch or a mark answers: the plug-in for `plugin`, the list for `plugins`.
+fn answer(params: &Value, found: &[(String, String, String, String)], field: &str, value: bool) -> Value {
+    match (params.get("plugin"), found) {
+        (Some(_), [(spec, name, _, _)]) => json!({ "plugin": name, "spec": spec, field: value }),
+        _ => json!({ "plugins": found.iter().map(|(_, name, _, _)| name.as_str()).collect::<Vec<_>>(), field: value }),
+    }
+}
+
 fn set_enabled(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let name = Args::new(params).raw_str("plugin").ok_or("plugin must be a plug-in name, id or spec")?;
     let enabled = Args::new(params).bool("enabled")?;
-    let library = projects.library_mut();
-    let catalog = library.catalog();
-    let plugin = catalog
-        .plugins()
-        .find(|p| p.spec() == name)
-        .or_else(|| catalog.find(name))
-        .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugin.list lists them"))?;
-    let (spec, shown) = (plugin.spec(), plugin.name.clone());
-    library.set_enabled(&spec, enabled)?;
-    Ok(json!({ "plugin": shown, "spec": spec, "enabled": enabled }))
+    let found = named_plugins(projects, params)?;
+    let specs: Vec<String> = found.iter().map(|(spec, ..)| spec.clone()).collect();
+    projects.library_mut().set_enabled_many(&specs, enabled)?;
+    Ok(answer(params, &found, "enabled", enabled))
 }
 
 fn set_owned(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
-    let name = Args::new(params).raw_str("plugin").ok_or("plugin must be a plug-in name, id or spec")?;
+    use suhina_plugins::library::product_key;
     let owned = Args::new(params).bool("owned")?;
-    let library = projects.library_mut();
-    let catalog = library.catalog();
-    let plugin = catalog
-        .plugins()
-        .find(|p| p.spec() == name)
-        .or_else(|| catalog.find(name))
-        .ok_or_else(|| format!("no plug-in {name:?} in the catalog; plugin.list lists them"))?;
-    let (spec, shown) = (plugin.spec(), plugin.name.clone());
-    library.set_owned(&spec, owned)?;
-    Ok(json!({ "plugin": shown, "spec": spec, "owned": owned }))
+    // A mark of a plug-in no longer installed is taken away by its name, so it never sticks.
+    if !owned
+        && let Some(name) = params.get("plugin").and_then(Value::as_str)
+        && projects.library_mut().catalog().find(name).is_none()
+        && !projects.library_mut().catalog().plugins().any(|p| p.spec() == name)
+    {
+        let keys: Vec<String> = projects
+            .library_mut()
+            .owned_keys()
+            .into_iter()
+            .filter(|key| key.split_once('\t').is_some_and(|(_, n)| n.eq_ignore_ascii_case(name)) || key == name)
+            .collect();
+        if keys.is_empty() {
+            return Err(format!("no plug-in {name:?} in the catalog or marked as owned; plugin.list lists them").into());
+        }
+        projects.library_mut().set_owned_many(&keys, false)?;
+        return Ok(json!({ "plugin": name, "owned": false }));
+    }
+    let found = named_plugins(projects, params)?;
+    let keys: Vec<String> = found.iter().map(|(_, name, vendor, _)| product_key(vendor, name)).collect();
+    projects.library_mut().set_owned_many(&keys, owned)?;
+    Ok(answer(params, &found, "owned", owned))
 }
 
 fn scan_file(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
