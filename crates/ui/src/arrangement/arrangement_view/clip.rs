@@ -1561,11 +1561,11 @@ pub(super) fn paint_clip(
         widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &clip.name, font, text_color);
     }
     let marks = wave_area(rect);
+    let has_name = bar.is_some();
     // On a lane too low for a name bar the strip under the name is too thin for a waveform or
     // notes to read, so the clip shows its name there instead. On a taller lane, notes that crowd
     // into a smear give way too, the name staying in its bar. One or the other, never the name
     // over faint notes.
-    let has_name = bar.is_some();
     let low = !has_name;
     let mut content_hidden = low;
     if low {
