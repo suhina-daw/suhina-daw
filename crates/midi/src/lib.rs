@@ -19,7 +19,7 @@
 //! message whole, system exclusive included, goes to the session's sink with the driver's
 //! timestamp, and what the program sends back is written to an output port opened for it.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use suhina_engine::{LiveEvent, LiveSource, StampClock, live_now, port_id};
@@ -86,22 +86,64 @@ pub fn parse(message: &[u8]) -> Option<(u8, LiveEvent)> {
     Some((status & 0x0F, event))
 }
 
-/// The system's MIDI input ports.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Midi;
+/// The system's MIDI ports: one listing client per direction, kept alive so the two-second
+/// scan does not create and destroy CoreMIDI clients all day — the churn wedged the frame
+/// loop inside a scan and crashed the teardown. `connect` consumes a client, so an open
+/// takes the cached one out and the next listing makes another.
+#[derive(Default)]
+pub struct Midi {
+    input: Mutex<Option<MidiInput>>,
+    output: Mutex<Option<MidiOutput>>,
+}
 
 impl Midi {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
-}
 
-fn client() -> Result<MidiInput, String> {
-    let mut input = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
-    // System exclusive, clock and active sensing are not read; skipping them saves the
-    // callback's work.
-    input.ignore(Ignore::All);
-    Ok(input)
+    /// The input listing client, made once and borrowed; the scan runs with it held.
+    fn input_client(&self) -> Result<MutexGuard<'_, Option<MidiInput>>, String> {
+        let mut guard = self.input.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.is_none() {
+            let mut client = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
+            // System exclusive, clock and active sensing are not read; skipping them saves the
+            // callback's work.
+            client.ignore(Ignore::All);
+            *guard = Some(client);
+        }
+        Ok(guard)
+    }
+
+    /// The input client by value, for an open: midir's `connect` consumes it. The cache is
+    /// left empty and the next listing makes another.
+    fn take_input(&self) -> Result<MidiInput, String> {
+        let mut guard = self.input.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(client) = guard.take() {
+            return Ok(client);
+        }
+        let mut client = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
+        client.ignore(Ignore::All);
+        Ok(client)
+    }
+
+    /// The output listing client, made once and borrowed.
+    fn output_client(&self) -> Result<MutexGuard<'_, Option<MidiOutput>>, String> {
+        let mut guard = self.output.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.is_none() {
+            let client = MidiOutput::new(CLIENT).map_err(|e| e.to_string())?;
+            *guard = Some(client);
+        }
+        Ok(guard)
+    }
+
+    /// The output client by value, for an open.
+    fn take_output(&self) -> Result<MidiOutput, String> {
+        let mut guard = self.output.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(client) = guard.take() {
+            return Ok(client);
+        }
+        MidiOutput::new(CLIENT).map_err(|e| e.to_string())
+    }
 }
 
 /// An open port: closing it lets go of the keys it holds, on every channel.
@@ -124,12 +166,15 @@ impl Drop for Port {
 
 impl MidiSystem for Midi {
     fn ports(&self) -> Result<Vec<(String, String)>, String> {
-        let input = client()?;
+        let guard = self.input_client()?;
+        let Some(input) = guard.as_ref() else {
+            return Err("the input listing client is gone".into());
+        };
         Ok(input.ports().iter().filter_map(|port| Some((input.port_name(port).ok()?, port.id()))).collect())
     }
 
     fn open(&self, name: &str, input: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String> {
-        let client = client()?;
+        let client = self.take_input()?;
         let port = client
             .ports()
             .into_iter()
@@ -169,7 +214,7 @@ impl MidiSystem for Midi {
     }
 
     fn open_output(&self, name: &str) -> Result<Box<dyn MidiOut>, String> {
-        let output = MidiOutput::new(CLIENT).map_err(|e| e.to_string())?;
+        let output = self.take_output()?;
         let port = output
             .ports()
             .into_iter()

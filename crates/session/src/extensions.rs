@@ -473,24 +473,29 @@ impl Extensions {
                     programs::Event::Running => {
                         extension.state = State::Running;
                         extension.script_stopped = false;
-                        // The fresh process subscribes anew: the old process's subscriptions
-                        // would swallow the first push — their `last` holds the value as it
-                        // was, and while nothing changed they push nothing, leaving the new
-                        // script's reads nil and its controller dark until something moves.
-                        self.subs.retain(|sub| sub.program != extension.id);
-                        // The claims may have changed: the router looks again.
+                        // The claims may have changed: the router looks again. The process's
+                        // subscriptions are not dropped here: the queue's order puts them
+                        // ahead of Running (the chunk subscribes before `ready`), and a drop
+                        // would wipe the fresh ones every look, leaving the script blind.
                         self.claims_epoch += 1;
                     }
                     programs::Event::Crashed(reason) => {
                         extension.state = State::Crashed;
                         extension.last_error = Some(reason.clone());
+                        // The dead process's subscriptions die with it: a fresh script
+                        // subscribes anew, and the old records would swallow its first push
+                        // — their `last` already holds the value, so while nothing changed
+                        // they push nothing, leaving the new script's reads nil.
+                        self.subs.retain(|sub| sub.program != extension.id);
                         self.claims_epoch += 1;
                     }
                     programs::Event::ScriptError(message) => {
                         extension.last_error = Some(message.clone());
                         // The script is dead until `extensions.restart`; its ports fall back
-                        // (docs/spec/midi-mapping.md › Surface programs).
+                        // (docs/spec/midi-mapping.md › Surface programs). Its subscriptions
+                        // die with it: the restart's fresh script subscribes anew.
                         extension.script_stopped = true;
+                        self.subs.retain(|sub| sub.program != extension.id);
                         self.claims_epoch += 1;
                     }
                     programs::Event::SendBack { .. } => {
@@ -545,7 +550,9 @@ impl Extensions {
     ) -> Vec<(String, u64, Value)> {
         let mut pushed = Vec::new();
         for (program, token, result) in results {
-            let Ok(value) = result else { continue };
+            let Ok(value) = result else {
+                continue;
+            };
             let Some(sub) = self.subs.iter_mut().find(|sub| sub.program == program && sub.token == token) else {
                 continue;
             };
