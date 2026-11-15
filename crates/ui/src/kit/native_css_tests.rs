@@ -439,6 +439,37 @@ fn prepare_with(css: &str, width: f32, base: bool) {
     .clear();
 }
 #[test]
+fn a_user_sheet_or_variant_that_does_not_parse_resets_the_styles_once() {
+    let broken: Arc<str> = Arc::from("button { content: \"open\n }");
+    assert!(Sheet::parse(&broken).is_err());
+    let ctx = egui::Context::default();
+    let frame = |user: Option<Arc<str>>, variant: Option<Arc<str>>| {
+        skin::configure(&skin::Skin {
+            css: Some(Arc::from("button { color: #123456; }")),
+            variant,
+            ..Default::default()
+        });
+        set_user_sheet(user);
+        ctx.run_ui(Default::default(), |ui| begin_frame(ui)).textures_delta.clear();
+        style_epoch()
+    };
+    frame(None, None);
+    for (user, variant) in [(Some(Arc::clone(&broken)), None), (None, Some(Arc::clone(&broken)))] {
+        let first = frame(user.clone(), variant.clone());
+        assert_eq!(frame(user.clone(), variant.clone()), first, "the same broken text is not taken again");
+        assert_eq!(frame(user, variant), first);
+        frame(None, None);
+    }
+    // The working user sheet stays when a broken one follows it.
+    let working: Arc<str> = Arc::from("button { color: #abcdef; }");
+    frame(Some(working), None);
+    frame(Some(Arc::clone(&broken)), None);
+    assert_eq!(scoped(&["button".into()]).unwrap().color, Color32::from_rgb(0xab, 0xcd, 0xef));
+    set_user_sheet(None);
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
 fn a_variant_s_values_paint_over_the_theme_s_own_and_registered_defaults_apply() {
     let css = "@property --ink { syntax: \"<color>\"; initial-value: #010203; }\n\
                :root { --edge: #445566; } browser { color: var(--ink); border-color: var(--edge); }";

@@ -453,6 +453,9 @@ struct Engine {
     user: Option<(Arc<str>, Arc<suhina_style::sheet::Sheet>)>,
     /// The chosen theme variant's values, above the theme's sheet.
     variant: Option<(Arc<str>, Arc<suhina_style::sheet::Sheet>)>,
+    /// The user's sheet and the variant as last given, parsed or not: what the next frame's are
+    /// compared with, so that a text that does not parse resets the styles once, not every frame.
+    seen: (Option<Arc<str>>, Option<Arc<str>>),
     /// Parsed device panel sheets by the hash of their text, bounded.
     device_sheets: HashMap<u64, Arc<suhina_style::sheet::Sheet>>,
     /// Styles asked for this frame by elements the tree had no room for, which get none.
@@ -1147,13 +1150,15 @@ pub fn begin_frame(ui: &egui::Ui) {
     let variant = skin.variant.clone();
     ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
-        if engine.variant.as_ref().map(|(text, _)| text) != variant.as_ref() {
+        if engine.seen.1 != variant {
+            engine.seen.1.clone_from(&variant);
             engine.variant = variant
                 .and_then(|text| Some((Arc::clone(&text), Arc::new(suhina_style::sheet::Sheet::parse(&text).ok()?))));
             engine.styles_changed = true;
             engine.reset_styles();
         }
-        if engine.user.as_ref().map(|(text, _)| text) != user.as_ref() {
+        if engine.seen.0 != user {
+            engine.seen.0.clone_from(&user);
             // A user sheet that does not parse keeps the last working one.
             match user {
                 Some(text) => {
@@ -1183,6 +1188,7 @@ pub fn begin_frame(ui: &egui::Ui) {
                     let user = engine.user.take();
                     let variant = engine.variant.take();
                     let device_sheets = std::mem::take(&mut engine.device_sheets);
+                    let seen = std::mem::take(&mut engine.seen);
                     bump_epoch();
                     // The base tier's inputs are given to the new sheet below.
                     *engine = Engine {
@@ -1192,6 +1198,7 @@ pub fn begin_frame(ui: &egui::Ui) {
                         motion,
                         user,
                         variant,
+                        seen,
                         device_sheets,
                         ..Default::default()
                     };
