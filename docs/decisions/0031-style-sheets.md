@@ -1037,11 +1037,13 @@ toolbar, corner and gestures draw from their elements, the palette token as the 
 theme that leaves them alone looks as before. Their words read `label` by how much they stand
 out (`hint`, `caption`, `title`, `value`, `error`, `plugin-state`, `head`); `hint` and `caption`
 take only a colour a rule gives them, so a colour a theme gives a whole panel keeps them dimmer
-than its names. Lit toggles stay lit under a rule for every `button` (the follow action's
-switches, a branch's mute and solo, the browser's chips); parts that sit quietly on their bar
-(the piano roll's toolbar menus, `dropdown[kind="subtle"]`; a device's on switch,
-`button#control-device-on`; an expanded panel's ×, `button[kind="close"]`) take only a rule for
-themselves. egui's fields in the browser take `text-input` through `Entered::ui`. The Arrangement's
+than its names. Lit toggles are lit by the base sheet's `[checked]` rules (the follow action's
+switches, a branch's mute and solo, the browser's chips); under [#1448](https://github.com/suhina-daw/suhina-daw/issues/1448)
+a theme's rule for every `button` beats a base rule, so a theme that has one states its lit look
+too. Parts that sit quietly on their bar (the piano roll's toolbar menus, `dropdown[kind="subtle"]`;
+an expanded panel's ×, `button[kind="close"]`) take only a rule for themselves. A device's on
+switch, `button#control-device-on`, is an ordinary button: a rule for every `button` reaches it
+(changed with #1474's review). egui's fields in the browser take `text-input` through `Entered::ui`. The Arrangement's
 header edge is `divider#arrangement-header-splitter`. Where no theme's sheet runs, the piano
 roll's toolbar is laid out with its Toolbar size and measured with the user-agent sheet's padding,
 as it is when the style engine runs. The EQ's curve and the colours a device panel's canvas hands
