@@ -203,6 +203,7 @@ fn settings_survive_a_round_trip() {
         mcp_write_folders: vec![r"C:\Music\Mixes = mine".into(), "/tmp/renders".into()],
         plugin_manager_columns: vec![28, 240, 150, 80, 64, 70, 140, 300, 84],
         plugin_manager_hidden: vec!["Vendor".into(), "File".into()],
+        plugin_manager_owned_first: true,
         auto_arm: true,
     };
     assert_eq!(Settings::from_text(&settings.to_text()), (settings, Vec::new()));

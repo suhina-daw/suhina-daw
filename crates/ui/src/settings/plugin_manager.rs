@@ -91,6 +91,8 @@ pub struct ManagerState {
     pub widths: Vec<u32>,
     /// The columns hidden, by heading (`Vendor`, `File` …), from the columns menu.
     pub hidden: Vec<String>,
+    /// The plug-ins marked as owned are listed first, each group in the sort chosen.
+    pub owned_first: bool,
     /// The middle shows the folders scans look in (**Scan locations**) instead of the table.
     pub locations: bool,
     /// The widths and the hidden columns were read from the UI settings.
@@ -374,6 +376,15 @@ fn lines(plugins: &PluginsView, state: &ManagerState) -> Vec<Line> {
     if descending {
         lines.reverse();
     }
+    // Owned first: the marked plug-ins above the rest, each group keeping the sort (a stable sort
+    // moves rows only across the two groups).
+    if state.owned_first {
+        let owned = |line: &Line| match line.kind {
+            Kind::Plugin(i) => plugins.found.get(i).is_some_and(|p| p.owned),
+            _ => false,
+        };
+        lines.sort_by_key(|line| !owned(line));
+    }
     lines
 }
 
@@ -480,6 +491,8 @@ pub struct ManagerOut {
     pub widths: Option<Vec<u32>>,
     /// The columns hidden changed: the UI settings keep them.
     pub hidden: Option<Vec<String>>,
+    /// Owned first was switched: the UI settings keep it.
+    pub owned_first: Option<bool>,
 }
 
 /// "Show in Explorer" on Windows, "Show in Finder" on macOS.
@@ -936,9 +949,21 @@ fn table(
     let small = theme::ui_font(theme::TEXT_SMALL);
     // The search, and beside it **Columns**, the menu that shows or hides columns.
     let columns_width = 84.0;
-    let search = Rect::from_min_size(rect.min, Vec2::new((rect.width() - columns_width - 8.0).max(80.0), 24.0));
+    let first_width = 96.0;
+    let search =
+        Rect::from_min_size(rect.min, Vec2::new((rect.width() - columns_width - first_width - 16.0).max(80.0), 24.0));
+    // **Owned first**, lit while on: the marked plug-ins above the rest, the sort kept in each.
+    let first = Rect::from_min_size(Pos2::new(search.right() + 8.0, search.top()), Vec2::new(first_width, 24.0));
+    let on = plugins.manager.owned_first;
+    let label = "List the plug-ins marked as owned first";
+    let response =
+        widgets::button_with_id(ui, painter, first, Id::unique("manager-owned-first"), "Owned first", label, on);
+    if response.clicked() {
+        plugins.manager.owned_first = !on;
+        out.owned_first = Some(!on);
+    }
     let chooser =
-        Rect::from_min_max(Pos2::new(search.right() + 8.0, search.top()), Pos2::new(rect.right(), search.bottom()));
+        Rect::from_min_max(Pos2::new(first.right() + 8.0, search.top()), Pos2::new(rect.right(), search.bottom()));
     let id = Id::unique("manager-columns");
     let response = widgets::button_with_id(ui, painter, chooser, id, "Columns", "Choose the columns shown", false);
     egui::Popup::menu(&response)

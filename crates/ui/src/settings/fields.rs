@@ -244,6 +244,7 @@ pub(super) const FIELDS: &[Field] = &[
             widths.filter(|w| w.len() <= MANAGER_COLUMNS).map(|w| s.plugin_manager_columns = w).is_some()
         },
     },
+    switch!("plugin_manager_owned_first", plugin_manager_owned_first),
     Field {
         key: "plugin_manager_hidden",
         write: |s| s.plugin_manager_hidden.join(", "),

@@ -264,6 +264,7 @@ impl App {
             if !self.plugins.manager.widths_read {
                 self.plugins.manager.widths = self.settings.plugin_manager_columns.clone();
                 self.plugins.manager.hidden = self.settings.plugin_manager_hidden.clone();
+                self.plugins.manager.owned_first = self.settings.plugin_manager_owned_first;
                 self.plugins.manager.widths_read = true;
             }
             let out = ui
@@ -277,6 +278,10 @@ impl App {
             }
             if let Some(widths) = out.widths {
                 self.settings.plugin_manager_columns = widths;
+                self.settings_changed = true;
+            }
+            if let Some(first) = out.owned_first {
+                self.settings.plugin_manager_owned_first = first;
                 self.settings_changed = true;
             }
             if let Some(hidden) = out.hidden {

@@ -131,7 +131,9 @@ plug-ins not marked and **Unmark as owned** for those marked (each saying how ma
 where there are none), and **Turn off the rest of** its vendor ("Turn off the rest of Waves
 (712)"), which switches off every plug-in of that vendor that is on and not marked; it is there
 only once at least one of the vendor's plug-ins is marked, so a vendor nobody marked is never
-switched off whole. The selected plug-in's panel has an **Owned** switch, and with several picked
+switched off whole. **Owned first**, beside the search, lists the marked plug-ins above the rest, each
+group in the sort chosen (by name in natural order, for one), and is kept in the UI settings
+(`plugin_manager_owned_first`). The selected plug-in's panel has an **Owned** switch, and with several picked
 one switch marks them all (or, when all are marked, takes every mark away).
 
 ## Files that gave no plug-ins

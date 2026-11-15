@@ -262,3 +262,22 @@ fn the_rest_of_a_vendor_is_what_is_on_and_not_marked_as_owned() {
     assert_eq!(split_by_owned(&keys, &plugins), (vec![spec(&plugins, "Keys")], vec![spec(&plugins, "Comp")]));
     assert_eq!(Counts::of(&plugins).owned, 1);
 }
+
+#[test]
+fn owned_first_lists_the_marked_plug_ins_above_the_rest_each_in_its_sort() {
+    let mut plugins = view();
+    plugins.found.push(plugin("Amp", "Alpha", "effect", "vst3", true));
+    for p in plugins.found.iter_mut().filter(|p| p.name == "Keys" || p.name == "Verb 10") {
+        p.owned = true;
+    }
+    let mut state = ManagerState { sort: (1, false), owned_first: true, ..ManagerState::default() };
+    assert_eq!(names(&plugins, &state), ["Keys", "Verb 10", "Amp", "Broken.vst3", "Old.dll", "Verb 9"]);
+    state.sort = (1, true);
+    assert_eq!(
+        names(&plugins, &state),
+        ["Verb 10", "Keys", "Verb 9", "Old.dll", "Broken.vst3", "Amp"],
+        "descending too: the owned stay on top"
+    );
+    state.owned_first = false;
+    assert_eq!(names(&plugins, &state)[0], "Verb 10", "off: the plain sort");
+}
