@@ -7,6 +7,7 @@ last_verified: 2026-11-15
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
+  - .github/workflows/nightly-notes.yml
   - .github/workflows/discord.yml
   - .github/workflows/test-build.yml
   - .github/workflows/test-build-links.yml
@@ -27,6 +28,8 @@ covers:
   - scripts/discord_test_build.py
   - scripts/discord_test_build_backfill.py
   - scripts/discord_api.py
+  - scripts/nightly_notes.py
+  - scripts/test_nightly_notes.py
   - apps/suhina/build.rs
   - apps/suhina-cli/build.rs
   - crates/plugin-host/build.rs
@@ -124,14 +127,25 @@ The workflow publishes the nightly with the list from
 [`scripts/release_notes.py`](../scripts/release_notes.py) (see [Release notes](#release-notes)) and
 ends the notes with a hidden line, `<!-- nightly-range: <previous nightly>..<this commit> -->`.
 A scheduled Claude agent (a routine on the maintainer's account, not in this repository) runs about
-an hour after each build. For every dated nightly of the last three days whose notes do not yet
-end with `<!-- notes: composed -->`, it reads the pull requests merged in that range (their titles
-and descriptions), writes notes for users from them, replaces the notes of that dated release (and
-of `nightly` when it is the same build) and posts the nightly to Discord's releases channel (see
-[Discord](#discord)) with a link to its dated release, so the link still leads to the build it
-announced after the next night. A build that is still running is waited for, and a nightly the
-agent missed is caught up on its next run. Until then the nightly keeps the script's list, and it
-is published either way.
+an hour after each build. It takes every dated nightly of the last three days whose notes do not
+yet say `<!-- discord: posted -->`: without `<!-- notes: composed -->` it reads the pull requests
+merged in that range (their titles and descriptions) and writes notes for users from them; with it
+(the notes are published but the Discord post failed) it hands over the published notes again. A
+build that is still running is waited for, and a nightly the agent missed is caught up on its next
+run. Until then the nightly keeps the
+script's list, and it is published either way.
+
+The agent runs in a Claude cloud session, which may start workflows but may not edit releases, so
+it hands the notes to **Actions › Nightly notes** ([`nightly-notes.yml`](../.github/workflows/nightly-notes.yml))
+as its `tag` and `notes` inputs. [`scripts/nightly_notes.py`](../scripts/nightly_notes.py) checks
+them before anything changes: the tag is `nightly-YYYYMMDD` or `nightly-YYYYMMDD-N`, the notes
+start with `### New since the previous nightly`, carry no HTML, images, `@`, character references
+(`&#58;`) or reference-style link definitions (`[label]: …`), and link only to this repository. It then replaces the notes section of that dated release (and of `nightly` when it
+is the same build) and adds `<!-- notes: composed -->`, and posts the notes to Discord's releases
+channel (see [Discord](#discord)) as one embed whose title links to the dated release, so the link
+still leads to the build it announced after the next night. Only after Discord took the post is
+`<!-- discord: posted -->` added, so a failed post is tried again by the next run and a nightly is
+never posted twice. A maintainer can run the workflow by hand with the same inputs.
 
 Until Suhina has a release of its own (published, not a release candidate), the nightly is the
 repository's **latest** release, so the Releases box on the repository page offers its downloads.
@@ -400,7 +414,7 @@ ruleset restricts their creation), so no one else can make a ref that reaches th
 
 | Channel | Secret | Posts |
 |---|---|---|
-| releases | `DISCORD_WEBHOOK_RELEASES` | each release when a person publishes it, with its *New and changed* section (`discord.yml`) |
+| releases | `DISCORD_WEBHOOK_RELEASES` | each nightly, with the notes the agent wrote (`nightly-notes.yml`, see [Nightly notes](#nightly-notes)); each release when a person publishes it, with its *New and changed* section (`discord.yml`) |
 | events | `DISCORD_WEBHOOK_EVENTS` | pull requests opened, merged, closed and reopened; issues opened, closed and reopened (`discord.yml`) |
 | testing (a forum) | `DISCORD_WEBHOOK_TESTING` | each linked test build, in its pull request's thread (`test-build-links.yml`) |
 

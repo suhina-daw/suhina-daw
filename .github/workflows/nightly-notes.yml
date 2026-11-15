@@ -1,0 +1,51 @@
+name: Nightly notes
+
+# Publishes the notes a scheduled agent wrote for a dated nightly and posts the nightly to
+# Discord's releases channel (docs/releasing.md › Nightly notes). The agent runs in a Claude cloud
+# session, which may start workflows but may not edit releases, so it hands the notes over as this
+# workflow's input. scripts/nightly_notes.py checks them before anything is published: the tag's
+# form, no HTML, images, @, character references or reference-style links, and links to this
+# repository only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The dated nightly, nightly-YYYYMMDD or nightly-YYYYMMDD-N
+        required: true
+        type: string
+      notes:
+        description: The notes, starting with "### New since the previous nightly"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # DISCORD_WEBHOOK_RELEASES is in the environment `discord`, which main may use.
+    environment:
+      name: discord
+      deployment: false
+    permissions:
+      contents: write
+    # One run per nightly at a time, so a nightly is never posted twice.
+    concurrency:
+      group: nightly-notes-${{ inputs.tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The inputs reach the script as environment variables, never as shell text.
+      - name: Publish the notes and post to Discord
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          NOTES: ${{ inputs.notes }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
+        run: python3 scripts/nightly_notes.py
