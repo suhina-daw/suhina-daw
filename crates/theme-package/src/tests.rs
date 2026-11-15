@@ -352,14 +352,50 @@ fn colour_property(name: &str) -> bool {
     name == "color" || name.ends_with("-color")
 }
 
-/// The user-agent sheet has no colours (#1448): a theme that opts out of the base sheet stands on
-/// a bare floor. The theme swatch's square takes its colour from its element, not from the sheet.
+/// The user-agent sheet's only colours are the window's plain text and background (#1448): a
+/// theme that opts out of the base sheet stands on a bare floor it can read. Both are fixed, opaque
+/// values given to `window` alone. The theme swatch's square takes its colour from its element,
+/// not from the sheet.
 #[test]
-fn the_user_agent_sheet_has_no_colours() {
+fn the_user_agent_sheet_colours_only_the_window() {
     let sheet = suhina_style::sheet::Sheet::parse(USER_AGENT_SHEET).unwrap();
+    let mut given: Vec<&str> = Vec::new();
     for (name, value) in sheet.declarations().filter(|(name, _)| colour_property(name)) {
-        assert!(value.trim().starts_with("attr("), "the user-agent sheet gives {name} the colour {value}");
+        if value.trim().starts_with("attr(") {
+            continue;
+        }
+        assert!(
+            matches!(
+                suhina_style::value::Color::parse(value.trim()),
+                Ok(suhina_style::value::Color::Rgba([_, _, _, 255]))
+            ),
+            "the window's {name} is a fixed opaque colour: {value}"
+        );
+        given.push(name);
     }
+    given.sort_unstable();
+    assert_eq!(given, ["background-color", "color"]);
+    // Both in the one rule for `window`.
+    let mut text = USER_AGENT_SHEET.to_owned();
+    while let Some(start) = text.find("/*") {
+        let end = text[start..].find("*/").unwrap() + start + 2;
+        text.replace_range(start..end, "");
+    }
+    let mut rest = text.as_str();
+    let mut coloured = Vec::new();
+    while let Some(open) = rest.find('{') {
+        let close = rest.find('}').unwrap();
+        let body = &rest[open + 1..close];
+        if body.split(';').any(|declaration| {
+            declaration
+                .split_once(':')
+                .is_some_and(|(name, value)| colour_property(name.trim()) && !value.trim().starts_with("attr("))
+        }) {
+            coloured.push(rest[..open].trim().to_owned());
+        }
+        rest = &rest[close + 1..];
+    }
+    assert_eq!(coloured, ["window"]);
 }
 
 /// No colour in the base sheet is fixed (#1448): every colour it gives reads a variable, so a

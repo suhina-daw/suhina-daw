@@ -1171,9 +1171,11 @@ the pull requests that remove the palette (#1023): Suhina's defaults move out of
 ordinary CSS, in a cascade tier of their own under the theme.
 
 1. **The user-agent sheet stays bare** (`crates/theme-package/src/user-agent.css`): no variables
-   and no colours, only what keeps every element usable (layout, the regions' `overflow`, the
-   default artwork, the floating surfaces' blur, the bars' border widths, the theme swatch's
-   square). It is the floor a theme stands on when it opts out of the base sheet.
+   and no colours but a plain readable floor (fixed light text on an opaque dark `window`), only
+   what keeps every element usable (layout, the regions' `overflow`, the default artwork, the
+   floating surfaces' blur, the bars' border widths, the theme swatch's square). It is the floor a
+   theme stands on when it opts out of the base sheet, and the base sheet gives the window Suhina's
+   colours over it.
 2. **A base sheet holds Suhina's design** (`crates/theme-package/src/base.css`, `BASE_SHEET`) as
    ordinary rules written with the colour variables (`progress { background-color:
    var(--control-background); }`), in a tier of its own between the user-agent sheet and the
@@ -1197,7 +1199,8 @@ ordinary CSS, in a cascade tier of their own under the theme.
    track header's grey), each of those now a core variable of its own (`--browser-icon-midi`,
    `--sample-kick`, `--clip-mutedBackground` …) with its earlier value.
 3. **A theme can opt out** of the base sheet with `"base": "none"` in its `theme.json`
-   (`ThemeMeta::base`): it then gets the user-agent sheet's bare look under its own rules. The
+   (`ThemeMeta::base`): it then gets the user-agent sheet's bare look, readable text on an opaque
+   window, under its own rules. The
    theme's colour map and the core registrations still apply.
 4. **Colouring a region goes through its variables**, as ordinary CSS does: `mixer {
    --text-value: gold; }` reaches every part inside the mixer the base sheet colours with

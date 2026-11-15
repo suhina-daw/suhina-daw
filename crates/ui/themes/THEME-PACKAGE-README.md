@@ -490,7 +490,9 @@ specific selector to win over Suhina's.
   `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …
   `--sample-other`).
 - **Opting out.** `"base": "none"` in `theme.json` leaves the base sheet out: your theme stands on
-  the user-agent sheet's plain text on a plain background, and styles the rest itself.
+  the user-agent sheet, whose window has plain light text on an opaque dark background and no
+  other colours, and styles the rest itself. The colour variables still resolve, so your rules can
+  use them.
 
 ## SVG inheritance and safe defaults
 

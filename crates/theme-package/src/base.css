@@ -439,8 +439,9 @@ button[kind="focus"][checked], button[kind="focus"][checked]:hover { background-
 /* App bars, Settings and dialogs */
 
 /* The fills the app's bars, Settings, dialogs and menus paint for themselves where the region
-   behind them gives none, and the window under everything (faded over a backdrop). */
-window { background-color: var(--window-background); }
+   behind them gives none, and the window under everything (faded over a backdrop), its text the
+   document's again over the user-agent sheet's plain colour. */
+window { background-color: var(--window-background); color: var(--text-primary); }
 app-fill[kind="window"] { background-color: var(--window-background); }
 app-fill[kind="panel"] { background-color: var(--panel-background); }
 app-fill[kind="panel-hover"] { background-color: var(--panel-hoverBackground); }

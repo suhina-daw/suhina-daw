@@ -56,7 +56,7 @@ pub struct ThemeMeta {
     /// The suggested toolbar arrangement, kept as written (#1021 reads it).
     pub toolbar: Option<serde_json::Value>,
     /// Whether Suhina's base sheet ([`crate::BASE_SHEET`]) applies under the theme: `false` for
-    /// `"base": "none"`, which leaves the theme on the user-agent sheet's bare look.
+    /// `"base": "none"`, which leaves the theme on the user-agent sheet's bare look (plain text on an opaque window).
     pub base: bool,
     /// Keys the file has that Suhina does not read (`$schema`, or those of a newer feature), kept
     /// so that rewriting the file does not drop them.

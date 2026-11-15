@@ -1939,3 +1939,29 @@ fn opting_out_of_the_base_sheet_leaves_the_bare_look() {
     assert_eq!(bare.variable("--accent"), Some("#A6A3FF"), "the core variables still apply");
     skin::configure(&skin::Skin::default());
 }
+
+/// The user-agent sheet's floor is readable: with `"base": "none"` and nothing of the theme's,
+/// the window has plain text on an opaque background; with the base sheet, the window takes
+/// Suhina Studio's colours as before.
+#[test]
+fn opting_out_of_the_base_sheet_leaves_readable_text_on_an_opaque_window() {
+    let ctx = egui::Context::default();
+    let window = |base: bool| {
+        skin::configure(&skin::Skin { css: Some(Arc::from("")), base, ..Default::default() });
+        ctx.run_ui(Default::default(), |ui| begin_frame(ui)).textures_delta.clear();
+        scoped(&["window".into()]).unwrap()
+    };
+    let bare = window(false);
+    assert_eq!(bare.background.a(), 255, "an opaque window: {:?}", bare.background);
+    let luminance = |c: Color32| {
+        let [r, g, b, _] = c.to_srgba_unmultiplied().map(|v| f32::from(v) / 255.0);
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    };
+    let (text, ground) = (luminance(bare.color), luminance(bare.background));
+    assert_eq!(bare.color.a(), 255, "opaque text: {:?}", bare.color);
+    assert!((text - ground).abs() > 0.6, "text {:?} reads on {:?}", bare.color, bare.background);
+    let based = window(true);
+    assert_eq!(based.background, crate::kit::theme::studio("window-background"));
+    assert_eq!(based.color, crate::kit::theme::studio("text-primary"));
+    skin::configure(&skin::Skin::default());
+}

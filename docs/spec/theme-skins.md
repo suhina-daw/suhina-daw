@@ -363,12 +363,14 @@ Imports choose unused theme ids rather than overwriting existing themes.
 
 Suhina has a user-agent style sheet, as a browser does: `crates/theme-package/src/user-agent.css`
 (`suhina_theme_package::USER_AGENT_SHEET`), built into the app. It is the bare floor every
-element stands on: what keeps it usable, with no design and no colour of Suhina's.
+element stands on: what keeps it usable, with no design of Suhina's. Its only colours are a
+plain readable floor on `window`, fixed light text on an opaque dark background, which the base
+sheet replaces with Suhina's colours.
 
 - **It selects elements by name, state and attribute only:** no classes (but the standard toolbar
   group classes, `group.transport` and `group.display`, once the toolbar has groups), no ids, no
-  variables, no colours and no at-rules. Tests in `suhina-theme-package` check this, and that every
-  element it names is in the registry.
+  variables, no colours but the window's two fixed ones, and no at-rules. Tests in
+  `suhina-theme-package` check this, and that every element it names is in the registry.
 - **The cascade** is: the user-agent sheet, the base tier (*The base sheet*), the theme's
   `theme.css`, the chosen variant, device panel sheets (each inside its panel), and the user's
   `user.css` (`suhina_style::cascade::Layer`). A rule of the user-agent or the base tier on an
@@ -532,7 +534,7 @@ page's (ADR 0031, amendment of 2026-11-15).
   subtle drop-down's line and ink (from the surface it is on) and the readable ink on a lit
   toggle's fill, where no rule gives it one.
 - **Opting out.** `"base": "none"` in `theme.json` leaves the base sheet out: the theme stands on
-  the user-agent sheet's bare look, under its own rules. The core registrations and its colour map
+  the user-agent sheet's bare look, plain light text on an opaque dark window, under its own rules. The core registrations and its colour map
   still apply.
 - **Colouring a region goes through its variables.** `mixer { --text-value: gold; }` reaches every
   part inside the mixer the base sheet colours with `--text-value`. A plain `mixer { color: gold }`
