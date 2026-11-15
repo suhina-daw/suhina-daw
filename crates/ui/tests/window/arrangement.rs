@@ -831,6 +831,64 @@ fn dragging_an_audio_clips_gain_sets_it() {
     assert!(gain.is_some_and(|g| (g - 1.4125).abs() < 1e-3), "{gain:?}");
 }
 
+/// A value set by a key in the middle of a gain drag stands: the drag lets go, and its release does
+/// not bring the dragged value back (#1158).
+#[test]
+fn a_key_step_during_a_gain_drag_is_not_undone_by_its_release() {
+    let mut harness = window(audio_app());
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let field = harness.get_by_label("Gain of Loop on Loop").rect().center();
+    harness.hover_at(field);
+    harness.run();
+    harness.drag_at(field);
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 15.0));
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    harness.key_press(Key::ArrowUp);
+    harness.run();
+    harness.drop_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    let gain = harness.state().session().and_then(|s| {
+        let clips = s.project().arrangement.lanes.iter().flat_map(|l| &l.clips);
+        clips.into_iter().find(|c| c.content == suhina_engine::model::ContentId(300)).map(|c| c.audio.gain)
+    });
+    // The step is +1 dB from the clip's gain; the 3 dB the drag held is not committed after it.
+    assert!(gain.is_some_and(|g| (g - 1.1220).abs() < 1e-3), "{gain:?}");
+}
+
+/// A value typed in the middle of a gain drag stands: the drag lets go, and its release does
+/// not bring the dragged value back (#1158).
+#[test]
+fn a_typed_gain_during_a_gain_drag_is_not_undone_by_its_release() {
+    let mut harness = window(audio_app());
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let field = harness.get_by_label("Gain of Loop on Loop").rect().center();
+    harness.hover_at(field);
+    harness.run();
+    harness.drag_at(field);
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 15.0));
+    harness.run();
+    harness.hover_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    harness.event(egui::Event::Text("2".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    harness.drop_at(field - egui::vec2(0.0, 30.0));
+    harness.run();
+    let gain = harness.state().session().and_then(|s| {
+        let clips = s.project().arrangement.lanes.iter().flat_map(|l| &l.clips);
+        clips.into_iter().find(|c| c.content == suhina_engine::model::ContentId(300)).map(|c| c.audio.gain)
+    });
+    // The 2 dB typed stands; the 3 dB the drag held is not committed after it.
+    assert!(gain.is_some_and(|g| (g - 1.2589).abs() < 1e-3), "{gain:?}");
+}
+
 /// The Loop clip's fade-in and fade-out in the project.
 fn loop_fades(harness: &Harness<'static, App>) -> Option<(f64, f64)> {
     let session = harness.state().session()?;
@@ -1333,6 +1391,77 @@ fn dragging_a_midi_clips_right_edge_makes_it_longer_on_the_grid() {
     harness.drop_at(to);
     harness.run();
     assert_eq!(beat_b(&harness), before + 4.0, "a bar longer");
+}
+
+/// The length of Beat B on Drums, the clip from beat 64.
+fn beat_b_length(h: &Harness<'static, App>) -> Option<f64> {
+    let p = h.state().session()?.project();
+    let track = p.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id);
+    let lane = p.arrangement.lanes.iter().find(|l| l.track == track)?;
+    lane.clips.iter().find(|c| (c.start - 64.0).abs() < 1e-6).map(|c| c.length)
+}
+
+/// Escape lets go of a drag under way: the edge's release then trims nothing (#1158).
+#[test]
+fn escape_cancels_a_clip_edge_drag() {
+    let mut harness = arrangement_app();
+    let before = beat_b_length(&harness).unwrap();
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    let to = edge + egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    assert!(harness.state().arrangement().gesture_under_way(), "the edge is being dragged");
+    harness.key_press(Key::Escape);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "Escape let go of it");
+    // Moving on and letting go with the button still held from before does nothing.
+    harness.hover_at(to);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "the held drag did not start again");
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(beat_b_length(&harness), Some(before), "the clip kept its length");
+}
+
+/// A drag let go of while the Arrangement was not drawn (Tab to the Launcher view mid-drag) ends
+/// without doing anything, and the next drag starts as usual (#1158).
+#[test]
+fn a_drag_released_out_of_sight_ends_and_the_next_one_starts() {
+    let mut harness = arrangement_app();
+    let before = beat_b_length(&harness).unwrap();
+    let edge = harness.get_by_label("Right edge of Beat B on Drums").rect().center();
+    let to = edge + egui::vec2(32.0, 0.0);
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert!(harness.query_by_label("Right edge of Beat B on Drums").is_none(), "the Launcher view is shown");
+    harness.drop_at(to);
+    harness.run();
+    assert!(!harness.state().arrangement().gesture_under_way(), "the lost drag ended in the Launcher view");
+    harness.key_press(Key::Tab);
+    harness.run();
+    assert_eq!(beat_b_length(&harness), Some(before), "its release did nothing");
+    // A new drag of the edge trims the clip by a bar.
+    harness.hover_at(edge);
+    harness.run();
+    harness.drag_at(edge);
+    harness.run();
+    harness.hover_at(edge + egui::vec2(16.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(beat_b_length(&harness), Some(before + 4.0), "a bar longer");
 }
 
 /// The clip is drawn at its new length from the frame the button comes up on. In the window the
@@ -2109,7 +2238,7 @@ fn a_take_lanes_edge_drags_its_height() {
 /// A window on the Drums track's first clip as two take lanes of `length` beats, in the
 /// Arrangement.
 #[allow(clippy::unwrap_used)] // a test helper outside #[test] functions
-fn window_with_drums_takes(length: f64) -> Harness<'static, App> {
+pub(super) fn window_with_drums_takes(length: f64) -> Harness<'static, App> {
     let mut project = demo_project();
     let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
     let clip = project
@@ -2620,6 +2749,104 @@ fn parts_of_two_midi_takes_show_no_crossfade() {
     harness.state_mut().run(&Action::new("take.comp", json!({ "track": id, "take": 2 })));
     harness.run();
     assert!(harness.query_by_label("Crossfade end on Drums").is_none());
+}
+
+/// The ruler's right-click menu sets a time signature from the bar line there, a change's line
+/// drags to another bar, and the menu removes it; each is one undo step (#1259, #1264).
+#[test]
+fn the_ruler_adds_moves_and_removes_a_time_signature_change() {
+    let mut harness = arrangement_app();
+    let changes = |h: &Harness<'static, App>| -> Vec<(u32, u8, u8)> {
+        h.state().session().map_or(Vec::new(), |s| {
+            let t = &s.project().transport;
+            t.time_signature_changes
+                .iter()
+                .map(|c| (c.bar, c.time_signature.numerator, c.time_signature.denominator))
+                .collect()
+        })
+    };
+    // A right-click in the middle of the marker row: the bar line nearest it (8 points a beat,
+    // 4/4), counted from 0.
+    let row = harness.get_by_label("Markers").rect();
+    let bar = (f64::from(row.center().x - row.left()) / 8.0 / 4.0).round() as u32;
+    assert!(bar > 4, "{bar}");
+    harness.get_by_label("Markers").click_secondary();
+    harness.run();
+    harness.get_by_label(&format!("Time signature from bar {}", bar + 1)).click();
+    harness.run();
+    harness.get_by_label("3/4").click();
+    harness.run();
+    assert_eq!(changes(&harness), [(bar, 3, 4)]);
+
+    // Its line on the ruler drags two bars to the left.
+    let line = harness.get_by_label(&format!("Time-signature change at bar {}", bar + 1)).rect().center();
+    let to = line - egui::vec2(64.0, 0.0);
+    harness.hover_at(line);
+    harness.run();
+    harness.drag_at(line);
+    harness.run();
+    harness.hover_at(line - egui::vec2(30.0, 0.0));
+    harness.run();
+    harness.hover_at(to);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(changes(&harness), [(bar - 2, 3, 4)]);
+
+    // A right-click right on its line on the ruler opens the ruler's menu, which removes it (the
+    // line once took the press for its drag and no menu opened).
+    let at = harness.get_by_label(&format!("Time-signature change at bar {}", bar - 1)).rect().center();
+    harness.hover_at(at);
+    harness.run();
+    for pressed in [true, false] {
+        harness.input_mut().events.push(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+    }
+    harness.run();
+    harness.get_by_label(&format!("Remove the time-signature change at bar {}", bar - 1)).click();
+    harness.run();
+    assert!(changes(&harness).is_empty());
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(changes(&harness), [(bar - 2, 3, 4)]);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(changes(&harness), [(bar, 3, 4)]);
+}
+
+/// A click into the ruler menu's time-signature field keeps the menu open, so a signature can be
+/// typed there; Enter sets it (a click on any item of a menu closes it, and closed this one).
+#[test]
+fn a_click_into_the_ruler_menus_signature_field_keeps_it_open() {
+    let mut harness = arrangement_app();
+    let row = harness.get_by_label("Markers").rect();
+    let bar = (f64::from(row.center().x - row.left()) / 8.0 / 4.0).round() as u32;
+    harness.get_by_label("Markers").click_secondary();
+    harness.run();
+    harness.get_by_label(&format!("Time signature from bar {}", bar + 1)).click();
+    harness.run();
+    harness.get_by_label("Type a time signature").click();
+    harness.run();
+    assert!(harness.query_by_label("Type a time signature").is_some(), "the click closed the menu");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    harness.get_by_label("Type a time signature").type_text("5/4");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    let changes: Vec<(u32, u8, u8)> = harness.state().session().map_or(Vec::new(), |s| {
+        let t = &s.project().transport;
+        t.time_signature_changes
+            .iter()
+            .map(|c| (c.bar, c.time_signature.numerator, c.time_signature.denominator))
+            .collect()
+    });
+    assert_eq!(changes, [(bar, 5, 4)]);
 }
 
 /// A clip carried onto another track takes its gain envelope's button (and line) with it while it

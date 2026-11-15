@@ -148,7 +148,10 @@ mod tests {
     /// The sine tones pass every check an instrument must.
     #[test]
     fn passes_the_contract_tests() {
-        let failures = suhina_device_api::conformance::check(&|| Box::new(SineTones::new(48_000)));
+        let failures = suhina_device_api::conformance::check(&|rate| {
+            suhina_device_api::check_sample_rate(rate)?;
+            Ok(Box::new(SineTones::new(rate as u32)))
+        });
         assert!(failures.is_empty(), "{failures:#?}");
     }
 }

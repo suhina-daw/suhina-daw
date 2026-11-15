@@ -19,6 +19,7 @@ pub mod stems;
 pub mod tempo;
 pub mod write;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -127,6 +128,24 @@ pub fn decode_project_audio_trusted(
     project_dir: &Path,
     trusted: &Trusted,
 ) -> (AudioPool, Vec<String>) {
+    let decoded = decode_project_audio_found(project, project_dir, trusted);
+    (decoded.pool, decoded.warnings)
+}
+
+/// A project's audio as [`decode_project_audio_found`] decodes it.
+#[derive(Debug, Default)]
+pub struct DecodedAudio {
+    /// The decoded audio, by the name its clips and devices give each file.
+    pub pool: AudioPool,
+    /// One for each file that could not be found or decoded.
+    pub warnings: Vec<String>,
+    /// The file each name was decoded from, so that saving the project later uses that file and
+    /// not another one found at its path by then (#617).
+    pub found: HashMap<String, PathBuf>,
+}
+
+/// [`decode_project_audio_trusted`], with the file each name was decoded from.
+pub fn decode_project_audio_found(project: &Project, project_dir: &Path, trusted: &Trusted) -> DecodedAudio {
     // Each file once (once more when a Stems file is played whole as well as by track), with
     // where to look for it and whether all of its audio tracks are wanted.
     let mut wanted: Vec<(String, Vec<PathBuf>, bool)> = Vec::new();
@@ -158,11 +177,13 @@ pub fn decode_project_audio_trusted(
     let next = AtomicUsize::new(0);
     let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 16).min(wanted.len().max(1));
     type Decoded = Result<AudioData, String>;
-    let decoded: Vec<(String, Decoded)> = std::thread::scope(|scope| {
+    // Each thread's decoded keys, and the file each name it decoded was read from.
+    type Done = (Vec<(String, Decoded)>, Vec<(String, PathBuf)>);
+    let decoded: Vec<Done> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..threads)
             .map(|_| {
                 scope.spawn(|| {
-                    let mut done = Vec::new();
+                    let (mut done, mut found): Done = Default::default();
                     while let Some((file, candidates, streams)) = wanted.get(next.fetch_add(1, Ordering::Relaxed)) {
                         let Some(path) = candidates.iter().find(|p| p.is_file()) else {
                             done.push((file.clone(), Err(format!("audio file {file} not found"))));
@@ -170,37 +191,48 @@ pub fn decode_project_audio_trusted(
                         };
                         let failed = |e: MediaError| format!("audio file {}: {e}", path.display());
                         if !*streams {
-                            done.push((file.clone(), decode_file(path).map_err(failed)));
+                            match decode_file(path) {
+                                Ok(data) => {
+                                    found.push((file.clone(), path.clone()));
+                                    done.push((file.clone(), Ok(data)));
+                                }
+                                Err(e) => done.push((file.clone(), Err(failed(e)))),
+                            }
                             continue;
                         }
                         match stems::decode_streams(path) {
-                            Ok(all) => done.extend(
-                                all.into_iter()
-                                    .zip(0u16..)
-                                    .map(|(data, n)| (suhina_model::stream_key(file, n), Ok(data))),
-                            ),
+                            Ok(all) => {
+                                found.push((file.clone(), path.clone()));
+                                done.extend(
+                                    all.into_iter()
+                                        .zip(0u16..)
+                                        .map(|(data, n)| (suhina_model::stream_key(file, n), Ok(data))),
+                                );
+                            }
                             Err(e) => done.push((file.clone(), Err(failed(e)))),
                         }
                     }
-                    done
+                    (done, found)
                 })
             })
             .collect();
-        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+        handles.into_iter().map(|h| h.join().unwrap_or_default()).collect()
     });
 
-    let mut pool = AudioPool::new();
-    let mut warnings = Vec::new();
-    for (file, result) in decoded {
-        match result {
-            Ok(data) => {
-                pool.files.insert(file, Arc::new(data));
+    let mut out = DecodedAudio::default();
+    for (done, found) in decoded {
+        for (file, result) in done {
+            match result {
+                Ok(data) => {
+                    out.pool.files.insert(file, Arc::new(data));
+                }
+                Err(e) => out.warnings.push(e),
             }
-            Err(e) => warnings.push(e),
         }
+        out.found.extend(found);
     }
-    warnings.sort();
-    (pool, warnings)
+    out.warnings.sort();
+    out
 }
 
 /// A file the project's audio clips name that is found neither at its path relative to the

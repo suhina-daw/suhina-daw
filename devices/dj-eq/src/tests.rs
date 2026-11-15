@@ -49,7 +49,7 @@ fn one_band(kept: usize, slope: f64) -> Vec<(usize, f64)> {
     ]
 }
 
-suhina_device_api::conformance_test!(DjEq::new());
+suhina_device_api::conformance_test!(DjEq::with_rate);
 
 /// Far from the crossovers the defaults stay flat.
 #[test]

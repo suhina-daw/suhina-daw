@@ -248,6 +248,12 @@ refused or suspended, never by losing its edits.
   header, column, strip, lane, its clips and the piano roll from their `color` attribute
   (`attr(color type(<color>))`), with each Arrangement row a `track-lane` of its own.
 
+- Themes style each part of the Launcher, the mixer, the Arrangement and the piano roll on its own: slots, the
+  stop buttons, scenes, the lines between columns and slots, the grid lines, markers, the time
+  selection, take lanes, automation lanes and points, meters and the strips' device lists are
+  elements with their states (`slot[kind="stop"][queued]`, `grid-line[kind="beat"]`), and a
+  theme that leaves them alone looks as before.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
@@ -338,6 +344,15 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A launched scene's tempo or time signature overrides the tempo map until
   `transport.followTempoMap`, the next start of the transport or an edit to the map
   ([spec](docs/spec/tempo-map.md#scenes-and-the-tempo-map)).
+
+- The time signature is changed in the window: the control bar's numerator and denominator
+  drag up and down on their own (the denominator through 1, 2, 4, 8, 16) with the grids
+  following, take a typed `6/8`, `6-8` or `6 8` that steps from one number to the other, and a
+  chevron lists the common ones, for the song's start signature
+  (`transport.setTimeSignature`) or the change at the playhead; the Arrangement ruler's
+  right-click menu sets the signature from the nearest bar line or removes a change there, and a
+  change's line on the ruler drags to another bar
+  ([#1259](https://github.com/suhina-daw/suhina-daw/issues/1259)).
 
 ### M3 Commands and agents (in progress)
 - Every edit is a command with an id, typed parameters and one undo step; failed or invalid edits
@@ -1099,4 +1114,14 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The window as one grid in themes: the menu bar, the tabs, the toolbar, the status bar and the browser, view and detail panels are laid out by one CSS grid on `window`, which Suhina's own sheet states, so a theme can move the status bar to the top, put the toolbar under the views or hide a bar with `grid-template-areas`, `grid-area` and `display: none`; the layout settings are attributes on `window` (`[detail]`, `[browser]`, `[menu-bar]`).
 
 - The bars' items in themes: the toolbar, the status bar, the project tabs, the application bar, the piano roll's toolbar and the MIDI tools' tabs lay out their items in one CSS row, so a theme sets their gaps, padding, alignment and sizes and hides an item with `display: none`, which takes its input away too; a narrow bar still gives way in Suhina's order.
+
+- One drag at a time in the Arrangement: Escape lets go of the drag under way (a clip, an edge, a
+  fade, a header's control, a marker, the loop, time being painted, a take, an automation point,
+  curve, range or lane header) without doing what its release would, and a drag let go of while
+  the view was not drawn ends instead of staying stuck.
+
+- **Recording from the keyboard:** F9 starts and stops recording into the arrangement
+  (`transport.toggleRecord`, as the record button), and `selection.arm` arms or disarms the
+  selected tracks; both can be given any key in Settings › Keys
+  (`docs/shortcuts.md`).
 

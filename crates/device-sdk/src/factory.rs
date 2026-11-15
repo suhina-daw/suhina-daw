@@ -49,9 +49,11 @@ impl std::fmt::Debug for DeviceAsset {
 /// Makes the devices a project names: the built-ins by id, `.sd` graphs, and the instrument that
 /// plays previewed notes. Called off the audio thread; what it returns may then run on it.
 pub trait DeviceFactory: Send + Sync {
-    /// A new built-in device `id`, running `asset` when it is the file this device reads, or
-    /// `None` for an unknown id.
-    fn create(&self, id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>>;
+    /// A new built-in device `id` made for `rate`, running `asset` when it is the file this
+    /// device reads, or `None` for an unknown id or a rate a device cannot run at. The device is
+    /// ready to run at `rate`: nothing needs to prepare it (ADR 0004 › Amendment: a device is
+    /// made at its rate).
+    fn create(&self, id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>>;
 
     /// A `.sd` graph as a device prepared at `rate`, playing `samples`.
     fn graph_device(
@@ -64,8 +66,8 @@ pub trait DeviceFactory: Send + Sync {
     /// Whether device `id` runs a file whose path its state holds.
     fn runs_a_file(&self, id: &str) -> bool;
 
-    /// The instrument that plays previewed notes on a track with none, unprepared.
-    fn preview_instrument(&self) -> Option<Box<dyn Device>>;
+    /// The instrument that plays previewed notes on a track with none, made for `rate`.
+    fn preview_instrument(&self, rate: f64) -> Option<Box<dyn Device>>;
 }
 
 /// A factory shared by every renderer, graph and updater that builds with it.

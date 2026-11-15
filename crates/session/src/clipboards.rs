@@ -3,6 +3,8 @@
 
 //! [`Clipboards`]: what a session's copy commands hold for its paste commands.
 
+use std::collections::HashSet;
+
 use suhina_model::{Clip, ClipContent, Device, TrackId};
 
 use crate::notes::NoteClipboard;
@@ -33,6 +35,23 @@ pub(crate) struct Clipboards {
     /// selection started and each track's lanes over it (#1205). `clip.paste` with no track lays
     /// it back on its tracks, the selection's start where the paste starts.
     pub(crate) span: Option<SpanAutomation>,
+    /// Files the person chose in the project these were copied from (`device.setNamFile`) that
+    /// the copied devices and tracks name. A paste in another project makes them chosen there, so
+    /// a pasted Amp Modeler runs its model; no other project reads them without a paste.
+    pub(crate) chosen_files: HashSet<String>,
+}
+
+impl Clipboards {
+    /// The files the copied devices and whole tracks name, inside device groups too.
+    pub(crate) fn file_states(&self) -> HashSet<String> {
+        let tracks = self.whole_tracks.devices();
+        self.devices
+            .iter()
+            .chain(tracks)
+            .flat_map(|device| suhina_model::walk_devices(std::slice::from_ref(device)).into_iter().map(|(_, d)| d))
+            .filter_map(|device| crate::device_files::named_file(device).map(|(path, _)| path.to_string()))
+            .collect()
+    }
 }
 
 /// The automation of a copied time selection, each track's lanes from the selection's start.

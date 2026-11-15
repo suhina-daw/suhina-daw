@@ -93,7 +93,7 @@ impl Side {
 pub struct CabLoader {
     sample_rate: f64,
     params: ParamBank<{ param::COUNT }>,
-    /// The IR the loader was made with, for `prepare` and `reset` rebuilds.
+    /// The IR the loader was made with, which its convolutions are built from.
     ir: Option<Ir>,
     sides: [Side; 2],
     convs: [Option<Convolver>; 2],
@@ -122,18 +122,25 @@ impl Default for CabLoader {
 }
 
 impl CabLoader {
-    /// A cab loader with no IR.
+    /// A cab loader with no IR, made for the default sample rate.
     pub fn new() -> Self {
         Self::build(DEFAULT_SAMPLE_RATE, None)
     }
 
-    /// A cab loader that convolves with `ir`.
-    pub fn with_ir(ir: Ir) -> Self {
-        Self::build(DEFAULT_SAMPLE_RATE, Some(ir))
+    /// A cab loader with no IR, made for `sample_rate` (ADR 0004 › Amendment: a device is made
+    /// at its rate); fails for a rate a device cannot run at. Allocates.
+    pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(|rate| Self::build(rate, None))
     }
 
-    /// Everything for `sample_rate` and `ir`. `prepare` and `reset` run it again; whatever
-    /// clears the state, counters included, calls it.
+    /// A cab loader that convolves with `ir`, made for `sample_rate`; fails for a rate a device
+    /// cannot run at.
+    pub fn with_ir(ir: Ir, sample_rate: f64) -> Result<Self, DeviceError> {
+        check_sample_rate(sample_rate).map(|rate| Self::build(rate, Some(ir)))
+    }
+
+    /// Everything for `sample_rate` and `ir`, which `prepare` builds again for a new rate;
+    /// `reset` only clears it.
     fn build(sample_rate: f64, ir: Option<Ir>) -> Self {
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sample_rate);
         let mut loader = Self {
@@ -155,12 +162,15 @@ impl CabLoader {
         };
         loader.volume.set_ramp(ramp);
         loader.delay_frames.set_ramp(ramp);
-        loader.rebuild();
+        // The sides and delays above are sized for the rate already: only the convolutions are
+        // left to build.
+        loader.build_convs();
+        loader.clear();
         loader
     }
 
-    /// Makes the two sides' convolutions from the IR at the project's rate. A mono IR feeds
-    /// both sides. One recorded at another rate, or one the convolver cannot hold, stays out.
+    /// Makes the two sides' convolutions from the IR, which the session read at the project's
+    /// rate. A mono IR feeds both sides. One the convolver cannot hold stays out. Allocates.
     fn build_convs(&mut self) {
         self.convs = [None, None];
         let Some(ir) = self.ir.as_ref() else { return };
@@ -196,19 +206,38 @@ impl CabLoader {
         self.params.get(index)
     }
 
-    /// Filters, smoothers, delays, convolution memory and the schedule, everything cleared.
+    /// Filters and delays for a new sample rate, then [`Self::clear`]. Allocates: it runs at
+    /// `prepare`, never on the audio thread. The convolutions do not depend on the rate.
     fn rebuild(&mut self) {
         let sr = self.sample_rate;
-        let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
         self.sides = [Side::new(sr), Side::new(sr)];
-        self.build_convs();
+        self.delay = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
+        self.clear();
+    }
+
+    /// Filters, smoothers, delays, convolution memory and the schedule, everything cleared as a
+    /// new loader has them. What `reset` runs: allocates nothing, so it is real-time safe.
+    fn clear(&mut self) {
+        let sr = self.sample_rate;
+        let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
+        for side in &mut self.sides {
+            side.hp.reset();
+            side.bass.reset();
+            side.mid.reset();
+            side.treble.reset();
+        }
+        for conv in self.convs.iter_mut().flatten() {
+            conv.reset();
+        }
+        for staging in self.conv_in.iter_mut().chain(&mut self.conv_out) {
+            staging.fill(0.0);
+        }
         self.chunk[0].fill(0.0);
         self.chunk[1].fill(0.0);
         self.ready_left.fill(0.0);
         self.ready_right.fill(0.0);
         self.in_pos = 0;
         self.out_pos = 0;
-        self.delay = [TrimDelay::new(sr, MAX_DELAY_SECONDS), TrimDelay::new(sr, MAX_DELAY_SECONDS)];
         let volume_now = db_to_gain(self.value(param::VOLUME) as f32);
         self.volume.reset(volume_now);
         self.volume.set_ramp(ramp);
@@ -216,6 +245,7 @@ impl CabLoader {
         self.delay_frames.reset(frames as f32);
         self.delay_frames.set_ramp(ramp);
         for delay in &mut self.delay {
+            delay.reset();
             delay.set_frames(frames);
         }
         self.tune();
@@ -330,7 +360,7 @@ impl Device for CabLoader {
     }
 
     fn reset(&mut self) {
-        self.rebuild();
+        self.clear();
     }
 
     fn set_param(&mut self, index: usize, value: f64) {

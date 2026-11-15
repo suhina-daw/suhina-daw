@@ -3,7 +3,7 @@ description: How recording works: MIDI and audio takes into a clip slot or the a
 read_when: recording, record, take, record button, clip.record, transport.record, count-in, transport.setCountIn, record.state, MIDI recording, audio recording, Recorded folder, latency compensation of a take, overdub, loopback
 type: spec
 status: current
-last_verified: 2026-11-12
+last_verified: 2026-11-15
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/record_tests.rs
@@ -342,7 +342,12 @@ step.
   (**End the recording on …**) ends the take with `clip.launch`.
 - The control bar has a record button right of play and stop (**Record into the
   arrangement**, **Stop recording** while lit), and a **Count-in** menu right of the launch
-  quantisation (Off, 1 bar, 2 bars, 4 bars). It has no default shortcut yet.
+  quantisation (Off, 1 bar, 2 bars, 4 bars). F9 (`transport.toggleRecord`, Settings › Keys) does
+  what the record button does.
+- `selection.arm` (no default key; Settings › Keys gives it one) arms the selected tracks that
+  take notes or audio, or disarms them when all are armed. Arming disarms the other tracks, as a
+  click on an arm button does, so a MIDI and an audio track selected together are armed and
+  record together.
 - Without a MIDI keyboard, the computer keyboard plays notes (#944): the control bar's **Keys**
   button, or Ctrl+K (`view.computerKeyboard`), turns it on. A W S E D F T G Y H U J K play C to
   the C above (the black keys on the upper row), O L P ; go on up; Z and X move the octave

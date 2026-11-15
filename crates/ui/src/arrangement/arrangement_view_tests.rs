@@ -178,18 +178,78 @@ fn a_dragged_gain_or_fade_is_what_the_clip_shows() {
         Shown { gain_db: 0.0, fade_in: 1.0, fade_out: 0.0, fade_in_curve: linear, fade_out_curve: linear }
     );
     // A curve being dragged bends that fade only.
-    state.curve_drag = Some(CurveDrag { key, edge: FadeEdge::In, curve: 0.4, grab: 0.0 });
+    assert!(state.gesture.begin(Gesture::FadeCurve(CurveDrag { key, edge: FadeEdge::In, curve: 0.4, grab: 0.0 })));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_in_curve.curve, 0.4);
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_out_curve.curve, 0.0);
-    state.curve_drag = None;
+    state.gesture.settle(false);
     // The waveform is drawn with the gain being dragged, not the one in the project.
-    state.gain_drag = Some((key, -12.0));
+    assert!(state.gesture.begin(Gesture::Gain((key, -12.0))));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).gain_db, -12.0);
     assert_eq!(state.shown((TrackId(1), ClipId(2)), &clip, Some(beats(1.0))).gain_db, 0.0, "only on the dragged clip");
     // A fade being dragged: on the grid, or free with Alt.
-    state.fade_drag = Some(FadeDrag { key, edge: FadeEdge::Out, raw: 2.6, from: 0.0 });
+    state.gesture.settle(false);
+    assert!(state.gesture.begin(Gesture::Fade(FadeDrag { key, edge: FadeEdge::Out, raw: 2.6, from: 0.0 })));
     assert_eq!(state.shown(key, &clip, Some(beats(1.0))).fade_out, 3.0);
     assert!((state.shown(key, &clip, None).fade_out - 2.6).abs() < 1e-9);
+}
+
+#[test]
+fn a_second_drag_cannot_start_while_one_is_under_way() {
+    let key = (TrackId(1), ClipId(1));
+    let mut slot = GestureSlot::default();
+    let edge = EdgeDrag { key, grab: EdgeGrab::Right, raw: 4.0, from: 4.0, origin: 100.0 };
+    assert!(slot.begin(Gesture::Edge(edge)));
+    // A fade handle, a marker or the loop pressed meanwhile starts nothing: the edge drag stays.
+    assert!(!slot.begin(Gesture::Fade(FadeDrag { key, edge: FadeEdge::In, raw: 0.0, from: 0.0 })));
+    assert!(!slot.begin(Gesture::Marker((0, 2.0))));
+    assert_eq!(slot.edge(), Some(&edge));
+    assert_eq!(slot.fade(), None);
+    // Another clip's edge does not end it; its own does, handing back what it carried.
+    let other = (TrackId(1), ClipId(2));
+    assert_eq!(slot.end_edge(|d| d.key == other), None);
+    assert!(slot.is_some());
+    assert_eq!(slot.end_edge(|d| d.key == key), Some(edge));
+    // Then the next drag starts.
+    assert!(slot.begin(Gesture::Marker((0, 2.0))));
+    // Escape ends it without handing anything back, and the rest of its press starts nothing.
+    assert!(slot.cancel());
+    assert!(!slot.is_some());
+    assert!(slot.cancelled());
+    assert!(!slot.begin(Gesture::Marker((1, 3.0))), "the press Escape let go of starts no drag");
+    slot.settle(true);
+    assert!(slot.cancelled(), "a button still held keeps it so");
+    // Once every button is up the next press may start one; a drag that lost its release ends then.
+    slot.settle(false);
+    assert!(!slot.cancelled());
+    assert!(slot.begin(Gesture::Marker((1, 3.0))));
+    slot.settle(false);
+    assert!(!slot.is_some());
+}
+
+#[test]
+fn losing_the_window_focus_ends_the_drag_and_holds_no_press_back() {
+    let mut slot = GestureSlot::default();
+    assert!(slot.begin(Gesture::Marker((0, 2.0))));
+    slot.lose_focus();
+    assert!(!slot.is_some());
+    assert!(!slot.cancelled());
+    assert!(slot.begin(Gesture::Marker((1, 3.0))), "the first press after the focus returns starts a drag");
+    // Escape, then the focus lost with the button still reported down: the press is over too.
+    assert!(slot.cancel());
+    slot.lose_focus();
+    assert!(slot.begin(Gesture::Marker((2, 4.0))));
+}
+
+#[test]
+fn escape_ends_the_drag_and_its_held_press() {
+    let mut state = ArrangementViewState::default();
+    assert!(!state.gesture_under_way());
+    assert!(state.gesture.begin(Gesture::Track(TrackId(3))));
+    state.pressed_clip = Some((TrackId(1), ClipId(1)));
+    assert!(state.gesture_under_way());
+    assert!(state.cancel_gesture());
+    assert!(!state.gesture_under_way());
+    assert_eq!(state.dragged_clip(), None);
 }
 
 #[test]
@@ -699,6 +759,32 @@ fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
 }
 
 #[test]
+fn crowded_clip_notes_give_way_as_the_view_zooms_out() {
+    // Sixteenths over four bars: 64 starts.
+    let sixteenths: Vec<f64> = (0..64).map(|i| f64::from(i) * 0.25).collect();
+    assert!(!clip::notes_crowded(sixteenths.clone(), 640.0), "10 points apart: drawn");
+    // A beat about 5 points wide, as at the opening zoom: sixteenths stay drawn.
+    assert!(!clip::notes_crowded(sixteenths.clone(), 80.0), "1.25 points apart: drawn");
+    assert!(clip::notes_crowded(sixteenths, 48.0), "0.75 points apart: the name instead");
+    // A four-note chord on each beat counts once per beat.
+    let chords: Vec<f64> = (0..16).flat_map(|beat| [f64::from(beat); 4]).collect();
+    assert!(!clip::notes_crowded(chords, 16.0), "16 chords a point apart");
+    assert!(!clip::notes_crowded(Vec::new(), 10.0));
+}
+
+#[test]
+fn a_clips_notes_get_a_row_per_pitch_they_use_and_give_way_when_rows_are_too_thin() {
+    // A drum part: kick, snare and hat, each a row, whatever lies between them.
+    assert_eq!(clip::used_keys([42, 36, 38, 36, 42].into_iter()), vec![36, 38, 42]);
+    // The 13 points under the name bar of a 36 px lane hold thirteen pitches; a pluck's twenty
+    // fit in 30 points, rows overlapping a little; forty do not.
+    assert!(!clip::pitch_rows_crowded(4, 13.0), "4 rows of 3.25 points");
+    assert!(!clip::pitch_rows_crowded(20, 30.0), "20 rows of 1.5 points");
+    assert!(clip::pitch_rows_crowded(40, 30.0), "40 rows of 0.75 points");
+    assert!(!clip::pitch_rows_crowded(0, 13.0));
+}
+
+#[test]
 fn dragging_a_selected_track_resizes_every_selected_track() {
     let mut state = ArrangementViewState::default();
     state.set_lane_height(TrackId(1), 100.0);
@@ -832,4 +918,113 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
     assert_eq!(shown.len(), 1, "{shown:?}");
     assert_eq!((shown[0].left(), shown[0].right()), (120.0, 160.0), "beats 1 to 3 of the clip");
     assert!(lit(None).is_empty());
+}
+
+#[test]
+fn a_muted_clip_is_the_user_agent_grey_whatever_its_colour() {
+    // #1393: dimming the colour left a muted clip looking like any other clip on a grey track.
+    let surface = crate::kit::theme::panel_background();
+    let grey = clip::muted_clip_grey(false);
+    assert_eq!(grey, Color32::from_rgb(0xA9, 0xA6, 0xA0), "the user-agent sheet's clip[muted]");
+    assert_eq!(clip::muted_clip_grey(true), Color32::from_rgb(0xBD, 0xBA, 0xB4), "clip[muted][selected]");
+    for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), grey] {
+        assert_eq!(clip::clip_body(surface, colour, 82, true, false), grey, "{colour:?}");
+        let selected = clip::clip_body(surface, colour, 82, true, true);
+        assert!(
+            selected.to_srgba_unmultiplied()[0] > grey.to_srgba_unmultiplied()[0],
+            "selection lifts a muted clip's brightness"
+        );
+    }
+    // A clip that plays keeps its hue, and a grey one is not the muted grey.
+    let orange = clip::clip_body(surface, Color32::from_rgb(0xFF, 0x9A, 0x3C), 82, false, false);
+    let [red, _, blue, _] = orange.to_srgba_unmultiplied();
+    assert!(red > blue + 60, "{orange:?}");
+    assert_ne!(clip::clip_body(surface, Color32::from_rgb(0x4A, 0x4A, 0x4A), 82, false, false), grey);
+}
+
+#[test]
+fn a_clip_on_a_muted_track_keeps_its_colour_in_its_name_bar() {
+    let surface = crate::kit::theme::panel_background();
+    let orange = Color32::from_rgb(0xFF, 0x9A, 0x3C);
+    let grey = clip::muted_clip_grey(false);
+    // On a muted track: the bar is the colour a clip that plays has.
+    let on_track = clip::name_bar_fill(grey, surface, orange, 82, true, false);
+    assert_eq!(on_track, clip::clip_body(surface, orange, 82, false, false));
+    // Turned off itself: the bar is grey, a hair off the body.
+    let off = clip::name_bar_fill(grey, surface, orange, 82, false, false);
+    assert_ne!(off, on_track);
+    let [red, _, blue, _] = off.to_srgba_unmultiplied();
+    let grey_red = grey.to_srgba_unmultiplied()[0];
+    assert!(red.abs_diff(grey_red) < 16 && red.abs_diff(blue) < 16, "{off:?}");
+}
+
+#[test]
+fn a_muted_track_header_is_the_user_agent_grey() {
+    assert_eq!(header::muted_header_grey(false), Color32::from_rgb(0xA9, 0xA6, 0xA0), "track-header[muted]");
+    assert_eq!(header::muted_header_grey(true), Color32::from_rgb(0xB5, 0xB2, 0xAC), "track-header[muted][selected]");
+}
+
+#[test]
+fn a_clip_on_a_muted_track_is_drawn_muted_too() {
+    assert!(clip::drawn_muted(true, true), "on a muted track");
+    assert!(clip::drawn_muted(false, false), "turned off");
+    assert!(!clip::drawn_muted(false, true));
+}
+
+#[test]
+fn a_clip_too_low_for_a_name_bar_still_has_its_mute_mark() {
+    // #1399 review: the mark was drawn only inside the name bar, so a clip on a low lane turned
+    // off was the same as one on a muted track, or one whose colour is grey.
+    let low = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 24.0));
+    assert!(clip::clip_name_bar(low).is_none(), "24 points is below the name bar's least height");
+    let centre = clip::mute_mark_centre(low, None, 107.0).expect("a 24-point clip has room for the mark");
+    assert!(low.contains(centre), "{centre:?}");
+    assert!(centre.y < low.center().y, "in the upper left corner: {centre:?}");
+
+    // With a name bar, it stays before the name, in the middle of the bar.
+    let tall = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 60.0));
+    let bar = clip::clip_name_bar(tall).expect("a 60-point clip has a name bar");
+    let centre = clip::mute_mark_centre(tall, Some(bar), 107.0).expect("mark in the bar");
+    assert_eq!(centre.y, bar.center().y);
+
+    // A clip too small for it has none, rather than a mark spilling out of it.
+    let sliver = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 10.0));
+    assert_eq!(clip::mute_mark_centre(sliver, None, 107.0), None);
+    let narrow = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(12.0, 24.0));
+    assert_eq!(clip::mute_mark_centre(narrow, None, 107.0), None);
+}
+
+/// The name bar's look in one frame with `css` as the theme's sheet.
+fn name_bar_look_with(css: &str, bar_fill: Color32) -> clip::NameBarLook {
+    crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut look = None;
+    for _ in 0..3 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+            look = Some(clip::name_bar_look(bar_fill));
+        })
+        .textures_delta
+        .clear();
+    }
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    look.expect("ran a frame")
+}
+
+#[test]
+fn the_mute_mark_takes_the_ink_of_the_name_bar_as_drawn() {
+    // #1399 review: the mark's ink came from the clip's own bar colour, so on a theme's dark bar
+    // it was dark on dark while the name was readable.
+    let grey = clip::muted_clip_grey(false);
+    let dark = name_bar_look_with("clip-name { background-color: #000000; }", grey);
+    assert_eq!(dark.fill, Color32::BLACK);
+    assert_eq!(dark.ink, clip::ink_on(Color32::BLACK), "light ink on the theme's black bar");
+    assert_ne!(dark.ink, clip::ink_on(grey));
+
+    let coloured = name_bar_look_with("clip-name { background-color: #000000; color: #FFCC00; }", grey);
+    assert_eq!(coloured.ink, Color32::from_rgb(0xFF, 0xCC, 0x00), "the theme's own name colour");
+
+    // Unstyled, the bar is the clip's own colour and the ink reads on it, as before.
+    let plain = name_bar_look_with("", grey);
+    assert_eq!((plain.fill, plain.ink), (grey, clip::ink_on(grey)));
 }

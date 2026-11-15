@@ -9,7 +9,7 @@ use std::any::Any;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use suhina_device_api::{Device, DeviceInfo};
+use suhina_device_api::{Device, DeviceError, DeviceInfo};
 use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
@@ -18,8 +18,8 @@ use suhina_device_sdk::builtin::{self, Layout, Panel};
 /// table, so a new device is one row here.
 pub struct Entry {
     pub info: &'static DeviceInfo,
-    /// A new device at its defaults.
-    make: fn() -> Box<dyn Device>,
+    /// A new device at its defaults, made for a sample rate.
+    make: fn(f64) -> Result<Box<dyn Device>, DeviceError>,
     /// Where its panel's layout comes from.
     layout: LayoutSource,
     /// The file it runs, whose path its `Device::state` holds (docs/spec/nam-amp-and-cab.md), and
@@ -50,8 +50,8 @@ pub struct FileKind {
     pub legacy_folder: Option<&'static str>,
     /// What a panel calls the loaded file at `path`.
     name: fn(&Path, &AssetData) -> Option<String>,
-    /// A new device at its defaults, running the file.
-    make: fn(&AssetData) -> Option<Box<dyn Device>>,
+    /// A new device at its defaults, running the file, made for a sample rate.
+    make: fn(&AssetData, f64) -> Option<Box<dyn Device>>,
 }
 
 /// Where a device's panel layout comes from (ADR 0021 › Amendment: device panels).
@@ -68,79 +68,79 @@ enum LayoutSource {
 pub const ENTRIES: [Entry; 17] = [
     Entry {
         info: &suhina_device_fm_synth::INFO,
-        make: || Box::new(suhina_device_fm_synth::FmSynth::new()),
+        make: |rate| boxed(suhina_device_fm_synth::FmSynth::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/fm-synth/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_sampler::INFO,
-        make: || Box::new(suhina_device_sampler::Sampler::new()),
+        make: |rate| boxed(suhina_device_sampler::Sampler::with_rate(rate)),
         layout: LayoutSource::Rust(suhina_device_sampler::layout),
         file: None,
     },
     Entry {
         info: &suhina_device_utility::INFO,
-        make: || Box::new(suhina_device_utility::Utility::new()),
+        make: |rate| boxed(suhina_device_utility::Utility::with_rate(rate)),
         layout: LayoutSource::Generated,
         file: None,
     },
     Entry {
         info: &suhina_device_auto_pan::INFO,
-        make: || Box::new(suhina_device_auto_pan::AutoPan::new()),
+        make: |rate| boxed(suhina_device_auto_pan::AutoPan::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/auto-pan/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_dj_eq::INFO,
-        make: || Box::new(suhina_device_dj_eq::DjEq::new()),
+        make: |rate| boxed(suhina_device_dj_eq::DjEq::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/dj-eq/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_eq::INFO,
-        make: || Box::new(suhina_device_eq::Eq::new()),
+        make: |rate| boxed(suhina_device_eq::Eq::with_rate(rate)),
         layout: LayoutSource::Rust(suhina_device_eq::panel::layout),
         file: None,
     },
     Entry {
         info: &suhina_device_vinyl_distortion::INFO,
-        make: || Box::new(suhina_device_vinyl_distortion::VinylDistortion::new()),
+        make: |rate| boxed(suhina_device_vinyl_distortion::VinylDistortion::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/vinyl-distortion/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_overdrive::INFO,
-        make: || Box::new(suhina_device_overdrive::Overdrive::new()),
+        make: |rate| boxed(suhina_device_overdrive::Overdrive::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/overdrive/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_saturator::INFO,
-        make: || Box::new(suhina_device_saturator::Saturator::new()),
+        make: |rate| boxed(suhina_device_saturator::Saturator::with_rate(rate)),
         layout: LayoutSource::Generated,
         file: None,
     },
     Entry {
         info: &suhina_device_compressor::INFO,
-        make: || Box::new(suhina_device_compressor::Compressor::new()),
+        make: |rate| boxed(suhina_device_compressor::Compressor::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/compressor/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_multiband::INFO,
-        make: || Box::new(suhina_device_multiband::Multiband::new()),
+        make: |rate| boxed(suhina_device_multiband::Multiband::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/multiband/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_limiter::INFO,
-        make: || Box::new(suhina_device_limiter::Limiter::new()),
+        make: |rate| boxed(suhina_device_limiter::Limiter::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/limiter/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_nam_amp_modeler::INFO,
-        make: || Box::new(suhina_device_nam_amp_modeler::NamAmp::new()),
+        make: |rate| boxed(suhina_device_nam_amp_modeler::NamAmp::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/nam-amp-modeler/panel.json")),
         file: Some(FileKind {
             extension: "nam",
@@ -154,7 +154,7 @@ pub const ENTRIES: [Entry; 17] = [
     },
     Entry {
         info: &suhina_device_nam_cab_loader::INFO,
-        make: || Box::new(suhina_device_nam_cab_loader::CabLoader::new()),
+        make: |rate| boxed(suhina_device_nam_cab_loader::CabLoader::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/nam-cab-loader/panel.json")),
         file: Some(FileKind {
             extension: "wav",
@@ -168,19 +168,19 @@ pub const ENTRIES: [Entry; 17] = [
     },
     Entry {
         info: &suhina_device_delay::INFO,
-        make: || Box::new(suhina_device_delay::Delay::new()),
+        make: |rate| boxed(suhina_device_delay::Delay::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/delay/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_reverb::INFO,
-        make: || Box::new(suhina_device_reverb::Reverb::new()),
+        make: |rate| boxed(suhina_device_reverb::Reverb::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/reverb/panel.json")),
         file: None,
     },
     Entry {
         info: &suhina_device_pitch::INFO,
-        make: || Box::new(suhina_device_pitch::Pitch::new()),
+        make: |rate| boxed(suhina_device_pitch::Pitch::with_rate(rate)),
         layout: LayoutSource::Json(include_str!("../../../devices/pitch/panel.json")),
         file: None,
     },
@@ -273,10 +273,16 @@ pub fn panel(id: &str) -> Option<&'static Panel> {
         .get(index)
 }
 
-/// A new device with this id at its defaults, prepared for 48 kHz, or `None` for an unknown
-/// id. Allocates: call it off the audio thread.
-pub fn create(id: &str) -> Option<Box<dyn Device>> {
-    entry(id).map(|entry| (entry.make)())
+/// A new device with this id at its defaults, made for `rate` (ADR 0004 › Amendment: a device
+/// is made at its rate), or `None` for an unknown id or a rate a device cannot run at.
+/// Allocates: call it off the audio thread.
+pub fn create(id: &str, rate: f64) -> Option<Box<dyn Device>> {
+    entry(id).and_then(|entry| (entry.make)(rate).ok())
+}
+
+/// A device a crate's `with_rate` made, as the registry hands it out.
+fn boxed<D: Device + 'static>(made: Result<D, DeviceError>) -> Result<Box<dyn Device>, DeviceError> {
+    made.map(|device| Box::new(device) as Box<dyn Device>)
 }
 
 pub use suhina_device_sdk::{DeviceAsset, DeviceFactory, Devices};
@@ -301,8 +307,8 @@ pub fn builtin_file_key_parts(key: &str) -> Option<(&str, &str)> {
 pub struct Registry;
 
 impl DeviceFactory for Registry {
-    fn create(&self, id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
-        create_with(id, asset)
+    fn create(&self, id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
+        create_with(id, rate, asset)
     }
 
     fn graph_device(
@@ -319,8 +325,8 @@ impl DeviceFactory for Registry {
     }
 
     /// The FM synth, which plays a previewed note on a track with no instrument.
-    fn preview_instrument(&self) -> Option<Box<dyn Device>> {
-        create("fm-synth")
+    fn preview_instrument(&self, rate: f64) -> Option<Box<dyn Device>> {
+        create("fm-synth", rate)
     }
 }
 
@@ -602,13 +608,14 @@ pub fn load_builtin_file(id: &str, name: &str, rate: u32) -> Result<DeviceAsset,
     Ok(DeviceAsset::new(&entry.info.id, (file.read_bytes)(bytes, rate)?))
 }
 
-/// A new device with this id, its defaults, and `asset` already loaded — `None` for an unknown
-/// id. An asset another device read is ignored. Allocation: off the audio thread.
-pub fn create_with(id: &str, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
+/// A new device with this id, its defaults, and `asset` already loaded, made for `rate` —
+/// `None` for an unknown id or a rate a device cannot run at. An asset another device read is
+/// ignored. Allocation: off the audio thread.
+pub fn create_with(id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn Device>> {
     let loaded = asset
         .filter(|asset| asset.device() == id)
-        .and_then(|asset| file_kind(id).and_then(|file| (file.make)(asset.data())));
-    loaded.or_else(|| create(id))
+        .and_then(|asset| file_kind(id).and_then(|file| (file.make)(asset.data(), rate)));
+    loaded.or_else(|| create(id, rate))
 }
 
 fn read_nam(path: &Path, rate: u32) -> Result<Arc<AssetData>, String> {
@@ -628,9 +635,9 @@ fn nam_name(_path: &Path, data: &AssetData) -> Option<String> {
         .and_then(|model| suhina_device_nam_amp_modeler::model::display_name(model))
 }
 
-fn make_nam(data: &AssetData) -> Option<Box<dyn Device>> {
+fn make_nam(data: &AssetData, rate: f64) -> Option<Box<dyn Device>> {
     let model = data.downcast_ref::<Arc<suhina_device_nam_amp_modeler::NamModel>>()?;
-    Some(Box::new(suhina_device_nam_amp_modeler::NamAmp::with_model(Arc::clone(model))))
+    boxed(suhina_device_nam_amp_modeler::NamAmp::with_model(Arc::clone(model), rate)).ok()
 }
 
 fn read_ir(path: &Path, rate: u32) -> Result<Arc<AssetData>, String> {
@@ -660,9 +667,9 @@ fn ir_name(path: &Path, _data: &AssetData) -> Option<String> {
     path.file_stem().map(|stem| stem.to_string_lossy().into_owned())
 }
 
-fn make_cab(data: &AssetData) -> Option<Box<dyn Device>> {
+fn make_cab(data: &AssetData, rate: f64) -> Option<Box<dyn Device>> {
     let ir = data.downcast_ref::<suhina_dsp::Ir>()?;
-    Some(Box::new(suhina_device_nam_cab_loader::CabLoader::with_ir(ir.clone())))
+    boxed(suhina_device_nam_cab_loader::CabLoader::with_ir(ir.clone(), rate)).ok()
 }
 
 /// Largest preset file read.
@@ -993,6 +1000,8 @@ pub fn graph_device(
     samples: suhina_device_sdk::sample_resource::PreparedSamples,
 ) -> Result<suhina_device_sdk::GraphDevice, suhina_device_sdk::DeviceSdkError> {
     if graph.role == suhina_device_sdk::DeviceRole::MidiEffect {
+        // No sound, but made at a rate a device can run at, as every device is.
+        suhina_device_api::check_sample_rate(rate).map_err(|e| suhina_device_sdk::DeviceSdkError(e.to_string()))?;
         return suhina_device_sdk::GraphDevice::midi(graph);
     }
     let compiled = graph.clone();
@@ -1007,12 +1016,13 @@ pub fn compile_graph_with_samples(
     samples: &suhina_device_sdk::sample_resource::PreparedSamples,
 ) -> Result<suhina_device_sdk::PreparedEffect, suhina_device_sdk::DeviceSdkError> {
     graph.compile_with_samples_and_native_at(rate, samples, |id, rate| {
-        let mut device =
-            create(id).ok_or_else(|| suhina_device_sdk::DeviceSdkError(format!("unknown graph effect {id:?}")))?;
-        if device.info().role != suhina_device_api::Role::Effect {
+        let entry =
+            entry(id).ok_or_else(|| suhina_device_sdk::DeviceSdkError(format!("unknown graph effect {id:?}")))?;
+        if entry.info.role != suhina_device_api::Role::Effect {
             return Err(suhina_device_sdk::DeviceSdkError(format!("graph kernel {id:?} is not an audio effect")));
         }
-        device.prepare(rate).map_err(|e| suhina_device_sdk::DeviceSdkError(e.to_string()))?;
+        // Made at the graph's rate, so it is never built for 48 kHz and again (#1402).
+        let device = (entry.make)(rate).map_err(|e| suhina_device_sdk::DeviceSdkError(e.to_string()))?;
         if device.latency() != 0 {
             return Err(suhina_device_sdk::DeviceSdkError(
                 "graph kernels with latency require path compensation".into(),
