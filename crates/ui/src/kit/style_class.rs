@@ -1,8 +1,9 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Stable native CSS classes. A scoped palette lets existing painter code inherit styles.
-use super::theme;
+//! The style scopes of the elements being drawn: what the text drawn inside an element inherits
+//! from it (its font size, its text shadows), the region's background a part takes, and how egui's
+//! own widgets in it are styled.
 use std::cell::RefCell;
 
 thread_local! {
@@ -11,8 +12,6 @@ thread_local! {
 }
 
 pub struct Scope {
-    palette: theme::Palette,
-    revision: u64,
     /// What the elements in scope inherited before this one was entered.
     inherited: Option<super::native_css::Computed>,
     /// The region's background in scope before this one was entered, when this is a region with
@@ -73,7 +72,7 @@ pub(crate) fn with_surface<R>(surface: egui::Color32, body: impl FnOnce() -> R) 
 
 thread_local! {
     /// The style of the innermost element that has one, for the properties CSS inherits: the font
-    /// size [`theme::ui_font`] and the text shadows [`super::native_css::paint_text`] draw with.
+    /// size [`super::theme::ui_font`] and the text shadows [`super::native_css::paint_text`] draw with.
     static INHERITED: RefCell<Option<super::native_css::Computed>> = const { RefCell::new(None) };
 }
 
@@ -97,9 +96,6 @@ impl Scope {
 }
 impl Drop for Scope {
     fn drop(&mut self) {
-        if theme::palette_revision() == self.revision {
-            theme::local_palette(self.palette);
-        }
         INHERITED.with(|inherited| *inherited.borrow_mut() = self.inherited.take());
         // `surface` is `Some` exactly when `enter_inner` replaced `SURFACE`, so only then is there
         // anything to put back.
@@ -116,7 +112,7 @@ impl Drop for Scope {
     }
 }
 
-/// Puts the element `class` in the style tree and the palette scope. `prepare` gives its node what
+/// Puts the element `class` in the style tree and in scope. `prepare` gives its node what
 /// the app knows about it (its attributes, its variables) before its style is looked up.
 pub(super) fn enter_inner(
     class: super::element::Name,
@@ -128,40 +124,13 @@ pub(super) fn enter_inner(
     if let Some(node) = node {
         prepare(node);
     }
-    let saved = theme::palette();
     STACK.with(|s| s.borrow_mut().push(class));
-    let mut palette = saved;
     let own = super::native_css::style_of(node);
     let own_before = OWN.with(|o| o.replace(own.as_ref().filter(|v| v.authored.background).map(|v| v.background)));
     let surface = own
         .as_ref()
         .filter(|values| values.authored.background && class.is_surface())
         .map(|values| SURFACE.with(|s| s.replace(Some(values.background))));
-    if let Some(values) = &own {
-        // The element's colour variables that differ from its parent's reach the palette's
-        // readers inside it, as they reach the base sheet's rules (`mixer { --text-value: gold }`).
-        // Transitional: it goes with the palette (#1452).
-        let parent = INHERITED
-            .with(|inherited| inherited.borrow().as_ref().map(super::native_css::Computed::shared_variables))
-            .unwrap_or_else(super::native_css::root_variables);
-        take_variables(&mut palette, values, &parent);
-        if values.authored.color {
-            set_foreground(&mut palette, values.color, Some(class));
-        }
-        if values.authored.border {
-            palette.border = values.border;
-            palette.border_strong = values.border;
-        }
-        if values.authored.background {
-            set_background(&mut palette, values.background, class);
-        }
-        // `accent-color` reaches every control drawn in the scope (a knob's arc, a lit button),
-        // the parameter list of a built-in effect too.
-        if values.authored.accent {
-            palette.accent = values.accent;
-        }
-    }
-    theme::local_palette(palette);
     // An element without a style of its own (not collected) inherits what its parent did.
     let inherited = INHERITED.with(|inherited| {
         let mut inherited = inherited.borrow_mut();
@@ -170,93 +139,24 @@ pub(super) fn enter_inner(
             None => inherited.clone(),
         }
     });
-    Scope { palette: saved, revision: theme::palette_revision(), inherited, surface, own_before, node }
+    Scope { inherited, surface, own_before, node }
 }
 
-/// The palette's tokens with their custom properties' names (`--accent`), worked out once.
-fn token_variables() -> &'static [(&'static str, String)] {
-    static NAMES: std::sync::OnceLock<Vec<(&'static str, String)>> = std::sync::OnceLock::new();
-    NAMES.get_or_init(|| {
-        theme::Palette::DARK
-            .tokens()
-            .into_iter()
-            .map(|(key, _, _)| (key, format!("--{}", theme::variable_name(key))))
-            .collect()
-    })
-}
-
-/// Gives `palette` the colour variables `style` sees that differ from `parent`'s, the variables of
-/// the element it is in (the root's for the outermost). Nothing to compare when the element sets
-/// none of its own: it shares its parent's.
-fn take_variables(
-    palette: &mut theme::Palette,
-    style: &super::native_css::Computed,
-    parent: &std::sync::Arc<std::collections::BTreeMap<String, String>>,
-) {
-    if style.shares_variables(parent) {
-        return;
-    }
-    for (key, name) in token_variables() {
-        let own = style.variable(name);
-        if own.is_none() || own == parent.get(name).map(String::as_str) {
-            continue;
-        }
-        if let Some(Ok(suhina_style::value::Color::Rgba([r, g, b, a]))) =
-            own.map(|value| suhina_style::value::Color::parse(value.trim()))
-            && let Some(slot) = palette.token_mut(key)
-        {
-            *slot = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
-        }
-    }
-}
-
-/// A background for `class`. A region's or container's is its own, painted once where it is
-/// ([`super::element::Entered::paint`]), so it writes no token: what is drawn inside it never
-/// paints it again, and a translucent one never builds up with depth (#1233). A control's sets
-/// its own fill, which its painter reads as `control_background`.
-fn set_background(palette: &mut theme::Palette, color: egui::Color32, class: super::element::Name) {
-    if !class.is_surface() {
-        palette.control_background = color;
-    }
-}
-
-/// Keeps the text of the element whose style is `style` readable on `background`: when the
-/// colour it inherited (a bar's light text in a menu that opens over a light window) has too
-/// little contrast, its text takes the ink that reads on `background`. Lasts until the element's
-/// scope ends. Returns that ink when it changed the text, for widgets styled from the inherited
-/// colour.
+/// The ink that keeps the text of the element whose style is `style` readable on `background`:
+/// when the colour it inherited (a bar's light text in a menu that opens over a light window) has
+/// too little contrast, near black or near white, whichever reads on it; `None` when the inherited
+/// colour reads. Its caller gives it to the element's text (egui's `override_text_color`).
 pub(super) fn readable_on(
     style: Option<super::native_css::Computed>,
     background: egui::Color32,
 ) -> Option<egui::Color32> {
+    use super::theme::contrast;
     let inherited = style?.color();
-    if theme::contrast(inherited, background) >= 3.0 {
+    if contrast(inherited, background) >= 3.0 {
         return None;
     }
-    // Near black or near white, whichever reads on it: the palette's own text colours are the
-    // inherited ones by now.
     let (dark, light) = (egui::Color32::from_rgb(0x1a, 0x1a, 0x1a), egui::Color32::from_rgb(0xf4, 0xf4, 0xf4));
-    let ink = if theme::contrast(dark, background) >= theme::contrast(light, background) { dark } else { light };
-    let mut palette = theme::palette();
-    set_foreground(&mut palette, ink, None);
-    theme::local_palette(palette);
-    Some(ink)
-}
-
-fn set_foreground(palette: &mut theme::Palette, color: egui::Color32, class: Option<super::element::Name>) {
-    palette.text_primary = color;
-    palette.text_inverse = color;
-    palette.text_secondary = color;
-    palette.text_value = color;
-    palette.text_hint = color;
-    palette.browser_text_primary = color;
-    palette.browser_text_secondary = color;
-    palette.browser_text_value = color;
-    palette.text_on_color_dark = color;
-    palette.text_on_color_light = color;
-    if class == Some(super::element::METER) {
-        palette.meter_normal = color;
-    }
+    Some(if contrast(dark, background) >= contrast(light, background) { dark } else { light })
 }
 use super::element::{ARRANGEMENT, DEVICE, DEVICE_CONTROL, Entered};
 use suhina_style::property::Property;
@@ -594,7 +494,7 @@ impl WidgetRules {
     }
 }
 
-/// egui's `Visuals` at the root: the palette's (`fallback`), with what the sheet's rules for
+/// egui's `Visuals` at the root: `widget`'s (`fallback`), with what the sheet's rules for
 /// egui's own widgets say written over them. Every element is looked up without entering it, so
 /// the style tree has none of them; with no rule, or no style engine, they are `fallback`'s.
 pub(super) fn root_visuals(fallback: egui::Visuals) -> egui::Visuals {

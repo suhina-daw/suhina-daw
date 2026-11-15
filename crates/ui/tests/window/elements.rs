@@ -757,7 +757,10 @@ fn a_colour_for_a_whole_clip_column_leaves_its_dim_words_dim() {
     let shown = painted(&h);
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(shown.contains(&odd(79)), "the titles take the area's colour");
-    let (caption, hint) = (suhina_ui::kit::theme::text_secondary(), suhina_ui::kit::theme::text_hint());
+    let (caption, hint) = (
+        suhina_ui::kit::theme::default_color("text-secondary").unwrap(),
+        suhina_ui::kit::theme::default_color("text-hint").unwrap(),
+    );
     assert!(shown.contains(&caption) && shown.contains(&hint), "the captions and hints stay dim");
 }
 
@@ -1573,7 +1576,7 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_its_lit_buttons() {
         // the lit fill; the three sheets' are the button's own, as before the base sheet (the
         // recorded painted digests hold them), which this test pins so a change is a decision.
         let switch = h.get_by_label("Turn Drums off").rect();
-        let fill = suhina_ui::kit::theme::control_selected();
+        let fill = suhina_ui::kit::theme::default_color("control-selectedBackground").unwrap();
         let inks = text_colours_at(&h, switch);
         suhina_ui::kit::native_css::set_user_sheet(None);
         assert!(!inks.is_empty(), "{id}: the lit switch shows its number");

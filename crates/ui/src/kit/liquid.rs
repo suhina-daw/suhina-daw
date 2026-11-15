@@ -16,7 +16,8 @@ pub fn set_panel_base(ctx: &Context, color: Color32) {
 }
 
 pub fn panel_base(ctx: &Context) -> Color32 {
-    ctx.data(|data| data.get_temp::<Color32>(Id::unique("liquid-panel-base"))).unwrap_or_else(theme::window_background)
+    ctx.data(|data| data.get_temp::<Color32>(Id::unique("liquid-panel-base")))
+        .unwrap_or_else(|| super::element::app_fill("window"))
 }
 
 /// A bounded app-owned background image the host may include in its offscreen renderer.

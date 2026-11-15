@@ -333,7 +333,7 @@ impl App {
             if let Some(notice) = self.themes.take_notice() {
                 self.status = Status::Hint(notice);
             }
-            theme::set_palette(ui.ctx(), self.themes.palette(&self.settings.theme));
+            ui.ctx().request_repaint();
         }
         if outcome.keymap_changed {
             self.keymap_changed = true;

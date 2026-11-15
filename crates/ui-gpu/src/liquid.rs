@@ -479,7 +479,7 @@ impl Liquid {
         let targets = state.targets.as_ref()?;
         {
             let view = targets.source.create_view(&Default::default());
-            let background = egui::Rgba::from(suhina_ui::kit::theme::window_background()).to_array();
+            let background = egui::Rgba::from(suhina_ui::kit::theme::window_fill()).to_array();
             let mut color = attachment(&view);
             if !see_through {
                 color.ops.load = wgpu::LoadOp::Clear(wgpu::Color {

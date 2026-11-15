@@ -12,6 +12,15 @@ use suhina_ui::demo::demo_project;
 use suhina_ui::settings::settings_view::Page;
 use suhina_ui::{App, kit::theme};
 
+/// The colour variable `variable` (a name without `--`) as the window's root resolved it in the
+/// last frame: the theme in use's colour.
+#[allow(clippy::expect_used)] // a test helper outside #[test] functions
+fn live(variable: &str) -> egui::Color32 {
+    suhina_ui::kit::native_css::root_color(&format!("--{variable}"))
+        .or_else(|| suhina_ui::kit::theme::default_color(variable))
+        .expect("a colour variable")
+}
+
 /// A window too short for most pages.
 const SHORT: (f32, f32) = (1000.0, 420.0);
 
@@ -332,7 +341,7 @@ fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     harness.get_by_label("Theme: Suhina Light").click();
     settle(&mut harness);
     assert_eq!(harness.state().settings().theme, "suhina-light");
-    let palette = theme::palette();
+    let shown = (theme::window_fill(), theme::is_light(), live("accent"));
     // Choosing it left the page where it was: the card clicked is still in view.
     assert!(harness.get_by_label("Theme: Suhina Light").rect().is_positive());
     wheel_to(&mut harness, "Edit current theme…", 40);
@@ -343,14 +352,18 @@ fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     assert!(harness.query_by_label("Colour grid.major").is_none());
     assert!(harness.query_by_label("Theme panel liquid").is_none());
     assert!(harness.query_by_label("Theme: Suhina Light").is_none());
-    assert_eq!(theme::palette(), palette, "opening the editor must not change the theme");
+    assert_eq!(
+        (theme::window_fill(), theme::is_light(), live("accent")),
+        shown,
+        "opening the editor must not change the theme"
+    );
     harness.get_by_label("Back to themes").click();
     settle(&mut harness);
     harness.get_by_label("Theme: Suhina Light");
 }
 
 fn dimmed(harness: &Harness<'static, App>) -> bool {
-    let tint = theme::window_background().gamma_multiply(0.6);
+    let tint = live("window-background").gamma_multiply(0.6);
     harness.output().shapes.iter().any(|shape| {
         matches!(&shape.shape,
         egui::Shape::Rect(shape) if shape.fill == tint && shape.rect.width() > 900.0)
@@ -383,7 +396,7 @@ fn choosing_a_theme_keeps_the_window_behind_dimmed() {
         assert!(dimmed(&harness), "dimmed on frame {frame} after the click");
     }
     assert!(harness.get_by_label("Theme in use: Nord").rect().is_positive());
-    theme::use_palette(&harness.ctx, theme::Palette::DARK);
+    theme::use_colors(&harness.ctx, &theme::Colors::new());
 }
 
 /// The window behind stays clear from press to release, also while the pointer rests, not only
@@ -462,9 +475,9 @@ fn holding_a_themes_own_setting_keeps_the_window_clear_until_release() {
     assert!(dimmed(&harness), "dimmed again when the colour is let go");
 
     // The colours that follow the setting follow it every time, not only the first.
-    let first = theme::accent();
+    let first = live("accent");
     for (fraction, x) in [(0.2, 0.8), (0.8, 0.3)] {
-        let before = theme::accent();
+        let before = live("accent");
         let pointer = square.min + Vec2::new(square.width() * x, square.height() * fraction);
         harness.hover_at(pointer);
         harness.step();
@@ -473,8 +486,8 @@ fn holding_a_themes_own_setting_keeps_the_window_clear_until_release() {
         harness.input_mut().events.push(button(pointer, false));
         harness.step();
         harness.step();
-        assert_ne!(theme::accent(), before, "the accent follows the colour picked at {pointer:?}");
-        assert_ne!(theme::accent(), first);
+        assert_ne!(live("accent"), before, "the accent follows the colour picked at {pointer:?}");
+        assert_ne!(live("accent"), first);
     }
 }
 
@@ -495,7 +508,7 @@ fn reset_changes_restores_a_themes_own_settings() {
     settle(&mut harness);
     harness.get_by_label("Edit current theme…").click();
     settle(&mut harness);
-    let original = theme::accent();
+    let original = live("accent");
 
     // A setting that no colour follows counts as a change too.
     let glow = |h: &Harness<'static, App>| {
@@ -536,7 +549,7 @@ fn reset_changes_restores_a_themes_own_settings() {
     press(&mut harness, true);
     press(&mut harness, false);
     harness.step();
-    assert_ne!(theme::accent(), original);
+    assert_ne!(live("accent"), original);
     egui::Popup::close_all(&harness.ctx);
     settle(&mut harness);
 
@@ -544,7 +557,7 @@ fn reset_changes_restores_a_themes_own_settings() {
     settle(&mut harness);
     harness.get_by_label("Reset changes").click();
     settle(&mut harness);
-    assert_eq!(theme::accent(), original, "the colour that follows the setting is back");
+    assert_eq!(live("accent"), original, "the colour that follows the setting is back");
     assert_eq!(glow(&harness), before, "the slider is back");
 }
 
@@ -1091,7 +1104,7 @@ fn the_theme_in_use_is_marked_as_selected_in_the_list() {
     harness.run();
     assert!(selected(&harness, "Theme: Suhina Light"));
     assert!(!selected(&harness, "Theme: Suhina Studio"));
-    theme::use_palette(&harness.ctx, theme::Palette::DARK);
+    theme::use_colors(&harness.ctx, &theme::Colors::new());
 }
 
 /// The variant editor shows the quick controls the theme declares with `@property` and a label,

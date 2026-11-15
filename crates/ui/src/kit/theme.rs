@@ -4,10 +4,9 @@
 //! Design tokens from `docs/design/brief.md` › Tokens and the sizes in
 //! `docs/design/components.md`. Views use these names, never raw colours or sizes.
 //!
-//! Colours come from the theme in use: the colour functions read a [`Palette`] that is a snapshot
-//! of the style sheet's resolved root variables (Suhina Studio's values with the theme's
-//! [`Colors`], its sheet, its variant and `user.css` over them), so the user can change them.
-//! Sizes are fixed.
+//! Colours are the theme's variables ([`TOKENS`], held in a theme's [`Colors`]): the style
+//! sheet's rules read them, and the views read the computed colours of their elements. Nothing
+//! here names a colour a view paints. Sizes are fixed.
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -16,131 +15,73 @@ use egui::{Color32, FontFamily, FontId, Stroke, TextStyle};
 use serde_json::{Map, Value};
 pub use suhina_theme_package::meta::{FILE as META, THUMBNAIL, ThemeMeta};
 
-const fn rgb(hex: u32) -> Color32 {
-    Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
+/// Every colour token of a theme: its name in a theme file and what it is used for. Its custom
+/// property is [`variable_name`] of the name, and Suhina Studio's value the one the core sheet
+/// (`suhina_theme_package::CORE_SHEET`) registers for it ([`default_color`]).
+pub const TOKENS: [(&str, &str); 37] = [
+    ("grid.major", "Arrangement bar lines and lane separators"),
+    ("grid.minor", "Arrangement subdivisions between bar lines"),
+    ("track.headerBackground", "The neutral surface behind Arrangement track controls"),
+    ("track.headerSelectedBackground", "The surface behind a selected Arrangement track's controls"),
+    ("window.background", "The window behind everything: grid, empty slots, lanes, Settings"),
+    ("panel.background", "Panels and headers: menu, control and status bars, track headers, beat lines"),
+    ("panel.hoverBackground", "A panel or list row under the pointer"),
+    ("control.background", "Fields, buttons and stopped clips"),
+    ("control.hoverBackground", "A field, button or clip under the pointer"),
+    ("control.activeBackground", "Selected or pressed: a selected clip or track, a dragged field"),
+    ("control.playingBackground", "A playing clip or scene"),
+    ("control.selectedBackground", "The chosen option of a switch, a lit toggle, the level of a volume or pan field"),
+    ("border", "Hairlines between regions and rows"),
+    ("border.strong", "Launcher columns and arrangement track lines"),
+    ("text.primary", "Names and values"),
+    ("text.secondary", "Labels and notes"),
+    ("text.hint", "Inactive text, hints and section titles"),
+    ("text.value", "Clip names and values on fields"),
+    ("text.inverse", "Text on lit fills: a switch's chosen option, a lit button"),
+    ("text.playing", "The name of a playing clip"),
+    (
+        "text.onColorLight",
+        "Light text on dark coloured tracks, returns and clips; paired with text.onColorDark for contrast",
+    ),
+    (
+        "text.onColorDark",
+        "Dark text on bright coloured tracks, returns and clips; paired with text.onColorLight for contrast",
+    ),
+    ("browser.text.primary", "Browser selection, search input and highlighted names"),
+    ("browser.text.secondary", "Browser item names, categories and preview labels"),
+    ("browser.text.hint", "Browser section headings, search placeholder and hints"),
+    ("browser.text.value", "Browser values and active preview controls"),
+    ("accent", "The playhead, queued clips, a key being set"),
+    (
+        "automation.pin",
+        "The pin of an automation lane pinned below its track's top lane (older theme files: their accent)",
+    ),
+    ("selection", "The selected device's outline"),
+    ("recording", "Recording and errors"),
+    ("recording.background", "Behind an armed track's arm button and a recording clip"),
+    ("meter.normal", "A level meter below the top"),
+    ("meter.hot", "A level meter near the top"),
+    ("slot.empty", "The mark in an empty clip slot"),
+    ("track.mutedBackground", "The fills of a muted track"),
+    ("pan.background", "Behind a track header's pan field"),
+    ("pan.centre", "The centre mark of a pan field"),
+];
+
+/// Whether `key` names a colour token.
+pub fn is_token(key: &str) -> bool {
+    TOKENS.iter().any(|(token, _)| *token == key)
 }
 
-/// Declares the colour tokens once: the [`Palette`] field, its name in a theme file, the default
-/// (the built-in dark theme), what it is used for, and a function returning it from the theme in
-/// use.
-macro_rules! palette {
-    ($($field:ident, $key:literal, $hex:literal, $use:literal;)*) => {
-        /// Every colour token of a theme.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub struct Palette {
-            $(#[doc = $use] pub $field: Color32,)*
-        }
-
-        impl Palette {
-            /// The built-in dark theme: the values in the design brief.
-            pub const DARK: Self = Self { $($field: rgb($hex),)* };
-
-            /// Each token's name in a theme file, what it is used for, and its colour.
-            pub fn tokens(&self) -> Vec<(&'static str, &'static str, Color32)> {
-                vec![$(($key, $use, self.$field),)*]
-            }
-
-            /// The colour of the token named `key`, to change.
-            pub fn token_mut(&mut self, key: &str) -> Option<&mut Color32> {
-                match key {
-                    $($key => Some(&mut self.$field),)*
-                    _ => None,
-                }
-            }
-
-            /// The colour of the token named `key`.
-            pub fn token_color(&self, key: &str) -> Option<Color32> {
-                match key {
-                    $($key => Some(self.$field),)*
-                    _ => None,
-                }
-            }
-
-            /// Whether `key` names a token.
-            pub fn is_token(key: &str) -> bool {
-                matches!(key, $($key)|*)
-            }
-        }
-
-        $(#[doc = $use] pub fn $field() -> Color32 { PALETTE.with(|p| p.get().$field) })*
-    };
+/// Suhina Studio's value of the colour variable `variable` (a name without `--`): its initial
+/// value in the core sheet. `None` for a name that is not a core colour.
+pub fn default_color(variable: &str) -> Option<Color32> {
+    super::theme_vars::initial_color(variable)
 }
 
-palette! {
-    grid_major, "grid.major", 0x2C2B29,
-        "Arrangement bar lines and lane separators";
-    grid_minor, "grid.minor", 0x252422,
-        "Arrangement subdivisions between bar lines";
-    track_header_background, "track.headerBackground", 0x252421,
-        "The neutral surface behind Arrangement track controls";
-    track_header_selected, "track.headerSelectedBackground", 0x3E3E4C,
-        "The surface behind a selected Arrangement track's controls";
-    window_background, "window.background", 0x1D1C1A,
-        "The window behind everything: grid, empty slots, lanes, Settings";
-    panel_background, "panel.background", 0x252421,
-        "Panels and headers: menu, control and status bars, track headers, beat lines";
-    panel_hover, "panel.hoverBackground", 0x31302C,
-        "A panel or list row under the pointer";
-    control_background, "control.background", 0x343330,
-        "Fields, buttons and stopped clips";
-    control_hover, "control.hoverBackground", 0x3F3D3A,
-        "A field, button or clip under the pointer";
-    control_active, "control.activeBackground", 0x4B4A46,
-        "Selected or pressed: a selected clip or track, a dragged field";
-    control_playing, "control.playingBackground", 0x545472,
-        "A playing clip or scene";
-    control_selected, "control.selectedBackground", 0xD0CCC6,
-        "The chosen option of a switch, a lit toggle, the level of a volume or pan field";
-    border, "border", 0x343330,
-        "Hairlines between regions and rows";
-    border_strong, "border.strong", 0x484642,
-        "Launcher columns and arrangement track lines";
-    text_primary, "text.primary", 0xECE8E1,
-        "Names and values";
-    text_secondary, "text.secondary", 0xB5B2AC,
-        "Labels and notes";
-    text_hint, "text.hint", 0x85837E,
-        "Inactive text, hints and section titles";
-    text_value, "text.value", 0xDAD6D0,
-        "Clip names and values on fields";
-    text_inverse, "text.inverse", 0x1D1C1A,
-        "Text on lit fills: a switch's chosen option, a lit button";
-    text_playing, "text.playing", 0xFFFFFF,
-        "The name of a playing clip";
-    text_on_color_light, "text.onColorLight", 0xECE8E1,
-        "Light text on dark coloured tracks, returns and clips; paired with text.onColorDark for contrast";
-    text_on_color_dark, "text.onColorDark", 0x1D1C1A,
-        "Dark text on bright coloured tracks, returns and clips; paired with text.onColorLight for contrast";
-    browser_text_primary, "browser.text.primary", 0xECE8E1,
-        "Browser selection, search input and highlighted names";
-    browser_text_secondary, "browser.text.secondary", 0xB5B2AC,
-        "Browser item names, categories and preview labels";
-    browser_text_hint, "browser.text.hint", 0x85837E,
-        "Browser section headings, search placeholder and hints";
-    browser_text_value, "browser.text.value", 0xDAD6D0,
-        "Browser values and active preview controls";
-    accent, "accent", 0xA6A3FF,
-        "The playhead, queued clips, a key being set";
-    automation_pin, "automation.pin", 0xA6A3FF,
-        "The pin of an automation lane pinned below its track's top lane (older theme files: their accent)";
-    selection, "selection", 0xE3C86A,
-        "The selected device's outline";
-    recording, "recording", 0xE5484D,
-        "Recording and errors";
-    recording_background, "recording.background", 0x4D2F2B,
-        "Behind an armed track's arm button and a recording clip";
-    meter_normal, "meter.normal", 0x8BC48A,
-        "A level meter below the top";
-    meter_hot, "meter.hot", 0xE3C86A,
-        "A level meter near the top";
-    slot_empty, "slot.empty", 0x484642,
-        "The mark in an empty clip slot";
-    track_muted, "track.mutedBackground", 0x21201D,
-        "The fills of a muted track";
-    pan_background, "pan.background", 0x1F1E1C,
-        "Behind a track header's pan field";
-    pan_centre, "pan.centre", 0x817F7A,
-        "The centre mark of a pan field";
+/// The value of the colour variable `variable` in the colour map `colors`, else Suhina Studio's
+/// ([`default_color`]); transparent for a name that is neither.
+pub fn color_in(colors: &Colors, variable: &str) -> Color32 {
+    colors.get(variable).copied().or_else(|| default_color(variable)).unwrap_or(Color32::TRANSPARENT)
 }
 
 /// The name of the custom property that holds the token `key`, without its `--`: `accent` is
@@ -161,113 +102,40 @@ pub fn token_key(variable: &str) -> String {
 /// not.
 pub fn is_color_variable(variable: &str) -> bool {
     let key = token_key(variable);
-    Palette::is_token(&key) && variable_name(&key) == variable
+    is_token(&key) && variable_name(&key) == variable
 }
 
 /// The colours a theme sets: its colour variables by name without the `--`
 /// (`window-background`, `accent`), the names `:root { --… }` uses. A colour the theme does not
-/// set is Suhina Studio's ([`Palette::from_colors`]).
+/// set is Suhina Studio's ([`default_color`]).
 pub type Colors = std::collections::BTreeMap<String, Color32>;
 
-impl Palette {
-    /// Suhina Studio's colours with `colors` over them: the colours a theme paints with. A name
-    /// that is not a token is left out.
-    pub fn from_colors(colors: &Colors) -> Self {
-        let mut palette = Self::DARK;
-        for (variable, color) in colors {
-            if is_color_variable(variable)
-                && let Some(slot) = palette.token_mut(&token_key(variable))
-            {
-                *slot = *color;
-            }
-        }
-        palette
-    }
-}
-
-impl Default for Palette {
-    fn default() -> Self {
-        Self::DARK
-    }
-}
-
 thread_local! {
-    /// The colours in use: the root's snapshot ([`set_base_palette`]), with a style scope's over
-    /// it while one is entered. The UI draws on one thread; tests each get their own, so a test
-    /// that changes the theme does not change another's.
-    static PALETTE: Cell<Palette> = const { Cell::new(Palette::DARK) };
-    static PALETTE_REVISION: Cell<u64> = const { Cell::new(0) };
+    /// Whether the theme in use is light and whether it lets the desktop show through, as the
+    /// window's computed colours said when the styles last reset (`sync_root_visuals`).
+    static SCHEME: Cell<(bool, bool)> = const { Cell::new((false, false)) };
+    /// The `window`'s computed background when the styles last reset.
+    static WINDOW_FILL: Cell<Color32> = const { Cell::new(Color32::TRANSPARENT) };
 }
 
-/// The colours in use.
-pub fn palette() -> Palette {
-    PALETTE.with(Cell::get)
+/// The colour the window's own background is: the `window` element's computed
+/// `background-color` (faded over a backdrop), as of the last time the styles reset. For what
+/// paints outside the style tree, such as the GPU pass that clears behind the live UI.
+pub fn window_fill() -> Color32 {
+    WINDOW_FILL.with(Cell::get)
 }
 
-pub(crate) fn local_palette(palette: Palette) {
-    PALETTE.with(|p| p.set(palette));
-}
-
-/// Scoped CSS overrides must never roll back a user theme change made while drawing.
-pub(crate) fn palette_revision() -> u64 {
-    PALETTE_REVISION.with(Cell::get)
-}
-
-/// Whether a background of the theme in use lets the desktop show through the window.
+/// Whether a background of the theme in use lets the desktop show through the window: the
+/// computed background of the `window` or of its panels is see-through (a theme's own, or the
+/// window's opacity over a backdrop). As of the last time the styles reset.
 pub fn see_through() -> bool {
-    let p = palette();
-    [
-        p.window_background,
-        p.panel_background,
-        p.panel_hover,
-        p.control_background,
-        p.control_hover,
-        p.control_active,
-        p.control_playing,
-        p.control_selected,
-        p.track_header_background,
-        p.track_header_selected,
-        p.pan_background,
-        p.track_muted,
-        p.recording_background,
-    ]
-    .iter()
-    .any(|color| color.a() < 255)
+    SCHEME.with(Cell::get).1
 }
 
-/// Whether the theme in use is a light one, which the system's parts of the window follow.
+/// Whether the theme in use is a light one, which the system's parts of the window follow: the
+/// window's computed text colour is dark. As of the last time the styles reset.
 pub fn is_light() -> bool {
-    light(&palette())
-}
-
-/// Whether `p` is a light theme: one with dark text. A background can be see-through, so its
-/// colour alone does not tell, but text is always made to read on what the theme looks like.
-fn light(p: &Palette) -> bool {
-    luminance(p.text_primary) < 0.18
-}
-
-/// The light or dark scheme of `p`. egui passes it on to the native window (its title bar).
-fn scheme(p: &Palette) -> egui::Theme {
-    if light(p) { egui::Theme::Light } else { egui::Theme::Dark }
-}
-
-/// Tells egui whether the theme whose colours are `palette` is light or dark, which it passes on to
-/// the native window (its title bar). The colours themselves come from the style sheet's variables
-/// (`native_css::set_colors`, the root's snapshot), not from here: what is left of this goes with
-/// the palette (#1452).
-pub fn set_palette(ctx: &egui::Context, palette: Palette) {
-    ctx.set_theme(scheme(&palette));
-    ctx.request_repaint();
-}
-
-/// The colours of `palette` that are not Suhina Studio's, as a theme's colour map holds them.
-pub fn colors_of(palette: &Palette) -> Colors {
-    palette
-        .tokens()
-        .into_iter()
-        .filter(|(key, _, color)| Palette::DARK.token_color(key) != Some(*color))
-        .map(|(key, _, color)| (variable_name(key), color))
-        .collect()
+    SCHEME.with(Cell::get).0
 }
 
 /// `colors` as the `:root` rule that sets them (`:root { --accent: #A6A3FF; }`), `None` when it
@@ -281,21 +149,12 @@ pub fn colors_rule(colors: &Colors) -> Option<String> {
     (!set.is_empty()).then(|| format!(":root {{{} }}", set.concat()))
 }
 
-/// Draws with `palette` from now on, as a theme whose colours it is: the style engine's colour map
-/// from the next frame (`native_css::set_colors`), the colour functions at once, and egui's light
-/// or dark scheme. For what draws without the app, which gives the theme's colours itself each
-/// frame: tests, and tools that paint a widget alone.
-pub fn use_palette(ctx: &egui::Context, palette: Palette) {
-    super::native_css::set_colors(&colors_of(&palette));
-    set_base_palette(palette);
-    set_palette(ctx, palette);
-}
-
-/// Draws with `palette`, the snapshot of the root's resolved colour variables, until the next one:
-/// taken by the style engine once each time its styles reset (`native_css::begin_frame`).
-pub(super) fn set_base_palette(palette: Palette) {
-    PALETTE_REVISION.with(|revision| revision.set(revision.get().wrapping_add(1)));
-    PALETTE.with(|p| p.set(palette));
+/// Draws with the colour map `colors` from the next frame on, as a theme whose colours they are
+/// (`native_css::set_colors`): for what draws without the app, which gives the theme's colours
+/// itself each frame: tests, and tools that paint a widget alone.
+pub fn use_colors(ctx: &egui::Context, colors: &Colors) {
+    super::native_css::set_colors(colors);
+    ctx.request_repaint();
 }
 
 /// What the root's `Visuals` were last built from, kept in the context: the style engine's resets.
@@ -323,7 +182,8 @@ pub(super) fn sync_root_visuals(ctx: &egui::Context) {
         return;
     }
     ctx.data_mut(|data| data.insert_temp(key, source));
-    let Some((fallback, light)) = sheet_visuals() else { return };
+    let Some((fallback, light, clear)) = sheet_visuals() else { return };
+    SCHEME.with(|scheme| scheme.set((light, clear)));
     let built = super::style_class::root_visuals(fallback);
     if ctx.global_style().visuals != built {
         ctx.all_styles_mut(|style| style.visuals = built.clone());
@@ -343,35 +203,57 @@ pub fn follow_root_visuals(ui: &mut egui::Ui) {
     }
 }
 
-/// egui's `Visuals` as the palette gave them before the sheet did, for the tests that check the
-/// sheet's `widget` gives the same: what the root has with no rule of a theme for egui's widgets.
+/// egui's `Visuals` as the palette gave them before the sheet did, with the colours `color` gives
+/// by variable name: for the tests that check the sheet's `widget` gives the same, what the root
+/// has with no rule of a theme for egui's widgets.
 #[cfg(test)]
-pub(super) fn palette_visuals_for(p: &Palette) -> egui::Visuals {
-    let mut visuals = shaped(if light(p) { egui::Visuals::light() } else { egui::Visuals::dark() });
-    visuals.panel_fill = p.panel_background;
-    visuals.window_fill = p.panel_background;
-    visuals.extreme_bg_color = p.window_background;
-    visuals.faint_bg_color = p.panel_background;
-    visuals.window_stroke = hairline(p.border);
-    visuals.selection.bg_fill = p.control_active;
-    visuals.selection.stroke = hairline(p.accent);
+pub(super) fn palette_visuals_for(color: impl Fn(&str) -> Color32) -> egui::Visuals {
+    let light = luminance(color("text-primary")) < 0.18;
+    let mut visuals = shaped(if light { egui::Visuals::light() } else { egui::Visuals::dark() });
+    visuals.panel_fill = color("panel-background");
+    visuals.window_fill = color("panel-background");
+    visuals.extreme_bg_color = color("window-background");
+    visuals.faint_bg_color = color("panel-background");
+    visuals.window_stroke = hairline(color("border"));
+    visuals.selection.bg_fill = color("control-activeBackground");
+    visuals.selection.stroke = hairline(color("accent"));
     for (widget, fill) in [
-        (&mut visuals.widgets.noninteractive, p.panel_background),
-        (&mut visuals.widgets.inactive, p.control_background),
-        (&mut visuals.widgets.hovered, p.control_hover),
-        (&mut visuals.widgets.active, p.control_active),
-        (&mut visuals.widgets.open, p.control_active),
+        (&mut visuals.widgets.noninteractive, "panel-background"),
+        (&mut visuals.widgets.inactive, "control-background"),
+        (&mut visuals.widgets.hovered, "control-hoverBackground"),
+        (&mut visuals.widgets.active, "control-activeBackground"),
+        (&mut visuals.widgets.open, "control-activeBackground"),
     ] {
-        widget.bg_fill = fill;
-        widget.weak_bg_fill = fill;
+        widget.bg_fill = color(fill);
+        widget.weak_bg_fill = color(fill);
     }
-    visuals.widgets.noninteractive.bg_stroke = hairline(p.border);
-    visuals.widgets.noninteractive.fg_stroke = hairline(p.text_secondary);
-    visuals.widgets.inactive.fg_stroke = hairline(p.text_value);
-    visuals.widgets.hovered.fg_stroke = hairline(p.text_primary);
-    visuals.widgets.active.fg_stroke = hairline(p.text_primary);
-    visuals.widgets.open.fg_stroke = hairline(p.text_primary);
+    visuals.widgets.noninteractive.bg_stroke = hairline(color("border"));
+    visuals.widgets.noninteractive.fg_stroke = hairline(color("text-secondary"));
+    visuals.widgets.inactive.fg_stroke = hairline(color("text-value"));
+    visuals.widgets.hovered.fg_stroke = hairline(color("text-primary"));
+    visuals.widgets.active.fg_stroke = hairline(color("text-primary"));
+    visuals.widgets.open.fg_stroke = hairline(color("text-primary"));
     visuals
+}
+
+/// Suhina Studio's value of the colour variable `variable`, for the tests.
+#[cfg(test)]
+pub(crate) fn studio(variable: &str) -> Color32 {
+    default_color(variable).unwrap_or_else(|| panic!("no core colour {variable}"))
+}
+
+/// The opaque colour `0xRRGGBB`, for the tests.
+#[cfg(test)]
+pub(crate) const fn rgb(hex: u32) -> Color32 {
+    Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
+}
+
+/// The colour variable `name` (with its `--`) as the root resolves it on `ctx` with the colours
+/// set, after a frame: for the tests that check what a theme's variables come to.
+#[cfg(test)]
+pub(crate) fn root_in(ctx: &egui::Context, name: &str) -> Color32 {
+    in_style_frame(ctx, |_| super::native_css::root_color(name))
+        .unwrap_or_else(|| panic!("the root resolves no colour {name}"))
 }
 
 /// What `read` gives in a frame of the style engine on `ctx`, drawn with the colours set (a theme's
@@ -746,7 +628,7 @@ pub struct Theme {
     /// The rgb of each colour in [`Theme::colors`] that is fully transparent, by the same names.
     pub transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
     pub name: String,
-    /// The colours the theme sets; any other is Suhina Studio's ([`Theme::palette`]).
+    /// The colours the theme sets; any other is Suhina Studio's ([`Theme::color`]).
     pub colors: Colors,
     /// None inherits the application's global material strengths.
     pub liquid: Option<super::liquid::Options>,
@@ -796,9 +678,10 @@ impl Theme {
         theme
     }
 
-    /// The colours the theme paints with: Suhina Studio's with the ones the theme sets over them.
-    pub fn palette(&self) -> Palette {
-        Palette::from_colors(&self.colors)
+    /// The colour variable `variable` (a name without `--`) as the theme sets it, else Suhina
+    /// Studio's ([`color_in`]).
+    pub fn color(&self, variable: &str) -> Color32 {
+        color_in(&self.colors, variable)
     }
 
     /// `color`, the value of the colour variable `variable` (a name without `--`), as four bytes:
@@ -826,7 +709,7 @@ impl Theme {
     /// is Suhina Studio's own is not one the theme sets, so it is left out of the map.
     pub fn read_color(&mut self, variable: &str, [r, g, b, a]: [u8; 4]) {
         let color = Color32::from_rgba_unmultiplied(r, g, b, a);
-        if a != 0 && Palette::DARK.token_color(&token_key(variable)) == Some(color) {
+        if a != 0 && default_color(variable) == Some(color) {
             self.reset_color(variable);
         } else {
             self.set_color(variable, [r, g, b, a]);
@@ -837,7 +720,7 @@ impl Theme {
     /// Suhina Studio's own is not kept, so the theme sets only what differs.
     fn derive(&mut self, key: &str, color: Color32, transparent_rgb: Option<[u8; 3]>) {
         let variable = variable_name(key);
-        let same = Palette::DARK.token_color(key) == Some(color) && transparent_rgb.is_none();
+        let same = default_color(&variable) == Some(color) && transparent_rgb.is_none();
         self.reset_color(&variable);
         if !same {
             self.colors.insert(variable.clone(), color);
@@ -877,7 +760,7 @@ impl Theme {
                     if is_former_track_colour(&key.replace('.', "-")) {
                         continue;
                     }
-                    match (Palette::is_token(key), value.as_str().and_then(parse_rgba)) {
+                    match (is_token(key), value.as_str().and_then(parse_rgba)) {
                         (true, Some(rgba)) => theme.read_color(&variable_name(key), rgba),
                         (false, _) => warnings.push(
                             key.strip_prefix("kind.")
@@ -889,18 +772,18 @@ impl Theme {
                 }
                 // A colour an older file leaves out is worked out from the ones it sets, so the
                 // file keeps looking as it did until the colour is edited. It counts as set.
-                let has = |key: &str| colors.contains_key(key) && Palette::is_token(key);
+                let has = |key: &str| colors.contains_key(key) && is_token(key);
                 let rgb_of = |theme: &Theme, key: &str, color: Color32| -> [u8; 3] {
                     let [r, g, b, _] = color.to_srgba_unmultiplied();
                     theme.transparent_rgb.get(&variable_name(key)).copied().unwrap_or([r, g, b])
                 };
                 // Older files drew these with a background and a text colour.
                 if !has("text.inverse") {
-                    let [r, g, b] = rgb_of(&theme, "window.background", theme.palette().window_background);
+                    let [r, g, b] = rgb_of(&theme, "window.background", theme.color("window-background"));
                     theme.derive("text.inverse", Color32::from_rgb(r, g, b), None);
                 }
                 if !has("control.selectedBackground") && has("text.value") {
-                    let value = theme.palette().text_value;
+                    let value = theme.color("text-value");
                     let rgb = theme.transparent_rgb.get("text-value").copied();
                     theme.derive("control.selectedBackground", value, rgb);
                 }
@@ -915,16 +798,14 @@ impl Theme {
                     ("automation.pin", "accent"),
                 ] {
                     if !has(key) {
-                        let value = theme.palette().token_color(source);
+                        let value = theme.color(&variable_name(source));
                         let rgb = theme.transparent_rgb.get(&variable_name(source)).copied();
-                        if let Some(value) = value {
-                            theme.derive(key, value, rgb);
-                        }
+                        theme.derive(key, value, rgb);
                     }
                 }
                 // Text never takes a see-through background's alpha.
                 if !has("text.onColorDark") {
-                    let [r, g, b] = rgb_of(&theme, "text.onColorDark", theme.palette().text_on_color_dark);
+                    let [r, g, b] = rgb_of(&theme, "text.onColorDark", theme.color("text-onColorDark"));
                     theme.derive("text.onColorDark", Color32::from_rgb(r, g, b), None);
                 }
             }
@@ -990,10 +871,7 @@ impl Theme {
         let reread = read(&colors);
         for key in DERIVED {
             let variable = variable_name(key);
-            let (Some(mine), Some(theirs)) = (self.palette().token_color(key), reread.palette().token_color(key))
-            else {
-                continue;
-            };
+            let (mine, theirs) = (self.color(&variable), reread.color(&variable));
             let (mine, theirs) = (self.rgba(&variable, mine), reread.rgba(&variable, theirs));
             if mine != theirs && !colors.contains_key(key) {
                 colors.insert(key.to_string(), Value::String(hex_rgba(mine)));
@@ -1029,8 +907,9 @@ pub const COMPACT_SESSION_EXAMPLE: &str = include_str!("../../themes/compact-ses
 /// The README shipped with themes: the format, capabilities and generated palette reference.
 pub fn template_readme() -> String {
     let mut text = String::from(include_str!("../../themes/THEME-PACKAGE-README.md"));
-    text.push_str("\n\n## Palette token reference\n\n| Token | Suhina Studio | Used for |\n|---|---|---|\n");
-    for (key, purpose, color) in Palette::DARK.tokens() {
+    text.push_str("\n\n## Colour token reference\n\n| Token | Suhina Studio | Used for |\n|---|---|---|\n");
+    for (key, purpose) in TOKENS {
+        let color = default_color(&variable_name(key)).unwrap_or(Color32::TRANSPARENT);
         text.push_str(&format!("| `{key}` | `{}` | {purpose} |\n", hex(color)));
     }
     text
@@ -1241,10 +1120,13 @@ fn shaped(mut visuals: egui::Visuals) -> egui::Visuals {
 /// behind a text field), each looked up inside the `window`, so a backdrop's fading reaches them.
 /// Light or dark as the theme is: whether the window's text (its computed `color`) is dark. A
 /// background can be see-through, so its colour alone does not tell; text is always made to read
-/// on what the theme looks like. `None` where no sheet styles the window.
-fn sheet_visuals() -> Option<(egui::Visuals, bool)> {
+/// on what the theme looks like. See-through as the window's or its panels' computed background
+/// is. `None` where no sheet styles the window.
+fn sheet_visuals() -> Option<(egui::Visuals, bool, bool)> {
     use super::element::{Checked, Look, WIDGET, WINDOW};
-    let light = luminance(WINDOW.probe().style()?.color()) < 0.18;
+    let window_look = WINDOW.probe();
+    let root = window_look.style()?;
+    let light = luminance(root.color()) < 0.18;
     let window = WINDOW.enter();
     let look = |builder: super::element::Builder<'static>| builder.probe();
     let rest = look(WIDGET.builder());
@@ -1277,7 +1159,9 @@ fn sheet_visuals() -> Option<(egui::Visuals, bool)> {
         widget.fg_stroke = hairline(Look::color(own));
     }
     visuals.widgets.noninteractive.bg_stroke = hairline(disabled.border());
-    Some((visuals, light))
+    let clear = root.background().a() < u8::MAX || frame.background().a() < u8::MAX;
+    WINDOW_FILL.with(|fill| fill.set(root.background()));
+    Some((visuals, light, clear))
 }
 
 #[cfg(test)]

@@ -373,7 +373,7 @@ mod tests {
             1 => Some(blue),
             _ => None,
         };
-        let image = density(&screen, colour, rect, 1, crate::kit::theme::text_hint());
+        let image = density(&screen, colour, rect, 1, crate::kit::theme::studio("text-hint"));
         assert_eq!(image.size, [20, 1]);
         let mixed = image.pixels[0].to_srgba_unmultiplied();
         assert!(mixed[0].abs_diff(100) <= 1 && mixed[2].abs_diff(100) <= 1, "{mixed:?}");
@@ -396,7 +396,7 @@ mod tests {
         // Texel 0: one faint red point alone; texel 10: a faint red and a blue point.
         let screen = [Pos2::new(1.0, 1.0), Pos2::new(31.0, 1.0), Pos2::new(32.0, 1.0)];
         let colour = |i: usize| Some(if i == 2 { blue } else { faint_red });
-        let image = density(&screen, colour, rect, 0, crate::kit::theme::text_hint());
+        let image = density(&screen, colour, rect, 0, crate::kit::theme::studio("text-hint"));
         let alone = image.pixels[0].to_srgba_unmultiplied();
         assert!(alone[0].abs_diff(200) <= 2 && alone[2] == 0, "{alone:?}");
         assert!(alone[3] < 140, "a translucent colour is not drawn opaque: {alone:?}");
@@ -414,13 +414,15 @@ mod tests {
         let screen = [Pos2::new(1.0, 16.0), Pos2::new(7.0, 16.0)];
         let colour = |_| Some(Color32::from_rgb(200, 0, 0));
         let at = |image: &ColorImage, column: usize| image.pixels[5 * 10 + column];
-        let sharp = density(&screen, colour, rect, 0, crate::kit::theme::text_hint());
+        let sharp = density(&screen, colour, rect, 0, crate::kit::theme::studio("text-hint"));
         assert!(at(&sharp, 0).a() > 0 && at(&sharp, 2).a() > 0);
         assert_eq!(at(&sharp, 1), Color32::TRANSPARENT);
-        let soft = density(&screen, colour, rect, 2, crate::kit::theme::text_hint());
+        let soft = density(&screen, colour, rect, 2, crate::kit::theme::studio("text-hint"));
         assert!(at(&soft, 1).a() > 0);
         // A wider spread reaches further: two texels past a point it is stronger.
-        assert!(at(&soft, 4).a() > at(&density(&screen, colour, rect, 1, crate::kit::theme::text_hint()), 4).a());
+        assert!(
+            at(&soft, 4).a() > at(&density(&screen, colour, rect, 1, crate::kit::theme::studio("text-hint")), 4).a()
+        );
     }
 
     #[test]

@@ -141,7 +141,7 @@ fn css_changes_native_model_and_reports_unsupported_rules() {
         &mut theme,
         "/* own style */ :root { --accent: #123456; } meter {style: segmented; segments: 16;} toolbar {order: transport, tempo; hidden: performance;} fader.cap:hover {image: url('assets/cap.svg');} body {display: grid;}",
     );
-    assert_eq!(theme.palette().accent, egui::Color32::from_rgb(0x12, 0x34, 0x56));
+    assert_eq!(theme.color("accent"), egui::Color32::from_rgb(0x12, 0x34, 0x56));
     assert_eq!(theme.skin.meter, skin::MeterStyle::Segmented);
     assert_eq!(theme.skin.toolbar.as_ref().unwrap().order[0], "transport");
     assert_eq!(theme.skin.assets["fader.cap.hover"], "assets/cap.svg");

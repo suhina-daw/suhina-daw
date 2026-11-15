@@ -20,7 +20,7 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
         }
     }
     let mut h = window(demo_app());
-    let border = theme::border();
+    let border = live("border");
     // The line between the bars and the views is a line in the gap, never a fill under the views
     // that a translucent one would show (#1233).
     assert!(!h.output().shapes.iter().any(|shape| covers_workspace(&shape.shape, border)));
@@ -52,7 +52,7 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
     );
     assert!(
         h.output().shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(rect) if rect.fill == theme::panel_background() && rect.rect.height() > 10.0
+            egui::Shape::Rect(rect) if rect.fill == live("panel-background") && rect.rect.height() > 10.0
         )),
         "native panel surfaces remain opaque"
     );
@@ -83,9 +83,9 @@ fn no_background_replaces_the_window_pixels_on_native_alpha_surfaces() {
         fills.lock().unwrap().clear();
         h.step();
     }
-    assert!(theme::window_background().a() < u8::MAX, "a see-through theme");
+    assert!(theme::see_through(), "a see-through theme");
     assert!(fills.lock().unwrap().is_empty(), "nothing replaces pixels: {:?}", fills.lock().unwrap());
-    theme::use_palette(&ctx, theme::Palette::DARK);
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn sheet_menu_and_toolbar_paint_their_scoped_backgrounds_without_editing_the_pro
             _ => None,
         }
     }
-    for (ink, height) in [(theme::accent(), theme::MENU_BAR), (theme::panel_background(), theme::CONTROL_BAR)] {
+    for (ink, height) in [(live("accent"), theme::MENU_BAR), (live("panel-background"), theme::CONTROL_BAR)] {
         let bar = h
             .output()
             .shapes
@@ -136,7 +136,7 @@ fn glass_clears_the_views_of_the_main_window_half_as_far_as_its_bars_menus_and_d
     for _ in 0..4 {
         h.step();
     }
-    let glass = theme::panel_background();
+    let glass = live("panel-background");
     assert!(glass.a() < 255);
     fn fills(shape: &egui::Shape, found: &mut Vec<(egui::Rect, egui::Color32)>) {
         match shape {
@@ -195,7 +195,7 @@ fn glass_clears_the_views_of_the_main_window_half_as_far_as_its_bars_menus_and_d
         dialog.iter().any(|(rect, fill)| fill.a() == glass.a() && rect.height() > 200.0 && rect.height() < 800.0),
         "a dialog is glass"
     );
-    theme::use_palette(&ctx, theme::Palette::DARK);
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     let mut h = view();
     let (_, mut blocks) = theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-blocks").unwrap();
     skin::configure(&blocks.skin);
-    theme::use_palette(&h.ctx, blocks.palette());
+    theme::use_colors(&h.ctx, &blocks.colors);
     h.run_steps(3);
     let slot = h.get_by_label("Launch Root on Bass (scene 1)").rect();
     // The artwork is a rectangle or a nine-slice (at most 16 corners), not the fan of a CSS
@@ -229,7 +229,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     h.run_steps(3);
     assert!(!has_body(&h), "opting out restores native column fills");
     skin::configure(&skin::Skin::default());
-    theme::use_palette(&h.ctx, theme::Palette::DARK);
+    theme::use_colors(&h.ctx, &theme::Colors::new());
 }
 
 #[test]
@@ -368,14 +368,14 @@ fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
     assert!(harness.query_by_label("Theme: Ink").is_some());
     harness.get_by_label("Variant: Dim").click();
     harness.run();
-    assert_eq!(theme::accent(), egui::Color32::from_rgb(0xAB, 0xCD, 0xEF));
+    assert_eq!(live("accent"), egui::Color32::from_rgb(0xAB, 0xCD, 0xEF));
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.theme), Some("ink@dim".into()));
     // The theme in use shows its swatches on its large card and on its card in the list; both work.
     let own: Vec<_> = harness.get_all_by_label("Variant: Default").collect();
     assert_eq!(own.len(), 2, "the large card's swatch and the list card's");
     own[0].click();
     harness.run();
-    assert_eq!(theme::accent(), egui::Color32::from_rgb(0x12, 0x34, 0x56));
+    assert_eq!(live("accent"), egui::Color32::from_rgb(0x12, 0x34, 0x56));
     // A new variant starts from the values in use and is handed out to be written.
     harness.get_by_label("More").click();
     harness.run();
@@ -893,7 +893,7 @@ fn choosing_another_themes_folder_asks_before_its_themes_move() {
 
 #[test]
 fn a_theme_with_a_background_image_lets_the_window_rest() {
-    // Its window style changes palette colours; the background once set the palette again each
+    // Its window style changes the window's colours; the background once set them again each
     // frame to undo them, and the window never stopped repainting.
     let mut h = window(demo_app());
     let ctx = h.ctx.clone();
@@ -1255,8 +1255,8 @@ fn a_theme_styles_the_workspace_splitters() {
         open_with_clip("workspace-panel { margin: 4px; } #detail-splitter { background-color: transparent; }", false);
     let clear = fills_inside(&h, h.get_by_label("Detail area splitter").rect());
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(native.contains(&theme::control_background()), "the native strip: {native:?}");
-    assert!(!clear.contains(&theme::control_background()), "a transparent strip paints no fill: {clear:?}");
+    assert!(native.contains(&live("control-background")), "the native strip: {native:?}");
+    assert!(!clear.contains(&live("control-background")), "a transparent strip paints no fill: {clear:?}");
 }
 
 /// Every bundled theme gives no region a border or padding, so no region's `overflow` clip cuts

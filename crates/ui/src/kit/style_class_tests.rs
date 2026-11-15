@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+use crate::kit::theme;
 
 #[test]
 fn a_dialog_panel_takes_only_its_own_background() {
@@ -110,22 +111,23 @@ fn drag_pointer_overrides_the_setting_for_the_controls_inside_it() {
 }
 
 #[test]
-fn a_live_theme_change_survives_all_enclosing_style_scopes() {
-    let original = theme::palette();
-    let mut changed = original;
-    changed.text_primary = egui::Color32::from_rgb(40, 50, 60);
-    changed.grid_major = egui::Color32::from_rgba_unmultiplied(80, 90, 100, 120);
+fn a_colour_change_made_while_drawing_inside_style_scopes_holds_from_the_next_frame() {
     let ctx = egui::Context::default();
-    let inside = frames("browser { color: #123456; }", || {
-        let _window = test_el("window").enter();
-        let _browser = test_el("browser").enter();
-        let inside = theme::text_primary();
-        theme::use_palette(&ctx, changed);
-        inside
-    });
-    assert_eq!(inside, theme::parse_hex("#123456").unwrap());
-    assert_eq!(theme::palette(), changed);
-    theme::use_palette(&ctx, original);
+    let changed = egui::Color32::from_rgb(40, 50, 60);
+    skin::configure(&skin::Skin { css: Some("browser { color: #123456; }".into()), ..Default::default() });
+    for _ in 0..3 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let _window = test_el("window").enter();
+            let _browser = test_el("browser").enter();
+            theme::use_colors(ui.ctx(), &[("text-primary".to_owned(), changed)].into());
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    assert_eq!(theme::root_in(&ctx, "--text-primary"), changed, "leaving the scopes rolled nothing back");
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
@@ -156,23 +158,23 @@ fn ordinary_widget_style_preserves_ui_identity_and_restores_caller() {
     skin::configure(&skin::Skin::default());
 }
 #[test]
-fn descendant_styles_are_scoped_and_restore_palette() {
-    let original = theme::palette();
+fn descendant_styles_are_scoped_and_inherited() {
     let seen = frames("browser { color: #123456; } browser button { color: #ABCDEF; }", || {
         let browser = test_el("browser").enter();
-        let in_browser = theme::text_primary();
+        // An element with no rule of its own takes its parent's text colour, as CSS inherits it.
+        let in_browser = test_el("project-tabs").look().color();
         let in_button = {
             let _button = test_el("button").enter();
-            theme::text_primary()
+            test_el("project-tabs").look().color()
         };
-        let after = theme::text_primary();
+        let after = test_el("project-tabs").look().color();
         drop(browser);
-        (in_browser, in_button, after, theme::palette())
+        (in_browser, in_button, after, test_el("project-tabs").look().color())
     });
     assert_eq!(seen.0, theme::parse_hex("#123456").unwrap());
     assert_eq!(seen.1, theme::parse_hex("#ABCDEF").unwrap());
     assert_eq!(seen.2, seen.0);
-    assert_eq!(seen.3, original);
+    assert_ne!(seen.3, seen.0, "outside the browser its colour is gone");
 }
 
 // The root's `Visuals` come from the sheet (#1442).
@@ -240,8 +242,8 @@ fn a_rule_for_each_element_reaches_the_root_visuals() {
         v.popup_shadow,
         egui::epaint::Shadow { offset: [2, 3], blur: 8, spread: 0, color: egui::Color32::from_rgb(10, 10, 10) }
     );
-    // What no rule says stays the palette's.
-    let fallback = theme::palette_visuals_for(&theme::palette());
+    // What no rule says stays what the palette gave.
+    let fallback = theme::palette_visuals_for(theme::studio);
     assert_eq!(v.panel_fill, fallback.panel_fill);
     assert_eq!(v.faint_bg_color, fallback.faint_bg_color);
     assert_eq!(v.widgets.hovered.fg_stroke.width, fallback.widgets.hovered.fg_stroke.width);
@@ -253,7 +255,7 @@ fn a_rule_that_matches_only_below_a_width_reaches_the_root_visuals_after_the_res
     let css = "@media (max-width: 700px) { button { background-color: #112233; } }";
     let ctx = egui::Context::default();
     let wide = root_after(&ctx, css, 800.0);
-    assert_eq!(wide, theme::palette_visuals_for(&theme::palette()), "wide, nothing is said");
+    assert_eq!(wide, theme::palette_visuals_for(theme::studio), "wide, nothing is said");
     let narrow = frames_in(&ctx, 500.0);
     assert_eq!(narrow.widgets.inactive.weak_bg_fill, rgb(0x11, 0x22, 0x33));
     assert_eq!(frames_in(&ctx, 800.0), wide, "the rule goes with the width");
@@ -261,21 +263,19 @@ fn a_rule_that_matches_only_below_a_width_reaches_the_root_visuals_after_the_res
 }
 
 #[test]
-fn a_palette_change_such_as_the_window_s_opacity_reaches_the_root_visuals() {
-    let saved = theme::palette();
+fn a_colour_change_such_as_the_window_s_opacity_reaches_the_root_visuals() {
     let ctx = egui::Context::default();
     for css in ["", "menu { border-radius: 4px; }"] {
         let before = root_after(&ctx, css, 800.0);
-        let mut see_through = saved;
-        see_through.panel_background = see_through.panel_background.gamma_multiply(0.5);
-        see_through.border = see_through.border.gamma_multiply(0.5);
-        theme::use_palette(&ctx, see_through);
+        let panel = theme::studio("panel-background").gamma_multiply(0.5);
+        let border = theme::studio("border").gamma_multiply(0.5);
+        theme::use_colors(&ctx, &[("panel-background".to_owned(), panel), ("border".to_owned(), border)].into());
         let after = frames_in(&ctx, 800.0);
-        assert_eq!(after.panel_fill, see_through.panel_background, "{css:?}");
-        assert_eq!(after.window_fill, see_through.panel_background, "{css:?}");
-        assert_eq!(after.window_stroke.color, see_through.border, "{css:?}");
+        assert_eq!(after.panel_fill, panel, "{css:?}");
+        assert_eq!(after.window_fill, panel, "{css:?}");
+        assert_eq!(after.window_stroke.color, border, "{css:?}");
         assert_ne!(before.panel_fill, after.panel_fill);
-        theme::use_palette(&ctx, saved);
+        theme::use_colors(&ctx, &theme::Colors::new());
         assert_eq!(frames_in(&ctx, 800.0).panel_fill, before.panel_fill, "{css:?}");
     }
     skin::configure(&skin::Skin::default());
@@ -286,15 +286,14 @@ fn a_palette_change_such_as_the_window_s_opacity_reaches_the_root_visuals() {
 /// them, and with its sheet taken away is the palette's too.
 #[test]
 fn with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme() {
-    let saved = theme::palette();
     let with_rules = ["suhina-sheet", "suhina-meadow", "suhina-blocks"];
     let mut themes: Vec<(String, theme::Theme)> =
         theme::built_in_themes().into_iter().map(|(id, theme)| (id.to_owned(), theme)).collect();
     themes.extend(theme::built_in_variants());
     for (id, theme) in &themes {
         let ctx = egui::Context::default();
-        theme::use_palette(&ctx, theme.palette());
-        let expected = theme::palette_visuals_for(&theme.palette());
+        theme::use_colors(&ctx, &theme.colors);
+        let expected = theme::palette_visuals_for(|variable| theme.color(variable));
         skin::configure(&theme.skin);
         let built = frames_in(&ctx, 800.0);
         let base = id.split('@').next().unwrap_or(id);
@@ -305,11 +304,11 @@ fn with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme() {
         }
         // Without a sheet: the fallback alone.
         let ctx = egui::Context::default();
-        theme::use_palette(&ctx, theme.palette());
+        theme::use_colors(&ctx, &theme.colors);
         skin::configure(&skin::Skin::default());
         assert_eq!(frames_in(&ctx, 800.0), expected, "{id}: no sheet");
     }
-    theme::use_palette(&egui::Context::default(), saved);
+    theme::use_colors(&egui::Context::default(), &theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }
 
@@ -333,7 +332,7 @@ fn looking_up_the_root_visuals_adds_nothing_to_the_style_tree() {
 
 #[test]
 fn a_rule_that_gives_only_a_border_colour_keeps_the_outline_s_width() {
-    let fallback = theme::palette_visuals_for(&theme::palette());
+    let fallback = theme::palette_visuals_for(theme::studio);
     let hairline = fallback.widgets.noninteractive.bg_stroke.width;
     assert!(hairline > 0.0, "egui draws its separators with this stroke");
     let ctx = egui::Context::default();
@@ -374,7 +373,7 @@ fn a_scoped_ui_takes_a_colour_only_border_rule_with_the_width_it_had() {
 
 #[test]
 fn a_rule_for_every_button_is_not_the_selection_s() {
-    let fallback = theme::palette_visuals_for(&theme::palette());
+    let fallback = theme::palette_visuals_for(theme::studio);
     let ctx = egui::Context::default();
     let v = root_after(&ctx, "button { background-color: #101010; color: #111111; }", 800.0);
     assert_eq!(v.selection.bg_fill, fallback.selection.bg_fill);
@@ -400,10 +399,8 @@ fn the_root_visuals_are_built_again_only_when_the_styles_or_the_colours_changed(
     assert_eq!(frames_in(&ctx, 800.0).window_fill, mark, "frames with nothing changed leave them");
     assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a new width resets the styles");
     ctx.all_styles_mut(|style| style.visuals.window_fill = mark);
-    let mut changed = theme::palette();
-    changed.accent = rgb(4, 5, 6);
-    theme::use_palette(&ctx, changed);
+    theme::use_colors(&ctx, &[("accent".to_owned(), rgb(4, 5, 6))].into());
     assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a colour change rebuilds them");
-    theme::use_palette(&ctx, theme::Palette::DARK);
+    theme::use_colors(&ctx, &theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }

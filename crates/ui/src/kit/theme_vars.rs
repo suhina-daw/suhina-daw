@@ -5,7 +5,7 @@
 //!
 //! A theme is one style sheet, `theme.css`, written by its author and never rewritten by
 //! Suhina. What a user can change are custom properties: the **core set** every theme has (the
-//! palette tokens and the settings that were fields of the theme model: meter, artwork frame
+//! colour tokens and the settings that were fields of the theme model: meter, artwork frame
 //! rate, liquid materials, surface gradients, the background's strength, Session geometry),
 //! registered here with Suhina Studio's values, and any the theme declares itself with
 //! `@property`. A **variant** is a small JSON file of values for those properties; the chosen
@@ -44,14 +44,11 @@ pub struct Vars {
     pub kept: Option<Arc<str>>,
 }
 
-/// A setting's smallest and largest value.
-type Range = Option<(f32, f32)>;
-
 /// What a theme's sheet holds: its declared properties, every custom property's value at the
 /// root, and the sheet's notices.
 pub type SheetValues = (Vec<Registered>, BTreeMap<String, String>, Vec<String>);
 
-/// The theme's settings beyond the palette: registered properties of their elements
+/// The theme's settings beyond its colours: registered properties of their elements
 /// (`meter { meter-style: segmented; }`), read from the theme's sheet and its variant's. Element and name.
 pub const SETTINGS: &[(&str, &str)] = &[
     ("meter", "meter-style"),
@@ -114,16 +111,16 @@ pub fn setting_rules(values: &BTreeMap<String, String>) -> String {
     css
 }
 
-/// A palette token's custom property: `accent` is `--accent`, `track.headerBackground` is
+/// A colour token's custom property: `accent` is `--accent`, `track.headerBackground` is
 /// `--track-headerBackground`.
 pub fn token_property(key: &str) -> String {
     format!("--{}", key.replace('.', "-"))
 }
 
 /// The colours Suhina's base sheet (`suhina_theme_package::BASE_SHEET`) reads beyond the
-/// palette's, with Suhina Studio's values: the browser's icons by the kind of item and the sample
+/// colour tokens, with Suhina Studio's values: the browser's icons by the kind of item and the sample
 /// map's sounds by kind. They are core properties a theme's sheet may set (`--sample-kick`), not
-/// palette tokens: the model and the theme editor do not hold them.
+/// colour tokens: the model and the theme editor do not hold them.
 pub const BASE_COLOURS: &[(&str, &str)] = &[
     ("--browser-icon-midi", "#F2D541"),
     ("--browser-icon-sample", "#4FC3F7"),
@@ -153,25 +150,11 @@ pub fn is_base_colour(name: &str) -> bool {
     BASE_COLOURS.iter().any(|(colour, _)| *colour == name)
 }
 
-/// The core set as a style sheet: an `@property` rule for each, with Suhina Studio's values.
+/// The core set as a style sheet: an `@property` rule for each colour token and each of the base
+/// sheet's own colours, with Suhina Studio's values (`suhina_theme_package::CORE_SHEET`, the one
+/// place those values are written).
 pub fn core_sheet() -> &'static str {
-    static SHEET: OnceLock<String> = OnceLock::new();
-    SHEET.get_or_init(|| {
-        let defaults = core_values(&Theme::default());
-        let mut css = String::from("/* Suhina's core theme properties, with Suhina Studio's values. */\n");
-        for (name, syntax, range) in core_syntaxes() {
-            let Some(initial) = defaults.get(name.as_str()) else { continue };
-            css.push_str(&format!("@property {name} {{ syntax: \"{syntax}\"; initial-value: {initial};"));
-            if let Some((min, max)) = range {
-                css.push_str(&format!(" range: {min} {max};"));
-            }
-            css.push_str(" }\n");
-        }
-        for (name, initial) in BASE_COLOURS {
-            css.push_str(&format!("@property {name} {{ syntax: \"<color>\"; initial-value: {initial}; }}\n"));
-        }
-        css
-    })
+    suhina_theme_package::CORE_SHEET
 }
 
 /// The core set parsed, for the cascade's base tier: every colour variable resolves to Suhina
@@ -180,8 +163,29 @@ pub(in crate::kit) fn core_registrations() -> Option<&'static Sheet> {
     core_parsed()
 }
 
-fn core_syntaxes() -> Vec<(String, &'static str, Range)> {
-    super::theme::Palette::DARK.tokens().into_iter().map(|(key, _, _)| (token_property(key), "<color>", None)).collect()
+/// Suhina Studio's value of the core colour variable `variable` (a name without `--`): its
+/// `initial-value` in the core sheet. `None` for a name the core sheet does not register as a
+/// colour.
+pub fn initial_color(variable: &str) -> Option<egui::Color32> {
+    static COLOURS: OnceLock<BTreeMap<String, egui::Color32>> = OnceLock::new();
+    COLOURS
+        .get_or_init(|| {
+            core()
+                .iter()
+                .filter_map(|property| {
+                    let initial = property.initial.as_deref()?;
+                    let Ok(suhina_style::value::Color::Rgba([r, g, b, a])) =
+                        suhina_style::value::Color::parse(initial.trim())
+                    else {
+                        return None;
+                    };
+                    let name = property.name.strip_prefix("--")?;
+                    Some((name.to_owned(), egui::Color32::from_rgba_unmultiplied(r, g, b, a)))
+                })
+                .collect()
+        })
+        .get(variable)
+        .copied()
 }
 
 fn core_parsed() -> Option<&'static Sheet> {
@@ -202,8 +206,9 @@ pub fn is_core(name: &str) -> bool {
 /// The values of the core properties that `theme` (the model) holds, as CSS text.
 pub fn core_values(theme: &Theme) -> BTreeMap<String, String> {
     let mut values = BTreeMap::new();
-    for (key, _, color) in theme.palette().tokens() {
+    for (key, _) in super::theme::TOKENS {
         let variable = super::theme::variable_name(key);
+        let color = theme.color(&variable);
         values.insert(format!("--{variable}"), hex_rgba(theme.rgba(&variable, color)));
     }
     let skin = &theme.skin;
@@ -249,7 +254,7 @@ pub fn apply_core(theme: &mut Theme, values: &BTreeMap<String, String>) -> Vec<S
     let mut warnings = Vec::new();
     // A colour equal to Suhina Studio's is not one the theme sets, so it is left out of the map
     // (and one the theme set before is dropped when the values no longer differ).
-    for (key, _, _) in super::theme::Palette::DARK.tokens() {
+    for (key, _) in super::theme::TOKENS {
         let variable = super::theme::variable_name(key);
         let Some(value) = values.get(&format!("--{variable}")) else { continue };
         match suhina_style::value::Color::parse(value) {

@@ -112,8 +112,8 @@ the importable example is `my-theme/`, with an example variant.
 
 ### Settings and variants
 
-A theme's colours are custom properties: every theme has each palette token (`--accent`,
-`--window-background`, `--track-headerBackground`: the palette keys with hyphens), set in
+A theme's colours are custom properties: every theme has each colour token (`--accent`,
+`--window-background`, `--track-headerBackground`: the token names with hyphens), set in
 `:root`. A theme needs to set only the colours it changes: any other is Suhina Studio's, and a
 theme Suhina saves writes only the colours it sets. Token names from the first versions
 (`--surface-0`, `--line`, …) are no longer read; use the names in the table below. A token colours many things at once; in the Launcher, the mixer and the Arrangement

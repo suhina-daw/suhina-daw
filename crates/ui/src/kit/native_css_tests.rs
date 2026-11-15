@@ -314,17 +314,15 @@ fn responsive_workspace_and_toolbar_survive_resize() {
     skin::configure(&skin::Skin::default());
 }
 #[test]
-fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
-    let saved = theme::palette();
+fn colour_and_resize_restyle_retained_tree_and_preserve_author_colours() {
     prepare(
         "button { background-color:currentColor; } browser { color:#123456; } @media (max-width:600px) { browser { color:#654321; } }",
         800.0,
     );
     let ctx = egui::Context::default();
     for (pass, width) in [(0, 800.0), (1, 800.0), (2, 500.0)] {
-        let mut palette = saved;
-        palette.text_primary = Color32::from_rgba_unmultiplied(24, 48, 72, 80 + pass * 40);
-        set_colors(&theme::colors_of(&palette));
+        let text_primary = Color32::from_rgba_unmultiplied(24, 48, 72, 80 + pass * 40);
+        set_colors(&[("text-primary".to_owned(), text_primary)].into());
         ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(width, 600.0))),
@@ -353,7 +351,7 @@ fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
         ENGINE.with(|engine| {
             let engine = engine.borrow();
             let button = engine.nodes.iter().find(|node| node.element.name() == "button").unwrap();
-            assert_eq!(engine.values[&button.key].background, palette.text_primary);
+            assert_eq!(engine.values[&button.key].background, text_primary);
             let browser = engine.nodes.iter().find(|node| node.element.name() == "browser").unwrap();
             let expected =
                 if width > 600.0 { Color32::from_rgb(0x12, 0x34, 0x56) } else { Color32::from_rgb(0x65, 0x43, 0x21) };
@@ -365,17 +363,15 @@ fn palette_and_resize_restyle_retained_tree_and_preserve_author_colours() {
     skin::configure(&skin::Skin::default());
 }
 #[test]
-#[ignore = "manual timing comparison for live palette edits"]
+#[ignore = "manual timing comparison for live colour edits"]
 fn measure_primary_colour_edits() {
-    let saved = theme::palette();
     let css = include_str!("../../themes/suhina-sheet/theme.css");
     prepare(css, 800.0);
     let ctx = egui::Context::default();
     let mut samples = Vec::new();
     for sample in 0..62 {
-        let mut palette = saved;
-        palette.text_primary = Color32::from_rgba_unmultiplied(40, 60, 50, 100 + sample);
-        set_colors(&theme::colors_of(&palette));
+        let text_primary = Color32::from_rgba_unmultiplied(40, 60, 50, 100 + sample);
+        set_colors(&[("text-primary".to_owned(), text_primary)].into());
         let start = std::time::Instant::now();
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = frame(ui);
@@ -398,23 +394,23 @@ fn measure_primary_colour_edits() {
     set_colors(&theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }
-/// A colour of the theme's colour map reaches the sheet's `var()` and the colour functions from
+/// A colour of the theme's colour map reaches the sheet's `var()` and the root's variables from
 /// the next frame, through the base tier. Every edit resets the styles: the base sheet reads the
-/// colours, and the palette's snapshot and the scopes' variables must follow them (#1448).
+/// colours, and the root's variables and the scopes' must follow them (#1448).
 #[test]
-fn a_colour_map_edit_reaches_the_sheet_and_the_colour_functions() {
+fn a_colour_map_edit_reaches_the_sheet_and_the_root() {
     prepare("browser { color: var(--accent); background-color: white; }", 800.0);
     let stack = ["browser".into()];
-    assert_eq!(scoped(&stack).unwrap().color, theme::Palette::DARK.accent);
+    assert_eq!(scoped(&stack).unwrap().color, crate::kit::theme::studio("accent"));
     let accent = Color32::from_rgb(10, 30, 70);
     set_colors(&[("accent".to_owned(), accent)].into());
     prepare("browser { color: var(--accent); background-color: white; }", 800.0);
     assert_eq!(scoped(&stack).unwrap().color, accent);
-    assert_eq!(theme::accent(), accent);
+    assert_eq!(root_color("--accent"), Some(accent));
     // The theme's own `:root` beats its colour map.
     prepare(":root { --accent: #102030; } browser { color: var(--accent); }", 800.0);
     assert_eq!(scoped(&stack).unwrap().color, Color32::from_rgb(0x10, 0x20, 0x30));
-    assert_eq!(theme::accent(), Color32::from_rgb(0x10, 0x20, 0x30));
+    assert_eq!(root_color("--accent"), Some(Color32::from_rgb(0x10, 0x20, 0x30)));
     set_colors(&theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }
@@ -510,9 +506,9 @@ fn retained_scopes_match_siblings_and_keep_named_track_identity() {
             let _window = test_el("window").enter();
             let _session = test_el("session").enter();
             for (index, track) in order.iter().enumerate() {
-                let _track = test_el("mixer").id(&format!("track-{track}")).enter();
+                let entered = test_el("mixer").id(&format!("track-{track}")).enter();
                 if pass > 0 && *track == 2 {
-                    assert_eq!(theme::text_primary(), Color32::from_rgb(10, 20, 30));
+                    assert_eq!(entered.color(), Color32::from_rgb(10, 20, 30));
                 }
                 if (pass == 1 || pass == 3) && index == 1 {
                     let own = super::super::style_class::surface_or(Color32::TRANSPARENT);
@@ -535,14 +531,14 @@ fn disabled_state_uses_the_native_response_without_changing_its_id() {
             let _frame = frame(ui);
             let _window = test_el("window").enter();
             let response = ui.add_enabled(false, egui::Button::new("Disabled"));
-            let _button = test_el("button").response(&response).enter();
+            let button = test_el("button").response(&response).enter();
             if let Some(id) = previous_id {
                 assert_eq!(response.id, id);
             }
             previous_id = Some(response.id);
             assert!(!response.enabled());
             if pass == 1 {
-                assert_eq!(theme::control_background(), Color32::from_rgb(50, 60, 70));
+                assert_eq!(button.background(), Color32::from_rgb(50, 60, 70));
             }
         })
         .textures_delta
@@ -778,17 +774,13 @@ fn dragging_a_splitter_lays_the_window_out_once_a_frame() {
 }
 #[test]
 fn unrelated_css_preserves_native_colours_font_sizes_and_corner_defaults() {
-    let original = theme::palette();
     let mut seen = None;
     painted("browser { color:rgb(10 20 30); }", |_| {
         let mixer = {
             let mixer = test_el("mixer").enter();
-            (theme::palette() == original, mixer.font_size_or(9.0), mixer.radius_or(4.0))
+            (mixer.color() != Color32::from_rgb(10, 20, 30), mixer.font_size_or(9.0), mixer.radius_or(4.0))
         };
-        let browser = {
-            let _browser = test_el("browser").enter();
-            theme::text_primary()
-        };
+        let browser = test_el("browser").enter().color();
         seen = Some((mixer, browser));
     });
     assert_eq!(seen, Some(((true, 9.0, 4.0), Color32::from_rgb(10, 20, 30))));
@@ -872,19 +864,24 @@ fn a_transparent_control_background_paints_nothing() {
     let shapes = painted("#tempo { background-color: transparent; }", |ui| {
         let _toolbar = test_el("toolbar").enter();
         let module = test_el("toolbar-module").id("tempo").enter();
-        surface_now(ui.painter(), field, 0.0, theme::window_background(), &module);
+        surface_now(ui.painter(), field, 0.0, crate::kit::theme::studio("window-background"), &module);
     });
     assert!(!rects(&shapes).iter().any(|r| r.rect == field), "{shapes:?}");
 }
 
 #[test]
 fn a_view_background_leaves_the_controls_on_it_their_own_fill() {
-    let (control, window_token) = (theme::control_background(), theme::window_background());
+    let (control, window_token) =
+        (crate::kit::theme::studio("control-background"), crate::kit::theme::studio("window-background"));
     let mut seen = None;
     painted("arrangement { background-color: #102030; }", |_| {
         let _view = test_el("arrangement").enter();
         let own = super::super::style_class::surface_or(egui::Color32::TRANSPARENT);
-        seen = Some((own, theme::window_background(), theme::control_background()));
+        seen = Some((
+            own,
+            crate::kit::theme::studio("window-background"),
+            crate::kit::theme::studio("control-background"),
+        ));
     });
     let (own, window, inside) = seen.unwrap();
     assert_eq!(own, egui::Color32::from_rgb(0x10, 0x20, 0x30), "what is drawn in the view knows its colour");
@@ -913,7 +910,7 @@ fn a_level_bar_or_surface_squeezed_below_a_point_draws_nothing_and_never_panics(
                 "0.0",
                 egui::Align2::RIGHT_CENTER,
             );
-            surface_now(ui.painter(), field, 4.0, theme::control_background(), &value);
+            surface_now(ui.painter(), field, 4.0, crate::kit::theme::studio("control-background"), &value);
         });
     }
 }
@@ -936,7 +933,7 @@ fn checked_and_selected_states_reach_the_sheet() {
                     &solo,
                     &response,
                     on,
-                    theme::control_background(),
+                    crate::kit::theme::studio("control-background"),
                     0.0,
                 );
             }
@@ -959,12 +956,12 @@ fn a_menu_opened_from_a_light_text_bar_reads_on_its_own_background() {
     painted("menu-bar { background-color: #217346; color: #ffffff; }", |_| {
         let _bar = test_el("menu-bar").enter();
         let menu = test_el("menu").enter();
-        let ink = menu.readable_on(egui::Color32::WHITE);
-        seen = Some((ink, theme::text_primary()));
+        seen = Some((menu.color(), menu.readable_on(egui::Color32::WHITE)));
     });
-    let (ink, text) = seen.unwrap();
-    assert!(ink.is_some(), "the bar's white text is replaced in the menu");
-    assert!(theme::contrast(text, egui::Color32::WHITE) >= 3.0, "{text:?}");
+    let (inherited, ink) = seen.unwrap();
+    assert!(theme::contrast(inherited, egui::Color32::WHITE) < 3.0, "the menu inherits the bar's white text");
+    let ink = ink.expect("the bar's white text is replaced in the menu");
+    assert!(theme::contrast(ink, egui::Color32::WHITE) >= 3.0, "{ink:?}");
 }
 
 #[test]
@@ -974,7 +971,7 @@ fn a_selected_header_s_background_never_fills_its_buttons() {
         let header = test_el("track-header").id("track-1").attr(crate::kit::element::Selected, true).enter();
         let shown = header.background_or(egui::Color32::BLACK);
         let _button = test_el("button").enter();
-        seen = Some((shown, theme::control_background()));
+        seen = Some((shown, crate::kit::theme::studio("control-background")));
     });
     let (shown, control) = seen.unwrap();
     assert_eq!(shown, egui::Color32::from_rgb(0x30, 0x40, 0x50), "the header shows the sheet's colour");
@@ -1036,7 +1033,7 @@ fn a_knob_s_value_goes_where_the_sheet_puts_it() {
                 egui::Color32::WHITE,
                 None,
                 "C",
-                theme::text_secondary(),
+                crate::kit::theme::studio("text-secondary"),
                 crate::kit::widgets::ValuePosition::Right,
                 theme::TEXT_SMALL,
             );
@@ -1858,18 +1855,15 @@ fn window_frame(ctx: &egui::Context) -> Computed {
 fn an_opacity_change_reaches_the_window_panel_and_border_colours() {
     let ctx = egui::Context::default();
     skin::configure(&skin::Skin::default());
-    let dark = theme::Palette::DARK;
+    let studio = crate::kit::theme::studio;
     for percent in [0u8, 37, 80, 100] {
         let opacity = f32::from(percent) / 100.0;
         set_window_opacity(&ctx, opacity);
         let window = window_frame(&ctx);
-        for (name, read, base) in [
-            ("--window-background", theme::window_background(), dark.window_background),
-            ("--panel-background", theme::panel_background(), dark.panel_background),
-            ("--border", theme::border(), dark.border),
-        ] {
+        assert_eq!(window.background(), studio("window-background").gamma_multiply(opacity), "at {percent} %");
+        for name in ["--window-background", "--panel-background", "--border"] {
+            let base = studio(&name[2..]);
             let faded = base.gamma_multiply(opacity);
-            assert_eq!(read, faded, "{name} at {percent} %");
             let sheet = match window.variable(name).map(|v| suhina_style::value::Color::parse(v.trim())) {
                 Some(Ok(suhina_style::value::Color::Rgba([r, g, b, a]))) => Color32::from_rgba_unmultiplied(r, g, b, a),
                 other => panic!("{name}: {other:?}"),
@@ -1882,10 +1876,10 @@ fn an_opacity_change_reaches_the_window_panel_and_border_colours() {
     set_window_opacity(&ctx, 1.0);
 }
 
-/// A translucent theme colour fades as `gamma_multiply` fades it, to the same bytes in the
-/// palette's readers and in the sheet's variable, at every opacity (#1448).
+/// A translucent theme colour fades as `gamma_multiply` fades it, the bytes the palette gave, in
+/// the sheet's variable on `window`, at every opacity (#1448).
 #[test]
-fn a_translucent_colour_fades_alike_for_the_palette_and_the_sheet() {
+fn a_translucent_colour_fades_on_window_as_gamma_multiply_does() {
     let ctx = egui::Context::default();
     skin::configure(&skin::Skin::default());
     let mut colors = theme::Colors::new();
@@ -1897,16 +1891,14 @@ fn a_translucent_colour_fades_alike_for_the_palette_and_the_sheet() {
         let opacity = f32::from(percent) / 100.0;
         set_window_opacity(&ctx, opacity);
         let window = window_frame(&ctx);
-        for (name, read) in
-            [("--window-background", theme::window_background()), ("--panel-background", theme::panel_background())]
-        {
+        for name in ["--window-background", "--panel-background"] {
             let sheet = match window.variable(name).map(|v| suhina_style::value::Color::parse(v.trim())) {
                 Some(Ok(suhina_style::value::Color::Rgba([r, g, b, a]))) => Color32::from_rgba_unmultiplied(r, g, b, a),
                 other => panic!("{name}: {other:?}"),
             };
             let faded = root_color(name).map(|base| base.gamma_multiply(opacity));
-            if sheet != read || Some(read) != faded {
-                off.push(format!("{name} at {percent} %: palette {read:?}, sheet {sheet:?}"));
+            if Some(sheet) != faded {
+                off.push(format!("{name} at {percent} %: faded {faded:?}, sheet {sheet:?}"));
             }
         }
     }
@@ -1927,7 +1919,7 @@ fn opting_out_of_the_base_sheet_leaves_the_bare_look() {
         scoped(&["window".into(), "knob".into(), "knob-body".into()]).unwrap()
     };
     let based = knob_body(true);
-    assert_eq!(based.color, theme::Palette::DARK.control_background, "the base sheet's knob body");
+    assert_eq!(based.color, crate::kit::theme::studio("control-background"), "the base sheet's knob body");
     assert!(!based.authored.color, "a base rule is not the theme's");
     let bare = knob_body(false);
     assert_eq!(bare.color, Color32::from_rgb(0xff, 0xb0, 0x00), "the knob's own colour, inherited");

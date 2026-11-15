@@ -1746,7 +1746,7 @@ fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
         .swatches
         .iter()
         .find(|(key, _)| key == id)
-        .map_or(theme::Palette::from_colors(&themes.colors).panel_background, |(_, color)| *color)
+        .map_or_else(|| theme::color_in(&themes.colors, "panel-background"), |(_, color)| *color)
 }
 
 /// A swatch of `color`: a `theme-swatch` element with that `color` attribute, as the theme in use

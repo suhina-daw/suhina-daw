@@ -1487,7 +1487,7 @@ impl App {
             self.sample_map.set_window(true, &mut self.browser);
         }
         self.settings = settings;
-        theme::set_palette(ctx, self.themes.palette(&self.settings.theme));
+        ctx.request_repaint();
     }
 
     /// Uses the themes read from the theme files in `folder`, and draws with the one the settings
@@ -1507,7 +1507,7 @@ impl App {
             self.settings.theme = base.to_owned();
             self.settings_changed = true;
         }
-        theme::set_palette(ctx, self.themes.palette(&self.settings.theme));
+        ctx.request_repaint();
     }
 
     /// Draws with the theme `id` from now on and saves that in the settings, if there is such a
@@ -1527,7 +1527,7 @@ impl App {
         if self.themes.get(id).is_some() {
             self.settings.theme = id.to_string();
             self.settings_changed = true;
-            theme::set_palette(ctx, self.themes.palette(id));
+            ctx.request_repaint();
         }
     }
 
@@ -2539,7 +2539,7 @@ impl App {
     /// theme in use.
     pub fn put_theme(&mut self, ctx: &egui::Context, entry: ThemeEntry) {
         if self.themes.put(entry) {
-            theme::set_palette(ctx, self.themes.palette(&self.settings.theme));
+            ctx.request_repaint();
         }
     }
 

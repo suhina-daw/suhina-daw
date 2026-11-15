@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use crate::kit::theme::{self, BUILT_IN, Palette, Theme};
+use crate::kit::theme::{self, BUILT_IN, Theme};
 use crate::settings::settings_view::{ThemeRequest, ThemesView};
 
 /// A theme and its id: a built-in id or the name of its folder for the theme's own values, and
@@ -121,11 +121,6 @@ impl Themes {
 
     pub fn get(&self, id: &str) -> Option<&Theme> {
         self.entries.iter().find(|e| same_id(&e.id, id)).map(|e| &e.theme)
-    }
-
-    /// The colours the theme `id` paints with, or Suhina Studio's when there is no such theme.
-    pub fn palette(&self, id: &str) -> Palette {
-        self.get(id).map_or(Palette::DARK, Theme::palette)
     }
 
     /// What Settings shows, with `current` in use.

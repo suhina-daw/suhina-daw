@@ -56,8 +56,8 @@ fn the_editor_writes_variants_and_never_the_authors_sheet_or_guide() {
     assert!(variant.contains("\"--accent\": \"#123456\"") && !variant.contains("--border"), "{variant}");
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(entry(&entries, "authored@custom").palette().accent, eframe::egui::Color32::from_rgb(18, 52, 86));
-    assert_eq!(entry(&entries, "authored").palette().accent, Theme::default().palette().accent);
+    assert_eq!(entry(&entries, "authored@custom").color("accent"), eframe::egui::Color32::from_rgb(18, 52, 86));
+    assert_eq!(entry(&entries, "authored").color("accent"), Theme::default().color("accent"));
     let _clean = std::fs::remove_dir_all(&root);
 }
 
@@ -84,7 +84,7 @@ fn palette_edits_do_not_rewrite_unchanged_package_resources() {
     for path in paths {
         assert_eq!(std::fs::metadata(root.join(path)).unwrap().modified().unwrap(), old, "rewrote {path}");
     }
-    assert_eq!(entry(&files.read_all().0, "sheet@red").palette().accent, eframe::egui::Color32::RED);
+    assert_eq!(entry(&files.read_all().0, "sheet@red").color("accent"), eframe::egui::Color32::RED);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -225,7 +225,7 @@ fn an_authors_sheet_is_read_verbatim_and_survives_backups() {
     assert_eq!(entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["ink", "ink@dim"]);
     let ink = entry(&entries, "ink");
     assert_eq!(ink.name, "Ink");
-    assert_eq!(ink.palette().accent, theme::parse_hex("#12AB34").unwrap());
+    assert_eq!(ink.color("accent"), theme::parse_hex("#12AB34").unwrap());
     assert_eq!(ink.skin.segments, 32);
     assert_eq!(ink.skin.css.as_deref(), Some(source));
     assert_eq!(ink.vars.declared.len(), 1);
@@ -260,7 +260,7 @@ fn an_edit_to_the_authors_sheet_is_read_and_editor_saves_leave_it_alone() {
     let (changed, warnings) = files.changed();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(changed.len(), 1);
-    assert_eq!(changed[0].theme.palette().accent, theme::parse_hex("#12AB34").unwrap());
+    assert_eq!(changed[0].theme.color("accent"), theme::parse_hex("#12AB34").unwrap());
     assert_eq!(changed[0].theme.skin.toolbar_offsets["transport"], 80);
     files.checked = None;
     assert!(files.changed().0.is_empty(), "reading must not trigger its own reload");
@@ -272,7 +272,7 @@ fn an_edit_to_the_authors_sheet_is_read_and_editor_saves_leave_it_alone() {
     assert_eq!(std::fs::read_to_string(&css).unwrap(), edited_sheet);
     let (entries, _) = files.read_all();
     let custom = entry(&entries, "portable@custom");
-    assert_eq!(custom.palette().accent, theme::parse_hex("#112233").unwrap());
+    assert_eq!(custom.color("accent"), theme::parse_hex("#112233").unwrap());
     assert_eq!(custom.skin.meter_intensity, 80);
     assert_eq!(custom.skin.toolbar_offsets["transport"], 80);
     std::fs::remove_dir_all(root).unwrap();
@@ -299,7 +299,7 @@ fn a_save_over_unread_external_variant_edits_is_refused_and_keeps_the_file() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), external);
     // Once read, the external edit is the variant, and saving works again.
     let (entries, _) = files.read_all();
-    assert_eq!(entry(&entries, "portable@custom").palette().accent, theme::parse_hex("#445566").unwrap());
+    assert_eq!(entry(&entries, "portable@custom").color("accent"), theme::parse_hex("#445566").unwrap());
     assert!(files.write("portable@custom", &ours).is_ok());
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -399,7 +399,7 @@ fn a_built_in_themes_variants_live_beside_no_copy_of_its_css() {
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["nord", "nord@frost"]);
-    assert_eq!(entry(&entries, "nord@frost").palette().accent, theme::parse_hex("#88C0D0").unwrap());
+    assert_eq!(entry(&entries, "nord@frost").color("accent"), theme::parse_hex("#88C0D0").unwrap());
     let zip = files.backup().unwrap();
     let mut archive = zip::ZipArchive::new(std::fs::File::open(zip).unwrap()).unwrap();
     assert!(archive.by_name("nord/variants/frost.json").is_ok());

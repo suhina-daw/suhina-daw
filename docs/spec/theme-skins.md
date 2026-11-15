@@ -334,13 +334,13 @@ and its artwork in a separate folder.
 Artwork changes presentation only: command dispatch, keyboard access, value ranges,
 gestures and undo remain owned by the application. Missing or invalid artwork uses
 Suhina's normal drawing. Network resources, embedded SVG images and SVG scripts are not
-loaded. SVGs are parsed and rasterized once per asset, scale and palette, never on
+loaded. SVGs are parsed and rasterized once per asset, scale and set of colours, never on
 the audio thread; texture cache size and raster dimensions are bounded.
 
 Typed SDK device-panel knobs/dials and buttons consume the same SVG roles. Their
 labels, readouts, parameter angles and native response/command paths remain in the
 SDK host. Named `device-panel` and `device-control` scopes expose semantic widget
-classes and scoped palette/text styling; see [custom panels](sdk-custom-ui.md#host-theme-css-and-svg-controls).
+classes and scoped colour and text styling; see [custom panels](sdk-custom-ui.md#host-theme-css-and-svg-controls).
 
 Asset roles include fader cap and rail, knob body and pointer, button surface and
 play/stop/record/solo/arm/cue icons. State suffixes `.hover`, `.active`, `.disabled`
@@ -554,18 +554,17 @@ page's (ADR 0031, amendment of 2026-11-15).
   the base sheet colours with a rule of their own (#1449). A theme colours a region through its
   variables, or states a rule for the part; a theme's rule for a whole kind of element (every
   `button`) hides the base sheet's lit and hovered looks of it, so it states those it wants.
-  Until the palette goes (#1452), entering an element whose colour variables differ from its
-  parent's gives the palette's readers inside it those values too.
-- **The colour functions read the variables.** `theme::accent()` and the other colour functions
-  read a snapshot of the root's resolved colour variables, taken each time the styles reset
-  (`native_css::begin_frame`): Suhina Studio's values with the colour map, the theme's sheet, its
-  variant and `user.css` over them. A `user.css` that sets `--accent` reaches everything, Suhina
-  Studio included. `set_palette` only tells egui whether the theme is light or dark.
+- **No palette.** Every part reads its colours from its element's computed style; nothing in Rust
+  names a theme colour (#1452). A variable's value is Suhina Studio's (the core sheet's
+  `@property` initial value) with the colour map, the theme's sheet, its variant and `user.css`
+  over it, so a `user.css` that sets `--accent` reaches everything, Suhina Studio included.
+  Whether the theme is light (the native title bar follows it) is the window's computed text
+  colour; whether the desktop shows through, the window's or its panels' computed background.
 - **Window opacity.** Over a backdrop image the window's own colours are faded to the theme's
   backdrop opacity (or the Settings tint): the host writes `--window-background`,
   `--panel-background` and `--border`, each `Color32::gamma_multiply`'d, in a rule for `window` in
-  the base tier (`native_css::set_window_opacity`), and the palette's snapshot takes the same
-  colours. A theme's own rule on `window` for one of them beats it.
+  the base tier (`native_css::set_window_opacity`), so every rule that reads them takes the
+  faded colours. A theme's own rule on `window` for one of them beats it.
 - **Suhina Studio runs the style engine** like every theme: its sheet sets only `:root` colours.
 
 **Including the default artwork.** *More › New theme…* and *More › Duplicate theme…* ask first,
@@ -584,7 +583,7 @@ so and changes nothing. *New theme* starts from a
 
 The toolbar's modules are `toolbar-module` elements by id, laid out in one CSS row whatever the
 theme (› The bars' rows). Module scopes are siblings rather than nested controls; their
-palette/style changes are restored before another module paints. Each module paints its box
+style changes are restored before another module paints. Each module paints its box
 (`background`, border, shadows) and draws its controls in it; its ids and commands are the same in
 every arrangement.
 
@@ -951,9 +950,9 @@ File operations and live-reload polling run on one background worker. While a sa
 is in flight, later samples of the same slider replace queued saves; rename,
 reload, import and export retain their order. Preview changes remain immediate,
 errors return to the status bar, and normal exit drains the final queued edits.
-Native CSS caches depend on the palette variables the stylesheet references:
+Native CSS caches depend on the colour variables the stylesheet references:
 an unrelated opacity edit does not rebuild its computed contexts.
-Referenced palette changes, including `text.primary`, restyle the retained scope
+Referenced colour changes, including `text.primary`, restyle the retained scope
 document instead of discarding it and rebuilding a fallback document per control.
 Viewport changes also retain the scope tree while updating media conditions and
 viewport-dependent values. The next repaint consumes the refreshed style snapshot.
@@ -1513,8 +1512,8 @@ of bars, and a slider id per parameter.
 - **Dialogs:** `settings-nav` (`[checked]` for the page shown), `progress`, `progress-fill` (also the sample map's busy card and the MIDI panel's range bar).
 - **The views' parts (#1417):** every colour the Launcher, its mixer strips and meters, the
   Arrangement and the piano roll's grid, notes, ruler and loop row paint comes from the element
-  that draws it, with the palette token as its fallback, so a theme with no rule for an element
-  looks as before. The parts and their kinds are in the theme guide's selector reference and in
+  that draws it, the base sheet's rule giving the colour token the palette did, so a theme with
+  no rule for an element looks as before. The parts and their kinds are in the theme guide's selector reference and in
   ADR 0031 › *Amendment: the Launcher, the mixer, the Arrangement and the piano roll draw from
   their elements*. A line or a mark (`separator[kind]`, `grid-line`, `start-marker`) takes only a
   `color` given to it; text inherits. While a toggle is on (`[checked]`), and for a slot clip's
@@ -1574,7 +1573,7 @@ of bars, and a slider id per parameter.
   Close, Reset and Add buttons `button`, its theme picker's cards `theme-card`, `[selected]` for the
   theme in use) and every dialog (its title row `dialog-title`, its words `label` and `label[kind]`,
   its lists `list-row`, its buttons `button`, its progress bar `progress` and `progress-fill`) draw
-  from their elements, the palette token as the fallback. The start page's tabs are
+  from their elements, the base sheet's rules giving the colour tokens the palette did. The start page's tabs are
   `editor-tab#tab-recent` and `#tab-templates` and the colour picker's swatches `colour-swatch`
   (`border-color` outlines the chosen one). A Settings switch, a chosen segment of a Settings
   choice, a plug-in folder's format and a keymap preset (`button[checked]`) stay lit under a rule

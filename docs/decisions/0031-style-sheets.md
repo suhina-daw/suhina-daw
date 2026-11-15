@@ -1246,3 +1246,32 @@ With it:
   window has no style. The progress bar (`progress`, `progress-fill`) and the drop targets' lines
   (`drop-target[kind="insert"]`, `[kind="area"]`) read their colours with them from base rules,
   the first parts that have no palette fallback.
+
+## Amendment: the palette goes (2026-11-15)
+
+The last step of #1023 (#1452). With every view reading its colours from its elements' computed
+styles, nothing reads the palette any more, so it is removed:
+
+- **Gone:** `Palette`, the `palette!` macro, the colour functions (`theme::accent()` …),
+  `set_palette`, `use_palette`, the palette's revision, `Theme::palette()`,
+  `Palette::from_colors`, `colors_of` and the palette half of a style scope (`local_palette`,
+  `set_foreground`, `set_background` and the transitional scope rule of the base-sheet
+  amendment). Nothing in Rust names a colour a view paints.
+- **The tokens are names:** `theme::TOKENS` lists each colour token's name in a theme file and
+  what it is for. Suhina Studio's values are written in one place, the core sheet
+  (`suhina_theme_package::CORE_SHEET`, `@property` initial values); `theme::default_color` reads
+  them, and `Theme::color` gives a theme's value of a variable (its map's, else Studio's), for
+  what reads a theme that is not in use: the theme editor, swatches, thumbnails, the import of
+  older files.
+- **An inherited colour is CSS inheritance.** `mixer { color: gold }` reaches what inherits
+  `color` and has no rule of its own; `mixer { --text-value: gold }` reaches every part the base
+  sheet colours with the variable. No scope copies colours into Rust.
+- **Light or dark, and see-through, come from the computed `window`.** Each time the styles
+  reset (`sync_root_visuals`), the window's computed text colour says whether the theme is light
+  (egui passes it on to the native window's title bar) and the window's or its panels' computed
+  background whether the desktop shows through. `theme::window_fill()` is the window's computed
+  background, for what clears behind the UI outside the style tree (the app's clear colour, the
+  GPU pass, the painted tests).
+- **Tests and tools set colours as a theme does:** `theme::use_colors` gives the style engine a
+  colour map from the next frame (`native_css::set_colors`), and a test reads what an element or
+  the root resolved (`native_css::root_color`), never a palette.

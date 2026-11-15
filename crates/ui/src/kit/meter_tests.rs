@@ -102,7 +102,7 @@ fn intensity_dims_native_ink_without_changing_geometry_or_clip_light() {
             assert_eq!(dim, opacity, "native CSS and theme intensity agree");
             let zero = render(0, None);
             assert_eq!(zero, render(100, Some("meter-level { opacity: 0; }")));
-            assert!(zero.iter().any(|(_, color)| *color == theme::recording()));
+            assert!(zero.iter().any(|(_, color)| *color == crate::kit::theme::studio("recording")));
             assert_eq!(full.len(), dim.len());
             let mut changed = 0;
             for ((bounds, color), (dim_bounds, dim_color)) in full.iter().zip(&dim) {
@@ -113,11 +113,16 @@ fn intensity_dims_native_ink_without_changing_geometry_or_clip_light() {
                 }
             }
             assert!(changed >= 2, "both channels dim");
-            assert!(dim.iter().any(|(_, color)| *color == theme::recording()), "clip warning stays visible");
+            assert!(
+                dim.iter().any(|(_, color)| *color == crate::kit::theme::studio("recording")),
+                "clip warning stays visible"
+            );
             if meter != skin::MeterStyle::Needle {
                 let transparent = render(100, Some("meter-level { background-color: transparent; }"));
                 assert!(
-                    !transparent.iter().any(|(_, color)| *color == theme::meter_normal().gamma_multiply(0.45)),
+                    !transparent
+                        .iter()
+                        .any(|(_, color)| *color == crate::kit::theme::studio("meter-normal").gamma_multiply(0.45)),
                     "transparent fill must not revive native peak ink"
                 );
             }
@@ -235,7 +240,7 @@ fn silent_rails_survive_parent_gradients_and_accept_their_own_background() {
     for override_color in [None, Some("#081014")] {
         let ctx = egui::Context::default();
         theme::install(&ctx);
-        let native = theme::palette().window_background;
+        let native = crate::kit::theme::studio("window-background");
         let css = format!(
             "session {{ background: linear-gradient(red, blue); }} {}",
             override_color.map_or(String::new(), |color| format!("meter {{ background-color: {color}; }}"))

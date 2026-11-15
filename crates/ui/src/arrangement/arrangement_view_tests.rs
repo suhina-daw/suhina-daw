@@ -857,7 +857,7 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
 
     let lane = timeline.lanes.iter().find(|l| l.clips.iter().any(|c| c.id == clip.id)).unwrap();
     let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(160.0, 60.0));
-    let tint = theme::accent().gamma_multiply(0.45);
+    let tint = crate::kit::theme::studio("accent").gamma_multiply(0.45);
     let lit = |span: Option<(ClipId, f64, f64)>| {
         // The base sheet's colours, as the style engine gives them over a few frames.
         crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some("".into()), ..Default::default() });

@@ -258,7 +258,7 @@ pub fn shoot(harness: &mut Harness<'static, App>) -> Result<Shot, String> {
     harness.state_mut().wait_for_background();
     harness.run_steps(2);
     let pixels = harness.render()?;
-    let see_through = theme::window_background().a() < u8::MAX;
+    let see_through = theme::window_fill().a() < u8::MAX;
     let [r, g, b, _] = harness.ctx.global_style().visuals.panel_fill.to_array();
     Ok(Shot { pixels, see_through: see_through && theme::see_through(), clear: [r, g, b, 255] })
 }

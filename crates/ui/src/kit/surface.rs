@@ -73,9 +73,8 @@ mod tests {
     /// A context with the provider and a theme that asks for a see-through window.
     fn see_through() -> Context {
         let ctx = Context::default();
-        let mut palette = super::super::theme::Palette::DARK;
-        palette.window_background = Color32::from_rgba_unmultiplied(20, 20, 20, 200);
-        super::super::theme::use_palette(&ctx, palette);
+        let window = Color32::from_rgba_unmultiplied(20, 20, 20, 200);
+        super::super::theme::use_colors(&ctx, &[("window-background".to_owned(), window)].into());
         install(&ctx, Arc::new(Marking));
         ctx
     }
@@ -109,7 +108,7 @@ mod tests {
     #[test]
     fn an_opaque_theme_or_no_provider_clears_nothing() {
         let ctx = see_through();
-        super::super::theme::use_palette(&ctx, super::super::theme::Palette::DARK);
+        super::super::theme::use_colors(&ctx, &super::super::theme::Colors::new());
         assert!(in_frame(&ctx, || clear(&ctx, rect(), CornerRadius::ZERO).is_none()));
         assert!(clear(&Context::default(), rect(), CornerRadius::ZERO).is_none());
     }

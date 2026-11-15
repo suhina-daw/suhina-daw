@@ -984,12 +984,12 @@ fn the_ink_helpers_read_label_kinds_from_the_sheet() {
     assert_eq!(value, plain.4, "so does a value");
     // With no rule, each is the base sheet's, which reads the colour variables.
     let tokens = (
-        crate::kit::theme::text_primary(),
-        crate::kit::theme::text_hint(),
-        crate::kit::theme::text_secondary(),
-        crate::kit::theme::recording(),
-        crate::kit::theme::text_value(),
-        crate::kit::theme::text_primary(),
+        crate::kit::theme::studio("text-primary"),
+        crate::kit::theme::studio("text-hint"),
+        crate::kit::theme::studio("text-secondary"),
+        crate::kit::theme::studio("recording"),
+        crate::kit::theme::studio("text-value"),
+        crate::kit::theme::studio("text-primary"),
     );
     assert_eq!(plain, tokens, "with no rule, every word is the variable's");
 }

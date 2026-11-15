@@ -291,22 +291,22 @@ mod tests {
     fn row_colours_follow_the_scale() {
         let c = Some(scale(0, ScaleMode::Major));
         let red = egui::Color32::from_rgb(220, 40, 40);
-        let dark = theme::window_background();
-        let base = RowBase { light: theme::panel_background(), dark };
+        let dark = theme::studio("window-background");
+        let base = RowBase { light: theme::studio("panel-background"), dark };
         let (root, inside) = (row_fill(c, 60, false, red, base), row_fill(c, 62, false, red, base));
         assert_eq!(root, dark.lerp_to_gamma(red, ROOT_TINT), "the root, the clip's colour a little more");
         assert_eq!(inside, dark.lerp_to_gamma(red, SCALE_TINT), "in the scale, a little of the clip's colour");
         assert_ne!(root, inside, "the root stands out");
         assert_eq!(row_fill(c, 61, true, red, base), dark, "outside it");
         assert_eq!(row_fill(c, 61, false, red, base), dark, "white or black alike");
-        assert_eq!(row_fill(None, 61, true, red, base), theme::window_background());
-        assert_eq!(row_fill(None, 60, false, red, base), theme::panel_background());
+        assert_eq!(row_fill(None, 61, true, red, base), theme::studio("window-background"));
+        assert_eq!(row_fill(None, 60, false, red, base), theme::studio("panel-background"));
     }
 
     #[test]
     fn plain_rows_stay_distinct_under_an_authored_surface() {
         let surface = egui::Color32::from_rgba_unmultiplied(20, 30, 40, 100);
-        let base = RowBase { light: theme::panel_background(), dark: theme::window_background() };
+        let base = RowBase { light: theme::studio("panel-background"), dark: theme::studio("window-background") };
         crate::kit::style_class::with_surface(surface, || {
             let (white, black) = (
                 row_fill(None, 60, false, egui::Color32::RED, base),
@@ -333,10 +333,10 @@ mod tests {
 
     #[test]
     fn plain_rows_look_different_on_any_surface() {
-        let opaque_window = theme::window_background().to_opaque();
-        let base = RowBase { light: theme::panel_background(), dark: theme::window_background() };
+        let opaque_window = theme::studio("window-background").to_opaque();
+        let base = RowBase { light: theme::studio("panel-background"), dark: theme::studio("window-background") };
         let surfaces = [
-            theme::window_background(),
+            theme::studio("window-background"),
             opaque_window,
             egui::Color32::BLACK,
             egui::Color32::WHITE,

@@ -98,7 +98,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     assert!(harness.query_by_label("Theme: Suhina Studio").is_some());
     harness.get_by_label("Theme: Night").click();
     harness.run();
-    assert_eq!(theme::accent(), colors["accent"]);
+    assert_eq!(live("accent"), colors["accent"]);
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.theme), Some("night".into()));
 
     // A copy to change becomes the theme in use, and is handed out to be written.
@@ -156,7 +156,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     harness.state_mut().put_theme(&ctx, edited);
     // The colours come from the style sheet's variables, from the next frame on.
     harness.run();
-    assert_eq!(theme::accent(), colors["accent"]);
+    assert_eq!(live("accent"), colors["accent"]);
 
     // New theme, with the default artwork: every built-in image goes to the theme's assets.
     harness.get_by_label("More").click();

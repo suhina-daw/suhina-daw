@@ -79,7 +79,7 @@ impl Background {
     pub(super) fn update(&mut self, ui: &Ui) {
         // The theme's own window colour, before the opacity fades it.
         let base = crate::kit::native_css::root_color("--window-background")
-            .unwrap_or_else(crate::kit::theme::window_background);
+            .unwrap_or_else(|| crate::kit::element::app_fill("window"));
         crate::kit::liquid::set_panel_base(ui.ctx(), base);
         self.draw(ui);
     }

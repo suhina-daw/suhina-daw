@@ -27,12 +27,12 @@ fn a_pan_and_a_send_take_their_own_knob_artwork_and_other_knobs_do_not() {
 
 #[test]
 fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
-    let original = theme::palette();
-    let mut palette = original;
-    palette.window_background = Color32::TRANSPARENT;
-    palette.text_value = Color32::from_rgb(220, 230, 220);
+    let colors = [
+        ("window-background".to_owned(), Color32::TRANSPARENT),
+        ("text-value".to_owned(), Color32::from_rgb(220, 230, 220)),
+    ];
     let ctx = egui::Context::default();
-    theme::use_palette(&ctx, palette);
+    theme::use_colors(&ctx, &colors.into());
     motion::set_enabled(&ctx, false);
     let (fill, text) = theme::in_style_frame(&ctx, |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
@@ -41,27 +41,25 @@ fn active_toggle_text_stays_visible_over_transparent_or_gradient_panels() {
     });
     assert_eq!(text.a(), 255);
     assert!(theme::contrast(fill, text) >= 4.5);
-    theme::use_palette(&ctx, original);
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
 fn active_toggle_text_stays_visible_when_the_inverse_ink_is_translucent() {
-    let original = theme::palette();
-    let mut palette = original;
     // Nearly transparent white ink on a black lit fill: opaque white would read, this does not.
-    palette.control_selected = Color32::BLACK;
-    palette.text_inverse = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
+    let faint = Color32::from_rgba_unmultiplied(255, 255, 255, 20);
+    let colors = [("control-selectedBackground".to_owned(), Color32::BLACK), ("text-inverse".to_owned(), faint)];
     let ctx = egui::Context::default();
-    theme::use_palette(&ctx, palette);
+    theme::use_colors(&ctx, &colors.into());
     motion::set_enabled(&ctx, false);
     let (fill, text) = theme::in_style_frame(&ctx, |ui| {
         let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(24.0));
         let response = button_area(ui, rect, Id::unique("faint-ink-toggle"), "Track on");
         toggle_colors(ui, &response, true)
     });
-    assert_ne!(text, palette.text_inverse, "the faint ink is replaced");
+    assert_ne!(text, faint, "the faint ink is replaced");
     assert!(theme::text_contrast(text, fill) >= 4.5, "{text:?} on {fill:?}");
-    theme::use_palette(&ctx, original);
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
@@ -436,7 +434,10 @@ fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
         crate::kit::skin::configure(&crate::kit::skin::Skin::default());
         found
     };
-    assert_eq!(colours(""), (theme::control_background(), theme::text_primary()));
+    assert_eq!(
+        colours(""),
+        (crate::kit::theme::studio("control-background"), crate::kit::theme::studio("text-primary"))
+    );
     assert_eq!(
         colours("button { background-color: #102030; color: #405060; }"),
         (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60))
