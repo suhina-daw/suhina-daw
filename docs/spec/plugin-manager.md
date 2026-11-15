@@ -28,7 +28,8 @@ current theme: switching the theme changes the manager with the rest of the app.
 - **Top bar:** the title and how many plug-ins were found on the left; **Scan for new** (drawn
   as the page's main button, in the theme's accent), **Rescan all** and **Close** on the right.
   While a scan runs the scan buttons wait.
-- **Library sidebar** on the left: **All plug-ins**, **Enabled**, **Disabled**, **Owned** (the
+- **Library sidebar** on the left: **All** (every row), **Plug-ins** (the plug-ins, no files),
+  **Enabled**, **Disabled**, **Owned** (the
   plug-ins marked as owned, below) and **Needs attention** (the files that failed and those built for another processor), each with how
   many rows it holds; under **Needs attention**, **Failed** and **Other processor** apart. Below,
   the filters: **Type** (all types, effects, instruments), **Format** (CLAP, VST3, VST2

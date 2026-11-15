@@ -51,6 +51,8 @@ const ACTION: usize = 8;
 pub enum Shelf {
     #[default]
     All,
+    /// The plug-ins, without the files that gave none.
+    Plugins,
     Enabled,
     Disabled,
     /// The plug-ins marked as owned.
@@ -338,6 +340,7 @@ fn kept(line: &Line, plugins: &PluginsView, state: &ManagerState) -> bool {
     };
     let shelf = match state.shelf {
         Shelf::All => true,
+        Shelf::Plugins => matches!(line.kind, Kind::Plugin(_)),
         Shelf::Enabled => line.state == State::Ready,
         Shelf::Disabled => line.state == State::Disabled,
         Shelf::Owned => plugin.is_some_and(|p| p.owned),
@@ -729,7 +732,8 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
     );
     y += 4.0;
     let shelves = [
-        (Shelf::All, "All plug-ins", counts.plugins + counts.attention(), false),
+        (Shelf::All, "All", counts.plugins + counts.attention(), false),
+        (Shelf::Plugins, "Plug-ins", counts.plugins, false),
         (Shelf::Enabled, "Enabled", counts.enabled, false),
         (Shelf::Disabled, "Disabled", counts.disabled, false),
         (Shelf::Owned, "Owned", counts.owned, false),

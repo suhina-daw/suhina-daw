@@ -670,8 +670,14 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([spec](docs/spec/browser.md)).
 - The **plug-in manager** (Settings › Plug-ins › Manage plug-ins): every plug-in found and every
   file that gave none in one table (on, name, vendor, type, format, version, status, file),
-  sorted by any column and searched; a plug-in switched off is not offered and does not load,
-  and a failed file is read again with its **Scan again**
+  sorted by any column and searched, its columns resized (kept between starts, a double-click
+  fits one), hidden and scrolled sideways, a cut cell's full text on hover; a library sidebar
+  (all, plug-ins, enabled, disabled, owned, needs attention) with type, format and vendor
+  filters; the folders scans look in under **Scan locations**; a panel for the plug-in picked,
+  or one switch for several; a plug-in switched off is not offered and does not load, and a
+  failed file is read again with its **Scan again** or from its right-click menu, which also
+  shows it in the file manager. Plug-ins are **marked as owned** (`plugin.setOwned`), listed
+  first on request, and **Turn off the rest** of a vendor switches off its unmarked ones
   ([spec](docs/spec/plugin-manager.md)).
 - Plug-in **folders per format**: each added folder for CLAP, VST3 or both, any folder switched
   off without removing it (`plugin.setFolderEnabled`); VST2 folders are ready for when VST2

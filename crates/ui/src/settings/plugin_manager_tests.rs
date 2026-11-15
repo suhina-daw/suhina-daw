@@ -92,6 +92,8 @@ fn the_sidebar_shows_a_shelf_a_type_some_formats_and_a_vendor() {
     assert_eq!(names(&plugins, &state), ["Broken.vst3"]);
     state.shelf = Shelf::Incompatible;
     assert_eq!(names(&plugins, &state), ["Old.dll"]);
+    state.shelf = Shelf::Plugins;
+    assert_eq!(names(&plugins, &state), ["Keys", "Verb 9", "Verb 10"], "the plug-ins, no files");
     state.shelf = Shelf::All;
     state.types = TypeFilter::Instruments;
     assert_eq!(names(&plugins, &state), ["Keys"], "a type leaves the files out");
