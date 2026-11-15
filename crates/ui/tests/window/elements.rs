@@ -32,6 +32,28 @@ fn painted(h: &Harness<'static, App>) -> Vec<egui::Color32> {
     found
 }
 
+/// Where shapes of `color` were painted in the window's last frame: fills, strokes and lines.
+fn painted_at(h: &Harness<'static, App>, color: egui::Color32) -> Vec<egui::Rect> {
+    fn walk(shape: &egui::Shape, color: egui::Color32, found: &mut Vec<egui::Rect>) {
+        let rect = shape.visual_bounding_rect();
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, color, found)),
+            egui::Shape::Rect(r) if r.fill == color || r.stroke.color == color => found.push(rect),
+            egui::Shape::LineSegment { stroke, .. } if stroke.color == color => found.push(rect),
+            egui::Shape::Path(path)
+                if path.fill == color
+                    || matches!(&path.stroke.color, egui::epaint::ColorMode::Solid(c) if *c == color) =>
+            {
+                found.push(rect)
+            }
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    h.output().shapes.iter().for_each(|shape| walk(&shape.shape, color, &mut found));
+    found
+}
+
 /// A colour no theme or track uses, the `n`-th of a set.
 fn odd(n: u8) -> egui::Color32 {
     egui::Color32::from_rgb(0x13, 0x57, n)
@@ -314,6 +336,9 @@ fn a_rule_for_every_slot_clip_needs_a_muted_rule_to_keep_the_deactivated_clip_gr
     assert_eq!(strokes_with(&mut h, &ink, odd(54)), 0, "the outline is not the clips' colour");
     let fill = format!("clip {{ background-color: {}; }}", hex(odd(55)));
     assert_eq!(count_with(&mut h, &fill, odd(55)), 1, "the deactivated clip takes the clips' fill");
+    let muted = format!("{fill} clip[muted] {{ background-color: {}; }}", hex(odd(56)));
+    assert_eq!(count_with(&mut h, &muted, odd(56)), 1, "a `[muted]` rule keeps the deactivated clip apart");
+    assert_eq!(count_with(&mut h, &muted, odd(55)), 0, "and the clips' fill no longer reaches it");
 }
 
 /// The muted greys are variables of the base sheet: setting `--clip-mutedBackground` or
@@ -1090,8 +1115,8 @@ fn the_start_page_s_tabs_take_their_own_rules() {
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
 }
 
-/// Settings' words, headings and buttons take their own rules, and its lit switches and chosen
-/// segments stay lit under a rule for every `button` (#1440).
+/// Settings' words, headings and buttons take their own rules, its lit switches and chosen
+/// segments their `[checked]` rule (#1440).
 #[test]
 fn settings_words_and_buttons_take_their_own_rules() {
     let mut h = window(demo_app());
@@ -1136,8 +1161,8 @@ fn a_rule_for_every_button_needs_a_checked_rule_to_keep_settings_chosen_preset_l
     assert!(unlit.contains(&odd(141)), "an unchosen one keeps the rule: {unlit:?}");
 }
 
-/// A yes/no setting's switch is lit by a rule for `[checked]` only: a rule for every `button`
-/// colours the unlit ones and leaves the lit ones lit (#1440).
+/// A rule for every `button` colours Settings' yes/no switches, lit ones too; a theme states
+/// the lit look with `button[kind="switch"][checked]`, which only the lit ones take (#1440).
 #[test]
 fn a_rule_for_every_button_needs_a_checked_rule_to_keep_settings_switches_lit() {
     use egui_kittest::kittest::NodeT;
@@ -1434,9 +1459,20 @@ fn put_down(h: &mut Harness<'static, App>) {
 fn a_user_sheet_s_accent_reaches_a_drop_target_line_in_suhina_studio() {
     let mut h = carrying_a_device(None);
     assert_eq!(h.state().settings().theme, suhina_ui::kit::theme::BUILT_IN);
-    let missing = missing(&mut h, &[(":root", "--accent", odd(130))]);
+    // The line's place, from a rule for it alone.
+    let line = under(&mut h, format!("drop-target[kind=\"insert\"] {{ color: {}; }}", hex(odd(129))), |h| {
+        painted_at(h, odd(129))
+    });
+    assert_eq!(line.len(), 1, "one insert line: {line:?}");
+    let accent = under(&mut h, format!(":root {{ --accent: {}; }}", hex(odd(130))), |h| painted_at(h, odd(130)));
+    assert!(accent.contains(&line[0]), "the accent is the line's colour: {accent:?} and {line:?}");
+    // With the sheet put away, the line is back to Suhina Studio's accent.
+    for _ in 0..4 {
+        h.step();
+    }
+    let after = painted_at(&h, odd(130));
     put_down(&mut h);
-    assert_eq!(missing, Vec::<String>::new());
+    assert!(after.is_empty(), "nothing keeps the user's accent: {after:?}");
 }
 
 /// A theme's rule beats the base sheet's for the same element, also a less specific one and one
@@ -2110,4 +2146,25 @@ fn a_region_s_variables_reach_the_toolbar_s_signature_and_settings_pages() {
     let mut h = settings_on("Keys");
     let page = words_under(&mut h, format!("settings {{ --text-secondary: {}; }}", hex(odd(251))), "Browser");
     assert!(page.contains(&odd(251)), "a page's name in the list: {page:?}");
+}
+
+/// The time signature's numbers take `toolbar-module[kind="signature"]`'s `color` and its arrow
+/// the caption ink inside it, as the slash does; the piano roll ruler's line under its loop row is
+/// `separator[kind="row"]` (#1269, #1451).
+#[test]
+fn the_signature_s_numbers_and_arrow_and_the_piano_roll_ruler_s_line_take_their_rules() {
+    let mut h = walk_picked();
+    let numerator = h.get_by_label("Time signature numerator").rect();
+    let numbers = under(&mut h, format!("toolbar-module[kind=\"signature\"] {{ color: {}; }}", hex(odd(252))), |h| {
+        inks_in(h, numerator)
+    });
+    assert!(numbers.contains(&odd(252)), "the numerator: {numbers:?}");
+    let chevron = h.get_by_label("Time signatures").rect();
+    let css = format!("toolbar-module[kind=\"signature\"] label[kind=\"caption\"] {{ color: {}; }}", hex(odd(253)));
+    let arrow = under(&mut h, css, |h| painted_at(h, odd(253)));
+    assert!(arrow.iter().any(|rect| chevron.intersects(*rect)), "the arrow: {arrow:?} in {chevron:?}");
+    let ruler = h.get_by_label("Piano roll ruler").rect();
+    let css = format!("piano-roll separator[kind=\"row\"] {{ color: {}; }}", hex(odd(254)));
+    let line = under(&mut h, css, |h| painted_at(h, odd(254)));
+    assert!(line.iter().any(|rect| ruler.expand(1.0).contains_rect(*rect)), "the ruler's line: {line:?} in {ruler:?}");
 }
