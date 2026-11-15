@@ -405,6 +405,21 @@ specific selector to win over Suhina's.
   colours only the text that has no rule of its own, not the parts the base sheet styles.
 - **Your own sheet too.** `:root { --accent: #FF8A00; }` in `user.css` reaches everything, in
   Suhina Studio as in any theme.
+- **Shared controls.** The base sheet gives Suhina's own controls their looks: a `button` (its
+  fill, text, edge and the ring while it has the keys, a step brighter under the pointer), the
+  toggles (`button[kind="toggle"]`: dim words, and when `[checked]` the chosen fill and the text on
+  it; solo, `button[kind="solo"]`, is lit in the accent, arm, `button[kind="arm"]`, in the
+  recording colours), `knob`, the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) and their
+  `value-fill` and `value-handle`, the pan field and its `pan-centre`, `send`, the line under a
+  field (`text-input`, `value`, `dropdown`), a drop-down's `dropdown-arrow`, a typed number
+  (`text-input[kind="typed"]`), a slider's `slider-rail`, `slider-fill` and `slider-handle`, a
+  fader cap's fill, a meter's `meter-level` (`meter-level[kind="hot"]` near the top) and
+  `meter-clip`, a `dialog`'s edge, a floating list's `list-row` (`[selected]` for the picked one),
+  and the words (`label[kind="hint"]`, `"caption"`, `"value"`, `"error"`). **Your rule for any of
+  these overrides the base sheet's for each property it sets, its states' too**: after `button {
+  background-color: … }` a lit toggle takes that background as well, so write
+  `button[kind="toggle"][checked] { background-color: … }`, and for a slider `slider-fill { … }`
+  `slider[checked] slider-fill { … }`.
 - **The base sheet's own colours** are variables as well: the browser's icons by kind
   (`--browser-icon-midi`, `--browser-icon-sample`, `--browser-icon-instrument`,
   `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …
@@ -612,11 +627,11 @@ Elements, by name:
 | `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]` |
 | `waveform`, `envelope` | what a clip shows |
 | `device-panel`, `device-section`, `device-control`, `xy-control` | device panels; `#id` selects a device control |
-| `button`, `value`, `value-fill`, `dropdown`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` leaves it alone) |
-| `#control-solo`, `#control-cue`, `#control-arm` | a track's solo, cue and arm buttons, `[checked]` while on (the arm `[armed]` too): lit, they take a colour only from a rule for that state, so a rule for every `button` (its colour or its background image) does not hide which one is on; under the pointer they are ringed in their `border-color`, and in their `accent-color` while they have the keys |
-| `slider`, `slider-rail`, `slider-fill`, `slider-handle` | a slider and its parts' `background-color`; a swing amount is `slider[checked]` while it is the clip's own, its fill then only from a rule for the lit slider (`slider[checked] slider-fill`) |
+| `button`, `value`, `value-fill`, `dropdown`, `dropdown-arrow`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a drop-down's arrow keeps its own `color`, so a rule for the field's text names `dropdown-arrow` too; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` is its too, until `text-input[kind="typed"]` has its own) |
+| `button[kind="toggle"]`, `#control-solo`, `#control-cue`, `#control-arm` | a track's solo, cue and arm buttons and the other switches Suhina draws as buttons (`[kind="solo"]`, `[kind="arm"]`, `[kind="toggle"]`), `[checked]` while on (the arm `[armed]` too): a rule for every `button` (its colour or its background image) is the lit button's too, so state its lit look (`button[kind="toggle"][checked] { background-color: … }`, and for solo and arm `button[kind="solo"][checked]`, `button[kind="arm"][checked]`); under the pointer they are ringed in their `border-color`, and in their `accent-color` while they have the keys |
+| `slider`, `slider-rail`, `slider-fill`, `slider-handle` | a slider and its parts' `background-color`; a swing amount is `slider[checked]` while it is the clip's own, its fill then the accent: a rule for every `slider-fill` is the lit one's too, so state `slider[checked] slider-fill` |
 | `menu`, `popup` | an open menu of the menu bar; a control's popup (`#metronome-level`, the metronome's level) |
-| `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob` with its rim in its `border-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
+| `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob[kind="dial"]` with its rim in its `border-color`, the disc between rim and face in `knob-ring`'s `background-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
 | `meter`, `meter-level`, `meter-vertical`, `meter-horizontal` | level meters and their lit part |
 | `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs |
 | `label[kind]` | the browser's and the detail panels' words by how much they stand out: dim words (`hint`) and a control's or figure's name (`caption`) take only a colour given to them, not one around them; a panel's title (`title`), a value shown as words (`value`), a fault (`error`), a plug-in's state (`plugin-state`), the head of the MIDI tools' figures (`head`, `[selected]` in its `accent-color`) |

@@ -482,7 +482,20 @@ page's (ADR 0031, amendment of 2026-11-15).
   `progress-fill`); the drop targets' lines (`drop-target[kind="insert"]`,
   `drop-target[kind="area"]`); the browser's icons by kind (`--browser-icon-midi`,
   `--browser-icon-sample`, `--browser-icon-instrument`, `--browser-icon-effect`); the sample
-  map's kinds. The views move onto it area by area (#1449 – #1452), each in a section of its own.
+  map's kinds; the shared controls' section (#1449): the label kinds' inks (`label[kind="hint"]`,
+  `"caption"`, `"value"`, `"error"`) and the rows' line (`separator[kind="row"]`); `button` (fill,
+  text, edge, ring, `:hover`) and the toggles, `button[kind="toggle"]` with its `[checked]` look
+  (solo, `button[kind="solo"]`, in the accent; arm, `button[kind="arm"]`, in the recording colours);
+  `knob` and `knob-ring`; the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) with
+  `value-fill`, `value-handle`, the pan field (`pan`, `pan-centre`) and `send`; the fields'
+  lines (`text-input`, `value`, `dropdown`, with `:hover`), a drop-down's text and
+  `dropdown-arrow`, a typed number (`text-input[kind="typed"]`), a routing field's `:hover`
+  (`dropdown[kind="subtle"]`); a slider's rail, fill and handle; a fader cap's fill; a meter's
+  levels and clip light; a dialog's edge; the rows of a floating list (`list-row`,
+  `list-row[selected]`). The views move onto it area by area (#1449 – #1452), each in a section of
+  its own. Two things are worked out from the colours around them and not given by a rule: the
+  subtle drop-down's line and ink (from the surface it is on) and the readable ink on a lit
+  toggle's fill, where no rule gives it one.
 - **Opting out.** `"base": "none"` in `theme.json` leaves the base sheet out: the theme stands on
   the user-agent sheet's bare look, under its own rules. The core registrations and its colour map
   still apply.
@@ -1446,18 +1459,28 @@ of bars, and a slider id per parameter.
   `[queued]`, `[selected]` and `[muted]` and a picked automation point, a rule for that state
   sets its own fill and outline. A `clip:hover` background still colours the clip's fill while the
   pointer is over it. `[queued]` is an attribute.
-- **The shared controls (#1023):** the kit's controls draw from their elements the same way: a
-  track's solo, cue and arm (`button#control-solo`, `#control-cue`, `#control-arm`, lit only by a
-  rule for `[checked]` or `[armed]`, neither the colour nor the background image of a rule for
-  every `button` over the lit fill, ringed in `border-color` under the pointer and `accent-color`
-  with the keys), the kit's own fields' underlines (`border-color`, `accent-color` while edited),
-  a dialog's button (`border-color`, `color`), a dial (`knob`: rim `border-color`, disc
-  `background-color`, pointer `accent-color`), the swing slider (`slider[checked]` and its
-  `slider-rail`, `slider-fill`, `slider-handle`; lit, its fill only from a rule for the lit
-  slider), a send's rail (the send's `background-color`), a fader cap without artwork (its own
-  `color`), a routing field (`dropdown[kind="subtle"]`) and a typed number
-  (`text-input[kind="typed"]`), which only a rule for the kind reaches. The other toggles keep
-  the palette's colours until their views move.
+- **The shared controls (#1023, #1449):** the kit's controls draw from their elements and take
+  their colours from the base sheet (*The base sheet*), so a theme's rule for an element
+  overrides the base sheet's for each property it sets, its lit and hovered looks too. A track's
+  solo, cue and arm (`button#control-solo`, `#control-cue`, `#control-arm`) and the other
+  switches the kit draws as buttons are `button[kind="toggle"]` (`kind="solo"` and `kind="arm"`
+  for those two), lit by `[checked]` (the arm `[armed]` too); a theme that styles every `button`
+  states their lit look as well (`button[kind="toggle"][checked] { background-color: … }`), and
+  its rule for `[checked]` or `[armed]` is the lit fill, neither the colour nor the background
+  image of a rule for every `button` over it. They are ringed in `border-color` under the
+  pointer and `accent-color` with the keys. The kit's own fields' underlines (`border-color`,
+  `accent-color` while edited), a dialog's button (`border-color`, `color`), a dial
+  (`knob[kind="dial"]`: rim `border-color`, the disc between rim and face `knob-ring`, inner
+  disc `background-color`, pointer `accent-color`), the swing slider (`slider[checked]` and its
+  `slider-rail`, `slider-fill`, `slider-handle`; a rule for every `slider-fill` is the lit
+  swing's too, so a theme states `slider[checked] slider-fill`), a send's rail (the send's
+  `background-color`), a fader cap without artwork (its own `color`), a drop-down's arrow
+  (`dropdown-arrow`), a routing field (`dropdown[kind="subtle"]`, which only a rule for the kind
+  reaches) and a typed number (`text-input[kind="typed"]`; a rule for every `text-input` is its
+  too, until it has its own) are the same. A switch a view draws itself with no `button` takes the
+  colours of `toggle`. The switches the views enter themselves and compare (`Toggle::of`: a
+  Settings switch, the browser's chips, the follow action) stay lit under a rule for every
+  `button` until their views move onto the sheet (#1450, #1451).
 - **The browser and the detail panels (#1023):** the browser, the clip panels, the follow action,
   a device's and a device group's panel (`device[kind="group"]`, its branches `device-row`), an
   expanded panel and the piano roll's keys, toolbar and corner draw from their elements the same
@@ -1482,10 +1505,12 @@ of bars, and a slider id per parameter.
   its lists `list-row`, its buttons `button`, its progress bar `progress` and `progress-fill`) draw
   from their elements, the palette token as the fallback. The start page's tabs are
   `editor-tab#tab-recent` and `#tab-templates` and the colour picker's swatches `colour-swatch`
-  (`border-color` outlines the chosen one). Every switch that is lit stays lit under a rule for
-  every `button`: a track's on switch and the Arrangement's monitor, take-lanes and automation
-  switches, the computer keyboard, the browser's Auto, a device's On/Off, a Settings switch, a chosen
-  segment of a Settings choice, a plug-in folder's format and a keymap preset (`button[checked]`).
+  (`border-color` outlines the chosen one). A Settings switch, a chosen segment of a Settings
+  choice, a plug-in folder's format and a keymap preset (`button[checked]`) stay lit under a rule
+  for every `button`; a track's on switch, the Arrangement's monitor and automation switches, the
+  computer keyboard, the browser's Auto and a device's On/Off take the lit look of
+  `button[kind="toggle"][checked]` from the base sheet, which a rule for every `button` overrides
+  (#1449).
   `divider#detail-splitter` is `[closed]` while the detail area is closed. A dialog's `color` reaches
   its names, values and titles; its hints and captions keep to a colour given to them.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
