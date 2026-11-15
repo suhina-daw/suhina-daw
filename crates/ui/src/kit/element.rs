@@ -293,6 +293,19 @@ impl<'a> Builder<'a> {
         Look(style)
     }
 
+    /// [`Builder::probe`] of the element as if drawn inside `ancestor` (a `clip` of the
+    /// Arrangement, looked up from the piano roll), so a rule that reaches it only there
+    /// (`arrangement clip[muted]`) is in its look. The ancestor is taken out of the style tree
+    /// again with it.
+    pub fn probe_in(self, ancestor: Name) -> Look {
+        let around = ancestor.enter();
+        let node = around.scope.node;
+        let look = self.probe();
+        drop(around);
+        super::native_css::discard(node);
+        look
+    }
+
     /// The element entered with `attr` `on`, and while it is on, the [`Look`] of the very same
     /// element with only `attr` off: its id, response (so its `:hover`, `:active` and focus),
     /// pointer states, colour, attributes and other states kept. That is what

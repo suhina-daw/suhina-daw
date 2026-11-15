@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-14
+last_verified: 2026-11-15
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -253,7 +253,8 @@ fields for the name, the tempo (empty for none) and the time signature (`3/4`, e
 each applied with Enter, then **Insert scene below**, **Duplicate scene** and **Delete scene**
 (greyed out for the only scene). Every entry is a `scene.*` command, undone with Ctrl+Z. The
 control bar shows the time signature playing, and its position counts bars in it; a launched
-scene can change it.
+scene can change it. Dragging or typing into the control bar's time signature changes the project's
+([tempo map](tempo-map.md#editing-in-the-window)).
 
 ### Launch keys
 

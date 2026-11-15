@@ -177,7 +177,7 @@ fn a_lane_pulled_to_the_top_still_shows_its_notes() {
 }
 
 #[test]
-fn a_lane_at_its_least_height_still_shows_its_notes() {
+fn a_lane_at_its_least_height_shows_its_clips_name_instead_of_notes() {
     let mut h = piano_app();
     // Alt and the wheel make every lane shorter, down to the least 20 px.
     let lane = h.get_by_label(CLIP).rect();
@@ -198,7 +198,15 @@ fn a_lane_at_its_least_height_still_shows_its_notes() {
     h.run();
     let short = h.get_by_label(CLIP).rect();
     assert!(short.height() < 21.0, "the lane is at its least height: {short:?}");
-    assert!(note_marks(&h, short) > 0, "a 20 px lane still shows its clip's notes");
+    // Notes in the thin strip of a 20 px lane run together; the clip says its name instead.
+    assert_eq!(note_marks(&h, short), 0, "a 20 px lane draws no notes");
+    let named = shapes(&h).into_iter().any(|(clipped, shape)| match shape {
+        Shape::Text(t) => {
+            t.galley.job.text.contains("Beat B") && short.contains(t.pos + vec2(1.0, 1.0)) && clipped.intersects(short)
+        }
+        _ => false,
+    });
+    assert!(named, "a 20 px lane shows its clip's name in the body");
     let volume = h.get_by_label("Drums volume").rect();
     let header = h.get_by_label("Track Drums").rect();
     assert!(volume.width() >= 48.0, "a compact lane keeps a usable volume field");
