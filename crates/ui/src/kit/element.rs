@@ -194,8 +194,8 @@ pub struct Builder<'a> {
     states: u8,
     /// Pointer states given without a response: hover 1, active 2, disabled 4, focus 8.
     pointer: u16,
-    /// A device panel's own sheet, and the context to wake when the engine was idle.
-    sheet: Option<(egui::Context, &'a str)>,
+    /// A device panel's own sheet.
+    sheet: Option<&'a str>,
     color: Option<Color32>,
     /// Attributes with a value the app gives the element besides its colour (`kind`).
     attributes: Vec<(&'static str, &'a str)>,
@@ -234,8 +234,8 @@ impl<'a> Builder<'a> {
     }
     /// A device panel's own style sheet (`source`), which applies inside the panel only, over the
     /// application's theme ([`super::native_css`]).
-    pub fn sheet(mut self, ctx: &egui::Context, source: Option<&'a str>) -> Self {
-        self.sheet = source.map(|source| (ctx.clone(), source));
+    pub fn sheet(mut self, source: Option<&'a str>) -> Self {
+        self.sheet = source;
         self
     }
     /// The element's own colour, given to the sheet as `[color="#rrggbb"]` (or `#rrggbbaa`).
@@ -266,7 +266,6 @@ impl<'a> Builder<'a> {
     /// are not `:hover` for it.
     fn enter_as(self, asked: bool) -> Entered {
         let Self { name, id, response, states, pointer, color, attributes, native, sheet } = self;
-        let sheet_wake = sheet.clone();
         let scope = super::style_class::enter_inner(name, id, response, |node| {
             super::native_css::mark_node_bits(node, pointer, asked);
             for (attr, state) in STATES {
@@ -280,16 +279,10 @@ impl<'a> Builder<'a> {
             for (attribute, value) in attributes {
                 super::native_css::set_attribute(node, attribute, value.to_owned());
             }
-            if let Some((ctx, source)) = sheet {
-                super::native_css::device_sheet(Some(node), &ctx, Some(source));
+            if let Some(source) = sheet {
+                super::native_css::device_sheet(node, source);
             }
         });
-        // A sheet asked for while the engine is idle starts it on the next frame.
-        if scope.node.is_none()
-            && let Some((ctx, source)) = sheet_wake
-        {
-            super::native_css::device_sheet(None, &ctx, Some(source));
-        }
         Entered { scope, native, name, rest: std::cell::RefCell::new(None) }
     }
 

@@ -1257,7 +1257,7 @@ fn paint_horizontal_fader(
     let cap = Rect::from_center_size(centre, Vec2::new(thickness, length));
     let cap_style = crate::kit::element::FADER_CAP.response(response).enter();
     cap_style.paint_background(painter, Rect::from_center_size(centre, Vec2::new(length, thickness)), 2.0);
-    let cap_ink = crate::kit::mixer_controls::cap_ink(&cap_style, state);
+    let cap_ink = crate::kit::mixer_controls::cap_ink(&cap_style);
     if !crate::kit::skin::paint(painter, cap, "fader.cap", state, cap_ink, std::f32::consts::FRAC_PI_2) {
         let cap = Rect::from_center_size(centre, Vec2::new(length, thickness));
         let fill = cap_style.hover_fade(hover, crate::kit::element::Look::background);

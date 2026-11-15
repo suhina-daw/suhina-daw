@@ -194,7 +194,7 @@ fn device_controls(theme: &str, device: &str, user: Option<&str>) -> (Computed, 
             let mut found = Vec::new();
             for panel in ["track-1-device-0", "track-1-device-1"] {
                 let sheet = panel.ends_with('0').then_some(device);
-                let _panel = test_el("device-panel").id(panel).sheet(ui.ctx(), sheet).enter();
+                let _panel = test_el("device-panel").id(panel).sheet(sheet).enter();
                 let control = test_el("device-control").id("cutoff").enter();
                 found.push(control.style().unwrap());
             }

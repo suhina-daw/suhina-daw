@@ -243,9 +243,9 @@ pub fn send_field(
 }
 
 /// The colour of a fader cap's artwork (its `currentColor`): the computed colour of `el`, the
-/// `fader-cap` in `state`, which the base sheet gives (the control colour lit a little by the
-/// values' text) unless a theme does.
-pub fn cap_ink(el: &super::element::Entered, _state: super::skin::State) -> Color32 {
+/// `fader-cap` entered in its pointer state, which the base sheet gives (the control colour lit a
+/// little by the values' text) unless a theme does.
+pub fn cap_ink(el: &super::element::Entered) -> Color32 {
     el.color()
 }
 
@@ -273,7 +273,7 @@ pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, response: &egui
     let state = super::skin::State::response(response, false);
     let el = super::element::FADER_CAP.response(response).enter();
     el.paint_background(painter, cap, 2.0);
-    if super::skin::paint(painter, cap, "fader.cap", state, cap_ink(&el, state), 0.0) {
+    if super::skin::paint(painter, cap, "fader.cap", state, cap_ink(&el), 0.0) {
         return;
     }
     // Without artwork: the cap's own `color` where a rule gives it one (not the palette tier's),

@@ -518,9 +518,6 @@ thread_local! {
     /// Counts the times every computed style was forgotten (a sheet, variant, user sheet, width,
     /// colour or engine change): what the root's `Visuals` are rebuilt on.
     static STYLE_EPOCH: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-    /// Whether a device panel asked for its sheet since the last frame began, so the engine
-    /// runs even when the theme has no style sheet of its own.
-    static DEVICE_WANTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Most device panel sheets kept parsed at once.
@@ -555,11 +552,9 @@ pub fn set_user_sheet(source: Option<Arc<str>>) {
 /// panel, above the application theme and below `user.css`. Unchanged text is parsed once; a
 /// sheet that does not parse is ignored and the panel keeps the theme. Given before the panel's
 /// style is looked up ([`super::element::Builder::sheet`]).
-pub(super) fn device_sheet(node: Option<usize>, ctx: &egui::Context, source: Option<&str>) {
-    let Some(source) = source.filter(|s| !s.trim().is_empty() && s.len() <= 64 * 1024) else { return };
-    if !DEVICE_WANTED.with(|wanted| wanted.replace(true)) && !ENGINE.with(|engine| engine.borrow().collecting) {
-        // The engine was idle: start it on the next frame.
-        ctx.request_repaint();
+pub(super) fn device_sheet(node: usize, source: &str) {
+    if source.trim().is_empty() || source.len() > 64 * 1024 {
+        return;
     }
     let mut hash = std::hash::DefaultHasher::new();
     source.hash(&mut hash);
@@ -576,7 +571,7 @@ pub(super) fn device_sheet(node: Option<usize>, ctx: &egui::Context, source: Opt
             }
             engine.device_sheets.insert(key, Arc::new(sheet));
         }
-        if let Some(node) = node.and_then(|at| engine.nodes.get_mut(at)) {
+        if let Some(node) = engine.nodes.get_mut(node) {
             node.sheet = key;
         }
     });
@@ -1137,7 +1132,6 @@ fn snapshot(engine: &mut Engine, opacity: f32) {
 
 /// Refresh only when the sheets, the theme's colours, the window's opacity or the viewport change.
 pub fn begin_frame(ui: &egui::Ui) {
-    DEVICE_WANTED.with(|wanted| wanted.set(false));
     let skin = skin::current();
     // A theme without a sheet of its own runs the engine on an empty one: the base tier and the
     // user's sheet still apply.

@@ -80,7 +80,7 @@ fn a_colour_around_a_knob_or_fader_does_not_reach_its_body_rail_or_cap() {
         let pointer = KNOB_POINTER.enter().color_or(unset);
         drop(knob);
         let rail = super::super::mixer_controls::rail_ink(&FADER_RAIL.enter());
-        let cap = super::super::mixer_controls::cap_ink(&FADER_CAP.enter(), super::super::skin::State::Normal);
+        let cap = super::super::mixer_controls::cap_ink(&FADER_CAP.enter());
         (body, pointer, rail, cap)
     });
     let rgb = egui::Color32::from_rgb;
