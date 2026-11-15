@@ -125,7 +125,7 @@ fn the_notice_counts_the_files_that_need_attention() {
 #[test]
 fn the_file_fills_what_the_other_columns_leave() {
     let area = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, ROW));
-    let spans = spans(area, &WIDTHS, true);
+    let spans = spans(area, &WIDTHS, true, true);
     assert_eq!(spans[0].0, 0.0);
     assert!((spans[ACTION].1 - 1000.0).abs() < 0.01, "the columns fill the width");
     assert!(spans.windows(2).all(|w| (w[0].1 - w[1].0).abs() < 0.01), "no gaps");
@@ -134,7 +134,7 @@ fn the_file_fills_what_the_other_columns_leave() {
 }
 
 fn spans_of_file(area: Rect, actions: bool) -> f32 {
-    let (left, right) = spans(area, &WIDTHS, actions)[FILE];
+    let (left, right) = spans(area, &WIDTHS, actions, true)[FILE];
     right - left
 }
 
@@ -189,4 +189,28 @@ fn the_second_of_two_same_named_files_is_scanned_again_by_its_own_button() {
     harness.get_by_label(&scan_again_label(&two)).click();
     harness.run();
     assert_eq!(harness.state().1, Some(PluginRequest::ScanFiles(vec![two])), "the click reaches its own row");
+}
+
+#[test]
+fn columns_are_hidden_and_shown_again_and_a_wide_table_scrolls_sideways() {
+    let mut state = ManagerState::default();
+    assert!((0..COLUMN_COUNT).all(|c| state.shows(c)), "every column at first");
+    state.set_shown(FILE, false);
+    state.set_shown(2, false);
+    assert_eq!(state.hidden, ["File", "Vendor"]);
+    assert!(!state.shows(FILE) && !state.shows(2));
+    state.set_shown(1, false);
+    assert!(state.shows(1), "the name is never hidden");
+    let widths = state.shown_widths();
+    assert_eq!((widths[2], widths[FILE]), (0.0, 0.0), "a hidden column takes no width");
+    let area = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, ROW));
+    let spans = spans(area, &widths, true, false);
+    assert_eq!(spans[FILE].0, spans[FILE].1, "the file hidden: no width for it");
+    state.set_shown(FILE, true);
+    assert_eq!(state.hidden, ["Vendor"]);
+    // Narrower than the columns and a path's room: the table is laid out wider and scrolls.
+    let all = ManagerState::default();
+    let others: f32 = WIDTHS.iter().enumerate().filter(|(i, _)| *i != FILE).map(|(_, w)| w).sum();
+    assert_eq!(all.content_width(400.0, true), others + FILE_WANT);
+    assert_eq!(all.content_width(5000.0, true), 5000.0, "wide enough: the table fills the room");
 }

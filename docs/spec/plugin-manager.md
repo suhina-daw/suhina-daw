@@ -71,7 +71,12 @@ others by their text, the name breaking ties). The edge between two headings, fr
 over it and no column narrower than its least width; a double-click on the edge fits the column
 to its heading and the rows the table shows. The widths are kept in the UI settings
 (`plugin_manager_columns` in `settings.txt`), so the manager opens with them again, after a
-restart too. Text a cell cuts ends with an ellipsis, and the pointer over the cell shows the whole
+restart too. When the columns need more room than the dialog
+gives (the file column gets at least room for a path), the table scrolls sideways, its headings
+with its rows. **Columns**, beside the search, and a right-click on the headings show or hide
+every column but the checkbox, the name and the action (**Show every column** brings them all
+back); the hidden ones are kept in the UI settings too (`plugin_manager_hidden`), and a hidden
+**File** leaves the room to the other columns. Text a cell cuts ends with an ellipsis, and the pointer over the cell shows the whole
 text (the whole path, the whole reason); a file row's name shows the file's whole path.
 
 The search field keeps the rows whose name, vendor, file or reason hold every word typed, within

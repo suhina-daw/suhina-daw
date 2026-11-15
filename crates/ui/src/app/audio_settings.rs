@@ -263,6 +263,7 @@ impl App {
             // The column widths as last dragged, from the UI settings.
             if !self.plugins.manager.widths_read {
                 self.plugins.manager.widths = self.settings.plugin_manager_columns.clone();
+                self.plugins.manager.hidden = self.settings.plugin_manager_hidden.clone();
                 self.plugins.manager.widths_read = true;
             }
             let out = ui
@@ -276,6 +277,10 @@ impl App {
             }
             if let Some(widths) = out.widths {
                 self.settings.plugin_manager_columns = widths;
+                self.settings_changed = true;
+            }
+            if let Some(hidden) = out.hidden {
+                self.settings.plugin_manager_hidden = hidden;
                 self.settings_changed = true;
             }
             if let Some(request) = out.request {

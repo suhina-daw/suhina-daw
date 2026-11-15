@@ -510,6 +510,8 @@ pub struct Settings {
     /// The plug-in manager's column widths in points, as dragged (`docs/spec/plugin-manager.md`
     /// › The table); empty for the widths it starts with.
     pub plugin_manager_columns: Vec<u32>,
+    /// The plug-in manager's columns hidden, by heading (`Vendor`, `File` …); empty shows all.
+    pub plugin_manager_hidden: Vec<String>,
     /// Waveforms in decibels, so quiet parts show; linear otherwise.
     pub waveform_db: bool,
     /// The audio output (Settings › Audio, `audio.setOutput`): host and device by name, empty
@@ -609,6 +611,7 @@ impl Default for Settings {
             map_window: false,
             map_window_rect: None,
             plugin_manager_columns: Vec::new(),
+            plugin_manager_hidden: Vec::new(),
             waveform_db: false,
             audio_host: String::new(),
             audio_device: String::new(),

@@ -244,6 +244,16 @@ pub(super) const FIELDS: &[Field] = &[
             widths.filter(|w| w.len() <= MANAGER_COLUMNS).map(|w| s.plugin_manager_columns = w).is_some()
         },
     },
+    Field {
+        key: "plugin_manager_hidden",
+        write: |s| s.plugin_manager_hidden.join(", "),
+        read: |s, v| {
+            // Headings only, no commas in them; anything longer is from no version of Suhina.
+            s.plugin_manager_hidden =
+                v.split(',').map(str::trim).filter(|h| !h.is_empty() && h.len() <= 16).map(str::to_string).collect();
+            true
+        },
+    },
     text!("audio_host", audio_host),
     text!("audio_device", audio_device),
     number!("audio_sample_rate", audio_sample_rate, u32, only |r: &u32| *r <= MAX_SAMPLE_RATE),
