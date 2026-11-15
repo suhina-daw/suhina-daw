@@ -328,7 +328,7 @@ impl<'a> Builder<'a> {
     /// The element entered with `attr` `on`, and while it is on, the [`Look`] of the very same
     /// element with only `attr` off: its id, response (so its `:hover`, `:active` and focus),
     /// pointer states, colour, attributes and other states kept. That is what
-    /// [`Look::background_unlike`] and the others compare a state's rule with, so only a rule for
+    /// [`Look::themed_unlike`] and the others compare a state's rule with, so only a rule for
     /// the state itself (`button[checked]`) counts as the state's colour, not one for the
     /// pointer's state (`button:hover`) or for every such element.
     pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
