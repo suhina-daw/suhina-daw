@@ -221,7 +221,7 @@ pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     }
     // CSS :hover applies to the ancestors of the pointer target as well.
     for (index, node) in engine.nodes.iter().enumerate().rev() {
-        if node.state & 1 == 0 {
+        if node.state & 1 == 0 || node.state & super::ASKED != 0 {
             continue;
         }
         let mut parent = elements.get(index + 2).and_then(|element| element.parent);

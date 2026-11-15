@@ -529,7 +529,7 @@ fn a_glow_stops_at_a_viewport_edge_that_cuts_its_control() {
 
 #[test]
 fn a_child_of_a_parent_held_for_a_transition_is_not_kept_under_the_parent_s_new_chain() {
-    // The header's colour moves to blue on hover over a second; the button inherits it.
+    // The header's colour moves to blue on hover over a second; the label inherits it.
     let css = "track-header { color: #FF0000; transition: color 1s linear; } \
                track-header:hover { color: #0000FF; }";
     super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
@@ -540,7 +540,7 @@ fn a_child_of_a_parent_held_for_a_transition_is_not_kept_under_the_parent_s_new_
             let _frame = super::super::native_css::frame_with_motion(ui, true);
             if let Some(hovered) = header {
                 let _header = TRACK_HEADER.pointer(hovered, false, false).enter();
-                color = BUTTON.style().map(|style| style.color);
+                color = LABEL.style().map(|style| style.color);
             }
         })
         .textures_delta
@@ -550,10 +550,10 @@ fn a_child_of_a_parent_held_for_a_transition_is_not_kept_under_the_parent_s_new_
     for time in [0.0, 0.1, 0.2] {
         run(time, Some(false));
     }
-    // Hovered: the header holds red while its transition starts, and the button inherits that.
+    // Hovered: the header holds red while its transition starts, and the label inherits that.
     assert_eq!(run(0.3, Some(true)).0, Some(egui::Color32::from_rgb(0xFF, 0, 0)));
     // The header goes, and comes back hovered with nothing to move from: blue at once, and the
-    // button with it, rather than the red it inherited under the same chain before.
+    // label with it, rather than the red it inherited under the same chain before.
     run(0.4, None);
     run(0.5, None);
     let (color, asked) = run(0.6, Some(true));
@@ -784,14 +784,15 @@ fn a_toggle_is_lit_only_by_a_rule_for_its_lit_state() {
     assert_eq!(toggle(&lit, false, false).on, (on, ink_on(on)), "settled off, nothing is looked up");
     let inked = format!("{lit} button[checked] {{ color: #A0B0C0; }}");
     assert_eq!(toggle(&inked, true, false).on, (rgb(0x70, 0x80, 0x90), rgb(0xA0, 0xB0, 0xC0)));
-    // The unlit ink: inherited from a view's rule, or only the button's own.
+    // The unlit ink: the button's own where a theme gives it one, else the token.
     let own_ink = frames("session { color: #405060; }", || {
         let _view = SESSION.enter();
         let (el, sides) = BUTTON.id("solo").enter_toggle(&[Checked], false, false);
         let ink = |unlit| Toggle::of(&el, sides.as_ref(), unlit, off, on, ink_on).off.1;
         (ink(UnlitInk::Inherited), ink(UnlitInk::Own))
     });
-    assert_eq!(own_ink, (rgb(0x40, 0x50, 0x60), off.1));
+    // The base sheet gives the button its own ink, so a view's colour reaches neither.
+    assert_eq!(own_ink, (off.1, off.1));
     // Faded half way, half of each.
     let half =
         Toggle { off: (rgb(0, 0, 0), rgb(0, 0, 0)), on: (rgb(200, 200, 200), rgb(100, 100, 100)), own_image: false }
@@ -917,24 +918,26 @@ fn a_look_s_accent_and_image_are_compared_with_the_plain_one() {
     assert_eq!((general, own, image), (token, rgb(0x10, 0x20, 0x30), true));
 }
 
-/// The inks of a view's words: a rule for a `label` kind gives it, a kind that takes only its own
-/// `color` ignores the colour a rule gives a view around it, and with no rule each is its token
-/// (#1440).
+/// The inks of a view's words: a rule for a `label` kind gives it, a name and a title take the text
+/// colour of the view they are in, and a kind the base sheet colours (a hint, a caption, a value, an
+/// error) takes only a rule of its own, never the colour a rule gives a view around it (#1449).
 #[test]
-fn the_ink_helpers_read_label_kinds_and_fall_back_to_their_tokens() {
+fn the_ink_helpers_read_label_kinds_from_the_sheet() {
     let rgb = egui::Color32::from_rgb;
     let css = "dialog { color: #102030; } label[kind=\"caption\"] { color: #405060; } \
                label[kind=\"error\"] { color: #ff0000; }";
-    let (name, hint, caption, error, value, title, token) = frames(css, || {
+    let (name, hint, caption, error, value, title) = frames(css, || {
         let _dialog = DIALOG.enter();
-        (name_ink(), hint_ink(), caption_ink(), error_ink(), value_ink(), title_ink(), crate::kit::theme::text_hint())
+        (name_ink(), hint_ink(), caption_ink(), error_ink(), value_ink(), title_ink())
     });
+    let plain = frames("", || (name_ink(), hint_ink(), caption_ink(), error_ink(), value_ink(), title_ink()));
     assert_eq!(name, rgb(0x10, 0x20, 0x30), "a name inherits the dialog's colour");
-    assert_eq!((value, title), (name, name), "so do values and titles");
+    assert_eq!(title, name, "so does a title");
     assert_eq!(caption, rgb(0x40, 0x50, 0x60), "a caption takes a rule for itself");
     assert_eq!(error, rgb(0xff, 0, 0));
-    assert_eq!(hint, token, "a hint takes only a rule of its own: the dialog's palette token otherwise");
-    let plain = frames("", || (name_ink(), hint_ink(), caption_ink(), error_ink(), value_ink(), title_ink()));
+    assert_eq!(hint, plain.1, "a hint keeps the base sheet's ink under the dialog's colour");
+    assert_eq!(value, plain.4, "so does a value");
+    // With no rule, each is the base sheet's, which reads the colour variables.
     let tokens = (
         crate::kit::theme::text_primary(),
         crate::kit::theme::text_hint(),
@@ -943,7 +946,7 @@ fn the_ink_helpers_read_label_kinds_and_fall_back_to_their_tokens() {
         crate::kit::theme::text_value(),
         crate::kit::theme::text_primary(),
     );
-    assert_eq!(plain, tokens, "with no rule, every word is its token's");
+    assert_eq!(plain, tokens, "with no rule, every word is the variable's");
 }
 
 /// A `list-row` and a `dialog-title` give their `background-color`, and no rule leaves the token.

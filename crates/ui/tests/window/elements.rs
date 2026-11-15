@@ -452,25 +452,39 @@ fn solo_cue_and_arm_take_their_own_rules_lit_and_unlit() {
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
 }
 
-/// A rule for every `button` does not hide which track button is on: the lit solo, cue and arm keep
-/// their lit fills, the unlit ones take the rule's (#1023).
+/// A rule for every `button` is the lit solo, cue and arm's too until the theme states their lit
+/// look (`button[kind="toggle"][checked]`, `[kind="solo"]` and `[kind="arm"]`); the unlit ones keep
+/// the rule's fill (#1449).
 #[test]
-fn a_rule_for_every_button_keeps_solo_cue_and_arm_lit() {
+fn a_rule_for_every_button_needs_lit_rules_to_keep_solo_cue_and_arm_lit() {
     let mut h = lit_drums();
-    let css = format!("button {{ background-color: {}; }}", hex(odd(57)));
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
-    for _ in 0..4 {
-        h.step();
-    }
-    for (lit, unlit) in [
+    let show = |h: &mut Harness<'static, App>, css: &str| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+    };
+    let pairs = [
         ("End solo on Drums", "Solo Keys"),
         ("Stop cueing Drums", "Cue Keys on the headphones"),
         ("Disarm Drums", "Arm Keys for recording"),
-    ] {
-        let lit_fills = fills_at(&h, h.get_by_label(lit).rect());
-        assert!(!lit_fills.is_empty(), "{lit} is painted");
-        assert!(!lit_fills.contains(&odd(57)), "{lit} keeps its lit fill: {lit_fills:?}");
+    ];
+    let general = format!("button {{ background-color: {}; }}", hex(odd(57)));
+    show(&mut h, &general);
+    for (lit, unlit) in pairs {
+        assert!(fills_at(&h, h.get_by_label(lit).rect()).contains(&odd(57)), "{lit} takes the rule too");
         assert!(fills_at(&h, h.get_by_label(unlit).rect()).contains(&odd(57)), "{unlit} takes the rule");
+    }
+    let stated = format!(
+        "{general} button[kind=\"toggle\"][checked], button[kind=\"solo\"][checked], button[kind=\"arm\"][checked] \
+         {{ background-color: {}; }}",
+        hex(odd(58))
+    );
+    show(&mut h, &stated);
+    for (lit, unlit) in pairs {
+        let lit_fills = fills_at(&h, h.get_by_label(lit).rect());
+        assert!(lit_fills.contains(&odd(58)) && !lit_fills.contains(&odd(57)), "{lit} is lit: {lit_fills:?}");
+        assert!(fills_at(&h, h.get_by_label(unlit).rect()).contains(&odd(57)), "{unlit} keeps the rule");
     }
     suhina_ui::kit::native_css::set_user_sheet(None);
 }
@@ -650,10 +664,10 @@ fn a_rule_s_background_image_does_not_cover_a_lit_track_button() {
     suhina_ui::kit::native_css::set_user_sheet(None);
 }
 
-/// A rule for every `text-input` does not reach a typed number, which is drawn over a value
-/// control: only one for `text-input[kind="typed"]` does (#1435 review).
+/// A rule for every `text-input` is the typed number's too, which is drawn over a value control,
+/// until the theme gives `text-input[kind="typed"]` its own (#1449).
 #[test]
-fn a_rule_for_every_text_field_leaves_a_typed_number_alone() {
+fn a_rule_for_every_text_field_is_a_typed_number_s_until_it_has_its_own() {
     let mut h = window_with_step(audio_app(), 1.0 / 60.0);
     h.get_by_label("Arrangement view").click();
     h.run();
@@ -685,22 +699,23 @@ fn a_rule_for_every_text_field_leaves_a_typed_number_alone() {
     let (fills, inks) =
         typed(&mut h, format!("text-input {{ background-color: {}; color: {}; }}", hex(odd(91)), hex(odd(92))));
     assert!(!fills.is_empty() && !inks.is_empty(), "the typed number is drawn");
-    assert!(!fills.contains(&odd(91)), "the typed fill keeps its own: {fills:?}");
-    assert!(!inks.contains(&odd(92)), "the typed text keeps its own: {inks:?}");
+    assert!(fills.contains(&odd(91)), "the typed fill takes the rule: {fills:?}");
+    assert!(inks.contains(&odd(92)), "the typed text takes the rule: {inks:?}");
     let own = format!("text-input[kind=\"typed\"] {{ background-color: {}; color: {}; }}", hex(odd(93)), hex(odd(94)));
     let (fills, inks) = typed(&mut h, own);
     assert!(fills.contains(&odd(93)) && inks.contains(&odd(94)), "the kind's rule reaches it");
 }
 
-/// A rule for every `slider-fill` does not hide that the swing is lit: only one for the lit
-/// slider's fill changes it (#1435 review).
+/// A rule for every `slider-fill` is the lit swing's too until the theme states the lit slider's
+/// fill: only a rule for `slider[checked] slider-fill` changes it (#1449).
 #[test]
-fn a_rule_for_every_slider_fill_keeps_the_swing_lit() {
+fn a_rule_for_every_slider_fill_needs_a_lit_rule_to_keep_the_swing_lit() {
     let mut h = arrangement_app();
     let general = format!("slider-fill {{ background-color: {}; }}", hex(odd(95)));
-    assert_eq!(count_with(&mut h, &general, odd(95)), 0, "the lit swing keeps its fill");
+    assert_eq!(count_with(&mut h, &general, odd(95)), 1, "the lit swing takes the rule too");
     let lit = format!("{general} slider[checked] slider-fill {{ background-color: {}; }}", hex(odd(96)));
     assert_eq!(count_with(&mut h, &lit, odd(96)), 1, "a rule for the lit slider's fill reaches it");
+    assert_eq!(count_with(&mut h, &lit, odd(95)), 0, "and it leaves the general rule");
 }
 
 /// The demo with Walk on Bass picked in the Launcher: its MIDI clip's panel, its follow action and
@@ -929,34 +944,37 @@ fn the_control_bar_s_words_and_switches_take_their_own_rules() {
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
 }
 
-/// A rule for every `button` does not hide which of the toolbar's switches is on: the computer
-/// keyboard keeps its lit fill while it plays, its unlit self takes the rule's (#1440).
+/// A rule for every `button` is the toolbar's lit switch's too until the theme states the lit look:
+/// the computer keyboard takes the lit rule's fill while it plays (#1449).
 #[test]
-fn a_rule_for_every_button_keeps_the_computer_keyboard_lit() {
+fn a_rule_for_every_button_needs_a_lit_rule_to_keep_the_computer_keyboard_lit() {
     let mut h = window(demo_app());
-    let css = format!("button {{ background-color: {}; }}", hex(odd(124)));
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.clone().into()));
-    for _ in 0..4 {
-        h.step();
-    }
-    let unlit = fills_at(&h, h.get_by_label("Computer keyboard").rect());
-    suhina_ui::kit::native_css::set_user_sheet(None);
+    let general = format!("button {{ background-color: {}; }}", hex(odd(124)));
+    let fills = |h: &mut Harness<'static, App>, css: &str, label: &str| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        let found = fills_at(h, h.get_by_label_contains(label).rect());
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        found
+    };
+    let unlit = fills(&mut h, &general, "Computer keyboard");
     assert!(unlit.contains(&odd(124)), "the unlit switch takes the rule: {unlit:?}");
     h.get_by_label("Computer keyboard").click();
     h.run();
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
-    for _ in 0..4 {
-        h.step();
-    }
-    let lit = fills_at(&h, h.get_by_label_contains("Computer keyboard on").rect());
-    suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(!lit.is_empty() && !lit.contains(&odd(124)), "the lit switch keeps its fill: {lit:?}");
+    let lit = fills(&mut h, &general, "Computer keyboard on");
+    assert!(lit.contains(&odd(124)), "the lit switch takes it too: {lit:?}");
+    let stated = format!("{general} button[kind=\"toggle\"][checked] {{ background-color: {}; }}", hex(odd(127)));
+    let lit = fills(&mut h, &stated, "Computer keyboard on");
+    assert!(lit.contains(&odd(127)) && !lit.contains(&odd(124)), "its lit rule lights it: {lit:?}");
 }
 
-/// A rule for every `button` does not hide which tracks are on: a track's on switch, in the
-/// Arrangement's header and in the mixer strip, keeps its lit fill (#1440).
+/// A theme's rule for every `button` is a track's on switch's too, lit or not, until the theme
+/// states the lit look: its rule for `button[kind="toggle"][checked]` lights the switches of the
+/// tracks that are on, in the Arrangement's header and in the mixer strip (#1449).
 #[test]
-fn a_rule_for_every_button_keeps_a_track_s_on_switch_lit() {
+fn a_rule_for_every_button_needs_a_lit_rule_to_keep_a_track_s_on_switch_lit() {
     for view in [None, Some("Arrangement view")] {
         let mut h = window(demo_app());
         if let Some(view) = view {
@@ -965,16 +983,24 @@ fn a_rule_for_every_button_keeps_a_track_s_on_switch_lit() {
         }
         h.get_by_label("Turn Keys off").click();
         h.run();
-        let css = format!("button {{ background-color: {}; }}", hex(odd(125)));
-        suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
-        for _ in 0..4 {
-            h.step();
-        }
-        let lit = fills_at(&h, h.get_by_label("Turn Drums off").rect());
-        let off = fills_at(&h, h.get_by_label("Turn Keys on").rect());
-        suhina_ui::kit::native_css::set_user_sheet(None);
-        assert!(!lit.is_empty() && !lit.contains(&odd(125)), "{view:?}: a track that is on keeps its fill: {lit:?}");
+        let fills = |h: &mut Harness<'static, App>, css: String| {
+            suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+            for _ in 0..4 {
+                h.step();
+            }
+            let lit = fills_at(h, h.get_by_label("Turn Drums off").rect());
+            let off = fills_at(h, h.get_by_label("Turn Keys on").rect());
+            suhina_ui::kit::native_css::set_user_sheet(None);
+            (lit, off)
+        };
+        let general = format!("button {{ background-color: {}; }}", hex(odd(125)));
+        let (lit, off) = fills(&mut h, general.clone());
+        assert!(lit.contains(&odd(125)), "{view:?}: the rule is a lit switch's too: {lit:?}");
         assert!(off.contains(&odd(125)), "{view:?}: a track that is off takes the rule: {off:?}");
+        let stated = format!("{general} button[kind=\"toggle\"][checked] {{ background-color: {}; }}", hex(odd(126)));
+        let (lit, off) = fills(&mut h, stated);
+        assert!(lit.contains(&odd(126)) && !lit.contains(&odd(125)), "{view:?}: its lit rule lights it: {lit:?}");
+        assert!(off.contains(&odd(125)), "{view:?}: a track that is off keeps the rule: {off:?}");
     }
 }
 
@@ -1159,21 +1185,28 @@ fn under<R>(h: &mut Harness<'static, App>, css: String, read: impl FnOnce(&Harne
     out
 }
 
-/// A rule for every `list-row` does not hide the picked row of a floating list: the picked one
-/// keeps its own ink, the others take the rule's (#1440 review).
+/// A rule for every `list-row` is the picked row's too until the theme states the picked one's:
+/// its rule for `list-row[selected]` gives that row its own ink (#1449).
 #[test]
-fn a_rule_for_every_list_row_keeps_the_picked_row_lit() {
+fn a_rule_for_every_list_row_needs_a_selected_rule_to_keep_the_picked_row_lit() {
     let mut h = window(demo_app());
     h.key_press_modifiers(Modifiers::COMMAND, Key::P);
     h.run();
-    let css = format!("list-row {{ color: {}; }}", hex(odd(150)));
-    let (picked, other) = under(&mut h, css, |h| {
-        let rows = h.query_all_by_label_contains("Add ").collect::<Vec<_>>();
-        assert!(rows.len() >= 2, "the list shows rows");
-        (inks_in(h, rows[0].rect()), inks_in(h, rows[1].rect()))
-    });
-    assert!(!picked.contains(&odd(150)), "the picked row keeps its ink: {picked:?}");
+    let general = format!("list-row {{ color: {}; }}", hex(odd(150)));
+    let rows = |h: &mut Harness<'static, App>, css: String| {
+        under(h, css, |h| {
+            let rows = h.query_all_by_label_contains("Add ").collect::<Vec<_>>();
+            assert!(rows.len() >= 2, "the list shows rows");
+            (inks_in(h, rows[0].rect()), inks_in(h, rows[1].rect()))
+        })
+    };
+    let (picked, other) = rows(&mut h, general.clone());
+    assert!(picked.contains(&odd(150)), "the picked row takes the rule too: {picked:?}");
     assert!(other.contains(&odd(150)), "an other row takes the rule: {other:?}");
+    let stated = format!("{general} list-row[selected] {{ color: {}; }}", hex(odd(151)));
+    let (picked, other) = rows(&mut h, stated);
+    assert!(picked.contains(&odd(151)) && !picked.contains(&odd(150)), "the picked row's own rule: {picked:?}");
+    assert!(other.contains(&odd(150)), "an other row keeps the rule: {other:?}");
 }
 
 /// A rule for every `editor-tab` does not make the shown start tab look like the other: it keeps
@@ -1358,4 +1391,73 @@ fn a_theme_rule_beats_the_base_sheet_s_less_specific_or_layered() {
 fn a_mixer_s_text_value_variable_reaches_a_field_in_the_mixer() {
     let mut h = window(demo_app());
     assert_eq!(missing(&mut h, &[("mixer", "--text-value", odd(132))]), Vec::<String>::new());
+}
+
+/// A theme's rule beats each rule the base sheet gives the shared controls, whatever its
+/// specificity: one rule for each element, and its colour is painted (#1449).
+#[test]
+fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
+    let mut h = lit_drums();
+    let rules = [
+        ("button", "background-color", odd(141)),
+        ("button[kind=\"solo\"][checked]", "background-color", odd(142)),
+        ("button[kind=\"arm\"][checked]", "background-color", odd(143)),
+        ("label[kind=\"hint\"]", "color", odd(144)),
+        ("label[kind=\"caption\"]", "color", odd(145)),
+        ("separator[kind=\"column\"]", "color", odd(147)),
+    ];
+    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
+    // The less specific rules too: a rule for the element beats the base sheet's for its kind.
+    let general = [("label", "color", odd(148)), ("button", "color", odd(149))];
+    assert_eq!(missing(&mut h, &general), Vec::<String>::new());
+}
+
+/// A built-in theme with a rule for every `button` still shows which track buttons are on: Suhina
+/// Meadow, Blocks and Sheet state the lit look their rule for every button would hide (#1449).
+#[test]
+fn a_built_in_theme_with_a_rule_for_every_button_still_shows_its_lit_buttons() {
+    for id in ["suhina-meadow", "suhina-blocks", "suhina-sheet"] {
+        let mut h = lit_drums();
+        let ctx = h.ctx.clone();
+        h.state_mut().use_theme(&ctx, id);
+        for _ in 0..4 {
+            h.step();
+        }
+        for (lit, unlit) in [
+            ("End solo on Drums", "Solo Keys"),
+            ("Stop cueing Drums", "Cue Keys on the headphones"),
+            ("Disarm Drums", "Arm Keys for recording"),
+        ] {
+            // What is painted exactly over the button: a fill, or the artwork a fill is drawn in.
+            let faces = |label: &str| {
+                let rect = h.get_by_label(label).rect();
+                let mut found = Vec::new();
+                for shape in &h.output().shapes {
+                    if let egui::Shape::Rect(shape) = &shape.shape
+                        && (shape.rect.min - rect.min).length() < 0.5
+                        && (shape.rect.max - rect.max).length() < 0.5
+                    {
+                        found.push(format!(
+                            "{:?} {:?}",
+                            shape.fill,
+                            shape.brush.as_ref().map(|brush| brush.fill_texture_id)
+                        ));
+                    }
+                }
+                found
+            };
+            let (lit_faces, unlit_faces) = (faces(lit), faces(unlit));
+            assert!(!lit_faces.is_empty() && !unlit_faces.is_empty(), "{id}: both are painted");
+            assert_ne!(lit_faces, unlit_faces, "{id}: {lit} shows it is on");
+        }
+    }
+}
+
+/// Colouring a region goes through its variables: `window { --text-hint: … }` reaches every hint
+/// word inside it, and a toggle's dim words, which the base sheet colours with the same variable
+/// (#1449).
+#[test]
+fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
+    let mut h = lit_drums();
+    assert_eq!(missing(&mut h, &[("window", "--text-hint", odd(151))]), Vec::<String>::new());
 }

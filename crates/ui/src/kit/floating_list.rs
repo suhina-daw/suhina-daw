@@ -95,9 +95,8 @@ pub fn show(
                 let height = (look.row_height + spacing) * look.visible_rows.max(1) as f32;
                 // `list-row` (`[selected]` for the picked one): its `color`, and the tags' hint.
                 use super::element::{LIST_ROW, Selected};
-                let plain = LIST_ROW.probe();
-                let picked_ink = LIST_ROW.attr(Selected, true).look().color_unlike(&plain, theme::text_primary());
-                let other_ink = LIST_ROW.look().color_or(theme::text_secondary());
+                let picked_ink = LIST_ROW.attr(Selected, true).look().color();
+                let other_ink = LIST_ROW.look().color();
                 let hint = super::element::hint_ink();
                 egui::ScrollArea::vertical()
                     .id_salt(id.with("rows"))

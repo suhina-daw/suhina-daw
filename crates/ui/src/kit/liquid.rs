@@ -652,11 +652,7 @@ pub fn paint(painter: &Painter, rect: Rect, el: &super::element::Entered, base: 
         painter.rect_stroke(
             rect,
             0.0,
-            theme::hairline(motion::mix(
-                base,
-                super::element::LABEL.probe().color_or(super::theme::text_primary()),
-                0.12 * strength,
-            )),
+            theme::hairline(motion::mix(base, super::element::LABEL.probe().color(), 0.12 * strength)),
             StrokeKind::Inside,
         );
     }

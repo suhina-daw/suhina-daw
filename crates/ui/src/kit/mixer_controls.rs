@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Shared Launcher and Arrangement channel control faces; interaction belongs to each view.
-use super::element::{Entered, Native};
+use super::element::{Entered, Look, Native};
 use super::{motion, theme, widgets};
 use egui::{Align2, Color32, Pos2, Rect, Vec2};
 
@@ -17,24 +17,24 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, el: &Entered, pan: f64, ho
     }
     // The native look: a flat field with centre ticks and a thin bar along its bottom.
     // `pan` and `#mixer-pan` colour it as well: the theme's background, border and text.
-    let fill = motion::mix(theme::pan_background(), theme::panel_hover(), hover);
+    let fill = el.hover_fade(hover, Look::background);
     el.paint_with(painter, rect, Native { radius: 0.0, fill });
     let centre = rect.center().x.round() - 0.5;
     // The centre's ticks are `pan-centre`, the bar from the centre the pan's `value-fill`.
-    let tick = theme::hairline(super::element::PAN_CENTRE.look().own_color_or(theme::pan_centre()));
+    let tick = theme::hairline(super::element::PAN_CENTRE.look().color());
     painter.vline(centre, egui::Rangef::new(rect.top(), rect.top() + 2.0), tick);
     painter.vline(centre, egui::Rangef::new(rect.bottom() - 2.0, rect.bottom()), tick);
     let to = rect.center().x + rect.width() / 2.0 * pan.clamp(-1.0, 1.0) as f32;
     let bar =
         Rect::from_min_max(Pos2::new(centre.min(to), rect.bottom() - 2.0), Pos2::new(centre.max(to), rect.bottom()));
-    painter.rect_filled(bar, 0.0, super::element::VALUE_FILL.look().background_or(theme::control_selected()));
+    painter.rect_filled(bar, 0.0, super::element::VALUE_FILL.look().background());
     widgets::text_in(
         painter,
         rect,
         Align2::CENTER_CENTER,
         &widgets::format_pan(pan),
         theme::mono_font(theme::TEXT_SMALL),
-        el.color_or(theme::text_primary()),
+        el.color(),
     );
 }
 
@@ -73,7 +73,8 @@ pub fn level_bar(
     let state = if hover > 0.5 { State::Hover } else { State::Normal };
     let height = el.thickness_or(rect.height()).clamp(1.0, rect.height());
     let track = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), height));
-    let back = motion::mix(theme::control_background(), theme::control_hover(), hover);
+    // The track as a bar: `pan[kind="bar"]`, `value[kind="bar"]`.
+    let back = bar_fade(el, hover);
     // The track's artwork takes the control's `background-color` where the sheet gives one.
     let radius = if skin::has_own(&format!("{kind}.track"))
         && skin::paint(painter, track, &format!("{kind}.track"), state, el.background_or(back), 0.0)
@@ -86,7 +87,7 @@ pub fn level_bar(
     let filled = Rect::from_min_max(Pos2::new(x(span.0), track.top()), Pos2::new(x(span.1), track.bottom()));
     let fill = {
         let fill_el = super::element::VALUE_FILL.enter();
-        let fill = fill_el.background_or(theme::control_selected());
+        let fill = fill_el.background();
         if filled.width() > 0.0 {
             let fill_height = fill_el.thickness_or(height).clamp(1.0, rect.height());
             let bar = Rect::from_center_size(track.center(), Vec2::new(track.width(), fill_height));
@@ -115,7 +116,7 @@ pub fn level_bar(
                 Vec2::new(width.min(rect.width()), handle_el.thickness_or(rect.height()).min(rect.height())),
             );
             if !(skin::has_own(&role) && skin::paint(painter, handle, &role, state, fill, 0.0)) {
-                handle_el.paint_with(painter, handle, Native { radius: 2.0, fill: theme::text_primary() });
+                handle_el.paint_with(painter, handle, Native { radius: 2.0, fill: handle_el.background() });
             }
         }
     }
@@ -133,8 +134,7 @@ pub fn level_bar(
     if track.height() < font.size {
         let above = Rect::from_min_max(inner.min, Pos2::new(inner.right(), track.top()));
         if above.height() >= font.size {
-            let ink = el.color_or(theme::text_primary());
-            widgets::text_in(painter, above, align, text, font, ink);
+            widgets::text_in(painter, above, align, text, font, el.color());
         }
         return;
     }
@@ -160,11 +160,11 @@ pub fn level_bar(
             align,
             text,
             font.clone(),
-            el.color_or(theme::text_primary()),
+            el.color(),
         );
     }
     let on_fill = lit_ink.unwrap_or_else(|| {
-        if fill.a() > 0 && height >= rect.height() * 0.6 { theme::text_on(fill) } else { theme::text_primary() }
+        if fill.a() > 0 && height >= rect.height() * 0.6 { theme::text_on(fill) } else { el.color() }
     });
     widgets::text_in(
         &painter.with_clip_rect(painter.clip_rect().intersect(filled.with_min_y(rect.top()).with_max_y(rect.bottom()))),
@@ -195,7 +195,7 @@ pub fn send_field(
         Pos2::new(rect.left() + 4.0, rect.bottom() - 3.0),
         Pos2::new(rect.right() - 4.0, rect.bottom() - 1.5),
     );
-    let quiet = motion::mix(el.background_or(theme::control_background()), pointer, 0.25);
+    let quiet = motion::mix(el.background(), pointer, 0.25);
     painter.rect_filled(rail, 1.0, quiet);
     let level = Rect::from_min_size(rail.min, Vec2::new(rail.width() * position.clamp(0.0, 1.0), rail.height()));
     if level.width() >= 1.0
@@ -226,7 +226,7 @@ pub fn send_field(
             Align2::LEFT_CENTER,
             letter,
             theme::mono_font(theme::TEXT_SMALL),
-            super::element::LABEL.look().color_or(theme::text_hint()),
+            super::element::hint_ink(),
         );
         widgets::text_in(
             painter,
@@ -243,26 +243,28 @@ pub fn send_field(
 }
 
 /// The colour of a fader cap's artwork (its `currentColor`): the computed colour of `el`, the
-/// `fader-cap` in `state`, which the palette's tier gives (`native_css::native::PART_COLOURS`);
-/// where no sheet styles the window, the same: the control colour lit a little by the values' text.
-pub fn cap_ink(el: &super::element::Entered, state: super::skin::State) -> Color32 {
-    let lit = matches!(state, super::skin::State::Hover | super::skin::State::Active);
-    el.computed_color_or(motion::mix(
-        if lit { theme::control_hover() } else { theme::control_background() },
-        theme::text_value(),
-        0.28,
-    ))
+/// `fader-cap` in `state`, which the base sheet gives (the control colour lit a little by the
+/// values' text) unless a theme does.
+pub fn cap_ink(el: &super::element::Entered, _state: super::skin::State) -> Color32 {
+    el.color()
 }
 
 /// The control colour darkened into a recess: a fader rail's colour where a theme gives none.
 pub fn recess() -> Color32 {
-    motion::mix(theme::control_background(), Color32::BLACK, 0.65)
+    super::element::FADER_RAIL.look().color()
 }
 
 /// The colour of a fader rail's artwork (its `currentColor`): the computed colour of `el`, the
-/// `fader-rail`, which the palette's tier gives; where no sheet styles the window, [`recess`].
+/// `fader-rail`, which the base sheet gives unless a theme does.
 pub fn rail_ink(el: &super::element::Entered) -> Color32 {
-    el.computed_color_or(recess())
+    el.color()
+}
+
+/// The `background-color` of `el`'s level bar, a track: `el`'s kind with `kind="bar"`, `hover`
+/// (0 to 1) of the way from its resting colour to the one under the pointer.
+fn bar_fade(el: &Entered, hover: f32) -> Color32 {
+    let (rest, hot) = el.name().attribute("kind", "bar").hover_ends(hover);
+    motion::mix(rest.background(), hot.background(), hover)
 }
 
 /// A tactile vertical fader cap, drawn as `response`'s widget. Its centre marker, rather than its
@@ -277,8 +279,8 @@ pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, response: &egui
     // Without artwork: the cap's own `color` where a rule gives it one (not the palette tier's),
     // shaded lighter and darker; else the control colour lit a little by the values' text.
     let own = el.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
-    let base = own.unwrap_or_else(|| motion::mix(theme::control_background(), theme::control_hover(), hover));
-    let face = own.unwrap_or_else(|| motion::mix(base, theme::text_value(), 0.28));
+    let base = own.unwrap_or_else(|| el.hover_fade(hover, Look::background));
+    let face = own.unwrap_or_else(|| el.hover_fade(hover, Look::color));
     let light = motion::mix(face, theme::text_on(face), 0.32);
     let dark = motion::mix(base, Color32::BLACK, 0.55);
     painter.rect_filled(cap.translate(Vec2::new(1.0, 2.0)), 3.0, Color32::from_black_alpha(100));

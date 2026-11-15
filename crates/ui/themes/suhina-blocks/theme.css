@@ -57,15 +57,38 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
     background-image: repeating-linear-gradient(0deg, color-mix(in oklab, var(--ground), black 13.6%) 0 2px, color-mix(in oklab, color-mix(in oklab, var(--ground), var(--ink) 0.3%), var(--highlight) 11.2%) 2px 4px, color-mix(in oklab, var(--ground), var(--highlight) 3.1%) 4px 23px, #49301E 23px 25px);
   }
   application-bar, menu-bar, project-tabs, toolbar, status-bar {
-    color: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 97.3%), white 9.4%);
+    color: var(--text-primary);
+    /* The parts inside take the bars' text colour through its variables too. */
+    --text-primary: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 97.3%), white 9.4%);
+    --text-secondary: var(--text-primary);
+    --text-hint: var(--text-primary);
+    --text-value: var(--text-primary);
+    --text-inverse: var(--text-primary);
+    --browser-text-primary: var(--text-primary);
+    --browser-text-secondary: var(--text-primary);
+    --browser-text-value: var(--text-primary);
+    --text-onColorDark: var(--text-primary);
+    --text-onColorLight: var(--text-primary);
     background: linear-gradient(color-mix(in oklab, var(--stone), var(--ink) 7.8%), color-mix(in oklab, var(--stone), black 17.6%) 48%, color-mix(in oklab, color-mix(in oklab, var(--ink), var(--tint) 4.8%), black 66.1%));
-    border-color: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 17%), white 32.8%);
+    border-color: var(--border);
+    --border: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 17%), white 32.8%);
+    --border-strong: var(--border);
   }
   browser {
     background-color: #6A472F;
     background-image: repeating-linear-gradient(90deg, color-mix(in srgb, black 9.41%, transparent) 0 3px, transparent 3px 9px),
                       repeating-linear-gradient(0deg, color-mix(in srgb, #F4D09C 6.27%, transparent) 0 2px, transparent 2px 8px);
-    color: #F1DFBA;
+    color: var(--text-primary);
+    --text-primary: #F1DFBA;
+    --text-secondary: var(--text-primary);
+    --text-hint: var(--text-primary);
+    --text-value: var(--text-primary);
+    --text-inverse: var(--text-primary);
+    --browser-text-primary: var(--text-primary);
+    --browser-text-secondary: var(--text-primary);
+    --browser-text-value: var(--text-primary);
+    --text-onColorDark: var(--text-primary);
+    --text-onColorLight: var(--text-primary);
   }
   detail, device-panel {
     background-color: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--ink) 5.8%), var(--highlight) 10.7%);
@@ -83,9 +106,16 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
     --text-onColorLight: var(--text-primary);
   }
   mixer { box-shadow: inset 1px 0 0 color-mix(in srgb, #F6E7BA 13.33%, transparent), inset -1px 0 0 color-mix(in oklab, var(--surface), black 46.3%); }
-  button { color: color-mix(in oklab, var(--ink), var(--highlight) 8.1%); background-color: var(--stone); border-color: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 54%), var(--tint) 6.5%); border-radius: 0px; }
-  button:hover { color: #FAFFB8; background-color: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 25.8%), white 21.3%); border-color: #D2CD77; }
-  value, dropdown, text-input { color: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--ink) 97.7%), var(--highlight) 29.7%); background-color: color-mix(in oklab, color-mix(in oklab, var(--highlight), white 33.7%), black 68%); border-radius: 0px; }
+  button { color: var(--text-primary); --text-primary: color-mix(in oklab, var(--ink), var(--highlight) 8.1%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: var(--stone); border-color: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 54%), var(--tint) 6.5%); border-radius: 0px; }
+  button:hover { color: var(--text-primary); --text-primary: #FAFFB8; --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 25.8%), white 21.3%); border-color: #D2CD77; }
+  /* The lit fills of the toggles (Suhina's base sheet gives them, and this theme's rule for every
+     `button` overrides them: state them again). The text stays the button's. */
+  button[kind="toggle"][checked] { background-color: var(--control-selectedBackground); }
+  button[kind="toggle"][checked]:hover { background-color: color-mix(in srgb, var(--control-selectedBackground), white 20%); }
+  button[kind="solo"][checked] { background-color: var(--accent); }
+  button[kind="arm"][checked] { background-color: var(--recording-background); color: var(--recording); }
+  value, dropdown, dropdown-arrow, text-input { color: var(--text-primary); --text-primary: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--ink) 97.7%), var(--highlight) 29.7%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: color-mix(in oklab, color-mix(in oklab, var(--highlight), white 33.7%), black 68%); border-radius: 0px; }
+  text-input[kind="typed"] { background-color: var(--control-activeBackground); color: var(--text-value); }
   knob { color: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--ink) 81.9%), var(--highlight) 58.1%); background-color: var(--stone); }
   fader-scale { color: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--highlight) 86.6%), white 45%); }
   meter { background-color: color-mix(in oklab, color-mix(in oklab, var(--stone), var(--tint) 34.9%), black 63.3%); }

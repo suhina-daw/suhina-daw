@@ -344,6 +344,20 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// The element's [`Look`] at rest and under the pointer (`:hover`), for a fade from one to the
+    /// other that is `amount` of the way (0 none, 1 all): looked up as comparisons
+    /// ([`Builder::probe`]), the hovered one only while there is some hover to show (else the
+    /// resting one again). The builder is given no response, which would say where the pointer is.
+    pub fn hover_ends(self, amount: f32) -> (Look, Look) {
+        let rest = self.clone().pointer(false, false, false).probe();
+        if amount.is_finite() && amount > 0.0 {
+            let hot = self.pointer(true, false, false).probe();
+            (rest, hot)
+        } else {
+            (rest.clone(), rest)
+        }
+    }
+
     /// The [`Look`] of every drawn item of this kind: looked up once, outside the loop that draws
     /// them, so a line drawn a hundred times is one element of the style tree.
     pub fn look(self) -> Look {
@@ -388,6 +402,21 @@ impl Look {
     /// The item's computed `accent-color` ([`Look::color`]).
     pub fn accent(&self) -> Color32 {
         self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::accent)
+    }
+
+    /// The item's `color`, where a theme's rule gives it one (the base sheet's does not count).
+    pub fn themed_color(&self) -> Option<Color32> {
+        self.0.as_ref().filter(|s| s.authored.color).map(|s| s.color)
+    }
+
+    /// The item's `background-color`, where a theme's rule gives it one.
+    pub fn themed_background(&self) -> Option<Color32> {
+        self.0.as_ref().filter(|s| s.authored.background).map(|s| s.background)
+    }
+
+    /// The item's `border-color`, where a theme's rule gives it one.
+    pub fn themed_border(&self) -> Option<Color32> {
+        self.0.as_ref().filter(|s| s.authored.border).map(|s| s.border)
     }
 
     /// The item's own `color`, where a rule on the item sets one; else `token`. A line or a mark
@@ -753,6 +782,29 @@ impl Entered {
         Look(self.style())
     }
 
+    /// The element's [`Look`] as if the pointer were over it (`hovered`) or not, whatever it is
+    /// now: what a fade between its two states starts and ends at.
+    pub fn look_hovered(&self, hovered: bool) -> Look {
+        Look(super::native_css::probe_hovered(self.scope.node, hovered))
+    }
+
+    /// A colour of the element `amount` (0 to 1) of the way from its resting style to its hovered
+    /// one (`:hover`), `read` out of each ([`Look::background`], [`Look::color`]): the fade an
+    /// animated hover draws. The element's own style is one end where it is in that state, so a
+    /// control at rest, or fully hovered, looks the other end up only while it fades.
+    pub fn hover_fade(&self, amount: f32, read: impl Fn(&Look) -> Color32) -> Color32 {
+        let amount = if amount.is_finite() { amount.clamp(0.0, 1.0) } else { 0.0 };
+        let now = super::native_css::node_hovered(self.scope.node);
+        let end = |hovered: bool| if hovered == now { self.look() } else { self.look_hovered(hovered) };
+        if amount <= 0.0 {
+            return read(&end(false));
+        }
+        if amount >= 1.0 {
+            return read(&end(true));
+        }
+        super::motion::mix(read(&end(false)), read(&end(true)), amount)
+    }
+
     /// The element's corner radius, or `fallback` where the sheet sets none.
     pub fn radius_or(&self, fallback: f32) -> f32 {
         self.style().filter(|s| s.authored.radius).map_or(fallback, |s| s.radius)
@@ -843,48 +895,42 @@ fn shrink(rect: Rect, [top, right, bottom, left]: [f32; 4]) -> Rect {
     if inner.is_positive() { inner } else { Rect::from_center_size(inner.center(), egui::Vec2::ZERO) }
 }
 
-/// A line between a view's rows or parts: `separator[kind="row"]`'s own `color`, else the
-/// palette's border.
+/// A line between a view's rows or parts: `separator[kind="row"]`'s `color`.
 pub(crate) fn row_line() -> Color32 {
-    SEPARATOR.attribute("kind", "row").look().own_color_or(crate::kit::theme::border())
+    SEPARATOR.attribute("kind", "row").look().color()
 }
 
-/// Dim words (a device's kind, an empty area's note, a heading's rule): `label[kind="hint"]`'s own
-/// `color`, else the palette's hint. Its own, not inherited: a colour a theme gives a whole view
-/// keeps them dimmer than the text beside them.
+/// Dim words (a device's kind, an empty area's note, a heading's rule): `label[kind="hint"]`'s
+/// `color`. Its own, not inherited: a colour a theme gives a whole view keeps them dimmer than the
+/// text beside them.
 pub(crate) fn hint_ink() -> Color32 {
-    LABEL.attribute("kind", "hint").look().own_color_or(crate::kit::theme::text_hint())
+    LABEL.attribute("kind", "hint").look().color()
 }
 
-/// A control's name over it, a figure's name: `label[kind="caption"]`'s own `color`, else the
-/// palette's secondary text. Its own, as a hint's: a colour a theme gives the whole view keeps it
-/// apart from the values.
+/// A control's name over it, a figure's name: `label[kind="caption"]`'s `color`. Its own, as a
+/// hint's: a colour a theme gives the whole view keeps it apart from the values.
 pub(crate) fn caption_ink() -> Color32 {
-    LABEL.attribute("kind", "caption").look().own_color_or(crate::kit::theme::text_secondary())
+    LABEL.attribute("kind", "caption").look().color()
 }
 
-/// A panel's title, such as a clip's name or a dialog's: `label[kind="title"]`'s `color`,
-/// inherited from the panel's too, else the palette's primary text.
+/// A panel's title, such as a clip's name or a dialog's: `label[kind="title"]`'s `color`.
 pub(crate) fn title_ink() -> Color32 {
-    LABEL.attribute("kind", "title").look().color_or(crate::kit::theme::text_primary())
+    LABEL.attribute("kind", "title").look().color()
 }
 
-/// A figure or a value shown as words, not a field: `label[kind="value"]`'s `color`, inherited
-/// from the view's too, else the palette's value text.
+/// A figure or a value shown as words, not a field: `label[kind="value"]`'s `color`.
 pub(crate) fn value_ink() -> Color32 {
-    LABEL.attribute("kind", "value").look().color_or(crate::kit::theme::text_value())
+    LABEL.attribute("kind", "value").look().color()
 }
 
-/// Words that say something went wrong: `label[kind="error"]`'s own `color`, else the palette's
-/// recording red.
+/// Words that say something went wrong: `label[kind="error"]`'s `color`.
 pub(crate) fn error_ink() -> Color32 {
-    LABEL.attribute("kind", "error").look().own_color_or(crate::kit::theme::recording())
+    LABEL.attribute("kind", "error").look().color()
 }
 
-/// A name or a line of text: `label`'s `color`, inherited from the view's too, else the palette's
-/// primary text.
+/// A name or a line of text: `label`'s `color`.
 pub(crate) fn name_ink() -> Color32 {
-    LABEL.look().color_or(crate::kit::theme::text_primary())
+    LABEL.look().color()
 }
 
 /// The registry's element named `name`, for code that has a name at run time.
@@ -1025,6 +1071,7 @@ names! {
     SLIDER_FILL = "slider-fill";
     SLIDER_HANDLE = "slider-handle";
     BUTTON = "button";
+    TOGGLE = "toggle";
     VALUE = "value";
     VALUE_FILL = "value-fill";
     VALUE_HANDLE = "value-handle";
@@ -1038,6 +1085,7 @@ names! {
     KNOB = "knob";
     KNOB_BODY = "knob-body";
     KNOB_POINTER = "knob-pointer";
+    KNOB_RING = "knob-ring";
     ICON = "icon";
     METER = "meter";
     METER_LEVEL = "meter-level";
@@ -1045,6 +1093,7 @@ names! {
     METER_VERTICAL = "meter-vertical";
     METER_HORIZONTAL = "meter-horizontal";
     DROPDOWN = "dropdown";
+    DROPDOWN_ARROW = "dropdown-arrow";
     TEXT_INPUT = "text-input";
     SCROLL_BAR = "scroll-bar";
     LABEL = "label";

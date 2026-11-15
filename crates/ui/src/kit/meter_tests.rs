@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::kit::element::test_el;
+use crate::kit::theme;
 
 #[test]
 #[ignore = "manual performance comparison; run without a simultaneous interactive test"]

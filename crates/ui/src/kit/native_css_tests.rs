@@ -53,7 +53,7 @@ fn native_gradients_publish_every_layer_and_their_end_colours() {
 #[test]
 fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
     let rgba = Color32::from_rgba_unmultiplied;
-    prepare(
+    prepare_bare(
         "button { color:#123456; background-color:#abcdef80; border-color:currentColor; border-radius:4px; opacity:.7; }",
         800.0,
     );
@@ -76,7 +76,7 @@ fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
             box_shadow: false
         }
     );
-    prepare(
+    prepare_bare(
         ":root { --ink:#2468ac; } toolbar { color:var(--ink); font-size:12px; } button { font-size:1.5em; border-radius:.25em; box-shadow:inset 0 1px 2px -1px #fff4, 1px 2px 3px currentColor; text-shadow:0 1px 1px #000a; }",
         800.0,
     );
@@ -90,7 +90,7 @@ fn native_paint_values_resolve_variables_currentcolor_em_and_media() {
     for (width, expected) in
         [(800.0, Color32::from_rgb(0x0c, 0x22, 0x38)), (600.0, Color32::from_rgb(0x65, 0x43, 0x21))]
     {
-        prepare(
+        prepare_bare(
             "toolbar { font-size:12px; color:rgba(12, 34, 56, .5); } @media (max-width:700px) { button { color:#654321; } }",
             width,
         );
@@ -148,7 +148,10 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
             sheet: 0,
         },
     ];
-    prepare("toolbar { color:#112233; } toolbar:hover { color:#445566; } #control-play { box-shadow:0 1px; }", 800.0);
+    prepare_bare(
+        "toolbar { color:#112233; } toolbar:hover { color:#445566; } #control-play { box-shadow:0 1px; }",
+        800.0,
+    );
     ENGINE.with(|engine| engine.borrow_mut().nodes = nodes.clone());
     // Nothing was painted from a style of its own, so no other frame is needed.
     assert_eq!(finish_tree(0.0), (false, false));
@@ -165,7 +168,7 @@ fn native_states_live_reload_and_compatibility_switch_keep_stable_keys() {
         "button { color:#abcdef; background-image:radial-gradient(in oklch, red, blue); }",
         "button { color:#abcdef; }",
     ] {
-        prepare(source, 800.0);
+        prepare_bare(source, 800.0);
         ENGINE.with(|engine| engine.borrow_mut().nodes = nodes.clone());
         assert_eq!(finish_tree(0.3), (false, false));
         ENGINE.with(|engine| {
@@ -416,8 +419,18 @@ fn a_colour_map_edit_reaches_the_sheet_and_the_colour_functions() {
     skin::configure(&skin::Skin::default());
 }
 fn prepare(css: &str, width: f32) {
+    prepare_with(css, width, true);
+}
+
+/// [`prepare`] with no base sheet under the theme's: for a test of what a rule alone does, such as
+/// an element inheriting a colour its region's rule gives.
+fn prepare_bare(css: &str, width: f32) {
+    prepare_with(css, width, false);
+}
+
+fn prepare_with(css: &str, width: f32, base: bool) {
     let ctx = egui::Context::default();
-    let s = skin::Skin { css: Some(Arc::from(css)), ..Default::default() };
+    let s = skin::Skin { css: Some(Arc::from(css)), base, ..Default::default() };
     skin::configure(&s);
     ctx.run_ui(
         egui::RawInput {

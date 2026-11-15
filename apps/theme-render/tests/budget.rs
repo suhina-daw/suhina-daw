@@ -53,6 +53,11 @@ use suhina_theme_render::{Subject, scenes};
 /// theme change does (2 frames, and every identity worked out afresh: 386 and 618, 398 and 630 on
 /// Windows). Before, a colour the theme's own sheet did not read reset nothing. Resetting only the
 /// styles that read the changed variable is #1456.
+///
+/// #1449 (the shared controls take their colours from the base sheet) added no node and no
+/// identity, and one style worked out the first time the pointer reaches a control whose colours
+/// fade (`hover_fresh` 0 to 1 in each scene, and one more after a colour change: 387 and 619, 399
+/// and 631 on Windows): the look it fades to is a style of its own, looked up while it fades.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -68,9 +73,9 @@ const RECORDED: [(&str, Counts); 2] = [
             theme_change_fresh: 386,
             hover_frames: 3,
             hover_style_frames: 0,
-            hover_fresh: 0,
+            hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 386,
+            colour_change_fresh: 387,
         },
     ),
     (
@@ -86,9 +91,9 @@ const RECORDED: [(&str, Counts); 2] = [
             theme_change_fresh: 618,
             hover_frames: 4,
             hover_style_frames: 0,
-            hover_fresh: 0,
+            hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 618,
+            colour_change_fresh: 619,
         },
     ),
 ];
@@ -110,9 +115,9 @@ const RECORDED: [(&str, Counts); 2] = [
             theme_change_fresh: 398,
             hover_frames: 4,
             hover_style_frames: 0,
-            hover_fresh: 0,
+            hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 398,
+            colour_change_fresh: 399,
         },
     ),
     (
@@ -128,9 +133,9 @@ const RECORDED: [(&str, Counts); 2] = [
             theme_change_fresh: 630,
             hover_frames: 4,
             hover_style_frames: 0,
-            hover_fresh: 0,
+            hover_fresh: 1,
             colour_change_frames: 2,
-            colour_change_fresh: 630,
+            colour_change_fresh: 631,
         },
     ),
 ];

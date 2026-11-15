@@ -492,7 +492,7 @@ pub const ELEMENTS: &[Element] = &[
     element("slider-fill", Part, "A slider's fill up to its value."),
     element("slider-handle", Part, "A slider's handle."),
     // Controls everywhere.
-    element("button", Control, "A button or switch; also egui's check boxes and drop-downs. A device's on switch is `#control-device-on`; an expanded panel's × `button[kind=\"close\"]` and the browser's more tags `button[kind=\"more\"]` take only a rule for their kind.")
+    element("button", Control, "A button or switch; also egui's check boxes and drop-downs. A device's on switch is `#control-device-on`; an expanded panel's × `button[kind=\"close\"]` and the browser's more tags `button[kind=\"more\"]` take only a rule for their kind. The toggles Suhina's own views draw (a track's on switch, cue, a view's switches) are `button[kind=\"toggle\"]`, solo `button[kind=\"solo\"]` and arm `button[kind=\"arm\"]`, lit with `[checked]`: their base look is dim words on the control fill, and the chosen fill and its text when lit; a rule for every `button` overrides it for the properties it sets, lit ones too, so state the lit look as well.")
         .ids(Ids::Listed { prefix: "control-", names: CONTROL_IDS })
         .attributes(&["checked", "playing", "recording", "armed", "muted", "kind"])
         .artwork(&[
@@ -507,15 +507,19 @@ pub const ELEMENTS: &[Element] = &[
             own("automation"),
             own("monitor"),
         ]),
-    element("value", Control, "A value field, such as a volume bar or a clip panel's number field.")
+    element("toggle", Drawn, "The colours of a switch its view draws itself, with no `button` of its own (a clip panel's On and Off, a device group's Mute): dim words, `[checked]` when it is on; the `button[kind=\"toggle\"]` of a switch drawn as a button is looked up the same way.")
+        .attributes(&["checked"]),
+    element("value", Control, "A value field, such as a volume bar or a clip panel's number field; drawn as a bar, its track is `value[kind=\"bar\"]`.")
         .parts(&["value-fill", "value-handle"])
+        .attributes(&["kind"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
         .settings(VALUE_SETTINGS)
         .artwork(&[own("volume.track"), own("volume.fill"), own("volume.handle")]),
     element("value-fill", Part, "The lit part of a level bar."),
     element("value-handle", Part, "The handle where a level bar's fill ends."),
-    element("pan", Control, "A pan control; drawn as a field, its centre's ticks are `pan-centre` and the bar from the centre its `value-fill`.")
+    element("pan", Control, "A pan control; drawn as a field, its centre's ticks are `pan-centre` and the bar from the centre its `value-fill`; drawn as a bar, its track is `pan[kind=\"bar\"]`.")
         .parts(&["pan-centre", "value-fill"])
+        .attributes(&["kind"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
         .settings(VALUE_SETTINGS)
         .artwork(&[
@@ -538,12 +542,14 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Prefixed("mixer-send-"))
         .settings(VALUE_SETTINGS)
         .artwork(&[own("send"), own("send.fill"), own("send.knob.body"), own("send.knob.pointer")]),
-    element("knob", Control, "A knob.")
-        .parts(&["knob-body", "knob-pointer"])
+    element("knob", Control, "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`.")
+        .parts(&["knob-body", "knob-pointer", "knob-ring"])
+        .attributes(&["kind"])
         .settings(VALUE_SETTINGS)
         .artwork(&[default_svg!("knob.body", "knob-body"), default_svg!("knob.pointer", "knob-pointer")]),
     element("knob-body", Part, "A knob's body; its artwork takes its `color`."),
     element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),
+    element("knob-ring", Part, "The disc between a dial's rim and its inner disc: its `background-color`, where the region the dial is in gives none."),
     element("icon", Part, "The symbol on a button or a track header, by its `kind` attribute (`play`, `midi`); the piano roll's tool pointer (`pointer`, its ring the `background-color`) and its magnifier (`magnifier`), a clip's colour swatch (`swatch`), a device's folder (`folder`)."),
     element("meter", Control, "A level meter.")
         .parts(&["meter-level", "meter-clip"])
@@ -555,8 +561,10 @@ pub const ELEMENTS: &[Element] = &[
     element("meter-vertical", Part, "A meter standing up, around its level."),
     element("meter-horizontal", Part, "A meter lying down, around its level."),
     element("dropdown", Control, "A drop-down menu's button; also a clip panel's lists. A routing field in a track header, which takes the colours of what it is on, is `dropdown[kind=\"subtle\"]`: only a rule for that kind reaches it.")
+        .parts(&["dropdown-arrow"])
         .attributes(&["kind"])
         .artwork(&[default_svg!("folder", "icon[kind=\"folder\"]")]),
+    element("dropdown-arrow", Part, "The arrow of a drop-down field, in its `color`; a rule for the field's `color` does not reach it."),
     element("text-input", Control, "A text field; a number typed into a value control is `text-input[kind=\"typed\"]`; the browser's fields are `#browser-search` and `#browser-new-folder`.")
         .attributes(&["kind"])
         .ids(Ids::Listed { prefix: "", names: &["browser-search", "browser-new-folder"] }),

@@ -244,6 +244,14 @@ impl Computed {
         self.variables.get(name).map(String::as_str)
     }
 
+    /// The custom property `name` (with its `--`) as a colour, when it is one.
+    pub fn colour_variable(&self, name: &str) -> Option<Color32> {
+        match suhina_style::value::Color::parse(self.variable(name)?.trim()) {
+            Ok(suhina_style::value::Color::Rgba([r, g, b, a])) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
+            _ => None,
+        }
+    }
+
     /// Whether the sheet gives the element a `box-shadow`.
     pub fn has_shadow(&self) -> bool {
         !self.shadows.is_empty()
@@ -793,9 +801,22 @@ pub(super) fn mark_node_bits(node: usize, bits: u16) {
     ENGINE.with(|engine| {
         if let Some(node) = engine.borrow_mut().nodes.get_mut(node) {
             node.state |= bits;
+            // A pointer state given outright, with no response, asks what the element looks like
+            // under the pointer: it does not put the pointer there.
+            if bits & POINTER_STATES != 0 {
+                node.state |= ASKED;
+            }
         }
     });
 }
+
+/// The bits of a node's state that say what the pointer does to it: over (1), pressed (2) and
+/// disabled (4).
+const POINTER_STATES: u16 = 0b111;
+
+/// A node's state bit for a pointer state it was asked about (`Builder::pointer`), not one the
+/// pointer is in: its ancestors are not `:hover` for it.
+const ASKED: u16 = 1 << 14;
 
 /// Gives the element of this frame's tree at `node` the attribute `name` with `value`. A
 /// duplicate name is dropped, and so is an attribute past the style tree's limit
@@ -1074,8 +1095,7 @@ fn palette_of(variables: &std::collections::BTreeMap<String, String>) -> theme::
 const FADED: [&str; 3] = ["window.background", "panel.background", "border"];
 
 /// Takes the palette's snapshot of the root's colours, when the styles reset or the window's
-/// opacity changed since the last one: the colour functions (`theme::accent()`) read it until the
-/// next. Over a backdrop the window's colours are faded, written as variables on `window` too.
+/// opacity changed since the last one: the palette's colour functions read it until the next. Over a backdrop the window's colours are faded, written as variables on `window` too.
 fn snapshot(engine: &mut Engine, opacity: f32) {
     let taken = (style_epoch(), opacity.to_bits());
     if engine.snapshot == Some(taken) || engine.native.is_none() {
@@ -1287,6 +1307,38 @@ pub(super) fn probe_style(node: Option<usize>) -> Option<Computed> {
         }
         Some(styled.computed)
     })
+}
+
+/// Whether the pointer is over the element at `node` ([`Entered::hover_fade`](super::element::Entered)).
+pub(super) fn node_hovered(node: Option<usize>) -> bool {
+    node.is_some_and(|at| ENGINE.with(|engine| engine.borrow().nodes.get(at).is_some_and(|node| node.state & 1 != 0)))
+}
+
+/// [`probe_style`] of the element at `node` as if the pointer were over it (`hovered`) or not,
+/// whatever it is now: its state's pointer bits changed for the lookup and put back. The element
+/// is the last one in the tree, so its chain is worked out afresh and no other node reads it.
+pub(super) fn probe_hovered(node: Option<usize>, hovered: bool) -> Option<Computed> {
+    let at = node?;
+    let before = ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        let chain = engine.chains.get(at).copied()?;
+        let state = engine.nodes.get(at)?.state;
+        engine.nodes.get_mut(at)?.state = if hovered { state | 1 } else { state & !0b11 };
+        *engine.chains.get_mut(at)? = 0;
+        Some((state, chain))
+    });
+    let (state, chain) = before?;
+    let style = probe_style(node);
+    ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        if let Some(node) = engine.nodes.get_mut(at) {
+            node.state = state;
+        }
+        if let Some(slot) = engine.chains.get_mut(at) {
+            *slot = chain;
+        }
+    });
+    style
 }
 
 /// The identity of `node` and of every element it is in: what its style depends on, apart from
