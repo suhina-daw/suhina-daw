@@ -248,6 +248,7 @@ fn a_new_first_beat_moves_the_notes_of_every_lane_of_a_pattern() {
     };
     let content = project.contents.iter_mut().find(|c| c.id == ContentId(1)).unwrap();
     content.lanes = vec![lane(1, 2.0), lane(2, 3.0)].into();
+    project.tracks.push(Track::new(TrackId(2), "Bass"));
     project.arrangement.lanes[0].clips[0].offset = 2.0;
     let mut session = Session::new(project);
     run(&mut session, "clip.setOrigin", json!({ "track": 1, "index": 0, "beat": 2.0 })).unwrap();
@@ -302,7 +303,9 @@ fn the_clip_edits_redo_and_refuse_malformed_parameters() {
         run(&mut session, id, params.clone()).unwrap_or_else(|e| panic!("{id}: {e}"));
         let after = session.project().clone();
         undo(&mut session);
-        assert_eq!(*session.project(), before, "{id}: undone");
+        // Ids handed out stay used after an undo (so a redo gives the same ones back).
+        let undone = Project { next_id: before.next_id, ..session.project().clone() };
+        assert_eq!(undone, before, "{id}: undone");
         run(&mut session, "edit.redo", json!({})).unwrap();
         assert_eq!(*session.project(), after, "{id}: redone");
     }

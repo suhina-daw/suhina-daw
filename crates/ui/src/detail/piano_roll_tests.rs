@@ -1365,3 +1365,23 @@ fn split_clip_cuts_a_selection_before_the_start_marker_where_the_loop_plays_it()
     let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
     assert_eq!(split.params["ats"], json!([2.0, 3.0]));
 }
+
+/// A Rows toggle is wide enough for its word whatever the toolbar's size: its icon is a square as
+/// tall as the toggle, so the width counts that, not the smaller tool icon (Fold, Scale and
+/// Highlight came out cut short on a tall toolbar).
+#[test]
+fn a_rows_toggle_fits_its_word_at_every_toolbar_height() {
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let font = theme::ui_font(theme::TEXT_SMALL);
+        for height in [12.0, 18.0, 24.0, 32.0] {
+            for word in ["Fold", "Scale", "Highlight"] {
+                let width = toolbar::row_toggle_width(ui, height, Some(word));
+                // The icon starts 3 in and the word 2 after it (`row_toggle`).
+                let room = width - (3.0 + height + 2.0);
+                assert!(room >= widgets::text_width(ui, word, font.clone()), "{word} at {height}");
+            }
+        }
+    });
+    output.textures_delta.clear();
+}
