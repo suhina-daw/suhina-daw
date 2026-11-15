@@ -316,6 +316,42 @@ fn a_rule_for_every_slot_clip_needs_a_muted_rule_to_keep_the_deactivated_clip_gr
     assert_eq!(count_with(&mut h, &fill, odd(55)), 1, "the deactivated clip takes the clips' fill");
 }
 
+/// The muted greys are variables of the base sheet: setting `--clip-mutedBackground` or
+/// `--track-headerMutedBackground` recolours a muted track's Arrangement clips and header, and a
+/// theme's own `arrangement clip[muted]` rule still wins over the variable (#1474 review).
+#[test]
+fn the_muted_grey_variables_reach_the_arrangement() {
+    let mut project = demo_project();
+    let bass = project.tracks.iter().find(|t| project.shown_track_name(t.id) == "Bass").unwrap().clone();
+    project.channel_mut(bass.channel.unwrap()).unwrap().mute = true;
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    let mut h = window(app);
+    h.get_by_label("Arrangement view").click();
+    h.run();
+    let fills = |h: &mut Harness<'static, App>, css: &str| {
+        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        for _ in 0..4 {
+            h.step();
+        }
+        let shown = (count(h, odd(57)), count(h, odd(58)), count(h, odd(59)));
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        shown
+    };
+    let variables = format!(
+        ":root {{ --clip-mutedBackground: {}; --track-headerMutedBackground: {}; }}",
+        hex(odd(57)),
+        hex(odd(58))
+    );
+    let (clips, header, _) = fills(&mut h, &variables);
+    assert!(clips > 0, "a muted track's clips take --clip-mutedBackground");
+    assert!(header > 0, "a muted track's header takes --track-headerMutedBackground");
+    let rule = format!("{variables} arrangement clip[muted] {{ background-color: {}; }}", hex(odd(59)));
+    let (clips, _, themed) = fills(&mut h, &rule);
+    assert_eq!(clips, 0, "a rule for the muted clip wins over the variable");
+    assert!(themed > 0, "the rule's own fill is drawn");
+}
+
 /// A `color` rule for every tool is the chosen tool's ink too: a theme that wants it apart states
 /// `arrangement-tool[checked]` (#1450).
 #[test]

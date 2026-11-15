@@ -1426,7 +1426,11 @@ pub(super) fn paint_clip(
     // its own colour stays only down its leading edge, and on a muted track in its name bar.
     let strength = if clip.audio { look.audio_colour_strength } else { 82 };
     let surface = super::panel_surface();
-    let body = own.background_or(clip_body(surface, rgb(clip.color), strength, off, selected));
+    // A muted clip's grey is the computed `arrangement clip[muted]` background: the base sheet's
+    // rule reads `--clip-mutedBackground`, so a theme that sets only the variable reaches it, and
+    // a theme's own rule for the clip still wins.
+    let fallback = clip_body(surface, rgb(clip.color), strength, off, selected);
+    let body = if off { own.computed_background_or(fallback) } else { own.background_or(fallback) };
     let bar_fill = name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected);
     let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never

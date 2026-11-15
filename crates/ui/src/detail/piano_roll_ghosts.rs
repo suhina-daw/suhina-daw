@@ -313,7 +313,7 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
 
 /// The colour of the ghost notes of `clip` on the track at `position`: the track's colour, or,
 /// for a clip turned off or on a muted track, the background the Arrangement draws such a clip
-/// in (a theme's `clip[muted]` rule, else the base sheet's grey), so a clip that does not
+/// in (a theme's `clip[muted]` rule, else the base sheet's `--clip-mutedBackground`), so a clip that does not
 /// sound is not taken for one that does (#1393).
 fn ghost_colour(project: &Project, position: usize, clip: &Clip) -> Color32 {
     let track = project.tracks.get(position);
@@ -321,7 +321,7 @@ fn ghost_colour(project: &Project, position: usize, clip: &Clip) -> Color32 {
     if track_muted || !clip.enabled {
         use crate::kit::element::{ARRANGEMENT, CLIP, Muted};
         let grey = crate::arrangement::arrangement_view::muted_clip_grey(false);
-        return CLIP.attr(Muted, true).probe_in(ARRANGEMENT).background_or(grey);
+        return CLIP.attr(Muted, true).probe_in(ARRANGEMENT).computed_background_or(grey);
     }
     let rgb = track.map(|track| track_colour(track, position)).unwrap_or(suhina_session::colours::MIDI);
     Color32::from_rgb(rgb.0, rgb.1, rgb.2)

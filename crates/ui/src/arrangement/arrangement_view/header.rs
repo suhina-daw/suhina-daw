@@ -277,10 +277,11 @@ pub(super) fn track_header(
         })
         .unwrap_or(egui::Color32::TRANSPARENT);
     let strength = crate::kit::style_class::theme_header_tint().unwrap_or(state.header_colour_strength);
-    // A muted track's header is the base sheet's `track-header[muted]` grey, as its clips are, not
-    // a dimmer shade of its colour (#1393); its colour stays in the band down its edge.
+    // A muted track's header is the `track-header[muted]` grey, as its clips are, not a dimmer
+    // shade of its colour (#1393); its colour stays in the band down its edge. The grey is the
+    // computed background, so `--track-headerMutedBackground` reaches it.
     let header_fill = if lane.mute {
-        muted_header_grey(selected)
+        own.computed_background_or(muted_header_grey(selected))
     } else {
         let surface = colour_surface(background, rgb(lane.color), strength);
         if selected { motion::mix(surface, crate::kit::element::name_ink(), 0.07) } else { surface }

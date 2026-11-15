@@ -457,6 +457,12 @@ impl Look {
         self.0.as_ref().filter(|s| s.authored.background).map_or(token, |s| s.background)
     }
 
+    /// The item's computed `background-color`, the base sheet's included
+    /// ([`Entered::computed_background_or`]); `fallback` only where no sheet styles the window.
+    pub fn computed_background_or(&self, fallback: Color32) -> Color32 {
+        self.0.as_ref().map_or(fallback, |s| s.background)
+    }
+
     /// The item's `border-color`, where the sheet sets one; else `token`.
     pub fn border_or(&self, token: Color32) -> Color32 {
         self.0.as_ref().filter(|s| s.authored.border).map_or(token, |s| s.border)
@@ -780,6 +786,14 @@ impl Entered {
     /// the window.
     pub fn computed_color_or(&self, fallback: Color32) -> Color32 {
         self.style().map_or(fallback, |s| s.color)
+    }
+
+    /// The element's computed `background-color`, the base sheet's included: for an element whose
+    /// look the base sheet gives through a variable (`arrangement clip[muted]` and its
+    /// `--clip-mutedBackground`), so setting the variable reaches it and a theme's own rule still
+    /// wins. `fallback` only where no sheet styles the window.
+    pub fn computed_background_or(&self, fallback: Color32) -> Color32 {
+        self.style().map_or(fallback, |s| s.background)
     }
 
     /// The element's `background-color`, or `fallback` where the sheet sets none.

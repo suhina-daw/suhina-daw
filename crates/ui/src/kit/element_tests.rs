@@ -1042,7 +1042,8 @@ fn color_unlike_ignores_what_the_plain_item_has() {
 /// grey, and a deactivated Launcher clip, outside the Arrangement, keeps the look of its own
 /// `session clip[muted]` rule (#1393 review). A base
 /// sheet rule is never authored, so a drawn element's `background_or` keeps its fallback whatever
-/// the rule says; the host reads the grey through `base_background`.
+/// the rule says: the Arrangement reads the computed background (`computed_background_or`), and
+/// `base_background` is its grey only where no sheet styles the window.
 #[test]
 fn the_muted_grey_reaches_the_arrangement_not_the_launcher() {
     use super::super::native_css::base_background;
