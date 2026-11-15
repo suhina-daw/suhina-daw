@@ -1163,3 +1163,50 @@ struct fields. It now holds them the way the style sheet does, as custom propert
 - **Old token names are dropped.** `RENAMED` is gone: `--surface-0`, `"line"` and the rest are
   reported like any name that is not a token. The former track colours and `kind.*` colours keep
   their own notices.
+
+## Amendment: the strips lay their parts out in CSS, and control placements go (2026-11-15)
+
+Accepted, from [issue #1453](https://github.com/suhina-daw/suhina-daw/issues/1453) (the layout
+point of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023)). It replaces the pixel
+offsets and anchors of controls (`skin.controls`, the `.control-*` rules, *Alternatives
+considered* › Pixel offsets from native anchors, and `suhina_style::anchor` in *Implementation
+status*) and, for the track headers, the mixer strips and the transport, decision 5's
+"rows, columns and grids that a theme reorders with `order` and turns with `layout`".
+
+- **A strip is a box tree of its parts.** A track header, a mixer strip (Main's too) and the
+  toolbar's transport lay their parts out through the bars' helper (`kit::native_css::row`,
+  *Amendment: the window is one grid* and the bars' rows of #1372), with Flexbox and Grid on
+  Taffy: the parts are the elements that paint them (`button#control-solo`, `fader#mixer-volume`,
+  `meter`, `track-name`, `track-colour`, `mixer-toggles`), in `group`s that lay them out and paint
+  nothing (`group#mixer-body`, `#mixer-level`, `#header-first`). A strip's parts are laid out by
+  their `order`; a bar's items keep the app's order.
+- **The user-agent sheet holds the layout Suhina had**, so nothing moves without a theme rule:
+  with no rule every built-in theme lays out and paints as before. Which parts a strip has room
+  for stays the app's, as a bar's giving way is: the mixer's height steps
+  (`docs/design/components.md`), a header's lines by its width and height. What the app knows
+  about the strip is an attribute the sheet reads: `mixer[narrow]` (96 points or less),
+  `mixer[kind="main"]`, `track-header[layout="short|narrow|side|stacked"]`, `[size]` and
+  `[name-first]`.
+- **Content sizes come from the app:** a fader's length, a meter's width, a button's width from
+  the strip's width, a row's height by the header's size. An `auto` size is that size plus the
+  part's padding and border; a size the sheet sets wins, as for the window's regions.
+- **One rectangle.** Painting, hit testing and the value and scroll areas read the rectangle the
+  layout gives; a part the sheet hides (`display: none`) has none, and is neither drawn nor
+  takes the pointer. A fader laid out wider than tall lies down and drags across; knobs turn
+  with an up or down drag. The mixer's dB readout is drawn and takes the pointer in the same
+  20 points over the fader (it took the strip's width before).
+- **One layout a kind.** Every strip of one kind under the same elements shares one layout: it is
+  laid out without what tells one track from another (its id, project object and `color`), and
+  kept by a hash of the sheet in use, the size, its chain and its parts, so a settled frame lays
+  nothing out and a resize or a new sheet lays out each kind once.
+- **#995's findings:** `mixer-toggles { flex-direction: column }` stacks solo, cue and arm; the
+  track-on switch with the track's number is a part of its own beside them
+  (`#control-track-on`).
+- **Removed:** `kit::control_layout`, `skin.controls` and a JSON skin's `controls`, the
+  `.control-*` rules (a selector like any other now, matching nothing), the properties `left`,
+  `top`, `right`, `bottom`, `direction` and `anchor-*`, `--suhina-direction`, `compact-below`,
+  `suhina_style::anchor`, the placement of device panels' controls (`device-NAME`; device panels
+  keep the SDK's layout until [#1009](https://github.com/suhina-daw/suhina-daw/issues/1009)) and
+  of the toolbar's modules (`toolbar-NAME`; `theme.json`'s toolbar order and offsets stay).
+  Themes are not migrated (pre-alpha): the built-in Suhina Sheet, Blocks and Meadow had their
+  mixer placements, which are now rules of their sheets (`mixer meter { order: -1 }`).
