@@ -402,14 +402,17 @@ specific selector to win over Suhina's.
   A property you do not set keeps the base sheet's value.
 - **Colour a region through its variables.** `mixer { --text-value: gold; }` reaches every part
   inside the mixer that Suhina colours with `--text-value`. A plain `mixer { color: gold; }`
-  colours only the text that has no rule of its own, not the parts the base sheet styles.
+  colours only the text that has no rule of its own: it no longer reaches buttons, value fields,
+  drop-downs, knobs, list rows and the label kinds (`hint`, `caption`, `value`, `error`), which the
+  base sheet colours with a rule of their own. Colour a region through its variables
+  (`--text-primary`, `--text-value`, `--control-background` …), or write a rule for the part.
 - **Your own sheet too.** `:root { --accent: #FF8A00; }` in `user.css` reaches everything, in
   Suhina Studio as in any theme.
 - **Shared controls.** The base sheet gives Suhina's own controls their looks: a `button` (its
   fill, text, edge and the ring while it has the keys, a step brighter under the pointer), the
-  toggles (`button[kind="toggle"]`: dim words, and when `[checked]` the chosen fill and the text on
-  it; solo, `button[kind="solo"]`, is lit in the accent, arm, `button[kind="arm"]`, in the
-  recording colours), `knob`, the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) and their
+  toggles (`button[kind="toggle"]`, and `toggle` for a switch a view draws itself: dim words, and
+  when `[checked]` the chosen fill and the text on it; solo, `button[kind="solo"]`, is lit in the
+  accent, arm, `button[kind="arm"]`, in the recording colours), `knob`, the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) and their
   `value-fill` and `value-handle`, the pan field and its `pan-centre`, `send`, the line under a
   field (`text-input`, `value`, `dropdown`), a drop-down's `dropdown-arrow`, a typed number
   (`text-input[kind="typed"]`), a slider's `slider-rail`, `slider-fill` and `slider-handle`, a
@@ -629,6 +632,7 @@ Elements, by name:
 | `device-panel`, `device-section`, `device-control`, `xy-control` | device panels; `#id` selects a device control |
 | `button`, `value`, `value-fill`, `dropdown`, `dropdown-arrow`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a drop-down's arrow keeps its own `color`, so a rule for the field's text names `dropdown-arrow` too; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` is its too, until `text-input[kind="typed"]` has its own) |
 | `button[kind="toggle"]`, `#control-solo`, `#control-cue`, `#control-arm` | a track's solo, cue and arm buttons and the other switches Suhina draws as buttons (`[kind="solo"]`, `[kind="arm"]`, `[kind="toggle"]`), `[checked]` while on (the arm `[armed]` too): a rule for every `button` (its colour or its background image) is the lit button's too, so state its lit look (`button[kind="toggle"][checked] { background-color: … }`, and for solo and arm `button[kind="solo"][checked]`, `button[kind="arm"][checked]`); under the pointer they are ringed in their `border-color`, and in their `accent-color` while they have the keys |
+| `toggle` | a switch a view draws itself, not as a button (the detail panels' switches), `[checked]` while on: its `color` and `background-color`, a step brighter under the pointer; the base sheet gives it the colours of `button[kind="toggle"]` |
 | `slider`, `slider-rail`, `slider-fill`, `slider-handle` | a slider and its parts' `background-color`; a swing amount is `slider[checked]` while it is the clip's own, its fill then the accent: a rule for every `slider-fill` is the lit one's too, so state `slider[checked] slider-fill` |
 | `menu`, `popup` | an open menu of the menu bar; a control's popup (`#metronome-level`, the metronome's level) |
 | `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob[kind="dial"]` with its rim in its `border-color`, the disc between rim and face in `knob-ring`'s `background-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |

@@ -182,6 +182,50 @@ fn one_frame<R>(ctx: &egui::Context, css: &str, mut draw: impl FnMut() -> R) -> 
     (result.unwrap(), super::super::native_css::budget().asked)
 }
 
+/// The colour of a `slot` while its `clip` is entered by `draw`, after the frames the tree takes.
+fn slot_colour_around(css: &str, mut draw: impl FnMut()) -> egui::Color32 {
+    frames(css, || {
+        let slot = SLOT.enter();
+        draw();
+        slot.style().map(|s| s.color).unwrap_or_default()
+    })
+}
+
+/// A clip entered with the pointer over it is a real hover, as `Builder::pointer(..).enter()` has
+/// always been (the Launcher's clip, #1241): the slot around it is `:hover` too, and a rule for
+/// the clip inside a hovered slot applies.
+#[test]
+fn an_entered_element_given_the_pointer_makes_its_ancestors_hover() {
+    let rgb = egui::Color32::from_rgb;
+    let css = "slot { color: #112233; } slot:hover { color: #445566; } clip { color: #102030; } \
+               slot:hover clip { color: #708090; }";
+    assert_eq!(slot_colour_around(css, || drop(CLIP.pointer(false, false, false).enter())), rgb(0x11, 0x22, 0x33));
+    assert_eq!(slot_colour_around(css, || drop(CLIP.pointer(true, false, false).enter())), rgb(0x44, 0x55, 0x66));
+    let clip = frames(css, || {
+        let _slot = SLOT.enter();
+        CLIP.pointer(true, false, false).enter().style().map(|s| s.color).unwrap_or_default()
+    });
+    assert_eq!(clip, rgb(0x70, 0x80, 0x90), "`slot:hover clip` matches");
+}
+
+/// A question about how an element looks under the pointer (`probe`, `look`, `style`) is not the
+/// pointer: the slot around it is not `:hover` for it.
+#[test]
+fn a_look_asked_for_under_the_pointer_does_not_make_its_ancestors_hover() {
+    let rgb = egui::Color32::from_rgb;
+    let css = "slot { color: #112233; } slot:hover { color: #445566; } clip:hover { color: #708090; }";
+    for ask in [
+        (|| CLIP.pointer(true, false, false).probe().color()) as fn() -> egui::Color32,
+        || CLIP.pointer(true, false, false).look().color(),
+        || CLIP.pointer(true, false, false).style().map(|s| s.color).unwrap_or_default(),
+    ] {
+        let mut asked = egui::Color32::TRANSPARENT;
+        let slot = slot_colour_around(css, || asked = ask());
+        assert_eq!(asked, rgb(0x70, 0x80, 0x90), "the hovered look is asked for");
+        assert_eq!(slot, rgb(0x11, 0x22, 0x33), "and the slot stays as it was");
+    }
+}
+
 #[test]
 fn a_state_given_in_a_frame_styles_its_element_in_that_frame() {
     let css = "button { background-color: #000000; } button:hover { background-color: #FF0000; } \

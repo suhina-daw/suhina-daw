@@ -484,7 +484,7 @@ page's (ADR 0031, amendment of 2026-11-15).
   `--browser-icon-sample`, `--browser-icon-instrument`, `--browser-icon-effect`); the sample
   map's kinds; the shared controls' section (#1449): the label kinds' inks (`label[kind="hint"]`,
   `"caption"`, `"value"`, `"error"`) and the rows' line (`separator[kind="row"]`); `button` (fill,
-  text, edge, ring, `:hover`) and the toggles, `button[kind="toggle"]` with its `[checked]` look
+  text, edge, ring, `:hover`) and the toggles, `button[kind="toggle"]` and `toggle` with their `[checked]` look
   (solo, `button[kind="solo"]`, in the accent; arm, `button[kind="arm"]`, in the recording colours);
   `knob` and `knob-ring`; the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) with
   `value-fill`, `value-handle`, the pan field (`pan`, `pan-centre`) and `send`; the fields'
@@ -501,7 +501,11 @@ page's (ADR 0031, amendment of 2026-11-15).
   still apply.
 - **Colouring a region goes through its variables.** `mixer { --text-value: gold; }` reaches every
   part inside the mixer the base sheet colours with `--text-value`. A plain `mixer { color: gold }`
-  reaches only what has no rule of its own, so it does not recolour parts the base sheet styles.
+  reaches only what has no rule of its own: it no longer reaches buttons, value fields,
+  drop-downs, knobs, list rows and the label kinds (`hint`, `caption`, `value`, `error`), which
+  the base sheet colours with a rule of their own (#1449). A theme colours a region through its
+  variables, or states a rule for the part; a theme's rule for a whole kind of element (every
+  `button`) hides the base sheet's lit and hovered looks of it, so it states those it wants.
   Until the palette goes (#1452), entering an element whose colour variables differ from its
   parent's gives the palette's readers inside it those values too.
 - **The colour functions read the variables.** `theme::accent()` and the other colour functions

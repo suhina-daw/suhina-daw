@@ -254,12 +254,21 @@ impl<'a> Builder<'a> {
         self
     }
 
-    /// Puts the element in the style tree and the palette scope until the value is dropped.
+    /// Puts the element in the style tree and the palette scope until the value is dropped. The
+    /// pointer states it was given are the pointer's: `.pointer(true, ..)` puts the pointer over
+    /// it, so its ancestors are `:hover` too.
     pub fn enter(self) -> Entered {
+        self.enter_as(false)
+    }
+
+    /// [`Builder::enter`]; `asked` says the pointer states are a question (what the element looks
+    /// like under the pointer, for a lookup), not where the pointer is: the element's ancestors
+    /// are not `:hover` for it.
+    fn enter_as(self, asked: bool) -> Entered {
         let Self { name, id, response, states, pointer, color, attributes, native, sheet } = self;
         let sheet_wake = sheet.clone();
         let scope = super::style_class::enter_inner(name, id, response, |node| {
-            super::native_css::mark_node_bits(node, pointer);
+            super::native_css::mark_node_bits(node, pointer, asked);
             for (attr, state) in STATES {
                 if states & (1 << attr as u8) != 0 {
                     super::native_css::mark_node(node, state);
@@ -286,7 +295,7 @@ impl<'a> Builder<'a> {
 
     /// The style of a drawn item: the element entered and left at once.
     pub fn style(self) -> Option<Computed> {
-        self.enter().style()
+        self.enter_as(true).style()
     }
 
     /// The [`Look`] of an element that is not drawn: what a state's rule is compared with
@@ -299,7 +308,7 @@ impl<'a> Builder<'a> {
     /// with the same key (held for a CSS transition), so a state's rule is not on both sides of
     /// the comparison.
     pub fn probe(self) -> Look {
-        let entered = self.enter();
+        let entered = self.enter_as(true);
         let node = entered.scope.node;
         let style = match node {
             Some(_) => super::native_css::probe_style(node),

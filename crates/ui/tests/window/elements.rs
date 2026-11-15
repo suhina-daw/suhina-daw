@@ -1394,32 +1394,110 @@ fn a_mixer_s_text_value_variable_reaches_a_field_in_the_mixer() {
 }
 
 /// A theme's rule beats each rule the base sheet gives the shared controls, whatever its
-/// specificity: one rule for each element, and its colour is painted (#1449).
+/// specificity: one rule for each element the sheet gives colours to, in a window that shows it,
+/// and its colour is painted (#1449). A fader's cap and a meter's level are not here: what they
+/// paint is shades worked out from the colour, not the colour, which the style tests read.
 #[test]
 fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
-    let mut h = lit_drums();
-    let rules = [
-        ("button", "background-color", odd(141)),
-        ("button[kind=\"solo\"][checked]", "background-color", odd(142)),
-        ("button[kind=\"arm\"][checked]", "background-color", odd(143)),
-        ("label[kind=\"hint\"]", "color", odd(144)),
-        ("label[kind=\"caption\"]", "color", odd(145)),
-        ("separator[kind=\"column\"]", "color", odd(147)),
+    fn audio_clip() -> Harness<'static, App> {
+        let mut h = window_with_step(audio_app(), 1.0 / 60.0);
+        h.get_by_label("Arrangement view").click();
+        h.run();
+        h.get_by_label("Clip Loop on Loop at bar 1").click();
+        h.run();
+        h
+    }
+    let mut dialog = window(demo_app());
+    dialog.state_mut().open_project_dialog(false);
+    dialog.run();
+    let mut list = window(demo_app());
+    list.key_press_modifiers(Modifiers::COMMAND, Key::P);
+    list.run();
+    type Scene = (&'static str, Harness<'static, App>, Vec<(&'static str, &'static str)>);
+    let scenes: Vec<Scene> = vec![
+        (
+            "mixer",
+            lit_drums(),
+            vec![
+                ("button", "background-color"),
+                ("button[kind=\"solo\"][checked]", "background-color"),
+                ("button[kind=\"arm\"][checked]", "background-color"),
+                ("label[kind=\"hint\"]", "color"),
+                ("label[kind=\"caption\"]", "color"),
+                ("label", "color"),
+                ("button", "color"),
+                ("value", "color"),
+                ("value-fill", "background-color"),
+                ("pan", "background-color"),
+                ("send", "background-color"),
+                ("dropdown", "color"),
+                ("dropdown", "border-color"),
+            ],
+        ),
+        (
+            "arrangement",
+            arrangement_app(),
+            vec![
+                ("value[kind=\"bar\"]", "background-color"),
+                ("slider-rail", "background-color"),
+                ("slider-fill", "background-color"),
+                ("slider-handle", "background-color"),
+            ],
+        ),
+        (
+            "clip panel",
+            walk_picked(),
+            vec![("toggle", "background-color"), ("toggle[checked]", "background-color"), ("dropdown-arrow", "color")],
+        ),
+        ("dialog", dialog, vec![("dialog", "border-color"), ("text-input", "border-color")]),
+        ("list", list, vec![("list-row", "color"), ("list-row[selected]", "color")]),
+        (
+            "audio clip",
+            audio_clip(),
+            vec![("knob", "background-color"), ("knob-ring", "background-color"), ("label[kind=\"value\"]", "color")],
+        ),
     ];
-    assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
-    // The less specific rules too: a rule for the element beats the base sheet's for its kind.
-    let general = [("label", "color", odd(148)), ("button", "color", odd(149))];
-    assert_eq!(missing(&mut h, &general), Vec::<String>::new());
+    let mut shade = 140u8;
+    for (name, mut h, rules) in scenes {
+        let rules: Vec<_> = rules
+            .into_iter()
+            .map(|(selector, property)| {
+                shade += 1;
+                (selector, property, odd(shade))
+            })
+            .collect();
+        assert_eq!(missing(&mut h, &rules), Vec::<String>::new(), "{name}");
+    }
+    // A typed number: its ring, its fill and its text.
+    let mut h = audio_clip();
+    h.get_by_label_contains("Pitch: ").click();
+    h.run();
+    h.event(egui::Event::Text("3".into()));
+    h.run();
+    let typed = [
+        ("text-input[kind=\"typed\"]", "border-color", odd(shade + 1)),
+        ("text-input[kind=\"typed\"]", "background-color", odd(shade + 2)),
+        ("text-input[kind=\"typed\"]", "color", odd(shade + 3)),
+    ];
+    assert_eq!(missing(&mut h, &typed), Vec::<String>::new(), "a typed number");
 }
 
 /// A built-in theme with a rule for every `button` still shows which track buttons are on: Suhina
-/// Meadow, Blocks and Sheet state the lit look their rule for every button would hide (#1449).
+/// Meadow, Blocks and Sheet and the Dark Gloss example state the lit look their rule for every
+/// button would hide, and the text on a lit button reads on its fill (#1449).
 #[test]
 fn a_built_in_theme_with_a_rule_for_every_button_still_shows_its_lit_buttons() {
-    for id in ["suhina-meadow", "suhina-blocks", "suhina-sheet"] {
+    let rgb = egui::Color32::from_rgb;
+    for (id, example, expected_ink) in [
+        ("suhina-meadow", None, Some(rgb(0x18, 0x2a, 0x44))),
+        ("suhina-blocks", None, Some(rgb(0xee, 0xe1, 0xc0))),
+        ("suhina-sheet", None, Some(rgb(0x28, 0x5c, 0x3d))),
+        ("suhina-studio", Some(suhina_ui::kit::theme::GLOSS_EXAMPLE), None),
+    ] {
         let mut h = lit_drums();
         let ctx = h.ctx.clone();
         h.state_mut().use_theme(&ctx, id);
+        suhina_ui::kit::native_css::set_user_sheet(example.map(|css| css.to_owned().into()));
         for _ in 0..4 {
             h.step();
         }
@@ -1450,14 +1528,60 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_its_lit_buttons() {
             assert!(!lit_faces.is_empty() && !unlit_faces.is_empty(), "{id}: both are painted");
             assert_ne!(lit_faces, unlit_faces, "{id}: {lit} shows it is on");
         }
+        // The mixer's switch is lit while its track is on: the ink of its number. Gloss's reads on
+        // the lit fill; the three sheets' are the button's own, as before the base sheet (the
+        // recorded painted digests hold them), which this test pins so a change is a decision.
+        let switch = h.get_by_label("Turn Drums off").rect();
+        let fill = suhina_ui::kit::theme::control_selected();
+        let inks = text_colours_at(&h, switch);
+        suhina_ui::kit::native_css::set_user_sheet(None);
+        assert!(!inks.is_empty(), "{id}: the lit switch shows its number");
+        match expected_ink {
+            Some(ink) => assert!(inks.iter().all(|c| *c == ink), "{id}: the lit switch's ink is {ink:?}: {inks:?}"),
+            None => {
+                for ink in inks {
+                    let contrast = suhina_ui::kit::theme::text_contrast(ink, fill);
+                    assert!(contrast >= 3.0, "{id}: the lit switch's text {ink:?} on {fill:?} reads at {contrast}");
+                }
+            }
+        }
     }
 }
 
-/// Colouring a region goes through its variables: `window { --text-hint: … }` reaches every hint
-/// word inside it, and a toggle's dim words, which the base sheet colours with the same variable
-/// (#1449).
+/// Colouring a region goes through its variables: `window { --text-hint: … }` reaches the hint
+/// words inside it (an empty detail panel's note) and a switch's dim words, which the base sheet
+/// colours with the same variable: a track that is off, its number (#1449).
 #[test]
 fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
     let mut h = lit_drums();
-    assert_eq!(missing(&mut h, &[("window", "--text-hint", odd(151))]), Vec::<String>::new());
+    h.get_by_label("Turn Keys off").click();
+    h.run();
+    // The pointer leaves it: under the pointer a switch's words are the brighter ones.
+    h.event(egui::Event::PointerGone);
+    h.run();
+    let switch = h.get_by_label("Turn Keys on").rect();
+    let css = format!("window {{ --text-hint: {}; }}", hex(odd(151)));
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    for _ in 0..4 {
+        h.step();
+    }
+    let toggle = text_colours_at(&h, switch);
+    // The colours of the hint's words: the empty detail panel's note.
+    fn colours_of(shape: &egui::Shape, words: &str, found: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| colours_of(shape, words, found)),
+            egui::Shape::Text(text) if text.galley.text() == words => {
+                found.extend(text.galley.job.sections.iter().map(|section| section.format.color));
+            }
+            _ => {}
+        }
+    }
+    let mut hint = Vec::new();
+    h.output()
+        .shapes
+        .iter()
+        .for_each(|shape| colours_of(&shape.shape, "Select a track or a clip to see it here", &mut hint));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!toggle.is_empty() && toggle.iter().all(|c| *c == odd(151)), "the off switch's number: {toggle:?}");
+    assert!(!hint.is_empty() && hint.iter().all(|c| *c == odd(151)), "the hint's words: {hint:?}");
 }

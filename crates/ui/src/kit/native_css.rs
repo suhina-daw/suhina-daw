@@ -793,17 +793,16 @@ pub(super) fn outer_clip(node: Option<usize>) -> Option<Rect> {
 }
 
 /// Gives the element of this frame's tree at `node` the pointer states `bits` (hover 1, active 2,
-/// disabled 4).
-pub(super) fn mark_node_bits(node: usize, bits: u16) {
+/// disabled 4). `asked`: they are a question (what the element looks like under the pointer), not
+/// where the pointer is, so the element's ancestors do not take `:hover` from them.
+pub(super) fn mark_node_bits(node: usize, bits: u16, asked: bool) {
     if bits == 0 {
         return;
     }
     ENGINE.with(|engine| {
         if let Some(node) = engine.borrow_mut().nodes.get_mut(node) {
             node.state |= bits;
-            // A pointer state given outright, with no response, asks what the element looks like
-            // under the pointer: it does not put the pointer there.
-            if bits & POINTER_STATES != 0 {
+            if asked && bits & POINTER_STATES != 0 {
                 node.state |= ASKED;
             }
         }
@@ -814,8 +813,9 @@ pub(super) fn mark_node_bits(node: usize, bits: u16) {
 /// disabled (4).
 const POINTER_STATES: u16 = 0b111;
 
-/// A node's state bit for a pointer state it was asked about (`Builder::pointer`), not one the
-/// pointer is in: its ancestors are not `:hover` for it.
+/// A node's state bit for a pointer state it was asked about (a lookup, `Builder::probe`), not one
+/// the pointer is in: its ancestors are not `:hover` for it. A pointer state given to an entered
+/// element (`Builder::pointer(..).enter()`) is the pointer's.
 const ASKED: u16 = 1 << 14;
 
 /// Gives the element of this frame's tree at `node` the attribute `name` with `value`. A
@@ -1095,7 +1095,8 @@ fn palette_of(variables: &std::collections::BTreeMap<String, String>) -> theme::
 const FADED: [&str; 3] = ["window.background", "panel.background", "border"];
 
 /// Takes the palette's snapshot of the root's colours, when the styles reset or the window's
-/// opacity changed since the last one: the palette's colour functions read it until the next. Over a backdrop the window's colours are faded, written as variables on `window` too.
+/// opacity changed since the last one: the palette's colour functions read it until the next. Over
+/// a backdrop the window's colours are faded, written as variables on `window` too.
 fn snapshot(engine: &mut Engine, opacity: f32) {
     let taken = (style_epoch(), opacity.to_bits());
     if engine.snapshot == Some(taken) || engine.native.is_none() {

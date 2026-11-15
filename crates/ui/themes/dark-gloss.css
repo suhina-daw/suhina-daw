@@ -50,6 +50,33 @@
     background-image: linear-gradient(#6c614b, #3b352a 55%, #26231e);
     border-color: var(--gloss-brass);
   }
+  /* A rule for every `button` hides the lit looks of Suhina's base sheet: state them again, in the
+     gloss's own style, from the palette's lit colours and the text that reads on them. A lit
+     button keeps the rule's edge, shadows and, over the lit colour, a gloss. */
+  button[kind="toggle"][checked] {
+    color: var(--text-inverse);
+    background-color: var(--control-selectedBackground);
+    background-image: linear-gradient(#ffffff55, #ffffff00 52%, #00000033);
+    text-shadow: none;
+  }
+  button[kind="toggle"][checked]:hover {
+    background-color: color-mix(in srgb, var(--control-selectedBackground), white 20%);
+    background-image: linear-gradient(#ffffff55, #ffffff00 52%, #00000033);
+  }
+  button[kind="solo"][checked] {
+    color: var(--text-inverse);
+    background-color: var(--accent);
+    background-image: linear-gradient(#ffffff55, #ffffff00 52%, #00000033);
+    text-shadow: none;
+  }
+  button[kind="arm"][checked] {
+    color: var(--recording);
+    background-color: var(--recording-background);
+    background-image: linear-gradient(#ffffff33, #ffffff00 52%, #00000044);
+  }
+  /* A figure shown as words in a bar takes the bar's ink, as it did before the sheet gave it one. */
+  toolbar label[kind="value"], application-bar label[kind="value"], menu-bar label[kind="value"],
+  project-tabs label[kind="value"], status-bar label[kind="value"] { color: var(--gloss-ink); }
   #control-play { color: #b9eb7b; box-shadow: inset 0 1px 0 #fff3, 0 0 3px #8bd74666; }
   #control-record { color: #f18d75; }
   knob { color: #c4d5d8; background-color: #28383f; }
