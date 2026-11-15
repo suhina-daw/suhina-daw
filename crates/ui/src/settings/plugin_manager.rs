@@ -398,7 +398,7 @@ fn lines(plugins: &PluginsView, state: &ManagerState) -> Vec<Line> {
     lines_of(all_lines(plugins), plugins, state)
 }
 
-/// [`lines`] from the rows built already.
+/// The rows the filters and the search keep, sorted, from the rows built already.
 fn lines_of(mut lines: Vec<Line>, plugins: &PluginsView, state: &ManagerState) -> Vec<Line> {
     let words = search_words(state);
     lines.retain(|line| found_by(line, &words) && kept(line, plugins, state));
