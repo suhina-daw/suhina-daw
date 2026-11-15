@@ -1153,4 +1153,6 @@ fn a_resumed_clip_counts_the_loop_passes_already_played() {
     // No loop, or an empty one: one pass.
     assert_eq!(super::loop_passes(0.0, None, 100.0), 0);
     assert_eq!(super::loop_passes(0.0, Some((4.0, 4.0)), 100.0), 0);
+    // A loop vanishingly short for the time played: the count saturates, never wraps.
+    assert_eq!(super::loop_passes(0.0, Some((0.0, 1e-20)), 1e6), u64::MAX);
 }

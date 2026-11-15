@@ -696,7 +696,11 @@ struct SlotPlan {
 fn loop_passes(offset: f64, loop_range: Option<(f64, f64)>, elapsed: f64) -> u64 {
     let beat = offset + elapsed;
     match loop_range {
-        Some((start, end)) if beat >= end && end > start => 1 + ((beat - end) / (end - start)).floor() as u64,
+        Some((start, end)) if beat >= end && end > start => {
+            // `as` saturates a quotient past u64 (a loop vanishingly short for the time played),
+            // and the pass after it saturates too rather than wrapping.
+            (((beat - end) / (end - start)).floor() as u64).saturating_add(1)
+        }
         _ => 0,
     }
 }

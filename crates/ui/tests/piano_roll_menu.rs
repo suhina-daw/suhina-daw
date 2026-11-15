@@ -279,3 +279,35 @@ fn reverse_turns_the_selected_notes_round_in_time() {
     after.sort_unstable();
     assert_eq!(after, expected, "note.reverse on the selected notes only");
 }
+
+/// With the Mute tool chosen and the menu open on the empty grid, the grid the menu leaves
+/// uncovered shows the arrow: the tool's icon is not drawn there, so the system cursor is not
+/// hidden either and the pointer never goes missing.
+#[test]
+fn the_grid_beside_an_open_menu_keeps_a_visible_pointer() {
+    let mut renderer = engine();
+    let mut h = with_preset(&mut renderer, Preset::SelectFirst);
+    let mute = ["1", "2", "3", "4", "5", "6"]
+        .iter()
+        .map(|key| format!("Mute ({key})"))
+        .find(|label| h.query_by_label(label).is_some())
+        .expect("the Mute tool's button");
+    item(&mut h, &mute);
+    let empty = empty_spot(&h);
+    right_click(&mut h, empty);
+    assert!(menu_open(&h), "the right button does nothing else with the Mute tool");
+    // Left of where the menu opened, on the same row: grid the menu does not cover.
+    let n = notes(&h);
+    let beside = spot(&h, n[0].time, notes_free_key(&n));
+    assert!(beside.x < empty.x);
+    h.hover_at(beside);
+    h.run();
+    assert!(menu_open(&h), "hovering leaves the menu open");
+    assert_ne!(h.output().platform_output.cursor_icon, egui::CursorIcon::None, "a pointer shows");
+}
+
+/// A key no note of `notes` is on.
+fn notes_free_key(notes: &[Note]) -> u8 {
+    let (low, high) = (notes.iter().map(|n| n.key).min().unwrap(), notes.iter().map(|n| n.key).max().unwrap());
+    (low..=high).find(|k| notes.iter().all(|n| n.key != *k)).unwrap_or(low - 1)
+}
