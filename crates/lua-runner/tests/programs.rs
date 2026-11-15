@@ -257,6 +257,31 @@ fn a_killed_process_is_restarted() {
     fixture.expect(|e| *e == programs::Event::Running, "running again");
 }
 
+/// A restarted program's subscriptions start over: the fresh script's first state arrives even
+/// when nothing changed while the old process was dead. The old subscription records would
+/// otherwise swallow it — their `last` already holds the value, so "no change" pushes nothing
+/// and the new script's reads stay nil, its controller dark until something moves.
+#[test]
+fn a_restarted_program_hears_its_first_state_again() {
+    let mut fixture = Fixture::claiming("resubscribe", SCRIPT_SUBSCRIBE);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    // The first state came after the subscribe: the controller byte counts it. The write
+    // lands one look after the push, so a few frames run before the assert.
+    fixture.projects.test_extensions_pump_frames(5);
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1]]);
+    // The process dies and the supervisor starts another one; nothing changes in between.
+    let pid = fixture.pid();
+    let sent = fixture.projects.test_extensions_program().expect("running").test_kill(pid);
+    assert!(sent, "the kill was sent");
+    fixture.expect(|e| matches!(e, programs::Event::Crashed(_)), "the crash");
+    fixture.expect(|e| *e == programs::Event::Running, "running again");
+    fixture.projects.test_extensions_pump_frames(20);
+    // The fresh script heard the grid again, though nothing had moved: a second state pushed,
+    // and the fresh script's counter counts it as its first.
+    assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1], vec![0xB1, 1, 1]]);
+}
+
 fn find(listed: &Value, id: &str) -> Option<Value> {
     listed["extensions"].as_array()?.iter().find(|e| e["id"] == id).cloned()
 }

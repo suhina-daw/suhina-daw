@@ -335,6 +335,7 @@ impl Projects {
                 programs::Event::SendBack { port, bytes } => self.devices.midi.send_back(&program, &port, &bytes),
                 programs::Event::Command { token, id, params, gesture } => {
                     let params = with_gesture(&id, params, gesture.as_deref());
+                    suhina_plugins::trace!("programs dispatch {id} {params}");
                     let (ok, error) = match self.dispatch_for_program(&id, &params) {
                         Ok(_) => (true, None),
                         Err(e) => (false, Some(e.0)),

@@ -473,6 +473,11 @@ impl Extensions {
                     programs::Event::Running => {
                         extension.state = State::Running;
                         extension.script_stopped = false;
+                        // The fresh process subscribes anew: the old process's subscriptions
+                        // would swallow the first push — their `last` holds the value as it
+                        // was, and while nothing changed they push nothing, leaving the new
+                        // script's reads nil and its controller dark until something moves.
+                        self.subs.retain(|sub| sub.program != extension.id);
                         // The claims may have changed: the router looks again.
                         self.claims_epoch += 1;
                     }

@@ -491,7 +491,14 @@ fn watch(
                     script_errored = true;
                     break;
                 }
-                _ => {
+                Some(Message::Send { port, bytes }) => {
+                    // The chunk runs before `ready`, and its `on_ports` answers the ports the
+                    // host sent with a full LED rewrite: the send-backs are queued like the
+                    // running loop's, taken when the program is running.
+                    report(events, Event::SendBack { port: port.clone(), bytes: bytes.clone() });
+                }
+                other => {
+                    suhina_plugins::trace!("programs handshake refused {other:?}");
                     let _ = link.send(&Message::Error { message: "not a message for the host".into() });
                 }
             },
@@ -582,7 +589,8 @@ fn watch(
                     Some(Message::Error { message }) => {
                         return Err(child.end(format!("the runner sent an error: {message}")));
                     }
-                    Some(_) => {
+                    Some(other) => {
+                        suhina_plugins::trace!("programs refused {other:?}");
                         let _ = link.send(&Message::Error { message: "not a message for the host".into() });
                     }
                     None => {

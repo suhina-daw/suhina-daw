@@ -85,6 +85,9 @@ struct ProgramSink {
 
 impl RawSink for ProgramSink {
     fn message(&self, stamp: u64, bytes: &[u8]) {
+        // What the controller plays into the program, next to the session's "midi out": the
+        // pair answers why a ring or a pad shows what it shows (docs/debugging.md).
+        suhina_plugins::trace!("midi in {port}: {bytes:02x?}", port = self.port);
         let _ = self.to.send(programs::ToProgram::PortMessage {
             port: self.port.clone(),
             timestamp: stamp,
@@ -331,6 +334,9 @@ impl MidiInputs {
         let Some((_, _, _, out)) = self.outs.iter().find(|(p, id, _, _)| p == port && id == program) else {
             return;
         };
+        // What the program lights, next to the driver's "midi in": the pair answers why a ring
+        // or a pad shows what it shows (docs/debugging.md).
+        suhina_plugins::trace!("midi out {port}: {bytes:02x?}");
         if let Err(e) = out.send(bytes) {
             suhina_plugins::trace!("midi out {port}: {e}");
         }
