@@ -194,9 +194,10 @@ fn an_arrangement_beat_is_the_inverse_of_the_content_beat() {
     assert_eq!(looped.arrangement_beat(1.5), Some(0.5));
     assert_eq!(looped.arrangement_beat(1.0), Some(0.0));
     // Before the offset, inside the loop: where the loop first comes round to it, after the
-    // stretch from the offset to the loop's end. Beat 2 of the content wraps to the loop's start.
+    // stretch from the offset to the loop's end. From the loop's end on, the content never plays.
     assert_eq!(looped.arrangement_beat(0.5), Some(1.5));
-    assert_eq!(looped.arrangement_beat(2.0), Some(1.0));
+    assert_eq!(looped.arrangement_beat(2.0), None);
+    assert_eq!(looped.arrangement_beat(3.0), None);
     // Past the clip's end it plays nothing.
     let short = Placement { length: 1.5, ..looped };
     assert_eq!(short.arrangement_beat(0.5), None);
@@ -1384,4 +1385,19 @@ fn a_rows_toggle_fits_its_word_at_every_toolbar_height() {
         }
     });
     output.textures_delta.clear();
+}
+
+/// A time selection past the loop's end is content the clip never plays: Split clip cuts
+/// nothing there, rather than where the loop starts again.
+#[test]
+fn split_clip_leaves_a_selection_past_the_loop_end_alone() {
+    let mut piano = clip(vec![note(0.0, 1.0, 60)]);
+    piano.placement = Placement { start: 0.0, length: 16.0, offset: 0.0, loop_range: Some((0.0, 4.0)) };
+    let mut state = focused_on(&piano);
+    state.select_span(5.0, 6.0);
+    assert!(state.key_action("pianoRoll.splitClip", &piano, 0.0, None).is_none());
+    // Ending on the loop's end still cuts there.
+    state.select_span(3.0, 4.0);
+    let split = state.key_action("pianoRoll.splitClip", &piano, 0.0, None).expect("clip.split");
+    assert_eq!(split.params["ats"], json!([3.0, 4.0]));
 }

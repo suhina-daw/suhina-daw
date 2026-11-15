@@ -1156,3 +1156,66 @@ fn a_resumed_clip_counts_the_loop_passes_already_played() {
     // A loop vanishingly short for the time played: the count saturates, never wraps.
     assert_eq!(super::loop_passes(0.0, Some((0.0, 1e-20)), 1e6), u64::MAX);
 }
+
+/// A clip resumed after two loops rolls its notes' velocities as the uninterrupted playback does
+/// (ADR 0037): the pass through the loop is part of the roll, so a resume that counted from 0
+/// would play other velocities.
+#[test]
+fn a_resumed_clip_rolls_the_velocities_the_uninterrupted_playback_rolls() {
+    const BLOCK: usize = 512;
+    let rolled = |time: f64, key: u8| Note { velocity: 0.5, velocity_range: 60, ..note(time, key) };
+    let p = project(
+        vec![notes(1, vec![rolled(0.0, 60), rolled(1.0, 62), rolled(2.0, 64), rolled(3.0, 65)])],
+        vec![vec![with(clip(1, 4.0, true))]],
+    );
+    let blocks = 17 * BEAT / BLOCK;
+    let start = |renderer: &mut Renderer| {
+        renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
+        renderer.handle(LaunchCommand::Play);
+        renderer.handle(LaunchCommand::LaunchClip { column: 0, slot: 0 });
+    };
+    let mut reference = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    start(&mut reference);
+    let mut expected = vec![0.0f32; 2 * BLOCK * blocks];
+    for block in expected.chunks_mut(2 * BLOCK) {
+        reference.process(block);
+    }
+    // The clip launches at beat 4; 14.3 beats in, it is more than two loops into its playback.
+    let mut old = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    start(&mut old);
+    let split = 143 * BEAT / 10 / BLOCK;
+    let mut out = vec![0.0f32; 2 * BLOCK * blocks];
+    for block in out.chunks_mut(2 * BLOCK).take(split) {
+        old.process(block);
+    }
+    let monitor = old.monitor();
+    let (beat, marker) = (monitor.beat(), monitor.start_beat());
+    let elapsed = monitor.elapsed_beats(0).unwrap();
+    assert!(elapsed > 8.0 && elapsed < 11.0, "{elapsed}");
+    let mut new = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    for command in [
+        LaunchCommand::SetPosition { beat: marker },
+        LaunchCommand::Play,
+        LaunchCommand::Locate { beat },
+        LaunchCommand::ResumeColumn { column: 0, slot: Some(0), elapsed_beats: elapsed },
+    ] {
+        new.handle(command);
+    }
+    for block in out.chunks_mut(2 * BLOCK).skip(split - 1) {
+        new.process(block);
+    }
+    // Each note's loudness: the peak of its first quarter beat.
+    let peak = |out: &[f32], frame: usize| {
+        out.get(2 * frame..2 * (frame + BEAT / 4)).unwrap_or(&[]).iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    };
+    let resumed_from = split * BLOCK;
+    let after: Vec<usize> = onsets(&expected).into_iter().filter(|at| *at > resumed_from + BEAT / 4).collect();
+    assert!(after.len() >= 2, "notes after the resume: {after:?}");
+    for at in &after {
+        let (want, got) = (peak(&expected, *at), peak(&out, *at));
+        assert!((want - got).abs() <= want * 1e-3, "at {at}: {got} played, {want} uninterrupted");
+    }
+    // The range is at work: the passes roll different loudnesses for the same note.
+    let all: Vec<f32> = onsets(&expected).iter().map(|at| peak(&expected, *at)).collect();
+    assert!(all.windows(2).any(|w| (w[0] - w[1]).abs() > 1e-3), "{all:?}");
+}

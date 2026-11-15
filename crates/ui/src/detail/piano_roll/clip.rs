@@ -67,12 +67,14 @@ impl Placement {
         if !(beat.is_finite() && self.start.is_finite() && self.length.is_finite() && self.offset.is_finite()) {
             return None;
         }
-        let mut content = beat.max(0.0);
+        let content = beat.max(0.0);
+        // Past the loop's end the content never plays: playback turns back to the loop's start
+        // there (a stretch's last moment, just before the end, is still played).
         if let Some((start, end)) = self.loop_range
             && end > start
             && content >= end
         {
-            content = start + (content - start) % (end - start);
+            return None;
         }
         let mut elapsed = content - self.offset;
         if elapsed < 0.0 {
