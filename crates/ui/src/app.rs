@@ -2933,8 +2933,6 @@ impl App {
         if self.settings.track_headers.is_none() {
             self.arrangement.headers_left = headers_left(None);
         }
-        // The frame's placed controls, for anchors between them (`anchor-*`).
-        let _capture = crate::kit::control_layout::Capture::begin(ui.ctx());
         self.ui_content(ui);
         crate::kit::widgets::hide_pointer_during_value_drag(ui.ctx());
     }
@@ -3079,11 +3077,8 @@ impl App {
         suhina_plugins::trace::timed("sample map analysis poll", || self.projects.poll_sound_map());
         self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
-        let placing = crate::kit::control_layout::editing(ui.ctx());
-        if !placing {
-            keys_for_shortcuts(ui.ctx());
-            self.launch_keys(ui, &mut actions);
-        }
+        keys_for_shortcuts(ui.ctx());
+        self.launch_keys(ui, &mut actions);
         // A menu bar item chosen while a dialog asks something is passed over, as its key is.
         let queued = std::mem::take(&mut self.queued);
         let menu_items = std::mem::take(&mut self.queued_menu_items);
@@ -3095,9 +3090,7 @@ impl App {
                 self.run_menu_item(&id, ui.ctx(), &mut actions);
             }
         }
-        if !placing {
-            self.shortcuts(ui, &mut actions);
-        }
+        self.shortcuts(ui, &mut actions);
         self.apply_zoom(ui.ctx());
         self.frame_trace.mark("keys");
         self.sample_map_window(ui.ctx(), &mut actions);

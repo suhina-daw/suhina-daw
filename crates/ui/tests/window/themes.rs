@@ -233,12 +233,12 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
 }
 
 #[test]
-fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_command() {
-    use suhina_ui::kit::{skin, theme_css};
+fn a_session_fader_laid_out_lying_down_drags_across_and_keeps_the_native_command() {
+    use suhina_ui::kit::skin;
     let mut harness = view();
-    let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-volume { direction: horizontal; }").is_empty());
-    skin::configure(&theme.skin);
+    // The fader's row standing as a column, the fader 20 points tall: it lies across the strip.
+    let css = "group#mixer-level { flex-direction: column; } #mixer-volume { height: 20px; }";
+    skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
     harness.run_steps(3);
     let rect = harness.get_by_label("Drums volume").rect();
     assert!(rect.width() > rect.height());
@@ -259,30 +259,22 @@ fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_comma
 }
 
 #[test]
-fn an_individually_placed_send_keeps_its_parameter_target_and_can_be_hidden() {
-    use suhina_ui::kit::{skin, theme_css};
+fn a_strip_part_the_sheet_hides_is_neither_drawn_nor_clicked() {
+    use suhina_ui::kit::skin;
     let mut harness = view();
-    let before = harness.get_by_label("Bass send to A Reverb").rect();
-    let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-send-1 { left: 6px; width: 16px; }").is_empty());
-    skin::configure(&theme.skin);
-    harness.run_steps(3);
-    let moved = harness.get_by_label("Bass send to A Reverb").rect();
-    assert!((moved.left() - before.left() - 6.0).abs() < 0.01);
-    assert!((moved.width() - 16.0).abs() < 0.01);
-    let start = moved.center();
-    harness.hover_at(start);
-    harness.drag_at(start);
-    harness.run_steps(1);
-    harness.hover_at(start - Vec2::new(0.0, 10.0));
-    harness.run_steps(1);
-    harness.drop_at(start - Vec2::new(0.0, 10.0));
-    harness.run_steps(2);
-    assert!(harness.state().actions.iter().any(|a| a.id == "track.setSend" && a.params["track"] == 2));
-    theme.skin.controls.get_mut("mixer-send-1").unwrap().hidden = true;
-    skin::configure(&theme.skin);
+    assert!(harness.query_by_label("Bass send to A Reverb").is_some());
+    let solo = harness.get_by_label("Solo Bass").rect();
+    let cue = harness.get_by_label_contains("Cue Bass").rect();
+    skin::configure(&skin::Skin { css: Some("#mixer-sends { display: none; }".into()), ..Default::default() });
     harness.run_steps(3);
     assert!(harness.query_by_label("Bass send to A Reverb").is_none());
+    skin::configure(&skin::Skin { css: Some("mixer #control-solo { display: none; }".into()), ..Default::default() });
+    harness.run_steps(3);
+    // The strip's solo is gone: the track-on switch takes its room, and cue stays where it was.
+    assert!(harness.query_by_label("Solo Bass").is_none());
+    let moved = harness.get_by_label_contains("Cue Bass").rect();
+    assert!((moved.min - cue.min).length() < 0.01 && (moved.max - cue.max).length() < 0.01, "{moved:?} {cue:?}");
+    assert!(harness.get_by_label("Turn Bass off").rect().contains(solo.center()));
     skin::configure(&skin::Skin::default());
 }
 
@@ -1257,6 +1249,47 @@ fn a_theme_styles_the_workspace_splitters() {
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(native.contains(&live("control-background")), "the native strip: {native:?}");
     assert!(!clear.contains(&live("control-background")), "a transparent strip paints no fill: {clear:?}");
+}
+
+/// The Launcher mixer's top line is `divider#mixer-splitter` (#1453): the line it draws while the
+/// pointer is over it takes `:hover`, while it is dragged `:active`, and the drag still resizes
+/// the mixer.
+#[test]
+fn the_mixer_splitter_takes_hover_and_active_and_still_drags() {
+    let (green, magenta) = (egui::Color32::from_rgb(0, 0xFF, 0), egui::Color32::from_rgb(0xFF, 0, 0xFF));
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "#mixer-splitter:hover { color: #00ff00; } #mixer-splitter:active { color: #ff00ff; }".into(),
+    ));
+    let mut h = window(demo_app());
+    h.get_by_label("Launcher view").click();
+    h.run();
+    let edge = h.get_by_label("Mixer height").rect().center();
+    // The line across the mixer's top, wherever the drag has it.
+    let lines = |h: &Harness<'static, App>, colour: egui::Color32| {
+        h.output().shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::LineSegment { points, stroke } => {
+                stroke.color == colour && points[0].y == points[1].y && (points[1].x - points[0].x) > 100.0
+            }
+            _ => false,
+        })
+    };
+    let at_rest = lines(&h, green) || lines(&h, magenta);
+    h.hover_at(edge);
+    h.run();
+    let hovered = lines(&h, green);
+    h.drag_at(edge);
+    h.run();
+    h.hover_at(edge - Vec2::new(0.0, 60.0));
+    h.run();
+    let active = lines(&h, magenta);
+    h.drop_at(edge - Vec2::new(0.0, 60.0));
+    h.run();
+    let moved = h.get_by_label("Mixer height").rect().center();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!at_rest, "no line while the pointer is elsewhere");
+    assert!(hovered, "the hovered line takes :hover");
+    assert!(active, "the dragged line takes :active");
+    assert!(moved.y < edge.y - 30.0, "the drag made the mixer taller: {edge:?} to {moved:?}");
 }
 
 /// Every bundled theme gives no region a border or padding, so no region's `overflow` clip cuts

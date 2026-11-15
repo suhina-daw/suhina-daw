@@ -426,8 +426,11 @@ struct Engine {
     resolved: HashMap<u64, u64>,
     /// Whether this frame hit a limit of the tree, which the trace was told of.
     limited: bool,
-    /// Laid-out bar rows by their input (#1372), bounded.
-    rows: HashMap<String, row::Row>,
+    /// Laid-out bar rows by their input (#1372), each with the frame that last used it, bounded.
+    rows: HashMap<u64, (Arc<row::Row>, u64)>,
+    /// The frames begun, for [`Engine::rows`]: a full cache drops only the rows no frame used
+    /// lately, so a frame that lays out many strips never lays them out again the next one.
+    row_frame: u64,
     window: Option<(String, Window)>,
     /// Whether the browser and the detail area follow their splitters, by the window's size and
     /// which regions are there: a splitter drag changes only the content sizes, which lays the
@@ -622,6 +625,7 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
         engine.unstyled = 0;
         engine.fresh = 0;
         engine.limited = false;
+        engine.row_frame = engine.row_frame.wrapping_add(1);
     });
     // egui's own widgets, at the root, follow the sheet as of this frame's reset.
     super::theme::sync_root_visuals(ui.ctx());

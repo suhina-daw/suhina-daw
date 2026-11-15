@@ -212,8 +212,8 @@ pub fn theme_track_height() -> Option<f32> {
 }
 
 /// The narrowest the theme lets the Arrangement view's header column be (`arrangement {
-/// header-min-width: 330px }`): the width its placements were made for, which the header's
-/// narrower layouts would break. From 160 to 520 points.
+/// header-min-width: 330px }`): the width its header layout was made for, which the header's
+/// narrower layouts would change. From 160 to 520 points.
 pub fn theme_header_min_width() -> Option<f32> {
     arrangement()?.points(Property::HeaderMinWidth).filter(|v| (160.0..=520.0).contains(v))
 }
@@ -223,12 +223,6 @@ pub fn theme_header_min_width() -> Option<f32> {
 /// theme takes the native tint away with 0.
 pub fn theme_header_tint() -> Option<u8> {
     arrangement()?.integer(Property::HeaderTint).and_then(|v| u8::try_from(v).ok()).filter(|v| *v <= 100)
-}
-
-/// The height under which an Arrangement header keeps Suhina's own layout instead of the theme's
-/// placements (`arrangement { compact-below: 48px }`), so a low track does not overlap.
-pub fn theme_compact_below() -> Option<f32> {
-    arrangement()?.points(Property::CompactBelow).filter(|v| (0.0..=200.0).contains(v))
 }
 
 /// How a device panel's generated parameter list is laid out: the columns of the device's grid

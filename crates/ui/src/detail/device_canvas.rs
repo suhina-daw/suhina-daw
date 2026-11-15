@@ -2240,11 +2240,6 @@ pub(crate) fn show(
         }
         let [x, y, w, h] = fitted_control_bounds(control, reduction);
         let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y) * stretch, Vec2::new(w, h) * stretch);
-        let name = crate::kit::control_layout::semantic_name("device", &control.id);
-        if crate::kit::control_layout::placement(&name).hidden {
-            continue;
-        }
-        let bounds = crate::kit::control_layout::place(&name, bounds, rect);
         let _control_scope = crate::kit::element::DEVICE_CONTROL.id(&control.id).enter();
         if matches!(control.widget, Some(Widget::Envelope { .. })) {
             let role = crate::kit::element::ENVELOPE.enter();

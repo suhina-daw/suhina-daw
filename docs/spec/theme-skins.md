@@ -8,7 +8,7 @@ covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
   - crates/ui/src/kit/artwork.rs
-  - crates/ui/src/kit/control_layout.rs
+  - crates/ui/src/arrangement/arrangement_view/header_layout.rs
   - crates/ui/src/kit/floating.rs
   - assets/themes/default/*.svg
   - assets/themes/examples/*.svg
@@ -158,7 +158,7 @@ geometry/preferences. A theme sets them as properties of `session` (`session { t
 80px; }` and the other named properties); `auto` removes an override. Mixer height continues
 to use its existing native preference and divider.
 Column widths affect scrolling, rendering, file/clip drop targets and hit testing
-together. Individual control placement remains relative to these native anchors.
+together.
 `pan { appearance: knob; }` is a portable pan-face override for both Launcher and
 Arrangement, read from the pan's own computed style. `field` forces a value field;
 `native` or no override retains the existing global preference. The compact example
@@ -192,19 +192,18 @@ the Launcher view alone; neither a combined Arrangement view nor a standalone mi
 view is introduced. The screenshot is from actual demo playback on the same isolated
 Linux OpenGL/virtual-ALSA setup described below.
 
-Its additional placement overrides are:
+Its additional mixer layout rules (› The strips) are:
 
 ```css
-.control-mixer-meter { left: -48px; }
-.control-mixer-volume { left: 18px; }
-.control-mixer-volume-scale { left: -40px; }
-.control-mixer-volume-readout { left: -24px; width: 30px; }
-.control-mixer-pan { left: 25px; width: 24px; height: 24px; }
-.control-mixer-color { width: 2px; }
+mixer meter { order: -1; margin: 0 8px 0 0; }
+mixer fader-scale { margin: 0 6px 0 0; }
+#mixer-volume-readout { width: 30px; }
+#mixer-pan { width: 24px; height: 24px; margin-left: 25px; align-self: flex-start; }
+mixer > track-colour { width: 2px; }
 ```
 
 Load the compact native CSS and dark-gloss advanced CSS examples separately, then
-apply these placements and the cap override. The compact example carries its pan style.
+apply these rules and the cap override. The compact example carries its pan style.
 The capture keeps the global preference at Field and verifies the theme-owned Knob
 override, so that presentation does not depend on another user's settings.
 The images below retain the earlier, wider geometry and colour-keyed texture example.
@@ -228,51 +227,55 @@ Colour-dependent texture contrast is authored with named scopes, e.g.
 `track-name[data-object=track-1] { color: #edf6e9; }`; arbitrary named track scopes
 use `data-object`, while the toolbar's and the window's ids have their documented literal ids.
 
-## Native element placement contract
+## The strips: track headers, mixer strips and the transport
 
-The customization target includes every native control and text/name area, not just toolbar
-modules. `skin.controls` is a bounded map (256 semantic names) whose entries specify native
-anchor-relative `left`/`top` offsets, optional logical-point `width`/`height`, and a
-`direction` (`vertical` or `horizontal`). `bottom` anchors to the containing panel's
-bottom; `hidden` suppresses connected elements. `height: 100%` (editor **Full height**)
-stretches between the panel's top plus `top` and bottom minus `bottom` (default zero).
-In this mode `top` is a panel inset, not a native-anchor offset. Insets are clamped to
-the panel; an exhausted height draws nothing. `height: auto` restores native height. Similarly `width: 100%` (**Full width**)
-uses `left` and `right` insets; `right` can also anchor a fixed-width control.
-`width: auto` restores native width.
-Arrangement meter placement uses the whole track header, never its visible intersection;
-scroll clipping affects painting and hit testing without changing the meter scale. The canonical CSS projection uses
-`.control-NAME { left: 8px; top: 0px; width: 80px; height: 20px;
-direction: horizontal; }`. Offsets are bounded to ±16384, sizes to 1–4096.
-Each adapter must resolve the rectangle before interaction and paint, preserve the native
-widget ID/command, and contain it in its panel. Removing an override restores native geometry.
-These are explicit native relative offsets, not a claim of general CSS positioning support.
-The visual placement editor (**Edit interface**) was removed for now: it saved placements in
-a format of its own beside the CSS, and placing controls with it broke layouts in testing.
-Placements are written by hand; a future editor will write plain CSS
-([issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)).
-Fractional offsets survive CSS and JSON storage at 1/1024 logical pixel resolution.
-A persistent anchor is explicit: `anchor-left|top|right|bottom:
-<control> <edge> [<gap>px]` (JSON `anchors: { "bottom": "arrangement-volume top 4px" }`)
-makes that edge follow the target's edge on the same axis. Opposite edges keep the gap
-between the controls; matching edges inset by it. With one anchored edge a full-width or
-full-height control keeps its other edge, otherwise it moves at its size; two anchored
-edges set both. The target is resolved in the same container: drawn earlier in the frame,
-or the previous frame's rectangle moved as far as the container moved (scrolling), with
-one repaint when it has since changed. A hidden, absent or foreign target leaves the edge
-at the control's own placement. Cycles, self-anchors and chains of more than eight links
-are dropped with a warning when a theme loads. Gaps are whole
-points within ±16384; the result stays inside the container. The toolkit-independent
-parts (names, parsing, validation, axis arithmetic) are `suhina_style::anchor`.
-Drag an outline or select a semantic element and edit offsets, size,
-bottom anchoring and direction. Matching instances share that theme rule. Done merges only
-edited entries into the latest theme; Cancel/Escape discards the draft. A theme switch cancels
-it. Entering/leaving without edits never forks a default theme. An input shield keeps the
-underlying transport/mixer commands idle while placing controls; the editor window remains
-above the shield. Native widget IDs remain unchanged.
-The direction property applies to controls with an axis; horizontal volume dragging increases
-to the right, while vertical dragging increases upwards. Keyboard, wheel, reset and undo keep
-their existing semantics. Layout entry support is incremental and documented per adapter.
+A track header, a mixer strip (Main's too) and the toolbar's transport lay their parts out as a
+box tree (#1453), through the helper the bars use (› The bars' rows): Flexbox and Grid on Taffy,
+under the theme's sheets or the user-agent sheet alone when their layout fails. The parts are the
+elements that paint them; the `group`s around them lay them out and paint nothing. A strip's
+parts are laid out by `order` (a bar's items keep the app's order). The user-agent sheet holds the
+layout Suhina had, so with no rule nothing moves.
+
+The app says which parts a strip has room for and how big each is (its content box): the mixer's
+height steps (`docs/design/components.md` › Height steps), a header's lines by its width and
+height, a fader's length, a meter's width, a toggle's width from the strip's width. An `auto` size
+is that size plus the part's padding and border; a `width` or `height` the sheet gives wins. What
+the app knows is an attribute on the strip: `mixer[narrow]` at 96 points or less, Main's
+`mixer[kind="main"]`; `track-header[layout]` (`short`: one line; `narrow`: the name, then the
+buttons and the volume; `side`: the buttons with the volume and pan beside them, then the name and
+the sends; `stacked`: the buttons and the name, then the volume, the sends and the pan),
+`[name-first]` when the name's line comes first, and `[size]` (`tiny`, `small`, `normal`,
+`spacious`) for the room around and between the lines. Every part with an id in the tree has a
+`kind` equal to it, as the bars' items do, which the user-agent sheet selects.
+
+The app reads the strip's own border and padding before it chooses these attributes, so they
+are the strip's without them: a `padding` or `border` on `track-header[layout]`, `[size]`,
+`[name-first]` or `mixer[narrow]` moves the parts once the attribute is chosen but does not
+change which parts the strip has room for or which attribute it gets (choosing them again from
+it could go round in a loop).
+
+| Strip | Its parts |
+|---|---|
+| Mixer strip (`mixer`) | `track-colour`, `group#mixer-body` with `track-name`, `group#mixer-output`, `device-list`, `divider#mixer-divider`, `pan#mixer-pan`, `value#mixer-volume-readout`, `group#mixer-level` (`fader-scale`, `fader#mixer-volume`, `meter`), `value#mixer-volume` (low strips), `group#mixer-input` (its caption `label`, the source `dropdown`, `group#mixer-monitor` of `#control-mixer-monitor-in`, `-auto`, `-off`), `group#mixer-buttons` (`#control-track-on`, `mixer-toggles` of `#control-solo`, `#control-cue`, `#control-arm`; Main's `#control-main-metronome`), `group#mixer-sends` |
+| Track header (`track-header`) | `group#header-indent` (the groups' bands), `track-colour`, `group#header-body` with `group#header-first` and `#header-second` (`fold`, `#control-automation`, the take lanes' `button[kind="takes"]`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-monitor`, `track-name`, `#arrangement-volume`, `#arrangement-pan`, `send`s, `button[kind="sends-previous"]` and `[kind="sends-next"]`), the routing `dropdown[kind="arrangement-output"]` and `[kind="arrangement-input"]`; `meter` |
+| Transport (`toolbar-module#transport`) | `#control-play`, `#control-stop`, `#control-record` |
+
+Painting, hit testing and the value and scroll areas read the rectangle the layout gives. A part
+the sheet hides with `display: none` has none: it is neither drawn nor takes the pointer, and the
+parts after it close up. A fader laid out wider than tall lies down and drags across; knobs turn
+with an up or down drag. Every strip of one kind under the same elements shares one layout, laid
+out without what tells one track from another (its id, its project object, its `color`), so a
+settled frame lays nothing out and a resize or a new sheet lays out each kind once.
+
+Examples (#995): `mixer-toggles { flex-direction: column; }` stands solo, cue and arm one above the
+other, beside the track-on switch, which is a part of its own; `mixer meter { order: -1; }` puts
+the meter before the fader; `mixer track-colour { display: none; }` hides the colour band.
+
+Control placements are gone: `.control-NAME` rules with `left`, `top`, `right`, `bottom`,
+`width`, `height`, `direction` and `anchor-*`, a JSON skin's `controls`, `compact-below` and the
+toolbar modules' `toolbar-NAME` placements. The toolbar's order and offsets in `theme.json` stay.
+A device panel's controls keep the SDK's layout until
+[#1009](https://github.com/suhina-daw/suhina-daw/issues/1009).
 
 Artwork can choose an interaction state: `track.name.hover` overrides the default
 `track.name`. The own state variant wins, then the own default, then the embedded fallback.
@@ -287,28 +290,6 @@ that reads `--track-colour`, `--track-fill` or `--clip-colour`, or gives artwork
 Native animation-off freezes it at frame zero without a repaint loop. Assets allow the
 base roles plus 64 variants; SVG parse, cache and package budgets still apply. MIDI/audio type glyphs have
 their own SVG roles (`track.midi` and `track.audio`); MIDI defaults to a note symbol.
-
-Arrangement headers also expose `arrangement-fold`, `arrangement-enable`,
-`arrangement-automation`, `arrangement-output`, `arrangement-input`,
-`arrangement-send-1` (and subsequent return slots), and previous/next send buttons.
-Launcher send controls expose `mixer-send-1` and subsequent slots within the movable
-sends region. Slot numbers follow native return order, independent of project ids.
-
-Connected placement adapters currently include native/custom toolbar modules (`toolbar-NAME`),
-transport play/stop/record/metronome, Launcher strip name, output/input/monitor block, devices,
-sends, pan, volume/readout, meter, compact volume and toggle row (`mixer-NAME`), solo/cue/arm,
-track-type glyphs, and Arrangement name, colour band, volume/pan and meter. `mixer-color` can
-hide the side band or make it a top stripe; `mixer-name { bottom: 0px; }` relocates the name.
-Compact native height thresholds remain authoritative. Full raw-widget, clip/scene, browser
-and floating-window geometry coverage remains necessary for the all-elements target.
-
-SDK device controls use `device-<control-id>` placement names. Their drawing coordinates,
-hit rectangles and parameter gestures move together. Explicit dimensions scale rectangles,
-paths, curves and textures on both axes; text/strokes use the smaller scale and knobs retain
-their circular shape. Invalid/long identifier characters get a bounded stable slug/hash name.
-The native device panel remains the containing clip and each control keeps its existing ID,
-parameter bindings and visibility condition. Disabled/hidden device controls do not dispatch
-parameter actions. The native volume-direction property does not reinterpret SDK bindings.
 
 SVG background roles blend over what is under them, as every background does: artwork never
 clears the window's pixels, so round artwork on a see-through toolbar leaves the toolbar
@@ -781,7 +762,7 @@ under the views `#views-top`'s and `#views-bottom`'s; `--border` stays every oth
 
 **Header width.** `arrangement { header-min-width }` (160 to 520 points) is the least
 width of the Arrangement header column, so the header's narrower layouts do not break a theme's
-placements.
+layout.
 
 **Theme folders.** A folder is a theme when it holds `theme.css`; one without it is named in the
 warnings. Renaming a theme keeps its folder (its id). Two themes with one name are named in the
@@ -806,8 +787,7 @@ Host rules the app reads itself, beside the engine: `meter` accepts `style`, `se
 and `intensity`; `image` declarations name package-relative SVG/PNG artwork or Suhina's own
 (`url("suhina:knob.body.svg")`), on the element that draws it with its state (*The user-agent
 sheet*) or on a role; `window` accepts a relative PNG `background-image`, `background-opacity` and
-`background-blur` (0–100). Placement offsets on `.control-NAME` rules (`left`, `top`, `right`,
-`bottom`) are the app's too and give no notice. The toolbar's `order`, `hidden` and offsets are
+`background-blur` (0–100). The toolbar's `order`, `hidden` and offsets are
 read only from a sheet of an earlier version, when it is migrated (`order` and `hidden` as
 comma-separated module lists), and Suhina writes them to `theme.json`. In a current `theme.css`
 such a rule is ignored, with a warning.
@@ -848,9 +828,9 @@ my-theme/
   `offsets` of items moved by hand, and leaves an arrangement with groups or spaces as written.
   Suhina writes `theme.json` when the theme is renamed or its toolbar changes, and only then.
 - `theme.css`: the theme's style and layout, as its author wrote it (rules, variables,
-  `@media`, gradients, artwork `image` rules, `.control-NAME` placements). There is no
+  `@media`, gradients, artwork `image` rules). There is no
   `layout.css`: a folder that still has one gets a warning on import and the file is not read.
-  What Suhina's editors set beyond settings (moved controls, artwork chosen in the app) is written into `theme.css` through the source-preserving editor
+  What Suhina's editors set beyond settings (artwork chosen in the app) is written into `theme.css` through the source-preserving editor
   (`suhina_style::edit`): only the declarations that changed are edited or appended, and
   comments, `@media` rules and the rest of the author's text stay as they are.
 - `thumbnail.svg` (optional): see *Swatches and thumbnails*.
@@ -1387,11 +1367,9 @@ These native parts take the sheet (the theme package README lists every selector
   its inset before its value is cut.
 - **Faders:** `fader-cap { width; height }` (4–64 by 4–96) and `fader-rail { width }`
   (1–32), in paint and in the strip's travel.
-- **Mixer strips:** `mixer-divider` is a placeable control; the divider's drag area and its
-  highlight follow it and stay inside the strip. A strip without an audio input resolves its
-  input's caption, source and monitor rectangles without drawing them, so anchors to them line
-  up across strips. After placement, an anchored part that overlaps another part (other than
-  one containing the other, as the meter in the fader's column) or the toggles is not drawn.
+- **Mixer strips:** `divider#mixer-divider` is a part of the strip's layout (› The strips); its
+  drag area and highlight follow it and stay inside the strip. A strip without an audio input
+  keeps its input's room without drawing it, so the parts line up across strips.
 - **Piano roll:** `piano-grid` (background; `border-color` for the lines), `piano-row`,
   `piano-row-black` (without a scale); the keys: `piano-key` and `piano-key-black` (background,
   a `background-image` gradient in place of the key style's shading, `color` for the names,
@@ -1468,10 +1446,10 @@ of bars, and a slider id per parameter.
 - **Packages brought in again:** a package whose id names a theme here is not written; the app
   asks **Replace** (the theme's folder goes, the package is written under its id) or **Copy**
   (a new id, even when it looks the same).
-- **Arrangement header:** `#control-track-on` (`[checked]`, `[muted]`, artwork `track-on`),
-  `track-number` (placed as `arrangement-number` when `arrangement-enable` is hidden),
-  `#control-automation` (artwork `automation`), `fold` (artwork `fold`), `#control-monitor`
-  (artwork `monitor`, placed as `arrangement-monitor`).
+- **Arrangement header:** `#control-track-on` (`[checked]`, `[muted]`, artwork `track-on`) with
+  the track's number on it as `track-number`, `#control-automation` (artwork `automation`), `fold`
+  (artwork `fold`), `#control-monitor` (artwork `monitor`), laid out in the header's lines
+  (› The strips).
 - **Artwork variables:** before rasterising, `var()` in artwork takes the theme's resolved root
   variables; a track's colour reaches artwork as `currentColor`.
 - **Knob values:** `value-position` (`right` by default, `left`, `top`, `bottom`,
@@ -1510,8 +1488,6 @@ of bars, and a slider id per parameter.
 - **Device panels:** `height` on `device` or `#device-<id>` (60–1200, not with an embedded
   editor); `param-label` over each parameter's own; `knob { width | height }` within
   its cell.
-- **Low tracks:** `compact-below` on `arrangement` (at most 200 points): a header
-  lower than it resolves every placement natively (`control_layout::native_only`).
 - **Ruler:** `ruler-number` (`color`, `font-size`, `display`) and `ruler-tick` (`color`, `width`
   0–4) inside the Arrangement's `ruler`. The piano roll's bar numbers and ticks are inside its
   `ruler` too, and take only their `color`.
@@ -1603,9 +1579,7 @@ of bars, and a slider id per parameter.
   `divider#detail-splitter` is `[closed]` while the detail area is closed. A dialog's `color` reaches
   its names, values and titles; its hints and captions keep to a colour given to them.
 - **MIDI tools:** inside `midi-tools`, `gap` (0–16 points: the room between the tools part's rows and between the rows of its buttons) and `button { height }` (10–40 points: the height of its fields, buttons, switches and Apply); the stacked panel grows to hold them. `slider { appearance: knob }` draws Transform › Quantise's amount as a knob (`slider#quantise-amount`, as tall as its `height`, 16–96 points, 32 by default; `value-position` places its value). Its buttons and switches are `button`, its lists `dropdown` and its number fields `value`, as in a clip's panel (`docs/spec/clip-panel.md` › Theme).
-- **Duplicate:** a copy keeping placed controls returns a notice naming how many it keeps in its
-  `theme.css`.
-- **Host rules in layers:** placement and artwork rules inside `@layer` blocks are
+- **Host rules in layers:** artwork rules inside `@layer` blocks are
   read like the rest (nested layers too, eight deep); rules in `@media` and `@supports` are left
   to the style engine.
 - **Selected header:** `track-header[selected] { background-color }` paints the header in both
@@ -1619,7 +1593,6 @@ of bars, and a slider id per parameter.
 - **Knob artwork per part:** `pan.knob.body|pointer` and `send.knob.body|pointer` for a pan's and
   a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`. An
   Arrangement send is a knob with `send { appearance: knob }`, as in the mixer.
-- **Mixer colour strip:** `.control-mixer-color` (`display: none` hides it; `top`, `height` and
-  `width` move and size it).
+- **Mixer colour strip:** `mixer > track-colour` (`display: none` hides it; `width` sizes it).
 - **`accent-color`** reaches every control in its scope, the built-in effects' parameter knobs too.
 

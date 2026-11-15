@@ -93,7 +93,13 @@ pub const ATTRIBUTES: &[(&str, &str)] = &[
     ("detail", "where the window has its detail area: below, full-width or beside"),
     ("browser", "the side the window shows its browser on, left or right, while it shows"),
     ("menu-bar", "a window with its own menu bar"),
-    ("size", "the piano roll's toolbar at its Toolbar size: normal, large or larger"),
+    (
+        "size",
+        "the piano roll's toolbar at its Toolbar size: normal, large or larger; a track header by its height: tiny, small, normal or spacious",
+    ),
+    ("layout", "which line of a track header holds what, by its width and height: short, narrow, side or stacked"),
+    ("name-first", "a track header whose name's line comes first"),
+    ("narrow", "a mixer strip 96 points wide or less"),
 ];
 
 /// The toolbar's areas, by id (`#tempo`).
@@ -114,8 +120,25 @@ pub const TOOLBAR_MODULES: &[&str] = &[
 ];
 
 /// The groups of the bars' items, by id (`#toolbar-start`).
-pub const GROUP_IDS: &[&str] =
-    &["toolbar-start", "toolbar-end", "app-bar-start", "app-bar-centre", "app-bar-end", "piano-roll-rows"];
+pub const GROUP_IDS: &[&str] = &[
+    "toolbar-start",
+    "toolbar-end",
+    "app-bar-start",
+    "app-bar-centre",
+    "app-bar-end",
+    "piano-roll-rows",
+    "mixer-body",
+    "mixer-output",
+    "mixer-input",
+    "mixer-monitor",
+    "mixer-level",
+    "mixer-buttons",
+    "mixer-sends",
+    "header-indent",
+    "header-body",
+    "header-first",
+    "header-second",
+];
 
 /// The items of the status bar, the application bar and the piano roll's toolbar, by id.
 pub const BAR_ITEM_IDS: &[&str] = &[
@@ -160,7 +183,8 @@ const CONTROL_IDS: &[&str] = &[
 ];
 
 /// The level fields of the track headers and the mixer, by their placement names.
-const LEVEL_FIELDS: &[&str] = &["arrangement-volume", "arrangement-pan", "main-volume", "mixer-volume", "mixer-pan"];
+const LEVEL_FIELDS: &[&str] =
+    &["arrangement-volume", "arrangement-pan", "main-volume", "mixer-volume", "mixer-volume-readout", "mixer-pan"];
 
 /// Settings of a value a person drags, inherited from its ancestors.
 const VALUE_SETTINGS: &[&str] = &["appearance", "value-position", "value-decimals", "value-unit", "drag-pointer"];
@@ -238,7 +262,7 @@ pub const ELEMENTS: &[Element] = &[
     element("toolbar-module", Part, "One area of the toolbar, by its id; each is `[kind]` its id too: the time signature's words are `toolbar-module[kind=\"signature\"]`'s `color`, the launch quantisation's `[kind=\"grid\"]`'s.")
         .ids(Ids::Listed { prefix: "", names: TOOLBAR_MODULES })
         .attributes(&["kind"]),
-    element("group", Container, "A group of a bar's items, by id: the toolbar's start and end, the application bar's parts, the piano roll's Rows.")
+    element("group", Container, "A group of a bar's items or a strip's parts, by id: the toolbar's start and end, the application bar's parts, the piano roll's Rows, a mixer strip's and a track header's rows; a strip's groups lay its parts out and paint nothing.")
         .ids(Ids::Listed { prefix: "", names: GROUP_IDS })
         .attributes(&["kind"]),
     element("flexible-space", Drawn, "A gap in a bar that takes the room left over."),
@@ -319,10 +343,10 @@ pub const ELEMENTS: &[Element] = &[
             "start-marker",
         ])
         .attributes(&["kind"])
-        .settings(&["track-headers", "track-height", "header-min-width", "header-tint", "compact-below"]),
+        .settings(&["track-headers", "track-height", "header-min-width", "header-tint"]),
     element("track-header", Container, "A track's header, in the Arrangement view and over a Launcher column; Main's over the Launcher's scenes is `track-header[kind=\"main\"]`.")
-        .parts(&["track-name", "track-number", "fold"])
-        .attributes(&["color", "selected", "armed", "muted", "kind"])
+        .parts(&["track-name", "track-number", "track-colour", "fold", "group"])
+        .attributes(&["color", "selected", "armed", "muted", "kind", "layout", "size", "name-first"])
         .artwork(&[
             default_svg!("track.midi", "icon[kind=\"midi\"]"),
             default_svg!("track.audio", "icon[kind=\"audio\"]"),
@@ -337,6 +361,7 @@ pub const ELEMENTS: &[Element] = &[
         own("track.name.arrangement"),
     ]),
     element("track-number", Part, "A track's number in its Arrangement header.").attributes(&["muted"]),
+    element("track-colour", Part, "The band of a track's colour in its header or mixer strip; a click on it opens the colour picker."),
     element("fold", Control, "The triangle that folds a track or a group.")
         .attributes(&["checked"])
         .artwork(&[own("fold")]),
@@ -397,10 +422,11 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["checked"]),
     element("playhead", Drawn, "The play position line, in the arrangement, the piano roll and the browser's preview strip; where a jump waits for its beat is `playhead[kind=\"pending\"]`; the piano roll's is `playhead[kind=\"piano\"]` and the preview strip's `playhead[kind=\"preview\"]`.")
         .attributes(&["kind"]),
-    element("mixer", Region, "The mixer, and a mixer strip in any view.")
-        .parts(&["fader", "pan", "send", "meter", "device-list"])
-        .attributes(&["color", "selected", "muted"]),
+    element("mixer", Region, "The mixer, and a mixer strip in any view: `[narrow]` at 96 points or less, Main's `mixer[kind=\"main\"]`.")
+        .parts(&["fader", "pan", "send", "meter", "device-list", "track-colour", "mixer-toggles", "group"])
+        .attributes(&["color", "selected", "muted", "narrow", "kind"]),
     element("device-list", Container, "A mixer strip's list of its track's devices.").parts(&["device-row", "label"]),
+    element("mixer-toggles", Container, "A mixer strip's solo, cue and arm, beside its track-on switch.").parts(&["button"]),
     element("device-row", Control, "A device in a mixer strip's list: `[selected]` while it is picked, `[muted]` while it is off; a device group's branch in its panel, `device-row[kind=\"branch\"]`, `[selected]` while its devices show, `[muted]` while it is muted.")
         .attributes(&["selected", "muted", "kind"]),
     element("detail", Region, "The detail area under the main view."),

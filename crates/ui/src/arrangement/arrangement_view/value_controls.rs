@@ -16,17 +16,11 @@ pub(super) fn send_knob(
     clip: Rect,
     lane: &Lane,
     send: &crate::interaction::grid::SendKnob,
-    slot: usize,
     id: Id,
     state: &mut ArrangementViewState,
     background: Color32,
     actions: &mut Vec<Action>,
 ) {
-    let name = format!("arrangement-send-{}", slot + 1);
-    if crate::kit::control_layout::placement(&name).hidden {
-        return;
-    }
-    let rect = crate::kit::control_layout::place(&name, rect, clip);
     if !rect.intersects(clip) {
         return;
     }
@@ -134,11 +128,7 @@ pub(super) fn value_control(
         Control::Volume => "arrangement-volume",
         Control::Pan => "arrangement-pan",
     };
-    if crate::kit::control_layout::placement(name).hidden {
-        return;
-    }
-    let rect = crate::kit::control_layout::place(name, rect, clip);
-    // Named by their placement names, so a theme selects one by id (`#arrangement-volume`).
+    // Named by their places, so a theme selects one by id (`#arrangement-volume`).
     let value_style = crate::kit::element::VALUE.id(name).enter();
     let pan_style = matches!(control, Control::Pan).then(|| crate::kit::element::PAN.enter());
     // The innermost of the two, which the field or knob is drawn as.
@@ -170,14 +160,12 @@ pub(super) fn value_control(
             Control::Pan => (format!("{} pan", lane.name), widgets::format_pan(shown)),
         };
         // A field drawn as a bar is dragged either way: up or right raises it, whichever the drag
-        // moves along first. A knob turns with an up or down drag, unless the theme lays it out
-        // horizontally.
+        // moves along first. A knob turns with an up or down drag.
         let knob = match control {
             Control::Volume => state.knobs,
             Control::Pan => crate::kit::style_class::knob_preference(el, state.knobs),
         };
-        let axis =
-            if knob { crate::kit::control_layout::placement(name).direction.into() } else { widgets::DragAxis::Both };
+        let axis = if knob { widgets::DragAxis::Vertical } else { widgets::DragAxis::Both };
         let response = widgets::value_area_axis(ui, rect.intersect(clip), id.with(label.as_str()), &label, text, axis);
         widgets::value_drag_pointer(ui.ctx(), &response, el);
         control_response = Some(response.clone());

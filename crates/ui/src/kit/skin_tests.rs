@@ -174,7 +174,6 @@ fn skin_round_trip_and_old_defaults() {
         artwork_fps: 12,
         toolbar: Some(Toolbar::default()),
         toolbar_offsets: BTreeMap::from([("transport".into(), 80)]),
-        controls: BTreeMap::new(),
         variables: Arc::default(),
         base: true,
     };

@@ -181,13 +181,14 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   meter-horizontal meter-level { background: linear-gradient(to right, #00b050, #92d050 72%, #e3b929 90%, #d45840); }
 }
 
-/* Control placements. */
-.control-mixer-color { left: 0px; top: 0px; bottom: auto; display: none; right: auto; width: auto; height: auto; direction: vertical; }
-.control-mixer-meter { left: -48px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
-.control-mixer-pan { left: 25px; top: 0px; bottom: auto; display: block; right: auto; width: 24px; height: 24px; direction: vertical; }
-.control-mixer-volume { left: 18px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
-.control-mixer-volume-readout { left: -24px; top: 0px; bottom: auto; display: block; right: auto; width: 30px; height: auto; direction: vertical; }
-.control-mixer-volume-scale { left: -40px; top: 0px; bottom: auto; display: block; right: auto; width: auto; height: auto; direction: vertical; }
+/* The mixer strip's layout: no colour band, the meter before the fader, the dB value over the
+   meter, and the pan as a knob. */
+mixer track-colour { display: none; }
+mixer meter { order: -1; margin: 0 8px 0 0; }
+mixer fader-scale { margin: 0 6px 0 0; }
+#mixer-volume { margin-right: 6px; }
+#mixer-volume-readout { width: 30px; margin-right: 38px; }
+#mixer-pan { width: 24px; height: 24px; margin: 0 0 2px 25px; align-self: flex-start; }
 pan { appearance: knob; }
 
 /* Artwork. */

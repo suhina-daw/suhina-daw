@@ -60,8 +60,8 @@ fn sample_pan_and_zoom_stay_inside_the_file() {
 }
 
 #[test]
-fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispatch() {
-    use crate::kit::{control_layout::Placement, skin};
+fn a_device_control_is_drawn_and_clicked_where_the_sdk_lays_it_out() {
+    // A theme no longer places a device's controls (#1453): they keep the SDK's layout until #1009.
     let canvas = Arc::new(DeviceUi {
         size: [240.0, 120.0],
         controls: vec![CustomControl {
@@ -79,12 +79,6 @@ fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispat
         ..Default::default()
     });
     let parameters = [GraphParameter { value: 0.0, ..parameter("enabled", false) }];
-    let mut skin = skin::Skin::default();
-    skin.controls.insert(
-        "device-enabled".into(),
-        Placement { x: 80, y: 30, width: Some(80), height: Some(40), ..Default::default() },
-    );
-    skin::configure(&skin);
     let ctx = egui::Context::default();
     let mut output = ctx.run_ui(Default::default(), |ui| {
         show(
@@ -99,21 +93,16 @@ fn theme_device_geometry_moves_paint_and_input_and_hidden_controls_do_not_dispat
         )
     });
     output.textures_delta.clear();
-    let expected = Rect::from_min_size(egui::pos2(100.0, 50.0), Vec2::new(80.0, 40.0));
+    let expected = Rect::from_min_size(egui::pos2(20.0, 20.0), Vec2::new(40.0, 20.0));
     assert!(
         output.shapes.iter().any(
             |shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.rect == expected && rect.brush.is_some())
         )
     );
     assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text == "On" && expected.contains(text.pos))));
-    assert!(click(&canvas, &parameters, egui::pos2(40.0, 30.0)).is_empty());
     let actions = click(&canvas, &parameters, expected.center());
     assert!(actions.iter().any(|action| action.id == "device.setParam" && action.params["param"] == "enabled"));
-    skin.controls.get_mut("device-enabled").unwrap().hidden = true;
-    skin::configure(&skin);
-    assert!(click(&canvas, &parameters, expected.center()).is_empty());
-    skin::configure(&skin::Skin::default());
-    assert!(click(&canvas, &parameters, egui::pos2(40.0, 30.0)).iter().any(|action| action.id == "device.setParam"));
+    assert!(click(&canvas, &parameters, egui::pos2(120.0, 70.0)).is_empty());
 }
 
 #[test]

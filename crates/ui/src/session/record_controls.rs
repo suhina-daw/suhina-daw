@@ -21,10 +21,6 @@ const COUNT_INS: [(u8, &str); 4] = [(0, "Off"), (1, "1 bar"), (2, "2 bars"), (4,
 /// The control bar's record button in `rect`: lit while the arrangement records; a click
 /// starts or ends recording into the arrangement.
 pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, actions: &mut Vec<Action>) {
-    if crate::kit::control_layout::placement("transport-record").hidden {
-        return;
-    }
-    let rect = crate::kit::control_layout::place("transport-record", rect, ui.max_rect());
     let label = if recording { "Stop recording" } else { "Record into the arrangement" };
     let response = widgets::button_area(ui, rect, Id::unique("record"), label);
     if response.clicked() {
@@ -66,10 +62,6 @@ pub fn metronome_button(
     (on, db, sound): (bool, f64, suhina_engine::ClickSound),
     actions: &mut Vec<Action>,
 ) {
-    if crate::kit::control_layout::placement("transport-metronome").hidden {
-        return;
-    }
-    let rect = crate::kit::control_layout::place("transport-metronome", rect, ui.max_rect());
     let label = if on { "Metronome off" } else { "Metronome on" };
     let response = ui.interact(rect, Id::unique("metronome"), egui::Sense::click_and_drag()).on_hover_text(
         "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound",

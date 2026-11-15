@@ -559,7 +559,14 @@ pub fn show(
     // while the mixer is too low for a fader.
     let shared =
         crate::session::mixer_strip::Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
-    let parts = crate::session::mixer_strip::layout_main(main_mixer, shared);
+    let parts = crate::session::mixer_strip::layout_in(
+        crate::session::mixer_strip::Host::In(&style_class),
+        main_mixer,
+        false,
+        false,
+        shared,
+        crate::session::mixer_strip::Strip::Main,
+    );
     if let Some(list) = parts.devices {
         crate::session::mixer_strip::main_devices(
             ui,
@@ -574,27 +581,19 @@ pub fn show(
         crate::session::mixer_strip::main_fader(
             ui,
             &main_painter,
-            parts.readout.unwrap_or(Rect::NOTHING),
-            fader,
+            (parts.readout.unwrap_or(Rect::NOTHING), fader, parts.scale),
             grid.main_volume_db,
             state,
             actions,
         );
     }
-    let at = parts.meter.unwrap_or_else(|| {
-        Rect::from_min_size(
-            main_mixer.min + Vec2::splat(PAD),
-            Vec2::new(crate::session::mixer_strip::METER_WIDTH, parts.toggles.top() - main_mixer.top() - PAD * 2.0),
-        )
-    });
-    if !crate::kit::control_layout::placement("mixer-meter").hidden {
+    // The main meter stands where a track's does: beside the fader, or at the top of the strip
+    // while the mixer is too low for a fader.
+    if let Some(at) = parts.meter {
         meter::show(ui, &painter.with_clip_rect(main_mixer), at, "Main", meter::Source::Main, &level, actions);
     }
     // The metronome in the main strip's toggle row, as the main channel's click control.
-    let click =
-        Rect::from_min_size(parts.toggles.min, Vec2::new(28.0_f32.min(parts.toggles.width()), parts.toggles.height()));
-    let click = crate::kit::control_layout::place("mixer-metronome", click, main_mixer);
-    if !crate::kit::control_layout::placement("mixer-metronome").hidden {
+    if let Some(click) = parts.metronome {
         main_metronome(ui, &painter.with_clip_rect(main_mixer), click, grid.metronome, actions);
     }
     let bounds = mixer_bounds(area.height(), grid.scenes.len(), rows_top + rows_bottom);

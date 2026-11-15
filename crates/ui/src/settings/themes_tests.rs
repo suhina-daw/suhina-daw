@@ -268,20 +268,6 @@ fn a_folder_that_is_not_a_theme_keeps_its_id_from_a_copy() {
 }
 
 #[test]
-fn a_copy_of_a_theme_with_placed_controls_says_so() {
-    let mut themes = Themes::default();
-    let mut placed = night();
-    placed.theme.skin.controls.insert("arrangement-volume".into(), Default::default());
-    themes.set(vec![placed], None);
-    assert_eq!(themes.request("night", ThemeRequest::Duplicate { artwork: false }), Some("night-copy".into()));
-    assert!(themes.take_notice().is_some_and(|n| n.contains("1 placed control of")), "the copy says what it keeps");
-    assert_eq!(themes.take_notice(), None, "once");
-    themes.set(vec![night()], None);
-    themes.request("night", ThemeRequest::Duplicate { artwork: false });
-    assert_eq!(themes.take_notice(), None, "nothing placed, nothing said");
-}
-
-#[test]
 fn editing_a_palette_colour_refreshes_the_swatch_and_thumbnail_of_its_card() {
     for id in ["nord", BUILT_IN] {
         a_palette_edit_shows_on_the_card(id);

@@ -326,15 +326,6 @@ impl Themes {
                 if artwork {
                     self.add_default_artwork(&id);
                 }
-                // The copy keeps the controls placed in the theme it came from: say so, as they
-                // can look out of place in a theme made from it.
-                let placed = self.get(&id).map_or(0, |t| t.skin.controls.len());
-                if placed > 0 {
-                    let controls = if placed == 1 { "control" } else { "controls" };
-                    self.notice = Some(format!(
-                        "{name} keeps the {placed} placed {controls} of the theme it copies, in its theme.css"
-                    ));
-                }
                 self.actions.push(Pending::Save(id.clone()));
                 Some(id)
             }
@@ -561,16 +552,10 @@ pub fn slug(name: &str) -> String {
     if id.is_empty() { "theme".into() } else { id.to_string() }
 }
 
-/// What of a skin is its structure rather than settings: artwork, the toolbar, placements, and
-/// the background image itself.
+/// What of a skin is its structure rather than settings: artwork, the toolbar and the background
+/// image itself.
 fn structure(skin: &crate::kit::skin::Skin) -> impl PartialEq + use<> {
-    (
-        skin.assets.clone(),
-        skin.toolbar.clone(),
-        skin.toolbar_offsets.clone(),
-        skin.controls.clone(),
-        skin.background.clone(),
-    )
+    (skin.assets.clone(), skin.toolbar.clone(), skin.toolbar_offsets.clone(), skin.background.clone())
 }
 
 /// Ids name files, and file names do not differ by case on every system.
