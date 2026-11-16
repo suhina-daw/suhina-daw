@@ -408,6 +408,37 @@ fn moving_a_control_of_a_built_in_theme_copies_it() {
     );
 }
 
+/// A toolbar change to a built-in theme copies the theme as saved: the variant editor's unsaved
+/// edits are not written into the copy.
+#[test]
+fn a_toolbar_copy_of_a_built_in_theme_leaves_the_unsaved_draft_out() {
+    let mut themes = Themes::default();
+    let saved = themes.get("nord@snow-storm").unwrap().color("accent");
+    // Accent, the control that colours `accent`.
+    let name = "--tint".to_string();
+    let value = "#ff0000";
+    assert_ne!(saved, RED, "Nord's accent is not red to begin with");
+    themes.request("nord@snow-storm", ThemeRequest::EditValue { name, value: value.into() });
+    assert_eq!(themes.get("nord@snow-storm").unwrap().color("accent"), RED, "the draft is drawn");
+    assert!(themes.edited("nord@snow-storm"));
+    let mut skin = themes.get("nord@snow-storm").unwrap().skin.clone();
+    skin.toolbar_offsets.insert("transport".into(), 40);
+    let copy = themes.request("nord@snow-storm", ThemeRequest::EditSkin(skin));
+    assert_eq!(copy.as_deref(), Some("nord-custom"));
+    let saves: Vec<_> = themes
+        .take_actions()
+        .into_iter()
+        .filter_map(|a| match a {
+            FileAction::Save { id, theme } => Some((id, theme)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(saves.len(), 1, "{:?}", saves.iter().map(|(id, _)| id).collect::<Vec<_>>());
+    assert_eq!(saves[0].0, "nord-custom");
+    assert_eq!(saves[0].1.skin.toolbar_offsets.get("transport"), Some(&40), "the toolbar change is written");
+    assert_eq!(saves[0].1.color("accent"), saved, "the unsaved edit is not");
+}
+
 #[test]
 fn a_sheet_with_notices_is_named_with_them() {
     let (theme, _) =
