@@ -274,7 +274,8 @@ fn the_user_agent_sheet_selects_by_name_state_and_attribute_only() {
     assert!(!USER_AGENT_SHEET.contains("var("), "the user-agent sheet uses no variables");
     assert!(!USER_AGENT_SHEET.contains("--"), "the user-agent sheet declares no custom properties");
     assert!(!USER_AGENT_SHEET.contains('@'), "the user-agent sheet has no at-rules");
-    let mut text = USER_AGENT_SHEET.to_owned();
+    // One line ending whatever the checkout makes of the file.
+    let mut text = USER_AGENT_SHEET.replace("\r\n", "\n");
     while let Some(start) = text.find("/*") {
         let end = text[start..].find("*/").unwrap() + start + 2;
         text.replace_range(start..end, "");
