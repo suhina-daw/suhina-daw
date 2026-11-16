@@ -101,37 +101,38 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     assert_eq!(live("accent"), colors["accent"]);
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.theme), Some("night".into()));
 
-    // A copy to change becomes the theme in use, and is handed out to be written.
-    harness.get_by_label("More").click();
+    // A new theme made from it becomes the theme in use, and is handed out to be written.
+    harness.get_by_label("Theme: Night").click_secondary();
     harness.run();
-    harness.get_by_label("Duplicate theme…").click();
+    harness.get_by_label("New theme from this…").click();
     harness.run();
     // It asks first, with the default artwork left out unless it is ticked.
     assert!(harness.query_by_label("Include the default artwork").is_some());
-    harness.get_by_label("Duplicate").click();
+    harness.get_by_label("Theme name").focus();
+    harness.run();
+    harness.get_by_label("Theme name").type_text("Night copy");
+    harness.run();
+    harness.get_by_label("Create theme").click();
     harness.run();
     let saved: Vec<_> = harness
         .state_mut()
         .take_theme_actions()
         .into_iter()
         .map(|a| match a {
-            FileAction::Save { id, theme } => (id, theme.name),
-            other => (format!("{other:?}"), String::new()),
+            FileAction::Save { id, theme } => (id, theme.name, theme.colors.get("accent").copied()),
+            other => (format!("{other:?}"), String::new(), None),
         })
         .collect();
-    assert_eq!(saved, [("night-copy".to_string(), "Night copy".to_string())]);
+    assert_eq!(saved, [("night-copy".to_string(), "Night copy".to_string(), Some(colors["accent"]))]);
     assert_eq!(harness.state().settings().theme, "night-copy");
 
-    for button in ["Reload themes", "Open the themes folder", "Back up themes"] {
+    for button in ["Open the themes folder", "Back up themes"] {
         harness.get_by_label("More").click();
         harness.run();
         harness.get_by_label(button).click();
         harness.run();
     }
-    assert_eq!(
-        harness.state_mut().take_theme_actions(),
-        [FileAction::Reload, FileAction::OpenFolder, FileAction::Backup]
-    );
+    assert_eq!(harness.state_mut().take_theme_actions(), [FileAction::OpenFolder, FileAction::Backup]);
 
     // A theme file dropped on the window is handed out to be brought in.
     harness.input_mut().dropped_files.push(std::sync::Arc::new(TestFile("dark blue.json".into())));

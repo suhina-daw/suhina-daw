@@ -144,20 +144,21 @@ impl App {
             "project.previous" => actions.push(Action::new("project.previous", json!({}))),
             "view.session" if has_project => {
                 self.shown = View::Session;
-                self.settings_open = false;
+                self.close_settings();
             }
             "view.arrangement" if has_project => {
                 self.shown = View::Arrangement;
-                self.settings_open = false;
+                self.close_settings();
             }
             "view.sampleMapWindow" => self.toggle_map_window(),
             "view.sampleMap" => {
-                self.settings_open = false;
-                self.toggle_large_map();
+                if self.close_settings() {
+                    self.toggle_large_map();
+                }
             }
             "menu.missingFiles" if !self.missing.rows.is_empty() => {
                 self.missing.open = true;
-                self.settings_open = false;
+                self.close_settings();
             }
             "view.browser" => self.toggle_browser(),
             "view.detail" if has_project => {

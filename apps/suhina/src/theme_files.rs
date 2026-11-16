@@ -97,6 +97,14 @@ pub struct ThemeFiles {
     reserved: Vec<String>,
     /// How many entries of the themes folder are looked at for names.
     max_folders: usize,
+    /// Moves a file or folder to the system's Trash: [`system_trash`], or in tests one that
+    /// touches no real Trash.
+    trash: fn(&Path) -> Result<(), String>,
+}
+
+/// Moves `path` to the system's Trash (Recycle Bin on Windows, the freedesktop trash on Linux).
+fn system_trash(path: &Path) -> Result<(), String> {
+    trash::delete(path).map_err(|e| e.to_string())
 }
 
 impl ThemeFiles {
@@ -110,6 +118,7 @@ impl ThemeFiles {
             not_themes: Vec::new(),
             reserved: Vec::new(),
             max_folders: 4096,
+            trash: system_trash,
         }
     }
 
@@ -590,6 +599,48 @@ impl ThemeFiles {
             written.push(ThemeEntry { id, theme });
         }
         Ok(Imported { ids: written.into_iter().map(|e| e.id).collect(), warnings, conflict })
+    }
+
+    /// Moves the theme `id`'s folder (and a JSON file of it not migrated yet), or for
+    /// `<theme>@<variant>` the variant's file, to the system's Trash. Returns what to say in the
+    /// status bar. The list is then read again whole, so the theme leaves it only once it is gone.
+    pub fn trash(&mut self, id: &str) -> Result<String, String> {
+        let folder = self.folder.clone().ok_or("there is no folder to keep themes in")?;
+        let (base, variant) = theme_vars::split_id(id);
+        if !is_theme_id(base) || variant.is_some_and(|v| !theme_vars::is_variant_id(v)) {
+            return Err(format!("{id} cannot name a theme file"));
+        }
+        let paths: Vec<PathBuf> = match variant {
+            Some(variant) => vec![folder.join(base).join(VARIANTS).join(format!("{variant}.json"))],
+            None if theme::is_built_in(base) => return Err(format!("{base} comes with Suhina and cannot be deleted")),
+            None => vec![folder.join(base), folder.join(format!("{base}.json"))],
+        };
+        let paths: Vec<PathBuf> = paths.into_iter().filter(|p| std::fs::symlink_metadata(p).is_ok()).collect();
+        if paths.is_empty() {
+            return Err(format!("{id} has no file to delete"));
+        }
+        for path in &paths {
+            (self.trash)(path).map_err(|e| format!("could not move {} to the Trash: {e}", path.display()))?;
+        }
+        self.snapshots.remove(id);
+        if variant.is_none() {
+            self.seen.remove(base);
+            self.snapshots.retain(|key, _| theme_vars::split_id(key).0 != base);
+        }
+        Ok(format!("Moved {id} to the Trash"))
+    }
+
+    /// Shows the theme `id`'s folder in the system's file manager.
+    pub fn reveal_theme(&self, id: &str) -> Result<(), String> {
+        let folder = self.folder.as_ref().ok_or("there is no folder to keep themes in")?;
+        if !is_theme_id(id) {
+            return Err(format!("{id} cannot name a theme file"));
+        }
+        let path = folder.join(id);
+        if !path.exists() {
+            return Err(format!("{id} has no folder yet"));
+        }
+        reveal(&path, true)
     }
 
     /// Shows the themes folder in the system's file manager, made first if it is not there.

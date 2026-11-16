@@ -488,3 +488,51 @@ fn a_folder_of_variants_alone_is_not_written_in_by_a_save() {
     );
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+/// A Trash for tests: the file or folder leaves the themes folder, and no real Trash is touched.
+fn fake_trash(path: &Path) -> Result<(), String> {
+    let gone = if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) };
+    gone.map_err(|e| e.to_string())
+}
+
+/// A Trash that refuses, as a full or missing one may.
+fn failing_trash(_: &Path) -> Result<(), String> {
+    Err("the Trash is not available".into())
+}
+
+#[test]
+fn a_deleted_variant_or_theme_goes_to_the_trash() {
+    let dir = folder("trash");
+    let themes = dir.join("themes");
+    hand_written(
+        &themes.join("ink"),
+        "Ink",
+        "@property --tint { syntax: \"<color>\"; initial-value: #112233; label: \"Tint\"; }",
+    );
+    std::fs::create_dir_all(themes.join("ink").join(VARIANTS)).unwrap();
+    let warm = Variant { id: "warm".into(), name: "Warm".into(), values: [("--tint".into(), "#884400".into())].into() };
+    std::fs::write(themes.join("ink").join(VARIANTS).join("warm.json"), warm.to_json()).unwrap();
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    files.trash = fake_trash;
+    let ids = |files: &mut ThemeFiles| files.read_all().0.into_iter().map(|e| e.id).collect::<Vec<_>>();
+    assert_eq!(ids(&mut files), ["ink", "ink@warm"]);
+
+    // A Trash that refuses leaves the file, and says why.
+    files.trash = failing_trash;
+    let refused = files.trash("ink@warm");
+    assert!(refused.as_ref().is_err_and(|e| e.contains("the Trash is not available")), "{refused:?}");
+    assert_eq!(ids(&mut files), ["ink", "ink@warm"]);
+
+    files.trash = fake_trash;
+    assert_eq!(files.trash("ink@warm"), Ok("Moved ink@warm to the Trash".into()));
+    assert_eq!(ids(&mut files), ["ink"]);
+    assert!(files.trash("ink@warm").is_err(), "nothing left to delete");
+    // Never a built-in theme, nor a path outside the folder.
+    for id in ["nord", "../ink", "ink@../../x"] {
+        assert!(files.trash(id).is_err(), "{id}");
+    }
+    assert_eq!(files.trash("ink"), Ok("Moved ink to the Trash".into()));
+    assert!(ids(&mut files).is_empty());
+    assert!(!themes.join("ink").exists());
+    let _clean = std::fs::remove_dir_all(&dir);
+}
