@@ -500,6 +500,27 @@ fn failing_trash(_: &Path) -> Result<(), String> {
     Err("the Trash is not available".into())
 }
 
+/// A Trash that takes folders and refuses files, so a theme with a folder and an old file beside
+/// it is half moved.
+fn folders_only_trash(path: &Path) -> Result<(), String> {
+    if path.is_dir() { fake_trash(path) } else { Err("files are refused".into()) }
+}
+
+#[test]
+fn a_half_moved_theme_says_so() {
+    let dir = folder("trash-half");
+    let themes = dir.join("themes");
+    hand_written(&themes.join("ink"), "Ink", ":root { --accent: #112233; }");
+    std::fs::write(themes.join("ink.json"), "{}").unwrap();
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    files.read_all();
+    files.trash = folders_only_trash;
+    let result = files.trash("ink");
+    assert!(result.as_ref().is_err_and(|e| e.contains("the rest of ink is in the Trash")), "{result:?}");
+    assert!(!themes.join("ink").exists());
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_deleted_variant_or_theme_goes_to_the_trash() {
     let dir = folder("trash");

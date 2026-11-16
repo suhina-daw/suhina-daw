@@ -101,9 +101,23 @@ pub struct ThemeFiles {
     trash: fn(&Path) -> Result<(), String>,
 }
 
+/// The folder of an earlier version's template zip and theme packages that held example sheets
+/// (and in the template the built-in themes): left out when a zip is brought in.
+const EXAMPLES: &str = "examples/";
+
 /// Moves `path` to the system's Trash (Recycle Bin on Windows, the freedesktop trash on Linux).
+/// On macOS through the system's file manager call, not by asking Finder, which needs the user
+/// to let Suhina control Finder (and fails in a build without that permission) and plays its
+/// sound; the file is dragged out of the Trash to restore it.
 fn system_trash(path: &Path) -> Result<(), String> {
-    trash::delete(path).map_err(|e| e.to_string())
+    #[allow(unused_mut)]
+    let mut context = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        context.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    context.delete(path).map_err(|e| e.to_string())
 }
 
 impl ThemeFiles {
@@ -615,15 +629,31 @@ impl ThemeFiles {
         if paths.is_empty() {
             return Err(format!("{id} has no file to delete"));
         }
+        let mut failed = None;
+        let mut moved = 0;
         for path in &paths {
-            (self.trash)(path).map_err(|e| format!("could not move {} to the Trash: {e}", path.display()))?;
+            match (self.trash)(path) {
+                Ok(()) => moved += 1,
+                Err(e) => {
+                    failed = Some(format!("could not move {} to the Trash: {e}", path.display()));
+                    break;
+                }
+            }
         }
-        self.snapshots.remove(id);
-        if variant.is_none() {
-            self.seen.remove(base);
-            self.snapshots.retain(|key, _| theme_vars::split_id(key).0 != base);
+        // What was moved is forgotten even when a later move failed, so a theme of that id made
+        // again is not taken for one edited outside Suhina.
+        if moved > 0 {
+            self.snapshots.remove(id);
+            if variant.is_none() {
+                self.seen.remove(base);
+                self.snapshots.retain(|key, _| theme_vars::split_id(key).0 != base);
+            }
         }
-        Ok(format!("Moved {id} to the Trash"))
+        match failed {
+            Some(error) if moved > 0 => Err(format!("{error}; the rest of {id} is in the Trash")),
+            Some(error) => Err(error),
+            None => Ok(format!("Moved {id} to the Trash")),
+        }
     }
 
     /// Shows the theme `id`'s folder in the system's file manager.
@@ -1499,7 +1529,7 @@ fn read_zip(path: &Path) -> Result<(Vec<LoadedTheme>, Vec<String>), String> {
             && !name.contains(&format!("/{LEGACY}/"))
             && !name.contains(&format!("{VARIANTS}/"))
             && !css_folders.contains(name.strip_suffix(".json").unwrap_or_default());
-        if !css && !json {
+        if (!css && !json) || name.starts_with(EXAMPLES) {
             continue;
         }
         let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
@@ -1521,7 +1551,7 @@ fn read_zip(path: &Path) -> Result<(Vec<LoadedTheme>, Vec<String>), String> {
             let own: Vec<(String, Vec<u8>)> = files
                 .iter()
                 .filter_map(|(path, bytes)| Some((path.strip_prefix(&prefix)?.to_owned(), bytes.clone())))
-                .filter(|(path, _)| !path.starts_with(&format!("{LEGACY}/")))
+                .filter(|(path, _)| !path.starts_with(&format!("{LEGACY}/")) && !path.starts_with(EXAMPLES))
                 .collect();
             match resolve_files(&own.iter().cloned().collect()) {
                 Ok((theme, warnings)) => (theme, warnings, own),

@@ -72,6 +72,9 @@ pub struct Themes {
     overridden: Vec<String>,
     /// Each of the user's themes whose sheet has notices, with them (line, column, message).
     notices: Vec<(String, Vec<String>)>,
+    /// Themes and variants this asked to move to the Trash: the ones whose going the app answers
+    /// by choosing another, unlike a theme missing from one reading of the folder.
+    trashed: Vec<String>,
 }
 
 /// The variant editor's unsaved edits of the variant `id`: the values set and the name typed, and
@@ -116,6 +119,7 @@ impl Default for Themes {
             draft: None,
             overridden: Vec::new(),
             notices: Vec::new(),
+            trashed: Vec::new(),
         }
     }
 }
@@ -168,10 +172,15 @@ impl Themes {
         if theme::is_built_in(&entry.id) {
             return false;
         }
+        let shipped = self.entries[..self.built_in].iter().find(|e| same_id(&e.id, &entry.id)).map(|e| e.id.clone());
         let changed = match self.entries.iter_mut().find(|e| same_id(&e.id, &entry.id)) {
             Some(old) if *old == entry => false,
             Some(old) => {
                 *old = entry;
+                // The user's copy of a variant a built-in theme ships, as `set` marks it.
+                if let Some(id) = shipped.filter(|id| !self.overridden.contains(id)) {
+                    self.overridden.push(id);
+                }
                 true
             }
             None => {
@@ -381,6 +390,9 @@ impl Themes {
                 // The entry stays until the file is gone: the app reads the folder again then, and
                 // what was in use gives way only once the move succeeded.
                 let target = if variant.is_some() { real.clone() } else { base.to_owned() };
+                if !self.trashed.contains(&target) {
+                    self.trashed.push(target.clone());
+                }
                 self.file_action(FileAction::Trash(target))
             }
             ThemeRequest::NewTheme(new) => {
@@ -439,7 +451,11 @@ impl Themes {
                     theme.meta.name.clone_from(&name);
                     theme.meta.author = text(&info.author);
                     theme.meta.description = text(&info.description);
-                    theme.meta.default_variant = text(&info.default_variant);
+                    // The name shown when none is set ("Default") is not written as one.
+                    let typed = text(&info.default_variant);
+                    if theme.meta.default_variant.is_some() || typed.as_deref() != Some(theme.meta.default_variant()) {
+                        theme.meta.default_variant = typed;
+                    }
                 });
                 self.actions.push(Pending::Save(base));
                 None
@@ -506,8 +522,21 @@ impl Themes {
     pub fn edited(&self, current: &str) -> bool {
         let Some(draft) = self.draft_for(current) else { return false };
         let Some(entry) = self.entries.iter().find(|e| e.id == draft.id) else { return false };
-        let renamed = draft.name.as_deref().is_some_and(|n| n.trim() != self.saved_name(&draft.id));
+        let renamed = typed_name(draft).is_some_and(|n| n != self.saved_name(&draft.id));
         draft.new || renamed || draft.theme.vars.values != entry.theme.vars.values
+    }
+
+    /// Whether the theme or variant `id` went because this moved it to the Trash.
+    pub fn trashed(&self, id: &str) -> bool {
+        self.trashed.iter().any(|t| same_id(t, id))
+    }
+
+    /// Drops the draft unless it is of `id`: another theme is used without the editor (a theme
+    /// brought in, say), and edits left behind would come back unasked.
+    pub fn keep_draft_of(&mut self, id: &str) {
+        if self.draft.as_ref().is_some_and(|d| !same_id(&d.id, &self.real_id(id))) {
+            self.draft = None;
+        }
     }
 
     /// Drops the draft, unsaved: the editor was left without saving, or Settings closed.
@@ -573,10 +602,10 @@ impl Themes {
                 theme.vars.values.insert(name.clone(), value.clone());
             }
         }
-        if let Some(name) = &draft.name
+        if let Some(name) = typed_name(draft)
             && crate::kit::theme_vars::split_id(&draft.id).1.is_some()
         {
-            theme.vars.variant_name = Some(name.clone());
+            theme.vars.variant_name = Some(name);
         }
         crate::kit::theme_vars::resolve(&mut theme);
         // A theme read from a sheet keeps its edited settings as values over the sheet's.
@@ -618,7 +647,7 @@ impl Themes {
         } else {
             let base = base.to_string();
             let id = self.free_variant(&base, "Custom");
-            let mut theme = self.get(&real)?.clone();
+            let mut theme = self.entries.iter().find(|e| e.id == real)?.theme.clone();
             theme.vars.variant = crate::kit::theme_vars::split_id(&id).1.map(str::to_owned);
             theme.vars.variant_name = Some("Custom".into());
             // A change that changes nothing (a reset of what was not edited) makes no variant.
@@ -642,6 +671,8 @@ impl Themes {
             crate::kit::theme_vars::refresh_view(&mut entry.theme);
         }
         self.actions.push(Pending::Save(id.clone()));
+        // A draft over it is made again over the changed entry.
+        self.rebuild_draft();
         switched.then_some(id)
     }
 
@@ -678,8 +709,10 @@ impl Themes {
         let mut actions: Vec<FileAction> = Vec::new();
         for item in pending {
             let action = match item {
-                Pending::Save(id) => match self.get(&id) {
-                    Some(theme) => FileAction::Save { id, theme: Box::new(theme.clone()) },
+                // What the entry holds, never an unsaved draft over it: Save puts the draft into
+                // the entry first.
+                Pending::Save(id) => match self.entries.iter().find(|e| e.id == id) {
+                    Some(entry) => FileAction::Save { id, theme: Box::new(entry.theme.clone()) },
                     None => continue,
                 },
                 Pending::Other(action) => *action,
@@ -761,3 +794,9 @@ fn same_id(a: &str, b: &str) -> bool {
 #[cfg(test)]
 #[path = "themes_tests.rs"]
 mod tests;
+
+/// The name typed in the editor, trimmed; none when the field was emptied, which keeps the name
+/// the variant has.
+fn typed_name(draft: &Draft) -> Option<String> {
+    draft.name.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(str::to_owned)
+}

@@ -1352,7 +1352,7 @@ opaque theme it is composited normally.
 
 ## Parts added for themes
 
-These native parts take the sheet (the theme package README lists every selector):
+These native parts take the sheet (the [theme author guide](../guide/theme-authoring.md) lists every selector):
 
 - **Sends:** `send` in the mixer and the Arrangement header; `#mixer-send-N` by place from
   the left; `appearance: knob` draws mixer sends as knobs; artwork `send` and

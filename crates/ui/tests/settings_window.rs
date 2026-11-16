@@ -1295,3 +1295,14 @@ fn the_themes_page_has_no_restore_template_or_active_marker() {
         assert!(harness.query_by_label(gone).is_none(), "{gone}");
     }
 }
+
+/// A theme missing from one reading of the folder (not there yet, or half written) stays the
+/// choice, for when it is back.
+#[test]
+fn a_theme_missing_from_one_reading_stays_chosen() {
+    let mut harness = short_window();
+    ink_and_dim(&mut harness);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_themes(&ctx, Vec::new(), Some("themes".into()));
+    assert_eq!(harness.state().settings().theme, "ink@dim");
+}

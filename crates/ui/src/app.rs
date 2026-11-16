@@ -1499,13 +1499,20 @@ impl App {
 
     pub fn set_themes(&mut self, ctx: &egui::Context, files: Vec<ThemeEntry>, folder: Option<String>) {
         self.themes.set(files, folder);
-        // A variant in use whose file went: its theme's own values take its place; a theme whose
-        // folder went (moved to the Trash, say): Suhina Studio.
+        // A variant in use whose file went: its theme's own values take its place. A theme moved
+        // to the Trash from Settings: Suhina Studio. A theme missing from one reading of the
+        // folder (not there yet, or half written) stays the choice, for when it is back.
         if self.themes.get(&self.settings.theme).is_none() {
             let base = self.settings.theme.split_once('@').map_or(self.settings.theme.as_str(), |(base, _)| base);
-            self.settings.theme =
-                if self.themes.get(base).is_some() { base.to_owned() } else { crate::kit::theme::BUILT_IN.to_owned() };
-            self.settings_changed = true;
+            let next = if self.themes.get(base).is_some() {
+                Some(base.to_owned())
+            } else {
+                self.themes.trashed(base).then(|| crate::kit::theme::BUILT_IN.to_owned())
+            };
+            if let Some(next) = next {
+                self.settings.theme = next;
+                self.settings_changed = true;
+            }
         }
         if let Some(notice) = self.themes.take_notice() {
             self.status = Status::Hint(notice);
@@ -1541,6 +1548,7 @@ impl App {
 
     pub fn use_theme(&mut self, ctx: &egui::Context, id: &str) {
         if self.themes.get(id).is_some() {
+            self.themes.keep_draft_of(id);
             self.settings.theme = id.to_string();
             self.settings_changed = true;
             ctx.request_repaint();

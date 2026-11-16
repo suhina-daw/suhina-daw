@@ -439,3 +439,107 @@ fn add_default_artwork_adds_only_what_is_missing() {
     assert!(themes.take_actions().is_empty());
     assert_eq!(themes.take_notice().as_deref(), Some("This theme already has all of the default artwork"));
 }
+
+/// The toolbar editor saves what the file holds plus its change, never the variant editor's
+/// unsaved draft, and the draft is made again over the changed entry.
+#[test]
+fn a_toolbar_edit_during_a_draft_saves_the_entry_not_the_draft() {
+    let mut themes = ink();
+    themes.request("ink@warm", tint("#ff0000"));
+    let mut skin = themes.get("ink@warm").unwrap().skin.clone();
+    skin.segments = 9;
+    themes.request("ink@warm", ThemeRequest::EditSkin(skin));
+    let saves: Vec<_> = themes
+        .take_actions()
+        .into_iter()
+        .filter_map(|a| match a {
+            FileAction::Save { id, theme } => Some((id, theme.skin.segments, theme.color("accent"))),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(saves.len(), 1, "{saves:?}");
+    assert_eq!(saves[0].0, "ink@warm");
+    assert_eq!(saves[0].1, 9, "the toolbar change is written");
+    assert_ne!(saves[0].2, RED, "the unsaved colour is not");
+    let drawn = themes.get("ink@warm").unwrap();
+    assert_eq!((drawn.skin.segments, drawn.color("accent")), (9, RED), "the draft keeps both");
+
+    // A new variant's draft stays a draft: the variant it started from keeps its name.
+    themes.request("ink@warm", ThemeRequest::Discard);
+    themes.request("ink@warm", ThemeRequest::NewVariant("ink@warm".into()));
+    let skin = themes.get("ink@warm").unwrap().skin.clone();
+    themes.request("ink@warm", ThemeRequest::EditSkin(crate::kit::skin::Skin { segments: 7, ..skin }));
+    let names: Vec<_> = themes
+        .take_actions()
+        .into_iter()
+        .filter_map(|a| match a {
+            FileAction::Save { theme, .. } => theme.vars.variant_name,
+            _ => None,
+        })
+        .collect();
+    assert_eq!(names, ["Warm"]);
+}
+
+/// An emptied Name keeps the name the variant has.
+#[test]
+fn an_emptied_name_is_not_a_change_and_is_not_written() {
+    let mut themes = ink();
+    themes.request("ink@warm", ThemeRequest::EditName("  ".into()));
+    assert!(!themes.edited("ink@warm"));
+    themes.request("ink@warm", tint("#ff0000"));
+    themes.request("ink@warm", ThemeRequest::Save);
+    let names: Vec<_> = themes
+        .take_actions()
+        .into_iter()
+        .filter_map(|a| match a {
+            FileAction::Save { theme, .. } => theme.vars.variant_name,
+            _ => None,
+        })
+        .collect();
+    assert_eq!(names, ["Warm"]);
+}
+
+/// Only what Settings moved to the Trash counts as gone on purpose.
+#[test]
+fn a_theme_moved_to_the_trash_is_known_as_trashed() {
+    let mut themes = ink();
+    assert!(!themes.trashed("ink"));
+    themes.request("ink", ThemeRequest::Delete("ink".into()));
+    assert!(themes.trashed("ink"));
+    assert!(!themes.trashed("ink@warm"));
+}
+
+/// Theme info leaves the default variant's name unset when it was and still reads "Default".
+#[test]
+fn theme_info_writes_no_default_variant_name_it_did_not_have() {
+    let mut themes = ink();
+    let info = themes.view("ink").info.into_iter().find(|(id, _)| id == "ink").unwrap().1;
+    assert_eq!(info.default_variant, "Default");
+    themes.request("ink", ThemeRequest::EditInfo { id: "ink".into(), info: ThemeInfo { author: "Me".into(), ..info } });
+    assert_eq!(themes.get("ink").unwrap().meta.default_variant, None);
+    assert_eq!(themes.get("ink").unwrap().meta.author.as_deref(), Some("Me"));
+}
+
+/// Another theme used without the editor drops the draft; the draft's own theme keeps it.
+#[test]
+fn using_another_theme_drops_a_draft_of_this_one() {
+    let mut themes = ink();
+    themes.request("ink@warm", tint("#ff0000"));
+    themes.keep_draft_of("ink@warm");
+    assert!(themes.edited("ink@warm"));
+    themes.keep_draft_of("ink");
+    assert!(!themes.edited("ink@warm"));
+}
+
+/// A user's copy of a shipped variant read alone (not with the whole folder) is the user's too.
+#[test]
+fn a_users_copy_of_a_shipped_variant_read_alone_can_be_saved() {
+    let mut themes = Themes::default();
+    assert!(!themes.saveable("nord@snow-storm"));
+    let theme = themes.get("nord@snow-storm").unwrap().clone();
+    let mut copy = theme.clone();
+    copy.vars.variant_name = Some("Mine".into());
+    themes.put(ThemeEntry { id: "nord@snow-storm".into(), theme: copy });
+    assert!(themes.saveable("nord@snow-storm"));
+    assert!(themes.view("nord").overridden.contains(&"nord@snow-storm".to_string()));
+}
