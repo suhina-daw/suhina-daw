@@ -843,7 +843,7 @@ fn a_split_takes_a_beat_per_note_and_can_keep_only_the_longer_piece() {
     assert_eq!(*session.project(), before);
 
     let cases = [
-        (json!({ "track": 1, "index": 0, "notes": [0], "at": 0.5, "times": [0.5] }), "not both"),
+        (json!({ "track": 1, "index": 0, "notes": [0], "at": 0.5, "times": [0.5] }), "one of"),
         (json!({ "track": 1, "index": 0, "notes": [0, 2], "times": [0.5] }), "one entry per note"),
         (json!({ "track": 1, "index": 0, "notes": [0], "times": [-1.0] }), "each of times must be 0 to"),
         (json!({ "track": 1, "index": 0, "notes": [0], "times": "soon" }), "times must be a list"),
