@@ -299,7 +299,12 @@ fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
     let parameters = [parameter("gain", false)];
     let pointer = |text: Color32| {
         let ctx = egui::Context::default();
-        crate::kit::theme::use_colors(&ctx, &[("text.primary".to_owned(), text)].into());
+        // The sheet's variables: the canvas's text colour reads `--text-primary`, a knob's own
+        // `color` `--text-hint` (base.css), which the dial's line takes.
+        crate::kit::theme::use_colors(
+            &ctx,
+            &[("text-primary".to_owned(), text), ("text-hint".to_owned(), text)].into(),
+        );
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = crate::kit::native_css::frame(ui);
             show(
@@ -313,6 +318,7 @@ fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
                 &mut Vec::new(),
             )
         });
+        crate::kit::theme::use_colors(&ctx, &crate::kit::theme::Colors::new());
         output.textures_delta.clear();
         output
             .shapes
