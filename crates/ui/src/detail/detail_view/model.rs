@@ -656,8 +656,10 @@ fn show_value(
                     .clamp(parameter.min, parameter.max);
             }
             // A plug-in's listed text is for the value it listed, not the one played: the one
-            // played takes the plug-in's text for it, once the plug-in has given it.
-            if value != parameter.value {
+            // played takes the plug-in's text for it, once the plug-in has given it. A value
+            // that did not move but has no text yet (the project keeps one the plug-in did not
+            // list) is looked up too; a listed text for the same value stays.
+            if value != parameter.value || (texts.is_some() && parameter.text.is_empty()) {
                 let id = suhina_engine::param_id(&parameter.id);
                 let known = texts.zip(id).map(|(texts, id)| {
                     texts.lock().map(|kept| kept.get(&(id, value.to_bits())).cloned()).unwrap_or_default()

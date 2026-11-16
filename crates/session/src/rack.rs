@@ -269,11 +269,26 @@ fn texts_of(texts: &ParamTexts) -> std::sync::MutexGuard<'_, std::collections::H
 /// Most texts kept for one plug-in; past this the texts are forgotten and asked for again.
 const MAX_TEXTS: usize = 8192;
 
+/// Most parameters of one plug-in waiting in line for their texts.
+const MAX_TEXTS_WAITING: usize = 64;
+
 /// The ids of a parameter list's parameters whose lanes hold each value until the next point
 /// (a switch, a list of choices: [`suhina_plugins::ParamInfo::holds`], #1482), as
 /// [`Instance::steps`] keeps them. A knob listed with steps is not one of them.
 fn steps(list: &[suhina_plugins::ParamInfo]) -> std::sync::Arc<[u32]> {
     list.iter().filter(|p| p.holds()).map(|p| p.id).collect()
+}
+
+/// The step of each parameter of a list that moves in steps without holding (a knob listed
+/// with steps, #1482), by id, as [`Instance::step_sizes`] keeps them.
+fn step_sizes(list: &[suhina_plugins::ParamInfo]) -> Vec<(u32, f64)> {
+    list.iter()
+        .filter(|p| p.steps > 1 && !p.holds())
+        .filter_map(|p| {
+            let step = (p.max - p.min).abs() / f64::from(p.steps);
+            (step.is_finite() && step > 0.0).then_some((p.id, step))
+        })
+        .collect()
 }
 
 /// A parameter list's ids and ranges (lowest, highest), as [`Instance::ranges`] keeps them.
@@ -393,6 +408,10 @@ struct Instance {
     /// engine holds their lanes' values until the next point, as the lanes draw them (#1205,
     /// #1482).
     steps: Option<std::sync::Arc<[u32]>>,
+    /// The step of each parameter that moves along its lanes' lines in steps (one listed with
+    /// steps that does not hold), by id, once listed: a report that far from what a lane sent is
+    /// still the lane's own value, rounded onto a step by the plug-in (#1482).
+    step_sizes: Option<Vec<(u32, f64)>>,
     /// Its parameters as last listed in the background for its generated panel, and when.
     listed: Option<(Arc<[suhina_plugins::ParamInfo]>, Instant)>,
     /// A listing for the panel is under way.
@@ -401,6 +420,10 @@ struct Instance {
     /// is under way.
     texts: Arc<ParamTexts>,
     texting: bool,
+    /// The parameters whose texts are wanted and not asked for yet, each with the values last
+    /// wanted, in the order they are asked for: one asked is wanted again behind the others, so
+    /// two automated parameters of one plug-in both get their texts (#1482).
+    texts_waiting: Vec<(u32, Vec<f64>)>,
     /// When it may be asked for texts again ([`TEXTS_EVERY`], [`TEXTS_AGAIN`]).
     texts_next: Option<Instant>,
     /// When the last listing for the panel ended, answered or not; a plug-in that refuses to
@@ -442,6 +465,7 @@ impl Instance {
         if let Some(list) = list {
             self.ranges = Some(ranges(&list));
             self.steps = Some(steps(&list));
+            self.step_sizes = Some(step_sizes(&list));
             self.listed = Some((list.into(), now));
         }
     }
@@ -465,6 +489,39 @@ impl Instance {
         }
     }
 
+    /// Parameter `id` wants the texts of `values` it was not given yet (none: it wants none):
+    /// it keeps its place in line, or goes to the back of it.
+    fn wait_texts(&mut self, id: u32, values: Vec<f64>) {
+        match self.texts_waiting.iter().position(|(i, _)| *i == id) {
+            Some(at) if values.is_empty() => {
+                self.texts_waiting.remove(at);
+            }
+            Some(at) => {
+                if let Some(waiting) = self.texts_waiting.get_mut(at) {
+                    waiting.1 = values;
+                }
+            }
+            None if !values.is_empty() && self.texts_waiting.len() < MAX_TEXTS_WAITING => {
+                self.texts_waiting.push((id, values));
+            }
+            None => {}
+        }
+    }
+
+    /// The parameter first in line for texts and its values the plug-in has not named since,
+    /// taken out of the line; parameters whose values were all named meanwhile leave it.
+    fn next_texts(&mut self) -> Option<(u32, Vec<f64>)> {
+        while !self.texts_waiting.is_empty() {
+            let (id, values) = self.texts_waiting.remove(0);
+            let known = texts_of(&self.texts);
+            let values: Vec<f64> = values.into_iter().filter(|v| !known.contains_key(&(id, v.to_bits()))).collect();
+            if !values.is_empty() {
+                return Some((id, values));
+            }
+        }
+        None
+    }
+
     fn new(status: PluginStatus, plugin: Option<(String, String, &'static str)>, generation: u64) -> Self {
         Self {
             status,
@@ -473,10 +530,12 @@ impl Instance {
             info: PluginSlotInfo::default(),
             ranges: None,
             steps: None,
+            step_sizes: None,
             listed: None,
             listing: false,
             texts: Arc::default(),
             texting: false,
+            texts_waiting: Vec::new(),
             texts_next: None,
             list_tried: None,
             control: None,
@@ -1164,15 +1223,12 @@ impl Rack {
 
     /// Asks the plug-in device `key` in the background for its texts of `values` of parameter
     /// `id` it has not given yet (#1205); one request at a time, while it runs and its control
-    /// half is not lent out.
+    /// half is not lent out. A parameter that cannot be asked yet waits in line, so each one
+    /// wanting texts is asked in turn (#1482).
     pub fn ask_texts(&mut self, key: u64, id: u32, values: &[f64]) {
-        let Some(instance) = self.instances.get(&key) else { return };
-        let now = Instant::now();
-        if instance.status != PluginStatus::Running
-            || instance.texting
-            || instance.control.is_none()
-            || instance.texts_next.is_some_and(|next| now < next)
-        {
+        let Some(instance) = self.instances.get_mut(&key) else { return };
+        if instance.status != PluginStatus::Running {
+            instance.texts_waiting.clear();
             return;
         }
         let mut wanted: Vec<f64> = Vec::new();
@@ -1188,25 +1244,45 @@ impl Rack {
                 }
             }
         }
-        if wanted.is_empty() {
+        instance.wait_texts(id, wanted);
+        self.send_texts(key);
+    }
+
+    /// Asks the plug-in device `key` for the texts of the parameter first in line, when it may
+    /// be asked now ([`Rack::ask_texts`]).
+    fn send_texts(&mut self, key: u64) {
+        let Some(instance) = self.instances.get_mut(&key) else { return };
+        let now = Instant::now();
+        if instance.texting || instance.control.is_none() || instance.texts_next.is_some_and(|next| now < next) {
             return;
         }
+        let Some((id, wanted)) = instance.next_texts() else { return };
+        let back = (id, wanted.clone());
         let lent = self.lend(key, move |control| {
             let texts = control.param_texts_within(id, &wanted, LIST_TIMEOUT).ok();
             Done::Texts(id, wanted, texts)
         });
-        if lent.is_ok()
-            && let Some(instance) = self.instances.get_mut(&key)
-        {
+        let Some(instance) = self.instances.get_mut(&key) else { return };
+        if lent.is_ok() {
             instance.texting = true;
             instance.texts_next = Some(now + TEXTS_EVERY);
+        } else {
+            // Not lent after all: it keeps its place at the front of the line.
+            instance.texts_waiting.insert(0, back);
         }
     }
 
-    /// Whether a request for texts is under way for any plug-in device ([`Rack::ask_texts`]):
-    /// the window draws again until it is answered, so the texts show without input (#1482).
+    /// Whether a request for texts is under way for any plug-in device, or one waits in line to
+    /// be sent within a moment ([`Rack::ask_texts`]): the window draws again until it is
+    /// answered, so the texts show without input (#1482).
     pub fn texts_pending(&self) -> bool {
-        self.instances.values().any(|i| i.texting)
+        let soon = Instant::now() + TEXTS_EVERY;
+        self.instances.values().any(|i| {
+            i.texting
+                || (i.status == PluginStatus::Running
+                    && !i.texts_waiting.is_empty()
+                    && i.texts_next.is_none_or(|next| next <= soon))
+        })
     }
 
     /// What is known about the plug-in device `key`.
@@ -1265,10 +1341,17 @@ impl Rack {
         self.instances.iter().filter_map(|(key, i)| Some((*key, std::sync::Arc::clone(i.steps.as_ref()?)))).collect()
     }
 
-    /// Whether parameter `id` of the plug-in device `key` holds each lane value until the next
-    /// point (a switch, a list of choices), as its plug-in listed it.
-    pub(crate) fn stepped(&self, key: u64, id: u32) -> bool {
-        self.instances.get(&key).and_then(|i| i.steps.as_ref()).is_some_and(|steps| steps.contains(&id))
+    /// How parameter `id` of the plug-in device `key` plays its lane, as its plug-in listed it,
+    /// for its reports to be matched with what the lane sent: holding each value until the next
+    /// point (a switch, a list of choices), or along the line in steps of a size (#1482); `None`
+    /// for a continuous one or one not listed yet.
+    pub(crate) fn echo(&self, key: u64, id: u32) -> Option<crate::devices::Echo> {
+        let instance = self.instances.get(&key)?;
+        if instance.steps.as_ref().is_some_and(|steps| steps.contains(&id)) {
+            return Some(crate::devices::Echo::Holds);
+        }
+        let step = instance.step_sizes.as_ref()?.iter().find(|(i, _)| *i == id)?.1;
+        Some(crate::devices::Echo::Step(step))
     }
 
     /// The slots the engine's graphs are built with.
@@ -1959,6 +2042,7 @@ impl Rack {
         if let Some(instance) = self.instances.get_mut(&key) {
             instance.ranges = Some(ranges(&list));
             instance.steps = Some(steps(&list));
+            instance.step_sizes = Some(step_sizes(&list));
         }
         Ok(list)
     }

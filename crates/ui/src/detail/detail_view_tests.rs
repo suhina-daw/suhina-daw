@@ -690,6 +690,51 @@ fn automation_replaces_a_plug_ins_listed_text_with_the_value_it_plays() {
     assert_eq!(value_text(&graph.parameters[0], 0.75), "0.75");
 }
 
+/// A plug-in parameter whose played value is the one the panel already shows, without a text
+/// (the project keeps a value the plug-in did not list), still takes the plug-in's text for it, or
+/// asks for it; a listed text for the value played stays (#1482).
+#[test]
+fn an_unmoved_automated_value_still_takes_the_plug_ins_text() {
+    use suhina_engine::model::{AutomationLane, AutomationPoint};
+    let mut project = with_plugin();
+    let point = |beat, value| AutomationPoint { beat, value, curve: Default::default() };
+    let flat = |param: &str, value: f64| AutomationLane {
+        param: param.into(),
+        points: vec![point(0.0, value), point(8.0, value)].into(),
+        enabled: true,
+    };
+    // Mix keeps 0.25 in the project (listed at 0.5 with its text); Bypass plays what it listed.
+    project.channels[0].devices[0].params.push(suhina_engine::model::DeviceParam::new("1", 0.25));
+    project.channels[0].devices[0].automation = vec![flat("1", 0.25), flat("2", 0.0)];
+    let build = || {
+        build_with(
+            &project,
+            Some(TrackId(1)),
+            None,
+            &mut |_, _| Some(listing(PluginStatus::Running)),
+            crate::detail::device_widgets::Lists::default(),
+        )
+    };
+    let texts = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let text_of = |detail: &Detail, id: &str| {
+        let Detail::Devices(chain) = detail else { panic!() };
+        let graph = chain.devices[0].graph.as_ref().unwrap();
+        graph.parameters.iter().find(|p| p.id == id).map(|p| (p.value, p.text.clone())).unwrap()
+    };
+    // Not named yet: the number, and asked about.
+    let mut detail = build();
+    assert_eq!(text_of(&detail, "1"), (0.25, String::new()), "the value kept, without a text");
+    let wanted = detail.follow_automation_texts(&project, 4.0, None, &mut |_, _| Some(std::sync::Arc::clone(&texts)));
+    assert_eq!(wanted, [(TrackId(1), vec![0], 1, 0.25)]);
+    assert_eq!(text_of(&detail, "2"), (0.0, "Bypass at 0".to_string()), "the listed text stays");
+    // Named: its text, and nothing more to ask.
+    texts.lock().unwrap().insert((1, 0.25f64.to_bits()), "-12.0 dB".to_string());
+    let mut detail = build();
+    let wanted = detail.follow_automation_texts(&project, 4.0, None, &mut |_, _| Some(std::sync::Arc::clone(&texts)));
+    assert!(wanted.is_empty(), "{wanted:?}");
+    assert_eq!(text_of(&detail, "1"), (0.25, "-12.0 dB".to_string()));
+}
+
 /// With the plug-in's own texts at hand, an automated parameter shows the plug-in's text for the
 /// value it plays, and a value it has not named yet shows the number and is given back to be
 /// asked about, on the step the plug-in plays; a knob listed with steps moves along the line,

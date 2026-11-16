@@ -2703,8 +2703,12 @@ fn segment_at(points: &[AutomationPoint], scale: &Scale, plot: Rect, geometry: &
     if b.beat <= a.beat || a.value == b.value {
         return None;
     }
-    let value = suhina_engine::model::automation::value_at(points, beat, false, scale)?;
-    ((y_of(plot, scale.position(value)) - pos.y).abs() <= segment_hit(plot)).then_some(index)
+    // Where the drawn line is: between the points' positions along the segment's curve. A value
+    // taken back through the scale would land on a plug-in knob's nearest step (#1482).
+    let t = (beat - a.beat) / (b.beat - a.beat);
+    let (ya, yb) = (scale.position(a.value), scale.position(b.value));
+    let position = ya + (yb - ya) * a.curve.shape(t);
+    ((y_of(plot, position) - pos.y).abs() <= segment_hit(plot)).then_some(index)
 }
 
 /// Draws one lane of `param` in `time` (its envelope, points and drag in progress) and turns

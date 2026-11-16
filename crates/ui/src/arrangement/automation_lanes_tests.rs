@@ -642,6 +642,20 @@ fn only_a_plug_in_s_switches_and_lists_hold_their_values() {
     }
 }
 
+/// A knob listed with few steps draws a straight line between its points, and the line is hit
+/// where it is drawn, not on the step its value there would round to (#1482).
+#[test]
+fn a_stepped_knobs_segment_is_hit_where_it_is_drawn() {
+    let (plot, geometry) = plot_and_geometry();
+    let knob = Scale::Plugin(Box::new(PluginScale { min: 0.0, max: 1.0, steps: 2, ..PluginScale::default() }));
+    let points = [AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 1.0)];
+    // A quarter of the way, at beat 1: the line is at 0.25, which rounds to the step at 0.5.
+    let on_line = Pos2::new(geometry.x_of(1.0), y_of(plot, 0.25));
+    assert_eq!(segment_at(&points, &knob, plot, &geometry, on_line), Some(0));
+    let off_line = Pos2::new(geometry.x_of(1.0), y_of(plot, 0.75));
+    assert_eq!(segment_at(&points, &knob, plot, &geometry, off_line), None);
+}
+
 /// A plug-in's range is not trusted: an empty or upside-down one and numbers that are not finite
 /// stay on the lane (#1205).
 #[test]

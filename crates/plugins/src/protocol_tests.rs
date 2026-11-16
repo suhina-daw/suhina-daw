@@ -79,7 +79,7 @@ fn gain() -> ParamInfo {
 
 #[test]
 fn every_message_round_trips() {
-    assert_eq!(VERSION, 16);
+    assert_eq!(VERSION, 17);
     let messages = [
         Message::Hello { version: VERSION },
         Message::Reconfigure { instance: 7, sample_rate: 48_000.0 },

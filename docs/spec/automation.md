@@ -185,7 +185,9 @@ brings the lane back on with the old value.
 A move in a hosted plug-in's own editor turns its lane off the same way, as one undo step, and
 the engine stops playing the lane at once (#1205). A value the plug-in reports that the lane sent
 it does not count: stopped, the lane's value at the playhead; playing, any value the lane went
-through in the last two beats, as a report may come a little after the value it echoes.
+through in the last two beats, as a report may come a little after the value it echoes. For a
+knob listed with steps (one that moves along the line, #1482) a report within one step of such a
+value counts too, as the plug-in may report the step it rounded the lane's value to.
 
 ## What the controls show
 

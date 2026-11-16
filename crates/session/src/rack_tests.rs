@@ -175,6 +175,30 @@ fn a_failed_listing_is_tried_again_as_seldom_as_a_good_one() {
     assert!(!instance.list_due(later + LIST_EVERY * 9));
 }
 
+/// Parameters of one plug-in that want texts wait in line and are asked in turn, so a second
+/// automated parameter is asked even while the first keeps wanting new values; values named
+/// meanwhile are not asked again (#1482).
+#[test]
+fn parameters_wanting_texts_are_asked_in_turn() {
+    let mut instance = Instance::new(PluginStatus::Running, None, 0);
+    instance.wait_texts(1, vec![0.1]);
+    instance.wait_texts(2, vec![0.2]);
+    assert_eq!(instance.next_texts(), Some((1, vec![0.1])));
+    // The first wants more while it is asked: it waits behind the second.
+    instance.wait_texts(1, vec![0.11]);
+    instance.wait_texts(2, vec![0.2, 0.21]);
+    assert_eq!(instance.next_texts(), Some((2, vec![0.2, 0.21])));
+    assert_eq!(instance.next_texts(), Some((1, vec![0.11])));
+    assert_eq!(instance.next_texts(), None);
+    // A value named while it waited is left out, and one wanting nothing leaves the line.
+    instance.wait_texts(3, vec![0.3, 0.31]);
+    instance.wait_texts(4, vec![0.4]);
+    instance.wait_texts(4, Vec::new());
+    texts_of(&instance.texts).insert((3, 0.3f64.to_bits()), "30 %".into());
+    assert_eq!(instance.next_texts(), Some((3, vec![0.31])));
+    assert_eq!(instance.next_texts(), None);
+}
+
 /// The engine holds the lanes of a plug-in's switches and lists of choices only; a knob listed
 /// with steps (a filter's cutoff in 1024 steps) moves along the line (#1482).
 #[test]
@@ -196,6 +220,8 @@ fn only_switches_and_lists_hold_their_lanes_values() {
     };
     let list = [param(1, 0, false), param(2, 1024, false), param(3, 1, false), param(4, 3, true), param(5, 3, false)];
     assert_eq!(&*steps(&list), [3, 4]);
+    // The knobs listed with steps move in them: their step, for a rounded report to match.
+    assert_eq!(step_sizes(&list), [(2, 1.0 / 1024.0), (5, 1.0 / 3.0)]);
     let mut instance = Instance::new(PluginStatus::Running, None, 0);
     instance.list_done(Some(list.to_vec()), Instant::now());
     assert_eq!(instance.steps.as_deref(), Some(&[3, 4][..]));
