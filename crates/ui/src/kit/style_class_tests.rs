@@ -230,7 +230,11 @@ fn a_rule_for_each_element_reaches_the_root_visuals() {
     assert_eq!(v.widgets.hovered.bg_fill, rgb(0x0c, 0x0c, 0x0c));
     assert_eq!(v.widgets.active.weak_bg_fill, rgb(0x30, 0x30, 0x30));
     assert_eq!(v.widgets.open.weak_bg_fill, rgb(0x30, 0x30, 0x30), "an open button is a pressed one");
-    assert_eq!(v.widgets.noninteractive.weak_bg_fill, rgb(0x40, 0x40, 0x40));
+    assert_ne!(
+        v.widgets.noninteractive.weak_bg_fill,
+        rgb(0x40, 0x40, 0x40),
+        "egui's lines, frames and labels are not a disabled button (#1487)"
+    );
     assert_eq!(v.selection.bg_fill, rgb(0x50, 0x50, 0x50));
     assert_eq!(v.extreme_bg_color, rgb(6, 6, 6));
     assert_eq!(v.text_edit_bg_color, Some(rgb(6, 6, 6)));
@@ -337,31 +341,64 @@ fn a_rule_that_gives_only_a_border_colour_keeps_the_outline_s_width() {
     assert!(hairline > 0.0, "egui draws its separators with this stroke");
     let ctx = egui::Context::default();
     let red = egui::Color32::from_rgb(255, 0, 0);
-    let v = root_after(&ctx, "button:disabled { border-color: #ff0000; } menu { border-color: #ff0000; }", 800.0);
+    let css = "widget[kind=\"static\"] { border-color: #ff0000; } button { border-color: #ff0000; } \
+               menu { border-color: #ff0000; }";
+    let v = root_after(&ctx, css, 800.0);
     assert_eq!(v.widgets.noninteractive.bg_stroke, egui::Stroke::new(hairline, red));
+    assert_eq!(v.widgets.inactive.bg_stroke.color, red);
     assert_eq!(v.window_stroke, egui::Stroke::new(fallback.window_stroke.width, red));
     // An authored width, 0 included, is the width.
-    let v = root_after(&ctx, "button:disabled { border-color: #ff0000; border-width: 0; }", 800.0);
+    let v = root_after(&ctx, "widget[kind=\"static\"] { border-color: #ff0000; border-width: 0; }", 800.0);
     assert_eq!(v.widgets.noninteractive.bg_stroke.width, 0.0);
-    let v = root_after(&ctx, "button:disabled { border-width: 3px; }", 800.0);
+    let v = root_after(&ctx, "widget[kind=\"static\"] { border-width: 3px; }", 800.0);
     assert_eq!(v.widgets.noninteractive.bg_stroke.width, 3.0);
     skin::configure(&skin::Skin::default());
 }
 
 #[test]
+fn egui_s_lines_are_not_a_disabled_button() {
+    // egui shows a disabled widget faded in its own state's look; its non-interactive look is its
+    // separators, frames and labels, so `button:disabled` does not reach them (#1487).
+    let ctx = egui::Context::default();
+    let plain = root_after(&ctx, "button { color: #010101; }", 800.0);
+    let v = root_after(
+        &ctx,
+        "button { color: #010101; } button:disabled { background-color: #404040; color: #414141; \
+         border-color: #ff0000; border-width: 0; }",
+        800.0,
+    );
+    assert_eq!(v.widgets.noninteractive, plain.widgets.noninteractive);
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn a_line_made_transparent_takes_no_room() {
+    // egui keeps a stroke's width whether or not it is seen (a panel's separator), so a line a
+    // theme hides with a transparent colour alone would still leave a gap (#1487).
+    let ctx = egui::Context::default();
+    let v = root_after(
+        &ctx,
+        "widget[kind=\"static\"] { border-color: transparent; } button { border-color: transparent; } \
+         menu { border-color: transparent; }",
+        800.0,
+    );
+    assert_eq!(v.widgets.noninteractive.bg_stroke, egui::Stroke::NONE);
+    assert_eq!(v.widgets.inactive.bg_stroke, egui::Stroke::NONE);
+    assert_eq!(v.window_stroke, egui::Stroke::NONE);
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
 fn a_scoped_ui_takes_a_colour_only_border_rule_with_the_width_it_had() {
-    skin::configure(&skin::Skin {
-        css: Some("button:disabled { border-color: #ff0000; }".into()),
-        ..Default::default()
-    });
+    skin::configure(&skin::Skin { css: Some("button { border-color: #ff0000; }".into()), ..Default::default() });
     let ctx = egui::Context::default();
     let mut seen = None;
     for _ in 0..3 {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = super::super::native_css::frame_with_motion(ui, false);
-            let before = ui.visuals().widgets.noninteractive.bg_stroke.width;
+            let before = ui.visuals().widgets.inactive.bg_stroke.width;
             let scoped = ui_for(ui, None, false);
-            seen = Some((before, scoped.ui.visuals().widgets.noninteractive.bg_stroke));
+            seen = Some((before, scoped.ui.visuals().widgets.inactive.bg_stroke));
         })
         .textures_delta
         .clear();
@@ -369,6 +406,89 @@ fn a_scoped_ui_takes_a_colour_only_border_rule_with_the_width_it_had() {
     let (before, stroke) = seen.expect("ran");
     assert_eq!(stroke, egui::Stroke::new(before, rgb(255, 0, 0)));
     skin::configure(&skin::Skin::default());
+}
+
+/// The corner radius and outline of egui's widgets at rest, and the radius egui's lines and frames
+/// take, inside `element` entered and mapped onto egui, with `css` as the theme's sheet.
+fn widgets_in(css: &str, element: crate::kit::element::Name) -> (egui::CornerRadius, egui::Stroke, egui::CornerRadius) {
+    skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut seen = None;
+    for _ in 0..3 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let el = element.enter();
+            let styled = el.ui(ui);
+            let widgets = &styled.ui.visuals().widgets;
+            seen = Some((
+                widgets.inactive.corner_radius,
+                widgets.inactive.bg_stroke,
+                widgets.noninteractive.corner_radius,
+            ));
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    seen.expect("ran")
+}
+
+#[test]
+fn a_region_s_own_radius_and_border_are_its_frame_s_not_its_rows() {
+    use crate::kit::element::{DROPDOWN, MENU, SETTINGS};
+    // A menu's or a page's radius and border frame it: its rows take theirs from the `button`
+    // rules that reach them, so a round menu's rows are not pills with its rim (#1487).
+    let css = "menu, settings { border-radius: 12px; border-width: 2px; border-color: #ff0000; }";
+    for region in [MENU, SETTINGS] {
+        let (radius, stroke, line) = widgets_in(css, region);
+        assert_ne!(radius, egui::CornerRadius::same(12), "{}", region.name());
+        assert_ne!(stroke.color, rgb(255, 0, 0), "{}", region.name());
+        assert_ne!(line, egui::CornerRadius::same(12), "{}", region.name());
+    }
+    // `menu button` reaches the rows of the menu.
+    let (radius, ..) = widgets_in(&format!("{css} menu button {{ border-radius: 4px; }}"), MENU);
+    assert_eq!(radius, egui::CornerRadius::same(4));
+    // A control's own radius and border are its egui widget's.
+    let (radius, stroke, line) =
+        widgets_in("dropdown { border-radius: 12px; border-width: 2px; border-color: #ff0000; }", DROPDOWN);
+    assert_eq!(radius, egui::CornerRadius::same(12));
+    assert_eq!(stroke, egui::Stroke::new(2.0, rgb(255, 0, 0)));
+    assert_ne!(line, egui::CornerRadius::same(12), "egui's lines in it are not the control");
+}
+
+#[test]
+fn a_drop_down_s_rows_keep_its_words_not_its_box() {
+    use crate::kit::element::DROPDOWN;
+    // The rows of an open drop-down are not the field: they keep its words (CSS inherits
+    // `color`), not its radius, border or fill; `dropdown button` gives them theirs (#1487).
+    let css = "dropdown { border-radius: 12px; border-width: 2px; border-color: #ff0000; color: #00ff00; } \
+               dropdown button { border-radius: 3px; }";
+    skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut seen = None;
+    for _ in 0..3 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let around = ui.style().clone();
+            let el = DROPDOWN.enter();
+            let styled = el.ui(ui);
+            let rows = rows_in_scope(&around, styled.ui.style());
+            seen = Some((
+                rows.visuals.widgets.inactive.corner_radius,
+                rows.visuals.widgets.inactive.bg_stroke.color,
+                rows.visuals.override_text_color,
+                styled.ui.visuals().widgets.inactive.corner_radius,
+            ));
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    let (rows, rim, ink, field) = seen.expect("ran");
+    assert_eq!(rows, egui::CornerRadius::same(3));
+    assert_ne!(rim, rgb(255, 0, 0));
+    assert_eq!(ink, Some(rgb(0, 255, 0)));
+    assert_eq!(field, egui::CornerRadius::same(12), "the field itself keeps its own radius");
 }
 
 #[test]

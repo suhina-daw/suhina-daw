@@ -311,12 +311,12 @@ fn outline(own: &super::native_css::Computed, existing: egui::Stroke) -> egui::S
 }
 
 /// What the sheet's generic rules say about egui's own widgets: `button` (plain, `:hover`,
-/// `:active`, `:disabled`) for buttons, check boxes and drop-downs, `button[checked]` for the
+/// `:active`) for buttons, check boxes and drop-downs, `button[checked]` for the
 /// selection, and `text-input` for text fields; at the root also `text-input:focus`, `menu` for
 /// menus and pop-ups, and `scroll-bar` (plain, `:hover`, `:active`) for scroll handles. The one
 /// mapping both a style scope ([`ui_for`]) and the root's `Visuals` ([`root_visuals`]) use.
 pub(super) struct WidgetRules {
-    controls: [Option<super::native_css::Computed>; 4],
+    controls: [Option<super::native_css::Computed>; 3],
     /// What `button[checked]` says of the selection's fill and ink, where it differs from `button`.
     chosen: (Option<egui::Color32>, Option<egui::Color32>),
     input: Option<super::native_css::Computed>,
@@ -333,8 +333,8 @@ impl WidgetRules {
         root: bool,
     ) -> Self {
         use super::element::{BUTTON, Checked, MENU, SCROLL_BAR, TEXT_INPUT};
-        let control = |hovered: bool, pressed: bool, disabled: bool| {
-            look(BUTTON.pointer(hovered, pressed, disabled)).filter(|c| {
+        let control = |hovered: bool, pressed: bool| {
+            look(BUTTON.pointer(hovered, pressed, false)).filter(|c| {
                 c.authored.background
                     || c.authored.border
                     || c.authored.border_width
@@ -357,12 +357,10 @@ impl WidgetRules {
             None
         };
         Self {
-            controls: [
-                control(false, false, false),
-                control(true, false, false),
-                control(true, true, false),
-                control(false, false, true),
-            ],
+            // Not `button:disabled`: egui fades a disabled widget in its own state's look, and its
+            // non-interactive look is its lines, frames and labels, `widget[kind="static"]`'s
+            // (#1487).
+            controls: [control(false, false), control(true, false), control(true, true)],
             // `button[checked]`: a chosen item in a list or a menu (egui's selection).
             // Only what the state itself says: a rule for every `button` is not the selection's.
             chosen: {
@@ -412,13 +410,12 @@ impl WidgetRules {
 
     /// Writes what the rules say over `visuals`, which keep every other value they hold.
     pub(super) fn apply(&self, visuals: &mut egui::Visuals) {
-        let [idle, hovered, pressed, disabled] = &self.controls;
+        let [idle, hovered, pressed] = &self.controls;
         for (widget, own) in [
             (&mut visuals.widgets.inactive, idle.as_ref()),
             (&mut visuals.widgets.hovered, hovered.as_ref()),
             (&mut visuals.widgets.active, pressed.as_ref()),
             (&mut visuals.widgets.open, pressed.as_ref()),
-            (&mut visuals.widgets.noninteractive, disabled.as_ref()),
         ] {
             let Some(own) = own else { continue };
             if own.authored.background {
@@ -495,6 +492,7 @@ pub(super) fn root_visuals(fallback: egui::Visuals) -> egui::Visuals {
     let mut visuals = fallback;
     let rules = WidgetRules::read(|element| element.probe().style().cloned(), true);
     rules.apply(&mut visuals);
+    super::theme::unseen_strokes_take_no_room(&mut visuals);
     visuals
 }
 
@@ -503,13 +501,17 @@ pub(super) fn root_visuals(fallback: egui::Visuals) -> egui::Visuals {
 pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Computed>, surface: bool) -> UiStyle<'_> {
     let color = values.as_ref().filter(|style| style.authored.color).map(|style| style.color);
     let font = values.as_ref().filter(|style| style.authored.font_size).map(|style| style.font_size);
-    let radius = values.as_ref().filter(|style| style.authored.radius).map(|style| style.radius);
+    // A control's own radius and border (a drop-down's, a field's) are its egui widget's. A region's
+    // or container's (a menu, Settings, a dialog) are its frame's, not each of its widgets': they
+    // take theirs from the `button` rules that reach them (`menu button`), so a round menu's rows
+    // are not pills with a rim of the menu's (#1487).
+    let radius = values.as_ref().filter(|style| style.authored.radius && !surface).map(|style| style.radius);
     // A border the sheet gives (a width, 0 for none) is the ordinary widgets' outline too, in
     // every state: without it they keep egui's own. Only one width all round: a bar's line along
     // one side is not a box round each of its buttons (#1336).
     let border = values
         .as_ref()
-        .filter(|style| style.authored.border_width)
+        .filter(|style| style.authored.border_width && !surface)
         .and_then(|style| style.even_border().map(|width| egui::Stroke::new(width, style.border)));
     // A panel's or view's background is the surface behind its widgets, not their fill: a
     // device panel's colour would otherwise hide its sliders' rails.
@@ -528,9 +530,10 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
         let previous = ui.style().clone();
         let style = ui.style_mut();
         rules.apply(&mut style.visuals);
+        // egui's lines, frames and labels in the scope are not its widgets: they keep
+        // `widget[kind="static"]`'s look (#1487).
         if let Some(stroke) = border {
             for widget in [
-                &mut style.visuals.widgets.noninteractive,
                 &mut style.visuals.widgets.inactive,
                 &mut style.visuals.widgets.hovered,
                 &mut style.visuals.widgets.active,
@@ -557,7 +560,6 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
         if let Some(radius) = radius {
             let radius = egui::CornerRadius::same(radius.clamp(0.0, 128.0) as u8);
             for widget in [
-                &mut style.visuals.widgets.noninteractive,
                 &mut style.visuals.widgets.inactive,
                 &mut style.visuals.widgets.hovered,
                 &mut style.visuals.widgets.active,
@@ -566,11 +568,37 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
                 widget.corner_radius = radius;
             }
         }
+        super::theme::unseen_strokes_take_no_room(&mut style.visuals);
         Some(previous)
     } else {
         None
     };
     UiStyle { ui, previous, previous_clip: None }
+}
+
+/// What the rows of a control's open list take (a drop-down's): `styled`, the control's own
+/// style in its scope, with what CSS does not inherit, the widgets' radius, outline and fill, as
+/// they are in `around` (the style around the control) under the sheet's rules for egui's widgets
+/// in the scope (`dropdown button`). Its words and font size stay the control's. The rows are not
+/// the field, so a pill field's rows are not pills (#1487).
+pub(super) fn rows_in_scope(around: &egui::Style, styled: &egui::Style) -> egui::Style {
+    let mut plain = around.visuals.clone();
+    WidgetRules::read(|element| element.style(), false).apply(&mut plain);
+    let mut rows = styled.clone();
+    for (row, plain) in [
+        (&mut rows.visuals.widgets.inactive, &plain.widgets.inactive),
+        (&mut rows.visuals.widgets.hovered, &plain.widgets.hovered),
+        (&mut rows.visuals.widgets.active, &plain.widgets.active),
+        (&mut rows.visuals.widgets.open, &plain.widgets.open),
+    ] {
+        row.corner_radius = plain.corner_radius;
+        row.bg_stroke = plain.bg_stroke;
+        row.bg_fill = plain.bg_fill;
+        row.weak_bg_fill = plain.weak_bg_fill;
+    }
+    rows.visuals.selection.stroke.width = plain.selection.stroke.width;
+    super::theme::unseen_strokes_take_no_room(&mut rows.visuals);
+    rows
 }
 
 #[cfg(test)]

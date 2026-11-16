@@ -501,6 +501,29 @@ fn a_parent_s_outline_is_drawn_over_its_children_and_past_its_own_clip() {
 }
 
 #[test]
+fn a_border_painted_alone_follows_the_sheet_s_radius() {
+    // A bar's or a page's border whose background its caller paints (`paint_border`) is rounded
+    // as the sheet says, as its gradients are; square where the sheet gives no radius (#1487).
+    let border = egui::Color32::from_rgb(0xFF, 0, 0);
+    let area = Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(100.0, 40.0));
+    let corner = |css: &str| {
+        let painted = shapes(css, |ui| {
+            SETTINGS.enter().paint_border(ui.painter(), area);
+        });
+        painted.iter().find_map(|shape| match shape {
+            egui::Shape::Rect(rect) if rect.stroke.color == border => Some(rect.corner_radius),
+            _ => None,
+        })
+    };
+    let round = corner("settings { border-width: 1px; border-color: #FF0000; border-radius: 8px; }");
+    assert_eq!(round, Some(egui::CornerRadius::same(8)));
+    let tight = corner("settings { border-width: 1px; border-color: #FF0000; border-radius: 80px; }");
+    assert_eq!(tight, Some(egui::CornerRadius::same(20)), "no rounder than half the box");
+    let square = corner("settings { border-width: 1px; border-color: #FF0000; }");
+    assert_eq!(square, Some(egui::CornerRadius::ZERO));
+}
+
+#[test]
 fn an_outline_is_drawn_last_and_outside_the_border() {
     let outline = egui::Color32::from_rgb(0, 0, 0xFF);
     let css = "button { outline: 2px solid #0000FF; outline-offset: 3px; }";

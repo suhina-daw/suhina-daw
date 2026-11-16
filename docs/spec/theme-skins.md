@@ -677,8 +677,12 @@ Settings, dialogs and the browser, styled by the generic `button` rules) draw on
 **egui's own widgets at the root (#1442, #1452).** egui draws its buttons, check boxes, drop-downs, text
 fields, scroll bars, menus and pop-ups from `egui::Visuals`. The window builds them from the
 sheet. Under every theme's rules they take the computed style of `widget`, looked up inside the
-`window` (so a backdrop's fading reaches them): `widget` at rest, `:hover`, `:active` and
-`:disabled` (fill, words and, disabled, the edge of egui's separators), `widget[checked]` the
+`window` (so a backdrop's fading reaches them): `widget` at rest, `:hover` and `:active` (fill
+and words), `widget[kind="static"]` what egui draws that takes no input (egui's non-interactive
+look: the fill and edge of its separators and group frames in its `background-color`,
+`border-color` and `border-width`, a hairline unless a width all round is given, and its labels'
+words in its `color`; no `button` rule reaches it, since egui draws a disabled widget faded in its
+own state's look, #1487), `widget[checked]` the
 selection (fill, and its `accent-color` the outline), `widget[kind="window"]` the fill and edge of
 egui's windows and menus and of the panels, `widget[kind="field"]` the fill behind a text field;
 the base sheet gives them Suhina's colours. `widget`'s words at rest are `--text-value`, where a
@@ -686,15 +690,16 @@ the base sheet gives them Suhina's colours. `widget`'s words at rest are `--text
 so one `button` rule need not give both. Whether the theme is light or dark, which egui passes to
 the native window (its title bar), is whether the window's computed `color` is dark: a background
 can be see-through, so its colour alone does not tell. Over `widget`, the rules a theme gives
-egui's widgets are written as before: `button` (plain, `:hover`, `:active`,
-`:disabled`; an open button is a pressed one) for the widget states, `button[checked]` for the
+egui's widgets are written as before: `button` (plain, `:hover`, `:active`; an open button is
+a pressed one) for the widget states, `button[checked]` for the
 selection (only what it says unlike the plain `button`), `text-input` for text fields (`text-input:focus`'s border for a focused field's
 outline), `menu` for every menu and pop-up that egui frames (`background-color`, border,
 `border-radius`, outer `box-shadow`; egui's own windows share these), and `scroll-bar` (plain,
 `:hover`, `:active`) for a scroll handle's fill, which egui also uses for its sliders' and check
 marks' fills. egui has no separate value for a tooltip: `tooltip` styles the frame painted over
-it. A rule that gives a border colour and no width keeps the outline's width, so egui's
-separators stay; only a width (0 too) changes it. A rule with no ancestor reaches them everywhere; one scoped to a view (`settings button`)
+it. A rule that gives a border colour and no width keeps the outline's width; only a width (0
+too) changes it. A stroke whose colour is fully transparent is width 0, since egui keeps a line's
+room whether or not it is seen (a panel's separator). A rule with no ancestor reaches them everywhere; one scoped to a view (`settings button`)
 reaches them in that view only, over the root's values. The values are rebuilt when the styles
 reset (theme, variant, `user.css`, a width `@media`, contrast, the window's opacity), not every
 frame, and show from the next frame.
@@ -1393,8 +1398,14 @@ These native parts take the sheet (the [theme author guide](../guide/theme-autho
   `sd`, `unsupported` otherwise), `[selected]` and `[muted]` (off), and `device-header`.
 - **Generic widgets:** inside any scope that maps the sheet onto egui (Settings, dialogs, the
   start page `start-page`, the browser, the sample map, the Plug-in manager
-  `plugin-manager`, popups), `button`, `button:hover`, `button:active`, `button:disabled`
+  `plugin-manager`, popups), `button`, `button:hover`, `button:active`
   set egui's widget fills, outlines (`border-width: 0` removes them), text and radius;
+  the scope's own `color` and `font-size` reach its widgets as CSS inherits them. Its own
+  `border-radius` and border reach them only where the scope is a control (a `dropdown`, a
+  `text-input`, a `value`), whose egui widget it is; a region's or container's (`menu`,
+  `settings`, `dialog`) frame it alone, so `menu button` gives a menu's rows theirs. The rows of
+  a drop-down's open list keep the field's words, not its radius, border or fill
+  (`dropdown button` gives those, #1487);
   `button[checked]` the selection; `text-input` text fields' background.
 - **Pan field:** the native field takes `pan` and `#mixer-pan` colours.
 

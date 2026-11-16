@@ -475,10 +475,13 @@ specific selector to win over Suhina's.
   tabs' names: colour the bar through `--text-secondary`, or give them a rule
   (`menu-bar bar-item[kind="menu"], project-tabs label[kind="caption"] { color: … }`).
 - **egui's own widgets** (the fields, drop-downs, check boxes and entries of Settings and the
-  menus) take `widget`: at rest, `:hover`, `:active`, `:disabled`, `[checked]` for the selection,
+  menus) take `widget`: at rest, `:hover`, `:active`, `[checked]` for the selection,
   `[kind="window"]` for egui's windows and menus, `[kind="field"]` behind a text field. Its words
   at rest are `--text-value`, a `button`'s `--text-primary`; your rules for `button`, `text-input`,
-  `menu` and `scroll-bar` still go over it.
+  `menu` and `scroll-bar` still go over it. What egui draws that takes no input, its separators,
+  frames and labels, is `widget[kind="static"]` (`border-color` and `border-width` its lines,
+  `color` its labels), and no `button` rule reaches it: a `button:disabled` rule no longer changes
+  egui's lines (#1487).
 - **The base sheet's own colours** are variables as well: the grey of a muted Arrangement clip
   and track header (`--clip-mutedBackground`, `--clip-mutedSelectedBackground`,
   `--track-headerMutedBackground`, `--track-headerMutedSelectedBackground`), the browser's icons by kind
@@ -954,15 +957,27 @@ browser's search field and Settings' theme swatches draw each side. Settings' ch
 On) are `button` parts too, the chosen one `[checked]`.
 
 A rule that is not scoped reaches egui's own widgets everywhere, wherever a view draws one
-outside a style scope: `button` (`:hover`, `:active`, `:disabled`) their states, `button[checked]`
+outside a style scope: `button` (`:hover`, `:active`) their states, `button[checked]`
 the selection, `text-input` their fill and text colour (`text-input:focus`'s `border-color` a
 focused field's outline), `menu` the fill, border, `border-radius` and outer `box-shadow` of every
 menu and pop-up egui frames (egui's own windows share them), and `scroll-bar` (`:hover`,
 `:active`) a scroll handle's fill, which egui's sliders and check marks use too. egui has no
 value of its own for tooltips: `tooltip` styles the frame painted over them. A theme with no such
 rule keeps the colours of its tokens. A rule with a `border-color` and no `border-width` keeps the width
-egui draws with (its separators included); only a width, `0` too, changes it. `button[checked]` gives the
-selection only what it says unlike the plain `button`.
+egui draws with; only a width, `0` too, changes it. A fully transparent `border-color` is width 0 as
+well, so a line you hide leaves no gap. `button[checked]` gives the selection only what it says unlike
+the plain `button`.
+
+egui's separators, the edges of its group frames and its labels are not buttons: style them with
+`widget[kind="static"]`, and hide its lines with `widget[kind="static"] { border-color: transparent; }`.
+A disabled egui widget is drawn faded in its own state's look, so `button:disabled` does not reach
+egui's widgets at all.
+
+A region's own `border-radius` and border (a `menu`'s, `settings`', a `dialog`'s) frame the region;
+the widgets inside take theirs from the `button` rules that reach them, so a round menu does not make
+its rows pills. Give the rows their own with a scoped rule: `menu button { border-radius: 4px; }`.
+A drop-down's or a text field's own radius and border are its field's; the rows of a drop-down's
+open list keep the field's words but take their radius, border and fill from `dropdown button`.
 
 ```css
 button { background-color: #24272B; border-width: 0; border-radius: 4px; }
