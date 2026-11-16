@@ -1499,13 +1499,23 @@ impl App {
 
     pub fn set_themes(&mut self, ctx: &egui::Context, files: Vec<ThemeEntry>, folder: Option<String>) {
         self.themes.set(files, folder);
-        // A variant in use whose file went: its theme's own values take its place.
-        if self.themes.get(&self.settings.theme).is_none()
-            && let Some((base, _)) = self.settings.theme.split_once('@')
-            && self.themes.get(base).is_some()
-        {
-            self.settings.theme = base.to_owned();
-            self.settings_changed = true;
+        // A variant in use whose file went: its theme's own values take its place. A theme moved
+        // to the Trash from Settings: Suhina Studio. A theme missing from one reading of the
+        // folder (not there yet, or half written) stays the choice, for when it is back.
+        if self.themes.get(&self.settings.theme).is_none() {
+            let base = self.settings.theme.split_once('@').map_or(self.settings.theme.as_str(), |(base, _)| base);
+            let next = if self.themes.get(base).is_some() {
+                Some(base.to_owned())
+            } else {
+                self.themes.trashed(base).then(|| crate::kit::theme::BUILT_IN.to_owned())
+            };
+            if let Some(next) = next {
+                self.settings.theme = next;
+                self.settings_changed = true;
+            }
+        }
+        if let Some(notice) = self.themes.take_notice() {
+            self.status = Status::Hint(notice);
         }
         ctx.request_repaint();
     }
@@ -1523,8 +1533,22 @@ impl App {
         self.theme_import = Some((path, name));
     }
 
+    /// Closes Settings, unless the variant editor has unsaved changes: Settings then shows the
+    /// editor asking whether to save them, and stays open, and what closed it is not done (run it
+    /// again after answering). Returns whether Settings closed.
+    pub fn close_settings(&mut self) -> bool {
+        if self.settings_open && self.page.theme_editor && self.themes.edited(&self.settings.theme) {
+            crate::settings::settings_view::ask_leave(&mut self.page, crate::settings::settings_view::Leave::Close);
+            return false;
+        }
+        self.settings_open = false;
+        self.themes.end_draft();
+        true
+    }
+
     pub fn use_theme(&mut self, ctx: &egui::Context, id: &str) {
         if self.themes.get(id).is_some() {
+            self.themes.keep_draft_of(id);
             self.settings.theme = id.to_string();
             self.settings_changed = true;
             ctx.request_repaint();
@@ -1743,7 +1767,9 @@ impl App {
 
     /// Shows the project dialog; `open` puts the keys in its path field (File › Open).
     pub fn open_project_dialog(&mut self, open: bool) {
-        self.settings_open = false;
+        if !self.close_settings() {
+            return;
+        }
         self.save_prompt = None;
         self.project_dialog = Some(DialogState { path: String::new(), focus_path: open });
         self.lists_wanted = true;
@@ -1925,7 +1951,8 @@ impl App {
             | PickField::McpWriteFolder
             | PickField::CopyToFolder
             | PickField::PluginFolder
-            | PickField::BackgroundImage => None,
+            | PickField::BackgroundImage
+            | PickField::ThemePackage => None,
         };
         self.pick_request = Some(PickRequest { field, start });
     }
@@ -1958,6 +1985,10 @@ impl App {
                 return;
             }
             PickField::NamModelsFolder => self.settings.nam_models_folder = text,
+            PickField::ThemePackage => {
+                self.themes.import(path);
+                return;
+            }
             // A folder whose files move with it asks first.
             PickField::ThemesFolder | PickField::DataFolder => self.folder_move = Some((field, Some(path))),
             PickField::IrFolder => self.settings.irs_folder = text,

@@ -25,60 +25,6 @@ fn live(variable: &str) -> egui::Color32 {
 const SHORT: (f32, f32) = (1000.0, 420.0);
 
 #[test]
-fn meter_intensity_slider_saves_theme_without_changing_the_project() {
-    use suhina_ui::settings::themes::FileAction;
-    let mut harness = short_window();
-    let before = harness.state().session().unwrap().project().clone();
-    harness.get_by_label("Settings page: Themes").click();
-    settle(&mut harness);
-    harness.get_by_label("Edit current theme…").click();
-    settle(&mut harness);
-    wheel_to(&mut harness, "Controls, meters and toolbar", 80);
-    harness.get_by_label("Controls, meters and toolbar").click();
-    settle(&mut harness);
-    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Meter intensity").scroll_to_me();
-    settle(&mut harness);
-    harness.state_mut().take_theme_actions();
-    harness.get_by_role_and_label(egui::accesskit::Role::Slider, "Meter intensity").click();
-    settle(&mut harness);
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(
-        actions.iter().any(|action| matches!(action, FileAction::Save {theme, ..} if theme.skin.meter_intensity < 100)),
-        "{actions:?}"
-    );
-    assert_eq!(harness.state().session().unwrap().project(), &before);
-}
-
-#[test]
-fn compact_session_css_applies_to_a_png_skin_without_changing_artwork_or_project() {
-    use suhina_ui::settings::themes::{FileAction, ThemeEntry};
-    let mut harness = short_window();
-    let ctx = harness.ctx.clone();
-    let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQ6nD5DwADrAHuJHH6EQAAAABJRU5ErkJggg==";
-    let mut theme = theme::Theme { name: "PNG controls".into(), ..Default::default() };
-    theme.skin.assets.insert("track.name".into(), png.into());
-    harness.state_mut().put_theme(&ctx, ThemeEntry { id: "png-controls".into(), theme });
-    harness.state_mut().use_theme(&ctx, "png-controls");
-    let before = harness.state().session().unwrap().project().clone();
-    harness.get_by_label("Settings page: Themes").click();
-    settle(&mut harness);
-    harness.get_by_label("Edit current theme…").click();
-    settle(&mut harness);
-    for label in ["Controls, meters and toolbar", "Native CSS", "Load compact Launcher geometry"] {
-        wheel_to(&mut harness, label, 80);
-        harness.get_by_label(label).click();
-        settle(&mut harness);
-    }
-    harness.state_mut().take_theme_actions();
-    wheel_to(&mut harness, "Apply CSS", 80);
-    harness.get_by_label("Apply CSS").click();
-    settle(&mut harness);
-    let actions = harness.state_mut().take_theme_actions();
-    assert!(actions.iter().any(|action| matches!(action, FileAction::Save {theme, ..} if theme.skin.session.track_width == Some(86) && theme.skin.assets.get("track.name").is_some_and(|source| source == png))), "{actions:?}");
-    assert_eq!(harness.state().session().unwrap().project(), &before);
-}
-
-#[test]
 #[ignore = "renders GPU review images; run explicitly after changing the theme UI"]
 fn render_themes_gallery_and_editor_for_review() {
     let mut app = App::new();
@@ -102,7 +48,7 @@ fn render_themes_gallery_and_editor_for_review() {
     let folder = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/theme-gallery-review");
     std::fs::create_dir_all(&folder).unwrap();
     harness.render().unwrap().save(folder.join("themes.png")).unwrap();
-    harness.get_by_label("Edit current theme…").click();
+    harness.get_by_label("Edit current variant").click();
     harness.run();
     harness.remove_cursor();
     harness.run();
@@ -304,34 +250,6 @@ fn active_theme_is_featured_and_holding_it_keeps_the_preview_clear() {
 }
 
 #[test]
-fn restoring_a_built_in_waits_for_the_save_choice_and_can_be_cancelled() {
-    let mut harness = short_window();
-    harness.get_by_label("Settings page: Themes").click();
-    settle(&mut harness);
-    let original = harness.state().settings().theme.clone();
-    harness.get_by_label("Restore built-in…").click();
-    settle(&mut harness);
-    harness.get_by_label("Restore Nord").click();
-    settle(&mut harness);
-    assert_eq!(harness.state().settings().theme, original);
-    harness.get_by_label("Cancel restore").click();
-    settle(&mut harness);
-    assert_eq!(harness.state().settings().theme, original);
-    harness.get_by_label("Restore built-in…").click();
-    settle(&mut harness);
-    harness.get_by_label("Restore Nord").click();
-    settle(&mut harness);
-    harness.get_by_label("Save a copy & restore").click();
-    settle(&mut harness);
-    assert_eq!(harness.state().settings().theme, "nord");
-    assert!(harness.get_by_label("Theme in use: Nord").rect().width() > 500.0);
-    harness.get_by_label(&format!(
-        "Theme: {name} copy",
-        name = suhina_ui::kit::theme::built_in_themes().into_iter().find(|(id, _)| *id == original).unwrap().1.name
-    ));
-}
-
-#[test]
 fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     let mut harness = short_window();
     harness.get_by_label("Settings page: Themes").click();
@@ -344,8 +262,8 @@ fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     let shown = (theme::window_fill(), theme::is_light(), live("accent"));
     // Choosing it left the page where it was: the card clicked is still in view.
     assert!(harness.get_by_label("Theme: Suhina Light").rect().is_positive());
-    wheel_to(&mut harness, "Edit current theme…", 40);
-    harness.get_by_label("Edit current theme…").click();
+    wheel_to(&mut harness, "Edit current variant", 40);
+    harness.get_by_label("Edit current variant").click();
     settle(&mut harness);
     // The variant editor shows only the theme's own quick controls, and Suhina Light declares none.
     assert!(harness.query_by_label_contains("This theme offers no quick controls").is_some());
@@ -415,7 +333,7 @@ fn holding_a_themes_own_setting_keeps_the_window_clear_until_release() {
     harness.state_mut().use_theme(&ctx, "ink");
     harness.get_by_label("Settings page: Themes").click();
     settle(&mut harness);
-    harness.get_by_label("Edit current theme…").click();
+    harness.get_by_label("Edit current variant").click();
     settle(&mut harness);
     let button = |pos, pressed| egui::Event::PointerButton {
         pos,
@@ -491,9 +409,9 @@ fn holding_a_themes_own_setting_keeps_the_window_clear_until_release() {
     }
 }
 
-/// Reset changes puts a theme's own settings back, and they still work afterwards.
+/// Discard changes puts a theme's own settings back after asking, and they still work afterwards.
 #[test]
-fn reset_changes_restores_a_themes_own_settings() {
+fn discard_changes_restores_a_themes_own_settings() {
     let mut harness = short_window();
     let sheet = "@property --glow { syntax: \"<integer>\"; initial-value: 50; label: \"Glow\"; range: 0 100; }\n\
                  @property --tint { syntax: \"<color>\"; initial-value: #336699; label: \"Tint\"; }\n\
@@ -506,7 +424,7 @@ fn reset_changes_restores_a_themes_own_settings() {
     harness.state_mut().use_theme(&ctx, "ink");
     harness.get_by_label("Settings page: Themes").click();
     settle(&mut harness);
-    harness.get_by_label("Edit current theme…").click();
+    harness.get_by_label("Edit current variant").click();
     settle(&mut harness);
     let original = live("accent");
 
@@ -553,10 +471,16 @@ fn reset_changes_restores_a_themes_own_settings() {
     egui::Popup::close_all(&harness.ctx);
     settle(&mut harness);
 
-    harness.get_by_label("Reset changes").scroll_to_me();
+    harness.get_by_label("Discard changes").scroll_to_me();
     settle(&mut harness);
-    harness.get_by_label("Reset changes").click();
+    harness.get_by_label("Discard changes").click();
     settle(&mut harness);
+    // It asks first; Cancel keeps the changes.
+    answer(&mut harness, "Cancel");
+    assert_ne!(live("accent"), original, "Cancel kept the changes");
+    harness.get_by_label("Discard changes").click();
+    settle(&mut harness);
+    answer(&mut harness, "Discard");
     assert_eq!(live("accent"), original, "the colour that follows the setting is back");
     assert_eq!(glow(&harness), before, "the slider is back");
 }
@@ -1117,8 +1041,8 @@ fn the_variant_editor_shows_only_the_themes_quick_controls() {
     let ctx = harness.ctx.clone();
     harness.state_mut().use_theme(&ctx, "nord");
     settle(&mut harness);
-    wheel_to(&mut harness, "Edit current theme…", 40);
-    harness.get_by_label("Edit current theme…").click();
+    wheel_to(&mut harness, "Edit current variant", 40);
+    harness.get_by_label("Edit current variant").click();
     settle(&mut harness);
     for control in ["Background", "Panels", "Text", "Accent", "Selection"] {
         assert!(harness.query_all_by_label(control).next().is_some(), "{control} is one of Nord's quick controls");
@@ -1139,10 +1063,246 @@ fn a_quick_controls_colour_picker_has_no_additive_blending() {
     let ctx = harness.ctx.clone();
     harness.state_mut().use_theme(&ctx, "nord");
     settle(&mut harness);
-    wheel_to(&mut harness, "Edit current theme…", 40);
-    harness.get_by_label("Edit current theme…").click();
+    wheel_to(&mut harness, "Edit current variant", 40);
+    harness.get_by_label("Edit current variant").click();
     settle(&mut harness);
     harness.query_all_by_role(egui::accesskit::Role::ColorWell).next().expect("a colour control").click();
     settle(&mut harness);
     assert!(harness.query_by_label("Normal").is_none() && harness.query_by_label("Additive").is_none());
+}
+
+/// Clicks `label` in the box over Settings (a question's answer), not the button of the same
+/// name behind it.
+#[allow(clippy::unwrap_used)] // a test helper outside #[test] functions
+fn answer(harness: &mut Harness<'static, App>, label: &str) {
+    harness.get_all_by_label(label).last().unwrap().click();
+    settle(harness);
+}
+
+/// Ink, a theme with one quick control, and its variant Dim, as the user's own themes; Dim in use.
+fn ink_and_dim(harness: &mut Harness<'static, App>) {
+    use suhina_ui::settings::themes::ThemeEntry;
+    let sheet = "@property --glow { syntax: \"<integer>\"; initial-value: 50; label: \"Glow\"; range: 0 100; }\n\
+                 :root { --accent: #123456; }";
+    let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), sheet);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let dim = suhina_ui::kit::theme_vars::Variant {
+        id: "dim".into(),
+        name: "Dim".into(),
+        values: [("--glow".to_string(), "20".to_string())].into(),
+    };
+    let (ink_dim, warnings) = suhina_ui::kit::theme_vars::with_variant(&ink, Some(&dim));
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let entries =
+        vec![ThemeEntry { id: "ink".into(), theme: ink }, ThemeEntry { id: "ink@dim".into(), theme: ink_dim }];
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_themes(&ctx, entries, Some("themes".into()));
+    harness.state_mut().use_theme(&ctx, "ink@dim");
+    harness.get_by_label("Settings page: Themes").click();
+    settle(harness);
+}
+
+/// Opens the variant editor on the variant in use and renames it to `name`: an unsaved change.
+fn rename_in_editor(harness: &mut Harness<'static, App>, name: &str) {
+    harness.get_by_label("Edit current variant").click();
+    settle(harness);
+    harness.get_by_label("Variant name").focus();
+    settle(harness);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.get_by_label("Variant name").type_text(name);
+    settle(harness);
+    assert!(harness.query_by_label("Edited").is_some(), "the editor marks the change");
+}
+
+fn saved_ids(harness: &mut Harness<'static, App>) -> Vec<String> {
+    use suhina_ui::settings::themes::FileAction;
+    harness
+        .state_mut()
+        .take_theme_actions()
+        .into_iter()
+        .filter_map(|action| match action {
+            FileAction::Save { id, .. } => Some(id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Leaving the editor with unsaved changes asks first: Cancel stays, Don't save puts the saved
+/// values back and writes nothing, Save writes the variant.
+#[test]
+fn leaving_the_variant_editor_with_changes_asks_to_save_them() {
+    let mut harness = short_window();
+    ink_and_dim(&mut harness);
+    harness.state_mut().take_theme_actions();
+    rename_in_editor(&mut harness, "Dusk");
+    assert!(saved_ids(&mut harness).is_empty(), "nothing is written while editing");
+
+    harness.get_by_label("Back to themes").click();
+    settle(&mut harness);
+    assert!(harness.query_by_label("Save changes to Dusk?").is_some());
+    answer(&mut harness, "Cancel");
+    settle(&mut harness);
+    assert!(harness.query_by_label("Save changes to Dusk?").is_none());
+    assert!(harness.query_by_label("Variant name").is_some(), "Cancel stays in the editor");
+
+    harness.get_by_label("Back to themes").click();
+    settle(&mut harness);
+    answer(&mut harness, "Don't save");
+    settle(&mut harness);
+    assert!(harness.query_by_label("Variant name").is_none(), "back in the gallery");
+    assert!(harness.query_all_by_label("Variant: Dim").next().is_some(), "the saved name is back");
+    assert!(saved_ids(&mut harness).is_empty(), "Don't save writes nothing");
+
+    rename_in_editor(&mut harness, "Dusk");
+    harness.get_by_label("Back to themes").click();
+    settle(&mut harness);
+    answer(&mut harness, "Save");
+    settle(&mut harness);
+    assert_eq!(saved_ids(&mut harness), ["ink@dim"]);
+    assert!(harness.query_all_by_label("Variant: Dusk").next().is_some());
+}
+
+/// Closing Settings, by its button or by any other way in (`App::close_settings`), asks about
+/// unsaved changes and stays open until answered.
+#[test]
+fn closing_settings_with_unsaved_changes_asks_first() {
+    let mut harness = short_window();
+    ink_and_dim(&mut harness);
+    rename_in_editor(&mut harness, "Dusk");
+
+    harness.get_by_label("Close settings").click();
+    settle(&mut harness);
+    assert!(harness.state().settings_open());
+    assert!(harness.query_by_label("Save changes to Dusk?").is_some());
+    answer(&mut harness, "Cancel");
+    settle(&mut harness);
+
+    assert!(!harness.state_mut().close_settings(), "another way to close it asks too");
+    settle(&mut harness);
+    assert!(harness.state().settings_open());
+    answer(&mut harness, "Don't save");
+    settle(&mut harness);
+    assert!(!harness.state().settings_open());
+    assert!(saved_ids(&mut harness).is_empty());
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    settle(&mut harness);
+    assert!(harness.query_all_by_label("Variant: Dim").next().is_some(), "the saved name is back");
+}
+
+/// A theme's default variant is its own values: Save is off and the prompt offers Save as new
+/// variant, which makes one and leaves the default as it was.
+#[test]
+fn changes_to_a_default_variant_are_saved_as_a_new_variant() {
+    let mut harness = short_window();
+    ink_and_dim(&mut harness);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().use_theme(&ctx, "ink");
+    settle(&mut harness);
+    harness.state_mut().take_theme_actions();
+    rename_in_editor(&mut harness, "Bright");
+    assert!(harness.get_by_label("Save").accesskit_node().is_disabled());
+    harness.get_by_label("Back to themes").click();
+    settle(&mut harness);
+    answer(&mut harness, "Save as new variant");
+    settle(&mut harness);
+    assert_eq!(saved_ids(&mut harness), ["ink@bright"]);
+    assert_eq!(harness.state().settings().theme, "ink@bright");
+}
+
+/// The + after the swatches is off, with a reason, for a theme with no quick controls.
+#[test]
+fn new_variant_is_off_for_a_theme_without_quick_controls() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().use_theme(&ctx, "suhina-light");
+    settle(&mut harness);
+    let plus = harness.get_all_by_label("New variant").next().unwrap();
+    assert!(plus.accesskit_node().is_disabled(), "Suhina Light declares no quick controls");
+    let mut harness = short_window();
+    ink_and_dim(&mut harness);
+    let plus = harness.get_all_by_label("New variant").next().unwrap();
+    assert!(!plus.accesskit_node().is_disabled(), "Ink declares Glow");
+}
+
+/// A card's and a swatch's right-click menus offer what the card shows, with what a built-in theme
+/// can't do greyed out.
+#[test]
+fn right_click_menus_grey_out_what_a_built_in_theme_cannot_do() {
+    let mut harness = short_window();
+    ink_and_dim(&mut harness);
+    wheel_to(&mut harness, "Theme: Nord", 40);
+    harness.get_by_label("Theme: Nord").click_secondary();
+    settle(&mut harness);
+    for label in ["Use", "New theme from this…", "Export theme…"] {
+        assert!(!harness.get_by_label(label).accesskit_node().is_disabled(), "{label}");
+    }
+    for label in ["Theme info…", "Show in folder", "Add default artwork", "Delete theme…"] {
+        assert!(harness.get_by_label(label).accesskit_node().is_disabled(), "{label} is off for a built-in theme");
+    }
+    harness.key_press(Key::Escape);
+    settle(&mut harness);
+    assert!(harness.state().settings_open(), "Escape closes the menu, not Settings");
+    assert!(harness.query_by_label("New theme from this…").is_none());
+
+    wheel_to(&mut harness, "Theme in use: Ink", 40);
+    harness.get_by_label("Theme in use: Ink").click_secondary();
+    settle(&mut harness);
+    for label in ["Theme info…", "Show in folder", "Add default artwork", "Delete theme…"] {
+        assert!(!harness.get_by_label(label).accesskit_node().is_disabled(), "{label} is on for an own theme");
+    }
+    assert!(harness.query_by_label("Use").is_none(), "the large card is the theme in use already");
+}
+
+/// Delete asks in place, names what goes, and only then hands the file to be moved to the Trash.
+#[test]
+fn deleting_a_variant_asks_then_moves_it_to_the_trash() {
+    use suhina_ui::settings::themes::FileAction;
+    let mut harness = short_window();
+    ink_and_dim(&mut harness);
+    harness.state_mut().take_theme_actions();
+    harness.get_all_by_label("Variant: Dim").next().unwrap().click_secondary();
+    settle(&mut harness);
+    harness.get_by_label("Delete…").click();
+    settle(&mut harness);
+    assert!(harness.query_by_label("Delete Dim?").is_some());
+    assert!(harness.state_mut().take_theme_actions().is_empty(), "nothing goes before the answer");
+    answer(&mut harness, "Cancel");
+    settle(&mut harness);
+    assert!(harness.query_by_label("Delete Dim?").is_none());
+
+    harness.get_all_by_label("Variant: Dim").next().unwrap().click_secondary();
+    settle(&mut harness);
+    harness.get_by_label("Delete…").click();
+    settle(&mut harness);
+    answer(&mut harness, "Delete");
+    settle(&mut harness);
+    assert_eq!(harness.state_mut().take_theme_actions(), [FileAction::Trash("ink@dim".into())]);
+    // It stays until the file is gone.
+    assert_eq!(harness.state().settings().theme, "ink@dim");
+}
+
+/// What the gallery no longer has.
+#[test]
+fn the_themes_page_has_no_restore_template_or_active_marker() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    harness.get_by_label("More").click();
+    settle(&mut harness);
+    for gone in ["Restore built-in…", "Active", "Export the theme template", "Reload themes", "Duplicate theme…"] {
+        assert!(harness.query_by_label(gone).is_none(), "{gone}");
+    }
+}
+
+/// A theme missing from one reading of the folder (not there yet, or half written) stays the
+/// choice, for when it is back.
+#[test]
+fn a_theme_missing_from_one_reading_stays_chosen() {
+    let mut harness = short_window();
+    ink_and_dim(&mut harness);
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_themes(&ctx, Vec::new(), Some("themes".into()));
+    assert_eq!(harness.state().settings().theme, "ink@dim");
 }

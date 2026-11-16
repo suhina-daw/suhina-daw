@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-14
+last_verified: 2026-11-16
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -274,8 +274,9 @@ and its children agree in the same frame. The elements of a frame form a tree, b
 depth (section 9), that selectors match against; its ancestry and siblings are the ones drawn.
 
 Every element type, id, class and state lives in one registry with a sentence on what it is. The
-registry turns typos into warnings ("no element called `buton`") and writes the theme template's
-README, so an agent can write a theme from the README alone.
+registry turns typos into warnings ("no element called `buton`"); the theme author guide
+(`docs/guide/theme-authoring.md`) lists what it holds, so an agent can write a theme from the guide
+alone (*Amendment: no guide in theme files*).
 
 ### 3. Media queries
 
@@ -562,9 +563,9 @@ variables, so views move over one at a time and the snapshots must not change on
   rules that matched it with file and line, and its glass, like a browser's developer tools.
 - **Problems list:** Settings › Appearance lists every warning with file, line and column; a bad
   declaration is skipped and the rest of the sheet still applies.
-- **Template:** Export template writes the README of every element, class, state, media feature,
-  property and artwork part (from the registries), the default style sheet and the default artwork,
-  for people and agents. Every exported theme carries the same README.
+- **Template:** *(Removed, see Amendment: no guide in theme files.)* Export template wrote the
+  README of every element, class, state, media feature, property and artwork part, the default
+  style sheet and the default artwork, and every exported theme carried the same README.
 - **Example themes:** besides Suhina Studio, the built-in themes include PR 841's Sheet, Meadow and
   Blocks, rewritten as style sheets with their original artwork, so authors start from working
   examples of artwork, density and glass.
@@ -1328,3 +1329,11 @@ status*) and, for the track headers, the mixer strips and the transport, decisio
   of the toolbar's modules (`toolbar-NAME`; `theme.json`'s toolbar order and offsets stay).
   Themes are not migrated (pre-alpha): the built-in Suhina Sheet, Blocks and Meadow had their
   mixer placements, which are now rules of their sheets (`mixer meter { order: -1 }`).
+
+## Amendment: no guide in theme files (2026-11-16)
+
+Issue #1022. Suhina no longer writes a README or example sheets into the theme folders it makes,
+the packages it exports or the backups it writes, and *Export template* is gone. The author guide
+is a document of the repository, [`docs/guide/theme-authoring.md`](../guide/theme-authoring.md),
+with every colour token and its Suhina Studio value; a test keeps that table in step with the
+token registry. A README an author put in a theme's folder is the author's, and travels with it.

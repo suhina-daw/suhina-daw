@@ -368,10 +368,18 @@ fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
     own[0].click();
     harness.run();
     assert_eq!(live("accent"), egui::Color32::from_rgb(0x12, 0x34, 0x56));
-    // A new variant starts from the values in use and is handed out to be written.
-    harness.get_by_label("More").click();
+    // The + after the swatches opens the editor on a new variant from the values in use; Cancel
+    // leaves nothing behind, and Save hands it out to be written.
+    harness.get_all_by_label("New variant").next().unwrap().click();
     harness.run();
-    harness.get_by_label("New variant").click();
+    assert!(harness.state_mut().take_theme_actions().is_empty(), "nothing is written before Save");
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert!(harness.query_by_label("Back to themes").is_none(), "Cancel goes back to the themes");
+    assert!(harness.state_mut().take_theme_actions().is_empty());
+    harness.get_all_by_label("New variant").next().unwrap().click();
+    harness.run();
+    harness.get_by_label("Save").click();
     harness.run();
     let saved: Vec<_> = harness
         .state_mut()
@@ -382,8 +390,8 @@ fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
             _ => None,
         })
         .collect();
-    assert_eq!(saved, ["ink@variant"]);
-    assert_eq!(harness.state().settings().theme, "ink@variant");
+    assert_eq!(saved, ["ink@new-variant"]);
+    assert_eq!(harness.state().settings().theme, "ink@new-variant");
 }
 
 #[test]

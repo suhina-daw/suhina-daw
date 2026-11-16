@@ -67,7 +67,7 @@ fn palette_edits_do_not_rewrite_unchanged_package_resources() {
     let mut files = ThemeFiles::new(Some(root.join("themes")));
     let theme = theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-sheet").unwrap().1;
     files.write("sheet", &theme).unwrap();
-    let paths = ["themes/sheet/assets/button.svg", "themes/sheet/README.md", "themes/sheet/theme.css"];
+    let paths = ["themes/sheet/assets/button.svg", "themes/sheet/theme.css"];
     let old = SystemTime::UNIX_EPOCH + Duration::from_secs(946_684_800);
     for path in paths {
         std::fs::File::options()
@@ -174,28 +174,11 @@ fn no_default_artwork_library_is_made() {
 }
 
 #[test]
-fn portable_packages_include_the_shared_ai_author_guide_and_effective_svg() {
+fn portable_packages_carry_the_theme_and_effective_svg_but_no_guide_or_examples() {
     let theme = Theme::default();
     let files = portable_package_files("plain", &theme).unwrap();
-    let guide = files.iter().find(|(name, _)| name == "plain/README.md").unwrap();
-    assert_eq!(guide.1, theme::template_readme().as_bytes());
-    let text = std::str::from_utf8(&guide.1).unwrap();
-    for heading in [
-        "What this package is",
-        "why they are separate",
-        "How and when",
-        "What's possible now",
-        "Limits",
-        "For AI-assisted edits",
-    ] {
-        assert!(text.contains(heading), "{heading}");
-    }
+    assert!(!files.iter().any(|(name, _)| name.ends_with("README.md") || name.contains("/examples/")), "{files:?}");
     assert!(files.iter().any(|(name, _)| name == "plain/assets/fader.cap.svg"));
-    assert!(
-        files
-            .iter()
-            .any(|(name, data)| name == "plain/examples/dark-gloss.css" && data == theme::GLOSS_EXAMPLE.as_bytes())
-    );
     assert!(theme.skin.assets.is_empty(), "export must not modify sparse local overrides");
     let css = files.iter().find(|(name, _)| name == "plain/theme.css").unwrap();
     assert!(std::str::from_utf8(&css.1).unwrap().contains("icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }"));
@@ -467,7 +450,7 @@ fn example_builtins_export_their_css_svg_controls_and_background() {
             assert!(archive.by_name(&format!("sheet-copy/assets/{role}.svg")).is_ok(), "{role}");
         }
         assert!(archive.by_name("sheet-copy/theme.css").is_ok());
-        assert!(archive.by_name("sheet-copy/README.md").is_ok());
+        assert!(archive.by_name("sheet-copy/README.md").is_err(), "Suhina writes no guide into themes");
         assert_eq!(archive.by_name("sheet-copy/background.png").is_ok(), id == "suhina-meadow");
         std::fs::remove_dir_all(root).unwrap();
     }

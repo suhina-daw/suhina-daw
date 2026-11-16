@@ -203,13 +203,17 @@ fn execute(files: &mut ThemeFiles, actions: Vec<FileAction>) -> Reply {
                 Ok(None)
             }
             FileAction::OpenFolder => files.open_folder().map(|()| None),
+            FileAction::Reveal(id) => files.reveal_theme(&id).map(|()| None),
+            FileAction::Trash(id) => {
+                // Read the list again whole, so what was deleted leaves it (and what was in use
+                // gives way) only once it is gone.
+                reply.replace = true;
+                files.trash(&id).map(Some)
+            }
             FileAction::Backup => files.backup().map(|path| Some(crate::saved(&path, "Backed up the themes to"))),
             FileAction::ExportPackage { id, theme } => files
                 .export_package(&id, &theme)
                 .map(|path| Some(crate::saved(&path, &format!("Exported {} to", theme.name)))),
-            FileAction::ExportTemplate => {
-                files.export_template().map(|path| Some(crate::saved(&path, "Saved the theme template to")))
-            }
             FileAction::Import(path) => imported(files, &path, Again::Ask, &mut reply),
             FileAction::ImportAgain { path, replace } => {
                 imported(files, &path, if replace { Again::Replace } else { Again::Copy }, &mut reply)

@@ -18,7 +18,10 @@ impl App {
     pub fn do_action(&mut self, action: &str, actions: &mut Vec<Action>) {
         let has_project = !self.projects.is_empty();
         match action {
-            "settings.open" => self.settings_open = !self.settings_open,
+            "settings.open" if self.settings_open => {
+                self.close_settings();
+            }
+            "settings.open" => self.settings_open = true,
             "help.about" => self.about_open = !self.about_open,
             "file.new" if self.start_panel_open() => {}
             "file.new" => self.open_project_dialog(false),
@@ -73,8 +76,9 @@ impl App {
             }
             "view.browser" => self.toggle_browser(),
             "view.sampleMap" => {
-                self.settings_open = false;
-                self.toggle_large_map();
+                if self.close_settings() {
+                    self.toggle_large_map();
+                }
             }
             "view.sampleMapWindow" => self.toggle_map_window(),
             "view.zoomIn" => self.step_zoom(1),
@@ -90,11 +94,11 @@ impl App {
                     self.settings_changed = true;
                 }
             }
+            "browser.search" if !self.close_settings() => {}
             "browser.search" => {
                 if !self.settings.browser_open {
                     self.toggle_browser();
                 }
-                self.settings_open = false;
                 // Ctrl+F searches everything: All is chosen, and what the field says is selected
                 // so typing replaces it. To search one kind, choose it and click the field.
                 self.browser.place = None;
