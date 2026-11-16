@@ -354,7 +354,7 @@ answering a class query before the entry has run crashes them (a null dereferenc
 module), which a scan would then report as a crash while loading.
 
 the state handed to the engine is the component's. `test:vst3`, a gain with a separate
-controller built into the host, plays the part of `test:clap`. **Class ids** are written as
+controller built into the host, plays the part of `test:clap`; `test:vst3-gate` is the same plug-in whose state reads alone honour the tests' state-read gate (`SUHINA_TEST_PLUGIN_STATE_GATE`), so a test that holds reads runs it in a host process of its own and no other test's reads are held. **Class ids** are written as
 the SDK writes them (`moduleinfo.json`, the model): on Windows the first three fields of the
 COM GUID layout are turned back into numbers, so the text matches across scanning, the
 module's own description and imported projects.
