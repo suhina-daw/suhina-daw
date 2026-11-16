@@ -8,7 +8,8 @@
  * It holds only what keeps every element usable: layout, the regions' overflow, the default
  * artwork, the floating surfaces' blur, and plain readable text on an opaque window. It selects
  * elements by name, state and attribute only: no classes, no ids and no variables, and its only
- * colours are the window's two fixed plain ones, so nothing in it depends on a theme. The element
+ * colours are the window's two fixed plain ones and its background again for the menus, pop-ups
+ * and dialogs over it, so nothing in it depends on a theme. The element
  * reference lists every element it names.
  */
 
@@ -105,6 +106,12 @@ dialog,
 start-page,
 plugin-manager,
 export { overflow: hidden; }
+
+/* Menus, pop-ups and dialogs are opaque, in the window's own plain colour: nothing behind them
+   shows through unless a theme asks for it. */
+popup,
+menu,
+dialog { background-color: #1e1e1e; }
 
 /* What floats over the window blurs the window's own layers behind it. */
 popup,

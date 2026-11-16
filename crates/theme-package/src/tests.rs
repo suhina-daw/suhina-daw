@@ -352,12 +352,12 @@ fn colour_property(name: &str) -> bool {
     name == "color" || name.ends_with("-color")
 }
 
-/// The user-agent sheet's only colours are the window's plain text and background (#1448): a
-/// theme that opts out of the base sheet stands on a bare floor it can read. Both are fixed, opaque
-/// values given to `window` alone. The theme swatch's square takes its colour from its element,
+/// The user-agent sheet's only colours are the window's plain text and background, and the same
+/// opaque background for the menus, pop-ups and dialogs over it (#1448): a theme that opts out of
+/// the base sheet stands on a bare floor it can read. All are fixed, opaque values. The theme swatch's square takes its colour from its element,
 /// not from the sheet.
 #[test]
-fn the_user_agent_sheet_colours_only_the_window() {
+fn the_user_agent_sheet_colours_only_the_window_and_what_floats_over_it() {
     let sheet = suhina_style::sheet::Sheet::parse(USER_AGENT_SHEET).unwrap();
     let mut given: Vec<&str> = Vec::new();
     for (name, value) in sheet.declarations().filter(|(name, _)| colour_property(name)) {
@@ -374,8 +374,8 @@ fn the_user_agent_sheet_colours_only_the_window() {
         given.push(name);
     }
     given.sort_unstable();
-    assert_eq!(given, ["background-color", "color"]);
-    // Both in the one rule for `window`.
+    assert_eq!(given, ["background-color", "background-color", "color"]);
+    // The text and background in the one rule for `window`, the background in one for what floats.
     let mut text = USER_AGENT_SHEET.to_owned();
     while let Some(start) = text.find("/*") {
         let end = text[start..].find("*/").unwrap() + start + 2;
@@ -395,7 +395,7 @@ fn the_user_agent_sheet_colours_only_the_window() {
         }
         rest = &rest[close + 1..];
     }
-    assert_eq!(coloured, ["window"]);
+    assert_eq!(coloured, ["window", "popup,\nmenu,\ndialog"]);
 }
 
 /// No colour in the base sheet is fixed (#1448): every colour it gives reads a variable, so a

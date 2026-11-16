@@ -363,12 +363,13 @@ Imports choose unused theme ids rather than overwriting existing themes.
 Suhina has a user-agent style sheet, as a browser does: `crates/theme-package/src/user-agent.css`
 (`suhina_theme_package::USER_AGENT_SHEET`), built into the app. It is the bare floor every
 element stands on: what keeps it usable, with no design of Suhina's. Its only colours are a
-plain readable floor on `window`, fixed light text on an opaque dark background, which the base
-sheet replaces with Suhina's colours.
+plain readable floor on `window`, fixed light text on an opaque dark background, and the same
+opaque background on `menu`, `popup` and `dialog`, so what floats over the window never shows
+what is behind it; the base sheet replaces them with Suhina's colours.
 
 - **It selects elements by name, state and attribute only:** no classes (but the standard toolbar
   group classes, `group.transport` and `group.display`, once the toolbar has groups), no ids, no
-  variables, no colours but the window's two fixed ones, and no at-rules. Tests in
+  variables, no colours but the window's two fixed ones and that background on what floats over it, and no at-rules. Tests in
   `suhina-theme-package` check this, and that every element it names is in the registry.
 - **The cascade** is: the user-agent sheet, the base tier (*The base sheet*), the theme's
   `theme.css`, the chosen variant, device panel sheets (each inside its panel), and the user's
