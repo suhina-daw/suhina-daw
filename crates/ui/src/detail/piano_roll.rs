@@ -531,10 +531,12 @@ pub fn show(
         && note_at(&layout, &clip.notes, pos).is_none()
     {
         let time = ui.input(|i| i.time);
-        if state
-            .last_click
-            .is_some_and(|(at, from)| time - at < DOUBLE_CLICK_TIME && from.distance(pos) < DOUBLE_CLICK_DISTANCE)
-        {
+        // A click recorded this very frame is this press's own (pressed and let go within one
+        // frame, as a quick click on a slow frame is), never the first of a pair: taking it for
+        // one turned a single click into a drawn note.
+        if state.last_click.is_some_and(|(at, from)| {
+            time > at && time - at < DOUBLE_CLICK_TIME && from.distance(pos) < DOUBLE_CLICK_DISTANCE
+        }) {
             state.last_click = None;
             state.press_draw = true;
             state.selected.clear();

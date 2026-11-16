@@ -191,6 +191,38 @@ fn escape_closes_the_menu_and_keeps_the_selection() {
     assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), vec![1], "the menu's Escape alone");
 }
 
+/// A click pressed and let go within one frame (a quick click on a slow frame) is one click: it
+/// clears the selection and adds no note. Its own press was taken for the second of a
+/// double-click.
+#[test]
+fn a_click_within_one_frame_on_the_empty_grid_adds_no_note() {
+    let mut renderer = engine();
+    let mut h = with_preset(&mut renderer, Preset::SelectFirst);
+    let before = notes(&h).len();
+    let empty = empty_spot(&h);
+    h.hover_at(empty);
+    h.step();
+    for pressed in [true, false] {
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: empty,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+    }
+    h.step();
+    h.run();
+    assert_eq!(notes(&h).len(), before, "one click adds nothing");
+    pause(&mut h);
+    // A real double-click still adds one.
+    for _ in 0..2 {
+        press(&mut h, empty, egui::PointerButton::Primary, true);
+        press(&mut h, empty, egui::PointerButton::Primary, false);
+    }
+    h.run();
+    assert_eq!(notes(&h).len(), before + 1, "a double-click adds a note");
+}
+
 /// The mute key reaches the piano roll through the window's keys: 0 mutes the selected note and
 /// 0 again brings it back.
 #[test]
