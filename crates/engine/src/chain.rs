@@ -564,6 +564,15 @@ impl Chain {
         self.positions.iter().position(|&p| p == position)
     }
 
+    /// Marks the plug-in at `slot` as one that reads a key, from the graph's first block: it then
+    /// runs its blocks on its own, never in a joint round trip, where only the leader is handed
+    /// its key and a keyed plug-in following another would hear none.
+    pub(crate) fn mark_keyed(&mut self, slot: usize) {
+        if let Some(DeviceSlot::Plugin(plugin)) = self.slots.get_mut(slot) {
+            plugin.keyed = true;
+        }
+    }
+
     /// Keeps the chain's signal at `tap` each block, for a key another chain reads. Allocates.
     pub(crate) fn want_tap(&mut self, tap: suhina_model::TapPoint) {
         if let Some(buffer) = self.taps.get_mut(tap_index(tap))

@@ -309,6 +309,7 @@ pub(crate) fn build(
         let delay = reader_in.saturating_sub(tapped) as usize;
         if let Some(chain) = chains.get_mut(i) {
             chain.key_reads.push(crate::chain::KeyRead::new(slot, j, tap, gain, delay));
+            chain.mark_keyed(slot);
         }
     }
     // When each chain runs in a block, and with how much of the deadline (#1261).

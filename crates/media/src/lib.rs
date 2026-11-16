@@ -320,6 +320,9 @@ fn joined(root: &Path, file: &str) -> Option<PathBuf> {
 /// A project-named file inside its folder, with no parent traversal or symbolic links; or,
 /// outside it, one that `trusted` names.
 pub fn locate(file: &str, absolute: Option<&str>, project_dir: &Path, trusted: &Trusted) -> Option<PathBuf> {
+    // A project opened by its bare file name (`suhina-cli render song.suhina`) is in the current
+    // folder: its parent is the empty path, which has no absolute form of its own.
+    let project_dir = if project_dir.as_os_str().is_empty() { Path::new(".") } else { project_dir };
     let root = std::path::absolute(project_dir).ok()?;
     inside(file, absolute, &root).or_else(|| {
         let from_root = joined(&root, file);

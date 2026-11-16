@@ -1710,3 +1710,64 @@ fn joint_sends_record_busy_and_successful_trip_timing() {
     assert!(slot.finish(&mut samples, None));
     assert_eq!(slot.longest_us, longest, "offline work does not pollute real-time diagnostics");
 }
+
+/// A plug-in in a host process with others that reads a key: what it was handed as its key.
+struct KeyedMember {
+    joint: crate::Joint,
+    heard: Arc<std::sync::Mutex<f32>>,
+    followed: Arc<AtomicUsize>,
+}
+
+impl PluginProcessor for KeyedMember {
+    fn process(&mut self, _buffer: &mut [f32], _events: &[(usize, NoteEvent)], _timeout: Duration) -> bool {
+        true
+    }
+
+    fn joint(&self) -> Option<crate::Joint> {
+        Some(self.joint)
+    }
+
+    fn followed(&mut self, _events: &[(usize, NoteEvent)], _how: crate::Followed) {
+        self.followed.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn set_key(&mut self, key: &[f32]) {
+        if let Ok(mut heard) = self.heard.lock() {
+            *heard = key.iter().fold(*heard, |m, v| m.max(v.abs()));
+        }
+    }
+}
+
+/// A plug-in that reads a key, right after another plug-in of the same host process: it runs
+/// its blocks on its own and hears its key, rather than following the other in a joint round
+/// trip that carries only the first one's key.
+#[test]
+fn a_keyed_plug_in_after_another_of_its_process_hears_its_key() {
+    let clap = |id: &str| plug(DeviceKind::Clap { id: id.into() });
+    let mut p = two_tracks(vec![note(0.0, 2.0, 69)], vec![clap("a"), clap("b")]);
+    p.channels[0].devices[1].inputs =
+        vec![suhina_model::DeviceInput::key(ChannelId(2), suhina_model::TapPoint::PostFx)];
+    let table = Arc::default();
+    let trips = Arc::new(AtomicUsize::new(0));
+    let heard = Arc::new(std::sync::Mutex::new(0.0f32));
+    let followed = Arc::new(AtomicUsize::new(0));
+    let mut plugins = Plugins::new();
+    let found = plugin_devices(&p);
+    plugins.insert(found[0].key, EFFECT, Box::new(Member::new(1, 1, 1.0, &table, &trips)));
+    let keyed = KeyedMember {
+        joint: crate::Joint { process: 1, member: 2 },
+        heard: Arc::clone(&heard),
+        followed: Arc::clone(&followed),
+    };
+    plugins.insert(found[1].key, EFFECT, Box::new(keyed));
+    render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    assert!(*heard.lock().unwrap() > 0.1, "the key reached it: {}", heard.lock().unwrap());
+    assert_eq!(followed.load(Ordering::SeqCst), 0, "it never followed the other plug-in");
+}
