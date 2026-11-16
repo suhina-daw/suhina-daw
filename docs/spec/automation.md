@@ -76,15 +76,21 @@ and is deleted with its device. One lane per parameter.
   lane moves along; the header, the point's tooltip and the panel while it plays show the number
   played.
 - A hosted plug-in's parameter (#1205) moves evenly over the plug-in's own range (a VST3 plug-in's
-  normalized 0 to 1, a CLAP plug-in's plain values) and, for a stepped one, holds each point's
-  value on its nearest step until the next point, as drawn: the engine learns which parameters
-  take steps from the plug-in's own list of them, read once it runs, for playing and for an
-  offline render alike (the project file does not keep it). The header, the point's tooltip,
+  normalized 0 to 1, a CLAP plug-in's plain values). A point of a stepped one sits on its nearest
+  step. Only a **switch** (one step) or a **list of choices** (VST3 `kIsList`, CLAP
+  `CLAP_PARAM_IS_ENUM`) holds each point's value until the next point, as drawn, since the values
+  between its choices mean nothing; any other parameter, one listed with steps too (a filter's
+  cutoff in 1024 steps), moves along the line like a built-in whole-number parameter, and the
+  plug-in plays the step the line is on (#1482). The engine learns which parameters hold from the
+  plug-in's own list of them, read once it runs, for playing and for an offline render alike (the
+  project file does not keep it). The header, the point's tooltip,
   Edit value and the value beside the pointer while dragging show the plug-in's own text for the
   value ("-3.2 dB"), asked from the plug-in in the background (`get_param_texts`, [the plug-in
   protocol](plugin-protocol.md)), at most ten times a second; until it answers, for a plug-in that
   names no values (VST2) and for 30 seconds after a request it did not answer, they show the
-  number. While a point is dragged the plug-in follows the line where the transport stands; when
+  number. The device panel's generated list shows the plug-in's text for the value automation
+  plays the same way, on the step the plug-in plays (#1482); the window draws again as soon as an
+  answer comes, without waiting for the pointer to move. While a point is dragged the plug-in follows the line where the transport stands; when
   the drag ends, given up or not, it goes back to what the lane plays there.
 - The movement follows the first point's **curve** (`automation::Curve`): a cubic Bezier from
   (0, 0) to (1, 1) in (share of the segment's time, share of the way in position) through two
@@ -179,7 +185,9 @@ brings the lane back on with the old value.
 A move in a hosted plug-in's own editor turns its lane off the same way, as one undo step, and
 the engine stops playing the lane at once (#1205). A value the plug-in reports that the lane sent
 it does not count: stopped, the lane's value at the playhead; playing, any value the lane went
-through in the last two beats, as a report may come a little after the value it echoes.
+through in the last two beats, as a report may come a little after the value it echoes. For a
+knob listed with steps (one that moves along the line, #1482) a report within one step of such a
+value counts too, as the plug-in may report the step it rounded the lane's value to.
 
 ## What the controls show
 

@@ -158,6 +158,7 @@ fn a_failed_listing_is_tried_again_as_seldom_as_a_good_one() {
         value: 0.5,
         text: String::new(),
         steps: 0,
+        list: false,
         automatable: true,
         read_only: false,
         hidden: false,
@@ -172,6 +173,108 @@ fn a_failed_listing_is_tried_again_as_seldom_as_a_good_one() {
     // A plug-in that does not run is not asked.
     instance.status = PluginStatus::Loading;
     assert!(!instance.list_due(later + LIST_EVERY * 9));
+}
+
+/// Parameters of one plug-in that want texts wait in line and are asked in turn, so a second
+/// automated parameter is asked even while the first keeps wanting new values; values named
+/// meanwhile are not asked again (#1482).
+#[test]
+fn parameters_wanting_texts_are_asked_in_turn() {
+    let mut instance = Instance::new(PluginStatus::Running, None, 0);
+    instance.wait_texts(1, vec![0.1]);
+    instance.wait_texts(2, vec![0.2]);
+    assert_eq!(instance.next_texts(), Some((1, vec![0.1])));
+    // The first wants more while it is asked: it waits behind the second.
+    instance.wait_texts(1, vec![0.11]);
+    instance.wait_texts(2, vec![0.2, 0.21]);
+    assert_eq!(instance.next_texts(), Some((2, vec![0.2, 0.21])));
+    assert_eq!(instance.next_texts(), Some((1, vec![0.11])));
+    assert_eq!(instance.next_texts(), None);
+    // A value named while it waited is left out, and one wanting nothing leaves the line.
+    instance.wait_texts(3, vec![0.3, 0.31]);
+    instance.wait_texts(4, vec![0.4]);
+    instance.wait_texts(4, Vec::new());
+    texts_of(&instance.texts).insert((3, 0.3f64.to_bits()), "30 %".into());
+    assert_eq!(instance.next_texts(), Some((3, vec![0.31])));
+    assert_eq!(instance.next_texts(), None);
+}
+
+/// While its plug-in runs, the next parameter waiting in line is sent once the request before
+/// it is answered and a moment has passed, with no lane or panel asking again (the view that
+/// wanted it was closed); one request at a time (#1482).
+#[test]
+fn the_next_waiting_parameter_is_sent_without_another_ask() {
+    let mut instance = Instance::new(PluginStatus::Running, None, 0);
+    instance.wait_texts(1, vec![0.1]);
+    instance.wait_texts(2, vec![0.2]);
+    let now = Instant::now();
+    assert_eq!(instance.take_request(now), Some((1, vec![0.1])));
+    instance.sent_texts(now);
+    assert_eq!(instance.take_request(now + TEXTS_EVERY), None, "one request at a time");
+    instance.texts_done(1, &[0.1], Some(vec!["10 %".into()]));
+    assert_eq!(instance.take_request(now), None, "not again before a moment has passed");
+    assert_eq!(instance.take_request(now + TEXTS_EVERY), Some((2, vec![0.2])), "the second, unasked");
+    instance.sent_texts(now + TEXTS_EVERY);
+    instance.texts_done(2, &[0.2], Some(vec!["20 %".into()]));
+    assert_eq!(instance.take_request(now + TEXTS_EVERY * 2), None, "the line is empty");
+    // A plug-in that does not run is not asked.
+    instance.wait_texts(3, vec![0.3]);
+    instance.status = PluginStatus::Loading;
+    assert_eq!(instance.take_request(now + TEXTS_EVERY * 3), None);
+}
+
+/// Texts waiting in line keep the window drawing only while they can be sent; once their
+/// plug-in stops running the line empties without anyone asking again, so a closed lane or panel
+/// leaves nothing waiting (#1482).
+#[test]
+fn a_text_line_empties_without_another_ask() {
+    let mut rack = Rack::default();
+    let mut instance = Instance::new(PluginStatus::Running, None, 0);
+    instance.wait_texts(1, vec![0.1]);
+    instance.wait_texts(2, vec![0.2]);
+    rack.instances.insert(7, instance);
+    assert!(rack.texts_pending(), "waiting to be sent");
+    // Asked again later than a moment from now (a request it did not answer): not drawn for.
+    if let Some(instance) = rack.instances.get_mut(&7) {
+        instance.texts_next = Some(Instant::now() + TEXTS_AGAIN);
+    }
+    assert!(!rack.texts_pending());
+    // The plug-in stops: the line is dropped by the regular poll, with no lane asking again.
+    if let Some(instance) = rack.instances.get_mut(&7) {
+        instance.texts_next = None;
+        instance.status = PluginStatus::Loading;
+    }
+    rack.pump_texts();
+    assert!(rack.instances.get(&7).is_some_and(|i| i.texts_waiting.is_empty()));
+    assert!(!rack.texts_pending());
+}
+
+/// The engine holds the lanes of a plug-in's switches and lists of choices only; a knob listed
+/// with steps (a filter's cutoff in 1024 steps) moves along the line (#1482).
+#[test]
+fn only_switches_and_lists_hold_their_lanes_values() {
+    let param = |id: u32, steps: u32, list: bool| suhina_plugins::ParamInfo {
+        id,
+        name: String::new(),
+        group: String::new(),
+        min: 0.0,
+        max: 1.0,
+        default: 0.0,
+        value: 0.0,
+        text: String::new(),
+        steps,
+        list,
+        automatable: true,
+        read_only: false,
+        hidden: false,
+    };
+    let list = [param(1, 0, false), param(2, 1024, false), param(3, 1, false), param(4, 3, true), param(5, 3, false)];
+    assert_eq!(&*steps(&list), [3, 4]);
+    // The knobs listed with steps move in them: their step, for a rounded report to match.
+    assert_eq!(step_sizes(&list), [(2, 1.0 / 1024.0), (5, 1.0 / 3.0)]);
+    let mut instance = Instance::new(PluginStatus::Running, None, 0);
+    instance.list_done(Some(list.to_vec()), Instant::now());
+    assert_eq!(instance.steps.as_deref(), Some(&[3, 4][..]));
 }
 
 #[test]

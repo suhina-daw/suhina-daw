@@ -84,6 +84,11 @@ impl App {
         {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
+        // A plug-in's texts for the values lanes and panels show are on their way: drawn as soon
+        // as they come, not at the next move of the pointer (#1482).
+        if self.session().is_some_and(suhina_session::Session::plugin_texts_pending) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        }
     }
 
     /// While the active project's plug-ins start, a dialog over the window says how far they
