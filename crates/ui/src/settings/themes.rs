@@ -84,6 +84,9 @@ struct Draft {
     name: Option<String>,
     values: BTreeMap<String, String>,
     theme: Theme,
+    /// A new variant started from `id` (the + box): nothing is written until it is saved, as a
+    /// variant of its own.
+    new: bool,
 }
 
 /// A file action as it waits: a theme to save is looked up when the app takes it, so a theme
@@ -208,6 +211,7 @@ impl Themes {
             variant_name: self.draft_for(shown).and_then(|d| d.name.clone()).unwrap_or(saved_name),
             edited: self.edited(shown),
             saveable: self.saveable(shown),
+            new_variant: self.draft_for(shown).is_some_and(|d| d.new),
             kept: self
                 .entries
                 .iter()
@@ -319,8 +323,10 @@ impl Themes {
                 let mut theme = self.get(&real)?.clone();
                 let saved = self.saved_name(&real);
                 let typed = self.draft_for(&real).and_then(|d| d.name.clone()).map(|n| n.trim().to_owned());
+                let new = self.draft_for(&real).is_some_and(|d| d.new);
                 let name = match typed.filter(|n| !n.is_empty()) {
-                    Some(name) if name != saved => name,
+                    Some(name) if new || name != saved => name,
+                    _ if new => "New variant".to_owned(),
                     _ => format!("{saved} copy"),
                 };
                 self.draft = None;
@@ -337,18 +343,19 @@ impl Themes {
                 None
             }
             ThemeRequest::NewVariant(from) => {
+                // A draft of the variant it starts from, saved as a variant of its own only on
+                // Save; Cancel leaves nothing behind.
                 let from = self.real_id(&from);
-                let mut theme = self.get(&from)?.clone();
+                let theme = self.entries.iter().find(|e| e.id == from)?.theme.clone();
                 let base = crate::kit::theme_vars::split_id(&from).0.to_string();
                 let id = self.free_variant(&base, "New variant");
-                // Numbered as its id is, so two new variants are told apart by name too.
+                // Numbered as its id would be, so two new variants are told apart by name too.
                 let number = id.rsplit_once('-').and_then(|(_, n)| n.parse::<u32>().ok());
                 let name = number.map_or_else(|| "New variant".to_owned(), |n| format!("New variant {n}"));
-                theme.vars.variant = crate::kit::theme_vars::split_id(&id).1.map(str::to_owned);
-                theme.vars.variant_name = Some(name);
-                self.entries.push(ThemeEntry { id: id.clone(), theme });
-                self.actions.push(Pending::Save(id.clone()));
-                Some(id)
+                self.draft =
+                    Some(Draft { id: from.clone(), name: Some(name), values: BTreeMap::new(), theme, new: true });
+                self.rebuild_draft();
+                (!same_id(&from, current)).then_some(from)
             }
             ThemeRequest::DuplicateVariant(from) => {
                 let from = self.real_id(&from);
@@ -360,29 +367,6 @@ impl Themes {
                 theme.vars.variant_name = Some(name);
                 self.entries.push(ThemeEntry { id: id.clone(), theme });
                 self.actions.push(Pending::Save(id));
-                None
-            }
-            ThemeRequest::RenameVariant { id, name } => {
-                let name = name.trim().to_string();
-                let real = self.real_id(&id);
-                if name.is_empty() || self.get(&real).is_none() {
-                    return None;
-                }
-                match crate::kit::theme_vars::split_id(&real) {
-                    // A variant keeps its file; only its name changes.
-                    (_, Some(_)) if self.saveable(&real) => {
-                        let entry = self.entries.iter_mut().find(|e| e.id == real)?;
-                        entry.theme.vars.variant_name = Some(name);
-                        self.actions.push(Pending::Save(real));
-                    }
-                    // The default variant's name is the theme's, in its theme.json.
-                    (base, None) if !theme::is_built_in(base) => {
-                        let base = base.to_owned();
-                        self.each_of(&base, |theme| theme.meta.default_variant = Some(name.clone()));
-                        self.actions.push(Pending::Save(base));
-                    }
-                    _ => self.notice = Some(LOCKED.into()),
-                }
                 None
             }
             ThemeRequest::Delete(id) => {
@@ -523,7 +507,7 @@ impl Themes {
         let Some(draft) = self.draft_for(current) else { return false };
         let Some(entry) = self.entries.iter().find(|e| e.id == draft.id) else { return false };
         let renamed = draft.name.as_deref().is_some_and(|n| n.trim() != self.saved_name(&draft.id));
-        renamed || draft.theme.vars.values != entry.theme.vars.values
+        draft.new || renamed || draft.theme.vars.values != entry.theme.vars.values
     }
 
     /// Drops the draft, unsaved: the editor was left without saving, or Settings closed.
@@ -567,7 +551,7 @@ impl Themes {
         let real = self.real_id(current);
         if self.draft_for(&real).is_none() {
             let theme = self.entries.iter().find(|e| e.id == real)?.theme.clone();
-            self.draft = Some(Draft { id: real, name: None, values: BTreeMap::new(), theme });
+            self.draft = Some(Draft { id: real, name: None, values: BTreeMap::new(), theme, new: false });
         }
         Some(())
     }

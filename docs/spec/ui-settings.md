@@ -173,17 +173,20 @@ grid. All of a theme's swatches stay on one line, narrowing together when they d
 without variants keeps the row's room, so all the grid's cards are one height.
 
 **Right-click menus** offer what can be done to the thing clicked. A swatch: *Use*, *Edit…*,
-*Duplicate*, *Rename…*, *Delete…* (for a variant a built-in theme ships that the user edited in
-an earlier version, *Revert to built-in…* in its place). A card: *Use*, *New theme from this…*,
+*Duplicate*, *Delete…* (for a variant a built-in theme ships that the user edited in an earlier
+version, *Revert to built-in…* in its place); a variant is renamed in the variant editor. A card:
+*Use* (not on the large card, which is the theme in use), *New theme from this…*,
 *Theme info…*, *Export theme…*, *Show in folder*, *Add default artwork* and *Delete theme…*. An
 item that does not apply is shown greyed with the reason when hovered: a built-in theme and the
 variants it ships cannot be changed (make a new theme or variant from them), and the default
 variant is the theme's own values, renamed in *Theme info…* and never deleted.
 
-**Variants.** The **+** box and *Duplicate* add a variant with the values of the one they start
-from (the variant in use, or the swatch clicked), named *New variant* or *<name> copy* under a free
-id, and save it at once; **+** then uses it and opens the editor on it. A variant added to a
-built-in theme is the user's and can be edited, renamed and deleted.
+**Variants.** The **+** box is drawn as the theme's buttons are (their fill, edge and text, lighter
+under the pointer, faded when greyed). It opens the editor on a new variant with the values of the
+variant in use, named *New variant* (numbered when one is there): nothing is written until
+**Save**, which saves it under a free id and uses it, and **Cancel** goes back to the themes and
+leaves nothing behind. *Duplicate* saves a copy of the swatch clicked, *<name> copy*, at once. A
+variant added to a built-in theme is the user's and can be edited, renamed and deleted.
 
 **Edit current variant** opens a child view of Themes: *Back to themes*, the theme's and the
 variant's names, and *Edited* while there are unsaved changes. It shows the variant's **Name** and
@@ -192,31 +195,34 @@ settings* (a theme that declares none says so). The palette colours, liquid stre
 gradients are not listed there (#1019); a theme sets them in its `theme.css`. Changes preview at
 once across the whole app, and nothing is written until **Save**. **Save as new variant** writes
 the edits as a new variant (named from the Name field, with *copy* added when it is unchanged) and
-uses it; **Discard changes** asks first, in place, then puts back the saved values. Save is greyed,
+uses it; **Discard changes** asks first, then puts back the saved values. Save is greyed,
 with the reason when hovered, for the default variant and for a variant a built-in theme ships:
-only Save as new variant then.
+only Save as new variant then. A new variant from the + box offers only **Save** and **Cancel**.
 
 Leaving the editor with unsaved changes — *Back to themes*, another Settings page, closing
 Settings by its button, Escape, the window's close box or any command that closes it — first shows
-a panel at the top of the editor: *Save changes to <variant>?* with **Save** (or **Save as new
-variant** where Save is not allowed), **Don't save** and **Cancel** (Escape). The panel is in
-place, not a dialog, per the design brief's one-window rule. A command that closed Settings to
+*Save changes to <variant>?* (*Save the new variant <name>?* for one the + box started) with
+**Save** (or **Save as new variant** where Save is not allowed), **Don't save** and **Cancel**
+(Escape, or a click beside the box). A command that closed Settings to
 show something else does not run when the answer is Save or Don't save; run it again. A variant
 whose file goes away while it is being edited drops its edits with a note in the status bar, and
 quitting Suhina drops them: nothing was written.
 
-**New theme…** (More, or *New theme from this…* on a card, which preselects that theme) is a form
-in place of the gallery: **Start from** (*Suhina's defaults*, or any theme, built-in or the user's),
+**Questions and forms** of the Themes page (*Save changes…?*, *Discard…?*, *Delete…?*, New
+theme, Theme info) are boxes over Settings, which is dimmed behind them, so nothing on the page
+moves when one opens; Escape or a click beside the box cancels it.
+
+**New theme…** (More, or *New theme from this…* on a card, which preselects that theme) is a form: **Start from** (*Suhina's defaults*, or any theme, built-in or the user's),
 **Name**, **Author**, **Description** and **Include the default artwork** (off: the built-in
 control images copied into the theme's `assets/` with a rule for each in its `theme.css`, so they
 can be edited). **Create theme** makes the folder and uses the new theme; a theme started from
 another carries its look and the variant in use's values, not its other variants.
 
-**Theme info…** (the user's own themes) is a form in place of the gallery: **Name**, **Author**,
+**Theme info…** (the user's own themes) is a form: **Name**, **Author**,
 **Description** and **Default variant's name**. **Save** writes `theme.json`; the folder keeps its
 name, since it is the theme's id.
 
-**Delete** asks in place, naming what goes: *Delete <variant>? Its file will be moved to the
+**Delete** asks first, naming what goes: *Delete <variant>? Its file will be moved to the
 Trash* (or *Delete the theme <name>? Its folder will be moved to the Trash*), with **Delete** in
 the warning colour and **Cancel**. The file or folder goes to the system's Trash or Recycle Bin.
 The theme leaves the list, and a theme or variant in use gives way to the theme's default variant

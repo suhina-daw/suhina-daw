@@ -476,13 +476,11 @@ fn discard_changes_restores_a_themes_own_settings() {
     harness.get_by_label("Discard changes").click();
     settle(&mut harness);
     // It asks first; Cancel keeps the changes.
-    harness.get_by_label("Cancel").click();
-    settle(&mut harness);
+    answer(&mut harness, "Cancel");
     assert_ne!(live("accent"), original, "Cancel kept the changes");
     harness.get_by_label("Discard changes").click();
     settle(&mut harness);
-    harness.get_by_label("Discard").click();
-    settle(&mut harness);
+    answer(&mut harness, "Discard");
     assert_eq!(live("accent"), original, "the colour that follows the setting is back");
     assert_eq!(glow(&harness), before, "the slider is back");
 }
@@ -1073,6 +1071,14 @@ fn a_quick_controls_colour_picker_has_no_additive_blending() {
     assert!(harness.query_by_label("Normal").is_none() && harness.query_by_label("Additive").is_none());
 }
 
+/// Clicks `label` in the box over Settings (a question's answer), not the button of the same
+/// name behind it.
+#[allow(clippy::unwrap_used)] // a test helper outside #[test] functions
+fn answer(harness: &mut Harness<'static, App>, label: &str) {
+    harness.get_all_by_label(label).last().unwrap().click();
+    settle(harness);
+}
+
 /// Ink, a theme with one quick control, and its variant Dim, as the user's own themes; Dim in use.
 fn ink_and_dim(harness: &mut Harness<'static, App>) {
     use suhina_ui::settings::themes::ThemeEntry;
@@ -1134,14 +1140,14 @@ fn leaving_the_variant_editor_with_changes_asks_to_save_them() {
     harness.get_by_label("Back to themes").click();
     settle(&mut harness);
     assert!(harness.query_by_label("Save changes to Dusk?").is_some());
-    harness.get_by_label("Cancel").click();
+    answer(&mut harness, "Cancel");
     settle(&mut harness);
     assert!(harness.query_by_label("Save changes to Dusk?").is_none());
     assert!(harness.query_by_label("Variant name").is_some(), "Cancel stays in the editor");
 
     harness.get_by_label("Back to themes").click();
     settle(&mut harness);
-    harness.get_by_label("Don't save").click();
+    answer(&mut harness, "Don't save");
     settle(&mut harness);
     assert!(harness.query_by_label("Variant name").is_none(), "back in the gallery");
     assert!(harness.query_all_by_label("Variant: Dim").next().is_some(), "the saved name is back");
@@ -1150,7 +1156,7 @@ fn leaving_the_variant_editor_with_changes_asks_to_save_them() {
     rename_in_editor(&mut harness, "Dusk");
     harness.get_by_label("Back to themes").click();
     settle(&mut harness);
-    harness.get_by_label("Save").click();
+    answer(&mut harness, "Save");
     settle(&mut harness);
     assert_eq!(saved_ids(&mut harness), ["ink@dim"]);
     assert!(harness.query_all_by_label("Variant: Dusk").next().is_some());
@@ -1168,13 +1174,13 @@ fn closing_settings_with_unsaved_changes_asks_first() {
     settle(&mut harness);
     assert!(harness.state().settings_open());
     assert!(harness.query_by_label("Save changes to Dusk?").is_some());
-    harness.get_by_label("Cancel").click();
+    answer(&mut harness, "Cancel");
     settle(&mut harness);
 
     assert!(!harness.state_mut().close_settings(), "another way to close it asks too");
     settle(&mut harness);
     assert!(harness.state().settings_open());
-    harness.get_by_label("Don't save").click();
+    answer(&mut harness, "Don't save");
     settle(&mut harness);
     assert!(!harness.state().settings_open());
     assert!(saved_ids(&mut harness).is_empty());
@@ -1197,7 +1203,7 @@ fn changes_to_a_default_variant_are_saved_as_a_new_variant() {
     assert!(harness.get_by_label("Save").accesskit_node().is_disabled());
     harness.get_by_label("Back to themes").click();
     settle(&mut harness);
-    harness.get_by_label("Save as new variant").click();
+    answer(&mut harness, "Save as new variant");
     settle(&mut harness);
     assert_eq!(saved_ids(&mut harness), ["ink@bright"]);
     assert_eq!(harness.state().settings().theme, "ink@bright");
@@ -1246,6 +1252,7 @@ fn right_click_menus_grey_out_what_a_built_in_theme_cannot_do() {
     for label in ["Theme info…", "Show in folder", "Add default artwork", "Delete theme…"] {
         assert!(!harness.get_by_label(label).accesskit_node().is_disabled(), "{label} is on for an own theme");
     }
+    assert!(harness.query_by_label("Use").is_none(), "the large card is the theme in use already");
 }
 
 /// Delete asks in place, names what goes, and only then hands the file to be moved to the Trash.
@@ -1261,7 +1268,7 @@ fn deleting_a_variant_asks_then_moves_it_to_the_trash() {
     settle(&mut harness);
     assert!(harness.query_by_label("Delete Dim?").is_some());
     assert!(harness.state_mut().take_theme_actions().is_empty(), "nothing goes before the answer");
-    harness.get_by_label("Cancel").click();
+    answer(&mut harness, "Cancel");
     settle(&mut harness);
     assert!(harness.query_by_label("Delete Dim?").is_none());
 
@@ -1269,7 +1276,7 @@ fn deleting_a_variant_asks_then_moves_it_to_the_trash() {
     settle(&mut harness);
     harness.get_by_label("Delete…").click();
     settle(&mut harness);
-    harness.get_by_label("Delete").click();
+    answer(&mut harness, "Delete");
     settle(&mut harness);
     assert_eq!(harness.state_mut().take_theme_actions(), [FileAction::Trash("ink@dim".into())]);
     // It stays until the file is gone.

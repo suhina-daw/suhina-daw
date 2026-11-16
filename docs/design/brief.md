@@ -47,8 +47,11 @@ From [research](#sources) and the first design rounds:
 4. **Two type sizes:** 12 px for UI text, 11 px for small values. No bold headings. 9 px is
    kept for tags beside a name, 13 px for a page title (components › Global rules).
 5. **One window, no pop-ups.** Menus and pickers open in place. The exceptions are plug-in
-   editors, which float in their own windows (ADR 0006), the project dialogs, and the sample map
-   when the user moves it into a window of its own for another screen
+   editors, which float in their own windows (ADR 0006), the project dialogs, Settings' own
+   questions and forms (Help, and the Themes page's *Save changes…?*, *Delete…?*, New theme and
+   Theme info, boxes over Settings so the page does not move;
+   [spec](../spec/ui-settings.md#theme-gallery-and-variant-editor)), and the sample map when the
+   user moves it into a window of its own for another screen
    ([spec](../spec/sample-map.md) › Where the map is shown).
 6. **Progressive disclosure.** Controls appear when there is room or need (track height, toggled
    sections), never all at once.

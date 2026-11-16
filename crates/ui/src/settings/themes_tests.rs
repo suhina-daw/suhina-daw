@@ -243,10 +243,8 @@ fn a_built_in_variant_is_edited_but_never_saved_in_place() {
     assert!(!themes.saveable("nord@snow-storm"));
     for request in [
         ThemeRequest::Save,
-        ThemeRequest::RenameVariant { id: "nord@snow-storm".into(), name: "Mine".into() },
         ThemeRequest::Delete("nord@snow-storm".into()),
         ThemeRequest::Delete("nord".into()),
-        ThemeRequest::RenameVariant { id: "nord".into(), name: "Mine".into() },
         ThemeRequest::EditInfo { id: "nord".into(), info: ThemeInfo { name: "Mine".into(), ..Default::default() } },
         ThemeRequest::AddDefaultArtwork("nord".into()),
     ] {
@@ -272,27 +270,38 @@ fn deleting_waits_for_the_file_to_go() {
 }
 
 #[test]
-fn new_duplicated_and_renamed_variants() {
+fn a_new_variant_is_written_only_when_saved() {
     let mut themes = ink();
-    assert_eq!(themes.request("ink", ThemeRequest::NewVariant("ink@warm".into())), Some("ink@new-variant".into()));
-    assert_eq!(themes.request("ink", ThemeRequest::NewVariant("ink".into())), Some("ink@new-variant-2".into()));
-    assert_eq!(themes.view("ink@new-variant-2").variant.as_deref(), Some("New variant 2"));
-    assert_eq!(
-        themes.get("ink@new-variant").unwrap().color("accent"),
-        themes.get("ink@warm").unwrap().color("accent"),
-        "it starts from the values of the variant it was made from"
-    );
+    // It starts as a draft of the variant it is made from, which is used.
+    assert_eq!(themes.request("ink", ThemeRequest::NewVariant("ink@warm".into())), Some("ink@warm".into()));
+    assert!(themes.take_actions().is_empty(), "nothing is written before Save");
+    assert!(themes.edited("ink@warm"), "a new variant counts as unsaved");
+    assert!(themes.view("ink@warm").new_variant);
+    assert_eq!(themes.view("ink@warm").variant_name, "New variant");
+    // Cancel leaves nothing behind.
+    themes.request("ink@warm", ThemeRequest::Discard);
+    assert!(!themes.edited("ink@warm"));
+    assert_eq!(themes.view("ink@warm").variant_name, "Warm");
+    assert!(themes.get("ink@new-variant").is_none());
+
+    // Save makes it a variant of its own, with the values it started from and those changed.
+    themes.request("ink@warm", ThemeRequest::NewVariant("ink@warm".into()));
+    let warm = themes.get("ink@warm").unwrap().color("accent");
+    themes.request("ink@warm", tint("#ff0000"));
+    assert_eq!(themes.request("ink@warm", ThemeRequest::SaveAsNew), Some("ink@new-variant".into()));
+    assert_eq!(saved(&mut themes), [("ink@new-variant".into(), "Ink".into())]);
+    assert_eq!(themes.view("ink@new-variant").variant.as_deref(), Some("New variant"));
+    assert_eq!(themes.get("ink@new-variant").unwrap().color("accent"), RED);
+    assert_eq!(themes.get("ink@warm").unwrap().color("accent"), warm, "the variant it started from is as it was");
+    assert!(!themes.edited("ink@warm"));
+    // A second is numbered as its id is, and keeps the name typed.
+    themes.request("ink", ThemeRequest::NewVariant("ink".into()));
+    assert_eq!(themes.view("ink").variant_name, "New variant 2");
+    themes.request("ink", ThemeRequest::EditName("Ember".into()));
+    assert_eq!(themes.request("ink", ThemeRequest::SaveAsNew), Some("ink@ember".into()));
+
     assert_eq!(themes.request("ink", ThemeRequest::DuplicateVariant("ink@warm".into())), None);
     assert_eq!(themes.view("ink@warm-copy").variant.as_deref(), Some("Warm copy"));
-    themes.take_actions();
-    themes.request("ink", ThemeRequest::RenameVariant { id: "ink@warm-copy".into(), name: " Ember ".into() });
-    assert_eq!(saved(&mut themes), [("ink@warm-copy".into(), "Ink".into())]);
-    assert_eq!(themes.view("ink@warm-copy").variant.as_deref(), Some("Ember"));
-    // The default variant's name is the theme's, for it and each of its variants.
-    themes.request("ink", ThemeRequest::RenameVariant { id: "ink".into(), name: "Night".into() });
-    assert_eq!(saved(&mut themes), [("ink".into(), "Ink".into())]);
-    assert_eq!(themes.view("ink").variant_name, "Night");
-    assert_eq!(themes.get("ink@warm").unwrap().meta.default_variant(), "Night");
 }
 
 #[test]
