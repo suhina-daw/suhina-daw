@@ -60,6 +60,10 @@ pub(super) struct Parts {
     /// The header's look by its size: its rows' height and its name's font size.
     pub(super) row: f32,
     pub(super) name_size: f32,
+    /// The attributes the header element takes for its look: `layout`, `size` and `name-first`.
+    /// They change only where the header crosses one of its sizes, so a drag of the header column
+    /// changes the style tree only there (#1489).
+    pub(super) words: (&'static str, &'static str, bool),
 }
 
 /// The header's arrangement: which line holds what (`track-header[layout]`).
@@ -279,6 +283,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
         shown_sends,
         navigation,
         row: header_row,
+        words: (shape.word(), size, name_first),
         name_size: if tiny {
             10.0
         } else if spacious {

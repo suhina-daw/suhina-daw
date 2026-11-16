@@ -488,6 +488,13 @@ pub fn budget() -> Budget {
     })
 }
 
+/// How many element styles the last whole-tree resolve worked out rather than took from its
+/// cache (#1489).
+#[cfg(test)]
+fn resolved_last() -> usize {
+    ENGINE.with(|engine| engine.borrow().native.as_ref().map_or(0, native::Paint::computed_last))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct StyleNode {
     key: u64,

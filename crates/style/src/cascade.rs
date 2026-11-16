@@ -182,6 +182,10 @@ pub const MAX_CACHED_STYLES: usize = 8192;
 pub struct StyleCache {
     inputs: Option<(Viewport, u64)>,
     structure: Structure,
+    /// The ids some selector tests: any other id cannot change a style, so it is no part of an
+    /// identity (the host gives elements without one an id of their own, `node-…`, which would
+    /// otherwise keep identical elements apart).
+    tested_ids: std::collections::BTreeSet<String>,
     /// Each distinct identity, numbered.
     identities: std::collections::HashMap<Identity, u32>,
     /// Each distinct place, numbered, with its style.
@@ -220,7 +224,7 @@ impl StyleCache {
     fn identity(&mut self, element: &crate::selector::Element) -> u32 {
         let identity = Identity {
             kind: element.kind.clone(),
-            id: element.id.clone(),
+            id: element.id.clone().filter(|id| self.tested_ids.contains(id)),
             classes: element.classes.clone(),
             states: element.states.clone(),
             attributes: element.attributes.clone(),
@@ -325,6 +329,10 @@ pub fn compute_shared(
         let structure = Structure::of(sheets);
         cache.clear();
         cache.structure = structure;
+        cache.tested_ids.clear();
+        for selector in sheets.iter().flat_map(|applied| applied.sheet.rules.iter()).flat_map(|rule| &rule.selectors) {
+            selector.ids(&mut cache.tested_ids);
+        }
         cache.inputs = Some((viewport, sheets_key));
     }
     cache.computed = 0;

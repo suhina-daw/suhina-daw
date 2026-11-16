@@ -391,6 +391,25 @@ impl Selector {
         }
     }
 
+    /// Adds to `into` the ids this selector, or one inside it, tests (`#play`).
+    pub(crate) fn ids(&self, into: &mut std::collections::BTreeSet<String>) {
+        for part in &self.parts {
+            for test in &part.tests {
+                match test {
+                    Test::Id(id) => {
+                        into.insert(id.clone());
+                    }
+                    Test::Any(selectors, _) => {
+                        for selector in selectors {
+                            selector.ids(into);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// Whether some part of this selector, or of one inside it, tests an element's place among its
     /// siblings (`:nth-child`, `:first-child`, `:last-child`, `:only-child` and their kin).
     pub(crate) fn tests_position(&self) -> bool {

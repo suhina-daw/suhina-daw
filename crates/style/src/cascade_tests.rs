@@ -690,3 +690,22 @@ fn many_siblings_take_their_places_in_one_pass() {
     assert_eq!(styles[3].get(Property::Radius), Value::Length(Length::Px(2.0)), "a row after a row");
     assert_ne!(styles[2].get(Property::Radius), styles[3].get(Property::Radius), "the first row follows none");
 }
+
+#[test]
+fn an_id_no_selector_tests_does_not_keep_elements_apart() {
+    // The host gives elements without an id of their own one (`node-…`): rows that differ only
+    // by such an id share one style, and an id a rule tests keeps its element apart.
+    let rows = |ids: [&str; 3]| {
+        let mut elements = vec![Element::new("window", None), Element::new("list", Some(0))];
+        elements.extend(ids.iter().map(|id| Element::new("row", Some(1)).with_id(id)));
+        elements
+    };
+    let mut cache = StyleCache::default();
+    let (_, computed) = both("row { color: #000000; }", rows(["node-1", "node-2", "node-3"]), &mut cache);
+    assert_eq!(computed, 3, "window, list and one row");
+    let mut cache = StyleCache::default();
+    let (styles, computed) =
+        both("row { color: #000000; } #node-2 { color: #ff0000; }", rows(["node-1", "node-2", "node-3"]), &mut cache);
+    assert_eq!(computed, 4, "the row whose id a rule tests is apart");
+    assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
+}
