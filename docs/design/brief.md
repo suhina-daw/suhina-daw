@@ -210,16 +210,15 @@ Light, High Contrast, and popular open palettes mapped onto the tokens: Nord, wi
 Snow Storm variants, and Catppuccin Mocha and Latte (all MIT, licences in `crates/ui/themes/licenses/`).
 
 Settings › Appearance › Themes picks a theme from cards showing each theme's thumbnail (or its
-swatch colour), with a swatch per variant. Edit current theme changes its grouped colours (writing the file); the name
-of a theme file is changed there too, and its file is renamed to match. Duplicate copies the
-theme in use, Reload reads the files again, Open folder shows the themes folder, Back up writes
-every theme file into `exports/suhina-themes-<date>.zip`, and Export template writes
-`exports/suhina-theme-template.zip`: a `my-theme/` folder (`theme.json`, and `theme.css` with every
-token written out), `README.md`
-(the format and every token, written so an AI agent can make a theme from it alone) and the
-built-in themes in `examples/`. A theme file or a zip of them (a backup) dropped on the window is
-added; a theme already there is not doubled, and one whose id is taken gets `-2`. A theme file
-saved in another editor shows within a second.
+swatch colour), with a swatch per variant; *Edit current variant* changes the settings the theme
+declares, previewed live and written only on Save
+([Settings › Themes](../spec/ui-settings.md#theme-gallery-and-variant-editor)). *New theme…*
+starts a theme from Suhina's defaults or any theme, *Theme info…* writes its name, author and
+description, Open the themes folder shows the folder, Back up writes every theme file into
+`exports/suhina-themes-<date>.zip`, and deleting a theme or variant moves it to the system's
+Trash. A theme file or a zip of them (a backup) dropped on the window is added; a theme already
+there is not doubled, and one whose id is taken gets `-2`. A theme file saved in another editor
+shows within a second.
 
 ## Squint test
 

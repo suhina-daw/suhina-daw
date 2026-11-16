@@ -38,11 +38,11 @@ my-theme/
   examples/compact-session.css  # optional native Launcher density; not enabled automatically
 ```
 
-`theme.css` is yours. What a user changes in Suhina's theme editor (colours, meter, liquid,
-gradients and any setting your theme offers) is saved in a variant file. Moving a control or
+`theme.css` is yours. What a user changes in Suhina's variant editor (the settings your theme
+offers with `@property` and a label) is saved in a variant file when they press Save. Moving a control or
 choosing artwork in the app edits only that declaration in `theme.css` (Suhina changes or adds
 the one declaration and leaves your comments, `@media` rules and everything else as you wrote
-them); renaming the theme or rearranging the toolbar writes `theme.json`. There is no
+them); *Theme info…* (name, author, description) or rearranging the toolbar writes `theme.json`. There is no
 `layout.css` any more: a folder that still has one is warned about and the file is not read, so
 move its rules into `theme.css`.
 
@@ -89,7 +89,7 @@ theme-swatch { background: attr(color type(<color>)); border-radius: 50%; }
 It may use your properties through `var()`; they are filled in for each variant as for the
 swatch, colours as plain colours. The artwork rules apply: no scripts, embedded images, foreign
 objects or links. Without a thumbnail the card is filled with the swatch colour. The built-in
-themes' `thumbnail.svg` (in the template's `examples/`) is a good start.
+themes' `thumbnail.svg` (*Export theme…* on a built-in theme writes its folder) is a good start.
 
 Installed themes are the same folders, named by their id. Relative image paths in the sheets are
 authoritative; keep the whole folder together. A theme saved by an earlier Suhina version (JSON,
@@ -101,13 +101,11 @@ Open the themes folder from that page to edit the installed files.
 A folder in the themes folder is a theme when it holds files named exactly `theme.json` and
 `theme.css` (on Windows, check that they are not `theme.css.txt` or `theme.json.txt` with the
 extension hidden). A theme made for the format before `theme.json` needs one added by hand. Suhina finds a new
-folder within about a second, or at once with **More › Reload themes**; a folder that is not a
+folder within about a second; a folder that is not a
 theme is named in the status bar with what it is missing. The folder's name is the theme's id:
 it stays when the theme is renamed. Two themes with the same name show their folder names on
-their cards. **Duplicate theme** copies the whole theme, its layout rules included. Built-in themes cannot be
-edited, only duplicated.
-The template ZIP also has the built-in themes as reference folders in `examples/`;
-the importable example is `my-theme/`, with an example variant.
+their cards. **New theme…** started from another theme copies its whole sheet, its layout rules
+included. Built-in themes cannot be edited, only used as the start of a new theme.
 
 ### Settings and variants
 
@@ -192,10 +190,10 @@ or on `#device-<id>` for one (its expanded panel included):
 
 ## How and when to edit each file
 
-1. Duplicate a bundled theme in the editor or start with the supplied example.
+1. Start a new theme from a bundled one (*More › New theme…*), or from Suhina's defaults.
 2. Set the name and swatch in `theme.json`. Theme folder ids use letters, digits and `-`.
-   The folder's name stays its id when the name changes. A name given in Suhina (the editor's
-   name field) is written to `theme.json`.
+   The folder's name stays its id when the name changes. A name given in Suhina (*Theme info…*)
+   is written to `theme.json`.
 3. Set the palette in `theme.css`'s `:root` and the settings on their elements. For example:
 
    ```css
@@ -242,8 +240,8 @@ colour stops anchored to the full dB range; peaks/RMS reveal the appropriate por
 Outset shadows form the glow around the lit region, without filling empty rails or
 segment gaps. This differs from a decorative gradient that stretches with the level.
 
-**Meter intensity** in the theme editor dims measured ink and glow from 0–100%.
-In `theme.css` it is `meter { meter-intensity: 65; }`.
+**Meter intensity** dims measured ink and glow from 0–100%: `meter { meter-intensity: 65; }`
+in `theme.css`, or a quick control of your own that sets it through `var()`.
 It also affects needles, hold marks and signal-driven artwork frames, while keeping
 the native clip warning visible and native bar rails unchanged. Frame artwork dims
 as a whole, including any background baked into its image. This changes visual opacity, not audio
@@ -539,10 +537,10 @@ and now draws in the part's `color`. Give the part that colour to keep the look
 The `--kind-*` colours of the sample map are no longer read: set `--sample-kick` and the others,
 or write `sample-point[kind="kick"] { color: #D06E5E; }` and so on instead.
 
-*More › New theme…* and *More › Duplicate theme…* have an **Include the default artwork**
-checkbox: it copies every default SVG into the new theme's `assets/` and writes a rule for each
-into its `theme.css` (`knob-body { image: url("assets/knob.body.svg"); }`), ready to edit. *More ›
-Add default artwork* does the same for the theme in use, adding only what it lacks.
+*New theme…* has an **Include the default artwork** checkbox: it copies every default SVG into
+the new theme's `assets/` and writes a rule for each into its `theme.css`
+(`knob-body { image: url("assets/knob.body.svg"); }`), ready to edit. A theme card's right-click
+*Add default artwork* does the same for a theme of yours, adding only what it lacks.
 
 The rules of an earlier form (`knob.body { image: … }`, `play`, `solo:on`) still read.
 

@@ -106,7 +106,7 @@ what is inside it).
 | Appearance | Background | Background image, Surface opacity, Background blur |
 | Appearance | Application bar | Application name position, Show project name, Show project timing, Project information position |
 | Appearance | Advanced | Graphics renderer, Panel liquid, Track liquid, Clip liquid (experimental) |
-| Themes | Theme | The themes, their variants, the theme in use and its settings; Edit current theme |
+| Themes | Theme | The themes, their variants, the theme in use and its settings; Edit current variant |
 | Themes | Folder | Themes folder (changing it asks, backs up and moves the themes) |
 | Agents and updates | Agents | AI agents edit projects (off by default; [ADR 0028](../decisions/0028-mcp-in-the-running-app.md)) |
 | Agents and updates | MCP write permissions | Project folder for agents (on by default, with the active folder shown), More agent write folders (Add folder… and Remove); all grants include subfolders |
@@ -135,65 +135,100 @@ start accepts the restored playhead and launched clips before playback begins. C
 that pending start clears the resume target; the next ordinary Play uses the marker.
 
 
-## Theme gallery and colour editor
+## Theme gallery and variant editor
 
-Themes has a search field beside *Other themes*: it shows the themes whose name, id or a
-variant's name contains the text, ignoring case, and *No themes match* when none does; the theme in
-use always shows. A theme left in an earlier file format says *Not converted* on its card, with
-the reason when hovered. Each theme's card shows its thumbnail (`thumbnail.svg`, 16:9, drawn with the values of the
-theme and the variant shown), or a blank card filled with its swatch colour when it has none
-([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)).
-Drawing them never installs a theme. The theme in use is highlighted, on its large card and in
-its place in the list: a 2 px accent border and a tint of the accent over the card, and on its
-variant's swatch a 2 px accent ring. On macOS the window's title bar and the system's menus
-follow the theme: light for a theme with dark text, dark otherwise. The bar at the top of the
-screen itself is drawn by the system and follows the desktop.
-The active theme is featured once at full width with a thumbnail at most 170 px high; other
-themes remain in a two-column grid. Clicking a card immediately applies and saves the
-selected theme and returns the gallery to the top. Holding the primary button on the
-active card keeps the background clear, including stationary frames; release restores
-the blur and dimming immediately.
-More holds New theme…, Duplicate theme…, New variant, Add default artwork, Reload, Open folder,
-Export theme, Back up and Export template.
+**The theme in use** is featured once at full width, its thumbnail at most 170 px high: the
+theme's name at the page-title size (13 px) and under it the variant's name in the caption style
+(*Default*, or the name `theme.json` gives the default variant). Under it is a row of swatches,
+one per variant with the default first, and an outlined **+** box that adds a variant (below). The
+**+** is greyed, with a tooltip saying why, when the theme declares no quick controls, since a
+variant of it could hold nothing. Above the card are **Edit current variant** and **More**. More
+holds *New theme…*, *Import theme…* (a theme package or zip, chosen in the system's dialog),
+*Export theme…*, *Open the themes folder*, *Back up themes* and, last and in the warning colour,
+*Delete variant…* (greyed for a variant that cannot be deleted). Theme files are read again
+within a second of changing, so there is no Reload.
 
-Restore built-in opens a choice of the original built-in palettes, in both gallery and
-editor. Selecting one asks whether to save a new copy of the current theme first:
-Save a copy & restore, Restore without a copy, or Cancel restore. Nothing changes until
-that choice. Existing custom files are already saved by live editing and remain in the
-library in either restore path; this is stated in the prompt. Restore never overwrites
-a built-in or deletes the custom theme. A saved copy gets a free file name.
+**All themes** lists every theme, the one in use too, in a two-column grid, with a search field:
+it shows the themes whose name, id or a variant's name contains the text, ignoring case, and
+*No themes match* when none does; the theme in use always shows. Each card shows its thumbnail
+(`thumbnail.svg`, 16:9, drawn with the values of the theme and the variant shown), or a blank card
+filled with its swatch colour when it has none
+([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)), its name,
+and *Built-in* or *Custom* under it. A theme left in an earlier file format says *Not converted*,
+with the reason when hovered, and a theme whose sheet has notices shows a warning badge that lists
+them when hovered (line, column and message; the rest of the sheet still applies). A theme with
+variants has a row of swatches under its card. Drawing them never installs a theme. Clicking a card
+uses and saves that theme and returns the gallery to the top; clicking a swatch uses that variant.
+The theme in use is highlighted, on its large card and in its place in the list: a 2 px accent
+border and a tint of the accent over the card, and on its variant's swatch a 2 px accent ring. On
+macOS the window's title bar and the system's menus follow the theme: light for a theme with dark
+text, dark otherwise (worked out from the text colour; a variant has no appearance field). The bar
+at the top of the screen itself is drawn by the system and follows the desktop. Holding the
+primary button on the active card keeps the background clear, including stationary frames;
+release restores the blur and dimming immediately.
 
-A short gallery note explains that existing tracks and clips keep their colours when selecting
-a theme.
+Each swatch is a `theme-swatch` element in the variant's swatch colour, styled by the theme in use:
+a rounded rectangle the colour fills to its edge, larger on the active theme's card than in the
+grid. All of a theme's swatches stay on one line, narrowing together when they do not fit. A card
+without variants keeps the row's room, so all the grid's cards are one height.
 
-Edit current theme opens a child view, with Back to themes and the current theme name.
-It shows only the theme's quick controls: the settings it declares with `@property` and a
-label, under *Theme settings* (a theme that declares none says so). The palette colours, the
-liquid strengths and the surface gradients are not listed there (#1019); a theme sets them in its
-`theme.css`. Settings edits are saved in a variant of the theme (Custom, made the first time on
-the theme's own values), so a built-in theme is not copied for them. A theme's `window { liquid }`
-setting is `auto` or three integers from 0 to 100 (panels, tracks, clips); `auto` preserves global
-inheritance. Copies and exports retain these values; Reset changes restores the theme's own
-settings. A theme sets no track or clip colours: new tracks get Suhina's own MIDI and audio colours, a new
-clip takes its track's colour (Suhina's own MIDI and audio colours only with *New clip colour ›
-By clip type*), and the colour picker offers Suhina's eight, in every theme.
-Changes apply and save live into the variant in use; moving controls or changing artwork of a
-built-in theme creates a custom copy. A theme with variants shows a row of swatches under its
-card, the default variant first (named in `theme.json`, *Default* otherwise); clicking one uses
-that variant. Each swatch is a `theme-swatch` element in the variant's swatch colour, styled by
-the theme in use: a rounded rectangle the colour fills to its edge, larger on the active theme's
-card than in the grid. All of a theme's swatches stay on one line, narrowing together when they
-do not fit. A card without variants keeps the row's room, so all the grid's cards are one height. More › New variant starts
-one from the values in use, and with a variant in use the name field renames the variant.
-*Theme settings* lists the settings the theme declares with `@property`, each with a control
-for its type ([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)).
-Save as new theme duplicates the current theme and focuses its editable name. *More › New
-theme…* and *More › Duplicate theme…* ask first, with an **Include the default artwork** checkbox
-(off by default), and *More › Add default artwork* copies the default artwork the theme in use
-lacks ([theme skins](theme-skins.md#the-user-agent-sheet)). Reset
-changes restores the palette captured when entering the editor, without changing the
-built-in source. The name field reserves the same space for built-in and custom themes,
-so making the first custom edit does not shift the picker.
+**Right-click menus** offer what can be done to the thing clicked. A swatch: *Use*, *Edit…*,
+*Duplicate*, *Rename…*, *Delete…* (for a variant a built-in theme ships that the user edited in
+an earlier version, *Revert to built-in…* in its place). A card: *Use*, *New theme from this…*,
+*Theme info…*, *Export theme…*, *Show in folder*, *Add default artwork* and *Delete theme…*. An
+item that does not apply is shown greyed with the reason when hovered: a built-in theme and the
+variants it ships cannot be changed (make a new theme or variant from them), and the default
+variant is the theme's own values, renamed in *Theme info…* and never deleted.
+
+**Variants.** The **+** box and *Duplicate* add a variant with the values of the one they start
+from (the variant in use, or the swatch clicked), named *New variant* or *<name> copy* under a free
+id, and save it at once; **+** then uses it and opens the editor on it. A variant added to a
+built-in theme is the user's and can be edited, renamed and deleted.
+
+**Edit current variant** opens a child view of Themes: *Back to themes*, the theme's and the
+variant's names, and *Edited* while there are unsaved changes. It shows the variant's **Name** and
+the theme's quick controls: the settings it declares with `@property` and a label, under *Theme
+settings* (a theme that declares none says so). The palette colours, liquid strengths and surface
+gradients are not listed there (#1019); a theme sets them in its `theme.css`. Changes preview at
+once across the whole app, and nothing is written until **Save**. **Save as new variant** writes
+the edits as a new variant (named from the Name field, with *copy* added when it is unchanged) and
+uses it; **Discard changes** asks first, in place, then puts back the saved values. Save is greyed,
+with the reason when hovered, for the default variant and for a variant a built-in theme ships:
+only Save as new variant then.
+
+Leaving the editor with unsaved changes — *Back to themes*, another Settings page, closing
+Settings by its button, Escape, the window's close box or any command that closes it — first shows
+a panel at the top of the editor: *Save changes to <variant>?* with **Save** (or **Save as new
+variant** where Save is not allowed), **Don't save** and **Cancel** (Escape). The panel is in
+place, not a dialog, per the design brief's one-window rule. A command that closed Settings to
+show something else does not run when the answer is Save or Don't save; run it again. A variant
+whose file goes away while it is being edited drops its edits with a note in the status bar, and
+quitting Suhina drops them: nothing was written.
+
+**New theme…** (More, or *New theme from this…* on a card, which preselects that theme) is a form
+in place of the gallery: **Start from** (*Suhina's defaults*, or any theme, built-in or the user's),
+**Name**, **Author**, **Description** and **Include the default artwork** (off: the built-in
+control images copied into the theme's `assets/` with a rule for each in its `theme.css`, so they
+can be edited). **Create theme** makes the folder and uses the new theme; a theme started from
+another carries its look and the variant in use's values, not its other variants.
+
+**Theme info…** (the user's own themes) is a form in place of the gallery: **Name**, **Author**,
+**Description** and **Default variant's name**. **Save** writes `theme.json`; the folder keeps its
+name, since it is the theme's id.
+
+**Delete** asks in place, naming what goes: *Delete <variant>? Its file will be moved to the
+Trash* (or *Delete the theme <name>? Its folder will be moved to the Trash*), with **Delete** in
+the warning colour and **Cancel**. The file or folder goes to the system's Trash or Recycle Bin.
+The theme leaves the list, and a theme or variant in use gives way to the theme's default variant
+or Suhina Studio, only once the move succeeded; a move that fails says why in the status bar and
+leaves the file. *Revert to built-in…* asks the same way and moves the user's copy of the variant
+to the Trash, so the variant the theme ships is used again.
+
+*Add default artwork* copies the default artwork the theme lacks
+([theme skins](theme-skins.md#the-user-agent-sheet)); on a built-in theme it is greyed. A theme
+sets no track or clip colours: new tracks get Suhina's own MIDI and audio colours, a new clip
+takes its track's colour (Suhina's own MIDI and audio colours only with *New clip colour › By
+clip type*), and the colour picker offers Suhina's eight, in every theme.
 
 An open colour picker holds the undimmed preview for the entire primary-button press,
 including frames with no pointer motion or colour change. Release restores dimming on
@@ -340,10 +375,10 @@ Older theme files inherit these new roles from their previous text/background to
 
 ### Surface gradients and content refraction
 
-Edit current theme has independent Panel, Track and Clip gradient overlays. Each has
-a toggle, clockwise direction (0 degrees left to right, 90 down), and 2–8 stops, each
-with position 0–100, colour and opacity. Stops can be added and removed. Changes apply
-live, save, duplicate, export and reset with the theme, without changing project colours.
+A theme's `theme.css` sets independent Panel, Track and Clip gradient overlays
+(`window { panel-gradient; track-gradient; clip-gradient; }`): a clockwise direction (0 degrees
+left to right, 90 down) and 2–8 stops, each with position 0–100 and colour. They copy and export
+with the theme, without changing project colours.
 Gradients work without GPU liquid; high contrast and reduced effects suppress materials.
 An optional `gradients` object stores `panels`, `tracks`, `clips`; each enabled surface
 has an `angle` integer 0–360 and `stops` array of `position` integer and RGBA `color`.

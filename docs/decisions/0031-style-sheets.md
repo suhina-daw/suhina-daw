@@ -274,7 +274,7 @@ and its children agree in the same frame. The elements of a frame form a tree, b
 depth (section 9), that selectors match against; its ancestry and siblings are the ones drawn.
 
 Every element type, id, class and state lives in one registry with a sentence on what it is. The
-registry turns typos into warnings ("no element called `buton`") and writes the theme template's
+registry turns typos into warnings ("no element called `buton`") and writes the theme package's
 README, so an agent can write a theme from the README alone.
 
 ### 3. Media queries

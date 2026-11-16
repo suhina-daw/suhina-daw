@@ -462,26 +462,23 @@ wheel over it, as far as its last row and no further.
 thumbnail across the card's width. The thumbnail is the theme's `thumbnail.svg` drawn with the
 values of the theme and variant shown; a theme without one shows a card filled with its swatch
 colour. Drawing cards does not install a theme; a 10 px gap separates them. The active card has
-an accent border and Active label, and clicking another card applies it immediately. A theme
-with variants has a row of 14 px swatches 22 px apart under its name, the default variant first:
+an accent border, the theme's name at 13 px and the variant's name under it in the caption style,
+and clicking another card applies it immediately. A theme
+with variants has a row of swatches under its name, the default variant first:
 each is a `theme-swatch` element in the variant's swatch colour, styled by the theme in use
-(a rounded square by default), and the variant in use has a 2 px accent outline; the card grows
-by 22 px for them. The header contains the active theme name,
-Edit current theme and a More menu for file actions.
+(a rounded square by default), and the variant in use has a 2 px accent outline. The active card
+ends its row with an outlined + box that adds a variant, greyed when the theme declares no quick
+controls. Above it are Edit current variant and a More menu for file actions; right-clicking a
+swatch or a card opens a menu of what can be done to it, with greyed items saying why.
 Holding the active card clears the backdrop until the primary button is released.
-Restore built-in is available in both gallery and editor: choosing an original palette
-asks Save a copy & restore, Restore without a copy, or Cancel restore. The current
-custom theme remains saved in the library; no file is deleted or overwritten.
+Confirmations (delete, discard, unsaved changes) and the New theme and Theme info forms are
+panels in place, never pop-ups.
 
-Edit current theme opens a child view with Back to themes, the theme name, Save as new
-theme and Reset changes. The Liquid section inherits global strengths unless Use global liquid settings is turned off;
-then independent panel, track and clip sliders save into the theme. The live colour rows are grouped into Surfaces, Text, Tracks &
-clips, Controls, Meters and Sample map. Each entry puts swatch, hex and a wrapping token
-above an Opacity slider for theme surfaces and the full wrapping purpose, with 6 px between entries; no truncated second column.
-The built-in name field reserves the same height as an editable custom name so the
-picker does not move when its first edit creates a variant or a custom copy. An open picker keeps
+Edit current variant opens a child view with Back to themes, the theme's and variant's names and
+an Edited marker, the variant's Name, the theme's quick controls, and Save, Save as new variant
+and Discard changes. An open picker keeps
 the background undimmed while the primary button is held, even when stationary;
-release restores dimming immediately. Reset restores the editor-entry palette.
+release restores dimming immediately.
 See [brief](brief.md) › Themes.
 
 **Shortcuts › Keys** lists every action under its group (File, Transport, View, Edit, Tracks, Commands): its
@@ -882,10 +879,9 @@ Alt+wheel remains available to zoom track heights.
 Loop notches scale with the on-screen pass width and disappear below 64 px per pass. The
 continuous loop separator remains, and live right-edge resizing reveals new boundaries before release.
 
-Surface gradients live under Edit current theme, separately for Panel, Track and Clip.
-Each collapsed section exposes an enable toggle, direction, live preview and 2–8 colour
-stops with position and opacity. The layout wraps and scrolls in a narrow window.
-They save/reset/copy with the theme; no project track or clip colours are rewritten.
+Surface gradients are set in a theme's `theme.css` (`window { panel-gradient; track-gradient;
+clip-gradient; }`), separately for Panel, Track and Clip; no project track or clip colours are
+rewritten.
 Content refraction uses one foreground-free substrate per frame, inserted before sharp
 labels, controls, notes and waveforms.
 

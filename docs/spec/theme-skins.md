@@ -84,7 +84,7 @@ The colour of the element that draws the artwork supplies `currentColor`; inheri
 force the default theme's colours. Deleting an override restores inheritance.
 
 Every theme package contains a generated `README.md` for human and AI-assisted
-authors, shared with the template export. Multi-theme backups also carry it at
+authors. Multi-theme backups also carry it at
 the archive root. The guide explains what/why/how/when, current possibilities,
 file ownership, examples, SVG inheritance and recovery, supported CSS integration
 and explicit limits. Its palette reference is generated from the token registry.
@@ -329,8 +329,8 @@ play/stop/record/solo/arm/cue icons. State suffixes `.hover`, `.active`, `.disab
 optionally override a base role. `currentColor` uses the control's foreground.
 The fader cap moves along the rail; the knob pointer rotates with its value.
 
-Meter intensity is an integer percentage (`skin.meter-intensity`, default 100),
-editable with the theme slider and canonical `meter { intensity: 65%; }` CSS.
+Meter intensity is an integer percentage (`meter { meter-intensity: 65; }`, default 100);
+a theme may offer it as a quick control of its own through `var()`.
 It dims measured ink, hold marks, needles, frames and glow without changing audio,
 geometry, native bar rails or clip warnings. Frame artwork dims as a whole, including
 any background baked into the image. See [level meters](level-meters.md).
@@ -556,17 +556,17 @@ page's (ADR 0031, amendment of 2026-11-15).
   faded colours. A theme's own rule on `window` for one of them beats it.
 - **Suhina Studio runs the style engine** like every theme: its sheet sets only `:root` colours.
 
-**Including the default artwork.** *More › New theme…* and *More › Duplicate theme…* ask first,
-with an **Include the default artwork** checkbox (off by default). With it, the new theme gets a
-copy of every default SVG in its `assets/` (`assets/knob.body.svg`) and a rule for each in its
-`theme.css` (`knob-body { image: url("assets/knob.body.svg"); }`): without the rules the copies
-would do nothing, since the built-in images would still apply. *More › Add default artwork* does
-the same for the theme in use, adding only the roles it has no artwork for in any state (a
-built-in theme is copied first; with a variant of a theme of the user's in use, the artwork goes to
-the theme and each of its variants, since artwork is the theme's); when nothing is missing it says
-so and changes nothing. *New theme* starts from a
-`theme.css` that holds only a comment, so the user-agent sheet styles everything; it is named
-*New theme*, then *New theme 2* and so on, numbered as its id is.
+**Including the default artwork.** *New theme…* has an **Include the default artwork** checkbox
+(off by default). With it, the new theme gets a copy of every default SVG in its `assets/`
+(`assets/knob.body.svg`) and a rule for each in its `theme.css`
+(`knob-body { image: url("assets/knob.body.svg"); }`): without the rules the copies would do
+nothing, since the built-in images would still apply. A theme card's *Add default artwork* does the
+same for a theme of the user's, adding only the roles it has no artwork for in any state (the
+artwork goes to the theme and each of its variants, since artwork is the theme's; a built-in
+theme's item is greyed); when nothing is missing it says so and changes nothing. A new theme
+started from *Suhina's defaults* has a `theme.css` that holds only a comment, so the user-agent
+sheet styles everything; one started from another theme carries that theme's sheet and the values
+of its variant in use.
 
 ## Native CSS: controls and the toolbar
 
@@ -852,8 +852,8 @@ and has no migration. Only a sheet of the much earlier form (below) is still mig
 
 **Built-in themes** have exactly this structure, in `crates/ui/themes/<id>/`, built into the app
 (`theme::built_in_themes`, which reads each folder as a folder on disk is read). They cannot be
-edited, only duplicated; *Export theme…* writes a built-in theme's folder as it is, and the theme
-template carries them all in `examples/`. A built-in folder may hold `variants/`, which come with
+edited, only used as the start of a new theme; *Export theme…* writes a built-in theme's folder
+as it is. A built-in folder may hold `variants/`, which come with
 the theme as its swatches (`theme::built_in_variants`). Suhina Studio's sheet sets only colours and
 settings, and runs on the style engine like every theme's (*The base sheet*).
 
@@ -902,7 +902,7 @@ length). The custom properties that held them before (`--meter-style`, `--sessio
 may declare properties of its own with `@property`
 (`syntax`, `initial-value`, and Suhina's `label`, `group`, `range`, `step`); a declared property
 with a label is one of the theme's **quick controls**, listed under *Theme settings* with a
-control for its type. The variant editor (*Edit current theme…*) shows only those: the core
+control for its type. The variant editor (*Edit current variant*) shows only those: the core
 palette colours, liquid strengths and surface gradients are no longer listed there, and a theme
 that declares none says so. The theme's values
 are read at the root of a 1280 by 800 window (the settings on `window`, `session` and
@@ -910,14 +910,19 @@ are read at the root of a 1280 by 800 window (the settings on `window`, `session
 (`"meter-style": "needle"`, written as a rule of the setting's element); they apply in the Variant tier,
 above the theme's rules, including its conditional ones.
 
-**Editing.** A setting changed in Suhina is written to the variant in use; on a theme's own values
-a variant named *Custom* is made first. A variant added to a built-in theme, or an edit of
-one it comes with, is kept in a folder of its id holding only `variants/`, without a copy of its
-CSS; a file there wins over the built-in variant of its id. Moving controls or changing artwork
+**Editing.** The variant editor changes a draft held in memory: the app draws with it at once,
+and nothing is written until *Save* writes it to the variant's file or *Save as new variant*
+writes a new one ([Settings](ui-settings.md#theme-gallery-and-variant-editor)). The default
+variant (the theme's own values) and the variants a built-in theme ships are never written by
+it; only *Save as new variant* keeps their edits. A variant added to a built-in theme is kept in
+a folder of the theme's id holding only `variants/`, without a copy of its CSS. A file there with
+the id of a variant the theme ships (an edit made by an earlier version) wins over it, can be
+saved, and *Revert to built-in* moves it to the Trash. Deleting a variant or a theme moves its
+file or folder to the system's Trash. Moving controls or changing artwork (the toolbar editor)
 edits the theme's `theme.css` in place; artwork the sheet names keeps its file. A built-in theme
-is copied first. Renaming writes `theme.json`. *New variant* starts one from the values in use;
-with a variant in use, the name field renames it. The picker shows one card per theme and a
-swatch per variant, the default variant first.
+is copied first. *Theme info…* writes `theme.json` (name, author, description, the default
+variant's name). The picker shows one card per theme and a swatch per variant, the default
+variant first.
 
 Changes to any file of the folder are noticed within the one-second poll, and only files whose
 bytes changed are written. A save over an edit of a variant file made outside Suhina since it was
@@ -1193,7 +1198,8 @@ that reads on a dark panel can disappear on a bright volume/pan field fill:
 
 The theme's `theme.css` is kept as written, except for the declarations Suhina's editors change
 in it; Suhina's own settings live in its variants. The same byte limit and package path restrictions apply to every
-stylesheet. The *Theme style sheet* section of the editor lists the sheet's notices.
+stylesheet. A theme whose sheet has notices shows a warning badge on its card in Settings ›
+Themes that lists them.
 
 The native engine
 computes variables, layers, inheritance, colours, value expressions and viewport
