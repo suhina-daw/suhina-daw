@@ -76,7 +76,7 @@ impl PickField {
             Self::ExportFile => &["wav", "flac", "ogg", "mp3"],
             Self::BackgroundImage => &["png"],
             field if field.folder() => &[],
-            _ => &["suhina", "als", "flp"],
+            _ => &["suhina", "als", "flp", "zip"],
         }
     }
 

@@ -65,6 +65,10 @@ impl App {
                     }
                     Err(e) => self.status = Status::Error(e.message().to_owned()),
                 }
+            } else if is(&path, "zip") && !opened && suhina_session::zipped_project(&path).is_ok_and(|p| p.is_some()) {
+                // A zipped project, not a zip of themes: it asks where to unpack it, then opens.
+                opened = true;
+                self.request_open(path);
             } else if is_theme_package(&path) || is(&path, "json") || is(&path, "zip") || is(&path, "css") {
                 // Before projects: a package's name ends in `.suhina` too.
                 self.status = Status::Hint(format!("Bringing in the theme {}", path.display()));
@@ -73,7 +77,7 @@ impl App {
                 opened = true;
                 self.request_open(path);
             } else {
-                let what = "is not a sample, a MIDI file, a project (.suhina, .als or .flp), a theme package (.theme.suhina), a theme (.css or .json), a zip of themes or a folder for the browser";
+                let what = "is not a sample, a MIDI file, a project (.suhina, .als or .flp, or a zip holding one), a theme package (.theme.suhina), a theme (.css or .json), a zip of themes or a folder for the browser";
                 self.status = Status::Error(format!("{} {what}", path.display()));
             }
         }

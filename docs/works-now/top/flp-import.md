@@ -17,3 +17,5 @@
 - **Linked copies:** Duplicate linked in a clip's menu makes copies that keep one content, so
   editing any of them edits all; they carry a chain mark, and Unlink gives a clip its own content
   again. An ordinary duplicate stays independent.
+- **Zipped projects:** a zip holding a project and its samples opens after a bar asks where to
+  unpack it (beside the zip by default); `suhina-cli` takes `--extract-to <folder>`.

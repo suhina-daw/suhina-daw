@@ -151,7 +151,7 @@ fn draw(
         ui,
         field,
         egui::TextEdit::singleline(&mut state.path)
-            .hint_text("Path to a .suhina, .als or .flp file")
+            .hint_text("Path to a .suhina, .als or .flp file, or a zip holding one")
             .font(small.clone()),
     );
     edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Project path"));

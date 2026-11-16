@@ -45,6 +45,22 @@ browser index before audio is loaded. A unique best trailing-path match is accep
 equal-best matches, saturated candidate lists and missing files stay unresolved for the
 panel. The search does not add roots, scan the disk or move audio; media trust rules apply.
 
+## Zipped projects
+
+A project can arrive as a zip that holds it and its samples, as another DAW packs a song to send
+it. Opening or dropping such a zip (`.flp`, `.als` or `.suhina` inside, exactly one) does not open
+it at once: a bar asks where to unpack it, with a folder named after the zip beside it filled in
+(a number added when that folder is taken), **Unpack and open** and **Cancel**. The project then
+opens from the unpacked folder, so its samples are found beside it by the rules above.
+`suhina-cli` takes the folder as `--extract-to <folder>`; the MCP server refuses a zip, as an
+agent should not write files outside its roots unasked. A zip with no project is a zip of themes
+as before; one with several projects is refused with a message to unpack it by hand.
+
+Unpacking treats the zip as someone else's file (`crates/session/src/zipped.rs`): an entry whose
+name would leave the folder, a link and an entry beyond 10,000 are refused; the files may unpack
+to 8 GiB at most, counted as they are written rather than as the zip states; a file already in the
+folder is never written over (the unpack stops there with an error, keeping what it wrote).
+
 ## The panel
 
 A dialog over the window, 600 px wide, as high as it needs (at most the window), titled

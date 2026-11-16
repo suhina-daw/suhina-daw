@@ -91,7 +91,9 @@ commands:
             device.closeEditor commands
 
 options:
-  <project.als>      a project to import (.als or .flp), or a Suhina project (.suhina) to open
+  <project.als>      a project to import (.als or .flp), or a Suhina project (.suhina) to open;
+                     a zip holding one is unpacked first into --extract-to <folder>
+  --extract-to <dir> where a zipped project is unpacked (made if missing; nothing is written over)
   --demo             use the built-in demo project instead
   -o, --output       output WAV path (render only)
   --cue <cue.wav>    render only: also write the cue (the tracks whose cue is on, after their
@@ -127,6 +129,8 @@ struct Args {
     fm: Option<FmChoice>,
     /// The audio output `play` uses.
     audio_output: suhina_session::OutputChoice,
+    /// `--extract-to`: where a zipped project is unpacked before it opens.
+    extract_to: Option<PathBuf>,
 }
 
 /// `--fm`, with the voice to load.
@@ -242,12 +246,17 @@ fn parse_args(args: &[String], command: Command) -> Result<Args, String> {
     let mut source = None;
     let mut fm: Option<FmChoice> = None;
     let mut audio_output = suhina_session::OutputChoice::default();
+    let mut extract_to = None;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         let next = match arg.as_str() {
             "--demo" => Some(Source::Demo),
             "-o" | "--output" => {
                 output = Some(PathBuf::from(it.next().ok_or("--output needs a path")?));
+                None
+            }
+            "--extract-to" => {
+                extract_to = Some(PathBuf::from(it.next().ok_or("--extract-to needs a folder")?));
                 None
             }
             "--cue" => {
@@ -347,6 +356,7 @@ fn parse_args(args: &[String], command: Command) -> Result<Args, String> {
         sample_rate,
         fm,
         audio_output,
+        extract_to,
     })
 }
 
@@ -364,7 +374,20 @@ fn load_project(args: &Args) -> Result<Loaded, String> {
             suhina_engine::DeviceAssets::new(),
             suhina_session::FileAccess::default(),
         ),
-        Source::Als(path) => {
+        Source::Als(given) => {
+            // A zipped project is unpacked first, into the folder --extract-to names; it then
+            // opens from there with its samples beside it.
+            let unpacked;
+            let path = if given.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+                let into = args.extract_to.as_deref().ok_or_else(|| {
+                    format!("{}: a zipped project; give --extract-to <folder> to unpack it", given.display())
+                })?;
+                unpacked = suhina_session::extract_zipped_project(given, into)?;
+                eprintln!("unpacked into {}", into.display());
+                &unpacked
+            } else {
+                given
+            };
             // A Suhina project (.suhina) or a Live Set to import.
             // Opened, and its audio trusted, as the window and the MCP server do (#764 › 3).
             let started = std::time::Instant::now();

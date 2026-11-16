@@ -82,6 +82,7 @@ mod take_carry;
 mod tempo;
 mod track_copy;
 mod track_kind;
+mod zipped;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -126,6 +127,7 @@ pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
 pub use suhina_plugins::Placement;
 pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
+pub use zipped::{ZippedProject, default_extract_folder, extract_zipped_project, zipped_project};
 
 /// What makes the devices a project names: the device registry, handed to every renderer the
 /// session, the app, the CLI and the MCP server build (#1147). The engine knows no device itself.
@@ -1180,6 +1182,14 @@ impl Session {
             let import =
                 suhina_flp::import_file_with_samples(path, resolve).map_err(|e| format!("{}: {e}", path.display()))?;
             (import.project, import.warnings)
+        } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+            // A zipped project opens once it is unpacked into a folder the person chose
+            // (`extract_zipped_project`): the window asks where, the CLI takes --extract-to.
+            return Err(format!(
+                "{}: a zipped project; unpack it first (the window asks where, suhina-cli takes --extract-to)",
+                path.display()
+            )
+            .into());
         } else if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("als")) {
             return Err(format!(
                 "{}: Suhina opens a project (.{}) or imports .als and .flp files, not this file",
