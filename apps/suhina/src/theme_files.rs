@@ -11,7 +11,8 @@
 //!   (`suhina_style::edit`), which changes only the declarations it edits.
 //! - `variants/<id>.json`, values for the theme's declared controls (`theme_vars::Variant`). The
 //!   settings editors write these.
-//! - an optional `thumbnail.svg`, artwork in `assets/`, `background.png` and the README.
+//! - an optional `thumbnail.svg`, artwork in `assets/`, `background.png`, and a README of the
+//!   author's, which a backup keeps (Suhina writes none; the guide is docs/guide/theme-authoring.md).
 //!
 //! A built-in theme's variants live in a folder of its id holding only `variants/`. A file saved
 //! while Suhina runs is read again within a second, so a theme can be edited in any text editor
@@ -52,8 +53,6 @@ const MAX_VARIANTS: usize = 64;
 const MAX_VARIANT_FILE: u64 = 64 * 1024;
 /// Where a migrated theme keeps its JSON and old canonical CSS.
 const LEGACY: &str = "legacy";
-/// The folder of an earlier version's template zip that held the built-in themes as examples.
-const EXAMPLES: &str = "examples/";
 
 /// A variant file's text as last read or written, so a save never overwrites an edit made
 /// outside Suhina since.
@@ -428,7 +427,7 @@ impl ThemeFiles {
             return Err("there are no theme files to back up yet".into());
         }
         let folder = self.folder.as_ref().ok_or("there is no folder to keep themes in")?;
-        let mut contents = vec![("README.md".into(), theme::template_readme().into_bytes())];
+        let mut contents = Vec::new();
         // Suhina's own folders (starting with `_`) and the template are no theme of the user's.
         for (id, path, _) in files.into_iter().filter(|(id, _, _)| !id.starts_with('_') && id != "template") {
             if is_css_theme(&path) || path.is_dir() {
@@ -474,9 +473,6 @@ impl ThemeFiles {
                     .collect()
             }
         };
-        // The author's guide travels with the theme, so whoever receives it can edit it.
-        let mut files = files;
-        files.entry("README.md".into()).or_insert_with(|| theme::template_readme().into_bytes());
         let id = slug(id);
         let bytes = suhina_theme_package::pack(&id, &theme.name, &files)?;
         let exports = self.exports()?;
@@ -1010,7 +1006,6 @@ fn migrate(folder: &Path, id: &str, theme: &Theme, previous: bool) -> Result<(),
     let mut files = resources;
     files.push((format!("{id}/{THEME_JSON}"), theme::meta_json(theme).into_bytes()));
     files.push((format!("{id}/{THEME_CSS}"), sheet.into_bytes()));
-    files.push((format!("{id}/README.md"), theme::template_readme().into_bytes()));
     write_files(folder, files)?;
     // The old files move only after the new theme is written, so a failed write leaves the theme
     // as it was.
@@ -1151,8 +1146,7 @@ fn with_editor_rules(theme: &Theme, sheet: String) -> String {
     }
 }
 
-/// A theme as a package: `theme.json`, `theme.css`, the thumbnail, artwork, background, README
-/// and examples.
+/// A theme as a package: `theme.json`, `theme.css`, the thumbnail, artwork and background.
 fn package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, String> {
     use suhina_ui::kit::theme_css;
     let sheet = with_editor_rules(theme, new_sheet(theme));
@@ -1165,9 +1159,6 @@ fn package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, Stri
     if let Some(thumbnail) = &theme.thumbnail {
         files.push((format!("{id}/{}", theme::THUMBNAIL), thumbnail.as_bytes().to_vec()));
     }
-    files.push((format!("{id}/README.md"), theme::template_readme().into_bytes()));
-    files.push((format!("{id}/examples/dark-gloss.css"), theme::GLOSS_EXAMPLE.as_bytes().to_vec()));
-    files.push((format!("{id}/examples/compact-session.css"), theme::COMPACT_SESSION_EXAMPLE.as_bytes().to_vec()));
     Ok(files)
 }
 
@@ -1199,8 +1190,8 @@ fn holds_other_files(dir: &Path, variants_too: bool) -> bool {
 /// Writes the theme `id`'s own files from `theme`. A theme without a `theme.css` yet gets all of
 /// them. Otherwise what its editors changed (the toolbar, artwork) is edited into its
 /// `theme.css` in place, leaving the rest of the author's text as it is; `theme.json` is written
-/// when the name changed; artwork and the background are written. Unchanged files and an
-/// installed README are left alone.
+/// when the name changed; artwork and the background are written. Unchanged files are left
+/// alone.
 fn persist_theme(folder: &Path, id: &str, theme: &Theme) -> Result<(), String> {
     use suhina_ui::kit::theme_css;
     let dir = folder.join(id);
@@ -1384,8 +1375,7 @@ fn resolve_theme(
     Ok((theme, warnings))
 }
 
-/// Writes `files` under `folder` atomically, `theme.css` last, leaving unchanged files and an
-/// installed README alone.
+/// Writes `files` under `folder` atomically, `theme.css` last, leaving unchanged files alone.
 fn write_files(folder: &Path, mut files: Vec<(String, Vec<u8>)>) -> Result<(), String> {
     // theme.css commits the snapshot last. Temp files live beside their destinations for atomic renames.
     files.sort_by_key(|(name, _)| name.ends_with(THEME_CSS));
@@ -1405,11 +1395,6 @@ fn write_files(folder: &Path, mut files: Vec<(String, Vec<u8>)>) -> Result<(), S
             if std::fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink()) {
                 return Err("theme destination may not be a symlink".into());
             }
-        }
-        // Installed author guides belong to their package version. New packages
-        // get the current guide; editing a colour must not replace a user's copy.
-        if name.ends_with("/README.md") && path.is_file() {
-            continue;
         }
         // Keep unchanged artwork and documentation in place. In particular, forcing
         // dozens of identical SVGs to disk made each theme slider tick take 100+ ms.
@@ -1514,7 +1499,7 @@ fn read_zip(path: &Path) -> Result<(Vec<LoadedTheme>, Vec<String>), String> {
             && !name.contains(&format!("/{LEGACY}/"))
             && !name.contains(&format!("{VARIANTS}/"))
             && !css_folders.contains(name.strip_suffix(".json").unwrap_or_default());
-        if (!css && !json) || name.starts_with(EXAMPLES) {
+        if !css && !json {
             continue;
         }
         let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
@@ -1536,7 +1521,7 @@ fn read_zip(path: &Path) -> Result<(Vec<LoadedTheme>, Vec<String>), String> {
             let own: Vec<(String, Vec<u8>)> = files
                 .iter()
                 .filter_map(|(path, bytes)| Some((path.strip_prefix(&prefix)?.to_owned(), bytes.clone())))
-                .filter(|(path, _)| !path.starts_with(&format!("{LEGACY}/")) && !path.starts_with(EXAMPLES))
+                .filter(|(path, _)| !path.starts_with(&format!("{LEGACY}/")))
                 .collect();
             match resolve_files(&own.iter().cloned().collect()) {
                 Ok((theme, warnings)) => (theme, warnings, own),

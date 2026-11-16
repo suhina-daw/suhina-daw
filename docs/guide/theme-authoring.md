@@ -1,7 +1,16 @@
-<!-- Copyright (C) 2026 The Suhina contributors; SPDX-License-Identifier: GPL-3.0-or-later -->
-# Suhina theme package: author and AI guide
+---
+description: Guide for people and AI assistants writing or editing a Suhina theme - the folder's files, theme.css, quick controls and variants, artwork, layout, limits and every colour token
+read_when: write a theme, edit a theme, theme author guide, theme.css, theme package, theme folder files, colour tokens, quick controls, variants, AI theme edits
+type: howto
+status: current
+last_verified: 2026-11-16
+covers:
+  - crates/ui/src/kit/theme.rs
+---
 
-## What this package is
+# Writing a Suhina theme: author and AI guide
+
+## What a theme is
 
 A theme changes Suhina's native egui interface through colours, SVG/PNG control artwork,
 meter appearance, background images, and connected CSS styles and layouts. It contains
@@ -33,9 +42,6 @@ my-theme/
   assets/*.svg        # vector control artwork
   assets/*.png        # optional raster artwork and sequence frames
   background.png      # optional background image
-  README.md           # this guide
-  examples/dark-gloss.css  # optional paint-only example; not enabled automatically
-  examples/compact-session.css  # optional native Launcher density; not enabled automatically
 ```
 
 `theme.css` is yours. What a user changes in Suhina's variant editor (the settings your theme
@@ -217,21 +223,13 @@ or on `#device-<id>` for one (its expanded panel included):
 7. Test normal, hover, active and disabled states, narrow/wide windows, interaction,
    clipping and contrast, with each variant. Export and reimport the ZIP to check portability.
 
-To try the supplied dark metallic look, copy `examples/dark-gloss.css` to the end of your
-`theme.css`.
-It demonstrates original gradients, rounded SVG-backed buttons, box/text shadows
-and coloured transport controls while preserving native geometry. Back up your
-current CSS before replacing it with an example.
-
-Use **Load compact Session geometry** under Native CSS, then **Apply CSS**, which saves it in
-the variant in use. It sets track/return/scene widths and header/slot heights (in `theme.css`,
-`session { track-width; … }`): widths are 64–512px, slot height 16–64px and header height
+The Launcher's track, return and scene widths and its header and slot heights are set in
+`theme.css` with `session { track-width; … }`: widths are 64–512px, slot height 16–64px and header height
 20–64px. Use `auto` to remove
 an override. The same geometry drives drawing, scrolling and drop/input targets.
 Mixer height keeps its existing native divider/preference. Launcher and Arrangement
 remain separate; this does not introduce the separately planned mixer view.
-The example also includes `pan { appearance: knob; }`, a portable native
-pan-face override for Launcher and Arrangement. `field` forces a number field, while
+`pan { appearance: knob; }` is a portable native pan-face override for Launcher and Arrangement. `field` forces a number field, while
 `native` retains the global preference. Native parameter gestures remain unchanged.
 
 The gloss example gives `mixer` and `track-name` their own materials. Meter gradients
@@ -1210,7 +1208,7 @@ filters, downloadable fonts, full typography, geometry animation and
 the reduced-motion media feature are not connected. Floating windows stay host-managed; the
 inside of each bar is laid out by Suhina, and its controls keep their native height. Do not claim universal browser CSS
 or container-query support. Notices are useful but are not a complete CSS validator.
-Use the editor's Flex/Grid examples and check the current support specification.
+Check the current support specification for Flex and Grid.
 
 Stylesheets are limited to 128 KiB, bounded nesting and native scope budgets.
 SVGs are limited to 128 KiB each, the base roles and 64 additional variants per theme. External/network images,
@@ -1257,3 +1255,48 @@ track-header > meter { align-self: stretch; margin: 4px 6px 4px 0; }
 Arrangement meter geometry follows the whole track, so scrolling does not rescale its level. SVG
 symbol roles preserve their aspect ratio and are centred; surface artwork such as button and
 track backgrounds stretches.
+
+## Colour token reference
+
+Each token's colour in Suhina Studio; a test keeps this table in step with Suhina's list of
+tokens.
+
+| Token | Suhina Studio | Used for |
+|---|---|---|
+| `grid.major` | `#2C2B29` | Arrangement bar lines and lane separators |
+| `grid.minor` | `#252422` | Arrangement subdivisions between bar lines |
+| `track.headerBackground` | `#252421` | The neutral surface behind Arrangement track controls |
+| `track.headerSelectedBackground` | `#3E3E4C` | The surface behind a selected Arrangement track's controls |
+| `window.background` | `#1D1C1A` | The window behind everything: grid, empty slots, lanes, Settings |
+| `panel.background` | `#252421` | Panels and headers: menu, control and status bars, track headers, beat lines |
+| `panel.hoverBackground` | `#31302C` | A panel or list row under the pointer |
+| `control.background` | `#343330` | Fields, buttons and stopped clips |
+| `control.hoverBackground` | `#3F3D3A` | A field, button or clip under the pointer |
+| `control.activeBackground` | `#4B4A46` | Selected or pressed: a selected clip or track, a dragged field |
+| `control.playingBackground` | `#545472` | A playing clip or scene |
+| `control.selectedBackground` | `#D0CCC6` | The chosen option of a switch, a lit toggle, the level of a volume or pan field |
+| `border` | `#343330` | Hairlines between regions and rows |
+| `border.strong` | `#484642` | Launcher columns and arrangement track lines |
+| `text.primary` | `#ECE8E1` | Names and values |
+| `text.secondary` | `#B5B2AC` | Labels and notes |
+| `text.hint` | `#85837E` | Inactive text, hints and section titles |
+| `text.value` | `#DAD6D0` | Clip names and values on fields |
+| `text.inverse` | `#1D1C1A` | Text on lit fills: a switch's chosen option, a lit button |
+| `text.playing` | `#FFFFFF` | The name of a playing clip |
+| `text.onColorLight` | `#ECE8E1` | Light text on dark coloured tracks, returns and clips; paired with text.onColorDark for contrast |
+| `text.onColorDark` | `#1D1C1A` | Dark text on bright coloured tracks, returns and clips; paired with text.onColorLight for contrast |
+| `browser.text.primary` | `#ECE8E1` | Browser selection, search input and highlighted names |
+| `browser.text.secondary` | `#B5B2AC` | Browser item names, categories and preview labels |
+| `browser.text.hint` | `#85837E` | Browser section headings, search placeholder and hints |
+| `browser.text.value` | `#DAD6D0` | Browser values and active preview controls |
+| `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
+| `automation.pin` | `#A6A3FF` | The pin of an automation lane pinned below its track's top lane (older theme files: their accent) |
+| `selection` | `#E3C86A` | The selected device's outline |
+| `recording` | `#E5484D` | Recording and errors |
+| `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
+| `meter.normal` | `#8BC48A` | A level meter below the top |
+| `meter.hot` | `#E3C86A` | A level meter near the top |
+| `slot.empty` | `#484642` | The mark in an empty clip slot |
+| `track.mutedBackground` | `#21201D` | The fills of a muted track |
+| `pan.background` | `#1F1E1C` | Behind a track header's pan field |
+| `pan.centre` | `#817F7A` | The centre mark of a pan field |

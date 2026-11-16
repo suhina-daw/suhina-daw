@@ -243,14 +243,16 @@ fn the_user_sheet_wins_over_device_and_theme_and_runs_without_a_theme_sheet() {
 }
 #[test]
 fn gloss_surfaces_have_opaque_bases_and_sheet_overlays_preserve_native_fills() {
-    prepare(theme::GLOSS_EXAMPLE, 1138.0);
+    prepare(include_str!("../../tests/fixtures/dark-gloss.css"), 1138.0);
     for class in ["session", "arrangement", "browser", "detail", "device-panel", "mixer", "button"] {
         let style = scoped(&[class.into()]).unwrap();
         assert!(style.authored.background, "{class} has no explicit base");
         assert_eq!(style.background.a(), 255, "{class} exposes the desktop");
         assert!(style.has_gradient(), "{class} lost its gradient");
     }
-    for css in [theme::GLOSS_EXAMPLE, include_str!("../../themes/suhina-sheet/theme.css")] {
+    for css in
+        [include_str!("../../tests/fixtures/dark-gloss.css"), include_str!("../../themes/suhina-sheet/theme.css")]
+    {
         prepare(css, 1138.0);
         for class in ["track-header", "track-name"] {
             let style = scoped(&[class.into()]).unwrap();

@@ -12,9 +12,6 @@ covers:
   - crates/ui/src/kit/floating.rs
   - assets/themes/default/*.svg
   - assets/themes/examples/*.svg
-  - crates/ui/themes/THEME-PACKAGE-README.md
-  - crates/ui/themes/dark-gloss.css
-  - crates/ui/themes/compact-session.css
   - crates/ui/themes/*/theme.json
   - crates/ui/themes/*/theme.css
   - crates/ui/themes/*/thumbnail.svg
@@ -83,11 +80,12 @@ exports include inherited artwork so they keep their appearance on another machi
 The colour of the element that draws the artwork supplies `currentColor`; inheritance does not
 force the default theme's colours. Deleting an override restores inheritance.
 
-Every theme package contains a generated `README.md` for human and AI-assisted
-authors. Multi-theme backups also carry it at
-the archive root. The guide explains what/why/how/when, current possibilities,
-file ownership, examples, SVG inheritance and recovery, supported CSS integration
-and explicit limits. Its palette reference is generated from the token registry.
+The guide for human and AI-assisted theme authors is
+[`docs/guide/theme-authoring.md`](../guide/theme-authoring.md): what/why/how/when, current
+possibilities, file ownership, SVG inheritance and recovery, supported CSS integration, explicit
+limits and every colour token (a test keeps its table in step with the token registry). Suhina
+writes no guide or example files into theme folders, packages or backups; a `README.md` an
+author put in a theme's folder is kept and travels with it.
 
 # Theme skins
 
@@ -202,8 +200,9 @@ mixer fader-scale { margin: 0 6px 0 0; }
 mixer > track-colour { width: 2px; }
 ```
 
-Load the compact native CSS and dark-gloss advanced CSS examples separately, then
-apply these rules and the cap override. The compact example carries its pan style.
+The capture used two example sheets of an earlier version (a compact Launcher geometry, which
+carried its pan style, and a dark gloss; Suhina no longer ships them, and the gloss is kept as a
+test fixture, `crates/ui/tests/fixtures/dark-gloss.css`) with these rules and the cap override.
 The capture keeps the global preference at Field and verifies the theme-owned Knob
 override, so that presentation does not depend on another user's settings.
 The images below retain the earlier, wider geometry and colour-keyed texture example.
@@ -844,7 +843,7 @@ my-theme/
   is left out with a warning, and any key besides `name` and `values` (such as the `appearance`
   of earlier versions) is a warning. At most 64 variants of 64 KiB each, 256 values of 1 KiB
   each. The default variant is the theme's own values and is never a file.
-- `assets/`, `background.png`, `README.md` and `examples/`.
+- `assets/`, `background.png`, and optionally a `README.md` of the author's.
 
 A folder with a `theme.css` but no `theme.json` is not a theme; the status bar says so. Themes
 written for the format before `theme.json` need adding one by hand: the format is experimental
@@ -927,8 +926,7 @@ variant first.
 Changes to any file of the folder are noticed within the one-second poll, and only files whose
 bytes changed are written. A save over an edit of a variant file made outside Suhina since it was
 last read is refused and leaves the file as it is; reading the themes again makes the edit the
-variant. A malformed sheet or missing resource does not replace the loaded theme. Installed
-package README files are not rewritten.
+variant. A malformed sheet or missing resource does not replace the loaded theme.
 
 **Migration of earlier themes.** A theme of an earlier version, `<id>.json` beside
 `<id>/style.css`, or a `theme.css` of the earlier form (rules such as `meter { style: ... }` and
@@ -1416,7 +1414,6 @@ audio track while the audio device has no input says so in the status bar.
   between 14 and 40.
 - **Nine-slice:** insets that do not fit shrink by one factor on both axes.
 - **Settings' segmented choices** are `button` parts, the chosen one `[checked]`.
-- **Export** adds the theme guide (`README.md`) to a package whose folder has none.
 - **Opaque windows:** where the system does not composite the window's transparency, the window
   clears to the panel colour over black, opaque.
 - **Variants:** a theme read again is read with the whole list; a variant in use whose file is
