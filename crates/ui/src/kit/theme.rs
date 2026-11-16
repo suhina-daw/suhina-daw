@@ -888,23 +888,6 @@ impl Theme {
     }
 }
 
-/// Original paint-only example, shared by the editor and portable packages.
-pub const GLOSS_EXAMPLE: &str = include_str!("../../themes/dark-gloss.css");
-
-/// Optional native Launcher density, shared by the editor and exported packages.
-pub const COMPACT_SESSION_EXAMPLE: &str = include_str!("../../themes/compact-session.css");
-
-/// The README shipped with themes: the format, capabilities and generated palette reference.
-pub fn template_readme() -> String {
-    let mut text = String::from(include_str!("../../themes/THEME-PACKAGE-README.md"));
-    text.push_str("\n\n## Colour token reference\n\n| Token | Suhina Studio | Used for |\n|---|---|---|\n");
-    for (key, purpose) in TOKENS {
-        let color = color_in(&Colors::new(), &variable_name(key));
-        text.push_str(&format!("| `{key}` | `{}` | {purpose} |\n", hex(color)));
-    }
-    text
-}
-
 /// Opaque `#RRGGBB`, or `#RRGGBBAA` when opacity is present.
 pub fn hex(color: Color32) -> String {
     hex_rgba(color.to_srgba_unmultiplied())

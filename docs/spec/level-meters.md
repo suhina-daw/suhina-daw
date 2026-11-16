@@ -95,8 +95,8 @@ Sizes and tokens are in [components](../design/components.md) › Meter.
   bars, hold marks, needles, artwork frames and glow together, preserving empty
   native bar rails, the clip light and all measurement geometry. Frame images dim
   as a whole, including any background authored inside them. Canonical CSS
-  `meter { intensity: 65%; }` and the theme editor's Meter intensity slider
-  mirror this value into JSON. This is visual opacity, not audio gain or colour
+  `meter { meter-intensity: 65; }` sets this value; a theme may offer it as a quick
+  control of its own through `var()`. This is visual opacity, not audio gain or colour
   saturation. Advanced `meter-level { opacity: .5; }` additionally dims native
   bars, hold marks and needles as well as CSS fills/glow. An explicitly transparent
   fill suppresses native fill fallback.
