@@ -2033,6 +2033,10 @@ fn paint_control(
                     .enter()
                     .computed_color_or(colours().control_background);
                 if crate::kit::skin::paint_as(&scope, painter, rect, "device.knob.body", state, body_ink) {
+                    // The pointer then sits on the theme's face, which the theme pairs with its
+                    // knob's `color` (or its own `device.knob.pointer`): the device's face colour
+                    // no longer says what the pointer must stand out from.
+                    face_fill = None;
                     continue;
                 }
             } else if let (Draw::Line { from, to, color: c, width }, Some(rect)) = (draw, face) {

@@ -328,6 +328,18 @@ fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
         let contrast = crate::kit::theme::text_contrast(ink, fill);
         assert!(contrast >= 3.0, "with text {text:?} the pointer is {ink:?} on {fill:?}, contrast {contrast}");
     }
+    // A theme's light `device.knob.body` replaces the dark face: the pointer stands out from the
+    // theme's face, not from the device's that it hides, so the theme's dark text stays.
+    let light = Color32::from_rgb(0xF0, 0xEE, 0xE8);
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#F0EEE8\"/></svg>";
+    crate::kit::skin::configure(&crate::kit::skin::Skin {
+        assets: [("device.knob.body".into(), svg.into())].into(),
+        ..Default::default()
+    });
+    let ink = pointer(Color32::from_rgb(20, 20, 24));
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    let contrast = crate::kit::theme::text_contrast(ink, light);
+    assert!(contrast >= 3.0, "over the theme's light face the pointer is {ink:?}, contrast {contrast}");
 }
 
 /// A face's colour is the mean of the opaque pixels in its middle; the transparent corners and the
