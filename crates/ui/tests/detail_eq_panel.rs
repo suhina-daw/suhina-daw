@@ -23,6 +23,7 @@ fn eq_device() -> Device {
         .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
         .unwrap_or_default();
     Device {
+        inputs: Vec::new(),
         id: Default::default(),
         name: "EQ".into(),
         kind: DeviceKind::Builtin("eq".into()),
@@ -165,6 +166,7 @@ fn grouped_eq_project() -> Project {
     let mut branch = suhina_engine::model::Branch::new("Branch 1");
     branch.devices.push(grouped);
     let group = Device {
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Group".into(),
         kind: DeviceKind::Group(Box::new(suhina_engine::model::DeviceGroup::with_branches(vec![branch]))),

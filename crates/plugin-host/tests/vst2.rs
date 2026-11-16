@@ -217,6 +217,7 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                inputs: Vec::new(),
                 id: Default::default(),
                 name: "Suhina Test Gain".into(),
                 kind: DeviceKind::Vst2 { id: 0x5368_5447 },

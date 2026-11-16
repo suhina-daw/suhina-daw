@@ -62,6 +62,7 @@ fn project_sources_cannot_escape_by_absolute_path_parent_or_symlink() {
         let mut project = project_with_audio(&name, Some(name.clone()));
         project.channels.push(Channel::new(ChannelId(1), "Sampler"));
         project.channels[0].devices.push(Device {
+            inputs: Vec::new(),
             id: Default::default(),
             name: "Sampler".into(),
             kind: DeviceKind::Builtin("sampler".into()),

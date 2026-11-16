@@ -138,6 +138,7 @@ fn a_source_render_writes_the_nodes_sum_alone() {
         cue: None,
         node: node.map(str::to_string),
         scene: None,
+        extract_to: None,
         launcher: false,
         sample_rate: 48_000,
         fm: None,

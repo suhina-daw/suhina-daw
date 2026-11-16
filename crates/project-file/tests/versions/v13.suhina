@@ -183,6 +183,16 @@
               }
             ],
             "id": 9,
+            "inputs": [
+              {
+                "gain": 0.5,
+                "port": "key",
+                "source": {
+                  "channel": 2,
+                  "tap": "postFader"
+                }
+              }
+            ],
             "kind": {
               "id": "dj-eq",
               "type": "builtin"

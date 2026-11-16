@@ -1495,8 +1495,11 @@ fn every_feature() -> Project {
     project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
     // Version 11: a clip's own swing (#1221).
     project.arrangement.lanes[0].clips[0].swing = ClipSwing { amount: 0.6, own: true };
-    // Version 13: linked copies and the cosine fade shape.
+    // Version 13: linked copies, the cosine fade shape and a device's key (sidechain).
     project.contents[0].linked = true;
+    let key_source = project.channels.iter().map(|c| c.id).find(|id| *id != project.channels[0].id).unwrap();
+    project.channels[0].devices[0].inputs =
+        vec![DeviceInput { gain: 0.5, ..DeviceInput::key(key_source, TapPoint::PostFader) }];
     project.arrangement.lanes[0].clips[0].fade_out_curve = FadeCurve { shape: FadeShape::Cosine, curve: 0.25 };
     renumbered(project)
 }
@@ -1565,8 +1568,9 @@ fn a_file_of_every_version_reads() {
             }
         }
         if version < 13 {
-            // Linked copies and the cosine fade shape came with version 13.
+            // Linked copies, the cosine fade shape and keys came with version 13.
             expected.contents[0].linked = false;
+            expected.channels[0].devices[0].inputs.clear();
             expected.arrangement.lanes[0].clips[0].fade_out_curve =
                 everything().arrangement.lanes[0].clips[0].fade_out_curve;
         }
@@ -1783,4 +1787,31 @@ fn linked_copies_survive_a_round_trip_and_older_files_read_unlinked() {
     let mut wrong = written;
     wrong["project"]["contents"][0]["linked"] = json!("yes");
     assert!(from_json(&wrong.to_string()).is_err());
+}
+
+#[test]
+fn a_key_survives_a_round_trip_and_a_bad_one_is_refused() {
+    let mut project = everything();
+    let source = project.channels.iter().map(|c| c.id).find(|id| *id != project.channels[0].id).unwrap();
+    project.channels[0].devices.insert(0, Device::new("Compressor", DeviceKind::Builtin("compressor".into())));
+    project.channels[0].devices[0].inputs =
+        vec![DeviceInput { port: "Stereo Side Chain".into(), gain: 2.0, ..DeviceInput::key(source, TapPoint::PreFx) }];
+    let text = to_json(&project);
+    let written: Value = serde_json::from_str(&text).unwrap();
+    let key = &written["project"]["channels"][0]["devices"][0]["inputs"][0];
+    assert_eq!(key["source"], json!({ "channel": source.0, "tap": "preFx" }));
+    let read = from_json(&text).unwrap();
+    assert_eq!(read.channels[0].devices[0].inputs, project.channels[0].devices[0].inputs);
+    // A file with an unknown tap point names it.
+    let mut wrong = written.clone();
+    wrong["project"]["channels"][0]["devices"][0]["inputs"][0]["source"]["tap"] = json!("sideways");
+    assert!(from_json(&wrong.to_string()).unwrap_err().to_string().contains("sideways"));
+    // No tap and no gain: the defaults, Post FX at unity.
+    let mut plain = written;
+    let input = plain["project"]["channels"][0]["devices"][0]["inputs"][0].as_object_mut().unwrap();
+    input.remove("gain");
+    input["source"].as_object_mut().unwrap().remove("tap");
+    let read = from_json(&plain.to_string()).unwrap();
+    let key = &read.channels[0].devices[0].inputs[0];
+    assert_eq!((key.source.tap(), key.gain), (TapPoint::PostFx, 1.0));
 }

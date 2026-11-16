@@ -381,3 +381,46 @@ fn a_group_cycle_is_reported_and_walking_it_ends() {
     assert_eq!(own.validate(), Err(vec![ValidationError::GroupCycle(TrackId(1))]));
     assert_eq!(own.ancestors(TrackId(1)), vec![]);
 }
+
+#[test]
+fn a_key_reads_a_channel_that_exists_and_never_closes_a_loop() {
+    // Track 1 plays into group 3; track 2 plays to the output on its own.
+    let mut p = Project::default();
+    for (id, output) in [(1, Some(3)), (2, None), (3, None)] {
+        let mut channel = Channel::new(ChannelId(id), format!("C{id}"));
+        channel.output = output.map(ChannelId);
+        channel.devices.push(Device::new("Compressor", DeviceKind::Builtin("compressor".into())));
+        p.channels.push(channel);
+        p.tracks.push(Track { channel: Some(ChannelId(id)), ..Track::new(TrackId(id), format!("T{id}")) });
+    }
+    let keyed = |p: &mut Project, reader: u32, input: DeviceInput| {
+        let mut p = p.clone();
+        p.channel_mut(ChannelId(reader)).unwrap().devices[0].inputs = vec![input];
+        p.validate()
+    };
+    // Another track, the own track before its devices, a group from a track that is not in it.
+    assert_eq!(keyed(&mut p, 1, DeviceInput::key(ChannelId(2), TapPoint::PostFx)), Ok(()));
+    assert_eq!(keyed(&mut p, 1, DeviceInput::key(ChannelId(1), TapPoint::PreFx)), Ok(()));
+    assert_eq!(keyed(&mut p, 2, DeviceInput::key(ChannelId(3), TapPoint::PostFader)), Ok(()));
+    // A group keyed by a track inside it runs after it: no loop.
+    assert_eq!(keyed(&mut p, 3, DeviceInput::key(ChannelId(1), TapPoint::PostFx)), Ok(()));
+    let cycle = |errors: Result<(), Vec<ValidationError>>| {
+        errors.is_err_and(|e| e.iter().any(|e| matches!(e, ValidationError::KeyCycle { .. })))
+    };
+    // A track keyed by the group it plays into, or by itself after its devices: a loop.
+    assert!(cycle(keyed(&mut p, 1, DeviceInput::key(ChannelId(3), TapPoint::PostFx))));
+    assert!(cycle(keyed(&mut p, 1, DeviceInput::key(ChannelId(1), TapPoint::PostFx))));
+    let bad = |errors: Result<(), Vec<ValidationError>>| {
+        errors.is_err_and(|e| e.iter().any(|e| matches!(e, ValidationError::BadKey { .. })))
+    };
+    assert!(bad(keyed(&mut p, 1, DeviceInput::key(ChannelId(99), TapPoint::PostFx))));
+    let loud = DeviceInput { gain: DeviceInput::MAX_GAIN * 2.0, ..DeviceInput::key(ChannelId(2), TapPoint::PostFx) };
+    assert!(bad(keyed(&mut p, 1, loud)));
+    let mut two = p.clone();
+    two.channel_mut(ChannelId(1)).unwrap().devices[0].inputs =
+        vec![DeviceInput::key(ChannelId(2), TapPoint::PostFx), DeviceInput::key(ChannelId(2), TapPoint::PreFx)];
+    assert!(bad(two.validate()));
+    for tap in TapPoint::ALL {
+        assert_eq!(TapPoint::from_name(tap.name()), Some(tap));
+    }
+}

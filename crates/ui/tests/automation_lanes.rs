@@ -563,6 +563,7 @@ fn menu_on(devices: &[(&str, &str)], size: (f32, f32), track: usize, detail: boo
         let info = suhina_device_registry::info(id).expect("a built-in device");
         let params = info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect();
         channel.devices.push(Device {
+            inputs: Vec::new(),
             id: Default::default(),
             name: (*device).into(),
             kind: DeviceKind::Builtin((*id).into()),
@@ -883,6 +884,7 @@ fn with_automation_of(fm: &[&str]) -> Harness<'static, App> {
             _ => fm.iter().map(|p| points(p, [0.0, 1.0])).collect(),
         };
         channel.devices.push(Device {
+            inputs: Vec::new(),
             id: Default::default(),
             name: name.into(),
             kind: DeviceKind::Builtin(id.into()),

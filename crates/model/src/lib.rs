@@ -370,7 +370,84 @@ pub struct Device {
     /// The channel's ARA plug-in that edits its clips (ADR 0033 › 2, #990): always its first
     /// device, not shown in its device list.
     pub clip_host: bool,
+    /// The device's ports that read another channel's signal: its key, or sidechain
+    /// (`docs/spec/sidechain.md`). Empty for almost every device; at most one entry.
+    pub inputs: Vec<DeviceInput>,
     pub extensions: Extensions,
+}
+
+/// A port of a device that reads a signal other than the device's own input: a key
+/// (`docs/spec/sidechain.md` › Model).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeviceInput {
+    /// Which port reads it: `"key"` for a built-in detector or a plug-in's first auxiliary input,
+    /// or the plug-in's own name for that input (`"Stereo Side Chain"`).
+    pub port: String,
+    pub source: SignalPoint,
+    /// The key's level before the device reads it, linear: 1 leaves it as the source has it.
+    pub gain: f64,
+}
+
+impl DeviceInput {
+    /// The port every key goes to by default.
+    pub const KEY: &'static str = "key";
+    /// The highest gain a key takes (+24 dB).
+    pub const MAX_GAIN: f64 = 15.848_931_924_611_133;
+
+    /// A key from `channel` at `tap`, at unity gain, on the default port.
+    pub fn key(channel: ChannelId, tap: TapPoint) -> Self {
+        Self { port: Self::KEY.into(), source: SignalPoint::Channel { channel, tap }, gain: 1.0 }
+    }
+}
+
+/// Where a key is read: a channel at one of its tap points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalPoint {
+    Channel { channel: ChannelId, tap: TapPoint },
+}
+
+impl SignalPoint {
+    /// The channel the point reads.
+    pub fn channel(self) -> ChannelId {
+        match self {
+            Self::Channel { channel, .. } => channel,
+        }
+    }
+
+    pub fn tap(self) -> TapPoint {
+        match self {
+            Self::Channel { tap, .. } => tap,
+        }
+    }
+}
+
+/// Where in a channel's signal a key is taken (`docs/spec/sidechain.md` › Tap points).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TapPoint {
+    /// What plays on the channel's track, before its devices and its fader.
+    PreFx,
+    /// The channel's devices' output, before its fader. The default.
+    #[default]
+    PostFx,
+    /// The channel's output after its fader, mute and pan.
+    PostFader,
+}
+
+impl TapPoint {
+    pub const ALL: [Self; 3] = [Self::PreFx, Self::PostFx, Self::PostFader];
+
+    /// The name the commands and the project file use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::PreFx => "preFx",
+            Self::PostFx => "postFx",
+            Self::PostFader => "postFader",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.name().eq_ignore_ascii_case(name))
+    }
 }
 
 /// Maximum persisted manual slice boundaries per source.
@@ -1192,6 +1269,18 @@ pub enum ValidationError {
         channel: ChannelId,
         device: Vec<usize>,
     },
+    /// The device at this path has more than one key, or one that reads a channel that is not
+    /// there (`docs/spec/sidechain.md` › Model).
+    BadKey {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
+    /// The device at this path reads a key whose source plays into it, through outputs, sends
+    /// and other keys, or reads its own channel: it would have to run before itself.
+    KeyCycle {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
     /// The device group at this path is inside more than [`MAX_DEVICE_GROUP_DEPTH`] levels of groups,
     /// itself counted.
     DeviceGroupTooDeep {
@@ -1268,6 +1357,20 @@ impl fmt::Display for ValidationError {
                 path(device),
                 channel.0
             ),
+            Self::BadKey { channel, device } => {
+                write!(
+                    f,
+                    "the device at {device:?} on channel {} has more than one key, or one that reads a channel that does not exist",
+                    channel.0
+                )
+            }
+            Self::KeyCycle { channel, device } => {
+                write!(
+                    f,
+                    "the key of the device at {device:?} on channel {} reads a channel that plays into it, or its own",
+                    channel.0
+                )
+            }
             Self::DeviceGroupTooDeep { channel, device } => write!(
                 f,
                 "device group {} on channel {} is inside more than {MAX_DEVICE_GROUP_DEPTH} levels of groups",
@@ -1303,6 +1406,48 @@ fn path(device: &[usize]) -> String {
 impl Project {
     /// Checks that ids are unique and every reference resolves. Importers call this so a
     /// malformed file becomes an error instead of a crash later.
+    /// Whether a key that a device on channel `reader` reads from `point` would close a loop:
+    /// `reader` plays into the point's channel through outputs, sends and other keys, or the point
+    /// is its own channel after its devices, so neither could run first
+    /// (`docs/spec/sidechain.md` › Ordering and cycles). Its own channel before its devices
+    /// (`PreFx`) is no loop: that signal exists before the devices run. Bounded by the number of
+    /// channels, so a malformed project's own routing loop cannot make it run forever.
+    pub fn key_closes_loop(&self, point: SignalPoint, reader: ChannelId) -> bool {
+        let source = point.channel();
+        if source == reader {
+            return point.tap() != TapPoint::PreFx;
+        }
+        let mut seen = vec![reader];
+        let mut at = 0;
+        while let Some(&from) = seen.get(at) {
+            at += 1;
+            if seen.len() > self.channels.len() + 1 {
+                break;
+            }
+            let Some(channel) = self.channel(from) else { continue };
+            let mut next: Vec<ChannelId> =
+                channel.output.into_iter().chain(channel.sends.iter().map(|s| s.target)).collect();
+            // A channel that a key reads from `from` runs after it too.
+            for other in &self.channels {
+                if groups::walk_devices(&other.devices)
+                    .iter()
+                    .any(|(_, d)| d.inputs.iter().any(|i| i.source.channel() == from))
+                {
+                    next.push(other.id);
+                }
+            }
+            for id in next {
+                if id == source {
+                    return true;
+                }
+                if !seen.contains(&id) {
+                    seen.push(id);
+                }
+            }
+        }
+        false
+    }
+
     pub fn validate(&self) -> Result<(), Vec<ValidationError>> {
         let mut errors = Vec::new();
 
@@ -1395,6 +1540,16 @@ impl Project {
                 channel_ref(send.target, &mut errors);
             }
             groups::validate_devices(channel.id, &channel.devices, &mut errors);
+            for (path, device) in groups::walk_devices(&channel.devices) {
+                let bad_source = device.inputs.iter().any(|i| {
+                    !channels.contains(&i.source.channel()) || !(0.0..=DeviceInput::MAX_GAIN).contains(&i.gain)
+                });
+                if device.inputs.len() > 1 || bad_source {
+                    errors.push(ValidationError::BadKey { channel: channel.id, device: path.clone() });
+                } else if device.inputs.iter().any(|i| self.key_closes_loop(i.source, channel.id)) {
+                    errors.push(ValidationError::KeyCycle { channel: channel.id, device: path });
+                }
+            }
         }
         for content in &self.contents {
             for lane in &content.lanes {

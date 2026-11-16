@@ -129,6 +129,7 @@ impl Device {
             params: Vec::new(),
             automation: Vec::new(),
             clip_host: false,
+            inputs: Vec::new(),
             extensions: Extensions::default(),
         }
     }

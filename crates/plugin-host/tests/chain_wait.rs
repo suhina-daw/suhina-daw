@@ -48,6 +48,7 @@ fn start(spec: &str, sample_rate: u32) -> (Plugin, Hosted) {
 
 fn plugin_device() -> Device {
     Device {
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Test".into(),
         kind: DeviceKind::Clap { id: "x".into() },

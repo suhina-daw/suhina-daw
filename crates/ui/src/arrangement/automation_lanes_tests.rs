@@ -132,6 +132,7 @@ fn a_built_in_devices_parameters_can_be_shown_with_its_lanes() {
     let mut lane = AutomationLane::new("gain");
     lane.insert(AutomationPoint::new(4.0, -6.0));
     channel.devices.push(suhina_engine::model::Device {
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),
@@ -180,6 +181,7 @@ fn sd_parameters_are_listed_and_use_their_control_scale() {
     let mut lane = AutomationLane::new("frequency");
     lane.insert(AutomationPoint::new(4.0, 1_000.0));
     channel.devices.push(suhina_engine::model::Device {
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Test Filter".into(),
         kind: DeviceKind::Sd,

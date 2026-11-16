@@ -24,13 +24,14 @@ use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, CLIP_GAIN_MAX_DB,
     Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ClipSwing, ContentId, ContentKinds,
-    ContentLane, ControllerMapping, Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions,
-    FadeCurve, FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId,
-    LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT,
+    ContentLane, ControllerMapping, Device, DeviceGroup, DeviceId, DeviceInput, DeviceKind, DeviceParam, Extension,
+    Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData,
+    LaneId, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT,
     MAX_GAIN_POINTS, MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro,
     MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb,
-    SWING_RANGE, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoSource,
-    TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
+    SWING_RANGE, Scale, ScaleMode, Scene, SceneId, Send, SignalPoint, Slot, StretchMode, TakeLane, TapPoint,
+    TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation,
+    max_clip_gain, valid_bpm,
 };
 use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
@@ -496,6 +497,21 @@ fn device_value(d: &Device) -> Value {
         // Only a channel's clip host says so (#990), so other devices keep their shape.
         if d.clip_host {
             map.insert("clip_host".into(), json!(true));
+        }
+        // Only a device with a key (sidechain) says so, so other devices keep their shape.
+        if !d.inputs.is_empty() {
+            let inputs: Vec<Value> = d
+                .inputs
+                .iter()
+                .map(|i| {
+                    json!({
+                        "port": i.port,
+                        "source": { "channel": i.source.channel().0, "tap": i.source.tap().name() },
+                        "gain": number(i.gain),
+                    })
+                })
+                .collect();
+            map.insert("inputs".into(), Value::Array(inputs));
         }
         with_extensions(map, &d.extensions);
     }
@@ -1437,7 +1453,27 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         params.push(DeviceParam { id: required_text(p, "id", &at)?, value: float(p, "value", &at)? });
     }
     let automation = read_lanes(d, at)?;
+    // A key (sidechain), from version 13 (`docs/spec/sidechain.md` › Project file).
+    let mut inputs = Vec::new();
+    for (i, v) in list(d, "inputs", at)?.iter().enumerate() {
+        let at = format!("{at}.inputs[{i}]");
+        let input = object(v, &at)?;
+        let source_at = format!("{at}.source");
+        let source = object(input.get("source").unwrap_or(&Value::Null), &source_at)?;
+        let tap = match source.get("tap") {
+            None | Some(Value::Null) => TapPoint::default(),
+            Some(Value::String(name)) => TapPoint::from_name(name)
+                .ok_or_else(|| ProjectFileError(format!("{source_at}.tap: unknown tap point {name:?}")))?,
+            Some(_) => return Err(format!("{source_at}.tap: expected preFx, postFx or postFader").into()),
+        };
+        inputs.push(DeviceInput {
+            port: text(input, "port", &at)?,
+            source: SignalPoint::Channel { channel: ChannelId(whole(source, "channel", &source_at)?), tap },
+            gain: float_or(input, "gain", 1.0, &at)?,
+        });
+    }
     Ok(Device {
+        inputs,
         // From version 6 (#763 › 1); earlier files' devices get theirs when the project is opened.
         id: DeviceId(read_id(d, at)?),
         name: text(d, "name", at)?,

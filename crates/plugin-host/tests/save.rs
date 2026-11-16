@@ -56,6 +56,7 @@ fn bank(gain: f32) -> Vec<u8> {
 /// is not installed.
 fn project() -> Project {
     let plugin = Device {
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Test vst3".into(),
         // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
