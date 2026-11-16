@@ -208,6 +208,8 @@ pub struct Timeline {
     pub stack_rows: StackRows,
     /// The MIDI input ports there are, for the tracks' MIDI inputs; set by the app.
     pub midi_ports: Vec<String>,
+    /// The devices that read a key (sidechain), for the tracks' Sidechain to menus.
+    pub key_readers: Vec<crate::interaction::menus::KeyReader>,
     /// The channels of the audio input device open now (0 when none is); set by the app.
     pub input_channels: u16,
     /// The main channel's volume, if the project has one.
@@ -547,6 +549,7 @@ impl Timeline {
             ara_activity: std::collections::HashMap::new(),
             tempo: Some(project.transport.tempo_map(1.0)),
             midi_ports: Vec::new(),
+            key_readers: crate::interaction::menus::key_readers(project),
             input_channels: 0,
             lanes,
             main_volume_db,

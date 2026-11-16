@@ -213,6 +213,8 @@ pub struct TrackGrid {
     pub columns: Vec<Column>,
     /// The MIDI input ports there are, for the tracks' MIDI input menus; set by the app.
     pub midi_ports: Vec<String>,
+    /// The devices that read a key (sidechain), for the tracks' Sidechain to menus.
+    pub key_readers: Vec<crate::interaction::menus::KeyReader>,
     /// The channels of the audio input device open now (0 when none is), for the tracks'
     /// audio input menus; set by the app.
     pub input_channels: u16,
@@ -418,6 +420,7 @@ impl TrackGrid {
         let mut grid = Self {
             columns,
             midi_ports: Vec::new(),
+            key_readers: crate::interaction::menus::key_readers(project),
             input_channels: 0,
             scenes,
             running,

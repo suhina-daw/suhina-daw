@@ -36,6 +36,154 @@ pub struct TrackMenu<'a> {
     pub audio: Option<(&'a AudioInput, u16)>,
     /// Whole tracks have been copied, so Paste can add them (#919).
     pub tracks_copied: bool,
+    /// The project's devices that read a key (sidechain), for Sidechain to.
+    pub key_readers: &'a [KeyReader],
+}
+
+/// A device that reads a key (sidechain), as a track's Sidechain to menu lists it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyReader {
+    /// Its track ([`TrackId::MAIN`] for the main channel's) and place among the track's devices.
+    pub track: TrackId,
+    pub device: usize,
+    /// "Track › Device".
+    pub label: String,
+    /// The track it reads its key from now.
+    pub source: Option<TrackId>,
+    /// The tracks it cannot read from: its own, and those that play into it (a loop).
+    pub refused: Vec<TrackId>,
+}
+
+/// The devices on the project's tracks (not inside a device group) that read a key, in track
+/// order, Main's last (`docs/spec/sidechain.md` › Choosing a source).
+pub fn key_readers(project: &suhina_engine::model::Project) -> Vec<KeyReader> {
+    use suhina_engine::model::{ChannelRole, SignalPoint, TapPoint};
+    let mut readers = Vec::new();
+    let owners =
+        project.tracks.iter().filter_map(|t| t.channel.map(|c| (t.id, c, project.shown_track_name(t.id)))).chain(
+            project
+                .channels
+                .iter()
+                .find(|c| c.role == ChannelRole::Master)
+                .map(|c| (TrackId::MAIN, c.id, "Main".to_owned())),
+        );
+    for (track, channel_id, name) in owners {
+        let Some(channel) = project.channel(channel_id) else { continue };
+        let mut refused = None;
+        for (index, device) in channel.devices.iter().enumerate() {
+            if device.clip_host || !suhina_session::reads_a_key(device) {
+                continue;
+            }
+            let refused = refused
+                .get_or_insert_with(|| {
+                    project
+                        .tracks
+                        .iter()
+                        .filter_map(|t| t.channel.map(|c| (t.id, c)))
+                        .filter(|&(_, c)| {
+                            c == channel_id
+                                || project.key_closes_loop(
+                                    SignalPoint::Channel { channel: c, tap: TapPoint::PostFx },
+                                    channel_id,
+                                )
+                        })
+                        .map(|(t, _)| t)
+                        .collect::<Vec<_>>()
+                })
+                .clone();
+            let source = device
+                .inputs
+                .first()
+                .and_then(|i| project.tracks.iter().find(|t| t.channel == Some(i.source.channel())))
+                .map(|t| t.id);
+            readers.push(KeyReader {
+                track,
+                device: index,
+                label: format!("{name} › {}", device.name),
+                source,
+                refused,
+            });
+        }
+    }
+    readers
+}
+
+/// How a key's tap point reads in the menus.
+pub fn tap_label(tap: suhina_engine::model::TapPoint) -> &'static str {
+    match tap {
+        suhina_engine::model::TapPoint::PreFx => "Before its devices",
+        suhina_engine::model::TapPoint::PostFx => "After its devices",
+        suhina_engine::model::TapPoint::PostFader => "After its fader",
+    }
+}
+
+/// A device's sidechain choices (`device.setKey`, `device.clearKey`): no key, or one of the
+/// tracks it can read; with a key, where on the track it is read and how loud. The device
+/// panel's Sidechain button and the device's menu show the same.
+pub fn sidechain_choices(
+    ui: &mut Ui,
+    track: TrackId,
+    device: &serde_json::Value,
+    side: &crate::detail::detail_view::SidechainBox,
+    actions: &mut Vec<Action>,
+) {
+    ui.set_min_width(180.0);
+    let key = side.key.as_ref();
+    let set = |source: TrackId, tap: suhina_engine::model::TapPoint, gain: f64| {
+        Action::new(
+            "device.setKey",
+            json!({ "track": track.0, "device": device, "source": source.0, "tap": tap.name(), "gain": gain }),
+        )
+    };
+    if ui.selectable_label(key.is_none(), "None").clicked() {
+        if key.is_some() {
+            actions.push(Action::new("device.clearKey", json!({ "track": track.0, "device": device })));
+        }
+        ui.close();
+    }
+    let (tap, gain) = key.map_or((suhina_engine::model::TapPoint::default(), 0.0), |k| (k.tap, k.gain_db));
+    egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+        for (source, name) in &side.sources {
+            let on = key.is_some_and(|k| k.track == *source);
+            if ui.selectable_label(on, name).clicked() {
+                if !on {
+                    actions.push(set(*source, tap, gain));
+                }
+                ui.close();
+            }
+        }
+    });
+    if side.sources.is_empty() {
+        ui.label("No other track to read");
+    }
+    let Some(key) = key else { return };
+    ui.separator();
+    for choice in suhina_engine::model::TapPoint::ALL {
+        if ui.selectable_label(key.tap == choice, tap_label(choice)).clicked() {
+            if key.tap != choice {
+                actions.push(set(key.track, choice, key.gain_db));
+            }
+            ui.close();
+        }
+    }
+    ui.separator();
+    // The key's level: a drag or a typed value, one undo step when it is let go.
+    let id = Id::unique(("key-gain", track, device.to_string()));
+    let mut draft: f64 = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(key.gain_db.max(-60.0));
+    let response = ui
+        .horizontal(|ui| {
+            ui.label("Gain");
+            ui.add(egui::DragValue::new(&mut draft).range(-60.0..=24.0).speed(0.1).suffix(" dB").max_decimals(1))
+        })
+        .inner;
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, "Sidechain gain"));
+    ui.ctx().data_mut(|d| d.insert_temp(id, draft));
+    if response.drag_stopped() || (response.lost_focus() && !response.dragged()) {
+        if (draft - key.gain_db).abs() > 1e-9 {
+            actions.push(set(key.track, key.tap, draft));
+        }
+        ui.ctx().data_mut(|d| d.remove::<f64>(id));
+    }
 }
 
 /// How a track's audio input reads: "No input", "In 3" or "In 1/2", with its monitoring.
@@ -305,6 +453,29 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     if let Some((input, ports)) = menu.midi {
         ui.menu_button(format!("MIDI input: {}", midi_input_text(input)), |ui| {
             midi_input_choices(ui, menu.track, input, ports, actions);
+        });
+    }
+    // The devices on other tracks that can read this track as their key (sidechain): a pick
+    // sets it, a picked one clears it again; the device's own Sidechain choice is the same.
+    let readers: Vec<&KeyReader> =
+        menu.key_readers.iter().filter(|r| !r.refused.contains(&menu.track) && !menu.is_group).collect();
+    if !readers.is_empty() {
+        ui.menu_button("Sidechain to", |ui| {
+            ui.set_min_width(200.0);
+            for reader in readers {
+                let on = reader.source == Some(menu.track);
+                if ui.selectable_label(on, &reader.label).clicked() {
+                    let at = json!({ "track": reader.track.0, "device": reader.device });
+                    if on {
+                        actions.push(Action::new("device.clearKey", at));
+                    } else {
+                        let mut params = at;
+                        params["source"] = json!(track);
+                        actions.push(Action::new("device.setKey", params));
+                    }
+                    ui.close();
+                }
+            }
         });
     }
     ui.separator();
@@ -746,7 +917,9 @@ pub fn time_signature_list(
 /// The menu of a device in a track's chain: removing it takes it off the track, settings and
 /// all.
 /// A device's menu in the detail area; `branches` is how many branches it has when it is a
-/// device group (`docs/spec/device-groups.md` › The device panel).
+/// device group (`docs/spec/device-groups.md` › The device panel); `sidechain` its key choices
+/// when it reads one.
+#[allow(clippy::too_many_arguments)]
 pub fn device_menu(
     ui: &mut Ui,
     track: TrackId,
@@ -754,10 +927,17 @@ pub fn device_menu(
     branches: Option<usize>,
     is_builtin: bool,
     name: &str,
+    sidechain: Option<&crate::detail::detail_view::SidechainBox>,
     actions: &mut Vec<Action>,
 ) {
     ui.set_min_width(140.0);
     let device = at.value();
+    // The key it reads (sidechain), as the panel's Sidechain button chooses it.
+    if let Some(side) = sidechain {
+        let label = side.key.as_ref().map_or("Sidechain: none".to_owned(), |k| format!("Sidechain: {}", k.name));
+        ui.menu_button(label, |ui| sidechain_choices(ui, track, &device, side, actions));
+        ui.separator();
+    }
     // Save as preset (`device.savePreset`, docs/decisions/0036-library-and-shipped-content.md ›
     // 5): the menu stays open while the name is typed, as a rename's field does.
     if is_builtin {

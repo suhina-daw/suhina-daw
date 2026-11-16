@@ -101,6 +101,7 @@ pub use commands::{
     parse_quantization,
 };
 pub use demo::{demo_project, grouped_project};
+pub use devices::reads_a_key;
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::stage_and_rename;
 pub use files::{MAX_FILES, file_tempo};

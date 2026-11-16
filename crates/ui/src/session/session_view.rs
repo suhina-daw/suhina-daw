@@ -361,6 +361,7 @@ pub fn show(
             .map(|c| (c.track, c.name.clone()))
             .collect(),
         midi_ports: &grid.midi_ports,
+        key_readers: &grid.key_readers,
         input_channels: grid.input_channels,
         tracks_copied: state.tracks_copied,
         order: grid.columns.iter().map(|c| c.track).collect(),
@@ -723,6 +724,8 @@ struct Bands<'a> {
     /// The MIDI input ports there are, and the audio input device's channels, for the tracks'
     /// menus.
     midi_ports: &'a [String],
+    /// The devices that read a key (sidechain), for the tracks' Sidechain to menus.
+    key_readers: &'a [crate::interaction::menus::KeyReader],
     input_channels: u16,
     /// Whole tracks have been copied, so a header's menu can paste them.
     tracks_copied: bool,
@@ -866,6 +869,7 @@ fn track_menu_on(response: &Response, column: &Column, bands: &Bands, actions: &
             midi: column.plays_notes.then_some((&column.midi_input, bands.midi_ports)),
             audio: column.plays_audio.then_some((&column.audio_input, bands.input_channels)),
             tracks_copied: bands.tracks_copied,
+            key_readers: bands.key_readers,
         };
         menus::track_menu(ui, &menu, actions);
     });

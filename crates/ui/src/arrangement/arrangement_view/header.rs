@@ -267,6 +267,7 @@ pub(super) fn track_header(
             midi: lane.plays_notes.then_some((&lane.midi_input, timeline.midi_ports.as_slice())),
             audio: lane.plays_audio.then_some((&lane.audio_input, timeline.input_channels)),
             tracks_copied: state.tracks_copied,
+            key_readers: &timeline.key_readers,
         };
         menus::track_menu(ui, &menu, actions);
     });

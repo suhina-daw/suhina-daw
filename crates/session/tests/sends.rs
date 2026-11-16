@@ -359,6 +359,13 @@ fn a_compressor_is_keyed_by_another_track_and_a_loop_or_a_device_without_a_sidec
     assert!(utility.unwrap_err().contains("no sidechain input"));
     let tap = run(&mut session, "device.setKey", json!({ "track": "Lead", "device": 0, "source": "Bass", "tap": "x" }));
     assert!(tap.unwrap_err().contains("tap"));
+    // Inside a device group a key is not read yet: refused rather than kept unheard.
+    run(&mut session, "device.add", json!({ "track": "Lead", "id": "compressor" })).unwrap();
+    run(&mut session, "device.group", json!({ "track": "Lead", "device": 2 })).unwrap();
+    let grouped = run(&mut session, "device.setKey", json!({ "track": "Lead", "device": "2/0/0", "source": "Bass" }));
+    assert!(grouped.unwrap_err().contains("device group"));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
     // Undo takes back one key change; clear and "none" take it away.
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(keys(&session, 2)[0].source.channel(), ChannelId(1));

@@ -620,7 +620,7 @@ fn gain_db(gain: f64) -> f64 {
 pub(crate) const KEYED_BUILTINS: [&str; 1] = ["compressor"];
 
 /// Whether `device` has a sidechain input to read a key with.
-pub(crate) fn reads_a_key(device: &Device) -> bool {
+pub fn reads_a_key(device: &Device) -> bool {
     match &device.kind {
         DeviceKind::Builtin(id) => KEYED_BUILTINS.contains(&id.as_str()),
         kind => is_plugin(kind),
@@ -674,6 +674,11 @@ pub(crate) fn set_key(session: &mut Session, params: &Value) -> Result<Value, Co
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
     if !reads_a_key(device) {
         return Err(format!("{} has no sidechain input", device.name).into());
+    }
+    // The engine reads keys for a channel's own devices, not inside a device group
+    // (`docs/spec/sidechain.md` › Device groups).
+    if path.len() > 1 {
+        return Err(format!("{} is inside a device group, where a sidechain is not read yet", device.name).into());
     }
     device.inputs = vec![suhina_model::DeviceInput { port: port.clone(), source: point, gain }];
     Ok(json!({

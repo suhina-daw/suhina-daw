@@ -176,7 +176,16 @@ pub(super) fn group_panel(
     // The device inside a group gets the same menu as one on the track itself, the preset
     // name's field included (`device.savePreset`).
     panel.context_menu(|ui| {
-        menus::device_menu(ui, track, &device.at, Some(group.branches.len()), device.is_builtin, &device.name, actions)
+        menus::device_menu(
+            ui,
+            track,
+            &device.at,
+            Some(group.branches.len()),
+            device.is_builtin,
+            &device.name,
+            None,
+            actions,
+        )
     });
     // A `device` to the theme, `[kind="group"]`, as a device's panel is; `device-header` its header.
     let device_el = crate::kit::element::DEVICE
