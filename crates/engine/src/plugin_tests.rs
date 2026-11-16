@@ -1649,6 +1649,7 @@ fn stopping_a_plugin_note_joins_the_delayed_release_without_a_step() {
 
 fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::PluginSlot {
     crate::plugin::PluginSlot {
+        keyed: false,
         key: 1,
         processor: Some(processor),
         instrument: false,

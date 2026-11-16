@@ -124,6 +124,7 @@ impl SlotFactory<'_> {
         let key = self.keys.iter().find(|d| d.channel == self.channel && d.path == path)?.key;
         let info = *self.plugins.info.get(&key)?;
         let slot = PluginSlot {
+            keyed: false,
             key,
             processor: self.plugins.processors.remove(&key),
             instrument: info.instrument,

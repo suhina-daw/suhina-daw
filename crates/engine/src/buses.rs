@@ -107,6 +107,17 @@ pub(crate) fn build(
         chains.push(Chain::passthrough(source, column_of(source), sample_rate));
     }
 
+    // Keys (sidechains, `docs/spec/sidechain.md` › Engine): the reading track, the device's place
+    // among its channel's devices, the track read, at which tap point and gain. The main
+    // channel reads as the main chain. A source gets a chain of its own, so there is a signal to
+    // read, as a send's source does.
+    let keys = key_edges(project);
+    for &(_, _, source, _, _) in &keys {
+        if source != TrackId::MAIN && chains.iter().all(|c| c.track != source) {
+            chains.push(Chain::passthrough(source, column_of(source), sample_rate));
+        }
+    }
+
     // A bus: a track with a chain that some other channel plays into.
     let channel_of = |track: TrackId| project.track(track).and_then(|t| t.channel);
     let feeds = |channel: ChannelId| project.channels.iter().any(|c| c.id != channel && c.output == Some(channel));
@@ -135,6 +146,8 @@ pub(crate) fn build(
             .map(|(bus, _)| *bus)
             .into_iter()
             .chain(planned.iter().filter(|p| p.source == c.track).map(|p| p.target))
+            // A key's source before the chain that reads it.
+            .chain(keys.iter().filter(|k| k.2 == c.track && k.0 != c.track).map(|k| k.0))
             .collect()
     });
     let mut chains = chains;
@@ -272,9 +285,63 @@ pub(crate) fn build(
     {
         chains.push(main);
     }
+    // Each key: the reading slot takes the source's signal at its tap point, delayed so that it
+    // lines up with the reader's own input (as late as the latest path into the reader, less
+    // how late the tap point already is); a key that comes later than that is not held back.
+    for &(reader, position, source, tap, gain) in &keys {
+        let (Some(i), Some(j)) =
+            (chains.iter().position(|c| c.track == reader), chains.iter().position(|c| c.track == source))
+        else {
+            continue;
+        };
+        let Some(slot) = chains.get(i).and_then(|c| c.slot_of(position)) else { continue };
+        let reader_in = input.get(i).copied().unwrap_or(latency);
+        let tapped = match tap {
+            suhina_model::TapPoint::PreFx => input.get(j).copied().unwrap_or(0),
+            _ => arrive.get(j).copied().unwrap_or(0),
+        };
+        if let Some(chain) = chains.get_mut(j) {
+            chain.want_tap(tap);
+            if j != i && !chain.key_readers.contains(&i) {
+                chain.key_readers.push(i);
+            }
+        }
+        let delay = reader_in.saturating_sub(tapped) as usize;
+        if let Some(chain) = chains.get_mut(i) {
+            chain.key_reads.push(crate::chain::KeyRead::new(slot, j, tap, gain, delay));
+        }
+    }
     // When each chain runs in a block, and with how much of the deadline (#1261).
     sends::plan_turns(&mut chains);
     (chains, latency)
+}
+
+/// The keys (sidechains) the project's devices read: the reading track ([`TrackId::MAIN`] for
+/// the main channel), the device's place among its channel's top-level devices, the track read,
+/// its tap point and gain. A switched-off device reads none, and neither does one inside a
+/// device group (`docs/spec/sidechain.md` › Device groups); a key whose source has no track, or
+/// that would close a loop (a hand-edited file), is left out and the device reads its own input.
+pub(crate) fn key_edges(project: &Project) -> Vec<(TrackId, usize, TrackId, suhina_model::TapPoint, f32)> {
+    let track_of = |channel: ChannelId| {
+        project.tracks.iter().find(|t| t.channel == Some(channel)).map(|t| t.id).or_else(|| {
+            project.channel(channel).filter(|c| c.role == suhina_model::ChannelRole::Master).map(|_| TrackId::MAIN)
+        })
+    };
+    let mut keys = Vec::new();
+    for channel in &project.channels {
+        let Some(reader) = track_of(channel.id) else { continue };
+        for (position, device) in channel.devices.iter().enumerate() {
+            let Some(input) = device.inputs.first().filter(|_| device.enabled) else { continue };
+            let Some(source) = track_of(input.source.channel()) else { continue };
+            if source == TrackId::MAIN || project.key_closes_loop(input.source, channel.id) {
+                continue;
+            }
+            let gain =
+                if input.gain.is_finite() { input.gain.clamp(0.0, suhina_model::DeviceInput::MAX_GAIN) } else { 0.0 };
+            keys.push((reader, position, source, input.source.tap(), gain as f32));
+        }
+    }
+    keys
 }
 
 /// Whether the main channel runs a chain of its own (#687): it holds devices, or its volume,

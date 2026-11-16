@@ -809,3 +809,66 @@ fn a_missing_instrument_takes_the_notes_and_plays_nothing() {
     foreign.mark_missing_instrument();
     assert_eq!(render(vec![foreign]), 0.0);
 }
+
+/// Track 1 plays a quiet note through `devices`; track 2, muted, plays a loud one at the same
+/// time, so only track 1 is heard and track 2 can only reach it as a key.
+fn keyed_pair(devices: Vec<Device>) -> Project {
+    let mut p = project(vec![Note::new(0.0, 2.0, 69, 0.05)], 2.0, devices);
+    p.tracks.push(Track {
+        content: ContentKinds { notes: true, audio: false },
+        channel: Some(ChannelId(2)),
+        ..Track::new(TrackId(2), "Kick")
+    });
+    p.channels.push(Channel { mute: true, ..Channel::new(ChannelId(2), "Kick") });
+    p.contents.push(ClipContent {
+        linked: false,
+        id: ContentId(2),
+        name: "k".into(),
+        length: 2.0,
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 2.0, 45, 1.0)].into()) }]
+            .into(),
+        extensions: Extensions::default(),
+        scale: None,
+    });
+    p.arrangement.lanes.push(ArrangementLane {
+        id: Default::default(),
+        name: "k".into(),
+        track: Some(TrackId(2)),
+        clips: vec![Clip::new(ContentId(2), 0.0, 2.0)],
+    });
+    p
+}
+
+#[test]
+fn a_compressor_keyed_by_a_muted_track_ducks_and_its_render_does_not_depend_on_block_size() {
+    let compressor = || device("compressor", &[("threshold", -30.0), ("ratio", 20.0), ("knee", 0.0), ("attack", 0.1)]);
+    let render = |p: &Project, block: usize| render_offline(p, SR, block, suhina_device_registry::factory()).unwrap();
+    // Without a key the quiet note is under the threshold and passes as it is.
+    let plain = render(&keyed_pair(vec![compressor()]), 512);
+    let mut keyed = keyed_pair(vec![compressor()]);
+    keyed.channels[0].devices[0].inputs = vec![DeviceInput::key(ChannelId(2), TapPoint::PostFx)];
+    assert_eq!(keyed.validate(), Ok(()));
+    let ducked = render(&keyed, 512);
+    // A muted source still keys at Post FX: the loud note ducks the quiet one.
+    // The middle of the notes, past the attack: frames 0.4 s to 0.8 s (they last 1 s at 120 bpm).
+    let tail = |out: &[f32]| peak(out.get(SR as usize * 4 / 5..SR as usize * 8 / 5).unwrap_or_default());
+    assert!(tail(&plain) > 0.0);
+    assert!(tail(&ducked) < tail(&plain) * 0.5, "ducked {} vs plain {}", tail(&ducked), tail(&plain));
+    // The same render at other block sizes, sample for sample.
+    for block in [1usize, 333, 4096] {
+        let other = render(&keyed, block);
+        assert_eq!(other.len(), ducked.len());
+        let worst = other.iter().zip(&ducked).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+        assert!(worst < 1e-6, "block {block}: {worst}");
+    }
+    // At Post Fader the muted source is silence: nothing is ducked.
+    keyed.channels[0].devices[0].inputs = vec![DeviceInput::key(ChannelId(2), TapPoint::PostFader)];
+    let after_fader = render(&keyed, 512);
+    assert!((tail(&after_fader) - tail(&plain)).abs() < 1e-5);
+    // A switched-off key source device makes no difference to a silent key either way; a key
+    // from a track with no notes reduces nothing.
+    let mut empty = keyed_pair(vec![compressor()]);
+    empty.arrangement.lanes[1].clips.clear();
+    empty.channels[0].devices[0].inputs = vec![DeviceInput::key(ChannelId(2), TapPoint::PostFx)];
+    assert!((tail(&render(&empty, 512)) - tail(&plain)).abs() < 1e-5);
+}
