@@ -131,7 +131,7 @@ pub(super) struct MenuCx<'a> {
 
 /// The popup of the menu opened as `serial`.
 fn menu_id(serial: u64) -> Id {
-    Id::new(("piano-roll-context-menu", serial))
+    Id::unique(("piano-roll-context-menu", serial))
 }
 
 /// The height of one of the menu's rows, lower than the window's other rows.
