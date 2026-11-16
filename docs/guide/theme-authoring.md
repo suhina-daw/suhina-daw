@@ -1,7 +1,16 @@
-<!-- Copyright (C) 2026 The Suhina contributors; SPDX-License-Identifier: GPL-3.0-or-later -->
-# Suhina theme package: author and AI guide
+---
+description: Guide for people and AI assistants writing or editing a Suhina theme - the folder's files, theme.css, quick controls and variants, artwork, layout, limits and every colour token
+read_when: write a theme, edit a theme, theme author guide, theme.css, theme package, theme folder files, colour tokens, quick controls, variants, AI theme edits
+type: howto
+status: current
+last_verified: 2026-11-16
+covers:
+  - crates/ui/src/kit/theme.rs
+---
 
-## What this package is
+# Writing a Suhina theme: author and AI guide
+
+## What a theme is
 
 A theme changes Suhina's native egui interface through colours, SVG/PNG control artwork,
 meter appearance, background images, and connected CSS styles and layouts. It contains
@@ -33,16 +42,13 @@ my-theme/
   assets/*.svg        # vector control artwork
   assets/*.png        # optional raster artwork and sequence frames
   background.png      # optional background image
-  README.md           # this guide
-  examples/dark-gloss.css  # optional paint-only example; not enabled automatically
-  examples/compact-session.css  # optional native Launcher density; not enabled automatically
 ```
 
-`theme.css` is yours. What a user changes in Suhina's theme editor (colours, meter, liquid,
-gradients and any setting your theme offers) is saved in a variant file. Moving a control or
+`theme.css` is yours. What a user changes in Suhina's variant editor (the settings your theme
+offers with `@property` and a label) is saved in a variant file when they press Save. Moving a control or
 choosing artwork in the app edits only that declaration in `theme.css` (Suhina changes or adds
 the one declaration and leaves your comments, `@media` rules and everything else as you wrote
-them); renaming the theme or rearranging the toolbar writes `theme.json`. There is no
+them); *Theme info…* (name, author, description) or rearranging the toolbar writes `theme.json`. There is no
 `layout.css` any more: a folder that still has one is warned about and the file is not read, so
 move its rules into `theme.css`.
 
@@ -89,7 +95,7 @@ theme-swatch { background: attr(color type(<color>)); border-radius: 50%; }
 It may use your properties through `var()`; they are filled in for each variant as for the
 swatch, colours as plain colours. The artwork rules apply: no scripts, embedded images, foreign
 objects or links. Without a thumbnail the card is filled with the swatch colour. The built-in
-themes' `thumbnail.svg` (in the template's `examples/`) is a good start.
+themes' `thumbnail.svg` (*Export theme…* on a built-in theme writes its folder) is a good start.
 
 Installed themes are the same folders, named by their id. Relative image paths in the sheets are
 authoritative; keep the whole folder together. A theme saved by an earlier Suhina version (JSON,
@@ -101,13 +107,11 @@ Open the themes folder from that page to edit the installed files.
 A folder in the themes folder is a theme when it holds files named exactly `theme.json` and
 `theme.css` (on Windows, check that they are not `theme.css.txt` or `theme.json.txt` with the
 extension hidden). A theme made for the format before `theme.json` needs one added by hand. Suhina finds a new
-folder within about a second, or at once with **More › Reload themes**; a folder that is not a
+folder within about a second; a folder that is not a
 theme is named in the status bar with what it is missing. The folder's name is the theme's id:
 it stays when the theme is renamed. Two themes with the same name show their folder names on
-their cards. **Duplicate theme** copies the whole theme, its layout rules included. Built-in themes cannot be
-edited, only duplicated.
-The template ZIP also has the built-in themes as reference folders in `examples/`;
-the importable example is `my-theme/`, with an example variant.
+their cards. **New theme…** started from another theme copies its whole sheet, its layout rules
+included. Built-in themes cannot be edited, only used as the start of a new theme.
 
 ### Settings and variants
 
@@ -192,10 +196,10 @@ or on `#device-<id>` for one (its expanded panel included):
 
 ## How and when to edit each file
 
-1. Duplicate a bundled theme in the editor or start with the supplied example.
+1. Start a new theme from a bundled one (*More › New theme…*), or from Suhina's defaults.
 2. Set the name and swatch in `theme.json`. Theme folder ids use letters, digits and `-`.
-   The folder's name stays its id when the name changes. A name given in Suhina (the editor's
-   name field) is written to `theme.json`.
+   The folder's name stays its id when the name changes. A name given in Suhina (*Theme info…*)
+   is written to `theme.json`.
 3. Set the palette in `theme.css`'s `:root` and the settings on their elements. For example:
 
    ```css
@@ -219,21 +223,13 @@ or on `#device-<id>` for one (its expanded panel included):
 7. Test normal, hover, active and disabled states, narrow/wide windows, interaction,
    clipping and contrast, with each variant. Export and reimport the ZIP to check portability.
 
-To try the supplied dark metallic look, copy `examples/dark-gloss.css` to the end of your
-`theme.css`.
-It demonstrates original gradients, rounded SVG-backed buttons, box/text shadows
-and coloured transport controls while preserving native geometry. Back up your
-current CSS before replacing it with an example.
-
-Use **Load compact Session geometry** under Native CSS, then **Apply CSS**, which saves it in
-the variant in use. It sets track/return/scene widths and header/slot heights (in `theme.css`,
-`session { track-width; … }`): widths are 64–512px, slot height 16–64px and header height
+The Launcher's track, return and scene widths and its header and slot heights are set in
+`theme.css` with `session { track-width; … }`: widths are 64–512px, slot height 16–64px and header height
 20–64px. Use `auto` to remove
 an override. The same geometry drives drawing, scrolling and drop/input targets.
 Mixer height keeps its existing native divider/preference. Launcher and Arrangement
 remain separate; this does not introduce the separately planned mixer view.
-The example also includes `pan { appearance: knob; }`, a portable native
-pan-face override for Launcher and Arrangement. `field` forces a number field, while
+`pan { appearance: knob; }` is a portable native pan-face override for Launcher and Arrangement. `field` forces a number field, while
 `native` retains the global preference. Native parameter gestures remain unchanged.
 
 The gloss example gives `mixer` and `track-name` their own materials. Meter gradients
@@ -242,8 +238,8 @@ colour stops anchored to the full dB range; peaks/RMS reveal the appropriate por
 Outset shadows form the glow around the lit region, without filling empty rails or
 segment gaps. This differs from a decorative gradient that stretches with the level.
 
-**Meter intensity** in the theme editor dims measured ink and glow from 0–100%.
-In `theme.css` it is `meter { meter-intensity: 65; }`.
+**Meter intensity** dims measured ink and glow from 0–100%: `meter { meter-intensity: 65; }`
+in `theme.css`, or a quick control of your own that sets it through `var()`.
 It also affects needles, hold marks and signal-driven artwork frames, while keeping
 the native clip warning visible and native bar rails unchanged. Frame artwork dims
 as a whole, including any background baked into its image. This changes visual opacity, not audio
@@ -539,10 +535,10 @@ and now draws in the part's `color`. Give the part that colour to keep the look
 The `--kind-*` colours of the sample map are no longer read: set `--sample-kick` and the others,
 or write `sample-point[kind="kick"] { color: #D06E5E; }` and so on instead.
 
-*More › New theme…* and *More › Duplicate theme…* have an **Include the default artwork**
-checkbox: it copies every default SVG into the new theme's `assets/` and writes a rule for each
-into its `theme.css` (`knob-body { image: url("assets/knob.body.svg"); }`), ready to edit. *More ›
-Add default artwork* does the same for the theme in use, adding only what it lacks.
+*New theme…* has an **Include the default artwork** checkbox: it copies every default SVG into
+the new theme's `assets/` and writes a rule for each into its `theme.css`
+(`knob-body { image: url("assets/knob.body.svg"); }`), ready to edit. A theme card's right-click
+*Add default artwork* does the same for a theme of yours, adding only what it lacks.
 
 The rules of an earlier form (`knob.body { image: … }`, `play`, `solo:on`) still read.
 
@@ -1212,7 +1208,7 @@ filters, downloadable fonts, full typography, geometry animation and
 the reduced-motion media feature are not connected. Floating windows stay host-managed; the
 inside of each bar is laid out by Suhina, and its controls keep their native height. Do not claim universal browser CSS
 or container-query support. Notices are useful but are not a complete CSS validator.
-Use the editor's Flex/Grid examples and check the current support specification.
+Check the current support specification for Flex and Grid.
 
 Stylesheets are limited to 128 KiB, bounded nesting and native scope budgets.
 SVGs are limited to 128 KiB each, the base roles and 64 additional variants per theme. External/network images,
@@ -1259,3 +1255,48 @@ track-header > meter { align-self: stretch; margin: 4px 6px 4px 0; }
 Arrangement meter geometry follows the whole track, so scrolling does not rescale its level. SVG
 symbol roles preserve their aspect ratio and are centred; surface artwork such as button and
 track backgrounds stretches.
+
+## Colour token reference
+
+Each token's colour in Suhina Studio; a test keeps this table in step with Suhina's list of
+tokens.
+
+| Token | Suhina Studio | Used for |
+|---|---|---|
+| `grid.major` | `#2C2B29` | Arrangement bar lines and lane separators |
+| `grid.minor` | `#252422` | Arrangement subdivisions between bar lines |
+| `track.headerBackground` | `#252421` | The neutral surface behind Arrangement track controls |
+| `track.headerSelectedBackground` | `#3E3E4C` | The surface behind a selected Arrangement track's controls |
+| `window.background` | `#1D1C1A` | The window behind everything: grid, empty slots, lanes, Settings |
+| `panel.background` | `#252421` | Panels and headers: menu, control and status bars, track headers, beat lines |
+| `panel.hoverBackground` | `#31302C` | A panel or list row under the pointer |
+| `control.background` | `#343330` | Fields, buttons and stopped clips |
+| `control.hoverBackground` | `#3F3D3A` | A field, button or clip under the pointer |
+| `control.activeBackground` | `#4B4A46` | Selected or pressed: a selected clip or track, a dragged field |
+| `control.playingBackground` | `#545472` | A playing clip or scene |
+| `control.selectedBackground` | `#D0CCC6` | The chosen option of a switch, a lit toggle, the level of a volume or pan field |
+| `border` | `#343330` | Hairlines between regions and rows |
+| `border.strong` | `#484642` | Launcher columns and arrangement track lines |
+| `text.primary` | `#ECE8E1` | Names and values |
+| `text.secondary` | `#B5B2AC` | Labels and notes |
+| `text.hint` | `#85837E` | Inactive text, hints and section titles |
+| `text.value` | `#DAD6D0` | Clip names and values on fields |
+| `text.inverse` | `#1D1C1A` | Text on lit fills: a switch's chosen option, a lit button |
+| `text.playing` | `#FFFFFF` | The name of a playing clip |
+| `text.onColorLight` | `#ECE8E1` | Light text on dark coloured tracks, returns and clips; paired with text.onColorDark for contrast |
+| `text.onColorDark` | `#1D1C1A` | Dark text on bright coloured tracks, returns and clips; paired with text.onColorLight for contrast |
+| `browser.text.primary` | `#ECE8E1` | Browser selection, search input and highlighted names |
+| `browser.text.secondary` | `#B5B2AC` | Browser item names, categories and preview labels |
+| `browser.text.hint` | `#85837E` | Browser section headings, search placeholder and hints |
+| `browser.text.value` | `#DAD6D0` | Browser values and active preview controls |
+| `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
+| `automation.pin` | `#A6A3FF` | The pin of an automation lane pinned below its track's top lane (older theme files: their accent) |
+| `selection` | `#E3C86A` | The selected device's outline |
+| `recording` | `#E5484D` | Recording and errors |
+| `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
+| `meter.normal` | `#8BC48A` | A level meter below the top |
+| `meter.hot` | `#E3C86A` | A level meter near the top |
+| `slot.empty` | `#484642` | The mark in an empty clip slot |
+| `track.mutedBackground` | `#21201D` | The fills of a muted track |
+| `pan.background` | `#1F1E1C` | Behind a track header's pan field |
+| `pan.centre` | `#817F7A` | The centre mark of a pan field |

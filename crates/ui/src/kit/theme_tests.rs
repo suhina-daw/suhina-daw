@@ -391,9 +391,15 @@ fn a_theme_is_see_through_when_a_background_has_alpha() {
     use_colors(&ctx, &Colors::new());
 }
 
+/// The theme author guide, `docs/guide/theme-authoring.md`.
+fn guide() -> String {
+    // A Windows checkout has CRLF line ends.
+    include_str!("../../../../docs/guide/theme-authoring.md").replace("\r\n", "\n")
+}
+
 #[test]
-fn the_readme_names_every_token() {
-    let readme = template_readme();
+fn the_author_guide_names_every_token() {
+    let readme = guide();
     for rule in
         ["Backgrounds on the see-through window", "Closed-panel Grid tracks", "Value text on lit controls", "4:1"]
     {
@@ -534,11 +540,10 @@ fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
     assert!(warnings.iter().any(|w| w == "kind.nothing is not a colour token"), "{warnings:?}");
 }
 
-/// The README's examples for track and clip colours are rules a theme can use as written.
+/// The guide's examples for track and clip colours are rules a theme can use as written.
 #[test]
-fn the_readme_s_track_and_clip_colour_examples_read_without_warnings() {
-    // A Windows checkout has CRLF line ends; the fences are found by their LF.
-    let readme = include_str!("../../themes/THEME-PACKAGE-README.md").replace("\r\n", "\n");
+fn the_author_guide_s_track_and_clip_colour_examples_read_without_warnings() {
+    let readme = guide();
     let from = readme.find("### Tracks").unwrap();
     let to = readme[from..].find("piano-grid {").unwrap() + from;
     let css: String =

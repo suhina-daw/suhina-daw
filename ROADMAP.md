@@ -155,7 +155,7 @@ refused or suspended, never by losing its edits.
 
 - Private image backgrounds use a cached source and display-scaled, alpha-correct blur; Settings keeps its own readable material. Native Mica has been removed.
 
-- Theme variants: a theme's settings are CSS custom properties, the core set every theme has and any it declares with `@property` (shown under Theme settings with a control for its type). A variant (`variants/<id>.json`) holds other values for them, such as a light and a dark version of one theme; the picker shows a swatch per variant, and editing a theme's settings saves a variant, so built-in themes need no copy for it.
+- Theme variants: a theme's settings are CSS custom properties, the core set every theme has and any it declares with `@property` (shown under Theme settings with a control for its type). A variant (`variants/<id>.json`) holds other values for them, such as a light and a dark version of one theme; the picker shows a swatch per variant, and a theme's settings are edited and saved in a variant, so built-in themes need no copy for it.
 - Theme packages: Export theme… writes one theme as a `.theme.suhina` file with a SHA-256 manifest; dropping or opening one brings it in after checking every file, and `suhina-cli theme pack` and `theme validate` do the same from a terminal.
 - Theme reach: sends, the add-track buttons, the ruler, loop bar and play position, clip parts and states (`:playing`, `:recording`), level-bar handles, fader sizes, a placeable mixer divider, the piano roll (grid, keys, notes with the clip's colour, tools), each built-in device's panel (`#device-compressor`), and the ordinary buttons and fields in Settings, dialogs and pages take the theme's CSS; artwork reads the theme's variables, draws text and can be nine-sliced. New clips take their track's colour (New clip colour).
 - Theme customization includes independent Browser/coloured-surface text, alpha-preserving gradients, editable liquid strengths, a private image backdrop and configurable application-bar identity/project information.
@@ -288,6 +288,13 @@ refused or suspended, never by losing its edits.
   fields' underlines, routing fields (`dropdown[kind="subtle"]`), dialog buttons and a typed
   number (`text-input[kind="typed"]`) take their elements' rules; a theme that leaves them alone
   looks as before.
+
+- Theme and variant picker: the theme in use heads Settings › Themes with its variant's name, a
+  swatch per variant and a + that starts a new variant (Save or Cancel); right-click menus on swatches and cards use, edit,
+  duplicate, export and delete them (to the system's Trash, after asking), with greyed
+  items that say why for built-in themes. The variant editor previews changes live and writes them
+  only on Save, Save as new variant or after asking on leaving; New theme… starts from Suhina's
+  defaults or any theme with a name, author and description, and Theme info… edits them.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
