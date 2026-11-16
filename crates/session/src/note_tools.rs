@@ -270,7 +270,10 @@ pub(crate) fn set_velocity_range(session: &mut Session, params: &Value) -> Resul
                 VelocityRange::To(range) => range,
                 VelocityRange::By(by) => i64::from(note.velocity_range) + by,
             };
-            let range = i8::try_from(wanted.clamp(-127, 127)).unwrap_or(0);
+            // A range only reaches as far as the note's velocity can go: up to 127, down to 1, so
+            // a note at 127 takes no range above it and one at 1 none below.
+            let midi = i64::from(midi_velocity(note.velocity));
+            let range = i8::try_from(wanted.clamp(1 - midi, 127 - midi)).unwrap_or(0);
             if note.velocity_range != range {
                 note.velocity_range = range;
             }

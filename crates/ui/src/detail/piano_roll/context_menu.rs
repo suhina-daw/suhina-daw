@@ -212,7 +212,7 @@ impl MenuCx<'_> {
         let (word, mute) = if acting && muted { ("Unmute", false) } else { ("Mute", true) };
         item(ui, word, Some("selection.mute"), acting, Pick::Mute(mute));
         item(ui, "Split here", None, !self.split_notes(state, at).is_empty(), Pick::Split);
-        item(ui, "Chop on grid", Some("pianoRoll.chopNotes"), acting, Pick::Key("pianoRoll.chopNotes"));
+        item(ui, "Chop on grid", None, acting, Pick::Key("pianoRoll.chopNotes"));
         // Reverse turns the notes round in time (the Notes tab's Reverse); Invert selection above
         // changes what is selected, not the notes.
         item(ui, "Reverse", None, acting, Pick::Reverse);

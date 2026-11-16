@@ -291,6 +291,23 @@ fn folded_layout(rows: KeyRows) -> Layout {
     }
 }
 
+/// In the velocity lane, among notes starting together (a chord) the stem whose head is nearest
+/// the pointer's height is grabbed, so each note of a chord can be reached; a selected note still
+/// comes first.
+#[test]
+fn a_chords_stems_are_told_apart_by_the_heights_of_their_heads() {
+    let layout = folded_layout(KeyRows::default());
+    let quiet = Note { velocity: 30.0 / 127.0, ..note(0.0, 1.0, 60) };
+    let loud = Note { velocity: 120.0 / 127.0, ..note(0.0, 1.0, 64) };
+    let notes = [quiet, loud];
+    let x = layout.x_of(0.5);
+    let head = |n: &Note| layout.lane.bottom() - 2.0 - velocity_height(n.velocity, layout.lane);
+    let none = BTreeSet::new();
+    assert_eq!(stem_at(&layout, &notes, &none, Pos2::new(x, head(&quiet) + 1.0)), Some(0));
+    assert_eq!(stem_at(&layout, &notes, &none, Pos2::new(x, head(&loud) - 1.0)), Some(1));
+    assert_eq!(stem_at(&layout, &notes, &BTreeSet::from([1]), Pos2::new(x, head(&quiet))), Some(1));
+}
+
 #[test]
 fn a_fold_maps_heights_to_the_shown_keys_and_back() {
     use suhina_engine::model::ScaleMode;
@@ -502,8 +519,8 @@ fn keys_stop_at_the_limits_and_never_make_notes_shorter_than_a_step() {
     assert!(state.selected.is_empty());
 }
 
-/// Shift+Right goes to the next grid line over the next note of the key, as far as a step goes:
-/// with stacked notes off that note makes room once the selection is let go.
+/// The grid step of Shift+Right goes to the next grid line over the next note of the key, as far as
+/// a step goes; with stacked notes off the key itself stops at that note (the test below).
 #[test]
 fn a_longer_key_goes_to_the_next_line_over_the_next_note_of_the_key() {
     let notes = [note(0.0, 0.3, 60), note(0.4, 0.25, 60), note(0.2, 1.0, 62)];
@@ -520,6 +537,31 @@ fn a_longer_key_goes_to_the_next_line_over_the_next_note_of_the_key() {
     // Shorter: the line before, and never less than a step from the start.
     assert!((end(2, false) - 0.75 - 0.25).abs() < 1e-9);
     assert!((end(1, false) - 0.65).abs() < 1e-9, "a step long already");
+}
+
+/// With stacked notes off, Shift+Right stops each note at the next note of its key instead of
+/// running over it: a long note chopped into pieces, all selected, keeps them side by side.
+#[test]
+fn with_stacked_notes_off_a_longer_key_stops_at_the_next_note_of_the_key() {
+    let piano = clip(vec![note(0.0, 0.2, 60), note(0.25, 0.2, 60), note(0.5, 0.25, 60)]);
+    let mut state = PianoRollState { notes_replace: true, ..focused_on(&piano) };
+    state.selected = BTreeSet::from([0, 1, 2]);
+    let grow = state.key_action("pianoRoll.longer", &piano, 0.0, None).expect("note.resize");
+    assert_eq!(grow.params["notes"], json!([0, 1, 2]));
+    let lengths: Vec<f64> = grow.params["lengths"].as_array().unwrap().iter().filter_map(|v| v.as_f64()).collect();
+    assert_eq!(&lengths[..2], &[0.25, 0.25], "the first two stop at the next note");
+    assert!(lengths[2] > 0.25, "the last has nothing after it and goes on to the line: {lengths:?}");
+    // Already touching the next note: only the last note grows.
+    let touching = clip(vec![note(0.0, 0.25, 60), note(0.25, 0.25, 60)]);
+    let mut state = PianoRollState { notes_replace: true, ..focused_on(&touching) };
+    state.selected = BTreeSet::from([0, 1]);
+    let grow = state.key_action("pianoRoll.longer", &touching, 0.0, None).expect("note.resize");
+    assert_eq!(grow.params["notes"], json!([1]));
+    // With stacked notes on, the key runs over the next note as before.
+    let mut state = PianoRollState { notes_replace: false, ..focused_on(&touching) };
+    state.selected = BTreeSet::from([0, 1]);
+    let grow = state.key_action("pianoRoll.longer", &touching, 0.0, None).expect("note.resize");
+    assert_eq!(grow.params["notes"], json!([0, 1]));
 }
 
 /// A note under selected notes that are to make room shows what `note.makeRoom` will leave of it.

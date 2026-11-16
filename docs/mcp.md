@@ -268,8 +268,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   other clips also play (a duplicate) first gives that clip its own copy of the content, so the
   others do not change; the result's indices are the same.
 - **Velocity range.** `note.setVelocityRange {track, index | scene, notes, range | by}` sets how far
-  above (or, negative, below) its velocity each named note may play, -127 to 127, rolled each time
-  it starts and kept within 1 to 127 (`by` adds steps to each note's range); one undo step.
+  above (or, negative, below) its velocity each named note may play, rolled each time it starts;
+  each note's range is kept to what its velocity allows, up to 127 and down to 1 (`by` adds steps
+  to each note's range); one undo step.
   `note.list` gives `velocityRange` on a note that has one ([ADR 0037](decisions/0037-rolled-note-values.md)).
 - **Muting notes.** `note.setMuted {track, index | scene, notes, muted?}` sets the named notes'
   mute (`true` mutes, `false` unmutes); with `muted` left out each named note is flipped, which is

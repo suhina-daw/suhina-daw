@@ -180,18 +180,26 @@ pub(super) fn note_at(layout: &Layout, notes: &[Note], pos: Pos2) -> Option<(usi
     })
 }
 
-/// The velocity bar under `pos`: a note's bar can be grabbed anywhere over the note's width in
-/// the lane (and a little before its start, where the stem is drawn), the nearest start first,
-/// a selected note before the others.
+/// The velocity stem under `pos`: a note's stem can be grabbed anywhere over the note's width in
+/// the lane (its head and the line along its length, and a little before its start), the nearest
+/// start first and, among notes starting together (a chord), the one whose head is nearest the
+/// pointer's height; a selected note before the others.
 pub(super) fn stem_at(layout: &Layout, notes: &[Note], selected: &BTreeSet<usize>, pos: Pos2) -> Option<usize> {
     let near = |(i, n): &(usize, &Note)| {
         let start = layout.x_of(n.time);
         let end = layout.x_of(n.time + n.duration.max(0.0)).max(start + STEM_REACH);
-        (pos.x >= start - STEM_REACH && pos.x <= end).then_some((*i, (start - pos.x).abs()))
+        let head = layout.lane.bottom() - 2.0 - velocity_height(n.velocity, layout.lane);
+        (pos.x >= start - STEM_REACH && pos.x <= end).then_some((
+            *i,
+            (start - pos.x).abs().round(),
+            (head - pos.y).abs(),
+        ))
     };
-    let candidates: Vec<(usize, f32)> = notes.iter().enumerate().filter_map(|e| near(&e)).collect();
-    let best = |list: &mut dyn Iterator<Item = (usize, f32)>| list.min_by(|a, b| a.1.total_cmp(&b.1)).map(|c| c.0);
-    best(&mut candidates.iter().copied().filter(|(i, _)| selected.contains(i)))
+    let candidates: Vec<(usize, f32, f32)> = notes.iter().enumerate().filter_map(|e| near(&e)).collect();
+    let best = |list: &mut dyn Iterator<Item = (usize, f32, f32)>| {
+        list.min_by(|a, b| a.1.total_cmp(&b.1).then(a.2.total_cmp(&b.2))).map(|c| c.0)
+    };
+    best(&mut candidates.iter().copied().filter(|(i, _, _)| selected.contains(i)))
         .or_else(|| best(&mut candidates.iter().copied()))
 }
 

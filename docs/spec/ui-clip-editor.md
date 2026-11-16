@@ -271,15 +271,20 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
 4. **Velocity lane** (built): under the grid, sharing its time axis, 72 px tall (less in a short
    detail area: at most 30 % of the room under the ruler, and never so tall that fewer than five
    key rows are left above it; when that leaves it under 12 px it is not drawn at all, and the
-   key rows take its room). One stem per note at the
-   note's start, its height the velocity; a selected stem is brighter. **Built
+   key rows take its room). One stem per note at the note's start, whether its key row is in view
+   or not: a line 2 px wide from the lane's foot up to its velocity, a round head there, and from
+   the head a thin line along the note's length, so notes starting together (a chord) are told
+   apart by their heights. With notes selected, their stems are lit and the others step back; a
+   muted note's stem takes the muted colour. The key column names 127, 64 and 1 beside the lane,
+   and a faint line marks 64 across it. A press grabs the stem nearest the pointer: the nearest
+   start, and among notes starting together the head nearest the pointer's height, a selected
+   note before the others. **Built
    ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** the lane's **top edge** can be
    dragged, the pointer within 3 px of it showing a vertical resize cursor (its accessible label is
    "Velocity lane top edge"): up makes the lane taller, down shorter, from 24 px to 480 px and never
    so tall that fewer than five key rows are left above it, so the least height above still holds.
    The height is window state, kept until Suhina closes (not saved, not a command, not an undo
-   step); until it is dragged the lane takes the default height above. **Later:** chord notes on
-   the same start drawn side by side, a few pixels apart, so each can be grabbed; the lane's tools
+   step); until it is dragged the lane takes the default height above. **Later:** the lane's tools
    (randomise, ramp, deviation) ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)).
 
 Everything scales with the detail area: the detail area's splitter (exists) makes the editor taller
@@ -751,9 +756,10 @@ keys do.
   first grid line after its start; no selected note gets shorter than a hundredth of a beat.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344),
   [#1115](https://github.com/suhina-daw/suhina-daw/issues/1115)):** **Shift+Right** takes each selected
-  note's end to the next grid line, over the next note of its key too: with **Allow stacked notes**
-  off that note makes room once the selection is let go, and until then shows only what will be
-  left of it. **Shift+Left** takes each end to the previous grid line, and no note gets shorter than one
+  note's end to the next grid line, over the next note of its key too while **Allow stacked notes**
+  is on; with it off (the default) the end stops at the start of the next note of its key, so the
+  key never runs one note over another (a note already touching the next one stays as it is).
+  **Shift+Left** takes each end to the previous grid line, and no note gets shorter than one
   step. One `note.resize` with `lengths`, one undo step; with snapping off, a whole step either way.
   With **Alt** held too, the end goes a 1/128 note either way, off the grid, under the same limits.
 - **Built ([#1113](https://github.com/suhina-daw/suhina-daw/issues/1113)):** with **Allow stacked
@@ -822,8 +828,8 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
     selection, and no others;
   - Quantize (Ctrl+U) and Quantize settings… (the Transform tab's Quantise); Mute or Unmute the
     selection (`note.setMuted`; Unmute when every note it acts on is muted); Split here
-    (`note.split` of the notes it acts on at the clicked point, on the grid); Chop on grid (Alt+E,
-    › Joining, fitting, cropping and splitting); Reverse (`note.reverse`
+    (`note.split` of the notes it acts on at the clicked point, on the grid); Chop on grid (as Ctrl+E
+    chops, › Joining, fitting, cropping and splitting); Reverse (`note.reverse`
     of the notes it acts on, the Notes tab's Reverse: turned round in time inside their own span);
   - Loop selection (`clip.setLoop` over the time selection, or the selected notes' span); Set start
     here and Set loop start here, at the clicked point on the grid, as a drag of that marker on the
@@ -879,7 +885,8 @@ notes are untouched, and a clip that holds audio refuses them.
   is the selected notes' own span), it chops the notes the edit keys act on, as Chop on grid does,
   and a note no longer than a grid step stays whole. It never splits at the playhead and never
   splits the clip.
-- **Chop on grid** (`note.split` with `ats`, **Alt+E**, and the menu): the notes the edit keys act
+- **Chop on grid** (`note.split` with `ats`, the menu; Ctrl+E chops the same way where it has
+  nothing to split): the notes the edit keys act
   on are cut at every grid line inside them, into grid-long pieces, one undo step; with no grid
   line inside a note it does nothing.
 - **Split clip** (`clip.split` with `ats`, the menu): the clip is cut at the time selection's
@@ -1001,24 +1008,27 @@ notes are untouched, and a clip that holds audio refuses them.
 ### Velocity range
 
 **Built ([#1282](https://github.com/suhina-daw/suhina-daw/issues/1282)):** each note has a velocity
-range, -127 to 127 (0 by default): how far above (or, negative, below) its velocity it may play,
-rolled each time it starts. A note of velocity 100 with a range of +20 plays somewhere from 100 to
+range (0 by default): how far above (or, negative, below) its velocity it may play, rolled each
+time it starts. It reaches only as far as the velocity can go: a note of velocity 100 takes a range
+from −99 to +27, one at 127 none above it. A note of velocity 100 with a range of +20 plays somewhere from 100 to
 120 on each pass of a loop; a range of 0 plays exactly 100. The played velocity stays within 1 to
 127. The note keeps its own velocity; the roll happens where the note starts, in the one render
 path, from a pure function of the note and where it plays, so an offline render gives the same
 velocities every time and matches what was heard
 ([ADR 0037](../decisions/0037-rolled-note-values.md)). MIDI export writes the note's own velocity.
 
-- **The lane:** a note with a range shows it as a fainter bar beside its stem, from its velocity to
-  the furthest it may play, with a tick at that end.
+- **The lane:** a note with a range shows it as a faint whisker beside its stem's head, from its
+  velocity to the furthest it may play, with a tick at that end.
 - **Dragging:** **Ctrl+drag** a stem (Cmd on macOS) sets the range: from the grabbed note's
   velocity to the pointer's height, above it a range up and below it one down; every selected note
   takes the same range. The bar follows while dragging; letting go is one `note.setVelocityRange`,
   one undo step.
 - **Keys:** **Alt+Shift+Up** and **Alt+Shift+Down** raise and lower the selection's range by one
   (`pianoRoll.rangeUp`, `.rangeDown`; `note.setVelocityRange` with `by`).
-- **The clip panel's figures** show the range of what the tools act on beside its velocities
-  ("100 (range +20)", or "range −5–+20" for several).
+- **The clip panel's figures** show, under the velocities of what the tools act on, a **Plays** row
+  with the velocities they may play at once rolled, from the quietest to the loudest ("100–120"
+  for a note of 100 with a range of +20; "51–100" for one of 80 with −29 and one of 100 without),
+  where any of them has a range. A figure's value keeps to the room right of its name.
 - **Commands:** `note.setVelocityRange {notes, range | by}`, one undo step; `note.list` gives a
   note's `velocityRange` where it has one; the project file writes `velocity_range` from version 13.
 - **Import:** what another project format holds of a note's velocity range comes in once it is
@@ -1327,7 +1337,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Ctrl+A, Escape | Selects every note, clears the selection |
 | Left, Right | Moves the selection one grid step earlier, later |
 | Up, Down; Shift+Up, Shift+Down | Moves the selection a semitone (folded, each note to the next row shown, so it stays in the scale: `note.move` with `keys`); an octave |
-| Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line, over the next note of the key too (› Resizing) |
+| Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line; with stacked notes off, never past the next note of the key (› Resizing) |
 | Alt+Left, Alt+Right; Alt+Shift+Left, Alt+Shift+Right | Moves the selection, or changes its length, by a 1/128 note, off the grid (› Moving, › Resizing) |
 | Ctrl+Right, Ctrl+Left | Each selected key's selection goes to its next, previous note; the notes stay (› Selecting from the keyboard) |
 | Ctrl+Up, Ctrl+Down | Selects the clip's next, previous note, in time and then by key; from a chord its lowest, highest note |
@@ -1364,7 +1374,7 @@ the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.desel
 `.selectNextOnKey`, `.selectPreviousOnKey`, `.selectNextNote`, `.selectPreviousNote`,
 `.growSelectionOnKey`, `.shrinkSelectionOnKey`, `.growSelection`, `.shrinkSelection`, `.draw`,
 `.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection`,
-`.zoomClip`, `.legato`, `.loop`, `.join`, `.fitToTime`, `.crop`, `.splitNotes`, `.chopNotes`, `.rangeUp` and
+`.zoomClip`, `.legato`, `.loop`, `.join`, `.fitToTime`, `.crop`, `.splitNotes`, `.rangeUp` and
 `.rangeDown`, which are read only
 while the piano roll has the keyboard, so they can be changed like the rest. `pianoRoll.quantize`
 (Ctrl+U) means nothing elsewhere, so it works whenever the piano roll shows a clip.

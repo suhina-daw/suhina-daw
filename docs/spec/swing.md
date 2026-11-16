@@ -63,7 +63,8 @@ eighth would change which of them are delayed. The piano roll's Set the clip's f
 - **MIDI clip panel**, at the foot of the **Notes** tab of its note tools ([clip editor
   spec](ui-clip-editor.md) › Note tools): the name says whose swing the clip plays, **Swing (global)** or **Swing (this
   clip)**, with the amount at its right; under it the **Global** switch (lit while the clip follows
-  the project's swing) and a slider.
+  the project's swing), and under that a slider the panel's whole width, so a drag sets the swing
+  to the percent (where the panel is too short for that line, the slider goes beside the switch).
   - While **Global** is lit the slider shows the project's swing, and dragging it sets the
     project's: every clip that follows it, and the slider beside **Resize all**, follow at once.
   - A click on **Global** turns it off: the clip plays its own amount, and the slider sets that.

@@ -795,9 +795,9 @@ fn setting_a_velocity_range_absolutely_or_by_a_step() {
     assert!(listed[2].get("velocityRange").is_none(), "a note without one lists none");
     run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0, 2], "by": -1 })).unwrap();
     assert_eq!(ranges(&session), vec![19, 20, -1, 0]);
-    // Kept within -127 to 127.
+    // Kept to what the velocity (100) allows: 27 above it, 99 below.
     run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [1], "by": 200 })).unwrap();
-    assert_eq!(ranges(&session)[1], 127);
+    assert_eq!(ranges(&session)[1], 27);
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -805,7 +805,14 @@ fn setting_a_velocity_range_absolutely_or_by_a_step() {
     for _ in 0..3 {
         run(&mut session, "edit.redo", json!({})).unwrap();
     }
-    assert_eq!(ranges(&session), vec![19, 127, -1, 0], "redone");
+    assert_eq!(ranges(&session), vec![19, 27, -1, 0], "redone");
+    run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [2], "range": -127 })).unwrap();
+    assert_eq!(ranges(&session)[2], -99, "down to a velocity of 1");
+    // A note at 127 takes no range above it.
+    let mut loud = Session::new(project(vec![Note::new(0.0, 1.0, 60, 1.0)]));
+    let result =
+        run(&mut loud, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0], "by": 5 })).unwrap();
+    assert_eq!(result["ranges"], json!([0]));
     let bad = |params: serde_json::Value| {
         let mut session = Session::new(project(scale_notes()));
         let before = session.project().clone();

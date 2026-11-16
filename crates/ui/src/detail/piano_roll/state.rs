@@ -748,8 +748,13 @@ impl PianoRollState {
                 let mut lengths = Vec::new();
                 for &index in &acting {
                     let Some(note) = clip.notes.get(index) else { continue };
-                    let end = key_step_end(note, grid, longer);
-                    if (end - note.time - note.duration).abs() > EPSILON {
+                    let mut end = key_step_end(note, grid, longer);
+                    // With stacked notes off a longer note stops at the next note of its key,
+                    // rather than running over it: the keys never stack notes.
+                    if longer && self.notes_replace {
+                        end = end.min(next_start_of_key(&clip.notes, note).unwrap_or(f64::INFINITY));
+                    }
+                    if (end - note.time - note.duration).abs() > EPSILON && end > note.time + EPSILON {
                         named.push(index);
                         lengths.push(round_beat(end - note.time));
                     }
@@ -1026,7 +1031,7 @@ impl PianoRollState {
 }
 
 /// Where a grid key leaves the end of `note`. Longer: the next grid line, over the next note of its
-/// key too (with stacked notes off, that note makes room once the selection is let go). Shorter:
+/// key too (with stacked notes off, the key stops at that note instead: [`next_start_of_key`]). Shorter:
 /// the previous grid line, never less than one step from its start. Off the grid, a whole step
 /// either way.
 pub(super) fn key_step_end(note: &Note, grid: TimelineGrid, longer: bool) -> f64 {
@@ -1037,6 +1042,11 @@ pub(super) fn key_step_end(note: &Note, grid: TimelineGrid, longer: bool) -> f64
         let line = if grid.snaps { grid.previous_line(end) } else { end - grid.step };
         line.max(note.time + grid.step).min(end)
     }
+}
+
+/// Where the next note of `note`'s key starts: the earliest note on that key that starts after it.
+pub(super) fn next_start_of_key(notes: &[Note], note: &Note) -> Option<f64> {
+    notes.iter().filter(|n| n.key == note.key && n.time > note.time + EPSILON).map(|n| n.time).reduce(f64::min)
 }
 
 /// The `note.add` params for `notes`.
@@ -1130,7 +1140,7 @@ fn split_notes(
     (!cut.is_empty()).then(|| split_action(clip, cut, ats))
 }
 
-/// Chop on grid (Alt+E): the notes the edit keys act on, cut at every grid line inside them
+/// Chop on grid (the menu, and Ctrl+E where it does not split): the notes the edit keys act on, cut at every grid line inside them
 /// into grid-long pieces. One `note.split` with `ats`, one undo step; `None` with nothing to cut
 /// (no notes, or no grid line inside one).
 fn chop_notes(clip: &PianoClip, acting: &BTreeSet<usize>, beat_width: f32) -> Option<Action> {

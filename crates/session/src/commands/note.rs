@@ -290,7 +290,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.setVelocityRange",
-        label: "Set the velocity range of notes of a MIDI clip: how far above (or, negative, below) its velocity each note may play, rolled each time it starts, the played velocity kept within 1 to 127; the result gives each note's range",
+        label: "Set the velocity range of notes of a MIDI clip: how far above (or, negative, below) its velocity each note may play, rolled each time it starts; each note's range is kept to what its velocity allows (up to 127, down to 1), and the result gives each note's range",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -300,12 +300,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "range",
                 ParamType::Integer,
-                "the range for every named note, -127 to 127 (0 plays the velocity exactly)",
+                "the range for every named note, -127 to 127 (0 plays the velocity exactly), kept to what each note's velocity allows",
             ),
             optional(
                 "by",
                 ParamType::Integer,
-                "instead of range: MIDI steps added to each note's range, which stays within -127 to 127",
+                "instead of range: MIDI steps added to each note's range, which stays within what the note's velocity allows",
             ),
         ],
         kind: CommandKind::EDIT,
