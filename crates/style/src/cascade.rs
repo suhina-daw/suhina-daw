@@ -186,6 +186,9 @@ pub struct StyleCache {
     identities: std::collections::HashMap<Identity, u32>,
     /// Each distinct place, numbered, with its style.
     places: std::collections::HashMap<Place, (u64, Arc<ComputedStyle>)>,
+    /// Each distinct run of earlier siblings, numbered: the run before the last of them, its
+    /// identity's number, and with `:empty`, whether it has children.
+    runs: std::collections::HashMap<(Option<u32>, u32, bool), u32>,
     computed: usize,
 }
 
@@ -195,6 +198,7 @@ impl StyleCache {
         self.inputs = None;
         self.identities.clear();
         self.places.clear();
+        self.runs.clear();
     }
 
     /// How many styles the last [`compute_shared`] worked out rather than took from the cache.
@@ -225,6 +229,12 @@ impl StyleCache {
         let next = u32::try_from(self.identities.len()).unwrap_or(u32::MAX);
         *self.identities.entry(identity).or_insert(next)
     }
+
+    /// The number of the run of siblings `before` followed by one of identity `identity`.
+    fn run(&mut self, before: Option<u32>, identity: u32, empty: bool) -> u32 {
+        let next = u32::try_from(self.runs.len()).unwrap_or(u32::MAX);
+        *self.runs.entry((before, identity, empty)).or_insert(next)
+    }
 }
 
 /// What selectors and `attr()` can see of an element itself.
@@ -250,9 +260,9 @@ struct Place {
     roots: Vec<usize>,
     /// With a sheet that tests places among siblings: this one, and how many siblings there are.
     position: Option<(usize, usize)>,
-    /// With a sheet that relates siblings: the earlier siblings' identities, and with `:empty`,
-    /// whether each has children.
-    earlier: Vec<(u32, bool)>,
+    /// With a sheet that relates siblings: the run of the earlier siblings' identities (and with
+    /// `:empty`, whether each has children), by its number; `None` for a first child.
+    earlier: Option<Option<u32>>,
     /// With a sheet that tests `:empty`: whether the element has children.
     empty: Option<bool>,
 }
@@ -320,12 +330,33 @@ pub fn compute_shared(
     cache.computed = 0;
     let structure = cache.structure;
     let identities: Vec<u32> = elements.iter().map(|element| cache.identity(element)).collect();
+    // Each element's place among its siblings and the run of those before it, in one pass over
+    // each parent's children: only when a sheet tests them, and never by searching a list.
+    let mut places: Vec<(usize, usize, Option<u32>)> = Vec::new();
+    if structure.position || structure.siblings {
+        places = vec![(0, 1, None); elements.len()];
+        let roots: Vec<usize> =
+            elements.iter().enumerate().filter(|(_, element)| element.parent.is_none()).map(|(node, _)| node).collect();
+        let groups = std::iter::once(roots.as_slice()).chain((0..elements.len()).map(|node| tree.children(node)));
+        for group in groups {
+            let mut before = None;
+            for (at, &node) in group.iter().enumerate() {
+                if let Some(slot) = places.get_mut(node) {
+                    *slot = (at, group.len(), before);
+                }
+                if structure.siblings {
+                    let identity = identities.get(node).copied().unwrap_or(u32::MAX);
+                    let empty = structure.children && tree.children(node).is_empty();
+                    before = Some(cache.run(before, identity, empty));
+                }
+            }
+        }
+    }
     let mut result: Vec<(u64, Arc<ComputedStyle>)> = Vec::with_capacity(elements.len());
     let mut budget = Budget::default();
     for (node, element) in elements.iter().enumerate() {
         let parent = element.parent.and_then(|parent| result.get(parent));
-        let siblings = tree.siblings(node);
-        let at = siblings.iter().position(|index| *index == node).unwrap_or(0);
+        let (at, count, before) = places.get(node).copied().unwrap_or((0, 1, None));
         let place = Place {
             parent: parent.map(|(number, _)| *number),
             identity: identities.get(node).copied().unwrap_or(u32::MAX),
@@ -335,19 +366,8 @@ pub fn compute_shared(
                 .filter(|(_, applied)| applied.root == Some(node))
                 .map(|(index, _)| index)
                 .collect(),
-            position: structure.position.then_some((at, siblings.len())),
-            earlier: if structure.siblings {
-                siblings
-                    .iter()
-                    .take(at)
-                    .map(|earlier| {
-                        let identity = identities.get(*earlier).copied().unwrap_or(u32::MAX);
-                        (identity, structure.children && tree.children(*earlier).is_empty())
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            },
+            position: structure.position.then_some((at, count)),
+            earlier: structure.siblings.then_some(before),
             empty: structure.children.then(|| tree.children(node).is_empty()),
         };
         if let Some((number, style)) = cache.places.get(&place) {

@@ -672,3 +672,21 @@ fn a_full_cache_starts_again_and_every_number_stays_its_place() {
         }
     }
 }
+
+#[test]
+fn many_siblings_take_their_places_in_one_pass() {
+    // Two thousand identical rows: without a sheet that tests siblings their places are one, and
+    // with one each row's place among them still comes out right.
+    let mut elements = vec![Element::new("window", None), Element::new("list", Some(0))];
+    elements.extend((0..2000).map(|_| Element::new("row", Some(1))));
+    let mut cache = StyleCache::default();
+    let (_, computed) = both("row { color: #000000; }", elements.clone(), &mut cache);
+    assert_eq!(computed, 3, "window, list and one row for all");
+    let css = "row { color: #000000; } row:nth-child(2n) { color: #ff0000; } row + row { radius: 2px; }";
+    let mut cache = StyleCache::default();
+    let (styles, _) = both(css, elements, &mut cache);
+    assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([0, 0, 0, 255])));
+    assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
+    assert_eq!(styles[3].get(Property::Radius), Value::Length(Length::Px(2.0)), "a row after a row");
+    assert_ne!(styles[2].get(Property::Radius), styles[3].get(Property::Radius), "the first row follows none");
+}
