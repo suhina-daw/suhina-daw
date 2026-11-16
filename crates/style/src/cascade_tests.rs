@@ -643,3 +643,32 @@ fn a_scoped_sheet_reaches_only_the_elements_under_its_root() {
     assert_eq!(styles[4].1.get(Property::Color), Value::Color(Color::Rgba([0, 0, 0, 255])));
     assert_ne!(styles[2].0, styles[4].0, "the same knob under another panel is another key");
 }
+
+#[test]
+fn a_full_cache_starts_again_and_every_number_stays_its_place() {
+    let css = "row { color: attr(color type(<color>)); } label { color: inherit; }";
+    let mut cache = StyleCache::default();
+    let mut numbers = std::collections::HashMap::new();
+    for round in 0..12u32 {
+        let mut elements = vec![Element::new("window", None)];
+        for row in 0..400u32 {
+            let parent = elements.len();
+            let shade = (round * 400 + row) % 0xff_ffff;
+            elements.push(Element::new("row", Some(0)).with_attribute("color", &format!("#{shade:06x}")));
+            elements.push(Element::new("label", Some(parent)));
+        }
+        let sheet = Sheet::parse(css).unwrap();
+        let applied = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+        let tree = Tree::new(elements).unwrap();
+        let whole = compute(&tree, viewport(1138.0), &applied).unwrap();
+        let shared = compute_shared(&tree, viewport(1138.0), &applied, 1, &mut cache).unwrap();
+        assert_eq!(whole, shared.iter().map(|(_, style)| style.as_ref().clone()).collect::<Vec<_>>(), "round {round}");
+        assert!(cache.len() <= MAX_CACHED_STYLES);
+        for (number, style) in &shared {
+            numbers.insert(*number, Arc::clone(style));
+        }
+        for (number, style) in &shared {
+            assert!(Arc::ptr_eq(&numbers[number], style), "one number, one style within a call");
+        }
+    }
+}

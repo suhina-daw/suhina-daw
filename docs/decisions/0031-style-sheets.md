@@ -890,10 +890,10 @@ open.
   frame the whole tree is resolved as before, and another frame is asked for only when a style
   painted differs from the tree's: sibling-dependent selectors (`+`, `~`, `:nth-child`) and a
   hover that reaches an ancestor, which still wait a frame. The whole tree's resolve shares its
-  styles too (`cascade::compute_shared`, #1489): each element is keyed by its parent's key, its
-  own identity, the device sheets it is the root of and, only when a sheet needs them, its place
-  and earlier siblings or whether it has children, and an element whose key was seen before
-  takes the style kept under it. A tree that changed in a few elements (a hover, a splitter
+  styles too (`cascade::compute_shared`, #1489): each element's place, compared in full and
+  never by a hash alone, is its parent's place, its own identity, the device sheets it is the root of and, only when a sheet needs them, its place
+  and earlier siblings or whether it has children, and an element whose place was seen before
+  takes the style kept for it. A tree that changed in a few elements (a hover, a splitter
   being dragged) works out only those and what is under them, and identical elements share one
   computation; the cache empties when the viewport or a sheet changes. Without it every change
   cost the whole window's cascade, 75 ms a frame in Suhina Blocks, whose regions set variables

@@ -167,19 +167,25 @@ pub const MAX_CACHED_STYLES: usize = 8192;
 /// An element's style depends only on its parent's style, its own identity (kind, id, classes,
 /// states, attributes, object), the scoped sheets it is the root of, the viewport and the sheets;
 /// and on its siblings only when a sheet relates them (`+`, `~`) or tests a place among them
-/// (`:nth-child`), and on its children only when a sheet tests `:empty`. Its key hashes these,
-/// its parent's key standing for the parent's style and everything above it, so two elements with
-/// the same key have the same style. A tree that changed in a few elements then works out only
-/// those and the elements under them, and identical elements (rows, headers, buttons in the same
-/// place) share one computation even the first time.
+/// (`:nth-child`), and on its children only when a sheet tests `:empty`. Each distinct identity
+/// and each distinct place (all of these, with the parent's place standing for the parent's
+/// style and everything above it) gets a number of its own, compared in full, never by a hash
+/// alone: two elements share a style only when everything a selector or inheritance can see of
+/// them is the same. A tree that changed in a few elements then works out only those and the
+/// elements under them, and identical elements (rows, headers, buttons in the same place) share
+/// one computation even the first time.
 ///
-/// The cache empties when the viewport or the caller's `sheets_key` changes: the caller gives a
-/// key that changes whenever any sheet's content does.
+/// The cache empties when the viewport or the caller's `sheets_key` changes (the caller gives a
+/// key that changes whenever any sheet's content does), and when it would hold more than
+/// [`MAX_CACHED_STYLES`].
 #[derive(Debug, Default)]
 pub struct StyleCache {
     inputs: Option<(Viewport, u64)>,
     structure: Structure,
-    styles: std::collections::HashMap<u64, Arc<ComputedStyle>>,
+    /// Each distinct identity, numbered.
+    identities: std::collections::HashMap<Identity, u32>,
+    /// Each distinct place, numbered, with its style.
+    places: std::collections::HashMap<Place, (u64, Arc<ComputedStyle>)>,
     computed: usize,
 }
 
@@ -187,7 +193,8 @@ impl StyleCache {
     /// Forgets every style kept.
     pub fn clear(&mut self) {
         self.inputs = None;
-        self.styles.clear();
+        self.identities.clear();
+        self.places.clear();
     }
 
     /// How many styles the last [`compute_shared`] worked out rather than took from the cache.
@@ -197,13 +204,57 @@ impl StyleCache {
 
     /// How many styles are kept.
     pub fn len(&self) -> usize {
-        self.styles.len()
+        self.places.len()
     }
 
     /// Whether no style is kept.
     pub fn is_empty(&self) -> bool {
-        self.styles.is_empty()
+        self.places.is_empty()
     }
+
+    /// The number of `element`'s identity, given one if it is new.
+    fn identity(&mut self, element: &crate::selector::Element) -> u32 {
+        let identity = Identity {
+            kind: element.kind.clone(),
+            id: element.id.clone(),
+            classes: element.classes.clone(),
+            states: element.states.clone(),
+            attributes: element.attributes.clone(),
+            object: element.object.clone(),
+        };
+        let next = u32::try_from(self.identities.len()).unwrap_or(u32::MAX);
+        *self.identities.entry(identity).or_insert(next)
+    }
+}
+
+/// What selectors and `attr()` can see of an element itself.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Identity {
+    kind: String,
+    id: Option<String>,
+    classes: Vec<String>,
+    states: Vec<String>,
+    attributes: Vec<(String, String)>,
+    object: Option<String>,
+}
+
+/// Everything an element's style depends on besides the viewport and the sheets, each part
+/// compared in full ([`StyleCache`]).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Place {
+    /// The parent's place's number: its style, and its ancestors' identities, scopes and places.
+    parent: Option<u64>,
+    /// The element's identity's number.
+    identity: u32,
+    /// The scoped sheets (device panels) whose root is this element, by their index.
+    roots: Vec<usize>,
+    /// With a sheet that tests places among siblings: this one, and how many siblings there are.
+    position: Option<(usize, usize)>,
+    /// With a sheet that relates siblings: the earlier siblings' identities, and with `:empty`,
+    /// whether each has children.
+    earlier: Vec<(u32, bool)>,
+    /// With a sheet that tests `:empty`: whether the element has children.
+    empty: Option<bool>,
 }
 
 /// What of an element's surroundings the sheets' selectors test, apart from its ancestors.
@@ -241,22 +292,9 @@ pub fn state_names(sheets: &[AppliedSheet<'_>], state: &str) -> crate::selector:
     names
 }
 
-/// The hash of what an element is, apart from where it is: what selectors test of it.
-fn identity(element: &crate::selector::Element) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::hash::DefaultHasher::new();
-    element.kind.hash(&mut hasher);
-    element.id.hash(&mut hasher);
-    element.classes.hash(&mut hasher);
-    element.states.hash(&mut hasher);
-    element.attributes.hash(&mut hasher);
-    element.object.hash(&mut hasher);
-    hasher.finish()
-}
-
-/// [`compute`] with the styles shared: each element's style with the key it is kept under in
-/// `cache` ([`StyleCache`]). `sheets_key` must change whenever the content of any of `sheets`
-/// does; the same sheets at other addresses may keep it.
+/// [`compute`] with the styles shared: each element's style with the number of its place in
+/// `cache` ([`StyleCache`]), the same for two elements only when their styles are. `sheets_key`
+/// must change whenever the content of any of `sheets` does.
 pub fn compute_shared(
     tree: &Tree,
     viewport: Viewport,
@@ -264,56 +302,56 @@ pub fn compute_shared(
     sheets_key: u64,
     cache: &mut StyleCache,
 ) -> Result<Vec<(u64, Arc<ComputedStyle>)>, String> {
-    use std::hash::{Hash, Hasher};
     if !viewport.valid() || sheets.len() > 32 {
         return Err("Invalid style viewport or sheet count".into());
     }
     if sheets.iter().any(|sheet| sheet.root.is_some_and(|root| tree.elements().get(root).is_none())) {
         return Err("Invalid style scope root".into());
     }
-    if cache.inputs != Some((viewport, sheets_key)) {
-        cache.styles.clear();
-        cache.structure = Structure::of(sheets);
+    let elements = tree.elements();
+    // A tree whose new places might not fit starts the cache again before any is numbered, so
+    // the numbers this call hands out stay the places they were given for.
+    if cache.inputs != Some((viewport, sheets_key)) || cache.places.len() + elements.len() > MAX_CACHED_STYLES {
+        let structure = Structure::of(sheets);
+        cache.clear();
+        cache.structure = structure;
         cache.inputs = Some((viewport, sheets_key));
     }
     cache.computed = 0;
     let structure = cache.structure;
-    let elements = tree.elements();
-    let own: Vec<u64> = elements.iter().map(identity).collect();
+    let identities: Vec<u32> = elements.iter().map(|element| cache.identity(element)).collect();
     let mut result: Vec<(u64, Arc<ComputedStyle>)> = Vec::with_capacity(elements.len());
     let mut budget = Budget::default();
     for (node, element) in elements.iter().enumerate() {
         let parent = element.parent.and_then(|parent| result.get(parent));
-        let mut hasher = std::hash::DefaultHasher::new();
-        parent.map(|(key, _)| *key).hash(&mut hasher);
-        own.get(node).hash(&mut hasher);
-        for (index, applied) in sheets.iter().enumerate() {
-            if applied.root == Some(node) {
-                index.hash(&mut hasher);
-            }
-        }
-        if structure.siblings || structure.position {
-            let siblings = tree.siblings(node);
-            let place = siblings.iter().position(|index| *index == node).unwrap_or(0);
-            place.hash(&mut hasher);
-            if structure.position {
-                siblings.len().hash(&mut hasher);
-            }
-            if structure.siblings {
-                for earlier in siblings.iter().take(place) {
-                    own.get(*earlier).hash(&mut hasher);
-                    if structure.children {
-                        tree.children(*earlier).is_empty().hash(&mut hasher);
-                    }
-                }
-            }
-        }
-        if structure.children {
-            tree.children(node).is_empty().hash(&mut hasher);
-        }
-        let key = hasher.finish();
-        if let Some(style) = cache.styles.get(&key) {
-            result.push((key, Arc::clone(style)));
+        let siblings = tree.siblings(node);
+        let at = siblings.iter().position(|index| *index == node).unwrap_or(0);
+        let place = Place {
+            parent: parent.map(|(number, _)| *number),
+            identity: identities.get(node).copied().unwrap_or(u32::MAX),
+            roots: sheets
+                .iter()
+                .enumerate()
+                .filter(|(_, applied)| applied.root == Some(node))
+                .map(|(index, _)| index)
+                .collect(),
+            position: structure.position.then_some((at, siblings.len())),
+            earlier: if structure.siblings {
+                siblings
+                    .iter()
+                    .take(at)
+                    .map(|earlier| {
+                        let identity = identities.get(*earlier).copied().unwrap_or(u32::MAX);
+                        (identity, structure.children && tree.children(*earlier).is_empty())
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            empty: structure.children.then(|| tree.children(node).is_empty()),
+        };
+        if let Some((number, style)) = cache.places.get(&place) {
+            result.push((*number, Arc::clone(style)));
             continue;
         }
         let style = Arc::new(element_style(
@@ -326,11 +364,9 @@ pub fn compute_shared(
             &mut budget,
         )?);
         cache.computed += 1;
-        if cache.styles.len() >= MAX_CACHED_STYLES {
-            cache.styles.clear();
-        }
-        cache.styles.insert(key, Arc::clone(&style));
-        result.push((key, style));
+        let number = cache.places.len() as u64;
+        cache.places.insert(place, (number, Arc::clone(&style)));
+        result.push((number, style));
     }
     Ok(result)
 }
