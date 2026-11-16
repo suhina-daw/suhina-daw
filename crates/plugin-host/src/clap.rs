@@ -155,7 +155,8 @@ impl Ports {
     /// channels when it has no `audio-ports` extension.
     fn of(instance: &mut PluginInstance<Host>, is_input: bool, link_channels: u32) -> Self {
         let Some(ports) = instance.access_shared_handler(|s| s.audio_ports.get().copied().flatten()) else {
-            return Self::declared([(link_channels, true)]);
+            // Stereo: the link's channels past the second carry a key, not more of the sound.
+            return Self::declared([(link_channels.min(2), true)]);
         };
         let handle = instance.plugin_handle();
         let count = ports.count(&handle, is_input).min(MAX_PORTS as u32);
@@ -953,11 +954,17 @@ impl crate::audio::Block for ClapBlock {
         let frames = input.len() / channels.max(1);
         // The link's channels into the main input port, by the rule every format follows
         // ([`crate::audio::feed_main`]); silence elsewhere (a plug-in may have written to an input).
+        // The first port that is not the main one hears the key (sidechain) the link's third and
+        // fourth channels carry (`docs/spec/sidechain.md` › Plug-in buses).
+        let aux = (0..inputs.bus_count()).find(|&port| input_ports.main != Some(port));
         for port in 0..inputs.bus_count() {
             if input_ports.main == Some(port) {
                 crate::audio::feed_main(input, channels, frames, inputs.bus_mut(port));
             } else {
                 inputs.silence(port, frames);
+                if Some(port) == aux {
+                    crate::audio::feed_aux(input, channels, frames, inputs.bus_mut(port));
+                }
             }
         }
         let audio_in = input_audio.with_input_buffers(inputs.buses_mut().map(|port| AudioPortBuffer {

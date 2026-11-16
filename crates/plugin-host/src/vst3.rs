@@ -1025,6 +1025,18 @@ impl Vst3Plugin {
                 let _ = unsafe { self.component.activateBus(audio, direction as BusDirection, 0, 1) };
             }
         }
+        // The second input bus, when the plug-in says it is an auxiliary one (a sidechain): the
+        // link's key channels go there (`docs/spec/sidechain.md` › Plug-in buses).
+        if inputs > 1 {
+            let mut info: BusInfo = blank();
+            let input = BusDirections_::kInput as BusDirection;
+            // SAFETY: a live component writing one value for a bus it counted.
+            let described = ok(unsafe { self.component.getBusInfo(audio, input, 1, &mut info) });
+            if described && info.busType == BusTypes_::kAux as BusType {
+                // SAFETY: a live component; bus 1 exists.
+                let _ = unsafe { self.component.activateBus(audio, input, 1, 1) };
+            }
+        }
         // An instrument takes notes on its first event input.
         let event = MediaTypes_::kEvent as MediaType;
         let input = BusDirections_::kInput as BusDirection;
@@ -1842,6 +1854,11 @@ impl crate::audio::Block for Vst3Block {
             self.in_buffers.silence(bus, frames);
         }
         crate::audio::feed_main(input, link_channels, frames, self.in_buffers.bus_mut(0));
+        // A key (sidechain) rides in the link's third and fourth channels: the second input bus
+        // hears it. One that is not an auxiliary bus is not active and ignores it.
+        if self.in_buffers.bus_count() > 1 {
+            crate::audio::feed_aux(input, link_channels, frames, self.in_buffers.bus_mut(1));
+        }
         follow_song(&mut self.context, events);
         self.watch_events(events, frames);
         let mapping = &self.mapping;

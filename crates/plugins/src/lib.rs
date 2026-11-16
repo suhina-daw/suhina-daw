@@ -227,6 +227,12 @@ impl PluginAudio {
         outcome
     }
 
+    /// How many channels the link carries: 2 (the plug-in's main input and output), or 4 when
+    /// a key (sidechain) rides in the third and fourth (`docs/spec/sidechain.md` › Plug-in buses).
+    pub fn channels(&self) -> u32 {
+        self.link.channels()
+    }
+
     /// The first half of [`PluginAudio::process_with_events`]: sends the block (at most
     /// `room` samples, the output's size) without waiting for its answer, so several plug-ins'
     /// blocks can be out at once. When the host is still busy with an earlier block it waits

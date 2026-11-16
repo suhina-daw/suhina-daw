@@ -145,7 +145,7 @@ fn start_one(
     let launch = Launch {
         host: env.host.clone(),
         plugin: matched.plugin.spec(),
-        channels: 2,
+        channels: 4,
         max_frames: MAX_BLOCK_FRAMES as u32,
         sample_rate: f64::from(sample_rate),
         timeout: START_TIMEOUT,

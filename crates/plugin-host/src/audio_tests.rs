@@ -180,3 +180,28 @@ fn a_block_runs_its_followers_on_the_same_thread_in_order() {
         assert_eq!(thread.join().ok(), Some(true));
     }
 }
+
+#[test]
+fn a_wide_link_carries_the_key_to_a_vst2_plugins_third_and_fourth_inputs_and_to_an_auxiliary_bus() {
+    // Two frames of four link channels: the sound (1, -1 then 2, -2) and the key (7, -7 then 8, -8).
+    let wide = [1.0f32, -1.0, 7.0, -7.0, 2.0, -2.0, 8.0, -8.0];
+    // A VST2 effect with four inputs: its sidechain is inputs three and four.
+    let mut vst2 = vec![vec![0.0f32; 2]; 4];
+    feed_main(&wide, 4, 2, &mut vst2);
+    assert_eq!(vst2, vec![vec![1.0, 2.0], vec![-1.0, -2.0], vec![7.0, 8.0], vec![-7.0, -8.0]]);
+    // A stereo effect hears only the sound.
+    let mut stereo = vec![vec![0.0f32; 2]; 2];
+    feed_main(&wide, 4, 2, &mut stereo);
+    assert_eq!(stereo, vec![vec![1.0, 2.0], vec![-1.0, -2.0]]);
+    // An auxiliary bus (a VST3 sidechain bus, a CLAP port that is not the main one) hears the key.
+    let mut aux = vec![vec![0.0f32; 2]; 2];
+    feed_aux(&wide, 4, 2, &mut aux);
+    assert_eq!(aux, vec![vec![7.0, 8.0], vec![-7.0, -8.0]]);
+    // A mono auxiliary bus takes the key's first channel; a narrow link leaves the bus silent.
+    let mut mono = vec![vec![0.0f32; 2]];
+    feed_aux(&wide, 4, 2, &mut mono);
+    assert_eq!(mono, vec![vec![7.0, 8.0]]);
+    let mut untouched = vec![vec![0.0f32; 2]; 2];
+    feed_aux(&[1.0, -1.0, 2.0, -2.0], 2, 2, &mut untouched);
+    assert_eq!(untouched, vec![vec![0.0, 0.0]; 2]);
+}
