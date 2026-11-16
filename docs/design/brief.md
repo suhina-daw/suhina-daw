@@ -3,7 +3,7 @@ description: Suhina's visual language: principles, what stays familiar and what 
 read_when: UI design, colours, tokens, typography, theme, accent, track colours, browser design, squint test, reference mockups
 type: spec
 status: draft
-last_verified: 2026-11-14
+last_verified: 2026-11-16
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/settings/themes.rs
