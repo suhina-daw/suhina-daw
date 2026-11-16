@@ -236,3 +236,38 @@ fn minimum_width_headers_keep_names_controls_and_meters_separate() {
         assert!(harness.state().session().unwrap().is_armed(suhina_engine::model::TrackId(1)));
     }
 }
+
+#[test]
+fn a_paste_while_playing_goes_to_the_start_marker_not_the_playhead() {
+    let mut renderer = suhina_engine::Renderer::stopped(
+        &demo_project(),
+        &suhina_engine::AudioPool::new(),
+        48_000,
+        suhina_session::devices(),
+    )
+    .unwrap();
+    let mut session = Session::new(demo_project());
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    let mut harness = arrangement(session);
+    let track = harness.state().session().and_then(|s| s.project().arrangement.lanes[0].track).unwrap();
+    // A time selection's copy: Beat B's first bar on Drums.
+    let run = |harness: &mut Harness<'static, App>, id: &str, params: serde_json::Value| {
+        harness.state_mut().run(&suhina_ui::kit::widgets::Action::new(id, params));
+    };
+    run(&mut harness, "range.copy", serde_json::json!({ "tracks": [track.0], "start": 64.0, "end": 68.0 }));
+    // Playing from beat 8, with the play start marker moved on to beat 400 meanwhile.
+    run(&mut harness, "transport.setPosition", serde_json::json!({ "beats": 8.0 }));
+    run(&mut harness, "transport.play", serde_json::json!({}));
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    run(&mut harness, "transport.setStart", serde_json::json!({ "beats": 400.0 }));
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    harness.run();
+    let mut actions = Vec::new();
+    harness.state_mut().do_action("selection.paste", &mut actions);
+    assert_eq!(actions.len(), 1, "{actions:?}");
+    assert_eq!(actions[0].params["start"], serde_json::json!(400.0), "the start marker, not the playhead");
+    for action in &actions {
+        harness.state_mut().run(action);
+    }
+    assert!(drums(&harness).iter().any(|c| c.start == 400.0), "the copy is on Drums at the start marker");
+}

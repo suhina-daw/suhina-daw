@@ -765,12 +765,13 @@ impl App {
                 if self.shown == View::Arrangement && self.session().is_some_and(Session::copied_from_tracks) =>
             {
                 // Copied from several tracks: each part back on its own track, from the play
-                // start marker.
-                let beat = self.timeline.as_ref().map_or(0.0, |(_, _, t)| t.beat);
+                // start marker, never the playhead, which moves on while playing (#1186).
+                let beat = self.timeline.as_ref().map_or(0.0, |(_, _, t)| t.start_beat);
                 actions.push(Action::new("clip.paste", json!({ "start": beat })));
             }
             "selection.paste" => {
-                // After the selected clip, or at the playhead on the selected track.
+                // After the selected clip, or where the lane was clicked, or at the play start
+                // marker on the selected track (never the playhead, which moves on while playing).
                 let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
                 let target = match self.arrangement.selected_clip() {
                     Some((track, id)) => timeline
@@ -778,7 +779,7 @@ impl App {
                         .and_then(|l| l.clips.iter().find(|c| c.id == id))
                         .map(|c| (track, if self.settings.view.replace_clip { c.start } else { c.start + c.length })),
                     None => self.arrangement.insert.or_else(|| {
-                        self.arrangement.selected_tracks.first().map(|t| (*t, timeline.map_or(0.0, |t| t.beat)))
+                        self.arrangement.selected_tracks.first().map(|t| (*t, timeline.map_or(0.0, |t| t.start_beat)))
                     }),
                 };
                 match target {
