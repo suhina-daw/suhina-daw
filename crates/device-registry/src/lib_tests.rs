@@ -523,17 +523,17 @@ fn every_pack_file_is_named_for_its_device_and_reads() {
 #[test]
 fn the_amp_modelers_artwork_is_embedded_from_its_files() {
     // The panel's images ride beside its panel.json as files and land in its compact canvas's
-    // assets as the layout loads, a dark and a light version of each; its knobs name a knob
-    // image as their face.
+    // assets as the layout loads, a dark and a light head and one knob face for both; its knobs
+    // name that image as their face.
     let panel = panel("nam-amp-modeler").unwrap();
     let canvas = panel.ui.as_ref().expect("the amp has a canvas");
     let ids: Vec<&str> = canvas.assets.iter().map(|asset| asset.id.as_str()).collect();
-    assert_eq!(ids, ["background-dark", "background-light", "knob-dark", "knob-light"]);
+    assert_eq!(ids, ["background-dark", "background-light", "knob"]);
     for artwork in &canvas.assets[..2] {
         assert_eq!(artwork.dimensions().unwrap(), [1284, 504], "three times the canvas");
     }
-    let face = |c: &&suhina_device_sdk::ui::CustomControl| matches!(&c.widget, Some(suhina_device_sdk::ui::Widget::Dial { image: Some(id), .. }) if id.starts_with("knob-"));
-    // Each knob twice, its dark face and its light one, the theme's `#light` showing one.
-    assert_eq!(canvas.controls.iter().filter(face).count(), 12, "every knob draws the device's face");
+    let face = |c: &&suhina_device_sdk::ui::CustomControl| matches!(&c.widget, Some(suhina_device_sdk::ui::Widget::Dial { image: Some(id), .. }) if id == "knob");
+    // Each knob once, the same face on either head.
+    assert_eq!(canvas.controls.iter().filter(face).count(), 6, "every knob draws the device's face");
     assert!(layout_errors().is_empty(), "{:?}", layout_errors());
 }

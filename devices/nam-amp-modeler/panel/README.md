@@ -8,10 +8,10 @@ device registry embeds them into the panel's canvas as image assets when it load
 |---|---|---|---|
 | `background-dark.jpg` | `background-dark` | The amp head behind the controls, in black tolex with a dark grille: the frame, the grille the dropdowns, steppers and buttons sit on, the logo and the brushed plate under the knobs. Shown with a dark theme | 1284 × 504, three times the 428 × 168 canvas |
 | `background-light.jpg` | `background-light` | The same head in cream tolex with a light grille and a bright plate. Shown with a light theme (`#light`) | 1284 × 504 |
-| `knob-dark.png` | `knob-dark` | A knob's face for the dark head: a dark body with a soft top-to-bottom shade and a grey rim, transparent around it | 128 × 128 |
-| `knob-light.png` | `knob-light` | A knob's face for the light head: a flat dark body with a grey rim | 128 × 128 |
+| `knob.png` | `knob` | A knob's face, the same on either head: a flat dark body with a grey rim, transparent around it | 128 × 128 |
 
-The panel draws the value's arc around a knob and its pointer over it, and a theme's
+The panel draws the value's arc around a knob and its pointer over it, in the theme's text
+colour where that reads on the dark face and in a light ink where it does not, and a theme's
 `device.knob.body` artwork replaces the face. The originals' dark slots marked where each
 control sits; they are filled with the grille here, and the panel draws the controls' boxes in
 the theme's colours.

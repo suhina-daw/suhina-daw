@@ -57,7 +57,31 @@ struct Loaded {
     source: Arc<DeviceUi>,
     palette: WidgetPalette,
     images: Vec<Result<egui::TextureHandle, String>>,
+    /// Each image's colour where a dial's pointer crosses it ([`face_colour`]), by asset.
+    faces: Vec<Option<Color32>>,
     controls: Vec<Vec<Draw>>,
+}
+
+/// The mean colour of the round middle of an RGBA image, out to 62% of its half-size where a
+/// dial's pointer ends, weighted by alpha: what a pointer line drawn over a device's own knob face
+/// must stand out from. `None` for an image with no opaque pixel there.
+fn face_colour(pixels: &[u8], [width, height]: [usize; 2]) -> Option<Color32> {
+    let (cx, cy) = (width as f32 / 2.0, height as f32 / 2.0);
+    let reach = cx.min(cy) * 0.62;
+    let mut sum = [0.0f64; 4];
+    for (i, px) in pixels.as_chunks::<4>().0.iter().enumerate().take(width.saturating_mul(height)) {
+        let (x, y) = ((i % width) as f32 + 0.5 - cx, (i / width) as f32 + 0.5 - cy);
+        if x * x + y * y > reach * reach {
+            continue;
+        }
+        let alpha = f64::from(px[3]);
+        for (total, channel) in sum.iter_mut().zip(&px[..3]) {
+            *total += f64::from(*channel) * alpha;
+        }
+        sum[3] += alpha;
+    }
+    let mean = |total: f64| (total / sum[3]).round().clamp(0.0, 255.0) as u8;
+    (sum[3] > 0.0).then(|| Color32::from_rgb(mean(sum[0]), mean(sum[1]), mean(sum[2])))
 }
 
 fn visible_sample_peaks(source: &suhina_engine::AudioData, range: (usize, usize)) -> Vec<f32> {
@@ -1322,12 +1346,14 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
     if let Some(found) = cache.iter().find(|v| Arc::ptr_eq(&v.source, source) && v.palette == palette) {
         return found.clone();
     }
+    let mut faces = Vec::with_capacity(source.assets.len());
     let images = source
         .assets
         .iter()
         .map(|a| {
             a.decode_rgba()
                 .map(|(pixels, size)| {
+                    faces.push(face_colour(&pixels, size));
                     ctx.load_texture(
                         &a.id,
                         egui::ColorImage::from_rgba_unmultiplied(size, &pixels),
@@ -1341,11 +1367,14 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
                         },
                     )
                 })
-                .map_err(|e| e.to_string())
+                .map_err(|e| {
+                    faces.push(None);
+                    e.to_string()
+                })
         })
         .collect();
     let controls = source.controls.iter().map(|c| c.drawings_with_palette(&palette).into_owned()).collect();
-    let loaded = Arc::new(Loaded { source: source.clone(), palette, images, controls });
+    let loaded = Arc::new(Loaded { source: source.clone(), palette, images, faces, controls });
     cache.push(loaded.clone());
     if cache.len() > 8 {
         cache.remove(0);
@@ -1984,12 +2013,19 @@ fn paint_control(
     // `device.knob.pointer` artwork replace the device's image and its pointer line.
     let device_face = matches!(control.widget, Some(Widget::Dial { image: Some(_), .. }));
     let mut face: Option<Rect> = None;
+    let mut face_fill: Option<Color32> = None;
     for draw in drawings.iter() {
         if device_face {
-            if let Draw::Image { rect: r, .. } = draw {
+            if let Draw::Image { rect: r, asset, .. } = draw {
                 let min = point(&[r[0].clone(), r[1].clone()]);
                 let rect = Rect::from_min_size(min, Vec2::new(value(&r[2]), value(&r[3])) * scale);
                 face = Some(rect);
+                face_fill = loaded
+                    .source
+                    .assets
+                    .iter()
+                    .position(|a| a.id == *asset)
+                    .and_then(|i| loaded.faces.get(i).copied().flatten());
                 // The roles have no default artwork, so `paint_as` paints only a theme's own, in
                 // whichever state it has artwork for (`device.knob.body.hover` alone included).
                 let body_ink = crate::kit::element::KNOB_BODY
@@ -1999,7 +2035,7 @@ fn paint_control(
                 if crate::kit::skin::paint_as(&scope, painter, rect, "device.knob.body", state, body_ink) {
                     continue;
                 }
-            } else if let (Draw::Line { from, to, .. }, Some(rect)) = (draw, face) {
+            } else if let (Draw::Line { from, to, color: c, width }, Some(rect)) = (draw, face) {
                 let direction = point(to) - point(from);
                 let angle = direction.x.atan2(-direction.y);
                 let pointer_ink = crate::kit::element::KNOB_POINTER.response_if(response).enter().color_or(ink);
@@ -2012,6 +2048,18 @@ fn paint_control(
                     pointer_ink,
                     angle,
                 ) {
+                    continue;
+                }
+                // The line sits on the device's own face, not on the theme's: in the theme's text
+                // colour where that reads on it, otherwise in the ink that does (a light theme's
+                // dark text on a black knob would hide the pointer).
+                let themed = tokens.color(*c);
+                if let Some(fill) = face_fill
+                    && crate::kit::theme::text_contrast(themed, fill) < 3.0
+                {
+                    let readable = crate::kit::theme::text_on(fill).to_srgba_unmultiplied();
+                    let line = Draw::Line { from: from.clone(), to: to.clone(), color: readable, width: *width };
+                    paint_scaled(painter, &scope, std::slice::from_ref(&line), origin, values, loaded, tokens, scale);
                     continue;
                 }
             }
