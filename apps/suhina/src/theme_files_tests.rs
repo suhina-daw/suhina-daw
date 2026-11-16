@@ -521,6 +521,26 @@ fn a_half_moved_theme_says_so() {
     let _clean = std::fs::remove_dir_all(&dir);
 }
 
+/// A theme whose `variants` folder is a link to a folder elsewhere never gets that folder's files
+/// moved to the Trash.
+#[cfg(unix)]
+#[test]
+fn a_variant_behind_a_linked_folder_is_not_trashed() {
+    let dir = folder("trash-link");
+    let themes = dir.join("themes");
+    hand_written(&themes.join("ink"), "Ink", ":root { --accent: #112233; }");
+    let outside = dir.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("warm.json"), "{}").unwrap();
+    std::os::unix::fs::symlink(&outside, themes.join("ink").join(VARIANTS)).unwrap();
+    let mut files = ThemeFiles::new(Some(themes));
+    files.trash = failing_trash;
+    let result = files.trash("ink@warm");
+    assert!(result.as_ref().is_err_and(|e| e.contains("behind a link")), "{result:?}");
+    assert!(outside.join("warm.json").exists());
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_deleted_variant_or_theme_goes_to_the_trash() {
     let dir = folder("trash");

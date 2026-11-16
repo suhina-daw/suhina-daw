@@ -16,7 +16,11 @@
 /* The floor's colours: plain light text on an opaque dark window, fixed values, so a theme
    without the base sheet is readable before it styles anything. The base sheet gives the window
    Suhina's own colours over them. */
-window { color: #e6e6e6; background-color: #1e1e1e; }
+window { color: #e6e6e6; }
+window,
+popup,
+menu,
+dialog { background-color: #1e1e1e; }
 
 /* The window is one grid of named areas (#1370): the bars, the lines over and under the views, the
    notice strip and the three panels. A theme moves one by giving it another area, or hides it with
@@ -106,12 +110,6 @@ dialog,
 start-page,
 plugin-manager,
 export { overflow: hidden; }
-
-/* Menus, pop-ups and dialogs are opaque, in the window's own plain colour: nothing behind them
-   shows through unless a theme asks for it. */
-popup,
-menu,
-dialog { background-color: #1e1e1e; }
 
 /* What floats over the window blurs the window's own layers behind it. */
 popup,

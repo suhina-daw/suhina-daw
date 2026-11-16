@@ -374,8 +374,8 @@ fn the_user_agent_sheet_colours_only_the_window_and_what_floats_over_it() {
         given.push(name);
     }
     given.sort_unstable();
-    assert_eq!(given, ["background-color", "background-color", "color"]);
-    // The text and background in the one rule for `window`, the background in one for what floats.
+    assert_eq!(given, ["background-color", "color"]);
+    // The text in a rule for `window`, the background in one for it and what floats over it.
     let mut text = USER_AGENT_SHEET.to_owned();
     while let Some(start) = text.find("/*") {
         let end = text[start..].find("*/").unwrap() + start + 2;
@@ -395,7 +395,7 @@ fn the_user_agent_sheet_colours_only_the_window_and_what_floats_over_it() {
         }
         rest = &rest[close + 1..];
     }
-    assert_eq!(coloured, ["window", "popup,\nmenu,\ndialog"]);
+    assert_eq!(coloured, ["window", "window,\npopup,\nmenu,\ndialog"]);
 }
 
 /// No colour in the base sheet is fixed (#1448): every colour it gives reads a variable, so a

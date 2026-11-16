@@ -1147,6 +1147,7 @@ fn open_page(state: &mut PageState, page: Page) {
     state.theme_leave = None;
     state.theme_discard = false;
     state.theme_dialog = None;
+    state.skin_editor.forget_drafts();
     state.search.clear();
     state.capture = None;
     state.audio_listed = None;
@@ -2064,6 +2065,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
         } else {
             state.theme_editor = false;
             state.scrolled = None;
+            state.skin_editor.forget_drafts();
             return (None, close);
         }
     }

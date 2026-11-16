@@ -92,10 +92,16 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
                 _ => {
                     let draft = state.drafts.entry(property.name.clone()).or_insert_with(|| value.clone());
                     let edit = ui.add(egui::TextEdit::singleline(draft).desired_width(200.0));
+                    // A value that is acceptable is taken as it is typed, so a pending edit never
+                    // waits for the field to lose focus (leaving the editor would not see it); one
+                    // that is not is put back when the field loses focus.
+                    let typed = draft.trim().to_string();
+                    if edit.changed() && property.accepts(&typed) {
+                        next = Some(typed.clone());
+                    }
                     if edit.lost_focus() {
-                        let typed = draft.trim().to_string();
                         if property.accepts(&typed) {
-                            next = Some(typed);
+                            state.drafts.remove(&property.name);
                         } else {
                             *draft = value.clone();
                             state.error = format!("{label}: {typed} is not a value of this setting");
@@ -105,7 +111,6 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
             }
         });
         if let Some(next) = next.filter(|next| *next != value) {
-            state.drafts.remove(&property.name);
             request = Some(ThemeRequest::EditValue { name: property.name.clone(), value: next });
         }
     }

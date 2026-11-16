@@ -621,7 +621,19 @@ impl ThemeFiles {
             return Err(format!("{id} cannot name a theme file"));
         }
         let paths: Vec<PathBuf> = match variant {
-            Some(variant) => vec![folder.join(base).join(VARIANTS).join(format!("{variant}.json"))],
+            Some(variant) => {
+                // The file itself is checked below; a link above it would lead the Trash to a file
+                // outside the theme.
+                let theme_dir = folder.join(base);
+                let variants = theme_dir.join(VARIANTS);
+                if [&theme_dir, &variants]
+                    .iter()
+                    .any(|dir| std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_symlink()))
+                {
+                    return Err(format!("{id} sits behind a link and cannot be deleted"));
+                }
+                vec![variants.join(format!("{variant}.json"))]
+            }
             None if theme::is_built_in(base) => return Err(format!("{base} comes with Suhina and cannot be deleted")),
             None => vec![folder.join(base), folder.join(format!("{base}.json"))],
         };

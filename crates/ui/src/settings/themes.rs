@@ -413,7 +413,7 @@ impl Themes {
                     Some(from) if self.get(&from).is_some() => {
                         let variant = crate::kit::theme_vars::split_id(&from).1.is_some();
                         let label = self.saved_name(&from);
-                        let mut theme = self.copy_of(&from);
+                        let mut theme = self.copy_of(&from, false);
                         // A theme made from a variant has that variant's values as its own.
                         if variant {
                             theme.meta.default_variant = Some(label);
@@ -641,7 +641,7 @@ impl Themes {
         let (base, variant) = crate::kit::theme_vars::split_id(&real);
         let (id, switched) = if structure && theme::is_built_in(base) {
             let name = format!("{} (custom)", self.get(current).map_or("Suhina Studio", |t| &t.name));
-            (self.copy(current, &name), true)
+            (self.copy(current, &name, true), true)
         } else if variant.is_some() || !settings {
             (real.clone(), false)
         } else {
@@ -734,17 +734,21 @@ impl Themes {
         self.entries.iter().find(|e| same_id(&e.id, id)).map_or_else(|| id.to_string(), |e| e.id.clone())
     }
 
-    /// Adds a copy of the theme `from` named `name`, under a new id. Returns the id.
-    fn copy(&mut self, from: &str, name: &str) -> String {
-        let original = self.copy_of(from);
+    /// Adds a copy of the theme `from` named `name`, under a new id; of what is saved when `saved`,
+    /// else with the unsaved edits. Returns the id.
+    fn copy(&mut self, from: &str, name: &str, saved: bool) -> String {
+        let original = self.copy_of(from, saved);
         let id = self.free_id(name);
         self.entries.push(ThemeEntry { id: id.clone(), theme: Theme { name: name.to_string(), ..original } });
         id
     }
 
     /// The theme `from` as a theme of its own: its variant's values become part of its sheet.
-    fn copy_of(&self, from: &str) -> Theme {
-        let mut theme = self.get(from).cloned().unwrap_or_default();
+    /// Of what is saved when `saved`: a change made apart from the variant editor (the toolbar's)
+    /// takes none of the editor's unsaved edits with it.
+    fn copy_of(&self, from: &str, saved: bool) -> Theme {
+        let kept = saved.then(|| self.entries.iter().find(|e| same_id(&e.id, from)).map(|e| &e.theme)).flatten();
+        let mut theme = kept.or_else(|| self.get(from)).cloned().unwrap_or_default();
         theme.vars.variant = None;
         theme.vars.variant_name = None;
         theme

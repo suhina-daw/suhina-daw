@@ -367,14 +367,13 @@ waveforms are drawn afterward. The latter two are surface reflections, not per-c
 The renderer is described in [Glass rendering experiment](../design/glass-rendering.md).
 
 Controls remain editable and save their values even in a host without the GPU provider.
-The theme editor explains when preview is unavailable; global controls also show this
-explanation on hover. Selecting GPU in Graphics renderer requires restarting the app if it is
+Global controls show when preview is unavailable, on hover. Selecting GPU in Graphics renderer requires restarting the app if it is
 currently running on OpenGL. Disabled animations or
 the built-in high-contrast theme keep the material off without erasing saved strengths.
 The feature remains experimental: full playback performance qualification is not complete.
 
-The colour editor has a separate Browser text group: primary, secondary, hint and value.
-These change browser text without recolouring the rest of the interface. Text on coloured
+A theme can offer a separate Browser text group (primary, secondary, hint and value) as quick
+controls of its own, to change browser text without recolouring the rest of the interface. Text on coloured
 tracks, returns and clips uses `text.onColorLight` or `text.onColorDark`, whichever has
 greater contrast with the surface, rather than reusing the window background as text.
 Older theme files inherit these new roles from their previous text/background tokens.
@@ -444,9 +443,9 @@ main background surface opacity, to avoid multiplying two transparency controls.
 
 Holding the Background blur slider keeps the Settings live preview active even while the pointer is stationary; the modal dimmer returns only on release, so individual value changes do not flash the surrounding view.
 
-Global liquid strength sliders are disabled while the active theme supplies liquid overrides. Their notes explain how to enable Use global liquid settings in the theme editor. Stored global values remain unchanged and become editable again when inheritance is restored.
+Global liquid strength sliders are disabled while the active theme supplies liquid overrides. Their notes say the theme sets them in its `theme.css`, and that removing those rules there gives the sliders back. Stored global values remain unchanged and become editable again when inheritance is restored.
 
-The gradient editor uses a single horizontal colour ramp with numbered draggable stops. Selecting a stop exposes only its colour, position and opacity; Add inserts and selects a midpoint in the largest gap, and Remove acts on the selected stop (at least two remain). Stops cannot cross their neighbours. Surface direction is a separate control below the stop editor. Colour-picker popups use an opaque readable surface even when Settings uses liquid transparency.
+Colour-picker popups use an opaque readable surface even when Settings uses liquid transparency.
 
 ## Sources
 
