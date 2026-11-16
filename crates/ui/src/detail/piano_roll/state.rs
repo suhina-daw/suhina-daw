@@ -851,7 +851,9 @@ impl PianoRollState {
                 // refused crop (a stretch too short, a neighbour in the way) leaves it as it was.
                 Some(Action::new("clip.crop", params))
             }
-            "pianoRoll.splitNotes" => split_notes(clip, acting, span, self.beat_width),
+            // The selected notes, not the notes that start in the time selection (what the other
+            // keys act on with none selected): a note across its start is cut there too.
+            "pianoRoll.splitNotes" => split_notes(clip, &self.selected, span, self.beat_width),
             _ => None,
         }
     }
@@ -1085,9 +1087,9 @@ pub struct Context<'a> {
 /// The most cuts Split notes makes on the grid in one go.
 const MAX_CHOPS: usize = 1024;
 
-/// Split notes (Ctrl+E): with a time selection that runs across notes, those notes (the acting
-/// ones, or with none every note of the clip) are cut at its edges; otherwise the acting notes are
-/// cut at every grid line inside them. One `note.split` with `ats`, one undo step; `None` with
+/// Split notes (Ctrl+E): with a time selection that runs across notes, those notes (the selected
+/// ones, or with none every note of the clip) are cut at its edges; otherwise the selected notes
+/// are cut at every grid line inside them. One `note.split` with `ats`, one undo step; `None` with
 /// nothing to cut (no notes, or no grid line or edge inside one).
 fn split_notes(
     clip: &PianoClip,
