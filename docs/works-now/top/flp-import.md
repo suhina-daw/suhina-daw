@@ -19,3 +19,9 @@
   again. An ordinary duplicate stays independent.
 - **Zipped projects:** a zip holding a project and its samples opens after a bar asks where to
   unpack it (beside the zip by default); `suhina-cli` takes `--extract-to <folder>`.
+- **Sidechain:** a compressor or a plug-in can read another track as its key (its detector
+  listens to that track while it processes its own). Choose the track with the **SC** button
+  in the device's header or *Sidechain* in its menu, with where it is read (before or after
+  the track's devices, or after its fader) and its gain; or from the source's track menu,
+  *Sidechain to*. A plug-in hears the key on its sidechain input. An imported `.flp` keeps
+  its plug-ins' sidechains.

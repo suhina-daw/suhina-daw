@@ -97,7 +97,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | 10 | An audio clip's own `audio` state (gain, gain envelope, transpose, warp, warp markers, tempo source) on the clip, the region keeping the file only; an earlier file's region state is read into every clip of its content ([ADR 0035](../decisions/0035-clip-gain-envelope.md)) | #1190 |
 | 11 | The project's `lane_layouts`: how each channel's automation lanes are laid out in the Arrangement view ([automation](automation.md#in-the-arrangement-view)) | #1322 |
 | 12 | Swing: the project's `transport.swing` and a clip's `swing` `{ amount, own }` ([swing](swing.md) › Project file); an earlier file has none, every clip following a project swing of 0 | #1221 |
-| 13 | A content's `linked`, for linked copies ([arrangement editing](arrangement-editing.md) › Linked copies); the `cosine` fade shape; a device's `inputs`, its key ([sidechain](sidechain.md)). An earlier file has none of them: its contents are not linked and its devices read no key | #<this PR> |
+| 13 | A content's `linked`, for linked copies ([arrangement editing](arrangement-editing.md) › Linked copies); the `cosine` fade shape; a device's `inputs`, its key ([sidechain](sidechain.md)). An earlier file has none of them: its contents are not linked and its devices read no key | #1446 |
 
 ## Parts
 
