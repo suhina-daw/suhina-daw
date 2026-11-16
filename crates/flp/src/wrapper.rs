@@ -100,6 +100,18 @@ pub(crate) fn decode(source: &Device) -> Option<Device> {
     Some(device)
 }
 
+/// Which of its mixer track's inputs the wrapped plug-in's sidechain hears: the port of its
+/// second input bus (record 31, 12 bytes an entry: i32 port, u32 active, u32 0), counted from 1
+/// over the tracks routed into its track in track order; `None` for 0 (none) or no such record.
+/// The layout follows the pinned Lemon Studio `os-flp/src/wrapper.rs` (`input_ports`).
+pub(crate) fn sidechain_input(device: &Device) -> Option<usize> {
+    let original = device.extensions.0.iter().find(|e| e.format == "flp" && e.key == "wrapper")?;
+    let records = Records::parse(&original.data)?;
+    let entry = records.get(31)?.get(12..16)?;
+    let port = i32::from_le_bytes(entry.try_into().ok()?);
+    usize::try_from(port).ok().filter(|&p| p > 0)
+}
+
 /// The source host's parameter index is not necessarily the hosted VST3 parameter id.
 pub(crate) fn parameter_id(device: &Device, index: u16) -> Option<String> {
     match device.kind {

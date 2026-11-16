@@ -764,6 +764,9 @@ fn source_utility(gain: f64, pan: f64) -> Device {
 /// Mixer chains live once, separately from source channels and playlist presentation.
 fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Result<(), FlpError> {
     let mut starts = Vec::new();
+    // Per mixer track, the tracks routed into it (a sidechain route included), for the
+    // plug-ins that pick one of them as their key.
+    let mut routes: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
     for (i, e) in flp.events.iter().enumerate() {
         if e.id != 236 {
             continue;
@@ -916,6 +919,7 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
                 if destination >= count {
                     return Err(error(e.offset, "mixer route refers to missing bus"));
                 }
+                routes.entry(destination as u32).or_insert_with(BTreeSet::new).insert(index as u32);
                 bus.sends.push(Send {
                     target: if destination == 0 { main_send } else { ChannelId(131_072 + destination as u32) },
                     level: levels.get(&(destination as u32)).copied().unwrap_or(1.),
@@ -982,6 +986,38 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
             project.tracks.push(track);
         }
         project.channels.push(bus);
+    }
+    // Sidechains: a route at level 0 ("sidechain to this track") carries no sound; a plug-in on
+    // the track it reaches hears it as its key, picking it by its place among the tracks routed
+    // into its own, in track order (`docs/spec/flp-model-mapping.md` › Sidechains). Heard after
+    // the source's fader, as the source plays it.
+    let mut unresolved = 0usize;
+    for channel in &mut project.channels {
+        let Some(own) = channel.id.0.checked_sub(131_072).filter(|&i| (1..501).contains(&i)) else { continue };
+        let inputs: Vec<u32> =
+            routes.get(&own).map(|r| r.iter().copied().filter(|&m| m != 0 && m != own).collect()).unwrap_or_default();
+        suhina_model::visit_devices_mut(&mut channel.devices, &mut |device| {
+            let Some(port) = crate::wrapper::sidechain_input(device) else { return };
+            match port.checked_sub(1).and_then(|i| inputs.get(i)) {
+                Some(&source) => {
+                    device.inputs = vec![suhina_model::DeviceInput {
+                        port: suhina_model::DeviceInput::KEY.into(),
+                        source: suhina_model::SignalPoint::Channel {
+                            channel: ChannelId(131_072 + source),
+                            tap: suhina_model::TapPoint::PostFader,
+                        },
+                        gain: 1.0,
+                    }];
+                }
+                None => unresolved += 1,
+            }
+        });
+        channel.sends.retain(|s| s.level > 0.);
+    }
+    if unresolved > 0 {
+        warnings.push(format!(
+            "{unresolved} plug-in sidechain inputs name a track that is not routed in; they hear their own input."
+        ));
     }
     let returns: BTreeSet<_> = project.channels.iter().flat_map(|c| c.sends.iter().map(|s| s.target)).collect();
     for channel in &mut project.channels {

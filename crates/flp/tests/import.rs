@@ -1033,3 +1033,86 @@ fn an_empty_sampler_is_a_sampler_without_an_invented_sound() {
     assert_eq!(sampler.kind, DeviceKind::Builtin("sampler".into()));
     assert!(sampler.sample_file().is_none());
 }
+
+/// Mixer tracks Main, Kick, Pad and Bus: Kick plays to Main and sidechains Bus (a route at level
+/// 0); Pad plays into Bus; Bus holds a wrapped plug-in whose sidechain hears Bus's input `port`
+/// (1: Kick, 2: Pad, the tracks routed into Bus in track order).
+fn sidechain_fixture(port: i32) -> Vec<u8> {
+    let file = wrapper_fixture(false, false);
+    let parsed = suhina_flp::read_bytes(&file).unwrap();
+    let wrapper = parsed.events.iter().find(|e| e.id == 213).unwrap();
+    let suhina_flp::Payload::Data(wrapper) = &wrapper.payload else { panic!("state data") };
+    let mut wrapper = wrapper.clone();
+    // Two input buses: the main one (port 0) and the sidechain (`port`), both active.
+    let inputs: Vec<u8> = [[0i32, 1, 0], [port, 1, 0]].iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
+    wrapper_record(&mut wrapper, 31, &inputs);
+    let mut events = Vec::new();
+    let flags = [0u8, 0, 0, 0, 12, 0, 0, 0];
+    let routes = |to: &[usize]| {
+        let mut on = [0u8; 4];
+        for &t in to {
+            on[t] = 1;
+        }
+        on
+    };
+    // The last bus is the current (monitor) one FL stores after the inserts.
+    for (index, name) in ["Main", "Kick", "Pad", "Bus", "Current"].into_iter().enumerate() {
+        text(&mut events, 204, name);
+        event(&mut events, 236, &flags);
+        match index {
+            1 => event(&mut events, 235, &routes(&[0, 3])),
+            2 => event(&mut events, 235, &routes(&[3])),
+            3 => {
+                text(&mut events, 201, "Fruity Wrapper");
+                event(&mut events, 213, &wrapper);
+                event(&mut events, 98, &0u16.to_le_bytes());
+                event(&mut events, 235, &routes(&[0]));
+            }
+            _ => {}
+        }
+    }
+    // Kick's route to Bus at level 0: a sidechain, no sound.
+    let mut level = [0u8; 12];
+    level[4] = 3;
+    level[5] = 0x20;
+    level[6..8].copy_from_slice(&(0x7000u16 + 64).to_le_bytes());
+    event(&mut events, 225, &level);
+    // Voice 0 plays into Kick, Voice 1 into Pad (the fixture sends both to track 1).
+    let mut file = fixture(96, 32);
+    let second = file.windows(3).enumerate().filter(|(_, w)| *w == [104, 1, 0]).nth(1).map(|(i, _)| i).unwrap();
+    file[second + 1] = 2;
+    appended(file, &events)
+}
+
+#[test]
+fn a_sidechain_route_keys_the_plugin_that_picks_it_after_the_source_fader() {
+    // Kick and Pad each play one voice, so they fold into Voice 0 and Voice 1: the key follows.
+    let kick = suhina_model::ChannelId(0);
+    let pad = suhina_model::ChannelId(1);
+    let bus = suhina_model::ChannelId(131_075);
+    for (port, source) in [(1, kick), (2, pad)] {
+        let imported = import_bytes(&sidechain_fixture(port)).unwrap();
+        let p = &imported.project;
+        let channel = p.channel(bus).unwrap();
+        let device = channel.devices.iter().find(|d| matches!(d.kind, DeviceKind::Vst2 { .. })).unwrap();
+        let key = device.inputs.first().unwrap_or_else(|| panic!("port {port}: {:?}", channel.devices));
+        assert_eq!(
+            key.source,
+            suhina_model::SignalPoint::Channel { channel: source, tap: suhina_model::TapPoint::PostFader }
+        );
+        assert_eq!((key.port.as_str(), key.gain), ("key", 1.0));
+        // The level-0 route carries no sound: it is no send.
+        assert!(p.channel(kick).unwrap().sends.iter().all(|s| s.target != bus), "{:?}", p.channel(kick));
+        assert_eq!(p.validate(), Ok(()));
+        let encoded = suhina_project_file::to_json(p);
+        assert_eq!(suhina_project_file::from_json(&encoded).unwrap().channel(bus).unwrap().devices, channel.devices);
+    }
+    // An input Bus does not have: no key, and the import says so.
+    let imported = import_bytes(&sidechain_fixture(3)).unwrap();
+    let channel = imported.project.channel(bus).unwrap();
+    assert!(channel.devices.iter().all(|d| d.inputs.is_empty()));
+    assert!(imported.warnings.iter().any(|w| w.contains("sidechain")), "{:?}", imported.warnings);
+    // None picked: nothing.
+    let imported = import_bytes(&sidechain_fixture(0)).unwrap();
+    assert!(imported.project.channel(bus).unwrap().devices.iter().all(|d| d.inputs.is_empty()));
+}

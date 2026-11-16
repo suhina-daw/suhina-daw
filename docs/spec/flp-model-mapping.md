@@ -315,7 +315,7 @@ are unsupported rather than being incorrectly substituted with MIDI velocity.
 Patcher parsing uses only pinned Lemon os-flp/src/patcher.rs: version 4 and bounded
 u32/u64 chunks for nodes, named host ports and links. Representable independent branches
 become device-group branches; shared or reconvergent processing is unsupported rather than duplicated across branches.
-Unlinked controllers do not affect playback. Unsupported active controls, sidechains,
+Unlinked controllers do not affect playback. Unsupported active controls, Patcher sidechains,
 cycles or ambiguous ports keep the whole patch as a placeholder, never a partial graph.
 Nonunity input/internal edge gains are unsupported, while output-edge gains become branch gains.
 The original state is retained. Lemon's pinned README
@@ -345,6 +345,24 @@ retains a MIDI-driven branch with no audio output as muted. Unknown flags remain
 These Spire instances store wrapper kind 15 with the same 21-byte header and exact
 chunk-size boundary as 12/13. Its payload is treated as an opaque VST2 bank chunk;
 acceptance is checked with the installed plug-in through the existing sandbox host.
+
+## Sidechains
+
+A mixer route at level 0 ("sidechain to this track") carries no sound: it is not
+imported as a send. A wrapped plug-in on the track it reaches picks its sidechain with
+the wrapper's record 31 (12 bytes an entry: i32 port, u32 active, u32 0): the second
+entry's port counts, from 1, over the tracks routed into the plug-in's own track (at
+any level, a sidechain route included), in track order, Main and the track itself left
+out; 0 picks none (pinned Lemon os-flp/src/wrapper.rs `input_ports`, os-app/src/mixer.rs
+`inputs`). The plug-in gets a key (`docs/spec/sidechain.md`) read from that track after
+its fader, as the source plays it, at unity gain. A port past the routed tracks gives no
+key and a warning. When the source track folds into the generator playing it, the key
+reads the generator's channel; a key whose track is pruned, or that would close a loop,
+is dropped.
+
+Authored-project observation (JMS2025, read-only, 2026-11-16): two Pro-C 2 instances,
+on mixer 6 and on the Serum #2 insert, have port 1, and the kick's track routes into
+both at level 0; both import keyed from the kick after its fader.
 
 ## Sources
 

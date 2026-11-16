@@ -14,7 +14,12 @@ pub(crate) fn apply(import: &mut crate::Import) {
     let mut pending: Vec<_> = needed.iter().copied().collect();
     while let Some(id) = pending.pop() {
         if let Some(channel) = p.channel(id) {
-            for next in channel.output.into_iter().chain(channel.sends.iter().map(|s| s.target)) {
+            // A track a key reads is needed too, though it may play nowhere (sidechain only).
+            let keys: Vec<ChannelId> = suhina_model::walk_devices(&channel.devices)
+                .iter()
+                .flat_map(|(_, d)| d.inputs.iter().map(|i| i.source.channel()))
+                .collect();
+            for next in channel.output.into_iter().chain(channel.sends.iter().map(|s| s.target)).chain(keys) {
                 if needed.insert(next) {
                     pending.push(next);
                 }
@@ -41,6 +46,7 @@ pub(crate) fn apply(import: &mut crate::Import) {
         })
         .collect();
     let mut folded = BTreeSet::new();
+    let mut into: BTreeMap<ChannelId, ChannelId> = BTreeMap::new();
     for (source_id, mixer_id) in candidates {
         let Some(mixer) = p.channel(mixer_id).cloned() else { continue };
         let Some(source) = p.channel_mut(source_id) else { continue };
@@ -71,9 +77,40 @@ pub(crate) fn apply(import: &mut crate::Import) {
             data: mixer_id.0.to_le_bytes().to_vec(),
         });
         folded.insert(mixer_id);
+        into.insert(mixer_id, source_id);
     }
     p.channels.retain(|c| !folded.contains(&c.id));
     p.tracks.retain(|t| t.channel.is_none_or(|id| !folded.contains(&id)));
+    // A key read from a mixer insert that folded into its source reads the source now; one whose
+    // track is gone reads nothing (the device hears its own input).
+    let present: BTreeSet<ChannelId> = p.channels.iter().map(|c| c.id).collect();
+    for channel in &mut p.channels {
+        suhina_model::visit_devices_mut(&mut channel.devices, &mut |device| {
+            for input in &mut device.inputs {
+                if let Some(&to) = into.get(&input.source.channel()) {
+                    input.source = suhina_model::SignalPoint::Channel { channel: to, tap: input.source.tap() };
+                }
+            }
+            device.inputs.retain(|i| present.contains(&i.source.channel()));
+        });
+    }
+    // A key that now reads its own track after its devices, or closes a loop, is left out.
+    let looped: Vec<(ChannelId, Vec<usize>)> = p
+        .channels
+        .iter()
+        .flat_map(|c| {
+            suhina_model::walk_devices(&c.devices)
+                .into_iter()
+                .filter(|(_, d)| d.inputs.iter().any(|i| p.key_closes_loop(i.source, c.id)))
+                .map(|(path, _)| (c.id, path))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    for (channel, path) in looped {
+        if let Some(device) = p.channel_mut(channel).and_then(|c| suhina_model::device_at_mut(&mut c.devices, &path)) {
+            device.inputs.clear();
+        }
+    }
     let primary: BTreeSet<_> = p.channels.iter().filter_map(|c| c.output).collect();
     for channel in &mut p.channels {
         if channel.id.0 > MIXER && channel.id.0 < MIXER + 501 && primary.contains(&channel.id) {
