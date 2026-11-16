@@ -210,6 +210,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.rename",
+        label: "Rename a device: the name its panel, the menus and its editor's window show; a plug-in is still found by its own name",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            param("name", ParamType::Text, "the new name, not empty, at most 200 characters"),
+        ],
+        kind: CommandKind::EDIT,
+        run: devices::rename,
+        policy: Policy::UNHEARD,
+    },
+    CommandSpec {
         id: "device.setKey",
         label: "Make a device read another track's signal as its key (sidechain): a compressor or a plug-in with a sidechain input ducks to it; source \"none\" removes the key",
         params: &[

@@ -1221,6 +1221,33 @@ pub(crate) fn set_enabled(session: &mut Session, params: &Value) -> Result<Value
     Ok(json!({ "device": path_value(&path), "enabled": enabled }))
 }
 
+/// The longest name `device.rename` takes, in characters.
+pub(crate) const MAX_DEVICE_NAME: usize = 200;
+
+/// `device.rename {track, device, name}`: the name the panel, the menus and an editor's window
+/// show. A plug-in keeps its own name the first time it is renamed (`Device::plugin_name`), as
+/// finding it among the installed plug-ins goes by that name. One undo step.
+pub(crate) fn rename(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let name = Args::new(params).raw_str("name").map(str::trim).filter(|n| !n.is_empty());
+    let name = name.ok_or("name must be a text, not empty")?.to_string();
+    if name.chars().count() > MAX_DEVICE_NAME {
+        return Err(format!("name must be at most {MAX_DEVICE_NAME} characters").into());
+    }
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
+    let kept = device.extensions.0.iter().any(|e| e.format == "suhina" && e.key == Device::PLUGIN_NAME);
+    if is_plugin(&device.kind) && !kept && device.name != name {
+        device.extensions.0.push(suhina_model::Extension {
+            format: "suhina".into(),
+            key: Device::PLUGIN_NAME.into(),
+            data: device.name.as_bytes().to_vec(),
+        });
+    }
+    device.name.clone_from(&name);
+    Ok(json!({ "device": path_value(&path), "name": name }))
+}
+
 /// `device.setEnabledMany {track, devices, enabled}`: several devices of a track on or off, one
 /// undo step (0 or an on/off button with several devices picked, #948).
 pub(crate) fn set_enabled_many(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

@@ -2028,3 +2028,30 @@ fn a_compressors_sidechain_button_picks_a_source_track() {
     assert_eq!((compressor.device, compressor.source), (0, Some(TrackId(2))));
     assert!(compressor.refused.contains(&TrackId(1)), "its own track is no source");
 }
+
+/// A device's menu renames it: the name typed in its field, applied with Enter, is one
+/// `device.rename`; Enter on the unchanged name sends nothing.
+#[test]
+fn a_devices_menu_renames_it() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let at = crate::detail::detail_view::DeviceAt(vec![2]);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 300.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            crate::interaction::menus::device_menu(ui, TrackId(3), &at, None, true, "Utility", None, actions);
+        },
+        Vec::new(),
+    );
+    harness.get_by_label("Rename Utility").click();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert!(harness.state().iter().all(|a| a.id != "device.rename"), "{:?}", harness.state());
+    harness.get_by_label("Rename Utility").click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Rename Utility").type_text("Source level");
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let renamed: Vec<_> = harness.state().iter().filter(|a| a.id == "device.rename").collect();
+    assert_eq!(renamed.len(), 1, "{:?}", harness.state());
+    assert_eq!(renamed[0].params, json!({ "track": 3, "device": 2, "name": "Source level" }));
+}

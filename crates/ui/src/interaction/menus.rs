@@ -932,6 +932,25 @@ pub fn device_menu(
 ) {
     ui.set_min_width(140.0);
     let device = at.value();
+    // Its name: edited in place, applied with Enter (`device.rename`), as a track's is.
+    let id = Id::unique(("device-rename", track, device.to_string()));
+    let mut text = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| name.to_string());
+    let response = crate::kit::widgets::text_input(
+        ui,
+        egui::TextEdit::singleline(&mut text).hint_text("Name").desired_width(140.0),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename {name}")));
+    if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+        let renamed = text.trim();
+        if !renamed.is_empty() && renamed != name {
+            actions.push(Action::new("device.rename", json!({ "track": track.0, "device": device, "name": renamed })));
+        }
+        ui.data_mut(|d| d.remove::<String>(id));
+        ui.close();
+        return;
+    }
+    ui.data_mut(|d| d.insert_temp(id, text));
+    ui.separator();
     // The key it reads (sidechain), as the panel's Sidechain button chooses it.
     if let Some(side) = sidechain {
         let label = side.key.as_ref().map_or("Sidechain: none".to_owned(), |k| format!("Sidechain: {}", k.name));

@@ -308,7 +308,7 @@ fn found<'a>(catalog: &'a Catalog, kind: &DeviceKind, name: &str) -> Option<Opti
 /// state, with a VST3 controller's own state when the project kept one); `None` when the device
 /// is not a plug-in or nothing installed stands for it.
 pub fn device_plugin<'a>(catalog: &'a Catalog, device: &Device) -> Option<(Match<'a>, Option<SavedState>)> {
-    let found = found(catalog, &device.kind, &device.name)??;
+    let found = found(catalog, &device.kind, device.plugin_name())??;
     let controller = device.extensions.0.iter().find(|e| e.key == "Vst3ControllerState").map(|e| e.data.clone());
     let state = device.state.as_deref().map(|data| SavedState { data: data.to_vec(), controller });
     Some((found, state))
@@ -343,7 +343,7 @@ fn check(projects: &mut Projects, params: &Value) -> Result<Value, CommandError>
     let list: Vec<Value> = devices
         .iter()
         .filter_map(|(channel, device)| {
-            let result = found(catalog, &device.kind, &device.name)?;
+            let result = found(catalog, &device.kind, device.plugin_name())?;
             let (format, id) = device_format(&device.kind);
             let mut entry = json!({
                 "channel": channel, "device": device.name, "format": format, "id": id,

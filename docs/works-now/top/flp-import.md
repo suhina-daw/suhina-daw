@@ -25,3 +25,5 @@
   the track's devices, or after its fader) and its gain; or from the source's track menu,
   *Sidechain to*. A plug-in hears the key on its sidechain input. An imported `.flp` keeps
   its plug-ins' sidechains.
+- **Renaming devices:** a device's menu starts with its name in a field; type a new one and
+  press Enter. A renamed plug-in still loads as itself.

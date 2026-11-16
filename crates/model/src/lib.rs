@@ -542,6 +542,20 @@ impl Device {
         });
         Ok(())
     }
+    /// The extension key (format `"suhina"`) that keeps a renamed plug-in's own name.
+    pub const PLUGIN_NAME: &'static str = "pluginName";
+
+    /// The name the plug-in itself has, which finding it among the installed plug-ins goes by:
+    /// the name it had before it was first renamed (`device.rename`), else its name.
+    pub fn plugin_name(&self) -> &str {
+        self.extensions
+            .0
+            .iter()
+            .find(|e| e.format == "suhina" && e.key == Self::PLUGIN_NAME)
+            .and_then(|e| std::str::from_utf8(&e.data).ok())
+            .unwrap_or(&self.name)
+    }
+
     /// A sampler's source path, versioned independently of parameter values.
     pub fn sample_file(&self) -> Option<&str> {
         let bytes = if self.kind == DeviceKind::Sd {
