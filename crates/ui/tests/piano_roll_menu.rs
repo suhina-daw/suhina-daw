@@ -191,6 +191,29 @@ fn escape_closes_the_menu_and_keeps_the_selection() {
     assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), vec![1], "the menu's Escape alone");
 }
 
+/// The mute key reaches the piano roll through the window's keys: 0 mutes the selected note and
+/// 0 again brings it back.
+#[test]
+fn the_mute_key_mutes_and_unmutes_the_selected_notes() {
+    let mut renderer = engine();
+    let mut h = with_preset(&mut renderer, Preset::SelectFirst);
+    let n = notes(&h);
+    let on = note_rect(&h, &n[1]).center();
+    h.hover_at(on);
+    h.step();
+    press(&mut h, on, egui::PointerButton::Primary, true);
+    press(&mut h, on, egui::PointerButton::Primary, false);
+    h.run();
+    assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), vec![1]);
+    h.key_press(egui::Key::Num0);
+    h.run();
+    assert!(notes(&h)[1].muted, "0 muted the selected note");
+    assert!(!notes(&h)[0].muted, "and no other");
+    h.key_press(egui::Key::Num0);
+    h.run();
+    assert!(!notes(&h)[1].muted, "0 again unmuted it");
+}
+
 #[test]
 fn invert_selection_selects_the_notes_that_were_not_selected() {
     let mut renderer = engine();

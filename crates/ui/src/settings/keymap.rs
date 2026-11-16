@@ -280,14 +280,15 @@ pub fn slot_only(action: &str) -> bool {
 /// that have nothing to do with what a view shows or has selected.
 const IN_PIANO_ROLL_NAMESPACES: [&str; 6] = ["pianoRoll.", "file.", "edit.", "project.", "help.", "settings."];
 
-/// The other actions that run while the piano roll has the keyboard: the edit keys, which act on
-/// its notes there, playback, and the window's views and panes.
-const IN_PIANO_ROLL: [&str; 25] = [
+/// The other actions that run while the piano roll has the keyboard: the edit keys and the mute
+/// key, which act on its notes there, playback, and the window's views and panes.
+const IN_PIANO_ROLL: [&str; 26] = [
     "selection.copy",
     "selection.cut",
     "selection.paste",
     "selection.duplicate",
     "selection.delete",
+    "selection.mute",
     "transport.toggle",
     "transport.play",
     "transport.stop",

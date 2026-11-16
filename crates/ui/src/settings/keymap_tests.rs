@@ -112,7 +112,6 @@ fn alt_l_is_legato_and_the_loop_key_is_left_alone_in_the_piano_roll() {
     // What runs there is listed, so the rest is left alone without being named: the keys of
     // the views behind the notes, and an action nobody has listed yet.
     for id in [
-        "selection.mute",
         "selection.selectAll",
         "selection.launch",
         "arrangement.tool3",
@@ -132,6 +131,7 @@ fn alt_l_is_legato_and_the_loop_key_is_left_alone_in_the_piano_roll() {
         "pianoRoll.legato",
         "selection.delete",
         "selection.copy",
+        "selection.mute",
         "edit.undo",
         "edit.redo",
         "file.save",
