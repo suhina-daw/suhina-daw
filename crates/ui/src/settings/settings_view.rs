@@ -272,8 +272,6 @@ pub enum ThemeRequest {
     Backup,
     /// Write the theme in use as a theme package to share (`.theme.suhina`).
     ExportPackage,
-    /// Write a theme template and a README on the format into a zip.
-    ExportTemplate,
 }
 
 /// What *New theme* and *Duplicate theme* ask before they make a theme.
@@ -1515,7 +1513,6 @@ fn theme_page(
                         ("Open the themes folder", ThemeRequest::OpenFolder),
                         ("Export theme…", ThemeRequest::ExportPackage),
                         ("Back up themes", ThemeRequest::Backup),
-                        ("Export the theme template", ThemeRequest::ExportTemplate),
                     ] {
                         if ui.button(label).clicked() {
                             request = Some(action);

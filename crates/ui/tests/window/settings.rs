@@ -122,7 +122,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     assert_eq!(saved, [("night-copy".to_string(), "Night copy".to_string())]);
     assert_eq!(harness.state().settings().theme, "night-copy");
 
-    for button in ["Reload themes", "Open the themes folder", "Back up themes", "Export the theme template"] {
+    for button in ["Reload themes", "Open the themes folder", "Back up themes"] {
         harness.get_by_label("More").click();
         harness.run();
         harness.get_by_label(button).click();
@@ -130,7 +130,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     }
     assert_eq!(
         harness.state_mut().take_theme_actions(),
-        [FileAction::Reload, FileAction::OpenFolder, FileAction::Backup, FileAction::ExportTemplate]
+        [FileAction::Reload, FileAction::OpenFolder, FileAction::Backup]
     );
 
     // A theme file dropped on the window is handed out to be brought in.

@@ -89,39 +89,6 @@ fn a_backup_brings_the_themes_back() {
 }
 
 #[test]
-fn the_template_holds_a_theme_a_readme_and_examples() {
-    let dir = folder("template");
-    let files = ThemeFiles::new(Some(dir.join("themes")));
-    let zip = files.export_template().unwrap_or_default();
-    let file = std::fs::File::open(&zip).unwrap_or_else(|e| panic!("{e}"));
-    let mut archive = zip::ZipArchive::new(file).unwrap_or_else(|e| panic!("{e}"));
-    let mut names: Vec<String> = archive.file_names().filter_map(Result::ok).map(|n| n.to_string()).collect();
-    names.sort();
-    for name in ["README.md", "my-theme/theme.css", "my-theme/variants/warm.json", "examples/nord/theme.css"] {
-        assert!(names.contains(&name.to_string()), "{name}: {names:?}");
-    }
-    let json = |n: &&String| n.ends_with(".json") && !n.contains("/variants/") && !n.ends_with("/theme.json");
-    assert!(!names.iter().any(|n| json(&n)), "only variants and theme.json are JSON: {names:?}");
-    assert!(names.contains(&"my-theme/theme.json".to_string()) && !names.iter().any(|n| n.ends_with("layout.css")));
-    let mut template = String::new();
-    archive
-        .by_name("my-theme/theme.css")
-        .unwrap_or_else(|e| panic!("{e}"))
-        .read_to_string(&mut template)
-        .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(theme::from_css(&template).1, Vec::<String>::new());
-    // The editable example is importable; reference palettes remain examples only.
-    let mut into = ThemeFiles::new(Some(dir.join("into")));
-    let (ids, warnings) = into.import(&zip).unwrap();
-    assert_eq!(ids, ["my-theme"]);
-    assert!(warnings.is_empty());
-    let (entries, warnings) = into.read_all();
-    assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["my-theme", "my-theme@warm"]);
-    let _clean = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
 fn what_is_not_a_theme_is_refused() {
     let dir = folder("refused");
     std::fs::create_dir_all(&dir).unwrap_or_default();
@@ -155,7 +122,7 @@ fn without_a_folder_nothing_is_read_or_written() {
     let mut files = ThemeFiles::new(None);
     assert_eq!(files.read_all(), (Vec::new(), Vec::new()));
     assert!(files.write("night", &Theme::default()).is_err());
-    assert!(files.backup().is_err() && files.export_template().is_err() && files.open_folder().is_err());
+    assert!(files.backup().is_err() && files.open_folder().is_err());
     assert_eq!(files.folder_text(), None);
 }
 

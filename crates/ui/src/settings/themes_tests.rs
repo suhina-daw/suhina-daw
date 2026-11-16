@@ -239,13 +239,13 @@ fn using_and_file_actions() {
     themes.set(vec![night()], None);
     assert_eq!(themes.request(BUILT_IN, ThemeRequest::Use("night".into())), Some("night".into()));
     assert_eq!(themes.request(BUILT_IN, ThemeRequest::Use("nothing".into())), None);
-    for request in [ThemeRequest::Reload, ThemeRequest::Backup, ThemeRequest::Backup, ThemeRequest::ExportTemplate] {
+    for request in [ThemeRequest::Reload, ThemeRequest::Backup, ThemeRequest::Backup] {
         assert_eq!(themes.request(BUILT_IN, request), None);
     }
     themes.import("night.json".into());
     assert_eq!(
         themes.take_actions(),
-        [FileAction::Reload, FileAction::Backup, FileAction::ExportTemplate, FileAction::Import("night.json".into())]
+        [FileAction::Reload, FileAction::Backup, FileAction::Import("night.json".into())]
     );
 }
 

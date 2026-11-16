@@ -18,8 +18,8 @@
 //! and seen right away. A theme from an earlier version (`night-blue.json` beside a folder, or a
 //! `theme.css` that imports `advanced.css`) is migrated once: the new files are written, read back
 //! and compared, and only then are the old ones moved into the theme's `legacy/` folder; nothing is
-//! deleted. Backups and the theme template are zips written to the `exports` folder; theme files
-//! and zips dropped on the window are brought in.
+//! deleted. Backups and exported themes are written to the `exports` folder; theme files and zips
+//! dropped on the window are brought in.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -38,7 +38,8 @@ const MAX_EXPANDED: u64 = 32 * 1024 * 1024;
 const MAX_ZIP_FILES: usize = 512;
 /// How often the folder is looked at for changed files.
 const CHECK_EVERY: Duration = Duration::from_secs(1);
-/// The theme template's name in its zip; it is not brought in when the zip is dropped.
+/// The theme template's name in the zips of earlier versions; it is not brought in when one is
+/// dropped.
 const TEMPLATE: &str = "template.json";
 /// A theme's own style sheet: `<id>/theme.css`.
 const THEME_CSS: &str = "theme.css";
@@ -51,7 +52,7 @@ const MAX_VARIANTS: usize = 64;
 const MAX_VARIANT_FILE: u64 = 64 * 1024;
 /// Where a migrated theme keeps its JSON and old canonical CSS.
 const LEGACY: &str = "legacy";
-/// The folder of the template zip that holds the built-in themes as examples.
+/// The folder of an earlier version's template zip that held the built-in themes as examples.
 const EXAMPLES: &str = "examples/";
 
 /// A variant file's text as last read or written, so a save never overwrites an edit made
@@ -232,7 +233,7 @@ impl ThemeFiles {
         self.folder.as_ref().map(|f| f.display().to_string())
     }
 
-    /// Where backups and the template go: `exports` beside the themes folder.
+    /// Where backups and exported themes go: `exports` beside the themes folder.
     fn exports(&self) -> Result<PathBuf, String> {
         self.folder
             .as_ref()
@@ -433,30 +434,6 @@ impl ThemeFiles {
         // one day are both kept.
         let name = format!("suhina-themes-{}.zip", chrono::Local::now().format("%Y-%m-%d-%H%M%S"));
         write_zip(&self.exports()?.join(name), &contents)
-    }
-
-    /// Writes `exports/suhina-theme-template.zip`: `my-theme/` (Suhina Studio's sheet with every
-    /// colour written out, its artwork and an example variant), `README.md` on the format, and the
-    /// built-in themes in `examples/`. Returns its path.
-    pub fn export_template(&self) -> Result<PathBuf, String> {
-        let mut template = Theme { name: "My theme".into(), ..Theme::default() };
-        template.skin.assets = suhina_ui::kit::skin::inherited_assets();
-        template.skin.toolbar = Some(Default::default());
-        let mut contents = vec![("README.md".to_string(), theme::template_readme().into_bytes())];
-        // The built-in themes as their folders are, as examples.
-        for (id, _) in theme::built_in_themes() {
-            for (name, data) in theme::built_in_files(id).unwrap_or_default() {
-                contents.push((format!("{EXAMPLES}{id}/{name}"), data.to_vec()));
-            }
-        }
-        contents.extend(portable_package_files("my-theme", &template)?);
-        let example = Variant {
-            id: "warm".into(),
-            name: "Warm".into(),
-            values: [("--accent".to_string(), "#FFB86C".to_string())].into(),
-        };
-        contents.push((format!("my-theme/{VARIANTS}/warm.json"), example.to_json().into_bytes()));
-        write_zip(&self.exports()?.join("suhina-theme-template.zip"), &contents)
     }
 
     /// Writes the theme `id` as a theme package, `exports/<id>.theme.suhina`: its folder's files,
