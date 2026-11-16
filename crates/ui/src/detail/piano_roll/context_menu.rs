@@ -13,13 +13,22 @@ use super::*;
 use crate::detail::piano_roll_ruler::Part as RulerPart;
 
 /// Where the menu was opened: the point on the screen, the beat under it, and the note it was
-/// opened on, if any. `opened` once the popup has been told to open.
+/// opened on, if any. `opened` once the popup has been told to open. `serial` tells this opening
+/// from the one before: each is a popup of its own, so a right click while the menu is open opens
+/// it again at the new point instead of the click closing the new one with the old.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct MenuAt {
     pub(super) pos: Pos2,
     pub(super) beat: f64,
     pub(super) note: Option<usize>,
     pub(super) opened: bool,
+    pub(super) serial: u64,
+}
+
+/// A fresh [`MenuAt::serial`].
+fn next_serial() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// What a right click in the grid opens, read once a frame after the right button's own gestures.
@@ -72,7 +81,8 @@ impl RightClick<'_> {
             state.selected = BTreeSet::from([index]);
             state.clear_span();
         }
-        let menu = MenuAt { pos, beat: self.layout.beat_at(pos.x).max(0.0), note: over, opened: false };
+        let menu =
+            MenuAt { pos, beat: self.layout.beat_at(pos.x).max(0.0), note: over, opened: false, serial: next_serial() };
         let ghost = over.is_none()
             && ghost_view::ghost_at(&self.clip.ghosts, pos, |g| self.layout.note_rect(&g.note())).is_some();
         if ghost {
@@ -119,9 +129,9 @@ pub(super) struct MenuCx<'a> {
     pub(super) playhead: f64,
 }
 
-/// The menu popup's id.
-fn menu_id() -> Id {
-    Id::unique("piano-roll-context-menu")
+/// The popup of the menu opened as `serial`.
+fn menu_id(serial: u64) -> Id {
+    Id::new(("piano-roll-context-menu", serial))
 }
 
 /// The height of one of the menu's rows, lower than the window's other rows.
@@ -135,7 +145,7 @@ impl MenuCx<'_> {
     /// one change to the view.
     pub(super) fn show(&self, ui: &Ui, state: &mut PianoRollState, actions: &mut Vec<Action>) {
         let Some(at) = state.menu else { return };
-        let id = menu_id();
+        let id = menu_id(at.serial);
         let open = (!at.opened).then_some(SetOpenCommand::Bool(true));
         let mut picked = None;
         let shown = egui::Popup::new(id, ui.ctx().clone(), at.pos, ui.layer_id())
@@ -202,6 +212,7 @@ impl MenuCx<'_> {
         let (word, mute) = if acting && muted { ("Unmute", false) } else { ("Mute", true) };
         item(ui, word, Some("selection.mute"), acting, Pick::Mute(mute));
         item(ui, "Split here", None, !self.split_notes(state, at).is_empty(), Pick::Split);
+        item(ui, "Chop on grid", Some("pianoRoll.chopNotes"), acting, Pick::Key("pianoRoll.chopNotes"));
         // Reverse turns the notes round in time (the Notes tab's Reverse); Invert selection above
         // changes what is selected, not the notes.
         item(ui, "Reverse", None, acting, Pick::Reverse);
@@ -393,8 +404,9 @@ impl PianoRollState {
 
     /// Closes the right-click menu (Escape), and one waiting to open on a ghost note.
     pub fn close_menu(&mut self, ctx: &egui::Context) {
-        self.menu = None;
+        if let Some(menu) = self.menu.take() {
+            egui::Popup::close_id(ctx, menu_id(menu.serial));
+        }
         self.menu_waiting = None;
-        egui::Popup::close_id(ctx, menu_id());
     }
 }

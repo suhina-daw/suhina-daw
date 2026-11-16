@@ -333,7 +333,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   splits each named note that spans the beat `at` into two at `at` (the first keeps the start, the
   second the end); `times` instead gives each note a beat of its own, one per entry of `notes` (the
   piano roll's slanted cut), and `ats` cuts each note at every one of several beats it spans (the
-  piano roll's Ctrl+E), not with `keepLonger`. A note that starts or ends exactly at its beat is left alone, so a second
+  piano roll's Ctrl+E and Chop on grid), not with `keepLonger`. A note that starts or ends exactly at its beat is left alone, so a second
   split at the same beat changes nothing. One undo step; it returns the indices and `ids` of the
   notes it made (each first half keeps its note's id), and every beat is from 0 to 120 000. With
   `keepLonger: true` each note split keeps only its longer piece (the first when they are as

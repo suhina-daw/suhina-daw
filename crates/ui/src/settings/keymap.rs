@@ -130,7 +130,7 @@ pub struct Action {
 }
 
 /// Actions the window does itself or on the selection, with their labels.
-const WINDOW_ACTIONS: [(&str, &str, &str); 106] = [
+const WINDOW_ACTIONS: [(&str, &str, &str); 107] = [
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -241,11 +241,8 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 106] = [
     ("pianoRoll.join", "Join the selected notes on one key into one note, over any gap", PIANO_ROLL),
     ("pianoRoll.fitToTime", "Stretch or squeeze the selected notes to fill the time selection", PIANO_ROLL),
     ("pianoRoll.crop", "Crop the piano roll's clip to the time selection", PIANO_ROLL),
-    (
-        "pianoRoll.splitNotes",
-        "Split the notes at the time selection's edges, or the selected notes on the grid",
-        PIANO_ROLL,
-    ),
+    ("pianoRoll.splitNotes", "Split the notes at the time selection's edges", PIANO_ROLL),
+    ("pianoRoll.chopNotes", "Chop the selected notes into grid-long pieces", PIANO_ROLL),
     ("pianoRoll.rangeUp", "Raise the selected notes' velocity range by one", PIANO_ROLL),
     ("pianoRoll.rangeDown", "Lower the selected notes' velocity range by one", PIANO_ROLL),
     ("help.about", "Show which version of Suhina this is", "Help"),
@@ -544,7 +541,7 @@ const PRESET_KEY: &str = "preset";
 /// The duplicate key of Draw-first, and the browser's key otherwise.
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
-const DEFAULTS: [(&str, &[&str]); 106] = [
+const DEFAULTS: [(&str, &[&str]); 107] = [
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -649,6 +646,7 @@ const DEFAULTS: [(&str, &[&str]); 106] = [
     ("pianoRoll.fitToTime", &["Ctrl+Alt+J"]),
     ("pianoRoll.crop", &["Ctrl+Shift+J"]),
     ("pianoRoll.splitNotes", &["Ctrl+E"]),
+    ("pianoRoll.chopNotes", &["Alt+E"]),
     ("pianoRoll.rangeUp", &["Alt+Shift+Up"]),
     ("pianoRoll.rangeDown", &["Alt+Shift+Down"]),
 ];

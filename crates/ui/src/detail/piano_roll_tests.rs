@@ -1344,7 +1344,7 @@ fn the_menus_paste_lands_at_the_playhead_like_the_key() {
     let keymap = crate::settings::keymap::Keymap::default();
     let grid = TimelineGrid::new(0.25, 40.0, 4.0, 4.0);
     let menu = MenuCx { clip: &piano, keymap: &keymap, copied: Some(1), grid, playhead: 18.0 };
-    let at = MenuAt { pos: Pos2::ZERO, beat: 5.0, note: None, opened: true };
+    let at = MenuAt { pos: Pos2::ZERO, beat: 5.0, note: None, opened: true, serial: 0 };
     let mut by_menu = focused_on(&piano);
     let pasted = menu.run(context_menu::Pick::Key("selection.paste"), at, &mut by_menu).expect("note.paste");
     let mut by_key = focused_on(&piano);
@@ -1442,7 +1442,7 @@ fn the_first_beat_item_counts_a_patterns_other_lanes() {
     let keymap = crate::settings::keymap::Keymap::default();
     let grid = TimelineGrid::new(0.25, 40.0, 4.0, 4.0);
     let menu = MenuCx { clip: &piano, keymap: &keymap, copied: None, grid, playhead: 0.0 };
-    let at = |beat: f64| MenuAt { pos: Pos2::ZERO, beat, note: None, opened: true };
+    let at = |beat: f64| MenuAt { pos: Pos2::ZERO, beat, note: None, opened: true, serial: 0 };
     assert!(!menu.origin_ok(at(1.0)), "the other track's note at 0.25 lies before beat 1");
     assert!(menu.origin_ok(at(0.25)));
 }
@@ -1471,7 +1471,7 @@ fn the_first_beat_item_takes_only_an_eighth_on_a_clip_that_swings() {
     let mut placed = Clip { offset: 2.0, ..Clip::new(ContentId(1), 0.0, 8.0) };
     let keymap = crate::settings::keymap::Keymap::default();
     let grid = TimelineGrid::new(0.25, 40.0, 4.0, 4.0);
-    let at = |beat: f64| MenuAt { pos: Pos2::ZERO, beat, note: None, opened: true };
+    let at = |beat: f64| MenuAt { pos: Pos2::ZERO, beat, note: None, opened: true, serial: 0 };
 
     let straight = super::clip::piano_clip_from(&project, TrackId(1), &placed).expect("a MIDI clip");
     assert!(!straight.swings);
@@ -1486,10 +1486,10 @@ fn the_first_beat_item_takes_only_an_eighth_on_a_clip_that_swings() {
     assert!(menu.origin_ok(at(1.5)), "on an eighth every note keeps its swing");
 }
 
-/// Ctrl+E splits notes, never the clip: at a time selection's edges where it runs across notes,
-/// else the selected notes at every grid line inside them; nothing with nothing to cut.
+/// Ctrl+E splits notes, never the clip, at a time selection's edges where it runs across notes,
+/// and nothing else; Chop on grid (Alt+E) cuts the selected notes at every grid line.
 #[test]
-fn ctrl_e_splits_notes_at_the_time_selection_or_on_the_grid() {
+fn ctrl_e_splits_at_the_time_selection_and_chop_cuts_on_the_grid() {
     let piano = clip(vec![note(0.0, 2.0, 60), note(1.0, 1.0, 64), note(4.0, 1.0, 62)]);
     let mut state = focused_on(&piano);
     assert!(state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).is_none(), "nothing selected");
@@ -1498,10 +1498,12 @@ fn ctrl_e_splits_notes_at_the_time_selection_or_on_the_grid() {
     let split = state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).expect("note.split");
     assert_eq!(split.id, "note.split");
     assert_eq!((split.params["notes"].clone(), split.params["ats"].clone()), (json!([0, 1]), json!([0.5, 1.5])));
-    // Selected notes whose time selection is their own span (a rectangle): chopped on the grid.
+    // Selected notes whose time selection is their own span (a rectangle): its edges cut nothing,
+    // and Ctrl+E only splits, so nothing happens; Chop on grid cuts them on the grid.
     state.selected = BTreeSet::from([0]);
     state.select_span(0.0, 2.0);
-    let chop = state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).expect("note.split");
+    assert!(state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).is_none(), "split never chops");
+    let chop = state.key_action("pianoRoll.chopNotes", &piano, 0.0, None).expect("note.split");
     assert_eq!(chop.params["notes"], json!([0]));
     let ats: Vec<f64> = chop.params["ats"].as_array().unwrap().iter().filter_map(|v| v.as_f64()).collect();
     assert!(!ats.is_empty() && ats.iter().all(|at| *at > 0.0 && *at < 2.0), "{ats:?}");

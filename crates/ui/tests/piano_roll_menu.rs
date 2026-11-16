@@ -175,6 +175,25 @@ fn a_right_click_on_an_unselected_note_selects_it_alone() {
     assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), vec![1]);
 }
 
+/// A right click while the menu is open opens it again where it was clicked; the click that
+/// closes the old menu never closes the new one with it (it flashed and was gone).
+#[test]
+fn a_second_right_click_opens_the_menu_again_at_the_new_point() {
+    let mut renderer = engine();
+    let mut h = with_preset(&mut renderer, Preset::SelectFirst);
+    let empty = empty_spot(&h);
+    right_click(&mut h, empty);
+    assert!(menu_open(&h));
+    pause(&mut h);
+    // The same empty key, a little later: no note there.
+    let elsewhere = empty + egui::vec2(40.0, 0.0);
+    right_click(&mut h, elsewhere);
+    pause(&mut h);
+    h.run();
+    assert!(menu_open(&h), "the menu is open at the second point");
+    assert!(h.state().piano_roll().menu_open());
+}
+
 #[test]
 fn escape_closes_the_menu_and_keeps_the_selection() {
     let mut renderer = engine();

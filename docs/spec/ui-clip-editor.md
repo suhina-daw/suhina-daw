@@ -822,7 +822,8 @@ at the pointer, with what the toolbar, the clip panel and the keys can do.
     selection, and no others;
   - Quantize (Ctrl+U) and Quantize settings… (the Transform tab's Quantise); Mute or Unmute the
     selection (`note.setMuted`; Unmute when every note it acts on is muted); Split here
-    (`note.split` of the notes it acts on at the clicked point, on the grid); Reverse (`note.reverse`
+    (`note.split` of the notes it acts on at the clicked point, on the grid); Chop on grid (Alt+E,
+    › Joining, fitting, cropping and splitting); Reverse (`note.reverse`
     of the notes it acts on, the Notes tab's Reverse: turned round in time inside their own span);
   - Loop selection (`clip.setLoop` over the time selection, or the selected notes' span); Set start
     here and Set loop start here, at the clicked point on the grid, as a drag of that marker on the
@@ -871,12 +872,14 @@ notes are untouched, and a clip that holds audio refuses them.
   what is left, one whose loop it misses plays once and is as long as the selection. A time
   selection outside the part of the clip that plays is refused.
 - **Split notes** (`note.split` with `ats`, **Ctrl+E**, the split key, which the piano roll takes
-  while it has the keyboard): with a time selection that runs across notes, those notes (the
-  selected ones, or with none selected every note across it) are cut at its two edges; otherwise
-  the selected notes are cut at every grid line inside them, into grid-long pieces (a rectangle's
-  time selection is the selected notes' own span, so its edges cut nothing and the grid does). One
-  undo step; nothing selected and no time selection across a note, or snapping with no grid lines,
-  does nothing. It never splits at the playhead and never splits the clip.
+  while it has the keyboard): the notes across the time selection's two edges (the selected ones,
+  or with none selected every note across them) are cut at them, one undo step. It only splits:
+  without a time selection, or with none of its edges inside a note (a rectangle's time selection
+  is the selected notes' own span), it does nothing. It never splits at the playhead and never
+  splits the clip.
+- **Chop on grid** (`note.split` with `ats`, **Alt+E**, and the menu): the notes the edit keys act
+  on are cut at every grid line inside them, into grid-long pieces, one undo step; with no grid
+  line inside a note it does nothing.
 - **Split clip** (`clip.split` with `ats`, the menu): the clip is cut at the time selection's
   edges (where the clip first plays them), into clips of their own on the same lane, as the
   Arrangement's split does, in one undo step; without a time selection, **Split clip here** cuts
@@ -1359,7 +1362,7 @@ the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.desel
 `.selectNextOnKey`, `.selectPreviousOnKey`, `.selectNextNote`, `.selectPreviousNote`,
 `.growSelectionOnKey`, `.shrinkSelectionOnKey`, `.growSelection`, `.shrinkSelection`, `.draw`,
 `.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection`,
-`.zoomClip`, `.legato`, `.loop`, `.join`, `.fitToTime`, `.crop`, `.splitNotes`, `.rangeUp` and
+`.zoomClip`, `.legato`, `.loop`, `.join`, `.fitToTime`, `.crop`, `.splitNotes`, `.chopNotes`, `.rangeUp` and
 `.rangeDown`, which are read only
 while the piano roll has the keyboard, so they can be changed like the rest. `pianoRoll.quantize`
 (Ctrl+U) means nothing elsewhere, so it works whenever the piano roll shows a clip.

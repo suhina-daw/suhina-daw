@@ -683,7 +683,11 @@ impl PianoRollState {
             }
             // Join, Fit to time range, Crop and Split clip (› Joining, fitting, cropping and
             // splitting): one command each.
-            "pianoRoll.join" | "pianoRoll.fitToTime" | "pianoRoll.crop" | "pianoRoll.splitNotes" => {
+            "pianoRoll.join"
+            | "pianoRoll.fitToTime"
+            | "pianoRoll.crop"
+            | "pianoRoll.splitNotes"
+            | "pianoRoll.chopNotes" => {
                 return self.clip_edit(action, clip, &acting);
             }
             _ if chosen.is_empty() => return None,
@@ -853,7 +857,8 @@ impl PianoRollState {
             }
             // The selected notes, not the notes that start in the time selection (what the other
             // keys act on with none selected): a note across its start is cut there too.
-            "pianoRoll.splitNotes" => split_notes(clip, &self.selected, span, self.beat_width),
+            "pianoRoll.splitNotes" => split_notes(clip, &self.selected, span),
+            "pianoRoll.chopNotes" => chop_notes(clip, acting, self.beat_width),
             _ => None,
         }
     }
@@ -1084,37 +1089,40 @@ pub struct Context<'a> {
     pub seeks: bool,
 }
 
-/// The most cuts Split notes makes on the grid in one go.
+/// The most cuts Chop on grid makes in one go.
 const MAX_CHOPS: usize = 1024;
 
-/// Split notes (Ctrl+E): with a time selection that runs across notes, those notes (the selected
-/// ones, or with none every note of the clip) are cut at its edges; otherwise the selected notes
-/// are cut at every grid line inside them. One `note.split` with `ats`, one undo step; `None` with
-/// nothing to cut (no notes, or no grid line or edge inside one).
-fn split_notes(
-    clip: &PianoClip,
-    acting: &BTreeSet<usize>,
-    span: Option<(f64, f64)>,
-    beat_width: f32,
-) -> Option<Action> {
-    let spans = |n: &Note, at: f64| n.time < at - EPSILON && n.time + n.duration > at + EPSILON;
-    let action = |notes: Vec<usize>, ats: Vec<f64>| {
-        let mut params = clip.address.clone();
-        params["notes"] = json!(notes);
-        params["ats"] = json!(ats);
-        Action::new("note.split", params)
-    };
-    if let Some((start, end)) = span {
-        let named: Vec<usize> =
-            if acting.is_empty() { (0..clip.notes.len()).collect() } else { acting.iter().copied().collect() };
-        let cut: Vec<usize> = named
-            .into_iter()
-            .filter(|i| clip.notes.get(*i).is_some_and(|n| spans(n, start) || spans(n, end)))
-            .collect();
-        if !cut.is_empty() {
-            return Some(action(cut, vec![start, end]));
-        }
-    }
+/// Whether `note` runs across `at`: it starts before and ends after it.
+fn runs_across(note: &Note, at: f64) -> bool {
+    note.time < at - EPSILON && note.time + note.duration > at + EPSILON
+}
+
+/// One `note.split` of `notes` at every beat of `ats`, one undo step.
+fn split_action(clip: &PianoClip, notes: Vec<usize>, ats: Vec<f64>) -> Action {
+    let mut params = clip.address.clone();
+    params["notes"] = json!(notes);
+    params["ats"] = json!(ats);
+    Action::new("note.split", params)
+}
+
+/// Split notes (Ctrl+E): the notes across the time selection's edges (the selected ones, or with
+/// none every note of the clip) are cut at them; `None` without a time selection or with no note
+/// across an edge. It only splits: chopping on the grid is [`chop_notes`].
+fn split_notes(clip: &PianoClip, selected: &BTreeSet<usize>, span: Option<(f64, f64)>) -> Option<Action> {
+    let (start, end) = span?;
+    let named: Vec<usize> =
+        if selected.is_empty() { (0..clip.notes.len()).collect() } else { selected.iter().copied().collect() };
+    let cut: Vec<usize> = named
+        .into_iter()
+        .filter(|i| clip.notes.get(*i).is_some_and(|n| runs_across(n, start) || runs_across(n, end)))
+        .collect();
+    (!cut.is_empty()).then(|| split_action(clip, cut, vec![start, end]))
+}
+
+/// Chop on grid (Alt+E): the notes the edit keys act on, cut at every grid line inside them
+/// into grid-long pieces. One `note.split` with `ats`, one undo step; `None` with nothing to cut
+/// (no notes, or no grid line inside one).
+fn chop_notes(clip: &PianoClip, acting: &BTreeSet<usize>, beat_width: f32) -> Option<Action> {
     let chosen: Vec<&Note> = acting.iter().filter_map(|i| clip.notes.get(*i)).collect();
     let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
     let last = chosen.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
@@ -1122,7 +1130,7 @@ fn split_notes(
         .lines(first, last, MAX_CHOPS)
         .into_iter()
         .map(|(beat, _)| round_beat(beat))
-        .filter(|beat| chosen.iter().any(|n| spans(n, *beat)))
+        .filter(|beat| chosen.iter().any(|n| runs_across(n, *beat)))
         .collect();
-    (!ats.is_empty()).then(|| action(acting.iter().copied().collect(), ats))
+    (!ats.is_empty()).then(|| split_action(clip, acting.iter().copied().collect(), ats))
 }
