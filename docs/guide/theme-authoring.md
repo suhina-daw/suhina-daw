@@ -964,8 +964,8 @@ menu and pop-up egui frames (egui's own windows share them), and `scroll-bar` (`
 `:active`) a scroll handle's fill, which egui's sliders and check marks use too. egui has no
 value of its own for tooltips: `tooltip` styles the frame painted over them. A theme with no such
 rule keeps the colours of its tokens. A rule with a `border-color` and no `border-width` keeps the width
-egui draws with; only a width, `0` too, changes it. A fully transparent `border-color` is width 0 as
-well, so a line you hide leaves no gap. `button[checked]` gives the selection only what it says unlike
+egui draws with; only a width, `0` too, changes it. A fully transparent `border-color` on egui's lines
+(`widget[kind="static"]`) or on its menus' edge is width 0 as well, so a line you hide leaves no gap. `button[checked]` gives the selection only what it says unlike
 the plain `button`.
 
 egui's separators, the edges of its group frames and its labels are not buttons: style them with

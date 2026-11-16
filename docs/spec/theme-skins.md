@@ -698,7 +698,8 @@ outline), `menu` for every menu and pop-up that egui frames (`background-color`,
 `:hover`, `:active`) for a scroll handle's fill, which egui also uses for its sliders' and check
 marks' fills. egui has no separate value for a tooltip: `tooltip` styles the frame painted over
 it. A rule that gives a border colour and no width keeps the outline's width; only a width (0
-too) changes it. A stroke whose colour is fully transparent is width 0, since egui keeps a line's
+too) changes it. egui's lines (`widget[kind="static"]`) and its windows' and menus' edge, once every rule is
+written over them, are width 0 where their colour is fully transparent, since egui keeps a line's
 room whether or not it is seen (a panel's separator). A rule with no ancestor reaches them everywhere; one scoped to a view (`settings button`)
 reaches them in that view only, over the root's values. The values are rebuilt when the styles
 reset (theme, variant, `user.css`, a width `@media`, contrast, the window's opacity), not every

@@ -1141,24 +1141,19 @@ fn sheet_visuals() -> Option<(egui::Visuals, bool, bool)> {
         .filter(|style| style.authored.border_width)
         .and_then(super::native_css::Computed::even_border)
         .map_or(line, |width| Stroke::new(width, line.color));
-    unseen_strokes_take_no_room(&mut visuals);
     let clear = root.background().a() < u8::MAX || frame.background().a() < u8::MAX;
     WINDOW_FILL.with(|fill| fill.set(root.background()));
     Some((visuals, light, clear))
 }
 
-/// A stroke the sheet makes fully transparent is width 0 in egui's `visuals`: egui reserves a
-/// line's width whether or not it is seen (a panel's separator), so a hidden line would still
-/// leave a gap of its width (#1487).
+/// egui's lines (its separators and panel edges) and its windows' and menus' edge, where the sheet
+/// makes them fully transparent, are width 0 in egui's `visuals`: egui reserves a line's width
+/// whether or not it is seen (a panel's separator), so a hidden line would still leave a gap of
+/// its width (#1487). Called once every rule is written over them (`root_visuals`): a later rule
+/// that gives only a colour keeps the width it finds, so a line zeroed earlier would stay unseen.
+/// A widget's outline takes no room and keeps its width.
 pub(super) fn unseen_strokes_take_no_room(visuals: &mut egui::Visuals) {
-    for stroke in [
-        &mut visuals.widgets.noninteractive.bg_stroke,
-        &mut visuals.widgets.inactive.bg_stroke,
-        &mut visuals.widgets.hovered.bg_stroke,
-        &mut visuals.widgets.active.bg_stroke,
-        &mut visuals.widgets.open.bg_stroke,
-        &mut visuals.window_stroke,
-    ] {
+    for stroke in [&mut visuals.widgets.noninteractive.bg_stroke, &mut visuals.window_stroke] {
         if stroke.color.a() == 0 {
             *stroke = Stroke::NONE;
         }

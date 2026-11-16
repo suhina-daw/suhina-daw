@@ -383,8 +383,17 @@ fn a_line_made_transparent_takes_no_room() {
         800.0,
     );
     assert_eq!(v.widgets.noninteractive.bg_stroke, egui::Stroke::NONE);
-    assert_eq!(v.widgets.inactive.bg_stroke, egui::Stroke::NONE);
     assert_eq!(v.window_stroke, egui::Stroke::NONE);
+    // A widget's outline takes no room: it keeps its width.
+    assert_eq!(v.widgets.inactive.bg_stroke.color, egui::Color32::TRANSPARENT);
+    // Hidden by one rule and coloured by a later one, a line is seen at the width it had: it is
+    // made width 0 only once every rule is written.
+    let v = root_after(
+        &ctx,
+        "widget[kind=\"window\"] { border-color: transparent; } menu { border-color: #ff0000; }",
+        800.0,
+    );
+    assert_eq!(v.window_stroke, egui::Stroke::new(1.0, rgb(255, 0, 0)));
     skin::configure(&skin::Skin::default());
 }
 

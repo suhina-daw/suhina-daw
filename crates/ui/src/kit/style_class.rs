@@ -568,7 +568,6 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
                 widget.corner_radius = radius;
             }
         }
-        super::theme::unseen_strokes_take_no_room(&mut style.visuals);
         Some(previous)
     } else {
         None
@@ -597,7 +596,6 @@ pub(super) fn rows_in_scope(around: &egui::Style, styled: &egui::Style) -> egui:
         row.weak_bg_fill = plain.weak_bg_fill;
     }
     rows.visuals.selection.stroke.width = plain.selection.stroke.width;
-    super::theme::unseen_strokes_take_no_room(&mut rows.visuals);
     rows
 }
 
