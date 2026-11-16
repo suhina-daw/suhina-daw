@@ -176,6 +176,22 @@ fn a_right_click_on_an_unselected_note_selects_it_alone() {
 }
 
 #[test]
+fn escape_closes_the_menu_and_keeps_the_selection() {
+    let mut renderer = engine();
+    let mut h = with_preset(&mut renderer, Preset::SelectFirst);
+    let n = notes(&h);
+    // The right click gives the piano roll the keyboard, whose own Escape clears the selection.
+    let on = note_rect(&h, &n[1]).center();
+    right_click(&mut h, on);
+    assert!(menu_open(&h));
+    h.key_press(egui::Key::Escape);
+    h.run();
+    assert!(!menu_open(&h), "Escape closed the menu");
+    assert!(!h.state().piano_roll().menu_open());
+    assert_eq!(h.state().piano_roll().selected.iter().copied().collect::<Vec<_>>(), vec![1], "the menu's Escape alone");
+}
+
+#[test]
 fn invert_selection_selects_the_notes_that_were_not_selected() {
     let mut renderer = engine();
     let mut h = with_preset(&mut renderer, Preset::SelectFirst);

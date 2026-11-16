@@ -232,25 +232,3 @@ fn dragging_a_velocity_bar_sets_its_notes_velocity() {
     h.run();
     assert!(velocity(&h, 1) >= 120);
 }
-
-#[test]
-fn escape_closes_the_right_click_menu_and_keeps_the_selection() {
-    let mut renderer = engine();
-    let mut h = piano_app(&mut renderer);
-    let first = notes(&h)[0];
-    let at = note_rect(&h, &first).center();
-    // A click gives the piano roll the keyboard, whose own Escape clears the selection.
-    click(&mut h, at);
-    button(&mut h, at, true, egui::PointerButton::Secondary);
-    button(&mut h, at, false, egui::PointerButton::Secondary);
-    h.run();
-    assert!(h.state().piano_roll().menu_open(), "a right click on a note opens the menu");
-    let picked: Vec<usize> = h.state().piano_roll().selected.iter().copied().collect();
-    assert_eq!(picked.len(), 1);
-    h.key_press(egui::Key::Escape);
-    h.run();
-    assert!(!h.state().piano_roll().menu_open(), "Escape closed the menu");
-    assert!(h.query_by_label("Piano roll menu").is_none(), "the popup is gone too");
-    let kept: Vec<usize> = h.state().piano_roll().selected.iter().copied().collect();
-    assert_eq!(kept, picked, "the menu's Escape is the menu's alone");
-}

@@ -263,7 +263,8 @@ fn a_paste_while_playing_goes_to_the_start_marker_not_the_playhead() {
     renderer.process(&mut [0.0f32; 2 * 64]);
     run(&mut harness, "transport.setStart", serde_json::json!({ "beats": 400.0 }));
     renderer.process(&mut [0.0f32; 2 * 64]);
-    harness.run();
+    // Playing repaints every frame: a few frames, not a wait to settle.
+    harness.run_steps(3);
     let mut actions = Vec::new();
     harness.state_mut().do_action("selection.paste", &mut actions);
     assert_eq!(actions.len(), 1, "{actions:?}");
