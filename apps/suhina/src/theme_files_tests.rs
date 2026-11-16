@@ -89,39 +89,6 @@ fn a_backup_brings_the_themes_back() {
 }
 
 #[test]
-fn the_template_holds_a_theme_a_readme_and_examples() {
-    let dir = folder("template");
-    let files = ThemeFiles::new(Some(dir.join("themes")));
-    let zip = files.export_template().unwrap_or_default();
-    let file = std::fs::File::open(&zip).unwrap_or_else(|e| panic!("{e}"));
-    let mut archive = zip::ZipArchive::new(file).unwrap_or_else(|e| panic!("{e}"));
-    let mut names: Vec<String> = archive.file_names().filter_map(Result::ok).map(|n| n.to_string()).collect();
-    names.sort();
-    for name in ["README.md", "my-theme/theme.css", "my-theme/variants/warm.json", "examples/nord/theme.css"] {
-        assert!(names.contains(&name.to_string()), "{name}: {names:?}");
-    }
-    let json = |n: &&String| n.ends_with(".json") && !n.contains("/variants/") && !n.ends_with("/theme.json");
-    assert!(!names.iter().any(|n| json(&n)), "only variants and theme.json are JSON: {names:?}");
-    assert!(names.contains(&"my-theme/theme.json".to_string()) && !names.iter().any(|n| n.ends_with("layout.css")));
-    let mut template = String::new();
-    archive
-        .by_name("my-theme/theme.css")
-        .unwrap_or_else(|e| panic!("{e}"))
-        .read_to_string(&mut template)
-        .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(theme::from_css(&template).1, Vec::<String>::new());
-    // The editable example is importable; reference palettes remain examples only.
-    let mut into = ThemeFiles::new(Some(dir.join("into")));
-    let (ids, warnings) = into.import(&zip).unwrap();
-    assert_eq!(ids, ["my-theme"]);
-    assert!(warnings.is_empty());
-    let (entries, warnings) = into.read_all();
-    assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["my-theme", "my-theme@warm"]);
-    let _clean = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
 fn what_is_not_a_theme_is_refused() {
     let dir = folder("refused");
     std::fs::create_dir_all(&dir).unwrap_or_default();
@@ -155,7 +122,7 @@ fn without_a_folder_nothing_is_read_or_written() {
     let mut files = ThemeFiles::new(None);
     assert_eq!(files.read_all(), (Vec::new(), Vec::new()));
     assert!(files.write("night", &Theme::default()).is_err());
-    assert!(files.backup().is_err() && files.export_template().is_err() && files.open_folder().is_err());
+    assert!(files.backup().is_err() && files.open_folder().is_err());
     assert_eq!(files.folder_text(), None);
 }
 
@@ -214,7 +181,7 @@ fn an_exported_package_brings_the_theme_back_and_a_damaged_one_is_refused() {
     assert!(package.to_string_lossy().ends_with("night.theme.suhina"), "{}", package.display());
     let mut other = ThemeFiles::new(Some(dir.join("other")));
     let read = suhina_theme_package::read(&std::fs::read(&package).unwrap()).unwrap();
-    assert!(read.files.contains_key("README.md"), "the guide goes with the theme");
+    assert!(!read.files.contains_key("README.md"), "Suhina adds no guide; it is in the repository's docs");
     let (ids, _) = other.import(&package).unwrap();
     assert_eq!(ids, ["night"]);
     assert!(same_look(&other.read_all().0[0].theme, &night()));
@@ -519,5 +486,114 @@ fn a_folder_of_variants_alone_is_not_written_in_by_a_save() {
         themes.join("fresh").join(THEME_JSON).exists()
             && themes.join("fresh").join(VARIANTS).join("custom.json").exists()
     );
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+/// A Trash for tests: the file or folder leaves the themes folder, and no real Trash is touched.
+fn fake_trash(path: &Path) -> Result<(), String> {
+    let gone = if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) };
+    gone.map_err(|e| e.to_string())
+}
+
+/// A Trash that refuses, as a full or missing one may.
+fn failing_trash(_: &Path) -> Result<(), String> {
+    Err("the Trash is not available".into())
+}
+
+/// A Trash that takes folders and refuses files, so a theme with a folder and an old file beside
+/// it is half moved.
+fn folders_only_trash(path: &Path) -> Result<(), String> {
+    if path.is_dir() { fake_trash(path) } else { Err("files are refused".into()) }
+}
+
+#[test]
+fn a_half_moved_theme_says_so() {
+    let dir = folder("trash-half");
+    let themes = dir.join("themes");
+    hand_written(&themes.join("ink"), "Ink", ":root { --accent: #112233; }");
+    std::fs::write(themes.join("ink.json"), "{}").unwrap();
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    files.read_all();
+    files.trash = folders_only_trash;
+    let result = files.trash("ink");
+    assert!(result.as_ref().is_err_and(|e| e.contains("the rest of ink is in the Trash")), "{result:?}");
+    assert!(!themes.join("ink").exists());
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+/// A theme folder that is itself a link (themes may be kept elsewhere) still has its variants
+/// deleted.
+#[cfg(unix)]
+#[test]
+fn a_variant_of_a_linked_theme_folder_is_trashed() {
+    let dir = folder("trash-linked-theme");
+    let themes = dir.join("themes");
+    let real = dir.join("elsewhere").join("ink");
+    hand_written(&real, "Ink", ":root { --accent: #112233; }");
+    std::fs::create_dir_all(real.join(VARIANTS)).unwrap();
+    std::fs::write(real.join(VARIANTS).join("warm.json"), "{}").unwrap();
+    std::fs::create_dir_all(&themes).unwrap();
+    std::os::unix::fs::symlink(&real, themes.join("ink")).unwrap();
+    let mut files = ThemeFiles::new(Some(themes));
+    files.trash = fake_trash;
+    assert_eq!(files.trash("ink@warm"), Ok("Moved ink@warm to the Trash".into()));
+    assert!(!real.join(VARIANTS).join("warm.json").exists());
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+/// A theme whose `variants` folder is a link to a folder elsewhere never gets that folder's files
+/// moved to the Trash.
+#[cfg(unix)]
+#[test]
+fn a_variant_behind_a_linked_folder_is_not_trashed() {
+    let dir = folder("trash-link");
+    let themes = dir.join("themes");
+    hand_written(&themes.join("ink"), "Ink", ":root { --accent: #112233; }");
+    let outside = dir.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("warm.json"), "{}").unwrap();
+    std::os::unix::fs::symlink(&outside, themes.join("ink").join(VARIANTS)).unwrap();
+    let mut files = ThemeFiles::new(Some(themes));
+    files.trash = failing_trash;
+    let result = files.trash("ink@warm");
+    assert!(result.as_ref().is_err_and(|e| e.contains("behind a link")), "{result:?}");
+    assert!(outside.join("warm.json").exists());
+    let _clean = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_deleted_variant_or_theme_goes_to_the_trash() {
+    let dir = folder("trash");
+    let themes = dir.join("themes");
+    hand_written(
+        &themes.join("ink"),
+        "Ink",
+        "@property --tint { syntax: \"<color>\"; initial-value: #112233; label: \"Tint\"; }",
+    );
+    std::fs::create_dir_all(themes.join("ink").join(VARIANTS)).unwrap();
+    let warm = Variant { id: "warm".into(), name: "Warm".into(), values: [("--tint".into(), "#884400".into())].into() };
+    std::fs::write(themes.join("ink").join(VARIANTS).join("warm.json"), warm.to_json()).unwrap();
+    let mut files = ThemeFiles::new(Some(themes.clone()));
+    files.trash = fake_trash;
+    let ids = |files: &mut ThemeFiles| files.read_all().0.into_iter().map(|e| e.id).collect::<Vec<_>>();
+    assert_eq!(ids(&mut files), ["ink", "ink@warm"]);
+
+    // A Trash that refuses leaves the file, and says why.
+    files.trash = failing_trash;
+    let refused = files.trash("ink@warm");
+    assert!(refused.as_ref().is_err_and(|e| e.contains("the Trash is not available")), "{refused:?}");
+    assert_eq!(ids(&mut files), ["ink", "ink@warm"]);
+
+    files.trash = fake_trash;
+    assert_eq!(files.trash("ink@warm"), Ok("Moved ink@warm to the Trash".into()));
+    assert_eq!(ids(&mut files), ["ink"]);
+    assert!(files.trash("ink@warm").is_err(), "nothing left to delete");
+    // Never a built-in theme, nor a path outside the folder.
+    for id in ["nord", "../ink", "ink@../../x"] {
+        assert!(files.trash(id).is_err(), "{id}");
+    }
+    assert_eq!(files.trash("ink"), Ok("Moved ink to the Trash".into()));
+    assert!(ids(&mut files).is_empty());
+    assert!(!themes.join("ink").exists());
     let _clean = std::fs::remove_dir_all(&dir);
 }
