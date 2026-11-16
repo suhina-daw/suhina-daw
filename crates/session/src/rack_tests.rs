@@ -199,6 +199,30 @@ fn parameters_wanting_texts_are_asked_in_turn() {
     assert_eq!(instance.next_texts(), None);
 }
 
+/// While its plug-in runs, the next parameter waiting in line is sent once the request before
+/// it is answered and a moment has passed, with no lane or panel asking again (the view that
+/// wanted it was closed); one request at a time (#1482).
+#[test]
+fn the_next_waiting_parameter_is_sent_without_another_ask() {
+    let mut instance = Instance::new(PluginStatus::Running, None, 0);
+    instance.wait_texts(1, vec![0.1]);
+    instance.wait_texts(2, vec![0.2]);
+    let now = Instant::now();
+    assert_eq!(instance.take_request(now), Some((1, vec![0.1])));
+    instance.sent_texts(now);
+    assert_eq!(instance.take_request(now + TEXTS_EVERY), None, "one request at a time");
+    instance.texts_done(1, &[0.1], Some(vec!["10 %".into()]));
+    assert_eq!(instance.take_request(now), None, "not again before a moment has passed");
+    assert_eq!(instance.take_request(now + TEXTS_EVERY), Some((2, vec![0.2])), "the second, unasked");
+    instance.sent_texts(now + TEXTS_EVERY);
+    instance.texts_done(2, &[0.2], Some(vec!["20 %".into()]));
+    assert_eq!(instance.take_request(now + TEXTS_EVERY * 2), None, "the line is empty");
+    // A plug-in that does not run is not asked.
+    instance.wait_texts(3, vec![0.3]);
+    instance.status = PluginStatus::Loading;
+    assert_eq!(instance.take_request(now + TEXTS_EVERY * 3), None);
+}
+
 /// Texts waiting in line keep the window drawing only while they can be sent; once their
 /// plug-in stops running the line empties without anyone asking again, so a closed lane or panel
 /// leaves nothing waiting (#1482).

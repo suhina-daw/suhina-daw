@@ -522,6 +522,22 @@ impl Instance {
         None
     }
 
+    /// The request for texts to send at `now`, taken out of the line, when one may be sent: it
+    /// runs, no request is under way and the last was [`TEXTS_EVERY`] ago (or [`TEXTS_AGAIN`]
+    /// after one it did not answer). The caller sends it when its control half is in.
+    fn take_request(&mut self, now: Instant) -> Option<(u32, Vec<f64>)> {
+        if self.status != PluginStatus::Running || self.texting || self.texts_next.is_some_and(|next| now < next) {
+            return None;
+        }
+        self.next_texts()
+    }
+
+    /// A request for texts went out at `now`.
+    fn sent_texts(&mut self, now: Instant) {
+        self.texting = true;
+        self.texts_next = Some(now + TEXTS_EVERY);
+    }
+
     fn new(status: PluginStatus, plugin: Option<(String, String, &'static str)>, generation: u64) -> Self {
         Self {
             status,
@@ -1271,10 +1287,10 @@ impl Rack {
     fn send_texts(&mut self, key: u64) {
         let Some(instance) = self.instances.get_mut(&key) else { return };
         let now = Instant::now();
-        if instance.texting || instance.control.is_none() || instance.texts_next.is_some_and(|next| now < next) {
+        if instance.control.is_none() {
             return;
         }
-        let Some((id, wanted)) = instance.next_texts() else { return };
+        let Some((id, wanted)) = instance.take_request(now) else { return };
         let back = (id, wanted.clone());
         let lent = self.lend(key, move |control| {
             let texts = control.param_texts_within(id, &wanted, LIST_TIMEOUT).ok();
@@ -1282,8 +1298,7 @@ impl Rack {
         });
         let Some(instance) = self.instances.get_mut(&key) else { return };
         if lent.is_ok() {
-            instance.texting = true;
-            instance.texts_next = Some(now + TEXTS_EVERY);
+            instance.sent_texts(now);
         } else {
             // Not lent after all: it keeps its place at the front of the line.
             instance.texts_waiting.insert(0, back);
