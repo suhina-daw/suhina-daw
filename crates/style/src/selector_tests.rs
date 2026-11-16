@@ -143,3 +143,25 @@ fn the_apps_states_are_attributes_not_pseudo_classes() {
         assert!(Tree::new(vec![Element { states: vec![(*state).into()], ..Element::new("button", None) }]).is_err());
     }
 }
+
+#[test]
+fn state_names_are_the_elements_a_state_is_tested_on() {
+    let mut names = StateNames::default();
+    for source in ["button:hover", "slider:hover slider-fill", "#play:hover", "row:not(:hover) label", "knob:active"] {
+        for selector in Selector::parse_list(source).unwrap() {
+            selector.state_names("hover", &mut names);
+        }
+    }
+    assert!(!names.any);
+    for name in ["button", "slider", "play", "row"] {
+        assert!(names.names.contains(name), "{name}");
+    }
+    assert!(!names.tested("window", Some("main")), "nothing tests the window's hover");
+    assert!(names.tested("panel", Some("play")), "an element named by its id");
+    assert!(!names.names.contains("knob"), "another state");
+    let mut any = StateNames::default();
+    for selector in Selector::parse_list("[kind=\"x\"]:hover").unwrap() {
+        selector.state_names("hover", &mut any);
+    }
+    assert!(any.any && any.tested("window", None), "a compound with no kind or id can be any element");
+}

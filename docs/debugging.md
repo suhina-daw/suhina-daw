@@ -138,7 +138,10 @@ and file polling; its time must not be mistaken for a window-thread stall.
 `slow theme save`, `slow theme save check`,
 `slow theme package persist` and `slow theme save readback` separate persistence from
 the controls' own work. `slow native CSS tree` measures the retained style tree's
-updates. In older builds, persistence ran synchronously after the drawing timer:
+updates. `slow style paint resolve: N ms, C of M styles worked out` is the whole tree's resolve
+at a frame's end, which runs when the tree changed: it works out only the elements whose
+parent, identity or (where a sheet relates them) siblings changed and takes the rest from its
+cache (#1489). One of these every frame of a drag with C near M means the cache is missed. In older builds, persistence ran synchronously after the drawing timer:
 a long gap between frames could be file work rather than GPU presentation.
 
 Nested UI measurements report `slow arrangement clip`, `slow arrangement track header`,

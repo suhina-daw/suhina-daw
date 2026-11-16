@@ -192,6 +192,11 @@ impl Tree {
         if Some(node) == root { None } else { self.elements.get(node)?.parent }
     }
 
+    /// The children of `node`, in order.
+    pub(crate) fn children(&self, node: usize) -> &[usize] {
+        self.children.get(node).map_or(&[], Vec::as_slice)
+    }
+
     pub(crate) fn siblings(&self, node: usize) -> &[usize] {
         if let Some(leaf) = self.leaf.as_ref().filter(|leaf| leaf[0] == node) {
             return leaf;
@@ -201,6 +206,23 @@ impl Tree {
             .and_then(|element| element.parent)
             .and_then(|parent| self.children.get(parent))
             .map_or(&self.roots, Vec::as_slice)
+    }
+}
+
+/// The elements some selector tests for a state ([`Selector::state_names`]): by kind or id, or
+/// any element at all. A state given to an element none of them names changes no rule's match.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct StateNames {
+    /// Whether a selector tests the state on an element it does not name.
+    pub any: bool,
+    /// The kinds and ids selectors test the state on.
+    pub names: std::collections::BTreeSet<String>,
+}
+
+impl StateNames {
+    /// Whether a selector may test the state on an element of `kind` with `id`.
+    pub fn tested(&self, kind: &str, id: Option<&str>) -> bool {
+        self.any || self.names.contains(kind) || id.is_some_and(|id| self.names.contains(id))
     }
 }
 
@@ -324,6 +346,71 @@ impl Selector {
                     Test::Any(selectors, _) => selectors.iter().any(Selector::relates_siblings),
                     _ => false,
                 })
+        })
+    }
+
+    /// Adds to `into` the elements, by kind or id, that this selector tests for `state` (`hover`):
+    /// `button:hover` and `slider:hover slider-fill` name `button` and `slider`, `#play:hover` names
+    /// `play`. A compound with the state and no kind or id (`:hover`, `.x:hover`) can be any
+    /// element. A selector in `:is()`, `:where()` or `:not()` is the outer compound's element.
+    pub fn state_names(&self, state: &str, into: &mut StateNames) {
+        self.collect_state(state, &[], into);
+    }
+
+    fn collect_state(&self, state: &str, outer: &[String], into: &mut StateNames) {
+        let last = self.parts.len().saturating_sub(1);
+        for (index, part) in self.parts.iter().enumerate() {
+            let mut names: Vec<String> = part
+                .tests
+                .iter()
+                .filter_map(|test| match test {
+                    Test::Kind(name) | Test::Id(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect();
+            if names.is_empty() && index == last {
+                names = outer.to_vec();
+            }
+            for test in &part.tests {
+                match test {
+                    Test::State(own) if own == state => {
+                        if names.is_empty() {
+                            into.any = true;
+                        } else {
+                            into.names.extend(names.iter().cloned());
+                        }
+                    }
+                    Test::Any(selectors, _) => {
+                        for selector in selectors {
+                            selector.collect_state(state, &names, into);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Whether some part of this selector, or of one inside it, tests an element's place among its
+    /// siblings (`:nth-child`, `:first-child`, `:last-child`, `:only-child` and their kin).
+    pub(crate) fn tests_position(&self) -> bool {
+        self.any_test(&|test| matches!(test, Test::Nth { .. } | Test::Only))
+    }
+
+    /// Whether some part of this selector, or of one inside it, tests whether an element has
+    /// children (`:empty`).
+    pub(crate) fn tests_children(&self) -> bool {
+        self.any_test(&|test| matches!(test, Test::Empty))
+    }
+
+    /// Whether `found` holds for some test of this selector, or of a selector in its `:is()`,
+    /// `:where()` or `:not()`.
+    fn any_test(&self, found: &dyn Fn(&Test) -> bool) -> bool {
+        self.parts.iter().any(|part| {
+            part.tests.iter().any(|test| match test {
+                Test::Any(selectors, _) => selectors.iter().any(|selector| selector.any_test(found)),
+                other => found(other),
+            })
         })
     }
 
