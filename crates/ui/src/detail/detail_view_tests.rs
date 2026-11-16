@@ -615,6 +615,7 @@ fn param(id: u32, name: &str, steps: u32, value: f64) -> suhina_plugins::ParamIn
         value,
         text: format!("{name} at {value}"),
         steps,
+        list: false,
         automatable: true,
         read_only: false,
         hidden: false,
@@ -687,6 +688,66 @@ fn automation_replaces_a_plug_ins_listed_text_with_the_value_it_plays() {
     let shown: Vec<_> = graph.parameters.iter().map(|p| (p.value, p.text.as_str())).collect();
     assert_eq!(shown, [(0.75, ""), (1.0, "")]);
     assert_eq!(value_text(&graph.parameters[0], 0.75), "0.75");
+}
+
+/// With the plug-in's own texts at hand, an automated parameter shows the plug-in's text for the
+/// value it plays, and a value it has not named yet shows the number and is given back to be
+/// asked about, on the step the plug-in plays; a knob listed with steps moves along the line,
+/// and only a list of choices holds its value until the next point (#1482).
+#[test]
+fn automation_shows_a_plug_ins_own_text_for_the_value_it_plays() {
+    use suhina_engine::model::{AutomationLane, AutomationPoint};
+    let mut project = with_plugin();
+    let point = |beat, value| AutomationPoint { beat, value, curve: Default::default() };
+    let lane = |param: &str| AutomationLane {
+        param: param.into(),
+        points: vec![point(0.0, 0.0), point(8.0, 1.0)].into(),
+        enabled: true,
+    };
+    project.channels[0].devices[0].automation = vec![lane("1"), lane("5"), lane("6")];
+    let knob = suhina_plugins::ParamInfo { steps: 1024, ..param(5, "Cutoff", 0, 1.0) };
+    let choice = suhina_plugins::ParamInfo { steps: 3, list: true, ..param(6, "Shape", 0, 0.0) };
+    let report = || {
+        let mut report = listing(PluginStatus::Running);
+        let mut list = report.params.as_deref().unwrap_or_default().to_vec();
+        list.extend([knob.clone(), choice.clone()]);
+        report.params = Some(list.into());
+        report
+    };
+    let mut detail = build_with(
+        &project,
+        Some(TrackId(1)),
+        None,
+        &mut |_, _| Some(report()),
+        crate::detail::device_widgets::Lists::default(),
+    );
+    let mut known = std::collections::HashMap::new();
+    known.insert((1, 0.25f64.to_bits()), "-12.0 dB".to_string());
+    let texts = std::sync::Arc::new(std::sync::Mutex::new(known));
+    let mut looked_up = Vec::new();
+    let wanted = detail.follow_automation_texts(&project, 2.0, None, &mut |track, path| {
+        looked_up.push((track, path.to_vec()));
+        Some(std::sync::Arc::clone(&texts))
+    });
+    assert_eq!(looked_up, [(TrackId(1), vec![0])], "looked up once for the device");
+    let Detail::Devices(chain) = &detail else { panic!() };
+    let graph = chain.devices[0].graph.as_ref().unwrap();
+    let shown = |id: &str| graph.parameters.iter().find(|p| p.id == id).map(|p| (p.value, p.text.clone())).unwrap();
+    assert_eq!(shown("1"), (0.25, "-12.0 dB".to_string()), "the plug-in's text for the value played");
+    assert_eq!(shown("5"), (0.25, String::new()), "a quarter of the way along the line, not held at 0");
+    assert_eq!(shown("6"), (0.0, "Shape at 0".to_string()), "a list of choices holds the value it listed");
+    assert_eq!(wanted, [(TrackId(1), vec![0], 5, 0.25)], "the knob's value is asked about");
+    // Between two steps, the knob plays and is asked about on the nearest one.
+    let step = |beat: f64| ((beat / 8.0) * 1024.0).round() / 1024.0;
+    let wanted = detail.follow_automation_texts(&project, 2.01, None, &mut |_, _| Some(std::sync::Arc::clone(&texts)));
+    assert!(wanted.contains(&(TrackId(1), vec![0], 5, step(2.01))), "{wanted:?}");
+    // A value the plug-in named with an empty text shows the number and is not asked about again.
+    texts.lock().unwrap().insert((5, step(2.02).to_bits()), String::new());
+    let wanted = detail.follow_automation_texts(&project, 2.02, None, &mut |_, _| Some(std::sync::Arc::clone(&texts)));
+    assert!(!wanted.iter().any(|(_, _, id, _)| *id == 5), "{wanted:?}");
+    let Detail::Devices(chain) = &detail else { panic!() };
+    let knob = chain.devices[0].graph.as_ref().unwrap().parameters.iter().find(|p| p.id == "5").unwrap();
+    assert_eq!((knob.value, knob.text.as_str()), (step(2.02), ""));
 }
 
 /// A panel showing what automation plays sends nothing by itself, also where the value

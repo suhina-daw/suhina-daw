@@ -25,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 16;
+pub const VERSION: u64 = 17;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -50,17 +50,26 @@ pub struct ParamInfo {
     pub text: String,
     /// Number of steps for a stepped parameter (a switch has 1), 0 for a continuous one.
     pub steps: u32,
+    /// Its values are a list of choices (a VST3 list, a CLAP enum), not points along a range.
+    pub list: bool,
     pub automatable: bool,
     pub read_only: bool,
     pub hidden: bool,
 }
 
 impl ParamInfo {
+    /// Whether automation holds each point's value until the next point (#1482): a switch (one
+    /// step) or a list of choices, whose values in between mean nothing. Any other parameter,
+    /// one listed with steps too, moves along the line, as a knob does.
+    pub fn holds(&self) -> bool {
+        holds(self.steps, self.list)
+    }
+
     fn to_json(&self) -> Value {
         json!({
             "id": self.id, "name": self.name, "group": self.group, "min": self.min, "max": self.max,
             "default": self.default, "value": self.value, "text": self.text, "steps": self.steps,
-            "automatable": self.automatable, "read_only": self.read_only, "hidden": self.hidden,
+            "list": self.list, "automatable": self.automatable, "read_only": self.read_only, "hidden": self.hidden,
         })
     }
 
@@ -78,11 +87,18 @@ impl ParamInfo {
             value: number("value")?,
             text: text("text")?,
             steps: u32::try_from(value.get("steps")?.as_u64()?).ok()?,
+            list: flag("list")?,
             automatable: flag("automatable")?,
             read_only: flag("read_only")?,
             hidden: flag("hidden")?,
         })
     }
+}
+
+/// [`ParamInfo::holds`] for a parameter with `steps` steps that is (`list`) or is not a list
+/// of choices.
+pub fn holds(steps: u32, list: bool) -> bool {
+    steps == 1 || (steps > 0 && list)
 }
 
 /// Where an embedded editor sits in the window it is a child of: its origin, in the window's

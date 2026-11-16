@@ -489,6 +489,7 @@ fn plugin_list() -> std::sync::Arc<[suhina_plugins::ParamInfo]> {
         value: 0.5,
         text: String::new(),
         steps: 0,
+        list: false,
         automatable: true,
         read_only: false,
         hidden: false,
@@ -500,6 +501,7 @@ fn plugin_list() -> std::sync::Arc<[suhina_plugins::ParamInfo]> {
             min: 0.0,
             max: 3.0,
             steps: 3,
+            list: true,
             value: 1.0,
             ..param(4, "Osc Shape")
         },
@@ -595,6 +597,49 @@ fn a_plug_in_lane_takes_the_plug_in_s_range_steps_and_text() {
     asked.sort_by_key(|(id, _)| *id);
     assert_eq!(asked, [(0, vec![0.75]), (4, vec![2.0])]);
     assert!(params.asked_texts().is_empty());
+}
+
+/// A plug-in parameter holds each point's value until the next only when it is a switch or a
+/// list of choices; a knob listed with steps (a filter's cutoff in 1024 steps) moves along the
+/// line, as a whole-number parameter of a built-in device does, its points still on its steps
+/// (#1482).
+#[test]
+fn only_a_plug_in_s_switches_and_lists_hold_their_values() {
+    let scale = |steps: u32, list: bool| {
+        Scale::Plugin(Box::new(PluginScale { min: 0.0, max: 1.0, steps, list, ..PluginScale::default() }))
+    };
+    assert!(!scale(0, false).stepped(), "continuous");
+    assert!(!scale(1024, false).stepped(), "a knob in 1024 steps");
+    assert!(!scale(3, false).stepped(), "steps without a list");
+    assert!(scale(1, false).stepped(), "a switch");
+    assert!(scale(3, true).stepped(), "a list of choices");
+    assert!(!scale(0, true).stepped(), "a list without steps is not one");
+    let knob = scale(1024, false);
+    assert_eq!(knob.value_at(0.3), (0.3f64 * 1024.0).round() / 1024.0, "a point lands on a step");
+    // Played and drawn along the line: half-way from 0 to 1 is 0.5, where a list still holds 0.
+    let points = [AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, 1.0)];
+    let played = |scale: &Scale| automation::value_at(&points, 2.0, scale.stepped(), scale);
+    assert_eq!(played(&knob), Some(0.5));
+    assert_eq!(played(&scale(3, true)), Some(0.0), "a list holds");
+    // The rule is the one the engine is given (`ParamInfo::holds`).
+    for (steps, list) in [(0, false), (1, false), (3, true), (3, false), (1024, false)] {
+        let info = suhina_plugins::ParamInfo {
+            id: 0,
+            name: String::new(),
+            group: String::new(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            value: 0.0,
+            text: String::new(),
+            steps,
+            list,
+            automatable: true,
+            read_only: false,
+            hidden: false,
+        };
+        assert_eq!(info.holds(), scale(steps, list).stepped(), "{steps} steps, list {list}");
+    }
 }
 
 /// A plug-in's range is not trusted: an empty or upside-down one and numbers that are not finite

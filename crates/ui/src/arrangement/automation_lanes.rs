@@ -140,6 +140,8 @@ pub struct PluginScale {
     pub max: f64,
     /// Steps of a stepped parameter (a switch has 1), 0 for a continuous one.
     pub steps: u32,
+    /// Its values are a list of choices (a VST3 list, a CLAP enum).
+    pub list: bool,
     /// The value the plug-in listed and its text for it.
     pub listed: Option<(f64, String)>,
     /// The plug-in's texts for values it was asked about, as the session keeps them.
@@ -154,6 +156,7 @@ impl PartialEq for PluginScale {
             && self.min == other.min
             && self.max == other.max
             && self.steps == other.steps
+            && self.list == other.list
             && self.listed == other.listed
             && std::sync::Arc::ptr_eq(&self.texts, &other.texts)
     }
@@ -398,7 +401,8 @@ impl Scale {
             Self::Mute => true,
             Self::Device(info) => matches!(info.kind, ParamKind::Toggle | ParamKind::Choice(_)),
             Self::Sd(parameter) => parameter.control.is_stepped(),
-            Self::Plugin(plugin) => plugin.steps > 0,
+            // A switch or a list of choices; a knob listed with steps moves along the line (#1482).
+            Self::Plugin(plugin) => suhina_plugins::protocol::holds(plugin.steps, plugin.list),
             Self::Volume | Self::Pan => false,
         }
     }
@@ -743,6 +747,7 @@ fn plugin_params(
                 min: info.min,
                 max: info.max,
                 steps: info.steps,
+                list: info.list,
                 listed: (!info.text.is_empty()).then(|| (info.value, info.text.clone())),
                 texts: texts.clone(),
                 asked: Default::default(),

@@ -566,11 +566,16 @@ impl App {
         });
         // Automated parameters show what plays at the playhead, running or stopped (#706, #811);
         // without a player, at the start.
+        let mut wanted = Vec::new();
         if let Some(session) = self.session() {
             let beat = session.player().map_or(0.0, |p| p.monitor().beat());
             // A lane dragged in the Arrangement view: the knob follows the line as it is dragged.
             let dragged = self.arrangement.automation.dragged.as_ref().filter(|_| self.shown == View::Arrangement);
-            shown.follow_automation_dragged(session.project(), beat, dragged);
+            // A plug-in's automated parameter shows the plug-in's own text for the value played,
+            // asked from it in the background when it was not given yet (#1482).
+            wanted = shown.follow_automation_texts(session.project(), beat, dragged, &mut |t, path| {
+                session.plugin_texts_at(t, path)
+            });
             // An audio clip's panel: where the playhead is in the clip, for its Set buttons, and
             // what each source says its tempo is while its Find menu is open
             // (`docs/spec/clip-panel.md`).
@@ -602,6 +607,21 @@ impl App {
                     ui.ctx().data_mut(|d| d.insert_temp(key, found));
                     Some(found)
                 });
+            }
+        }
+        // The plug-ins are asked for the texts of the values their panels show and do not know.
+        if !wanted.is_empty()
+            && let Ok(session) = self.projects.session_mut(None)
+        {
+            let mut asks: Vec<(TrackId, Vec<usize>, u32, Vec<f64>)> = Vec::new();
+            for (track, path, id, value) in wanted {
+                match asks.iter_mut().find(|(t, p, i, _)| *t == track && *p == path && *i == id) {
+                    Some((_, _, _, values)) => values.push(value),
+                    None => asks.push((track, path, id, vec![value])),
+                }
+            }
+            for (track, path, id, values) in asks {
+                session.ask_plugin_texts_at(track, &path, id, &values);
             }
         }
         // What the host hands devices' canvases: whether the panel is open, and live values (a

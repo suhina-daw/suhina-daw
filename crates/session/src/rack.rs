@@ -205,7 +205,7 @@ struct Started {
     /// report a state it was given in a form of its own); `None` when it did not answer.
     first_state: Option<SavedState>,
     /// Its parameters listed just after it started, on the same thread, so the engine knows
-    /// which take steps without the control half being lent out for it later (#1205); `None`
+    /// which hold their lanes' values without the control half being lent out for it later (#1205); `None`
     /// when it did not answer.
     listed: Option<Vec<suhina_plugins::ParamInfo>>,
 }
@@ -269,10 +269,11 @@ fn texts_of(texts: &ParamTexts) -> std::sync::MutexGuard<'_, std::collections::H
 /// Most texts kept for one plug-in; past this the texts are forgotten and asked for again.
 const MAX_TEXTS: usize = 8192;
 
-/// The ids of a parameter list's parameters that take steps (a switch, a choice), as
-/// [`Instance::steps`] keeps them.
+/// The ids of a parameter list's parameters whose lanes hold each value until the next point
+/// (a switch, a list of choices: [`suhina_plugins::ParamInfo::holds`], #1482), as
+/// [`Instance::steps`] keeps them. A knob listed with steps is not one of them.
 fn steps(list: &[suhina_plugins::ParamInfo]) -> std::sync::Arc<[u32]> {
-    list.iter().filter(|p| p.steps > 0).map(|p| p.id).collect()
+    list.iter().filter(|p| p.holds()).map(|p| p.id).collect()
 }
 
 /// A parameter list's ids and ranges (lowest, highest), as [`Instance::ranges`] keeps them.
@@ -388,8 +389,9 @@ struct Instance {
     counts: Option<Arc<BlockCounts>>,
     /// Its parameters' ids and ranges (lowest, highest), once listed ([`Rack::params`]).
     ranges: Option<Vec<(u32, f64, f64)>>,
-    /// The ids of its parameters that take steps, once listed: the engine holds their lanes'
-    /// values until the next point, as the lanes draw them (#1205).
+    /// The ids of its parameters that hold (a switch, a list of choices), once listed: the
+    /// engine holds their lanes' values until the next point, as the lanes draw them (#1205,
+    /// #1482).
     steps: Option<std::sync::Arc<[u32]>>,
     /// Its parameters as last listed in the background for its generated panel, and when.
     listed: Option<(Arc<[suhina_plugins::ParamInfo]>, Instant)>,
@@ -1201,6 +1203,12 @@ impl Rack {
         }
     }
 
+    /// Whether a request for texts is under way for any plug-in device ([`Rack::ask_texts`]):
+    /// the window draws again until it is answered, so the texts show without input (#1482).
+    pub fn texts_pending(&self) -> bool {
+        self.instances.values().any(|i| i.texting)
+    }
+
     /// What is known about the plug-in device `key`.
     pub fn report(&mut self, key: u64) -> Option<PluginReport> {
         let instance = self.instances.get_mut(&key)?;
@@ -1251,12 +1259,14 @@ impl Rack {
         progress
     }
 
-    /// The parameters of each listed plug-in device that take steps, for the engine's graphs.
+    /// The parameters of each listed plug-in device whose lanes hold each value (a switch, a
+    /// list of choices), for the engine's graphs.
     fn step_map(&self) -> suhina_engine::PluginSteps {
         self.instances.iter().filter_map(|(key, i)| Some((*key, std::sync::Arc::clone(i.steps.as_ref()?)))).collect()
     }
 
-    /// Whether parameter `id` of the plug-in device `key` takes steps, as its plug-in listed it.
+    /// Whether parameter `id` of the plug-in device `key` holds each lane value until the next
+    /// point (a switch, a list of choices), as its plug-in listed it.
     pub(crate) fn stepped(&self, key: u64, id: u32) -> bool {
         self.instances.get(&key).and_then(|i| i.steps.as_ref()).is_some_and(|steps| steps.contains(&id))
     }

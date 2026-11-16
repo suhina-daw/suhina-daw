@@ -158,6 +158,7 @@ fn a_failed_listing_is_tried_again_as_seldom_as_a_good_one() {
         value: 0.5,
         text: String::new(),
         steps: 0,
+        list: false,
         automatable: true,
         read_only: false,
         hidden: false,
@@ -172,6 +173,32 @@ fn a_failed_listing_is_tried_again_as_seldom_as_a_good_one() {
     // A plug-in that does not run is not asked.
     instance.status = PluginStatus::Loading;
     assert!(!instance.list_due(later + LIST_EVERY * 9));
+}
+
+/// The engine holds the lanes of a plug-in's switches and lists of choices only; a knob listed
+/// with steps (a filter's cutoff in 1024 steps) moves along the line (#1482).
+#[test]
+fn only_switches_and_lists_hold_their_lanes_values() {
+    let param = |id: u32, steps: u32, list: bool| suhina_plugins::ParamInfo {
+        id,
+        name: String::new(),
+        group: String::new(),
+        min: 0.0,
+        max: 1.0,
+        default: 0.0,
+        value: 0.0,
+        text: String::new(),
+        steps,
+        list,
+        automatable: true,
+        read_only: false,
+        hidden: false,
+    };
+    let list = [param(1, 0, false), param(2, 1024, false), param(3, 1, false), param(4, 3, true), param(5, 3, false)];
+    assert_eq!(&*steps(&list), [3, 4]);
+    let mut instance = Instance::new(PluginStatus::Running, None, 0);
+    instance.list_done(Some(list.to_vec()), Instant::now());
+    assert_eq!(instance.steps.as_deref(), Some(&[3, 4][..]));
 }
 
 #[test]

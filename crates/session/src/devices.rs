@@ -1582,7 +1582,8 @@ pub(crate) fn keep_plugin_params_in_step(session: &mut Session) -> bool {
         let monitor = p.monitor();
         (monitor.running(), monitor.beat())
     });
-    // The parameters that take steps: their lanes hold each value, and so do the echoes of it.
+    // The parameters that hold (a switch, a list of choices): their lanes hold each value, and
+    // so do the echoes of it.
     let stepped: Vec<(u64, u32)> = edits
         .iter()
         .filter(|(key, id, _)| session.plugins.stepped(*key, *id))
@@ -1816,7 +1817,7 @@ pub(crate) fn plugin_params(session: &mut Session, params: &Value) -> Result<Val
                 json!({
                     "id": p.id, "name": p.name, "group": p.group, "min": p.min, "max": p.max,
                     "default": p.default, "value": p.value, "text": p.text, "steps": p.steps,
-                    "automatable": p.automatable, "read_only": p.read_only,
+                    "list": p.list, "automatable": p.automatable, "read_only": p.read_only,
                 })
             })
             .collect(),
