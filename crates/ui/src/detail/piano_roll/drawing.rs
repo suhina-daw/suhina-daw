@@ -719,24 +719,36 @@ fn note_alpha(velocity: f32, look: NoteLook) -> f32 {
 mod note_alpha_tests {
     use super::*;
 
+    /// `text_on` reads the theme's inks from the style engine, so the checks run in a frame of the
+    /// built-in theme, not in whatever another test left behind.
+    fn in_built_in_theme(check: impl Fn()) {
+        let ctx = egui::Context::default();
+        theme::use_colors(&ctx, &theme::Colors::new());
+        theme::in_style_frame(&ctx, |_| check());
+    }
+
     #[test]
     fn faded_white_note_labels_use_the_composited_dark_background() {
-        let shown = composite_note_color(Color32::WHITE.gamma_multiply(0.12), Color32::BLACK);
-        assert!(theme::contrast(theme::text_on(shown), shown) >= 4.5);
-        assert!(theme::text_on(shown).to_array()[0] > 128);
+        in_built_in_theme(|| {
+            let shown = composite_note_color(Color32::WHITE.gamma_multiply(0.12), Color32::BLACK);
+            assert!(theme::contrast(theme::text_on(shown), shown) >= 4.5);
+            assert!(theme::text_on(shown).to_array()[0] > 128);
+        });
     }
 
     #[test]
     fn dark_imported_notes_remain_visible_with_readable_labels() {
-        for background in [Color32::BLACK, Color32::WHITE] {
-            for color in [Color32::from_rgb(23, 17, 17), Color32::BLACK, Color32::WHITE] {
-                for alpha in [0.4, 0.85, 1.0] {
-                    let fill = visible_note_fill(color, background, alpha);
-                    assert!(theme::contrast(fill, background) >= 3.0);
-                    assert!(theme::contrast(theme::text_on(fill), fill) >= 4.5);
+        in_built_in_theme(|| {
+            for background in [Color32::BLACK, Color32::WHITE] {
+                for color in [Color32::from_rgb(23, 17, 17), Color32::BLACK, Color32::WHITE] {
+                    for alpha in [0.4, 0.85, 1.0] {
+                        let fill = visible_note_fill(color, background, alpha);
+                        assert!(theme::contrast(fill, background) >= 3.0);
+                        assert!(theme::contrast(theme::text_on(fill), fill) >= 4.5);
+                    }
                 }
             }
-        }
+        });
     }
 
     #[test]
