@@ -622,14 +622,11 @@ impl ThemeFiles {
         }
         let paths: Vec<PathBuf> = match variant {
             Some(variant) => {
-                // The file itself is checked below; a link above it would lead the Trash to a file
-                // outside the theme.
-                let theme_dir = folder.join(base);
-                let variants = theme_dir.join(VARIANTS);
-                if [&theme_dir, &variants]
-                    .iter()
-                    .any(|dir| std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_symlink()))
-                {
+                // The file itself is checked below. The theme's own folder may be a link (themes
+                // may be kept elsewhere); one below it would lead the Trash to a file outside the
+                // theme.
+                let variants = folder.join(base).join(VARIANTS);
+                if std::fs::symlink_metadata(&variants).is_ok_and(|m| m.file_type().is_symlink()) {
                     return Err(format!("{id} sits behind a link and cannot be deleted"));
                 }
                 vec![variants.join(format!("{variant}.json"))]

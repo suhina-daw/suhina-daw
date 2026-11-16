@@ -377,7 +377,8 @@ fn the_user_agent_sheet_colours_only_the_window_and_what_floats_over_it() {
     given.sort_unstable();
     assert_eq!(given, ["background-color", "color"]);
     // The text in a rule for `window`, the background in one for it and what floats over it.
-    let mut text = USER_AGENT_SHEET.to_owned();
+    // One line ending whatever the checkout makes of the file.
+    let mut text = USER_AGENT_SHEET.replace("\r\n", "\n");
     while let Some(start) = text.find("/*") {
         let end = text[start..].find("*/").unwrap() + start + 2;
         text.replace_range(start..end, "");
