@@ -125,11 +125,11 @@ pub fn render_started(
                 break;
             };
             wide_in.fill(0.0);
-            for (to, from) in wide_in.chunks_exact_mut(channels).zip(block_in.chunks_exact(2)) {
+            for (to, from) in wide_in.chunks_exact_mut(channels).zip(block_in.as_chunks::<2>().0) {
                 to.iter_mut().zip(from).for_each(|(t, f)| *t = *f);
             }
             let outcome = audio.process_with_events(wide_in, &block_events, wide_out, BLOCK_TIMEOUT);
-            for (to, from) in block_out.chunks_exact_mut(2).zip(wide_out.chunks_exact(channels)) {
+            for (to, from) in block_out.as_chunks_mut::<2>().0.iter_mut().zip(wide_out.chunks_exact(channels)) {
                 to.iter_mut().zip(from).for_each(|(t, f)| *t = *f);
             }
             outcome
