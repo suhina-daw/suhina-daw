@@ -140,6 +140,8 @@ pub struct PluginScale {
     pub max: f64,
     /// Steps of a stepped parameter (a switch has 1), 0 for a continuous one.
     pub steps: u32,
+    /// Its values are a list of choices (a VST3 list, a CLAP enum).
+    pub list: bool,
     /// The value the plug-in listed and its text for it.
     pub listed: Option<(f64, String)>,
     /// The plug-in's texts for values it was asked about, as the session keeps them.
@@ -154,6 +156,7 @@ impl PartialEq for PluginScale {
             && self.min == other.min
             && self.max == other.max
             && self.steps == other.steps
+            && self.list == other.list
             && self.listed == other.listed
             && std::sync::Arc::ptr_eq(&self.texts, &other.texts)
     }
@@ -398,7 +401,8 @@ impl Scale {
             Self::Mute => true,
             Self::Device(info) => matches!(info.kind, ParamKind::Toggle | ParamKind::Choice(_)),
             Self::Sd(parameter) => parameter.control.is_stepped(),
-            Self::Plugin(plugin) => plugin.steps > 0,
+            // A switch or a list of choices; a knob listed with steps moves along the line (#1482).
+            Self::Plugin(plugin) => suhina_plugins::protocol::holds(plugin.steps, plugin.list),
             Self::Volume | Self::Pan => false,
         }
     }
@@ -743,6 +747,7 @@ fn plugin_params(
                 min: info.min,
                 max: info.max,
                 steps: info.steps,
+                list: info.list,
                 listed: (!info.text.is_empty()).then(|| (info.value, info.text.clone())),
                 texts: texts.clone(),
                 asked: Default::default(),
@@ -2698,8 +2703,16 @@ fn segment_at(points: &[AutomationPoint], scale: &Scale, plot: Rect, geometry: &
     if b.beat <= a.beat || a.value == b.value {
         return None;
     }
-    let value = suhina_engine::model::automation::value_at(points, beat, false, scale)?;
-    ((y_of(plot, scale.position(value)) - pos.y).abs() <= segment_hit(plot)).then_some(index)
+    let position = line_position(a, b, scale, (beat - a.beat) / (b.beat - a.beat));
+    ((y_of(plot, position) - pos.y).abs() <= segment_hit(plot)).then_some(index)
+}
+
+/// Where the line from point `a` to point `b` is drawn at share `t` of the segment's time: between
+/// the points' positions along the segment's curve, as [`envelope`] draws it. A value taken back
+/// through the scale would land on a plug-in knob's nearest step instead (#1482).
+fn line_position(a: &AutomationPoint, b: &AutomationPoint, scale: &Scale, t: f64) -> f64 {
+    let (ya, yb) = (scale.position(a.value), scale.position(b.value));
+    ya + (yb - ya) * a.curve.shape(t)
 }
 
 /// Draws one lane of `param` in `time` (its envelope, points and drag in progress) and turns
@@ -3260,11 +3273,8 @@ fn lane(
             if xb - xa < CURVE_HANDLE_MIN || a.value == b.value {
                 continue;
             }
-            let mid = (a.beat + b.beat) / 2.0;
-            let Some(value) = suhina_engine::model::automation::value_at(&points, mid, false, &param.scale) else {
-                continue;
-            };
-            let center = Pos2::new((xa + xb) / 2.0, y_of(plot, param.scale.position(value)));
+            // On the drawn line, half-way along the segment's time.
+            let center = Pos2::new((xa + xb) / 2.0, y_of(plot, line_position(&a, &b, &param.scale, 0.5)));
             let hit = Rect::from_center_size(center, Vec2::splat(POINT_HIT)).intersect(visible);
             if hit.width() <= 0.0 || hit.height() <= 0.0 {
                 continue;

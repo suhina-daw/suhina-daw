@@ -1129,6 +1129,12 @@ impl Session {
         }
     }
 
+    /// Whether a plug-in's answer to a request for its texts is awaited
+    /// ([`Session::ask_plugin_texts_at`]): the window keeps drawing until it comes (#1482).
+    pub fn plugin_texts_pending(&self) -> bool {
+        self.plugins.texts_pending()
+    }
+
     /// Has the plug-in device at `path` on `track` list its parameters again in the background,
     /// for its generated panel, when its list is a couple of seconds old
     /// ([`rack::Rack::list_params`]).

@@ -3211,16 +3211,21 @@ impl App {
         // Under the system's title bar: the toolbar's background, as behind the bars below it.
         // Full screen hides the title bar, and the room with it.
         if self.title_bar > 0.0 && !full_screen {
-            egui::Panel::top("title-bar").exact_size(self.title_bar).frame(egui::Frame::NONE).show(ui, |ui| {
-                // The strip reads as the top of the toolbar under it, in the toolbar's colour.
-                let _style_class = crate::kit::element::TOOLBAR.enter();
-                let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
-                ui.painter().rect_filled(
-                    ui.max_rect(),
-                    top,
-                    crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")),
-                );
-            });
+            // No egui line under it: the strip reads as the toolbar's own top (#1487).
+            egui::Panel::top("title-bar")
+                .exact_size(self.title_bar)
+                .show_separator_line(false)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| {
+                    // The strip reads as the top of the toolbar under it, in the toolbar's colour.
+                    let _style_class = crate::kit::element::TOOLBAR.enter();
+                    let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
+                    ui.painter().rect_filled(
+                        ui.max_rect(),
+                        top,
+                        crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")),
+                    );
+                });
         }
         let project_info = self
             .projects

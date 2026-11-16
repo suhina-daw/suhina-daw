@@ -90,10 +90,32 @@ fn a_stepped_parameters_echo_is_the_value_its_lane_holds() {
     let enabled = |p: &Project| p.channels[0].devices[0].automation[0].enabled;
     let mut project = with_lane();
     let key = suhina_engine::plugin_devices(&project)[0].key;
-    let stepped = [(key, 0)];
+    let stepped = [(key, 0, Echo::Holds)];
     assert_eq!(take_in_param_edits(&mut project, &[(key, 0, 0.0)], Some((false, 4.0)), &stepped), (true, false));
     assert!(enabled(&project));
     assert!(take_in_param_edits(&mut project, &[(key, 0, 0.5)], Some((false, 4.0)), &stepped).1);
+    assert!(!enabled(&project));
+}
+
+/// A knob listed with steps moves along its lane's line, and the plug-in may report the step it
+/// rounded the line's value to: a report within a step of the value at the playhead is the lane's
+/// own, stopped or playing, and one further away is a move by hand (#1482).
+#[test]
+fn a_stepped_knobs_echo_may_be_rounded_onto_a_step() {
+    let enabled = |p: &Project| p.channels[0].devices[0].automation[0].enabled;
+    let mut project = with_lane();
+    let key = suhina_engine::plugin_devices(&project)[0].key;
+    let step = 1.0 / 1024.0;
+    let knob = [(key, 0, Echo::Step(step))];
+    // Stopped at beat 4.001 the line is at 0.500125; the plug-in plays and reports step 512.
+    let rounded = 512.0 * step;
+    assert_eq!(take_in_param_edits(&mut project, &[(key, 0, rounded)], Some((false, 4.001)), &knob), (true, false));
+    assert!(enabled(&project));
+    // Without the step the same report is a move by hand, as for a continuous knob.
+    let mut continuous = with_lane();
+    assert!(take_in_param_edits(&mut continuous, &[(key, 0, rounded)], Some((false, 4.001)), &[]).1);
+    // Further than a step away, it is a move by hand.
+    assert!(take_in_param_edits(&mut project, &[(key, 0, 0.51)], Some((false, 4.0)), &knob).1);
     assert!(!enabled(&project));
 }
 

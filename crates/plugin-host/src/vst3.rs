@@ -1376,6 +1376,7 @@ impl Vst3Plugin {
             value: finite(value, 0.0),
             text,
             steps: u32::try_from(info.stepCount).unwrap_or(0),
+            list: flag(Flags::kIsList),
             automatable: flag(Flags::kCanAutomate),
             read_only: flag(Flags::kIsReadOnly),
             hidden: flag(Flags::kIsHidden),
