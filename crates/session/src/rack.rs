@@ -1156,6 +1156,24 @@ impl Rack {
                 notices.push(e.0);
             }
         }
+        self.pump_texts();
+    }
+
+    /// Sends the text requests waiting in line whose plug-ins may be asked now, also when no lane
+    /// or panel asks again (it was closed meanwhile), and drops those of plug-ins that stopped
+    /// running; called whenever finished work is taken back, so the line always empties (#1482).
+    fn pump_texts(&mut self) {
+        let waiting: Vec<u64> =
+            self.instances.iter().filter(|(_, i)| !i.texts_waiting.is_empty()).map(|(key, _)| *key).collect();
+        for key in waiting {
+            if let Some(instance) = self.instances.get_mut(&key)
+                && instance.status != PluginStatus::Running
+            {
+                instance.texts_waiting.clear();
+                continue;
+            }
+            self.send_texts(key);
+        }
     }
 
     /// Tells the hosts where the window wants their embedded editors, where that has not been

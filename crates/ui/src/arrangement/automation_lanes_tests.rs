@@ -654,6 +654,11 @@ fn a_stepped_knobs_segment_is_hit_where_it_is_drawn() {
     assert_eq!(segment_at(&points, &knob, plot, &geometry, on_line), Some(0));
     let off_line = Pos2::new(geometry.x_of(1.0), y_of(plot, 0.75));
     assert_eq!(segment_at(&points, &knob, plot, &geometry, off_line), None);
+    // A curve handle sits half-way on the drawn line: 0.5 for a three-step knob, whose nearest
+    // step there is 2/3.
+    let three = Scale::Plugin(Box::new(PluginScale { min: 0.0, max: 1.0, steps: 3, ..PluginScale::default() }));
+    assert_eq!(line_position(&points[0], &points[1], &three, 0.5), 0.5);
+    assert_eq!(three.position(three.value_at(0.5)), 2.0 / 3.0, "where a value taken back would put it");
 }
 
 /// A plug-in's range is not trusted: an empty or upside-down one and numbers that are not finite

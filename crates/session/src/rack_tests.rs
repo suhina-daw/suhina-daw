@@ -199,6 +199,32 @@ fn parameters_wanting_texts_are_asked_in_turn() {
     assert_eq!(instance.next_texts(), None);
 }
 
+/// Texts waiting in line keep the window drawing only while they can be sent; once their
+/// plug-in stops running the line empties without anyone asking again, so a closed lane or panel
+/// leaves nothing waiting (#1482).
+#[test]
+fn a_text_line_empties_without_another_ask() {
+    let mut rack = Rack::default();
+    let mut instance = Instance::new(PluginStatus::Running, None, 0);
+    instance.wait_texts(1, vec![0.1]);
+    instance.wait_texts(2, vec![0.2]);
+    rack.instances.insert(7, instance);
+    assert!(rack.texts_pending(), "waiting to be sent");
+    // Asked again later than a moment from now (a request it did not answer): not drawn for.
+    if let Some(instance) = rack.instances.get_mut(&7) {
+        instance.texts_next = Some(Instant::now() + TEXTS_AGAIN);
+    }
+    assert!(!rack.texts_pending());
+    // The plug-in stops: the line is dropped by the regular poll, with no lane asking again.
+    if let Some(instance) = rack.instances.get_mut(&7) {
+        instance.texts_next = None;
+        instance.status = PluginStatus::Loading;
+    }
+    rack.pump_texts();
+    assert!(rack.instances.get(&7).is_some_and(|i| i.texts_waiting.is_empty()));
+    assert!(!rack.texts_pending());
+}
+
 /// The engine holds the lanes of a plug-in's switches and lists of choices only; a knob listed
 /// with steps (a filter's cutoff in 1024 steps) moves along the line (#1482).
 #[test]
