@@ -974,6 +974,8 @@ pub(crate) fn remove_track(p: &mut Project, track: TrackId, channel: ChannelId) 
             c.output = None;
         }
         c.sends.retain(|s| s.target != channel);
+        // A key that read the channel goes with it (`docs/spec/sidechain.md` › Commands).
+        suhina_model::visit_devices_mut(&mut c.devices, &mut |d| d.inputs.retain(|i| i.source.channel() != channel));
     }
     p.arrangement.lanes.retain(|l| l.track != Some(track));
     p.arrangement.takes.retain(|t| t.track != track);

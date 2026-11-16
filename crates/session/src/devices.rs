@@ -589,6 +589,15 @@ fn device_json(path: &[usize], device: &Device) -> Value {
     if let Some(edits) = device.sample_edit_data().and_then(suhina_device_api::sample_edits::SampleEdits::decode) {
         value["sample_edits"] = json!({"version":1,"pins":edits.pins(),"suppressed":edits.suppressed()});
     }
+    // Its key (sidechain), so a panel and an agent see it without a second call.
+    if let Some(input) = device.inputs.first() {
+        value["key"] = json!({
+            "channel": input.source.channel().0,
+            "tap": input.source.tap().name(),
+            "gain": gain_db(input.gain),
+            "port": input.port,
+        });
+    }
     if !device.automation.is_empty() {
         value["automation"] = device
             .automation
@@ -600,6 +609,87 @@ fn device_json(path: &[usize], device: &Device) -> Value {
             .collect();
     }
     value
+}
+
+/// A linear gain in dB, silence as -150.
+fn gain_db(gain: f64) -> f64 {
+    if gain > 0.0 { 20.0 * gain.log10() } else { -150.0 }
+}
+
+/// The built-in devices that read a key; a plug-in reads one through its first auxiliary input.
+pub(crate) const KEYED_BUILTINS: [&str; 1] = ["compressor"];
+
+/// Whether `device` has a sidechain input to read a key with.
+pub(crate) fn reads_a_key(device: &Device) -> bool {
+    match &device.kind {
+        DeviceKind::Builtin(id) => KEYED_BUILTINS.contains(&id.as_str()),
+        kind => is_plugin(kind),
+    }
+}
+
+/// `device.setKey {track, device, source, tap?, gain?, port?}`: the device reads `source`'s
+/// signal at `tap` as its key (sidechain), replacing a key it had; `source` "none" removes it
+/// (`docs/spec/sidechain.md` › Commands). Refused for a device without a sidechain input and for a
+/// key that would close a loop. One undo step.
+pub(crate) fn set_key(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    if params.get("source").and_then(Value::as_str).is_some_and(|s| s.eq_ignore_ascii_case("none")) {
+        return clear_key(session, params);
+    }
+    let tap = match params.get("tap") {
+        None | Some(Value::Null) => suhina_model::TapPoint::default(),
+        Some(Value::String(name)) => suhina_model::TapPoint::from_name(name)
+            .ok_or_else(|| format!("tap must be preFx, postFx or postFader, got {name:?}"))?,
+        Some(_) => return Err("tap must be preFx, postFx or postFader".into()),
+    };
+    let db = match params.get("gain") {
+        None | Some(Value::Null) => 0.0,
+        Some(_) => Args::new(params).f64("gain")?,
+    };
+    if !(-150.0..=24.0).contains(&db) {
+        return Err(format!("gain must be from -150 to +24 dB, got {db}").into());
+    }
+    let gain = if db <= -150.0 { 0.0 } else { 10f64.powf(db / 20.0) };
+    let port = match params.get("port") {
+        None | Some(Value::Null) => suhina_model::DeviceInput::KEY.to_owned(),
+        Some(Value::String(port)) if !port.trim().is_empty() => port.trim().to_owned(),
+        Some(_) => return Err("port must be a port name".into()),
+    };
+    let source_track = crate::commands::track_at(&session.project, params, "source")?;
+    let source_name = session.project.track(source_track).map(|t| t.name.clone()).unwrap_or_default();
+    let source = session
+        .project
+        .track(source_track)
+        .and_then(|t| t.channel)
+        .ok_or_else(|| format!("track {source_name:?} has no mixer channel to read a key from"))?;
+    let point = suhina_model::SignalPoint::Channel { channel: source, tap };
+    let reader = device_channel(session, params)?.id;
+    if session.project.key_closes_loop(point, reader) {
+        return Err(format!(
+            "a key from {source_name:?} would close a loop: it plays into this track, or is this track after its devices"
+        )
+        .into());
+    }
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
+    if !reads_a_key(device) {
+        return Err(format!("{} has no sidechain input", device.name).into());
+    }
+    device.inputs = vec![suhina_model::DeviceInput { port: port.clone(), source: point, gain }];
+    Ok(json!({
+        "device": path_value(&path),
+        "key": { "track": source_track.0, "channel": source.0, "tap": tap.name(), "gain": db, "port": port },
+    }))
+}
+
+/// `device.clearKey {track, device}`: the device reads its own input again. One undo step.
+pub(crate) fn clear_key(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
+    let had = !device.inputs.is_empty();
+    device.inputs.clear();
+    Ok(json!({ "device": path_value(&path), "cleared": had }))
 }
 
 pub(crate) fn is_plugin(kind: &DeviceKind) -> bool {

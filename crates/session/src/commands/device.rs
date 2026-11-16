@@ -210,6 +210,37 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.setKey",
+        label: "Make a device read another track's signal as its key (sidechain): a compressor or a plug-in with a sidechain input ducks to it; source \"none\" removes the key",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            param("source", ParamType::Track, "the track whose signal keys the device, id or name, or \"none\""),
+            optional(
+                "tap",
+                ParamType::Text,
+                "where on the source the key is taken: preFx, postFx (default) or postFader",
+            ),
+            optional("gain", ParamType::Number, "the key's level in dB, -150 to +24 (default 0)"),
+            optional(
+                "port",
+                ParamType::Text,
+                "the device's input that reads it: \"key\" (default) or a plug-in's own name for its sidechain input",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: devices::set_key,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "device.clearKey",
+        label: "Take a device's key (sidechain) away: it reads its own input again",
+        params: &[DEVICE_TRACK, DEVICE],
+        kind: CommandKind::EDIT,
+        run: devices::clear_key,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "device.setEnabledMany",
         label: "Switch several devices of a track on or off as one undo step",
         params: &[DEVICE_TRACK, DEVICES, param("enabled", ParamType::Bool, "false switches the devices off")],

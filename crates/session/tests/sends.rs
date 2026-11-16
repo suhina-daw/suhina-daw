@@ -320,3 +320,53 @@ fn turning_a_send_off_and_on_updates_the_soloed_groups_source_audibility() {
     }
     assert!(out.iter().any(|s| s.abs() > 0.01));
 }
+
+/// The keys (sidechains) of the devices on `channel`, at their paths.
+fn keys(session: &Session, channel: u32) -> Vec<DeviceInput> {
+    session
+        .project()
+        .channel(ChannelId(channel))
+        .map(|c| c.devices.iter().flat_map(|d| d.inputs.clone()).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_compressor_is_keyed_by_another_track_and_a_loop_or_a_device_without_a_sidechain_is_refused() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Lead", "id": "compressor" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": "Lead", "id": "utility" })).unwrap();
+    let out = run(
+        &mut session,
+        "device.setKey",
+        json!({ "track": "Lead", "device": 0, "source": "Bass", "tap": "postFader", "gain": -6 }),
+    )
+    .unwrap();
+    assert_eq!(out["key"]["tap"], "postFader");
+    let key = &keys(&session, 2)[0];
+    assert_eq!((key.source.channel(), key.source.tap(), key.port.as_str()), (ChannelId(1), TapPoint::PostFader, "key"));
+    assert!((key.gain - 0.501).abs() < 1e-3);
+    let listed = run(&mut session, "track.devices", json!({ "track": "Lead" })).unwrap();
+    assert!(listed.to_string().contains(r#""key":{"channel":1,"#), "{listed}");
+    // Lead plays into Group: a key from Group closes a loop; so does Lead itself after its devices.
+    let looped = run(&mut session, "device.setKey", json!({ "track": "Lead", "device": 0, "source": "Group" }));
+    assert!(looped.unwrap_err().contains("loop"));
+    assert!(run(&mut session, "device.setKey", json!({ "track": "Lead", "device": 0, "source": "Lead" })).is_err());
+    // Lead before its devices is no loop.
+    run(&mut session, "device.setKey", json!({ "track": "Lead", "device": 0, "source": "Lead", "tap": "preFx" }))
+        .unwrap();
+    // A utility has no sidechain input; a bad tap names itself.
+    let utility = run(&mut session, "device.setKey", json!({ "track": "Lead", "device": 1, "source": "Bass" }));
+    assert!(utility.unwrap_err().contains("no sidechain input"));
+    let tap = run(&mut session, "device.setKey", json!({ "track": "Lead", "device": 0, "source": "Bass", "tap": "x" }));
+    assert!(tap.unwrap_err().contains("tap"));
+    // Undo takes back one key change; clear and "none" take it away.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(keys(&session, 2)[0].source.channel(), ChannelId(1));
+    run(&mut session, "device.setKey", json!({ "track": "Lead", "device": 0, "source": "none" })).unwrap();
+    assert!(keys(&session, 2).is_empty());
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    // Deleting the source track takes the key with it.
+    run(&mut session, "track.delete", json!({ "track": "Bass" })).unwrap();
+    assert!(keys(&session, 2).is_empty());
+    assert!(session.project().validate().is_ok());
+}
