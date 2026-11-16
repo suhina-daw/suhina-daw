@@ -1037,11 +1037,11 @@ fn an_empty_sampler_is_a_sampler_without_an_invented_sound() {
 /// Mixer tracks Main, Kick, Pad and Bus: Kick plays to Main and sidechains Bus (a route at level
 /// 0); Pad plays into Bus; Bus holds a wrapped plug-in whose sidechain hears Bus's input `port`
 /// (1: Kick, 2: Pad, the tracks routed into Bus in track order).
-fn sidechain_fixture(port: i32) -> Vec<u8> {
+fn sidechain_fixture(port: i32) -> Option<Vec<u8>> {
     let file = wrapper_fixture(false, false);
-    let parsed = suhina_flp::read_bytes(&file).unwrap();
-    let wrapper = parsed.events.iter().find(|e| e.id == 213).unwrap();
-    let suhina_flp::Payload::Data(wrapper) = &wrapper.payload else { panic!("state data") };
+    let parsed = suhina_flp::read_bytes(&file).ok()?;
+    let wrapper = parsed.events.iter().find(|e| e.id == 213)?;
+    let suhina_flp::Payload::Data(wrapper) = &wrapper.payload else { return None };
     let mut wrapper = wrapper.clone();
     // Two input buses: the main one (port 0) and the sidechain (`port`), both active.
     let inputs: Vec<u8> = [[0i32, 1, 0], [port, 1, 0]].iter().flatten().flat_map(|v| v.to_le_bytes()).collect();
@@ -1079,9 +1079,9 @@ fn sidechain_fixture(port: i32) -> Vec<u8> {
     event(&mut events, 225, &level);
     // Voice 0 plays into Kick, Voice 1 into Pad (the fixture sends both to track 1).
     let mut file = fixture(96, 32);
-    let second = file.windows(3).enumerate().filter(|(_, w)| *w == [104, 1, 0]).nth(1).map(|(i, _)| i).unwrap();
-    file[second + 1] = 2;
-    appended(file, &events)
+    let second = file.windows(3).enumerate().filter(|(_, w)| *w == [104, 1, 0]).nth(1).map(|(i, _)| i)?;
+    *file.get_mut(second + 1)? = 2;
+    Some(appended(file, &events))
 }
 
 #[test]
@@ -1091,7 +1091,7 @@ fn a_sidechain_route_keys_the_plugin_that_picks_it_after_the_source_fader() {
     let pad = suhina_model::ChannelId(1);
     let bus = suhina_model::ChannelId(131_075);
     for (port, source) in [(1, kick), (2, pad)] {
-        let imported = import_bytes(&sidechain_fixture(port)).unwrap();
+        let imported = import_bytes(&sidechain_fixture(port).unwrap()).unwrap();
         let p = &imported.project;
         let channel = p.channel(bus).unwrap();
         let device = channel.devices.iter().find(|d| matches!(d.kind, DeviceKind::Vst2 { .. })).unwrap();
@@ -1108,11 +1108,11 @@ fn a_sidechain_route_keys_the_plugin_that_picks_it_after_the_source_fader() {
         assert_eq!(suhina_project_file::from_json(&encoded).unwrap().channel(bus).unwrap().devices, channel.devices);
     }
     // An input Bus does not have: no key, and the import says so.
-    let imported = import_bytes(&sidechain_fixture(3)).unwrap();
+    let imported = import_bytes(&sidechain_fixture(3).unwrap()).unwrap();
     let channel = imported.project.channel(bus).unwrap();
     assert!(channel.devices.iter().all(|d| d.inputs.is_empty()));
     assert!(imported.warnings.iter().any(|w| w.contains("sidechain")), "{:?}", imported.warnings);
     // None picked: nothing.
-    let imported = import_bytes(&sidechain_fixture(0)).unwrap();
+    let imported = import_bytes(&sidechain_fixture(0).unwrap()).unwrap();
     assert!(imported.project.channel(bus).unwrap().devices.iter().all(|d| d.inputs.is_empty()));
 }

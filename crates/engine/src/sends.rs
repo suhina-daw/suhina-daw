@@ -470,8 +470,7 @@ fn feed_keys(chains: &mut [Chain], i: usize, frames: usize) {
             continue;
         }
         let (low, high) = chains.split_at_mut(i.max(j));
-        let (reader, source) =
-            if j < i { (high.first_mut(), low.get(j)) } else { (low.get_mut(i), high.first().map(|c| &*c)) };
+        let (reader, source) = if j < i { (high.first_mut(), low.get(j)) } else { (low.get_mut(i), high.first()) };
         if let (Some(reader), Some(source)) = (reader, source)
             && let Some(read) = reader.key_reads.get_mut(k)
         {

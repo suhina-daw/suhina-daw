@@ -919,7 +919,7 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
                 if destination >= count {
                     return Err(error(e.offset, "mixer route refers to missing bus"));
                 }
-                routes.entry(destination as u32).or_insert_with(BTreeSet::new).insert(index as u32);
+                routes.entry(destination as u32).or_default().insert(index as u32);
                 bus.sends.push(Send {
                     target: if destination == 0 { main_send } else { ChannelId(131_072 + destination as u32) },
                     level: levels.get(&(destination as u32)).copied().unwrap_or(1.),
