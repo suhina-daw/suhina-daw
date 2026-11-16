@@ -238,7 +238,7 @@ fn minimum_width_headers_keep_names_controls_and_meters_separate() {
 }
 
 /// Runs command `id` in `harness`'s app, as a click would.
-fn run(harness: &mut Harness<'static, App>, id: &str, params: serde_json::Value) {
+fn run(harness: &mut Harness<'static, App>, id: &'static str, params: serde_json::Value) {
     harness.state_mut().run(&suhina_ui::kit::widgets::Action::new(id, params));
 }
 
