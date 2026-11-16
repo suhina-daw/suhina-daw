@@ -1771,3 +1771,46 @@ fn a_keyed_plug_in_after_another_of_its_process_hears_its_key() {
     assert!(*heard.lock().unwrap() > 0.1, "the key reached it: {}", heard.lock().unwrap());
     assert_eq!(followed.load(Ordering::SeqCst), 0, "it never followed the other plug-in");
 }
+
+/// The track's notes end at its instrument: a plug-in effect after it (one with a MIDI input,
+/// such as a compressor that MIDI notes can trigger) gets none, as an effect on a mixer channel
+/// gets none of its instrument's notes; one before the instrument still gets them. The same in
+/// a device group's branch.
+#[test]
+fn notes_end_at_the_instrument_and_an_effect_after_it_gets_none() {
+    let seen = || -> Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>> { Arc::default() };
+    let render = |devices: Vec<Device>, stands: Vec<(Stand, PluginSlotInfo)>| {
+        let p = project(vec![note(0.0, 1.0, 60)], 2.0, devices);
+        render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, stands)),
+            SR,
+            512,
+            None,
+        )
+        .unwrap()
+    };
+    let stands = |before: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>,
+                  instrument: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>,
+                  after: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>| {
+        let mut a = Stand::new(Behaviour::Gain(1.0));
+        a.seen = Arc::clone(before);
+        let mut b = Stand::new(Behaviour::Instrument);
+        b.seen = Arc::clone(instrument);
+        let mut c = Stand::new(Behaviour::Gain(1.0));
+        c.seen = Arc::clone(after);
+        vec![(a, EFFECT), (b, INSTRUMENT), (c, EFFECT)]
+    };
+    let ons = |s: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>| {
+        s.lock().unwrap().iter().filter(|(_, e)| matches!(e, NoteEvent::On { .. })).count()
+    };
+    let (before, instrument, after) = (seen(), seen(), seen());
+    let out = render(vec![plug(vst3()), plug(vst3()), plug(vst3())], stands(&before, &instrument, &after));
+    assert!(peak(&out) > 0.0);
+    assert_eq!((ons(&before), ons(&instrument), ons(&after)), (1, 1, 0));
+    // In a branch of a device group.
+    let (before, instrument, after) = (seen(), seen(), seen());
+    render(vec![grouped(vec![vec![plug(vst3()), plug(vst3()), plug(vst3())]])], stands(&before, &instrument, &after));
+    assert_eq!((ons(&before), ons(&instrument), ons(&after)), (1, 1, 0));
+}

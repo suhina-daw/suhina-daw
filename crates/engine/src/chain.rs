@@ -728,7 +728,9 @@ impl Chain {
         } = self;
         let from = (*done).min(to);
         let alone = ara.is_some();
-        while let Some(slot) = slots.get_mut(*stage) {
+        while *stage < slots.len() {
+            let notes_ended = notes_ended(slots, *stage);
+            let Some(slot) = slots.get_mut(*stage) else { break };
             let key = key_reads.iter().find(|k| k.slot == *stage).map(|k| k.buffer.as_slice());
             match slot {
                 DeviceSlot::Device(device) => {
@@ -773,7 +775,10 @@ impl Chain {
                     }
                     let last = (to - from).saturating_sub(1);
                     span_events.clear();
-                    span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
+                    if !notes_ended {
+                        span_events
+                            .extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
+                    }
                     let Some(span) = buffer.get_mut(from * 2..to * 2) else {
                         *stage += 1;
                         continue;
@@ -1117,7 +1122,9 @@ impl Chain {
         let from = (*done).min(to);
         let alone = ara.is_some();
         let mut index = 0;
-        while let Some(slot) = slots.get_mut(index) {
+        while index < slots.len() {
+            let notes_ended = notes_ended(slots, index);
+            let Some(slot) = slots.get_mut(index) else { break };
             let key = key_reads.iter().find(|k| k.slot == index).map(|k| k.buffer.as_slice());
             match slot {
                 DeviceSlot::Device(device) => {
@@ -1160,7 +1167,10 @@ impl Chain {
                     }
                     let last = (to - from).saturating_sub(1);
                     span_events.clear();
-                    span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
+                    if !notes_ended {
+                        span_events
+                            .extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
+                    }
                     let Some(span) = buffer.get_mut(from * 2..to * 2) else {
                         index += 1;
                         continue;
@@ -1510,6 +1520,16 @@ fn find_joined(
         *member = joint.member;
         joined.len += 1;
     }
+}
+
+/// Whether the plug-in effect at `at` comes after an instrument: the track's notes end at the
+/// instrument, and a plug-in effect after it (one with a MIDI input, such as a compressor MIDI
+/// notes can trigger) gets none, as an effect on a mixer channel gets none of the notes its
+/// instrument plays; another instrument after it still plays them
+/// (`docs/spec/device-chains.md` › Instruments and their notes).
+pub(crate) fn notes_ended(slots: &[DeviceSlot], at: usize) -> bool {
+    let effect = slots.get(at).is_some_and(|s| matches!(s, DeviceSlot::Plugin(p) if !p.instrument));
+    effect && slots.get(..at).is_some_and(|before| before.iter().any(crate::group::is_instrument))
 }
 
 /// Hands `span` (the block's frames `from..to`) with `events` to the plug-in at `at`, together

@@ -58,7 +58,12 @@ output, when it holds devices or its volume, pan or mute follows a lane.
 pressure, all notes off) at the frame where the next `process` starts: the host splits a
 block where an event falls, exactly as for automation, so one mechanism times both and the
 trait needs no event list. Values are plain and in range from a well-behaved host, but a
-device accepts anything without misbehaving. Effects ignore events. Whole-number parameters
+device accepts anything without misbehaving. Effects ignore events. The track's notes end at
+its instrument: a plug-in effect after it (one with a MIDI input, such as a compressor MIDI
+notes can trigger) gets none, as an effect on a mixer channel gets none of the notes its
+instrument plays, while another instrument after it still plays them, in a chain and in a
+device group's branch alike (`chain::notes_ended`). A plug-in effect before the instrument
+gets them. Whole-number parameters
 (a level from 0 to 99, an algorithm number) get their own kind, `ParamKind::Integer`, so they
 never take a fraction. The contract tests add, for instruments, a fixed performance (notes
 that start inside blocks, the sustain pedal, bend, the wheel, pressure) in every block size,

@@ -611,7 +611,10 @@ pub(crate) fn run_slots(
     run: Span<'_>,
 ) {
     let Span { from, to, context, sample_rate, deadline } = run;
-    for (index, slot) in slots.iter_mut().enumerate() {
+    for index in 0..slots.len() {
+        // The branch's notes end at its instrument, as a chain's do.
+        let notes_ended = crate::chain::notes_ended(slots, index);
+        let Some(slot) = slots.get_mut(index) else { break };
         match slot {
             DeviceSlot::Device(device) => {
                 crate::chain::run_device(device, index, buffer, from, to, pending, lanes, context, sample_rate);
@@ -632,7 +635,9 @@ pub(crate) fn run_slots(
             DeviceSlot::Plugin(plugin) => {
                 let last = (to - from).saturating_sub(1);
                 span_events.clear();
-                span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
+                if !notes_ended {
+                    span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
+                }
                 plugin.automate(from, to);
                 if let Some(span) = buffer.get_mut(from * 2..to * 2) {
                     plugin.run(span, span_events, deadline);
