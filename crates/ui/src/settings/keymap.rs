@@ -241,7 +241,7 @@ const WINDOW_ACTIONS: [(&str, &str, &str); 107] = [
     ("pianoRoll.join", "Join the selected notes on one key into one note, over any gap", PIANO_ROLL),
     ("pianoRoll.fitToTime", "Stretch or squeeze the selected notes to fill the time selection", PIANO_ROLL),
     ("pianoRoll.crop", "Crop the piano roll's clip to the time selection", PIANO_ROLL),
-    ("pianoRoll.splitNotes", "Split the notes at the time selection's edges", PIANO_ROLL),
+    ("pianoRoll.splitNotes", "Split the notes at the time selection, or chop them on the grid", PIANO_ROLL),
     ("pianoRoll.chopNotes", "Chop the selected notes into grid-long pieces", PIANO_ROLL),
     ("pianoRoll.rangeUp", "Raise the selected notes' velocity range by one", PIANO_ROLL),
     ("pianoRoll.rangeDown", "Lower the selected notes' velocity range by one", PIANO_ROLL),

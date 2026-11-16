@@ -1486,10 +1486,10 @@ fn the_first_beat_item_takes_only_an_eighth_on_a_clip_that_swings() {
     assert!(menu.origin_ok(at(1.5)), "on an eighth every note keeps its swing");
 }
 
-/// Ctrl+E splits notes, never the clip, at a time selection's edges where it runs across notes,
-/// and nothing else; Chop on grid (Alt+E) cuts the selected notes at every grid line.
+/// Ctrl+E splits notes, never the clip: at a time selection's edges or the insert mark where they
+/// run across notes, else it chops the selected notes on the grid, as Chop on grid (Alt+E) does.
 #[test]
-fn ctrl_e_splits_at_the_time_selection_and_chop_cuts_on_the_grid() {
+fn ctrl_e_splits_at_the_time_selection_or_the_mark_else_chops_on_the_grid() {
     let piano = clip(vec![note(0.0, 2.0, 60), note(1.0, 1.0, 64), note(4.0, 1.0, 62)]);
     let mut state = focused_on(&piano);
     assert!(state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).is_none(), "nothing selected");
@@ -1499,15 +1499,23 @@ fn ctrl_e_splits_at_the_time_selection_and_chop_cuts_on_the_grid() {
     assert_eq!(split.id, "note.split");
     assert_eq!((split.params["notes"].clone(), split.params["ats"].clone()), (json!([0, 1]), json!([0.5, 1.5])));
     // Selected notes whose time selection is their own span (a rectangle): its edges cut nothing,
-    // and Ctrl+E only splits, so nothing happens; Chop on grid cuts them on the grid.
+    // so Ctrl+E chops them on the grid, as Chop on grid does.
     state.selected = BTreeSet::from([0]);
     state.select_span(0.0, 2.0);
-    assert!(state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).is_none(), "split never chops");
-    let chop = state.key_action("pianoRoll.chopNotes", &piano, 0.0, None).expect("note.split");
+    let chop = state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).expect("note.split");
+    let menu = state.key_action("pianoRoll.chopNotes", &piano, 0.0, None).expect("note.split");
+    assert_eq!(chop.params, menu.params, "Ctrl+E chops as Chop on grid does");
     assert_eq!(chop.params["notes"], json!([0]));
     let ats: Vec<f64> = chop.params["ats"].as_array().unwrap().iter().filter_map(|v| v.as_f64()).collect();
     assert!(!ats.is_empty() && ats.iter().all(|at| *at > 0.0 && *at < 2.0), "{ats:?}");
     let mut sorted = ats.clone();
     sorted.sort_by(f64::total_cmp);
     assert_eq!(ats, sorted, "grid lines in time order");
+    // The insert mark (a click on an empty spot) with nothing selected: every note across it is
+    // cut there.
+    state.selected.clear();
+    state.clear_span();
+    state.insert_at = Some(1.5);
+    let at_mark = state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).expect("note.split");
+    assert_eq!((at_mark.params["notes"].clone(), at_mark.params["ats"].clone()), (json!([0, 1]), json!([1.5])));
 }

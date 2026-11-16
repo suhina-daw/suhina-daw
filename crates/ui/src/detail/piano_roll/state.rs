@@ -857,7 +857,8 @@ impl PianoRollState {
             }
             // The selected notes, not the notes that start in the time selection (what the other
             // keys act on with none selected): a note across its start is cut there too.
-            "pianoRoll.splitNotes" => split_notes(clip, &self.selected, span),
+            "pianoRoll.splitNotes" => split_notes(clip, &self.selected, span, self.insert_at)
+                .or_else(|| chop_notes(clip, acting, self.beat_width)),
             "pianoRoll.chopNotes" => chop_notes(clip, acting, self.beat_width),
             _ => None,
         }
@@ -1105,18 +1106,28 @@ fn split_action(clip: &PianoClip, notes: Vec<usize>, ats: Vec<f64>) -> Action {
     Action::new("note.split", params)
 }
 
-/// Split notes (Ctrl+E): the notes across the time selection's edges (the selected ones, or with
-/// none every note of the clip) are cut at them; `None` without a time selection or with no note
-/// across an edge. It only splits: chopping on the grid is [`chop_notes`].
-fn split_notes(clip: &PianoClip, selected: &BTreeSet<usize>, span: Option<(f64, f64)>) -> Option<Action> {
-    let (start, end) = span?;
+/// The split half of Split notes (Ctrl+E): the notes across the time selection's edges (the
+/// selected ones, or with none every note of the clip) are cut at them; with no time selection and
+/// nothing selected, every note across the insert mark is cut there. `None` with no note across an
+/// edge or the mark, where Ctrl+E chops the notes on the grid instead ([`chop_notes`]).
+fn split_notes(
+    clip: &PianoClip,
+    selected: &BTreeSet<usize>,
+    span: Option<(f64, f64)>,
+    insert_at: Option<f64>,
+) -> Option<Action> {
+    let ats = match (span, insert_at) {
+        (Some((start, end)), _) => vec![start, end],
+        (None, Some(at)) if selected.is_empty() => vec![round_beat(at)],
+        (None, _) => return None,
+    };
     let named: Vec<usize> =
         if selected.is_empty() { (0..clip.notes.len()).collect() } else { selected.iter().copied().collect() };
     let cut: Vec<usize> = named
         .into_iter()
-        .filter(|i| clip.notes.get(*i).is_some_and(|n| runs_across(n, start) || runs_across(n, end)))
+        .filter(|i| clip.notes.get(*i).is_some_and(|n| ats.iter().any(|at| runs_across(n, *at))))
         .collect();
-    (!cut.is_empty()).then(|| split_action(clip, cut, vec![start, end]))
+    (!cut.is_empty()).then(|| split_action(clip, cut, ats))
 }
 
 /// Chop on grid (Alt+E): the notes the edit keys act on, cut at every grid line inside them

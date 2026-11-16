@@ -872,10 +872,12 @@ notes are untouched, and a clip that holds audio refuses them.
   what is left, one whose loop it misses plays once and is as long as the selection. A time
   selection outside the part of the clip that plays is refused.
 - **Split notes** (`note.split` with `ats`, **Ctrl+E**, the split key, which the piano roll takes
-  while it has the keyboard): the notes across the time selection's two edges (the selected ones,
-  or with none selected every note across them) are cut at them, one undo step. It only splits:
-  without a time selection, or with none of its edges inside a note (a rectangle's time selection
-  is the selected notes' own span), it does nothing. It never splits at the playhead and never
+  while it has the keyboard), one undo step: the notes across the time selection's two edges
+  (the selected ones, or with none selected every note across them) are cut at them; with no time
+  selection and nothing selected, every note across the insert mark (left by a click on an empty
+  spot) is cut there. Where no note runs across an edge or the mark (a rectangle's time selection
+  is the selected notes' own span), it chops the notes the edit keys act on, as Chop on grid does,
+  and a note no longer than a grid step stays whole. It never splits at the playhead and never
   splits the clip.
 - **Chop on grid** (`note.split` with `ats`, **Alt+E**, and the menu): the notes the edit keys act
   on are cut at every grid line inside them, into grid-long pieces, one undo step; with no grid
