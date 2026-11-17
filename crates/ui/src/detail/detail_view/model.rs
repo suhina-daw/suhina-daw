@@ -782,16 +782,13 @@ pub(super) fn chain(
 /// The tracks a device on `reader` can read a key from, in project order: each track with a
 /// mixer channel but the reader's own, leaving out those a key from would close a loop.
 pub(crate) fn key_sources(project: &Project, reader: suhina_engine::model::ChannelId) -> Vec<(TrackId, String)> {
+    // One walk: the channels the reader plays into, whose key would close a loop.
+    let after = project.channels_after(reader);
     project
         .tracks
         .iter()
         .filter_map(|t| t.channel.map(|c| (t.id, c)))
-        .filter(|&(_, channel)| channel != reader)
-        .filter(|&(_, channel)| {
-            let point =
-                suhina_engine::model::SignalPoint::Channel { channel, tap: suhina_engine::model::TapPoint::PostFx };
-            !project.key_closes_loop(point, reader)
-        })
+        .filter(|&(_, channel)| channel != reader && !after.contains(&channel))
         .map(|(track, _)| (track, project.shown_track_name(track)))
         .collect()
 }

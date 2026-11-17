@@ -1431,35 +1431,45 @@ impl Project {
         if source == reader {
             return point.tap() != TapPoint::PreFx;
         }
-        let mut seen = vec![reader];
+        self.channels_after(reader).contains(&source)
+    }
+
+    /// The channels `from` plays into, at any depth: through its output, its sends and the keys
+    /// read from it (a channel whose device reads a key from one of them runs after it). A key a
+    /// device on `from` reads from one of them would close a loop. One walk over the graph, the
+    /// key edges gathered once, so a caller can ask for every track at once.
+    pub fn channels_after(&self, from: ChannelId) -> Vec<ChannelId> {
+        let keyed: Vec<(ChannelId, ChannelId)> = self
+            .channels
+            .iter()
+            .flat_map(|reader| {
+                groups::walk_devices(&reader.devices)
+                    .into_iter()
+                    .flat_map(|(_, d)| d.inputs.iter().map(|i| i.source.channel()).collect::<Vec<_>>())
+                    .map(move |source| (source, reader.id))
+            })
+            .collect();
+        let mut seen = vec![from];
         let mut at = 0;
-        while let Some(&from) = seen.get(at) {
+        while let Some(&channel_id) = seen.get(at) {
             at += 1;
             if seen.len() > self.channels.len() + 1 {
                 break;
             }
-            let Some(channel) = self.channel(from) else { continue };
-            let mut next: Vec<ChannelId> =
-                channel.output.into_iter().chain(channel.sends.iter().map(|s| s.target)).collect();
-            // A channel that a key reads from `from` runs after it too.
-            for other in &self.channels {
-                if groups::walk_devices(&other.devices)
-                    .iter()
-                    .any(|(_, d)| d.inputs.iter().any(|i| i.source.channel() == from))
-                {
-                    next.push(other.id);
-                }
-            }
-            for id in next {
-                if id == source {
-                    return true;
-                }
+            let Some(channel) = self.channel(channel_id) else { continue };
+            let next = channel
+                .output
+                .into_iter()
+                .chain(channel.sends.iter().map(|s| s.target))
+                .chain(keyed.iter().filter(|(source, _)| *source == channel_id).map(|(_, reader)| *reader));
+            for id in next.collect::<Vec<_>>() {
                 if !seen.contains(&id) {
                     seen.push(id);
                 }
             }
         }
-        false
+        seen.remove(0);
+        seen
     }
 
     pub fn validate(&self) -> Result<(), Vec<ValidationError>> {

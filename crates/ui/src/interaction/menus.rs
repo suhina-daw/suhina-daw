@@ -57,7 +57,7 @@ pub struct KeyReader {
 /// The devices on the project's tracks (not inside a device group) that read a key, in track
 /// order, Main's last (`docs/spec/sidechain.md` › Choosing a source).
 pub fn key_readers(project: &suhina_engine::model::Project) -> Vec<KeyReader> {
-    use suhina_engine::model::{ChannelRole, SignalPoint, TapPoint};
+    use suhina_engine::model::ChannelRole;
     let mut readers = Vec::new();
     let owners =
         project.tracks.iter().filter_map(|t| t.channel.map(|c| (t.id, c, project.shown_track_name(t.id)))).chain(
@@ -74,19 +74,16 @@ pub fn key_readers(project: &suhina_engine::model::Project) -> Vec<KeyReader> {
             if device.clip_host || !suhina_session::reads_a_key(device) {
                 continue;
             }
+            // One walk per reading channel: its own track and the tracks it plays into. The
+            // views build this list every frame, so never a walk per track.
             let refused = refused
                 .get_or_insert_with(|| {
+                    let after = project.channels_after(channel_id);
                     project
                         .tracks
                         .iter()
                         .filter_map(|t| t.channel.map(|c| (t.id, c)))
-                        .filter(|&(_, c)| {
-                            c == channel_id
-                                || project.key_closes_loop(
-                                    SignalPoint::Channel { channel: c, tap: TapPoint::PostFx },
-                                    channel_id,
-                                )
-                        })
+                        .filter(|&(_, c)| c == channel_id || after.contains(&c))
                         .map(|(t, _)| t)
                         .collect::<Vec<_>>()
                 })
