@@ -1619,9 +1619,11 @@ of bars, and a slider id per parameter.
 - **Knob artwork per part:** `pan.knob.body|pointer` and `send.knob.body|pointer` for a pan's and
   a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`.
   `device.knob.body|pointer` replace the face and the pointer of a device panel's knobs that draw
-  the device's own artwork (the Amp Modeler's knobs, `Dial { image }`); without them those
-  knobs keep the device's image, never `knob.*`. The arc around them takes the knob's
-  `accent-color`. An
+  the device's own artwork (the Amp Modeler's knobs, `Dial { image }`); without them the theme's
+  own `knob.body|pointer` do, when the theme has artwork of its own for the role, and otherwise
+  those knobs keep the device's image: the user-agent sheet's default knob never covers it
+  (#1500). A pointer drawn as a line takes `knob-pointer { color }` where the theme gives one.
+  The arc around them takes the knob's `accent-color`. An
   Arrangement send is a knob with `send { appearance: knob }`, as in the mixer.
 - **Mixer colour strip:** `mixer > track-colour` (`display: none` hides it; `width` sizes it).
 - **`accent-color`** reaches every control in its scope, the built-in effects' parameter knobs too.

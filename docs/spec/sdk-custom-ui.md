@@ -368,7 +368,9 @@ knob. Such a dial draws, inside its bounds, its track and its value's arc (the t
 accent colours) around the image and the pointer over it (the theme's text colour); its label
 and value keep their places. A theme's `device.knob.body` artwork replaces the image and its
 `device.knob.pointer` the pointer ([theme-skins.md](theme-skins.md)), so a user can bring knobs
-of their own to every device that draws its own.
+of their own to every device that draws its own; without them the theme's own `knob.body` and
+`knob.pointer` do, as on every other knob, but not the user-agent sheet's default artwork. The
+pointer line takes `knob-pointer { color }` where the theme gives one (#1500).
 Format `tempo` displays BPM, or Auto for zero (a device may use that value to request tempo detection).
 Formats `seconds`, `percent`, `decibels` and `balance` display milliseconds/seconds,
 fractional percentages, dB and centre/L/R respectively. Existing Dial definitions

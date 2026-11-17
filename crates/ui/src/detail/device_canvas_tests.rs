@@ -2884,3 +2884,100 @@ fn the_pack_dropdown_groups_a_collections_captures() {
         .collect();
     assert_eq!(paths, ["p/Collection/Bright/a.nam"], "a row chooses its pack's first file");
 }
+
+/// A dial with the device's own face (the Amp Modeler's knob) at `rect`, as the tests below draw it.
+fn image_dial_canvas() -> Arc<DeviceUi> {
+    let face = suhina_device_sdk::ui::ImageAsset::from_bytes(
+        "face",
+        include_bytes!("../../../../devices/nam-amp-modeler/panel/knob.png"),
+    )
+    .unwrap();
+    Arc::new(DeviceUi {
+        size: [60.0, 52.0],
+        assets: vec![face],
+        controls: vec![CustomControl {
+            id: "gain".into(),
+            name: "gain".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, 60.0, 52.0],
+            widget: Some(Widget::Dial {
+                label: String::new(),
+                decimals: 1,
+                format: Default::default(),
+                image: Some("face".into()),
+            }),
+            visible_when: None,
+            gesture: UiGesture::Drag,
+            x: None,
+            y: Some(UiBinding::new("gain")),
+            drawing: Vec::new(),
+        }],
+        ..Default::default()
+    })
+}
+
+/// One frame of `canvas` under `skin` and `colours`: its shapes, and whether a texture it uploaded
+/// holds `colour`.
+fn drawn_with(
+    canvas: &Arc<DeviceUi>,
+    skin: crate::kit::skin::Skin,
+    colours: &[(&str, Color32)],
+    colour: Color32,
+) -> (Vec<egui::epaint::ClippedShape>, bool) {
+    crate::kit::skin::configure(&skin);
+    let ctx = egui::Context::default();
+    crate::kit::theme::use_colors(&ctx, &colours.iter().map(|(n, c)| ((*n).to_owned(), *c)).collect());
+    let parameters = [parameter("gain", false)];
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _frame = crate::kit::native_css::frame(ui);
+        show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(60.0, 52.0)),
+            canvas,
+            &crate::detail::device_widgets::PanelState::none(),
+            &parameters,
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut Vec::new(),
+        )
+    });
+    let painted = output.textures_delta.set.values().flat_map(|deltas| deltas.iter()).any(|delta| match &delta.image {
+        egui::ImageData::Color(image) => image.pixels.contains(&colour),
+    });
+    output.textures_delta.clear();
+    crate::kit::theme::use_colors(&ctx, &crate::kit::theme::Colors::new());
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    (output.shapes, painted)
+}
+
+/// A dial with the device's own face takes the theme's own `knob.body` artwork when the theme has
+/// no `device.knob.body`, as every other knob does; the user-agent sheet's default knob never
+/// covers the device's face (#1500).
+#[test]
+fn a_themes_own_knob_replaces_a_dials_own_face_and_the_default_knob_does_not() {
+    let canvas = image_dial_canvas();
+    let green = Color32::from_rgb(0x12, 0xAB, 0x34);
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#12AB34\"/></svg>";
+    let own = crate::kit::skin::Skin { assets: [("knob.body".into(), svg.into())].into(), ..Default::default() };
+    assert!(drawn_with(&canvas, own, &[], green).1, "the theme's own knob.body replaces the face");
+    // The default knob, coloured green through the knob body's colour, is not drawn over it.
+    let default = crate::kit::skin::default_svgs().find(|(role, _)| *role == "knob.body").map(|(_, svg)| svg).unwrap();
+    let skin = crate::kit::skin::Skin { assets: [("knob.body".into(), default.into())].into(), ..Default::default() };
+    let (_, painted) = drawn_with(&canvas, skin, &[("control-background", green)], green);
+    assert!(!painted, "the default knob leaves the device's face");
+}
+
+/// The pointer line over the device's face takes `knob-pointer { color }` where the theme gives
+/// one, rather than the ink worked out from the face (#1500).
+#[test]
+fn a_dials_pointer_line_takes_the_themes_knob_pointer_colour() {
+    let canvas = image_dial_canvas();
+    let magenta = Color32::from_rgb(0xFF, 0x00, 0xFF);
+    let skin = crate::kit::skin::Skin { css: Some("knob-pointer { color: #FF00FF; }".into()), ..Default::default() };
+    let (shapes, _) = drawn_with(&canvas, skin, &[], Color32::TRANSPARENT);
+    let line = shapes.iter().find_map(|shape| match &shape.shape {
+        egui::Shape::LineSegment { stroke, .. } => Some(stroke.color),
+        _ => None,
+    });
+    assert_eq!(line, Some(magenta));
+}

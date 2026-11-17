@@ -422,8 +422,10 @@ the knobs) is an image layer under the controls, at three times the canvas's poi
 sharp on a high-DPI screen; the folder's `README.md` records its author and licence. What the
 artwork does not hold follows the theme: the texts, the knobs' arcs and pointers, the buttons'
 fills, the dropdowns and the steppers take the palette's colours, and a theme's
-`device.knob.body` and `device.knob.pointer` artwork replaces the knobs' faces
-([theme-skins.md](theme-skins.md)). Top to bottom:
+`device.knob.body` and `device.knob.pointer` artwork replaces the knobs' faces, else the theme's
+own `knob.body` and `knob.pointer` artwork does ([theme-skins.md](theme-skins.md)). EQ, HQ and
+Mono are the canvas's buttons, so a theme's `button` artwork and rules (its hover and
+`[checked]` looks) reach them, and they are lit in the accent while on (#1500). Top to bottom:
 
 1. **The file row** — in the grille's top slots, left to right:
    - **The pack**: a dropdown over the folder's packs ([Folders](#packs) › Packs: a subfolder of

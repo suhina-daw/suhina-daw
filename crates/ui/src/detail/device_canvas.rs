@@ -2010,7 +2010,9 @@ fn paint_control(
     let mut body = None;
     let mut knob_effects = false;
     // A dial with the device's own face (`Dial { image }`): a theme's `device.knob.body` and
-    // `device.knob.pointer` artwork replace the device's image and its pointer line.
+    // `device.knob.pointer` artwork replace the device's image and its pointer line, else the
+    // theme's own `knob.body` and `knob.pointer` do, as on every other knob (#1500); the
+    // user-agent sheet's default knob never covers the device's face.
     let device_face = matches!(control.widget, Some(Widget::Dial { image: Some(_), .. }));
     let mut face: Option<Rect> = None;
     let mut face_fill: Option<Color32> = None;
@@ -2032,7 +2034,11 @@ fn paint_control(
                     .response_if(response)
                     .enter()
                     .computed_color_or(colours().control_background);
-                if crate::kit::skin::paint_as(&scope, painter, rect, "device.knob.body", state, body_ink) {
+                let themed = ["device.knob.body", "knob.body"].into_iter().any(|role| {
+                    (role == "device.knob.body" || crate::kit::skin::has_own(role))
+                        && crate::kit::skin::paint_as(&scope, painter, rect, role, state, body_ink)
+                });
+                if themed {
                     // The pointer then sits on the theme's face, which the theme pairs with its
                     // knob's `color` (or its own `device.knob.pointer`): the device's face colour
                     // no longer says what the pointer must stand out from.
@@ -2042,27 +2048,34 @@ fn paint_control(
             } else if let (Draw::Line { from, to, color: c, width }, Some(rect)) = (draw, face) {
                 let direction = point(to) - point(from);
                 let angle = direction.x.atan2(-direction.y);
-                let pointer_ink = crate::kit::element::KNOB_POINTER.response_if(response).enter().color_or(ink);
-                if crate::kit::skin::paint_turned_as(
-                    &scope,
-                    painter,
-                    rect,
-                    "device.knob.pointer",
-                    state,
-                    pointer_ink,
-                    angle,
-                ) {
+                let pointer = crate::kit::element::KNOB_POINTER.response_if(response).enter().look();
+                let pointer_ink = pointer.color_or(ink);
+                let turned = ["device.knob.pointer", "knob.pointer"].into_iter().any(|role| {
+                    (role == "device.knob.pointer" || crate::kit::skin::has_own(role))
+                        && crate::kit::skin::paint_turned_as(&scope, painter, rect, role, state, pointer_ink, angle)
+                });
+                if turned {
                     continue;
                 }
-                // The line sits on the device's own face, not on the theme's: in the theme's text
-                // colour where that reads on it, otherwise in the ink that does (a light theme's
+                // The line takes `knob-pointer { color }` where the theme gives one (#1500).
+                // Otherwise it sits on the device's own face, not on the theme's: in the theme's
+                // text colour where that reads on it, else in the ink that does (a light theme's
                 // dark text on a black knob would hide the pointer).
                 let themed = tokens.color(*c);
-                if let Some(fill) = face_fill
-                    && crate::kit::theme::text_contrast(themed, fill) < 3.0
-                {
-                    let readable = crate::kit::theme::text_on(fill).to_srgba_unmultiplied();
-                    let line = Draw::Line { from: from.clone(), to: to.clone(), color: readable, width: *width };
+                let colour = match (pointer.own_color(), face_fill) {
+                    (Some(own), _) => Some(own),
+                    (None, Some(fill)) if crate::kit::theme::text_contrast(themed, fill) < 3.0 => {
+                        Some(crate::kit::theme::text_on(fill))
+                    }
+                    _ => None,
+                };
+                if let Some(colour) = colour {
+                    let line = Draw::Line {
+                        from: from.clone(),
+                        to: to.clone(),
+                        color: colour.to_srgba_unmultiplied(),
+                        width: *width,
+                    };
                     paint_scaled(painter, &scope, std::slice::from_ref(&line), origin, values, loaded, tokens, scale);
                     continue;
                 }

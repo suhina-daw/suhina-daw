@@ -11,8 +11,9 @@ device registry embeds them into the panel's canvas as image assets when it load
 | `knob.png` | `knob` | A knob's face, the same on either head: a flat dark body with a grey rim, transparent around it | 128 × 128 |
 
 The panel draws the value's arc around a knob and its pointer over it, in the theme's text
-colour where that reads on the dark face and in a light ink where it does not, and a theme's
-`device.knob.body` artwork replaces the face. The originals' dark slots marked where each
+colour where that reads on the dark face and in a light ink where it does not (in
+`knob-pointer`'s colour where the theme gives one), and a theme's `device.knob.body` artwork,
+else its own `knob.body` artwork, replaces the face. The originals' dark slots marked where each
 control sits; they are filled with the grille here, and the panel draws the controls' boxes in
 the theme's colours.
 
