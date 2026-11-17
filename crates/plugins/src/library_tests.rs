@@ -217,6 +217,56 @@ fn plugins_switched_off_are_kept_and_left_out_of_the_catalog_sessions_see() {
 }
 
 #[test]
+fn plugins_marked_as_owned_are_kept_marked_and_still_offered() {
+    let folder = scratch("owned");
+    let mut library = Library::new(Some(folder.clone()), PathBuf::from("host"));
+    library.catalog.insert(PathBuf::from("/p/Thing.clap"), vec![info("/p/Thing.clap", "Maker")]);
+    let key = product_key("Maker", "Thing");
+    assert!(!library.is_owned(&key), "not marked at first");
+    library.set_owned_many(std::slice::from_ref(&key), true).unwrap();
+    assert_eq!(library.enabled_catalog().plugins().count(), 1, "a mark leaves it offered");
+    let mut again = Library::new(Some(folder.clone()), PathBuf::from("host"));
+    assert!(again.is_owned(&key), "kept across starts");
+    assert_eq!(again.owned_keys(), std::slice::from_ref(&key));
+    again.set_owned_many(std::slice::from_ref(&key), false).unwrap();
+    assert!(!again.is_owned(&key));
+    let bad = [key.clone(), String::new()];
+    assert!(again.set_owned_many(&bad, true).is_err());
+    assert!(!again.is_owned(&key), "a list with a bad name changes nothing");
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn marks_kept_by_spec_before_become_their_products_marks() {
+    let folder = scratch("owned-by-spec");
+    std::fs::create_dir_all(&folder).unwrap();
+    let mut library = Library::new(Some(folder.clone()), PathBuf::from("host"));
+    library.catalog.insert(PathBuf::from("/p/Thing.clap"), vec![info("/p/Thing.clap", "Maker")]);
+    std::fs::write(folder.join(CATALOG_FILE), library.catalog.to_json()).unwrap();
+    let spec = info("/p/Thing.clap", "Maker").spec();
+    std::fs::write(folder.join(OWNED_FILE), json!([spec, "clap:/gone.clap#x"]).to_string()).unwrap();
+    let mut again = Library::new(Some(folder.clone()), PathBuf::from("host"));
+    assert!(again.is_owned(&product_key("Maker", "Thing")), "the old mark names its product now");
+    assert!(again.owned_keys().contains(&"clap:/gone.clap#x".to_string()), "one the catalog lacks stays");
+    let saved = std::fs::read_to_string(folder.join(OWNED_FILE)).unwrap();
+    assert!(!saved.contains(&spec), "written back once in the new form: {saved}");
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn many_plug_ins_are_switched_off_with_one_save() {
+    let folder = scratch("disabled-many");
+    let mut library = Library::new(Some(folder.clone()), PathBuf::from("host"));
+    let specs: Vec<String> = (0..700).map(|i| format!("clap:/p/{i}.clap#id")).collect();
+    library.set_enabled_many(&specs, false).unwrap();
+    let mut again = Library::new(Some(folder.clone()), PathBuf::from("host"));
+    assert!(specs.iter().all(|s| !again.is_enabled(s)), "all of them kept off");
+    again.set_enabled_many(&specs[..10], true).unwrap();
+    assert!(again.is_enabled(&specs[0]) && !again.is_enabled(&specs[10]));
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn groups_follow_the_hosting() {
     let plugin = info("C:/Plugins/Thing.vst3", "Example Audio");
     assert_eq!(group_for(Hosting::Binary, &plugin).as_deref(), Some("file:C:/Plugins/Thing.vst3"));

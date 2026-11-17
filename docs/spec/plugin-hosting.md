@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-16
+last_verified: 2026-11-17
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
@@ -202,8 +202,18 @@ state at `DENORMAL_FLOOR`.
 A late reply resets the hang counter when the next request is accepted: missing
 an audio deadline does not mean the host stopped answering. Superseded starts
 after a rate change are unloaded off the session thread, like accepted instances.
-With measured render lead, the deadline uses the complete device periods covered by queued
-frames minus 3 ms, with half a render batch as the startup floor. All internal chunks
+With measured render lead, the deadline is when the device will take the block: the complete
+device periods covered by queued frames, plus what is left until the device's next take, a
+period after its last one (each read of the ring marks the time once its frames are gone),
+minus 3 ms. When that take needs more frames than the block (a device period longer than the
+engine block), the block has only its share of the time left, by frames, so the blocks after
+it still have theirs. No take yet, or one more than a period ago (overdue), adds nothing, and
+half a render batch is the floor in every case. Counting from
+the next take matters most with an armed track's queue of one block, which is empty after
+every take: from the queued periods alone each block had half its playing time, a quarter
+less again before a bus with plug-ins, though the device needed it a whole period later, and
+a heavy instrument with an effect after it missed nearly every block while its track was
+armed (#1494). All internal chunks
 of the batch share that absolute deadline: the 1024-frame internal limit must neither
 cap a short processing burst while queued audio covers it nor renew the time allowed
 for a hanging processor. Sustained overload still exhausts the queue and misses its
@@ -493,8 +503,13 @@ format, whatever its name.
 stays in the catalog and in `plugin.list`, but sessions get the catalog without it: it is
 not offered in the browser, not found by name, and a project that uses it finds it
 missing, so it never loads.
+- Plug-ins can be marked as owned (`plugin.setOwned`, the plug-in manager): a mark only, listed
+by `plugin.list` (`owned`), that changes nothing a session offers or loads; the manager's
+**Turn off the rest** of a vendor switches off its plug-ins not marked
+([plugin-manager.md](plugin-manager.md) › Marking a plug-in as owned).
 The `plugin.*` commands run scans and choose the added folders (ADR 0002 amendment); the
-folders, the catalog, the plug-ins switched off and the hosting choices are kept as JSON in
+folders, the catalog, the plug-ins switched off and marked as owned, and the hosting choices
+are kept as JSON in
 Suhina's settings folder.
 
 ## Editors

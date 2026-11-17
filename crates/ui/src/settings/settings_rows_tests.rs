@@ -4,9 +4,9 @@
 use super::*;
 use crate::settings::Settings;
 
-/// Kept in `settings.json` but changed outside the Settings window: the browser and the map
-/// window as they were left.
-const NOT_IN_THE_WINDOW: [&str; 9] = [
+/// Kept in `settings.json` but changed outside the Settings window: the browser, the map window
+/// and the plug-in manager's table as they were left.
+const NOT_IN_THE_WINDOW: [&str; 12] = [
     // The piano roll toolbar's Highlight switches it.
     "highlight_scale",
     "setting_descriptions",
@@ -17,6 +17,10 @@ const NOT_IN_THE_WINDOW: [&str; 9] = [
     "map_window_rect",
     "session_mixer_height",
     "session_strip_fader",
+    // The plug-in manager's column widths, hidden columns and Owned first.
+    "plugin_manager_columns",
+    "plugin_manager_hidden",
+    "plugin_manager_owned_first",
 ];
 
 fn saved_keys() -> Vec<String> {

@@ -201,6 +201,9 @@ fn settings_survive_a_round_trip() {
         agents: true,
         mcp_project_folder: false,
         mcp_write_folders: vec![r"C:\Music\Mixes = mine".into(), "/tmp/renders".into()],
+        plugin_manager_columns: vec![28, 240, 150, 80, 64, 70, 140, 300, 84],
+        plugin_manager_hidden: vec!["Vendor".into(), "File".into()],
+        plugin_manager_owned_first: true,
         auto_arm: true,
     };
     assert_eq!(Settings::from_text(&settings.to_text()), (settings, Vec::new()));
@@ -472,4 +475,23 @@ fn a_saved_built_in_theme_that_went_is_read_as_what_took_its_place() {
     let (settings, warnings) = Settings::from_text("theme = suhina-dark@../x\n");
     assert_eq!(settings.theme, Settings::default().theme);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
+#[test]
+fn the_plug_in_managers_saved_table_reads_only_what_it_can_use() {
+    let (settings, _) = Settings::from_text(
+        "plugin_manager_columns = 28, 0, 99999, 3\nplugin_manager_hidden = file, Vendor, nonsense, File, \nplugin_manager_owned_first = maybe\n",
+    );
+    assert_eq!(
+        settings.plugin_manager_columns,
+        [28, 0, MANAGER_COLUMN.1, MANAGER_COLUMN.0],
+        "0 kept, the rest clamped"
+    );
+    assert_eq!(settings.plugin_manager_hidden, ["File", "Vendor"], "known headings, each once");
+    assert!(!settings.plugin_manager_owned_first, "an unknown value leaves the default");
+    let too_many = format!("plugin_manager_columns = {}\n", ["50"; MANAGER_COLUMNS + 1].join(", "));
+    assert!(Settings::from_text(&too_many).0.plugin_manager_columns.is_empty(), "more widths than columns: ignored");
+    assert!(Settings::from_text("plugin_manager_columns = 1, x\n").0.plugin_manager_columns.is_empty());
+    let kept = Settings { plugin_manager_columns: vec![28, 0, 140], ..Settings::default() };
+    assert_eq!(Settings::from_text(&kept.to_text()).0.plugin_manager_columns, [28, 0, 140], "a 0 round-trips");
 }

@@ -759,6 +759,7 @@ mod refused_tests {
             "midi.setInput",
             "plugin.setHosting",
             "plugin.setEnabled",
+            "plugin.setOwned",
             "plugin.setFolderEnabled",
             "plugin.scan",
             "plugin.scanFile",

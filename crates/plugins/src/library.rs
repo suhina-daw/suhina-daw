@@ -24,6 +24,14 @@ const FOLDERS_FILE: &str = "plugin-folders.json";
 const CATALOG_FILE: &str = "plugin-catalog.json";
 const HOSTING_FILE: &str = "plugin-hosting.json";
 const DISABLED_FILE: &str = "plugin-disabled.json";
+/// The plug-ins the user marked as owned, by [`product_key`].
+const OWNED_FILE: &str = "plugin-owned.json";
+
+/// What an owned mark names: the product, its vendor and name, not one file of it. A plug-in
+/// installed in two formats is owned in both, and a mark outlives an update that moves the file.
+pub fn product_key(vendor: &str, name: &str) -> String {
+    format!("{vendor}\t{name}")
+}
 /// Plug-ins whose hosting may be set apart from the default.
 const MAX_HOSTING: usize = 4096;
 /// Longest hosting file read; a longer one is not Suhina's and is ignored.
@@ -248,6 +256,9 @@ pub struct Library {
     catalog: Catalog,
     /// Plug-ins (by spec) the user switched off: not offered, not loaded.
     disabled: BTreeSet<String>,
+    /// Plug-ins (by [`product_key`]) the user marked as owned: theirs among a vendor's bundle that
+    /// installs every plug-in it has. A mark only; what is offered and loaded does not change.
+    owned: BTreeSet<String>,
     /// Whether scans look in the system's standard folders as well as the added ones.
     standard: bool,
     /// Plug-ins (by spec) hosted other than the default way.
@@ -272,6 +283,7 @@ impl Library {
             off: Vec::new(),
             catalog: Catalog::new(),
             disabled: BTreeSet::new(),
+            owned: BTreeSet::new(),
             standard: true,
             hosting: BTreeMap::new(),
         }
@@ -306,6 +318,31 @@ impl Library {
         if let Some(text) = read_bounded(&folder.join(DISABLED_FILE), MAX_HOSTING_BYTES) {
             self.disabled = parse_disabled(&text);
         }
+        if let Some(text) = read_bounded(&folder.join(OWNED_FILE), MAX_HOSTING_BYTES) {
+            self.owned = parse_disabled(&text);
+            // Marks written before they named the product were a file's spec: each one the
+            // catalog knows becomes its product's mark, saved once, so no mark is lost.
+            if self.owned_marks_by_product() {
+                let list: Vec<&String> = self.owned.iter().collect();
+                let _kept = self.save(OWNED_FILE, &json!(list).to_string());
+            }
+        }
+    }
+
+    /// Turns every owned mark that is a plug-in's spec into its [`product_key`]; true when one
+    /// changed. A spec the catalog no longer has stays as it is, taken away by name later.
+    fn owned_marks_by_product(&mut self) -> bool {
+        let specs: Vec<String> = self.owned.iter().filter(|m| !m.contains('\t')).cloned().collect();
+        let mut changed = false;
+        for spec in specs {
+            if let Some(plugin) = self.catalog.plugins().find(|p| p.spec() == spec) {
+                let key = product_key(&plugin.vendor, &plugin.name);
+                self.owned.remove(&spec);
+                self.owned.insert(key);
+                changed = true;
+            }
+        }
+        changed
     }
 
     fn save(&self, name: &str, text: &str) -> Result<(), String> {
@@ -440,20 +477,44 @@ impl Library {
     /// Switches the plug-in `plugin_spec` on or off, and saves it. One switched off is not
     /// offered in the browser or found by name, and a project that uses it finds it missing.
     pub fn set_enabled(&mut self, plugin_spec: &str, enabled: bool) -> Result<(), String> {
+        self.set_enabled_many(&[plugin_spec.to_string()], enabled)
+    }
+
+    /// Switches every plug-in of `plugin_specs` on or off and saves the list once: hundreds at a
+    /// time are one write. Nothing changes when one of them is not a plug-in name or the list
+    /// would grow past its limit.
+    pub fn set_enabled_many(&mut self, plugin_specs: &[String], enabled: bool) -> Result<(), String> {
         self.load();
-        if plugin_spec.is_empty() || plugin_spec.len() > MAX_SPEC {
-            return Err("not a plug-in name".into());
-        }
-        if enabled {
-            self.disabled.remove(plugin_spec);
-        } else {
-            if !self.disabled.contains(plugin_spec) && self.disabled.len() >= MAX_HOSTING {
-                return Err(format!("at most {MAX_HOSTING} plug-ins can be switched off"));
-            }
-            self.disabled.insert(plugin_spec.to_string());
-        }
+        let mut disabled = self.disabled.clone();
+        mark(&mut disabled, plugin_specs, !enabled, "switched off")?;
+        self.disabled = disabled;
         let list: Vec<&String> = self.disabled.iter().collect();
         self.save(DISABLED_FILE, &json!(list).to_string())
+    }
+
+    /// Whether the product `key` ([`product_key`]) is marked as owned.
+    pub fn is_owned(&mut self, key: &str) -> bool {
+        self.load();
+        self.owned.contains(key)
+    }
+
+    /// The marks as kept, each a [`product_key`]: also those of plug-ins no longer installed, so
+    /// such a mark can be taken away.
+    pub fn owned_keys(&mut self) -> Vec<String> {
+        self.load();
+        self.owned.iter().cloned().collect()
+    }
+
+    /// Marks every product of `keys` ([`product_key`]) as owned or takes the marks away, and saves
+    /// them once. Nothing changes when one of them is not a name or the list would grow past its
+    /// limit.
+    pub fn set_owned_many(&mut self, keys: &[String], owned: bool) -> Result<(), String> {
+        self.load();
+        let mut marks = self.owned.clone();
+        mark(&mut marks, keys, owned, "marked as owned")?;
+        self.owned = marks;
+        let list: Vec<&String> = self.owned.iter().collect();
+        self.save(OWNED_FILE, &json!(list).to_string())
     }
 
     /// The catalog without the plug-ins switched off: what sessions offer and load.
@@ -576,7 +637,27 @@ fn parse_folders(text: &str) -> (Vec<(PathBuf, FolderFormat)>, Vec<PathBuf>) {
     }
 }
 
-/// The plug-ins switched off in a `plugin-disabled.json` text: a list of specs.
+/// Puts every one of `names` in `set` (`on`) or takes it out, refusing an empty or too long name
+/// and a set that would grow past [`MAX_HOSTING`]; `what` says what the set holds.
+fn mark(set: &mut BTreeSet<String>, names: &[String], on: bool, what: &str) -> Result<(), String> {
+    for name in names {
+        if name.is_empty() || name.len() > MAX_SPEC {
+            return Err("not a plug-in name".into());
+        }
+        if on {
+            if !set.contains(name) && set.len() >= MAX_HOSTING {
+                return Err(format!("at most {MAX_HOSTING} plug-ins can be {what}"));
+            }
+            set.insert(name.clone());
+        } else {
+            set.remove(name);
+        }
+    }
+    Ok(())
+}
+
+/// The plug-ins switched off in a `plugin-disabled.json` text, or marked in `plugin-owned.json`:
+/// a list of specs.
 fn parse_disabled(text: &str) -> BTreeSet<String> {
     let Ok(Value::Array(list)) = serde_json::from_str::<Value>(text) else { return BTreeSet::new() };
     list.iter()
