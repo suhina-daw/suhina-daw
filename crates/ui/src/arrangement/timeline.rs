@@ -129,6 +129,9 @@ pub struct ClipBox {
     pub ara: bool,
     /// A linked copy: its content is linked and another arrangement clip plays it too (#1414).
     pub linked: bool,
+    /// What its content holds (its lanes and length), so clips that play the same notes or
+    /// audio can be offered Link; 0 for a content that is missing.
+    pub material: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -826,6 +829,16 @@ fn take_rows(project: &Project) -> Vec<TakeRow> {
     rows
 }
 
+/// A key for what `content` holds (its lanes, its length, its scale), equal for contents that
+/// hold the same material ([`ClipBox::material`]).
+fn material_key(content: &ClipContent) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    format!("{:?}{:?}", content.lanes, content.scale).hash(&mut hasher);
+    content.length.to_bits().hash(&mut hasher);
+    hasher.finish()
+}
+
 /// How the view draws `clip`, the `index`th of its lane, on a track coloured `track_color`.
 fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> ClipBox {
     let content = project.content(clip.content);
@@ -835,6 +848,7 @@ fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> C
         id: clip.id,
         color: clip.color.unwrap_or(track_color),
         stack_key: (clip.content.0, clip.start.to_bits(), clip.id.0),
+        material: content.map_or(0, material_key),
         // A MIDI clip goes on before its notes (#832); an audio clip's audio starts where it does.
         earliest_start: if looped || !audio { 0.0 } else { (clip.start - clip.offset).max(0.0) },
         latest_end: content.filter(|_| audio && !looped).map(|c| clip.start - clip.offset + c.length),

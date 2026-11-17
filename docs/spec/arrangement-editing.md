@@ -411,6 +411,11 @@ links in its lower right corner, and its name reads ", linked" to a screen reade
 its own copy of the content as it is now; the other clips stay linked. A content left with one
 clip is no longer linked. A clip that is not linked is left as it is. One undo step.
 
+`clip.link {clips}` (the menu's **Link**, shown when the clips the menu acts on play the same
+notes or audio, every lane and the length alike, from contents of their own) makes them play the
+first clip's content, marked linked; a content no clip, slot or take plays any more goes. Clips
+that play different material are refused, so no edit is lost. One undo step.
+
 An ordinary duplicate, a paste and a drag copy of a linked clip are independent at once: they get
 a content of their own, so they never join the link unasked. A split's parts keep playing the
 content from where it was cut, so they stay linked copies. Placement properties (start,

@@ -280,7 +280,19 @@ pub(super) fn clip_box<'a>(
         ui.ctx().data_mut(|d| d.remove::<String>(Id::unique(("clip-rename", key.1.0))));
     }
     egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-        menus::clip_menu(ui, &menu_clips, stack, clip.enabled, clip.linked, &clip.name, actions);
+        // Link, when the clips play the same notes or audio but not yet one content.
+        let shown: Vec<&ClipBox> = menu_clips
+            .iter()
+            .filter_map(|(track, id)| {
+                timeline.lanes.iter().filter(|l| l.track == *track).flat_map(|l| &l.clips).find(|c| c.id == *id)
+            })
+            .collect();
+        let linkable = shown.len() > 1
+            && shown.len() == menu_clips.len()
+            && shown.iter().all(|c| c.material != 0 && c.material == shown[0].material)
+            && shown.iter().any(|c| c.stack_key.0 != shown[0].stack_key.0);
+        let links = menus::ClipLinks { linked: clip.linked, linkable };
+        menus::clip_menu(ui, &menu_clips, stack, clip.enabled, links, &clip.name, actions);
         let ara = state
             .ara_tracks
             .iter()
@@ -2794,6 +2806,7 @@ pub(super) fn paint_live_take(
         take: Some(0),
         ara: false,
         linked: false,
+        material: 0,
     };
     paint_clip(painter, rect, lane, &clip, Shown::of(&clip), take.start, x_of, beat_width, timeline, false, look);
     // An audio take's waveform so far: a line per peak, about the middle of the clip.

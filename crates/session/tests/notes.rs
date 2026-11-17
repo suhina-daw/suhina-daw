@@ -935,3 +935,39 @@ fn an_edit_through_a_linked_copy_changes_every_copy_and_unlink_separates_one() {
     run(&mut session, "clip.unlink", json!({ "clips": [{ "track": 1, "index": independent }] })).unwrap();
     assert_eq!(session.project().contents.len(), contents);
 }
+
+/// Clips that play the same notes in contents of their own are linked into one: they play the
+/// first one's content, linked, and the content left unplayed goes; one undo step. Clips that
+/// play different notes are refused, so no edit is lost.
+#[test]
+fn clips_that_play_the_same_notes_are_linked_into_one_content() {
+    let mut session = Session::new(project());
+    let made =
+        run(&mut session, "clip.duplicate", json!({ "clips": [{ "track": 1, "index": 0 }], "stack": true })).unwrap();
+    let copy = made["clips"][0]["index"].as_u64().unwrap() as usize;
+    // Edited and edited back: the same notes in a content of its own.
+    run(&mut session, "note.move", json!({ "track": 1, "index": copy, "notes": [0], "semitones": 12 })).unwrap();
+    run(&mut session, "note.move", json!({ "track": 1, "index": copy, "notes": [0], "semitones": -12 })).unwrap();
+    let own = arranged(&session)[copy];
+    assert_ne!(own, 1);
+    assert_eq!(notes(&session, own), notes(&session, 1));
+    let contents = session.project().contents.len();
+    let before = session.project().clone();
+    let clips = json!({ "clips": [{ "track": 1, "index": 0 }, { "track": 1, "index": copy }] });
+    run(&mut session, "clip.link", clips.clone()).unwrap();
+    assert_eq!((arranged(&session)[0], arranged(&session)[copy]), (1, 1));
+    assert!(session.project().content(ContentId(1)).unwrap().linked);
+    assert!(session.project().content(ContentId(own)).is_none(), "the content no clip plays goes");
+    assert_eq!(session.project().contents.len(), contents - 1);
+    // Linked: an edit through one is heard in both.
+    run(&mut session, "note.move", json!({ "track": 1, "index": copy, "notes": [0], "semitones": 12 })).unwrap();
+    assert_eq!(arranged(&session)[0], 1);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(*session.project(), before);
+    // Different notes: refused, nothing changes.
+    run(&mut session, "note.move", json!({ "track": 1, "index": copy, "notes": [0], "semitones": 12 })).unwrap();
+    let different = session.project().clone();
+    assert!(run(&mut session, "clip.link", clips).is_err());
+    assert_eq!(*session.project(), different);
+}

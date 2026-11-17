@@ -228,6 +228,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "clip.link",
+        label: "Link arrangement clips that play the same notes or audio: they play one content from now on, so editing one edits them all",
+        params: &[CLIPS],
+        kind: CommandKind::EDIT,
+        run: link_clips,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "clip.setEnabled",
         label: "Turn arrangement clips on or off: a clip that is off is drawn grey with a mute mark and plays nothing",
         params: &[CLIPS, param("enabled", ParamType::Bool, "true plays the clips, false silences them")],
@@ -1507,6 +1515,59 @@ fn unlink_clips(session: &mut Session, params: &Value) -> Result<Value, CommandE
         }
     }
     Ok(json!({ "unlinked": unlinked }))
+}
+
+/// `clip.link {clips}`: arrangement clips whose contents hold the same notes or audio (every
+/// lane, its length) play the first one's content from now on, a linked content; the contents
+/// no clip, slot or take plays any more go. Clips that play different things are refused: no
+/// edit is lost.
+fn link_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let clips = clip_list(&session.project, params)?;
+    let p = &mut session.project;
+    let content_of = |p: &suhina_model::Project, (track, index): (suhina_model::TrackId, usize)| {
+        p.arrangement.lanes.iter().find(|l| l.track == Some(track)).and_then(|l| l.clips.get(index)).map(|c| c.content)
+    };
+    let contents: Vec<suhina_model::ContentId> =
+        clips.iter().map(|&at| content_of(p, at).ok_or("the clip is missing")).collect::<Result<_, _>>()?;
+    let Some(&first) = contents.first() else { return Err("clips must name at least two clips".into()) };
+    if contents.iter().all(|c| *c == first) {
+        return Err("the clips already play one content".into());
+    }
+    let kept = p.content(first).cloned().ok_or("the clip's content is missing")?;
+    for content in &contents {
+        let other = p.content(*content).ok_or("the clip's content is missing")?;
+        if !same_material(&kept, other) {
+            return Err("only clips that play the same notes or audio can be linked".into());
+        }
+    }
+    let mut linked = Vec::new();
+    for &(track, index) in &clips {
+        if let Some(clip) =
+            p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)).and_then(|l| l.clips.get_mut(index))
+        {
+            clip.content = first;
+            linked.push(clip.id.0);
+        }
+    }
+    if let Some(content) = p.contents.iter_mut().find(|c| c.id == first) {
+        content.linked = true;
+    }
+    // A content nothing plays any more is dropped, so it is not left in the file.
+    let gone: Vec<suhina_model::ContentId> = contents
+        .iter()
+        .copied()
+        .filter(|c| *c != first)
+        .filter(|c| crate::notes::placements(p, *c) == 0)
+        .filter(|c| !p.arrangement.takes.iter().flat_map(|t| &t.clips).any(|clip| clip.content == *c))
+        .collect();
+    p.contents.retain(|c| !gone.contains(&c.id));
+    Ok(json!({ "linked": linked, "content": first.0 }))
+}
+
+/// Whether two contents hold the same material: the same lanes (notes or audio, for the same
+/// targets) and the same length. Their names and ids may differ.
+pub(crate) fn same_material(a: &suhina_model::ClipContent, b: &suhina_model::ClipContent) -> bool {
+    a.length == b.length && a.lanes == b.lanes && a.scale == b.scale
 }
 
 fn set_clip_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

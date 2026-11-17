@@ -623,19 +623,30 @@ fn rename_item(ui: &mut Ui, target: serde_json::Value, name: &str, actions: &mut
     }
 }
 
+/// What a clip menu offers of linking (#1414): Unlink for a linked copy, Link for clips that play
+/// the same material from contents of their own.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClipLinks {
+    /// The clicked clip is a linked copy.
+    pub linked: bool,
+    /// The clips the menu acts on play the same notes or audio, not yet one content.
+    pub linkable: bool,
+}
+
 /// The menu of arrangement clips; `stack` is true when the stacking setting for the clips' kind
 /// is on, so their copies leave the clips they land on as they are. `clips` is the selection the
 /// click fell in, or the one clip it fell on; `enabled` is whether the clicked clip plays now, and
-/// `linked` whether it is a linked copy (#1414).
+/// `links` what it offers of linking ([`ClipLinks`]).
 pub fn clip_menu(
     ui: &mut Ui,
     clips: &[(TrackId, ClipId)],
     stack: bool,
     enabled: bool,
-    linked: bool,
+    links: ClipLinks,
     name: &str,
     actions: &mut Vec<Action>,
 ) {
+    let ClipLinks { linked, linkable } = links;
     if clips.is_empty() {
         return;
     }
@@ -696,6 +707,11 @@ pub fn clip_menu(
             params["stack"] = json!(true);
         }
         actions.push(Action::new("clip.duplicate", params));
+        ui.close();
+    }
+    // Clips that play the same notes or audio, not yet linked: one content from now on.
+    if linkable && ui.button("Link").clicked() {
+        actions.push(Action::new("clip.link", json!({ "clips": list.clone() })));
         ui.close();
     }
     if linked && ui.button("Unlink").clicked() {
