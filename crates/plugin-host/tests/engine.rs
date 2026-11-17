@@ -407,6 +407,8 @@ fn session(project: Project, offline: bool) -> (Session, Renderer) {
     renderer.set_offline(offline);
     let controller = renderer.controller();
     let mut session = Session::new(project);
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(controller, None));
     session.rack_mut().set_env(env());
     (session, renderer)

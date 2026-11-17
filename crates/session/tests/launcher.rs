@@ -119,7 +119,7 @@ fn project_built() -> Project {
 fn playing() -> (Session, Renderer) {
     let project = project();
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
-    let mut session = Session::new(project);
+    let mut session = crate::support::toned(project);
     session.attach_player(Player::new(renderer.controller(), None));
     (session, renderer)
 }
@@ -136,7 +136,7 @@ fn advance(renderer: &mut Renderer, frames: usize) {
 
 #[test]
 fn transport_commands_need_a_player() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     // The quantisation is kept by the session until a player is attached (tested below). Arming
     // is kept by the session and told to each new player, so it needs none either (ADR 0017);
     // nor do the count-in and what records (docs/spec/recording.md), nor the take lane heard in
@@ -271,7 +271,7 @@ fn quantisation_values_parse_to_beats() {
 #[test]
 fn the_quantisation_is_kept_without_a_player_and_handed_to_the_next() {
     let project = project();
-    let mut session = Session::new(project.clone());
+    let mut session = crate::support::toned(project.clone());
     assert_eq!(session.quantization(), Quantization::Bars(1));
     run(&mut session, "launcher.setQuantization", json!({ "value": "1/16" })).unwrap();
     assert_eq!(session.quantization(), Quantization::Beats(0.25));
@@ -393,7 +393,7 @@ fn a_drag_that_the_engine_cannot_build_is_an_error() {
         clips: vec![clip],
     }];
     let mut renderer = Renderer::stopped(&project(), &AudioPool::new(), SR, suhina_session::devices()).unwrap();
-    let mut session = Session::new(long);
+    let mut session = crate::support::toned(long);
     session.attach_player(Player::new(renderer.controller(), None));
     // Each edit is made and reports that the engine could not follow it.
     for (beat, value) in [(0, 0.0), (2, 1.0), (4, 0.0)] {
@@ -599,7 +599,7 @@ fn playing_with_clips() -> (Session, Renderer) {
     };
     project.arrangement.lanes = vec![lane(1, vec![clip(4.0), clip(10.0)]), lane(2, vec![clip(2.0)])];
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
-    let mut session = Session::new(project);
+    let mut session = crate::support::toned(project);
     session.attach_player(Player::new(renderer.controller(), None));
     advance(&mut renderer, 1);
     (session, renderer)
@@ -808,7 +808,7 @@ fn a_loop_turned_on_while_playing_repeats_its_span() {
 
 #[test]
 fn a_slot_clip_is_deleted_by_scene_and_undo_brings_it_back() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     run(&mut session, "clip.create", json!({ "track": 3, "scene": 1 })).unwrap();
     // Deleted by scene: the slot is empty again.
     let deleted = run(&mut session, "clip.delete", json!({ "track": 3, "scene": 1 })).unwrap();
@@ -878,7 +878,7 @@ fn quick_presses_of_play_and_stop_cost_the_session_next_to_nothing() {
 
 #[test]
 fn a_slot_clip_moves_to_another_slot_and_swaps_an_occupied_one() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     // The fixture: track 1 scene 1 and track 2 scene 2 hold clips; track 2 scene 1 is empty.
     let clip = |session: &Session, track: u32, scene: usize| {
         session
@@ -923,14 +923,14 @@ fn a_slot_clip_moves_to_another_slot_and_swaps_an_occupied_one() {
     // The target's kind must take the clip's: an audio track takes no MIDI clips.
     let mut p = project();
     p.tracks[0].content = ContentKinds { notes: false, audio: true };
-    let mut session = Session::new(p);
+    let mut session = crate::support::toned(p);
     let moved = run(&mut session, "clip.moveSlot", json!({ "track": 2, "scene": 1, "toTrack": 1, "toScene": 1 }));
     assert!(moved.is_err(), "an audio track takes no MIDI clips");
 }
 
 #[test]
 fn a_clip_is_renamed_by_scene_or_index_and_undo_brings_the_name_back() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     // A slot's clip renamed by scene: its content's name is the clip's. The fixture's track 1
     // slots share one content, so the two slots' clips share the name, as the model has it.
     let renamed = run(&mut session, "clip.rename", json!({ "track": 1, "scene": 0, "name": "Drop the beat" })).unwrap();
@@ -960,7 +960,7 @@ fn a_clip_is_renamed_by_scene_or_index_and_undo_brings_the_name_back() {
         clips: vec![Clip { loop_range: Some(LoopRange { start: 0.0, end: 1.0 }), ..Clip::new(ContentId(1), 0.0, 1.0) }],
         ..ArrangementLane::default()
     });
-    let mut session = Session::new(p);
+    let mut session = crate::support::toned(p);
     run(&mut session, "clip.rename", json!({ "track": 1, "index": 0, "name": "Intro take" })).unwrap();
     let p = session.project();
     let arranged = &p.arrangement.lanes[0].clips[0];
@@ -1001,7 +1001,7 @@ fn a_branch_fader_is_a_message_to_the_playing_group() {
     ];
     project.channels[0].devices.push(Device::group("Group", DeviceGroup::with_branches(branches)));
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
-    let mut session = Session::new(project);
+    let mut session = crate::support::toned(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 0 })).unwrap();
     let loud = beat_peaks(&mut renderer, 2)[1];
@@ -1073,7 +1073,7 @@ fn a_nested_branch_and_the_main_fader_are_messages() {
     project.channels[0].devices.push(outer);
     project.channels.push(Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(100), "Main") });
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
-    let mut session = Session::new(project);
+    let mut session = crate::support::toned(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "clip.launch", json!({ "track": "Drums", "scene": 0 })).unwrap();
     let loud = beat_peaks(&mut renderer, 2)[1];

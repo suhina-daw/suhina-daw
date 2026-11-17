@@ -545,6 +545,9 @@ pub struct Settings {
     /// Selecting a track arms it, so a MIDI controller plays what the user looks at (Settings ›
     /// MIDI, #834); off until the person turns it on.
     pub auto_arm: bool,
+    /// A MIDI track with no instrument plays its notes as a plain sine tone (Settings › Devices,
+    /// #1384); off until the person turns it on, so a track sounds only through an instrument.
+    pub implicit_tones: bool,
     /// The size of the whole window, in percent (`ZOOMS`): everything is drawn this much larger
     /// or smaller.
     pub zoom: u32,
@@ -634,6 +637,7 @@ impl Default for Settings {
             mcp_project_folder: true,
             mcp_write_folders: Vec::new(),
             auto_arm: false,
+            implicit_tones: false,
         }
     }
 }

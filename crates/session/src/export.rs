@@ -51,6 +51,8 @@ pub struct ExportData {
     /// The project's own name: the stem of the file it was opened from, what the MP3 export
     /// writes as the ID3 title; empty when the project was never saved.
     pub title: String,
+    /// A track with no instrument plays its notes as sine tones (#1384), as the session plays it.
+    pub implicit_tones: bool,
 }
 
 /// Runs an export against data taken off the session ([`Session::export_data`]): what a worker
@@ -205,6 +207,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     )
     .map_err(|e| e.to_string())?;
     renderer.set_offline(true);
+    renderer.set_implicit_tones(data.implicit_tones);
     // The whole arrangement, once: a render does not repeat the loop region.
     renderer.set_follow_loop(false);
     let total = match range {
@@ -407,6 +410,7 @@ impl Session {
     /// by the read, and no undo step is recorded.
     pub fn export_data(&mut self) -> ExportData {
         ExportData {
+            implicit_tones: self.live.implicit_tones,
             project: self.project_as_heard(),
             warnings: self.plugins.take_export_notices(),
             audio: self.audio.pool.clone(),
@@ -445,6 +449,7 @@ impl Session {
     fn export_data_as_known(&mut self) -> ExportData {
         let states = self.plugins.known_states();
         ExportData {
+            implicit_tones: self.live.implicit_tones,
             project: self.with_states(&states),
             warnings: self.plugins.take_export_notices(),
             audio: self.audio.pool.clone(),

@@ -102,6 +102,8 @@ fn a_save_writes_the_state_the_running_plug_in_gives() {
     imported.assign_ids().unwrap();
     let mut renderer = Renderer::stopped(&imported, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(imported.clone());
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
 
@@ -154,6 +156,8 @@ fn removing_the_first_of_two_identical_plug_ins_keeps_the_seconds_own() {
     p.assign_ids().unwrap();
     let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(p);
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
     let mut output = vec![0.0f32; 256 * 2];

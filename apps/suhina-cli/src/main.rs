@@ -525,6 +525,9 @@ fn render(args: &Args) -> Result<(), String> {
             folder: None,
             trusted: suhina_media::Trusted::default(),
             title,
+            // A track with no instrument is silent, as in the app by default (#1384); the
+            // built-in demo is made of such tracks and plays their sine tones.
+            implicit_tones: matches!(args.source, Source::Demo),
         };
         let params = serde_json::json!({
             "path": path.display().to_string(),

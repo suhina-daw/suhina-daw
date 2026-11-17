@@ -42,7 +42,7 @@ fn sends(session: &Session, channel: u32) -> Vec<Send> {
 
 #[test]
 fn a_send_is_made_set_and_undone() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     let out =
         run(&mut session, "track.setSend", json!({ "track": "Bass", "return": "A Return", "level": -6 })).unwrap();
     assert_eq!(out["level_db"], -6.0);
@@ -68,7 +68,7 @@ fn a_send_is_made_set_and_undone() {
 
 #[test]
 fn a_send_mode_without_a_send_makes_a_silent_one() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     run(&mut session, "track.setSendMode", json!({ "track": "Lead", "return": "B Return", "mode": "PRE" })).unwrap();
     let s = sends(&session, 2);
     assert_eq!(s, vec![Send { target: ChannelId(4), level: 0.0, pre_fader: true }]);
@@ -76,7 +76,7 @@ fn a_send_mode_without_a_send_makes_a_silent_one() {
 
 #[test]
 fn sends_are_listed_with_the_tracks() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     run(&mut session, "track.setSend", json!({ "track": "Bass", "return": "B Return", "level": 0 })).unwrap();
     let tracks = run(&mut session, "project.tracks", json!({})).unwrap();
     assert_eq!(tracks[0]["sends"], json!([{ "return": 4, "name": "B Return", "level_db": 0.0, "mode": "post" }]));
@@ -85,7 +85,7 @@ fn sends_are_listed_with_the_tracks() {
 
 #[test]
 fn returns_send_to_other_returns_but_never_in_a_loop() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     run(&mut session, "track.setSend", json!({ "track": "A Return", "return": "B Return", "level": 0 })).unwrap();
     let err = run(&mut session, "track.setSend", json!({ "track": "B Return", "return": "A Return", "level": 0 }))
         .unwrap_err();
@@ -97,7 +97,7 @@ fn returns_send_to_other_returns_but_never_in_a_loop() {
     // A return that plays into a group cannot be fed by that group.
     let mut p = project();
     p.channels[3].output = Some(ChannelId(5));
-    let mut session = Session::new(p);
+    let mut session = crate::support::toned(p);
     let err =
         run(&mut session, "track.setSend", json!({ "track": "Group", "return": "A Return", "level": 0 })).unwrap_err();
     assert!(err.contains("loop"), "{err}");
@@ -127,7 +127,7 @@ fn bad_send_parameters_change_nothing() {
         ("return.rename", json!({ "return": "A Return" })),
     ];
     for (id, params) in cases {
-        let mut session = Session::new(project());
+        let mut session = crate::support::toned(project());
         let result = session.execute(id, &params);
         assert!(result.is_err(), "{id} with {params} succeeded");
         assert_eq!(session.project(), &project(), "{id} with {params} changed the project");
@@ -136,7 +136,7 @@ fn bad_send_parameters_change_nothing() {
 
 #[test]
 fn returns_are_added_renamed_and_removed_with_their_sends() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     let added = run(&mut session, "return.add", json!({})).unwrap();
     assert_eq!(added["name"], "C Return");
     let id = added["track"].as_u64().unwrap();
@@ -174,7 +174,7 @@ fn a_send_set_by_command_is_heard_through_the_return() {
             .iter()
             .fold(0.0f32, |m, s| m.max(s.abs()))
     };
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     run(&mut session, "track.setVolume", json!({ "tracks": ["Bass"], "db": "-inf" })).unwrap();
     assert!(peak(session.project()) < 1e-6);
     run(&mut session, "track.setSend", json!({ "track": "Bass", "return": "A Return", "level": 0 })).unwrap();
@@ -188,7 +188,7 @@ fn a_send_set_by_command_is_heard_through_the_return() {
 
 #[test]
 fn a_send_dragged_is_one_undo_step() {
-    let mut session = Session::new(project_built());
+    let mut session = crate::support::toned(project_built());
     let before = session.project().clone();
     for level in [-30.0, -20.0, -10.0, -6.0] {
         run(
@@ -205,7 +205,7 @@ fn a_send_dragged_is_one_undo_step() {
 
 #[test]
 fn several_tracks_take_their_own_values_in_one_undo_step() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     let send = |session: &Session, channel: u32| sends(session, channel).first().map(|s| s.level);
     for values in [[-6.0, -12.0], [-3.0, -200.0]] {
         run(
@@ -257,7 +257,7 @@ fn a_send_turned_up_from_silence_takes_one_graph_then_messages() {
     let mut renderer =
         suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
             .unwrap();
-    let mut session = Session::new(project);
+    let mut session = crate::support::toned(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     // No gesture: a move that needed a new graph would fail here, not catch up later.
     let level = |db: f64| json!({ "track": "Bass", "return": "A Return", "level": db });
@@ -280,7 +280,7 @@ fn a_send_turned_up_from_silence_takes_one_graph_then_messages() {
 
 #[test]
 fn a_shared_group_accepts_sends_but_is_not_removed_as_a_return() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     run(&mut session, "track.setSend", json!({"track": "Bass", "return": "Group", "level": -6})).unwrap();
     assert_eq!(sends(&session, 1)[0].target, ChannelId(5));
     run(&mut session, "track.setSendMode", json!({"track": "Bass", "return": "Group", "mode": "pre"})).unwrap();
@@ -298,7 +298,7 @@ fn turning_a_send_off_and_on_updates_the_soloed_groups_source_audibility() {
     let mut renderer =
         suhina_engine::Renderer::stopped(&p, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
             .unwrap();
-    let mut session = Session::new(p);
+    let mut session = crate::support::toned(p);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     run(&mut session, "transport.play", json!({})).unwrap();
     let mut out = vec![0.0f32; 960];
@@ -332,7 +332,7 @@ fn keys(session: &Session, channel: u32) -> Vec<DeviceInput> {
 
 #[test]
 fn a_compressor_is_keyed_by_another_track_and_a_loop_or_a_device_without_a_sidechain_is_refused() {
-    let mut session = Session::new(project());
+    let mut session = crate::support::toned(project());
     run(&mut session, "device.add", json!({ "track": "Lead", "id": "compressor" })).unwrap();
     run(&mut session, "device.add", json!({ "track": "Lead", "id": "utility" })).unwrap();
     let out = run(

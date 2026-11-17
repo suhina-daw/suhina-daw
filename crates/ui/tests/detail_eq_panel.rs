@@ -114,6 +114,8 @@ fn the_eq_panels_analyser_receives_the_playing_output() {
     let mut session = Session::new(eq_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
+    // Its MIDI tracks have no instrument: they play the sine tones (#1384).
+    app.projects_mut().set_implicit_tones(true);
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()

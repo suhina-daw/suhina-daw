@@ -399,6 +399,7 @@ impl App {
             // Each audio device keeps its input and default track input as the session has them.
             self.settings.keep_device_inputs(self.projects.device_inputs());
             self.projects.set_backup_settings(self.settings.backup, self.settings.backup_clean_up);
+            self.projects.set_implicit_tones(self.settings.implicit_tones);
             motion::set_enabled(ui.ctx(), self.settings.animations);
             crate::kit::widgets::set_drag_hides_pointer(ui.ctx(), self.settings.drag_hides_pointer);
             self.arrangement.headers_left = headers_left(self.settings.track_headers);

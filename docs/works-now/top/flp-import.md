@@ -36,3 +36,6 @@
   declares it replaces the VST2 still comes first.
 - **A plug-in's process from the plug-in manager:** a row's menu has *Process* (one process per
   plug-in file, per vendor, or a process of its own for each), from the plug-in's next start.
+- **No tone without an instrument:** a MIDI track with no instrument is silent, unless
+  *Tone without instrument* (Settings › Devices) is on; a switched-off or missing instrument is
+  always silent.

@@ -2702,5 +2702,26 @@
       "docs/spec/clip-panel.md"
     ],
     "sourceFingerprint": "30493d37606b9166b73cba5dd28eefe2f4c874971bc92ee7f4a0e87f9333f934"
+  },
+  "Devices/Instruments/implicit_tones": {
+    "sourceFingerprint": "fa89eadf8efc7a0431f8ab75ad3469fba2053171f89c4ba9c154e208c4c10662",
+    "summary": "Let a MIDI track with no instrument play its notes as a plain sine tone.",
+    "description": "When this is on, a MIDI track that has no instrument (no devices, or only MIDI effects and audio effects) plays its notes as a plain sine tone, so you can hear what the notes are before you choose a sound. When it is off, such a track is silent until you add an instrument.\n\nAn instrument that is switched off or not installed never falls back to the tone, whichever way this is set: the track stays silent and keeps the instrument, its settings and its notes. Previewing a MIDI file in the browser plays it with its own preview sound either way. The setting applies to playback, clip launching, notes from a MIDI keyboard and exports, at once, in every open project. It is off unless you turn it on.",
+    "options": [
+      {
+        "name": "On",
+        "description": "A MIDI track with no instrument plays its notes as a plain sine tone."
+      },
+      {
+        "name": "Off",
+        "description": "A MIDI track sounds only through an instrument; without one it is silent."
+      }
+    ],
+    "whenToChange": "Turn it on to hear the notes of tracks that have no instrument yet, for example while sketching or checking an imported MIDI part. Leave it off so a track never plays a sound you did not choose.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/session/src/projects.rs",
+      "crates/engine/src/lib.rs"
+    ]
   }
 }

@@ -85,7 +85,7 @@ fn one_track() -> Project {
 #[test]
 fn the_whole_arrangement_export_round_trips_the_float_render() {
     let project = one_track();
-    let mut session = Session::new(project.clone());
+    let mut session = crate::support::toned(project.clone());
     let path = temp_file("whole", "wav");
     let result = run(&mut session, json!({ "path": path.display().to_string() })).unwrap();
     assert_eq!(result["format"], "wav");
@@ -99,7 +99,7 @@ fn the_whole_arrangement_export_round_trips_the_float_render() {
 fn an_empty_arrangement_refuses_to_export() {
     let mut project = suhina_session::blank_project();
     assert_eq!(project.assign_ids(), Ok(()));
-    let mut session = Session::new(project);
+    let mut session = crate::support::toned(project);
     let path = temp_file("empty", "wav");
     let error = run(&mut session, json!({ "path": path.display().to_string() })).unwrap_err();
     assert_eq!(error, "the arrangement is empty; add a clip before exporting");
@@ -107,7 +107,7 @@ fn an_empty_arrangement_refuses_to_export() {
 
 #[test]
 fn preparation_warnings_reach_the_finished_export() {
-    let mut session = Session::new(one_track());
+    let mut session = crate::support::toned(one_track());
     let mut data = session.export_data();
     data.warnings.push("Test instrument: reading its settings failed; using its last settings".into());
     let path = temp_file("state-warning", "wav");
@@ -118,7 +118,7 @@ fn preparation_warnings_reach_the_finished_export() {
 
 #[test]
 fn a_worker_export_keeps_the_commands_parameter_validation() {
-    let mut session = Session::new(one_track());
+    let mut session = crate::support::toned(one_track());
     let data = session.export_data();
     let path = temp_file("unknown-parameter", "wav");
     let params = json!({"path": path.display().to_string(), "normalise": true});
@@ -131,7 +131,7 @@ fn a_worker_export_keeps_the_commands_parameter_validation() {
 
 #[test]
 fn an_existing_file_is_never_replaced_without_overwrite() {
-    let mut session = Session::new(one_track());
+    let mut session = crate::support::toned(one_track());
     let path = temp_file("again", "wav");
     run(&mut session, json!({ "path": path.display().to_string() })).unwrap();
     let error = run(&mut session, json!({ "path": path.display().to_string() })).unwrap_err();
@@ -142,7 +142,7 @@ fn an_existing_file_is_never_replaced_without_overwrite() {
 #[test]
 fn a_flac_export_decodes_to_the_source() {
     let project = one_track();
-    let mut session = Session::new(project.clone());
+    let mut session = crate::support::toned(project.clone());
     let source = suhina_engine::render_offline(&project, SR, 512, suhina_session::devices()).unwrap();
     for depth in ["24", "16"] {
         let path = temp_file("flac", "flac");
@@ -166,7 +166,7 @@ fn a_flac_export_decodes_to_the_source() {
 
 #[test]
 fn tail_goes_with_a_range() {
-    let mut session = Session::new(one_track());
+    let mut session = crate::support::toned(one_track());
     let path = temp_file("tail", "wav");
     // A tail without a range says so, rather than being ignored.
     let error = run(&mut session, json!({ "path": path.display().to_string(), "tail": 2.0 })).unwrap_err();
@@ -182,7 +182,7 @@ fn tail_goes_with_a_range() {
 
 #[test]
 fn a_range_over_the_sample_budget_is_refused_by_bytes() {
-    let mut session = Session::new(one_track());
+    let mut session = crate::support::toned(one_track());
     let path = temp_file("budget", "wav");
     // 1 500 beats at the default tempo is 750 s; at 384 000 Hz that is 2.1 GiB of f32
     // samples, past the 2 GiB cap — refused before a byte is rendered.
@@ -206,7 +206,7 @@ fn a_node_render_names_the_returns_its_sends_go_to() {
     project.channels.push(Channel { role: ChannelRole::Effect, ..Channel::new(ChannelId(7), "Echo") });
     project.channels[0].sends = vec![Send { target: ChannelId(7), level: 1.0, pre_fader: false }];
     assert_eq!(project.assign_ids(), Ok(()));
-    let mut session = Session::new(project.clone());
+    let mut session = crate::support::toned(project.clone());
     let path = temp_file("send", "wav");
     let result = run(&mut session, json!({ "path": path.display().to_string(), "source": "Bass" })).unwrap();
     let warnings: Vec<String> = serde_json::from_value(result["warnings"].clone()).unwrap();
@@ -220,7 +220,7 @@ fn a_node_render_names_the_returns_its_sends_go_to() {
 #[test]
 fn an_mp3_export_decodes_to_the_signal_and_is_deterministic() {
     let project = one_track();
-    let mut session = Session::new(project.clone());
+    let mut session = crate::support::toned(project.clone());
     let source = suhina_engine::render_offline(&project, SR, 512, suhina_session::devices()).unwrap();
     let path = temp_file("mp3", "mp3");
     let result = run(&mut session, json!({ "path": path.display().to_string(), "mp3Rate": "320" })).unwrap();
@@ -253,7 +253,7 @@ fn an_mp3_export_decodes_to_the_signal_and_is_deterministic() {
 
 #[test]
 fn an_mp3_export_refuses_what_does_not_apply() {
-    let mut session = Session::new(one_track());
+    let mut session = crate::support::toned(one_track());
     let path = temp_file("mp3-no", "mp3");
     // A rate the encoder does not write.
     let error = run(&mut session, json!({ "path": path.display().to_string(), "sampleRate": 96_000 })).unwrap_err();
@@ -275,4 +275,20 @@ fn an_mp3_export_refuses_what_does_not_apply() {
     let error = run(&mut session, json!({ "path": wav.display().to_string(), "format": "MP3" })).unwrap_err();
     assert_eq!(error, "the file name says .wav, and the format says mp3");
     assert!(!wav.exists(), "a refused export wrote the file");
+}
+
+/// A track with no instrument is silent in an export by default (#1384), and plays its notes as
+/// sine tones only with the setting on.
+#[test]
+fn a_track_with_no_instrument_exports_silence_unless_the_tones_are_on() {
+    let export = |on: bool, name: &str| {
+        let mut session = suhina_session::Session::new(one_track());
+        assert!(!session.implicit_tones(), "off by default");
+        session.set_implicit_tones(on);
+        let path = temp_file(name, "wav");
+        run(&mut session, json!({ "path": path.display().to_string() })).unwrap();
+        samples_of(&path).iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    };
+    assert_eq!(export(false, "tones-off"), 0.0);
+    assert!(export(true, "tones-on") > 0.01);
 }

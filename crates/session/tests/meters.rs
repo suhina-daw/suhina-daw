@@ -61,7 +61,7 @@ fn project_built(volume: f64) -> Project {
 fn played(volume: f64) -> (Session, Renderer) {
     let project = project(volume);
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
-    let mut session = Session::new(project);
+    let mut session = crate::support::toned(project);
     session.attach_player(Player::new(renderer.controller(), None));
     run(&mut session, "transport.play", json!({})).unwrap();
     let mut block = vec![0.0f32; 2 * 256];
@@ -115,7 +115,7 @@ fn reset_clip_turns_off_a_track_the_main_output_or_every_indicator() {
 
 #[test]
 fn the_meters_need_a_playing_engine() {
-    let mut session = Session::new(project(1.0));
+    let mut session = crate::support::toned(project(1.0));
     let error = run(&mut session, "mixer.levels", json!({})).unwrap_err();
     assert!(error.contains("no audio engine"), "{error}");
     assert!(run(&mut session, "mixer.resetClip", json!({})).is_err());

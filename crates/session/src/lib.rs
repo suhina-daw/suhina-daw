@@ -241,11 +241,14 @@ pub struct Session {
     one_new_track_colour: bool,
     /// A new clip takes its track's colour rather than the MIDI or audio default.
     new_clips_take_track_colour: bool,
+    /// The audio engine and its output. Declared before the plug-ins, so a closed project's
+    /// output goes quiet at once when the session is let go: the fields drop in this order, and
+    /// with the plug-ins first each went silent in turn while the output played on.
+    pub(crate) sync: player_sync::PlayerSync,
     /// The project's plug-ins, running while it plays (ADR 0006).
     pub(crate) plugins: rack::Rack,
     audio: project_audio::ProjectAudio,
     device_files: device_files::DeviceFiles,
-    pub(crate) sync: player_sync::PlayerSync,
     /// Plug-in parameters the user moved in a plug-in's own editor since the window last asked
     /// (track, device on the track's chain, parameter id), for its lanes to show them (#1205).
     pub(crate) touched: Vec<(suhina_model::TrackId, usize, u32)>,
@@ -745,6 +748,20 @@ impl Session {
         Ok(data)
     }
 
+    /// Whether a track with no instrument of its own plays its notes as sine tones (#1384), the
+    /// user's setting: off by default, heard at once while playing and in every export.
+    pub fn set_implicit_tones(&mut self, on: bool) {
+        self.live.implicit_tones = on;
+        if let Some(player) = self.sync.player.as_mut() {
+            let _ = player.send(suhina_engine::LaunchCommand::SetImplicitTones(on));
+        }
+    }
+
+    /// Whether a track with no instrument plays its notes as sine tones ([`Session::set_implicit_tones`]).
+    pub fn implicit_tones(&self) -> bool {
+        self.live.implicit_tones
+    }
+
     /// Connects an audio engine playing this session's project; transport and launcher commands
     /// go to it from now on. Replaces (and so closes) any previous player. It should have been
     /// started with [`Session::audio`]; audio added later reaches it with the next edit.
@@ -759,6 +776,8 @@ impl Session {
         let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
+        // And whether a track with no instrument plays its notes as sine tones (#1384).
+        let _ = player.send(suhina_engine::LaunchCommand::SetImplicitTones(self.live.implicit_tones));
         // Takes of the engine this one replaces end where it was; a new engine records anew.
         self.end_takes_now();
         let sample_rate = player.sample_rate();
@@ -908,6 +927,16 @@ impl Session {
         self.plugins.stop_all();
         self.end_takes_now();
         self.sync.player.take()
+    }
+
+    /// Lets the audio engine go, its output first, so the project goes quiet at once, and then
+    /// its plug-ins (each keeps its last state for when the project plays again). Stopping the
+    /// plug-ins with the output still on silenced them one after another.
+    pub fn release_player(&mut self) {
+        self.sync.output_open_failed = false;
+        self.end_takes_now();
+        drop(self.sync.player.take());
+        self.plugins.stop_all();
     }
 
     /// The project's running plug-ins (`Rack`): their progress, ARA state and edits.

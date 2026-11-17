@@ -84,6 +84,11 @@ pub(crate) struct Chain {
     /// device.
     params: Vec<Vec<f64>>,
     pub(crate) instrument: bool,
+    /// Its instrument is the sine tones the chain adds itself after MIDI effects, the track having
+    /// no instrument of its own: heard only while the renderer plays the implicit tones (#1384).
+    pub(crate) implicit_tones: bool,
+    /// The renderer does not play the implicit tones now: such a chain takes no notes.
+    pub(crate) tones_off: bool,
     /// The delay its devices add together, in frames.
     pub(crate) latency: u32,
     /// Latency compensation: delays the chain's output so that it lines up with the chain with
@@ -360,6 +365,7 @@ impl Chain {
         // MIDI effects with no instrument after them play the notes they change as the sine
         // tones the track would play without them (ADR 0004 › 14).
         let is_midi = |slot: &DeviceSlot| matches!(slot, DeviceSlot::MidiDevice(_));
+        let mut implicit_tones = false;
         if !instrument && slots.iter().any(is_midi) {
             let at = slots.iter().take_while(|slot| is_midi(slot)).count();
             device_lanes.insert_slot(at);
@@ -369,6 +375,7 @@ impl Chain {
             device_ids.insert(at, DeviceId::NONE);
             params.insert(at, Vec::new());
             instrument = true;
+            implicit_tones = true;
         }
         // The channel's clip host plays the ARA clips (#990): only while it is enabled and running
         // as the first slot; otherwise the clips play as they are.
@@ -396,6 +403,8 @@ impl Chain {
             device_ids,
             params,
             instrument,
+            implicit_tones,
+            tones_off: false,
             latency,
             delay: Delay::new(0),
             post: (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN),
@@ -453,6 +462,8 @@ impl Chain {
             sample_edits: Vec::new(),
             params: Vec::new(),
             instrument: false,
+            implicit_tones: false,
+            tones_off: false,
             latency: 0,
             delay: Delay::new(0),
             post: (1.0, 1.0),

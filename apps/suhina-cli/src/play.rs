@@ -44,6 +44,8 @@ pub fn play(project: &Project, audio: &AudioPool, assets: &DeviceAssets, choice:
         RenderOptions::PLAYING,
     )
     .map_err(|e| e.to_string())?;
+    // A track with no instrument is silent, as in the app by default (#1384).
+    renderer.set_implicit_tones(false);
     let length = renderer.length();
     if length == 0 {
         println!("{}", nothing_to_play(project));
@@ -128,6 +130,7 @@ pub fn launcher(
         RenderOptions::STOPPED,
     )
     .map_err(|e| e.to_string())?;
+    renderer.set_implicit_tones(false);
     let mut controller = renderer.controller();
     let progress = Arc::new(Progress::default());
     let stream = output.start(renderer, &mut controller, &progress)?;

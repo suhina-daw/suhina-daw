@@ -270,6 +270,8 @@ fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     assert_eq!(project.assign_ids(), Ok(()));
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project.clone());
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(vst2_env());
     let device = json!({ "track": 1, "device": 0 });

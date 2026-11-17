@@ -178,11 +178,16 @@ The contract tests add, for MIDI effects, the same events in spans of every size
 parameter's ends, `reset` while notes are held, hostile events, too little room to write, and
 that no key still sounds after every key played is released, after all-notes-off too.
 `device.add` places a MIDI effect among the MIDI effects that lead the chain, only on a MIDI
-track; an instrument goes right after them (built-in, `.sd` or plug-in). A chain whose MIDI
-effects have no instrument after them plays the notes they change as the sine tones a MIDI
-track without an instrument plays (an instrument of the engine's own, after the MIDI
-effects and before the audio effects), so adding a MIDI effect never silences a track and
-never passes its notes by; notes from a MIDI input reach those tones too. MIDI effects run in
+track; an instrument goes right after them (built-in, `.sd` or plug-in). A MIDI track with no
+instrument of its own (no devices, or only MIDI and audio effects) plays its notes as sine
+tones only while the user's setting *Tone without instrument* is on (Settings › Devices,
+#1384, off by default; the renderer's `LaunchCommand::SetImplicitTones`, applied at once
+and to every export); otherwise it is silent. With the setting on, a chain whose MIDI
+effects have no instrument after them plays the notes they change as those tones (an
+instrument of the engine's own, after the MIDI effects and before the audio effects), and
+notes from a MIDI input reach them too. A switched-off or missing instrument never falls
+back to them (below). The browser's preview of a MIDI file has its own preview instrument
+and is not affected. MIDI effects run in
 the same chain code offline and in real time (golden rule 4): `render_offline`, the player
 and the launcher all start notes through it, so the offline renders in
 `crates/engine/src/midi_effect_tests.rs` are the oracle for playback as well.

@@ -506,6 +506,9 @@ pub struct Renderer {
     /// Stretch underruns counted by graphs swapped out.
     underruns_before: u64,
     metronome: metronome::Metronome,
+    /// A track with no instrument plays its notes as sine tones (#1384). On for the engine's own
+    /// renders and tests; the session sets it from the user's setting, off by default.
+    implicit_tones: bool,
     /// The frame of the current block being rendered, for events sent to device chains.
     block_frame: usize,
     /// Rendering offline: plug-ins are waited for without a real-time deadline (ADR 0006).
@@ -743,6 +746,7 @@ impl Renderer {
             swap: swap::SwapState::default(),
             underruns_before: 0,
             metronome: metronome::Metronome::new(sample_rate),
+            implicit_tones: true,
             block_frame: 0,
             offline: false,
             declick: Declick::default(),
@@ -768,6 +772,15 @@ impl Renderer {
 
     /// Renders offline from now on: plug-ins are waited for as long as they take (up to
     /// [`OFFLINE_TIMEOUT`] a block) instead of until the block's real-time deadline.
+    /// Whether a track with no instrument of its own plays its notes as sine tones (#1384), as
+    /// [`LaunchCommand::SetImplicitTones`] sets it while playing: on until set.
+    pub fn set_implicit_tones(&mut self, on: bool) {
+        self.implicit_tones = on;
+        for chain in &mut self.graph.chains {
+            chain.tones_off = !on;
+        }
+    }
+
     pub fn set_offline(&mut self, offline: bool) {
         self.offline = offline;
     }
@@ -955,8 +968,15 @@ impl Renderer {
                 scale: event.scale,
                 arranged: true,
             };
-            let Self { voices, graph, transport: crate::transport::Transport { position, .. }, sample_rate, .. } = self;
-            start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start);
+            let Self {
+                voices,
+                graph,
+                transport: crate::transport::Transport { position, .. },
+                sample_rate,
+                implicit_tones,
+                ..
+            } = self;
+            start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start, *implicit_tones);
         }
     }
 
@@ -1284,9 +1304,10 @@ impl Renderer {
                         graph,
                         transport: crate::transport::Transport { position, .. },
                         sample_rate,
+                        implicit_tones,
                         ..
                     } = self;
-                    start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start);
+                    start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start, *implicit_tones);
                 }
             }
 
@@ -1628,7 +1649,9 @@ pub(crate) fn bus_chain(chains: &mut [Chain], bus: u32) -> Option<&mut Chain> {
 
 /// Starts a note at renderer frame `position` (`frame` of the block) that ends at frame `end`:
 /// on the track's instrument when its chain starts with one, otherwise as a sine voice, stealing
-/// the oldest voice when all are busy.
+/// the oldest voice when all are busy. A track with no instrument of its own is silent while the
+/// renderer does not play the implicit tones (`tones`, #1384).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start_note(
     voices: &mut [Voice; MAX_VOICES],
     chains: &mut [Chain],
@@ -1637,13 +1660,20 @@ pub(crate) fn start_note(
     sample_rate: u32,
     end: u64,
     note: NoteStart,
+    tones: bool,
 ) {
     if let Some(chain) = bus_chain(chains, note.bus).filter(|c| c.instrument) {
+        if chain.implicit_tones && !tones {
+            return;
+        }
         chain.set_scale(frame, note.scale);
         chain.note_on(frame, position, note.key, note.velocity, end);
         if note.arranged {
             chain.mark_arranged(note.key);
         }
+        return;
+    }
+    if !tones {
         return;
     }
     let slot = match voices.iter().position(|v| !v.active) {

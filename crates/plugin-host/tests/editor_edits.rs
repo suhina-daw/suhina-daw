@@ -99,6 +99,8 @@ fn a_running_plug_in_read_again_and_again_is_no_unsaved_change() {
     let project = project();
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env_for("vst3"));
     wait_running(&mut session, &mut renderer);
@@ -135,6 +137,8 @@ fn processor_change(id: &str) -> (Session, Renderer) {
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     renderer.set_offline(true);
     let mut session = Session::new(project);
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env_for(id));
     wait_running(&mut session, &mut renderer);
@@ -183,6 +187,7 @@ fn periodic_reads_notice_a_processor_change_without_an_editor() {
     assert!(!session.can_undo());
     let folder = std::env::temp_dir().join(format!("suhina-editorless-backup-{}", std::process::id()));
     let mut projects = Projects::new();
+    projects.set_implicit_tones(true);
     projects.set_backup_folder(Some(folder.clone()));
     let id = projects.add(session, None).unwrap();
     assert!(projects.backup_due(id), "a plug-in-only edit must make a backup due");

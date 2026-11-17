@@ -15,7 +15,11 @@ fn project() -> Project {
             channel: Some(ChannelId(1)),
             ..Track::new(TrackId(1), "Drums")
         }],
-        channels: vec![Channel::new(ChannelId(1), "Drums")],
+        // An instrument: a track without one is silent (#1384).
+        channels: vec![Channel {
+            devices: vec![Device::new("fm-synth", DeviceKind::Builtin("fm-synth".into()))],
+            ..Channel::new(ChannelId(1), "Drums")
+        }],
         contents: vec![ClipContent {
             linked: false,
             id: ContentId(1),

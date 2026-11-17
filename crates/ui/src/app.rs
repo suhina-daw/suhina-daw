@@ -1492,6 +1492,7 @@ impl App {
     /// Uses `settings` from now on, as loaded from the settings file.
     pub fn set_settings(&mut self, ctx: &egui::Context, settings: Settings) {
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
+        self.projects.set_implicit_tones(settings.implicit_tones);
         motion::set_enabled(ctx, settings.animations);
         crate::kit::widgets::set_drag_hides_pointer(ctx, settings.drag_hides_pointer);
         self.arrangement.headers_left = headers_left(settings.track_headers);
