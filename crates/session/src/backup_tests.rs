@@ -340,3 +340,33 @@ fn an_entry_is_offered_only_while_its_backup_is_newer_than_its_file() {
     assert!(offered(&entry).is_none(), "the backup is gone");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// The names and labels keep the formats they had: a backup's name, the stamp in the names of
+/// a data folder's backup and a theme export, and the times the app shows.
+#[test]
+fn times_are_written_in_their_formats() {
+    let time = jiff::civil::date(2026, 10, 5).at(4, 3, 9, 0).to_zoned_datetime(jiff::tz::TimeZone::UTC).unwrap();
+    assert_eq!(format_time(&time, "%Y-%m-%d %H:%M:%S"), "2026-10-05 04:03:09");
+    assert_eq!(format_time(&time, "%H:%M"), "04:03");
+    assert_eq!(format_time(&time, "%Y-%m-%d %H-%M-%S"), "2026-10-05 04-03-09");
+    assert_eq!(format_time(&time, "%Y-%m-%d-%H%M%S"), "2026-10-05-040309");
+}
+
+/// A `SystemTime` is written in the system's time zone, with the same shape whatever the zone.
+#[test]
+fn system_times_are_written_as_local_times() {
+    let written = SystemTime::UNIX_EPOCH + Duration::from_secs(1_791_000_000);
+    let expected = written_in(written, jiff::tz::TimeZone::system());
+    assert_eq!(date_time(written), format_time(&expected, "%Y-%m-%d %H:%M:%S"));
+    assert_eq!(clock_time(written), format_time(&expected, "%H:%M"));
+    let stamp = file_stamp_now();
+    assert_eq!(stamp.len(), "2026-10-05-040309".len(), "{stamp}");
+    assert!(
+        stamp.bytes().enumerate().all(|(i, b)| if [4, 7, 10].contains(&i) { b == b'-' } else { b.is_ascii_digit() }),
+        "{stamp}"
+    );
+}
+
+fn written_in(time: SystemTime, zone: jiff::tz::TimeZone) -> jiff::ZonedDateTime {
+    jiff::Timestamp::try_from(time).unwrap().to_zoned_datetime(zone)
+}

@@ -1183,6 +1183,42 @@ fn the_ruler_loop_region_and_playhead_take_their_classes() {
     );
 }
 
+/// Zoomed far out over a large project, the clips in view fill the style tree; the playhead, drawn
+/// over them last, keeps its colour all the same instead of turning transparent.
+#[test]
+fn the_playhead_keeps_its_colour_when_the_clips_fill_the_style_tree() {
+    use crate::arrangement::{arrangement_view, timeline};
+    let mut project = crate::demo::demo_project();
+    // Every track's first clip, again on each beat for 2000 beats: more clips in view than the
+    // style tree holds elements (a clip is one element of it, its parts read once per kind).
+    for lane in project.arrangement.lanes.iter_mut().filter(|l| !l.clips.is_empty()) {
+        let first = lane.clips[0].clone();
+        lane.clips = (0..2000)
+            .map(|beat| suhina_engine::model::Clip {
+                id: suhina_engine::model::ClipId::NONE,
+                start: f64::from(beat),
+                length: 1.0,
+                ..first.clone()
+            })
+            .collect();
+    }
+    project.assign_ids().expect("the copies get ids");
+    let mut timeline = timeline::Timeline::build(&project, None);
+    timeline.running = true;
+    timeline.beat = 300.0;
+    let mut state = arrangement_view::ArrangementViewState::default();
+    // A fifth of a point a beat: the 2000 beats fit in the view.
+    state.beat_width = 0.2;
+    let css = "playhead { color: #0000FF; }";
+    let shapes = painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
+    assert!(super::budget().nodes >= super::MAX_NODES, "the clips fill the style tree");
+    assert!(
+        shapes.iter().any(|s| matches!(&s.shape, egui::Shape::LineSegment { stroke, .. }
+            if stroke.color == egui::Color32::from_rgb(0, 0, 0xFF))),
+        "the playhead keeps its colour"
+    );
+}
+
 #[test]
 fn a_clip_under_the_play_position_is_playing() {
     use crate::arrangement::{arrangement_view, timeline};

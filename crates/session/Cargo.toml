@@ -24,7 +24,7 @@ suhina-device-api.workspace = true
 suhina-device-sdk.workspace = true
 suhina-device-registry.workspace = true
 serde_json.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 hound.workspace = true
 zip.workspace = true
 
