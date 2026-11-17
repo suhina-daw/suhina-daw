@@ -90,11 +90,17 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
    render thread waits for it: it spins briefly, then sleeps on a wake-up the worker signals. It
    never gives its core away by yielding: on Windows a yield can hand the core to a thread of
    normal priority for a whole scheduler quantum. Playback never stops for it. A wait that eats
-   the queue shows as a device underrun, counted as today; a chain that finished after its
+   the queue shows as a device underrun, counted as today: the device plays silence for the
+   frames that were not there and then the frames as they come, nothing dropped. A chain that
+   finished after its
    block's share of time is counted as a *missed block* and named by track. Dropping a late chain
    for the block, as an engine with no queue has to, is rejected: it cuts a gap into the track
-   and skips its devices' state by a block, and output would no longer be bit-identical. With a
-   queue ahead of the device, a short wait costs nothing heard.
+   and skips its devices' state by a block, and a render on several threads would no longer
+   equal the render on one. With a queue ahead of the device, a short wait costs nothing heard.
+   What is bit-identical is a render on any number of threads against one on one thread; a
+   render in real time equals an offline one only while no plug-in misses its deadline, since
+   a late plug-in is replaced for its block ([ADR 0006](0006-plug-in-hosting.md) › 4) and offline
+   it is waited for.
 4. **Plug-in chains go to the pool too** (phase 2). A chain with plug-in slots is a job like any
    other: its round trips run on the worker, and chains overlap their round trips with each
    other and with built-in work. Inside a chain, parts that do not depend on each other (the
@@ -147,10 +153,12 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
     see an unbroken stream; going back, it builds its lead up again by rendering more than one
     block per block while there is time. Its latency compensation stays the same across the
     switch, since a change in it is what makes a switch drop out or stutter. A seam that is not
-    continuous (a stop, a jump) is declicked. This decision is checked by the prototype of
+    continuous (a stop, a jump) is declicked. Playing out the queue makes an action that needs
+    a track live at once (arming it, an unquantized launch) wait up to the lead in Studio mode;
+    Live mode has no queue to play out. This decision is checked by the prototype of
     [#1508](https://github.com/suhina-daw/suhina-daw/issues/1508) against the limits before the
-    full two paths are built ([#1509](https://github.com/suhina-daw/suhina-daw/issues/1509)); what
-    it changes comes as an amendment.
+    full two paths are built ([#1509](https://github.com/suhina-daw/suhina-daw/issues/1509)),
+    among them the unquantized launch's 10 ms; what it changes comes as an amendment.
 11. **Launcher, transport and edits.** Quantized launches are scheduled ahead and land on their
     sample on both paths. Stop and jump empty the queues and render from the new position. An
     edit's new graph ([ADR 0005](0005-edits-while-playing.md) › 3) takes over on each path at its
@@ -191,7 +199,7 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
     |---|---|---|---|
     | Playing through Suhina | 64 at 48 kHz | round-trip latency with a loopback | at most 10 ms; Suhina adds nothing beyond two buffers and the plug-ins' reported latency |
     | Playing | 64 | MIDI in to sound out, spread | at most 1 ms (p99) |
-    | Playing | 64 | dropouts in 30 minutes at the stated load | 0 |
+    | Playing | 64 | dropouts in 30 minutes at a load stated with the result (the project, its tracks and its engine load) | 0 |
     | Recording with in-ear monitoring | 32-64 | round-trip latency | at most 5 ms |
     | Live set with controller moves | 128-256 | knob turn to first changed sample, any track | target 10 ms, ceiling 30 ms |
     | Live set | 128-256 | quantized launch position, drift between tracks against an offline render | 0 samples |
@@ -220,6 +228,9 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
   modes; bypassing such plug-ins on the path being played is a separate feature, not part of
   this decision.
 - Total processor time grows a little (about 6 % in the prototype) for a shorter wall time.
+- Real-time work goes first between jobs, not inside one: while an export renders beside
+  playback, a live chain may wait for the export chain a worker is running when it is queued,
+  one block of one chain at most per worker, and the render thread runs live chains meanwhile.
 
 ## Alternatives
 
