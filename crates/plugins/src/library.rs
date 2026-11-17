@@ -320,7 +320,29 @@ impl Library {
         }
         if let Some(text) = read_bounded(&folder.join(OWNED_FILE), MAX_HOSTING_BYTES) {
             self.owned = parse_disabled(&text);
+            // Marks written before they named the product were a file's spec: each one the
+            // catalog knows becomes its product's mark, saved once, so no mark is lost.
+            if self.owned_marks_by_product() {
+                let list: Vec<&String> = self.owned.iter().collect();
+                let _kept = self.save(OWNED_FILE, &json!(list).to_string());
+            }
         }
+    }
+
+    /// Turns every owned mark that is a plug-in's spec into its [`product_key`]; true when one
+    /// changed. A spec the catalog no longer has stays as it is, taken away by name later.
+    fn owned_marks_by_product(&mut self) -> bool {
+        let specs: Vec<String> = self.owned.iter().filter(|m| !m.contains('\t')).cloned().collect();
+        let mut changed = false;
+        for spec in specs {
+            if let Some(plugin) = self.catalog.plugins().find(|p| p.spec() == spec) {
+                let key = product_key(&plugin.vendor, &plugin.name);
+                self.owned.remove(&spec);
+                self.owned.insert(key);
+                changed = true;
+            }
+        }
+        changed
     }
 
     fn save(&self, name: &str, text: &str) -> Result<(), String> {
