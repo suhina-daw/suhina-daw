@@ -162,7 +162,7 @@ mod tests {
     fn a_path_is_cut_in_its_middle_and_keeps_its_ends() {
         let ctx = egui::Context::default();
         let mut cut = (String::new(), false);
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             let painter = ui.painter().clone();
             let font = FontId::proportional(11.0);
             let path = "E:/Sample Library/Projects/Deep House 2/Downloads/Cloud Sounds/Drums/kick.wav";
@@ -171,6 +171,8 @@ mod tests {
             let width = painter.layout_no_wrap(cut.0.clone(), font.clone(), Color32::WHITE).size().x;
             assert!(width <= 160.0, "{} is {width} wide", cut.0);
         });
+        // The frame's font atlas is never uploaded here; epaint asserts in debug builds when it is dropped unhandled.
+        output.textures_delta.clear();
         assert!(cut.1);
         assert!(cut.0.starts_with("E:/"), "{}", cut.0);
         assert!(cut.0.ends_with("kick.wav"), "{}", cut.0);
@@ -183,9 +185,10 @@ mod tests {
         let ctx = egui::Context::default();
         let long = format!("C:/{}/kick.wav", "a".repeat(1 << 20));
         let mut cut = (String::new(), false);
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             cut = middle_cut(ui.painter(), &long, &FontId::proportional(11.0), 10_000.0);
         });
+        output.textures_delta.clear();
         assert!(cut.1);
         assert!(cut.0.chars().count() <= MAX_SHOWN + 1, "{}", cut.0.chars().count());
         assert!(cut.0.starts_with("C:/") && cut.0.ends_with("kick.wav"));
