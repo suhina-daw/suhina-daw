@@ -75,7 +75,9 @@ winresource = { version = "0.1", default-features = false }  # MIT
 roxmltree = "0.21"  # MIT OR Apache-2.0
 cpal = "0.18"  # Apache-2.0
 serde_json = "1"  # MIT OR Apache-2.0
-chrono = { version = "0.4", default-features = false, features = ["clock"] }  # MIT OR Apache-2.0
+# Local date and time in backup and export names. The system time zone needs a time zone
+# database: Windows's is bundled (tzdb-bundle-platform), elsewhere the system's is read.
+jiff = { version = "1", default-features = false, features = ["std", "tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo"] }  # Unlicense OR MIT
 serde = { version = "1", features = ["derive"] }  # MIT OR Apache-2.0
 nam-rs = "0.4"  # MIT; NAM model inference for the two NAM devices
 rtrb = "0.4"  # MIT OR Apache-2.0

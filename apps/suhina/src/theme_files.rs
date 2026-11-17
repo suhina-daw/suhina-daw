@@ -454,7 +454,7 @@ impl ThemeFiles {
         }
         // The local date and time, so the name says the day the user knows, and two backups on
         // one day are both kept.
-        let name = format!("suhina-themes-{}.zip", chrono::Local::now().format("%Y-%m-%d-%H%M%S"));
+        let name = format!("suhina-themes-{}.zip", suhina_session::backup::file_stamp_now());
         write_zip(&self.exports()?.join(name), &contents)
     }
 
