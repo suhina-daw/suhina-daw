@@ -2085,3 +2085,56 @@ fn the_height_a_padded_panel_asks_for_does_not_outlive_its_frame() {
     assert_eq!(shown_device_insets(&ctx, 6.0), 40.0, "the frame after the panel was shown");
     assert_eq!(shown_device_insets(&ctx, 6.0), 6.0, "gone when nothing leaves it again");
 }
+
+/// After a chain's last panel, the slot a dropped effect goes in: as tall as the panels, right of
+/// them, never over one however little room is left, and no hint text in its place
+/// (#1487 L11, B13).
+#[test]
+fn the_slot_after_a_chains_last_device_never_covers_it() {
+    let mut project = demo_project();
+    for _ in 0..2 {
+        project.channels[0].devices.push(Device::new("Utility", DeviceKind::Builtin("utility".into())));
+    }
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let css = "device { background-color: #0000FF; } drop-target[kind=\"append\"] { background-color: #00FF00; }";
+    let draw = |width: f32| {
+        crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
+        let area = Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(width, 300.0));
+        let ctx = egui::Context::default();
+        let mut shapes = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let painter = ui.painter().clone();
+                chain_row(ui, &painter, area, &chain, &[], &mut Vec::new(), &mut Vec::new());
+            });
+            output.textures_delta.clear();
+            shapes = output.shapes;
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        let fills = |colour: egui::Color32| -> Vec<Rect> {
+            shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Rect(r) if r.fill == colour => Some(r.rect),
+                    _ => None,
+                })
+                .collect()
+        };
+        let texts = shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.text() == APPEND_HINT));
+        (fills(egui::Color32::BLUE), fills(egui::Color32::from_rgb(0, 0xFF, 0)), texts)
+    };
+    let (panels, slots, hint_text) = draw(1400.0);
+    assert_eq!(panels.len(), 2, "{panels:?}");
+    assert_eq!(slots.len(), 1, "{slots:?}");
+    let (last, slot) = (panels[1], slots[0]);
+    assert!(slot.left() > last.right(), "{slot:?} after {last:?}");
+    assert_eq!((slot.top(), slot.height()), (last.top(), last.height()), "as tall as the panels");
+    assert!(!hint_text, "the slot is named, not written over the chain");
+    // Room for the panels and a few points more: the slot is cut at the area's edge, not drawn
+    // back over the last panel.
+    let (panels, slots, _) = draw(last.right() + 8.0);
+    for slot in &slots {
+        assert!(panels.iter().all(|p| !p.intersects(slot.shrink(0.5))), "{slot:?} over {panels:?}");
+    }
+}

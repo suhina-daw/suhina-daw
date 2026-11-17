@@ -1053,7 +1053,19 @@ fn painted_clip(css: &str, rect: Rect, selected: bool) -> Vec<egui::epaint::Clip
             let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * beat_width;
             let look = ArrangementViewState::default().clip_look();
             let clip = &clip;
-            paint_clip(ui.painter(), rect, lane, clip, Shown::of(clip), clip.start, &x_of, beat_width, &timeline, selected, &look);
+            paint_clip(
+                ui.painter(),
+                rect,
+                lane,
+                clip,
+                Shown::of(clip),
+                clip.start,
+                &x_of,
+                beat_width,
+                &timeline,
+                selected,
+                &look,
+            );
         });
         output.textures_delta.clear();
         shown = output.shapes;
@@ -1091,7 +1103,9 @@ fn the_take_marks_bars_are_evenly_spaced() {
             .iter()
             .filter_map(|s| match &s.shape {
                 egui::Shape::LineSegment { points, .. }
-                    if points[0].y == points[1].y && points[0].x == rect.left() + 4.0 && points[1].x == rect.left() + 11.0 =>
+                    if points[0].y == points[1].y
+                        && points[0].x == rect.left() + 4.0
+                        && points[1].x == rect.left() + 11.0 =>
                 {
                     Some(points[0].y)
                 }

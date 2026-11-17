@@ -1446,11 +1446,7 @@ pub(super) fn paint_clip(
         // body showed in a strip at the right, lighter while selected (#1487 B11). The leading
         // edge is drawn over its left end.
         let top = radius.min(bar.height()).clamp(0.0, 255.0) as u8;
-        painter.rect_filled(
-            bar,
-            egui::CornerRadius { nw: top, ne: top, sw: 0, se: 0 },
-            look.fill,
-        );
+        painter.rect_filled(bar, egui::CornerRadius { nw: top, ne: top, sw: 0, se: 0 }, look.fill);
         look
     });
     if bar.is_none() {

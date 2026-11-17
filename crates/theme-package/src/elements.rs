@@ -327,7 +327,7 @@ pub const ELEMENTS: &[Element] = &[
     element("slot-record", Control, "The record button in an armed track's empty slot, `[recording]` while that slot records: its `color` for the dot and the word, its `background-color` over the slot while it records.")
         .attributes(&["recording"]),
     element("slot-mark", Drawn, "The mark in an empty slot that holds a stop button."),
-    element("drop-target", Drawn, "Where a drop lands: the outline of the area (`kind=\"area\"`) or the line a moved track goes to (`kind=\"insert\"`).")
+    element("drop-target", Drawn, "Where a drop lands: the outline of the area (`kind=\"area\"`), the line a moved track goes to (`kind=\"insert\"`), or the slot with a + after a chain's last device (`kind=\"append\"`).")
         .attributes(&["kind"]),
     element("arrangement", Region, "The Arrangement view: tracks as rows along a timeline. Its `background-color` is the colour under the grid and the empty lanes; `arrangement[kind=\"panel\"]`'s is the one under its ruler, rows, headers and toolbar, and both are what the view draws over a region around it that has a background of its own.")
         .parts(&[

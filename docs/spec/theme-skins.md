@@ -464,7 +464,8 @@ page's (ADR 0031, amendment of 2026-11-15).
 - **What it holds now:** the text colour and size of `html, body`; the bars' border colour; the
   colours of `knob-body`, `fader-rail` and `fader-cap`; the progress bar's (`progress`,
   `progress-fill`); the drop targets' lines (`drop-target[kind="insert"]`,
-  `drop-target[kind="area"]`); the browser's icons by kind (`--browser-icon-midi`,
+  `drop-target[kind="area"]`) and the slot after a chain's last device (`drop-target[kind="append"]`,
+  a + on a control's fill); the browser's icons by kind (`--browser-icon-midi`,
   `--browser-icon-sample`, `--browser-icon-instrument`, `--browser-icon-effect`); the sample
   map's kinds; the grey of a muted Arrangement clip and track header (#1393),
   `arrangement clip[muted] { background-color: var(--clip-mutedBackground); }` (`#A9A6A0`, and

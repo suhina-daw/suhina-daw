@@ -202,7 +202,8 @@ fn chain_row(
     // height the user set, as before the boxes had insets.
     let needs = boxes.iter().filter(|(_, _, own, _)| !own).map(|(.., insets)| *insets).fold(0.0, f32::max);
     ui.data_mut(|d| d.insert_temp(shown_device_extra_id(), needs));
-    let total = boxes.iter().map(|(w, ..)| w + 1.0).sum::<f32>();
+    // The panels, then the slot after the last one that takes a dropped effect (#1487 L11).
+    let total = boxes.iter().map(|(w, ..)| w + 1.0).sum::<f32>() + APPEND_SLOT;
     let scroll_id = Id::unique(("chain-scroll", chain.track.0));
     let most = (total - area.width()).max(0.0);
     let mut offset = ui.data(|d| d.get_temp::<f32>(scroll_id)).unwrap_or(0.0).clamp(0.0, most);
@@ -267,6 +268,13 @@ fn chain_row(
             places.push(editor_place(ui, area, content, editor, chain.track, device, origin));
         }
     }
+    // After the last panel, as tall as the panels, the slot a dropped effect goes in: a + in
+    // `drop-target[kind="append"]`, in the chain's row so it scrolls with it and never covers a
+    // panel (#1487 L11, B13: a hint centred in the room left ran over the last panel).
+    let append = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(APPEND_SLOT, tallest.min(area.height())));
+    if append.right() >= area.left() && append.left() <= area.right() {
+        append_slot(ui, &painter.with_clip_rect(area), append, chain.track);
+    }
     ui.set_clip_rect(outer_clip);
     // A device of this chain carried over it: a line where it would go (#688).
     let carrying = ui.data(|d| d.get_temp::<(TrackId, usize)>(Id::unique(crate::interaction::drop::DEVICE_CARRYING)));
@@ -298,14 +306,6 @@ fn chain_row(
         let thumb =
             Rect::from_min_size(Pos2::new(thumb_left, bar.top() + 1.0), Vec2::new(thumb_width, bar.height() - 2.0));
         painter.rect_filled(thumb, 0.0, look.color());
-    }
-    // Right of the last panel, what a drop does.
-    if x < area.right() - 80.0 {
-        let rest = Rect::from_min_max(
-            Pos2::new(x, area.top()),
-            Pos2::new(area.right(), (area.top() + tallest).min(area.bottom())),
-        );
-        hint(painter, rest, "Drop audio effects here");
     }
     picked.content_height = Some((tallest + if bar.is_some() { 8.0 } else { 0.0 }).ceil() as u32);
     picked
@@ -925,6 +925,32 @@ fn clip_for_readers(ui: &Ui, rect: Rect, info: &ClipInfo) {
     };
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
 }
+
+/// The width of the slot after a chain's last panel that takes a dropped effect.
+const APPEND_SLOT: f32 = 24.0;
+
+/// The slot after a chain's last panel, `drop-target[kind="append"]`: its box as the sheet styles
+/// it and a + in its `color`, named "Drop audio effects here" for a pointer over it and for
+/// screen readers. A drop anywhere after the last panel lands at the chain's end, so the slot
+/// only shows where that is.
+fn append_slot(ui: &Ui, painter: &egui::Painter, rect: Rect, track: TrackId) {
+    let response = ui.interact(rect, Id::unique(("chain-append", track.0)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, APPEND_HINT));
+    let el =
+        crate::kit::element::DROP_TARGET.attribute("kind", "append").pointer(response.hovered(), false, false).enter();
+    let boxed = el.paint(painter, rect);
+    let ink = el.look().color();
+    let centre = boxed.content.center();
+    let arm = (boxed.content.width().min(boxed.content.height()) / 2.0 - 4.0).clamp(2.0, 6.0).round();
+    let stroke = egui::Stroke::new(1.5, ink);
+    painter.hline(egui::Rangef::new(centre.x - arm, centre.x + arm), centre.y, stroke);
+    painter.vline(centre.x, egui::Rangef::new(centre.y - arm, centre.y + arm), stroke);
+    drop(el);
+    response.on_hover_text(APPEND_HINT);
+}
+
+/// What the slot after a chain's last panel does.
+const APPEND_HINT: &str = "Drop audio effects here";
 
 fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), hint_ink());
