@@ -330,3 +330,28 @@ fn with_no_rule_the_header_lays_out_as_suhina_s_own_layout_did() {
     }
     assert!(checked > 1000, "{checked}");
 }
+
+#[test]
+fn a_header_s_words_change_only_where_it_crosses_its_sizes() {
+    // #1489: a drag of the header column changes the header's width every frame; its attributes,
+    // which are in the style tree, change only at a few widths, never back and forth.
+    for height in [22.0, 40.0, 60.0, 90.0] {
+        let header = Header { depth: 0, ancestors: 0, armable: true, notes: true, takes: false, sends: 2 };
+        let mut seen: Vec<(&str, &str, bool)> = Vec::new();
+        let mut changes = 0;
+        let mut width = 120.0;
+        while width <= 900.0 {
+            let rect = Rect::from_min_size(Pos2::new(11.0, 5.0), Vec2::new(width, height));
+            let words = layout(None, rect, header).words;
+            if seen.last() != Some(&words) {
+                assert!(!seen.contains(&words), "{height}: {words:?} came back at {width}, after {seen:?}");
+                seen.push(words);
+                changes += 1;
+            }
+            width += 1.0;
+        }
+        assert!(changes <= 4, "{height}: the words changed {changes} times: {seen:?}");
+        // The size word follows the height alone.
+        assert!(seen.iter().all(|(_, size, _)| *size == seen[0].1), "{height}: {seen:?}");
+    }
+}

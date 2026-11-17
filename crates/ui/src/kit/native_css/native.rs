@@ -26,6 +26,14 @@ pub(super) struct Paint {
     colors: Option<Arc<Sheet>>,
     /// The window's faded colours over a backdrop ([`super::set_window_opacity`]), in the base tier.
     window: Option<Arc<Sheet>>,
+    /// The whole tree's element styles, kept by what each depends on, so a tree that changed in a
+    /// few elements works out only those (#1489).
+    cache: std::cell::RefCell<cascade::StyleCache>,
+    /// The paint values of the styles in `cache`, by the same key, with the style they were made
+    /// from.
+    paints: std::cell::RefCell<std::collections::HashMap<u64, Computed>>,
+    /// The elements the sheets test for `:hover`, with the sheets key they were found for.
+    hovered: std::cell::RefCell<Option<(u64, Arc<suhina_style::selector::StateNames>)>>,
 }
 
 impl Paint {
@@ -33,7 +41,15 @@ impl Paint {
     /// skipped with a notice, as CSS does, and the rest applies.
     pub fn new(source: &str, base: bool) -> Option<Self> {
         let sheet = Sheet::parse(source).ok()?;
-        Some(Self { sheet, base, colors: None, window: None })
+        Some(Self {
+            sheet,
+            base,
+            colors: None,
+            window: None,
+            cache: Default::default(),
+            paints: Default::default(),
+            hovered: Default::default(),
+        })
     }
 
     /// Uses the theme's colour map `colors` and the window's rule `window` from now on.
@@ -41,6 +57,69 @@ impl Paint {
         self.base = base;
         self.colors = colors;
         self.window = window;
+        self.cache.borrow_mut().clear();
+        self.paints.borrow_mut().clear();
+        self.hovered.borrow_mut().take();
+    }
+
+    /// [`Paint::styles`] shared through the cache: each element's style with its key.
+    /// `sheets_key` changes whenever the variant's, a device panel's or the user's sheet does.
+    fn styles_shared(
+        &self,
+        tree: &Tree,
+        viewport: Viewport,
+        variant: Option<&Sheet>,
+        devices: &[(&Sheet, usize)],
+        user: Option<&Sheet>,
+        sheets_key: u64,
+    ) -> Option<Vec<(u64, Arc<ComputedStyle>)>> {
+        let mut cache = self.cache.borrow_mut();
+        let styles =
+            cascade::compute_shared(tree, viewport, &self.applied(variant, devices, user), sheets_key, &mut cache);
+        if styles.is_err() {
+            cache.clear();
+        }
+        styles.ok()
+    }
+
+    /// The paint values of `style`, kept under `key` while it is the style they were made from.
+    fn paint_of(&self, key: u64, style: Arc<ComputedStyle>) -> Computed {
+        let mut paints = self.paints.borrow_mut();
+        if let Some(paint) = paints.get(&key).filter(|paint| Arc::ptr_eq(&paint.resolved, &style)) {
+            return paint.clone();
+        }
+        let paint = computed_from(style);
+        if paints.len() >= cascade::MAX_CACHED_STYLES {
+            paints.clear();
+        }
+        paints.insert(key, paint.clone());
+        paint
+    }
+
+    /// The elements the sheets test for `:hover` ([`cascade::state_names`]), kept while
+    /// `sheets_key` is the same.
+    fn hover_names(
+        &self,
+        variant: Option<&Sheet>,
+        devices: &[(&Sheet, usize)],
+        user: Option<&Sheet>,
+        sheets_key: u64,
+    ) -> Arc<suhina_style::selector::StateNames> {
+        let mut kept = self.hovered.borrow_mut();
+        if let Some((key, names)) = kept.as_ref()
+            && *key == sheets_key
+        {
+            return Arc::clone(names);
+        }
+        let names = Arc::new(cascade::state_names(&self.applied(variant, devices, user), "hover"));
+        *kept = Some((sheets_key, Arc::clone(&names)));
+        names
+    }
+
+    /// How many element styles the last whole-tree resolve worked out rather than took from the
+    /// cache.
+    pub(super) fn computed_last(&self) -> usize {
+        self.cache.borrow().computed()
     }
 
     /// The cascade of the user-agent sheet, the base tier (the core variables, the base sheet, the
@@ -225,25 +304,6 @@ pub(super) fn body(engine: &mut Engine) -> Option<Arc<ComputedStyle>> {
 
 pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     let paint = engine.native.as_ref()?;
-    let mut elements = roots(false);
-    for node in &engine.nodes {
-        elements.push(element_of(engine, node, node.parent.map_or(1, |parent| parent + 2)));
-    }
-    // CSS :hover applies to the ancestors of the pointer target as well.
-    for (index, node) in engine.nodes.iter().enumerate().rev() {
-        if node.state & 1 == 0 || node.state & super::ASKED != 0 {
-            continue;
-        }
-        let mut parent = elements.get(index + 2).and_then(|element| element.parent);
-        while let Some(index) = parent {
-            let element = elements.get_mut(index)?;
-            if !element.states.iter().any(|state| state == "hover") {
-                element.states.push("hover".into());
-            }
-            parent = element.parent;
-        }
-    }
-    let tree = Tree::new(elements).ok()?;
     let devices: Vec<(&Sheet, usize)> = engine
         .nodes
         .iter()
@@ -252,8 +312,52 @@ pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
         .filter_map(|(index, node)| engine.device_sheets.get(&node.sheet).map(|sheet| (sheet.as_ref(), index + 2)))
         .collect();
     let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
-    let values = paint.styles(&tree, viewport(engine), variant(engine), &devices, user)?;
-    Some(engine.nodes.iter().zip(values.iter().skip(2)).map(|(node, value)| (node.key, computed(value))).collect())
+    // What the cache's styles depend on beyond the theme and the base tier, which reset it
+    // themselves: the variant's and the user's text, and the device panels' sheets in order.
+    let sheets_key = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::hash::DefaultHasher::new();
+        engine.variant.as_ref().map(|(text, _)| text.as_ref()).hash(&mut hasher);
+        engine.user.as_ref().map(|(text, _)| text.as_ref()).hash(&mut hasher);
+        for node in engine.nodes.iter().filter(|node| node.sheet != 0 && engine.device_sheets.contains_key(&node.sheet))
+        {
+            node.sheet.hash(&mut hasher);
+        }
+        hasher.finish()
+    };
+    let mut elements = roots(false);
+    for node in &engine.nodes {
+        elements.push(element_of(engine, node, node.parent.map_or(1, |parent| parent + 2)));
+    }
+    // CSS :hover applies to the ancestors of the pointer target as well; only those a rule tests
+    // for it take it, so the pointer moving between elements leaves the window and the rest of
+    // the tree above them as they were, and their styles in the cache (#1489).
+    let hovered = paint.hover_names(variant(engine), &devices, user, sheets_key);
+    for (index, node) in engine.nodes.iter().enumerate().rev() {
+        if node.state & 1 == 0 || node.state & super::ASKED != 0 {
+            continue;
+        }
+        let mut parent = elements.get(index + 2).and_then(|element| element.parent);
+        while let Some(index) = parent {
+            let element = elements.get_mut(index)?;
+            if hovered.tested(&element.kind, element.id.as_deref())
+                && !element.states.iter().any(|state| state == "hover")
+            {
+                element.states.push("hover".into());
+            }
+            parent = element.parent;
+        }
+    }
+    let tree = Tree::new(elements).ok()?;
+    let values = paint.styles_shared(&tree, viewport(engine), variant(engine), &devices, user, sheets_key)?;
+    Some(
+        engine
+            .nodes
+            .iter()
+            .zip(values.into_iter().skip(2))
+            .map(|(node, (key, style))| (node.key, paint.paint_of(key, style)))
+            .collect(),
+    )
 }
 
 #[cfg(test)]

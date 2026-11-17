@@ -488,6 +488,13 @@ pub fn budget() -> Budget {
     })
 }
 
+/// How many element styles the last whole-tree resolve worked out rather than took from its
+/// cache (#1489).
+#[cfg(test)]
+fn resolved_last() -> usize {
+    ENGINE.with(|engine| engine.borrow().native.as_ref().map_or(0, native::Paint::computed_last))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct StyleNode {
     key: u64,
@@ -961,8 +968,19 @@ fn finish_tree(now: f64) -> (bool, bool) {
         }
         let mut stale = false;
         if changed || engine.styles_changed || engine.targets.is_empty() {
-            let Some(resolved) = suhina_plugins::trace::timed("style paint resolve", || native::retained(&engine))
-            else {
+            let started = std::time::Instant::now();
+            let resolved = native::retained(&engine);
+            if suhina_plugins::trace::on() && started.elapsed() >= suhina_plugins::trace::SLOW_WORK {
+                // How many styles the shared cascade worked out, against the tree's size: a
+                // resolve that works out most of the tree when little changed is a cache miss (#1489).
+                let computed = engine.native.as_ref().map_or(0, native::Paint::computed_last);
+                suhina_plugins::trace::line(format_args!(
+                    "slow style paint resolve: {:.1} ms, {computed} of {} styles worked out",
+                    started.elapsed().as_secs_f64() * 1000.0,
+                    engine.nodes.len()
+                ));
+            }
+            let Some(resolved) = resolved else {
                 // A tree the engine cannot resolve keeps the last painted values.
                 engine.previous = engine.nodes.clone();
                 engine.styles_changed = false;

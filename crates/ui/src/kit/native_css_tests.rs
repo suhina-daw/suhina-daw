@@ -1967,3 +1967,60 @@ fn opting_out_of_the_base_sheet_leaves_readable_text_on_an_opaque_window() {
     assert_eq!(based.color, crate::kit::theme::studio("text-primary"));
     skin::configure(&skin::Skin::default());
 }
+
+/// A frame of a window with a toolbar of three buttons, the middle one under the pointer when
+/// `hovered`, and a browser of forty rows: how many styles its whole-tree resolve worked out, and
+/// how many elements the tree has.
+fn bar_and_rows(ctx: &egui::Context, hovered: bool) -> (usize, usize) {
+    use crate::kit::element::{BROWSER, BROWSER_ROW, BUTTON, TOOLBAR, WINDOW};
+    ctx.run_ui(Default::default(), |ui| {
+        let _frame = frame_with_motion(ui, false);
+        let _window = WINDOW.enter();
+        {
+            let _bar = TOOLBAR.enter();
+            for button in 0..3 {
+                let builder =
+                    if hovered && button == 1 { BUTTON.pointer(true, false, false) } else { BUTTON.builder() };
+                let _button = builder.enter();
+            }
+        }
+        let _browser = BROWSER.enter();
+        for _ in 0..40 {
+            let _row = BROWSER_ROW.enter();
+        }
+    })
+    .textures_delta
+    .clear();
+    (resolved_last(), budget().nodes)
+}
+
+#[test]
+fn a_resolve_works_out_only_what_changed_in_every_built_in_theme() {
+    // #1489: a change to the tree resolves it again, and in a theme whose regions set variables of
+    // their own that cost a whole cascade of the window every frame of a drag.
+    let themes = [
+        ("suhina-studio", include_str!("../../themes/suhina-studio/theme.css")),
+        ("suhina-sheet", include_str!("../../themes/suhina-sheet/theme.css")),
+        ("suhina-blocks", include_str!("../../themes/suhina-blocks/theme.css")),
+        ("suhina-meadow", include_str!("../../themes/suhina-meadow/theme.css")),
+        ("suhina-glass", include_str!("../../themes/suhina-glass/theme.css")),
+    ];
+    for (name, css) in themes {
+        prepare(css, 1138.0);
+        let ctx = egui::Context::default();
+        let (first, nodes) = bar_and_rows(&ctx, false);
+        assert!(nodes >= 46, "{name}: the frame entered its elements ({nodes})");
+        assert!(
+            first > 0 && first < nodes / 2,
+            "{name}: identical buttons and rows share their styles ({first} of {nodes})"
+        );
+        let (hover, _) = bar_and_rows(&ctx, true);
+        assert!(
+            (1..=3).contains(&hover),
+            "{name}: a hovered button works out itself, not the window ({hover} of {nodes})"
+        );
+        let (back, _) = bar_and_rows(&ctx, false);
+        assert_eq!(back, 0, "{name}: a tree seen before takes every style from the cache");
+    }
+    skin::configure(&skin::Skin::default());
+}

@@ -512,3 +512,200 @@ fn a_property_a_rule_wrote_on_the_element_is_declared_not_inherited() {
     assert!(styles[2].declared(Property::Color));
     assert!(styles[0].declared(Property::Color));
 }
+
+// The shared cascade (#1489).
+
+/// A window with a toolbar of three buttons and a list of rows, each row with a label.
+fn bar_and_list() -> Vec<Element> {
+    vec![
+        Element::new("window", None),
+        Element::new("toolbar", Some(0)),
+        Element::new("button", Some(1)),
+        Element::new("button", Some(1)),
+        Element::new("button", Some(1)),
+        Element::new("list", Some(0)),
+        Element::new("row", Some(5)),
+        Element::new("label", Some(6)),
+        Element::new("row", Some(5)),
+        Element::new("label", Some(8)),
+    ]
+}
+
+fn hovered(mut element: Element) -> Element {
+    element.states.push("hover".into());
+    element
+}
+
+/// The styles of `elements` under `css` worked out whole and shared, which must agree, and how
+/// many the shared cascade worked out after `cache` saw the trees before.
+fn both(css: &str, elements: Vec<Element>, cache: &mut StyleCache) -> (Vec<ComputedStyle>, usize) {
+    let sheet = Sheet::parse(css).unwrap();
+    assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+    let applied = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    let tree = Tree::new(elements).unwrap();
+    let whole = compute(&tree, viewport(1138.0), &applied).unwrap();
+    let shared = compute_shared(&tree, viewport(1138.0), &applied, 1, cache).unwrap();
+    assert_eq!(whole, shared.iter().map(|(_, style)| style.as_ref().clone()).collect::<Vec<_>>());
+    (whole, cache.computed())
+}
+
+const VARIABLES: &str = "window { --ink: #102030; color: var(--ink); } \
+     toolbar { --ink: color-mix(in oklab, #ffffff, #000000 20%); } \
+     button { --face: color-mix(in oklab, var(--ink), #ff0000 10%); background-color: var(--face); } \
+     button:hover { --face: #00ff00; } \
+     row label { color: var(--ink); } row:hover label { color: #ff00ff; }";
+
+#[test]
+fn the_shared_cascade_works_out_identical_elements_once() {
+    let mut cache = StyleCache::default();
+    let (_, computed) = both(VARIABLES, bar_and_list(), &mut cache);
+    // window, toolbar, one button for three, list, one row and one label for two.
+    assert_eq!(computed, 6);
+    let (_, again) = both(VARIABLES, bar_and_list(), &mut cache);
+    assert_eq!(again, 0, "an unchanged tree takes every style from the cache");
+}
+
+#[test]
+fn a_changed_element_works_out_only_itself_and_what_is_under_it() {
+    let mut cache = StyleCache::default();
+    both(VARIABLES, bar_and_list(), &mut cache);
+    let mut elements = bar_and_list();
+    elements[3] = hovered(Element::new("button", Some(1)));
+    let (styles, computed) = both(VARIABLES, elements, &mut cache);
+    assert_eq!(computed, 1, "the hovered button alone");
+    assert_eq!(styles[3].get(Property::BackgroundColor), Value::Color(Color::Rgba([0, 255, 0, 255])));
+    assert_ne!(styles[2].get(Property::BackgroundColor), styles[3].get(Property::BackgroundColor));
+    let mut elements = bar_and_list();
+    elements[8] = hovered(Element::new("row", Some(5)));
+    let (styles, computed) = both(VARIABLES, elements, &mut cache);
+    assert_eq!(computed, 2, "the hovered row and its label");
+    assert_eq!(styles[9].get(Property::Color), Value::Color(Color::Rgba([255, 0, 255, 255])));
+    assert_ne!(styles[7].get(Property::Color), styles[9].get(Property::Color));
+}
+
+#[test]
+fn a_sibling_selector_keeps_later_siblings_apart() {
+    let css = "button { color: #000000; } button:hover + button { color: #ff0000; } \
+               button:first-child { radius: 2px; } button:last-child { radius: 6px; }";
+    let mut cache = StyleCache::default();
+    let (styles, _) = both(css, bar_and_list(), &mut cache);
+    assert_eq!(styles[2].get(Property::Radius), Value::Length(Length::Px(2.0)));
+    assert_eq!(styles[4].get(Property::Radius), Value::Length(Length::Px(6.0)));
+    let mut elements = bar_and_list();
+    elements[2] = hovered(Element::new("button", Some(1)));
+    let (styles, computed) = both(css, elements, &mut cache);
+    assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
+    assert_eq!(styles[4].get(Property::Color), Value::Color(Color::Rgba([0, 0, 0, 255])));
+    assert_eq!(computed, 3, "the hovered button and the two after it, whose earlier siblings changed");
+}
+
+#[test]
+fn empty_is_told_apart_by_whether_an_element_has_children() {
+    let css = "row { color: #000000; } row:empty { color: #ff0000; }";
+    let mut cache = StyleCache::default();
+    let mut elements = bar_and_list();
+    elements.truncate(9);
+    let (styles, _) = both(css, elements, &mut cache);
+    assert_eq!(styles[6].get(Property::Color), Value::Color(Color::Rgba([0, 0, 0, 255])));
+    assert_eq!(
+        styles[8].get(Property::Color),
+        Value::Color(Color::Rgba([255, 0, 0, 255])),
+        "the row without its label"
+    );
+}
+
+#[test]
+fn new_sheets_or_another_viewport_empty_the_cache() {
+    let sheet = Sheet::parse(VARIABLES).unwrap();
+    let applied = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    let tree = Tree::new(bar_and_list()).unwrap();
+    let mut cache = StyleCache::default();
+    compute_shared(&tree, viewport(1138.0), &applied, 1, &mut cache).unwrap();
+    compute_shared(&tree, viewport(1138.0), &applied, 2, &mut cache).unwrap();
+    assert_eq!(cache.computed(), 6, "another sheets key");
+    compute_shared(&tree, viewport(800.0), &applied, 2, &mut cache).unwrap();
+    assert_eq!(cache.computed(), 6, "another viewport");
+    cache.clear();
+    assert!(cache.is_empty());
+}
+
+#[test]
+fn a_scoped_sheet_reaches_only_the_elements_under_its_root() {
+    let app = Sheet::parse("knob { color: #000000; }").unwrap();
+    let device = Sheet::parse("knob { color: #ff0000; }").unwrap();
+    let applied = [
+        AppliedSheet { sheet: &app, layer: Layer::Theme, root: None },
+        AppliedSheet { sheet: &device, layer: Layer::Device, root: Some(1) },
+    ];
+    let mut cache = StyleCache::default();
+    let styles = compute_shared(&tree(), viewport(1138.0), &applied, 1, &mut cache).unwrap();
+    assert_eq!(styles[2].1.get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
+    assert_eq!(styles[4].1.get(Property::Color), Value::Color(Color::Rgba([0, 0, 0, 255])));
+    assert_ne!(styles[2].0, styles[4].0, "the same knob under another panel is another key");
+}
+
+#[test]
+fn a_full_cache_starts_again_and_every_number_stays_its_place() {
+    let css = "row { color: attr(color type(<color>)); } label { color: inherit; }";
+    let mut cache = StyleCache::default();
+    let mut numbers = std::collections::HashMap::new();
+    for round in 0..12u32 {
+        let mut elements = vec![Element::new("window", None)];
+        for row in 0..400u32 {
+            let parent = elements.len();
+            let shade = (round * 400 + row) % 0xff_ffff;
+            elements.push(Element::new("row", Some(0)).with_attribute("color", &format!("#{shade:06x}")));
+            elements.push(Element::new("label", Some(parent)));
+        }
+        let sheet = Sheet::parse(css).unwrap();
+        let applied = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+        let tree = Tree::new(elements).unwrap();
+        let whole = compute(&tree, viewport(1138.0), &applied).unwrap();
+        let shared = compute_shared(&tree, viewport(1138.0), &applied, 1, &mut cache).unwrap();
+        assert_eq!(whole, shared.iter().map(|(_, style)| style.as_ref().clone()).collect::<Vec<_>>(), "round {round}");
+        assert!(cache.len() <= MAX_CACHED_STYLES);
+        for (number, style) in &shared {
+            numbers.insert(*number, Arc::clone(style));
+        }
+        for (number, style) in &shared {
+            assert!(Arc::ptr_eq(&numbers[number], style), "one number, one style within a call");
+        }
+    }
+}
+
+#[test]
+fn many_siblings_take_their_places_in_one_pass() {
+    // Two thousand identical rows: without a sheet that tests siblings their places are one, and
+    // with one each row's place among them still comes out right.
+    let mut elements = vec![Element::new("window", None), Element::new("list", Some(0))];
+    elements.extend((0..2000).map(|_| Element::new("row", Some(1))));
+    let mut cache = StyleCache::default();
+    let (_, computed) = both("row { color: #000000; }", elements.clone(), &mut cache);
+    assert_eq!(computed, 3, "window, list and one row for all");
+    let css = "row { color: #000000; } row:nth-child(2n) { color: #ff0000; } row + row { radius: 2px; }";
+    let mut cache = StyleCache::default();
+    let (styles, _) = both(css, elements, &mut cache);
+    assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([0, 0, 0, 255])));
+    assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
+    assert_eq!(styles[3].get(Property::Radius), Value::Length(Length::Px(2.0)), "a row after a row");
+    assert_ne!(styles[2].get(Property::Radius), styles[3].get(Property::Radius), "the first row follows none");
+}
+
+#[test]
+fn an_id_no_selector_tests_does_not_keep_elements_apart() {
+    // The host gives elements without an id of their own one (`node-…`): rows that differ only
+    // by such an id share one style, and an id a rule tests keeps its element apart.
+    let rows = |ids: [&str; 3]| {
+        let mut elements = vec![Element::new("window", None), Element::new("list", Some(0))];
+        elements.extend(ids.iter().map(|id| Element::new("row", Some(1)).with_id(id)));
+        elements
+    };
+    let mut cache = StyleCache::default();
+    let (_, computed) = both("row { color: #000000; }", rows(["node-1", "node-2", "node-3"]), &mut cache);
+    assert_eq!(computed, 3, "window, list and one row");
+    let mut cache = StyleCache::default();
+    let (styles, computed) =
+        both("row { color: #000000; } #node-2 { color: #ff0000; }", rows(["node-1", "node-2", "node-3"]), &mut cache);
+    assert_eq!(computed, 4, "the row whose id a rule tests is apart");
+    assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
+}
