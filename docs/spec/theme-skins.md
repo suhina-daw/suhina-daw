@@ -1535,7 +1535,8 @@ of bars, and a slider id per parameter.
   image of a rule for every `button` over it. They are ringed in `border-color` under the
   pointer and `accent-color` with the keys. The kit's own fields' underlines (`border-color`,
   `accent-color` while edited), a dialog's button (`border-color`, `color`), a dial
-  (`knob[kind="dial"]`: rim `border-color`, the disc between rim and face `knob-ring`, inner
+  (`knob[kind="dial"]`: rim `border-color`, its width `border-width`, else a sixth of the dial's
+  radius, the disc between rim and face `knob-ring`, inner
   disc `background-color`, pointer `accent-color`), the swing slider (`slider[checked]` and its
   `slider-rail`, `slider-fill`, `slider-handle`; a rule for every `slider-fill` is the lit
   swing's too, so a theme states `slider[checked] slider-fill`), a send's rail (the send's

@@ -2061,3 +2061,26 @@ fn a_resolve_works_out_only_what_changed_in_every_built_in_theme() {
     }
     skin::configure(&skin::Skin::default());
 }
+
+/// A dial's rim arc is a sixth of its radius wide, so a small dial's is thin for its size as a
+/// large one's (#1487 S4: it was 4 points at every size), unless the sheet gives the dial a
+/// `border-width`.
+#[test]
+fn a_dials_rim_scales_with_it_unless_the_sheet_sets_its_width() {
+    let rims = |css: &str| {
+        let shapes = painted(css, |ui| {
+            for (x, size) in [(40.0, 24.0), (200.0, 96.0)] {
+                crate::kit::widgets::dial(ui.painter(), egui::pos2(x, 100.0), size, 0.5, None);
+            }
+        });
+        shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Path(path) if !path.closed => Some(path.stroke.width),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(rims(""), [2.0, 8.0]);
+    assert_eq!(rims("knob[kind=\"dial\"] { border-width: 3px; }"), [3.0, 3.0]);
+}

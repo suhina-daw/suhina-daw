@@ -1559,26 +1559,36 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
     // disc and its `accent-color` for the pointer.
     let el = KNOB.response_if(response).attribute("kind", "dial").enter();
     let radius = (size * 0.5).max(1.0);
+    let rim = dial_rim(el.style().as_ref(), radius);
     // The face: the rim arc (2.35 to 7.05 rad as an `.sd` dial's is, i.e. 135° past each side
     // over the top), the ring disc inside it, the inner disc — the theme's tokens.
     let points: Vec<Pos2> = (0..=48)
         .map(|i| {
             let a = (-135.0 + 270.0 * i as f32 / 48.0).to_radians();
-            center + Vec2::new(a.sin(), -a.cos()) * (radius - 2.0).max(0.0)
+            center + Vec2::new(a.sin(), -a.cos()) * (radius - rim / 2.0).max(0.0)
         })
         .collect();
-    painter.add(egui::Shape::line(points, Stroke::new(4.0, el.border())));
+    painter.add(egui::Shape::line(points, Stroke::new(rim, el.border())));
     painter.circle_filled(
         center,
-        (radius - 4.0).max(0.0),
+        (radius - rim).max(0.0),
         crate::kit::style_class::surface_or(super::element::KNOB_RING.look().background()),
     );
-    painter.circle_filled(center, (radius - 8.0).max(0.0), el.background());
+    painter.circle_filled(center, (radius - 2.0 * rim).max(0.0), el.background());
     // The pointer: a quarter in, three quarters to the rim, in the accent token.
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
     let dir = Vec2::new(angle.sin(), -angle.cos());
     painter
         .line_segment([center + dir * (radius * 0.25), center + dir * (radius * 0.72)], Stroke::new(2.0, el.accent()));
+}
+
+/// The width of a dial's rim arc of `radius`: the `knob[kind="dial"]`'s `border-width` where the
+/// sheet sets one (at most the radius), else a sixth of the radius, so a small dial's arc is as
+/// thin for its size as a large one's (#1487 S4: a constant 4 points filled a small dial). The
+/// ring and the inner disc are set in by one and two widths.
+pub(crate) fn dial_rim(style: Option<&super::native_css::Computed>, radius: f32) -> f32 {
+    let themed = style.filter(|style| style.authored.border_width).map(|style| style.border_width);
+    themed.map_or(radius / 6.0, |width| width.min(radius)).max(1.0)
 }
 
 /// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step
