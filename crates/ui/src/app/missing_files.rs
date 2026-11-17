@@ -369,7 +369,8 @@ impl MissingFiles {
             Some(Ok(walked)) => {
                 let folder = walk.folder.display().to_string();
                 let before = self.found_count();
-                self.take(walked.found);
+                // A file the walk saw may have gone before it ended (a Search again since).
+                self.take(still_on_disk(walked.found));
                 let more = self.found_count().saturating_sub(before);
                 self.note = Some(match walked.note {
                     Some(note) => format!("{folder}: {note}"),

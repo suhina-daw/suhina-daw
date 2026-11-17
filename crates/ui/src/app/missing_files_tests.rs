@@ -269,6 +269,29 @@ fn search_again_is_not_lost_during_a_walk() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// A walk's finds are looked at on disk when it ends: a file it saw that has gone since is not
+/// offered.
+#[test]
+fn a_walk_s_finds_that_went_meanwhile_are_not_offered() {
+    let dir = temp("walk-gone");
+    let there = dir.join("Drums/kick.wav");
+    file(&there);
+    let (send, done) = channel();
+    let walk = Walk {
+        stop: Arc::new(AtomicBool::new(false)),
+        walked: Arc::new(AtomicUsize::new(0)),
+        done,
+        folder: dir.clone(),
+    };
+    let mut missing =
+        MissingFiles { rows: vec![row("kick.wav", "/gone/kick.wav")], walk: Some(walk), ..MissingFiles::default() };
+    let found = vec![("kick.wav".to_string(), vec![dir.join("Old/kick.wav"), there.clone()])];
+    send.send(Ok(Walked { found, note: None })).unwrap();
+    missing.wait_for_walk();
+    assert_eq!(missing.rows[0].candidates, vec![there]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// A sampler inside a device group names its file as one on the track does: changing it
 /// changes the key the list is rebuilt by.
 #[test]
