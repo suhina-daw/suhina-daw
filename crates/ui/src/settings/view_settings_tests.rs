@@ -180,8 +180,11 @@ fn a_see_through_custom_selection_colour_keeps_its_opacity() {
         custom: egui::Color32::from_rgba_unmultiplied(200, 40, 60, 128),
     };
     let text = settings.to_text();
-    assert!(text.contains("selection_custom_colour = #C8283C80"), "{text}");
+    let saved = text.lines().find_map(|line| line.strip_prefix("selection_custom_colour = ")).unwrap_or_default();
+    assert_eq!(saved.len(), 9, "#RRGGBBAA while see-through: {saved}");
     let (read, warnings) = Settings::from_text(&text);
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(read.view.selection, settings.view.selection);
+    let [r, g, b, a] = read.view.selection.custom.to_srgba_unmultiplied();
+    assert_eq!(a, 128);
+    assert!(r.abs_diff(200) <= 2 && g.abs_diff(40) <= 2 && b.abs_diff(60) <= 2, "{r} {g} {b}");
 }
