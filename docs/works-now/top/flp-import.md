@@ -29,3 +29,5 @@
   press Enter. A renamed plug-in still loads as itself.
 - **Notes stop at the instrument:** a plug-in effect after a track's instrument no longer gets
   the track's notes, so a compressor that MIDI notes can trigger no longer holds the sound down.
+- **Plug-in instruments at FL's level:** an imported plug-in generator's channel plays 3 dB
+  louder than before, as FL plays it; audio clip channels were already right.

@@ -346,6 +346,24 @@ These Spire instances store wrapper kind 15 with the same 21-byte header and exa
 chunk-size boundary as 12/13. Its payload is treated as an opaque VST2 bank chunk;
 acceptance is checked with the installed plug-in through the existing sandbox host.
 
+## Channel levels
+
+A source channel's volume (event 219, 0..12800) follows the level curve `(11^x - 1) / 10`
+and its pan a constant-power split, and both become a *Source level* Utility after the
+source's device. An audio clip's channel plays at unity at its default 78 % (the curve is
+divided by its value at 10000). A plug-in generator's channel plays its plug-in 3 dB
+(`sqrt 2`) above the curve: FL renders a wrapped instrument that much louder than the
+plug-in's own output times the curve.
+
+Authored-project observation (JMS2025, read-only, 2026-11-17), FL renders of one channel
+with its mixer effects bypassed, against Suhina's render of the same chain: the kick (an
+audio clip channel) matches within 0.1 dB; Serum (VST2, its own state) is 3.1 dB louder in
+FL and Sylenth1's init patch (same notes) 4.4 dB louder; raising the channel to 100 % adds
+9.8 dB (Serum, from 7613) and 5.2 dB (Sylenth1, from 10000), as the curve says; panning
+hard right raises that side 3.0 and 3.2 dB and keeps the total, a constant-power split.
+The plug-ins' hosted output, without the channel, is the same in Suhina's host as the
+render implies, so the difference is the channel's.
+
 ## Sidechains
 
 A mixer route at level 0 ("sidechain to this track") carries no sound: it is not

@@ -727,7 +727,14 @@ fn add_channel(
         channel.mute = false;
     }
     if kind != 5 {
-        let gain = level_gain(channel.volume * 12800.)? / if kind == 4 { level_gain(10000.)? } else { 1. };
+        // An audio clip's channel plays at unity at its default 78 %; a plug-in generator's channel
+        // plays its plug-in's output 3 dB above the level curve (`docs/spec/flp-model-mapping.md` ›
+        // Channel levels).
+        let gain = match kind {
+            4 => level_gain(channel.volume * 12800.)? / level_gain(10000.)?,
+            2 => level_gain(channel.volume * 12800.)? * std::f64::consts::SQRT_2,
+            _ => level_gain(channel.volume * 12800.)?,
+        };
         channel.devices.push(source_utility(gain, channel.pan));
         channel.volume = 1.;
         channel.pan = 0.;

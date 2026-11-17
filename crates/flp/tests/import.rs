@@ -1116,3 +1116,16 @@ fn a_sidechain_route_keys_the_plugin_that_picks_it_after_the_source_fader() {
     let imported = import_bytes(&sidechain_fixture(0).unwrap()).unwrap();
     assert!(imported.project.channel(bus).unwrap().devices.iter().all(|d| d.inputs.is_empty()));
 }
+
+/// A plug-in generator's channel plays its plug-in 3 dB above the level curve, as FL renders a
+/// wrapped instrument at its default 78 % centred (`docs/spec/flp-model-mapping.md` › Channel
+/// levels); a sampler channel stays on the curve.
+#[test]
+fn a_plug_in_generator_channel_plays_3_db_above_the_level_curve() {
+    let imported = import_bytes(&wrapper_fixture(false, false)).unwrap();
+    let channel = imported.project.channels.iter().find(|c| c.name == "Renamed source").unwrap();
+    let utility = channel.devices.iter().find(|d| d.name == "Source level").unwrap();
+    let gain = utility.params.iter().find(|p| p.id == "gain").unwrap().value;
+    let curve = 20. * ((11f64.powf(10000. / 12800.) - 1.) / 10.).log10();
+    assert!((gain - (curve + 20. * std::f64::consts::SQRT_2.log10())).abs() < 1e-9, "{gain} vs {curve}");
+}
