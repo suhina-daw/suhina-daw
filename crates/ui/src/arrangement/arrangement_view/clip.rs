@@ -1046,7 +1046,7 @@ pub(super) fn clip_box<'a>(
             state.beat_width,
             timeline,
             drawn_selected,
-            &state.clip_look(),
+            &state.clip_look_on(lane.track),
         );
     };
     let mut envelope_place = None;
@@ -1138,7 +1138,7 @@ pub(super) fn clip_box<'a>(
                         state.beat_width * factor as f32,
                         timeline,
                         drawn_selected,
-                        &state.clip_look(),
+                        &state.clip_look_on(lane.track),
                     );
                 }
                 None => paint_clip(
@@ -1152,7 +1152,7 @@ pub(super) fn clip_box<'a>(
                     state.beat_width,
                     timeline,
                     drawn_selected,
-                    &state.clip_look(),
+                    &state.clip_look_on(lane.track),
                 ),
             }
             None
@@ -1471,6 +1471,18 @@ pub(super) fn paint_clip(
     if bar.is_none() {
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, body);
     }
+    // The stretch of the body under the time selection, in the selection colour, as a selected
+    // clip's body is, its name bar kept (Settings › Appearance › Selection colour; with Clip's own
+    // colour the time selection is lit over the clips instead).
+    let time_fill = if off { None } else { look.time_lit.and_then(|_| crate::kit::selection::fill(&own)) };
+    let time_lit = look.time_lit.zip(time_fill).and_then(|((from, to), fill)| {
+        let x = egui::Rangef::new(x_of(from), x_of(to)).intersection(rect.x_range());
+        let top = bar.map_or(rect.top(), |bar| bar.bottom());
+        (x.span() > 0.0).then(|| (Rect::from_x_y_ranges(x, egui::Rangef::new(top, rect.bottom())), fill))
+    });
+    if let Some((lit, fill)) = time_lit {
+        painter.rect_filled(lit, 0.0, fill);
+    }
     crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
     let ink = ink_on(body);
     let edge_width = if selected { 4.0 } else { 3.0 };
@@ -1523,6 +1535,10 @@ pub(super) fn paint_clip(
     // that reads on it where theirs does not.
     let content_ink =
         if selection_fill.is_some() { crate::kit::selection::readable(content_ink, body) } else { content_ink };
+    let content_ink = match time_lit {
+        Some((_, fill)) => crate::kit::selection::readable(content_ink, fill),
+        None => content_ink,
+    };
     // A muted clip's notes and waveform step back, so the grey reads first.
     let content_ink = if off { motion::mix(body, content_ink, 0.6) } else { content_ink };
     let wave_ink = if ara_notes.is_some() { motion::mix(body, content_ink, 0.75) } else { content_ink };

@@ -254,8 +254,12 @@ over clips* on, a plain drag moves clips and Ctrl paints time.
 Ctrl (Cmd) held as the drag begins copies the clips instead (Shift when Ctrl selects time):
 they stay, and copies with contents of their own go where they are dropped (`clip.moveMany`
 with `copy`), the cursor showing the copy sign; while dragging, the originals stay drawn and the
-copies show where they will land. Dragging a selection draws every clip of it where it goes. A time selection is drawn in the accent over
-the clips with a line at each edge, and as a bar along the ruler.
+copies show where they will land. Dragging a selection draws every clip of it where it goes. A time selection is drawn in the
+selection colour ([Selection colour](#selection-colour)) over its tracks' rows, under their clips,
+and over the stretch of each clip's body under it, the clips' name bars keeping their own colour,
+with a line at each edge and a bar along the ruler; the take and automation lanes under the tracks
+are lit in `time-selection`'s colour. With Selection colour › Clip's own colour, and in one row
+of a stack, it is drawn in the accent over the clips instead.
 
 Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leaves the others
 where they were, an empty row between them staying until the rows above it empty too. A new clip

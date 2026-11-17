@@ -861,6 +861,58 @@ fn a_narrow_clip_draws_no_name_and_nothing_outside_itself() {
     assert!(shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "a wide clip shows its name");
 }
 
+/// The time selection over a clip's track lights the stretch of its body under it in the selection
+/// colour, under its name bar, as a selected clip's body is; the rest of the clip keeps its colour.
+#[test]
+fn the_time_selection_lights_a_clips_body_in_the_selection_colour() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let clip =
+        timeline.lanes.iter().flat_map(|l| l.clips.iter()).find(|c| !c.audio && c.length >= 4.0).cloned().unwrap();
+    let lane = timeline.lanes.iter().find(|l| l.clips.iter().any(|c| c.id == clip.id)).unwrap();
+    let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(20.0 * clip.length as f32, 60.0));
+    let fill = crate::kit::theme::studio("selection-background");
+    let lit = |time_lit: Option<(f64, f64)>| {
+        crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some("".into()), ..Default::default() });
+        let ctx = egui::Context::default();
+        let mut shown = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * 20.0;
+                let look = ClipLook { time_lit, ..ArrangementViewState::default().clip_look() };
+                paint_clip(
+                    ui.painter(),
+                    rect,
+                    lane,
+                    &clip,
+                    Shown::of(&clip),
+                    clip.start,
+                    &x_of,
+                    20.0,
+                    &timeline,
+                    false,
+                    &look,
+                );
+            });
+            output.textures_delta.clear();
+            shown = output.shapes;
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        shown
+            .into_iter()
+            .filter_map(|shape| match shape.shape {
+                egui::Shape::Rect(r) if r.fill == fill => Some(r.rect),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let shown = lit(Some((clip.start + 1.0, clip.start + 3.0)));
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!((shown[0].left(), shown[0].right()), (120.0, 160.0), "beats 1 to 3 of the clip");
+    assert!(shown[0].top() > rect.top(), "under the name bar");
+    assert!(lit(None).is_empty(), "no time selection, nothing lit");
+}
+
 /// The piano roll's time selection is lit on the clip it edits, where those beats of the content
 /// play from the clip's start, within the clip, and on no other clip.
 #[test]

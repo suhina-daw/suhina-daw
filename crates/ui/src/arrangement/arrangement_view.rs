@@ -1277,6 +1277,18 @@ fn show_lanes(
             .attr(crate::kit::element::Muted, lane.mute)
             .enter_against_plain(crate::kit::element::Checked, focus == Some(lane.track));
         lane_el.paint(&lanes_painter, row.clip.intersect(lanes_area));
+        // The time selection over this track's whole row, in the selection colour under its clips
+        // (the clips light the stretch of their bodies under it), so the grid shows through it.
+        if let Some(selection) =
+            state.time_selection.as_ref().filter(|s| s.row.is_none() && s.tracks.contains(&clips_lane.track))
+            && let Some(fill) = crate::kit::selection::fill(&lane_el)
+        {
+            let span = egui::Rangef::new(x_of(selection.start), x_of(selection.end)).intersection(time.x_range());
+            if span.span() > 0.0 {
+                let lit = Rect::from_x_y_ranges(span, row.clip.y_range()).intersect(lanes_area);
+                lanes_painter.rect_filled(lit, 0.0, fill.gamma_multiply(0.85));
+            }
+        }
         // A click on an empty spot of a lane clears the clip selection (arrangement-editing ›
         // Selecting clips). A double-click on an empty spot of a lane that holds clips makes a
         // one-bar clip there in the grid cell under the pointer (Alt: where the pointer is) — MIDI
@@ -1573,7 +1585,18 @@ fn show_lanes(
                 None => egui::Rangef::new(row.top(), row.bottom() + under + if joined { 1.0 } else { 0.0 }),
             };
             let lit = Rect::from_x_y_ranges(span, band);
-            lanes_painter.rect_filled(lit, 0.0, lit_fill);
+            // With a selection colour, the track's row is lit under its clips (above); only the
+            // take and automation lanes under it are lit here.
+            if selection.row.is_none()
+                && crate::kit::selection::look().mode != crate::kit::selection::SelectionColour::Own
+            {
+                let below = Rect::from_x_y_ranges(span, egui::Rangef::new(row.bottom(), band.max));
+                if below.height() > 0.0 {
+                    lanes_painter.rect_filled(below, 0.0, lit_fill);
+                }
+            } else {
+                lanes_painter.rect_filled(lit, 0.0, lit_fill);
+            }
             let edge = egui::Stroke::new(1.5, edge_ink);
             lanes_painter.vline(lit.left(), lit.y_range(), edge);
             lanes_painter.vline(lit.right(), lit.y_range(), edge);
