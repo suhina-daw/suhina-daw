@@ -1189,11 +1189,11 @@ fn the_ruler_loop_region_and_playhead_take_their_classes() {
 fn the_playhead_keeps_its_colour_when_the_clips_fill_the_style_tree() {
     use crate::arrangement::{arrangement_view, timeline};
     let mut project = crate::demo::demo_project();
-    // Every track's first clip, again on each beat for 400 beats: more clips in view than the
-    // style tree holds elements.
+    // Every track's first clip, again on each beat for 2000 beats: more clips in view than the
+    // style tree holds elements (a clip is one element of it, its parts read once per kind).
     for lane in project.arrangement.lanes.iter_mut().filter(|l| !l.clips.is_empty()) {
         let first = lane.clips[0].clone();
-        lane.clips = (0..400)
+        lane.clips = (0..2000)
             .map(|beat| suhina_engine::model::Clip {
                 id: suhina_engine::model::ClipId::NONE,
                 start: f64::from(beat),
@@ -1207,8 +1207,8 @@ fn the_playhead_keeps_its_colour_when_the_clips_fill_the_style_tree() {
     timeline.running = true;
     timeline.beat = 300.0;
     let mut state = arrangement_view::ArrangementViewState::default();
-    // A beat a point: the 400 beats fit in the view.
-    state.beat_width = 1.0;
+    // A fifth of a point a beat: the 2000 beats fit in the view.
+    state.beat_width = 0.2;
     let css = "playhead { color: #0000FF; }";
     let shapes = painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
     assert!(super::budget().nodes >= super::MAX_NODES, "the clips fill the style tree");
