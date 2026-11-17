@@ -179,6 +179,17 @@ pub fn decode_project_audio_found(project: &Project, project_dir: &Path, trusted
             want(&region.file, region.absolute_file.as_deref(), region.stream.is_some());
         }
     }
+    // A name played whole and by track is one file: an entry none of whose references resolved
+    // takes the file the other found.
+    let shared: Vec<(String, PathBuf)> =
+        wanted.iter().filter_map(|(key, candidates, _)| Some((key.clone(), candidates.first()?.clone()))).collect();
+    for (key, candidates, _) in &mut wanted {
+        if candidates.is_empty()
+            && let Some((_, file)) = shared.iter().find(|(name, _)| name == key)
+        {
+            candidates.push(file.clone());
+        }
+    }
 
     let next = AtomicUsize::new(0);
     let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 16).min(wanted.len().max(1));
