@@ -1183,6 +1183,43 @@ fn the_ruler_loop_region_and_playhead_take_their_classes() {
     );
 }
 
+/// The lines under the ruler and the loop bar run across the time area, where those rows are,
+/// and not through the header column's corner beside them (#1487 B10).
+#[test]
+fn the_ruler_and_loop_bar_lines_stay_in_the_time_area() {
+    use crate::arrangement::{arrangement_view, timeline};
+    let timeline = timeline::Timeline::build(&crate::demo::demo_project(), None);
+    let css = "ruler { background-color: #FF0000; } separator[kind=\"row\"] { color: #FF00FF; }";
+    for headers_left in [true, false] {
+        let mut state = arrangement_view::ArrangementViewState::default();
+        state.headers_left = headers_left;
+        let shapes = painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
+        let ruler = rects(&shapes).into_iter().find(|r| r.fill == egui::Color32::RED).expect("the ruler").rect;
+        // The two row lines under the ruler and the loop bar, above the first track.
+        let lines: Vec<egui::Rangef> = shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::LineSegment { points, stroke }
+                    if stroke.color == egui::Color32::from_rgb(0xFF, 0, 0xFF)
+                        && points[0].y == points[1].y
+                        && points[0].y < ruler.bottom() + 30.0 =>
+                {
+                    Some(egui::Rangef::new(points[0].x.min(points[1].x), points[0].x.max(points[1].x)))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(lines.len(), 2, "headers left: {headers_left}, {lines:?}");
+        for line in lines {
+            assert!(
+                line.min >= ruler.left() - 0.5 && line.max <= ruler.right() + 0.5,
+                "headers left: {headers_left}, {line:?} leaves the ruler's {:?}",
+                ruler.x_range()
+            );
+        }
+    }
+}
+
 #[test]
 fn a_clip_under_the_play_position_is_playing() {
     use crate::arrangement::{arrangement_view, timeline};

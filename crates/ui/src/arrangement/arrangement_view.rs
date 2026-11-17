@@ -754,9 +754,12 @@ fn show_lanes(
         widgets::text_in(&ruler_painter, label, Align2::LEFT_CENTER, &mark.text, font, tempo_ink);
     }
     let (row_line, band_line) = (line_color("row"), line_color("band"));
-    painter.hline(area.x_range(), ruler.bottom() + 0.5, theme::hairline(row_line));
+    // The lines between the ruler's rows stay in the time area, where the rows are; beside them
+    // the header column's corner holds its own controls (#1487 B10). The band under the marker
+    // row closes the whole top of the view, as the one over the fixed rows does.
+    painter.hline(time.x_range(), ruler.bottom() + 0.5, theme::hairline(row_line));
     painter.rect_filled(loop_row, 0.0, panel_surface());
-    painter.hline(area.x_range(), loop_row.bottom() + 0.5, theme::hairline(row_line));
+    painter.hline(time.x_range(), loop_row.bottom() + 0.5, theme::hairline(row_line));
     painter.rect_filled(marker_row, 0.0, panel_surface());
     painter.hline(area.x_range(), marker_row.bottom() + 0.5, theme::hairline(band_line));
 
