@@ -228,6 +228,37 @@ pub trait PluginProcessor: Send {
     fn followed(&mut self, events: &[(usize, NoteEvent)], how: Followed) {
         let _ = (events, how);
     }
+
+    /// How long the plug-in at `index` among the followers of the last joint block this one
+    /// sent ([`PluginProcessor::send_joint`]) took to process it, in microseconds, as its host
+    /// measured it, once that block is answered; `None` (the default) before that or when the
+    /// processor cannot tell (#1262). Never allocates.
+    fn follower_process_us(&self, index: usize) -> Option<u32> {
+        let _ = index;
+        None
+    }
+
+    /// The time a plug-in that followed in a joint block took to process it, in microseconds
+    /// ([`PluginProcessor::follower_process_us`] of the first), so it is counted with the
+    /// plug-in's own. Never allocates.
+    fn followed_process_us(&mut self, process_us: u32) {
+        let _ = process_us;
+    }
+}
+
+/// The slots of the plug-ins that followed in a joint block this plug-in sent and that was not
+/// answered in time: their processing times come with the late answer, which this plug-in's link
+/// holds until its next block goes (#1262).
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct LateFollowers {
+    pub(crate) slots: [usize; MAX_JOINED],
+    pub(crate) len: usize,
+}
+
+impl LateFollowers {
+    pub(crate) fn slots(&self) -> &[usize] {
+        self.slots.get(..self.len).unwrap_or_default()
+    }
 }
 
 /// What the engine needs to know about a plug-in device to place it in a chain: whether it
@@ -407,6 +438,10 @@ pub(crate) struct PluginSlot {
     pub(crate) sent_at: Option<Instant>,
     /// The parameter values it sends: set ones and automation.
     pub(crate) params: SlotParams,
+    /// The followers of its last joint block, while that block's late answer has not given
+    /// their processing times yet. Boxed, as it is seldom used, and made with the slot, so the
+    /// audio thread only reads and writes it in place.
+    pub(crate) late_followers: Box<LateFollowers>,
 }
 
 impl PluginSlot {
@@ -418,6 +453,8 @@ impl PluginSlot {
         self.instrument = fresh.instrument;
         self.latency = fresh.latency;
         self.params.adopt(&mut fresh.params);
+        // The slots it remembered may have moved with the edit.
+        self.late_followers.len = 0;
         if fresh.processor.is_some() {
             std::mem::swap(&mut self.processor, &mut fresh.processor);
             self.params.restart();

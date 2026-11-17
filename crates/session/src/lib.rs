@@ -1029,6 +1029,12 @@ impl Session {
         self.plugins.report(key)
     }
 
+    /// The report of the plug-in device with key `key` ([`suhina_engine::plugin_key`]), such as
+    /// the one the engine names as missing the most blocks.
+    pub fn plugin_report_by_key(&mut self, key: u64) -> Option<PluginReport> {
+        self.plugins.report(key)
+    }
+
     /// The report of the plug-in device at `path` on `track`, inside device groups too.
     pub fn plugin_report_at(&mut self, track: suhina_model::TrackId, path: &[usize]) -> Option<PluginReport> {
         let key = plugin_key_at_path(&self.project, track, path)?;

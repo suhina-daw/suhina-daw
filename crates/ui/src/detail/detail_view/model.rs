@@ -251,6 +251,11 @@ impl PluginBox {
                 if report.late_blocks > 0 && report.blocks > 0 {
                     let percent = (u64::from(report.late_blocks) * 100 / u64::from(report.blocks)).max(1);
                     line.push_str(&format!(" · {percent}% of blocks late"));
+                    // The plug-in's own longest time, as its host measured it (#1262): close to
+                    // the deadline, the plug-in is slow; far under it, its host woke late.
+                    if report.longest_process_us > 0 {
+                        line.push_str(&format!(" · plug-in up to {}", duration_text(report.longest_process_us)));
+                    }
                 }
                 (PluginState::Running, line)
             }
@@ -1006,5 +1011,15 @@ pub(super) fn group_box(
                     .collect(),
             })
             .collect(),
+    }
+}
+
+/// `us` microseconds as the device panel shows a time: whole milliseconds from 10 ms, one decimal
+/// below that, microseconds under 1 ms.
+pub(super) fn duration_text(us: u32) -> String {
+    match us {
+        0..1_000 => format!("{us} µs"),
+        1_000..10_000 => format!("{:.1} ms", f64::from(us) / 1000.0),
+        _ => format!("{} ms", (u64::from(us) + 500) / 1000),
     }
 }

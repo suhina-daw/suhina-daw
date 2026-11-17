@@ -81,6 +81,7 @@ impl SlotFactory<'_> {
             busy: 0,
             longest_us: 0,
             sent_at: None,
+            late_followers: Box::default(),
             params: SlotParams::new(
                 stored,
                 self.frames_per_beat,

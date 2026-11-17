@@ -42,7 +42,12 @@ raises its version and adds a row here.
 | 17 | `get_params` marks a parameter whose values are a list of choices (`list`: VST3 `kIsList`, CLAP `CLAP_PARAM_IS_ENUM`), so automation holds only switches and lists (#1482) |
 
 **Block region** (`ipc::region`): 2, events as fixed 16-byte records with their frame; 3, the
-block's followers ([plug-in hosting](plugin-hosting.md) › One round trip). **ARA audio source**
+block's followers ([plug-in hosting](plugin-hosting.md) › One round trip); 4, how long each
+instance took to process the block, in microseconds, as the host's audio thread measured it
+(#1262): the link's own instance in a header word beside the response, on the host's cache line,
+and the followers' in an area of 63 words after the followers list, in their order. The host
+writes them before it sets the response; the engine reads them once the response answers the
+block it sent, also for a block it gave up on, until it sends the next one. **ARA audio source**
 (`ipc::source`): 1. **Plug-in catalog** (`plugin-catalog.json`): 3 keeps when each file was last
 read; a catalog in format 2 is read as it is.
 

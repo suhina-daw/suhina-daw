@@ -53,7 +53,10 @@ const NOT_HELD: u64 = u64::MAX;
 /// (see `track_gains`); the track's real gains apply after the chain, divided by this.
 pub(crate) const CHAIN_INPUT_GAIN: f32 = 0.25;
 
-/// One device of a chain: built in, or a plug-in in a host process.
+/// One device of a chain: built in, or a plug-in in a host process. A plug-in's slot is kept
+/// inline, larger than the others: chains hold a few slots each, built off the audio thread, and
+/// the audio thread reaches a plug-in's state without another pointer.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum DeviceSlot {
     Device(Box<dyn Device>),
     /// A built-in MIDI effect: it changes the chain's events, not its sound.
@@ -1406,6 +1409,7 @@ fn send_plugins(
     alone: bool,
 ) -> (Sent, usize) {
     let mut members = [0u32; MAX_JOINED];
+    late_follower_times(slots, at);
     // A clip host runs on its own: its output is scaled and mixed before the next plug-in (#990).
     if alone {
         joined.len = 0;
@@ -1417,7 +1421,11 @@ fn send_plugins(
     {
         let followers = members.get(..joined.len).unwrap_or_default();
         match first.send_joint(span, events, followers, deadline) {
-            Sent::Out => return (Sent::Out, at + 1),
+            Sent::Out => {
+                // A late answer that came after `late_follower_times` looked is gone now.
+                first.late_followers.len = 0;
+                return (Sent::Out, at + 1);
+            }
             Sent::Refused => {
                 let next = joined.indices().last().map_or(at + 1, |last| last + 1);
                 for &index in joined.indices() {
@@ -1433,7 +1441,13 @@ fn send_plugins(
     }
     joined.len = 0;
     match slots.get_mut(at) {
-        Some(DeviceSlot::Plugin(plugin)) => (plugin.send(span, events, deadline), at + 1),
+        Some(DeviceSlot::Plugin(plugin)) => {
+            let sent = plugin.send(span, events, deadline);
+            if sent == Sent::Out {
+                plugin.late_followers.len = 0;
+            }
+            (sent, at + 1)
+        }
         _ => (Sent::Unsupported, at + 1),
     }
 }
@@ -1455,6 +1469,15 @@ fn collect_plugins(
     };
     let how = if answered { Followed::Answered } else { Followed::Late };
     let next = joined.indices().last().map_or(at + 1, |last| last + 1);
+    if answered {
+        follower_times(slots, at, joined.indices());
+    } else if let Some(DeviceSlot::Plugin(first)) = slots.get_mut(at) {
+        // Their times come with the late answer ([`late_follower_times`]).
+        for (to, from) in first.late_followers.slots.iter_mut().zip(joined.indices()) {
+            *to = *from;
+        }
+        first.late_followers.len = joined.len.min(MAX_JOINED);
+    }
     for &index in joined.indices() {
         if let Some(DeviceSlot::Plugin(plugin)) = slots.get_mut(index) {
             plugin.followed(span, events, how);
@@ -1462,6 +1485,41 @@ fn collect_plugins(
     }
     joined.len = 0;
     next
+}
+
+/// Hands each plug-in at `followers` (slot indices, in the joint block's order) the time it took
+/// to process the answered joint block the plug-in at `at` sent, as the host measured it
+/// (#1262). Never allocates.
+fn follower_times(slots: &mut [DeviceSlot], at: usize, followers: &[usize]) {
+    for (position, &index) in followers.iter().enumerate() {
+        let time = match slots.get(at) {
+            Some(DeviceSlot::Plugin(first)) => first.processor.as_ref().and_then(|p| p.follower_process_us(position)),
+            _ => None,
+        };
+        if let (Some(time), Some(DeviceSlot::Plugin(plugin))) = (time, slots.get_mut(index))
+            && let Some(processor) = plugin.processor.as_mut()
+        {
+            processor.followed_process_us(time);
+        }
+    }
+}
+
+/// Before the plug-in at `at` sends its next block: when its last joint block was late and its
+/// answer has come since, the plug-ins that followed in it get their processing times from it.
+/// Once a new block goes they are gone with the old answer, so they are let go of then too.
+/// Never allocates.
+fn late_follower_times(slots: &mut [DeviceSlot], at: usize) {
+    let Some(DeviceSlot::Plugin(first)) = slots.get_mut(at) else { return };
+    if first.late_followers.len == 0 {
+        return;
+    }
+    let answered = first.processor.as_ref().is_some_and(|p| p.follower_process_us(0).is_some());
+    if answered {
+        // Copied out, in place: nothing is allocated.
+        let late = *first.late_followers;
+        first.late_followers.len = 0;
+        follower_times(slots, at, late.slots());
+    }
 }
 
 /// What [`Chain::place`] did with a processor.

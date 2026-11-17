@@ -1970,6 +1970,8 @@ pub(crate) fn plugin_json(report: Option<crate::PluginReport>) -> Value {
         "late_blocks": report.late_blocks,
         "longest_us": report.longest_us,
         "no_time": report.no_time,
+        "longest_process_us": report.longest_process_us,
+        "average_process_us": report.average_process_us,
         "state_refused": report.state_refused,
         "ara": report.ara,
     })

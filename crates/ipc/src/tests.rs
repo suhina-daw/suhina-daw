@@ -281,7 +281,7 @@ fn a_block_names_the_instances_that_run_it_after_the_links_own() {
         let mut served = Served::open(&address).unwrap_or_else(|e| panic!("{e}"));
         let mut seen = Vec::new();
         while seen.len() < 3 {
-            served.serve_joint(LONG, |input, _, followers, output| {
+            served.serve_joint(LONG, |input, _, followers, output, _| {
                 let runs = 1.0 + followers.len() as f32;
                 for (o, i) in output.iter_mut().zip(input) {
                     *o = *i + runs;
@@ -421,4 +421,87 @@ fn a_wait_over_two_links_wakes_for_the_second() {
 #[test]
 fn a_wait_over_more_links_than_one_wait_takes_wakes_for_the_last() {
     a_wait_wakes_for_the_last_of(64);
+}
+
+/// A clock that moves only when it is read (by `STEP`) or when a test moves it, shared with the
+/// test.
+struct Stepping(Arc<std::sync::atomic::AtomicU64>);
+
+const STEP: u64 = 10;
+
+impl Clock for Stepping {
+    fn now_us(&mut self) -> u64 {
+        self.0.fetch_add(STEP, Ordering::Relaxed) + STEP
+    }
+}
+
+/// #1262: the host times the link's own instance and each follower of a joint block, and the
+/// engine reads each time back with the answer: here every part moves the clock by an amount
+/// of its own, so a time in the wrong place would show.
+#[test]
+fn a_joint_block_answers_with_each_instances_processing_time() {
+    let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
+    let address = link.address();
+    assert_eq!(link.process_us(), None, "nothing sent yet");
+    let host = thread::spawn(move || {
+        let mut served = Served::open(&address).unwrap_or_else(|e| panic!("{e}"));
+        let now = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        served.set_clock(Box::new(Stepping(Arc::clone(&now))));
+        let mut blocks = 0;
+        while blocks < 2 {
+            if served.serve_joint(LONG, |_, _, followers, _, laps| {
+                laps.own(|| now.fetch_add(100, Ordering::Relaxed));
+                for index in 0..followers.len() {
+                    laps.follower(index, || now.fetch_add(1000 * (index as u64 + 1), Ordering::Relaxed));
+                }
+            }) {
+                blocks += 1;
+            }
+        }
+    });
+    let input = vec![0.0; BLOCK * 2];
+    let mut output = vec![0.0; BLOCK * 2];
+    assert!(link.send_joint(&input, &[], &[4, 5], output.len()));
+    assert_eq!(link.wait(&mut output, Instant::now() + LONG), Outcome::Done);
+    // Each part took its own amount plus one step of the clock (the second reading).
+    assert_eq!(link.process_us(), Some(100 + STEP as u32));
+    assert_eq!(link.follower_process_us(0), Some(1000 + STEP as u32));
+    assert_eq!(link.follower_process_us(1), Some(2000 + STEP as u32));
+    assert_eq!(link.follower_process_us(MAX_FOLLOWERS), None);
+    // Not answered yet: nothing to read; then the new block's own time.
+    assert!(link.send_with_events(&input, &[], output.len()));
+    assert_eq!(link.wait(&mut output, Instant::now() + LONG), Outcome::Done);
+    assert_eq!(link.process_us(), Some(100 + STEP as u32));
+    assert!(host.join().is_ok());
+}
+
+/// #1262: `serve` and `serve_with_events` time the whole block as the link's own instance's.
+#[test]
+fn a_plain_block_is_timed_as_the_links_own() {
+    let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
+    let address = link.address();
+    let host = thread::spawn(move || {
+        let mut served = Served::open(&address).unwrap_or_else(|e| panic!("{e}"));
+        let now = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        served.set_clock(Box::new(Stepping(Arc::clone(&now))));
+        while !served.serve(LONG, |_, _| {
+            now.fetch_add(500, Ordering::Relaxed);
+        }) {}
+    });
+    let input = vec![0.0; BLOCK * 2];
+    let mut output = vec![0.0; BLOCK * 2];
+    assert!(link.send_with_events(&input, &[], output.len()));
+    assert_eq!(link.process_us(), None, "not answered yet");
+    assert_eq!(link.wait(&mut output, Instant::now() + LONG), Outcome::Done);
+    assert_eq!(link.process_us(), Some(500 + STEP as u32));
+    assert!(host.join().is_ok());
+}
+
+/// A region made by the version before (3, without the processing times) is refused, as any
+/// other version is.
+#[test]
+fn a_region_of_the_version_before_is_refused() {
+    let region = region::Region::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
+    region.set_version(3);
+    assert!(matches!(Served::open(region.address()), Err(IpcError::BadLink("made by another version"))));
 }

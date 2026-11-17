@@ -292,6 +292,19 @@ impl PluginAudio {
         self.note(outcome);
     }
 
+    /// How long the plug-in itself took to process the last block sent, in microseconds, as its
+    /// host measured it (#1262); `None` until the host has answered that block, so a block given
+    /// up on reads its time once its late answer has come. Real-time safe.
+    pub fn process_us(&self) -> Option<u32> {
+        self.link.process_us()
+    }
+
+    /// [`PluginAudio::process_us`] for the plug-in at `index` among the followers of the last
+    /// joint block sent ([`PluginAudio::send_joint`]), in the order given. Real-time safe.
+    pub fn follower_process_us(&self, index: usize) -> Option<u32> {
+        self.link.follower_process_us(index)
+    }
+
     /// Whether the block sent with [`PluginAudio::send`] has been answered, waiting for it at
     /// most until `until`, without taking it ([`Link::wait_answered`]): after `true`,
     /// [`PluginAudio::finish`] takes the result without waiting. Counts nothing. Real-time safe.
