@@ -96,7 +96,7 @@ pub(super) fn toolbar(
     let (Some(step), Some(items)) = (Step::ALL.get(chosen).copied(), candidates.get(chosen)) else { return };
     let selected = !state.acting().is_empty();
     let mut rows = [None; 3];
-    let mut rows_group = None;
+    let mut row_groups = [None; 2];
     // What the controls take as input stops at the toolbar's edge, as what they paint does.
     let outer_clip = ui.clip_rect();
     ui.set_clip_rect(outer_clip.intersect(rect));
@@ -109,7 +109,11 @@ pub(super) fn toolbar(
                 let ink = line.color();
                 painter.vline(area.center().x, area.top() + 2.0..=area.bottom() - 2.0, theme::hairline(ink));
             }
-            "group" => rows_group = Some(area),
+            "group" => {
+                if let Some(slot) = ROW_GROUPS.iter().position(|g| *g == id).and_then(|at| row_groups.get_mut(at)) {
+                    *slot = Some(area);
+                }
+            }
             _ if item.parent.is_some() => {
                 let slot = ROWS.iter().position(|(button, _)| button.id() == id).and_then(|at| rows.get_mut(at));
                 if let Some(slot) = slot {
@@ -179,8 +183,8 @@ pub(super) fn toolbar(
             },
         }
     }
-    if let Some(group) = rows_group {
-        rows_toggles(ui, &painter, group, &rows, step < Step::Icons, cx, state, actions);
+    if row_groups.iter().any(Option::is_some) {
+        rows_toggles(ui, &painter, &row_groups, &rows, step < Step::Icons, cx, state, actions);
     }
     ui.set_clip_rect(outer_clip);
 }
@@ -241,10 +245,14 @@ fn items(step: Step, w: &Widths, lit: &dyn Fn(IconButton) -> bool) -> Vec<crate:
     items.push(button(IconButton::MidiTools));
     if step < Step::Squeezed {
         items.push(separator());
-        let group = items.len();
-        // The group's height is its toggles' (the sheet can set one of its own).
-        items.push(Item::named("group", "piano-roll-rows"));
-        for ((toggle, _), width) in ROWS.iter().zip(w.rows) {
+        // Each group's height is its toggles' (the sheet can set one of its own).
+        let mut group = 0;
+        for (index, ((toggle, _), width)) in ROWS.iter().zip(w.rows).enumerate() {
+            let at = ROW_GROUP.get(index).copied().unwrap_or(0);
+            if index == 0 || ROW_GROUP.get(index - 1) != Some(&at) {
+                group = items.len();
+                items.push(Item::named("group", ROW_GROUPS.get(at).copied().unwrap_or("piano-roll-rows")));
+            }
             let width = if step < Step::Icons { width.0 } else { width.1 };
             items.push(Item::named("piano-tool", toggle.id()).width(width).height(w.rows_height).in_group(group));
         }
@@ -375,9 +383,16 @@ fn chevron(painter: &egui::Painter, at: Pos2, color: Color32) {
     ));
 }
 
-/// The words of the Rows group: Fold, Scale (the clip's scale switch) and Highlight.
+/// The words of the Rows toggles: Fold, Scale (the clip's scale switch) and Highlight.
 const ROWS: [(IconButton, &str); 3] =
     [(IconButton::Fold, "Fold"), (IconButton::Scale, "Scale"), (IconButton::Highlight, "Highlight")];
+
+/// The framed groups the Rows toggles stand in, by id: Fold and Scale choose how the rows fold,
+/// together; Highlight turns on its own, so it has a group of its own (#1487 L10).
+const ROW_GROUPS: [&str; 2] = ["piano-roll-rows", "piano-roll-highlight"];
+
+/// Which of [`ROW_GROUPS`] each of [`ROWS`] stands in.
+const ROW_GROUP: [usize; 3] = [0, 0, 1];
 
 /// The width of one of the Rows group's toggles `height` tall: its icon, a square as tall as the
 /// toggle ([`row_toggle`] draws it so), and its word when `word`.
@@ -388,15 +403,16 @@ pub(super) fn row_toggle_width(ui: &Ui, height: f32, word: Option<&str>) -> f32 
     }
 }
 
-/// The Rows group in `group`, framed: Fold, Scale and Highlight in `toggles`, each lit while on,
-/// as an icon and a word or, when `words` is off, the icon alone (its tooltip names it). Fold shows
-/// the rows with notes, or the scale's while the clip has one; Scale is the clip's scale switch,
-/// the same as the clip panel's; Highlight tints the scale's rows (› Scale and key).
+/// The Rows groups in `groups` ([`ROW_GROUPS`]), each framed: Fold and Scale in the first,
+/// Highlight in the second, from `toggles`, each lit while on, as an icon and a word or, when
+/// `words` is off, the icon alone (its tooltip names it). Fold shows the rows with notes, or the
+/// scale's while the clip has one; Scale is the clip's scale switch, the same as the clip panel's;
+/// Highlight tints the scale's rows (› Scale and key).
 #[allow(clippy::too_many_arguments)]
 fn rows_toggles(
     ui: &Ui,
     painter: &egui::Painter,
-    group: Rect,
+    groups: &[Option<Rect>; 2],
     toggles: &[Option<Rect>; 3],
     words: bool,
     cx: ToolbarCx<'_>,
@@ -404,9 +420,6 @@ fn rows_toggles(
     actions: &mut Vec<Action>,
 ) {
     let clip = cx.clip;
-    let element = crate::kit::element::GROUP.id("piano-roll-rows").attribute("kind", "piano-roll-rows").enter();
-    element.paint(painter, group);
-    painter.rect_stroke(group, 4.0, theme::hairline(element.border()), StrokeKind::Inside);
     // Fold folds to the notes, Scale to the clip's scale: each lit while the rows are folded its way.
     let folded = state.fold == Fold::Notes;
     let scaled = state.fold == Fold::Scale && clip.scale.is_some();
@@ -416,7 +429,22 @@ fn rows_toggles(
         "Highlight scale: tints the rows of the clip's scale and marks its keys",
     ];
     let ons = [folded, scaled, state.highlight_scale];
+    // Each group is in scope while its toggles are drawn, so the sheet's rules for a toggle in it
+    // reach them.
+    let mut element = None;
     for (index, ((button, word), rect)) in ROWS.iter().zip(toggles).enumerate() {
+        let at = ROW_GROUP.get(index).copied().unwrap_or(0);
+        if index == 0 || ROW_GROUP.get(index - 1) != Some(&at) {
+            drop(element.take());
+            let Some(group) = groups.get(at).copied().flatten() else { continue };
+            let id = ROW_GROUPS.get(at).copied().unwrap_or_default();
+            let entered = crate::kit::element::GROUP.id(id).attribute("kind", id).enter();
+            entered.paint(painter, group);
+            painter.rect_stroke(group, 4.0, theme::hairline(entered.border()), StrokeKind::Inside);
+            element = Some((entered, group));
+        }
+        let Some((element, group)) = element.as_ref() else { continue };
+        let group = *group;
         // A toggle the sheet hides is gone; the others keep their own places.
         let Some(rect) = rect else { continue };
         let on = ons.get(index).copied().unwrap_or(false);

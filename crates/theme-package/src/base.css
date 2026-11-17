@@ -428,13 +428,13 @@ piano-range, piano-time-selection { accent-color: var(--accent); }
 piano-insert-mark { background-color: var(--text-primary); }
 piano-clip-strip { color: var(--text-primary); }
 piano-clip-strip[selected] { color: var(--text-inverse); }
-group[kind="piano-roll-rows"] { border-color: var(--border-strong); }
+group[kind="piano-roll-rows"], group[kind="piano-roll-highlight"] { border-color: var(--border-strong); }
 piano-roll-toolbar separator[kind="bar"] { color: var(--border-strong); }
 piano-tool { color: var(--text-secondary); }
 piano-tool[checked] { color: var(--text-primary); background-color: var(--control-activeBackground); }
 piano-tool:hover { background-color: var(--control-hoverBackground); }
 piano-tool:disabled { color: var(--text-hint); }
-group[kind="piano-roll-rows"] piano-tool:hover { color: var(--text-primary); }
+group[kind="piano-roll-rows"] piano-tool:hover, group[kind="piano-roll-highlight"] piano-tool:hover { color: var(--text-primary); }
 piano-roll-toolbar bar-item[kind="menu"] { color: var(--text-secondary); }
 piano-roll-toolbar bar-item[kind="menu"][muted] { color: var(--text-hint); }
 piano-roll-toolbar bar-item[kind="menu"][checked] { color: var(--text-primary); }

@@ -127,6 +127,7 @@ pub const GROUP_IDS: &[&str] = &[
     "app-bar-centre",
     "app-bar-end",
     "piano-roll-rows",
+    "piano-roll-highlight",
     "mixer-body",
     "mixer-output",
     "mixer-input",
