@@ -299,13 +299,13 @@ impl Skin {
                     } else {
                         warnings.push("invalid embedded background PNG".into());
                     }
-                } else if asset_path(&source.replace(".png", ".svg")) && source.ends_with(".png") {
+                } else if suhina_style::property::backdrop_path(&format!("url({source})")) == Some(source) {
                     skin.background = Some(Arc::from(source));
                 } else {
-                    warnings.push("background must be a relative PNG path or embedded PNG".into());
+                    warnings.push("background must be a relative PNG, JPEG or WebP path or an embedded PNG".into());
                 }
             } else {
-                warnings.push("background must be a PNG path".into());
+                warnings.push("background must be a picture's path".into());
             }
         }
         for (key, slot) in

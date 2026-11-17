@@ -795,7 +795,7 @@ toolbar or window layout.
 Host rules the app reads itself, beside the engine: `meter` accepts `style`, `segments`
 and `intensity`; `image` declarations name package-relative SVG/PNG artwork or Suhina's own
 (`url("suhina:knob.body.svg")`), on the element that draws it with its state (*The user-agent
-sheet*) or on a role; `window` accepts a relative PNG `background-image`, `background-opacity` and
+sheet*) or on a role; `window` accepts a relative PNG, JPEG or WebP `background-image`, `background-opacity` and
 `background-blur` (0–100). The toolbar's `order`, `hidden` and offsets are
 read only from a sheet of an earlier version, when it is migrated (`order` and `hidden` as
 comma-separated module lists), and Suhina writes them to `theme.json`. In a current `theme.css`
@@ -902,7 +902,7 @@ set on the element they belong to and read from its computed style (`SETTINGS` i
 `theme_vars.rs`): `meter { meter-style; meter-segments; meter-intensity; }`, `window {
 artwork-fps; liquid; panel-gradient; track-gradient; clip-gradient; backdrop-image;
 backdrop-opacity; backdrop-blur; }` (`liquid` is `auto` or three strengths, a gradient `none` or
-`<angle>deg, <colour> <position>%, ...`, `backdrop-image` `none` or `url("<file>.png")`) and
+`<angle>deg, <colour> <position>%, ...`, `backdrop-image` `none` or `url("<file>.png")`, `.jpg`, `.jpeg` or `.webp`) and
 `session { track-width; return-width; scene-width; slot-height; header-height; }` (`auto` or a
 length). The custom properties that held them before (`--meter-style`, `--session-track-width`,
 …) are not read; a sheet that sets one gets a notice naming the rule that replaces it. A theme
@@ -1432,8 +1432,10 @@ audio track while the audio device has no input says so in the status bar.
   clears to the panel colour over black, opaque.
 - **Variants:** a theme read again is read with the whole list; a variant in use whose file is
   gone gives way to its theme.
-- **Background pictures:** a PNG of up to 64 MiB and 8192 pixels a side is read; one over 8 MiB
-  or 4 megapixels is scaled down to fit 2560 by 1600 and written again as PNG.
+- **Background pictures:** a PNG, JPEG or WebP picture of up to 64 MiB and 8192 pixels a side is
+  read (by its first bytes, whatever its name); a PNG over 8 MiB or 4 megapixels is scaled down to
+  fit 2560 by 1600 and written again as PNG, and a JPEG or WebP photo is always written as a PNG,
+  scaled down further while that PNG would be over 8 MiB (#1487 F1).
 - **Device panels:** `width` on `device` or `#device-<id>` (120–1600); a container's
   background (a device panel, Settings, a dialog, a view) is not mapped onto egui's widget
   fills. Parameter sliders draw from `slider-rail` (`height`), `slider-fill` and

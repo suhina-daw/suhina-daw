@@ -31,6 +31,28 @@ const VERSION: u64 = 1;
 /// A style sheet or an SVG is at most this big, as the app reads them.
 pub const MAX_TEXT: usize = 128 * 1024;
 /// A PNG is at most this big.
+/// The kind of picture a file named `lower` (in lower case) is by its extension: a PNG, or a
+/// JPEG or WebP photo a theme's `backdrop-image` may name (#1487 F1).
+pub fn picture(lower: &str) -> Option<&'static str> {
+    [(".png", "PNG"), (".jpg", "JPEG"), (".jpeg", "JPEG"), (".webp", "WebP")]
+        .into_iter()
+        .find(|(extension, _)| lower.ends_with(extension))
+        .map(|(_, kind)| kind)
+}
+
+/// The kind of picture `bytes` hold by their signature, as [`picture`] names them.
+pub fn picture_kind(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("PNG")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("JPEG")
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        Some("WebP")
+    } else {
+        None
+    }
+}
+
 pub const MAX_PNG: usize = 8 * 1024 * 1024;
 /// Any other file (a README, say) is at most this big.
 const MAX_OTHER: usize = 1024 * 1024;
@@ -194,7 +216,7 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
         let lower = path.to_ascii_lowercase();
         let limit = if lower.ends_with(".css") || lower.ends_with(".svg") {
             MAX_TEXT
-        } else if lower.ends_with(".png") {
+        } else if picture(&lower).is_some() {
             MAX_PNG
         } else if path == meta::FILE {
             MAX_META
@@ -217,9 +239,9 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
             if path == meta::THUMBNAIL {
                 meta::is_sixteen_by_nine(doc.root_element())?;
             }
-        } else if lower.ends_with(".png") {
-            if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-                return Err(format!("{path}: not a PNG image"));
+        } else if let Some(kind) = picture(&lower) {
+            if picture_kind(bytes) != Some(kind) {
+                return Err(format!("{path}: not a {kind} image"));
             }
         } else if lower.ends_with(".json") {
             serde_json::from_slice::<serde_json::Value>(bytes).map_err(|e| format!("{path}: {e}"))?;

@@ -494,3 +494,21 @@ fn image_rules_read_selector_lists_and_skip_comments_and_at_rules() {
                f { image: url(f.svg); }";
     assert_eq!(image_rules(css), vec![("e".to_owned(), "e.svg".to_owned()), ("f".to_owned(), "f.svg".to_owned())]);
 }
+
+/// A theme's background may be a JPEG or a WebP photo as well as a PNG, whose first bytes must
+/// say the kind its name does (#1487 F1).
+#[test]
+fn a_jpeg_or_webp_background_is_read_when_its_bytes_say_so() {
+    let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10].to_vec();
+    let webp = b"RIFF\x10\x00\x00\x00WEBPVP8L".to_vec();
+    for (path, bytes) in [("photo.jpg", &jpeg), ("photo.jpeg", &jpeg), ("photo.webp", &webp)] {
+        let mut files = theme();
+        files.insert(path.into(), bytes.clone());
+        assert!(validate(&files).is_ok(), "{path}");
+    }
+    let mut files = theme();
+    files.insert("photo.jpg".into(), webp.clone());
+    assert!(validate(&files).unwrap_err().contains("not a JPEG image"));
+    assert_eq!(picture("art/photo.webp"), Some("WebP"));
+    assert_eq!(picture("art/photo.gif"), None);
+}

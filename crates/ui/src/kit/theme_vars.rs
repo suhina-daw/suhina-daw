@@ -312,7 +312,9 @@ pub fn apply_core(theme: &mut Theme, values: &BTreeMap<String, String>) -> Vec<S
                     skin.background = Some(Arc::from(path))
                 }
                 Some(_) => {}
-                None => warnings.push(format!("backdrop-image: {image} is not url(\"<file>.png\")")),
+                None => {
+                    warnings.push(format!("backdrop-image: {image} is not url(\"<file>.png\"), .jpg, .jpeg or .webp"))
+                }
             },
         }
     }

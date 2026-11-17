@@ -28,44 +28,62 @@ pub fn decode(source: &str) -> Result<image::RgbaImage, String> {
     reader(&bytes).decode().map(|image| image.to_rgba8()).map_err(|error| format!("invalid artwork PNG: {error}"))
 }
 
-/// A background PNG brought within the theme's limits: one larger than 8 MiB or 4 megapixels (a
-/// 4K wallpaper) is scaled down to fit 2560 by 1600 and written again; one already within them is
-/// kept as it is. Up to 64 MiB and 8192 pixels a side are read.
+/// The decoder for `bytes` by their signature: a PNG, a JPEG or a WebP picture, else `None`.
+pub fn picture_format(bytes: &[u8]) -> Option<image::ImageFormat> {
+    match suhina_theme_package::picture_kind(bytes)? {
+        "PNG" => Some(image::ImageFormat::Png),
+        "JPEG" => Some(image::ImageFormat::Jpeg),
+        "WebP" => Some(image::ImageFormat::WebP),
+        _ => None,
+    }
+}
+
+/// A theme's background picture brought within its limits, as a PNG: a PNG larger than 8 MiB or
+/// 4 megapixels (a 4K wallpaper) is scaled down to fit 2560 by 1600 and written again, one
+/// already within them is kept as it is; a JPEG or WebP photo (#1487 F1) is always written as a
+/// PNG, scaled down further while the PNG would be larger than 8 MiB. Up to 64 MiB and 8192
+/// pixels a side are read.
 pub fn fit_background(bytes: &[u8]) -> Result<Vec<u8>, String> {
     const MAX_FILE: usize = 64 * 1024 * 1024;
-    if bytes.len() > MAX_FILE || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return Err("the background must be a PNG of at most 64 MiB".into());
-    }
-    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Png);
+    let format = picture_format(bytes)
+        .filter(|_| bytes.len() <= MAX_FILE)
+        .ok_or("the background must be a PNG, JPEG or WebP picture of at most 64 MiB")?;
+    let png = format == image::ImageFormat::Png;
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(8192);
     limits.max_image_height = Some(8192);
     limits.max_alloc = Some(300 * 1024 * 1024);
     reader.limits(limits.clone());
-    let within = bytes.len() <= super::skin::MAX_PNG;
+    let within = png && bytes.len() <= super::skin::MAX_PNG;
     let (width, height) = match reader.into_dimensions() {
         Ok(size) => size,
         // Within the limits it is kept as it was; drawing it says when it does not read.
         Err(_) if within => return Ok(bytes.to_vec()),
-        Err(error) => return Err(format!("the background PNG does not read: {error}")),
+        Err(error) => return Err(format!("the background picture does not read: {error}")),
     };
     if within && u64::from(width) * u64::from(height) <= 4 * 1024 * 1024 {
         return Ok(bytes.to_vec());
     }
-    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Png);
+    let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
     reader.limits(limits);
-    let image = reader.decode().map_err(|error| format!("the background PNG does not read: {error}"))?;
-    let scale = (2560.0 / f64::from(width)).min(1600.0 / f64::from(height)).min(1.0);
-    let (w, h) =
-        (((f64::from(width) * scale).round() as u32).max(1), ((f64::from(height) * scale).round() as u32).max(1));
-    let small = image.resize(w, h, image::imageops::FilterType::Triangle).to_rgb8();
-    let mut out = Cursor::new(Vec::new());
-    small.write_to(&mut out, image::ImageFormat::Png).map_err(|e| e.to_string())?;
-    let out = out.into_inner();
-    if out.len() > super::skin::MAX_PNG {
-        return Err("the background is too large even when scaled down".into());
+    let image = reader.decode().map_err(|error| format!("the background picture does not read: {error}"))?;
+    // A photo written as a PNG can be much larger than its file: it is scaled down by steps
+    // until it fits.
+    let mut scale = (2560.0 / f64::from(width)).min(1600.0 / f64::from(height)).min(1.0);
+    for _ in 0..4 {
+        let (w, h) =
+            (((f64::from(width) * scale).round() as u32).max(1), ((f64::from(height) * scale).round() as u32).max(1));
+        let small = image.resize(w, h, image::imageops::FilterType::Triangle).to_rgb8();
+        let mut out = Cursor::new(Vec::new());
+        small.write_to(&mut out, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+        let out = out.into_inner();
+        if out.len() <= super::skin::MAX_PNG {
+            return Ok(out);
+        }
+        scale *= 0.7;
     }
-    Ok(out)
+    Err("the background is too large even when scaled down".into())
 }
 
 pub fn raster(source: &str, width: u32, height: u32) -> Option<egui::ColorImage> {
@@ -115,6 +133,21 @@ mod tests {
         assert!(decode(&fixture(2049, 2049, [0, 0, 0, 255])).is_err());
         let invalid = super::super::skin::encode_png(b"\x89PNG\r\n\x1a\ninvalid").unwrap();
         assert!(decode(&invalid).is_err());
+    }
+
+    /// A theme's JPEG or WebP background is written as a PNG, within its limits (#1487 F1).
+    #[test]
+    fn a_jpeg_or_webp_background_is_written_as_a_png() {
+        let photo = image::RgbImage::from_pixel(64, 40, image::Rgb([30, 140, 220]));
+        for format in [image::ImageFormat::Jpeg, image::ImageFormat::WebP] {
+            let mut bytes = Cursor::new(Vec::new());
+            photo.write_to(&mut bytes, format).unwrap();
+            let png = fit_background(&bytes.into_inner()).unwrap();
+            assert_eq!(picture_format(&png), Some(image::ImageFormat::Png), "{format:?}");
+            let image = image::load_from_memory_with_format(&png, image::ImageFormat::Png).unwrap();
+            assert_eq!((image.width(), image.height()), (64, 40), "{format:?}");
+        }
+        assert!(fit_background(b"GIF89a").is_err());
     }
 
     #[test]
