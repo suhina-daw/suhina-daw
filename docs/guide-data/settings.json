@@ -2644,7 +2644,7 @@
       ],
       "sourceFingerprint": "ed71a5f714f37950b9440a0d29abb7327b7f2de4e2dfbb403ea13dc99670ff47",
       "helpStatus": "reviewed",
-      "description": "This opaque colour picker appears when Selection colour is Custom. Choose an RGB colour with the picker; the hexadecimal value is displayed beside it. It fills selected track headers and clips in both views and tints the selected tracks' lanes and Launcher columns, in every theme, replacing the theme's selection colour. Text, waveforms and notes on it switch to an ink that reads on it, so a dark colour works too. The saved colour has no effect with From theme or Clip's own colour.",
+      "description": "This colour picker appears when Selection colour is Custom. Choose an RGB colour and its opacity with the picker; the hexadecimal value is displayed beside it, with the opacity as its last two digits when the colour is see-through. A see-through colour lets the lanes, the grid and the clips' own colours show through what is selected. It fills selected track headers and clips in both views and tints the selected tracks' lanes and Launcher columns, in every theme, replacing the theme's selection colour. Text, waveforms and notes on it switch to an ink that reads on it, so a dark colour works too. The saved colour has no effect with From theme or Clip's own colour.",
       "options": [],
       "whenToChange": "Select Custom first, then choose a colour that stands apart from your track and clip colours.",
       "workInProgress": false

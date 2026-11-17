@@ -358,6 +358,17 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 
 /// Draws the Arrangement view in the space left in `ui` and adds what the user asked for to
 /// `actions`.
+/// The grid's `lines` (x, on a bar) inside `rect`, drawn over a `fill` laid over the grid (the
+/// selection colour of a time selection or a selected clip): faint lines of the ink that reads on
+/// it, stronger on the bars, so the grid stays in sight whatever the fill.
+pub(crate) fn grid_over(painter: &egui::Painter, rect: Rect, lines: &[(f32, bool)], fill: Color32) {
+    let ink = theme::text_on(fill.to_opaque());
+    let (beat, bar) = (ink.gamma_multiply(0.14), ink.gamma_multiply(0.3));
+    for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 0.5 && *x < rect.right() - 0.5) {
+        painter.vline(x, rect.y_range(), theme::hairline(if on_bar { bar } else { beat }));
+    }
+}
+
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
     let arrangement = crate::kit::element::ARRANGEMENT.enter();
     read_surfaces();
@@ -731,6 +742,8 @@ fn show_lanes(
             }
         }
     }
+    // The lines again, for what is drawn over the grid in the lanes (a time selection's fill).
+    let lane_grid = grid_xs.clone();
     if !state.grid_in_clips {
         grid_xs.clear();
     }
@@ -1300,6 +1313,8 @@ fn show_lanes(
             if span.span() > 0.0 {
                 let lit = Rect::from_x_y_ranges(span, row.clip.y_range()).intersect(lanes_area);
                 lanes_painter.rect_filled(lit, 0.0, fill.gamma_multiply(0.85));
+                // The grid stays in sight over the fill, in lines that read on it.
+                grid_over(&lanes_painter, lit, &lane_grid, fill);
             }
         }
         // A click on an empty spot of a lane clears the clip selection (arrangement-editing ›

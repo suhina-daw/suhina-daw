@@ -256,7 +256,8 @@ they stay, and copies with contents of their own go where they are dropped (`cli
 with `copy`), the cursor showing the copy sign; while dragging, the originals stay drawn and the
 copies show where they will land. Dragging a selection draws every clip of it where it goes. A time selection is drawn in the
 selection colour ([Selection colour](#selection-colour)) over its tracks' rows, under their clips,
-and over the stretch of each clip's body under it, the clips' name bars keeping their own colour,
+and over the stretch of each clip's body under it, the clips' name bars keeping their own colour;
+the grid's lines are drawn over the fill in an ink that reads on it,
 with a line at each edge and a bar along the ruler; the take and automation lanes under the tracks
 are lit in `time-selection`'s colour. With Selection colour › Clip's own colour, and in one row
 of a stack, it is drawn in the accent over the clips instead.
@@ -1136,8 +1137,8 @@ Settings › Appearance › Selection › **Selection colour** chooses it (saved
 not in the project): *From theme* (the default) uses the theme's; *Clip's own colour* keeps each
 selected header and clip in its own colour, a little brighter and outlined, as before there was
 one selection colour, so a selection still shows which track each clip is on (the lanes keep the
-tint), and a clip picked by a click in its body is only outlined, not lit (› Selecting clips); *Custom* shows **Custom selection colour** (`selection_custom_colour`), one colour from
-the colour picker, which is written over the theme's `--selection-background` on the window, so
+tint), and a clip picked by a click in its body is only outlined, not lit (› Selecting clips); *Custom* shows **Custom selection colour** (`selection_custom_colour`), one colour and its
+opacity from the colour picker (saved as `#RRGGBBAA` while see-through), which is written over the theme's `--selection-background` on the window, so
 headers, clips and the tints all take it in every theme until *From theme* is chosen again.
 
 ## Waveform colour

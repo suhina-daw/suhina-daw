@@ -1049,7 +1049,7 @@ pub(crate) static ROWS: &[Entry] = &[
         "Custom selection colour",
         "The colour selected tracks and clips take when Selection colour is Custom",
         &["selection_custom_colour"],
-        |cx, r| cx.colour_well(r, |s| &mut s.view.selection.custom),
+        |cx, r| cx.colour_well(r, true, |s| &mut s.view.selection.custom),
     )
     .when(|s| s.view.selection.mode == SelectionColour::Custom),
     row(

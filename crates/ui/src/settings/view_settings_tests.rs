@@ -171,3 +171,17 @@ fn liquid_strengths_default_off_and_parse_independently_with_bounds() {
     assert_eq!(warnings.len(), 1);
     assert_eq!(read.view.liquid, crate::kit::liquid::Options { panels: 100, tracks: 0, clips: 37 });
 }
+
+#[test]
+fn a_see_through_custom_selection_colour_keeps_its_opacity() {
+    let mut settings = Settings::default();
+    settings.view.selection = crate::kit::selection::SelectionLook {
+        mode: crate::kit::selection::SelectionColour::Custom,
+        custom: egui::Color32::from_rgba_unmultiplied(200, 40, 60, 128),
+    };
+    let text = settings.to_text();
+    assert!(text.contains("selection_custom_colour = #C8283C80"), "{text}");
+    let (read, warnings) = Settings::from_text(&text);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(read.view.selection, settings.view.selection);
+}

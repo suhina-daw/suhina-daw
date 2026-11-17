@@ -103,7 +103,7 @@ what is inside it).
 | Keys | Shortcuts | The preset, every action's keys, Reset all |
 | Appearance | Window | Window zoom, Animations, Hide pointer while dragging (On by default; a theme's `drag-pointer` wins for its controls), Menu bar in window |
 | Appearance | Waveforms | Waveform scale |
-| Appearance | Selection | Selection colour (From theme, the default; Clip's own colour; Custom, #1218), Custom selection colour (shown with Custom) |
+| Appearance | Selection | Selection colour (From theme, the default; Clip's own colour; Custom, #1218), Custom selection colour (shown with Custom; a colour and its opacity) |
 | Appearance | Background | Background image, Surface opacity, Background blur |
 | Appearance | Application bar | Application name position, Show project name, Show project timing, Project information position |
 | Appearance | Advanced | Graphics renderer, Panel liquid, Track liquid, Clip liquid (experimental) |

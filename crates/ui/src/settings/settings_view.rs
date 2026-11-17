@@ -724,15 +724,21 @@ impl Cx<'_> {
 
     /// The custom waveform and note ink, with the picker's RGB/hex controls.
     pub fn waveform_colour(&mut self, row: Rect) {
-        self.colour_well(row, |s| &mut s.view.waveform.custom);
+        self.colour_well(row, false, |s| &mut s.view.waveform.custom);
     }
 
-    /// A colour the setting `field` holds: the picker's button with its RGB/hex controls, and the
-    /// colour's hex beside it.
-    pub fn colour_well(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut egui::Color32) {
+    /// A colour the setting `field` holds: the picker's button with its RGB/hex controls, an
+    /// opacity slider too when `see_through`, and the colour's hex beside it (`#RRGGBBAA` while it
+    /// is see-through).
+    pub fn colour_well(
+        &mut self,
+        row: Rect,
+        see_through: bool,
+        field: impl FnOnce(&mut Settings) -> &mut egui::Color32,
+    ) {
         let value = field(self.settings);
         let mut colour = *value;
-        let (held, _) = colour_picker(self.ui, self.name, row, &mut colour, false);
+        let (held, _) = colour_picker(self.ui, self.name, row, &mut colour, false, see_through);
         self.outcome.adjusting |= held;
         if colour != *value {
             *value = colour;
@@ -751,7 +757,7 @@ impl Cx<'_> {
     ) {
         let value = field(self.settings);
         let mut colour = value.unwrap_or(themed);
-        let (held, reset) = colour_picker(self.ui, self.name, row, &mut colour, value.is_some());
+        let (held, reset) = colour_picker(self.ui, self.name, row, &mut colour, value.is_some(), false);
         self.outcome.adjusting |= held;
         if reset {
             *value = None;
@@ -3501,15 +3507,25 @@ fn option_face(
 }
 
 /// The colour picker's button for `colour` at the control's place in `row`, labelled `name`, its
-/// hex beside it, and a **Theme** button after them when `resettable`: whether the picker is held
-/// open with the button down (a drag in it), and whether **Theme** was clicked.
-fn colour_picker(ui: &mut Ui, name: &str, row: Rect, colour: &mut egui::Color32, resettable: bool) -> (bool, bool) {
+/// hex beside it, and a **Theme** button after them when `resettable`; with an opacity slider
+/// when `see_through`: whether the picker is held open with the button down (a drag in it), and
+/// whether **Theme** was clicked.
+fn colour_picker(
+    ui: &mut Ui,
+    name: &str,
+    row: Rect,
+    colour: &mut egui::Color32,
+    resettable: bool,
+    see_through: bool,
+) -> (bool, bool) {
     let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
     let (mut held, mut reset) = (false, false);
     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
         ui.horizontal(|ui| {
             let popup = ui.auto_id_with("popup");
-            let response = egui::color_picker::color_edit_button_srgba(ui, colour, egui::color_picker::Alpha::Opaque);
+            let alpha =
+                if see_through { egui::color_picker::Alpha::OnlyBlend } else { egui::color_picker::Alpha::Opaque };
+            let response = egui::color_picker::color_edit_button_srgba(ui, colour, alpha);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, name));
             held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
             ui.label(

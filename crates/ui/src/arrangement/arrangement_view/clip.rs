@@ -1516,8 +1516,16 @@ pub(super) fn paint_clip(
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
         let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.1), motion::mix(body, ink, 0.2));
+        let lit_x = time_lit.map(|(lit, _)| lit.x_range());
         for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 1.0 && *x < rect.right() - 1.0) {
+            // Under a time selection the line is drawn for the selection colour's fill.
+            if lit_x.is_some_and(|lit| lit.contains(x)) {
+                continue;
+            }
             painter.vline(x, span, theme::hairline(if on_bar { bar_ink } else { beat_ink }));
+        }
+        if let Some((lit, fill)) = time_lit {
+            super::grid_over(painter, Rect::from_x_y_ranges(lit.x_range(), span), lines, fill);
         }
     }
     // Notes an ARA plug-in found in an audio clip go over its waveform, which dims a little under
