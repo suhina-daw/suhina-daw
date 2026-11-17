@@ -458,21 +458,66 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         menu.key_readers.iter().filter(|r| !r.refused.contains(&menu.track) && !menu.is_group).collect();
     if !readers.is_empty() {
         ui.menu_button("Sidechain to", |ui| {
-            ui.set_min_width(200.0);
-            for reader in readers {
-                let on = reader.source == Some(menu.track);
-                if ui.selectable_label(on, &reader.label).clicked() {
-                    let at = json!({ "track": reader.track.0, "device": reader.device });
-                    if on {
-                        actions.push(Action::new("device.clearKey", at));
-                    } else {
-                        let mut params = at;
-                        params["source"] = json!(track);
-                        actions.push(Action::new("device.setKey", params));
-                    }
-                    ui.close();
-                }
+            ui.set_min_width(240.0);
+            // A search field over a list that scrolls, as the parameter chooser has: a project
+            // with many keyed devices listed them all, taller than the screen.
+            let query_id = egui::Id::unique(("sidechain-to-query", menu.track.0));
+            // The search starts empty each time the menu opens: what was typed is kept only
+            // while it stays open, frame after frame.
+            let frame = ui.ctx().cumulative_frame_nr();
+            let last: Option<u64> = ui.data(|d| d.get_temp(query_id.with("frame")));
+            if last.is_none_or(|last| last + 1 < frame) {
+                ui.data_mut(|d| {
+                    d.remove::<String>(query_id);
+                    d.remove::<bool>(query_id.with("shown"));
+                });
             }
+            ui.data_mut(|d| d.insert_temp(query_id.with("frame"), frame));
+            let mut query: String = ui.data(|d| d.get_temp(query_id)).unwrap_or_default();
+            let field = ui.add(
+                egui::TextEdit::singleline(&mut query)
+                    .id(query_id.with("field"))
+                    .hint_text("Search devices")
+                    .desired_width(f32::INFINITY),
+            );
+            field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search devices"));
+            if !ui.data(|d| d.get_temp::<bool>(query_id.with("shown")).unwrap_or(false)) {
+                field.request_focus();
+                ui.data_mut(|d| d.insert_temp(query_id.with("shown"), true));
+            }
+            ui.data_mut(|d| d.insert_temp(query_id, query.clone()));
+            let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+            let shown: Vec<&&KeyReader> = readers
+                .iter()
+                .filter(|r| {
+                    let label = r.label.to_lowercase();
+                    words.iter().all(|w| label.contains(w.as_str()))
+                })
+                .collect();
+            let height = (ui.ctx().content_rect().height() * 0.5).max(120.0);
+            egui::ScrollArea::vertical().max_height(height).auto_shrink([true, true]).show(ui, |ui| {
+                if shown.is_empty() {
+                    ui.label(egui::RichText::new("No device matches").color(crate::kit::element::hint_ink()));
+                }
+                for reader in shown {
+                    let on = reader.source == Some(menu.track);
+                    if ui.selectable_label(on, &reader.label).clicked() {
+                        let at = json!({ "track": reader.track.0, "device": reader.device });
+                        if on {
+                            actions.push(Action::new("device.clearKey", at));
+                        } else {
+                            let mut params = at;
+                            params["source"] = json!(track);
+                            actions.push(Action::new("device.setKey", params));
+                        }
+                        ui.data_mut(|d| {
+                            d.remove::<String>(query_id);
+                            d.remove::<bool>(query_id.with("shown"));
+                        });
+                        ui.close();
+                    }
+                }
+            });
         });
     }
     ui.separator();

@@ -2161,3 +2161,55 @@ fn a_devices_menu_renames_it() {
     assert_eq!(renamed.len(), 1, "{:?}", harness.state());
     assert_eq!(renamed[0].params, json!({ "track": 3, "device": 2, "name": "Source level" }));
 }
+
+/// A track's Sidechain to has a search field over a list that scrolls: typed words keep the
+/// devices whose "Track › Device" has them all, and a pick runs `device.setKey` from this track.
+#[test]
+fn sidechain_to_searches_the_keyed_devices() {
+    use crate::interaction::menus::{KeyReader, TrackMenu, track_menu};
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let readers: Vec<KeyReader> = (0..10)
+        .map(|i| KeyReader {
+            track: TrackId(10 + i),
+            device: 0,
+            label: format!("{} › Compressor", if i == 7 { "Bass".to_string() } else { format!("Pad {i}") }),
+            source: None,
+            refused: vec![TrackId(10 + i)],
+        })
+        .collect();
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(700.0, 600.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            let menu = TrackMenu {
+                track: TrackId(1),
+                name: "Kick",
+                colour: suhina_engine::model::Rgb(200, 100, 50),
+                is_group: false,
+                is_return: false,
+                selection: &[],
+                into: &[],
+                out: None,
+                midi: None,
+                audio: None,
+                tracks_copied: false,
+                key_readers: &readers,
+            };
+            track_menu(ui, &menu, actions);
+        },
+        Vec::new(),
+    );
+    harness.run();
+    harness.get_by_label("Sidechain to").click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label("Pad 3 › Compressor").is_some(), "every device is listed");
+    harness.get_by_label("Search devices").type_text("bass");
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label("Pad 3 › Compressor").is_none(), "the others are filtered out");
+    harness.get_by_label("Bass › Compressor").click();
+    harness.run();
+    let set: Vec<_> = harness.state().iter().filter(|a| a.id == "device.setKey").cloned().collect();
+    assert_eq!(set.len(), 1, "{:?}", harness.state());
+    assert_eq!((&set[0].params["track"], &set[0].params["source"]), (&json!(17), &json!(1)));
+}
