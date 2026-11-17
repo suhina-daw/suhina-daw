@@ -191,6 +191,23 @@ fn an_input_on_the_asio_driver_takes_over_waking_the_render_thread() {
     assert!(!progress.input_due());
 }
 
+/// The device's take is kept to the nanosecond for the render thread's plug-in deadline, none
+/// before the first, and each read of the ring marks one (#1494).
+#[test]
+fn reading_the_ring_marks_the_take_the_deadline_counts_from() {
+    let take = LastTake::default();
+    assert_eq!(take.get(), None, "no take before the first");
+    let at = Instant::now() + Duration::from_millis(5);
+    take.mark(at);
+    assert_eq!(take.get(), Some(at));
+    let progress = Progress::default();
+    assert_eq!(progress.last_take.get(), None);
+    let (_producer, mut consumer) = rtrb::RingBuffer::<f32>::new(8);
+    let mut out = [0.0f32; 8];
+    read_ring(&mut consumer, &mut out, &progress);
+    assert!(progress.last_take.get().is_some(), "a read of the ring is a take");
+}
+
 /// The render thread waits a quarter of the device's buffer for an ASIO input's frames, and at
 /// least half a millisecond.
 #[test]

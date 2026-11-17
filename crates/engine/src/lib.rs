@@ -516,6 +516,9 @@ pub struct Renderer {
     /// What the device has queued ahead of the next block and how much it takes at once, in
     /// frames ([`Renderer::set_render_lead`]): how long the block's plug-ins may take.
     render_lead: Option<(usize, usize)>,
+    /// When the device last took frames ([`Renderer::set_last_take`]): its next take, a device
+    /// period later, is when the first complete queued period runs out.
+    last_take: Option<Instant>,
     #[cfg(test)]
     observed_deadlines: (usize, [Option<Instant>; 2]),
     /// What is known about the project's plug-in devices, for the graphs built after edits.
@@ -743,6 +746,7 @@ impl Renderer {
             offline: false,
             declick: Declick::default(),
             render_lead: None,
+            last_take: None,
             #[cfg(test)]
             observed_deadlines: (0, [None; 2]),
             plugin_info: plugins.info,
@@ -863,6 +867,16 @@ impl Renderer {
     /// Call it before every [`Renderer::process`] while a device plays. Never allocates.
     pub fn set_render_lead(&mut self, queued: usize, device: usize) {
         self.render_lead = Some((queued, device));
+    }
+
+    /// When the device last took frames from the output (its last callback), `None` before its
+    /// first. With it the block's plug-ins may also take what is left until the device's next
+    /// take, which the queued periods start from: a shallow queue (an armed track keeps one
+    /// block) is empty after every take, and without it each block had only half its playing
+    /// time, though the device needs it a whole period later (#1494). A take more than a period
+    /// ago is overdue and adds nothing. Call it with [`Renderer::set_render_lead`].
+    pub fn set_last_take(&mut self, at: Option<Instant>) {
+        self.last_take = at;
     }
 
     pub fn set_live_clock(&mut self, now: u64, delay: u32) {
@@ -1077,12 +1091,18 @@ impl Renderer {
             // until the following callback to supply more. Only a partial period
             // is discounted; subtracting a whole period starves return effects
             // every time a large callback drains the ring to exactly one period.
-            // Keep a margin. A partially primed ring still gives half a batch;
-            // otherwise use its actual reserve, including for a brief start burst.
+            // The queued periods play from the device's next take, a period after its last
+            // one: what is left until then is the block's too (#1494). Keep a margin. A
+            // partially primed ring still gives half a batch; otherwise use its actual
+            // reserve, including for a brief start burst.
             Some((queued, device)) => {
                 let period = device.max(1);
                 let covered = queued / period * period;
-                let room = covered as f64 / rate - LEAD_MARGIN_SECONDS;
+                let to_next_take = self.last_take.map_or(0.0, |took| {
+                    let since = now.saturating_duration_since(took).as_secs_f64();
+                    (period as f64 / rate - since).max(0.0)
+                });
+                let room = covered as f64 / rate + to_next_take - LEAD_MARGIN_SECONDS;
                 room.max(block * 0.5)
             }
             None => block * DEADLINE_SHARE,

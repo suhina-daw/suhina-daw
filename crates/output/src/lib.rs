@@ -138,6 +138,34 @@ pub struct Progress {
     extra_cycle_blocks: AtomicU64,
     input_timeouts: AtomicU64,
     input_diagnostics: std::sync::OnceLock<Arc<suhina_engine::InputDiagnostics>>,
+    /// When the device last took from the ring: a block's plug-ins may use what is left until
+    /// its next take (#1494).
+    last_take: LastTake,
+}
+
+/// An instant one thread writes and another reads without a lock: nanoseconds after the moment
+/// it was made, plus one, so that 0 means never. Never allocates.
+pub(crate) struct LastTake {
+    epoch: Instant,
+    nanos: AtomicU64,
+}
+
+impl Default for LastTake {
+    fn default() -> Self {
+        Self { epoch: Instant::now(), nanos: AtomicU64::new(0) }
+    }
+}
+
+impl LastTake {
+    pub(crate) fn mark(&self, at: Instant) {
+        let since = u64::try_from(at.saturating_duration_since(self.epoch).as_nanos()).unwrap_or(u64::MAX - 1);
+        self.nanos.store(since.saturating_add(1), Ordering::Release);
+    }
+
+    pub(crate) fn get(&self) -> Option<Instant> {
+        let nanos = self.nanos.load(Ordering::Acquire).checked_sub(1)?;
+        self.epoch.checked_add(Duration::from_nanos(nanos))
+    }
 }
 
 impl Progress {
@@ -332,6 +360,9 @@ impl Progress {
 /// as an underrun, for what is not there yet. Never allocates.
 pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
     progress.output_cycles.fetch_add(1, Ordering::Release);
+    // The block after what is queued is due a device period after this take, and later ones a
+    // period apart: the render thread's plug-in deadline counts from here (#1494).
+    progress.last_take.mark(Instant::now());
     // Before taking from the ring: a render thread that sees the room made sees this too.
     if progress.input_wakes_render() {
         progress.input_due.store(true, Ordering::Release);
@@ -1044,6 +1075,7 @@ fn render_ahead(
         renderer.set_record_latency(output.round().clamp(0.0, f64::from(u32::MAX)) as u32, input);
         // How long the device can wait for this block: what is queued before it.
         renderer.set_render_lead(queued, progress.callback_frames());
+        renderer.set_last_take(progress.last_take.get());
         cycles.started(progress);
         renderer.process_with_cue(&mut block, &mut cue);
         // A device that takes faster than it plays, or a project too heavy to render in time,

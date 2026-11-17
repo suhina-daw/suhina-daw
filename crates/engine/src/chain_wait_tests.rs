@@ -230,6 +230,92 @@ fn a_queued_device_period_leaves_time_for_the_next_plugin_block() {
     assert_eq!(renderer.deadline_at(FRAMES, now), Some(now + Duration::from_millis(253)));
 }
 
+/// That `deadline` is `ms` milliseconds after `now`, to the microsecond (the deadline is
+/// computed in floating-point seconds).
+fn assert_due(deadline: Option<Instant>, now: Instant, ms: u64) {
+    let deadline = deadline.expect("a deadline in real time");
+    let want = now + Duration::from_millis(ms);
+    let off = if deadline > want { deadline - want } else { want - deadline };
+    assert!(off < Duration::from_micros(1), "due {:?} after now, not {ms} ms", deadline - now);
+}
+
+/// A renderer of one track with one plug-in, playing.
+fn one_plug_in() -> Renderer {
+    let p = tracks(vec![vec![plug()]]);
+    Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap()
+}
+
+/// An armed track keeps one block queued, so the queue is empty right after the device takes
+/// it; the block is still not due until the device's next take, a period later, and its
+/// plug-ins have that period less the margin, not half a block (#1494).
+#[test]
+fn an_empty_queue_right_after_a_take_leaves_the_plugins_the_device_period() {
+    let mut renderer = one_plug_in();
+    let now = Instant::now();
+    renderer.set_render_lead(0, FRAMES);
+    renderer.set_last_take(Some(now));
+    assert_due(renderer.deadline_at(FRAMES, now), now, 125);
+}
+
+/// What is left until the next take: a take 28 ms ago leaves 100 ms of the 128 ms period.
+#[test]
+fn a_take_some_time_ago_leaves_what_is_left_of_its_period() {
+    let mut renderer = one_plug_in();
+    let now = Instant::now();
+    renderer.set_render_lead(0, FRAMES);
+    renderer.set_last_take(Some(now - Duration::from_millis(28)));
+    assert_due(renderer.deadline_at(FRAMES, now), now, 97);
+}
+
+/// A take more than a period ago is overdue: the next one may come at any moment, so it adds
+/// nothing and the half-block floor stays, as before any take.
+#[test]
+fn an_overdue_take_keeps_the_half_block_floor() {
+    let mut renderer = one_plug_in();
+    let now = Instant::now();
+    renderer.set_render_lead(0, FRAMES);
+    renderer.set_last_take(Some(now - Duration::from_millis(200)));
+    assert_due(renderer.deadline_at(FRAMES, now), now, 64);
+    renderer.set_last_take(None);
+    assert_due(renderer.deadline_at(FRAMES, now), now, 64);
+}
+
+/// The four blocks of ordinary playback play from the next take as well: the block after them
+/// has their time and what is left until that take, never less than before.
+#[test]
+fn a_full_queue_adds_the_time_until_the_next_take() {
+    let mut renderer = one_plug_in();
+    let now = Instant::now();
+    renderer.set_render_lead(FRAMES * 4, FRAMES);
+    renderer.set_last_take(Some(now - Duration::from_millis(28)));
+    assert_due(renderer.deadline_at(FRAMES, now), now, 609);
+}
+
+/// A track that plays into a return with a plug-in keeps a quarter of the block's time less
+/// (#1261), now a quarter of the time until the next take: with an empty queue right after a
+/// take its plug-in has about 94 ms of a 128 ms period, so one that takes 90 ms is in time.
+/// With the half-block floor it had 48 ms and missed every block.
+#[test]
+fn an_armed_queue_keeps_the_bus_share_of_the_time_until_the_next_take() {
+    let p = with_return(tracks(vec![vec![plug()]]), &[1], vec![plug()]);
+    let log = Arc::default();
+    let stands = vec![Timed::new("track", 0.5, Duration::from_millis(90), &log), Timed::new("ret", 0.5, QUICK, &log)];
+    let mut renderer = playing(&p, stands);
+    let levels = renderer.graph.chains.iter().find(|c| c.track == TrackId(1)).map(|c| c.turn.levels_after);
+    assert_eq!(levels, Some(1), "one bus level with a plug-in after the track");
+    renderer.set_render_lead(0, FRAMES);
+    renderer.set_last_take(Some(clock::now()));
+    play(&mut renderer, 1);
+    assert_eq!(missed_on(&mut renderer, 1), 0, "the track's plug-in had the period less a quarter");
+    assert_eq!(missed_on(&mut renderer, 2), 0, "the return's plug-in had the rest");
+}
+
 /// Two chains of three plug-ins whose slow plug-ins are at different places: one chain's first,
 /// the other's last. In stages the block would take both slow plug-ins one after another (the
 /// second stage of every chain waiting for the first chain's slow one); a chain that goes on
