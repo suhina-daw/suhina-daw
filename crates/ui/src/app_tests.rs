@@ -1452,12 +1452,12 @@ fn opening_in_place_reads_the_plug_ins_across_frames_then_asks_or_opens() {
     let id = app.projects.active().unwrap();
     app.projects.get_mut(id).unwrap().execute("track.delete", &json!({ "track": 1 })).unwrap();
     app.open_as(PathBuf::from("next.suhina"), OpenAs::Replace);
-    assert!(app.leave_check.is_some(), "the click only starts the read");
+    assert!(!app.leave_checks.is_empty(), "the click only starts the read");
     assert!(app.unsaved_prompt.is_none() && app.open_request.is_none());
     for _ in 0..4 {
         frame(&mut app);
     }
-    assert!(app.leave_check.is_none());
+    assert!(app.leave_checks.is_empty());
     assert!(matches!(app.unsaved_prompt, Some(Leaving { then: AfterLeaving::Replace(_), .. })));
 
     let mut clean = App::new();
@@ -1468,4 +1468,75 @@ fn opening_in_place_reads_the_plug_ins_across_frames_then_asks_or_opens() {
     }
     assert!(clean.unsaved_prompt.is_none());
     assert!(matches!(clean.open_request, Some((_, OpenAs::Replace))));
+}
+
+/// Runs `app`'s leave checks for a few frames, as the window does each frame.
+fn poll_leave_checks(app: &mut App) {
+    for _ in 0..4 {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| app.poll_leave_check(ui.ctx()));
+        output.textures_delta.clear();
+    }
+}
+
+/// A file opened in place of one project while another became the active one meanwhile: the
+/// project it would replace is checked too, and its unsaved changes are asked about, never
+/// closed unasked.
+#[test]
+fn opening_in_place_checks_the_project_active_when_the_read_ends() {
+    let mut app = App::new();
+    let clean = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    let dirty = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    app.projects.get_mut(dirty).unwrap().execute("track.delete", &json!({ "track": 1 })).unwrap();
+    app.projects.switch(clean).unwrap();
+    app.open_as(PathBuf::from("next.suhina"), OpenAs::Replace);
+    // While the clean one's plug-ins are read, the dirty one is made active.
+    app.projects.switch(dirty).unwrap();
+    poll_leave_checks(&mut app);
+    assert!(app.open_request.is_none(), "nothing is replaced unasked");
+    assert!(
+        matches!(app.unsaved_prompt, Some(Leaving { project, then: AfterLeaving::Replace(_) }) if project == dirty),
+        "{:?}",
+        app.unsaved_prompt
+    );
+}
+
+/// Two projects closed while the first one's plug-ins are still read: both are read in turn and
+/// both close; the second close does not replace the first.
+#[test]
+fn two_closes_asked_in_a_row_both_go_on() {
+    let mut app = App::new();
+    let first = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    let second = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    let close = |project: ProjectId| Action::new("project.close", json!({ "project": project.0 }));
+    for project in [first, second] {
+        app.leave_checks.push_back(LeaveCheck { project, then: LeaveThen::Close(close(project)) });
+    }
+    poll_leave_checks(&mut app);
+    let (project, _) = app.checked_close.take().expect("the first close is checked");
+    assert_eq!(project, first);
+    assert_eq!(app.leave_checks.len(), 1, "the second waits its turn");
+    poll_leave_checks(&mut app);
+    assert_eq!(app.checked_close.take().map(|(p, _)| p), Some(second));
+}
+
+/// A checked close that comes due while a dialog holds the window's actions waits for it, and
+/// runs once the dialog is gone.
+#[test]
+fn a_checked_close_waits_for_a_dialog_that_holds_the_actions() {
+    let mut app = App::new();
+    app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    let closing = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    app.checked_close = Some((closing, Action::new("project.close", json!({ "project": closing.0 }))));
+    app.about_open = true;
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run_steps(2);
+    assert!(harness.state().projects.get(closing).is_some(), "the dialog holds it");
+    assert!(harness.state().checked_close.is_some(), "kept for later");
+    harness.state_mut().about_open = false;
+    harness.run_steps(2);
+    assert!(harness.state().projects.get(closing).is_none(), "closed once the dialog is gone");
 }

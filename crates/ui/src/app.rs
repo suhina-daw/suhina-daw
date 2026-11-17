@@ -428,10 +428,11 @@ pub struct App {
     /// A project with unsaved changes waiting for Save, Don't save or Cancel before it is closed,
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
-    /// A project being left while its plug-ins are read for edits ([`LeaveCheck`]).
-    leave_check: Option<LeaveCheck>,
-    /// A `project.close` whose plug-ins were read: run in the next frame without reading them
-    /// again.
+    /// Projects being left while their plug-ins are read for edits ([`LeaveCheck`]), one after
+    /// another in the order asked: a second close while a read goes on waits its turn.
+    leave_checks: std::collections::VecDeque<LeaveCheck>,
+    /// A `project.close` whose plug-ins were read: run without reading them again once actions
+    /// run (kept while a dialog holds them).
     checked_close: Option<(ProjectId, Action)>,
     /// Clips a plug-in edits about to go to another track, waiting for Keep edits or Copy as
     /// new (ADR 0033 step 6): the move, and the plug-in's name.
@@ -774,7 +775,7 @@ impl App {
             stashes: HashMap::new(),
             open_prompt: None,
             unsaved_prompt: None,
-            leave_check: None,
+            leave_checks: std::collections::VecDeque::new(),
             checked_close: None,
             traced_output: None,
             ara_prompt: None,
@@ -1121,7 +1122,7 @@ impl App {
             // Its plug-ins are read for edits first, a frame at a time ([`App::poll_leave_check`]):
             // reading them all at once here held the window for up to a second.
             Some(active) if how == OpenAs::Replace => {
-                self.leave_check = Some(LeaveCheck { project: active, then: LeaveThen::Replace(path) });
+                self.leave_checks.push_back(LeaveCheck { project: active, then: LeaveThen::Replace(path) });
             }
             _ => self.open_request = Some((path, how)),
         }
@@ -1130,14 +1131,34 @@ impl App {
     /// Advances the read of a project's plug-ins before it is left ([`LeaveCheck`]); once done,
     /// asks about unsaved changes or goes on.
     fn poll_leave_check(&mut self, ctx: &egui::Context) {
-        let Some(check) = self.leave_check.take() else { return };
-        let Some(session) = self.projects.get_mut(check.project) else { return };
+        // A checked close not yet run keeps the next one waiting: it holds the one slot.
+        if self.checked_close.is_some() {
+            return;
+        }
+        let Some(check) = self.leave_checks.pop_front() else { return };
+        let Some(session) = self.projects.get_mut(check.project) else {
+            // Closed meanwhile: a file to open goes where the active project is now, after its
+            // own check; a close has nothing left to do.
+            if let LeaveThen::Replace(path) = check.then {
+                self.open_as(path, OpenAs::Replace);
+            }
+            ctx.request_repaint();
+            return;
+        };
         if !session.rack_mut().poll_edits() {
-            self.leave_check = Some(check);
+            self.leave_checks.push_front(check);
             ctx.request_repaint_after(std::time::Duration::from_millis(10));
             return;
         }
+        if !self.leave_checks.is_empty() {
+            ctx.request_repaint();
+        }
         match check.then {
+            // Another project became the active one while this one was read: the file opens in
+            // its place only after the same check of that one, its unsaved changes asked about.
+            LeaveThen::Replace(path) if self.projects.active() != Some(check.project) => {
+                self.open_as(path, OpenAs::Replace);
+            }
             LeaveThen::Replace(path) if self.unsaved(check.project) => {
                 self.unsaved_prompt = Some(Leaving { project: check.project, then: AfterLeaving::Replace(path) });
             }
@@ -3103,11 +3124,13 @@ impl App {
         let mut actions = Vec::new();
         self.poll_leave_check(ui.ctx());
         // A close whose plug-ins were read goes on now.
-        let checked = self.checked_close.take();
-        if let Some((_, action)) = &checked {
+        let checked_close = self.checked_close.take();
+        if let Some((_, action)) = &checked_close {
             actions.push(action.clone());
         }
-        let checked = checked.map(|(project, _)| project);
+        let checked = checked_close.as_ref().map(|(project, _)| *project);
+        // Whether the checked close ran: a dialog that holds the actions keeps it for later.
+        let mut checked_ran = false;
         crate::detail::device_canvas::finish_sample_audition(ui.ctx(), self.projects.active(), &mut actions);
         let revision = self.revision;
         ui.ctx().data_mut(|d| {
@@ -3900,9 +3923,13 @@ impl App {
             if let Some(project) = closing
                 && checked != Some(project)
             {
-                self.leave_check = Some(LeaveCheck { project, then: LeaveThen::Close(action.clone()) });
+                let asked = |c: &LeaveCheck| c.project == project && matches!(c.then, LeaveThen::Close(_));
+                if !self.leave_checks.iter().any(asked) {
+                    self.leave_checks.push_back(LeaveCheck { project, then: LeaveThen::Close(action.clone()) });
+                }
                 continue;
             }
+            checked_ran |= closing.is_some() && closing == checked;
             if self.window_action(action) {
                 continue;
             }
@@ -3969,6 +3996,9 @@ impl App {
             if !failed && let Some(line) = clipboard_line(action.id) {
                 ui.ctx().copy_text(line);
             }
+        }
+        if !checked_ran && let Some(close) = checked_close {
+            self.checked_close = Some(close);
         }
         // A selection this frame's commands or clicks made arms its track.
         self.follow_selection_with_arm();

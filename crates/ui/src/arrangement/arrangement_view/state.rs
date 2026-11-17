@@ -233,6 +233,9 @@ pub struct ArrangementViewState {
     /// The stretch selected in time in the piano roll, for the clip it shows: that clip and the
     /// stretch in its content's beats. The clip lights it as the piano roll does.
     pub editor_span: Option<(ClipId, f64, f64)>,
+    /// The looks of clips' parts read this frame ([`ClipLook::parts`]), shared by every clip
+    /// drawn in it and emptied as the frame starts (`arrangement_view::show`).
+    pub(crate) clip_parts: ClipPartsCache,
     /// The time selection, the picked clips and the range painted on automation lanes as the
     /// last frame left them: whichever was made since gives the others up (#1322).
     seen_selections:
@@ -359,6 +362,7 @@ impl Default for ArrangementViewState {
             scroll: Vec2::ZERO,
             zoom_reach: 0.0,
             beat_width: DEFAULT_BEAT_WIDTH,
+            clip_parts: ClipPartsCache::default(),
             grid: PianoGrid::from_value("1 bar"),
             headers_left: false,
             returns_hidden: false,
@@ -1114,11 +1118,15 @@ pub(crate) struct ClipLook {
     /// The piano roll's time selection and the clip it is on ([`ArrangementViewState::editor_span`]).
     pub(crate) editor_span: Option<(ClipId, f64, f64)>,
     /// The looks of a clip's parts (its name, waveform or notes, fades), read once this frame for
-    /// each kind of clip there is ([`ClipKind`]): the style tree grows with kinds, not with clips
-    /// (ADR 0031 › A drawn item's style is read once per kind), so thousands of clips in view keep
-    /// their styles.
-    pub(crate) parts: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ClipKind, ClipParts>>>,
+    /// each kind of clip there is in each track's lane ([`ClipKind`]): the style tree grows with
+    /// kinds, not with clips (ADR 0031 › A drawn item's style is read once per kind), so thousands
+    /// of clips in view keep their styles and are not styled one by one. The lane is in the key
+    /// because a rule for the lane (`track-lane[selected] clip-name`) reaches the parts.
+    pub(crate) parts: ClipPartsCache,
 }
+
+/// The looks of clips' parts this frame, by lane and kind of clip ([`ClipLook::parts`]).
+pub(crate) type ClipPartsCache = std::rc::Rc<std::cell::RefCell<HashMap<(TrackId, ClipKind), ClipParts>>>;
 
 /// What a clip's parts can be styled by: its states and its colour, and whether it holds audio.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1149,7 +1157,7 @@ impl ArrangementViewState {
             waveform_appearance: self.waveform_appearance,
             audio_colour_strength: self.audio_colour_strength,
             editor_span: self.editor_span,
-            parts: std::rc::Rc::default(),
+            parts: std::rc::Rc::clone(&self.clip_parts),
         }
     }
 }

@@ -361,6 +361,8 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
     let arrangement = crate::kit::element::ARRANGEMENT.enter();
     read_surfaces();
+    // Clips' parts are read again each frame: the sheet or the clips may have changed.
+    state.clip_parts.borrow_mut().clear();
     let mut styled_ui = arrangement.ui(ui);
     let ui = &mut *styled_ui;
 

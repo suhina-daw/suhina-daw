@@ -1391,8 +1391,8 @@ pub(super) fn clip_kind(lane: &Lane, clip: &ClipBox, timeline: &Timeline, select
 /// The looks of the parts of a clip of `kind`, inside its entered `clip` element: read for the
 /// first clip of its kind this frame and kept in `look`, so the parts add no elements to the
 /// style tree for each clip.
-fn clip_parts(look: &super::state::ClipLook, kind: super::state::ClipKind) -> super::state::ClipParts {
-    if let Some(parts) = look.parts.borrow().get(&kind) {
+fn clip_parts(look: &super::state::ClipLook, track: TrackId, kind: super::state::ClipKind) -> super::state::ClipParts {
+    if let Some(parts) = look.parts.borrow().get(&(track, kind)) {
         return parts.clone();
     }
     use crate::kit::element::{CLIP_FADE, CLIP_NAME, CLIP_NOTES, CLIP_WAVEFORM};
@@ -1401,7 +1401,7 @@ fn clip_parts(look: &super::state::ClipLook, kind: super::state::ClipKind) -> su
         content: if kind.audio { CLIP_WAVEFORM.probe() } else { CLIP_NOTES.probe() },
         fade: CLIP_FADE.probe(),
     };
-    look.parts.borrow_mut().insert(kind, parts.clone());
+    look.parts.borrow_mut().insert((track, kind), parts.clone());
     parts
 }
 
@@ -1428,7 +1428,7 @@ pub(super) fn paint_clip(
         return;
     }
     let own = clip_element(&id, lane, clip, timeline, selected).enter();
-    let parts = clip_parts(look, clip_kind(lane, clip, timeline, selected));
+    let parts = clip_parts(look, lane.track, clip_kind(lane, clip, timeline, selected));
     // The sheet's opacity fades the whole clip, its waveform, notes and name too.
     let faded;
     let painter = match own.style().map(|style| style.opacity).filter(|o| *o < 1.0) {
