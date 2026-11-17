@@ -1035,3 +1035,47 @@ fn the_mute_mark_takes_the_ink_of_the_name_bar_as_drawn() {
     let plain = name_bar_look_with("", grey);
     assert_eq!((plain.fill, plain.ink), (grey, clip::ink_on(grey)));
 }
+
+/// The shapes `paint_clip` draws for `clip` in `rect` under `css`, `selected` or not, as the
+/// style engine gives them after a few frames.
+fn painted_clip(css: &str, rect: Rect, selected: bool) -> Vec<egui::epaint::ClippedShape> {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let lane = timeline.lanes.iter().find(|l| !l.clips.is_empty()).unwrap();
+    let mut clip = lane.clips[0].clone();
+    clip.take = Some(Default::default());
+    let beat_width = rect.width() / clip.length.max(1e-3) as f32;
+    crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut shown = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+            let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * beat_width;
+            let look = ArrangementViewState::default().clip_look();
+            let clip = &clip;
+            paint_clip(ui.painter(), rect, lane, clip, Shown::of(clip), clip.start, &x_of, beat_width, &timeline, selected, &look);
+        });
+        output.textures_delta.clear();
+        shown = output.shapes;
+    }
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    shown
+}
+
+/// A clip's name bar reaches its right edge, selected or not (#1487 B11): it stopped 2 points
+/// short, and the body's lighter selected shade showed in the gap.
+#[test]
+fn a_clips_name_bar_reaches_its_right_edge() {
+    let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(160.0, 60.0));
+    for selected in [false, true] {
+        let shapes = painted_clip("clip-name { background-color: #00FF00; }", rect, selected);
+        let bar = shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 0xFF, 0) => Some(r.rect),
+                _ => None,
+            })
+            .expect("the name bar");
+        assert_eq!(bar.right(), rect.right(), "selected: {selected}");
+    }
+}

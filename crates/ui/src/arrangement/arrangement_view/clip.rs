@@ -1442,10 +1442,12 @@ pub(super) fn paint_clip(
     // the mute mark on that fill.
     let name_look = bar.map(|bar| {
         let look = name_bar_look(bar_fill);
-        // The bar keeps the clip's rounded top corners.
+        // The bar keeps the clip's rounded top corners and reaches both its edges: inset, the
+        // body showed in a strip at the right, lighter while selected (#1487 B11). The leading
+        // edge is drawn over its left end.
         let top = radius.min(bar.height()).clamp(0.0, 255.0) as u8;
         painter.rect_filled(
-            bar.shrink2(Vec2::new(2.0, 0.0)),
+            bar,
             egui::CornerRadius { nw: top, ne: top, sw: 0, se: 0 },
             look.fill,
         );
