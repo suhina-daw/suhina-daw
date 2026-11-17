@@ -2761,7 +2761,7 @@ pub(super) fn paint_live_take(
         earliest_start: take.start,
         latest_end: None,
         color: lane.color,
-        stack_key: (0, take.start.to_bits()),
+        stack_key: (0, take.start.to_bits(), 0),
         // It holds takes from its first pass on: the corner mark says so (#1078).
         take: Some(0),
         ara: false,
