@@ -762,6 +762,36 @@ fn percent_padding(rule: RuleKind, property: Property, value: &crate::value::Val
     )
 }
 
+/// The notice for a placement property that went with control placements (ADR 0031 › Amendment:
+/// the strips lay their parts out in CSS): what a sheet writes in its place. `None` for any other
+/// name.
+fn removed_placement(name: &str) -> Option<String> {
+    let removed = "was a control placement and is no longer read";
+    let instead = match name {
+        "left" | "top" | "right" | "bottom" => format!(
+            "a part sits where its strip's CSS layout puts it: move it with margin-{name} or order on its \
+             element (#control-NAME, not .control-NAME)"
+        ),
+        "direction" => "lay a strip's parts out with flex-direction on the group that holds them \
+                        (mixer-toggles { flex-direction: column; })"
+            .into(),
+        "anchor-left" | "anchor-top" | "anchor-right" | "anchor-bottom" => {
+            "align a part with align-self, or justify-content on its group, and push it to an edge with \
+             margin: auto on the other side"
+                .into()
+        }
+        "compact-below" => {
+            return Some(
+                "compact-below is no longer read: Suhina picks a track header's lines by its size; style \
+                 the one-line header with track-header[layout=\"short\"]"
+                    .into(),
+            );
+        }
+        _ => return None,
+    };
+    Some(format!("{name} {removed}: {instead}"))
+}
+
 /// The declarations of one rule, of the kind its selectors say ([`RuleKind`]).
 fn declarations(
     parser: &mut Parser<'_>,
@@ -850,7 +880,7 @@ fn declarations(
             continue;
         }
         if !name.starts_with("--") && Property::from_name(&name).is_none() {
-            sheet.notice(at, format!("Unknown native property {name}"));
+            sheet.notice(at, removed_placement(&name).unwrap_or_else(|| format!("Unknown native property {name}")));
             continue;
         }
         let raw = source.get(value_start..value_end).ok_or("Invalid value span")?.trim();
@@ -986,16 +1016,33 @@ mod tests {
     }
 
     #[test]
-    fn the_placements_properties_are_unknown_everywhere() {
+    fn a_removed_placement_names_what_took_its_place() {
         // Control placements went with #1453: a `.control-*` rule is a rule like any other, and
-        // its offsets, direction and anchors are properties no element has.
+        // its offsets, direction and anchors are properties no element has. Each notice names the
+        // CSS that replaced it (#1478).
         let sheet = Sheet::parse(
             ".control-play { direction: vertical; anchor-left: 4px; left: 2px; } \
-             button { top: 1px; }",
+             button { top: 1px; RIGHT: 0; bottom: 0; anchor-bottom: 0; } arrangement { compact-below: 40px; } \
+             knob { colour: red; }",
         )
         .unwrap();
-        assert_eq!(sheet.notices.len(), 4, "{:?}", sheet.notices);
-        assert!(sheet.notices.iter().all(|notice| notice.message.starts_with("Unknown native property")));
+        let messages: Vec<_> = sheet.notices.iter().map(|notice| notice.message.as_str()).collect();
+        assert_eq!(messages.len(), 9, "{messages:?}");
+        let expect = [
+            ("direction ", "flex-direction"),
+            ("anchor-left ", "align-self"),
+            ("left ", "margin-left or order"),
+            ("top ", "margin-top or order"),
+            ("right ", "margin-right or order"),
+            ("bottom ", "margin-bottom or order"),
+            ("anchor-bottom ", "justify-content"),
+            ("compact-below ", "track-header[layout=\"short\"]"),
+        ];
+        for ((start, names), message) in expect.iter().zip(&messages) {
+            assert!(message.starts_with(start) && message.contains(names), "{message}");
+        }
+        assert!(messages[2].contains("#control-NAME"), "{}", messages[2]);
+        assert_eq!(messages[8], "Unknown native property colour");
         assert!(sheet.rules.iter().all(|rule| rule.declarations.is_empty()), "the engine keeps none of them");
     }
 }

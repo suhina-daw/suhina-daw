@@ -1336,7 +1336,9 @@ status*) and, for the track headers, the mixer strips and the transport, decisio
   keep the SDK's layout until [#1009](https://github.com/suhina-daw/suhina-daw/issues/1009)) and
   of the toolbar's modules (`toolbar-NAME`; `theme.json`'s toolbar order and offsets stay).
   Themes are not migrated (pre-alpha): the built-in Suhina Sheet, Blocks and Meadow had their
-  mixer placements, which are now rules of their sheets (`mixer meter { order: -1 }`).
+  mixer placements, which are now rules of their sheets (`mixer meter { order: -1 }`). A sheet
+  that still sets one of the removed properties gets a notice naming what to write instead
+  (#1478).
 
 ## Amendment: no guide in theme files (2026-11-16)
 
