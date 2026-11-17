@@ -648,7 +648,8 @@ impl Cx<'_> {
         let value = field(self.settings);
         // Option buttons for up to five choices that exclude each other, a drop-down beyond that,
         // and when the buttons would run past the row's right edge (long names, a narrow window).
-        let rect = options_rect(self.ui, row, options);
+        let widths = option_widths(self.ui, options);
+        let rect = fitted_rect(row, &widths);
         if !buttons_fit(options.len(), rect, row) {
             let listed: Vec<(String, T)> = options.iter().map(|(text, v)| (text.to_string(), *v)).collect();
             if let Some(picked) = choice_dropdown(self.ui, self.painter, row, self.name, &listed, value) {
@@ -657,7 +658,7 @@ impl Cx<'_> {
             }
             return;
         }
-        if let Some(picked) = segmented(self.ui, self.painter, rect, self.name, options, *value) {
+        if let Some(picked) = segmented_parts(self.ui, self.painter, rect, &widths, self.name, options, *value) {
             *value = picked;
             self.outcome.changed = true;
         }
@@ -3449,6 +3450,19 @@ fn options_rect<T>(ui: &Ui, row: Rect, options: &[(&str, T)]) -> Rect {
     Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
 }
 
+/// The width of each option button of a setting's choice: as wide as its text needs, at least
+/// 48 points (`docs/spec/ui-settings.md` › Pages and groups).
+fn option_widths<T>(ui: &Ui, options: &[(&str, T)]) -> Vec<f32> {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    options.iter().map(|(text, _)| (widgets::text_width(ui, text, font.clone()) + 16.0).max(48.0).ceil()).collect()
+}
+
+/// Where the option buttons of `widths` sit in `row`: from the control column, one point apart.
+fn fitted_rect(row: Rect, widths: &[f32]) -> Rect {
+    let width = widths.iter().sum::<f32>() + widths.len().saturating_sub(1) as f32;
+    Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
+}
+
 /// Whether `count` choices fit `row` as option buttons in `rect`: at most [`MAX_BUTTONS`], and
 /// not past the row's right edge.
 pub(crate) fn buttons_fit(count: usize, rect: Rect, row: Rect) -> bool {
@@ -3478,10 +3492,25 @@ fn segmented<T: Copy + PartialEq>(
 ) -> Option<T> {
     let count = options.len().max(1) as f32;
     let part = (rect.width() - (count - 1.0)) / count;
+    let widths = vec![part; options.len()];
+    segmented_parts(ui, painter, rect, &widths, name, options, current)
+}
+
+/// [`segmented`] with a width of its own for each part, from the left of `rect`.
+fn segmented_parts<T: Copy + PartialEq>(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    widths: &[f32],
+    name: &str,
+    options: &[(&str, T)],
+    current: T,
+) -> Option<T> {
     let mut picked = None;
-    for (index, (text, value)) in options.iter().enumerate() {
-        let x = rect.left() + index as f32 * (part + 1.0);
-        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(part, rect.height()));
+    let mut x = rect.left();
+    for (index, ((text, value), part)) in options.iter().zip(widths).enumerate() {
+        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(*part, rect.height()));
+        x += part + 1.0;
         let response = widgets::button_area(ui, cell, Id::unique(("setting", name, index)), format!("{name}: {text}"));
         if response.clicked() && *value != current {
             picked = Some(*value);
