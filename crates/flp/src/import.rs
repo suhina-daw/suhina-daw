@@ -31,6 +31,23 @@ fn color(value: u32) -> suhina_model::Rgb {
     suhina_model::Rgb(value as u8, (value >> 8) as u8, (value >> 16) as u8)
 }
 
+/// The grey FL gives a channel, a mixer insert or a playlist row nobody coloured. It is FL's look,
+/// not a choice the user made, so it comes in as no colour, and the track then gets the colour
+/// a new Suhina track of its kind gets (`crate::appearance::default_colours`).
+pub(crate) fn is_fl_default(c: suhina_model::Rgb) -> bool {
+    use suhina_model::Rgb;
+    matches!(c, Rgb(92, 101, 106) | Rgb(72, 81, 86) | Rgb(74, 82, 88))
+}
+
+/// A custom colour `value`, when `enabled` (FL's flag event, from FL 2025 on) says so or there is
+/// no flag (earlier versions keep the colour without one), and it is not FL's default grey.
+fn custom_color(enabled: Option<u32>, value: Option<u32>) -> Option<suhina_model::Rgb> {
+    if enabled == Some(0) {
+        return None;
+    }
+    value.map(color).filter(|c| !is_fl_default(*c))
+}
+
 /// An imported project and its explicit playback limitations.
 #[derive(Debug)]
 pub struct Import {
@@ -85,6 +102,11 @@ fn relocate_samples(
         let name = stored.file_name()?;
         let mut candidates = relative.map(Path::to_path_buf).into_iter().collect::<Vec<_>>();
         candidates.push(name.into());
+        // The folder it was in, beside the project: a project moved with its own subfolders keeps
+        // them (FL records into an `Audio` folder beside the project, for one).
+        if let Some(parent) = stored.parent().and_then(Path::file_name) {
+            candidates.push(Path::new(parent).join(name));
+        }
         for subfolder in ["Samples", "Recorded", "Rendered"] {
             candidates.push(Path::new(subfolder).join(name));
         }
@@ -176,6 +198,7 @@ fn finish(import: &mut Import) -> Result<(), FlpError> {
         let rows = crate::appearance::rows(&flp, selected)?;
         crate::appearance::apply(import, &rows);
     }
+    crate::appearance::default_colours(&mut import.project);
     validate_routes(&import.project)?;
     import.project.assign_ids().map_err(|_| error(0, "project identity limit exceeded"))?;
     import.project.validate().map_err(|errors| error(0, format!("invalid imported project: {errors:?}")))
@@ -344,6 +367,7 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
     let mut rows: BTreeMap<(u16, u8), Vec<Clip>> = BTreeMap::new();
     let content_indices: BTreeMap<_, _> = project.contents.iter().enumerate().map(|(i, c)| (c.id, i)).collect();
     let mut total_clips = 0usize;
+    let mut empty_placements = 0usize;
     let mut automation_placements = Vec::new();
     for e in &flp.events {
         if e.id == 99 {
@@ -375,7 +399,11 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
                 )
             };
             if !content_indices.contains_key(&content) {
-                return Err(error(e.offset, "playlist refers to missing content"));
+                // A pattern with no notes has no pattern records, yet the playlist may place it,
+                // and an audio clip channel may bring no content: such a clip plays nothing and
+                // belongs to no source track, so it is left out and counted.
+                empty_placements += 1;
+                continue;
             }
             let mut clip = Clip::new(content, p.start, p.length);
             clip.extensions.0.push(Extension {
@@ -427,6 +455,11 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
                 rows.entry((p.row, kind)).or_default().push(clip);
             }
         }
+    }
+    if empty_placements > 0 {
+        warnings.push(format!(
+            "{empty_placements} playlist clips with nothing to play (a pattern with no notes) are left out."
+        ));
     }
     if flp.events.iter().filter(|e| e.id == 99).count() > 1 {
         warnings.push(
@@ -593,9 +626,7 @@ fn add_channel(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| format!("Channel {}", source_id + 1));
     let mut track = Track::new(track_id, &name);
-    if find(41).map(number).transpose()?.is_some_and(|v| v != 0) {
-        track.color = find(128).map(number).transpose()?.map(color);
-    }
+    track.color = custom_color(find(41).map(number).transpose()?, find(128).map(number).transpose()?);
     track.channel = Some(ChannelId(source_id));
     track.content = ContentKinds { notes: true, audio: false };
     let mut channel = Channel::new(ChannelId(source_id), &name);
@@ -986,9 +1017,7 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
         }
         let mut track = Track::new(TrackId(id.0), name);
         track.channel = Some(id);
-        if find(42).map(number).transpose()?.is_some_and(|flag| flag != 0) {
-            track.color = find(149).map(number).transpose()?.map(color);
-        }
+        track.color = custom_color(find(42).map(number).transpose()?, find(149).map(number).transpose()?);
         if index != 0 {
             project.tracks.push(track);
         }

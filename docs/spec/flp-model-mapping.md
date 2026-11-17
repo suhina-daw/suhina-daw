@@ -33,6 +33,14 @@ Grouping the second row changes byte 46 of its 238 record from 0 to 1:
 it belongs to the nearest preceding ungrouped row. This is presentation,
 not a mixer routing instruction. Pattern event 150 uses an FF high byte
 for a custom colour (public Lemon Studio reader at the revision cited below).
+Projects from FL versions without the flag events (41, 42 and 43) keep their colours with
+no flag: a colour is used unless a flag says it is off. FL's untouched greys, (92,101,106)
+for a channel, (74,82,88) for a mixer insert and (72,81,86) for a playlist row (also on some
+channels), are FL's look rather than a choice, so they come in as no colour. A track left
+without one then gets the colour a new Suhina track of its kind gets (audio or MIDI), and a
+folder or group the colour of its first member that has one, so a family reads as one
+(authored-project observation, a 2023 FL project with coloured channels and rows and no flag
+events, 2026-11-18).
 An explicit playlist row colour takes precedence for both its placements and the
 source track on its first placement. Pattern, sample and source colours are used
 only when the represented playlist row has no custom colour.
@@ -184,7 +192,9 @@ data but do not become project tracks.
   shared content, preserving their start, length, trim offset and mute. Rows count down
   from 198 before 12.9 and 499 afterwards. Audio placements reference their source channel;
   automation placements stay disabled. Only the selected arrangement (event 100, numbered
-  by 99) is played.
+  by 99) is played. A placement whose source brought no content (a pattern with no
+  notes has no pattern records, yet the playlist may place it) plays nothing and belongs to no
+  source track: it is left out, and one warning counts such clips.
 - The unmodified input file is retained once in project Extensions as flp/source, so
   event ordering, unknown data and associations survive saving to .suhina. This includes
   the original license metadata: it is never printed in diagnostics. No FLP writer exists.
@@ -219,7 +229,9 @@ Windows) without parent steps and names an existing file; a network share or a d
 project names is decided from the path alone and never touched
 ([missing files](missing-files.md) › Project file boundaries). Otherwise it checks the
 stored relative path (or an absolute path already inside the project directory), then the
-filename beside the project and in its Samples, Recorded and Rendered subdirectories,
+filename beside the project, in the subdirectory its stored path names (FL records into an
+`Audio` folder beside the project, so a moved project finds its takes there) and in its
+Samples, Recorded and Rendered subdirectories,
 then the caller's library candidates as described below. Only existing regular
 files are used; no parent traversal or symlinks are followed. A local match becomes a relative
 reference while the original absolute reference is retained. Stretch timing reads a sample's

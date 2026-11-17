@@ -260,6 +260,12 @@ pub enum MidiPort {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
+/// The colour a new MIDI track or clip gets (and every new track with *One colour*).
+pub const NEW_MIDI_COLOUR: Rgb = Rgb(0x4F, 0xC3, 0xF7);
+
+/// The colour a new audio track or clip gets.
+pub const NEW_AUDIO_COLOUR: Rgb = Rgb(0xFF, 0x9A, 0x3C);
+
 /// What a track saved without a colour of its own (a project from before tracks stored one)
 /// shows, by its place among the tracks: these four in turn. Fixed, since it says what a saved
 /// file means: such a track looks the same in every theme and every version.

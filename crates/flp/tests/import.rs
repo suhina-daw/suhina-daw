@@ -1129,3 +1129,96 @@ fn a_plug_in_generator_channel_plays_3_db_above_the_level_curve() {
     let curve = 20. * ((11f64.powf(10000. / 12800.) - 1.) / 10.).log10();
     assert!((gain - (curve + 20. * std::f64::consts::SQRT_2.log10())).abs() < 1e-9, "{gain} vs {curve}");
 }
+
+/// `original`'s events written again, each through `f`, which may change its payload or add
+/// events after it.
+fn rewritten(original: &[u8], mut f: impl FnMut(&mut Vec<u8>, u8, Vec<u8>)) -> Option<Vec<u8>> {
+    let flp = suhina_flp::read_bytes(original).ok()?;
+    let mut bytes = Vec::new();
+    for e in flp.events {
+        use suhina_flp::Payload;
+        let payload = match e.payload {
+            Payload::Byte(v) => vec![v],
+            Payload::Word(v) => v.to_le_bytes().to_vec(),
+            Payload::Dword(v) => v.to_le_bytes().to_vec(),
+            Payload::Data(v) => v,
+        };
+        f(&mut bytes, e.id, payload);
+    }
+    Some(appended(original[..22].to_vec(), &bytes))
+}
+
+/// A channel's colour without the flag event (projects from FL versions before it) is its own;
+/// FL's untouched grey is no choice, so the track gets the colour a new Suhina MIDI track gets.
+#[test]
+fn channel_colours_without_a_flag_are_kept_and_fl_grey_becomes_suhinas_default() {
+    let with = |value: u32| {
+        rewritten(&fixture(96, 32), |out, id, payload| {
+            event(out, id, &payload);
+            if id == 64 {
+                event(out, 128, &value.to_le_bytes());
+            }
+        })
+        .unwrap()
+    };
+    let own = import_bytes(&with(0x00202260)).unwrap().project;
+    assert!(own.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::Rgb(96, 34, 32))));
+    // (92, 101, 106): FL's default channel colour.
+    let grey = import_bytes(&with(0x006A655C)).unwrap().project;
+    assert!(grey.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::NEW_MIDI_COLOUR)));
+    // A playlist row in FL's grey does not colour its clips or tracks either.
+    let mut row = [0u8; 66];
+    row[..4].copy_from_slice(&1u32.to_le_bytes());
+    row[4..8].copy_from_slice(&0x00565148u32.to_le_bytes());
+    row[12] = 1;
+    let mut events = Vec::new();
+    event(&mut events, 238, &row);
+    let rowed = import_bytes(&appended(with(0x00202260), &events)).unwrap().project;
+    assert!(rowed.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::Rgb(96, 34, 32))));
+}
+
+/// The playlist may place a pattern with no notes, which has no pattern records: the clip plays
+/// nothing and is left out with a warning, instead of stopping the import.
+#[test]
+fn a_placed_pattern_with_no_notes_is_left_out_with_a_warning() {
+    let bytes = rewritten(&fixture(96, 32), |out, id, mut payload| {
+        if id == 233 {
+            // The second placement plays pattern 2, which has no records.
+            payload[32 + 6..32 + 8].copy_from_slice(&0x5002u16.to_le_bytes());
+        }
+        event(out, id, &payload);
+    })
+    .unwrap();
+    let imported = import_bytes(&bytes).unwrap();
+    // The other placement stays, split over the pattern's two voices.
+    assert_eq!(imported.project.arrangement.lanes.iter().flat_map(|l| &l.clips).count(), 2);
+    assert!(
+        imported.warnings.iter().any(|w| w.starts_with("1 playlist clips with nothing to play")),
+        "{:?}",
+        imported.warnings
+    );
+}
+
+/// A sample recorded into a folder beside the project (FL's `Audio`) is found there after the
+/// project moved, through the folder its stored path names.
+#[test]
+fn a_moved_projects_samples_are_found_in_their_own_folder_beside_it() {
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let folder = std::env::temp_dir().join(format!("suhina-import-audio-{}-{nonce}", std::process::id()));
+    std::fs::create_dir_all(folder.join("Audio")).unwrap();
+    let bytes = rewritten(&fixture(96, 32), |out, id, payload| {
+        if id == 196 {
+            text(out, 196, "Z:/gone/Project/Audio/take.wav");
+        } else {
+            event(out, id, &payload);
+        }
+    })
+    .unwrap();
+    let path = folder.join("moved.flp");
+    std::fs::write(&path, &bytes).unwrap();
+    std::fs::write(folder.join("Audio/take.wav"), b"authored existence fixture").unwrap();
+    let found = suhina_flp::import_file(&path).unwrap();
+    assert_eq!(found.project.channels[0].devices[0].sample_file(), Some("Audio/take.wav"));
+    assert!(!found.warnings.iter().any(|w| w.contains("Sample not found")));
+    let _ = std::fs::remove_dir_all(&folder);
+}

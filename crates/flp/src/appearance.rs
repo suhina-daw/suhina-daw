@@ -38,12 +38,22 @@ pub(crate) fn rows(flp: &Flp, selected: u32) -> Result<BTreeMap<u32, Row>, FlpEr
                     .ok_or_else(|| error(e.offset, "invalid playlist row"))?;
                 let rgb = dword(d, 4, e.offset)?;
                 stored_color = Some(Rgb(rgb as u8, (rgb >> 8) as u8, (rgb >> 16) as u8));
-                rows.insert(row, Row { grouped: d.get(46).is_some_and(|v| *v != 0), ..Row::default() });
+                // A row's colour is its own unless it is FL's grey; event 43, where FL writes it,
+                // says whether it is enabled.
+                rows.insert(
+                    row,
+                    Row {
+                        grouped: d.get(46).is_some_and(|v| *v != 0),
+                        color: stored_color.filter(|c| !crate::import::is_fl_default(*c)),
+                        ..Row::default()
+                    },
+                );
                 current = Some(row);
             }
             43 => {
                 if let Some(row) = current.and_then(|id| rows.get_mut(&id)) {
-                    row.color = if number(e)? != 0 { stored_color } else { None };
+                    row.color =
+                        if number(e)? != 0 { stored_color.filter(|c| !crate::import::is_fl_default(*c)) } else { None };
                 }
             }
             239 => {
@@ -160,5 +170,32 @@ pub(crate) fn apply(import: &mut Import, rows: &BTreeMap<u32, Row>) {
             pending.extend(nested);
         }
         p.tracks.push(track);
+    }
+}
+
+/// Every track still without a colour (FL's grey, or none given) gets Suhina's own: an audio
+/// track the colour a new audio track gets, any other the new MIDI track's; a folder or a group
+/// the colour of its first track that has one, so a family reads as one.
+pub(crate) fn default_colours(p: &mut suhina_model::Project) {
+    for track in &mut p.tracks {
+        let parent_like = track.channel.is_none() || track.content == suhina_model::ContentKinds::default();
+        if track.color.is_none() && !parent_like {
+            track.color = Some(if track.content.audio && !track.content.notes {
+                suhina_model::NEW_AUDIO_COLOUR
+            } else {
+                suhina_model::NEW_MIDI_COLOUR
+            });
+        }
+    }
+    // Deepest first, so a folder above a group takes the group's colour.
+    let mut parents: Vec<(usize, TrackId)> =
+        p.tracks.iter().filter(|t| t.color.is_none()).map(|t| (p.with_descendants(t.id).len(), t.id)).collect();
+    parents.sort();
+    for (_, id) in parents {
+        let first =
+            p.tracks.iter().filter(|t| t.id != id && p.with_descendants(id).contains(&t.id)).find_map(|t| t.color);
+        if let Some(track) = p.track_mut(id) {
+            track.color = Some(first.unwrap_or(suhina_model::NEW_MIDI_COLOUR));
+        }
     }
 }

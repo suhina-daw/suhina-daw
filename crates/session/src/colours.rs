@@ -25,10 +25,10 @@ pub const PALETTE: [Rgb; 8] = [
 pub use suhina_model::LEGACY_TRACK_COLOURS as LEGACY;
 
 /// The colour a new MIDI track or clip gets (and every new track, with *One colour*).
-pub const MIDI: Rgb = Rgb(0x4F, 0xC3, 0xF7);
+pub const MIDI: Rgb = suhina_model::NEW_MIDI_COLOUR;
 
 /// The colour a new audio track or clip gets.
-pub const AUDIO: Rgb = Rgb(0xFF, 0x9A, 0x3C);
+pub const AUDIO: Rgb = suhina_model::NEW_AUDIO_COLOUR;
 
 /// The colour a track at `place` among the tracks shows: its own, or else [`LEGACY`]'s.
 pub fn track_colour(own: Option<Rgb>, place: usize) -> Rgb {
