@@ -606,6 +606,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A time range painted over several automation lanes, or over a track where no clip plays, is
   copied, duplicated and deleted with its automation on every lane.
 
+- Plug-ins are **marked as owned** (`plugin.setOwned`, `suhina-cli plugins own`): a mark of the
+  product, every format of it, for the user's own among a vendor's bundle that installs them all;
+  the plug-in manager lists the owned ones first on request, and **Turn off the rest** of a vendor
+  switches off its unmarked ones ([spec](https://github.com/suhina-daw/suhina-daw/blob/main/docs/spec/plugin-manager.md)).
+
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
   stopped on the output chosen in Settings › Audio and shows the **Launcher view**: tracks as
