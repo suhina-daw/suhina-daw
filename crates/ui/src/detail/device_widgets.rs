@@ -364,12 +364,13 @@ pub(crate) fn files(
                 words.pack,
                 &format!("{label}: pack"),
                 Some("folder"),
+                true,
             );
             picked.as_deref().and_then(first_of)
         }
         FileRowPart::File => {
             let shown = file_shown(current, lists);
-            dropdown(ui, rect, salt, files, &listed, &shown, words.file, &format!("{label}: {what} file"), None)
+            dropdown(ui, rect, salt, files, &listed, &shown, words.file, &format!("{label}: {what} file"), None, false)
         }
         FileRowPart::PreviousPack | FileRowPart::NextPack => {
             let up = part == FileRowPart::PreviousPack;
@@ -393,8 +394,11 @@ pub(crate) fn files(
 /// A dropdown pill in `rect`, its shown text and the rows under it (`rows` lists each as
 /// (path, label); the pack row's paths are the packs' names). The shown text falls back to
 /// the path's own name; with no rows, the empty text alone. The pack row draws the design
-/// system's folder artwork before its name (`icon`), so the two pickers read apart. Returns
-/// the row's path a click asked for.
+/// system's folder artwork before its name (`icon`), so the two pickers read apart. Each row is
+/// one line, cut short with its whole name on hover, a file without its extension. `grouped`
+/// (the pack row) lists a collection's capture folders (`Group / Capture`) under their group's
+/// name as a heading, a line between groups, and shows the chosen one as `Group › Capture`.
+/// Returns the row's path a click asked for.
 #[allow(clippy::too_many_arguments)] // the labels, current value, rows and artwork of one dropdown
 fn dropdown(
     ui: &mut Ui,
@@ -406,6 +410,7 @@ fn dropdown(
     empty: &str,
     label: &str,
     icon: Option<&str>,
+    grouped: bool,
 ) -> Option<String> {
     let mut row = match icon {
         Some(role) => {
@@ -431,6 +436,7 @@ fn dropdown(
     } else {
         shown.to_owned()
     };
+    let current_name = if grouped { current_name.replace(GROUP_JOIN, " › ") } else { current_name };
     let mut choice: Option<String> = None;
     // Cut short to the row, never drawn under the steppers beside it: the icon's own margin,
     // when the row draws one, comes out of the same bounds.
@@ -451,13 +457,28 @@ fn dropdown(
             // The rows carry the canonical form ([ADR 0036] › 5, the review): the compare
             // folds the state's side alone, once, not per row.
             let current = canonical_paths(current);
-            for (path, name) in rows {
+            // One line a row: a long capture's name is cut short, never wrapped over three.
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+            let mut group: Option<&str> = None;
+            for (index, (path, name)) in rows.iter().enumerate() {
+                let (in_group, own) = if grouped {
+                    name.split_once(GROUP_JOIN).map_or((None, name.as_str()), |(group, own)| (Some(group), own))
+                } else {
+                    (None, row_name(name))
+                };
+                if grouped && (index == 0 || in_group != group) {
+                    if index > 0 {
+                        ui.separator();
+                    }
+                    if let Some(heading) = in_group {
+                        ui.label(egui::RichText::new(heading).font(theme::ui_font(theme::TEXT_TINY)).weak());
+                    }
+                    group = in_group;
+                }
                 let mut on = path == &current;
-                let item = ui.selectable_value(
-                    &mut on,
-                    true,
-                    egui::RichText::new(name).font(theme::ui_font(theme::TEXT_SMALL)),
-                );
+                let item = ui
+                    .selectable_value(&mut on, true, egui::RichText::new(own).font(theme::ui_font(theme::TEXT_SMALL)))
+                    .on_hover_text(name.as_str());
                 if item.changed() {
                     choice = Some(path.clone());
                 }
@@ -470,7 +491,18 @@ fn dropdown(
     choice
 }
 
-/// A stepper button drawn in `rect`: a triangle pointing up or down, answering by its label.
+/// How a capture folder's pack joins its group's name to its own (`Live Amp Modeler / Albion
+/// Chime`, nam spec › Folders › Packs).
+const GROUP_JOIN: &str = " / ";
+
+/// A file row's shown name: a `.nam` or `.wav` file's without its extension.
+fn row_name(name: &str) -> &str {
+    let lower = name.to_ascii_lowercase();
+    if lower.ends_with(".nam") || lower.ends_with(".wav") { &name[..name.len() - 4] } else { name }
+}
+
+/// A stepper button drawn in `rect`: a triangle pointing left (`up`, the previous one) or right
+/// (the next one), as the two sit side by side in their row; answering by its label.
 fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) -> egui::Response {
     let painter = ui.painter();
     let response = ui.interact(rect, egui::Id::unique(id_salt), Sense::click());
@@ -482,9 +514,9 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
     let dir = if up { -1.0 } else { 1.0 };
     painter.add(egui::Shape::convex_polygon(
         vec![
-            egui::pos2(center.x, center.y + 2.5 * dir),
-            egui::pos2(center.x - 3.5, center.y - 1.5 * dir),
-            egui::pos2(center.x + 3.5, center.y - 1.5 * dir),
+            egui::pos2(center.x + 2.5 * dir, center.y),
+            egui::pos2(center.x - 1.5 * dir, center.y + 3.5),
+            egui::pos2(center.x - 1.5 * dir, center.y - 3.5),
         ],
         look.own_color_or(crate::detail::detail_view::hint_ink()),
         egui::Stroke::NONE,

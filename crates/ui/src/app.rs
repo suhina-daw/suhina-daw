@@ -1965,6 +1965,8 @@ impl App {
                 .map(|d| d.path.trim().to_string())
                 .filter(|text| !text.is_empty())
                 .and_then(|text| Path::new(&text).parent().map(Path::to_path_buf)),
+            PickField::MissingFile => self.missing.pick_start(),
+            PickField::MissingFolder => folder_of(&self.missing.folder),
             PickField::BrowserFolder
             | PickField::McpWriteFolder
             | PickField::CopyToFolder
@@ -2005,6 +2007,15 @@ impl App {
             PickField::NamModelsFolder => self.settings.nam_models_folder = text,
             PickField::ThemePackage => {
                 self.themes.import(path);
+                return;
+            }
+            PickField::MissingFile => {
+                self.missing.picked_file(path);
+                return;
+            }
+            PickField::MissingFolder => {
+                self.missing.folder = text;
+                self.missing.search_folder(path);
                 return;
             }
             // A folder whose files move with it asks first.
@@ -2168,8 +2179,12 @@ impl App {
     /// The project dialog and the save prompt, over the window, and what was chosen in them.
     fn project_dialogs(&mut self, ui: &Ui, window: Rect) {
         let name = self.projects.active().and_then(|id| self.projects.name(id)).unwrap_or("the project").to_string();
-        if let Some(crate::app::missing_files::Outcome::Apply(files)) = self.missing.panel(ui, window, &name) {
-            self.relink(files);
+        match self.missing.panel(ui, window, &name) {
+            Some(crate::app::missing_files::Outcome::Apply(files)) => self.relink(files),
+            Some(crate::app::missing_files::Outcome::PickFile) => self.ask_pick(PickField::MissingFile),
+            Some(crate::app::missing_files::Outcome::PickFolder) => self.ask_pick(PickField::MissingFolder),
+            Some(crate::app::missing_files::Outcome::Reveal(path)) => self.reveal = Some(path),
+            None => {}
         }
         if let Some(mut state) = self.project_dialog.take() {
             match project_dialog::show(ui, window, &mut state, &self.project_lists) {

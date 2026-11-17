@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-16
+last_verified: 2026-11-17
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -522,7 +522,8 @@ page's (ADR 0031, amendment of 2026-11-15).
   (`divider[kind="detail-splitter"]`), the toolbar's switches (`button[kind="map"]`, `"agent"`, `"play"`,
   `"browser"`), Settings' edge and its pages' list (`settings`, `settings-nav[checked]`), the start
   page's tabs (`editor-tab[kind="start"]`), a dialog's title row, the rows of a dialog's list, the
-  Plug-in manager's table and the colour picker (`list-row[kind="dialog"]`, `"plugin"`, `"picker"`),
+  Plug-in manager's table, the missing files panel's table and the colour picker
+  (`list-row[kind="dialog"]`, `"plugin"`, `"missing-file"`, `"picker"`),
   the swatches, the theme picker's cards, the drag pill (`tooltip`), the buttons that add a track
   (`add-track`), the buttons of Settings and the dialogs (`button[kind="secondary"]`, `"check"`,
   `"option"`, `"preset"`, `"switch"`, lit with `[checked]`) and egui's own widgets (`widget`, below).
@@ -1612,7 +1613,11 @@ of bars, and a slider id per parameter.
 - **Hovered clips:** `clip:hover { background-color }` replaces the lighter mix of a clip under
   the pointer in a slot; the clip fades toward it and back as the pointer comes and goes.
 - **Knob artwork per part:** `pan.knob.body|pointer` and `send.knob.body|pointer` for a pan's and
-  a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`. An
+  a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`.
+  `device.knob.body|pointer` replace the face and the pointer of a device panel's knobs that draw
+  the device's own artwork (the Amp Modeler's knobs, `Dial { image }`); without them those
+  knobs keep the device's image, never `knob.*`. The arc around them takes the knob's
+  `accent-color`. An
   Arrangement send is a knob with `send { appearance: knob }`, as in the mixer.
 - **Mixer colour strip:** `mixer > track-colour` (`display: none` hides it; `width` sizes it).
 - **`accent-color`** reaches every control in its scope, the built-in effects' parameter knobs too.

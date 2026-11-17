@@ -193,6 +193,177 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     assert!(actions.iter().any(|action| action.id == "device.setParam" && action.params["param"] == "enabled"));
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
 }
+/// A theme's `device.knob.body` replaces a dial's own face in the states it has artwork for, even
+/// with none for the plain state, and the device's image stays where it has none.
+#[test]
+fn a_themes_device_knob_replaces_a_dials_own_face_in_the_states_it_covers() {
+    let face = suhina_device_sdk::ui::ImageAsset::from_bytes(
+        "face",
+        include_bytes!("../../../../devices/nam-amp-modeler/panel/knob.png"),
+    )
+    .unwrap();
+    let canvas = Arc::new(DeviceUi {
+        size: [60.0, 80.0],
+        assets: vec![face],
+        controls: vec![CustomControl {
+            id: "gain".into(),
+            name: "gain".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, 60.0, 80.0],
+            widget: Some(Widget::Dial {
+                label: "Gain".into(),
+                decimals: 1,
+                format: Default::default(),
+                image: Some("face".into()),
+            }),
+            visible_when: None,
+            gesture: UiGesture::Drag,
+            x: None,
+            y: Some(UiBinding::new("gain")),
+            drawing: Vec::new(),
+        }],
+        ..Default::default()
+    });
+    let parameters = [parameter("gain", false)];
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#12AB34\"/></svg>";
+    // Artwork for the hovered knob only.
+    crate::kit::skin::configure(&crate::kit::skin::Skin {
+        assets: [("device.knob.body.hover".into(), svg.into())].into(),
+        ..Default::default()
+    });
+    let ctx = egui::Context::default();
+    let theme_green = Color32::from_rgb(0x12, 0xAB, 0x34);
+    let frame = |pointer: Option<Pos2>| {
+        let events = pointer.map(egui::Event::PointerMoved).into_iter().collect();
+        let mut output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(60.0, 80.0)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            )
+        });
+        let painted =
+            output.textures_delta.set.values().flat_map(|deltas| deltas.iter()).any(|delta| match &delta.image {
+                egui::ImageData::Color(image) => image.pixels.contains(&theme_green),
+            });
+        // egui asserts in debug builds that a frame's texture deltas were handled before they drop.
+        output.textures_delta.clear();
+        painted
+    };
+    assert!(!frame(None), "not hovered: the device's own face, not the theme's hover artwork");
+    let centre = Pos2::new(30.0, 40.0);
+    let hovered = frame(Some(centre)) | frame(Some(centre)) | frame(Some(centre));
+    assert!(hovered, "hovered: the theme's device.knob.body.hover replaces the face");
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+}
+
+/// A dial's pointer over the device's own dark face stays readable when the theme's text is dark
+/// too (a light theme): it takes the ink that reads on the face, not the theme's text colour.
+#[test]
+fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
+    let face = suhina_device_sdk::ui::ImageAsset::from_bytes(
+        "face",
+        include_bytes!("../../../../devices/nam-amp-modeler/panel/knob.png"),
+    )
+    .unwrap();
+    let (pixels, size) = face.decode_rgba().unwrap();
+    let fill = face_colour(&pixels, size).unwrap();
+    let canvas = Arc::new(DeviceUi {
+        size: [60.0, 52.0],
+        assets: vec![face],
+        controls: vec![CustomControl {
+            id: "gain".into(),
+            name: "gain".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, 60.0, 52.0],
+            widget: Some(Widget::Dial {
+                label: String::new(),
+                decimals: 1,
+                format: Default::default(),
+                image: Some("face".into()),
+            }),
+            visible_when: None,
+            gesture: UiGesture::Drag,
+            x: None,
+            y: Some(UiBinding::new("gain")),
+            drawing: Vec::new(),
+        }],
+        ..Default::default()
+    });
+    let parameters = [parameter("gain", false)];
+    let pointer = |text: Color32| {
+        let ctx = egui::Context::default();
+        // The sheet's variables: the canvas's text colour reads `--text-primary`, a knob's own
+        // `color` `--text-hint` (base.css), which the dial's line takes.
+        crate::kit::theme::use_colors(
+            &ctx,
+            &[("text-primary".to_owned(), text), ("text-hint".to_owned(), text)].into(),
+        );
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = crate::kit::native_css::frame(ui);
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(60.0, 52.0)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                &parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            )
+        });
+        crate::kit::theme::use_colors(&ctx, &crate::kit::theme::Colors::new());
+        output.textures_delta.clear();
+        output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::LineSegment { stroke, .. } => Some(stroke.color),
+                _ => None,
+            })
+            .expect("the pointer is drawn")
+    };
+    for text in [Color32::from_rgb(20, 20, 24), Color32::from_rgb(236, 232, 225)] {
+        let ink = pointer(text);
+        let contrast = crate::kit::theme::text_contrast(ink, fill);
+        assert!(contrast >= 3.0, "with text {text:?} the pointer is {ink:?} on {fill:?}, contrast {contrast}");
+    }
+    // A theme's light `device.knob.body` replaces the dark face: the pointer stands out from the
+    // theme's face, not from the device's that it hides, so the theme's dark text stays.
+    let light = Color32::from_rgb(0xF0, 0xEE, 0xE8);
+    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#F0EEE8\"/></svg>";
+    crate::kit::skin::configure(&crate::kit::skin::Skin {
+        assets: [("device.knob.body".into(), svg.into())].into(),
+        ..Default::default()
+    });
+    let ink = pointer(Color32::from_rgb(20, 20, 24));
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    let contrast = crate::kit::theme::text_contrast(ink, light);
+    assert!(contrast >= 3.0, "over the theme's light face the pointer is {ink:?}, contrast {contrast}");
+}
+
+/// A face's colour is the mean of the opaque pixels in its middle; the transparent corners and the
+/// rim do not count.
+#[test]
+fn a_faces_colour_is_its_middles_opaque_mean() {
+    // 8 × 8: a white rim, a red middle out to 62% of the half-size (a radius of 2.48).
+    let mut pixels = vec![255u8; 8 * 8 * 4];
+    for (i, px) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        let (x, y) = ((i % 8) as f32 + 0.5 - 4.0, (i / 8) as f32 + 0.5 - 4.0);
+        if x * x + y * y <= 2.48 * 2.48 {
+            *px = [200, 10, 10, 255];
+        }
+    }
+    assert_eq!(face_colour(&pixels, [8, 8]), Some(Color32::from_rgb(200, 10, 10)));
+    assert_eq!(face_colour(&[0; 16 * 4], [4, 4]), None, "a transparent image has no face colour");
+}
+
 /// A token drawing in a translucent theme colour keeps the theme's alpha, times its own (#1235).
 #[test]
 fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
@@ -2622,4 +2793,94 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
 /// canvas (`device-canvas`'s `accent-color`).
 fn marker_color() -> Color32 {
     crate::kit::theme::studio("accent")
+}
+
+/// The pack dropdown lists a collection's capture folders under their group's name, a line
+/// between groups, each row by its own name on one line; the chosen one reads `Group › Capture`
+/// in the box, and a row still chooses its pack's first file.
+#[test]
+fn the_pack_dropdown_groups_a_collections_captures() {
+    use egui_kittest::kittest::Queryable;
+    let set = |name: &str, file: &str| crate::detail::device_widgets::Set {
+        name: name.into(),
+        files: vec![(file.into(), format!("{file} model"))],
+    };
+    let lists = crate::detail::device_widgets::Lists {
+        models: vec![
+            set("Collection / Bright", "p/Collection/Bright/a.nam"),
+            set("Collection / Dark", "p/Collection/Dark/b.nam"),
+            set("Solo", "p/Solo/c.nam"),
+        ],
+        ..crate::detail::device_widgets::Lists::default()
+    };
+    let canvas = Arc::new(DeviceUi {
+        size: [428., 168.],
+        controls: vec![CustomControl {
+            id: "pack".into(),
+            name: "pack".into(),
+            tooltip: String::new(),
+            bounds: [0., 0., 200., 20.],
+            widget: Some(Widget::DeviceFiles { part: FileRowPart::Pack, what: "model".into() }),
+            gesture: UiGesture::Drag,
+            x: None,
+            y: None,
+            drawing: vec![],
+            visible_when: None,
+        }],
+        ..Default::default()
+    });
+    let draw = |ui: &mut egui::Ui, state: &mut (Vec<Action>, String)| {
+        crate::kit::theme::install(ui.ctx());
+        let panel_state = crate::detail::device_widgets::PanelState {
+            name: "NAM Amp Modeler".into(),
+            enabled: true,
+            file: &state.1,
+            lists: Some(&lists),
+        };
+        show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(428., 168.)),
+            &canvas,
+            &panel_state,
+            &[],
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut state.0,
+        );
+    };
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(428., 168.))
+        .build_ui_state(draw, (Vec::new(), "p/Collection/Dark/b.nam".to_owned()));
+    harness.run_steps(2);
+    // The box's text, as the frame paints it.
+    let ctx = egui::Context::default();
+    let mut state = (Vec::new(), "p/Collection/Dark/b.nam".to_owned());
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| draw(ui, &mut state));
+    output.textures_delta.clear();
+    let texts: Vec<String> = output
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        texts.iter().any(|t| t.contains("Collection › Dark")),
+        "the chosen capture reads Group › Capture: {texts:?}"
+    );
+    harness.get_by_label("Amp Modeler: pack").click();
+    harness.run();
+    assert!(harness.query_by_label("Collection").is_some(), "the group's name heads its captures");
+    harness.get_by_label("Amp Modeler: pack: Collection / Bright").click();
+    harness.run();
+    let paths: Vec<&str> = harness
+        .state()
+        .0
+        .iter()
+        .filter(|action| action.id == "device.setNamFile")
+        .filter_map(|action| action.params.get("path").and_then(|p| p.as_str()))
+        .collect();
+    assert_eq!(paths, ["p/Collection/Bright/a.nam"], "a row chooses its pack's first file");
 }

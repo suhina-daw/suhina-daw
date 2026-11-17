@@ -583,11 +583,20 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Prefixed("mixer-send-"))
         .settings(VALUE_SETTINGS)
         .artwork(&[own("send"), own("send.fill"), own("send.knob.body"), own("send.knob.pointer")]),
-    element("knob", Control, "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`.")
-        .parts(&["knob-body", "knob-pointer", "knob-ring"])
-        .attributes(&["kind"])
+    element(
+        "knob",
+        Control,
+        "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`, and `device.knob.*` replaces the face a device panel draws for its own knobs.",
+    )
+    .parts(&["knob-body", "knob-pointer", "knob-ring"])
+    .attributes(&["kind"])
         .settings(VALUE_SETTINGS)
-        .artwork(&[default_svg!("knob.body", "knob-body"), default_svg!("knob.pointer", "knob-pointer")]),
+        .artwork(&[
+            default_svg!("knob.body", "knob-body"),
+            default_svg!("knob.pointer", "knob-pointer"),
+            own("device.knob.body"),
+            own("device.knob.pointer"),
+        ]),
     element("knob-body", Part, "A knob's body; its artwork takes its `color`."),
     element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),
     element("knob-ring", Part, "The disc between a dial's rim and its inner disc: its `background-color`, where the region the dial is in gives none."),
@@ -632,7 +641,7 @@ pub const ELEMENTS: &[Element] = &[
     element("dialog", Region, "A dialog.").parts(&["dialog-title", "list-row"]).settings(FLOATING),
     element("dialog-title", Part, "A dialog's title row, with its Close button: its `background-color`, its words `label[kind=\"title\"]`."),
     element("colour-swatch", Control, "A swatch of the colour picker, in a track's or a clip's menu: its `border-color` outlines the chosen one and the one under the pointer, and the square of the colour beside a picker's name, `colour-swatch[kind=\"square\"]`.").attributes(&["kind"]),
-    element("list-row", Control, "A row of a list in a dialog or on the start page that a click picks (a recent project, a template): its `background-color` under the pointer, its `color` for its name. A dialog's row is `list-row[kind=\"dialog\"]`, a row of the Plug-in manager's table `list-row[kind=\"plugin\"]` (its fill while picked and under the pointer) and the colour picker's row beside a name `list-row[kind=\"picker\"]`.").attributes(&["selected", "kind"]),
+    element("list-row", Control, "A row of a list in a dialog or on the start page that a click picks (a recent project, a template): its `background-color` under the pointer, its `color` for its name. A dialog's row is `list-row[kind=\"dialog\"]`, a row of the Plug-in manager's table `list-row[kind=\"plugin\"]` (its fill while picked and under the pointer), a row of the missing files panel's table `list-row[kind=\"missing-file\"]` (the same) and the colour picker's row beside a name `list-row[kind=\"picker\"]`.").attributes(&["selected", "kind"]),
     element("start-page", Region, "The page shown with no project open."),
     element("plugin-manager", Region, "The Plug-in manager."),
     element("export", Region, "The Export audio dialog."),

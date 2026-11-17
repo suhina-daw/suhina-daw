@@ -528,6 +528,9 @@ pub const THEME_PALETTE_TOKENS: [([u8; 3], &str); 5] =
 
 /// The id a canvas reads to know whether its device's expanded panel is open (1) or not (0).
 pub const EXPANDED_ID: &str = "#expanded";
+/// The id a canvas reads to know whether the theme in use is a light one (1) or a dark one (0),
+/// for artwork made in a light and a dark version.
+pub const LIGHT_ID: &str = "#light";
 /// What a [`Draw::Plot`]'s `y` reads for its share of the way along the curve, 0 to 1.
 pub const PLOT_X_ID: &str = "#x";
 /// What an expression reads for the host's clock, in seconds, for a drawing that moves by itself.
@@ -596,7 +599,7 @@ impl DeviceUi {
             .iter()
             .map(|p| p.id.as_str())
             .chain(READOUT_IDS)
-            .chain([EXPANDED_ID, PLOT_X_ID, TIME_ID])
+            .chain([EXPANDED_ID, LIGHT_ID, PLOT_X_ID, TIME_ID])
             .collect::<HashSet<_>>();
         let ids = parameters.iter().map(|p| p.id.as_str()).collect::<HashSet<_>>();
         let mut asset_ids = HashSet::new();

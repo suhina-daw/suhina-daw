@@ -296,6 +296,12 @@ refused or suspended, never by losing its edits.
   only on Save, Save as new variant or after asking on leaving; New theme… starts from Suhina's
   defaults or any theme with a name, author and description, and Theme info… edits them.
 
+- The NAM Amp Modeler's panel is an amp head: its own artwork behind the controls, the pack,
+  the model and the ◀ ▶ model steppers on one row, EQ, HQ and the Mid Freq's value under them,
+  and six knobs on the plate. The texts, arcs, pointers and lit buttons take the theme's
+  colours, and a theme's `device.knob.body` and `device.knob.pointer` artwork puts knobs of the
+  user's own in place of the panel's.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
@@ -606,6 +612,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - A time range painted over several automation lanes, or over a track where no clip plays, is
   copied, duplicated and deleted with its automation on every lane.
 
+- Plug-ins are **marked as owned** (`plugin.setOwned`, `suhina-cli plugins own`): a mark of the
+  product, every format of it, for the user's own among a vendor's bundle that installs them all;
+  the plug-in manager lists the owned ones first on request, and **Turn off the rest** of a vendor
+  switches off its unmarked ones ([spec](https://github.com/suhina-daw/suhina-daw/blob/main/docs/spec/plugin-manager.md)).
+
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
   stopped on the output chosen in Settings › Audio and shows the **Launcher view**: tracks as
@@ -728,10 +739,12 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   loading it, such as an Intel-only plug-in on an Apple silicon Mac), is settled and listed
   apart.
 - **Missing files**: a project whose audio files cannot be found says so in a bar when it opens
-  (Find…, Later; View › Missing files). The panel lists them with the clips that use them, finds
-  them by name in the browser's folders and the project's folder at once, or in a folder typed or
-  dropped on it (walked in the background), best match first; Apply relinks them in one undo step
-  ([spec](docs/spec/missing-files.md)).
+  (Find…, Later; View › Missing files). The panel lists them in a table with the clips and
+  samplers that use them (inside device groups too), finds them by name in the browser's folders
+  and the project's folder at once, or in a folder chosen, typed or dropped on it (walked in the
+  background), best match first. A file located by hand (Locate…, dropped on its row, or its path
+  pasted) finds the others beside it and where its folder moved to; Copy file name hands the name
+  to a file search tool. Apply relinks them in one undo step ([spec](docs/spec/missing-files.md)).
 - The **sample map** (the browser's Sample map button, large in the main area, or in a window of its own for a second screen, Ctrl+Alt+M, which keeps its place): the samples
   of the browser's place laid out by how they sound, coloured by kind (kick, snare, clap, hats,
   toms, cymbals, percussion, bass, tonal, vocal, effect), as a free cloud or snapped to a grid that follows the view's shape (`soundmap.layout`

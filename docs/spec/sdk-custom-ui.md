@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-11-07
+last_verified: 2026-11-17
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -213,7 +213,10 @@ bytes before base64 total at most 1 MiB, one asset at most 512 KiB, decoded dime
 one image at most 1 million pixels and total images at most 4 million pixels. Header dimensions
 are validated before decoding; image decoding uses allocation limits off the audio thread.
 Decode failures appear in the panel as an asset error and preserve the graph. Textures and parsed
-UI graphs are cached with bounded retention. Supported image layouts are stretch, contain and
+UI graphs are cached with bounded retention. Textures are mipmapped, so an image larger than it is
+drawn (artwork at two or three times its points, for a high-DPI screen) stays smooth on a screen
+at 100 %. A built-in device's layout may keep its images as files beside its `panel.json`; the
+registry embeds them as the canvas's assets as the layout loads, under the same limits. Supported image layouts are stretch, contain and
 cover, with UV crop, RGBA tint and optional tile size. Repetition uses texture wrapping, not an
 unbounded loop of drawing operations. Vector icons are paths/lines/circles, raster icons can
 use PNG transparency. Photos and patterns are original assets supplied by the author.
@@ -293,7 +296,7 @@ Stroke widths and rectangle corner radii are 0..128; text size is 8..48. Image `
 current value and unit to the prefix `text`. `decimals` is 0..8. Unknown fields are rejected.
 
 A value expression uses `op`: `parameter` has `parameter` (id), `normalized` (false), `logarithmic`
-(false); `add`, `multiply`, `min` and `max` have `a` and `b`; `readout` has `index` (0 – 34) and reads the device's live value of that index ([ADR 0032](../decisions/0032-device-readouts.md)), 0 while it hands none; drawings and `visible_when` may also name `#r0` … `#r34` and `#expanded` (1 while the device's expanded panel is open) as parameters, bindings never; `sin` and `cos` have `value` (radians).
+(false); `add`, `multiply`, `min` and `max` have `a` and `b`; `readout` has `index` (0 – 34) and reads the device's live value of that index ([ADR 0032](../decisions/0032-device-readouts.md)), 0 while it hands none; drawings and `visible_when` may also name `#r0` … `#r34` `#expanded` (1 while the device's expanded panel is open) and `#light` (1 while the theme in use is a light one, for artwork made in a light and a dark version) as parameters, bindings never; `sin` and `cos` have `value` (radians).
 The `equal` expression has `a` and `b` and returns 1 when their difference is less than 0.0001, otherwise 0; use it for selected segment highlights.
 The parameter expression returns raw units unless `normalized` is true. Use the same
 `logarithmic` flag on bindings and normalized drawings.
@@ -359,7 +362,13 @@ triplet/dotted suffixes and sixteenth-note step counts while retaining saved val
 
 ## Reusable functional widgets
 
-Dial also accepts optional `decimals` (default 0) and `format` (default `number`).
+Dial also accepts optional `decimals` (default 0) and `format` (default `number`), and an optional
+`image`: the id of one of the canvas's image assets, drawn as the dial's face — a device's own
+knob. Such a dial draws, inside its bounds, its track and its value's arc (the theme's border and
+accent colours) around the image and the pointer over it (the theme's text colour); its label
+and value keep their places. A theme's `device.knob.body` artwork replaces the image and its
+`device.knob.pointer` the pointer ([theme-skins.md](theme-skins.md)), so a user can bring knobs
+of their own to every device that draws its own.
 Format `tempo` displays BPM, or Auto for zero (a device may use that value to request tempo detection).
 Formats `seconds`, `percent`, `decibels` and `balance` display milliseconds/seconds,
 fractional percentages, dB and centre/L/R respectively. Existing Dial definitions

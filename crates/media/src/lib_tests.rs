@@ -139,6 +139,78 @@ fn missing_files_are_listed_with_their_clips() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A sampler inside a device group plays its file as one on the track does: the file is
+/// decoded with the project, listed when it is missing, and counted as a sampler, not a clip.
+#[test]
+fn a_grouped_sampler_s_file_is_decoded_and_missed_like_a_track_s() {
+    let dir = temp_dir("grouped-sampler");
+    write_wav(&dir.join("set").join("kick.wav"), 1, 100);
+    let sampler = |file: &str| {
+        let mut device = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+        device.set_sample_file(file);
+        device
+    };
+    let grouped = |file: &str| {
+        let mut branch = Branch::new("Branch 1");
+        branch.devices.push(sampler(file));
+        Device::group("Group", DeviceGroup::with_branches(vec![branch]))
+    };
+    let mut project = Project::default();
+    project.channels.push(Channel::new(ChannelId(1), "Drums"));
+    project.channels[0].devices.push(grouped("kick.wav"));
+    let decoded = decode_project_audio_found(&project, &dir.join("set"), &Trusted::default());
+    assert!(decoded.pool.files.contains_key("kick.wav"), "{:?}", decoded.warnings);
+
+    project.channels[0].devices.push(grouped("gone.wav"));
+    project.channels[0].devices.push(sampler("gone.wav"));
+    let missing = missing_audio(&project, &dir.join("set"));
+    assert_eq!(missing.len(), 1);
+    assert_eq!((missing[0].file.as_str(), missing[0].clips, missing[0].samplers), ("gone.wav", 0, 2));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A name a sampler and a clip share resolves through whichever of them names a file that is
+/// there: the sampler's stale absolute path does not leave the clip silent or missing.
+#[test]
+fn a_stale_reference_does_not_hide_a_good_one_of_the_same_name() {
+    let dir = temp_dir("shared-name");
+    let good = dir.join("library").join("loop.wav");
+    std::fs::create_dir_all(good.parent().unwrap()).unwrap();
+    write_wav(&good, 1, 100);
+    let mut project = project_with_audio("loop.wav", Some(good.display().to_string()));
+    let mut sampler = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+    sampler.set_sample_reference("loop.wav", &dir.join("gone").join("loop.wav").display().to_string());
+    project.channels.push(Channel::new(ChannelId(1), "Keys"));
+    project.channels[0].devices.push(sampler);
+    let trusted = Trusted { local: true, ..Trusted::default() };
+    let decoded = decode_project_audio_found(&project, &dir.join("set"), &trusted);
+    assert!(decoded.pool.files.contains_key("loop.wav"), "{:?}", decoded.warnings);
+    assert!(missing_audio_trusted(&project, &dir.join("set"), &trusted).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A sampler that plays a name whole finds the file a clip playing one of its tracks found,
+/// when its own absolute path is stale.
+#[test]
+fn a_name_played_whole_takes_the_file_a_track_of_it_found() {
+    let dir = temp_dir("whole-and-track");
+    let good = dir.join("library").join("loop.wav");
+    std::fs::create_dir_all(good.parent().unwrap()).unwrap();
+    write_wav(&good, 1, 100);
+    let mut project = project_with_audio("loop.wav", Some(good.display().to_string()));
+    if let LaneData::Audio(region) = &mut project.contents[0].lanes[0].data {
+        region.stream = Some(0);
+    }
+    let mut sampler = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+    sampler.set_sample_reference("loop.wav", &dir.join("gone").join("loop.wav").display().to_string());
+    project.channels.push(Channel::new(ChannelId(1), "Keys"));
+    project.channels[0].devices.push(sampler);
+    let trusted = Trusted { local: true, ..Trusted::default() };
+    let decoded = decode_project_audio_found(&project, &dir.join("set"), &trusted);
+    assert!(decoded.pool.files.contains_key("loop.wav"), "{:?}", decoded.warnings);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn an_empty_region_names_no_file_so_nothing_is_decoded_or_missed() {
     // An empty audio clip (clip.create on an audio track) has no file yet.

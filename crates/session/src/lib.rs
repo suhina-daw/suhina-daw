@@ -568,8 +568,8 @@ impl Session {
     /// of its decoded audio), each name once.
     pub(crate) fn loaded_audio(&self) -> Vec<(String, PathBuf)> {
         let mut out: Vec<(String, PathBuf)> = Vec::new();
-        let devices = self.project.channels.iter().flat_map(|c| &c.devices);
-        let named = devices.filter_map(|d| d.sample_file().map(|f| (f, d.sample_absolute_file()))).chain(
+        let devices = suhina_media::sampler_devices(&self.project);
+        let named = devices.into_iter().filter_map(|d| d.sample_file().map(|f| (f, d.sample_absolute_file()))).chain(
             self.project.contents.iter().flat_map(|c| &c.lanes).filter_map(|l| match &l.data {
                 suhina_model::LaneData::Audio(region) if !region.file.is_empty() => {
                     Some((region.file.as_str(), region.absolute_file.as_deref()))

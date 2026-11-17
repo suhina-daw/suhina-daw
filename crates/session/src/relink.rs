@@ -44,13 +44,16 @@ pub(crate) fn missing_of(
     trusted: &suhina_media::Trusted,
 ) -> Vec<suhina_media::MissingAudio> {
     let folder = folder.map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    // A decoded file was loaded by the person or found on opening, so its path is looked at on
+    // a local disk wherever it is; a network share or a device path the project names is not
+    // asked about (decided from the path alone, as on opening).
+    let on_disk = suhina_media::Trusted { local: true, ..trusted.clone() };
     suhina_media::missing_audio_trusted(project, &folder, trusted)
         .into_iter()
         .filter(|missing| {
-            // Already decoded paths were explicitly loaded or safely resolved on open.
             let loaded = audio.files.contains_key(&missing.file)
                 || audio.files.contains_key(&suhina_model::stream_key(&missing.file, 0));
-            !loaded || !missing.last_path.is_file()
+            !loaded || on_disk.find(&missing.last_path).is_none()
         })
         .collect()
 }
@@ -60,7 +63,9 @@ pub(crate) fn missing_files(session: &mut Session, _: &Value) -> Result<Value, C
     let files: Vec<Value> = session
         .missing_files()
         .into_iter()
-        .map(|m| json!({ "file": m.file, "lastPath": m.last_path.display().to_string(), "clips": m.clips }))
+        .map(|m| {
+            json!({ "file": m.file, "lastPath": m.last_path.display().to_string(), "clips": m.clips, "samplers": m.samplers })
+        })
         .collect();
     Ok(json!({ "files": files }))
 }
@@ -87,20 +92,22 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
         }
         // The streams of a Stems file that clips play, so each is decoded with it.
         let mut streams: Option<u16> = None;
-        let mut named = session
-            .project()
-            .channels
-            .iter()
-            .flat_map(|c| &c.devices)
-            .any(|d| d.sample_file() == Some(file.as_str()) || d.sample_absolute_file() == Some(file.as_str()));
+        let names = |d: &suhina_model::Device| {
+            d.sample_file() == Some(file.as_str()) || d.sample_absolute_file() == Some(file.as_str())
+        };
+        // Whether something plays the file whole (a sampler, a clip of no single track): a
+        // sampler finds its source by the file's own name, never by a track's.
+        let mut whole = suhina_media::sampler_devices(session.project()).into_iter().any(names);
+        let mut named = whole;
         for content in &session.project().contents {
             for lane in &content.lanes {
                 if let LaneData::Audio(region) = &lane.data
                     && (region.file == *file || region.absolute_file.as_deref() == Some(file.as_str()))
                 {
                     named = true;
-                    if let Some(n) = region.stream {
-                        streams = Some(streams.map_or(n, |m| m.max(n)));
+                    match region.stream {
+                        Some(n) => streams = Some(streams.map_or(n, |m| m.max(n))),
+                        None => whole = true,
                     }
                 }
             }
@@ -114,6 +121,9 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
                 session
                     .decoded_streams(&target, usize::from(last) + 1)
                     .map_err(|e| format!("{}: {e}", target.display()))?;
+                if whole {
+                    session.decoded_audio(&target).map_err(|e| format!("{}: {e}", target.display()))?;
+                }
             }
             None => {
                 session.decoded_audio(&target).map_err(|e| format!("{}: {e}", target.display()))?;
@@ -121,10 +131,18 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
         }
         let key = target.display().to_string();
         let mut regions = 0;
-        for device in session.project.channels.iter_mut().flat_map(|c| &mut c.devices) {
-            if device.sample_file() == Some(file.as_str()) || device.sample_absolute_file() == Some(file.as_str()) {
-                device.set_sample_file(&key);
-                regions += 1;
+        // Samplers inside device groups too, each found by its path in its channel.
+        for channel in &mut session.project.channels {
+            let paths: Vec<Vec<usize>> = suhina_model::walk_devices(&channel.devices)
+                .into_iter()
+                .filter(|(_, device)| names(device))
+                .map(|(path, _)| path)
+                .collect();
+            for path in paths {
+                if let Some(device) = suhina_model::device_at_mut(&mut channel.devices, &path) {
+                    device.set_sample_file(&key);
+                    regions += 1;
+                }
             }
         }
         for content in &mut session.project.contents {
