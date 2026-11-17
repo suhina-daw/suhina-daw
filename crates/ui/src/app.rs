@@ -3739,7 +3739,9 @@ impl App {
                                 }
                             };
                             let mut timeline = timeline;
+                            self.frame_trace.mark("timeline build");
                             timeline.automation.take_plugins(session.project(), plugin_lists);
+                            self.frame_trace.mark("lane plug-ins");
                             // A parameter moved in a plug-in's own editor shows in its track's
                             // lanes, against the parameters just built (#1205).
                             for (track, key) in std::mem::take(&mut self.touched_lanes) {
@@ -3747,6 +3749,7 @@ impl App {
                             }
                             timeline.follow_automation(session.project());
                             timeline.follow_drag(self.arrangement.automation.dragged.as_ref());
+                            self.frame_trace.mark("lane values");
                             timeline.recording_spans = session.arrangement_recording_spans();
                             timeline.midi_ports = self.projects.midi_ports().to_vec();
                             // What ARA plug-ins found in the audio clips, as it is now (#720).
@@ -3763,6 +3766,7 @@ impl App {
                                 .filter(|l| l.clips.iter().any(|c| c.audio))
                                 .filter_map(|l| Some((l.track, session.rack().ara_activity(l.track)?)))
                                 .collect();
+                            self.frame_trace.mark("ara notes");
                             if !timeline.ara_activity.is_empty() {
                                 // Its progress moves without input.
                                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
