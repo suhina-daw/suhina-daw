@@ -5624,6 +5624,7 @@ dependencies = [
  "suhina-dsp",
  "suhina-ipc",
  "suhina-model",
+ "suhina-realtime",
  "suhina-stretch",
  "suhina-test-support",
 ]

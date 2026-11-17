@@ -81,6 +81,7 @@ mod plugin_params;
 mod plugin_params_tests;
 #[cfg(test)]
 mod plugin_tests;
+mod pool;
 mod preview;
 #[cfg(test)]
 mod preview_tests;
@@ -132,6 +133,7 @@ pub use plugin::{
     Sent, SongPosition, plugin_devices, plugin_key,
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
+pub use pool::{MAX_RENDER_THREADS, RENDER_THREADS_VAR, render_threads_from, render_threads_from_env};
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
 pub use record::{
     RECORD_CHUNK, RECORD_CHUNKS, RECORD_NOTES, RecordReceiver, RecordedAudio, RecordedJump, RecordedNote,
@@ -538,6 +540,9 @@ pub struct Renderer {
     cpu: cpu::CpuMeter,
     /// The level meters, published to the controller's `MeterMonitor`.
     meters: meters::MeterWriter,
+    /// The render workers that run chains without plug-ins beside the render thread
+    /// ([`pool`]); `None` renders on the render thread alone.
+    pool: Option<pool::Pool>,
 }
 
 /// What a render plays besides the project (#764 › 3): what makes its devices (#1147), the
@@ -758,7 +763,35 @@ impl Renderer {
             recorder: record::Recorder::new(),
             cpu: cpu::CpuMeter::new(),
             meters,
+            pool: pool::Pool::new(pool::render_threads_from_env().saturating_sub(1), sample_rate),
         })
+    }
+
+    /// Renders each block on `threads` threads, the render thread included (0 or 1: the render
+    /// thread alone), at most [`MAX_RENDER_THREADS`]. The output is the same, bit for bit, for
+    /// any number. Starts or stops threads: never call it on the render thread. Built renderers
+    /// start with the number `SUHINA_RENDER_THREADS` asks for.
+    pub fn set_render_threads(&mut self, threads: usize) {
+        let threads = threads.clamp(1, MAX_RENDER_THREADS);
+        if self.render_threads() == threads {
+            return;
+        }
+        self.pool = None;
+        self.pool = pool::Pool::new(threads - 1, self.sample_rate);
+    }
+
+    /// The threads that render each block, the render thread included.
+    pub fn render_threads(&self) -> usize {
+        self.pool.as_ref().map_or(1, pool::Pool::threads)
+    }
+
+    /// Asks the render workers to join real-time priority for blocks of `frames` frames, as the
+    /// render thread does: call it when the renderer starts playing to a device. Never
+    /// allocates.
+    pub fn join_real_time(&self, frames: usize) {
+        if let Some(pool) = self.pool.as_ref() {
+            pool.join_real_time(frames);
+        }
     }
 
     pub fn sample_rate(&self) -> u32 {
@@ -1355,7 +1388,7 @@ impl Renderer {
             keep: &capture.keep,
             buffer: &mut capture.buffer,
         });
-        sends::run(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture);
+        sends::run(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture, self.pool.as_mut());
         // The main fader's move since the graph was built, then the click it leaves alone. With
         // the fader still, the click is in the mix already and this changes nothing.
         if let Some((_, fader)) = self.graph.main_fader.as_ref()
