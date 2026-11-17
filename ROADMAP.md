@@ -296,6 +296,12 @@ refused or suspended, never by losing its edits.
   only on Save, Save as new variant or after asking on leaving; New theme… starts from Suhina's
   defaults or any theme with a name, author and description, and Theme info… edits them.
 
+- The NAM Amp Modeler's panel is an amp head: its own artwork behind the controls, the pack,
+  the model and the ◀ ▶ model steppers on one row, EQ, HQ and the Mid Freq's value under them,
+  and six knobs on the plate. The texts, arcs, pointers and lit buttons take the theme's
+  colours, and a theme's `device.knob.body` and `device.knob.pointer` artwork puts knobs of the
+  user's own in place of the panel's.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
