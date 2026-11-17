@@ -874,17 +874,19 @@ fn alt_and_an_arrow_key_go_a_fine_step_off_the_grid() {
     assert_eq!(shorter["lengths"][0].as_f64(), Some(0.96875));
 }
 
-/// A step longer runs over the next note of the key, which, with stacked notes off, makes room once
-/// the note is let go.
+/// A fine step longer stops at the next note of the key with stacked notes off, and runs over it
+/// with them on.
 #[test]
-fn a_fine_step_longer_runs_over_the_next_note_of_the_key() {
+fn a_fine_step_longer_stops_at_the_next_note_of_the_key_unless_notes_stack() {
     let clip = clip(vec![note(1.0, 1.24, 60), note(2.25, 1.0, 60)]);
-    let mut state = focused_on(&clip);
-    state.selected = BTreeSet::from([0]);
-    let longer = state.key_action("pianoRoll.longerFine", &clip, 0.0, None).map(|a| a.params);
-    let length = longer.and_then(|p| p["lengths"][0].as_f64()).unwrap_or(0.0);
-    assert!((length - 1.27125).abs() < 1e-6, "{length}");
-    assert!(state.settle_pending, "the next note makes room once it is let go");
+    let length = |stack: bool| {
+        let mut state = PianoRollState { notes_replace: !stack, ..focused_on(&clip) };
+        state.selected = BTreeSet::from([0]);
+        let longer = state.key_action("pianoRoll.longerFine", &clip, 0.0, None).map(|a| a.params);
+        longer.and_then(|p| p["lengths"][0].as_f64()).unwrap_or(0.0)
+    };
+    assert!((length(false) - 1.25).abs() < 1e-6, "{}", length(false));
+    assert!((length(true) - 1.27125).abs() < 1e-6, "{}", length(true));
 }
 
 #[test]
