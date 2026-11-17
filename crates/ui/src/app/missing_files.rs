@@ -295,11 +295,22 @@ impl MissingFiles {
             self.selected = self.rows.iter().find(|r| r.chosen.is_none()).or(self.rows.first()).map(|r| r.file.clone());
         }
         // The project's own folder is walked too, on a thread of its own.
-        // After the walk running, when Search again was asked for during one.
-        if (new_project || again)
-            && let Some(folder) = self.project_folder.clone().filter(|f| f.is_dir())
-        {
-            self.walk_or_queue(folder);
+        if let Some(folder) = self.project_folder.clone().filter(|f| f.is_dir()) {
+            if again {
+                self.walk_again(folder);
+            } else if new_project {
+                self.walk_or_queue(folder);
+            }
+        }
+    }
+
+    /// Search again's walk of `folder`: now, or after the walk running, even when that walk is
+    /// of the same folder (it may have passed a file put there since it started).
+    fn walk_again(&mut self, folder: PathBuf) {
+        if self.walk.is_none() {
+            self.start_walk(folder);
+        } else if !self.queued.contains(&folder) {
+            self.queued.push(folder);
         }
     }
 
@@ -368,14 +379,12 @@ impl MissingFiles {
             Some(Err(e)) => self.note = Some(e),
             None => {}
         }
-        // The next folder waiting, while files are still missing.
-        if self.rows.iter().any(|r| r.chosen.is_none() && !r.by_hand) {
-            while !self.queued.is_empty() && self.walk.is_none() {
-                let folder = self.queued.remove(0);
-                self.start_walk(folder);
-            }
-        } else {
-            self.queued.clear();
+        // The next folder waiting: a walk looks for every file not chosen by hand, one found
+        // already included (it may have a better candidate there); none starts once every file
+        // is chosen by hand.
+        while !self.queued.is_empty() && self.walk.is_none() {
+            let folder = self.queued.remove(0);
+            self.start_walk(folder);
         }
     }
 

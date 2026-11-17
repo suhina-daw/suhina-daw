@@ -51,7 +51,8 @@ title bar from `dialog-title`, its rows from `list-row[kind="missing-file"]`, it
 
 **Title bar:** "Missing files", the project's name and how many files; **Search again** on the
 right searches the browser's folders and the project's folder again (after the walk running,
-when one is), and forgets the candidates no longer on disk.
+when one is, even a walk of the project's folder), offers only the files still on disk, and
+forgets the candidates no longer there.
 
 **Searching** (above the table):
 

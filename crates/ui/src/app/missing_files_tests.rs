@@ -248,6 +248,27 @@ fn a_folder_located_during_a_walk_is_walked_after_it() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Search again during a walk of the same folder walks it once more afterwards, and a folder
+/// waiting is walked even when every file already has a candidate found by a search.
+#[test]
+fn search_again_is_not_lost_during_a_walk() {
+    let dir = temp("again");
+    let kick = dir.join("Drums/kick.wav");
+    file(&kick);
+    let mut missing = MissingFiles { rows: vec![row("kick.wav", "/gone/Drums/kick.wav")], ..MissingFiles::default() };
+    missing.search_folder(dir.clone());
+    missing.walk_again(dir.clone());
+    assert_eq!(missing.queued, vec![dir.clone()], "the same folder, once more after the walk");
+    missing.walk_again(dir.clone());
+    assert_eq!(missing.queued.len(), 1, "asked twice, walked once more");
+    missing.wait_for_walk();
+    assert_eq!(missing.rows[0].chosen, Some(kick), "found by a search, not by hand");
+    assert_eq!(missing.walk.as_ref().map(|w| w.folder.clone()), Some(dir.clone()), "the folder waiting still starts");
+    missing.wait_for_walk();
+    assert!(missing.walk.is_none() && missing.queued.is_empty());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// A sampler inside a device group names its file as one on the track does: changing it
 /// changes the key the list is rebuilt by.
 #[test]
