@@ -26,6 +26,7 @@
   --accent: var(--tint);
   --automation-pin: var(--tint);
   --selection: var(--highlight);
+  --selection-background: color-mix(in srgb, var(--accent), white 60%);
   --text-primary: var(--ink);
   --text-secondary: color-mix(in oklab, var(--ink), var(--surface) 25%);
   --text-hint: color-mix(in oklab, var(--ink), var(--surface) 48%);

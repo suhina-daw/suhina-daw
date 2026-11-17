@@ -10,6 +10,7 @@ covers:
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
   - crates/ui/src/arrangement/automation_lanes.rs
+  - crates/ui/src/kit/selection.rs
   - crates/ui/src/interaction/timeline_grid.rs
   - crates/model/src/lib.rs
   - crates/model/src/overlap.rs
@@ -201,8 +202,9 @@ header click **Ctrl+C**, **Ctrl+X**, **Ctrl+V** and **Ctrl+D** copy, cut, paste 
 selected tracks, in their order, one undo step each (Tracks, #919). A time selection painted
 afterwards, in the lanes or on the ruler, or a click in a lane takes these keys back from the
 tracks: they then act on the painted time, until a header is clicked again (#1199). The
-header shows its track's colour strongly (60 % over the panel); a selected track's is brighter
-and more saturated, with an outline in it. Every track has a colour of its own: one saved without
+header shows its track's colour strongly (60 % over the panel); a selected track's is filled
+with the selection colour every selected header and clip shares, with an outline, its own colour
+staying in the band down its edge ([Selection colour](#selection-colour)). Every track has a colour of its own: one saved without
 (a project from before tracks stored theirs) is given Suhina's fixed colour for its place when
 the project is opened (orange, yellow, light blue, violet in turn, the same in every theme),
 which is not an edit, so a copy of it, a group's colour and every view show the same. A track
@@ -226,7 +228,7 @@ track's colour and follows it. Moved to another track, a clip keeps the colour i
 (`clip.move` and `clip.moveMany` take `color`). The track menu's *Assign track color to all
 clips* (`clip.setColor {track, color: "none"}`) hands every clip of the track back to the
 track's colour; *Assign track name to clips* (`track.renameClips`) names them after the track. The track
-headers are tinted with their track's colour, deeper while selected.
+headers are tinted with their track's colour; a selected one takes the selection colour.
 
 A clip on a lane at least 36 px tall has a name bar along its top. By default (Settings ›
 Arrangement › *Moving a clip*: **Name bar**, `clip_drag = name_bar`) a drag from the name bar
@@ -1103,6 +1105,36 @@ kind, replacing earlier Resize all/manual height overrides for those rows. The o
 heights stay as they are. Editing a named height updates matching sizes live, including while
 Settings remains open.
 
+## Selection colour
+
+Everything selected takes **one shared selection colour**, the same for every track and clip
+whatever its own colour, so ten selected clips of different colours read as one selection
+(#1217). It is the theme's `selection.background` token (a light shade; Suhina Studio's is
+`#DBDAFF`), with a value in every built-in theme:
+
+- A selected **track header**, in the Arrangement and over a Launcher column, is filled with it;
+  the track's colour stays in the header's colour band (in the Launcher a 3 px band along its
+  top), and its name and controls take the ink that reads on it. A group's header is the same.
+- A selected **clip** (picked whole: by its name bar, a box or Ctrl+A), in the Arrangement and in
+  a Launcher slot, has its body and its name bar filled with exactly that colour, the colour of a
+  selected header; its own colour stays down its leading edge, and its waveform or notes keep
+  their colour where it reads on the fill, else take the ink that does. A clip picked by a click
+  in its body stays outlined, not lit (› Selecting clips).
+- The **lane** of each selected track is tinted with it across the whole timeline, under its
+  clips (`arrangement track-lane[selected]`: the colour at 12 %, a theme part a theme can
+  restyle); the lane the piano roll edits keeps its own highlight (`[checked]`). In the Launcher a
+  selected track's whole column, header, slots, stop row and strip, gets the same tint
+  (`track-column[selected]`) under its outline.
+- A muted or deactivated track or clip keeps its grey; unselected ones are unchanged.
+
+Settings › Appearance › Selection › **Selection colour** chooses it (saved as `selection_colour`,
+not in the project): *From theme* (the default) uses the theme's; *Clip's own colour* keeps each
+selected header and clip in its own colour, a little brighter and outlined, as before there was
+one selection colour, so a selection still shows which track each clip is on (the lanes keep the
+tint); *Custom* shows **Custom selection colour** (`selection_custom_colour`), one colour from
+the colour picker, which is written over the theme's `--selection-background` on the window, so
+headers, clips and the tints all take it in every theme until *From theme* is chosen again.
+
 ## Waveform colour
 
 Settings › Arrangement › Clips offers Waveform and note colour: Auto, Light, Dark (the default) or
@@ -1119,9 +1151,9 @@ Audio clip colour strength and Track header colour strength are independent 0–
 sliders in Arrangement settings. Both start at 82 percent, matching the existing MIDI clip
 strength. Their fills mix their theme surface with the original clip or track RGB colour;
 muting reduces that strength to 55 percent of its chosen value, preserving hue rather than
-mixing grey into the source colour. Disabled clips dim the same way. Selected clips lift
-their strength by 12 percentage points (capped at 100); selected headers retain a subtle
-brightness lift. Header names, fold indicators, routing and send labels maintain contrast on
+mixing grey into the source colour. Disabled clips dim the same way. With Selection colour › Clip's own colour, selected clips lift
+their strength by 12 percentage points (capped at 100) and selected headers retain a subtle
+brightness lift; otherwise they take the selection colour ([above](#selection-colour)). Header names, fold indicators, routing and send labels maintain contrast on
 the resulting surface. Explicit clip colours continue to override track colours. Changes
 apply live and persist as application settings without modifying project data.
 

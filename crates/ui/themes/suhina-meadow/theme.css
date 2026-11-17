@@ -29,6 +29,7 @@
   --recording: #D13D29;
   --recording-background: #F0D1C6;
   --selection: #E5A629;
+  --selection-background: color-mix(in srgb, var(--accent), white 60%);
   --slot-empty: #8E9A99;
   --text-hint: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 2%), black 42.9%);
   --text-inverse: white;

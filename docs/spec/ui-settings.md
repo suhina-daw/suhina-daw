@@ -87,7 +87,7 @@ what is inside it).
 | Arrangement | View | Grid inside clips, Waveform size, Waveform and note colour (Theme, Auto, Light, Dark, Custom), Custom waveform colour (shown with Custom), Audio clip colour strength |
 | Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Alt+wheel resizes |
 | Arrangement | Tools | Toolbar (On or Off, Off by default, #991), Default grid |
-| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere), Group plug-in lanes (On or Off, On by default: a lane mounted from a plug-in goes into that plug-in's group, #1322) |
+| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere), Group plug-in lanes (On or Off, On by default: a lane mounted from a plug-in goes into that plug-in's group, #1322), Top lane shows, Automation colour (Track colour, the default, or Fixed, #1518), Automation line colour and Automation point colour (shown with Fixed: the theme's `automation-line[kind="fixed"]` and `automation-point[kind="fixed"]` colours until one is picked, **Theme** beside the picker gives the theme's back) |
 | Arrangement | Gain envelope | Show gain envelope (On by default), Gain envelope ceiling (+3, +6, +12, +24 dB; +6 by default), Gain envelope grid (0.5, 1, 2, 3, 6 dB; 1 dB by default), Envelope points move (On the grid by default, or Freely; [clip panel](clip-panel.md#gain-envelope)) |
 | Arrangement | Track sizes | Default track size, Default return size, Tiny height, Compact height, Small height, Medium height, Large height |
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
@@ -103,6 +103,7 @@ what is inside it).
 | Keys | Shortcuts | The preset, every action's keys, Reset all |
 | Appearance | Window | Window zoom, Animations, Hide pointer while dragging (On by default; a theme's `drag-pointer` wins for its controls), Menu bar in window |
 | Appearance | Waveforms | Waveform scale |
+| Appearance | Selection | Selection colour (From theme, the default; Clip's own colour; Custom, #1218), Custom selection colour (shown with Custom) |
 | Appearance | Background | Background image, Surface opacity, Background blur |
 | Appearance | Application bar | Application name position, Show project name, Show project timing, Project information position |
 | Appearance | Advanced | Graphics renderer, Panel liquid, Track liquid, Clip liquid (experimental) |

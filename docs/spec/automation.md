@@ -456,7 +456,16 @@ closed lanes stay closed. The header:
 - The top lane's pin outline pins its parameter as a lane of its own and its **×** clears it; a
   mounted lane's filled pin unpins it (above).
 
-The envelope is drawn in the track's colour through every point, holding before the first and
+The envelope is drawn in the track's colour through every point (Settings › Arrangement ›
+Automation › **Automation colour**: *Track colour*, the default), or, with *Fixed* (#1518), every
+envelope's line in one colour and every point in one colour whatever the track's: the theme's
+`automation-line[kind="fixed"]` and `automation-point[kind="fixed"]` (the base sheet gives both
+the theme's accent), or the **Automation line colour** and **Automation point colour** picked
+under the setting (**Theme** beside a picker gives the theme's back). In both modes a picked point
+keeps `automation-point[selected]`'s colour and a lane that is off keeps
+`automation-line[muted]`'s, its points too; the curve handles, the dot that marks where a click
+adds a point and the faint line of a painted range follow the line's colour. The setting is
+saved with the other settings, not in the project. The envelope holds before the first point and
 after the last, along each segment's curve; steps for mute, on/off and choices. Values are placed
 as the parameter's control places them, and a segment is drawn evenly in that placement, as it
 plays: the volume on the fader's law ([above](#the-volume-fader), 0 dB at 85 % of the height), a

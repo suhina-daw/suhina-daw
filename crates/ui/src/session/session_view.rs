@@ -800,12 +800,30 @@ fn draw_column(
     // Column separator through header, grid and mixer.
     let full = egui::Rangef::new(bands.header.top(), bands.mixer.bottom());
     painter.with_clip_rect(clip).vline(span.max + 0.5, full, theme::hairline(bands.lines.column));
-    // A selected track is outlined along its whole column, header, slots and strip (#916).
-    if state.selected_tracks.contains(&column.track) || state.selected == Some(column.track) {
+    // A selected track's whole column, header, slots and strip, is tinted with
+    // `track-column[selected]`'s background (a light tint of the selection colour by default) and
+    // outlined (#916).
+    if column_selected(state, column.track) {
         let outline = Rect::from_x_y_ranges(span, full);
+        let tint = crate::kit::element::TRACK_COLUMN
+            .id(&format!("track-{}", column.track.0))
+            .color(rgb(column.color))
+            .attr(Selected, true)
+            .look()
+            .background();
+        painter.with_clip_rect(clip).rect_filled(outline, 0.0, tint);
         let colour = colour_picker::fill(column.color, false);
         painter.with_clip_rect(clip).rect_stroke(outline, 0.0, egui::Stroke::new(1.5, colour), StrokeKind::Inside);
     }
+}
+
+/// How wide a selected header's band and a selected clip's edge in their own colour are, in
+/// points.
+const SELECTED_BAND: f32 = 3.0;
+
+/// Whether `track` is selected: the one the detail area shows, or one of the selected tracks.
+fn column_selected(state: &SessionViewState, track: TrackId) -> bool {
+    state.selected == Some(track) || state.selected_tracks.contains(&track)
 }
 
 /// A click on `track`'s header (#208): alone it selects the track; with Ctrl (Cmd) it adds the
@@ -874,10 +892,11 @@ fn column_header(
     actions: &mut Vec<Action>,
 ) {
     let track_id = format!("track-{}", column.track.0);
+    let selected = column_selected(state, column.track);
     let own = crate::kit::element::TRACK_HEADER
         .id(&track_id)
         .color(rgb(column.color))
-        .attr(Selected, state.selected == Some(column.track))
+        .attr(Selected, selected)
         .attr(Muted, column.mute)
         .enter();
     if rect.width() <= 0.0 {
@@ -905,17 +924,24 @@ fn column_header(
         state.open_devices = Some(column.track);
     }
     // The header is the track's colour, its name in the text colour that reads on it; a selected
-    // track's header has an outline in that colour.
-    let fill = colour_picker::fill(column.color, column.mute);
+    // track's header is the selection colour every selected header and clip shares (Settings ›
+    // Appearance › Selection colour; its own colour with Clip's own colour), with its own colour
+    // in a band along its top, and an outline in its name's colour.
+    let selection_fill = (selected && !column.mute).then(|| crate::kit::selection::fill(&own)).flatten();
+    let fill = selection_fill.unwrap_or_else(|| colour_picker::fill(column.color, column.mute));
     if !crate::kit::skin::paint_in_view(
         painter,
         rect,
         "track.name",
-        crate::kit::skin::State::response(&response, state.selected == Some(column.track)),
+        crate::kit::skin::State::response(&response, selected),
         // Artwork's `currentColor`: the header's own `color` where the sheet gives one.
         own.own_color_or(fill),
     ) {
         painter.rect_filled(rect, 0.0, fill);
+    }
+    if selection_fill.is_some() {
+        let band = Rect::from_min_size(rect.min, Vec2::new(rect.width(), SELECTED_BAND.min(rect.height())));
+        painter.rect_filled(band, 0.0, colour_picker::fill(column.color, false));
     }
     crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
@@ -927,7 +953,7 @@ fn column_header(
     name_style.paint_background(painter, rect, 0.0);
     // Ink that reads on the fill, unless the sheet gives the name a colour.
     let color = name_style.color_or(theme::text_on(shown));
-    if state.selected == Some(column.track) || state.selected_tracks.contains(&column.track) {
+    if selected {
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5, color), StrokeKind::Inside);
     }
     // Nested tracks step in a little; a group's name follows its fold arrow.
@@ -980,13 +1006,17 @@ fn column_body(
     let editable = column.kind == ColumnKind::Track;
     let can_paste = state.can_paste;
     let track_id = format!("track-{}", column.track.0);
+    let selected_column = column_selected(state, column.track);
     let column_style = crate::kit::element::TRACK_COLUMN
         .id(&track_id)
         .color(rgb(column.color))
-        .attr(Selected, state.selected == Some(column.track))
+        .attr(Selected, selected_column)
         .enter();
-    // The column's own background from the sheet, under its slots.
-    column_style.paint_background(painter, Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip), 0.0);
+    // The column's own background from the sheet, under its slots; a selected column's is drawn
+    // over the whole column instead (`draw_column`).
+    if !selected_column {
+        column_style.paint_background(painter, Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip), 0.0);
+    }
     if crate::kit::style_class::track_artwork(&column_style) {
         let body = Rect::from_x_y_ranges(span, bands.body.y_range());
         crate::kit::skin::paint_in_view(
@@ -1440,6 +1470,11 @@ fn slot_cell(
     let track_color = rgb(column.color);
     // A clip slot is filled with the clip's colour (its track's unless it has its own).
     let clip_color = slot.color.map_or(track_color, rgb);
+    // A selected clip that plays is filled with the selection colour every selected clip and
+    // header shares (Settings › Appearance › Selection colour); `None` keeps its own colour.
+    let holds_clip = matches!(slot.state, SlotState::Stopped | SlotState::Queued | SlotState::Playing);
+    let selection_fill =
+        (selected && holds_clip && slot.enabled && !column.mute).then(|| crate::kit::selection::fill(el)).flatten();
     let textured = crate::kit::style_class::track_artwork(el);
     // An empty slot is tinted with its track's colour, unless the sheet gives it a background
     // (`slot { background-color }`).
@@ -1488,8 +1523,10 @@ fn slot_cell(
         }
         SlotState::Stopped | SlotState::Queued => {
             // The clip in its colour, lighter under the pointer; a deactivated clip is grey
-            // (`clip[muted]`).
-            let base = if !slot.enabled {
+            // (`clip[muted]`); a selected one the selection colour.
+            let base = if let Some(fill) = selection_fill {
+                fill
+            } else if !slot.enabled {
                 state.unlike(&plain, crate::kit::element::Paint::Background, native.muted)
             } else if slot.state == SlotState::Queued {
                 state.unlike(&plain, crate::kit::element::Paint::Background, clip_color)
@@ -1526,8 +1563,9 @@ fn slot_cell(
             widgets::text_in(painter, name_rect, Align2::LEFT_CENTER, &slot.name, font, text);
         }
         SlotState::Playing => {
-            // A playing clip keeps its colour, brighter, so the column still reads as its track.
-            let fill = lit(clip_color, 0.10);
+            // A playing clip keeps its colour, brighter, so the column still reads as its track;
+            // a selected one is the selection colour.
+            let fill = selection_fill.map_or_else(|| lit(clip_color, 0.10), |fill| lit(fill, 0.0));
             let fill = if column.mute { motion::mix(muted, fill, 0.45) } else { fill };
             painter.rect_filled(rect, 0.0, fill);
             crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
@@ -1545,6 +1583,12 @@ fn slot_cell(
                 Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() - 3.0), Vec2::new(rect.width() * done, 3.0));
             painter.rect_filled(line, 0.0, ink);
         }
+    }
+    // A clip in the selection colour keeps its own colour down its leading edge, as an arrangement
+    // clip does.
+    if selection_fill.is_some() {
+        let edge = Rect::from_min_size(rect.min, Vec2::new(SELECTED_BAND, rect.height()));
+        painter.rect_filled(edge, 0.0, clip_color);
     }
     // A selected clip is outlined as a selected arrangement clip is; a queued one keeps its
     // breathing outline.

@@ -25,6 +25,7 @@
   --recording: #D93036;
   --recording-background: #DCC7C1;
   --selection: #C9A227;
+  --selection-background: color-mix(in srgb, var(--accent), white 60%);
   --slot-empty: #BDB7AD;
   --text-hint: #8E887F;
   --text-inverse: #F4F2EE;

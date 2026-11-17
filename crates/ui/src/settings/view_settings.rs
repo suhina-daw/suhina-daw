@@ -56,6 +56,46 @@ impl WaveformAppearance {
     }
 }
 
+/// How the Arrangement's automation envelopes are coloured (Settings › Arrangement › Automation ›
+/// Automation colour).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AutomationColour {
+    /// Each envelope in its track's colour.
+    #[default]
+    Track,
+    /// Every envelope's line in one colour and every point in one colour: the theme's
+    /// `automation-line[fixed]` and `automation-point[fixed]`, or the colours chosen here.
+    Fixed,
+}
+
+impl AutomationColour {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Track => "track",
+            Self::Fixed => "fixed",
+        }
+    }
+}
+
+/// The automation colour setting: the choice, and the line and point colours **Fixed** uses where
+/// they are chosen here rather than taken from the theme (`None`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AutomationAppearance {
+    pub mode: AutomationColour,
+    pub line: Option<egui::Color32>,
+    pub point: Option<egui::Color32>,
+}
+
+/// A colour the settings file keeps as `theme` or `#RRGGBB`.
+fn themed_colour(colour: Option<egui::Color32>) -> String {
+    colour.map_or_else(|| "theme".to_owned(), crate::kit::theme::hex)
+}
+
+/// What [`themed_colour`] wrote: `Some(None)` for `theme`, `None` when it is neither.
+fn parse_themed_colour(value: &str) -> Option<Option<egui::Color32>> {
+    if value == "theme" { Some(None) } else { crate::kit::theme::parse_hex(value).map(Some) }
+}
+
 /// Where the detail area goes: beside the browser, or under it across the window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DetailLayout {
@@ -127,6 +167,11 @@ pub struct ViewSettings {
     pub liquid: crate::kit::liquid::Options,
     pub track_sizes: super::track_sizes::TrackSizes,
     pub waveform: WaveformAppearance,
+    /// How automation envelopes are coloured: in their track's colour, or in one line and one
+    /// point colour (#1518).
+    pub automation: AutomationAppearance,
+    /// The colour selected track headers and clips are filled with (#1217, #1218).
+    pub selection: crate::kit::selection::SelectionLook,
     /// Audio clip colour strength, as a percentage of its source RGB colour.
     pub audio_colour_strength: u8,
     /// Track header colour strength, as a percentage of its source RGB colour.
@@ -270,6 +315,8 @@ impl Default for ViewSettings {
             liquid: crate::kit::liquid::Options::default(),
             track_sizes: super::track_sizes::TrackSizes::default(),
             waveform: WaveformAppearance::default(),
+            automation: AutomationAppearance::default(),
+            selection: crate::kit::selection::SelectionLook::default(),
             audio_colour_strength: 82,
             header_colour_strength: 82,
             mixer_height: MIXER_HEIGHTS.1,
@@ -374,6 +421,18 @@ impl ViewSettings {
             self.audio_colour_strength,
             self.header_colour_strength,
         ) + &format!(
+            "automation_colour = {}
+automation_line_colour = {}
+automation_point_colour = {}
+selection_colour = {}
+selection_custom_colour = {}
+",
+            self.automation.mode.name(),
+            themed_colour(self.automation.line),
+            themed_colour(self.automation.point),
+            self.selection.mode.name(),
+            crate::kit::theme::hex(self.selection.custom),
+        ) + &format!(
             "liquid_panel_strength = {}\nliquid_track_strength = {}\nliquid_clip_strength = {}\n",
             self.liquid.panels, self.liquid.tracks, self.liquid.clips,
         ) + &format!("replace_clip = {}\n", if self.replace_clip { "on" } else { "off" })
@@ -469,6 +528,24 @@ impl ViewSettings {
                 let Some(colour) = crate::kit::theme::parse_hex(colour) else { return false };
                 self.waveform.custom = colour;
             }
+            ("automation_colour", "track") => self.automation.mode = AutomationColour::Track,
+            ("automation_colour", "fixed") => self.automation.mode = AutomationColour::Fixed,
+            ("automation_line_colour" | "automation_point_colour", colour) => {
+                let Some(colour) = parse_themed_colour(colour) else { return false };
+                if key == "automation_line_colour" {
+                    self.automation.line = colour;
+                } else {
+                    self.automation.point = colour;
+                }
+            }
+            ("selection_colour", mode) => {
+                let Some(mode) = crate::kit::selection::SelectionColour::parse(mode) else { return false };
+                self.selection.mode = mode;
+            }
+            ("selection_custom_colour", colour) => {
+                let Some(colour) = crate::kit::theme::parse_hex(colour) else { return false };
+                self.selection.custom = colour;
+            }
             ("session_mixer_height", height) => match height.parse::<u32>() {
                 Ok(height) => self.mixer_height = height.clamp(MIXER_HEIGHTS.0, MIXER_HEIGHTS.2),
                 Err(_) => return false,
@@ -557,6 +634,15 @@ mod tests {
                 mode: WaveformColour::Custom,
                 custom: egui::Color32::from_rgb(120, 210, 80),
             },
+            automation: AutomationAppearance {
+                mode: AutomationColour::Fixed,
+                line: Some(egui::Color32::from_rgb(250, 200, 40)),
+                point: None,
+            },
+            selection: crate::kit::selection::SelectionLook {
+                mode: crate::kit::selection::SelectionColour::Custom,
+                custom: egui::Color32::from_rgb(200, 20, 30),
+            },
             audio_colour_strength: 64,
             header_colour_strength: 75,
             mixer_height: 300,
@@ -644,6 +730,45 @@ mod tests {
         let (read, warnings) = Settings::from_text("waveform_colour = rainbow\nwaveform_custom_colour = #xyz123\n");
         assert_eq!(warnings.len(), 2);
         assert_eq!(read.view.waveform, WaveformAppearance::default());
+    }
+
+    #[test]
+    fn automation_and_selection_colours_round_trip_and_bad_values_keep_the_defaults() {
+        let read = Settings::from_text("").0.view;
+        assert_eq!(read.automation, AutomationAppearance::default());
+        assert_eq!(read.automation.mode, AutomationColour::Track);
+        assert_eq!(read.selection.mode, crate::kit::selection::SelectionColour::Theme);
+        for mode in [AutomationColour::Track, AutomationColour::Fixed] {
+            for (line, point) in [(None, None), (Some(egui::Color32::from_rgb(1, 2, 3)), Some(egui::Color32::WHITE))] {
+                let mut settings = Settings::default();
+                settings.view.automation = AutomationAppearance { mode, line, point };
+                let (read, warnings) = Settings::from_text(&settings.to_text());
+                assert!(warnings.is_empty(), "{warnings:?}");
+                assert_eq!(read.view.automation, settings.view.automation);
+            }
+        }
+        for mode in [
+            crate::kit::selection::SelectionColour::Theme,
+            crate::kit::selection::SelectionColour::Own,
+            crate::kit::selection::SelectionColour::Custom,
+        ] {
+            let mut settings = Settings::default();
+            settings.view.selection =
+                crate::kit::selection::SelectionLook { mode, custom: egui::Color32::from_rgb(10, 200, 90) };
+            let (read, warnings) = Settings::from_text(&settings.to_text());
+            assert!(warnings.is_empty(), "{warnings:?}");
+            assert_eq!(read.view.selection, settings.view.selection);
+        }
+        let (read, warnings) = Settings::from_text(
+            "automation_colour = rainbow
+automation_line_colour = #xyz
+selection_colour = loud
+selection_custom_colour = red
+",
+        );
+        assert_eq!(warnings.len(), 4, "{warnings:?}");
+        assert_eq!(read.view.automation, AutomationAppearance::default());
+        assert_eq!(read.view.selection, crate::kit::selection::SelectionLook::default());
     }
 
     #[test]

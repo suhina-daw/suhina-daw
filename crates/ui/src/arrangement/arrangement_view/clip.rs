@@ -1429,9 +1429,16 @@ pub(super) fn paint_clip(
     // A muted clip's grey is the computed `arrangement clip[muted]` background: the base sheet's
     // rule reads `--clip-mutedBackground`, so a theme that sets only the variable reaches it, and
     // a theme's own rule for the clip still wins.
-    let fallback = clip_body(surface, rgb(clip.color), strength, off, selected);
+    // A selected clip that plays is filled with the one selection colour every selected clip and
+    // header shares (Settings › Appearance › Selection colour), its name bar too; its own colour
+    // stays down its leading edge. With Clip's own colour it keeps its colour, a little brighter.
+    let selection_fill = if selected && !off { crate::kit::selection::fill(&own) } else { None };
+    let fallback = selection_fill.unwrap_or_else(|| clip_body(surface, rgb(clip.color), strength, off, selected));
     let body = if off { own.computed_background_or(fallback) } else { own.background_or(fallback) };
-    let bar_fill = name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected);
+    let bar_fill = match selection_fill {
+        Some(_) => body,
+        None => name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected),
+    };
     let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never
     // reaches the window and the desktop never shows through it.
@@ -1459,7 +1466,7 @@ pub(super) fn paint_clip(
     let edge_width = if selected { 4.0 } else { 3.0 };
     // A muted clip keeps its colour down its leading edge, so it is still known by it.
     let line_ink = motion::mix(body, ink, 0.5);
-    let edge_ink = if off { rgb(clip.color) } else { line_ink };
+    let edge_ink = if off || selection_fill.is_some() { rgb(clip.color) } else { line_ink };
     if let Some(bar) = bar {
         // A quiet divider ties the title to the stronger leading edge without framing the preview.
         painter.hline(
@@ -1502,6 +1509,10 @@ pub(super) fn paint_clip(
     } else {
         appearance.ink(ink)
     };
+    // On the selection colour, which may be light or dark whatever the theme is, they take an ink
+    // that reads on it where theirs does not.
+    let content_ink =
+        if selection_fill.is_some() { crate::kit::selection::readable(content_ink, body) } else { content_ink };
     // A muted clip's notes and waveform step back, so the grey reads first.
     let content_ink = if off { motion::mix(body, content_ink, 0.6) } else { content_ink };
     let wave_ink = if ara_notes.is_some() { motion::mix(body, content_ink, 0.75) } else { content_ink };
