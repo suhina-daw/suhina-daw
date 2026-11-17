@@ -441,3 +441,24 @@ fn only_clips_that_share_a_linked_content_show_as_linked() {
     assert!(linked(&project).is_empty(), "a linked content one clip plays shows no mark");
 }
 
+/// Two clips that play the same content from the same beat (an import's doubled placements) each
+/// keep their own row from one build to the next: they no longer swap rows on every rebuild, as
+/// soloing another track made them do.
+#[test]
+fn two_clips_of_one_content_at_one_beat_keep_their_rows_across_builds() {
+    let mut project = demo_project();
+    let lane = &mut project.arrangement.lanes[0];
+    let first = lane.clips[0].clone();
+    let mut second = first.clone();
+    second.id = suhina_engine::model::ClipId(first.id.0 + 10_000);
+    second.length = first.length / 2.0;
+    lane.clips = vec![first, second];
+    let ids = |t: &Timeline| t.lanes[0].clips.iter().map(|c| (c.id, c.row)).collect::<Vec<_>>();
+    let mut built = Timeline::build(&project, None);
+    let rows = ids(&built);
+    assert_ne!(rows[0].1, rows[1].1, "they stack");
+    for _ in 0..4 {
+        built = Timeline::build_after(&project, None, &built.stack_rows);
+        assert_eq!(ids(&built), rows);
+    }
+}
