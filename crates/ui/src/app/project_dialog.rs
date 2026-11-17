@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 
-use crate::kit::motion;
+use crate::kit::element::{LIST_ROW, Look, caption_ink, error_ink, hint_ink, name_ink, row_line};
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, button};
 
@@ -102,12 +102,14 @@ fn draw(
         |returns: bool| if returns { "4 tracks, 2 returns, 8 scenes" } else { "4 tracks, no returns, 8 scenes" };
     let blank = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(half, LINE));
     let returns = lists.new_returns;
-    if row(ui, &painter, blank, "blank", "New blank project", detail(returns), "New blank project").clicked() {
+    let note_ink = hint_ink();
+    let blank_row = ("New blank project", detail(returns));
+    if row(ui, &painter, blank, "blank", blank_row, ("New blank project", note_ink)).clicked() {
         choice = Some(Choice::NewBlank { returns });
     }
     let other = Rect::from_min_size(Pos2::new(left.left(), blank.bottom()), Vec2::new(half, LINE));
     let other_name = if returns { "New blank project without returns" } else { "New blank project with returns" };
-    if row(ui, &painter, other, "other", other_name, detail(!returns), other_name).clicked() {
+    if row(ui, &painter, other, "other", (other_name, detail(!returns)), (other_name, note_ink)).clicked() {
         choice = Some(Choice::NewBlank { returns: !returns });
     }
     y = other.bottom() + PAD;
@@ -118,14 +120,14 @@ fn draw(
     if lists.templates.is_empty() {
         let empty = Rect::from_min_size(list.min, Vec2::new(half, LINE));
         let text = "No templates yet: File › Save as template";
-        widgets::text_in(&painter, empty, Align2::LEFT_CENTER, text, small.clone(), theme::text_hint());
+        widgets::text_in(&painter, empty, Align2::LEFT_CENTER, text, small.clone(), hint_ink());
     } else {
         scrolled(ui, list, "templates", |ui| {
             for path in &lists.templates {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), LINE), Sense::hover());
                 let painter = ui.painter().clone();
                 let label = format!("Template {}", stem(path));
-                if row(ui, &painter, r, path, &stem(path), &kind(path), &label).clicked() {
+                if row(ui, &painter, r, path, (&stem(path), &kind(path)), (&label, note_ink)).clicked() {
                     choice = Some(Choice::NewFromTemplate(path.clone()));
                 }
             }
@@ -133,13 +135,8 @@ fn draw(
     }
     let folder =
         format!("Templates in {}; the folder is set in Settings › Projects and backups", lists.templates_folder);
-    let lines = widgets::fitted(&painter, &folder, small.clone(), theme::text_hint(), note.width());
-    widgets::paint_text(
-        &painter,
-        Pos2::new(note.left(), note.center().y - lines.size().y / 2.0),
-        lines,
-        theme::text_hint(),
-    );
+    let lines = widgets::fitted(&painter, &folder, small.clone(), hint_ink(), note.width());
+    widgets::paint_text(&painter, Pos2::new(note.left(), note.center().y - lines.size().y / 2.0), lines, hint_ink());
 
     // Open: a path, or a recent project.
     heading(&painter, right, "Open");
@@ -171,15 +168,16 @@ fn draw(
     let list = Rect::from_min_max(Pos2::new(right.left(), recent_top + LINE), Pos2::new(right.right(), bottom));
     if lists.recent.is_empty() {
         let empty = Rect::from_min_size(list.min, Vec2::new(half, LINE));
-        widgets::text_in(&painter, empty, Align2::LEFT_CENTER, "Nothing opened yet", small, theme::text_hint());
+        widgets::text_in(&painter, empty, Align2::LEFT_CENTER, "Nothing opened yet", small, hint_ink());
     } else {
+        let note_ink = hint_ink();
         scrolled(ui, list, "recent", |ui| {
             for path in &lists.recent {
                 let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), LINE), Sense::hover());
                 let painter = ui.painter().clone();
                 let folder = path.parent().map(|p| p.display().to_string()).unwrap_or_default();
                 let label = format!("Recent {}", stem(path));
-                if row(ui, &painter, r, path, &stem(path), &folder, &label).clicked() {
+                if row(ui, &painter, r, path, (&stem(path), &folder), (&label, note_ink)).clicked() {
                     choice = Some(Choice::Open(path.clone()));
                 }
             }
@@ -243,9 +241,10 @@ fn draw_save(
     let label_width = 52.0;
     let mut y = panel.top() + ROW + PAD;
     let mut browse_folder = false;
+    let caption = caption_ink();
     let mut field = |ui: &mut Ui, label: &str, value: &mut String, focus: bool| {
         let r = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
-        widgets::text_in(&painter, r, Align2::LEFT_CENTER, label, small.clone(), theme::text_secondary());
+        widgets::text_in(&painter, r, Align2::LEFT_CENTER, label, small.clone(), caption);
         let mut input = Rect::from_min_max(Pos2::new(r.left() + label_width, r.top()), r.max);
         if label == "Folder" {
             let browse = Rect::from_min_size(Pos2::new(r.right() - 64.0, r.top() + 1.0), Vec2::new(64.0, BUTTON.y));
@@ -272,7 +271,7 @@ fn draw_save(
         Some(path) => path.display().to_string(),
         None => "A name without / \\ or :".to_string(),
     };
-    let color = if path.as_ref().is_some_and(|p| p.exists()) { theme::recording() } else { theme::text_hint() };
+    let color = if path.as_ref().is_some_and(|p| p.exists()) { error_ink() } else { hint_ink() };
     widgets::text_in(&painter, note, Align2::LEFT_CENTER, &text, small, color);
     let save = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
     let cancel = Rect::from_min_size(Pos2::new(save.left() - 4.0 - BUTTON.x, save.top()), BUTTON);
@@ -379,14 +378,15 @@ fn draw_about(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect) ->
     );
     crate::kit::logo::paint(ui, &painter, logo, theme::ui_font(theme::TEXT + 2.0), 1.0);
     let font = theme::ui_font(theme::TEXT);
+    let (hint, ink) = (hint_ink(), name_ink());
     for (i, (name, value)) in facts.iter().enumerate() {
         let line = Rect::from_min_size(
             Pos2::new(panel.left() + PAD, panel.top() + facts_top + i as f32 * LINE),
             Vec2::new(panel.width() - 2.0 * PAD, LINE),
         );
-        widgets::text_in(&painter, line, Align2::LEFT_CENTER, name, font.clone(), theme::text_hint());
+        widgets::text_in(&painter, line, Align2::LEFT_CENTER, name, font.clone(), hint);
         let value_at = Rect::from_min_max(Pos2::new(line.left() + 80.0, line.top()), line.max);
-        widgets::text_in(&painter, value_at, Align2::LEFT_CENTER, value, font.clone(), theme::text_primary());
+        widgets::text_in(&painter, value_at, Align2::LEFT_CENTER, value, font.clone(), ink);
     }
     let copy = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
     // The label carries the line itself, so a screen reader reads the version too.
@@ -421,7 +421,7 @@ fn draw_unsaved(
         Vec2::new(panel.width() - 2.0 * PAD, LINE),
     );
     let message = format!("Save the changes to {name} before {doing}?");
-    widgets::text_in(&painter, text, Align2::LEFT_CENTER, &message, theme::ui_font(theme::TEXT), theme::text_primary());
+    widgets::text_in(&painter, text, Align2::LEFT_CENTER, &message, theme::ui_font(theme::TEXT), name_ink());
     let save = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
     let dont = Rect::from_min_size(Pos2::new(save.left() - 4.0 - BUTTON.x, save.top()), BUTTON);
     let cancel = Rect::from_min_size(Pos2::new(dont.left() - 4.0 - BUTTON.x, save.top()), BUTTON);
@@ -481,6 +481,7 @@ fn draw_ara_edits(
         &mut closed,
     );
     let painter = ui.painter_at(area);
+    let (first, rest) = (name_ink(), caption_ink());
     for (i, line) in [
         format!("Keep the {plugin} edits on the track the clips go to?"),
         format!("Keep edits puts {plugin} on that track when it has none."),
@@ -492,7 +493,7 @@ fn draw_ara_edits(
             Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + i as f32 * LINE),
             Vec2::new(panel.width() - 2.0 * PAD, LINE),
         );
-        let color = if i == 0 { theme::text_primary() } else { theme::text_secondary() };
+        let color = if i == 0 { first } else { rest };
         widgets::text_in(&painter, at, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), color);
     }
     let keep = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
@@ -565,12 +566,13 @@ fn draw_recovery(
             format!("A backup from {written} is all there is of it.")
         },
     ];
+    let ink = name_ink();
     for (n, line) in lines.iter().enumerate() {
         let text = Rect::from_min_size(
             Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
             Vec2::new(panel.width() - 2.0 * PAD, LINE),
         );
-        widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), theme::text_primary());
+        widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), ink);
     }
     let bottom = panel.bottom() - PAD - RECOVERY_BUTTON.y;
     let open = Rect::from_min_size(Pos2::new(panel.right() - PAD - RECOVERY_BUTTON.x, bottom), RECOVERY_BUTTON);
@@ -622,12 +624,13 @@ fn draw_agent(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, cl
         "You see every change it makes and can undo it; it cannot close tabs or change settings.".to_string(),
         "The name is what the agent says it is.".to_string(),
     ];
+    let (first, rest) = (name_ink(), hint_ink());
     for (n, line) in lines.iter().enumerate() {
         let text = Rect::from_min_size(
             Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
             Vec2::new(panel.width() - 2.0 * PAD, LINE),
         );
-        let colour = if n == 0 { theme::text_primary() } else { theme::text_hint() };
+        let colour = if n == 0 { first } else { rest };
         widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
     }
     let bottom = panel.bottom() - PAD - BUTTON.y;
@@ -663,12 +666,13 @@ pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<boo
                 "A backup of them is made first, beside the folder they are in now.".to_string(),
                 "Files the new folder has already are kept.".to_string(),
             ];
+            let (first, rest) = (name_ink(), hint_ink());
             for (n, line) in lines.iter().enumerate() {
                 let text = Rect::from_min_size(
                     Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
                     Vec2::new(panel.width() - 2.0 * PAD, LINE),
                 );
-                let colour = if n == 0 { theme::text_primary() } else { theme::text_hint() };
+                let colour = if n == 0 { first } else { rest };
                 widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
             }
             let bottom = panel.bottom() - PAD - BUTTON.y;
@@ -721,12 +725,13 @@ pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice
                 format!("{name} is one of your themes already."),
                 "Replace it with this one, or bring this one in as a copy.".to_string(),
             ];
+            let (first, rest) = (name_ink(), hint_ink());
             for (n, line) in lines.iter().enumerate() {
                 let text = Rect::from_min_size(
                     Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
                     Vec2::new(panel.width() - 2.0 * PAD, LINE),
                 );
-                let colour = if n == 0 { theme::text_primary() } else { theme::text_hint() };
+                let colour = if n == 0 { first } else { rest };
                 widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
             }
             let bottom = panel.bottom() - PAD - BUTTON.y;
@@ -762,36 +767,41 @@ pub(crate) fn panel<T: CloseChoice>(
     painter.rect_filled(
         area,
         0.0,
-        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+        crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
     );
     let rect = Rect::from_center_size(area.center(), crate::kit::floating::dialog_size(dialog, area, size));
     let rect = crate::kit::floating::dialog(
         &painter,
         dialog,
         rect,
-        crate::kit::style_class::own_background_or(theme::panel_background()),
+        crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel")),
     );
     let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.rect_filled(bar, 0.0, theme::control_background());
-    let font = theme::ui_font(theme::TEXT);
-    widgets::text_in(
-        &painter,
-        bar.shrink2(Vec2::new(PAD, 0.0)),
-        Align2::LEFT_CENTER,
-        title,
-        font,
-        theme::text_primary(),
-    );
+    let title_row = title_bar(&painter, bar, title);
     let close = Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, ROW));
     let response = widgets::button_area(ui, close, Id::unique(("dialog-close", title)), format!("Close {title}"));
-    let hover = widgets::hover(ui, &response);
-    painter.rect_filled(close, 0.0, motion::mix(theme::control_background(), theme::control_hover(), hover));
-    let small = theme::ui_font(theme::TEXT_SMALL);
-    widgets::text_in(&painter, close, Align2::CENTER_CENTER, "Close", small, theme::text_primary());
+    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT_SMALL, None));
+    drop(title_row);
     if response.clicked() {
         *closed = Some(T::close());
     }
     rect
+}
+
+/// A dialog's title row in `bar`, `dialog-title`: its fill and its words, `label[kind="title"]`.
+/// The element stays entered for what its caller puts on the row (a Close button).
+pub(crate) fn title_bar(painter: &egui::Painter, bar: Rect, title: &str) -> crate::kit::element::Entered {
+    let row = crate::kit::element::DIALOG_TITLE.enter();
+    painter.rect_filled(bar, 0.0, row.background());
+    widgets::text_in(
+        painter,
+        bar.shrink2(Vec2::new(PAD, 0.0)),
+        Align2::LEFT_CENTER,
+        title,
+        theme::ui_font(theme::TEXT),
+        crate::kit::element::title_ink(),
+    );
+    row
 }
 
 /// The choice that closes a dialog.
@@ -843,33 +853,32 @@ impl CloseChoice for AraEditsChoice {
 
 pub(crate) fn heading(painter: &egui::Painter, at: Rect, text: &str) {
     let r = Rect::from_min_size(at.min, Vec2::new(at.width(), LINE));
-    widgets::text_in(painter, r, Align2::LEFT_CENTER, text, theme::ui_font(theme::TEXT_SMALL), theme::text_hint());
-    painter.hline(r.x_range(), r.bottom() - 2.5, theme::hairline(theme::border()));
+    widgets::text_in(painter, r, Align2::LEFT_CENTER, text, theme::ui_font(theme::TEXT_SMALL), hint_ink());
+    painter.hline(r.x_range(), r.bottom() - 2.5, theme::hairline(row_line()));
 }
 
-/// A row to click: a name, and a note on the right. `key` tells it from the rows around it: a
-/// project's path, as two projects of the same name in different folders share their label
-/// (#1229).
+/// A row to click: a name, and a note on the right in `note_ink`. `key` tells it from the rows
+/// around it: a project's path, as two projects of the same name in different folders share their
+/// label (#1229). It is a `list-row`; its caller reads the note's ink once, outside its loop.
 pub(crate) fn row(
     ui: &Ui,
     painter: &egui::Painter,
     rect: Rect,
     key: impl std::hash::Hash + std::fmt::Debug,
-    name: &str,
-    note: &str,
-    label: &str,
+    (name, note): (&str, &str),
+    (label, note_ink): (&str, egui::Color32),
 ) -> egui::Response {
     let response = widgets::button_area(ui, rect, Id::unique(("dialog-row", key, label)), label);
     // Over the dialog's own background: only the hover paints.
-    let fill = motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(rect, 0.0, fill);
+    let el = LIST_ROW.attribute("kind", "dialog").response(&response).enter();
+    painter.rect_filled(rect, 0.0, el.hover_fade(widgets::hover(ui, &response), Look::background));
     let inner = rect.shrink2(Vec2::new(PAD, 0.0));
     let font = theme::ui_font(theme::TEXT);
     let name_width = widgets::text_width(ui, name, font.clone()).min(inner.width() * 0.6);
-    widgets::text_in(painter, inner, Align2::LEFT_CENTER, name, font, theme::text_primary());
+    widgets::text_in(painter, inner, Align2::LEFT_CENTER, name, font, el.color());
     let rest = Rect::from_min_max(Pos2::new(inner.left() + name_width + 8.0, inner.top()), inner.max);
     let small = theme::ui_font(theme::TEXT_SMALL);
-    widgets::text_in(painter, rest, Align2::RIGHT_CENTER, note, small, theme::text_hint());
+    widgets::text_in(painter, rest, Align2::RIGHT_CENTER, note, small, note_ink);
     response
 }
 

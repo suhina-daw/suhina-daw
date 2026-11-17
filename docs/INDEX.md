@@ -126,6 +126,7 @@ for the documents about something, `python scripts/docs.py covers PATH` for thos
 | [Debugging the running app](debugging.md) | howto | current | How to find out what the running app does around a bug: the trace log (suhina --trace), adding trace points, reading the log, reading a screen recording frame by frame, and working a bug through with a tester |
 | [Author a data-only SDK device](device-sdk.md) | howto | current | Author data-only effects, MIDI effects and instruments in Rust or with AI agents |
 | [Keyboard shortcuts](guide/keyboard-shortcuts.md) | howto | current | User guide to the keyboard shortcuts, one entry per action with its default key, where it works and what it does, written for users and for agents |
+| [Writing a Suhina theme: author and AI guide](guide/theme-authoring.md) | howto | current | Guide for people and AI assistants writing or editing a Suhina theme - the folder's files, theme.css, quick controls and variants, artwork, layout, limits and every colour token |
 | [How to check it](how-to-check.md) | howto | current | How to write a pull request's "How to check it" section, steps a newcomer can follow from the test build to check a change in what Suhina does |
 | [Releasing](releasing.md) | howto | current | How versions are numbered, how release builds, the nightly and test builds of pull requests are made, and how many pull requests are merged through the merge queue |
 | [Sampler graph verification](sdk-sampler-verification.md) | howto | current | Reproduce sampler graph project relocation, runtime and desktop checks |

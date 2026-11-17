@@ -20,7 +20,7 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
         }
     }
     let mut h = window(demo_app());
-    let border = theme::border();
+    let border = live("border");
     // The line between the bars and the views is a line in the gap, never a fill under the views
     // that a translucent one would show (#1233).
     assert!(!h.output().shapes.iter().any(|shape| covers_workspace(&shape.shape, border)));
@@ -30,7 +30,7 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
     let before = h.state().session().unwrap().project().clone();
     let ctx = h.ctx.clone();
     let mut paper = theme::Theme { name: "Private paper".into(), ..Default::default() };
-    paper.colors.window_background = egui::Color32::TRANSPARENT;
+    paper.colors.insert("window-background".into(), egui::Color32::TRANSPARENT);
     paper.skin.background = Some("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQ6nD5DwADrAHuJHH6EQAAAABJRU5ErkJggg==".into());
     paper.skin.background_opacity = 100;
     h.state_mut().put_theme(&ctx, ThemeEntry { id: "private-paper".into(), theme: paper });
@@ -52,7 +52,7 @@ fn private_background_removes_the_opaque_workspace_backdrop_and_keeps_native_pan
     );
     assert!(
         h.output().shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Rect(rect) if rect.fill == theme::panel_background() && rect.rect.height() > 10.0
+            egui::Shape::Rect(rect) if rect.fill == live("panel-background") && rect.rect.height() > 10.0
         )),
         "native panel surfaces remain opaque"
     );
@@ -83,9 +83,9 @@ fn no_background_replaces_the_window_pixels_on_native_alpha_surfaces() {
         fills.lock().unwrap().clear();
         h.step();
     }
-    assert!(theme::window_background().a() < u8::MAX, "a see-through theme");
+    assert!(theme::see_through(), "a see-through theme");
     assert!(fills.lock().unwrap().is_empty(), "nothing replaces pixels: {:?}", fills.lock().unwrap());
-    theme::set_palette(&ctx, theme::Palette::DARK);
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn sheet_menu_and_toolbar_paint_their_scoped_backgrounds_without_editing_the_pro
             _ => None,
         }
     }
-    for (ink, height) in [(theme::accent(), theme::MENU_BAR), (theme::panel_background(), theme::CONTROL_BAR)] {
+    for (ink, height) in [(live("accent"), theme::MENU_BAR), (live("panel-background"), theme::CONTROL_BAR)] {
         let bar = h
             .output()
             .shapes
@@ -136,7 +136,7 @@ fn glass_clears_the_views_of_the_main_window_half_as_far_as_its_bars_menus_and_d
     for _ in 0..4 {
         h.step();
     }
-    let glass = theme::panel_background();
+    let glass = live("panel-background");
     assert!(glass.a() < 255);
     fn fills(shape: &egui::Shape, found: &mut Vec<(egui::Rect, egui::Color32)>) {
         match shape {
@@ -195,7 +195,7 @@ fn glass_clears_the_views_of_the_main_window_half_as_far_as_its_bars_menus_and_d
         dialog.iter().any(|(rect, fill)| fill.a() == glass.a() && rect.height() > 200.0 && rect.height() < 800.0),
         "a dialog is glass"
     );
-    theme::set_palette(&ctx, theme::Palette::DARK);
+    theme::use_colors(&ctx, &theme::Colors::new());
 }
 
 #[test]
@@ -204,7 +204,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     let mut h = view();
     let (_, mut blocks) = theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-blocks").unwrap();
     skin::configure(&blocks.skin);
-    theme::set_palette(&h.ctx, blocks.colors);
+    theme::use_colors(&h.ctx, &blocks.colors);
     h.run_steps(3);
     let slot = h.get_by_label("Launch Root on Bass (scene 1)").rect();
     // The artwork is a rectangle or a nine-slice (at most 16 corners), not the fan of a CSS
@@ -229,16 +229,16 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
     h.run_steps(3);
     assert!(!has_body(&h), "opting out restores native column fills");
     skin::configure(&skin::Skin::default());
-    theme::set_palette(&h.ctx, theme::Palette::DARK);
+    theme::use_colors(&h.ctx, &theme::Colors::new());
 }
 
 #[test]
-fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_command() {
-    use suhina_ui::kit::{skin, theme_css};
+fn a_session_fader_laid_out_lying_down_drags_across_and_keeps_the_native_command() {
+    use suhina_ui::kit::skin;
     let mut harness = view();
-    let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-volume { direction: horizontal; }").is_empty());
-    skin::configure(&theme.skin);
+    // The fader's row standing as a column, the fader 20 points tall: it lies across the strip.
+    let css = "group#mixer-level { flex-direction: column; } #mixer-volume { height: 20px; }";
+    skin::configure(&skin::Skin { css: Some(css.into()), ..Default::default() });
     harness.run_steps(3);
     let rect = harness.get_by_label("Drums volume").rect();
     assert!(rect.width() > rect.height());
@@ -259,30 +259,22 @@ fn a_horizontal_session_fader_drags_on_its_drawn_axis_and_keeps_the_native_comma
 }
 
 #[test]
-fn an_individually_placed_send_keeps_its_parameter_target_and_can_be_hidden() {
-    use suhina_ui::kit::{skin, theme_css};
+fn a_strip_part_the_sheet_hides_is_neither_drawn_nor_clicked() {
+    use suhina_ui::kit::skin;
     let mut harness = view();
-    let before = harness.get_by_label("Bass send to A Reverb").rect();
-    let mut theme = theme::Theme::default();
-    assert!(theme_css::apply(&mut theme, ".control-mixer-send-1 { left: 6px; width: 16px; }").is_empty());
-    skin::configure(&theme.skin);
-    harness.run_steps(3);
-    let moved = harness.get_by_label("Bass send to A Reverb").rect();
-    assert!((moved.left() - before.left() - 6.0).abs() < 0.01);
-    assert!((moved.width() - 16.0).abs() < 0.01);
-    let start = moved.center();
-    harness.hover_at(start);
-    harness.drag_at(start);
-    harness.run_steps(1);
-    harness.hover_at(start - Vec2::new(0.0, 10.0));
-    harness.run_steps(1);
-    harness.drop_at(start - Vec2::new(0.0, 10.0));
-    harness.run_steps(2);
-    assert!(harness.state().actions.iter().any(|a| a.id == "track.setSend" && a.params["track"] == 2));
-    theme.skin.controls.get_mut("mixer-send-1").unwrap().hidden = true;
-    skin::configure(&theme.skin);
+    assert!(harness.query_by_label("Bass send to A Reverb").is_some());
+    let solo = harness.get_by_label("Solo Bass").rect();
+    let cue = harness.get_by_label_contains("Cue Bass").rect();
+    skin::configure(&skin::Skin { css: Some("#mixer-sends { display: none; }".into()), ..Default::default() });
     harness.run_steps(3);
     assert!(harness.query_by_label("Bass send to A Reverb").is_none());
+    skin::configure(&skin::Skin { css: Some("mixer #control-solo { display: none; }".into()), ..Default::default() });
+    harness.run_steps(3);
+    // The strip's solo is gone: the track-on switch takes its room, and cue stays where it was.
+    assert!(harness.query_by_label("Solo Bass").is_none());
+    let moved = harness.get_by_label_contains("Cue Bass").rect();
+    assert!((moved.min - cue.min).length() < 0.01 && (moved.max - cue.max).length() < 0.01, "{moved:?} {cue:?}");
+    assert!(harness.get_by_label("Turn Bass off").rect().contains(solo.center()));
     skin::configure(&skin::Skin::default());
 }
 
@@ -368,18 +360,26 @@ fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
     assert!(harness.query_by_label("Theme: Ink").is_some());
     harness.get_by_label("Variant: Dim").click();
     harness.run();
-    assert_eq!(theme::accent(), egui::Color32::from_rgb(0xAB, 0xCD, 0xEF));
+    assert_eq!(live("accent"), egui::Color32::from_rgb(0xAB, 0xCD, 0xEF));
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.theme), Some("ink@dim".into()));
     // The theme in use shows its swatches on its large card and on its card in the list; both work.
     let own: Vec<_> = harness.get_all_by_label("Variant: Default").collect();
     assert_eq!(own.len(), 2, "the large card's swatch and the list card's");
     own[0].click();
     harness.run();
-    assert_eq!(theme::accent(), egui::Color32::from_rgb(0x12, 0x34, 0x56));
-    // A new variant starts from the values in use and is handed out to be written.
-    harness.get_by_label("More").click();
+    assert_eq!(live("accent"), egui::Color32::from_rgb(0x12, 0x34, 0x56));
+    // The + after the swatches opens the editor on a new variant from the values in use; Cancel
+    // leaves nothing behind, and Save hands it out to be written.
+    harness.get_all_by_label("New variant").next().unwrap().click();
     harness.run();
-    harness.get_by_label("New variant").click();
+    assert!(harness.state_mut().take_theme_actions().is_empty(), "nothing is written before Save");
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert!(harness.query_by_label("Back to themes").is_none(), "Cancel goes back to the themes");
+    assert!(harness.state_mut().take_theme_actions().is_empty());
+    harness.get_all_by_label("New variant").next().unwrap().click();
+    harness.run();
+    harness.get_by_label("Save").click();
     harness.run();
     let saved: Vec<_> = harness
         .state_mut()
@@ -390,8 +390,8 @@ fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
             _ => None,
         })
         .collect();
-    assert_eq!(saved, ["ink@variant"]);
-    assert_eq!(harness.state().settings().theme, "ink@variant");
+    assert_eq!(saved, ["ink@new-variant"]);
+    assert_eq!(harness.state().settings().theme, "ink@new-variant");
 }
 
 #[test]
@@ -742,13 +742,24 @@ fn the_arrangement_track_on_toggle_is_control_track_on() {
             _ => false,
         }
     }
+    // The toggle is lit only by a rule for its lit state (#1440): `#control-track-on` colours the
+    // tracks that are off, `#control-track-on[checked]` the ones that are on.
     let orange = egui::Color32::from_rgb(0xFF, 0x88, 0x00);
-    suhina_ui::kit::native_css::set_user_sheet(Some("#control-track-on { background-color: #ff8800; }".into()));
+    let blue = egui::Color32::from_rgb(0x00, 0x88, 0xFF);
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "#control-track-on { background-color: #ff8800; } #control-track-on[checked] { background-color: #0088ff; }"
+            .into(),
+    ));
     let mut h = window(demo_app());
     h.get_by_label("Arrangement view").click();
     h.run();
-    let toggle = h.get_by_label("Turn Drums off").rect();
-    assert!(h.output().shapes.iter().any(|s| filled(&s.shape, toggle, orange)), "the toggle takes #control-track-on");
+    h.get_by_label("Turn Keys off").click();
+    h.run();
+    let on = h.get_by_label("Turn Drums off").rect();
+    let off = h.get_by_label("Turn Keys on").rect();
+    let shapes = &h.output().shapes;
+    assert!(shapes.iter().any(|s| filled(&s.shape, on, blue)), "a track that is on takes #control-track-on[checked]");
+    assert!(shapes.iter().any(|s| filled(&s.shape, off, orange)), "a track that is off takes #control-track-on");
     suhina_ui::kit::native_css::set_user_sheet(None);
 }
 
@@ -882,7 +893,7 @@ fn choosing_another_themes_folder_asks_before_its_themes_move() {
 
 #[test]
 fn a_theme_with_a_background_image_lets_the_window_rest() {
-    // Its window style changes palette colours; the background once set the palette again each
+    // Its window style changes the window's colours; the background once set them again each
     // frame to undo them, and the window never stopped repainting.
     let mut h = window(demo_app());
     let ctx = h.ctx.clone();
@@ -893,6 +904,40 @@ fn a_theme_with_a_background_image_lets_the_window_rest() {
     h.step();
     assert!(suhina_ui::kit::liquid::background_image(&ctx).is_some(), "the background image loaded");
     assert!(h.try_run().is_ok(), "the window settles within a second of frames: {:?}", ctx.repaint_causes());
+}
+
+/// The frame a theme's backdrop image first shows in paints the window faded to the theme's
+/// opacity already, never one opaque frame over the image (#1448).
+#[test]
+fn the_first_frame_with_a_backdrop_paints_the_window_faded() {
+    use suhina_ui::settings::themes::ThemeEntry;
+    fn fills(shape: &egui::Shape, out: &mut Vec<egui::Color32>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| fills(s, out)),
+            egui::Shape::Rect(rect) if rect.rect.width() > SIZE.0 * 0.9 && rect.rect.height() > SIZE.1 * 0.9 => {
+                out.push(rect.fill);
+            }
+            _ => {}
+        }
+    }
+    let mut h = window(demo_app());
+    let ctx = h.ctx.clone();
+    let base = egui::Color32::from_rgb(0x10, 0x20, 0x30);
+    let mut paper = theme::Theme { name: "Private paper".into(), ..Default::default() };
+    paper.colors.insert("window-background".into(), base);
+    paper.skin.background = Some("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQ6nD5DwADrAHuJHH6EQAAAABJRU5ErkJggg==".into());
+    paper.skin.background_opacity = 50;
+    h.state_mut().put_theme(&ctx, ThemeEntry { id: "private-paper".into(), theme: paper });
+    h.state_mut().use_theme(&ctx, "private-paper");
+    // The first frame starts loading the image; the next one, after the load, shows it.
+    h.step();
+    h.state_mut().wait_for_background();
+    h.step();
+    assert!(suhina_ui::kit::liquid::background_image(&ctx).is_some(), "the background image shows");
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| fills(&s.shape, &mut seen));
+    // Over the image (drawn on its opaque window colour), the window's own fill is faded.
+    assert_eq!(seen.last(), Some(&base.gamma_multiply(0.5)), "the window over the image: {seen:?}");
 }
 
 /// Main's volume field in the Arrangement view is an element of its own, `#main-volume`: it does
@@ -1210,8 +1255,49 @@ fn a_theme_styles_the_workspace_splitters() {
         open_with_clip("workspace-panel { margin: 4px; } #detail-splitter { background-color: transparent; }", false);
     let clear = fills_inside(&h, h.get_by_label("Detail area splitter").rect());
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(native.contains(&theme::control_background()), "the native strip: {native:?}");
-    assert!(!clear.contains(&theme::control_background()), "a transparent strip paints no fill: {clear:?}");
+    assert!(native.contains(&live("control-background")), "the native strip: {native:?}");
+    assert!(!clear.contains(&live("control-background")), "a transparent strip paints no fill: {clear:?}");
+}
+
+/// The Launcher mixer's top line is `divider#mixer-splitter` (#1453): the line it draws while the
+/// pointer is over it takes `:hover`, while it is dragged `:active`, and the drag still resizes
+/// the mixer.
+#[test]
+fn the_mixer_splitter_takes_hover_and_active_and_still_drags() {
+    let (green, magenta) = (egui::Color32::from_rgb(0, 0xFF, 0), egui::Color32::from_rgb(0xFF, 0, 0xFF));
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "#mixer-splitter:hover { color: #00ff00; } #mixer-splitter:active { color: #ff00ff; }".into(),
+    ));
+    let mut h = window(demo_app());
+    h.get_by_label("Launcher view").click();
+    h.run();
+    let edge = h.get_by_label("Mixer height").rect().center();
+    // The line across the mixer's top, wherever the drag has it.
+    let lines = |h: &Harness<'static, App>, colour: egui::Color32| {
+        h.output().shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::LineSegment { points, stroke } => {
+                stroke.color == colour && points[0].y == points[1].y && (points[1].x - points[0].x) > 100.0
+            }
+            _ => false,
+        })
+    };
+    let at_rest = lines(&h, green) || lines(&h, magenta);
+    h.hover_at(edge);
+    h.run();
+    let hovered = lines(&h, green);
+    h.drag_at(edge);
+    h.run();
+    h.hover_at(edge - Vec2::new(0.0, 60.0));
+    h.run();
+    let active = lines(&h, magenta);
+    h.drop_at(edge - Vec2::new(0.0, 60.0));
+    h.run();
+    let moved = h.get_by_label("Mixer height").rect().center();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!at_rest, "no line while the pointer is elsewhere");
+    assert!(hovered, "the hovered line takes :hover");
+    assert!(active, "the dragged line takes :active");
+    assert!(moved.y < edge.y - 30.0, "the drag made the mixer taller: {edge:?} to {moved:?}");
 }
 
 /// Every bundled theme gives no region a border or padding, so no region's `overflow` clip cuts
@@ -1281,6 +1367,26 @@ fn the_workspace_panels_draw_their_border_and_background() {
     );
     let under = borders.iter().find(|r| r.top() >= detail.bottom() - 0.5).copied();
     assert!(seen.iter().any(|r| r.fill == blue && Some(r.rect) == under), "the detail panel's background");
+}
+
+/// The detail area's panel carries `kind="detail"`, as the guide documents: a rule on
+/// `workspace-panel[kind="detail"]` paints its background (a slip had given it the splitter's kind).
+#[test]
+fn the_detail_panel_answers_to_its_kind() {
+    fn rects(shape: &egui::Shape, out: &mut Vec<egui::epaint::RectShape>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| rects(s, out)),
+            egui::Shape::Rect(rect) => out.push(rect.clone()),
+            _ => {}
+        }
+    }
+    let blue = egui::Color32::from_rgb(0, 0, 0xFF);
+    let h = open_with_clip("workspace-panel[kind=\"detail\"] { background-color: #0000FF; }", false);
+    let mut seen = Vec::new();
+    h.output().shapes.iter().for_each(|s| rects(&s.shape, &mut seen));
+    let detail = h.get_by_label("Detail area splitter").rect();
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(seen.iter().any(|r| r.fill == blue && r.rect.top() >= detail.bottom() - 0.5), "the detail panel's fill");
 }
 
 /// A theme that pads every region and container, gives it a border and makes it hide its

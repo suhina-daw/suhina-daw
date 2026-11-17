@@ -45,7 +45,7 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     painter.rect_filled(
         area,
         0.0,
-        crate::kit::style_class::opaque_surface_or(theme::window_background()).gamma_multiply(0.6),
+        crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
     );
 
     let loading = progress.loading.len().min(LISTED) + usize::from(progress.loading.len() > LISTED);
@@ -57,20 +57,11 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
         &painter,
         dialog,
         rect,
-        crate::kit::style_class::own_background_or(theme::panel_background()),
+        crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel")),
     );
 
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.rect_filled(title, 0.0, theme::control_background());
-    let text = |rect: Rect, align: Align2, text: &str, color: Color32| {
-        widgets::text_in(&painter, rect, align, text, theme::ui_font(theme::TEXT), color);
-    };
-    text(
-        title.shrink2(Vec2::new(PAD, 0.0)),
-        Align2::LEFT_CENTER,
-        &format!("Loading plug-ins · {project}"),
-        theme::text_primary(),
-    );
+    drop(super::project_dialog::title_bar(&painter, title, &format!("Loading plug-ins · {project}")));
 
     let inner = Rect::from_min_max(
         Pos2::new(rect.left() + PAD, title.bottom() + PAD),
@@ -80,9 +71,9 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     // `progress` (its background and radius) and `progress-fill` (its background) style the bar.
     let progress_style = crate::kit::element::PROGRESS.enter();
     let radius = progress_style.radius_or(0.0);
-    painter.rect_filled(bar, radius, progress_style.background_or(theme::control_background()));
+    painter.rect_filled(bar, radius, progress_style.background());
     let share = if progress.total == 0 { 1.0 } else { progress.ready as f32 / progress.total as f32 };
-    let fill = crate::kit::element::PROGRESS_FILL.enter().background_or(theme::accent());
+    let fill = crate::kit::element::PROGRESS_FILL.enter().background();
     painter.rect_filled(
         Rect::from_min_size(bar.min, Vec2::new(bar.width() * share.clamp(0.0, 1.0), BAR)),
         radius,
@@ -101,34 +92,24 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     if progress.missing > 0 {
         summary.push_str(&format!(", {} not installed", progress.missing));
     }
-    line(&summary, theme::text_secondary());
+    line(&summary, crate::kit::element::caption_ink());
+    let hint = crate::kit::element::hint_ink();
     for name in progress.loading.iter().take(LISTED) {
-        line(&format!("Loading {name}"), theme::text_hint());
+        line(&format!("Loading {name}"), hint);
     }
     if progress.loading.len() > LISTED {
-        line(&format!("and {} more", progress.loading.len() - LISTED), theme::text_hint());
+        line(&format!("and {} more", progress.loading.len() - LISTED), hint);
     }
+    let error = crate::kit::element::error_ink();
     for name in progress.failed.iter().take(LISTED) {
-        line(&format!("Could not start {name}"), theme::recording());
+        line(&format!("Could not start {name}"), error);
     }
 
     let button = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.bottom() - BUTTON.y), BUTTON);
     let response = widgets::button_area(ui, button, Id::unique("plugin-loading-hide"), "Continue in the background");
     let hover = widgets::hover(ui, &response);
-    painter.rect_filled(
-        button,
-        0.0,
-        crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover),
-    );
-    painter.rect_stroke(button, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    widgets::text_in(
-        &painter,
-        button,
-        Align2::CENTER_CENTER,
-        "Continue in the background",
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_primary(),
-    );
+    let el = crate::kit::element::BUTTON.response(&response).enter();
+    widgets::push_face(&painter, button, &el, hover, "Continue in the background");
     response.clicked() || ui.input(|i| i.key_pressed(Key::Escape))
 }
 

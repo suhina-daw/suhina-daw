@@ -17,6 +17,15 @@ use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::{App, interaction::colour_picker, kit::theme};
 
+/// The colour variable `variable` (a name without `--`) as the window's root resolved it in the
+/// last frame: the theme in use's colour.
+#[allow(clippy::expect_used)] // a test helper outside #[test] functions
+fn live(variable: &str) -> egui::Color32 {
+    suhina_ui::kit::native_css::root_color(&format!("--{variable}"))
+        .or_else(|| suhina_ui::kit::theme::default_color(variable))
+        .expect("a colour variable")
+}
+
 const SIZE: (f32, f32) = (1280.0, 900.0);
 
 fn window() -> Harness<'static, App> {
@@ -33,6 +42,14 @@ fn window() -> Harness<'static, App> {
     theme::install(&harness.ctx);
     harness.run();
     harness
+}
+
+/// Draws the window in `colors` from the next frame: the user's sheet sets them, as the app gives
+/// each frame the theme's own colours.
+fn use_colours(colors: &[(&str, Color32)]) {
+    let colors: theme::Colors = colors.iter().map(|(variable, color)| ((*variable).to_owned(), *color)).collect();
+    let rule = theme::colors_rule(&colors).unwrap_or_default();
+    suhina_ui::kit::native_css::set_user_sheet(Some(rule.into()));
 }
 
 fn arrangement() -> Harness<'static, App> {
@@ -61,30 +78,30 @@ fn default_header_is_40_px_and_keeps_controls_and_sends_inside() {
 #[test]
 fn arrangement_header_surfaces_follow_custom_theme_tokens() {
     let mut harness = arrangement();
-    let previous = theme::palette();
-    let mut custom = previous;
-    custom.track_header_background = Color32::from_rgb(31, 45, 53);
-    custom.track_header_selected = Color32::from_rgb(65, 72, 84);
-    custom.control_selected = Color32::from_rgb(233, 229, 222);
-    theme::set_palette(&harness.ctx, custom);
+    let (header_background, header_selected, control_selected) =
+        (Color32::from_rgb(31, 45, 53), Color32::from_rgb(65, 72, 84), Color32::from_rgb(233, 229, 222));
+    use_colours(&[
+        ("track-headerBackground", header_background),
+        ("track-headerSelectedBackground", header_selected),
+        ("control-selectedBackground", control_selected),
+    ]);
     harness.run();
     let header = harness.get_by_label("Track Drums").rect();
     let color = default_drums();
-    let has_surface =
-        filled_with(&harness, header, suhina_ui::kit::motion::mix(custom.track_header_background, color, 0.82))
-            || filled_with(
-                &harness,
-                header,
-                suhina_ui::kit::motion::mix(
-                    suhina_ui::kit::motion::mix(custom.track_header_selected, color, 0.82),
-                    theme::text_primary(),
-                    0.07,
-                ),
-            );
+    let has_surface = filled_with(&harness, header, suhina_ui::kit::motion::mix(header_background, color, 0.82))
+        || filled_with(
+            &harness,
+            header,
+            suhina_ui::kit::motion::mix(
+                suhina_ui::kit::motion::mix(header_selected, color, 0.82),
+                live("text-primary"),
+                0.07,
+            ),
+        );
     let neutral_volumes = ["Drums volume", "Bass volume", "A Reverb volume"]
         .into_iter()
-        .all(|label| filled_with(&harness, harness.get_by_label(label).rect(), custom.control_selected));
-    theme::set_palette(&harness.ctx, previous);
+        .all(|label| filled_with(&harness, harness.get_by_label(label).rect(), control_selected));
+    suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(has_surface, "the header must tint the editable theme surface with its track color");
     assert!(neutral_volumes, "volume fills share the neutral theme colour regardless of track colour");
 }
@@ -95,19 +112,17 @@ fn selected_header_uses_its_theme_surface_without_recolouring_the_track() {
     let before = harness.state().session().unwrap().project().clone();
     harness.get_by_label("Track Drums").click();
     harness.run();
-    let previous = theme::palette();
-    let mut custom = previous;
-    custom.track_header_selected = Color32::from_rgb(180, 35, 110);
-    theme::set_palette(&harness.ctx, custom);
+    let header_selected = Color32::from_rgb(180, 35, 110);
+    use_colours(&[("track-headerSelectedBackground", header_selected)]);
     harness.run();
     let header = harness.get_by_label("Track Drums").rect();
     let expected = suhina_ui::kit::motion::mix(
-        suhina_ui::kit::motion::mix(custom.track_header_selected, default_drums(), 0.82),
-        custom.text_primary,
+        suhina_ui::kit::motion::mix(header_selected, default_drums(), 0.82),
+        live("text-primary"),
         0.07,
     );
     let shown = filled_with(&harness, header, expected);
-    theme::set_palette(&harness.ctx, previous);
+    suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(shown, "selected header must use track.headerSelectedBackground");
     assert_eq!(harness.state().session().unwrap().project(), &before);
 }
@@ -115,11 +130,8 @@ fn selected_header_uses_its_theme_surface_without_recolouring_the_track() {
 #[test]
 fn arrangement_grid_uses_its_own_theme_colors() {
     let mut harness = arrangement();
-    let previous = theme::palette();
-    let mut custom = previous;
-    custom.grid_major = Color32::from_rgb(117, 83, 149);
-    custom.grid_minor = Color32::from_rgb(53, 79, 101);
-    theme::set_palette(&harness.ctx, custom);
+    let (grid_major, grid_minor) = (Color32::from_rgb(117, 83, 149), Color32::from_rgb(53, 79, 101));
+    use_colours(&[("grid-major", grid_major), ("grid-minor", grid_minor)]);
     harness.run();
     fn has_line(shape: &Shape, color: Color32) -> bool {
         match shape {
@@ -128,10 +140,11 @@ fn arrangement_grid_uses_its_own_theme_colors() {
             _ => false,
         }
     }
-    let has_major = harness.output().shapes.iter().any(|shape| {
-        has_line(&shape.shape, suhina_ui::kit::motion::mix(custom.window_background, custom.grid_major, 0.55))
-    });
-    theme::set_palette(&harness.ctx, previous);
+    let has_major =
+        harness.output().shapes.iter().any(|shape| {
+            has_line(&shape.shape, suhina_ui::kit::motion::mix(live("window-background"), grid_major, 0.55))
+        });
+    suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(has_major, "timeline grid lines must follow their own theme token");
 }
 

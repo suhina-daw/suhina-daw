@@ -313,7 +313,7 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
 
 /// The colour of the ghost notes of `clip` on the track at `position`: the track's colour, or,
 /// for a clip turned off or on a muted track, the background the Arrangement draws such a clip
-/// in (a theme's `clip[muted]` rule, else the user-agent sheet's grey), so a clip that does not
+/// in (a theme's `clip[muted]` rule, else the base sheet's `--clip-mutedBackground`), so a clip that does not
 /// sound is not taken for one that does (#1393).
 fn ghost_colour(project: &Project, position: usize, clip: &Clip) -> Color32 {
     let track = project.tracks.get(position);
@@ -321,7 +321,7 @@ fn ghost_colour(project: &Project, position: usize, clip: &Clip) -> Color32 {
     if track_muted || !clip.enabled {
         use crate::kit::element::{ARRANGEMENT, CLIP, Muted};
         let grey = crate::arrangement::arrangement_view::muted_clip_grey(false);
-        return CLIP.attr(Muted, true).probe_in(ARRANGEMENT).background_or(grey);
+        return CLIP.attr(Muted, true).probe_in(ARRANGEMENT).computed_background_or(grey);
     }
     let rgb = track.map(|track| track_colour(track, position)).unwrap_or(suhina_session::colours::MIDI);
     Color32::from_rgb(rgb.0, rgb.1, rgb.2)
@@ -563,11 +563,11 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
     // The button is short, so it fits beside the workflow menu, and drawn as the toolbar's other
     // menus are; it is dimmed while nothing shows, and its tooltip and accessible label name what
     // does. Short of room, the arrow alone (› Layout).
-    let color = if *source == GhostSource::None { theme::text_hint() } else { theme::text_secondary() };
+    let dim = *source == GhostSource::None;
     let label = format!("Ghost notes {}", source.name(ghosts));
     let id = Id::unique("piano-roll-ghost-menu");
     let response =
-        crate::detail::piano_roll::menu_face(ui, rect, id, (None, if word { "Ghosts" } else { "" }), color, &label);
+        crate::detail::piano_roll::menu_face(ui, rect, id, (None, if word { "Ghosts" } else { "" }), dim, &label);
     let shown = response.rect;
     egui::Popup::menu(&response).show(|ui| {
         let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {
@@ -588,7 +588,8 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
         let title = egui::RichText::new("Clip\u{2026}").font(font.clone());
         let clip_menu = ui.menu_button(title, |ui| {
             if ghosts.choices.is_empty() {
-                ui.label(egui::RichText::new("No other MIDI clip").font(font.clone()).color(theme::text_hint()));
+                let hint = crate::detail::detail_view::hint_ink();
+                ui.label(egui::RichText::new("No other MIDI clip").font(font.clone()).color(hint));
             }
             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                 for choice in &ghosts.choices {

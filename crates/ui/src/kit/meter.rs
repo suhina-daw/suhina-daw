@@ -11,7 +11,6 @@ use serde_json::json;
 use suhina_engine::model::TrackId;
 use suhina_engine::{Level, MeterMonitor};
 
-use crate::kit::theme;
 use crate::kit::widgets::Action;
 
 /// The scale: the volume control's range, in dB, bottom to top.
@@ -170,8 +169,7 @@ pub fn show(
         (light, Rect::from_min_max(rect.min, Pos2::new(light.left() - 1.0, rect.bottom())))
     };
     // The clip light, `meter-clip`: its background while lit.
-    let lit =
-        if level.clipped { super::element::METER_CLIP.look().background_or(theme::recording()) } else { background };
+    let lit = if level.clipped { super::element::METER_CLIP.look().background() } else { background };
     painter.rect_filled(light, 0.0, lit);
     // Intensity changes only measured ink, never rails or the safety indicator.
     let mut ink = painter.clone();
@@ -194,7 +192,7 @@ pub fn show(
     let (normal, hot) = {
         let level = super::element::METER_LEVEL.look();
         let hot = super::element::METER_LEVEL.attribute("kind", "hot").look();
-        (level.own_color_or(theme::meter_normal()), hot.own_color_or(theme::meter_hot()))
+        (level.color(), hot.color())
     };
     let hot_from = ((HOT_DB - RANGE.0) / (RANGE.1 - RANGE.0)) as f32;
     let thickness = if upright { bars.width() } else { bars.height() };

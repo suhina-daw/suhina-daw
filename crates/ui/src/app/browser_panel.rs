@@ -164,8 +164,7 @@ impl App {
     pub(super) fn toggle_map_window(&mut self) {
         if self.sample_map.view.window {
             self.close_map_window();
-        } else {
-            self.settings_open = false;
+        } else if self.close_settings() {
             self.sample_map.set_window(true, &mut self.browser);
             self.settings.map_window = true;
             self.settings_changed = true;
@@ -246,7 +245,11 @@ impl App {
                 ui.max_rect()
             };
             ui.allocate_rect(rect, egui::Sense::hover());
-            ui.painter().rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::window_background()));
+            ui.painter().rect_filled(
+                rect,
+                0.0,
+                crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
+            );
             let changed = panel.show(ui, rect, browser, projects, &mut settings, revision);
             // The window has its own keyboard: its keys run the same actions as the main window's,
             // unless a field in it is being typed in. Embedded, the main window reads them.

@@ -30,7 +30,6 @@ pub(super) fn place(ui: &Ui, module: &str, base: Rect) -> Rect {
         .map(|d| &d.skin)
         .map_or_else(|| skin::active_toolbar_offset(module), |s| s.toolbar_offsets.get(module).copied().unwrap_or(0));
     let at = base.translate(Vec2::new(offset as f32, 0.0));
-    let at = crate::kit::control_layout::place(&format!("toolbar-{module}"), at, ui.max_rect());
     ui.ctx().data_mut(|d| {
         let rects = d.get_temp_mut_or_default::<Vec<(String, Rect, Rect)>>(rects_id());
         if let Some(item) = rects.iter_mut().find(|item| item.0 == module) {
@@ -107,7 +106,7 @@ impl App {
                 overlay.set_min_size(bar.size());
                 overlay.set_clip_rect(bar);
                 let painter = overlay.painter();
-                let ink = theme::accent();
+                let ink = crate::kit::element::accent_ink();
                 for x in (0..=(bar.width().min(16384.0) / 8.0) as usize).map(|n| bar.left() + n as f32 * 8.0) {
                     painter.vline(x, bar.y_range(), egui::Stroke::new(0.5, ink.gamma_multiply(0.18)));
                 }

@@ -74,13 +74,13 @@ fn settings_change_right_away_and_are_handed_out_to_be_saved() {
 #[test]
 fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     let mut harness = window(demo_app());
-    let mut colors = theme::Palette::DARK;
-    colors.accent = egui::Color32::from_rgb(0x12, 0xAB, 0x9F);
+    let mut colors = theme::Colors::new();
+    colors.insert("accent".into(), egui::Color32::from_rgb(0x12, 0xAB, 0x9F));
     let night = suhina_ui::settings::themes::ThemeEntry {
         id: "night".into(),
         theme: theme::Theme {
             name: "Night".into(),
-            colors,
+            colors: colors.clone(),
             liquid: None,
             gradients: Default::default(),
             transparent_rgb: Default::default(),
@@ -98,40 +98,41 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     assert!(harness.query_by_label("Theme: Suhina Studio").is_some());
     harness.get_by_label("Theme: Night").click();
     harness.run();
-    assert_eq!(theme::accent(), colors.accent);
+    assert_eq!(live("accent"), colors["accent"]);
     assert_eq!(harness.state_mut().take_changed_settings().map(|s| s.theme), Some("night".into()));
 
-    // A copy to change becomes the theme in use, and is handed out to be written.
-    harness.get_by_label("More").click();
+    // A new theme made from it becomes the theme in use, and is handed out to be written.
+    harness.get_by_label("Theme: Night").click_secondary();
     harness.run();
-    harness.get_by_label("Duplicate theme…").click();
+    harness.get_by_label("New theme from this…").click();
     harness.run();
     // It asks first, with the default artwork left out unless it is ticked.
     assert!(harness.query_by_label("Include the default artwork").is_some());
-    harness.get_by_label("Duplicate").click();
+    harness.get_by_label("Theme name").focus();
+    harness.run();
+    harness.get_by_label("Theme name").type_text("Night copy");
+    harness.run();
+    harness.get_by_label("Create theme").click();
     harness.run();
     let saved: Vec<_> = harness
         .state_mut()
         .take_theme_actions()
         .into_iter()
         .map(|a| match a {
-            FileAction::Save { id, theme } => (id, theme.name),
-            other => (format!("{other:?}"), String::new()),
+            FileAction::Save { id, theme } => (id, theme.name, theme.colors.get("accent").copied()),
+            other => (format!("{other:?}"), String::new(), None),
         })
         .collect();
-    assert_eq!(saved, [("night-copy".to_string(), "Night copy".to_string())]);
+    assert_eq!(saved, [("night-copy".to_string(), "Night copy".to_string(), Some(colors["accent"]))]);
     assert_eq!(harness.state().settings().theme, "night-copy");
 
-    for button in ["Reload themes", "Open the themes folder", "Back up themes", "Export the theme template"] {
+    for button in ["Open the themes folder", "Back up themes"] {
         harness.get_by_label("More").click();
         harness.run();
         harness.get_by_label(button).click();
         harness.run();
     }
-    assert_eq!(
-        harness.state_mut().take_theme_actions(),
-        [FileAction::Reload, FileAction::OpenFolder, FileAction::Backup, FileAction::ExportTemplate]
-    );
+    assert_eq!(harness.state_mut().take_theme_actions(), [FileAction::OpenFolder, FileAction::Backup]);
 
     // A theme file dropped on the window is handed out to be brought in.
     harness.input_mut().dropped_files.push(std::sync::Arc::new(TestFile("dark blue.json".into())));
@@ -139,12 +140,12 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
     assert_eq!(harness.state_mut().take_theme_actions(), [FileAction::Import("dark blue.json".into())]);
 
     // A file saved elsewhere redraws the window.
-    colors.accent = egui::Color32::from_rgb(1, 2, 3);
+    colors.insert("accent".into(), egui::Color32::from_rgb(1, 2, 3));
     let edited = suhina_ui::settings::themes::ThemeEntry {
         id: "night-copy".into(),
         theme: theme::Theme {
             name: "Night copy".into(),
-            colors,
+            colors: colors.clone(),
             liquid: None,
             gradients: Default::default(),
             transparent_rgb: Default::default(),
@@ -154,7 +155,9 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
         },
     };
     harness.state_mut().put_theme(&ctx, edited);
-    assert_eq!(theme::accent(), colors.accent);
+    // The colours come from the style sheet's variables, from the next frame on.
+    harness.run();
+    assert_eq!(live("accent"), colors["accent"]);
 
     // New theme, with the default artwork: every built-in image goes to the theme's assets.
     harness.get_by_label("More").click();

@@ -21,6 +21,15 @@ use suhina_ui::session::session_view::{self, SessionViewState};
 use suhina_ui::settings::themes::FileAction;
 use suhina_ui::{App, OpenAs, Status, View, kit::theme};
 
+/// The colour variable `variable` (a name without `--`) as the window's root resolved it in the
+/// last frame: the theme in use's colour.
+#[allow(clippy::expect_used)] // a test helper outside #[test] functions
+fn live(variable: &str) -> egui::Color32 {
+    suhina_ui::kit::native_css::root_color(&format!("--{variable}"))
+        .or_else(|| suhina_ui::kit::theme::default_color(variable))
+        .expect("a colour variable")
+}
+
 mod arrangement;
 mod bars;
 mod control_bar;

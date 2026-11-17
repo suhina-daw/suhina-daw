@@ -120,8 +120,9 @@ impl App {
             .collect();
         let look =
             floating_list::Look { width: 360.0, row_height: 34.0, visible_rows: rows.len(), fixed_height: false };
+        let hint = crate::kit::element::hint_ink();
         let heading = |ui: &mut Ui| {
-            ui.label(egui::RichText::new("Open projects").color(theme::text_hint()).size(theme::TEXT_SMALL));
+            ui.label(egui::RichText::new("Open projects").color(hint).size(theme::TEXT_SMALL));
         };
         let chosen = floating_list::show(
             ctx,
@@ -167,6 +168,8 @@ impl App {
         ui.allocate_rect(whole, Sense::hover());
         let painter = ui.painter_at(whole);
         let active = self.projects.active();
+        let (ink, hint, caption) =
+            (style_class.color(), crate::kit::element::hint_ink(), crate::kit::element::caption_ink());
         // Each tab as wide as its name, its close button inside it, in one row (#1372).
         let tabs: Vec<_> = self
             .projects
@@ -176,8 +179,7 @@ impl App {
                 let name = self.projects.name(id).unwrap_or("Untitled").to_string();
                 let unsaved = self.projects.get(id).is_some_and(Session::has_unsaved_changes);
                 let shown = if unsaved { format!("{name} •") } else { name.clone() };
-                let galley =
-                    widgets::fitted(&painter, &shown, theme::ui_font(theme::TEXT), theme::text_primary(), 180.0);
+                let galley = widgets::fitted(&painter, &shown, theme::ui_font(theme::TEXT), ink, 180.0);
                 (id, name, galley)
             })
             .collect();
@@ -206,27 +208,28 @@ impl App {
                 actions.push(Action::new("project.switch", json!({ "project": id.0 })));
             }
             let lit = motion::toward(ui.ctx(), response.id.with("active"), Some(id) == active, motion::VALUE);
+            let fill_of = crate::kit::element::app_fill;
             let idle = motion::mix(
-                crate::kit::style_class::surface_or(theme::window_background()),
-                theme::panel_hover(),
+                crate::kit::style_class::surface_or(fill_of("window")),
+                fill_of("panel-hover"),
                 widgets::hover(ui, &response),
             );
-            let fill = motion::mix(idle, crate::kit::style_class::surface_or(theme::panel_background()), lit);
+            let fill = motion::mix(idle, crate::kit::style_class::surface_or(fill_of("panel")), lit);
             element.paint_with(&painter, tab, crate::kit::element::Native { radius: 0.0, fill });
             // The shown tab stands out unless a rule colours the tab itself; the row's `color` does not.
-            let text = element.own_color_or(motion::mix(theme::text_secondary(), theme::text_primary(), lit));
+            let text = element.own_color_or(motion::mix(caption, ink, lit));
             widgets::paint_text(
                 &painter,
                 Pos2::new(content.left() + PAD, tab.center().y - galley.size().y / 2.0),
                 galley,
                 text,
             );
-            let cross = motion::mix(theme::text_hint(), theme::text_primary(), widgets::hover(ui, &close_response));
+            let cross = motion::mix(hint, ink, widgets::hover(ui, &close_response));
             let c = close.center();
             for (a, b) in [(Vec2::new(-3.0, -3.0), Vec2::new(3.0, 3.0)), (Vec2::new(-3.0, 3.0), Vec2::new(3.0, -3.0))] {
                 painter.line_segment([c + a, c + b], theme::hairline(cross));
             }
-            painter.vline(tab.right() + 0.5, tab.y_range(), theme::hairline(theme::border()));
+            painter.vline(tab.right() + 0.5, tab.y_range(), theme::hairline(element.border()));
         }
     }
 
@@ -234,14 +237,14 @@ impl App {
     pub(super) fn open_prompt_bar(&mut self, ui: &mut Ui) {
         let Some(path) = self.open_prompt.clone() else { return };
         let bar = ui.max_rect();
-        ui.painter().rect_filled(bar, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+        ui.painter().rect_filled(bar, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
         let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().to_string());
         let current = self.projects.active().and_then(|id| self.projects.name(id)).unwrap_or("the project").to_string();
         let mut choice = None;
         let mut cancel = false;
         ui.scope_builder(egui::UiBuilder::new().max_rect(bar.shrink2(Vec2::new(PAD, 6.0))), |ui| {
             ui.horizontal_centered(|ui| {
-                ui.label(egui::RichText::new(format!("Open {name}:")).color(theme::text_primary()));
+                ui.label(egui::RichText::new(format!("Open {name}:")).color(crate::kit::element::name_ink()));
                 if ui.button("In a new tab").clicked() {
                     choice = Some(OpenAs::NewTab);
                 }

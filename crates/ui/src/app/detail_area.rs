@@ -439,7 +439,11 @@ impl App {
             } else {
                 self.side_drag = None;
             }
-            let style = crate::kit::element::DIVIDER.id("detail-splitter").response(&response).enter();
+            let style = crate::kit::element::DIVIDER
+                .id("detail-splitter")
+                .attribute("kind", "detail-splitter")
+                .response(&response)
+                .enter();
             paint_splitter(ui, side_splitter, &style, true);
             (
                 Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())),
@@ -470,7 +474,13 @@ impl App {
             } else {
                 self.side_drag = None;
             }
-            let style = crate::kit::element::DIVIDER.id("detail-splitter").response(&response).enter();
+            // Closed: `divider#detail-splitter[closed]`.
+            let style = crate::kit::element::DIVIDER
+                .id("detail-splitter")
+                .attribute("kind", "detail-splitter")
+                .response(&response)
+                .attribute("closed", "")
+                .enter();
             paint_splitter(ui, side_splitter, &style, true);
             (Rect::from_min_max(view.min, Pos2::new(side_splitter.left(), view.bottom())), None)
         } else {
@@ -498,6 +508,7 @@ impl App {
                         detail.center().y < view.center().y
                     },
                     bounds: (0.0, if stacked { area.width() } else { area.height() }),
+                    closed: false,
                 },
             );
             let response = &divider.response;
@@ -555,11 +566,16 @@ impl App {
         });
         // Automated parameters show what plays at the playhead, running or stopped (#706, #811);
         // without a player, at the start.
+        let mut wanted = Vec::new();
         if let Some(session) = self.session() {
             let beat = session.player().map_or(0.0, |p| p.monitor().beat());
             // A lane dragged in the Arrangement view: the knob follows the line as it is dragged.
             let dragged = self.arrangement.automation.dragged.as_ref().filter(|_| self.shown == View::Arrangement);
-            shown.follow_automation_dragged(session.project(), beat, dragged);
+            // A plug-in's automated parameter shows the plug-in's own text for the value played,
+            // asked from it in the background when it was not given yet (#1482).
+            wanted = shown.follow_automation_texts(session.project(), beat, dragged, &mut |t, path| {
+                session.plugin_texts_at(t, path)
+            });
             // An audio clip's panel: where the playhead is in the clip, for its Set buttons, and
             // what each source says its tempo is while its Find menu is open
             // (`docs/spec/clip-panel.md`).
@@ -591,6 +607,21 @@ impl App {
                     ui.ctx().data_mut(|d| d.insert_temp(key, found));
                     Some(found)
                 });
+            }
+        }
+        // The plug-ins are asked for the texts of the values their panels show and do not know.
+        if !wanted.is_empty()
+            && let Ok(session) = self.projects.session_mut(None)
+        {
+            let mut asks: Vec<(TrackId, Vec<usize>, u32, Vec<f64>)> = Vec::new();
+            for (track, path, id, value) in wanted {
+                match asks.iter_mut().find(|(t, p, i, _)| *t == track && *p == path && *i == id) {
+                    Some((_, _, _, values)) => values.push(value),
+                    None => asks.push((track, path, id, vec![value])),
+                }
+            }
+            for (track, path, id, values) in asks {
+                session.ask_plugin_texts_at(track, &path, id, &values);
             }
         }
         // What the host hands devices' canvases: whether the panel is open, and live values (a
@@ -953,6 +984,7 @@ impl App {
                     detail.center().y < main.center().y
                 },
                 bounds: (0.0, if side { room.width() } else { room.height() }),
+                closed: true,
             },
         );
         if divider.response.double_clicked() {
@@ -1214,9 +1246,9 @@ fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
 /// the grip its `color`; without them, the control background and the hint colour.
 fn paint_splitter(ui: &Ui, splitter: Rect, style: &crate::kit::element::Entered, stacked: bool) {
     let painter = ui.painter_at(splitter);
-    painter.rect_filled(splitter, 0.0, style.background_or(theme::control_background()));
+    painter.rect_filled(splitter, 0.0, style.background());
     let grip = if stacked { Vec2::new(2.0, 32.0) } else { Vec2::new(32.0, 2.0) };
-    painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color_or(theme::text_hint()));
+    painter.rect_filled(Rect::from_center_size(splitter.center(), grip), 0.0, style.color());
 }
 
 /// What the detail area edits a clip in, for [`DetailInsets::around`].

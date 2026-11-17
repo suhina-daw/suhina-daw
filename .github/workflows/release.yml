@@ -1,22 +1,19 @@
 name: Release
 
 # Builds the release binaries. A `v*` tag builds them and attaches them to a draft GitHub Release:
-# `v0.1.0-rc.1` for a release candidate, `v0.1.0` for the release. Every night main is built as the
-# nightly (and again 12 hours later), a release under the tag `nightly` that each new one replaces, so people can try the
-# current state, and kept for NIGHTLY_KEEP_DAYS as its own pre-release `nightly-YYYYMMDD`, so a
-# tester can go back to an earlier night; a night with no new commit on main builds nothing. Running the workflow by hand
-# only builds the packages, as workflow artifacts, or with "nightly" publishes the nightly from main
-# now. See docs/releasing.md.
+# `v0.1.0-rc.1` for a release candidate, `v0.1.0` for the release. Running the workflow by hand
+# only builds the packages, as workflow artifacts, or with "nightly" builds main as the nightly: a
+# release under the tag `nightly` that each new one replaces, so people can try the current state,
+# and kept for NIGHTLY_KEEP_DAYS as its own pre-release `nightly-YYYYMMDD`, so a tester can go back
+# to an earlier night. The workflow has no schedule: the nightly is started from outside, by hand
+# or by a scheduled agent, and a second agent rewrites its notes and posts it to Discord. See
+# docs/releasing.md.
 # The binaries are not signed yet (ROADMAP, M8): macOS Gatekeeper and Windows SmartScreen warn
 # about them.
 
 on:
   push:
     tags: ["v*"]
-  schedule:
-    # The nightly every 12 hours: 02:17 and 14:17 UTC (05:17 and 17:17 in Finland in summer).
-    - cron: "17 2 * * *"
-    - cron: "17 14 * * *"
   workflow_dispatch:
     inputs:
       nightly:
@@ -49,9 +46,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
       nightly: ${{ steps.version.outputs.nightly }}
-      skip: ${{ steps.version.outputs.skip }}
       name: ${{ steps.version.outputs.name }}
-      dated: ${{ steps.version.outputs.dated }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -77,9 +72,7 @@ jobs:
             exit 1
           fi
           nightly=false
-          dated=
-          skip=false
-          if [ "$GITHUB_EVENT_NAME" = "schedule" ] || [ "$NIGHTLY_INPUT" = "true" ]; then
+          if [ "$NIGHTLY_INPUT" = "true" ]; then
             if [ "$GITHUB_REF" != "refs/heads/main" ]; then
               echo "::error::the nightly is built from main only"
               exit 1
@@ -89,41 +82,22 @@ jobs:
             # build metadata, so a hash with a leading zero is still a valid version.
             day=$(date -u +%Y%m%d)
             version="${version%%-*}-nightly.$day+${GITHUB_SHA::7}"
-            # The night's own release, kept after `nightly` has moved on. A day's second scheduled
-            # build (the afternoon's) is kept beside its first as nightly-YYYYMMDD-2, and so on; a
-            # run by hand replaces the day's first one, as before.
-            dated="nightly-$day"
-            n=2
-            while [ -n "$(git ls-remote origin "refs/tags/$dated" | cut -f1)" ] \
-              && [ "$GITHUB_EVENT_NAME" = "schedule" ]; do
-              dated="nightly-$day-$n"
-              n=$((n + 1))
-            done
-            # A scheduled night with nothing new on main builds nothing.
-            built=$(git ls-remote origin refs/tags/nightly | cut -f1)
-            if [ "$GITHUB_EVENT_NAME" = "schedule" ] && [ "$built" = "$GITHUB_SHA" ]; then
-              echo "The nightly is already this commit, $GITHUB_SHA."
-              skip=true
-            fi
           fi
           # Release candidates and nightlies are pre-releases; a release, 0.x included, is the latest.
           if [[ "$version" == *-* ]]; then prerelease=true; else prerelease=false; fi
           # Nightly packages keep one name, so a link to the latest one never changes.
           if [ "$nightly" = "true" ]; then name=nightly; else name="$version"; fi
-          echo "Version $version, nightly $nightly, skip $skip"
+          echo "Version $version, nightly $nightly"
           {
             echo "version=$version"
             echo "prerelease=$prerelease"
             echo "nightly=$nightly"
-            echo "skip=$skip"
             echo "name=$name"
-            echo "dated=$dated"
           } >> "$GITHUB_OUTPUT"
 
   build:
     name: build (${{ matrix.name }})
     needs: version
-    if: needs.version.outputs.skip != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -354,13 +328,8 @@ jobs:
   nightly:
     name: nightly
     needs: [version, build]
-    if: needs.version.outputs.nightly == 'true' && needs.version.outputs.skip != 'true'
+    if: needs.version.outputs.nightly == 'true'
     runs-on: ubuntu-latest
-    # DISCORD_WEBHOOK_RELEASES is in the environment `discord`, which main may use; the nightly
-    # runs from main only.
-    environment:
-      name: discord
-      deployment: false
     permissions:
       contents: write
     concurrency:
@@ -395,7 +364,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
-          DATED: ${{ needs.version.outputs.dated }}
           PREVIOUS: ${{ steps.previous.outputs.sha }}
         run: |
           ls -l dist
@@ -409,8 +377,36 @@ jobs:
           Talk about it on Discord: https://discord.com/invite/e5JAZYMU. Bugs and ideas: https://github.com/$GITHUB_REPOSITORY/issues (say which nightly: \`$VERSION\`).
 
           $changes
+
+          <!-- nightly-range: $PREVIOUS..$GITHUB_SHA -->
           EOF
           )
+          # The night's own tag, for the same packages as a pre-release that is never the latest.
+          # The name is chosen here, inside the `nightly` concurrency group, from the tags as they
+          # are now, so a rerun of this job or a second run on the same day never acts on a stale
+          # name: a dated tag already on this commit is replaced (a rerun), otherwise the day's
+          # first free name is taken (nightly-YYYYMMDD, then -2, -3 ...). Another build's dated
+          # release is never deleted. The lookup only reads tags and runs before any release
+          # changes, so a failed lookup fails the job with everything as it was.
+          day=${VERSION#*-nightly.}
+          day=${day%%+*}
+          tags=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/nightly-$day" \
+            --jq '.[] | "\(.ref | ltrimstr("refs/tags/")) \(.object.sha)"') || {
+            echo "::error::could not list the tags of $day"
+            exit 1
+          }
+          tags=$(grep -E "^nightly-$day(-[0-9]+)? " <<<"$tags" || true)
+          replaced=$(grep " $GITHUB_SHA\$" <<<"$tags" | head -n 1 | cut -d' ' -f1 || true)
+          dated=$replaced
+          if [ -z "$dated" ]; then
+            names=$(cut -d' ' -f1 <<<"$tags")
+            dated="nightly-$day"
+            n=2
+            while grep -qxF "$dated" <<<"$names"; do
+              dated="nightly-$day-$n"
+              n=$((n + 1))
+            done
+          fi
           # Until Suhina has a release of its own (published, not a candidate), the nightly is the
           # repository's latest release, so the Releases box on the repository page offers it.
           # From the first release on it is a pre-release that never becomes the latest.
@@ -425,11 +421,15 @@ jobs:
             "${flags[@]}" \
             --title "Suhina nightly $VERSION" \
             --notes "$notes"
-          # The same packages under the night's own tag, a pre-release that is never the latest.
-          # A second scheduled nightly on the same day has a tag of its own (nightly-YYYYMMDD-2);
-          # one run by hand replaces the day's first.
-          gh release delete "$DATED" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
-          gh release create "$DATED" dist/* \
+          # The dated release goes after the rolling one, so a failed rolling publish leaves the
+          # day's dated releases as they were.
+          if [ -n "$replaced" ]; then
+            echo "Replacing $dated, already on this commit"
+            gh release delete "$dated" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          else
+            echo "Publishing $dated"
+          fi
+          gh release create "$dated" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease --latest=false \
@@ -455,24 +455,3 @@ jobs:
                   gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
                 fi
               done
-      # Posts the new nightly to the Discord releases channel, the secret DISCORD_WEBHOOK_RELEASES
-      # in the environment `discord` (Discord: channel settings > Integrations > Webhooks); without the secret nothing is
-      # posted. A failed post leaves the nightly published.
-      - name: Tell Discord
-        continue-on-error: true
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-          DATED: ${{ needs.version.outputs.dated }}
-          PREVIOUS: ${{ steps.previous.outputs.sha }}
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_RELEASES }}
-        run: |
-          if [ -z "$DISCORD_WEBHOOK" ]; then
-            echo "No DISCORD_WEBHOOK_RELEASES secret; nothing posted."
-            exit 0
-          fi
-          python3 scripts/release_notes.py --repo "$GITHUB_REPOSITORY" \
-            --base "$PREVIOUS" --head "$GITHUB_SHA" --style discord --version "$VERSION" --tag "$DATED" > post.txt
-          cat post.txt
-          # allowed_mentions: a commit title never pings anyone.
-          jq -Rs '{content: ., allowed_mentions: {parse: []}}' post.txt \
-            | curl -fsS -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"

@@ -3,10 +3,11 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy
 type: howto
 status: current
-last_verified: 2026-11-13
+last_verified: 2026-11-15
 covers:
   - .github/workflows/ci.yml
   - .github/workflows/release.yml
+  - .github/workflows/nightly-notes.yml
   - .github/workflows/discord.yml
   - .github/workflows/test-build.yml
   - .github/workflows/test-build-links.yml
@@ -27,6 +28,8 @@ covers:
   - scripts/discord_test_build.py
   - scripts/discord_test_build_backfill.py
   - scripts/discord_api.py
+  - scripts/nightly_notes.py
+  - scripts/test_nightly_notes.py
   - apps/suhina/build.rs
   - apps/suhina-cli/build.rs
   - crates/plugin-host/build.rs
@@ -92,10 +95,12 @@ binaries are not signed yet.
 ## Nightly
 
 The nightly is how people try the current state between releases: a build of `main`, not a
-release. Every 12 hours (02:17 and 14:17 UTC) the workflow builds `main` and publishes it as the release
-**`nightly`**, replacing the previous one: its release and tag are deleted and made again on the
-new commit, published at once without a draft. A run with no new commit on `main` since
-the last nightly builds nothing. Running the workflow by hand from `main` with **nightly** checked publishes one now.
+release. Running the workflow from `main` with **nightly** checked builds `main` and publishes it
+as the release **`nightly`**, replacing the previous one: its release and tag are deleted and made
+again on the new commit, published at once without a draft. The workflow has no schedule of its
+own: a scheduled agent starts it twice a day (`gh workflow run release.yml -f nightly=true`) when
+`main` has moved since the last nightly, or a maintainer does by hand. A second agent then rewrites
+its notes and posts it to Discord (see [Nightly notes](#nightly-notes)).
 
 The nightly's version is the workspace version without a pre-release suffix, the date and the
 commit: `0.0.1-nightly.20261013+a15ad35`. The workflow writes it into `Cargo.toml` and
@@ -110,14 +115,38 @@ https://github.com/suhina-daw/suhina-daw/releases/download/nightly/suhina-nightl
 Each night is also kept as a pre-release of its own under the tag **`nightly-YYYYMMDD`**
 (`nightly-20261013`), with the same packages and notes, published on the same commit and never
 the latest. A tester can go back to an earlier night to check when something broke, or return
-to a build that opens their project. The day's second scheduled build is kept as
-**`nightly-YYYYMMDD-2`** beside the first; one run by hand replaces the day's first. The nightly job deletes the dated nightlies older than `NIGHTLY_KEEP_DAYS` (30) with
+to a build that opens their project. A second nightly on the same day is kept as
+**`nightly-YYYYMMDD-2`** beside the first, and so on; the name is chosen when the nightly is
+published, so a rerun of a failed run replaces only a dated release of its own commit and never
+another build's. The nightly job deletes the dated nightlies older than `NIGHTLY_KEEP_DAYS` (30) with
 their tags; it touches no other release, and a failure there leaves the new nightly published.
 
-Each new nightly is posted to Discord's releases channel (see [Discord](#discord)): the version,
-a link to its dated release, so the link still leads to the build it announced after the next
-night, and the changes since the previous nightly (at most 15, as described under
-[Release notes](#release-notes)). A failed post leaves the nightly published.
+### Nightly notes
+
+The workflow publishes the nightly with the list from
+[`scripts/release_notes.py`](../scripts/release_notes.py) (see [Release notes](#release-notes)) and
+ends the notes with a hidden line, `<!-- nightly-range: <previous nightly>..<this commit> -->`.
+A scheduled Claude agent (a routine on the maintainer's account, not in this repository) runs about
+an hour after each build. It takes every dated nightly of the last three days whose notes do not
+yet say `<!-- discord: posted -->`: without `<!-- notes: composed -->` it reads the pull requests
+merged in that range (their titles and descriptions) and writes notes for users from them; with it
+(the notes are published but the Discord post failed) it hands over the published notes again. A
+build that is still running is waited for, and a nightly the agent missed is caught up on its next
+run. Until then the nightly keeps the
+script's list, and it is published either way.
+
+The agent runs in a Claude cloud session, which may start workflows but may not edit releases, so
+it hands the notes to **Actions › Nightly notes** ([`nightly-notes.yml`](../.github/workflows/nightly-notes.yml))
+as its `tag` and `notes` inputs. [`scripts/nightly_notes.py`](../scripts/nightly_notes.py) checks
+them before anything changes: the tag is `nightly-YYYYMMDD` or `nightly-YYYYMMDD-N`, the notes
+start with `### New since the previous nightly`, carry no HTML, images, `@`, character references
+(`&#58;`) or `]:` (which starts a reference-style link definition, `[label]: …`), and link only
+to this repository, also once Markdown's backslash escapes are undone. It then replaces the notes section of that dated release (and of `nightly` when it
+is the same build) and adds `<!-- notes: composed -->`, and posts the notes to Discord's releases
+channel (see [Discord](#discord)) as one embed whose title links to the dated release, so the link
+still leads to the build it announced after the next night. Only after Discord took the post is
+`<!-- discord: posted -->` added, so a failed post is tried again by the next run and a nightly is
+never posted twice. A maintainer can run the workflow by hand with the same inputs.
 
 Until Suhina has a release of its own (published, not a release candidate), the nightly is the
 repository's **latest** release, so the Releases box on the repository page offers its downloads.
@@ -347,7 +376,8 @@ one build of `main` with all of them merged on, in that order.
 ## Release notes
 
 [`scripts/release_notes.py`](../scripts/release_notes.py) writes the notes from git alone (no
-network, no AI service). A change is one commit on `main`'s first-parent line, so one merged pull
+network, no AI service); the nightly's are rewritten afterwards by an agent, as described under
+[Nightly notes](#nightly-notes). A change is one commit on `main`'s first-parent line, so one merged pull
 request, listed by its title with a link to the pull request: a squash merge's subject, or for a
 merge commit ("Merge pull request #N from …") the first line of its message, which is the pull
 request's title. Changes that touch only documentation, CI, scripts and tests are counted, not
@@ -357,7 +387,7 @@ dependencies or repository work ("Architecture: …", "Code structure: …", "Te
 request titles are the release notes, so they say what changed for a user: "Clip fades: shapes
 and an adjustable curve".
 
-- **Nightly:** the changes since the previous nightly, on its release page and in the Discord post.
+- **Nightly:** the changes since the previous nightly, on its release page until the agent rewrites them.
 - **Draft of a tagged release:** first *New and changed*, the bullets of ROADMAP.md › What works now
   that are new or reworded since the previous release, by milestone, then *All changes*. A
   release candidate counts from the tag before it, a release from the previous release, the first
@@ -385,7 +415,7 @@ ruleset restricts their creation), so no one else can make a ref that reaches th
 
 | Channel | Secret | Posts |
 |---|---|---|
-| releases | `DISCORD_WEBHOOK_RELEASES` | each nightly (`release.yml`); each release when a person publishes it, with its *New and changed* section (`discord.yml`) |
+| releases | `DISCORD_WEBHOOK_RELEASES` | each nightly, with the notes the agent wrote (`nightly-notes.yml`, see [Nightly notes](#nightly-notes)); each release when a person publishes it, with its *New and changed* section (`discord.yml`) |
 | events | `DISCORD_WEBHOOK_EVENTS` | pull requests opened, merged, closed and reopened; issues opened, closed and reopened (`discord.yml`) |
 | testing (a forum) | `DISCORD_WEBHOOK_TESTING` | each linked test build, in its pull request's thread (`test-build-links.yml`) |
 

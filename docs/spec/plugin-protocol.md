@@ -3,7 +3,7 @@ description: The plug-in host protocol - the control messages, the shared-memory
 read_when: plug-in protocol, protocol version, hello, load, unload, get_params, set_param, get_param_texts, param_texts, param_changed, open_editor, place_editor, latency_changed, ara_update, reconfigure, shared memory, region version, memfd, OpenFileMappingW, sweep, catalog format
 type: spec
 status: current
-last_verified: 2026-11-11
+last_verified: 2026-11-16
 covers:
   - crates/plugins/src/protocol.rs
   - crates/ipc/**
@@ -39,6 +39,7 @@ raises its version and adds a row here.
 | 14 | `param_changed`, unasked (#828); `ara_playback`'s `cycle` and `cycle_on`; `reconfigure` and `reconfigured` |
 | 15 | `open_editor` may carry the `title` of the editor's own window; `editor_title` changes it later (not answered) |
 | 16 | `get_param_texts` asks for the plug-in's own text of up to 256 values of one parameter; `param_texts` answers (#1205) |
+| 17 | `get_params` marks a parameter whose values are a list of choices (`list`: VST3 `kIsList`, CLAP `CLAP_PARAM_IS_ENUM`), so automation holds only switches and lists (#1482) |
 
 **Block region** (`ipc::region`): 2, events as fixed 16-byte records with their frame; 3, the
 block's followers ([plug-in hosting](plugin-hosting.md) › One round trip). **ARA audio source**
@@ -75,7 +76,9 @@ Messages go over a local socket or pipe, one JSON object per message with an `op
   the wake, so the frame it wakes already plays, stops or moves.
 
 **Parameters.** `get_params` lists each with its id, name, group, range, default,
-current value, the plug-in's own text for it, steps and flags; `set_param` sets one in its
+current value, the plug-in's own text for it, steps and flags (`list` when its values are a
+list of choices: VST3 `kIsList`, CLAP `CLAP_PARAM_IS_ENUM` on a stepped parameter, never for
+VST2); `set_param` sets one in its
 own range (a VST3 plug-in's normalized, a CLAP plug-in's plain), on a VST3 controller at
 once and on the processor (VST3 parameter changes, CLAP parameter events) at the start of
 the next block. `get_param_texts {instance, id, values}` asks for the plug-in's own text of
@@ -83,7 +86,8 @@ each of up to 256 values of one parameter, in its own range, without setting any
 `param_texts {instance, id, texts}` answers with one text a value, empty where the plug-in
 gives none (CLAP `value_to_text`, VST3 `getParamStringByValue`; a VST2 plug-in names only its
 current value, so its texts are empty). Automation lanes show these texts for their points
-and for a value being dragged (#1205). The engine side keeps values set since the state was last read and sets
+and for a value being dragged (#1205), and a device panel's generated list for the value
+automation plays (#1482). The engine side keeps values set since the state was last read and sets
 them again after a restart. `param_changed` (unasked, #828) tells the
 session what the user moved in the plug-in's editor: the value the plug-in runs with now,
 which the session keeps the project's values in step with — no undo step of its own, and

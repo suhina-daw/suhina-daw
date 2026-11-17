@@ -12,7 +12,7 @@
 //! let style = CLIP.color(clip.color).style(); // a drawn item
 //! ```
 //!
-//! An entered element stays in the style tree (and its palette scope) until the value is
+//! An entered element stays in the style tree (and its style scope) until the value is
 //! dropped. Its [`Entered::style`] is its own, worked out in the frame that enters it from its
 //! parent's and its own identity, never the style of an element that encloses it, so a part that
 //! forgets to enter its own element cannot paint as its parent. Kit's shared painters
@@ -103,7 +103,8 @@ impl Name {
             .copied()
             .unwrap_or(false)
     }
-    fn builder<'a>(self) -> Builder<'a> {
+    /// The element described with nothing yet said about it.
+    pub fn builder<'a>(self) -> Builder<'a> {
         Builder {
             name: self,
             id: None,
@@ -162,6 +163,17 @@ impl Name {
     pub fn probe(self) -> Look {
         self.builder().probe()
     }
+    /// The [`Look`] of this element inside `parent`, neither of them left in the style tree: a
+    /// part as it is in its control with a state off (`slider-fill` in a `slider` without
+    /// `[checked]`), to compare the part in the lit control with.
+    pub fn probe_in(self, parent: Builder<'_>) -> Look {
+        let outer = parent.enter();
+        let look = self.probe();
+        let node = outer.scope.node;
+        drop(outer);
+        super::native_css::discard(node);
+        look
+    }
     /// [`Builder::enter_against_plain`] of this element.
     pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
         self.builder().enter_against_plain(attr, on)
@@ -180,10 +192,10 @@ pub struct Builder<'a> {
     response: Option<&'a Response>,
     /// The [`Attr`]s that are on, a bit each (`1 << attr as u8`).
     states: u8,
-    /// Pointer states given without a response: hover 1, active 2, disabled 4.
+    /// Pointer states given without a response: hover 1, active 2, disabled 4, focus 8.
     pointer: u16,
-    /// A device panel's own sheet, and the context to wake when the engine was idle.
-    sheet: Option<(egui::Context, &'a str)>,
+    /// A device panel's own sheet.
+    sheet: Option<&'a str>,
     color: Option<Color32>,
     /// Attributes with a value the app gives the element besides its colour (`kind`).
     attributes: Vec<(&'static str, &'a str)>,
@@ -212,13 +224,18 @@ impl<'a> Builder<'a> {
     /// The pointer's states for an element drawn without a response: `hovered` (`:hover`),
     /// `pressed` (`:active`), `disabled` (`:disabled`).
     pub fn pointer(mut self, hovered: bool, pressed: bool, disabled: bool) -> Self {
-        self.pointer = u16::from(hovered) | u16::from(pressed) << 1 | u16::from(disabled) << 2;
+        self.pointer = (self.pointer & 8) | u16::from(hovered) | u16::from(pressed) << 1 | u16::from(disabled) << 2;
+        self
+    }
+    /// The element has the keyboard's focus (`:focus`), for one drawn without a response.
+    pub fn focused(mut self, on: bool) -> Self {
+        self.pointer = (self.pointer & !8) | u16::from(on) << 3;
         self
     }
     /// A device panel's own style sheet (`source`), which applies inside the panel only, over the
     /// application's theme ([`super::native_css`]).
-    pub fn sheet(mut self, ctx: &egui::Context, source: Option<&'a str>) -> Self {
-        self.sheet = source.map(|source| (ctx.clone(), source));
+    pub fn sheet(mut self, source: Option<&'a str>) -> Self {
+        self.sheet = source;
         self
     }
     /// The element's own colour, given to the sheet as `[color="#rrggbb"]` (or `#rrggbbaa`).
@@ -237,12 +254,20 @@ impl<'a> Builder<'a> {
         self
     }
 
-    /// Puts the element in the style tree and the palette scope until the value is dropped.
+    /// Puts the element in the style tree and the style scope until the value is dropped. The
+    /// pointer states it was given are the pointer's: `.pointer(true, ..)` puts the pointer over
+    /// it, so its ancestors are `:hover` too.
     pub fn enter(self) -> Entered {
+        self.enter_as(false)
+    }
+
+    /// [`Builder::enter`]; `asked` says the pointer states are a question (what the element looks
+    /// like under the pointer, for a lookup), not where the pointer is: the element's ancestors
+    /// are not `:hover` for it.
+    fn enter_as(self, asked: bool) -> Entered {
         let Self { name, id, response, states, pointer, color, attributes, native, sheet } = self;
-        let sheet_wake = sheet.clone();
         let scope = super::style_class::enter_inner(name, id, response, |node| {
-            super::native_css::mark_node_bits(node, pointer);
+            super::native_css::mark_node_bits(node, pointer, asked);
             for (attr, state) in STATES {
                 if states & (1 << attr as u8) != 0 {
                     super::native_css::mark_node(node, state);
@@ -254,22 +279,16 @@ impl<'a> Builder<'a> {
             for (attribute, value) in attributes {
                 super::native_css::set_attribute(node, attribute, value.to_owned());
             }
-            if let Some((ctx, source)) = sheet {
-                super::native_css::device_sheet(Some(node), &ctx, Some(source));
+            if let Some(source) = sheet {
+                super::native_css::device_sheet(node, source);
             }
         });
-        // A sheet asked for while the engine is idle starts it on the next frame.
-        if scope.node.is_none()
-            && let Some((ctx, source)) = sheet_wake
-        {
-            super::native_css::device_sheet(None, &ctx, Some(source));
-        }
         Entered { scope, native, name, rest: std::cell::RefCell::new(None) }
     }
 
     /// The style of a drawn item: the element entered and left at once.
     pub fn style(self) -> Option<Computed> {
-        self.enter().style()
+        self.enter_as(true).style()
     }
 
     /// The [`Look`] of an element that is not drawn: what a state's rule is compared with
@@ -282,7 +301,7 @@ impl<'a> Builder<'a> {
     /// with the same key (held for a CSS transition), so a state's rule is not on both sides of
     /// the comparison.
     pub fn probe(self) -> Look {
-        let entered = self.enter();
+        let entered = self.enter_as(true);
         let node = entered.scope.node;
         let style = match node {
             Some(_) => super::native_css::probe_style(node),
@@ -309,13 +328,49 @@ impl<'a> Builder<'a> {
     /// The element entered with `attr` `on`, and while it is on, the [`Look`] of the very same
     /// element with only `attr` off: its id, response (so its `:hover`, `:active` and focus),
     /// pointer states, colour, attributes and other states kept. That is what
-    /// [`Look::background_unlike`] and the others compare a state's rule with, so only a rule for
+    /// [`Look::themed_unlike`] and the others compare a state's rule with, so only a rule for
     /// the state itself (`button[checked]`) counts as the state's colour, not one for the
     /// pointer's state (`button:hover`) or for every such element.
     pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
         // Looked up first, so it is the last node when it is taken out again.
         let plain = on.then(|| self.clone().attr(attr, false).probe());
         (self.attr(attr, on).enter(), plain)
+    }
+
+    /// A toggle's element, entered with `attrs` while it is `on`, and while it is lit at all (`on`,
+    /// or `fading` out), the two [`Sides`] its fade runs between: the same element with `attrs`
+    /// on and with them off, everything else kept (its id, its response and so its `:hover`). The
+    /// one not entered is looked up first and taken out again ([`Builder::probe`]), so it takes
+    /// no place in the style tree. [`super::widgets::Toggle::of`] compares them.
+    pub fn enter_toggle(self, attrs: &[Attr], on: bool, fading: bool) -> (Entered, Option<Sides>) {
+        let with = |builder: Self, on: bool| attrs.iter().fold(builder, |builder, attr| builder.attr(*attr, on));
+        if on {
+            let plain = with(self.clone(), false).probe();
+            let el = with(self, true).enter();
+            let lit = el.look();
+            (el, Some(Sides { lit, plain, entered_lit: true }))
+        } else if fading {
+            let lit = with(self.clone(), true).probe();
+            let el = with(self, false).enter();
+            let plain = el.look();
+            (el, Some(Sides { lit, plain, entered_lit: false }))
+        } else {
+            (with(self, false).enter(), None)
+        }
+    }
+
+    /// The element's [`Look`] at rest and under the pointer (`:hover`), for a fade from one to the
+    /// other that is `amount` of the way (0 none, 1 all): looked up as comparisons
+    /// ([`Builder::probe`]), the hovered one only while there is some hover to show (else the
+    /// resting one again). The builder is given no response, which would say where the pointer is.
+    pub fn hover_ends(self, amount: f32) -> (Look, Look) {
+        let rest = self.clone().pointer(false, false, false).probe();
+        if amount.is_finite() && amount > 0.0 {
+            let hot = self.pointer(true, false, false).probe();
+            (rest, hot)
+        } else {
+            (rest.clone(), rest)
+        }
     }
 
     /// The [`Look`] of every drawn item of this kind: looked up once, outside the loop that draws
@@ -325,32 +380,122 @@ impl<'a> Builder<'a> {
     }
 }
 
-/// What a sheet says about a kind of drawn item (a grid line, a slot's mark), each colour with the
-/// palette token it replaces as the fallback: where no rule of a theme reaches the item, it paints
-/// as it did with the token (#1417).
+/// A toggle's two looks, lit and plain ([`Builder::enter_toggle`]).
+#[derive(Clone, Debug)]
+pub struct Sides {
+    /// The element with its state on.
+    pub lit: Look,
+    /// The same element with its state off.
+    pub plain: Look,
+    /// Whether the element entered is the lit one: it is on, not fading out.
+    pub entered_lit: bool,
+}
+
+/// What a sheet says about a kind of drawn item (a grid line, a slot's mark): its computed colours,
+/// the base sheet's included, or for a reader that asks for one, a fallback colour where no rule of
+/// a theme reaches the item (#1417).
 #[derive(Clone, Debug, Default)]
 pub struct Look(Option<Computed>);
 
+/// Which of an element's colours a [`Look`] reads where a theme's rule gives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Paint {
+    /// Its text `color`, inherited from a sheet's rule around it too.
+    Color,
+    /// Its own `color`: one a rule on the element itself sets, even when it equals the inherited
+    /// one. A line or a mark does not take the text colour a view's rule gives everything in it.
+    OwnColor,
+    /// Its `background-color`.
+    Background,
+    /// Its `border-color`.
+    Border,
+    /// Its `accent-color`.
+    Accent,
+}
+
+impl Paint {
+    /// The colour `style` has for this paint, where a theme's rule gives it (the base sheet's does
+    /// not count).
+    fn themed(self, style: &Computed) -> Option<Color32> {
+        let (set, color) = match self {
+            Self::Color => (style.authored.color, style.color),
+            Self::OwnColor => (style.declared(Property::Color), style.color),
+            Self::Background => (style.authored.background, style.background),
+            Self::Border => (style.authored.border, style.border),
+            Self::Accent => (style.authored.accent, style.accent),
+        };
+        set.then_some(color)
+    }
+}
+
 impl Look {
-    /// The item's own `color`, where a rule on the item sets one; else `token`. A line or a mark
-    /// does not take the text colour a view's rule gives everything in it.
+    /// The item's computed `color`, the base sheet's where no theme gives one; transparent where
+    /// no sheet styles the window.
+    pub fn color(&self) -> Color32 {
+        self.computed_color_or(Color32::TRANSPARENT)
+    }
+
+    /// The item's computed `background-color` ([`Look::color`]).
+    pub fn background(&self) -> Color32 {
+        self.computed_background_or(Color32::TRANSPARENT)
+    }
+
+    /// The item's computed `border-color` ([`Look::color`]).
+    pub fn border(&self) -> Color32 {
+        self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::border)
+    }
+
+    /// The item's computed `accent-color` ([`Look::color`]).
+    pub fn accent(&self) -> Color32 {
+        self.0.as_ref().map_or(Color32::TRANSPARENT, Computed::accent)
+    }
+
+    /// The item's computed `color`, the base and user-agent sheets' included: for an element whose
+    /// colour those sheets give (`knob-body`, `fader-cap`, `sample-point[kind]`), so a colour a
+    /// theme gives an element around it does not reach it. `fallback` only where no sheet styles
+    /// the window.
+    pub fn computed_color_or(&self, fallback: Color32) -> Color32 {
+        self.0.as_ref().map_or(fallback, Computed::color)
+    }
+
+    /// The item's computed `background-color`, the base and user-agent sheets' included (often
+    /// through a variable): a background a theme gives an element around it does not reach it,
+    /// while a variable the theme sets and its own rule for the element do. `fallback` only where
+    /// no sheet styles the window.
+    pub fn computed_background_or(&self, fallback: Color32) -> Color32 {
+        self.0.as_ref().map_or(fallback, Computed::background)
+    }
+
+    /// The item's colour `paint`, where a theme's rule gives it one.
+    pub fn themed(&self, paint: Paint) -> Option<Color32> {
+        self.0.as_ref().and_then(|style| paint.themed(style))
+    }
+
+    /// The item's own `color` ([`Paint::OwnColor`]), else `token`.
     pub fn own_color_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|own| own.declared(Property::Color)).map_or(token, |own| own.color)
+        self.themed(Paint::OwnColor).unwrap_or(token)
     }
 
     /// The item's text colour, inherited from a sheet's rule around it too; else `token`.
     pub fn color_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|s| s.authored.color).map_or(token, |s| s.color)
+        self.themed(Paint::Color).unwrap_or(token)
     }
 
     /// The item's `background-color`, where the sheet sets one; else `token`.
     pub fn background_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|s| s.authored.background).map_or(token, |s| s.background)
+        self.themed(Paint::Background).unwrap_or(token)
     }
 
-    /// The item's `border-color`, where the sheet sets one; else `token`.
+    /// The item's `border-color`, where the sheet sets one; else `token`: for a line the element
+    /// draws along its edge (a column's separator, a selected slot's frame).
     pub fn border_or(&self, token: Color32) -> Color32 {
-        self.0.as_ref().filter(|s| s.authored.border).map_or(token, |s| s.border)
+        self.themed(Paint::Border).unwrap_or(token)
+    }
+
+    /// The item's `accent-color`, where the sheet sets one; else `token`: a control's accent, such
+    /// as a dial's pointer or the line under a field that has the keys.
+    pub fn accent_or(&self, token: Color32) -> Color32 {
+        self.themed(Paint::Accent).unwrap_or(token)
     }
 
     /// The item's computed style, when a sheet styles the window.
@@ -358,26 +503,26 @@ impl Look {
         self.0.as_ref()
     }
 
-    /// The item's `background-color` in a state (`[checked]`, `[queued]`) where it differs from
+    /// The item's colour `paint` in a state (`[checked]`, `[queued]`) where it differs from
     /// `plain`, the same item without the state; else `token`, the state's own colour. A rule for
     /// every `button` then does not hide which one is on: only a rule for the state does.
-    pub fn background_unlike(&self, plain: &Look, token: Color32) -> Color32 {
-        let own = self.0.as_ref().filter(|s| s.authored.background).map(|s| s.background);
-        own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.background).map(|s| s.background))
-            .unwrap_or(token)
+    pub fn unlike(&self, plain: &Look, paint: Paint, token: Color32) -> Color32 {
+        self.themed_unlike(plain, paint).unwrap_or(token)
     }
 
-    /// [`Look::background_unlike`] for the `border-color`.
-    pub fn border_unlike(&self, plain: &Look, token: Color32) -> Color32 {
-        let own = self.0.as_ref().filter(|s| s.authored.border).map(|s| s.border);
-        own.filter(|own| Some(*own) != plain.0.as_ref().filter(|s| s.authored.border).map(|s| s.border))
-            .unwrap_or(token)
+    /// [`Look::unlike`] with no token: `None` where the state has no colour `paint` of its own.
+    pub fn themed_unlike(&self, plain: &Look, paint: Paint) -> Option<Color32> {
+        self.themed(paint).filter(|own| Some(*own) != plain.themed(paint))
     }
 
-    /// [`Look::background_unlike`] for the item's own `color`.
-    pub fn own_color_unlike(&self, plain: &Look, token: Color32) -> Color32 {
-        let own = |look: &Look| look.0.as_ref().filter(|s| s.declared(Property::Color)).map(|s| s.color);
-        own(self).filter(|color| Some(*color) != own(plain)).unwrap_or(token)
+    /// Whether the item has a background image (`background-image`) that `plain` does not have:
+    /// a state's own image, not the one a rule for every such item gives.
+    pub fn image_unlike(&self, plain: &Look) -> bool {
+        match (&self.0, &plain.0) {
+            (Some(own), Some(plain)) => own.has_gradient() && !own.same_image(plain),
+            (Some(own), None) => own.has_gradient(),
+            _ => false,
+        }
     }
 }
 
@@ -495,18 +640,42 @@ impl Entered {
         Boxed { content, radius }
     }
 
+    /// [`Entered::paint_with`] with `native.fill` in place of the sheet's `background-color`, and
+    /// `image` (0 to 1) of its background image: for a toggle whose caller worked out its fill
+    /// from the element already ([`super::widgets::Toggle`]), so neither the colour nor the image
+    /// of a rule for every such control covers the lit state's fill.
+    pub fn paint_over(&self, painter: &Painter, rect: Rect, native: Native, image: f32) -> Boxed {
+        self.finish();
+        let style = self.style();
+        let mut own = style.clone();
+        if let Some(own) = own.as_mut() {
+            own.authored.background = false;
+            own.image = image.clamp(0.0, 1.0);
+        }
+        let outer = super::native_css::outer_clip(self.scope.node);
+        let radius = super::native_css::box_begin(painter, rect, native.radius, native.fill, own.as_ref(), outer);
+        let content = self.contain(painter, rect, style, radius, outer);
+        Boxed { content, radius }
+    }
+
     /// The element's border in `rect`, for a bar whose background its caller paints with the
     /// window's corners (and [`Entered::paint_background`] its gradients and inset shadows): then,
     /// as after [`Entered::paint`], its contents go in the content box returned, are clipped to
-    /// its padding box when it hides its overflow, and its outline comes when it leaves scope.
+    /// its padding box when it hides its overflow, and its outline comes when it leaves scope. The
+    /// border follows the sheet's `border-radius`, as [`Entered::paint_background`]'s gradients and
+    /// shadows do, and is square where the sheet sets none (#1487).
     pub fn paint_border(&self, painter: &Painter, rect: Rect) -> Rect {
         self.finish();
         let style = self.style();
+        let radius = style
+            .as_ref()
+            .filter(|style| style.authored.radius)
+            .map_or(0.0, |style| style.radius.min(rect.width().min(rect.height()) / 2.0).max(0.0));
         if let Some(style) = &style {
-            super::native_css::border(painter, rect, 0.0, style);
+            super::native_css::border(painter, rect, radius, style);
         }
         let outer = super::native_css::outer_clip(self.scope.node);
-        self.contain(painter, rect, style, 0.0, outer)
+        self.contain(painter, rect, style, radius, outer)
     }
 
     /// The element's content box in `rect`; and from here on, until it is dropped, its box
@@ -581,45 +750,88 @@ impl Entered {
         self.style().map_or([0.0; 4], |style| style.insets_in(width))
     }
 
-    /// The element's `color`, or `fallback` where the sheet sets none.
-    pub fn color_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|s| s.authored.color).map_or(fallback, |s| s.color)
-    }
-
-    /// The element's `color` where a rule gives it one of its own, not the one it inherits (a
-    /// bar's `color` on its items), even when it equals the inherited one; else `fallback`, a
-    /// colour the app gives by state (an error, the shown tab).
-    pub fn own_color_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|own| own.declared(Property::Color)).map_or(fallback, |own| own.color)
-    }
-
     /// The element's node in this frame's style tree, while it is entered.
     pub(crate) fn node(&self) -> Option<usize> {
         self.scope.node
     }
 
-    /// The element's computed `color`, the user-agent tier's included: for an element whose
-    /// colour that tier gives (`knob-body`, `fader-cap`, `sample-point[kind]`), so a colour a
-    /// theme gives an element around it does not reach it. `fallback` only where no sheet styles
-    /// the window.
+    /// [`Look::color`] of the element.
+    pub fn color(&self) -> Color32 {
+        self.look().color()
+    }
+
+    /// [`Look::background`] of the element.
+    pub fn background(&self) -> Color32 {
+        self.look().background()
+    }
+
+    /// [`Look::border`] of the element.
+    pub fn border(&self) -> Color32 {
+        self.look().border()
+    }
+
+    /// [`Look::accent`] of the element.
+    pub fn accent(&self) -> Color32 {
+        self.look().accent()
+    }
+
+    /// [`Look::color_or`] of the element.
+    pub fn color_or(&self, fallback: Color32) -> Color32 {
+        self.look().color_or(fallback)
+    }
+
+    /// [`Look::own_color_or`] of the element: a colour the app gives by state (an error, the shown
+    /// tab) where no rule on the element gives one.
+    pub fn own_color_or(&self, fallback: Color32) -> Color32 {
+        self.look().own_color_or(fallback)
+    }
+
+    /// [`Look::computed_color_or`] of the element.
     pub fn computed_color_or(&self, fallback: Color32) -> Color32 {
-        self.style().map_or(fallback, |s| s.color)
+        self.look().computed_color_or(fallback)
     }
 
-    /// The element's `background-color`, or `fallback` where the sheet sets none.
+    /// [`Look::computed_background_or`] of the element.
+    pub fn computed_background_or(&self, fallback: Color32) -> Color32 {
+        self.look().computed_background_or(fallback)
+    }
+
+    /// [`Look::background_or`] of the element.
     pub fn background_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|s| s.authored.background).map_or(fallback, |s| s.background)
+        self.look().background_or(fallback)
     }
 
-    /// The element's `border-color`, or `fallback` where the sheet sets none: for a line the
-    /// element draws along its edge (a column's separator, a selected slot's frame).
+    /// [`Look::border_or`] of the element.
     pub fn border_or(&self, fallback: Color32) -> Color32 {
-        self.style().filter(|s| s.authored.border).map_or(fallback, |s| s.border)
+        self.look().border_or(fallback)
     }
 
     /// The [`Look`] of the element, for the colours of what it draws inside itself.
     pub fn look(&self) -> Look {
         Look(self.style())
+    }
+
+    /// The element's [`Look`] as if the pointer were over it (`hovered`) or not, whatever it is
+    /// now: what a fade between its two states starts and ends at.
+    pub fn look_hovered(&self, hovered: bool) -> Look {
+        Look(super::native_css::probe_hovered(self.scope.node, hovered))
+    }
+
+    /// A colour of the element `amount` (0 to 1) of the way from its resting style to its hovered
+    /// one (`:hover`), `read` out of each ([`Look::background`], [`Look::color`]): the fade an
+    /// animated hover draws. The element's own style is one end where it is in that state, so a
+    /// control at rest, or fully hovered, looks the other end up only while it fades.
+    pub fn hover_fade(&self, amount: f32, read: impl Fn(&Look) -> Color32) -> Color32 {
+        let amount = if amount.is_finite() { amount.clamp(0.0, 1.0) } else { 0.0 };
+        let now = super::native_css::node_hovered(self.scope.node);
+        let end = |hovered: bool| if hovered == now { self.look() } else { self.look_hovered(hovered) };
+        if amount <= 0.0 {
+            return read(&end(false));
+        }
+        if amount >= 1.0 {
+            return read(&end(true));
+        }
+        super::motion::mix(read(&end(false)), read(&end(true)), amount)
     }
 
     /// The element's corner radius, or `fallback` where the sheet sets none.
@@ -647,7 +859,15 @@ impl Entered {
     /// The element's gradients and inset shadows without its outer shadows: for a surface whose
     /// artwork casts them itself ([`Entered::artwork_shadows`]).
     pub fn paint_gradients(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
-        self.style().is_some_and(|style| super::native_css::gradients_rounded(painter, rect, radius, style))
+        self.paint_gradients_with(painter, rect, radius, 1.0)
+    }
+
+    /// [`Entered::paint_gradients`] with `image` (0 to 1) of its gradients ([`Entered::paint_over`]).
+    pub fn paint_gradients_with(&self, painter: &Painter, rect: Rect, radius: f32, image: f32) -> bool {
+        self.style().is_some_and(|mut style| {
+            style.image = image.clamp(0.0, 1.0);
+            super::native_css::gradients_rounded(painter, rect, radius, style)
+        })
     }
 
     /// The element's shadows cast by artwork: drawn into `slot`, a place reserved under the
@@ -699,9 +919,61 @@ impl Entered {
 
 /// `rect` less `insets` (top, right, bottom, left); an empty rectangle at its centre where they
 /// leave no room.
-fn shrink(rect: Rect, [top, right, bottom, left]: [f32; 4]) -> Rect {
-    let inner = Rect::from_min_max(rect.min + egui::vec2(left, top), rect.max - egui::vec2(right, bottom));
+fn shrink(rect: Rect, insets: [f32; 4]) -> Rect {
+    let inner = super::native_css::row::inset(rect, insets);
     if inner.is_positive() { inner } else { Rect::from_center_size(inner.center(), egui::Vec2::ZERO) }
+}
+
+/// A line between a view's rows or parts: `separator[kind="row"]`'s `color`.
+pub(crate) fn row_line() -> Color32 {
+    SEPARATOR.attribute("kind", "row").look().color()
+}
+
+/// Dim words (a device's kind, an empty area's note, a heading's rule): `label[kind="hint"]`'s
+/// `color`. Its own, not inherited: a colour a theme gives a whole view keeps them dimmer than the
+/// text beside them.
+pub(crate) fn hint_ink() -> Color32 {
+    LABEL.attribute("kind", "hint").look().color()
+}
+
+/// A control's name over it, a figure's name: `label[kind="caption"]`'s `color`. Its own, as a
+/// hint's: a colour a theme gives the whole view keeps it apart from the values.
+pub(crate) fn caption_ink() -> Color32 {
+    LABEL.attribute("kind", "caption").look().color()
+}
+
+/// A panel's title, such as a clip's name or a dialog's: `label[kind="title"]`'s `color`.
+pub(crate) fn title_ink() -> Color32 {
+    LABEL.attribute("kind", "title").look().color()
+}
+
+/// A figure or a value shown as words, not a field: `label[kind="value"]`'s `color`.
+pub(crate) fn value_ink() -> Color32 {
+    LABEL.attribute("kind", "value").look().color()
+}
+
+/// Words or a mark in the accent (a file found, a key being set, the toolbar editor's grid):
+/// `label[kind="accent"]`'s `color`.
+pub(crate) fn accent_ink() -> Color32 {
+    LABEL.attribute("kind", "accent").look().color()
+}
+
+/// Words that say something went wrong: `label[kind="error"]`'s `color`.
+pub(crate) fn error_ink() -> Color32 {
+    LABEL.attribute("kind", "error").look().color()
+}
+
+/// A name or a line of text: `label`'s `color`.
+pub(crate) fn name_ink() -> Color32 {
+    LABEL.look().color()
+}
+
+/// The fill the app's bars, Settings, dialogs and menus paint for themselves, of `kind`
+/// (`window`, `panel`, `panel-hover`, `control`, `control-hover`, `control-active`): the
+/// `background-color` of `app-fill[kind]`, read where it is painted, so a region's variables reach
+/// it.
+pub(crate) fn app_fill(kind: &str) -> Color32 {
+    APP_FILL.attribute("kind", kind).look().background()
 }
 
 /// The registry's element named `name`, for code that has a name at run time.
@@ -754,6 +1026,7 @@ names! {
     BROWSER_ICON = "browser-icon";
     BROWSER_TAG_DOT = "browser-tag-dot";
     BROWSER_PREVIEW_WAVE = "browser-preview-wave";
+    BROWSER_FILL = "browser-fill";
     SESSION = "session";
     TRACK_COLUMN = "track-column";
     SCENE_COLUMN = "scene-column";
@@ -767,6 +1040,7 @@ names! {
     TRACK_HEADER = "track-header";
     TRACK_NAME = "track-name";
     TRACK_NUMBER = "track-number";
+    TRACK_COLOUR = "track-colour";
     FOLD = "fold";
     ADD_TRACK = "add-track";
     TRACK_LANE = "track-lane";
@@ -799,8 +1073,10 @@ names! {
     PLAYHEAD = "playhead";
     MIXER = "mixer";
     DEVICE_LIST = "device-list";
+    MIXER_TOGGLES = "mixer-toggles";
     DEVICE_ROW = "device-row";
     DETAIL = "detail";
+    DETAIL_FILL = "detail-fill";
     CLIP_EDITOR = "clip-editor";
     EDITOR_TAB = "editor-tab";
     PIANO_ROLL = "piano-roll";
@@ -831,6 +1107,7 @@ names! {
     SAMPLE_POINT = "sample-point";
     DEVICE_PANEL = "device-panel";
     DEVICE = "device";
+    DEVICE_CANVAS = "device-canvas";
     DEVICE_HEADER = "device-header";
     DEVICE_SECTION = "device-section";
     DEVICE_CONTROL = "device-control";
@@ -842,6 +1119,7 @@ names! {
     SLIDER_FILL = "slider-fill";
     SLIDER_HANDLE = "slider-handle";
     BUTTON = "button";
+    TOGGLE = "toggle";
     VALUE = "value";
     VALUE_FILL = "value-fill";
     VALUE_HANDLE = "value-handle";
@@ -855,6 +1133,7 @@ names! {
     KNOB = "knob";
     KNOB_BODY = "knob-body";
     KNOB_POINTER = "knob-pointer";
+    KNOB_RING = "knob-ring";
     ICON = "icon";
     METER = "meter";
     METER_LEVEL = "meter-level";
@@ -862,6 +1141,7 @@ names! {
     METER_VERTICAL = "meter-vertical";
     METER_HORIZONTAL = "meter-horizontal";
     DROPDOWN = "dropdown";
+    DROPDOWN_ARROW = "dropdown-arrow";
     TEXT_INPUT = "text-input";
     SCROLL_BAR = "scroll-bar";
     LABEL = "label";
@@ -873,10 +1153,16 @@ names! {
     SETTINGS = "settings";
     SETTINGS_NAV = "settings-nav";
     DIALOG = "dialog";
+    DIALOG_TITLE = "dialog-title";
+    COLOUR_SWATCH = "colour-swatch";
+    LIST_ROW = "list-row";
     START_PAGE = "start-page";
     PLUGIN_MANAGER = "plugin-manager";
     EXPORT = "export";
+    THEME_CARD = "theme-card";
     THEME_SWATCH = "theme-swatch";
+    APP_FILL = "app-fill";
+    WIDGET = "widget";
 }
 
 #[cfg(test)]

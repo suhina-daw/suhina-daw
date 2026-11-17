@@ -7,19 +7,20 @@
 //! - `theme.json`, the theme's metadata: its name, author, description, swatch and so on
 //!   (`suhina_theme_package::meta`). Suhina writes it when the theme is renamed.
 //! - `theme.css`, the theme's style and layout. What Suhina's theme editors set beyond settings
-//!   (placements, the toolbar, artwork) goes into it through the source-preserving editor
+//!   (the toolbar, artwork) goes into it through the source-preserving editor
 //!   (`suhina_style::edit`), which changes only the declarations it edits.
 //! - `variants/<id>.json`, values for the theme's declared controls (`theme_vars::Variant`). The
 //!   settings editors write these.
-//! - an optional `thumbnail.svg`, artwork in `assets/`, `background.png` and the README.
+//! - an optional `thumbnail.svg`, artwork in `assets/`, `background.png`, and a README of the
+//!   author's, which a backup keeps (Suhina writes none; the guide is docs/guide/theme-authoring.md).
 //!
 //! A built-in theme's variants live in a folder of its id holding only `variants/`. A file saved
 //! while Suhina runs is read again within a second, so a theme can be edited in any text editor
 //! and seen right away. A theme from an earlier version (`night-blue.json` beside a folder, or a
 //! `theme.css` that imports `advanced.css`) is migrated once: the new files are written, read back
 //! and compared, and only then are the old ones moved into the theme's `legacy/` folder; nothing is
-//! deleted. Backups and the theme template are zips written to the `exports` folder; theme files
-//! and zips dropped on the window are brought in.
+//! deleted. Backups and exported themes are written to the `exports` folder; theme files and zips
+//! dropped on the window are brought in.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -38,7 +39,8 @@ const MAX_EXPANDED: u64 = 32 * 1024 * 1024;
 const MAX_ZIP_FILES: usize = 512;
 /// How often the folder is looked at for changed files.
 const CHECK_EVERY: Duration = Duration::from_secs(1);
-/// The theme template's name in its zip; it is not brought in when the zip is dropped.
+/// The theme template's name in the zips of earlier versions; it is not brought in when one is
+/// dropped.
 const TEMPLATE: &str = "template.json";
 /// A theme's own style sheet: `<id>/theme.css`.
 const THEME_CSS: &str = "theme.css";
@@ -51,8 +53,6 @@ const MAX_VARIANTS: usize = 64;
 const MAX_VARIANT_FILE: u64 = 64 * 1024;
 /// Where a migrated theme keeps its JSON and old canonical CSS.
 const LEGACY: &str = "legacy";
-/// The folder of the template zip that holds the built-in themes as examples.
-const EXAMPLES: &str = "examples/";
 
 /// A variant file's text as last read or written, so a save never overwrites an edit made
 /// outside Suhina since.
@@ -96,6 +96,28 @@ pub struct ThemeFiles {
     reserved: Vec<String>,
     /// How many entries of the themes folder are looked at for names.
     max_folders: usize,
+    /// Moves a file or folder to the system's Trash: [`system_trash`], or in tests one that
+    /// touches no real Trash.
+    trash: fn(&Path) -> Result<(), String>,
+}
+
+/// The folder of an earlier version's template zip and theme packages that held example sheets
+/// (and in the template the built-in themes): left out when a zip is brought in.
+const EXAMPLES: &str = "examples/";
+
+/// Moves `path` to the system's Trash (Recycle Bin on Windows, the freedesktop trash on Linux).
+/// On macOS through the system's file manager call, not by asking Finder, which needs the user
+/// to let Suhina control Finder (and fails in a build without that permission) and plays its
+/// sound; the file is dragged out of the Trash to restore it.
+fn system_trash(path: &Path) -> Result<(), String> {
+    #[allow(unused_mut)]
+    let mut context = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        context.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    context.delete(path).map_err(|e| e.to_string())
 }
 
 impl ThemeFiles {
@@ -109,6 +131,7 @@ impl ThemeFiles {
             not_themes: Vec::new(),
             reserved: Vec::new(),
             max_folders: 4096,
+            trash: system_trash,
         }
     }
 
@@ -232,7 +255,7 @@ impl ThemeFiles {
         self.folder.as_ref().map(|f| f.display().to_string())
     }
 
-    /// Where backups and the template go: `exports` beside the themes folder.
+    /// Where backups and exported themes go: `exports` beside the themes folder.
     fn exports(&self) -> Result<PathBuf, String> {
         self.folder
             .as_ref()
@@ -418,7 +441,7 @@ impl ThemeFiles {
             return Err("there are no theme files to back up yet".into());
         }
         let folder = self.folder.as_ref().ok_or("there is no folder to keep themes in")?;
-        let mut contents = vec![("README.md".into(), theme::template_readme().into_bytes())];
+        let mut contents = Vec::new();
         // Suhina's own folders (starting with `_`) and the template are no theme of the user's.
         for (id, path, _) in files.into_iter().filter(|(id, _, _)| !id.starts_with('_') && id != "template") {
             if is_css_theme(&path) || path.is_dir() {
@@ -433,30 +456,6 @@ impl ThemeFiles {
         // one day are both kept.
         let name = format!("suhina-themes-{}.zip", chrono::Local::now().format("%Y-%m-%d-%H%M%S"));
         write_zip(&self.exports()?.join(name), &contents)
-    }
-
-    /// Writes `exports/suhina-theme-template.zip`: `my-theme/` (Suhina Studio's sheet with every
-    /// colour written out, its artwork and an example variant), `README.md` on the format, and the
-    /// built-in themes in `examples/`. Returns its path.
-    pub fn export_template(&self) -> Result<PathBuf, String> {
-        let mut template = Theme { name: "My theme".into(), ..Theme::default() };
-        template.skin.assets = suhina_ui::kit::skin::inherited_assets();
-        template.skin.toolbar = Some(Default::default());
-        let mut contents = vec![("README.md".to_string(), theme::template_readme().into_bytes())];
-        // The built-in themes as their folders are, as examples.
-        for (id, _) in theme::built_in_themes() {
-            for (name, data) in theme::built_in_files(id).unwrap_or_default() {
-                contents.push((format!("{EXAMPLES}{id}/{name}"), data.to_vec()));
-            }
-        }
-        contents.extend(portable_package_files("my-theme", &template)?);
-        let example = Variant {
-            id: "warm".into(),
-            name: "Warm".into(),
-            values: [("--accent".to_string(), "#FFB86C".to_string())].into(),
-        };
-        contents.push((format!("my-theme/{VARIANTS}/warm.json"), example.to_json().into_bytes()));
-        write_zip(&self.exports()?.join("suhina-theme-template.zip"), &contents)
     }
 
     /// Writes the theme `id` as a theme package, `exports/<id>.theme.suhina`: its folder's files,
@@ -488,9 +487,6 @@ impl ThemeFiles {
                     .collect()
             }
         };
-        // The author's guide travels with the theme, so whoever receives it can edit it.
-        let mut files = files;
-        files.entry("README.md".into()).or_insert_with(|| theme::template_readme().into_bytes());
         let id = slug(id);
         let bytes = suhina_theme_package::pack(&id, &theme.name, &files)?;
         let exports = self.exports()?;
@@ -613,6 +609,73 @@ impl ThemeFiles {
             written.push(ThemeEntry { id, theme });
         }
         Ok(Imported { ids: written.into_iter().map(|e| e.id).collect(), warnings, conflict })
+    }
+
+    /// Moves the theme `id`'s folder (and a JSON file of it not migrated yet), or for
+    /// `<theme>@<variant>` the variant's file, to the system's Trash. Returns what to say in the
+    /// status bar. The list is then read again whole, so the theme leaves it only once it is gone.
+    pub fn trash(&mut self, id: &str) -> Result<String, String> {
+        let folder = self.folder.clone().ok_or("there is no folder to keep themes in")?;
+        let (base, variant) = theme_vars::split_id(id);
+        if !is_theme_id(base) || variant.is_some_and(|v| !theme_vars::is_variant_id(v)) {
+            return Err(format!("{id} cannot name a theme file"));
+        }
+        let paths: Vec<PathBuf> = match variant {
+            Some(variant) => {
+                // The file itself is checked below. The theme's own folder may be a link (themes
+                // may be kept elsewhere); one below it would lead the Trash to a file outside the
+                // theme.
+                let variants = folder.join(base).join(VARIANTS);
+                if std::fs::symlink_metadata(&variants).is_ok_and(|m| m.file_type().is_symlink()) {
+                    return Err(format!("{id} sits behind a link and cannot be deleted"));
+                }
+                vec![variants.join(format!("{variant}.json"))]
+            }
+            None if theme::is_built_in(base) => return Err(format!("{base} comes with Suhina and cannot be deleted")),
+            None => vec![folder.join(base), folder.join(format!("{base}.json"))],
+        };
+        let paths: Vec<PathBuf> = paths.into_iter().filter(|p| std::fs::symlink_metadata(p).is_ok()).collect();
+        if paths.is_empty() {
+            return Err(format!("{id} has no file to delete"));
+        }
+        let mut failed = None;
+        let mut moved = 0;
+        for path in &paths {
+            match (self.trash)(path) {
+                Ok(()) => moved += 1,
+                Err(e) => {
+                    failed = Some(format!("could not move {} to the Trash: {e}", path.display()));
+                    break;
+                }
+            }
+        }
+        // What was moved is forgotten even when a later move failed, so a theme of that id made
+        // again is not taken for one edited outside Suhina.
+        if moved > 0 {
+            self.snapshots.remove(id);
+            if variant.is_none() {
+                self.seen.remove(base);
+                self.snapshots.retain(|key, _| theme_vars::split_id(key).0 != base);
+            }
+        }
+        match failed {
+            Some(error) if moved > 0 => Err(format!("{error}; the rest of {id} is in the Trash")),
+            Some(error) => Err(error),
+            None => Ok(format!("Moved {id} to the Trash")),
+        }
+    }
+
+    /// Shows the theme `id`'s folder in the system's file manager.
+    pub fn reveal_theme(&self, id: &str) -> Result<(), String> {
+        let folder = self.folder.as_ref().ok_or("there is no folder to keep themes in")?;
+        if !is_theme_id(id) {
+            return Err(format!("{id} cannot name a theme file"));
+        }
+        let path = folder.join(id);
+        if !path.exists() {
+            return Err(format!("{id} has no folder yet"));
+        }
+        reveal(&path, true)
     }
 
     /// Shows the themes folder in the system's file manager, made first if it is not there.
@@ -759,7 +822,7 @@ fn lone_sheet(
     let name = if name == "theme" { "Theme" } else { name };
     let (mut theme, warnings) = theme::from_folder(theme::ThemeMeta::new(name, theme::DEFAULT_SWATCH), text);
     // The swatch as the colour it is here, since the sheet alone may not say every value it needs.
-    theme.meta.swatch = theme::hex(theme.swatch.unwrap_or(theme.colors.panel_background));
+    theme.meta.swatch = theme::hex(theme.swatch.unwrap_or(theme.color("panel-background")));
     theme::resolve_resources(&mut theme, &mut resource)?;
     Ok((theme, warnings))
 }
@@ -982,7 +1045,6 @@ fn migrate(folder: &Path, id: &str, theme: &Theme, previous: bool) -> Result<(),
     let mut files = resources;
     files.push((format!("{id}/{THEME_JSON}"), theme::meta_json(theme).into_bytes()));
     files.push((format!("{id}/{THEME_CSS}"), sheet.into_bytes()));
-    files.push((format!("{id}/README.md"), theme::template_readme().into_bytes()));
     write_files(folder, files)?;
     // The old files move only after the new theme is written, so a failed write leaves the theme
     // as it was.
@@ -1111,7 +1173,7 @@ fn resource_files(
     Ok(files)
 }
 
-/// `sheet` with what Suhina's theme editors set that it does not say yet (placements, the toolbar,
+/// `sheet` with what Suhina's theme editors set that it does not say yet (the toolbar,
 /// artwork) appended, for a theme written anew.
 fn with_editor_rules(theme: &Theme, sheet: String) -> String {
     use suhina_ui::kit::theme_css;
@@ -1123,8 +1185,7 @@ fn with_editor_rules(theme: &Theme, sheet: String) -> String {
     }
 }
 
-/// A theme as a package: `theme.json`, `theme.css`, the thumbnail, artwork, background, README
-/// and examples.
+/// A theme as a package: `theme.json`, `theme.css`, the thumbnail, artwork and background.
 fn package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, String> {
     use suhina_ui::kit::theme_css;
     let sheet = with_editor_rules(theme, new_sheet(theme));
@@ -1137,9 +1198,6 @@ fn package_files(id: &str, theme: &Theme) -> Result<Vec<(String, Vec<u8>)>, Stri
     if let Some(thumbnail) = &theme.thumbnail {
         files.push((format!("{id}/{}", theme::THUMBNAIL), thumbnail.as_bytes().to_vec()));
     }
-    files.push((format!("{id}/README.md"), theme::template_readme().into_bytes()));
-    files.push((format!("{id}/examples/dark-gloss.css"), theme::GLOSS_EXAMPLE.as_bytes().to_vec()));
-    files.push((format!("{id}/examples/compact-session.css"), theme::COMPACT_SESSION_EXAMPLE.as_bytes().to_vec()));
     Ok(files)
 }
 
@@ -1169,10 +1227,10 @@ fn holds_other_files(dir: &Path, variants_too: bool) -> bool {
 }
 
 /// Writes the theme `id`'s own files from `theme`. A theme without a `theme.css` yet gets all of
-/// them. Otherwise what its editors changed (placements, the toolbar, artwork) is edited into its
+/// them. Otherwise what its editors changed (the toolbar, artwork) is edited into its
 /// `theme.css` in place, leaving the rest of the author's text as it is; `theme.json` is written
-/// when the name changed; artwork and the background are written. Unchanged files and an
-/// installed README are left alone.
+/// when the name changed; artwork and the background are written. Unchanged files are left
+/// alone.
 fn persist_theme(folder: &Path, id: &str, theme: &Theme) -> Result<(), String> {
     use suhina_ui::kit::theme_css;
     let dir = folder.join(id);
@@ -1356,8 +1414,7 @@ fn resolve_theme(
     Ok((theme, warnings))
 }
 
-/// Writes `files` under `folder` atomically, `theme.css` last, leaving unchanged files and an
-/// installed README alone.
+/// Writes `files` under `folder` atomically, `theme.css` last, leaving unchanged files alone.
 fn write_files(folder: &Path, mut files: Vec<(String, Vec<u8>)>) -> Result<(), String> {
     // theme.css commits the snapshot last. Temp files live beside their destinations for atomic renames.
     files.sort_by_key(|(name, _)| name.ends_with(THEME_CSS));
@@ -1377,11 +1434,6 @@ fn write_files(folder: &Path, mut files: Vec<(String, Vec<u8>)>) -> Result<(), S
             if std::fs::symlink_metadata(&current).is_ok_and(|m| m.file_type().is_symlink()) {
                 return Err("theme destination may not be a symlink".into());
             }
-        }
-        // Installed author guides belong to their package version. New packages
-        // get the current guide; editing a colour must not replace a user's copy.
-        if name.ends_with("/README.md") && path.is_file() {
-            continue;
         }
         // Keep unchanged artwork and documentation in place. In particular, forcing
         // dozens of identical SVGs to disk made each theme slider tick take 100+ ms.

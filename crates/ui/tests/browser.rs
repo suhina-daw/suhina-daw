@@ -3730,3 +3730,42 @@ fn a_tag_in_the_footers_overflow_keeps_its_sidebar_menu() {
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// The sidebar reads its inks once, not once a row: another folder adds only the row's own
+/// elements to the style tree, not four more label lookups.
+#[test]
+fn the_sidebar_reads_its_inks_once_for_all_its_rows() {
+    let nodes = |extra: usize| {
+        let (settings, folder) = (temp(&format!("inks-settings-{extra}")), temp(&format!("inks-{extra}")));
+        pack(&folder);
+        let mut app = App::new();
+        let mut library = Library::new(Some(settings.clone()));
+        library.add_folder(&folder).unwrap();
+        let others: Vec<PathBuf> = (0..extra).map(|at| temp(&format!("inks-{extra}-other-{at}"))).collect();
+        for other in &others {
+            library.add_folder(other).unwrap();
+        }
+        app.set_file_library(library);
+        app.set_session(Session::new(demo_project()), &[]);
+        let mut harness = Harness::builder()
+            .allow_missing_glyphs()
+            .with_size(SIZE)
+            .with_step_dt(0.05)
+            .with_max_steps(20)
+            .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+        theme::install(&harness.ctx);
+        harness.run();
+        harness.run();
+        let nodes = suhina_ui::kit::native_css::budget().nodes;
+        drop(harness);
+        for dir in others.iter().chain([&settings, &folder]) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        nodes
+    };
+    let (one, four) = (nodes(0), nodes(3));
+    assert!(four > one, "the rows are elements: {one} and {four}");
+    // Each row adds its own elements (3 nodes); reading the inks in each
+    // row added the four labels to every one of them (7).
+    assert!(four - one <= 3 * 3, "each folder row adds only its own elements: {one} and {four}");
+}

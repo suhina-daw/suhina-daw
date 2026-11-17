@@ -17,6 +17,73 @@ use crate::kit::theme::{self, PAD};
 use crate::kit::{motion, widgets};
 use crate::settings::settings_view::{PluginRequest, PluginsView};
 
+/// The manager's colours, every one from the style sheet: words by how much they stand out
+/// (`label` and its kinds), the fills the app paints for itself (`app-fill`), a row's when picked
+/// or under the pointer (`list-row`) and the lines between rows (`separator[kind="row"]`, a
+/// `button`'s `border-color`). Read once a frame where the manager is painted, so its region's
+/// variables reach them.
+#[derive(Debug, Clone, Copy)]
+struct Inks {
+    primary: Color32,
+    secondary: Color32,
+    hint: Color32,
+    value: Color32,
+    accent: Color32,
+    error: Color32,
+    /// A plug-in that is ready: `label[kind="ok"]`.
+    ok: Color32,
+    /// A file that needs attention: `label[kind="warning"]`.
+    warning: Color32,
+    /// Words on a lit fill, such as a switch's knob: `label[kind="inverse"]`.
+    inverse: Color32,
+    line: Color32,
+    strong_line: Color32,
+    window: Color32,
+    control: Color32,
+    picked: Color32,
+    hovered: Color32,
+}
+
+impl Inks {
+    fn read() -> Self {
+        use crate::kit::element::{self as el, BUTTON, LABEL, LIST_ROW, Selected};
+        let row = || LIST_ROW.attribute("kind", "plugin");
+        Self {
+            primary: el::name_ink(),
+            secondary: el::caption_ink(),
+            hint: el::hint_ink(),
+            value: el::value_ink(),
+            accent: el::accent_ink(),
+            error: el::error_ink(),
+            ok: LABEL.attribute("kind", "ok").look().color(),
+            warning: LABEL.attribute("kind", "warning").look().color(),
+            inverse: LABEL.attribute("kind", "inverse").look().color(),
+            line: el::row_line(),
+            strong_line: BUTTON.look().border(),
+            window: el::app_fill("window"),
+            control: el::app_fill("control"),
+            picked: row().attr(Selected, true).look().background(),
+            hovered: row().pointer(true, false, false).look().background(),
+        }
+    }
+}
+
+thread_local! {
+    /// [`Inks`] as read this frame by [`show`]; read on first use where nothing set them (tests).
+    static INKS: std::cell::Cell<Option<Inks>> = const { std::cell::Cell::new(None) };
+}
+
+/// The manager's colours this frame.
+fn ink() -> Inks {
+    INKS.with(|cell| {
+        cell.get().unwrap_or_else(|| {
+            let inks = Inks::read();
+            cell.set(Some(inks));
+            inks
+        })
+    })
+}
+
 /// One row of the table.
 const ROW: f32 = 22.0;
 /// The bar with the title and the scan buttons, and the status bar under everything.
@@ -265,10 +332,10 @@ impl State {
     /// The mark's and the word's colour, from the theme.
     fn inks(self) -> (Color32, Color32) {
         match self {
-            State::Ready => (theme::meter_normal(), theme::text_secondary()),
-            State::Disabled => (theme::text_hint(), theme::text_hint()),
-            State::Failed => (theme::recording(), theme::recording()),
-            State::WrongArchitecture => (theme::meter_hot(), theme::meter_hot()),
+            State::Ready => (ink().ok, ink().secondary),
+            State::Disabled => (ink().hint, ink().hint),
+            State::Failed => (ink().error, ink().error),
+            State::WrongArchitecture => (ink().warning, ink().warning),
         }
     }
 
@@ -588,7 +655,7 @@ fn warn_mark(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
         color,
         egui::Stroke::NONE,
     ));
-    let ink = theme::window_background();
+    let ink = ink().window;
     painter.line_segment(
         [center + Vec2::new(0.0, -h * 0.35), center + Vec2::new(0.0, h * 0.25)],
         egui::Stroke::new(1.2, ink),
@@ -598,8 +665,8 @@ fn warn_mark(painter: &egui::Painter, center: Pos2, size: f32, color: Color32) {
 
 /// The mark of a plug-in marked as owned: a small ring in the accent with a dot in it.
 fn owned_mark(painter: &egui::Painter, center: Pos2) {
-    painter.circle_stroke(center, 4.0, egui::Stroke::new(1.3, theme::accent()));
-    painter.circle_filled(center, 1.8, theme::accent());
+    painter.circle_stroke(center, 4.0, egui::Stroke::new(1.3, ink().accent));
+    painter.circle_filled(center, 1.8, ink().accent);
 }
 
 /// The mark of a row's state: a dot, or the warning mark.
@@ -632,25 +699,25 @@ fn side_item(
     let response = widgets::button_area(ui, rect, Id::unique(("manager-side", id)), label);
     let hovered = widgets::hover(ui, &response);
     if on {
-        painter.rect_filled(rect, 3.0, theme::control_active());
+        painter.rect_filled(rect, 3.0, ink().picked);
     } else if hovered > 0.0 {
-        painter.rect_filled(rect, 3.0, theme::panel_hover().gamma_multiply(hovered));
+        painter.rect_filled(rect, 3.0, ink().hovered.gamma_multiply(hovered));
     }
     let small = theme::ui_font(theme::TEXT_SMALL);
     let mut left = rect.left() + 8.0;
     if warn {
-        warn_mark(painter, Pos2::new(left + 5.0, rect.center().y), 10.0, theme::meter_hot());
+        warn_mark(painter, Pos2::new(left + 5.0, rect.center().y), 10.0, ink().warning);
         left += 16.0;
     }
-    let ink = if on { theme::text_primary() } else { theme::text_secondary() };
+    let words_ink = if on { ink().primary } else { ink().secondary };
     let words = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 36.0, rect.bottom()));
-    widgets::text_in(painter, words, Align2::LEFT_CENTER, text, small.clone(), ink);
+    widgets::text_in(painter, words, Align2::LEFT_CENTER, text, small.clone(), words_ink);
     if let Some(count) = count {
         let number = Rect::from_min_max(
             Pos2::new(rect.right() - 44.0, rect.top()),
             Pos2::new(rect.right() - 8.0, rect.bottom()),
         );
-        widgets::text_in(painter, number, Align2::RIGHT_CENTER, &count.to_string(), small, theme::text_hint());
+        widgets::text_in(painter, number, Align2::RIGHT_CENTER, &count.to_string(), small, ink().hint);
     }
     response.clicked()
 }
@@ -658,7 +725,7 @@ fn side_item(
 /// A section heading of the sidebar or the panel: small, in capitals, quiet.
 fn heading(painter: &egui::Painter, rect: Rect, text: &str) {
     let tiny = theme::ui_font(theme::TEXT_TINY);
-    widgets::text_in(painter, rect, Align2::LEFT_CENTER, &text.to_uppercase(), tiny, theme::text_hint());
+    widgets::text_in(painter, rect, Align2::LEFT_CENTER, &text.to_uppercase(), tiny, ink().hint);
 }
 
 /// A link: text in the accent, underlined, with `label` for readers and tests. True when clicked.
@@ -667,7 +734,7 @@ fn link(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, text: &str, label:
     let width = widgets::text_width(ui, text, small.clone()).min(rect.width());
     let at = align.align_size_within_rect(Vec2::new(width, rect.height()), rect);
     let response = widgets::button_area(ui, at, id, label).on_hover_cursor(egui::CursorIcon::PointingHand);
-    let ink = motion::mix(theme::accent(), theme::text_primary(), widgets::hover(ui, &response));
+    let ink = motion::mix(ink().accent, ink().primary, widgets::hover(ui, &response));
     widgets::text_in(painter, at, Align2::LEFT_CENTER, text, small, ink);
     let y = at.center().y + 7.0;
     painter.hline(at.x_range(), y, egui::Stroke::new(1.0, ink));
@@ -704,7 +771,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let page = crate::kit::element::PLUGIN_MANAGER
         .native(crate::kit::element::Native {
             radius: 0.0,
-            fill: crate::kit::style_class::surface_or(theme::window_background()),
+            fill: crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
         })
         .enter();
     let mut styled_ui = page.ui(ui);
@@ -713,8 +780,10 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let painter = ui.painter_at(area);
     // What the page holds goes in its content box, inside its border and padding (#1336).
     let area = page.paint(&painter, area).content;
+    // The colours, read once a frame inside the manager's element.
+    INKS.with(|cell| cell.set(Some(Inks::read())));
     let parts = parts(area);
-    let line = theme::hairline(theme::border());
+    let line = theme::hairline(ink().line);
     painter.hline(parts.top.x_range(), parts.top.bottom() - 0.5, line);
     painter.hline(parts.status.x_range(), parts.status.top() + 0.5, line);
     if let Some(sidebar) = parts.sidebar {
@@ -755,14 +824,14 @@ fn top_bar(ui: &Ui, painter: &egui::Painter, rect: Rect, plugins: &PluginsView, 
     let title_font = theme::ui_font(theme::TEXT + 3.0);
     let title = "Plug-in manager";
     let title_width = widgets::text_width(ui, title, title_font.clone());
-    widgets::text_in(painter, rect, Align2::LEFT_CENTER, title, title_font, theme::text_primary());
+    widgets::text_in(painter, rect, Align2::LEFT_CENTER, title, title_font, ink().primary);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let count = format!("{} plug-ins", counts.plugins);
     let note = Rect::from_min_max(
         Pos2::new(rect.left() + title_width + 14.0, rect.top()),
         Pos2::new(rect.right() - 320.0, rect.bottom()),
     );
-    widgets::text_in(painter, note, Align2::LEFT_CENTER, &count, small.clone(), theme::text_secondary());
+    widgets::text_in(painter, note, Align2::LEFT_CENTER, &count, small.clone(), ink().secondary);
     let mut x = rect.right();
     let busy = plugins.scanning;
     for (text, label, primary) in [
@@ -800,14 +869,7 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
         r
     };
     let title = row(&mut y, 24.0);
-    widgets::text_in(
-        painter,
-        title,
-        Align2::LEFT_CENTER,
-        "Library",
-        theme::ui_font(theme::TEXT + 1.0),
-        theme::text_primary(),
-    );
+    widgets::text_in(painter, title, Align2::LEFT_CENTER, "Library", theme::ui_font(theme::TEXT + 1.0), ink().primary);
     y += 4.0;
     let shelves = [
         (Shelf::All, "All", counts.plugins + counts.attention(), false),
@@ -837,7 +899,7 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
         }
     }
     y += 8.0;
-    painter.hline(rect.x_range(), y, theme::hairline(theme::border()));
+    painter.hline(rect.x_range(), y, theme::hairline(ink().line));
     y += 8.0;
     heading(painter, row(&mut y, 18.0), "Type");
     for (types, text) in
@@ -849,7 +911,7 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
         }
     }
     y += 8.0;
-    painter.hline(rect.x_range(), y, theme::hairline(theme::border()));
+    painter.hline(rect.x_range(), y, theme::hairline(ink().line));
     y += 8.0;
     heading(painter, row(&mut y, 18.0), "Format");
     for (format, text) in [("clap", "CLAP"), ("vst3", "VST3"), ("vst2", "VST2")] {
@@ -874,7 +936,7 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
         }
     }
     y += 8.0;
-    painter.hline(rect.x_range(), y, theme::hairline(theme::border()));
+    painter.hline(rect.x_range(), y, theme::hairline(ink().line));
     y += 8.0;
     heading(painter, row(&mut y, 18.0), "Vendor");
     let vendor_row = row(&mut y, 24.0);
@@ -929,7 +991,7 @@ fn scan_locations(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mu
     let small = theme::ui_font(theme::TEXT_SMALL);
     let top = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 24.0));
     let title = theme::ui_font(theme::TEXT + 1.0);
-    widgets::text_in(painter, top, Align2::LEFT_CENTER, "Scan locations", title, theme::text_primary());
+    widgets::text_in(painter, top, Align2::LEFT_CENTER, "Scan locations", title, ink().primary);
     let back = Rect::from_min_max(Pos2::new(top.right() - 160.0, top.top()), top.max);
     let id = Id::unique("manager-back");
     if link(ui, painter, back, id, "Back to the plug-ins", "Back to the plug-ins", Align2::RIGHT_CENTER) {
@@ -937,7 +999,7 @@ fn scan_locations(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mu
     }
     let hint = Rect::from_min_size(Pos2::new(rect.left(), top.bottom() + 2.0), Vec2::new(rect.width(), 20.0));
     let words = "Scan for new looks in the folders ticked; a folder switched off leaves the list with the next scan.";
-    widgets::text_in(painter, hint, Align2::LEFT_CENTER, words, small, theme::text_hint());
+    widgets::text_in(painter, hint, Align2::LEFT_CENTER, words, small, ink().hint);
     let list = Rect::from_min_max(Pos2::new(rect.left(), hint.bottom() + 10.0), rect.max);
     let rows = plugins.folders.len() as f32;
     // The list's own height: its heading, a line per folder, the add row and the space after.
@@ -1082,7 +1144,7 @@ fn table(
     let mut y = search.bottom() + 8.0;
     if let Some(text) = counts.notice() {
         let notice = Rect::from_min_size(Pos2::new(rect.left(), y), Vec2::new(rect.width(), 28.0));
-        let warn = theme::meter_hot();
+        let warn = ink().warning;
         painter.rect_filled(notice, 3.0, warn.gamma_multiply(0.12));
         painter.rect_stroke(notice, 3.0, theme::hairline(warn.gamma_multiply(0.6)), egui::StrokeKind::Inside);
         warn_mark(painter, Pos2::new(notice.left() + 14.0, notice.center().y), 11.0, warn);
@@ -1119,7 +1181,7 @@ fn table(
         let header = Rect::from_min_size(table.min, Vec2::new(table.width(), ROW + 4.0));
         headings(ui, painter, header, header, plugins, lines, &order, out);
         let below = Rect::from_min_max(Pos2::new(table.left(), header.bottom()), table.max);
-        widgets::text_in(painter, below.shrink(PAD * 2.0), Align2::CENTER_TOP, text, small, theme::text_hint());
+        widgets::text_in(painter, below.shrink(PAD * 2.0), Align2::CENTER_TOP, text, small, ink().hint);
         return;
     }
     let actions = lines.iter().any(|l| !matches!(l.kind, Kind::Plugin(_)));
@@ -1229,7 +1291,7 @@ fn headings(
     let raw = plugins.manager.column_widths();
     let widths = plugins.manager.shown_widths();
     let columns = spans(header, &widths, actions, plugins.manager.shows(FILE));
-    painter.hline(strip.x_range(), header.bottom() - 0.5, theme::hairline(theme::border()));
+    painter.hline(strip.x_range(), header.bottom() - 0.5, theme::hairline(ink().line));
     // Beneath the headings: a right-click between them opens the columns menu too.
     let under = ui.interact(strip, Id::unique("manager-headings"), Sense::click());
     // Stays open while columns are ticked: a click inside would close a plain context menu.
@@ -1280,10 +1342,10 @@ fn headings(
         } else {
             (*name).to_string()
         };
-        let color = if sorted == index { theme::text_primary() } else { theme::text_secondary() };
+        let color = if sorted == index { ink().primary } else { ink().secondary };
         let hovered = widgets::hover(ui, &response);
         if hovered > 0.0 {
-            painter.rect_filled(cell, 0.0, theme::panel_hover().gamma_multiply(hovered));
+            painter.rect_filled(cell, 0.0, ink().hovered.gamma_multiply(hovered));
         }
         let words = cell.shrink2(Vec2::new(4.0, 0.0));
         widgets::text_in(painter, words, Align2::LEFT_CENTER, &label, small.clone(), color);
@@ -1311,7 +1373,7 @@ fn headings(
             out.widths = Some(state.widths.clone());
         }
         let lit = response.hovered() || response.dragged();
-        let ink = if lit { theme::accent() } else { theme::border() };
+        let ink = if lit { ink().accent } else { ink().line };
         let span = egui::Rangef::new(header.top() + 5.0, header.bottom() - 5.0);
         painter.vline(right - 0.5, span, egui::Stroke::new(if lit { 2.0 } else { 1.0 }, ink));
     }
@@ -1342,15 +1404,15 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
     let painter = ui.painter_at(rect);
     let lit = shown.picked_set.contains(line.key.as_str());
     if lit {
-        painter.rect_filled(rect, 0.0, theme::control_active());
+        painter.rect_filled(rect, 0.0, ink().picked);
     } else if ui.rect_contains_pointer(rect) {
-        painter.rect_filled(rect, 0.0, theme::panel_hover());
+        painter.rect_filled(rect, 0.0, ink().hovered);
     }
     if shown.anchor == Some(line.key.as_str()) {
         let strip = Rect::from_min_size(rect.min, Vec2::new(2.0, rect.height()));
-        painter.rect_filled(strip, 0.0, theme::accent());
+        painter.rect_filled(strip, 0.0, ink().accent);
     }
-    painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(theme::border().gamma_multiply(0.5)));
+    painter.hline(rect.x_range(), rect.bottom() - 0.5, theme::hairline(ink().line.gamma_multiply(0.5)));
     // A click picks the row (Ctrl adds, Shift takes the run); the right-click menu acts on every
     // picked row of its kind (#725).
     if response.clicked() {
@@ -1427,14 +1489,14 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
             continue;
         }
         let color = match (index, line.kind) {
-            _ if disabled => theme::text_hint(),
-            (1, Kind::Plugin(_)) => theme::text_value(),
+            _ if disabled => ink().hint,
+            (1, Kind::Plugin(_)) => ink().value,
             (6, _) => line.state.inks().1,
-            (FILE, Kind::Failed(_)) => theme::recording(),
-            (FILE, Kind::Incompatible(_)) => theme::meter_hot(),
-            (1, _) => theme::text_primary(),
-            (FILE, _) => theme::text_hint(),
-            _ => theme::text_secondary(),
+            (FILE, Kind::Failed(_)) => ink().error,
+            (FILE, Kind::Incompatible(_)) => ink().warning,
+            (1, _) => ink().primary,
+            (FILE, _) => ink().hint,
+            _ => ink().secondary,
         };
         if index == 6 {
             state_mark(&painter, Pos2::new(cell.left() + 5.0, rect.center().y), line.state);
@@ -1506,12 +1568,12 @@ fn switch(
     let response = ui.interact(rect, id, if enabled { Sense::click() } else { Sense::hover() });
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, on, label));
     let t = motion::toward(ui.ctx(), id.with("on"), on, motion::HOVER);
-    let fill = motion::mix(theme::control_background(), theme::accent(), t);
+    let fill = motion::mix(ink().control, ink().accent, t);
     let radius = rect.height() / 2.0;
     painter.rect_filled(rect, radius, if enabled { fill } else { fill.gamma_multiply(0.5) });
-    painter.rect_stroke(rect, radius, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
+    painter.rect_stroke(rect, radius, theme::hairline(ink().strong_line), egui::StrokeKind::Inside);
     let x = rect.left() + radius + (rect.width() - 2.0 * radius) * t;
-    let knob = motion::mix(theme::text_secondary(), theme::text_inverse(), t);
+    let knob = motion::mix(ink().secondary, ink().inverse, t);
     painter.circle_filled(Pos2::new(x, rect.center().y), radius - 3.0, knob);
     response
 }
@@ -1521,8 +1583,8 @@ fn tag(ui: &Ui, painter: &egui::Painter, at: Pos2, text: &str) -> f32 {
     let small = theme::ui_font(theme::TEXT_SMALL);
     let width = widgets::text_width(ui, text, small.clone()) + 16.0;
     let rect = Rect::from_min_size(at, Vec2::new(width, 20.0));
-    painter.rect_stroke(rect, 3.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, small, theme::text_secondary());
+    painter.rect_stroke(rect, 3.0, theme::hairline(ink().strong_line), egui::StrokeKind::Inside);
+    widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, small, ink().secondary);
     rect.right()
 }
 
@@ -1558,13 +1620,13 @@ fn many_selected(
     let small = theme::ui_font(theme::TEXT_SMALL);
     let picked = &plugins.manager.picked;
     let line_at = |y: f32, height: f32| Rect::from_min_size(Pos2::new(rect.left(), y), Vec2::new(rect.width(), height));
-    let rule = |y: f32| painter.hline(rect.x_range(), y, theme::hairline(theme::border()));
+    let rule = |y: f32| painter.hline(rect.x_range(), y, theme::hairline(ink().line));
     let mut y = rect.top();
     heading(painter, line_at(y, 18.0), "Selection");
     y += 18.0;
     let name_font = theme::ui_font(theme::TEXT + 6.0);
     let count = format!("{} selected", picked.len());
-    widgets::text_in(painter, line_at(y, 30.0), Align2::LEFT_CENTER, &count, name_font, theme::text_primary());
+    widgets::text_in(painter, line_at(y, 30.0), Align2::LEFT_CENTER, &count, name_font, ink().primary);
     y += 30.0;
     let plugin_count = picked.iter().filter(|k| !k.starts_with("file:")).count();
     let files: Vec<String> = picked.iter().filter_map(|k| k.strip_prefix("file:")).map(str::to_string).collect();
@@ -1581,7 +1643,7 @@ fn many_selected(
         Align2::LEFT_CENTER,
         &parts.join(" · "),
         small.clone(),
-        theme::text_secondary(),
+        ink().secondary,
     );
     y += 28.0;
     rule(y);
@@ -1609,7 +1671,7 @@ fn many_selected(
             Pos2::new(toggle.right() + 10.0, toggle.top()),
             Pos2::new(rect.right(), toggle.bottom()),
         );
-        widgets::text_in(painter, text, Align2::LEFT_CENTER, &words, small.clone(), theme::text_primary());
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, &words, small.clone(), ink().primary);
         // One mark for them all: on while every picked plug-in is marked; a click marks them all,
         // or, when all are, takes every mark away.
         let (owned, others) = split_by_owned(picked, plugins);
@@ -1635,7 +1697,7 @@ fn many_selected(
             Pos2::new(toggle.right() + 10.0, toggle.top()),
             Pos2::new(rect.right(), toggle.bottom()),
         );
-        widgets::text_in(painter, text, Align2::LEFT_CENTER, &words, small.clone(), theme::text_primary());
+        widgets::text_in(painter, text, Align2::LEFT_CENTER, &words, small.clone(), ink().primary);
         y = toggle.bottom() + 12.0;
         rule(y);
         y += 12.0;
@@ -1666,7 +1728,7 @@ fn many_selected(
                     let row_painter = ui.painter_at(row);
                     state_mark(&row_painter, Pos2::new(row.left() + 5.0, row.center().y), line.state);
                     let words = Rect::from_min_max(Pos2::new(row.left() + 16.0, row.top()), row.max);
-                    let ink = if line.state == State::Disabled { theme::text_hint() } else { theme::text_secondary() };
+                    let ink = if line.state == State::Disabled { ink().hint } else { ink().secondary };
                     widgets::text_in(&row_painter, words, Align2::LEFT_CENTER, &line.cells[1], small.clone(), ink);
                 }
             },
@@ -1690,23 +1752,23 @@ fn selected(
     }
     let Some(line) = plugins.manager.shown_row().and_then(|key| lines.iter().find(|l| l.key == key)) else {
         let at = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 20.0));
-        widgets::text_in(painter, at, Align2::LEFT_CENTER, "Pick a row to see it here", small, theme::text_hint());
+        widgets::text_in(painter, at, Align2::LEFT_CENTER, "Pick a row to see it here", small, ink().hint);
         return;
     };
     let plugin = match line.kind {
         Kind::Plugin(i) => plugins.found.get(i),
         _ => None,
     };
-    let rule = |y: f32| painter.hline(rect.x_range(), y, theme::hairline(theme::border()));
+    let rule = |y: f32| painter.hline(rect.x_range(), y, theme::hairline(ink().line));
     let line_at = |y: f32, height: f32| Rect::from_min_size(Pos2::new(rect.left(), y), Vec2::new(rect.width(), height));
     let mut y = rect.top();
     heading(painter, line_at(y, 18.0), if plugin.is_some() { "Selected plug-in" } else { "Selected file" });
     y += 18.0;
     let name_font = theme::ui_font(theme::TEXT + 6.0);
-    widgets::text_in(painter, line_at(y, 30.0), Align2::LEFT_CENTER, &line.cells[1], name_font, theme::text_primary());
+    widgets::text_in(painter, line_at(y, 30.0), Align2::LEFT_CENTER, &line.cells[1], name_font, ink().primary);
     y += 30.0;
     let under = plugin.map_or_else(|| folder_of(&line.file), |p| p.vendor.clone());
-    widgets::text_in(painter, line_at(y, 20.0), Align2::LEFT_CENTER, &under, small.clone(), theme::text_secondary());
+    widgets::text_in(painter, line_at(y, 20.0), Align2::LEFT_CENTER, &under, small.clone(), ink().secondary);
     y += 26.0;
     let mut x = rect.left();
     for text in [&line.cells[4], &line.cells[3]] {
@@ -1729,7 +1791,7 @@ fn selected(
             Pos2::new(toggle.right() + 10.0, toggle.top()),
             Pos2::new(rect.right(), toggle.bottom()),
         );
-        widgets::text_in(painter, words, Align2::LEFT_CENTER, "Enabled", small.clone(), theme::text_primary());
+        widgets::text_in(painter, words, Align2::LEFT_CENTER, "Enabled", small.clone(), ink().primary);
         let toggle = Rect::from_min_size(Pos2::new(rect.left(), toggle.bottom() + 10.0), Vec2::new(36.0, 20.0));
         let label = format!("Owned: {}", plugin.name);
         let id = Id::unique(("manager-owned", &plugin.spec));
@@ -1741,7 +1803,7 @@ fn selected(
             Pos2::new(toggle.right() + 10.0, toggle.top()),
             Pos2::new(rect.right(), toggle.bottom()),
         );
-        widgets::text_in(painter, words, Align2::LEFT_CENTER, "Owned", small.clone(), theme::text_primary());
+        widgets::text_in(painter, words, Align2::LEFT_CENTER, "Owned", small.clone(), ink().primary);
         y = toggle.bottom() + 12.0;
         rule(y);
         y += 10.0;
@@ -1750,9 +1812,9 @@ fn selected(
     let value_left = rect.left() + 96.0;
     let pair = |y: &mut f32, name: &str, value: &str, state: Option<State>| {
         let at = line_at(*y, 22.0);
-        widgets::text_in(painter, at, Align2::LEFT_CENTER, name, small.clone(), theme::text_secondary());
+        widgets::text_in(painter, at, Align2::LEFT_CENTER, name, small.clone(), ink().secondary);
         let mut value_rect = Rect::from_min_max(Pos2::new(value_left, at.top()), at.max);
-        let mut ink = theme::text_primary();
+        let mut ink = ink().primary;
         if let Some(state) = state {
             state_mark(painter, Pos2::new(value_rect.left() + 5.0, at.center().y), state);
             value_rect.min.x += 16.0;
@@ -1778,8 +1840,8 @@ fn selected(
     y += 8.0;
     rule(y);
     y += 12.0;
-    widgets::text_in(painter, line_at(y, 18.0), Align2::LEFT_CENTER, "File location", small, theme::text_primary());
-    y = wrapped(painter, rect.left(), y + 22.0, rect.width(), &line.file, theme::text_secondary()) + 8.0;
+    widgets::text_in(painter, line_at(y, 18.0), Align2::LEFT_CENTER, "File location", small, ink().primary);
+    y = wrapped(painter, rect.left(), y + 22.0, rect.width(), &line.file, ink().secondary) + 8.0;
     let label = format!("Show {} in its folder", file_name(&line.file));
     let id = Id::unique(("manager-reveal", &line.file));
     if link(ui, painter, line_at(y, 20.0), id, "Show in folder", &label, Align2::LEFT_CENTER) {
@@ -1798,7 +1860,7 @@ fn selected(
     rule(y);
     if plugin.is_some() {
         let hint = "A plug-in switched off is hidden from the browser and never loaded.";
-        wrapped(painter, rect.left(), y + 10.0, rect.width(), hint, theme::text_hint());
+        wrapped(painter, rect.left(), y + 10.0, rect.width(), hint, ink().hint);
     }
 }
 
@@ -1811,11 +1873,10 @@ fn status_bar(painter: &egui::Painter, rect: Rect, plugins: &PluginsView, lines:
         left += &format!(" · {} shown", lines.len());
     }
     left += &format!(" · {} selected", plugins.manager.picked.len());
-    widgets::text_in(painter, rect, Align2::LEFT_CENTER, &left, small.clone(), theme::text_secondary());
-    let (word, dot) =
-        if plugins.scanning { ("Scanning…", theme::accent()) } else { ("Scan complete", theme::meter_normal()) };
-    let width = painter.layout_no_wrap(word.to_string(), small.clone(), theme::text_secondary()).size().x;
-    widgets::text_in(painter, rect, Align2::RIGHT_CENTER, word, small, theme::text_secondary());
+    widgets::text_in(painter, rect, Align2::LEFT_CENTER, &left, small.clone(), ink().secondary);
+    let (word, dot) = if plugins.scanning { ("Scanning…", ink().accent) } else { ("Scan complete", ink().ok) };
+    let width = painter.layout_no_wrap(word.to_string(), small.clone(), ink().secondary).size().x;
+    widgets::text_in(painter, rect, Align2::RIGHT_CENTER, word, small, ink().secondary);
     painter.circle_filled(Pos2::new(rect.right() - width - 10.0, rect.center().y), 3.5, dot);
 }
 

@@ -385,13 +385,14 @@ impl App {
         let text = &mut palette.text;
         let formats = &mut filter.formats;
         let shows_formats = filter.kinds.iter().any(|k| k.has_plugins());
+        let hint = crate::kit::element::hint_ink();
         let heading = |ui: &mut Ui| {
             // "Searching…" sits at the header's right end, so nothing below it moves.
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(&header).color(theme::text_hint()).size(theme::TEXT_SMALL));
+                ui.label(egui::RichText::new(&header).color(hint).size(theme::TEXT_SMALL));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let note = if searching { "Searching…" } else { "" };
-                    ui.label(egui::RichText::new(note).color(theme::text_hint()).size(theme::TEXT_SMALL));
+                    ui.label(egui::RichText::new(note).color(hint).size(theme::TEXT_SMALL));
                 });
             });
             let field = egui::TextEdit::singleline(text)
@@ -403,7 +404,7 @@ impl App {
             });
             if shows_formats {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Formats").color(theme::text_hint()).size(theme::TEXT_SMALL));
+                    ui.label(egui::RichText::new("Formats").color(hint).size(theme::TEXT_SMALL));
                     for format in PluginFormat::ALL {
                         if toggle_button(ui, formats.contains(&format), format.label()) {
                             toggle(formats, format);

@@ -65,11 +65,13 @@ fn artwork_blends_and_never_clears_the_window_under_it() {
     super::super::surface::install(&ctx, Arc::new(Mark));
     // A see-through window: under its round artwork, a button leaves what is under it (#1233),
     // where it used to punch a square hole to the desktop.
-    let saved = super::super::theme::palette();
-    let mut see_through = saved;
-    see_through.window_background = Color32::from_rgba_unmultiplied(20, 20, 20, 160);
-    see_through.panel_background = Color32::from_rgba_unmultiplied(30, 30, 30, 160);
-    super::super::theme::set_palette(&ctx, see_through);
+    let see_through = [
+        ("window-background".to_owned(), Color32::from_rgba_unmultiplied(20, 20, 20, 160)),
+        ("panel-background".to_owned(), Color32::from_rgba_unmultiplied(30, 30, 30, 160)),
+    ];
+    super::super::theme::use_colors(&ctx, &see_through.into());
+    super::super::theme::in_style_frame(&ctx, |_| ());
+    assert!(super::super::theme::see_through());
     let mut output = ctx.run_ui(Default::default(), |ui| {
         let painter = ui.ctx().layer_painter(egui::LayerId::background());
         assert!(button(
@@ -82,7 +84,7 @@ fn artwork_blends_and_never_clears_the_window_under_it() {
         ));
     });
     output.textures_delta.clear();
-    super::super::theme::set_palette(&ctx, saved);
+    super::super::theme::use_colors(&ctx, &super::super::theme::Colors::new());
     assert!(!output.shapes.iter().any(|shape| matches!(shape.shape, egui::Shape::Circle(_))));
     assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.brush.is_some())));
 }
@@ -172,8 +174,8 @@ fn skin_round_trip_and_old_defaults() {
         artwork_fps: 12,
         toolbar: Some(Toolbar::default()),
         toolbar_offsets: BTreeMap::from([("transport".into(), 80)]),
-        controls: BTreeMap::new(),
         variables: Arc::default(),
+        base: true,
     };
     let mut warnings = Vec::new();
     assert_eq!(Skin::from_json(&skin.to_json(), &mut warnings), skin);

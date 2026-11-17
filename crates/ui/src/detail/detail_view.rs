@@ -20,8 +20,10 @@ use suhina_session::{Placement, PluginReport, PluginStatus};
 use crate::interaction::commands;
 use crate::interaction::grid::gain_to_db;
 use crate::interaction::menus;
+pub(crate) use crate::kit::element::{caption_ink, error_ink, hint_ink, title_ink, value_ink};
 use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
+pub(crate) use crate::kit::widgets::push_button;
 use crate::kit::widgets::{self, Action};
 
 mod clip_panel;
@@ -281,19 +283,21 @@ fn chain_row(
             .map_or_else(|| slots.last().map_or(area.left(), |(_, r)| r.right() + 0.5), |(_, r)| r.left() - 0.5);
         painter.with_clip_rect(area).line_segment(
             [Pos2::new(x, area.top()), Pos2::new(x, (area.top() + tallest).min(area.bottom()))],
-            egui::Stroke::new(2.0, theme::accent()),
+            egui::Stroke::new(2.0, crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color()),
         );
     }
     let pass = ui.ctx().cumulative_pass_nr();
     let list = crate::interaction::drop::DeviceSlots { track: chain.track, area, slots, vertical: false, pass };
     crate::interaction::drop::note_device_slots(ui.ctx(), list);
     if let Some(bar) = bar {
-        painter.rect_filled(bar, 0.0, theme::control_background());
+        // `scroll-bar[kind="chain"]`: its `background-color` for the track, its `color` for the thumb.
+        let look = crate::kit::element::SCROLL_BAR.attribute("kind", "chain").look();
+        painter.rect_filled(bar, 0.0, look.background());
         let thumb_width = (area.width() / total * bar.width()).max(24.0);
         let thumb_left = bar.left() + offset / most * (bar.width() - thumb_width);
         let thumb =
             Rect::from_min_size(Pos2::new(thumb_left, bar.top() + 1.0), Vec2::new(thumb_width, bar.height() - 2.0));
-        painter.rect_filled(thumb, 0.0, theme::text_hint());
+        painter.rect_filled(thumb, 0.0, look.color());
     }
     // Right of the last panel, what a drop does.
     if x < area.right() - 80.0 {
@@ -776,18 +780,7 @@ fn plugin_button(
         egui::Id::unique(("plugin-button", track.0, &device.at)),
         format!("{label} {}", device.name),
     );
-    let hover = widgets::hover(ui, &response);
-    let fill = crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover);
-    painter.rect_filled(button, 0.0, fill);
-    painter.rect_stroke(button, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    widgets::text_in(
-        painter,
-        button,
-        Align2::CENTER_CENTER,
-        label,
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_primary(),
-    );
+    push_button(ui, painter, button, "plugin-button", &response, label);
     if response.clicked() {
         actions.push(Action::new(command, json!({ "track": track.0, "device": device.at.value() })));
     }
@@ -842,13 +835,21 @@ pub fn show_ara_editor(
                     "Hide editor: {} keeps the clip and its edits; select the clip to show it again",
                     device.name
                 ));
+        // `piano-tool#piano-hide`, as the piano roll's own ×.
+        let el = crate::kit::element::PIANO_TOOL
+            .id("piano-hide")
+            .attribute("kind", "piano-hide")
+            .response(&response)
+            .enter();
         let fill = crate::kit::motion::mix(
-            theme::control_background(),
-            theme::control_hover(),
+            crate::detail::fill_of("control"),
+            el.look_hovered(true).background(),
             crate::kit::widgets::hover(ui, &response),
         );
-        painter.rect_filled(hide, 0.0, fill);
-        crate::interaction::toolbar::IconButton::Hide.draw(&painter, hide, theme::text_secondary(), 1.0);
+        el.paint_with(&painter, hide, crate::kit::element::Native { radius: 0.0, fill });
+        let ink = el.color();
+        crate::interaction::toolbar::IconButton::Hide.draw(&painter, hide, ink, 1.0);
+        drop(el);
         if response.clicked() {
             actions.push(Action::new("view.editor", json!({})));
         }
@@ -882,7 +883,7 @@ pub fn show_ara_editor(
         Align2::CENTER_CENTER,
         text,
         theme::ui_font(theme::TEXT),
-        theme::text_hint(),
+        hint_ink(),
     );
     let count = buttons.len() as f32;
     let width = count * BUTTON_WIDTH + (count - 1.0).max(0.0) * PAD;
@@ -908,17 +909,7 @@ fn ara_button(
 ) {
     let response =
         widgets::button_area(ui, rect, egui::Id::unique(("ara-button", id.0.0, id.1)), format!("{label} {plugin}"));
-    let hover = widgets::hover(ui, &response);
-    painter.rect_filled(rect, 0.0, crate::kit::motion::mix(theme::control_background(), theme::control_hover(), hover));
-    painter.rect_stroke(rect, 0.0, theme::hairline(theme::border_strong()), egui::StrokeKind::Inside);
-    widgets::text_in(
-        painter,
-        rect,
-        Align2::CENTER_CENTER,
-        label,
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_primary(),
-    );
+    push_button(ui, painter, rect, "ara-button", &response, label);
     if response.clicked() {
         actions.push(action);
     }
@@ -936,7 +927,32 @@ fn clip_for_readers(ui: &Ui, rect: Rect, info: &ClipInfo) {
 }
 
 fn hint(painter: &egui::Painter, area: Rect, text: &str) {
-    painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), theme::text_hint());
+    painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), hint_ink());
+}
+
+/// A device's on switch in its header, `on` while it runs: filled in `bright` (the header's
+/// `color`), else outlined in `dim`. It is `button#control-device-on`, `[checked]` while on, and a
+/// theme's rule that reaches it, one for every `button` as well as one for the switch, beats that
+/// look (#1448): its `background-color` while on, its `border-color` while off.
+pub(crate) fn device_switch(
+    painter: &egui::Painter,
+    switch: Rect,
+    response: &egui::Response,
+    on: bool,
+    (bright, dim): (egui::Color32, egui::Color32),
+) {
+    let own =
+        crate::kit::element::BUTTON.id("device-on").response(response).attr(crate::kit::element::Checked, on).look();
+    if on {
+        painter.rect_filled(switch, 0.0, own.themed(crate::kit::element::Paint::Background).unwrap_or(bright));
+    } else {
+        painter.rect_stroke(
+            switch,
+            0.0,
+            theme::hairline(own.themed(crate::kit::element::Paint::Border).unwrap_or(dim)),
+            egui::StrokeKind::Inside,
+        );
+    }
 }
 
 /// One device: a header with its on switch and name, then its parameters, one per row. Returns
@@ -995,10 +1011,7 @@ fn device_panel(
         .paint_with(
             painter,
             rect,
-            crate::kit::element::Native {
-                radius: 0.0,
-                fill: crate::kit::style_class::surface_or(theme::panel_background()),
-            },
+            crate::kit::element::Native { radius: 0.0, fill: crate::detail::detail_fill("panel") },
         )
         .content;
     // The selection outline, over everything the panel draws — on every path out of here. Along
@@ -1007,18 +1020,17 @@ fn device_panel(
     let outline = |painter: &egui::Painter| {
         if selected {
             device_style.close_box();
-            painter.rect_stroke(panel_box, 1.0, theme::hairline(theme::selection()), egui::StrokeKind::Inside);
+            // `device[selected]`'s `accent-color`.
+            let edge = device_style.accent();
+            painter.rect_stroke(panel_box, 1.0, theme::hairline(edge), egui::StrokeKind::Inside);
         }
     };
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    {
-        let header_el = crate::kit::element::DEVICE_HEADER.enter();
-        header_el.paint_with(
-            painter,
-            header,
-            crate::kit::element::Native { radius: 0.0, fill: theme::control_background() },
-        );
-    }
+    // `device-header`, in scope while its switch, name and buttons are drawn: its `color` is the
+    // name's and its buttons' under the pointer, `label[kind="hint"]` the dim ones.
+    let header_el = crate::kit::element::DEVICE_HEADER.enter();
+    header_el.paint_with(painter, header, crate::kit::element::Native { radius: 0.0, fill: header_el.background() });
+    let (bright, dim) = (header_el.color(), hint_ink());
     let switch = Rect::from_min_size(
         Pos2::new(header.left() + PAD, header.center().y - ON_SWITCH / 2.0),
         Vec2::splat(ON_SWITCH),
@@ -1041,11 +1053,7 @@ fn device_panel(
             json!({ "track": track.0, "device": device.at.value(), "enabled": !device.enabled }),
         ));
     }
-    if device.enabled {
-        painter.rect_filled(switch, 0.0, theme::text_primary());
-    } else {
-        painter.rect_stroke(switch, 0.0, theme::hairline(theme::text_hint()), egui::StrokeKind::Inside);
-    }
+    device_switch(painter, switch, &bypass, device.enabled, (bright, dim));
     // Beside the switch, on a panel with more parameters than its columns show: opens the rest.
     let fold_id = list_fold_id(ui, track, &device.at);
     let mut name_left = switch.right() + PAD;
@@ -1059,10 +1067,11 @@ fn device_panel(
         if chevron.clicked() {
             ui.ctx().data_mut(|d| d.insert_temp(fold_id, ListFold { open: !fold.open, ..fold }));
         }
-        let ink = if chevron.hovered() { theme::text_primary() } else { theme::text_hint() };
+        let ink = if chevron.hovered() { bright } else { dim };
         widgets::chevron(painter, at.center(), fold.open, ink);
     }
-    let name_color = if device.enabled { theme::text_primary() } else { theme::text_hint() };
+    // Off, the name is the header's own `color` (`device[muted] device-header`), else dim.
+    let name_color = if device.enabled { bright } else { header_el.own_color_or(dim) };
     // The X at the header's right end removes the device, as Remove device in its menu does.
     let close = Rect::from_center_size(Pos2::new(header.right() - PAD - 6.0, header.center().y), Vec2::splat(12.0));
     let remove = ui
@@ -1072,7 +1081,7 @@ fn device_panel(
     if remove.clicked() {
         actions.push(Action::new("device.remove", json!({ "track": track.0, "device": device.at.value() })));
     }
-    let cross = if remove.hovered() { theme::text_primary() } else { theme::text_hint() };
+    let cross = if remove.hovered() { bright } else { dim };
     let arm = 3.5;
     painter.line_segment(
         [close.center() + Vec2::new(-arm, -arm), close.center() + Vec2::new(arm, arm)],
@@ -1100,7 +1109,7 @@ fn device_panel(
                 open_expanded(ui.ctx(), track, device.at.clone());
             }
         }
-        let ink = if response.hovered() || open { theme::text_primary() } else { theme::text_hint() };
+        let ink = if response.hovered() || open { bright } else { dim };
         // Two corners pointing out: the panel grows.
         let r = button.shrink(2.0);
         for (corner, x, y) in [(r.right_top(), -1.0, 1.0), (r.left_bottom(), 1.0, -1.0)] {
@@ -1117,6 +1126,8 @@ fn device_panel(
         file: device.file.as_deref().unwrap_or(""),
         lists: Some(nam),
     };
+    // The header's controls are the device's, not inside its header element.
+    drop(header_el);
     // A built-in's header controls sit left of its maker, and the name gives way to them.
     let strip = device.graph.as_ref().and_then(|graph| graph.header.as_ref().map(|strip| (graph, strip)));
     let mut name_right = kind_right - PAD - kind_width;
@@ -1136,7 +1147,7 @@ fn device_panel(
         Align2::RIGHT_CENTER,
         &device.kind,
         theme::ui_font(theme::TEXT_TINY),
-        theme::text_hint(),
+        dim,
     );
 
     let body = Rect::from_min_max(
@@ -1144,10 +1155,11 @@ fn device_panel(
         Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
     );
     if let Some(plugin) = &device.plugin {
+        // `label[kind="plugin-state"]`; a crash is `label[kind="error"]`.
         let color = match plugin.state {
-            PluginState::Crashed => theme::recording(),
-            PluginState::Running => theme::text_secondary(),
-            PluginState::Stopped | PluginState::Loading | PluginState::Missing => theme::text_hint(),
+            PluginState::Crashed => error_ink(),
+            PluginState::Running => crate::kit::element::LABEL.attribute("kind", "plugin-state").look().color(),
+            PluginState::Stopped | PluginState::Loading | PluginState::Missing => hint_ink(),
         };
         widgets::text_in(
             painter,
@@ -1194,7 +1206,7 @@ fn device_panel(
             Align2::LEFT_CENTER,
             text,
             theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
+            hint_ink(),
         );
         outline(painter);
         return (clicked, rect);
@@ -1204,6 +1216,11 @@ fn device_panel(
         outline(painter);
         return (clicked, rect);
     }
+    // A parameter's name, `label`, and its value, `value`: read once for every row.
+    let (name_ink, value_ink) = (
+        crate::kit::element::LABEL.attribute("kind", "parameter").look().color(),
+        crate::kit::element::VALUE.attribute("kind", "parameter").look().color(),
+    );
     for (index, (id, value)) in device.params.iter().enumerate() {
         let row = Rect::from_min_size(
             Pos2::new(body.left(), body.top() + index as f32 * PARAM_ROW),
@@ -1212,22 +1229,8 @@ fn device_panel(
         if row.bottom() > body.bottom() + 0.5 {
             break;
         }
-        widgets::text_in(
-            painter,
-            row,
-            Align2::LEFT_CENTER,
-            id,
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::text_secondary(),
-        );
-        widgets::text_in(
-            painter,
-            row,
-            Align2::RIGHT_CENTER,
-            value,
-            theme::mono_font(theme::TEXT_SMALL),
-            theme::text_value(),
-        );
+        widgets::text_in(painter, row, Align2::LEFT_CENTER, id, theme::ui_font(theme::TEXT_SMALL), name_ink);
+        widgets::text_in(painter, row, Align2::RIGHT_CENTER, value, theme::mono_font(theme::TEXT_SMALL), value_ink);
     }
     outline(painter);
     (clicked, rect)

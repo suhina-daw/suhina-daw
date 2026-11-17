@@ -47,7 +47,7 @@ fn the_editor_writes_variants_and_never_the_authors_sheet_or_guide() {
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
     let edited = variant_of(entry(&entries, "authored"), "custom", |theme| {
-        theme.colors.accent = eframe::egui::Color32::from_rgb(18, 52, 86);
+        theme.colors.insert("accent".into(), eframe::egui::Color32::from_rgb(18, 52, 86));
     });
     files.write("authored@custom", &edited).unwrap();
     assert_eq!(std::fs::read_to_string(&css_path).unwrap(), source);
@@ -56,8 +56,8 @@ fn the_editor_writes_variants_and_never_the_authors_sheet_or_guide() {
     assert!(variant.contains("\"--accent\": \"#123456\"") && !variant.contains("--border"), "{variant}");
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(entry(&entries, "authored@custom").colors.accent, eframe::egui::Color32::from_rgb(18, 52, 86));
-    assert_eq!(entry(&entries, "authored").colors.accent, Theme::default().colors.accent);
+    assert_eq!(entry(&entries, "authored@custom").color("accent"), eframe::egui::Color32::from_rgb(18, 52, 86));
+    assert_eq!(entry(&entries, "authored").color("accent"), Theme::default().color("accent"));
     let _clean = std::fs::remove_dir_all(&root);
 }
 
@@ -67,7 +67,7 @@ fn palette_edits_do_not_rewrite_unchanged_package_resources() {
     let mut files = ThemeFiles::new(Some(root.join("themes")));
     let theme = theme::built_in_themes().into_iter().find(|(id, _)| *id == "suhina-sheet").unwrap().1;
     files.write("sheet", &theme).unwrap();
-    let paths = ["themes/sheet/assets/button.svg", "themes/sheet/README.md", "themes/sheet/theme.css"];
+    let paths = ["themes/sheet/assets/button.svg", "themes/sheet/theme.css"];
     let old = SystemTime::UNIX_EPOCH + Duration::from_secs(946_684_800);
     for path in paths {
         std::fs::File::options()
@@ -77,12 +77,14 @@ fn palette_edits_do_not_rewrite_unchanged_package_resources() {
             .set_times(std::fs::FileTimes::new().set_modified(old))
             .unwrap();
     }
-    let red = variant_of(&theme, "red", |theme| theme.colors.accent = eframe::egui::Color32::RED);
+    let red = variant_of(&theme, "red", |theme| {
+        theme.colors.insert("accent".into(), eframe::egui::Color32::RED);
+    });
     files.write("sheet@red", &red).unwrap();
     for path in paths {
         assert_eq!(std::fs::metadata(root.join(path)).unwrap().modified().unwrap(), old, "rewrote {path}");
     }
-    assert_eq!(entry(&files.read_all().0, "sheet@red").colors.accent, eframe::egui::Color32::RED);
+    assert_eq!(entry(&files.read_all().0, "sheet@red").color("accent"), eframe::egui::Color32::RED);
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -98,8 +100,9 @@ fn measure_theme_slider_saves() {
         let copy = format!("{id}-copy");
         files.write(&copy, &theme).unwrap();
         for value in 30..35 {
-            let edited =
-                variant_of(&theme, "slider", |t| t.colors.accent = eframe::egui::Color32::from_rgb(value, 60, 90));
+            let edited = variant_of(&theme, "slider", |t| {
+                t.colors.insert("accent".into(), eframe::egui::Color32::from_rgb(value, 60, 90));
+            });
             let start = Instant::now();
             files.write(&format!("{copy}@slider"), &edited).unwrap();
             eprintln!("slider-save {id} {value}: {:.3} ms", start.elapsed().as_secs_f64() * 1000.0);
@@ -171,28 +174,11 @@ fn no_default_artwork_library_is_made() {
 }
 
 #[test]
-fn portable_packages_include_the_shared_ai_author_guide_and_effective_svg() {
+fn portable_packages_carry_the_theme_and_effective_svg_but_no_guide_or_examples() {
     let theme = Theme::default();
     let files = portable_package_files("plain", &theme).unwrap();
-    let guide = files.iter().find(|(name, _)| name == "plain/README.md").unwrap();
-    assert_eq!(guide.1, theme::template_readme().as_bytes());
-    let text = std::str::from_utf8(&guide.1).unwrap();
-    for heading in [
-        "What this package is",
-        "why they are separate",
-        "How and when",
-        "What's possible now",
-        "Limits",
-        "For AI-assisted edits",
-    ] {
-        assert!(text.contains(heading), "{heading}");
-    }
+    assert!(!files.iter().any(|(name, _)| name.ends_with("README.md") || name.contains("/examples/")), "{files:?}");
     assert!(files.iter().any(|(name, _)| name == "plain/assets/fader.cap.svg"));
-    assert!(
-        files
-            .iter()
-            .any(|(name, data)| name == "plain/examples/dark-gloss.css" && data == theme::GLOSS_EXAMPLE.as_bytes())
-    );
     assert!(theme.skin.assets.is_empty(), "export must not modify sparse local overrides");
     let css = files.iter().find(|(name, _)| name == "plain/theme.css").unwrap();
     assert!(std::str::from_utf8(&css.1).unwrap().contains("icon[kind=\"play\"] { image: url(\"assets/play.svg\"); }"));
@@ -222,7 +208,7 @@ fn an_authors_sheet_is_read_verbatim_and_survives_backups() {
     assert_eq!(entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["ink", "ink@dim"]);
     let ink = entry(&entries, "ink");
     assert_eq!(ink.name, "Ink");
-    assert_eq!(ink.colors.accent, theme::parse_hex("#12AB34").unwrap());
+    assert_eq!(ink.color("accent"), theme::parse_hex("#12AB34").unwrap());
     assert_eq!(ink.skin.segments, 32);
     assert_eq!(ink.skin.css.as_deref(), Some(source));
     assert_eq!(ink.vars.declared.len(), 1);
@@ -248,7 +234,8 @@ fn an_edit_to_the_authors_sheet_is_read_and_editor_saves_leave_it_alone() {
     let css = root.join("themes/portable/theme.css");
     let edited_sheet = format!(
         "/* My notes stay. */\n{}",
-        std::fs::read_to_string(&css).unwrap().replace("--accent: #A6A3FF;", "--accent: #12AB34;")
+        // The saved sheet writes only the colours the theme sets, and this theme sets none.
+        std::fs::read_to_string(&css).unwrap() + ":root { --accent: #12AB34; }\n"
     );
     assert!(edited_sheet.contains("--accent: #12AB34;"));
     std::fs::write(&css, &edited_sheet).unwrap();
@@ -256,19 +243,19 @@ fn an_edit_to_the_authors_sheet_is_read_and_editor_saves_leave_it_alone() {
     let (changed, warnings) = files.changed();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(changed.len(), 1);
-    assert_eq!(changed[0].theme.colors.accent, theme::parse_hex("#12AB34").unwrap());
+    assert_eq!(changed[0].theme.color("accent"), theme::parse_hex("#12AB34").unwrap());
     assert_eq!(changed[0].theme.skin.toolbar_offsets["transport"], 80);
     files.checked = None;
     assert!(files.changed().0.is_empty(), "reading must not trigger its own reload");
     let edited = variant_of(&changed[0].theme, "custom", |theme| {
-        theme.colors.accent = theme::parse_hex("#112233").unwrap();
+        theme.colors.insert("accent".into(), theme::parse_hex("#112233").unwrap());
         theme.skin.meter_intensity = 80;
     });
     files.write("portable@custom", &edited).unwrap();
     assert_eq!(std::fs::read_to_string(&css).unwrap(), edited_sheet);
     let (entries, _) = files.read_all();
     let custom = entry(&entries, "portable@custom");
-    assert_eq!(custom.colors.accent, theme::parse_hex("#112233").unwrap());
+    assert_eq!(custom.color("accent"), theme::parse_hex("#112233").unwrap());
     assert_eq!(custom.skin.meter_intensity, 80);
     assert_eq!(custom.skin.toolbar_offsets["transport"], 80);
     std::fs::remove_dir_all(root).unwrap();
@@ -280,18 +267,22 @@ fn a_save_over_unread_external_variant_edits_is_refused_and_keeps_the_file() {
     let mut files = ThemeFiles::new(Some(root.join("themes")));
     let original = styled();
     files.write("portable", &original).unwrap();
-    let first = variant_of(&original, "custom", |t| t.colors.accent = theme::parse_hex("#112233").unwrap());
+    let first = variant_of(&original, "custom", |t| {
+        t.colors.insert("accent".into(), theme::parse_hex("#112233").unwrap());
+    });
     files.write("portable@custom", &first).unwrap();
     let path = root.join("themes/portable/variants/custom.json");
     let external = std::fs::read_to_string(&path).unwrap().replace("#112233", "#445566");
     std::fs::write(&path, &external).unwrap();
-    let ours = variant_of(&original, "custom", |t| t.colors.accent = theme::parse_hex("#778899").unwrap());
+    let ours = variant_of(&original, "custom", |t| {
+        t.colors.insert("accent".into(), theme::parse_hex("#778899").unwrap());
+    });
     let error = files.write("portable@custom", &ours).unwrap_err();
     assert!(error.contains("external edits"), "{error}");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), external);
     // Once read, the external edit is the variant, and saving works again.
     let (entries, _) = files.read_all();
-    assert_eq!(entry(&entries, "portable@custom").colors.accent, theme::parse_hex("#445566").unwrap());
+    assert_eq!(entry(&entries, "portable@custom").color("accent"), theme::parse_hex("#445566").unwrap());
     assert!(files.write("portable@custom", &ours).is_ok());
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -382,14 +373,16 @@ fn a_built_in_themes_variants_live_beside_no_copy_of_its_css() {
     let root = folder("builtin-variants");
     let mut files = ThemeFiles::new(Some(root.join("themes")));
     let nord = theme::built_in_themes().into_iter().find(|(id, _)| *id == "nord").unwrap().1;
-    let frost = variant_of(&nord, "frost", |t| t.colors.accent = theme::parse_hex("#88C0D0").unwrap());
+    let frost = variant_of(&nord, "frost", |t| {
+        t.colors.insert("accent".into(), theme::parse_hex("#88C0D0").unwrap());
+    });
     files.write("nord@frost", &frost).unwrap();
     assert!(root.join("themes/nord/variants/frost.json").is_file());
     assert!(!root.join("themes/nord/theme.css").exists(), "a built-in theme's CSS is not copied");
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["nord", "nord@frost"]);
-    assert_eq!(entry(&entries, "nord@frost").colors.accent, theme::parse_hex("#88C0D0").unwrap());
+    assert_eq!(entry(&entries, "nord@frost").color("accent"), theme::parse_hex("#88C0D0").unwrap());
     let zip = files.backup().unwrap();
     let mut archive = zip::ZipArchive::new(std::fs::File::open(zip).unwrap()).unwrap();
     assert!(archive.by_name("nord/variants/frost.json").is_ok());
@@ -457,7 +450,7 @@ fn example_builtins_export_their_css_svg_controls_and_background() {
             assert!(archive.by_name(&format!("sheet-copy/assets/{role}.svg")).is_ok(), "{role}");
         }
         assert!(archive.by_name("sheet-copy/theme.css").is_ok());
-        assert!(archive.by_name("sheet-copy/README.md").is_ok());
+        assert!(archive.by_name("sheet-copy/README.md").is_err(), "Suhina writes no guide into themes");
         assert_eq!(archive.by_name("sheet-copy/background.png").is_ok(), id == "suhina-meadow");
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -531,21 +524,19 @@ fn an_editor_change_is_edited_into_the_authors_sheet_and_a_rename_into_theme_jso
     let root = folder("editor-into-sheet");
     let themes = root.join("themes");
     let source = "/* Mine: keep me */\n:root { --accent: #12AB34; }\n\
-                  @media (width < 800px) { browser { display: none; } }\n\
-                  .control-mixer-pan { left: 4px; top: 0px; }\n";
+                  @media (width < 800px) { browser { display: none; } }\n";
     super::tests::hand_written(&themes.join("ink"), "Ink", source);
     let mut files = ThemeFiles::new(Some(themes.clone()));
     let (entries, warnings) = files.read_all();
     assert!(warnings.is_empty(), "{warnings:?}");
     let mut ink = entry(&entries, "ink").clone();
-    assert_eq!(ink.skin.controls["mixer-pan"].offset().x, 4.0);
-    // A control moved in the app changes only its own declaration in the author's sheet.
-    ink.skin.controls.get_mut("mixer-pan").unwrap().set_offset(eframe::egui::vec2(12.0, 0.0));
+    // Artwork added in the app is a rule added to the author's sheet, which keeps the rest.
+    ink.skin.assets.insert("knob.body".into(), PNG.into());
     ink.name = "Ink Two".into();
     files.write("ink", &ink).unwrap();
     let css = std::fs::read_to_string(themes.join("ink/theme.css")).unwrap();
     assert!(css.starts_with("/* Mine: keep me */\n") && css.contains("@media (width < 800px)"), "{css}");
-    assert!(css.contains("left: 12px") && !css.contains("left: 4px"), "{css}");
+    assert!(css.contains("--accent: #12AB34") && css.contains("assets/knob.body.png"), "{css}");
     assert!(!css.contains("Ink Two") && !themes.join("ink/layout.css").exists(), "{css}");
     // The name is theme.json's; the rest of it stays as it was.
     let (meta, _) = theme::ThemeMeta::parse(&std::fs::read(themes.join("ink/theme.json")).unwrap()).unwrap();

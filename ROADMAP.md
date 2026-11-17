@@ -146,7 +146,7 @@ refused or suspended, never by losing its edits.
 - Audio settings can open the active ASIO driver's native control panel, and
   show the engine block separately from the measured driver callback size.
 
-- Theme skins: editable SVG/PNG controls with state variants and image sequences, configurable level-meter presentation including signal-driven artwork frames and theme-owned intensity, theme-owned toolbar layouts and native element placement, and portable CSS/JSON/SVG/PNG packages with live literal-value synchronization. Suhina's own style engine (`suhina-style`, no browser engine) adds a retained native style tree, cascade layers, variables, calc(), media ranges, linear/radial/conic gradients, color-mix(), bounded box shadows, paint transitions/keyframes, Flex/Grid toolbar/workspace panel layout and persistent anchors between controls. Bar/window geometry, remaining raw controls and further CSS effects still need integration.
+- Theme skins: editable SVG/PNG controls with state variants and image sequences, configurable level-meter presentation including signal-driven artwork frames and theme-owned intensity, theme-owned toolbar layouts, and portable CSS/JSON/SVG/PNG packages with live literal-value synchronization. Suhina's own style engine (`suhina-style`, no browser engine) adds a retained native style tree, cascade layers, variables, calc(), media ranges, linear/radial/conic gradients, color-mix(), bounded box shadows, paint transitions/keyframes, Flex/Grid layout of the toolbar, the workspace panels, the track headers and the mixer strips. Bar/window geometry, remaining raw controls and further CSS effects still need integration.
 - Theme states and tracks: `:checked`, `:selected`, `:playing`, `:recording`, `:armed` and `:muted` in theme CSS, a track's or clip's colour as a `color` attribute, name colours, per-view track artwork, each bar's own separator line, styled menus, and a least Arrangement header width; a crash leaves a file in the data folder's `crashes/`.
 - Theme control shapes: buttons, the toolbar's fields and the volume and pan fields take their background, border, corner radius, thickness and shadows from the theme's CSS (`#arrangement-volume`, `.value-fill`, `volume.track` artwork and the rest); a workspace panel can float over the view; a theme can put the Arrangement track headers on a side; Settings › Themes has a search.
 - Theme presentation: native Launcher column widths and row heights come from the theme's CSS; mixer/name backgrounds consume authored materials, and stereo meter gradients retain fixed dBFS colour positions with native peak/RMS opacity and lit-region glow. Fader scales move independently of the rail/cap.
@@ -155,7 +155,7 @@ refused or suspended, never by losing its edits.
 
 - Private image backgrounds use a cached source and display-scaled, alpha-correct blur; Settings keeps its own readable material. Native Mica has been removed.
 
-- Theme variants: a theme's settings are CSS custom properties, the core set every theme has and any it declares with `@property` (shown under Theme settings with a control for its type). A variant (`variants/<id>.json`) holds other values for them, such as a light and a dark version of one theme; the picker shows a swatch per variant, and editing a theme's settings saves a variant, so built-in themes need no copy for it.
+- Theme variants: a theme's settings are CSS custom properties, the core set every theme has and any it declares with `@property` (shown under Theme settings with a control for its type). A variant (`variants/<id>.json`) holds other values for them, such as a light and a dark version of one theme; the picker shows a swatch per variant, and a theme's settings are edited and saved in a variant, so built-in themes need no copy for it.
 - Theme packages: Export theme… writes one theme as a `.theme.suhina` file with a SHA-256 manifest; dropping or opening one brings it in after checking every file, and `suhina-cli theme pack` and `theme validate` do the same from a terminal.
 - Theme reach: sends, the add-track buttons, the ruler, loop bar and play position, clip parts and states (`:playing`, `:recording`), level-bar handles, fader sizes, a placeable mixer divider, the piano roll (grid, keys, notes with the clip's colour, tools), each built-in device's panel (`#device-compressor`), and the ordinary buttons and fields in Settings, dialogs and pages take the theme's CSS; artwork reads the theme's variables, draws text and can be nine-sliced. New clips take their track's colour (New clip colour).
 - Theme customization includes independent Browser/coloured-surface text, alpha-preserving gradients, editable liquid strengths, a private image backdrop and configurable application-bar identity/project information.
@@ -253,6 +253,48 @@ refused or suspended, never by losing its edits.
   selection, take lanes, automation lanes and points, meters and the strips' device lists are
   elements with their states (`slot[kind="stop"][queued]`, `grid-line[kind="beat"]`), and a
   theme that leaves them alone looks as before.
+
+- Themes style the control bar, the tabs, the menus, Settings, the start page and the dialogs on
+  their own: their words are `label` kinds, their title rows, lists, colour swatches and theme cards
+  are elements, every lit switch (a track's on switch, the computer keyboard, a Settings switch or
+  chosen segment) has a lit look a theme states, and the detail area's splitter takes
+  `[closed]` while the area is closed; a theme that leaves them alone looks as before.
+- Themes style the browser, the clip panels, the follow action, device and device group panels,
+  expanded panels and the piano roll's keys and toolbar on their own: their dim words, captions,
+  titles and values are `label` kinds, a theme states their switches' lit look, and
+  the Arrangement's header edge is a divider a theme can colour; a theme that leaves them alone
+  looks as before.
+- Themes style egui's own widgets everywhere: a rule for `button` (`:hover`, `:active`,
+  `:disabled`, `[checked]`), `text-input` (`:focus`), `menu` or `scroll-bar` reaches the scroll
+  bars, text fields, drop-downs, check boxes, menus and pop-ups the views draw outside a style
+  scope too, rebuilt only when the styles reset; a theme that leaves them alone looks as before.
+- Suhina's own look is a base style sheet under every theme: a theme's rules always win over it, a
+  theme that sets only colour variables keeps every state, a rule like `mixer { --text-value: gold; }`
+  colours a region through its variables, `"base": "none"` in `theme.json` leaves it out, and a
+  `user.css` that sets `--accent` recolours Suhina Studio too. Every built-in theme looks as before, bar a few lit states in the layout showcase themes (Suhina Meadow, Blocks and Sheet), which are rewritten with the layout system.
+- A theme keeps only the colours it sets, as the custom properties of its style sheet
+  (`--accent`, `--window-background`): any other is Suhina Studio's, a saved or copied theme writes
+  just those, and the old token names (`--surface-0`, `--line`) are no longer read. Every built-in
+  theme looks as before, bar a few lit states in the layout showcase themes (Suhina Meadow, Blocks
+  and Sheet), which are rewritten with the layout system.
+- Themes lay out the track headers, the mixer strips and the transport in CSS, as the window and
+  the bars: `mixer meter { order: -1 }` puts the meter before the fader,
+  `mixer-toggles { flex-direction: column }` stacks solo, cue and arm, `display: none` takes a
+  part away from painting and the pointer, and a fader laid out across the strip drags sideways.
+  A theme with no rule lays out as before. Control placements (`.control-*` rules with offsets
+  and anchors) are gone.
+- Themes style more shared controls on their own: a theme states the lit look of a track's
+  solo, cue and arm (a rule for every button reaches them too), and dials, the swing slider, text
+  fields' underlines, routing fields (`dropdown[kind="subtle"]`), dialog buttons and a typed
+  number (`text-input[kind="typed"]`) take their elements' rules; a theme that leaves them alone
+  looks as before.
+
+- Theme and variant picker: the theme in use heads Settings › Themes with its variant's name, a
+  swatch per variant and a + that starts a new variant (Save or Cancel); right-click menus on swatches and cards use, edit,
+  duplicate, export and delete them (to the system's Trash, after asking), with greyed
+  items that say why for built-in themes. The variant editor previews changes live and writes them
+  only on Save, Save as new variant or after asking on leaving; New theme… starts from Suhina's
+  defaults or any theme with a name, author and description, and Theme info… edits them.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and

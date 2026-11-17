@@ -19,8 +19,8 @@ use crate::browser::{BrowserState, Place, Row, duration_text};
 use crate::interaction::drop::{BrowserItem, ItemKind};
 use crate::interaction::status::Status;
 use crate::kit::element::{
-    BROWSER, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, Entered, Native,
-    Selected,
+    BROWSER, BROWSER_FILL, BROWSER_PLACE, BROWSER_PLAY, BROWSER_ROW as BROWSER_ROW_ELEMENT, BUTTON, Checked, Entered,
+    Native, Selected,
 };
 use crate::kit::theme::{self, BROWSER_ROW as ROW, PAD};
 use crate::kit::widgets::play_glyph;
@@ -156,15 +156,43 @@ pub struct Context<'a> {
     pub other_results: Option<&'a mut OtherResults<'a>>,
 }
 
+/// The browser's words, by how much they stand out, each read once where a part of the browser is
+/// drawn: `label[kind="hint"]` (dim words: notes, headings, hints), `label[kind="caption"]`
+/// (secondary words) and `label[kind="value"]` (values), each with the colour the base sheet gives
+/// it in the browser (`browser label[kind="hint"]`), so a colour a theme gives the whole browser
+/// keeps them apart; `label` (names) takes the browser's own text colour.
+#[derive(Clone, Copy)]
+pub(crate) struct Inks {
+    pub(crate) hint: Color32,
+    pub(crate) secondary: Color32,
+    pub(crate) primary: Color32,
+    pub(crate) value: Color32,
+}
+
+/// A line between the browser's parts: `separator[kind="row"]`'s `color`.
+pub(crate) fn rule() -> Color32 {
+    crate::kit::element::row_line()
+}
+
+pub(crate) fn inks() -> Inks {
+    use crate::kit::element::LABEL;
+    Inks {
+        hint: LABEL.attribute("kind", "hint").look().color(),
+        secondary: LABEL.attribute("kind", "caption").look().color(),
+        primary: LABEL.look().color(),
+        value: LABEL.attribute("kind", "value").look().color(),
+    }
+}
+
 /// A row's icon colour: its `browser-icon[kind="…"]` element's `color`, which the user-agent
 /// sheet gives the kinds of item that have one and a theme may change; folders, headings and
 /// projects take the row's secondary text colour unless a sheet gives them one.
-fn icon_color(kind: ItemKind) -> Color32 {
+fn icon_color(kind: ItemKind, secondary: Color32) -> Color32 {
     let id = icon_kind(kind);
     let el = crate::kit::element::BROWSER_ICON.attribute("kind", id).enter();
     match icon_default(id) {
         Some(default) => el.computed_color_or(default),
-        None => el.color_or(theme::browser_text_secondary()),
+        None => el.color_or(secondary),
     }
 }
 
@@ -184,12 +212,13 @@ fn icon_kind(kind: ItemKind) -> &'static str {
     }
 }
 
-/// The colour the user-agent sheet alone gives the icon of kind `id`, if any: worked out once.
+/// The colour the base sheet alone gives the icon of kind `id`, if any, in Suhina Studio's
+/// colours: worked out once.
 fn icon_default(id: &str) -> Option<Color32> {
     const COLOURED: [&str; 7] = ["midi", "midi-effect", "sample", "instrument", "preset", "effect", "audio-effect"];
     static DEFAULTS: std::sync::OnceLock<[Option<Color32>; 7]> = std::sync::OnceLock::new();
-    let defaults = DEFAULTS
-        .get_or_init(|| COLOURED.map(|id| crate::kit::native_css::user_agent_color("browser-icon", &[("kind", id)])));
+    let defaults =
+        DEFAULTS.get_or_init(|| COLOURED.map(|id| crate::kit::native_css::base_color("browser-icon", &[("kind", id)])));
     COLOURED.iter().position(|known| *known == id).and_then(|at| defaults.get(at).copied().flatten())
 }
 
@@ -238,7 +267,7 @@ fn icon(painter: &egui::Painter, rect: Rect, kind: ItemKind, color: Color32) {
 }
 
 fn tag_color(text: &str) -> Color32 {
-    theme::parse_hex(text).unwrap_or_else(theme::browser_text_hint)
+    theme::parse_hex(text).unwrap_or_else(|| inks().hint)
 }
 
 /// Runs a library or preview command for the browser; an error goes to the status bar.
@@ -295,13 +324,8 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     let painter = ui.painter_at(area);
     // The panel's own background, over the window's (#1233); the browser is laid out in its
     // content box, inside its border and padding (#1336).
-    let area = style
-        .paint_with(
-            &painter,
-            area,
-            Native { radius: 0.0, fill: crate::kit::style_class::surface_or(theme::panel_background()) },
-        )
-        .content;
+    let area =
+        style.paint_with(&painter, area, Native { radius: 0.0, fill: crate::browser::browser_fill("panel") }).content;
     state.poll();
     suhina_plugins::trace::timed("library poll", || projects.file_library_mut().poll());
 
@@ -356,7 +380,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             Chip::List => !showing_map,
             Chip::Map => showing_map,
         };
-        let el = BUTTON.response(&response).attr(Checked, chosen).enter();
+        let lit = widgets::lit_toggle_kind(ui, &response, BUTTON.builder(), &[Checked], chosen, "chip");
         if response.clicked() {
             match chip {
                 Chip::Recent(group) => {
@@ -369,18 +393,10 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             }
             state.scroll = 0.0;
         }
-        let lit = motion::toward(ui.ctx(), response.id.with("on"), chosen, motion::VALUE);
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        widgets::button_surface(
-            &painter,
-            rect,
-            &el,
-            &response,
-            chosen,
-            motion::mix(idle, theme::control_selected(), lit),
-            0.0,
-        );
-        let text = el.color_or(motion::mix(theme::browser_text_secondary(), theme::text_inverse(), lit));
+        // `button[kind="chip"]`, `[checked]` while chosen: its colours are the base sheet's, in fill
+        // and in image, and only a rule for the lit state lights it.
+        let (fill, text) = lit.colors();
+        widgets::toggle_surface(&painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, title, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }
@@ -392,12 +408,12 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
         y -= FILTER + 2.0;
     }
     y += FILTER + 6.0;
-    painter.hline(area.x_range(), y - 0.5, theme::hairline(theme::border()));
+    painter.hline(area.x_range(), y - 0.5, theme::hairline(rule()));
 
     let bottom = area.bottom() - FOOTER - PREVIEW;
     let sidebar = Rect::from_min_max(Pos2::new(area.left(), y), Pos2::new(area.left() + SIDEBAR, bottom));
     let results = Rect::from_min_max(Pos2::new(sidebar.right() + 1.0, y), Pos2::new(area.right(), bottom));
-    painter.vline(sidebar.right() + 0.5, sidebar.y_range(), theme::hairline(theme::border()));
+    painter.vline(sidebar.right() + 0.5, sidebar.y_range(), theme::hairline(rule()));
     sidebar_view(ui, sidebar, state, projects, settings.view.recent_chips, &mut out);
 
     if let Err(e) = suhina_plugins::trace::timed("browser rows", || state.refresh_rows(projects)) {
@@ -457,20 +473,18 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
 }
 
 fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, out: &mut BrowserOut) {
+    let tier = inks();
     let painter = ui.painter_at(rect);
     // `.browser-search` (or `browser text-input`): its background, border, radius and `color`.
     let search_style = crate::kit::element::TEXT_INPUT.id("browser-search").enter();
-    paint_row(&painter, &search_style, rect, crate::kit::style_class::surface_or(theme::window_background()));
+    paint_row(&painter, &search_style, rect, crate::browser::browser_fill("window"));
     // Each side at its own width (an underline: `border-width: 0 0 1px`).
     if let Some(style) = search_style.style() {
         crate::kit::native_css::border(&painter, rect, style.radius, &style);
     }
     let glass = Pos2::new(rect.left() + PAD + 5.0, rect.center().y);
-    painter.circle_stroke(glass + Vec2::new(-1.0, -1.0), 3.5, Stroke::new(1.1, theme::browser_text_hint()));
-    painter.line_segment(
-        [glass + Vec2::new(1.5, 1.5), glass + Vec2::new(4.5, 4.5)],
-        Stroke::new(1.1, theme::browser_text_hint()),
-    );
+    painter.circle_stroke(glass + Vec2::new(-1.0, -1.0), 3.5, Stroke::new(1.1, tier.hint));
+    painter.line_segment([glass + Vec2::new(1.5, 1.5), glass + Vec2::new(4.5, 4.5)], Stroke::new(1.1, tier.hint));
     let hint = theme::mono_font(theme::TEXT_TINY);
     let key_width = widgets::text_width(ui, key, hint.clone());
     let field = Rect::from_min_max(
@@ -512,10 +526,11 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
     let edit = egui::TextEdit::singleline(&mut state.search)
         .id(id)
         .frame(egui::Frame::NONE)
-        .hint_text(egui::RichText::new("Search").color(theme::browser_text_hint()))
+        .hint_text(egui::RichText::new("Search").color(tier.hint))
         .font(theme::ui_font(theme::TEXT))
-        .text_color(search_style.color_or(theme::browser_text_primary()));
-    let response = crate::kit::widgets::text_input_at(ui, field, edit);
+        .text_color(search_style.color_or(tier.primary));
+    // egui's field takes the colours of `text-input#browser-search` through its style.
+    let response = crate::kit::widgets::text_input_at(&mut search_style.ui(ui), field, edit);
     if std::mem::take(&mut state.focus_search) {
         response.request_focus();
     }
@@ -539,7 +554,7 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
         Align2::RIGHT_CENTER,
         key,
         hint,
-        theme::browser_text_hint(),
+        tier.hint,
     );
 }
 
@@ -618,7 +633,7 @@ enum Target {
 
 /// One row of the sidebar's Pinned, Library and Folders sections: selected when its place is
 /// the one shown, a `×` while the place is chosen, and a click that shows it. The row is
-/// `Row` tall and consumes that of `y`.
+/// `Row` tall and consumes that of `y`. `tier` is the sidebar's inks, read once for all its rows.
 #[allow(clippy::too_many_arguments)]
 fn entry_row(
     ui: &mut Ui,
@@ -626,6 +641,7 @@ fn entry_row(
     area: Rect,
     y: &mut f32,
     state: &mut BrowserState,
+    tier: Inks,
     target: Target,
     label: &str,
     note: Option<&str>,
@@ -659,42 +675,25 @@ fn entry_row(
                 state.scroll = 0.0;
             }
             if rect.intersects(area) {
-                let style = place_style(&response, chosen);
-                let fill = if chosen {
-                    theme::control_active()
-                } else {
-                    motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
-                };
-                paint_row(painter, &style, rect.intersect(area), fill);
+                let style = place_style(&response, chosen, false);
+                paint_faded_row(painter, &style, rect.intersect(area), widgets::hover(ui, &response));
                 let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
-                let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+                let color = if chosen { tier.primary } else { tier.secondary };
                 let color = style.color_or(color);
                 widgets::text_in(painter, text, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), color);
             }
             return response;
         }
     };
-    let fill = if chosen {
-        theme::control_active()
-    } else {
-        motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
-    };
-    let style = place_style(&response, chosen);
+    let style = place_style(&response, chosen, false);
     if rect.intersects(area) {
-        paint_row(painter, &style, rect.intersect(area), fill);
+        paint_faded_row(painter, &style, rect.intersect(area), widgets::hover(ui, &response));
         let text = Rect::from_min_max(rect.min + Vec2::new(PAD + 2.0, 0.0), rect.max - Vec2::new(PAD, 0.0));
-        let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+        let color = if chosen { tier.primary } else { tier.secondary };
         let color = style.color_or(color);
         widgets::text_in(painter, text, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), color);
         if let Some(note) = note.filter(|_| !chosen) {
-            widgets::text_in(
-                painter,
-                text,
-                Align2::RIGHT_CENTER,
-                note,
-                theme::mono_font(theme::TEXT_TINY),
-                theme::browser_text_hint(),
-            );
+            widgets::text_in(painter, text, Align2::RIGHT_CENTER, note, theme::mono_font(theme::TEXT_TINY), tier.hint);
         }
     }
     // The place chosen shows a × that clears it; a second click on the place keeps it.
@@ -706,8 +705,7 @@ fn entry_row(
             Id::unique(("browser-place-clear", place.param())),
             "Show everything",
         );
-        let color =
-            motion::mix(theme::browser_text_hint(), theme::browser_text_primary(), widgets::hover(ui, &cleared));
+        let color = motion::mix(tier.hint, tier.primary, widgets::hover(ui, &cleared));
         widgets::text_in(painter, clear, Align2::CENTER_CENTER, "×", theme::ui_font(theme::TEXT_SMALL), color);
         if cleared.clicked() {
             state.place = None;
@@ -734,6 +732,7 @@ fn sidebar_view(
     recent_chips: bool,
     out: &mut BrowserOut,
 ) {
+    let tier = inks();
     let painter = ui.painter_at(area);
     let title_font = theme::ui_font(theme::TEXT_SMALL);
     let item_font = theme::ui_font(theme::TEXT_SMALL);
@@ -743,7 +742,7 @@ fn sidebar_view(
     let title = |y: &mut f32, text: &str| {
         *y += 8.0;
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, *y), Vec2::new(area.width() - PAD, 12.0));
-        widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, title_font.clone(), theme::browser_text_hint());
+        widgets::text_in(&painter, rect, Align2::LEFT_CENTER, text, title_font.clone(), tier.hint);
         // The rows that follow paint over the title's room: three points of clearance so a
         // descender ("g" in Tags, "y" in Library) is not clipped by the first one.
         *y += 15.0;
@@ -779,8 +778,18 @@ fn sidebar_view(
         if section.open {
             match section.kind {
                 SectionKind::Pinned => {
-                    entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Pinned), "Pinned", None);
-                    entry_row(ui, &painter, area, &mut y, state, Target::Place(Place::Recent(None)), "Recent", None);
+                    entry_row(ui, &painter, area, &mut y, state, tier, Target::Place(Place::Pinned), "Pinned", None);
+                    entry_row(
+                        ui,
+                        &painter,
+                        area,
+                        &mut y,
+                        state,
+                        tier,
+                        Target::Place(Place::Recent(None)),
+                        "Recent",
+                        None,
+                    );
                     if !recent_chips {
                         for group in Group::ALL {
                             entry_row(
@@ -789,6 +798,7 @@ fn sidebar_view(
                                 area,
                                 &mut y,
                                 state,
+                                tier,
                                 Target::Place(Place::Recent(Some(group))),
                                 &format!("    {}", group.title()),
                                 None,
@@ -805,6 +815,7 @@ fn sidebar_view(
                             area,
                             &mut y,
                             state,
+                            tier,
                             Target::Category(category),
                             category.title(),
                             None,
@@ -832,7 +843,7 @@ fn sidebar_view(
                 // The line at the slot's Y: above the half's title, or under it (the last
                 // one's under is the end, before the Folders section).
                 let line_y = if after { rect.bottom() + 2.0 } else { rect.top() - 2.0 };
-                painter.hline(area.x_range(), line_y, Stroke::new(2.0, theme::browser_text_primary()));
+                painter.hline(area.x_range(), line_y, Stroke::new(2.0, tier.primary));
                 // Inserting before the kind of the slot the pointer is in; the carried kind
                 // does not count (its own halves target itself, which is no move).
                 let before =
@@ -879,6 +890,7 @@ fn sidebar_view(
             area,
             &mut y,
             state,
+            tier,
             Target::Place(Place::Folder(folder.path.clone())),
             &name,
             note,
@@ -915,8 +927,7 @@ fn sidebar_view(
         None => {
             let response =
                 widgets::button_area(ui, rect.intersect(area), Id::unique("browser-add-folder"), "Add folder");
-            let color =
-                motion::mix(theme::browser_text_hint(), theme::browser_text_primary(), widgets::hover(ui, &response));
+            let color = motion::mix(tier.hint, tier.primary, widgets::hover(ui, &response));
             widgets::text_in(
                 &painter,
                 rect.shrink2(Vec2::new(PAD + 2.0, 0.0)),
@@ -931,11 +942,6 @@ fn sidebar_view(
         }
         Some(text) => {
             let id = Id::unique("browser-new-folder");
-            let edit = egui::TextEdit::singleline(text)
-                .id(id)
-                .hint_text("A folder's path")
-                .font(item_font.clone())
-                .text_color(theme::browser_text_primary());
             let field = rect.shrink2(Vec2::new(4.0, 1.0));
             let browse =
                 Rect::from_min_size(Pos2::new(field.right() - 56.0, field.top()), Vec2::new(56.0, field.height()));
@@ -944,11 +950,19 @@ fn sidebar_view(
                 state.new_folder = None;
                 return;
             }
+            // A `text-input`: egui's field takes its colours through its style.
+            let input = crate::kit::element::TEXT_INPUT.id("browser-new-folder").enter();
+            let edit = egui::TextEdit::singleline(text)
+                .id(id)
+                .hint_text("A folder's path")
+                .font(item_font.clone())
+                .text_color(input.color_or(tier.primary));
             let response = crate::kit::widgets::text_input_at(
-                ui,
+                &mut input.ui(ui),
                 Rect::from_min_max(field.min, Pos2::new(browse.left() - 4.0, field.bottom())).intersect(area),
                 edit,
             );
+            drop(input);
             if !response.has_focus() && !response.lost_focus() {
                 response.request_focus();
             }
@@ -1005,6 +1019,7 @@ fn results_view(
     selected_track: Option<TrackId>,
     out: &mut BrowserOut,
 ) {
+    let tier = inks();
     // On the browser's own background, which `show` painted.
     // The Plug-ins category's Instruments | Effects switch takes the results' top, then its
     // list's column headings, unless a place or a search lists other rows.
@@ -1054,7 +1069,7 @@ fn results_view(
             Align2::CENTER_TOP,
             text,
             theme::ui_font(theme::TEXT_SMALL),
-            theme::browser_text_hint(),
+            tier.hint,
         );
         return;
     }
@@ -1091,8 +1106,6 @@ fn results_view(
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Browser {}", row.item.name)));
         let selected = state.selected.iter().any(|s| s.key == row.item.key);
-        // `browser-row`, with `:hover`, `:active` and `[selected]`; its `color` is the name's.
-        let row_style = BROWSER_ROW_ELEMENT.response(&response).attr(Selected, selected).enter();
         let drop_here = dragging_samples
             && row.item.kind == ItemKind::Folder
             && pointer.is_some_and(|p| shown.contains(p))
@@ -1110,19 +1123,16 @@ fn results_view(
         if tag_here {
             state.drop_item = Some(row.item.clone());
         }
-        let fill = if drop_here || tag_here {
-            theme::control_hover()
-        } else if selected {
-            theme::control_active()
-        } else {
-            motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
-        };
-        paint_row(&painter, &row_style, shown, fill);
+        // `browser-row`, with `:hover`, `:active` and `[selected]`, `[kind="drop"]` while a drop
+        // lands on it; its `color` is the name's.
+        let row_style = BROWSER_ROW_ELEMENT.response(&response).attr(Selected, selected);
+        let row_style = if drop_here || tag_here { row_style.attribute("kind", "drop") } else { row_style }.enter();
+        paint_faded_row(&painter, &row_style, shown, widgets::hover(ui, &response));
         let mut x = rect.left() + 4.0 + row.depth as f32 * INDENT;
         let lead = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(10.0, ROW));
         let previewable = matches!(row.item.kind, ItemKind::Sample | ItemKind::Midi);
         if row.opens {
-            widgets::chevron(&painter, lead.center(), row.open, theme::browser_text_hint());
+            widgets::chevron(&painter, lead.center(), row.open, tier.hint);
         } else if previewable && (selected || response.hovered()) {
             let button = widgets::button_area(
                 ui,
@@ -1133,7 +1143,7 @@ fn results_view(
             let playing = state.preview_active_for(&row.item.key);
             // `browser-play`, `[checked]` while it plays, `color` its glyph.
             let play_style = BROWSER_PLAY.id("browser-play").response(&button).attr(Checked, playing).enter();
-            let ink = if button.hovered() { theme::browser_text_primary() } else { theme::browser_text_secondary() };
+            let ink = if button.hovered() { tier.primary } else { tier.secondary };
             play_glyph(&painter, lead.center(), playing, play_style.color_or(ink), 7.0);
             if button.clicked() {
                 play = Some(index);
@@ -1141,21 +1151,14 @@ fn results_view(
         }
         x = lead.right() + 2.0;
         let icon_rect = Rect::from_min_size(Pos2::new(x, rect.top() + 2.5), Vec2::splat(12.0));
-        icon(&painter, icon_rect, row.item.kind, icon_color(row.item.kind));
+        icon(&painter, icon_rect, row.item.kind, icon_color(row.item.kind, tier.secondary));
         x = icon_rect.right() + 5.0;
         // The plug-ins' list's columns, those there is room for.
         if let Some(columns) = &row.columns {
             let small = theme::ui_font(theme::TEXT_TINY);
             if let Some((left, right)) = column_span(area, 1) {
                 let span = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(right, rect.bottom()));
-                widgets::text_in(
-                    &painter,
-                    span,
-                    Align2::RIGHT_CENTER,
-                    columns.format,
-                    small,
-                    theme::browser_text_hint(),
-                );
+                widgets::text_in(&painter, span, Align2::RIGHT_CENTER, columns.format, small, tier.hint);
             }
         }
         // On the right: a sample's length, a device's kind, where a search found it. The
@@ -1184,8 +1187,7 @@ fn results_view(
         let name_space = (name_right - meta_width - x).max(0.0);
         let item_tags = projects.file_library_mut().item_tags(&row.item.key);
         let dots = item_tags.len() as f32 * DOT_HIT;
-        let color =
-            row_style.color_or(if selected { theme::browser_text_primary() } else { theme::browser_text_value() });
+        let color = row_style.color_or(if selected { tier.primary } else { tier.value });
         let galley = widgets::fitted(&painter, &row.item.name, font.clone(), color, (name_space - dots).max(0.0));
         let name_pos = Pos2::new(x, rect.center().y - galley.size().y / 2.0);
         let name_end = name_pos.x + galley.size().x;
@@ -1219,14 +1221,7 @@ fn results_view(
         if !meta.is_empty() {
             let meta_rect =
                 Rect::from_min_max(Pos2::new(rect.right() - meta_width, rect.top()), rect.max - Vec2::new(PAD, 0.0));
-            widgets::text_in(
-                &painter,
-                meta_rect,
-                Align2::RIGHT_CENTER,
-                &meta,
-                mono.clone(),
-                theme::browser_text_hint(),
-            );
+            widgets::text_in(&painter, meta_rect, Align2::RIGHT_CENTER, &meta, mono.clone(), tier.hint);
         }
         if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
             pressed = Some((index, ui.input(|i| i.modifiers)));
@@ -1596,6 +1591,7 @@ fn tags_section(
     projects: &mut Projects,
     out: &mut BrowserOut,
 ) {
+    let tier = inks();
     // The tag menus' state keys on the library's epoch too: a replaced library's tag of the
     // same id opens none of the old one's menus or drafts ([#1254] review).
     let epoch = state.tag_epoch;
@@ -1762,29 +1758,22 @@ fn tags_section(
         // What a drop of dragged items lands on lights as it would under the pointer
         // ([#1254] review: which tag a drop goes to shows the same highlight).
         let items_here = !is_folder && state.drag.is_some() && state.drop_tag.as_deref() == Some(name.as_str());
-        let fill = if move_here || items_here {
-            theme::control_hover()
-        } else if chosen {
-            theme::control_active()
-        } else {
-            motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response))
-        };
-        let style = place_style(&response, chosen);
+        let style = place_style(&response, chosen, move_here || items_here);
         if rect.intersects(area) {
-            paint_row(painter, &style, rect.intersect(area), fill);
+            paint_faded_row(painter, &style, rect.intersect(area), widgets::hover(ui, &response));
             // The section's rows sit a step in from its title: a top-level folder's chevron
             // under the title's name, not under the title's own chevron ([#1254] review: Tags
             // and its first folder read as one level). Each level a step further.
             let lead = Pos2::new(tag_row_lead(area.left(), row.depth), rect.center().y);
             if is_folder {
-                widgets::chevron(painter, Pos2::new(lead.x + 5.0, lead.y), open, theme::browser_text_hint());
+                widgets::chevron(painter, Pos2::new(lead.x + 5.0, lead.y), open, tier.hint);
             }
             let dim = !is_folder && count == 0;
             let center = Pos2::new(lead.x + (if is_folder { 16.0 } else { 7.0 }), rect.center().y);
             if !is_folder {
                 let mut color = match &row.entry {
                     suhina_library::TagEntry::Tag(tag) => tag_color(&tag.color),
-                    _ => theme::text_hint(),
+                    _ => tier.hint,
                 };
                 if dim {
                     color = color.gamma_multiply(0.5);
@@ -1794,7 +1783,7 @@ fn tags_section(
             // A picked row's ring, a tag's dot's and a folder's own beside its chevron:
             // where a group move's membership reads ([#1254] review).
             if chosen || picked {
-                painter.circle_stroke(center, DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
+                painter.circle_stroke(center, DOT / 2.0 + 1.5, Stroke::new(1.0, tier.primary));
             }
             let text = Rect::from_min_max(
                 Pos2::new(
@@ -1809,11 +1798,11 @@ fn tags_section(
                 Pos2::new(rect.right() - PAD, rect.bottom()),
             );
             let tinted = if dim {
-                theme::browser_text_hint()
+                tier.hint
             } else if chosen || response.hovered() {
-                theme::browser_text_primary()
+                tier.primary
             } else {
-                theme::browser_text_secondary()
+                tier.secondary
             };
             widgets::text_in(painter, text, Align2::LEFT_CENTER, &name, item_font.clone(), style.color_or(tinted));
             if response.hovered() {
@@ -1833,7 +1822,7 @@ fn tags_section(
                     Align2::RIGHT_CENTER,
                     &count.to_string(),
                     theme::mono_font(theme::TEXT_TINY),
-                    if dim { theme::browser_text_hint().gamma_multiply(0.5) } else { theme::browser_text_hint() },
+                    if dim { tier.hint.gamma_multiply(0.5) } else { tier.hint },
                 );
             }
         }
@@ -1846,8 +1835,7 @@ fn tags_section(
                 Id::unique(("browser-tag-clear", epoch, id)),
                 "Show everything",
             );
-            let color =
-                motion::mix(theme::browser_text_hint(), theme::browser_text_primary(), widgets::hover(ui, &cleared));
+            let color = motion::mix(tier.hint, tier.primary, widgets::hover(ui, &cleared));
             widgets::text_in(painter, clear, Align2::CENTER_CENTER, "×", item_font.clone(), color);
             if cleared.clicked() {
                 state.place = None;
@@ -2349,6 +2337,7 @@ fn section_title(
     projects: &mut Projects,
     out: &mut BrowserOut,
 ) {
+    let tier = inks();
     // The title's menu keys on the library's epoch as the rows' menus do: a replaced library
     // gets none of the old one's open menu, typed name or picked colour ([#1254] review).
     let epoch = state.tag_epoch;
@@ -2364,12 +2353,7 @@ fn section_title(
         state.drag_section = Some(kind);
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{} section", kind.title())));
-    widgets::chevron(
-        painter,
-        Pos2::new(title_chevron_x(area.left()), rect.center().y),
-        open,
-        theme::browser_text_hint(),
-    );
+    widgets::chevron(painter, Pos2::new(title_chevron_x(area.left()), rect.center().y), open, tier.hint);
     let text_rect =
         Rect::from_min_max(Pos2::new(area.left() + PAD + 14.0, rect.top()), Pos2::new(rect.right(), rect.bottom()));
     let carried = state.drag_section == Some(kind);
@@ -2379,7 +2363,7 @@ fn section_title(
         Align2::LEFT_CENTER,
         kind.title(),
         title_font,
-        if carried { theme::browser_text_hint().gamma_multiply(0.5) } else { theme::browser_text_hint() },
+        if carried { tier.hint.gamma_multiply(0.5) } else { tier.hint },
     );
     *y += 15.0;
     if response.clicked()
@@ -2690,11 +2674,20 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &tag.name));
     let painter = ui.painter();
     let hover = widgets::hover(ui, &response);
+    // The row is a `browser-row[kind="menu"]` under the pointer; its box a `button`
+    // `[kind="tag-check"]`, `[checked]` while ticked.
+    let (rest, hot) = crate::kit::element::BROWSER_ROW.attribute("kind", "menu").hover_ends(hover);
     if hover > 0.0 {
-        painter.rect_filled(rect, 3.0, theme::panel_hover().gamma_multiply(hover));
+        painter.rect_filled(
+            rect,
+            3.0,
+            hot.themed(crate::kit::element::Paint::Background)
+                .unwrap_or_else(|| hot.background().gamma_multiply(hover)),
+        );
     }
+    let check = BUTTON.attribute("kind", "tag-check").response(&response).attr(Checked, on).look();
     let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 6.0, rect.center().y - BOX / 2.0), Vec2::splat(BOX));
-    painter.rect_filled(box_rect, 3.0, if on { theme::text_value() } else { theme::control_background() });
+    painter.rect_filled(box_rect, 3.0, check.background());
     if on {
         let r = box_rect.shrink(2.5);
         let tick = [
@@ -2702,15 +2695,13 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
             Pos2::new(r.left() + r.width() * 0.4, r.bottom()),
             Pos2::new(r.right(), r.top()),
         ];
-        painter.add(egui::Shape::line(
-            tick.to_vec(),
-            Stroke::new(1.5, crate::kit::style_class::surface_or(theme::window_background())),
-        ));
+        painter.add(egui::Shape::line(tick.to_vec(), Stroke::new(1.5, check.color())));
     }
     let swatch = Pos2::new(box_rect.right() + 6.0 + SWATCH / 2.0, rect.center().y);
     painter.circle_filled(swatch, SWATCH / 2.0, tag_color(&tag.color));
     let text_rect = Rect::from_min_max(Pos2::new(rect.left() + text_left, rect.top()), rect.right_bottom());
-    let color = motion::mix(theme::text_value(), theme::text_primary(), hover);
+    let color =
+        hot.themed(crate::kit::element::Paint::Color).unwrap_or_else(|| motion::mix(rest.color(), hot.color(), hover));
     widgets::text_in(painter, text_rect, Align2::LEFT_CENTER, &tag.name, font, color);
     response
 }
@@ -2756,7 +2747,7 @@ fn plugins_view_switch(
     out: &mut BrowserOut,
 ) {
     let painter = ui.painter_at(area);
-    painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(theme::border()));
+    painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(rule()));
     let small = theme::ui_font(theme::TEXT_SMALL);
     let mut x = area.left() + PAD;
     for view in suhina_library::store::PluginsView::ALL {
@@ -2772,18 +2763,9 @@ fn plugins_view_switch(
         if response.clicked() && chosen != view {
             run(projects, "library.setPluginsView", json!({ "view": view.name() }), out);
         }
-        let style = BUTTON.response(&response).attr(Checked, chosen == view).enter();
-        let idle = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        widgets::button_surface(
-            &painter,
-            rect,
-            &style,
-            &response,
-            chosen == view,
-            if chosen == view { theme::control_selected() } else { idle },
-            0.0,
-        );
-        let text = style.color_or(if chosen == view { theme::text_inverse() } else { theme::browser_text_secondary() });
+        let lit = widgets::lit_toggle_kind(ui, &response, BUTTON.builder(), &[Checked], chosen == view, "chip");
+        let (fill, text) = lit.colors();
+        widgets::toggle_surface(&painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, theme::ui_font(theme::TEXT_SMALL), text);
         x = rect.right() + FILTER_GAP;
     }
@@ -2823,8 +2805,9 @@ fn column_span(area: Rect, index: usize) -> Option<(f32, f32)> {
 
 /// The list's column headings; clicking one sorts by it, again for the other direction.
 fn columns_header(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
+    let tier = inks();
     let painter = ui.painter_at(area);
-    painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(theme::border()));
+    painter.hline(area.x_range(), area.bottom() - 0.5, theme::hairline(rule()));
     let small = theme::ui_font(theme::TEXT_SMALL);
     let (sorted, descending) = state.plugin_sort;
     for (index, name) in COLUMN_NAMES.into_iter().enumerate() {
@@ -2837,9 +2820,15 @@ fn columns_header(ui: &mut Ui, area: Rect, state: &mut BrowserState) {
         let chosen = sorted == index as u8;
         let label =
             if chosen { format!("{name} {}", if descending { "▼" } else { "▲" }) } else { name.to_string() };
-        let color = if chosen { theme::browser_text_primary() } else { theme::browser_text_hint() };
-        let hover = motion::mix(egui::Color32::TRANSPARENT, theme::panel_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(rect, 0.0, hover);
+        let color = if chosen { tier.primary } else { tier.hint };
+        // A heading's cell is a `browser-row[kind="header"]`, tinted under the pointer.
+        let cell = crate::kit::element::BROWSER_ROW.attribute("kind", "header").response(&response).enter();
+        painter.rect_filled(
+            rect,
+            0.0,
+            cell.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
+        );
+        drop(cell);
         let align = if index == 0 { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER };
         widgets::text_in(&painter, rect, align, &label, small.clone(), color);
     }
@@ -2908,14 +2897,15 @@ fn preview_strip(
     track: Option<TrackId>,
     out: &mut BrowserOut,
 ) {
+    let tier = inks();
     let painter = ui.painter_at(area);
     // Without an authored surface the strip is the window's colour under the browser's panel; with
     // one, the surface `show` painted already is its background, and painting it again would
     // stack its alpha.
     if !crate::kit::style_class::has_surface() {
-        painter.rect_filled(area, 0.0, theme::window_background());
+        painter.rect_filled(area, 0.0, crate::browser::browser_fill("window"));
     }
-    painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
+    painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(rule()));
     // The Auto switch at the top right: a selected sample plays by itself while it is lit
     // (Settings › Browser › the same setting).
     let auto = Rect::from_min_size(Pos2::new(area.right() - PAD - 40.0, area.top() + 4.0), Vec2::new(40.0, 16.0));
@@ -2923,12 +2913,15 @@ fn preview_strip(
         .interact(auto, Id::unique("browser-preview-auto"), Sense::click())
         .on_hover_text("Auto preview: a sample plays when it is selected");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Auto preview"));
-    let auto_style = BUTTON.response(&response).attr(Checked, settings.preview_autoplay).enter();
     if response.clicked() {
         out.toggle_autoplay = true;
     }
-    let (fill, text) = widgets::toggle_colors(ui, &response, settings.preview_autoplay);
-    widgets::button_surface(&painter, auto, &auto_style, &response, settings.preview_autoplay, fill, 3.0);
+    // Lit by the `[checked]` rules; a theme's rule for every `button` overrides them (#1448), so such a
+    // theme states the lit look itself.
+    let lit = widgets::lit_toggle(ui, &response, BUTTON.builder(), &[Checked], settings.preview_autoplay);
+    let (fill, text) = lit.colors();
+    let auto_style = lit.el;
+    widgets::toggle_surface(&painter, auto, &auto_style, &response, fill, lit.toggle.image(lit.lit), 3.0);
     widgets::text_in(
         &painter,
         auto,
@@ -2950,10 +2943,12 @@ fn preview_strip(
                 let stop = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::splat(PLAY));
                 let response = widgets::button_area(ui, stop, Id::unique("browser-preview-play"), "Stop preview");
                 {
-                    let el = BUTTON.response(&response).attr(Checked, true).enter();
-                    widgets::button_surface(&painter, stop, &el, &response, true, theme::control_background(), 0.0);
+                    let el = BUTTON.attribute("kind", "preview").response(&response).attr(Checked, true).enter();
+                    let fill = el.hover_fade(0.0, crate::kit::element::Look::background);
+                    widgets::button_surface(&painter, stop, &el, &response, true, fill, 0.0);
                 }
-                play_glyph(&painter, stop.center(), true, theme::accent(), 7.0);
+                let ink = BROWSER_PLAY.id("browser-play").response(&response).attr(Checked, true).look();
+                play_glyph(&painter, stop.center(), true, ink.color(), 7.0);
                 if response.clicked() {
                     stop_preview(state, projects);
                 }
@@ -2965,7 +2960,7 @@ fn preview_strip(
                 Align2::LEFT_CENTER,
                 "Select a sample or MIDI file to preview",
                 theme::ui_font(theme::TEXT_SMALL),
-                theme::browser_text_hint(),
+                tier.hint,
             );
             return;
         }
@@ -2984,17 +2979,11 @@ fn preview_strip(
     let top = Rect::from_min_size(area.min + Vec2::new(PAD, 4.0), Vec2::new(area.width() - PAD * 2.0, PLAY));
     let play = Rect::from_min_size(top.min, Vec2::splat(PLAY));
     let response = widgets::button_area(ui, play, Id::unique("browser-preview-play"), "Preview");
-    let play_style = BUTTON.response(&response).attr(Checked, playing_this).enter();
-    widgets::button_surface(
-        &painter,
-        play,
-        &play_style,
-        &response,
-        playing_this,
-        motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response)),
-        0.0,
-    );
-    let ink = play_style.color_or(if playing_this { theme::accent() } else { theme::browser_text_primary() });
+    // `button[kind="preview"]`, `[checked]` while it plays.
+    let play_style = BUTTON.attribute("kind", "preview").response(&response).attr(Checked, playing_this).enter();
+    let fill = play_style.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
+    widgets::button_surface(&painter, play, &play_style, &response, playing_this, fill, 0.0);
+    let ink = play_style.color();
     if !crate::kit::skin::paint(
         &painter,
         play,
@@ -3028,7 +3017,7 @@ fn preview_strip(
     let facts = facts.join("  ");
     let facts_width = widgets::text_width(ui, &facts, mono.clone());
     let text_rect = Rect::from_min_max(Pos2::new(play.right() + PAD, top.top()), top.max);
-    widgets::text_in(&painter, text_rect, Align2::RIGHT_CENTER, &facts, mono, theme::browser_text_secondary());
+    widgets::text_in(&painter, text_rect, Align2::RIGHT_CENTER, &facts, mono, tier.secondary);
     let name_rect =
         Rect::from_min_max(text_rect.min, Pos2::new(text_rect.right() - facts_width - PAD, text_rect.bottom()));
     widgets::text_in(
@@ -3037,7 +3026,7 @@ fn preview_strip(
         Align2::LEFT_CENTER,
         &item.name,
         theme::ui_font(theme::TEXT_SMALL),
-        theme::browser_text_primary(),
+        tier.primary,
     );
 
     // The waveform, or the notes, with the part played brighter and the playhead.
@@ -3056,7 +3045,7 @@ fn preview_strip(
             Align2::LEFT_CENTER,
             &format!("Cannot preview: {error}"),
             theme::ui_font(theme::TEXT_SMALL),
-            theme::recording(),
+            crate::detail::detail_view::error_ink(),
         );
         return;
     }
@@ -3074,8 +3063,8 @@ fn preview_strip(
         // `browser-preview-wave { color }` for the part played, `border-color` for the rest.
         let wave = crate::kit::element::BROWSER_PREVIEW_WAVE.enter();
         let style = wave.style();
-        let played = wave.color_or(theme::browser_text_secondary());
-        let ahead = style.as_ref().filter(|s| s.authored.border).map_or(theme::browser_text_hint(), |s| s.border);
+        let played = wave.color_or(tier.secondary);
+        let ahead = style.as_ref().filter(|s| s.authored.border).map_or(tier.hint, |s| s.border);
         crate::kit::waveform::paint(&clipped(done), &shape, crate::kit::waveform::Colors::from(played));
         crate::kit::waveform::paint(&clipped(rest), &shape, crate::kit::waveform::Colors::from(ahead));
     } else if let Some(notes) = &info.notes {
@@ -3086,21 +3075,15 @@ fn preview_strip(
             let x0 = wave.left() + (*start / beats) as f32 * wave.width();
             let x1 = wave.left() + ((start + length) / beats) as f32 * wave.width();
             let y = wave.bottom() - f32::from(key - low) / span * (wave.height() - 2.0) - 2.0;
-            let color = if x0 <= played_x { theme::browser_text_secondary() } else { theme::browser_text_hint() };
+            let color = if x0 <= played_x { tier.secondary } else { tier.hint };
             painter.rect_filled(Rect::from_min_max(Pos2::new(x0, y), Pos2::new(x1.max(x0 + 1.0), y + 2.0)), 0.0, color);
         }
     } else {
-        widgets::text_in(
-            &painter,
-            wave,
-            Align2::LEFT_CENTER,
-            "Reading…",
-            theme::ui_font(theme::TEXT_SMALL),
-            theme::browser_text_hint(),
-        );
+        widgets::text_in(&painter, wave, Align2::LEFT_CENTER, "Reading…", theme::ui_font(theme::TEXT_SMALL), tier.hint);
     }
     if playing_this {
-        painter.vline(played_x, wave.y_range(), Stroke::new(1.0, theme::accent()));
+        let at = crate::kit::element::PLAYHEAD.attribute("kind", "preview").look().color();
+        painter.vline(played_x, wave.y_range(), Stroke::new(1.0, at));
     }
     // A click on the waveform previews from there.
     let response =
@@ -3115,12 +3098,13 @@ fn preview_strip(
 }
 
 fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut Projects, out: &mut BrowserOut) {
+    let tier = inks();
     // The tag menus' state keys on the library's epoch too: a replaced library's tag of the
     // same id opens none of the old one's menus or drafts ([#1254] review).
     let epoch = state.tag_epoch;
     // On the browser's own background, which `show` painted.
     let painter = ui.painter_at(area);
-    painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(theme::border()));
+    painter.hline(area.x_range(), area.top() + 0.5, theme::hairline(rule()));
     let mut x = area.left() + PAD;
     let tags = projects.file_library_mut().tag_flat();
     // The dots' ids ride the tag's id, so a live rename keeps the menu and its field
@@ -3333,7 +3317,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
 
         painter.circle_filled(rect.center(), DOT / 2.0, tag_color(&tag.color));
         if on {
-            painter.circle_stroke(rect.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
+            painter.circle_stroke(rect.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, tier.primary));
         }
     }
     let count = match state.selected.len() {
@@ -3346,7 +3330,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
         Align2::RIGHT_CENTER,
         &count,
         theme::mono_font(theme::TEXT_TINY),
-        theme::browser_text_hint(),
+        tier.hint,
     );
 }
 
@@ -3368,6 +3352,7 @@ fn footer_overflow(
     tags: &[suhina_library::Tag],
     state: &mut BrowserState,
 ) {
+    let tier = inks();
     // The tag menus' state keys on the library's epoch too: a replaced library's tag of the
     // same id opens none of the old one's menus or drafts ([#1254] review).
     let epoch = state.tag_epoch;
@@ -3391,16 +3376,12 @@ fn footer_overflow(
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "More tags".to_string()));
     let fill = widgets::hover(ui, &response);
-    painter.rect_filled(clipped, 0.0, theme::panel_hover().gamma_multiply(fill));
-    painter.text(
-        clipped.center(),
-        Align2::CENTER_CENTER,
-        "…",
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::browser_text_secondary(),
-    );
+    // `button[kind="more"]`: its `background-color` under the pointer, fading in with it.
+    let hot = BUTTON.attribute("kind", "more").hover_ends(fill).1;
+    painter.rect_filled(clipped, 0.0, hot.background().gamma_multiply(fill));
+    painter.text(clipped.center(), Align2::CENTER_CENTER, "…", theme::ui_font(theme::TEXT_SMALL), tier.secondary);
     if tags.iter().any(|t| state.tag_filter.contains(&t.id)) {
-        painter.circle_stroke(clipped.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, theme::browser_text_primary()));
+        painter.circle_stroke(clipped.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, tier.primary));
     }
     egui::Popup::menu(&response)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -3423,7 +3404,7 @@ fn footer_overflow(
                         let at = row.rect.left_center() + Vec2::new(8.0, 0.0);
                         ui.painter().circle_filled(at, 3.0, color);
                         if on {
-                            ui.painter().circle_stroke(at, 4.5, Stroke::new(1.0, theme::browser_text_primary()));
+                            ui.painter().circle_stroke(at, 4.5, Stroke::new(1.0, tier.primary));
                         }
                     }
                     if row.clicked() {
@@ -3460,17 +3441,20 @@ pub fn resize_handle(
             size: width,
             grows_forward: left,
             bounds,
+            closed: false,
         },
     );
     if divider.response.double_clicked() {
         return (Some(default), true);
     }
-    // `#browser-splitter` takes the element's `background-color`; without one, the border colour,
-    // stronger under the pointer.
-    let response = &divider.response;
-    let native = if response.hovered() || response.dragged() { theme::border_strong() } else { theme::border() };
-    ui.painter().rect_filled(handle, 0.0, divider.style.background_or(native));
-    (divider.size, response.drag_stopped())
+    // `#browser-splitter` takes the element's `background-color`; without one, that of
+    // `browser-fill[kind="splitter"]`: the border colour, stronger under the pointer.
+    let fill =
+        divider.style.look().themed(crate::kit::element::Paint::Background).unwrap_or_else(|| {
+            BROWSER_FILL.attribute("kind", "splitter").response(&divider.response).look().background()
+        });
+    ui.painter().rect_filled(handle, 0.0, fill);
+    (divider.size, divider.response.drag_stopped())
 }
 
 /// The active project's session.
@@ -3480,8 +3464,17 @@ fn active(projects: &Projects) -> Option<&suhina_session::Session> {
 
 /// A place or kind in the browser's left column, `browser-place`: `:hover`, `:active`, and
 /// `[checked]` and `[selected]` while it is the one shown.
-fn place_style(response: &egui::Response, chosen: bool) -> Entered {
-    BROWSER_PLACE.response(response).attr(Checked, chosen).attr(Selected, chosen).enter()
+/// `[kind="drop"]` while a drop lands on it.
+fn place_style(response: &egui::Response, chosen: bool, drop: bool) -> Entered {
+    let place = BROWSER_PLACE.response(response).attr(Checked, chosen).attr(Selected, chosen);
+    if drop { place.attribute("kind", "drop") } else { place }.enter()
+}
+
+/// A row's background: `el`'s `background-color`, `hover` (0 to 1) of the way from the one it has
+/// at rest to the one it has under the pointer, and its gradients and shadows.
+fn paint_faded_row(painter: &egui::Painter, el: &Entered, rect: Rect, hover: f32) {
+    painter.rect_filled(rect, 0.0, el.hover_fade(hover, crate::kit::element::Look::background));
+    el.paint_background(painter, rect, 0.0);
 }
 
 /// A row's background: the sheet's `background-color` for `el`, the row's element, else `fill`,

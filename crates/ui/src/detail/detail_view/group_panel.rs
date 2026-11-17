@@ -67,9 +67,12 @@ pub(super) fn value_row(
 ) -> Dragged {
     let response = ui.interact(rect, id, Sense::click_and_drag()).on_hover_text("Drag sideways; double-click resets");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, format!("{label} {text}")));
-    let fill = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-    painter.rect_filled(rect, 0.0, fill);
-    let inner = rect.shrink2(Vec2::new(PAD / 2.0, 0.0));
+    // A `value[kind="field"]` to the theme: its background, border and `color`; its name
+    // `label[kind="hint"]`.
+    let el = crate::kit::element::VALUE.attribute("kind", "field").response(&response).enter();
+    let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
+    let inner = el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill }).content;
+    let inner = inner.shrink2(Vec2::new(PAD / 2.0, 0.0));
     if !label.is_empty() {
         widgets::text_in(
             painter,
@@ -77,11 +80,13 @@ pub(super) fn value_row(
             Align2::LEFT_CENTER,
             label,
             theme::ui_font(theme::TEXT_SMALL),
-            theme::text_hint(),
+            super::hint_ink(),
         );
     }
     let align = if label.is_empty() { Align2::CENTER_CENTER } else { Align2::RIGHT_CENTER };
-    widgets::text_in(painter, inner, align, text, theme::ui_font(theme::TEXT_SMALL), theme::text_value());
+    let ink = el.color();
+    widgets::text_in(painter, inner, align, text, theme::ui_font(theme::TEXT_SMALL), ink);
+    drop(el);
     Dragged {
         delta: f64::from(response.drag_delta().x) * per_point,
         dragging: response.dragged() && !response.drag_stopped(),
@@ -173,9 +178,25 @@ pub(super) fn group_panel(
     panel.context_menu(|ui| {
         menus::device_menu(ui, track, &device.at, Some(group.branches.len()), device.is_builtin, &device.name, actions)
     });
-    painter.rect_filled(rect, 0.0, crate::kit::style_class::surface_or(theme::panel_background()));
+    // A `device` to the theme, `[kind="group"]`, as a device's panel is; `device-header` its header.
+    let device_el = crate::kit::element::DEVICE
+        .attribute("kind", "group")
+        .attr(crate::kit::element::Selected, selected)
+        .attr(crate::kit::element::Muted, !device.enabled)
+        .enter();
+    let fill = crate::detail::detail_fill("panel");
+    device_el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    painter.rect_filled(header, 0.0, theme::control_background());
+    let (bright, dim, off_name) = {
+        let header_el = crate::kit::element::DEVICE_HEADER.enter();
+        header_el.paint_with(
+            painter,
+            header,
+            crate::kit::element::Native { radius: 0.0, fill: header_el.background() },
+        );
+        let dim = super::hint_ink();
+        (header_el.color(), dim, header_el.own_color_or(dim))
+    };
     let switch = Rect::from_min_size(
         Pos2::new(header.left() + PAD, header.center().y - ON_SWITCH / 2.0),
         Vec2::splat(ON_SWITCH),
@@ -188,11 +209,7 @@ pub(super) fn group_panel(
             json!({ "track": track.0, "device": at, "enabled": !device.enabled }),
         ));
     }
-    if device.enabled {
-        painter.rect_filled(switch, 0.0, theme::text_primary());
-    } else {
-        painter.rect_stroke(switch, 0.0, theme::hairline(theme::text_hint()), egui::StrokeKind::Inside);
-    }
+    super::device_switch(painter, switch, &bypass, device.enabled, (bright, dim));
     let close = Rect::from_center_size(Pos2::new(header.right() - PAD - 6.0, header.center().y), Vec2::splat(12.0));
     let remove = widgets::button_area(
         ui,
@@ -203,7 +220,7 @@ pub(super) fn group_panel(
     if remove.clicked() {
         actions.push(Action::new("device.remove", json!({ "track": track.0, "device": at })));
     }
-    let cross = if remove.hovered() { theme::text_primary() } else { theme::text_hint() };
+    let cross = if remove.hovered() { bright } else { dim };
     for (from, to) in [(Vec2::new(-3.5, -3.5), Vec2::new(3.5, 3.5)), (Vec2::new(-3.5, 3.5), Vec2::new(3.5, -3.5))] {
         painter.line_segment([close.center() + from, close.center() + to], egui::Stroke::new(1.2, cross));
     }
@@ -216,7 +233,7 @@ pub(super) fn group_panel(
         Pos2::new(gain_row.left() - 2.0 - MIX_BOX, gain_row.top()),
         Pos2::new(gain_row.left() - 2.0, gain_row.bottom()),
     );
-    let name_color = if device.enabled { theme::text_primary() } else { theme::text_hint() };
+    let name_color = if device.enabled { bright } else { off_name };
     let name = Rect::from_min_max(
         Pos2::new(switch.right() + PAD, header.top()),
         Pos2::new((mix_row.left() - PAD).max(switch.right() + PAD), header.bottom()),
@@ -292,17 +309,30 @@ pub(super) fn group_panel(
             ui.data_mut(|d| d.insert_temp(Id::unique(("group-branch", track.0, &device.at)), index));
         }
         let lit = index == shown;
+        // A branch's row is a `device-row`, as a device in a mixer strip's list: `[selected]` while
+        // its devices show, `[muted]` while it is muted. Only a rule for the selected row lights it.
+        let row_el = crate::kit::element::DEVICE_ROW
+            .attribute("kind", "branch")
+            .response(&pick)
+            .attr(crate::kit::element::Muted, branch.mute)
+            .attr(crate::kit::element::Selected, lit)
+            .enter();
+        // A row not shown fades from the surface it is on to its `:hover` fill, unless a theme's
+        // rule gives it a fill of its own.
         let fill = if lit {
-            theme::control_active()
+            row_el.background()
         } else {
-            motion::mix(
-                crate::kit::style_class::surface_or(theme::window_background()),
-                theme::control_hover(),
-                widgets::hover(ui, &pick),
-            )
+            row_el.look().themed(crate::kit::element::Paint::Background).unwrap_or_else(|| {
+                motion::mix(
+                    crate::detail::detail_fill("window"),
+                    row_el.look_hovered(true).background(),
+                    widgets::hover(ui, &pick),
+                )
+            })
         };
         painter.rect_filled(name, 0.0, fill);
-        let color = if branch.mute { theme::text_hint() } else { theme::text_secondary() };
+        let color = if branch.mute { row_el.own_color_or(dim) } else { row_el.color() };
+        drop(row_el);
         widgets::text_in(
             painter,
             name.shrink2(Vec2::new(4.0, 0.0)),
@@ -347,7 +377,16 @@ pub(super) fn group_panel(
             Id::unique(("branch-mute", track.0, &device.at, index)),
             if branch.mute { format!("Unmute branch {}", branch.name) } else { format!("Mute branch {}", branch.name) },
         );
-        let (fill, text) = widgets::toggle_colors(ui, &response, branch.mute);
+        // `button[kind="toggle"]`, `[checked]` while muted: only a rule for the lit state lights it.
+        let lit = widgets::lit_toggle(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.builder(),
+            &[crate::kit::element::Checked],
+            branch.mute,
+        );
+        let (fill, text) = lit.colors();
+        drop(lit);
         painter.rect_filled(mute, 0.0, fill);
         widgets::text_in(painter, mute, Align2::CENTER_CENTER, "M", theme::ui_font(theme::TEXT_SMALL), text);
         if response.clicked() {
@@ -366,10 +405,19 @@ pub(super) fn group_panel(
                 format!("Solo branch {}", branch.name)
             },
         );
-        let lit = motion::toward(ui.ctx(), response.id.with("on"), branch.solo, motion::VALUE);
-        let off = motion::mix(theme::control_background(), theme::control_hover(), widgets::hover(ui, &response));
-        painter.rect_filled(solo, 0.0, motion::mix(off, theme::accent(), lit));
-        let text = motion::mix(theme::text_secondary(), theme::text_inverse(), lit);
+        // `button#solo[kind="solo"]`, `[checked]` while soloed, as a track's solo; the lit side is
+        // looked up while it fades out too.
+        let lit = widgets::lit_toggle_kind(
+            ui,
+            &response,
+            crate::kit::element::BUTTON.id("solo"),
+            &[crate::kit::element::Checked],
+            branch.solo,
+            "solo",
+        );
+        let (fill, text) = lit.colors();
+        drop(lit);
+        painter.rect_filled(solo, 0.0, fill);
         widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
         if response.clicked() {
             actions.push(Action::new(
@@ -385,25 +433,23 @@ pub(super) fn group_panel(
         Id::unique(("branch-add", track.0, &device.at)),
         format!("Add a branch to {}", device.name),
     );
+    // `add-track[kind="branch"]`: as the buttons that add a track, quiet until hovered.
+    let el = crate::kit::element::ADD_TRACK.attribute("kind", "branch").response(&response).enter();
     let fill = motion::mix(
-        crate::kit::style_class::surface_or(theme::window_background()),
-        theme::control_hover(),
+        crate::detail::detail_fill("window"),
+        el.look_hovered(true).background(),
         widgets::hover(ui, &response),
     );
-    painter.rect_filled(add, 0.0, fill);
-    widgets::text_in(
-        painter,
-        add,
-        Align2::CENTER_CENTER,
-        "+ Branch",
-        theme::ui_font(theme::TEXT_SMALL),
-        theme::text_hint(),
-    );
+    el.paint_with(painter, add, crate::kit::element::Native { radius: 0.0, fill });
+    let ink = el.color_or(super::hint_ink());
+    widgets::text_in(painter, add, Align2::CENTER_CENTER, "+ Branch", theme::ui_font(theme::TEXT_SMALL), ink);
+    drop(el);
     if response.clicked() {
         actions.push(Action::new("branch.add", json!({ "track": track.0, "device": at })));
     }
     if selected {
-        painter.rect_stroke(rect, 1.0, theme::hairline(theme::selection()), egui::StrokeKind::Inside);
+        let edge = device_el.accent();
+        painter.rect_stroke(rect, 1.0, theme::hairline(edge), egui::StrokeKind::Inside);
     }
     clicked
 }
@@ -415,11 +461,10 @@ pub(super) fn inside_group_mark(painter: &egui::Painter, rect: Rect, at: &Device
     if depth == 0 {
         return;
     }
+    // `separator[kind="group"]`: its `color`.
+    let ink = crate::kit::element::SEPARATOR.attribute("kind", "group").look().color();
     for level in 0..depth {
         let y = rect.top() + level as f32 * 3.0 + 1.0;
-        painter.line_segment(
-            [Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)],
-            egui::Stroke::new(2.0, theme::accent()),
-        );
+        painter.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], egui::Stroke::new(2.0, ink));
     }
 }

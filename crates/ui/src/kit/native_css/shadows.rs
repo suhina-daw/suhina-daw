@@ -64,6 +64,18 @@ impl Shadow {
         }
     }
 
+    /// The shadow as egui draws one under a menu: an outer shadow only, its numbers in egui's
+    /// whole points.
+    pub(super) fn as_egui(&self) -> Option<egui::epaint::Shadow> {
+        let whole = |value: f32, low: f32, high: f32| value.round().clamp(low, high);
+        (!self.inset).then(|| egui::epaint::Shadow {
+            offset: [whole(self.offset.x, -128.0, 127.0) as i8, whole(self.offset.y, -128.0, 127.0) as i8],
+            blur: whole(self.blur, 0.0, 255.0) as u8,
+            spread: whole(self.spread, 0.0, 255.0) as u8,
+            color: self.color,
+        })
+    }
+
     /// What the shadow of `caster` can cover (the caster included).
     pub(super) fn bounds(&self, caster: Rect) -> Rect {
         if self.inset {

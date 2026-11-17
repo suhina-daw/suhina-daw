@@ -167,14 +167,14 @@ fn native_toolbar_css_styles_modules_and_buttons_without_reflow_or_sibling_leaks
 
 #[test]
 fn dark_gloss_example_keeps_native_layout_and_transport_commands() {
-    assert!(crate::kit::native_css::inspect(theme::GLOSS_EXAMPLE).unwrap().is_empty());
+    assert!(crate::kit::native_css::inspect(include_str!("../../tests/fixtures/dark-gloss.css")).unwrap().is_empty());
     let mut harness = native_bar();
     let play = harness.get_by_label("Play").rect();
     let tempo = harness.get_by_label("Tempo").rect();
-    harness
-        .state_mut()
-        .app
-        .use_test_skin(skin::Skin { css: Some(std::sync::Arc::from(theme::GLOSS_EXAMPLE)), ..Default::default() });
+    harness.state_mut().app.use_test_skin(skin::Skin {
+        css: Some(std::sync::Arc::from(include_str!("../../tests/fixtures/dark-gloss.css"))),
+        ..Default::default()
+    });
     harness.run();
     assert_eq!(play, harness.get_by_label("Play").rect());
     assert_eq!(tempo, harness.get_by_label("Tempo").rect());
@@ -380,6 +380,25 @@ fn the_transport_stays_in_the_middle_and_a_narrow_toolbar_gives_way() {
     harness.run();
     assert!(harness.query_by_label("CPU load 1.0%").is_none(), "the CPU gives way");
     assert!(harness.get_by_label("Play").rect().left() > harness.get_by_label("Tempo").rect().right());
+    skin::configure(&skin::Skin::default());
+}
+
+/// The transport lays out play, stop and record in CSS (#1453): a gap moves stop and record, a
+/// hidden stop is neither drawn nor clicked and record closes up.
+#[test]
+fn the_transport_lays_its_buttons_out_from_the_sheet() {
+    let mut harness = native_bar();
+    let (play, stop) = (harness.get_by_label("Play").rect(), harness.get_by_label("Stop").rect());
+    assert_eq!(stop.left() - play.right(), 1.0, "a point apart");
+    let css = |css: &str| skin::Skin { css: Some(std::sync::Arc::from(css)), ..Default::default() };
+    harness.state_mut().app.use_test_skin(css("toolbar-module#transport { gap: 5px; }"));
+    harness.run();
+    let (play, stop) = (harness.get_by_label("Play").rect(), harness.get_by_label("Stop").rect());
+    assert_eq!(stop.left() - play.right(), 5.0);
+    harness.state_mut().app.use_test_skin(css("#transport > #control-stop { display: none; }"));
+    harness.run();
+    assert!(harness.query_by_label("Stop").is_none());
+    assert!(harness.query_by_label("Play").is_some());
     skin::configure(&skin::Skin::default());
 }
 

@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-13
+last_verified: 2026-11-16
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
@@ -105,6 +105,10 @@ loaded; a value `device.setParam` sets while it plays, at the start of the next 
 (the same parameter message as a built-in device's, ADR 0005); and, while the transport
 runs, each automation lane's value at the block's first frame, at each point inside it and
 every 64 frames while it moves (a VST3 plug-in ramps between them, a CLAP plug-in steps).
+Only a switch (one step) or a list of choices holds each point's value until the next
+point; any other parameter, one the plug-in lists with steps too (a cutoff knob in 1024
+steps), moves along the line and the plug-in plays the step it is on (#1482,
+[automation](automation.md)).
 The slot hands each span it runs its share through `PluginProcessor::automate`, and the
 session's processor merges them with the notes in frame order, a value before a note at
 the same frame; a block the host could not take carries the latest value of each

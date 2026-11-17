@@ -38,7 +38,11 @@ pub fn install(ctx: &Context, provider: Arc<dyn Provider>) {
 /// private background image, nothing shows the desktop, so nothing is cleared.
 pub fn available(ctx: &Context) -> bool {
     ctx.data(|data| data.get_temp::<Host>(Id::unique(HOST))).is_some()
-        && super::theme::window_background().a() < u8::MAX
+        && super::element::WINDOW
+            .probe()
+            .style()
+            .and_then(|style| style.colour_variable("--window-background"))
+            .is_some_and(|colour| colour.a() < u8::MAX)
         && super::liquid::background_image(ctx).is_none()
 }
 
@@ -69,9 +73,8 @@ mod tests {
     /// A context with the provider and a theme that asks for a see-through window.
     fn see_through() -> Context {
         let ctx = Context::default();
-        let mut palette = super::super::theme::Palette::DARK;
-        palette.window_background = Color32::from_rgba_unmultiplied(20, 20, 20, 200);
-        super::super::theme::set_palette(&ctx, palette);
+        let window = Color32::from_rgba_unmultiplied(20, 20, 20, 200);
+        super::super::theme::use_colors(&ctx, &[("window-background".to_owned(), window)].into());
         install(&ctx, Arc::new(Marking));
         ctx
     }
@@ -80,17 +83,33 @@ mod tests {
         Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(40.0, 20.0))
     }
 
+    /// Runs `body` in a few frames of the style engine, which the window's colours are read from.
+    fn in_frame<R>(ctx: &Context, mut body: impl FnMut() -> R) -> R {
+        super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from("")), ..Default::default() });
+        let mut result = None;
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _frame = super::super::native_css::frame_with_motion(ui, false);
+                result = Some(body());
+            })
+            .textures_delta
+            .clear();
+        }
+        super::super::skin::configure(&super::super::skin::Skin::default());
+        result.unwrap_or_else(body)
+    }
+
     #[test]
     fn a_see_through_window_clears_with_the_provider() {
         let ctx = see_through();
-        assert!(matches!(clear(&ctx, rect(), CornerRadius::ZERO), Some(Shape::Circle(_))));
+        assert!(in_frame(&ctx, || matches!(clear(&ctx, rect(), CornerRadius::ZERO), Some(Shape::Circle(_)))));
     }
 
     #[test]
     fn an_opaque_theme_or_no_provider_clears_nothing() {
         let ctx = see_through();
-        super::super::theme::set_palette(&ctx, super::super::theme::Palette::DARK);
-        assert!(clear(&ctx, rect(), CornerRadius::ZERO).is_none());
+        super::super::theme::use_colors(&ctx, &super::super::theme::Colors::new());
+        assert!(in_frame(&ctx, || clear(&ctx, rect(), CornerRadius::ZERO).is_none()));
         assert!(clear(&Context::default(), rect(), CornerRadius::ZERO).is_none());
     }
 
@@ -105,7 +124,7 @@ mod tests {
                     pixels: Arc::new(egui::ColorImage::filled([2, 2], Color32::RED)),
                 }),
             );
-            assert_eq!(clear(&ctx, rect(), CornerRadius::ZERO).is_none(), private_image);
+            assert_eq!(in_frame(&ctx, || clear(&ctx, rect(), CornerRadius::ZERO).is_none()), private_image);
         }
     }
 }
