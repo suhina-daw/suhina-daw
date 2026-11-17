@@ -120,19 +120,15 @@ fn a_hidden_rows_toggle_leaves_the_others_their_own_buttons() {
     assert!(exactly("#piano-scale { display: none; }", "Highlight scale").is_some());
 }
 
-/// Highlight turns on by itself, so it stands in a group of its own beside Fold and Scale's
-/// (#1487 L10): a rule for either group reaches only its own toggles.
+/// Fold, Scale and Highlight are buttons of the toolbar like the others, as tall as Select, with
+/// no group frame round them (#1487 L10).
 #[test]
-fn highlight_has_a_group_of_its_own_beside_fold_and_scale() {
-    let (scale, highlight) = (exactly("", "Scale").unwrap(), exactly("", "Highlight scale").unwrap());
-    // Each group's padding, and the room between the groups.
-    assert!(highlight.left() - scale.right() > 4.0, "{scale:?} {highlight:?}");
-    let alone = "group#piano-roll-highlight { display: none; }";
-    assert!(exactly(alone, "Highlight scale").is_none());
-    assert!(exactly(alone, "Fold").is_some() && exactly(alone, "Scale").is_some());
-    let rows = "group#piano-roll-rows { display: none; }";
-    assert!(exactly(rows, "Fold").is_none() && exactly(rows, "Scale").is_none());
-    assert!(exactly(rows, "Highlight scale").is_some());
+fn the_rows_toggles_are_buttons_like_the_others() {
+    let select = rect_of("", "Select (").unwrap();
+    for label in ["Fold", "Scale", "Highlight scale"] {
+        let toggle = exactly("", label).unwrap();
+        assert!((toggle.height() - select.height()).abs() < 0.5, "{label}: {toggle:?} {select:?}");
+    }
 }
 
 #[test]

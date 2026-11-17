@@ -581,8 +581,8 @@ fn the_toolbar_grid_menu_changes_the_piano_rolls_grid() {
     assert_eq!(notes(&h).last().unwrap().duration, 0.5);
 }
 
-/// The toolbar's menus look as the Rows group's toggles do: as tall and level with them, each as
-/// wide as its words, so no gap opens between the workflow and ghost menus.
+/// The toolbar's menus are level with the Rows toggles, each as wide as its words, so no gap opens
+/// between the workflow and ghost menus. The toggles are as tall as the toolbar's other buttons.
 #[test]
 fn the_toolbar_menus_line_up_with_the_rows_toggles() {
     let mut renderer = engine();
@@ -592,9 +592,11 @@ fn the_toolbar_menus_line_up_with_the_rows_toggles() {
     let ghosts = h.get_by_label_contains("Ghost notes ").rect();
     let grid = h.get_by_label("Grid value 1/16").rect();
     for (name, menu) in [("workflow", workflow), ("ghosts", ghosts), ("grid", grid)] {
-        let level = (menu.top() - fold.top()).abs() < 0.5 && (menu.bottom() - fold.bottom()).abs() < 0.5;
-        assert!(level, "the {name} menu {menu:?} is as tall as Fold {fold:?}");
+        let level = (menu.center().y - fold.center().y).abs() < 0.5;
+        assert!(level, "the {name} menu {menu:?} is level with Fold {fold:?}");
     }
+    let select = h.get_by_label_contains("Select (").rect();
+    assert!((select.height() - fold.height()).abs() < 0.5, "Fold is as tall as the buttons: {select:?} {fold:?}");
     assert!(ghosts.left() - workflow.right() <= 4.0, "the menus sit close: {workflow:?} {ghosts:?}");
     assert!(ghosts.width() < 72.0, "the ghost menu is as wide as its word: {ghosts:?}");
     assert!(fold.right() < workflow.left(), "the Rows group comes first: {fold:?} {workflow:?}");

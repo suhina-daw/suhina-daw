@@ -1131,7 +1131,7 @@ clip scales) and is saved with the project; a clip has none until one is set.
   edited) take the arrows the same way, and while one has them the window's arrow keys (the piano
   roll's, the Launcher's) wait.
 - **The toolbar's Rows group** (› Layout): **Fold** (› Zoom and scroll) and **Scale**, then
-  **Highlight** (Highlight scale) in a frame of its own, each lit while on. **Scale** folds the rows to the clip's
+  **Highlight** (Highlight scale), toolbar buttons like the others, with no frame round them, each lit while on. **Scale** folds the rows to the clip's
   scale (› Zoom and scroll), turning the scale on first when the clip has none (as the clip
   panel's switch does); off again, every row shows and the clip keeps its scale. The clip panel's
   switch, root and mode set the scale without folding a row, and the switch off leaves Scale

@@ -1149,7 +1149,7 @@ grid's tracks).
 | Status bar | `status-bar` | `bar-item#status-message`, `bar-item#status-counts` |
 | Project tabs | `project-tabs` | a `project-tab` per open project, `[selected]` on the one shown; its close button is inside it |
 | Application bar | `application-bar` | `group#app-bar-start`, `#app-bar-centre`, `#app-bar-end`; `bar-item#app-name`, `#project-name`, `#project-timing` |
-| Piano roll's toolbar | `piano-roll-toolbar[size]` | `piano-tool` buttons by id (`#piano-select` … `#piano-hide`, `#piano-edit` for the folded clipboard), `separator[kind="bar"]`, `group#piano-roll-rows` with `#piano-fold` and `#piano-scale`, `group#piano-roll-highlight` with `#piano-highlight`, a `flexible-space`, `bar-item#piano-roll-workflow`, `#piano-roll-ghosts`, `#piano-roll-grid` |
+| Piano roll's toolbar | `piano-roll-toolbar[size]` | `piano-tool` buttons by id (`#piano-select` … `#piano-hide`, `#piano-edit` for the folded clipboard), `separator[kind="bar"]`, `#piano-fold`, `#piano-scale` and `#piano-highlight`, a `flexible-space`, `bar-item#piano-roll-workflow`, `#piano-roll-ghosts`, `#piano-roll-grid` |
 | MIDI tools' tabs | `tab-row` | `editor-tab#tab-notes`, `#tab-transform`, `[checked]` on the one shown |
 
 Every item that has an id has a `kind` attribute equal to it, as it lays out and as it paints,
