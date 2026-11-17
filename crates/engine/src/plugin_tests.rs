@@ -1669,10 +1669,8 @@ fn a_plug_in_after_a_delaying_one_is_told_the_song_of_what_it_hears() {
     let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
     let mut renderer = Renderer::build(
         &p,
-        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
-            &p,
-            vec![(first, PluginSlotInfo { latency: LATENCY, ..EFFECT }), (second, EFFECT)],
-        )),
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(first, PluginSlotInfo { latency: LATENCY, ..EFFECT }), (second, EFFECT)])),
         SR,
         RenderOptions::PLAYING,
     )
@@ -1705,4 +1703,46 @@ fn an_earlier_song_position_steps_back_over_a_barline() {
     // Stopped, nothing moves.
     let stopped = SongPosition { playing: false, ..song };
     assert_eq!(stopped.earlier(12_000, 48_000.0), stopped);
+}
+
+/// A plug-in reports its latency once it has loaded, after the graph was built: the plug-in after
+/// it is told the song that much earlier from the next graph on, as it is when the latency was
+/// known from the start (the running slot takes the new delay with the rest of its settings).
+#[test]
+fn a_latency_reported_later_moves_the_song_the_next_plug_in_is_told() {
+    const LATENCY: u32 = 2_401;
+    let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3()), plug(vst3())]);
+    let keys: Vec<u64> = plugin_devices(&p).iter().map(|d| d.key).collect();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let info = |first: u32| {
+        let mut info = std::collections::HashMap::new();
+        info.insert(keys[0], PluginSlotInfo { latency: first, ..EFFECT });
+        info.insert(keys[1], EFFECT);
+        info
+    };
+    controller.set_plugin_info(info(0));
+    let (first, second) = (Stand::new(Behaviour::Gain(1.0)), Stand::new(Behaviour::Gain(1.0)));
+    let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
+    controller.send_plugin(keys[0], Box::new(first)).unwrap();
+    controller.send_plugin(keys[1], Box::new(second)).unwrap();
+    blocks(&mut renderer, 2, 480);
+    controller.update(&p).unwrap();
+    blocks(&mut renderer, 4, 480);
+    let gap = |a: &Arc<std::sync::Mutex<Vec<SongPosition>>>, b: &Arc<std::sync::Mutex<Vec<SongPosition>>>| {
+        let (a, b) = (*a.lock().unwrap().last().unwrap(), *b.lock().unwrap().last().unwrap());
+        a.position - b.position
+    };
+    assert_eq!(gap(&heard_first, &heard_second), 0, "no latency yet");
+    // The first one tells its latency: a new graph, the same running plug-ins.
+    controller.set_plugin_info(info(LATENCY));
+    controller.update(&p).unwrap();
+    blocks(&mut renderer, 4, 480);
+    assert_eq!(gap(&heard_first, &heard_second), u64::from(LATENCY));
 }

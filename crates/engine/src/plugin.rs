@@ -441,6 +441,9 @@ impl PluginSlot {
         self.enabled = fresh.enabled;
         self.instrument = fresh.instrument;
         self.latency = fresh.latency;
+        // The devices before it may report another latency now (a plug-in tells its own once it
+        // has loaded): it hears the song as late as the new graph says.
+        self.song_delay = fresh.song_delay;
         self.params.adopt(&mut fresh.params);
         if fresh.processor.is_some() {
             std::mem::swap(&mut self.processor, &mut fresh.processor);
