@@ -535,23 +535,23 @@ impl Chain {
         self.deadline = deadline;
     }
 
-    /// Plans the parameter events of its plug-ins for a block of `frames` frames starting at
-    /// arrangement frame `time` (`None` while the transport is stopped, standing at `parked`,
-    /// where the plug-ins' lanes send their values once): call it after
-    /// [`Chain::begin`], before any of the block runs. Never allocates.
     /// Tells the chain's plug-ins where the song is as the block starts
-    /// ([`PluginProcessor::transport`]). Never allocates.
-    pub(crate) fn transport(&mut self, song: &crate::plugin::SongPosition) {
-        let (input, sample_rate) = (self.input_latency, self.sample_rate);
+    /// ([`PluginProcessor::transport`]): each the song of the sound it hears, as late as the
+    /// chain's input and the devices before it, read from the blocks played
+    /// ([`crate::plugin::SongHistory`]). Never allocates.
+    pub(crate) fn transport(&mut self, songs: &crate::plugin::SongHistory) {
+        let input = self.input_latency;
         for slot in self.plugin_slots() {
             if let Some(processor) = slot.processor.as_mut() {
-                // The song of the sound it hears: as late as the chain's input and the devices
-                // before it.
-                processor.transport(&song.earlier(input.saturating_add(slot.song_delay), sample_rate));
+                processor.transport(&songs.heard(input.saturating_add(slot.song_delay)));
             }
         }
     }
 
+    /// Plans the parameter events of its plug-ins for a block of `frames` frames starting at
+    /// arrangement frame `time` (`None` while the transport is stopped, standing at `parked`,
+    /// where the plug-ins' lanes send their values once): call it after
+    /// [`Chain::begin`], before any of the block runs. Never allocates.
     pub(crate) fn automate(&mut self, time: Option<u64>, parked: u64, frames: usize) {
         let frames = frames.min(MAX_BLOCK);
         for slot in self.plugin_slots() {
@@ -1589,14 +1589,15 @@ fn midi_span(
 }
 
 /// Tells the plug-ins of `slot` (itself, or every one inside a group) that the devices before it
-/// delay their sound by `before` frames. A plug-in inside a group is told the delay before the
-/// group.
-fn set_song_delay(slot: &mut DeviceSlot, before: u32) {
+/// delay their sound by `before` more frames. Added to what each already has: a plug-in inside a
+/// group was told the devices before it in its branch as the group was built
+/// (`SlotFactory::group`), and the group's own place adds the devices before the group.
+pub(crate) fn set_song_delay(slot: &mut DeviceSlot, before: u32) {
     match slot {
-        DeviceSlot::Plugin(plugin) => plugin.song_delay = before,
+        DeviceSlot::Plugin(plugin) => plugin.song_delay = plugin.song_delay.saturating_add(before),
         DeviceSlot::Group(_) => {
             for plugin in crate::group::PluginSlots::new(std::slice::from_mut(slot)) {
-                plugin.song_delay = before;
+                plugin.song_delay = plugin.song_delay.saturating_add(before);
             }
         }
         DeviceSlot::Device(_) | DeviceSlot::MidiDevice(_) => {}

@@ -267,8 +267,10 @@ pub(crate) fn build(
     // The main channel's chain comes last, after everything that plays into the main output; a
     // node render stops below it.
     if source.is_none()
-        && let Some(main) = main_chain(project, audio, sample_rate, plugins, assets)
+        && let Some(mut main) = main_chain(project, audio, sample_rate, plugins, assets)
     {
+        // It hears the whole mix, which reaches it as late as the latest path.
+        main.input_latency = latency;
         chains.push(main);
     }
     // When each chain runs in a block, and with how much of the deadline (#1261).
