@@ -976,6 +976,7 @@ impl Reader {
                     release_velocity: (release / 127.0).clamp(0.0, 1.0) as f32,
                     channel: 0,
                     muted,
+                    velocity_range: 0,
                 });
             }
         }

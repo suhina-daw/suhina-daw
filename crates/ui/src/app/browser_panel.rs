@@ -164,8 +164,7 @@ impl App {
     pub(super) fn toggle_map_window(&mut self) {
         if self.sample_map.view.window {
             self.close_map_window();
-        } else {
-            self.settings_open = false;
+        } else if self.close_settings() {
             self.sample_map.set_window(true, &mut self.browser);
             self.settings.map_window = true;
             self.settings_changed = true;

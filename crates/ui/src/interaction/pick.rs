@@ -41,12 +41,17 @@ pub enum PickField {
     IrFolder,
     /// The folder Copy to folder… copies samples into (`library.copyTo`, #865).
     CopyToFolder,
+    /// A theme package or zip of themes to bring in (Settings › Themes › More › Import theme…).
+    ThemePackage,
 }
 
 impl PickField {
     /// Whether a folder is picked rather than a file.
     pub fn folder(self) -> bool {
-        !matches!(self, Self::StartTemplate | Self::OpenProject | Self::ExportFile | Self::BackgroundImage)
+        !matches!(
+            self,
+            Self::StartTemplate | Self::OpenProject | Self::ExportFile | Self::BackgroundImage | Self::ThemePackage
+        )
     }
 
     /// The dialog's title.
@@ -67,6 +72,7 @@ impl PickField {
             Self::DataFolder => "Settings folder",
             Self::IrFolder => "Cabinet sounds folder",
             Self::CopyToFolder => "Copy the samples to",
+            Self::ThemePackage => "Import a theme",
         }
     }
 
@@ -75,6 +81,7 @@ impl PickField {
         match self {
             Self::ExportFile => &["wav", "flac", "ogg", "mp3"],
             Self::BackgroundImage => &["png"],
+            Self::ThemePackage => &["suhina", "zip", "css", "json"],
             field if field.folder() => &[],
             _ => &["suhina", "als", "flp", "zip"],
         }

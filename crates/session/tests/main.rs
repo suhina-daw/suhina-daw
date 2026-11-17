@@ -15,6 +15,7 @@ mod clip_audio;
 mod clip_automation;
 mod clip_color;
 mod clip_edges;
+mod clip_edits;
 mod clip_shape;
 mod commands;
 mod comping;

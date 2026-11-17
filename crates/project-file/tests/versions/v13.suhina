@@ -12,8 +12,8 @@
               "fade_in_curve": -0.5,
               "fade_in_shape": "s_curve",
               "fade_out": 1.0,
-              "fade_out_curve": 0.25,
-              "fade_out_shape": "cosine",
+              "fade_out_curve": 0.75,
+              "fade_out_shape": "equal_power",
               "id": 2,
               "launch": {
                 "legato": true,
@@ -183,16 +183,6 @@
               }
             ],
             "id": 9,
-            "inputs": [
-              {
-                "gain": 0.5,
-                "port": "key",
-                "source": {
-                  "channel": 2,
-                  "tap": "postFader"
-                }
-              }
-            ],
             "kind": {
               "id": "dj-eq",
               "type": "builtin"
@@ -695,7 +685,8 @@
                 "key": 60,
                 "release_velocity": 0.5,
                 "time": 0.0,
-                "velocity": 0.75
+                "velocity": 0.75,
+                "velocity_range": 20
               },
               {
                 "channel": 15,
@@ -710,7 +701,6 @@
           }
         ],
         "length": 8.0,
-        "linked": true,
         "name": "Chords"
       },
       {

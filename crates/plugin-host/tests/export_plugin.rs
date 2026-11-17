@@ -31,7 +31,18 @@ const PATIENT: Duration = Duration::from_secs(20);
 
 /// A catalog with the host's VST3 test plug-in, as an effect with the id `vst3`: a gain.
 fn env() -> Arc<PluginEnv> {
-    let path = PathBuf::from("test:vst3");
+    env_of("test:vst3")
+}
+
+/// [`env`] with `test:vst3-gate`, the test plug-in whose state reads honour the [`StateGate`]:
+/// its host process is born after the gate is named and is no other test's, so the gate holds its
+/// reads, and only its reads.
+fn gated_env() -> Arc<PluginEnv> {
+    env_of("test:vst3-gate")
+}
+
+fn env_of(spec: &str) -> Arc<PluginEnv> {
+    let path = PathBuf::from(spec);
     let info = PluginInfo {
         path: path.clone(),
         id: "vst3".into(),
@@ -57,6 +68,7 @@ fn project() -> Project {
         release_velocity: 0.5,
         channel: 0,
         muted: false,
+        velocity_range: 0,
     };
     Project {
         tracks: vec![Track {
@@ -333,7 +345,7 @@ fn a_cancelled_gather_starts_nothing_on_a_late_reply() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.rack_mut().set_env(env());
+    session.rack_mut().set_env(gated_env());
     // The gate is known before the plug-in's host process is born, which inherits it.
     let mut gate = StateGate::new();
     let device = json!({ "track": 1, "device": 0 });
@@ -371,7 +383,7 @@ fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
     session.attach_player(Player::new(renderer.controller(), None));
-    session.rack_mut().set_env(env());
+    session.rack_mut().set_env(gated_env());
     // The gate is known before the plug-in's host process is born, which inherits it.
     let mut gate = StateGate::new();
     session.sync_plugins();
@@ -405,11 +417,13 @@ fn a_gather_past_its_deadline_says_which_plug_in_did_not_answer() {
     assert!(!session.can_undo());
 }
 
-/// The test plug-in's state-read gate (`SUHINA_TEST_PLUGIN_STATE_GATE`): while it is held, the
-/// plug-in's state reads keep their replies, so a test holds a read out for as long as it
-/// needs, never racing its answer. Hosts inherit the variable at their spawn, so it names one
-/// file for the whole test binary, and the tests that hold it take turns. Dropped, it lets
-/// every read go.
+/// The test plug-in's state-read gate (`SUHINA_TEST_PLUGIN_STATE_GATE`): while it is held,
+/// `test:vst3-gate`'s state reads keep their replies, so a test holds a read out for as long as
+/// it needs, never racing its answer. Only that plug-in honours it, in a host of its own that
+/// only the tests holding the gate start ([`gated_env`]): a plain `test:vst3` host another test
+/// started before the variable was named would never see it, and the other tests' reads are
+/// never held. Hosts inherit the variable at their spawn, so it names one file for the whole
+/// test binary, and the tests that hold it take turns. Dropped, it lets every read go.
 struct StateGate {
     path: PathBuf,
     _turn: std::sync::MutexGuard<'static, ()>,

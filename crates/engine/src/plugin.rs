@@ -336,9 +336,9 @@ pub fn plugin_devices(project: &Project) -> Vec<PluginDevice> {
 #[derive(Default)]
 pub struct Plugins {
     pub(crate) info: HashMap<u64, PluginSlotInfo>,
-    /// The parameters of each plug-in device that take steps (a switch, a choice), by id, as
+    /// The parameters of each plug-in device that hold (a switch, a list of choices), by id, as
     /// its plug-in listed them: their lanes hold each value until the next point, as they are
-    /// drawn (#1205).
+    /// drawn (#1205). A knob listed with steps moves along the line (#1482).
     pub(crate) steps: PluginSteps,
     pub(crate) processors: HashMap<u64, Box<dyn PluginProcessor>>,
     /// Processors retained from a closed renderer can still hold its sounding notes.
@@ -376,7 +376,8 @@ impl Plugins {
         self.info.insert(key, info);
     }
 
-    /// The parameters of the plug-in device `key` that take steps, by id ([`Plugins::steps`]).
+    /// The parameters of the plug-in device `key` whose lanes hold each value, by id
+    /// ([`Plugins::steps`]).
     pub fn set_steps(&mut self, key: u64, ids: std::sync::Arc<[u32]>) {
         self.steps.insert(key, ids);
     }
@@ -392,8 +393,8 @@ impl Plugins {
     }
 }
 
-/// The parameters of each plug-in device that take steps, by the device's key and the
-/// parameters' ids ([`Plugins::steps`]).
+/// The parameters of each plug-in device whose lanes hold each value until the next point (a
+/// switch, a list of choices), by the device's key and the parameters' ids ([`Plugins::steps`]).
 pub type PluginSteps = HashMap<u64, std::sync::Arc<[u32]>>;
 
 /// A plug-in device's place in a chain.

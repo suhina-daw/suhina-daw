@@ -888,23 +888,6 @@ impl Theme {
     }
 }
 
-/// Original paint-only example, shared by the editor and portable packages.
-pub const GLOSS_EXAMPLE: &str = include_str!("../../themes/dark-gloss.css");
-
-/// Optional native Launcher density, shared by the editor and exported packages.
-pub const COMPACT_SESSION_EXAMPLE: &str = include_str!("../../themes/compact-session.css");
-
-/// The README shipped with themes: the format, capabilities and generated palette reference.
-pub fn template_readme() -> String {
-    let mut text = String::from(include_str!("../../themes/THEME-PACKAGE-README.md"));
-    text.push_str("\n\n## Colour token reference\n\n| Token | Suhina Studio | Used for |\n|---|---|---|\n");
-    for (key, purpose) in TOKENS {
-        let color = color_in(&Colors::new(), &variable_name(key));
-        text.push_str(&format!("| `{key}` | `{}` | {purpose} |\n", hex(color)));
-    }
-    text
-}
-
 /// Opaque `#RRGGBB`, or `#RRGGBBAA` when opacity is present.
 pub fn hex(color: Color32) -> String {
     hex_rgba(color.to_srgba_unmultiplied())
@@ -1105,9 +1088,10 @@ fn shaped(mut visuals: egui::Visuals) -> egui::Visuals {
 }
 
 /// egui's visuals from the sheet, where no rule of a theme for egui's widgets says otherwise: the
-/// computed styles of `widget` (at rest, `:hover`, `:active` and `:disabled`; `[checked]` the
-/// selection; `[kind="window"]` the frames of windows and menus and the panels; `[kind="field"]`
-/// behind a text field), each looked up inside the `window`, so a backdrop's fading reaches them.
+/// computed styles of `widget` (at rest, `:hover` and `:active`; `[kind="static"]` what egui draws
+/// that takes no input, its separators, frames and labels; `[checked]` the selection;
+/// `[kind="window"]` the frames of windows and menus and the panels; `[kind="field"]` behind a text
+/// field), each looked up inside the `window`, so a backdrop's fading reaches them.
 /// Light or dark as the theme is: whether the window's text (its computed `color`) is dark. A
 /// background can be see-through, so its colour alone does not tell; text is always made to read
 /// on what the theme looks like. See-through as the window's or its panels' computed background
@@ -1122,7 +1106,9 @@ fn sheet_visuals() -> Option<(egui::Visuals, bool, bool)> {
     let rest = look(WIDGET.builder());
     let hovered = look(WIDGET.pointer(true, false, false));
     let pressed = look(WIDGET.pointer(true, true, false));
-    let disabled = look(WIDGET.pointer(false, false, true));
+    // egui shows a disabled widget faded, in its own state's look; its non-interactive look is
+    // what takes no input at all (#1487).
+    let still = look(WIDGET.attribute("kind", "static"));
     let chosen = look(WIDGET.attr(Checked, true));
     let frame = look(WIDGET.attribute("kind", "window"));
     let field = look(WIDGET.attribute("kind", "field"));
@@ -1138,7 +1124,7 @@ fn sheet_visuals() -> Option<(egui::Visuals, bool, bool)> {
     visuals.selection.bg_fill = chosen.background();
     visuals.selection.stroke = hairline(chosen.accent());
     for (widget, own) in [
-        (&mut visuals.widgets.noninteractive, &disabled),
+        (&mut visuals.widgets.noninteractive, &still),
         (&mut visuals.widgets.inactive, &rest),
         (&mut visuals.widgets.hovered, &hovered),
         (&mut visuals.widgets.active, &pressed),
@@ -1148,10 +1134,30 @@ fn sheet_visuals() -> Option<(egui::Visuals, bool, bool)> {
         widget.weak_bg_fill = Look::background(own);
         widget.fg_stroke = hairline(Look::color(own));
     }
-    visuals.widgets.noninteractive.bg_stroke = hairline(disabled.border());
+    // A hairline, unless the sheet gives a width all round (0 for no line): egui draws one line.
+    let line = hairline(still.border());
+    visuals.widgets.noninteractive.bg_stroke = still
+        .style()
+        .filter(|style| style.authored.border_width)
+        .and_then(super::native_css::Computed::even_border)
+        .map_or(line, |width| Stroke::new(width, line.color));
     let clear = root.background().a() < u8::MAX || frame.background().a() < u8::MAX;
     WINDOW_FILL.with(|fill| fill.set(root.background()));
     Some((visuals, light, clear))
+}
+
+/// egui's lines (its separators and panel edges) and its windows' and menus' edge, where the sheet
+/// makes them fully transparent, are width 0 in egui's `visuals`: egui reserves a line's width
+/// whether or not it is seen (a panel's separator), so a hidden line would still leave a gap of
+/// its width (#1487). Called once every rule is written over them (`root_visuals`): a later rule
+/// that gives only a colour keeps the width it finds, so a line zeroed earlier would stay unseen.
+/// A widget's outline takes no room and keeps its width.
+pub(super) fn unseen_strokes_take_no_room(visuals: &mut egui::Visuals) {
+    for stroke in [&mut visuals.widgets.noninteractive.bg_stroke, &mut visuals.window_stroke] {
+        if stroke.color.a() == 0 {
+            *stroke = Stroke::NONE;
+        }
+    }
 }
 
 #[cfg(test)]

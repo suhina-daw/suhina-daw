@@ -201,11 +201,16 @@ impl App {
                     let _status = ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| {
                         self.status_bar(ui, &status_bar, None)
                     });
-                    if ui.input(|input| {
-                        input.viewport().close_requested()
-                            || (self.page.capture.is_none() && input.modifiers.command && input.key_pressed(Key::Comma))
-                    }) {
-                        self.settings_open = false;
+                    let requested = ui.input(|input| input.viewport().close_requested());
+                    if (requested
+                        || ui.input(|input| {
+                            self.page.capture.is_none() && input.modifiers.command && input.key_pressed(Key::Comma)
+                        }))
+                        && !self.close_settings()
+                        && requested
+                    {
+                        // Unsaved variant edits: the window stays, asking whether to save them.
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::CancelClose);
                     }
                 });
             });
@@ -283,8 +288,7 @@ impl App {
         if !self.plugins_read {
             self.read_plugins();
         }
-        let mut themes = self.themes.view(&self.settings.theme);
-        themes.global_liquid = self.settings.view.liquid;
+        let themes = self.themes.view(&self.settings.theme);
         self.about.projects_default = self.default_folders.0.display().to_string();
         self.about.templates_default = self.default_folders.1.display().to_string();
         self.about.themes_default = self.themes_default_folder.display().to_string();
@@ -326,7 +330,9 @@ impl App {
         };
         let outcome = settings_view::show(ui, &mut self.settings, sources, &mut self.page);
         if let Some(request) = outcome.themes.clone() {
-            if let Some(id) = self.themes.request(&self.settings.theme, request) {
+            if request == settings_view::ThemeRequest::Import {
+                self.ask_pick(PickField::ThemePackage);
+            } else if let Some(id) = self.themes.request(&self.settings.theme, request) {
                 self.settings.theme = id;
                 self.settings_changed = true;
             }
@@ -384,7 +390,12 @@ impl App {
             self.settings_changed = true;
         }
         if outcome.close {
-            self.settings_open = false;
+            self.close_settings();
+        }
+        // The variant editor's draft lives while the editor is open (a search over it keeps it);
+        // leaving the editor any other way drops it unsaved.
+        if !(self.page.page == settings_view::Page::Theme && self.page.theme_editor) {
+            self.themes.end_draft();
         }
         if outcome.move_by.is_finite() && outcome.move_by != Vec2::ZERO {
             let position = ui.max_rect().min + outcome.move_by;

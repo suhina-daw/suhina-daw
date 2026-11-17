@@ -1063,6 +1063,7 @@ fn describe_param(
         value: crate::vst3::finite(value, min),
         text: shown,
         steps: if stepped && span.is_finite() { span.round().min(f64::from(u32::MAX)) as u32 } else { 0 },
+        list: stepped && info.flags.contains(ParamInfoFlags::IS_ENUM),
         automatable: info.flags.contains(ParamInfoFlags::IS_AUTOMATABLE),
         read_only: info.flags.contains(ParamInfoFlags::IS_READONLY),
         hidden: info.flags.contains(ParamInfoFlags::IS_HIDDEN),

@@ -15,7 +15,9 @@ impl App {
             .own_file(id)
             .and_then(|path| path.parent().map(Path::to_path_buf))
             .unwrap_or_else(|| self.projects_folder());
-        self.settings_open = false;
+        if !self.close_settings() {
+            return;
+        }
         let mut export = ExportDialog::new(folder.join(format!("{name}.wav")));
         // A restarted dialog over an export the worker is still running shows it, Exporting…;
         // over one still gathering its states the Cancel works (its close cancels the gather).

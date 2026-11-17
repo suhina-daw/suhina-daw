@@ -217,6 +217,10 @@ fn stored_values(device: &suhina_engine::model::Device) -> std::collections::Has
     device.params.iter().rev().map(|p| (p.id.as_str(), p.value)).collect()
 }
 
+/// A plug-in device's own texts for values it was asked about, by its track and its place on the
+/// track ([`Detail::follow_automation_texts`], #1482).
+pub type PluginTextsAt<'a> = dyn FnMut(TrackId, &[usize]) -> Option<std::sync::Arc<suhina_session::ParamTexts>> + 'a;
+
 /// Where a plug-in device's plug-in stands, as its panel shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PluginBox {
@@ -228,6 +232,9 @@ pub struct PluginBox {
     pub embedded: Option<(u32, u32)>,
     /// It is bound to its track's audio clips (ARA), so its editor edits them.
     pub ara: bool,
+    /// The ids of the parameters whose lanes hold each value until the next point (a switch, a
+    /// list of choices: `ParamInfo::holds`, #1482), from the list it gave last.
+    pub held: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +256,7 @@ impl PluginBox {
                 editor_open: false,
                 embedded: None,
                 ara: false,
+                held: Vec::new(),
             };
         };
         let name = report.plugin.as_ref().map(|(name, vendor, _)| format!("{name} by {vendor}"));
@@ -271,7 +279,8 @@ impl PluginBox {
             PluginStatus::Crashed(why) => (PluginState::Crashed, format!("Crashed: {why}")),
             PluginStatus::Failed(why) => (PluginState::Crashed, format!("Could not start: {why}")),
         };
-        Self { state, line, editor_open: report.editor_open, embedded: report.editor_embedded, ara: report.ara }
+        let held = report.params.as_deref().unwrap_or_default().iter().filter(|p| p.holds()).map(|p| p.id).collect();
+        Self { state, line, editor_open: report.editor_open, embedded: report.editor_embedded, ara: report.ara, held }
     }
 
     /// The size the embedded editor takes in the panel, in points.
@@ -527,9 +536,24 @@ impl Detail {
         beat: f64,
         dragged: Option<&crate::arrangement::automation_lanes::Dragged>,
     ) {
+        let _ = self.follow_automation_texts(project, beat, dragged, &mut |_, _| None);
+    }
+
+    /// [`Detail::follow_automation_dragged`], with each plug-in device's own texts for values it
+    /// was asked about (`texts`, by track and the device's place on it, #1482): an automated
+    /// plug-in parameter shows the plug-in's text for the value played. Gives back the values
+    /// whose text is not known yet, by track, device place and parameter id, for the plug-in to
+    /// be asked about.
+    pub fn follow_automation_texts(
+        &mut self,
+        project: &Project,
+        beat: f64,
+        dragged: Option<&crate::arrangement::automation_lanes::Dragged>,
+        texts: &mut PluginTextsAt<'_>,
+    ) -> Vec<(TrackId, Vec<usize>, u32, f64)> {
         let chain = match self {
             Self::Devices(chain) | Self::Clip(_, chain) => chain,
-            Self::Nothing => return,
+            Self::Nothing => return Vec::new(),
         };
         let Some(channel) = project
             .tracks
@@ -538,19 +562,22 @@ impl Detail {
             .and_then(|t| t.channel)
             .and_then(|c| project.channel(c))
         else {
-            return;
+            return Vec::new();
         };
         type Dragged = crate::arrangement::automation_lanes::Dragged;
+        type Texts<'a> = dyn FnMut(&[usize]) -> Option<std::sync::Arc<suhina_session::ParamTexts>> + 'a;
         fn follow(
             boxes: &mut [DeviceBox],
             devices: &[suhina_engine::model::Device],
             beat: f64,
             dragged: Option<&Dragged>,
+            texts: &mut Texts<'_>,
+            wanted: &mut Vec<(Vec<usize>, u32, f64)>,
         ) {
             for device_box in boxes {
                 if let Some(group) = device_box.group.as_mut() {
                     for branch in &mut group.branches {
-                        follow(&mut branch.devices, devices, beat, dragged);
+                        follow(&mut branch.devices, devices, beat, dragged, texts, wanted);
                     }
                 }
                 // The lane a drag holds is a device's on the track itself, not one in a group.
@@ -561,10 +588,13 @@ impl Detail {
                     DeviceKind::Builtin(id) => suhina_device_registry::info(id),
                     _ => None,
                 };
+                // A plug-in's own texts, looked up only for a plug-in with a lane that plays.
+                let mut plugin_texts = None;
                 for lane in device.automation.iter().filter(|l| l.enabled && !l.points.is_empty()) {
                     let spec = info.and_then(|info| info.params.iter().find(|p| p.id == lane.param));
                     // On/off and choice parameters hold each point's value until the next, as the
-                    // engine plays them and the lane draws them.
+                    // engine plays them and the lane draws them; so do a plug-in's switches and
+                    // lists of choices (#1482).
                     // Evenly along the parameter's control, as the engine plays it and the lane
                     // draws it.
                     use crate::arrangement::automation_lanes::Scale;
@@ -582,27 +612,49 @@ impl Detail {
                             }),
                     };
                     let Some(scale) = scale else { continue };
+                    let plugin_id = device_box.plugin.as_ref().and_then(|_| suhina_engine::param_id(&lane.param));
+                    let holds =
+                        device_box.plugin.as_ref().zip(plugin_id).is_some_and(|(plugin, id)| plugin.held.contains(&id));
                     let (points, beat) = match held {
                         Some(held) if held.key.param == lane.param => (held.points.as_slice(), held.at.unwrap_or(beat)),
                         _ => (&*lane.points, beat),
                     };
-                    let Some(value) = suhina_engine::model::automation::value_at(points, beat, scale.stepped(), &scale)
+                    let Some(value) =
+                        suhina_engine::model::automation::value_at(points, beat, scale.stepped() || holds, &scale)
                     else {
                         continue;
                     };
                     // A whole-number parameter shows what it plays, the fraction cut off toward zero.
                     let value = spec.map_or(value, |spec| spec.played(value));
-                    show_value(device_box, &lane.param, value);
+                    let Some(id) = plugin_id else {
+                        show_value(device_box, &lane.param, value, None);
+                        continue;
+                    };
+                    let known = plugin_texts.get_or_insert_with(|| texts(&device_box.at.0)).clone();
+                    if let Some(value) = show_value(device_box, &lane.param, value, known.as_deref()) {
+                        wanted.push((device_box.at.0.clone(), id, value));
+                    }
                 }
             }
         }
         let dragged = dragged.filter(|d| d.track == chain.track);
-        follow(&mut chain.devices, &channel.devices, beat, dragged);
+        let mut wanted = Vec::new();
+        let track = chain.track;
+        follow(&mut chain.devices, &channel.devices, beat, dragged, &mut |path| texts(track, path), &mut wanted);
+        wanted.into_iter().map(|(path, id, value)| (track, path, id, value)).collect()
     }
 }
 
 /// Shows `value` as parameter `param`'s on its device's panel: its knob or slider and its text.
-fn show_value(device_box: &mut DeviceBox, param: &str, value: f64) {
+/// For a plug-in's parameter, `texts` are the plug-in's own texts for values it was asked about
+/// (#1482): the text of the value played when it gave one, else the number. Gives back the value
+/// as the panel keeps it when the plug-in is to be asked for its text.
+fn show_value(
+    device_box: &mut DeviceBox,
+    param: &str,
+    value: f64,
+    texts: Option<&suhina_session::ParamTexts>,
+) -> Option<f64> {
     for (id, v) in &mut device_box.values {
         if id.as_str() == param {
             *v = value;
@@ -613,16 +665,40 @@ fn show_value(device_box: &mut DeviceBox, param: &str, value: f64) {
             *text = format_value(value);
         }
     }
+    let mut ask = None;
     if let Some(graph) = device_box.graph.as_mut() {
         for parameter in graph.parameters.iter_mut().filter(|p| p.id == param) {
-            let value = value.clamp(parameter.min, parameter.max);
-            // A plug-in's text is for the value it listed, not the one played.
-            if value != parameter.value {
-                parameter.text.clear();
+            let mut value = value.clamp(parameter.min, parameter.max);
+            // A plug-in's parameter listed with steps plays on its nearest step, as the lane
+            // shows it; the plug-in names that step.
+            let step = parameter.ui.step;
+            if texts.is_some() && step > 0.0 && step.is_finite() {
+                value = (parameter.min + ((value - parameter.min) / step).round() * step)
+                    .clamp(parameter.min, parameter.max);
+            }
+            // A plug-in's listed text is for the value it listed, not the one played: the one
+            // played takes the plug-in's text for it, once the plug-in has given it. A value
+            // that did not move but has no text yet (the project keeps one the plug-in did not
+            // list) is looked up too; a listed text for the same value stays.
+            if value != parameter.value || (texts.is_some() && parameter.text.is_empty()) {
+                let id = suhina_engine::param_id(&parameter.id);
+                let known = texts.zip(id).map(|(texts, id)| {
+                    texts.lock().map(|kept| kept.get(&(id, value.to_bits())).cloned()).unwrap_or_default()
+                });
+                match known {
+                    // Asked before: its text, or the number when it gave none.
+                    Some(Some(text)) => parameter.text = if text.trim().is_empty() { String::new() } else { text },
+                    Some(None) => {
+                        parameter.text.clear();
+                        ask = Some(value);
+                    }
+                    None => parameter.text.clear(),
+                }
             }
             parameter.value = value;
         }
     }
+    ask
 }
 
 /// The beat of `clip`'s content that plays at song beat `beat`, as the engine plays it: its start

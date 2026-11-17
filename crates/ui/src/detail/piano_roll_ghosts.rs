@@ -90,6 +90,7 @@ impl GhostNote {
             release_velocity: 0.0,
             channel: 0,
             muted: false,
+            velocity_range: 0,
         }
     }
 }

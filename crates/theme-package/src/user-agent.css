@@ -8,14 +8,19 @@
  * It holds only what keeps every element usable: layout, the regions' overflow, the default
  * artwork, the floating surfaces' blur, and plain readable text on an opaque window. It selects
  * elements by name, state and attribute only: no classes, no ids and no variables, and its only
- * colours are the window's two fixed plain ones, so nothing in it depends on a theme. The element
+ * colours are the window's two fixed plain ones and its background again for the menus, pop-ups
+ * and dialogs over it, so nothing in it depends on a theme. The element
  * reference lists every element it names.
  */
 
 /* The floor's colours: plain light text on an opaque dark window, fixed values, so a theme
    without the base sheet is readable before it styles anything. The base sheet gives the window
    Suhina's own colours over them. */
-window { color: #e6e6e6; background-color: #1e1e1e; }
+window { color: #e6e6e6; }
+window,
+popup,
+menu,
+dialog { background-color: #1e1e1e; }
 
 /* The window is one grid of named areas (#1370): the bars, the lines over and under the views, the
    notice strip and the three panels. A theme moves one by giving it another area, or hides it with

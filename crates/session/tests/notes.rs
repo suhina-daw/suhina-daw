@@ -692,6 +692,41 @@ fn pasting_never_fills_a_clip_past_its_cap() {
 }
 
 #[test]
+fn splitting_at_several_beats_cuts_each_note_at_every_one_it_spans() {
+    let mut session = Session::new(project());
+    // The clip's notes are at beats 0, 1 and 2, each a beat long; a note at 0.5 to 2.5 too.
+    run(
+        &mut session,
+        "note.add",
+        json!({ "track": 1, "index": 0, "notes": [{ "time": 0.5, "length": 2.0, "key": 48, "velocity": 60 }] }),
+    )
+    .unwrap();
+    let before = session.project().clone();
+    let cut =
+        run(&mut session, "note.split", json!({ "track": 1, "index": 0, "notes": [0, 3], "ats": [2.0, 1.0, 0.5] }))
+            .unwrap();
+    // Note 0 (0 to 1) spans 0.5: two pieces. Note 3 (0.5 to 2.5) spans 1 and 2: three pieces; 0.5
+    // is its own start, so it is not cut there. The pieces after the first are appended.
+    assert_eq!(without_ids(&cut), json!({ "notes": [4, 5, 6], "count": 3 }));
+    let now = notes(&session, 1);
+    let pieces: Vec<(f64, f64, u8)> = now.iter().map(|n| (n.time, n.duration, n.key)).collect();
+    assert_eq!(pieces[0], (0.0, 0.5, pieces[0].2));
+    assert_eq!(pieces[3], (0.5, 0.5, 48));
+    assert_eq!(&pieces[4..], &[(0.5, 0.5, pieces[0].2), (1.0, 1.0, 48), (2.0, 0.5, 48)]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(*session.project(), before, "one undo step");
+    let both =
+        run(&mut session, "note.split", json!({ "track": 1, "index": 0, "notes": [0], "at": 0.5, "ats": [0.5] }));
+    assert!(both.unwrap_err().contains("one of"));
+    let longer = run(
+        &mut session,
+        "note.split",
+        json!({ "track": 1, "index": 0, "notes": [0], "ats": [0.5], "keepLonger": true }),
+    );
+    assert!(longer.unwrap_err().contains("keepLonger"));
+}
+
+#[test]
 fn splitting_cuts_each_note_that_spans_the_beat_in_two() {
     let mut session = Session::new(project());
     // The clip's notes are at beats 0, 1 and 2, each a beat long; a note at 0.5 to 2.5 too.
@@ -809,7 +844,7 @@ fn a_split_takes_a_beat_per_note_and_can_keep_only_the_longer_piece() {
     assert_eq!(*session.project(), before);
 
     let cases = [
-        (json!({ "track": 1, "index": 0, "notes": [0], "at": 0.5, "times": [0.5] }), "not both"),
+        (json!({ "track": 1, "index": 0, "notes": [0], "at": 0.5, "times": [0.5] }), "one of"),
         (json!({ "track": 1, "index": 0, "notes": [0, 2], "times": [0.5] }), "one entry per note"),
         (json!({ "track": 1, "index": 0, "notes": [0], "times": [-1.0] }), "each of times must be 0 to"),
         (json!({ "track": 1, "index": 0, "notes": [0], "times": "soon" }), "times must be a list"),

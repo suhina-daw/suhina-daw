@@ -25,7 +25,7 @@ const COVERED: Param = optional(
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "note.list",
-        label: "List a MIDI clip's notes: index, id (which names the note while the project is open, wherever it moves), time and length in beats, key (60 is C3), velocity 1 to 127 and whether it is muted",
+        label: "List a MIDI clip's notes: index, id (which names the note while the project is open, wherever it moves), time and length in beats, key (60 is C3), velocity 1 to 127, whether it is muted, and velocityRange where the note has one",
         params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
         kind: CommandKind::READ,
         run: notes::list,
@@ -39,7 +39,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             CLIP,
             CLIP_INDEX,
             CLIP_SCENE,
-            param("notes", ParamType::Notes, "the notes, each {time, length, key, velocity?}; at most 10000"),
+            param(
+                "notes",
+                ParamType::Notes,
+                "the notes, each {time, length, key, velocity?, velocityRange?}; at most 10000",
+            ),
             REPLACE,
             COVERED,
         ],
@@ -215,7 +219,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "note.split",
-        label: "Split notes of a MIDI clip at a beat, each note that spans it into two; the result gives the new notes' indices and ids; each first half keeps its note's id",
+        label: "Split notes of a MIDI clip at a beat (or at several), each note that spans it into two; the result gives the new notes' indices and ids; each first half keeps its note's id",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -229,6 +233,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "instead of at: the beat to split each note at, one per entry of notes (a slanted cut)",
             ),
             optional(
+                "ats",
+                ParamType::Numbers,
+                "instead of at: several beats, each named note cut at every one of them it spans (not with keepLonger)",
+            ),
+            optional(
                 "keepLonger",
                 ParamType::Bool,
                 "keep only the longer piece of each note split (the first when they are as long), in the note's place; the result's trimmed lists them",
@@ -236,6 +245,32 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: notes::split,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "note.join",
+        label: "Join notes of a MIDI clip: the named notes on one key become one note, from the first's start to the last's end (the first reaching over any gap, as legato does), with the first's velocity and release velocity; keys join each on their own, and a key with one named note keeps it. The result gives the joined notes' indices and the removed ones",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, NOTES],
+        kind: CommandKind::EDIT,
+        run: crate::clip_edits::join,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "note.fitToTime",
+        label: "Fit notes of a MIDI clip to a time range: starts and lengths are stretched or squeezed together so the first note starts at start and the last one ends at end",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            NOTES,
+            param("start", ParamType::Number, "where the first note starts, in content beats, 0 to 120000"),
+            param("end", ParamType::Number, "where the last note ends, in content beats, after start"),
+            REPLACE,
+            COVERED,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_edits::fit_to_time,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -251,6 +286,30 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: note_tools::set_muted,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "note.setVelocityRange",
+        label: "Set the velocity range of notes of a MIDI clip: how far above (or, negative, below) its velocity each note may play, rolled each time it starts; each note's range is kept to what its velocity allows (up to 127, down to 1), and the result gives each note's range",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            NOTES,
+            optional(
+                "range",
+                ParamType::Integer,
+                "the range for every named note, -127 to 127 (0 plays the velocity exactly), kept to what each note's velocity allows",
+            ),
+            optional(
+                "by",
+                ParamType::Integer,
+                "instead of range: MIDI steps added to each note's range, which stays within what the note's velocity allows",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: note_tools::set_velocity_range,
         policy: Policy::DEFAULT,
     },
     CommandSpec {

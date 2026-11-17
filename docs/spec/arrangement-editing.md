@@ -35,7 +35,12 @@ covers:
 
 ### Pasting and pane-local scrolling
 
-A click in an empty track lane sets the paste destination to that track and beat.
+A click in an empty track lane sets the paste destination to that track and beat. With no clip
+selected and no spot clicked, a paste on the selected track goes to the play start marker; a copy
+from several tracks (a time selection's included) goes back to its own tracks from the play start
+marker, the copied span's start there, so each part keeps its place in the span, an empty stretch
+before a track's first clip included. A paste never goes to the playhead, which moves on while
+the transport plays.
 Settings > Arrangement > Replace clip defaults off (paste after the selected clip).
 When enabled, pasting onto a selected clip removes that whole destination clip and
 places the copy at its start, as one undoable `clip.paste` command with `replace` set
@@ -313,10 +318,10 @@ Let go, it is
   name when the clip has none, and neither notes nor a waveform: the strip is too thin for them to
   read. On a taller lane the name stays in its bar, and a MIDI clip's notes, a row per pitch the clip
   uses (the keys between take no room), give way once the strip under the name leaves a row under
-  a point (rows under 2 points let the 2-point notes overlap a little), or once they crowd into a
-  smear, their starts in view under a point apart (sixteenths at the opening zoom stay) (notes that start together, a
-  chord, count once); an audio clip keeps its waveform. One or the other is drawn, never the name
-  over faint notes.
+  a point (rows under 2 points let the 2-point notes overlap a little). Only the pitch rows decide:
+  however far the view zooms out in time, the notes stay drawn, running together into a band where
+  they are dense, so a clip with notes never looks empty. An audio clip keeps its waveform. One or
+  the other is drawn, never the name over faint notes.
 - The right edge is one handle over the clip's full height; there is no separate loop handle
   at the corner (#700). The loop is turned on in the clip column (› Clip column in
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then

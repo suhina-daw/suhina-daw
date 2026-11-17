@@ -31,6 +31,12 @@ pub struct PianoClip {
     pub ghosts: Ghosts,
     /// The scale of the clip's content, whose keys the rows mark (› Scale and key).
     pub scale: Option<Scale>,
+    /// Where the first note of the content's other lanes starts (a pattern's notes for other
+    /// tracks), which `clip.setOrigin` checks as it checks this clip's own notes.
+    pub others_first: Option<f64>,
+    /// Whether the clip plays with swing (its own or the project's), so that `clip.setOrigin`
+    /// takes only a first beat on an eighth.
+    pub swings: bool,
 }
 
 /// Where a clip plays its content on the arrangement.
@@ -67,18 +73,30 @@ impl Placement {
         if !(beat.is_finite() && self.start.is_finite() && self.length.is_finite() && self.offset.is_finite()) {
             return None;
         }
-        let mut content = beat.max(0.0);
+        let content = beat.max(0.0);
+        // Past the loop's end the content never plays: playback turns back to the loop's start
+        // there (a stretch's last moment, just before the end, is still played).
         if let Some((start, end)) = self.loop_range
             && end > start
             && content >= end
         {
-            content = start + (content - start) % (end - start);
-        }
-        let elapsed = content - self.offset;
-        // A beat before the clip's offset is not played by it; one past its end lands on the end.
-        if elapsed < 0.0 {
             return None;
         }
+        // Where playback starts in the content: a start marker at or past the loop's end turns
+        // into the loop at once, as `content_beat` (and the engine) wrap it.
+        let offset = suhina_engine::model::played_from(self.offset, self.loop_range);
+        let mut elapsed = content - offset;
+        if elapsed < 0.0 {
+            // A beat before the offset is first played when the loop comes round to it: after the
+            // stretch from the offset to the loop's end. Without a loop the clip never plays it.
+            match self.loop_range {
+                Some((start, end)) if end > start && content >= start && offset < end => {
+                    elapsed = (end - offset) + (content - start);
+                }
+                _ => return None,
+            }
+        }
+        // One past the clip's end lands on the end.
         let at = self.start + elapsed;
         (at < self.start + self.length).then_some(at.max(self.start))
     }
@@ -132,6 +150,21 @@ pub(super) fn piano_clip_from(project: &Project, track: TrackId, clip: &Clip) ->
     if content.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))) {
         return None;
     }
+    // The other lanes' notes: a pattern's for other tracks, which a new first beat moves too.
+    let mut own = true;
+    let others_first = content
+        .lanes
+        .iter()
+        .filter(|l| {
+            let mine = own && l.target.is_none_or(|t| t == track) && matches!(l.data, LaneData::Notes(_));
+            own &= !mine;
+            !mine
+        })
+        .filter_map(|l| match &l.data {
+            LaneData::Notes(n) => n.iter().map(|n| n.time).reduce(f64::min),
+            LaneData::Audio(_) => None,
+        })
+        .reduce(f64::min);
     let position = project.tracks.iter().position(|t| t.id == track)?;
     let color = project
         .tracks
@@ -163,6 +196,8 @@ pub(super) fn piano_clip_from(project: &Project, track: TrackId, clip: &Clip) ->
         },
         ghosts: Ghosts::default(),
         scale: content.scale,
+        others_first,
+        swings: clip.swing.effective(project.transport.swing) > 0.0,
     })
 }
 

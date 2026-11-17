@@ -142,22 +142,28 @@ impl App {
             "edit.redo" => actions.push(Action::new("edit.redo", json!({}))),
             "project.next" => actions.push(Action::new("project.next", json!({}))),
             "project.previous" => actions.push(Action::new("project.previous", json!({}))),
+            // A command that closes Settings to show something else does nothing while Settings
+            // asks about unsaved changes; it is run again after the answer.
             "view.session" if has_project => {
-                self.shown = View::Session;
-                self.settings_open = false;
+                if self.close_settings() {
+                    self.shown = View::Session;
+                }
             }
             "view.arrangement" if has_project => {
-                self.shown = View::Arrangement;
-                self.settings_open = false;
+                if self.close_settings() {
+                    self.shown = View::Arrangement;
+                }
             }
             "view.sampleMapWindow" => self.toggle_map_window(),
             "view.sampleMap" => {
-                self.settings_open = false;
-                self.toggle_large_map();
+                if self.close_settings() {
+                    self.toggle_large_map();
+                }
             }
             "menu.missingFiles" if !self.missing.rows.is_empty() => {
-                self.missing.open = true;
-                self.settings_open = false;
+                if self.close_settings() {
+                    self.missing.open = true;
+                }
             }
             "view.browser" => self.toggle_browser(),
             "view.detail" if has_project => {

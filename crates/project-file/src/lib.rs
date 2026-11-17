@@ -43,7 +43,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 13;
+pub const VERSION: u64 = 14;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -643,8 +643,8 @@ fn clip_audio_value(a: &ClipAudio) -> Value {
     out
 }
 
-/// One note as the file writes it. `muted` is written only on a muted note, so a project without
-/// muted notes is byte-identical to a file written before muted notes existed.
+/// One note as the file writes it. `muted` is written only on a muted note and `velocity_range`
+/// only on a note with one, so a project without them is written as before they existed.
 fn note_value(n: &Note) -> Value {
     let mut out = json!({
         "time": number(n.time),
@@ -659,7 +659,25 @@ fn note_value(n: &Note) -> Value {
     {
         map.insert("muted".into(), Value::Bool(true));
     }
+    if n.velocity_range != 0
+        && let Some(map) = out.as_object_mut()
+    {
+        map.insert("velocity_range".into(), json!(n.velocity_range));
+    }
     out
+}
+
+/// A note's `velocity_range`: a whole number from -127 to 127, 0 when left out (a file from before
+/// version 13 has none: ADR 0037).
+fn velocity_range(o: &Obj, at: &str) -> Result<i8, ProjectFileError> {
+    match o.get("velocity_range") {
+        None | Some(Value::Null) => Ok(0),
+        Some(v) => {
+            v.as_i64().filter(|r| (-127..=127).contains(r)).and_then(|r| i8::try_from(r).ok()).ok_or_else(|| {
+                ProjectFileError(format!("{at}.velocity_range: expected a whole number from -127 to 127"))
+            })
+        }
+    }
 }
 
 fn clip_value(c: &Clip) -> Value {
@@ -1453,7 +1471,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         params.push(DeviceParam { id: required_text(p, "id", &at)?, value: float(p, "value", &at)? });
     }
     let automation = read_lanes(d, at)?;
-    // A key (sidechain), from version 13 (`docs/spec/sidechain.md` › Project file).
+    // A key (sidechain), from version 14 (`docs/spec/sidechain.md` › Project file).
     let mut inputs = Vec::new();
     for (i, v) in list(d, "inputs", at)?.iter().enumerate() {
         let at = format!("{at}.inputs[{i}]");
@@ -1579,6 +1597,7 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
                         channel,
                         // A file from before muted notes reads every note as unmuted.
                         muted: flag(n, "muted", false, &at)?,
+                        velocity_range: velocity_range(n, &at)?,
                     });
                 }
                 LaneData::Notes(notes.into())

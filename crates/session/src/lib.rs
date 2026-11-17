@@ -38,6 +38,7 @@ mod clip_ara;
 mod clip_audio;
 mod clip_color;
 mod clip_edges;
+mod clip_edits;
 mod clip_shape;
 mod clipboards;
 pub mod colours;
@@ -1130,6 +1131,12 @@ impl Session {
         if let Some(key) = plugin_key_at_path(&self.project, track, path) {
             self.plugins.ask_texts(key, id, values);
         }
+    }
+
+    /// Whether a plug-in's answer to a request for its texts is awaited
+    /// ([`Session::ask_plugin_texts_at`]): the window keeps drawing until it comes (#1482).
+    pub fn plugin_texts_pending(&self) -> bool {
+        self.plugins.texts_pending()
     }
 
     /// Has the plug-in device at `path` on `track` list its parameters again in the background,

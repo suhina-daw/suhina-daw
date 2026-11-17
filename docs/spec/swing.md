@@ -44,6 +44,11 @@ start marker does not change which sixteenths are delayed. A pass ends where the
 that swing would start at or past the loop end (a loop ending off an eighth, the note in its last
 sixteenth) is left out of that pass, in the Arrangement and in the Launcher alike.
 
+Because swing follows the content's beats, moving every note of a clip that swings by a part of an
+eighth would change which of them are delayed. The piano roll's Set the clip's first beat here
+(`clip.setOrigin`) therefore takes only a beat on an eighth on such a clip
+([clip editor](ui-clip-editor.md) › Joining, fitting, cropping and splitting).
+
 ## The project's swing and a clip's own
 
 - The project has one swing amount (0 % at first). Every MIDI clip follows it until it gets its
@@ -58,7 +63,8 @@ sixteenth) is left out of that pass, in the Arrangement and in the Launcher alik
 - **MIDI clip panel**, at the foot of the **Notes** tab of its note tools ([clip editor
   spec](ui-clip-editor.md) › Note tools): the name says whose swing the clip plays, **Swing (global)** or **Swing (this
   clip)**, with the amount at its right; under it the **Global** switch (lit while the clip follows
-  the project's swing) and a slider.
+  the project's swing), and under that a slider the panel's whole width, so a drag sets the swing
+  to the percent (where the panel is too short for that line, the slider goes beside the switch).
   - While **Global** is lit the slider shows the project's swing, and dragging it sets the
     project's: every clip that follows it, and the slider beside **Resize all**, follow at once.
   - A click on **Global** turns it off: the clip plays its own amount, and the slider sets that.

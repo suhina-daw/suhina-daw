@@ -3,7 +3,7 @@ description: Experimental live modal backdrop and optical coatings for track and
 read_when: glass effect, backdrop blur, rendering materials, Aero
 type: plan
 status: draft
-last_verified: 2026-11-13
+last_verified: 2026-11-16
 covers:
   - crates/ui/src/kit/**
   - apps/suhina/src/main.rs
@@ -35,8 +35,8 @@ without a hard glossy stripe across notes or waveforms.
 
 The original static experiment below remains available. There is also an experimental
 native integration, disabled by default, with per-surface global strengths under
-Appearance › Liquid (experimental), and optional overrides saved with each theme in
-Edit current theme. Use global liquid settings removes the theme override.
+Appearance › Liquid (experimental), and optional overrides a theme sets in its `theme.css`
+(`window { liquid }`; `auto` keeps the global strengths).
 
 Run with `--renderer wgpu` and raise a strength above 0 to opt in. The old
 `SUHINA_LIQUID_PREVIEW` environment switch is no longer needed.
@@ -180,10 +180,9 @@ measurement before use on a live UI; no frame-rate claim has been established.
 
 ## Editable theme gradients
 
-Edit current theme provides independent panel, track and clip overlays. Each has a
-toggle, clockwise direction, live preview and 2–8 RGBA stops with positions, opacity,
-add and remove controls. The optional theme `gradients` object follows saves, copies,
-exports and Reset changes. A gradient is independent of the liquid strength and GPU
+A theme's `theme.css` sets independent panel, track and clip overlays
+(`window { panel-gradient; track-gradient; clip-gradient; }`), each a clockwise direction and
+2–8 RGBA stops with positions. They follow copies and exports of the theme. A gradient is independent of the liquid strength and GPU
 availability. Reduced effects and high contrast still suppress surface materials.
 
 The kit clips the rectangle against each pair of stop planes and triangulates those

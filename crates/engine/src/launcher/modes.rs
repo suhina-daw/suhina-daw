@@ -126,6 +126,7 @@ pub(super) fn take_over(plan: &mut ClipPlan, playing: &mut Playing, previous: (f
     playing.elapsed_frames = frames * elapsed / beats;
     playing.last_clip_beat = plan.clip_beat(elapsed);
     playing.next_note = plan.first_note_from(playing.last_clip_beat);
+    playing.passes = plan.pass_at(elapsed);
     let to = (elapsed * frames_per_beat).round().max(0.0) as u64;
     for voice in plan.audio.iter_mut().filter_map(|a| a.stretch.as_mut()) {
         voice.seek(to);

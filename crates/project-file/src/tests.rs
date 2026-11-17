@@ -1495,7 +1495,13 @@ fn every_feature() -> Project {
     project.channels[0].devices[0].set_sample_edit_data(sample_edits).unwrap();
     // Version 11: a clip's own swing (#1221).
     project.arrangement.lanes[0].clips[0].swing = ClipSwing { amount: 0.6, own: true };
-    // Version 13: linked copies, the cosine fade shape and a device's key (sidechain).
+    // Version 13: a note's velocity range (#1282).
+    if let Some(LaneData::Notes(notes)) = project.contents[0].lanes.first_mut().map(|l| &mut l.data)
+        && let Some(note) = notes.get_mut(0)
+    {
+        note.velocity_range = 20;
+    }
+    // Version 14: linked copies, the cosine fade shape and a device's key (sidechain).
     project.contents[0].linked = true;
     let key_source = project.channels.iter().map(|c| c.id).find(|id| *id != project.channels[0].id).unwrap();
     project.channels[0].devices[0].inputs =
@@ -1567,12 +1573,20 @@ fn a_file_of_every_version_reads() {
                 clip.swing = ClipSwing::default();
             }
         }
-        if version < 13 {
-            // Linked copies, the cosine fade shape and keys came with version 13.
+        if version < 14 {
+            // Linked copies, the cosine fade shape and keys came with version 14.
             expected.contents[0].linked = false;
             expected.channels[0].devices[0].inputs.clear();
             expected.arrangement.lanes[0].clips[0].fade_out_curve =
                 everything().arrangement.lanes[0].clips[0].fade_out_curve;
+        }
+        if version < 13 {
+            // A note's velocity range came with version 13 (#1282).
+            for lane in expected.contents.iter_mut().flat_map(|c| c.lanes.iter_mut()) {
+                if let LaneData::Notes(notes) = &mut lane.data {
+                    notes.iter_mut().for_each(|n| n.velocity_range = 0);
+                }
+            }
         }
         // Devices get their ids in document order when a file before version 6 is read.
         assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");
@@ -1814,4 +1828,22 @@ fn a_key_survives_a_round_trip_and_a_bad_one_is_refused() {
     let read = from_json(&plain.to_string()).unwrap();
     let key = &read.channels[0].devices[0].inputs[0];
     assert_eq!((key.source.tap(), key.gain), (TapPoint::PostFx, 1.0));
+}
+
+/// A note's velocity range is written only when it is not 0, read back as it was, and a value out
+/// of range refuses the file (#1282).
+#[test]
+fn a_notes_velocity_range_round_trips_and_is_checked() {
+    let mut project = every_feature();
+    let written = to_json(&project);
+    assert_eq!(written.matches("velocity_range").count(), 1, "only the note that has one");
+    assert_eq!(from_json(&written).map(renumbered), Ok(renumbered(project.clone())));
+    if let Some(LaneData::Notes(notes)) = project.contents[0].lanes.first_mut().map(|l| &mut l.data)
+        && let Some(note) = notes.get_mut(0)
+    {
+        note.velocity_range = -127;
+    }
+    assert_eq!(from_json(&to_json(&project)).map(renumbered), Ok(renumbered(project)));
+    let bad = written.replace("\"velocity_range\": 20", "\"velocity_range\": 128");
+    assert!(from_json(&bad).is_err());
 }

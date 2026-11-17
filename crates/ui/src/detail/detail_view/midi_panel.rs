@@ -184,9 +184,9 @@ pub(super) fn midi_panel(
 
 /// The Swing row at the foot of the Notes tab (#1221, `docs/spec/swing.md`): its name says whose swing the
 /// clip plays, the **Global** switch makes it follow the project's swing or play its own again, and
-/// the slider sets the swing it plays: the project's while it follows it (so every clip that
-/// follows changes with it), else its own. Left out whole when it does not fit. Returns where it
-/// ends.
+/// the slider under it, the panel's whole width, sets the swing it plays: the project's while it
+/// follows it (so every clip that follows changes with it), else its own. Left out whole when it
+/// does not fit; the slider goes beside the switch when there is no room for a line of its own.
 #[allow(clippy::too_many_arguments)]
 fn swing_row(
     ui: &Ui,
@@ -224,8 +224,14 @@ fn swing_row(
     if toggle(ui, painter, switch, "Use global swing", "Global", global) {
         actions.push(Action::new("clip.setSwing", on_clip(json!({ "global": !global }))));
     }
-    let slider =
-        Rect::from_min_max(Pos2::new(switch.right() + 4.0, switch.top()), Pos2::new(part.right(), switch.bottom()));
+    // The slider takes the whole width on a line of its own under the switch where there is room
+    // for it: beside the switch it is too short to set a value to the percent.
+    let below = switch.bottom() + 4.0;
+    let slider = if below + field <= part.bottom() + 0.5 {
+        Rect::from_min_max(Pos2::new(part.left(), below), Pos2::new(part.right(), below + field))
+    } else {
+        Rect::from_min_max(Pos2::new(switch.right() + 4.0, switch.top()), Pos2::new(part.right(), switch.bottom()))
+    };
     let label = if global { "Swing (global)" } else { "Swing (this clip)" };
     let id = Id::unique(("clip-panel-swing", panel.clip.0));
     if let Some((amount, dragged)) = widgets::percent_slider(ui, painter, slider, id, label, percent, !global) {
@@ -492,7 +498,7 @@ fn notes_tab(
                 "Invert" => "note.invert",
                 "Reverse" => "note.reverse",
                 "Legato" => {
-                    params["until"] = json!(tools.legato_until(state.span_end()));
+                    params["until"] = json!(tools.legato_until(state.legato_span_end()));
                     "note.legato"
                 }
                 "×2" => {
@@ -563,6 +569,9 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
         (Some(low), Some(high)) => Some(format!("{low}–{high}")),
         _ => None,
     };
+    // Under the velocities, the span they may play at once rolled, where a note has a velocity
+    // range (› Velocity range): a row of its own, so the velocity stays short.
+    let plays = played_velocity_text(tools.notes, acted);
     let muted = (info.muted > 0).then(|| info.muted.to_string());
     let rows = [("Pitch", pitch), ("From", info.from.clone()), ("To", info.to.clone()), ("Muted", muted)];
     for (name, value) in rows {
@@ -582,6 +591,13 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
     let row = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), INFO_ROW));
     figure(ui, painter, row, "Velocity", &velocity);
     y += INFO_ROW;
+    if let Some(plays) = plays
+        && y + INFO_ROW + RANGE_BAR <= part.bottom() + 0.5
+    {
+        let row = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), INFO_ROW));
+        figure(ui, painter, row, "Plays", &plays);
+        y += INFO_ROW;
+    }
     let bar = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), RANGE_BAR));
     // `progress`, its span `progress-fill`: their `background-color`.
     painter.rect_filled(bar, 3.0, crate::kit::element::PROGRESS.look().background());
@@ -592,6 +608,27 @@ fn figures(ui: &Ui, painter: &egui::Painter, part: Rect, panel: &AudioPanel, too
     );
     painter.rect_filled(span, 2.0, crate::kit::element::PROGRESS_FILL.look().background());
     bar.bottom()
+}
+
+/// The velocities the notes `acted` among `notes` may play at, their velocity ranges rolled, as the
+/// figures' **Plays** row shows it ("100–120"): from the quietest any of them may play to the
+/// loudest, within 1 to 127. `None` when none of them has a range.
+pub(crate) fn played_velocity_text(
+    notes: &[suhina_engine::model::Note],
+    acted: &std::collections::BTreeSet<usize>,
+) -> Option<String> {
+    let chosen = || acted.iter().filter_map(|i| notes.get(*i));
+    if chosen().all(|n| n.velocity_range == 0) {
+        return None;
+    }
+    let span = |n: &suhina_engine::model::Note| {
+        let own = i16::from(suhina_session::midi_velocity(n.velocity));
+        let range = i16::from(n.velocity_range);
+        ((own + range.min(0)).clamp(1, 127), (own + range.max(0)).clamp(1, 127))
+    };
+    let low = chosen().map(|n| span(n).0).min()?;
+    let high = chosen().map(|n| span(n).1).max()?;
+    Some(if low == high { low.to_string() } else { format!("{low}–{high}") })
 }
 
 /// The head of the figures: what the tools act on (**Whole clip**, **Selection**, **No notes in
@@ -630,9 +667,13 @@ fn figure(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, value: &str) 
     let label = format!("{name}: {value}");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
     widgets::text_in(painter, row, Align2::LEFT_CENTER, name, theme::ui_font(theme::TEXT_TINY), super::caption_ink());
+    // The value keeps to the room right of the name, fitted to it there, never drawn over the name.
+    let name_width =
+        painter.layout_no_wrap(name.to_owned(), theme::ui_font(theme::TEXT_TINY), super::caption_ink()).size().x;
+    let room = Rect::from_min_max(Pos2::new(row.left() + name_width + 6.0, row.top()), row.max);
     widgets::text_in(
         painter,
-        row,
+        room,
         Align2::RIGHT_CENTER,
         value,
         theme::mono_font(theme::TEXT_SMALL),
@@ -866,4 +907,27 @@ fn amount_knob(ui: &Ui, painter: &egui::Painter, rect: Rect, amount: f64) -> f64
         10.0,
     );
     amount
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use suhina_engine::model::Note;
+
+    /// The figures' Plays row gives the velocities the notes may play at, their ranges rolled
+    /// (#1282): from the quietest to the loudest, kept within 1 to 127, with no signs to misread.
+    #[test]
+    fn the_plays_row_gives_the_velocities_the_notes_may_play_at() {
+        let ranged = |velocity: u8, range: i8| Note {
+            velocity_range: range,
+            ..Note::new(0.0, 1.0, 60, f32::from(velocity) / 127.0)
+        };
+        let notes = [ranged(100, 0), ranged(100, 20), ranged(80, -29), ranged(120, 20), ranged(1, -5)];
+        let set = |list: &[usize]| list.iter().copied().collect::<std::collections::BTreeSet<usize>>();
+        assert_eq!(played_velocity_text(&notes, &set(&[0])), None, "no range, no row");
+        assert_eq!(played_velocity_text(&notes, &set(&[1])).as_deref(), Some("100–120"));
+        assert_eq!(played_velocity_text(&notes, &set(&[0, 2])).as_deref(), Some("51–100"));
+        assert_eq!(played_velocity_text(&notes, &set(&[3])).as_deref(), Some("120–127"), "kept within 127");
+        assert_eq!(played_velocity_text(&notes, &set(&[4])).as_deref(), Some("1"), "kept within 1");
+    }
 }
