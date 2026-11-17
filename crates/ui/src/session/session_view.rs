@@ -800,18 +800,15 @@ fn draw_column(
     // Column separator through header, grid and mixer.
     let full = egui::Rangef::new(bands.header.top(), bands.mixer.bottom());
     painter.with_clip_rect(clip).vline(span.max + 0.5, full, theme::hairline(bands.lines.column));
-    // A selected track's whole column, header, slots and strip, is tinted with
-    // `track-column[selected]`'s background (a light tint of the selection colour by default) and
-    // outlined (#916).
+    // A selected track's whole column, header, slots and strip, is tinted with what
+    // `track-column[selected]` changes in its background (a light tint of the selection colour by
+    // default) and outlined (#916). A background a theme gives every column stays under the slots
+    // ([`selected_column_tint`]).
     if column_selected(state, column.track) {
         let outline = Rect::from_x_y_ranges(span, full);
-        let tint = crate::kit::element::TRACK_COLUMN
-            .id(&format!("track-{}", column.track.0))
-            .color(rgb(column.color))
-            .attr(Selected, true)
-            .look()
-            .background();
-        painter.with_clip_rect(clip).rect_filled(outline, 0.0, tint);
+        if let Some(tint) = selected_column_tint(column) {
+            painter.with_clip_rect(clip).rect_filled(outline, 0.0, tint);
+        }
         let colour = colour_picker::fill(column.color, false);
         painter.with_clip_rect(clip).rect_stroke(outline, 0.0, egui::Stroke::new(1.5, colour), StrokeKind::Inside);
     }
@@ -820,6 +817,20 @@ fn draw_column(
 /// How wide a selected header's band and a selected clip's edge in their own colour are, in
 /// points.
 const SELECTED_BAND: f32 = 3.0;
+
+/// What a selected column is tinted with over its header, slots and strip: the background of
+/// `track-column[selected]` where it differs from the column's own (the base sheet's light tint of
+/// the selection colour, or a theme's rule for the state). `None` where the state changes nothing,
+/// so a background a theme gives every column (`track-column { background-color }`) is never drawn
+/// over the column, only under its slots, selected or not.
+fn selected_column_tint(column: &Column) -> Option<Color32> {
+    let id = format!("track-{}", column.track.0);
+    let look = |selected: bool| {
+        crate::kit::element::TRACK_COLUMN.id(&id).color(rgb(column.color)).attr(Selected, selected).probe().background()
+    };
+    let (selected, plain) = (look(true), look(false));
+    (selected != plain && selected.a() > 0).then_some(selected)
+}
 
 /// Whether `track` is selected: the one the detail area shows, or one of the selected tracks.
 fn column_selected(state: &SessionViewState, track: TrackId) -> bool {
@@ -1012,10 +1023,17 @@ fn column_body(
         .color(rgb(column.color))
         .attr(Selected, selected_column)
         .enter();
-    // The column's own background from the sheet, under its slots; a selected column's is drawn
-    // over the whole column instead (`draw_column`).
+    // The column's own background from the sheet, under its slots. A selected column's tint is
+    // drawn over the whole column instead (`draw_column`), so under the slots it keeps the
+    // background it has unselected: a theme's background for every column stays where it was.
+    let body_rect = Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip);
     if !selected_column {
-        column_style.paint_background(painter, Rect::from_x_y_ranges(span, bands.body.y_range()).intersect(clip), 0.0);
+        column_style.paint_background(painter, body_rect, 0.0);
+    } else {
+        let plain = crate::kit::element::TRACK_COLUMN.id(&track_id).color(rgb(column.color)).probe();
+        if plain.style().is_some_and(|style| style.authored.background) {
+            painter.rect_filled(body_rect, 0.0, plain.background());
+        }
     }
     if crate::kit::style_class::track_artwork(&column_style) {
         let body = Rect::from_x_y_ranges(span, bands.body.y_range());

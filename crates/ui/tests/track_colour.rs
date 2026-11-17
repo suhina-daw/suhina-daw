@@ -797,6 +797,32 @@ fn tinted_with(harness: &Harness<'static, App>, colour: Color32) -> Vec<Rect> {
         .collect()
 }
 
+/// A theme's background for every Launcher column stays under the slots when a column is
+/// selected: it is not drawn over the header, which keeps the selection colour (#1524 review).
+#[test]
+fn a_themes_column_background_does_not_cover_a_selected_column() {
+    let mut harness = window();
+    let column = Color32::from_rgb(0x20, 0x20, 0x20);
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        format!(
+            ":root {{ --selection-background: {}; }} track-column {{ background-color: #202020; }}",
+            theme::hex(PICKED)
+        )
+        .into(),
+    ));
+    harness.run();
+    pick(&mut harness, "Track Drums", false, Modifiers::NONE);
+    let header = harness.get_by_label("Track Drums").rect();
+    let covered = filled_rects(&harness).iter().any(|r| {
+        let over = r.rect.intersect(header);
+        r.fill == column && over.width() > 1.0 && over.height() > 1.0
+    });
+    let filled = filled_with(&harness, header, PICKED);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!covered, "the column's background is not drawn over the selected header");
+    assert!(filled, "the selected header keeps the selection colour");
+}
+
 /// Only the selected tracks' lanes are tinted with the selection colour, and the tint follows a
 /// change of selection (#1217).
 #[test]

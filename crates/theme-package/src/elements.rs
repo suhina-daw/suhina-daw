@@ -311,7 +311,7 @@ pub const ELEMENTS: &[Element] = &[
     element("session", Region, "The Launcher view: tracks as columns of clip slots.")
         .parts(&["track-column", "scene-column"])
         .settings(&["track-width", "return-width", "scene-width", "slot-height", "header-height"]),
-    element("track-column", Container, "A track's column in the Launcher view. While `[selected]`, its background is drawn over the whole column, header, slots and mixer strip, so give it a translucent one.")
+    element("track-column", Container, "A track's column in the Launcher view; its background is drawn under its slots. While `[selected]`, what that state changes in its background is drawn over the whole column, header, slots and mixer strip, so give `track-column[selected]` a translucent one.")
         .attributes(&["color", "selected", "muted"])
         .settings(&["track-artwork"]),
     element("scene-column", Part, "The column of scenes at the Launcher view's side."),
