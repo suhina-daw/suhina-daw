@@ -72,10 +72,11 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
    to a device takes its workers from one real-time pool: the player of the active project
    ([ADR 0007](0007-several-open-projects.md) › 4). Offline renders and exports take theirs from
    a second pool whose workers stay at normal priority: an export has no deadline, so the
-   system preempts its workers whenever a real-time thread needs a core, and an export beside
-   playback takes only the time playback leaves. Ordering jobs could not do this: a worker
-   cannot leave a chain's block it has started, so playback would wait for the export chains
-   already running, one on every worker at worst. Each pool's size is the physical performance
+   system preempts its workers whenever a real-time thread needs a core, and an export's own
+   chains beside playback take only the time playback leaves. Ordering jobs could not do this:
+   a worker cannot leave a chain's block it has started, so playback would wait for the export
+   chains already running, one on every worker at worst. An export's plug-ins are not covered:
+   they run in the hosts' audio threads at real-time priority (Consequences). Each pool's size is the physical performance
    cores less one, at most 8, counted where the system says which cores are which, and the
    physical cores less one where it does not; one core means no workers.
    `SUHINA_RENDER_THREADS=n` and an advanced setting in Settings › Audio override it, for
@@ -89,23 +90,26 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
    chain sent to a worker through an `rtrb` queue and sent back, with a spare chain in its place
    meanwhile, so the render thread allocates and frees nothing (AGENTS.md rule 3). The order is
    `sends::run`'s; a chain's output is summed in chain order, whichever finished first, so the
-   result is the same bit for bit on any number of threads. Tests run under a counting allocator
-   that fails on any allocation on the render thread or a worker.
+   result is the same bit for bit on any number of threads. A test counts what the render thread
+   allocates while it renders on several threads, and on one thread, where it runs the chain code
+   the workers run.
 3. **Late work is waited for.** When the block's sum needs a chain a worker has not finished, the
    render thread waits for it: it spins briefly, then sleeps on a wake-up the worker signals. It
    never gives its core away by yielding: on Windows a yield can hand the core to a thread of
    normal priority for a whole scheduler quantum. Playback never stops for it. A wait that eats
    the queue shows as a device underrun, counted as today: the device plays silence for the
    frames that were not there and then the frames as they come, nothing dropped. A chain that
-   finished after its
-   block's share of time is counted as a *missed block* and named by track. Dropping a late chain
+   finished after its block's share of time is counted as a *missed block* and named by track. Dropping a late chain
    for the block, as an engine with no queue has to, is rejected: it cuts a gap into the track
    and skips its devices' state by a block, and a render on several threads would no longer
    equal the render on one. With a queue ahead of the device, a short wait costs nothing heard.
-   What is bit-identical is a render on any number of threads against one on one thread; a
-   render in real time equals an offline one only while no plug-in misses its deadline, since
-   a late plug-in is replaced for its block ([ADR 0006](0006-plug-in-hosting.md) › 4) and offline
-   it is waited for.
+   What is bit-identical is a render on any number of threads against one on one thread, for
+   devices whose output depends only on their input and state (every built-in device; a plug-in
+   that draws unseeded random numbers differs between any two renders, on one thread too):
+   always offline, where every plug-in is waited for, and in real time only while no plug-in
+   misses its deadline, since a late plug-in is replaced for its block
+   ([ADR 0006](0006-plug-in-hosting.md) › 4) and whether one is late depends on timing; for the
+   same reason a real-time render equals an offline one only while none is late.
 4. **Plug-in chains go to the pool too** (phase 2). A chain with plug-in slots is a job like any
    other: its round trips run on the worker, and chains overlap their round trips with each
    other and with built-in work. Inside a chain, parts that do not depend on each other (the
@@ -174,7 +178,8 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
     wall time a block took over the block's time, with a peak hold), the load of rendering ahead
     apart from it, and missed blocks per track. Level meters and the spectrum read from the play
     position, not the render position, so they move with what is heard.
-13. **Worker threads get the render thread's priority.** On Windows the workers join MMCSS
+13. **The real-time pool's workers get the render thread's priority** (the export pool's stay
+    at normal priority, 1). On Windows the workers join MMCSS
     *Pro Audio* through `suhina-realtime`, as the render thread does, and run at normal priority
     where it refuses. On Linux they take `SCHED_FIFO` or rtkit as the render thread does, within
     rtkit's thread allowance, with the same pacing under `RLIMIT_RTTIME`. On macOS the render
