@@ -275,6 +275,7 @@ fn an_mp3_export_refuses_what_does_not_apply() {
     assert_eq!(error, "the file name says .wav, and the format says mp3");
     assert!(!wav.exists(), "a refused export wrote the file");
 }
+
 /// A device with latency delays the whole mix by as much; the export takes it out, so the file
 /// starts where the project does (an imported song's plug-in latency was silence at the start
 /// and missing at the end).
