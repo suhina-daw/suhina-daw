@@ -1190,7 +1190,7 @@ impl Session {
         })
     }
 
-    /// Opens a project (`.suhina`) or imports a project (`.als`). Returns
+    /// Opens a project (`.suhina`) or imports a project (`.als`, `.flp`). Returns
     /// the session and the importer's warnings. Any other file is refused by its extension.
     /// The NAM devices' files are read here, so the session is ready for the planned audio
     /// before a player is attached.
@@ -1204,9 +1204,21 @@ impl Session {
     /// when the base arrives later — a load that ran without it is a parse and, for an IR, a
     /// resample the session's thread spends twice ([`Session::set_library_base`], the review).
     pub fn open_with_base(path: &Path, base: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
+        Self::open_with_import_samples(path, base, |files| vec![None; files.len()])
+    }
+
+    fn open_with_import_samples(
+        path: &Path,
+        base: Option<&Path>,
+        resolve: impl FnOnce(&[String]) -> Vec<Option<PathBuf>>,
+    ) -> Result<(Self, Vec<String>), CommandError> {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (project, Vec::new())
+        } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("flp")) {
+            let import =
+                suhina_flp::import_file_with_samples(path, resolve).map_err(|e| format!("{}: {e}", path.display()))?;
+            (import.project, import.warnings)
         } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
             // A zipped project opens once it is unpacked into a folder the person chose
             // (`extract_zipped_project`): the window asks where, the CLI takes --extract-to.
@@ -1217,7 +1229,7 @@ impl Session {
             .into());
         } else if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("als")) {
             return Err(format!(
-                "{}: Suhina opens a project (.{}) or imports .als files, not this file",
+                "{}: Suhina opens a project (.{}) or imports .als and .flp files, not this file",
                 path.display(),
                 suhina_project_file::EXTENSION
             )

@@ -42,10 +42,15 @@ project opens and helps find the files again.
 3. The browser's index is searched at once for candidates (instant: it is a list of names in
    memory), so the panel usually opens with most files found.
 
+During a format import, unresolved sample paths may be matched automatically against the
+browser index before audio is loaded. A unique best trailing-path match is accepted;
+equal-best matches, saturated candidate lists and missing files stay unresolved for the
+panel. The search does not add roots, scan the disk or move audio; media trust rules apply.
+
 ## Zipped projects
 
 A project can arrive as a zip that holds it and its samples, as another DAW packs a song to send
-it. Opening or dropping such a zip (`.als` or `.suhina` inside, exactly one) does not open
+it. Opening or dropping such a zip (`.flp`, `.als` or `.suhina` inside, exactly one) does not open
 it at once: a bar asks where to unpack it, with a folder named after the zip beside it filled in
 (a number added when that folder is taken), **Unpack and open** and **Cancel**. The project then
 opens from the unpacked folder, so its samples are found beside it by the rules above.

@@ -5631,6 +5631,12 @@ dependencies = [
 [[package]]
 name = "suhina-flp"
 version = "0.0.1"
+dependencies = [
+ "suhina-media",
+ "suhina-model",
+ "suhina-plugins",
+ "suhina-project-file",
+]
 
 [[package]]
 name = "suhina-fs"
@@ -5791,6 +5797,7 @@ dependencies = [
  "suhina-device-registry",
  "suhina-device-sdk",
  "suhina-engine",
+ "suhina-flp",
  "suhina-fs",
  "suhina-library",
  "suhina-media",

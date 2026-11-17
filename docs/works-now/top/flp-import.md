@@ -1,3 +1,15 @@
+- **Importing `.flp` projects (partial):** the window, `suhina-cli` and the MCP server open an
+  FL Studio project file. Patterns become clips on the instrument or sample tracks they play,
+  shared across placements; samplers, audio clips (fades, gain, stretch timing as warp markers),
+  wrapped VST2 and VST3 instruments and effects with their saved state, parallel instrument
+  patches as device groups and neutral layers come in, with known effects as approximate
+  built-in substitutes. Mixer routing becomes groups and sends, a mixer insert fed by one source
+  folds into its track, an instrument's own mute switches its device off and a mixer mute stays
+  on its track or group. Volume automation of audio clips becomes gain envelopes and supported
+  device and mixer automation becomes lanes on its owner; playlist colours and groups become
+  track colours and folders. Samples are found beside the project or in the browser's library.
+  Everything else (step-sequencer notes, note expression, unsupported plug-ins and curves) is
+  kept in the project and named in the import's warnings (`docs/spec/flp-model-mapping.md`).
 - **Instruments that are switched off or missing stay silent:** they still take their track's
   notes, so no default tone plays in their place, and play again when switched on or relinked.
 - **Groups apply their pan and can take sends:** a group's pan applies once to its sum and its
@@ -11,11 +23,14 @@
   listens to that track while it processes its own). Choose the track with the **SC** button
   in the device's header or *Sidechain* in its menu, with where it is read (before or after
   the track's devices, or after its fader) and its gain; or from the source's track menu,
-  *Sidechain to*. A plug-in hears the key on its sidechain input.
+  *Sidechain to*. A plug-in hears the key on its sidechain input. An imported `.flp` keeps
+  its plug-ins' sidechains.
 - **Renaming devices:** a device's menu starts with its name in a field; type a new one and
   press Enter. A renamed plug-in still loads as itself.
 - **Notes stop at the instrument:** a plug-in effect after a track's instrument no longer gets
   the track's notes, so a compressor that MIDI notes can trigger no longer holds the sound down.
+- **Plug-in instruments at FL's level:** an imported plug-in generator's channel plays 3 dB
+  louder than before, as FL plays it; audio clip channels were already right.
 - **The original VST2 first:** a project saved with a VST2 plug-in opens it with the installed
   VST2 itself before a VST3 copy that only shares its id, so its saved sound loads; a VST3 that
   declares it replaces the VST2 still comes first.

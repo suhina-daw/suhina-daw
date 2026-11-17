@@ -420,7 +420,8 @@ An ordinary duplicate, a paste and a drag copy of a linked clip are independent 
 a content of their own, so they never join the link unasked. A split's parts keep playing the
 content from where it was cut, so they stay linked copies. Placement properties (start,
 length, offset, loop, fades, gain envelope, colour) stay each clip's own, as for any clip. The
-project file keeps `linked` on the content ([format](suhina-format.md) › Parts).
+project file keeps `linked` on the content ([format](suhina-format.md) › Parts). An imported
+`.flp` pattern placed several times comes in linked ([FLP mapping](flp-model-mapping.md)).
 
 ## Automation lanes
 
