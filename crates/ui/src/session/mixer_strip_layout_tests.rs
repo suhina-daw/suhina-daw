@@ -122,7 +122,8 @@ fn native(rect: Rect, has_sends: bool, input: bool, shared: Shared, main: bool, 
         parts.pan = Some(row(top, theme::KNOB));
         top += KNOB_ROW;
     }
-    let centred = rect.width() <= theme::SCENE_COLUMN;
+    // Since #1487 B19 every strip centres its fader, as a narrow one did.
+    let centred = true;
     let group_left = if centred { inner.center().x - FADER_COLUMN / 2.0 } else { inner.left() };
     let column =
         |top: f32, height: f32| Rect::from_min_size(Pos2::new(group_left, top), Vec2::new(FADER_COLUMN, height));
