@@ -149,12 +149,30 @@ impl Leftover {
 
 /// `written` as local date and time, `2026-10-15 14:05:09`.
 pub fn date_time(written: SystemTime) -> String {
-    chrono::DateTime::<chrono::Local>::from(written).format("%Y-%m-%d %H:%M:%S").to_string()
+    format_time(&local(written), "%Y-%m-%d %H:%M:%S")
 }
 
 /// `written` as the local time of day, `14:05`.
 pub fn clock_time(written: SystemTime) -> String {
-    chrono::DateTime::<chrono::Local>::from(written).format("%H:%M").to_string()
+    format_time(&local(written), "%H:%M")
+}
+
+/// The local date and time now for a file or folder name, `2026-10-15-140509`: sorts by time
+/// and keeps two on one day apart.
+pub fn file_stamp_now() -> String {
+    format_time(&local(SystemTime::now()), "%Y-%m-%d-%H%M%S")
+}
+
+/// `time` in the system's time zone; the Unix epoch for a time `jiff` cannot hold.
+fn local(time: SystemTime) -> jiff::ZonedDateTime {
+    jiff::Timestamp::try_from(time)
+        .unwrap_or(jiff::Timestamp::UNIX_EPOCH)
+        .to_zoned_datetime(jiff::tz::TimeZone::system())
+}
+
+/// `time` written with the `strftime` `format`; empty when `format` cannot be written.
+fn format_time(time: &jiff::ZonedDateTime, format: &str) -> String {
+    jiff::fmt::strtime::format(format, time).unwrap_or_default()
 }
 
 /// The settings and the thread the backups of [`Projects`] use.
@@ -413,7 +431,7 @@ fn offered(entry: &Entry) -> Option<Leftover> {
 
 /// Writes one backup: picks its name, writes it through a temporary file, then cleans up.
 fn write_backup(job: &Job) -> Result<Backup, String> {
-    let stamp = chrono::Local::now().format("%Y-%m-%d %H-%M-%S").to_string();
+    let stamp = format_time(&local(SystemTime::now()), "%Y-%m-%d %H-%M-%S");
     let base = format!("{} {stamp}", job.name);
     let path = (1..=99u32)
         .map(|n| {
