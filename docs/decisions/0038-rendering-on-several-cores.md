@@ -90,16 +90,16 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
    chain sent to a worker through an `rtrb` queue and sent back, with a spare chain in its place
    meanwhile, so the render thread allocates and frees nothing (AGENTS.md rule 3). The order is
    `sends::run`'s; a chain's output is summed in chain order, whichever finished first, so the
-   result is the same bit for bit on any number of threads. Tests run under a counting allocator
-   that fails on any allocation on the render thread or a worker.
+   result is the same bit for bit on any number of threads. A test counts what the render thread
+   allocates while it renders on several threads, and on one thread, where it runs the chain code
+   the workers run.
 3. **Late work is waited for.** When the block's sum needs a chain a worker has not finished, the
    render thread waits for it: it spins briefly, then sleeps on a wake-up the worker signals. It
    never gives its core away by yielding: on Windows a yield can hand the core to a thread of
    normal priority for a whole scheduler quantum. Playback never stops for it. A wait that eats
    the queue shows as a device underrun, counted as today: the device plays silence for the
    frames that were not there and then the frames as they come, nothing dropped. A chain that
-   finished after its
-   block's share of time is counted as a *missed block* and named by track. Dropping a late chain
+   finished after its block's share of time is counted as a *missed block* and named by track. Dropping a late chain
    for the block, as an engine with no queue has to, is rejected: it cuts a gap into the track
    and skips its devices' state by a block, and a render on several threads would no longer
    equal the render on one. With a queue ahead of the device, a short wait costs nothing heard.
@@ -178,7 +178,8 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
     wall time a block took over the block's time, with a peak hold), the load of rendering ahead
     apart from it, and missed blocks per track. Level meters and the spectrum read from the play
     position, not the render position, so they move with what is heard.
-13. **Worker threads get the render thread's priority.** On Windows the workers join MMCSS
+13. **The real-time pool's workers get the render thread's priority** (the export pool's stay
+    at normal priority, 1). On Windows the workers join MMCSS
     *Pro Audio* through `suhina-realtime`, as the render thread does, and run at normal priority
     where it refuses. On Linux they take `SCHED_FIFO` or rtkit as the render thread does, within
     rtkit's thread allowance, with the same pacing under `RLIMIT_RTTIME`. On macOS the render
