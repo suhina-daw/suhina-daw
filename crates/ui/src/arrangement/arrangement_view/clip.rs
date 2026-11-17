@@ -1366,6 +1366,18 @@ pub(super) fn clip_element<'a>(
     timeline: &Timeline,
     selected: bool,
 ) -> crate::kit::element::Builder<'a> {
+    let kind = clip_kind(lane, clip, timeline, selected);
+    crate::kit::element::CLIP
+        .id(id)
+        .color(kind.color)
+        .attr(crate::kit::element::Selected, kind.selected)
+        .attr(crate::kit::element::Muted, kind.muted)
+        .attr(crate::kit::element::Playing, kind.playing)
+        .attr(crate::kit::element::Recording, kind.recording)
+}
+
+/// What the `clip` element of an Arrangement clip is styled by ([`clip_element`]).
+pub(super) fn clip_kind(lane: &Lane, clip: &ClipBox, timeline: &Timeline, selected: bool) -> super::state::ClipKind {
     let off = drawn_muted(lane.mute, clip.enabled);
     let end = clip.start + clip.length;
     let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
@@ -1373,13 +1385,24 @@ pub(super) fn clip_element<'a>(
         .recording_spans
         .iter()
         .any(|(track, from, to)| *track == lane.track && *from < end && *to > clip.start);
-    crate::kit::element::CLIP
-        .id(id)
-        .color(rgb(clip.color))
-        .attr(crate::kit::element::Selected, selected)
-        .attr(crate::kit::element::Muted, off)
-        .attr(crate::kit::element::Playing, playing)
-        .attr(crate::kit::element::Recording, recording)
+    super::state::ClipKind { color: rgb(clip.color), selected, muted: off, playing, recording, audio: clip.audio }
+}
+
+/// The looks of the parts of a clip of `kind`, inside its entered `clip` element: read for the
+/// first clip of its kind this frame and kept in `look`, so the parts add no elements to the
+/// style tree for each clip.
+fn clip_parts(look: &super::state::ClipLook, kind: super::state::ClipKind) -> super::state::ClipParts {
+    if let Some(parts) = look.parts.borrow().get(&kind) {
+        return parts.clone();
+    }
+    use crate::kit::element::{CLIP_FADE, CLIP_NAME, CLIP_NOTES, CLIP_WAVEFORM};
+    let parts = super::state::ClipParts {
+        name: CLIP_NAME.probe(),
+        content: if kind.audio { CLIP_WAVEFORM.probe() } else { CLIP_NOTES.probe() },
+        fade: CLIP_FADE.probe(),
+    };
+    look.parts.borrow_mut().insert(kind, parts.clone());
+    parts
 }
 
 /// Draws a clip's body, colour strip, name and the marks of its notes (only those in view).
@@ -1400,11 +1423,12 @@ pub(super) fn paint_clip(
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement clip");
     let off = drawn_muted(lane.mute, clip.enabled);
     let id = clip_element_id(clip);
-    let own = clip_element(&id, lane, clip, timeline, selected).enter();
     let view = painter.clip_rect();
     if !rect.intersects(view) {
         return;
     }
+    let own = clip_element(&id, lane, clip, timeline, selected).enter();
+    let parts = clip_parts(look, clip_kind(lane, clip, timeline, selected));
     // The sheet's opacity fades the whole clip, its waveform, notes and name too.
     let faded;
     let painter = match own.style().map(|style| style.opacity).filter(|o| *o < 1.0) {
@@ -1441,7 +1465,7 @@ pub(super) fn paint_clip(
     // The name bar as the sheet's `clip-name` styles it: its fill, and the ink of the name and
     // the mute mark on that fill.
     let name_look = bar.map(|bar| {
-        let look = name_bar_look(bar_fill);
+        let look = name_bar_look(&parts.name, bar_fill);
         // The bar keeps the clip's rounded top corners.
         let top = radius.min(bar.height()).clamp(0.0, 255.0) as u8;
         painter.rect_filled(
@@ -1496,9 +1520,8 @@ pub(super) fn paint_clip(
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = look.waveform_appearance;
     // Theme: the sheet's `clip-waveform` and `clip-notes` colours, else Dark.
-    let themed = |part: crate::kit::element::Name| part.enter().color_or(appearance.ink(ink));
     let content_ink = if appearance.mode == crate::settings::view_settings::WaveformColour::Theme {
-        themed(if clip.audio { crate::kit::element::CLIP_WAVEFORM } else { crate::kit::element::CLIP_NOTES })
+        parts.content.color_or(appearance.ink(ink))
     } else {
         appearance.ink(ink)
     };
@@ -1631,7 +1654,7 @@ pub(super) fn paint_clip(
     // A clip with a name bar already shows its name; a low lane's clip shows it in the body.
     if content_hidden && !has_name {
         let name = if clip.name.is_empty() { lane.name.as_str() } else { clip.name.as_str() };
-        let el = crate::kit::element::CLIP_NAME.enter();
+        let el = &parts.name;
         let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
         let ink = el.color_or(text_color);
         // A clip turned off has its mute mark first, the name after it, as in a name bar.
@@ -1695,8 +1718,7 @@ pub(super) fn paint_clip(
     // A fade is a line over the waveform, from the clip's bottom corner to where it ends at
     // the top, following its shape and curve.
     if clip.audio {
-        let fade_stroke =
-            theme::hairline(crate::kit::element::CLIP_FADE.look().own_color_or(dim(Color32::TRANSPARENT)));
+        let fade_stroke = theme::hairline(parts.fade.own_color_or(dim(Color32::TRANSPARENT)));
         if shown.fade_in > 0.0 {
             let end = (rect.left() + shown.fade_in as f32 * beat_width).min(rect.right());
             painter.line(fade_line(rect, FadeEdge::In, rect.left(), end, shown.fade_in_curve), fade_stroke);
@@ -1883,8 +1905,7 @@ pub(super) struct NameBarLook {
 /// The name bar of a clip whose own bar colour is `bar_fill`, as the sheet styles it. The ink is
 /// worked out from the fill the bar is drawn in, so a theme's dark bar gets light ink even where
 /// it gives the name no colour of its own.
-pub(super) fn name_bar_look(bar_fill: Color32) -> NameBarLook {
-    let name = crate::kit::element::CLIP_NAME.enter();
+pub(super) fn name_bar_look(name: &crate::kit::element::Look, bar_fill: Color32) -> NameBarLook {
     let fill = name.background_or(bar_fill);
     NameBarLook { fill, ink: name.color_or(ink_on(fill)), font_size: name.font_size_or(theme::TEXT) }
 }

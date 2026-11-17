@@ -1113,6 +1113,31 @@ pub(crate) struct ClipLook {
     pub(crate) audio_colour_strength: u8,
     /// The piano roll's time selection and the clip it is on ([`ArrangementViewState::editor_span`]).
     pub(crate) editor_span: Option<(ClipId, f64, f64)>,
+    /// The looks of a clip's parts (its name, waveform or notes, fades), read once this frame for
+    /// each kind of clip there is ([`ClipKind`]): the style tree grows with kinds, not with clips
+    /// (ADR 0031 › A drawn item's style is read once per kind), so thousands of clips in view keep
+    /// their styles.
+    pub(crate) parts: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<ClipKind, ClipParts>>>,
+}
+
+/// What a clip's parts can be styled by: its states and its colour, and whether it holds audio.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct ClipKind {
+    pub(crate) color: egui::Color32,
+    pub(crate) selected: bool,
+    pub(crate) muted: bool,
+    pub(crate) playing: bool,
+    pub(crate) recording: bool,
+    pub(crate) audio: bool,
+}
+
+/// The looks of one kind of clip's parts ([`ClipLook::parts`]).
+#[derive(Clone, Debug)]
+pub(crate) struct ClipParts {
+    pub(crate) name: crate::kit::element::Look,
+    /// `clip-waveform` for an audio clip, `clip-notes` for a MIDI one.
+    pub(crate) content: crate::kit::element::Look,
+    pub(crate) fade: crate::kit::element::Look,
 }
 
 impl ArrangementViewState {
@@ -1124,6 +1149,7 @@ impl ArrangementViewState {
             waveform_appearance: self.waveform_appearance,
             audio_colour_strength: self.audio_colour_strength,
             editor_span: self.editor_span,
+            parts: std::rc::Rc::default(),
         }
     }
 }
