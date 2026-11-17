@@ -134,8 +134,9 @@ pub use plugin::{
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
 pub use pool::{
-    MAX_RENDER_THREADS, PARALLEL_MIN, RENDER_THREADS_VAR, RenderPool, automatic_render_threads, process_render_threads,
-    render_threads_for, render_threads_from, render_threads_from_env, set_process_render_threads,
+    MAX_RENDER_THREADS, PARALLEL_MIN, PoolKind, RENDER_THREADS_VAR, RenderPool, automatic_render_threads,
+    process_render_threads, render_threads_for, render_threads_from, render_threads_from_env,
+    set_process_render_threads,
 };
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
 pub use record::{
@@ -766,7 +767,7 @@ impl Renderer {
             recorder: record::Recorder::new(),
             cpu: cpu::CpuMeter::new(),
             meters,
-            pool: pool::process_lane(sample_rate),
+            pool: pool::process_lane(sample_rate, pool::PoolKind::RealTime),
         })
     }
 
@@ -782,7 +783,7 @@ impl Renderer {
             return;
         }
         self.pool = None;
-        self.pool = pool::RenderPool::new(threads - 1).and_then(|pool| pool.lane(self.sample_rate));
+        self.pool = pool::RenderPool::new(threads - 1, self.pool_kind()).and_then(|pool| pool.lane(self.sample_rate));
     }
 
     /// The threads that render each block, the render thread included.
@@ -805,8 +806,27 @@ impl Renderer {
 
     /// Renders offline from now on: plug-ins are waited for as long as they take (up to
     /// [`OFFLINE_TIMEOUT`] a block) instead of until the block's real-time deadline.
+    ///
+    /// An offline renderer renders on the process's offline pool, at normal priority, and a
+    /// renderer that plays on its real-time pool (ADR 0038 › 1): turning it offline gives its
+    /// lane back and takes one of the other pool, so call it before the first block, never on
+    /// the render thread.
     pub fn set_offline(&mut self, offline: bool) {
         self.offline = offline;
+        let kind = self.pool_kind();
+        if self.pool.as_ref().is_some_and(|lane| lane.kind() != kind) {
+            let threads = self.render_threads();
+            self.pool = None;
+            self.pool = pool::process_lane(self.sample_rate, kind).filter(|lane| lane.threads() == threads);
+            if self.pool.is_none() && threads > 1 {
+                self.pool = pool::RenderPool::new(threads - 1, kind).and_then(|pool| pool.lane(self.sample_rate));
+            }
+        }
+    }
+
+    /// The pool a renderer of this kind renders on: offline renders at normal priority.
+    fn pool_kind(&self) -> pool::PoolKind {
+        if self.offline { pool::PoolKind::Offline } else { pool::PoolKind::RealTime }
     }
 
     /// Whether playback repeats the project's loop region when it is on (the default). A render

@@ -4,12 +4,15 @@
 //! Render workers ([ADR 0038](../../../docs/decisions/0038-rendering-on-several-cores.md)): one
 //! pool of threads per process that runs independent chains in parallel with the render thread.
 //!
-//! **One pool, a lane per renderer.** [`RenderPool`] starts its workers once. A renderer takes a
+//! **Two pools, a lane per renderer.** The process has one real-time pool for playback and one
+//! at normal priority for offline renders and exports ([`PoolKind`]): the system preempts an
+//! export's workers whenever a real-time thread needs a core, so an export beside playback
+//! takes only the time playback leaves, and playback never waits for an export's chain
+//! (ADR 0038 › 1). Each [`RenderPool`] starts its workers once. A renderer takes a
 //! [`Lane`] from it when it is built ([`process_lane`] for the process's pool): one pair of
 //! lock-free rings (`rtrb`) to and from each worker, made with the pool, so every ring keeps one
 //! writer and one reader. A lane whose renderer plays to a device is marked real-time
-//! ([`Lane::join_real_time`]); a worker takes the real-time lanes' chains before any other's, so
-//! an export never holds up playback. A renderer that finds no free lane renders alone.
+//! ([`Lane::join_real_time`]); a worker takes the real-time lanes' chains before any other's. A renderer that finds no free lane renders alone.
 //!
 //! **A chain moves by value.** A chain goes to a worker through its lane and comes back the same
 //! way once its devices have run and it has staged what it adds where it plays
@@ -117,6 +120,9 @@ struct Reply {
 /// What the renderers and every worker share.
 struct Shared {
     stop: AtomicBool,
+    /// The pool renders for playback: its workers join real-time priority. An offline pool's
+    /// never do, so the system preempts them for any real-time thread (ADR 0038 › 1).
+    real_time_pool: bool,
     /// The block size and sample rate the workers join real-time priority for; 0 while no lane
     /// plays to a device.
     real_time: AtomicUsize,
@@ -138,6 +144,17 @@ struct RendererEnd {
     thread: Thread,
 }
 
+/// What a pool renders for (ADR 0038 › 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PoolKind {
+    /// Playback to a device: the workers join real-time priority with the render thread.
+    RealTime,
+    /// Offline renders and exports: the workers stay at normal priority, so the system preempts
+    /// them whenever a real-time thread needs a core, and an export beside playback takes only
+    /// the time playback leaves.
+    Offline,
+}
+
 /// A process's render workers (see the module's documentation).
 pub struct RenderPool {
     shared: Arc<Shared>,
@@ -151,13 +168,14 @@ pub struct RenderPool {
 impl RenderPool {
     /// A pool of `workers` threads, `None` for none. A thread the system will not start is left
     /// out. Allocates and starts threads: never on the render thread.
-    pub fn new(workers: usize) -> Option<Arc<Self>> {
+    pub fn new(workers: usize, kind: PoolKind) -> Option<Arc<Self>> {
         let workers = workers.min(MAX_RENDER_THREADS - 1);
         if workers == 0 {
             return None;
         }
         let shared = Arc::new(Shared {
             stop: AtomicBool::new(false),
+            real_time_pool: kind == PoolKind::RealTime,
             real_time: AtomicUsize::new(0),
             real_time_rate: AtomicUsize::new(0),
             lane_real_time: std::array::from_fn(|_| AtomicBool::new(false)),
@@ -177,7 +195,10 @@ impl RenderPool {
             }
             let worker_shared = Arc::clone(&shared);
             let spawned = std::thread::Builder::new()
-                .name(format!("suhina-render-worker-{n}"))
+                .name(match kind {
+                    PoolKind::RealTime => format!("suhina-render-worker-{n}"),
+                    PoolKind::Offline => format!("suhina-offline-worker-{n}"),
+                })
                 .spawn(move || work(&worker_shared, ends));
             let Ok(join) = spawned else { break };
             let thread = join.thread().clone();
@@ -235,39 +256,56 @@ impl Drop for RenderPool {
     }
 }
 
-/// The process's pool, made the first time it is asked for, with the threads
-/// `SUHINA_RENDER_THREADS` asks for unless [`set_process_render_threads`] chose others.
-static PROCESS_POOL: Mutex<Option<(usize, Option<Arc<RenderPool>>)>> = Mutex::new(None);
+/// The process's two pools, made the first time each is asked for, with the threads
+/// `SUHINA_RENDER_THREADS` asks for unless [`set_process_render_threads`] chose others: one
+/// real-time pool for playback, one at normal priority for offline renders and exports.
+struct ProcessPools {
+    threads: usize,
+    real_time: Option<Option<Arc<RenderPool>>>,
+    offline: Option<Option<Arc<RenderPool>>>,
+}
+
+static PROCESS_POOLS: Mutex<Option<ProcessPools>> = Mutex::new(None);
+
+fn process_pools() -> std::sync::MutexGuard<'static, Option<ProcessPools>> {
+    PROCESS_POOLS.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// Sets how many threads the process's renderers render on from now, the render thread included
-/// (1: the render thread alone). Renderers built before keep the pool they have. Starts or stops
-/// threads: never on the render thread.
+/// (1: the render thread alone), for playback and for offline renders alike. Renderers built
+/// before keep the pool they have. Starts or stops threads: never on the render thread.
 pub fn set_process_render_threads(threads: usize) {
     let threads = threads.clamp(1, MAX_RENDER_THREADS);
-    let mut pool = PROCESS_POOL.lock().unwrap_or_else(PoisonError::into_inner);
-    if pool.as_ref().is_some_and(|(n, _)| *n == threads) {
+    let mut pools = process_pools();
+    if pools.as_ref().is_some_and(|p| p.threads == threads) {
         return;
     }
-    *pool = Some((threads, RenderPool::new(threads - 1)));
+    *pools = Some(ProcessPools { threads, real_time: None, offline: None });
 }
 
 /// The threads the process's renderers render on, the render thread included.
 pub fn process_render_threads() -> usize {
-    let mut pool = PROCESS_POOL.lock().unwrap_or_else(PoisonError::into_inner);
-    pool.get_or_insert_with(from_env).0
+    let mut pools = process_pools();
+    pools.get_or_insert_with(from_env).threads
 }
 
-fn from_env() -> (usize, Option<Arc<RenderPool>>) {
-    let threads = render_threads_from_env();
-    (threads, RenderPool::new(threads - 1))
+fn from_env() -> ProcessPools {
+    ProcessPools { threads: render_threads_from_env(), real_time: None, offline: None }
 }
 
-/// A lane of the process's pool for a renderer at `sample_rate`, `None` when the process
-/// renders on one thread or every lane is taken. Never on the render thread.
-pub(crate) fn process_lane(sample_rate: u32) -> Option<Lane> {
+/// A lane of the process's pool of `kind` for a renderer at `sample_rate`, `None` when the
+/// process renders on one thread or every lane is taken. Starts the pool the first time. Never
+/// on the render thread.
+pub(crate) fn process_lane(sample_rate: u32, kind: PoolKind) -> Option<Lane> {
     let pool = {
-        let mut pool = PROCESS_POOL.lock().unwrap_or_else(PoisonError::into_inner);
-        pool.get_or_insert_with(from_env).1.clone()
+        let mut pools = process_pools();
+        let pools = pools.get_or_insert_with(from_env);
+        let threads = pools.threads;
+        let slot = match kind {
+            PoolKind::RealTime => &mut pools.real_time,
+            PoolKind::Offline => &mut pools.offline,
+        };
+        slot.get_or_insert_with(|| RenderPool::new(threads - 1, kind)).clone()
     };
     pool?.lane(sample_rate)
 }
@@ -303,12 +341,20 @@ impl Lane {
         self.workers.len() + 1
     }
 
+    /// What the lane's pool renders for.
+    pub(crate) fn kind(&self) -> PoolKind {
+        if self.pool.shared.real_time_pool { PoolKind::RealTime } else { PoolKind::Offline }
+    }
+
     /// Marks the lane as playing to a device with blocks of `frames` frames at `sample_rate`:
     /// the workers join real-time priority, as the render thread does
     /// ([`suhina_realtime::RealTime::join`]), each the next time it wakes, and take this lane's
     /// chains before those of lanes that render offline. Never allocates.
     pub(crate) fn join_real_time(&self, frames: usize, sample_rate: u32) {
         let shared = &self.pool.shared;
+        if !shared.real_time_pool {
+            return;
+        }
         if let Some(flag) = shared.lane_real_time.get(self.index) {
             flag.store(true, Ordering::Release);
         }
@@ -440,7 +486,7 @@ fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
     let mut realtime: Option<suhina_realtime::RealTime> = None;
     while !shared.stop.load(Ordering::Acquire) {
         let frames = shared.real_time.load(Ordering::Acquire);
-        if frames > 0 && realtime.is_none() {
+        if shared.real_time_pool && frames > 0 && realtime.is_none() {
             let rate = u32::try_from(shared.real_time_rate.load(Ordering::Acquire)).unwrap_or(48_000);
             realtime = Some(suhina_realtime::RealTime::join(frames, rate));
         }

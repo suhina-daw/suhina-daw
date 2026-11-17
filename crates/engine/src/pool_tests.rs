@@ -15,18 +15,18 @@ fn the_variable_asks_for_one_thread_unless_it_names_more() {
 
 #[test]
 fn a_pool_of_none_is_no_pool() {
-    assert!(RenderPool::new(0).is_none());
-    let pool = RenderPool::new(3);
+    assert!(RenderPool::new(0, PoolKind::RealTime).is_none());
+    let pool = RenderPool::new(3, PoolKind::RealTime);
     assert_eq!(pool.as_ref().map(|p| p.threads()), Some(4));
     let lane = pool.as_ref().and_then(|p| p.lane(8_000));
     assert_eq!(lane.as_ref().map(Lane::threads), Some(4));
     assert!(!lane.as_ref().is_some_and(Lane::any_away));
-    assert_eq!(RenderPool::new(100).map(|p| p.threads()), Some(MAX_RENDER_THREADS));
+    assert_eq!(RenderPool::new(100, PoolKind::Offline).map(|p| p.threads()), Some(MAX_RENDER_THREADS));
 }
 
 #[test]
 fn a_pool_lends_each_lane_once_and_takes_it_back() {
-    let Some(pool) = RenderPool::new(1) else { panic!("a worker starts") };
+    let Some(pool) = RenderPool::new(1, PoolKind::RealTime) else { panic!("a worker starts") };
     let lanes: Vec<Lane> = (0..LANES).filter_map(|_| pool.lane(8_000)).collect();
     assert_eq!(lanes.len(), LANES);
     assert!(pool.lane(8_000).is_none(), "every lane is taken");
@@ -38,6 +38,7 @@ fn a_pool_lends_each_lane_once_and_takes_it_back() {
 fn a_worker_takes_the_lanes_that_play_to_a_device_first() {
     let shared = Shared {
         stop: AtomicBool::new(false),
+        real_time_pool: true,
         real_time: AtomicUsize::new(0),
         real_time_rate: AtomicUsize::new(0),
         lane_real_time: std::array::from_fn(|_| AtomicBool::new(false)),
@@ -210,4 +211,31 @@ fn a_tracks_late_blocks_carry_over_to_the_next_graph() {
     let mut other = Chain::passthrough(TrackId(4), crate::NO_COLUMN, 8_000);
     other.adopt(&mut new);
     assert_eq!(other.missed_blocks, 0, "another track's count stays its own");
+}
+
+#[test]
+fn an_offline_pools_workers_never_join_real_time_priority() {
+    // An export's workers stay at normal priority, so the system preempts them for playback.
+    let Some(pool) = RenderPool::new(2, PoolKind::Offline) else { panic!("workers start") };
+    let Some(lane) = pool.lane(8_000) else { panic!("a lane is free") };
+    assert_eq!(lane.kind(), PoolKind::Offline);
+    lane.join_real_time(256, 48_000);
+    assert_eq!(pool.shared.real_time.load(Ordering::Acquire), 0);
+    assert!(!pool.shared.lane_real_time.iter().any(|f| f.load(Ordering::Acquire)));
+    let Some(playing) = RenderPool::new(2, PoolKind::RealTime) else { panic!("workers start") };
+    let Some(lane) = playing.lane(8_000) else { panic!("a lane is free") };
+    lane.join_real_time(256, 48_000);
+    assert_eq!(playing.shared.real_time.load(Ordering::Acquire), 256);
+}
+
+#[test]
+fn an_offline_renderer_renders_on_an_offline_pool() {
+    let mut renderer = Renderer::new(&project(), SR, suhina_device_registry::factory()).unwrap();
+    renderer.set_render_threads(3);
+    assert_eq!(renderer.pool.as_ref().map(Lane::kind), Some(PoolKind::RealTime));
+    renderer.set_offline(true);
+    assert_eq!(renderer.pool.as_ref().map(Lane::kind), Some(PoolKind::Offline));
+    assert_eq!(renderer.render_threads(), 3, "turning it offline keeps its threads");
+    renderer.set_offline(false);
+    assert_eq!(renderer.pool.as_ref().map(Lane::kind), Some(PoolKind::RealTime));
 }

@@ -34,13 +34,21 @@ pool at the current lead, off by default, for chains without plug-ins.
 
 ## How a block is rendered
 
-- **One pool per process.** `RenderPool` starts its workers once. Each renderer takes a lane of
-  it when it is built: a pair of lock-free rings (`rtrb`) to and from every worker, made with
-  the pool, so each ring has one writer and one reader. A pool has 16 lanes; a renderer that
-  finds none free renders alone. A renderer whose output plays to a device marks its lane
-  real-time (`Renderer::join_real_time`): a worker takes the real-time lanes' chains before an
-  export's, and the workers join real-time priority with the render thread. Changing the
-  threads makes a new pool; renderers built before keep theirs until they are dropped.
+- **Two pools per process.** One real-time pool for renderers that play to a device, one at
+  normal priority for offline renders and exports (`PoolKind`); both have the threads chosen.
+  A renderer is built with a lane of the real-time pool, and `Renderer::set_offline(true)`
+  (every offline render and export calls it before its first block) trades it for a lane of
+  the offline pool. The offline pool's workers (`suhina-offline-worker-N`) never join
+  real-time priority, so the system preempts them whenever a real-time thread needs a core:
+  an export beside playback takes only the time playback leaves, and playback never waits for
+  an export's chain.
+- **Lanes.** Each pool starts its workers once. A renderer's lane is a pair of lock-free rings
+  (`rtrb`) to and from every worker of its pool, made with the pool, so each ring has one
+  writer and one reader. A pool has 16 lanes; a renderer that finds none free renders alone.
+  A renderer whose output plays to a device marks its lane real-time
+  (`Renderer::join_real_time`), and the real-time pool's workers join real-time priority with
+  the render thread. Changing the threads makes new pools; renderers built before keep theirs
+  until they are dropped.
 - **What goes to a worker.** A chain with no plug-in slot and no ARA clip host, other than
   Main's, once the chains that play into it are done (`sends::run`'s order). A block with fewer
   than four such chains (`PARALLEL_MIN`) runs them all on the render thread. The render thread
