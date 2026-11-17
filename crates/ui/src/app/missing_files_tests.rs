@@ -12,6 +12,7 @@ fn row(file: &str, last: &str) -> Row {
         candidates: Vec::new(),
         chosen: None,
         by_hand: false,
+        picks: 0,
     }
 }
 
@@ -300,6 +301,46 @@ fn search_again_looks_at_the_disk_on_a_thread() {
     assert_eq!(missing.rows[0].candidates, vec![there.clone()]);
     assert_eq!(missing.rows[0].chosen, Some(there));
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A file chosen by hand that has gone is searched for again by the one Search again: once the
+/// disk has answered, the project's folder is walked for it and the file there is taken.
+#[test]
+fn search_again_walks_for_a_file_whose_choice_by_hand_has_gone() {
+    let dir = temp("chosen-gone");
+    let there = dir.join("Drums/kick.wav");
+    file(&there);
+    let mut r = row("kick.wav", "/old/Drums/kick.wav");
+    r.choose(dir.join("Gone/kick.wav"));
+    let mut missing = MissingFiles { rows: vec![r], project_folder: Some(dir.clone()), ..MissingFiles::default() };
+    missing.start_recheck(Vec::new());
+    missing.wait_for_recheck();
+    assert!(!missing.rows[0].by_hand, "the choice of a file that has gone is undone");
+    assert_eq!(missing.walk.as_ref().map(|w| w.folder.clone()), Some(dir.clone()), "the project's folder is walked");
+    missing.wait_for_walk();
+    assert_eq!(missing.rows[0].chosen, Some(there));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A file chosen by hand after Search again's look at the disk began keeps its choice, even
+/// when the look found that path gone before it was put back.
+#[test]
+fn a_choice_made_while_the_disk_is_looked_at_stands() {
+    let path = PathBuf::from("/samples/kick.wav");
+    let mut r = row("kick.wav", "/old/kick.wav");
+    r.offer(vec![PathBuf::from("/other/kick.wav")]);
+    let (send, done) = channel();
+    let mut missing = MissingFiles {
+        rows: vec![r],
+        recheck: Some(Recheck { done, seen: vec![("kick.wav".to_string(), 0)] }),
+        ..MissingFiles::default()
+    };
+    // The look finds the path gone; the file is put back and chosen before it answers.
+    missing.rows[0].choose(path.clone());
+    send.send(Rechecked { gone: [path.clone(), PathBuf::from("/other/kick.wav")].into(), found: Vec::new() }).unwrap();
+    missing.wait_for_recheck();
+    assert_eq!((missing.rows[0].chosen.clone(), missing.rows[0].by_hand), (Some(path.clone()), true));
+    assert_eq!(missing.rows[0].candidates, vec![path], "what else it found gone is still dropped");
 }
 
 /// A sampler inside a device group names its file as one on the track does: changing it

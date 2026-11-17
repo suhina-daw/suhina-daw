@@ -57,6 +57,9 @@ pub struct Row {
     pub chosen: Option<PathBuf>,
     /// The user chose it, so searches leave it.
     pub by_hand: bool,
+    /// How many times the user chose for it: a look at the disk started before the last choice
+    /// does not undo it.
+    pub picks: u32,
 }
 
 /// How far a row is from being relinked.
@@ -150,8 +153,14 @@ impl Row {
         if !self.candidates.contains(&path) {
             self.candidates.insert(0, path.clone());
         }
-        self.chosen = Some(path);
+        self.pick(Some(path));
+    }
+
+    /// The user's choice for it: `None` to leave it missing.
+    fn pick(&mut self, chosen: Option<PathBuf>) {
+        self.chosen = chosen;
         self.by_hand = true;
+        self.picks = self.picks.wrapping_add(1);
     }
 }
 
@@ -168,6 +177,8 @@ struct Walk {
 /// up the window.
 struct Recheck {
     done: Receiver<Rechecked>,
+    /// Each row's [`Row::picks`] when it started: a row chosen for since keeps its choice.
+    seen: Vec<(String, u32)>,
 }
 
 /// What a [`Recheck`] found: the candidates no longer on disk, and the index's finds that are.
@@ -294,6 +305,7 @@ impl MissingFiles {
                     candidates: Vec::new(),
                     chosen: None,
                     by_hand: false,
+                    picks: 0,
                 });
                 (row.clips, row.samplers) = (m.clips, m.samplers);
                 row
@@ -303,25 +315,28 @@ impl MissingFiles {
             self.open = false;
             return;
         }
-        let names = self.names();
-        let found = projects.file_library_mut().find_by_names(&names);
-        // Search again looks at the disk, on a thread: a candidate found earlier may have gone,
-        // and the index may still list a file that has gone since.
+        // Search again looks at the disk first, on a thread: a candidate found earlier may have
+        // gone, and the index may still list a file that has gone since. Every row's name is
+        // looked up, as a choice by hand of a file that has gone is undone; what the index lists
+        // is offered, and the project's folder walked, once the disk has answered.
         if again {
+            let names: Vec<String> = self.rows.iter().map(Row::name).collect();
+            let found = projects.file_library_mut().find_by_names(&names);
             self.start_recheck(found);
         } else {
+            let found = projects.file_library_mut().find_by_names(&self.names());
             self.take(found);
         }
         if !self.selected.as_ref().is_some_and(|s| self.rows.iter().any(|r| &r.file == s)) {
             self.selected = self.rows.iter().find(|r| r.chosen.is_none()).or(self.rows.first()).map(|r| r.file.clone());
         }
-        // The project's own folder is walked too, on a thread of its own.
-        if let Some(folder) = self.project_folder.clone().filter(|f| f.is_dir()) {
-            if again {
-                self.walk_again(folder);
-            } else if new_project {
-                self.walk_or_queue(folder);
-            }
+        // The project's own folder is walked too, on a thread of its own (for Search again, once
+        // the disk has answered).
+        if new_project
+            && !again
+            && let Some(folder) = self.project_folder.clone().filter(|f| f.is_dir())
+        {
+            self.walk_or_queue(folder);
         }
     }
 
@@ -371,24 +386,46 @@ impl MissingFiles {
     /// Search again's look at the disk for the rows' candidates and `found`, on a thread.
     fn start_recheck(&mut self, found: Found) {
         let candidates = self.rows.iter().flat_map(|r| r.candidates.iter().chain(&r.chosen)).cloned().collect();
+        let seen = self.rows.iter().map(|r| (r.file.clone(), r.picks)).collect();
         let (send, done) = channel();
         let started = std::thread::Builder::new().name("suhina-recheck-files".into()).spawn(move || {
             let _ = send.send(recheck(candidates, found));
         });
-        if started.is_ok() {
-            self.recheck = Some(Recheck { done });
+        match started {
+            Ok(_) => self.recheck = Some(Recheck { done, seen }),
+            // No thread: the project's folder is still walked.
+            Err(_) => self.walk_project_folder_again(),
         }
     }
 
-    /// Takes in what Search again's look at the disk found.
+    /// Takes in what Search again's look at the disk found, then walks the project's folder
+    /// for every file not chosen by hand, a choice of a file that has gone undone by then.
     fn finish_recheck(&mut self, rechecked: Rechecked) {
-        self.recheck = None;
+        let seen = self.recheck.take().map(|r| r.seen).unwrap_or_default();
         for row in &mut self.rows {
-            row.forget_gone(&rechecked.gone);
+            let unchanged = seen.iter().any(|(file, picks)| *file == row.file && *picks == row.picks);
+            if unchanged {
+                row.forget_gone(&rechecked.gone);
+            } else {
+                // Chosen for since the look began: that choice stands.
+                let mut gone = rechecked.gone.clone();
+                if let Some(chosen) = &row.chosen {
+                    gone.remove(chosen);
+                }
+                row.forget_gone(&gone);
+            }
         }
         self.take(rechecked.found);
         if !self.selected.as_ref().is_some_and(|s| self.rows.iter().any(|r| &r.file == s)) {
             self.selected = self.rows.iter().find(|r| r.chosen.is_none()).or(self.rows.first()).map(|r| r.file.clone());
+        }
+        self.walk_project_folder_again();
+    }
+
+    /// Search again's walk of the project's folder, when it has one.
+    fn walk_project_folder_again(&mut self) {
+        if let Some(folder) = self.project_folder.clone().filter(|f| f.is_dir()) {
+            self.walk_again(folder);
         }
     }
 
@@ -403,6 +440,7 @@ impl MissingFiles {
             Some(Err(std::sync::mpsc::TryRecvError::Empty)) => true,
             Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
                 self.recheck = None;
+                self.walk_project_folder_again();
                 false
             }
             None => false,
@@ -948,8 +986,7 @@ impl MissingFiles {
         if let Some(file) = asked.leave
             && let Some(row) = self.rows.iter_mut().find(|r| r.file == file)
         {
-            row.chosen = None;
-            row.by_hand = true;
+            row.pick(None);
         }
         if let Some(file) = asked.locate {
             self.selected = Some(file);
@@ -1175,8 +1212,7 @@ impl MissingFiles {
             if let Some(choice) = choice
                 && let Some(row) = self.rows.iter_mut().find(|r| r.file == row.file)
             {
-                row.chosen = choice;
-                row.by_hand = true;
+                row.pick(choice);
             }
         }
         y

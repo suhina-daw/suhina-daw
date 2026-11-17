@@ -54,7 +54,9 @@ right searches the browser's folders and the project's folder again (after the w
 when one is, even a walk of the project's folder), offers only the files still on disk, and
 forgets the candidates no longer there. Whether a file is still there is looked at on another
 thread, for Search again as for a walk's finds, so a network share that does not answer never
-holds up the window.
+holds up the window. Search again looks at the disk first and then walks the project's folder,
+so a file whose choice by hand has gone is searched for by the same click; a file chosen by
+hand while the disk is looked at keeps that choice.
 
 **Searching** (above the table):
 
