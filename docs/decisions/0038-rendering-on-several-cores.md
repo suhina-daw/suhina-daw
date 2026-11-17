@@ -102,10 +102,11 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
    for the block, as an engine with no queue has to, is rejected: it cuts a gap into the track
    and skips its devices' state by a block, and a render on several threads would no longer
    equal the render on one. With a queue ahead of the device, a short wait costs nothing heard.
-   What is bit-identical is a render on any number of threads against one on one thread; a
-   render in real time equals an offline one only while no plug-in misses its deadline, since
-   a late plug-in is replaced for its block ([ADR 0006](0006-plug-in-hosting.md) › 4) and offline
-   it is waited for.
+   What is bit-identical is a render on any number of threads against one on one thread:
+   always offline, where every plug-in is waited for, and in real time only while no plug-in
+   misses its deadline, since a late plug-in is replaced for its block
+   ([ADR 0006](0006-plug-in-hosting.md) › 4) and whether one is late depends on timing; for the
+   same reason a real-time render equals an offline one only while none is late.
 4. **Plug-in chains go to the pool too** (phase 2). A chain with plug-in slots is a job like any
    other: its round trips run on the worker, and chains overlap their round trips with each
    other and with built-in work. Inside a chain, parts that do not depend on each other (the
