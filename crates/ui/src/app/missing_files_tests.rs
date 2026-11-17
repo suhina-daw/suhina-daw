@@ -60,6 +60,21 @@ fn search_again_forgets_the_files_that_are_gone() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Search again offers only what the browser's index lists that is still on disk: an index
+/// not refreshed since a file went does not bring it back.
+#[test]
+fn search_again_does_not_take_back_what_a_stale_index_lists() {
+    let dir = temp("stale-index");
+    let there = dir.join("Drums/kick.wav");
+    file(&there);
+    let found = vec![("kick.wav".to_string(), vec![dir.join("Old/kick.wav"), there.clone()])];
+    let mut missing = MissingFiles { rows: vec![row("kick.wav", "/old/Drums/kick.wav")], ..MissingFiles::default() };
+    missing.take(still_on_disk(found));
+    assert_eq!(missing.rows[0].candidates, vec![there.clone()]);
+    assert_eq!(missing.rows[0].chosen, Some(there));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn a_row_says_what_plays_it() {
     let mut r = row("kick.wav", "/old/kick.wav");

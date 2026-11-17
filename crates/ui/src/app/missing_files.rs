@@ -285,7 +285,11 @@ impl MissingFiles {
             return;
         }
         let names = self.names();
-        let found = projects.file_library_mut().find_by_names(&names);
+        let mut found = projects.file_library_mut().find_by_names(&names);
+        // Search again looks at the disk: the index may still list a file that has gone since.
+        if again {
+            found = still_on_disk(found);
+        }
         self.take(found);
         if !self.selected.as_ref().is_some_and(|s| self.rows.iter().any(|r| &r.file == s)) {
             self.selected = self.rows.iter().find(|r| r.chosen.is_none()).or(self.rows.first()).map(|r| r.file.clone());
@@ -1414,6 +1418,11 @@ fn show_in_folder_label() -> &'static str {
     } else {
         "Show in folder"
     }
+}
+
+/// `found` without the paths no longer on disk.
+fn still_on_disk(found: Found) -> Found {
+    found.into_iter().map(|(name, paths)| (name, paths.into_iter().filter(|p| p.is_file()).collect())).collect()
 }
 
 /// The path in pasted text: its first line, without the quotes a file manager's "copy as
