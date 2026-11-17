@@ -693,7 +693,8 @@ fn menus_delete_a_track_and_duplicate_a_clip() {
     let before = clips(&harness);
     harness.get_by_label("Clip Fill on Drums at bar 29").click_secondary();
     harness.run();
-    harness.get_by_label_contains("Duplicate").click();
+    // "Duplicate", not "Duplicate linked".
+    harness.get_by(|n| n.label().is_some_and(|l| l.starts_with("Duplicate") && !l.contains("linked"))).click();
     harness.run();
     // The copy sits after Fill and shortens the clip it lands on, so there is one more clip.
     assert_eq!(clips(&harness), before + 1);
