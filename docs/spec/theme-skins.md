@@ -522,7 +522,8 @@ page's (ADR 0031, amendment of 2026-11-15).
   (`divider[kind="detail-splitter"]`), the toolbar's switches (`button[kind="map"]`, `"agent"`, `"play"`,
   `"browser"`), Settings' edge and its pages' list (`settings`, `settings-nav[checked]`), the start
   page's tabs (`editor-tab[kind="start"]`), a dialog's title row, the rows of a dialog's list, the
-  Plug-in manager's table and the colour picker (`list-row[kind="dialog"]`, `"plugin"`, `"picker"`),
+  Plug-in manager's table, the missing files panel's table and the colour picker
+  (`list-row[kind="dialog"]`, `"plugin"`, `"missing-file"`, `"picker"`),
   the swatches, the theme picker's cards, the drag pill (`tooltip`), the buttons that add a track
   (`add-track`), the buttons of Settings and the dialogs (`button[kind="secondary"]`, `"check"`,
   `"option"`, `"preset"`, `"switch"`, lit with `[checked]`) and egui's own widgets (`widget`, below).

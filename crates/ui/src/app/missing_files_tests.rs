@@ -175,6 +175,46 @@ fn a_dropped_path_goes_to_its_row_or_its_name_and_a_folder_is_searched() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// A pasted file goes to the selected row, unless it has another missing file's name and not
+/// the selected one's.
+#[test]
+fn a_pasted_file_goes_to_the_row_of_its_name() {
+    let missing = MissingFiles {
+        rows: vec![row("kick.wav", "/gone/kick.wav"), row("Drums/snare.wav", "/gone/snare.wav")],
+        selected: Some("kick.wav".into()),
+        ..MissingFiles::default()
+    };
+    assert_eq!(missing.paste_target(Path::new("/x/Snare.wav")).as_deref(), Some("Drums/snare.wav"));
+    assert_eq!(missing.paste_target(Path::new("/x/kick.wav")).as_deref(), Some("kick.wav"));
+    assert_eq!(missing.paste_target(Path::new("/x/renamed kick.wav")).as_deref(), Some("kick.wav"));
+}
+
+/// A file located while a folder is walked has its own folder walked after it; a project
+/// opened meanwhile stops the walk and forgets the ones waiting.
+#[test]
+fn a_folder_located_during_a_walk_is_walked_after_it() {
+    let dir = temp("queued");
+    let kick = dir.join("one/kick.wav");
+    let snare = dir.join("one/deep/snare.wav");
+    file(&kick);
+    file(&snare);
+    file(&dir.join("other/x.wav"));
+    let mut missing = MissingFiles {
+        rows: vec![row("kick.wav", "/gone/a/kick.wav"), row("snare.wav", "/gone/b/snare.wav")],
+        ..MissingFiles::default()
+    };
+    missing.search_folder(dir.join("other"));
+    assert!(missing.walk.is_some());
+    missing.locate("kick.wav", kick);
+    assert_eq!(missing.queued, vec![dir.join("one")]);
+    missing.wait_for_walk();
+    assert!(missing.queued.is_empty());
+    assert_eq!(missing.walk.as_ref().map(|w| w.folder.clone()), Some(dir.join("one")));
+    missing.wait_for_walk();
+    assert_eq!(missing.rows[1].chosen, Some(snare));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// A sampler inside a device group names its file as one on the track does: changing it
 /// changes the key the list is rebuilt by.
 #[test]

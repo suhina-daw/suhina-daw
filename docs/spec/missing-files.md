@@ -57,8 +57,9 @@ right searches the browser's folders and the project's folder again.
   **Search** (Enter in the field too); a folder dropped onto the panel is searched the same
   way. The folder is walked on a thread of its own, with **Stop** in Search's place while it
   runs and its file count in the bar at the bottom ("Searching D:\Samples: 12 400 files"). A
+  folder asked for while one is walked waits its turn; Stop drops the ones waiting too. A
   search finds candidates only for files still missing; it never replaces a candidate the user
-  chose.
+  chose. Opening another project stops a walk for the one before.
 - The browser's index and the project's own folder are searched when the panel's list is made.
 - **Filter files**: a field that keeps the rows whose name or old path holds every word typed,
   and **All**, **Missing** and **Found**, each with its count.
@@ -86,7 +87,7 @@ Explorer** (Finder on macOS) and **Leave it missing**.
 table): its name, its state as a tag and what uses it; **Original location**, with **Copy file
 name** (to paste into a file search tool) and **Copy path**; **Replacement**, with **Show in
 Explorer**, and **Locate file…**; then the files of its name, best first, and *Leave it
-missing*, a click choosing one.
+missing*, a click choosing one. The panel scrolls when what it holds is taller than it.
 
 **Locating a file by hand** gives the row its file, as the user's choice:
 
@@ -94,8 +95,10 @@ missing*, a click choosing one.
 - A file **dropped on a row** is that row's file, whatever its name; dropped on the panel at the
   right, the selected row's; dropped elsewhere, the missing file of its name. Several files
   dropped at once each find the file of their name.
-- A path **pasted** (Ctrl+V while no field has the keys) is the selected row's file, without the
-  quotes a file manager's "copy as path" puts round it; a folder's path is searched.
+- A path **pasted** (Ctrl+V while no field has the keys) is the selected row's file, unless it
+  has another missing file's name and not the selected one's, then that file's; without the
+  quotes a file manager's "copy as path" puts round it. A folder's path is searched. A file
+  copied as a file (not its path) gives no text to paste.
 
 A file located tells where the others went, at once:
 
@@ -105,7 +108,7 @@ A file located tells where the others went, at once:
    `C:\Old\Lib\Drums\kick.wav` found as `D:\Samples\Lib\Drums\kick.wav`; each other missing
    file that was under the old folder is looked for at the same place under the new one.
 3. **Under it:** the located file's folder and its subfolders are walked, as a folder search, while
-   files are still missing.
+   files are still missing (after the walk running, when one is).
 
 Rows chosen by hand keep their choice. The bar at the bottom says what was found ("Located
 kick.wav, found 4 more beside it").

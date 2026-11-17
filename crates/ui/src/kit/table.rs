@@ -148,7 +148,7 @@ mod tests {
         let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
             let painter = ui.painter().clone();
             let font = FontId::proportional(11.0);
-            let path = "E:/FL Studio/Projects/Deep House 2/%FLStudioDownloadsData%/FL CLOUD Sounds/kick.wav";
+            let path = "E:/Sample Library/Projects/Deep House 2/Downloads/Cloud Sounds/Drums/kick.wav";
             assert_eq!(middle_cut(&painter, "kick.wav", &font, 400.0), ("kick.wav".to_string(), false));
             cut = middle_cut(&painter, path, &font, 160.0);
             let width = painter.layout_no_wrap(cut.0.clone(), font.clone(), Color32::WHITE).size().x;

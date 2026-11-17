@@ -104,7 +104,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "project.missingFiles",
-        label: "List the audio files the project's clips name that cannot be found, with where they were and how many clips play each",
+        label: "List the audio files the project's clips and samplers name that cannot be found, with where they were and how many clips and samplers play each",
         params: &[],
         kind: CommandKind::READ,
         run: crate::relink::missing_files,

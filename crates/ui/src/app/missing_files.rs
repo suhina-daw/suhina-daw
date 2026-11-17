@@ -203,6 +203,10 @@ pub struct MissingFiles {
     widths: [f32; 6],
     /// The rows drawn this frame, by file: where a file is dropped.
     row_rects: Vec<(Rect, String)>,
+    /// How tall the selected file's panel's content was last drawn, for its scrolling.
+    detail_height: f32,
+    /// Folders to walk once the walk running ends: each file located while one ran.
+    queued: Vec<PathBuf>,
 }
 
 impl MissingFiles {
@@ -227,6 +231,11 @@ impl MissingFiles {
             self.rows.clear();
             self.note = None;
             self.selected = None;
+            // A walk for the project before is stopped: what it finds is not this one's.
+            if let Some(walk) = self.walk.take() {
+                walk.stop.store(true, Ordering::Relaxed);
+            }
+            self.queued.clear();
         }
         self.checked = Some((active, revision));
         let Some(session) = projects.get(active) else { return };
@@ -339,6 +348,15 @@ impl MissingFiles {
             Some(Err(e)) => self.note = Some(e),
             None => {}
         }
+        // The next folder waiting, while files are still missing.
+        if self.rows.iter().any(|r| r.chosen.is_none() && !r.by_hand) {
+            while !self.queued.is_empty() && self.walk.is_none() {
+                let folder = self.queued.remove(0);
+                self.start_walk(folder);
+            }
+        } else {
+            self.queued.clear();
+        }
     }
 
     /// Waits for the walk running to end and takes in what it found (tests: the walk's own
@@ -377,11 +395,23 @@ impl MissingFiles {
             1 => format!("Located {name}, found 1 more beside it"),
             n => format!("Located {name}, found {n} more beside it"),
         });
-        if self.walk.is_none()
-            && self.rows.iter().any(|r| r.chosen.is_none())
+        if self.rows.iter().any(|r| r.chosen.is_none() && !r.by_hand)
             && let Some(folder) = path.parent().filter(|f| f.is_dir())
         {
-            self.start_walk(folder.to_path_buf());
+            self.walk_or_queue(folder.to_path_buf());
+        }
+    }
+
+    /// Walks `folder` now, or after the walk running ends.
+    fn walk_or_queue(&mut self, folder: PathBuf) {
+        let running = self.walk.as_ref().is_some_and(|w| w.folder == folder);
+        if running || self.queued.contains(&folder) {
+            return;
+        }
+        if self.walk.is_some() {
+            self.queued.push(folder);
+        } else {
+            self.start_walk(folder);
         }
     }
 
@@ -439,14 +469,12 @@ impl MissingFiles {
 
     /// Searches `folder` and its subfolders for the files still missing.
     pub fn search_folder(&mut self, folder: PathBuf) {
-        match &self.walk {
-            Some(_) => self.note = Some("A search is running: stop it first".into()),
-            None if !folder.is_dir() => self.note = Some(format!("{} is not a folder", folder.display())),
-            None => {
-                self.note = None;
-                self.start_walk(folder);
-            }
+        if !folder.is_dir() {
+            self.note = Some(format!("{} is not a folder", folder.display()));
+            return;
         }
+        self.note = self.walk.is_some().then(|| format!("{} is searched after the search running", folder.display()));
+        self.walk_or_queue(folder);
     }
 
     /// Where the file dialog of Locate… opens: the nearest folder of the selected file's old
@@ -546,7 +574,7 @@ impl MissingFiles {
             crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
         );
         let wanted = TOP + 2.0 * TOOL + 3.0 * PAD * 1.5 + ROW + 4.0 + self.rows.len() as f32 * ROW + STATUS + 24.0;
-        let wanted = Vec2::new(WIDEST, wanted.max(460.0));
+        let wanted = Vec2::new(WIDEST, wanted.max(560.0));
         let size = crate::kit::floating::dialog_size(dialog, area, wanted);
         let rect = Rect::from_center_size(area.center(), size);
         let fill = crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel"));
@@ -572,7 +600,7 @@ impl MissingFiles {
         let table_rect = self.tools(ui, &painter, middle.shrink(PAD * 1.5), &inks, &mut outcome);
         self.table(ui, &painter, table_rect, &inks, &mut outcome);
         if let Some(detail) = detail {
-            self.detail(ui, &painter, detail.shrink2(Vec2::new(PAD * 2.5, PAD * 2.0)), &inks, &mut outcome);
+            self.detail(ui, detail.shrink2(Vec2::new(PAD * 2.5, PAD * 2.0)), &inks, &mut outcome);
         }
         self.status_bar(ui, &painter, status.shrink2(Vec2::new(PAD * 2.0, 0.0)), &inks, &mut outcome);
 
@@ -659,6 +687,7 @@ impl MissingFiles {
                 let id = Id::unique("missing-stop");
                 if widgets::button_with_id(ui, painter, search, id, "Stop", "Stop searching", false).clicked() {
                     walk.stop.store(true, Ordering::Relaxed);
+                    self.queued.clear();
                 }
             }
             None => {
@@ -856,14 +885,42 @@ impl MissingFiles {
         }
     }
 
+    /// The selected file's panel in `rect`, scrolled down when what it holds is taller: a long
+    /// path wraps, and a common name has many files to choose from.
+    fn detail(&mut self, ui: &mut Ui, rect: Rect, inks: &Inks, outcome: &mut Option<Outcome>) {
+        let height = self.detail_height.max(rect.height());
+        ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            egui::ScrollArea::vertical().id_salt("missing-files-detail").auto_shrink([false, false]).show(ui, |ui| {
+                let width = ui.available_width() - PAD;
+                let (area, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+                // Clipped to the panel's view: nothing it holds is drawn over the bars.
+                let painter = ui.painter().clone();
+                let bottom = self.detail_content(ui, &painter, area, inks, outcome);
+                let content = bottom - area.top();
+                if (content - self.detail_height).abs() > 0.5 {
+                    self.detail_height = content;
+                    ui.ctx().request_repaint();
+                }
+            });
+        });
+    }
+
     /// The selected file: its name, state and uses, where it was (with Copy file name and Copy
     /// path), what it will be linked to, Locate file…, and the other files of its name to choose.
-    fn detail(&mut self, ui: &Ui, painter: &egui::Painter, rect: Rect, inks: &Inks, outcome: &mut Option<Outcome>) {
+    /// Returns the bottom of what it drew.
+    fn detail_content(
+        &mut self,
+        ui: &Ui,
+        painter: &egui::Painter,
+        rect: Rect,
+        inks: &Inks,
+        outcome: &mut Option<Outcome>,
+    ) -> f32 {
         let small = theme::ui_font(theme::TEXT_SMALL);
         let Some(row) = self.selected_row().cloned() else {
             let at = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 20.0));
             widgets::text_in(painter, at, Align2::LEFT_CENTER, "Pick a file to see it here", small, inks.hint);
-            return;
+            return at.bottom();
         };
         let rule = |y: f32| painter.hline(rect.x_range(), y, theme::hairline(inks.line));
         let line_at = |y: f32, h: f32| Rect::from_min_size(Pos2::new(rect.left(), y), Vec2::new(rect.width(), h));
@@ -989,9 +1046,6 @@ impl MissingFiles {
             let mut choice: Option<Option<PathBuf>> = None;
             let options = row.candidates.iter().map(Some).chain(std::iter::once(None));
             for candidate in options {
-                if y + ROW > rect.bottom() {
-                    break;
-                }
                 let line = line_at(y, ROW);
                 y += ROW;
                 let (text, label) = match candidate {
@@ -1023,6 +1077,7 @@ impl MissingFiles {
                 row.by_hand = true;
             }
         }
+        y
     }
 
     /// The totals, or the search running with Stop, or what was last done on the left; Close
@@ -1110,8 +1165,20 @@ impl MissingFiles {
             })
         });
         if let Some(path) = pasted {
-            let target = self.selected.clone();
+            let target = self.paste_target(&path);
             self.take_path(path, target);
+        }
+    }
+
+    /// The row a pasted file goes to: the selected one, unless the file has another missing
+    /// file's name and not the selected one's, so a path copied for one row does not land on
+    /// another that happens to be picked.
+    fn paste_target(&self, path: &Path) -> Option<String> {
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let same = |row: &Row| row.name().eq_ignore_ascii_case(&name);
+        match self.selected_row() {
+            Some(selected) if same(selected) => Some(selected.file.clone()),
+            selected => self.rows.iter().find(|r| same(r)).or(selected).map(|r| r.file.clone()),
         }
     }
 
@@ -1138,6 +1205,7 @@ impl MissingFiles {
 
     fn close(&mut self) {
         self.open = false;
+        self.queued.clear();
         if let Some(walk) = &self.walk {
             walk.stop.store(true, Ordering::Relaxed);
         }
