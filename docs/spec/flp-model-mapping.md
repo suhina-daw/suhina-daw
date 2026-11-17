@@ -337,12 +337,12 @@ An opaque plug-in's unknown initial value is explicitly reported: the first auto
 value holds before the first placement. Known model initial values are preserved.
 
 Authored on/off comparison, 2026-11-13: the user's #2, #2_2 and #2_3 copies
-keep the existing Spire node header flags at 12. Its output cable flags change from
-2 (on, user-confirmed) to 3 (off); the new Spire has flags 12 and an enabled output
-cable at approximately 0.43. Thus flags 12 must not be treated as node bypass.
+keep the existing synthesizer node's header flags at 12 (a third-party VST2 plug-in). Its
+output cable flags change from 2 (on, user-confirmed) to 3 (off); the newly added instance
+has flags 12 and an enabled output cable at approximately 0.43. Thus flags 12 must not be treated as node bypass.
 The importer accepts the observed node flags 8 and 12, skips disabled links (3), and
 retains a MIDI-driven branch with no audio output as muted. Unknown flags remain unsupported.
-These Spire instances store wrapper kind 15 with the same 21-byte header and exact
+These instances store wrapper kind 15 with the same 21-byte header and exact
 chunk-size boundary as 12/13. Its payload is treated as an opaque VST2 bank chunk;
 acceptance is checked with the installed plug-in through the existing sandbox host.
 
