@@ -297,6 +297,22 @@ fn a_full_queue_adds_the_time_until_the_next_take() {
     assert_due(renderer.deadline_at(FRAMES, now), now, 609);
 }
 
+/// A device period of four blocks needs four blocks for its next take: each has a quarter of
+/// the time left until it, so a late plug-in in the first does not leave the others only the
+/// floor after the take is due. Right after the take the first has 128 ms of the 512 ms period;
+/// with one block queued and 128 ms gone, the second has a third of the 384 ms left.
+#[test]
+fn a_long_device_period_shares_the_time_until_the_take_among_its_blocks() {
+    let mut renderer = one_plug_in();
+    let now = Instant::now();
+    renderer.set_render_lead(0, FRAMES * 4);
+    renderer.set_last_take(Some(now));
+    assert_due(renderer.deadline_at(FRAMES, now), now, 125);
+    renderer.set_render_lead(FRAMES, FRAMES * 4);
+    renderer.set_last_take(Some(now - Duration::from_millis(128)));
+    assert_due(renderer.deadline_at(FRAMES, now), now, 125);
+}
+
 /// A track that plays into a return with a plug-in keeps a quarter of the block's time less
 /// (#1261), now a quarter of the time until the next take: with an empty queue right after a
 /// take its plug-in has about 94 ms of a 128 ms period, so one that takes 90 ms is in time.

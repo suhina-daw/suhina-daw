@@ -360,9 +360,7 @@ impl Progress {
 /// as an underrun, for what is not there yet. Never allocates.
 pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
     progress.output_cycles.fetch_add(1, Ordering::Release);
-    // The block after what is queued is due a device period after this take, and later ones a
-    // period apart: the render thread's plug-in deadline counts from here (#1494).
-    progress.last_take.mark(Instant::now());
+    let took = Instant::now();
     // Before taking from the ring: a render thread that sees the room made sees this too.
     if progress.input_wakes_render() {
         progress.input_due.store(true, Ordering::Release);
@@ -376,6 +374,11 @@ pub(crate) fn read_ring(ring: &mut Ring, out: &mut [f32], progress: &Progress) {
         }
         Err(_) => out.fill(0.0),
     }
+    // The block after what is queued is due a device period after this take, and later ones a
+    // period apart: the render thread's plug-in deadline counts from here (#1494). Marked once
+    // the frames are gone, so a render thread that sees this take sees its frames gone too and
+    // never counts a taken period as still queued.
+    progress.last_take.mark(took);
     if ready < out.len() {
         if let Some(missing) = out.get_mut(ready..) {
             missing.fill(0.0);
@@ -1043,6 +1046,9 @@ fn render_ahead(
     let mut input_wait = InputWait::default();
     let mut cycles = RenderCycles::default();
     while !stop.load(Ordering::Acquire) {
+        // The device's last take before what is queued: a take marks itself once its frames
+        // are gone, so read in this order a take in between can only shorten the deadline.
+        let last_take = progress.last_take.get();
         let queued = (capacity - ring.slots()) / RING_CHANNELS;
         // Arming shrinks the queue as the device drains it, and disarming fills it again: no
         // jump either way.
@@ -1075,7 +1081,7 @@ fn render_ahead(
         renderer.set_record_latency(output.round().clamp(0.0, f64::from(u32::MAX)) as u32, input);
         // How long the device can wait for this block: what is queued before it.
         renderer.set_render_lead(queued, progress.callback_frames());
-        renderer.set_last_take(progress.last_take.get());
+        renderer.set_last_take(last_take);
         cycles.started(progress);
         renderer.process_with_cue(&mut block, &mut cue);
         // A device that takes faster than it plays, or a project too heavy to render in time,

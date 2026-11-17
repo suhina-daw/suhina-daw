@@ -1092,15 +1092,19 @@ impl Renderer {
             // is discounted; subtracting a whole period starves return effects
             // every time a large callback drains the ring to exactly one period.
             // The queued periods play from the device's next take, a period after its last
-            // one: what is left until then is the block's too (#1494). Keep a margin. A
+            // one: what is left until then is the block's too (#1494), its share of it when
+            // that take needs more frames than this block (a device period longer than the
+            // block), so the blocks after it still have theirs. Keep a margin. A
             // partially primed ring still gives half a batch; otherwise use its actual
             // reserve, including for a brief start burst.
             Some((queued, device)) => {
                 let period = device.max(1);
                 let covered = queued / period * period;
+                let missing = (period - (queued - covered)).max(1);
+                let share = (frames as f64 / missing as f64).min(1.0);
                 let to_next_take = self.last_take.map_or(0.0, |took| {
                     let since = now.saturating_duration_since(took).as_secs_f64();
-                    (period as f64 / rate - since).max(0.0)
+                    (period as f64 / rate - since).max(0.0) * share
                 });
                 let room = covered as f64 / rate + to_next_take - LEAD_MARGIN_SECONDS;
                 room.max(block * 0.5)

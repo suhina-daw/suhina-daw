@@ -196,10 +196,13 @@ state at `DENORMAL_FLOOR`.
 A late reply resets the hang counter when the next request is accepted: missing
 an audio deadline does not mean the host stopped answering. Superseded starts
 after a rate change are unloaded off the session thread, like accepted instances.
-With measured render lead, the deadline is when the device will take the block: the device's
-next take, a period after its last one (each read of the ring marks the time), plus the
-complete device periods covered by queued frames, minus 3 ms, with half a render batch as the
-floor for a start with no take yet or a take more than a period ago (overdue). Counting from
+With measured render lead, the deadline is when the device will take the block: the complete
+device periods covered by queued frames, plus what is left until the device's next take, a
+period after its last one (each read of the ring marks the time once its frames are gone),
+minus 3 ms. When that take needs more frames than the block (a device period longer than the
+engine block), the block has only its share of the time left, by frames, so the blocks after
+it still have theirs. No take yet, or one more than a period ago (overdue), adds nothing, and
+half a render batch is the floor in every case. Counting from
 the next take matters most with an armed track's queue of one block, which is empty after
 every take: from the queued periods alone each block had half its playing time, a quarter
 less again before a bus with plug-ins, though the device needed it a whole period later, and
