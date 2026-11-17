@@ -40,6 +40,8 @@ fn plugin(name: &str, vendor: &str, kind: &str, format: &str, enabled: bool) -> 
         spec: format!("{format}:/{format}/{name}.{format}#00"),
         enabled,
         owned: false,
+        hosting: "binary".into(),
+        ara: false,
     }
 }
 
@@ -334,4 +336,26 @@ fn the_shelves_count_what_the_other_filters_leave() {
     assert_eq!(counts.attention(), 0, "a vendor leaves the files out, so Needs attention says 0");
     let searched = ManagerState { search: "x86".into(), ..ManagerState::default() };
     assert_eq!(Counts::shown(&all, &plugins, &searched).incompatible, 1);
+}
+
+/// A row's menu chooses how the plug-ins' instances share host processes (`plugin.setHosting`):
+/// the choice every picked one has is ticked; an ARA plug-in cannot have a process of its own.
+#[test]
+fn the_process_choice_ticks_what_every_picked_plug_in_has() {
+    let mut plugins = view();
+    plugins.found[2].ara = true;
+    plugins.found[1].hosting = "instance".into();
+    let spec = |i: usize| plugins.found[i].spec.clone();
+    let (specs, choices) = hosting_choices(&[spec(0)], &plugins);
+    assert_eq!(specs, [spec(0)]);
+    assert_eq!(choices, [("binary", true, true), ("vendor", false, true), ("instance", false, true)]);
+    // Two that differ: none ticked.
+    let (_, choices) = hosting_choices(&[spec(0), spec(1)], &plugins);
+    assert!(choices.iter().all(|c| !c.1));
+    // An ARA plug-in among them: no process of its own.
+    let (_, choices) = hosting_choices(&[spec(0), spec(2)], &plugins);
+    assert_eq!(choices[2], ("instance", false, false));
+    // A file row, no plug-in: no choice.
+    assert!(hosting_choices(&["file:/vst3/Broken.vst3".into()], &plugins).0.is_empty());
+    assert_eq!(hosting_label("instance"), "A process of its own for each");
 }

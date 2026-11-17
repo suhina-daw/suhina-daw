@@ -34,3 +34,5 @@
 - **The original VST2 first:** a project saved with a VST2 plug-in opens it with the installed
   VST2 itself before a VST3 copy that only shares its id, so its saved sound loads; a VST3 that
   declares it replaces the VST2 still comes first.
+- **A plug-in's process from the plug-in manager:** a row's menu has *Process* (one process per
+  plug-in file, per vendor, or a process of its own for each), from the plug-in's next start.

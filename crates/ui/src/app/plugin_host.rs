@@ -189,6 +189,8 @@ impl App {
                             spec,
                             enabled: p["enabled"].as_bool().unwrap_or(true),
                             owned: p["owned"].as_bool().unwrap_or(false),
+                            hosting: p["hosting"].as_str().unwrap_or("binary").to_string(),
+                            ara: p["ara"].as_bool().unwrap_or(false),
                         }
                     })
                     .collect();
@@ -217,6 +219,7 @@ impl App {
                     | PluginRequest::SetEnabled(..)
                     | PluginRequest::SetEnabledMany(..)
                     | PluginRequest::SetOwnedMany(..)
+                    | PluginRequest::SetHostingMany(..)
             )
         {
             self.status =
@@ -284,6 +287,31 @@ impl App {
                     Err(e) => self.status = Status::Error(e.message().to_owned()),
                 }
                 self.browser.relist();
+                self.plugins_read = false;
+            }
+            PluginRequest::SetHostingMany(specs, hosting) => {
+                // One command a plug-in; the first that refuses (an ARA plug-in asked for a
+                // process of its own) says why, and the others still take it.
+                let mut refused = None;
+                let mut set = 0usize;
+                for spec in &specs {
+                    match self.projects.execute("plugin.setHosting", &json!({ "plugin": spec, "hosting": hosting })) {
+                        Ok(_) => set += 1,
+                        Err(e) => {
+                            refused.get_or_insert_with(|| e.message().to_owned());
+                        }
+                    }
+                }
+                self.status = match refused {
+                    Some(why) => Status::Error(why),
+                    None => {
+                        let what = if set == 1 { "1 plug-in".to_string() } else { format!("{set} plug-ins") };
+                        Status::Done(format!(
+                            "{what}: {} from their next start (open the project again)",
+                            crate::settings::plugin_manager::hosting_label(&hosting).to_lowercase()
+                        ))
+                    }
+                };
                 self.plugins_read = false;
             }
             PluginRequest::SetOwnedMany(specs, owned) => {
