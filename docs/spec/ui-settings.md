@@ -116,7 +116,8 @@ what is inside it).
 
 The Settings window opens on the page used last in the session. Descriptions are shown whole: they
 wrap under the setting's name. A yes/no setting is a switch; a choice of up to five is a row of
-option buttons, each as wide as its text needs; more than five is a drop-down.
+option buttons, each as wide as its text needs; more than five, or buttons that would run past
+the row's right edge (long names, a narrow window), is a drop-down.
 
 Where a setting is shown never changes how it is saved: each keeps the key it has in
 `settings.txt` (or `keymap.json` for keys and the mouse switches), so a settings file written
@@ -331,8 +332,8 @@ checks the ones a machine can check and names this section when one fails.
      setting's options or help when someone needs it. No file paths into the docs, no ADR or issue
      numbers, no code names.
 5. **One control per kind of choice:** a switch (`cx.on_off`) for yes/no, option buttons
-   (`cx.choose`) for up to five choices that exclude each other, a drop-down beyond that
-   (`cx.choose` switches by itself). No text is cut off.
+   (`cx.choose`) for up to five choices that exclude each other, a drop-down beyond that or when
+   the buttons would run past the row (`cx.choose` switches by itself). No text is cut off.
 6. **The stored key never changes** when a setting moves: it keeps its key in `settings.txt`
    (`keymap.json` for keys and the mouse switches). A new setting gets a new key, listed in the
    entry's keys.

@@ -646,8 +646,10 @@ impl Cx<'_> {
         field: impl FnOnce(&mut Settings) -> &mut T,
     ) {
         let value = field(self.settings);
-        // Option buttons for up to five choices that exclude each other, a drop-down beyond that.
-        if options.len() > MAX_BUTTONS {
+        // Option buttons for up to five choices that exclude each other, a drop-down beyond that,
+        // and when the buttons would run past the row's right edge (long names, a narrow window).
+        let rect = options_rect(self.ui, row, options);
+        if !buttons_fit(options.len(), rect, row) {
             let listed: Vec<(String, T)> = options.iter().map(|(text, v)| (text.to_string(), *v)).collect();
             if let Some(picked) = choice_dropdown(self.ui, self.painter, row, self.name, &listed, value) {
                 *value = picked;
@@ -655,7 +657,6 @@ impl Cx<'_> {
             }
             return;
         }
-        let rect = options_rect(self.ui, row, options);
         if let Some(picked) = segmented(self.ui, self.painter, rect, self.name, options, *value) {
             *value = picked;
             self.outcome.changed = true;
@@ -3446,6 +3447,12 @@ fn options_rect<T>(ui: &Ui, row: Rect, options: &[(&str, T)]) -> Rect {
     let count = options.len().max(1) as f32;
     let width = part * count + (count - 1.0);
     Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
+}
+
+/// Whether `count` choices fit `row` as option buttons in `rect`: at most [`MAX_BUTTONS`], and
+/// not past the row's right edge.
+pub(crate) fn buttons_fit(count: usize, rect: Rect, row: Rect) -> bool {
+    count <= MAX_BUTTONS && rect.right() <= row.right() + 0.5
 }
 
 /// Where a setting's control starts in `row`: the second column.

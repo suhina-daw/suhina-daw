@@ -276,3 +276,13 @@ fn the_status_says_how_many_threads_render_and_which_track_was_late_most() {
     about.audio_late_track = Some("Bass".into());
     assert_eq!(render_threads_now(&about), "4 threads; 3 blocks late, most on Bass (2)");
 }
+
+#[test]
+fn option_buttons_that_run_past_the_row_become_a_drop_down() {
+    let row = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(560.0, 24.0));
+    let inside = Rect::from_min_max(Pos2::new(240.0, 1.0), Pos2::new(560.0, 23.0));
+    let past = Rect::from_min_max(Pos2::new(240.0, 1.0), Pos2::new(640.0, 23.0));
+    assert!(buttons_fit(5, inside, row));
+    assert!(!buttons_fit(5, past, row), "five long names past the edge");
+    assert!(!buttons_fit(6, inside, row), "more than five choices");
+}
