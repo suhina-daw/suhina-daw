@@ -1012,7 +1012,7 @@ fn name_bar_look_with(css: &str, bar_fill: Color32) -> clip::NameBarLook {
     for _ in 0..3 {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = crate::kit::native_css::frame_with_motion(ui, false);
-            look = Some(clip::name_bar_look(bar_fill));
+            look = Some(clip::name_bar_look(&crate::kit::element::CLIP_NAME.probe(), bar_fill));
         })
         .textures_delta
         .clear();
