@@ -180,13 +180,11 @@ impl Catalog {
         if let Some(plugin) = self.vst3_plugins().find(|p| p.replaces.iter().any(|r| derived_from(r, id))) {
             return found(How::Declared, plugin);
         }
-        let exact = vst2_class_id(id, name);
-        let derived = || self.vst3_plugins().filter(|p| derived_from(&p.id, id));
-        if let Some(plugin) = derived().find(|p| p.id.eq_ignore_ascii_case(&exact)).or_else(|| derived().next()) {
-            return found(How::Vst2Id, plugin);
-        }
-        // Prefer the original over a name guess. Identical product metadata at multiple
-        // paths is one installed product; distinct products sharing an id remain ambiguous.
+        // The original itself, when it is installed, before a VST3 whose class id only follows
+        // the id convention: such a VST3 promises no state conversion, and one can answer the
+        // saved VST2 state with yes and read none of it (ADR 0006 decision 8, Amendment: the
+        // VST2 itself first). Identical product metadata at multiple paths is one installed
+        // product; distinct products sharing an id remain ambiguous.
         let wanted = format!("{id:08X}");
         let mut itself = self.plugins().filter(|p| p.format() == "vst2" && p.id == wanted);
         if let Some(first) = itself.next() {
@@ -204,6 +202,11 @@ impl Catalog {
             if same_product {
                 return found(How::Itself, chosen);
             }
+        }
+        let exact = vst2_class_id(id, name);
+        let derived = || self.vst3_plugins().filter(|p| derived_from(&p.id, id));
+        if let Some(plugin) = derived().find(|p| p.id.eq_ignore_ascii_case(&exact)).or_else(|| derived().next()) {
+            return found(How::Vst2Id, plugin);
         }
         self.match_name(name)
     }

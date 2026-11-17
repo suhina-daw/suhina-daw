@@ -70,12 +70,22 @@ fn a_vst2_plug_in_without_a_standing_in_copy_runs_itself() {
     assert_eq!(matched.map(|m| m.plugin.format()), Some("vst2"), "the direct host loads it");
 }
 
-/// A copy that stands in still plays it (ADR 0006 decision 8), even though the plug-in
-/// itself is installed.
+/// The plug-in itself, when it is installed, plays its project before a VST3 whose class id
+/// only follows the id convention (ADR 0006 decision 8, Amendment: the VST2 itself first): such a
+/// copy promises nothing about reading the saved state. Without the plug-in itself, the copy
+/// plays it.
 #[test]
-fn a_vst2_plug_in_with_a_standing_in_copy_prefers_it() {
+fn an_installed_vst2_plug_in_comes_before_a_copy_found_by_the_id_convention() {
     let (id, name) = (0x5368_5448, "Suhina Test Gain");
     let catalog = vst2_catalog(id, name, true);
+    let matched = catalog.match_vst2(id, name);
+    assert_eq!(found(matched).map(|(_, how)| how), Some(How::Itself));
+    assert_eq!(matched.map(|m| m.plugin.format()), Some("vst2"));
+    let copy_only = json!({ "version": 2, "entries": [json!({
+        "path": PathBuf::from("/vst3/Gain.vst3").display().to_string(), "modified": 1, "size": 1,
+        "plugins": [vst3(&vst2_class_id(id, name), name, "Suhina", &[])],
+    })] });
+    let catalog = Catalog::from_json(&copy_only.to_string());
     let matched = catalog.match_vst2(id, name);
     assert_eq!(found(matched).map(|(_, how)| how), Some(How::Vst2Id));
     assert_eq!(matched.map(|m| m.plugin.format()), Some("vst3"));

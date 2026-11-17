@@ -372,27 +372,30 @@ module's own description and imported projects.
 ## VST2 projects
 
 A project that names a VST2 plug-in is opened with the installed VST3 that declares it
-replaces it or whose class id is derived from its id, and the saved VST2 state is handed to
-it. Without such a VST3, the scanned VST2 plug-in with the project's id runs through the VST2
-host with its saved state ([ADR 0022](../decisions/0022-vst2-interface-description.md),
-[the VST2 interface](plugin-vst2.md)). Without that either, a VST3 found by name or as a newer
+replaces it, and the saved VST2 state is handed to it. Without such a VST3, the scanned VST2
+plug-in with the project's id runs through the VST2 host with its saved state
+([ADR 0022](../decisions/0022-vst2-interface-description.md),
+[the VST2 interface](plugin-vst2.md)); without that, a VST3 whose class id is derived from
+its id. Without those either, a VST3 found by name or as a newer
 version may stand in, or the device stays in the project as a *missing plug-in* with its state
 intact, and the user can relink it by hand to a VST3 or CLAP version (ADR 0006 decision 8).
 
 *Finding the replacement* (`crates/plugins/src/matching.rs`, `plugin.check`). The catalog is
 searched in order of how sure the answer is: the same id; an installed VST3 that declares it
 replaces the plug-in (`Compatibility` in `moduleinfo.json`, or the module's
-`Plugin Compatibility Class`, which the scanner asks through `IPluginCompatibility`); a VST3
-whose class id is derived from the VST2 id by the SDK's convention (`VST`, the 4-byte id, the
-first nine bytes of the name in lower case; the name part is not compared, as a project keeps
-the name its host showed); the scanned VST2 plug-in itself, by its id, when exactly one has
-it (installation copies with identical name, vendor, version and features count as one,
-chosen by stable path order); the same name once build words (`x64`, `64bit`, `.64`) and a
+`Plugin Compatibility Class`, which the scanner asks through `IPluginCompatibility`); the
+scanned VST2 plug-in itself, by its id, when exactly one has it (installation copies with
+identical name, vendor, version and features count as one, chosen by stable path order); a
+VST3 whose class id is derived from the VST2 id by the SDK's convention (`VST`, the 4-byte id,
+the first nine bytes of the name in lower case; the name part is not compared, as a project
+keeps the name its host showed), which promises no state conversion: one answered a saved
+chunk bank with yes and kept its own empty state (ADR 0006, Amendment: the VST2 itself
+first); the same name once build words (`x64`, `64bit`, `.64`) and a
 leading vendor name are set aside, or the name without its number when the installed
 plug-in's version starts with that number (`Synth 5` finds a VST3 named `Synth` whose
 version is 5.x and whose class id follows no convention); and last the nearest newer version
 of the same name (`Synth` → `Synth 2`, `EQ 2` → `EQ 3`, and with the number inside
-the name, `Suite 8 Imager` → `Suite 11 Imager`). Only the first four promise that the state carries over;
+the name, `Suite 8 Imager` → `Suite 11 Imager`). The first four are expected to carry the state over (the third and fourth without a promise from the vendor);
 for the last two the state is handed over and the plug-in decides, and the result says
 which (`keeps_state`). Vendors declare their own older builds rather than older products:
 an `EQ 3` module declares the VST2 builds of `EQ 3`, not `EQ 2`, which is why the name
