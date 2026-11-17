@@ -1079,3 +1079,28 @@ fn a_clips_name_bar_reaches_its_right_edge() {
         assert_eq!(bar.right(), rect.right(), "selected: {selected}");
     }
 }
+
+/// The take mark's three bars are evenly spaced on whole pixels, wherever the clip's bottom
+/// falls (#1487 B14): 2.5 points apart, each rounded on its own, they were 2 and 3 apart.
+#[test]
+fn the_take_marks_bars_are_evenly_spaced() {
+    for bottom in [100.0, 100.25, 100.5, 100.75] {
+        let rect = Rect::from_min_max(Pos2::new(100.0, 40.0), Pos2::new(260.0, bottom));
+        let shapes = painted_clip("", rect, false);
+        let mut ys: Vec<f32> = shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::LineSegment { points, .. }
+                    if points[0].y == points[1].y && points[0].x == rect.left() + 4.0 && points[1].x == rect.left() + 11.0 =>
+                {
+                    Some(points[0].y)
+                }
+                _ => None,
+            })
+            .collect();
+        ys.sort_by(f32::total_cmp);
+        assert_eq!(ys.len(), 3, "bottom {bottom}: {ys:?}");
+        assert_eq!(ys[1] - ys[0], ys[2] - ys[1], "bottom {bottom}: {ys:?}");
+        assert_eq!(ys[0].fract(), 0.5, "on a pixel's centre: {ys:?}");
+    }
+}

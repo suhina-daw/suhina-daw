@@ -1733,10 +1733,17 @@ fn paint_take_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
     if rect.height() < 16.0 || rect.width() < 14.0 {
         return;
     }
-    let (left, bottom) = (rect.left() + 4.0, rect.bottom() - 4.0);
+    let left = rect.left() + 4.0;
+    stacked_lines(painter, egui::Rangef::new(left, left + 7.0), rect.bottom() - 4.0, 3.0, Stroke::new(1.0, ink));
+}
+
+/// Three stacked lines across `x`, the lowest at `bottom` and `gap` apart: the take lanes' glyph.
+/// The lowest is snapped to a pixel once and the gap is whole, so the lines are evenly spaced
+/// wherever `bottom` falls (#1487 B14: each line rounded on its own gave gaps of 2 and 3).
+pub(super) fn stacked_lines(painter: &egui::Painter, x: egui::Rangef, bottom: f32, gap: f32, stroke: Stroke) {
+    let (bottom, gap) = (bottom.round() - 0.5, gap.round().max(2.0));
     for line in 0..3 {
-        let y = (bottom - line as f32 * 2.5).round() + 0.5;
-        painter.hline(egui::Rangef::new(left, left + 7.0), y, Stroke::new(1.0, ink));
+        painter.hline(x, bottom - line as f32 * gap, stroke);
     }
 }
 
