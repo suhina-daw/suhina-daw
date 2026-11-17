@@ -197,3 +197,17 @@ fn a_few_chains_stay_on_the_render_thread() {
     }
     assert_eq!(renderer.pool.as_ref().map_or(0, |lane| lane.sent), 0);
 }
+
+#[test]
+fn a_tracks_late_blocks_carry_over_to_the_next_graph() {
+    // The count is the track's: an edit while playing builds a new graph, whose chain adopts the
+    // old one's, and the Status row and the trace keep counting from where they were.
+    let mut old = Chain::passthrough(TrackId(3), crate::NO_COLUMN, 8_000);
+    old.missed_blocks = 5;
+    let mut new = Chain::passthrough(TrackId(3), crate::NO_COLUMN, 8_000);
+    new.adopt(&mut old);
+    assert_eq!(new.missed_blocks, 5);
+    let mut other = Chain::passthrough(TrackId(4), crate::NO_COLUMN, 8_000);
+    other.adopt(&mut new);
+    assert_eq!(other.missed_blocks, 0, "another track's count stays its own");
+}

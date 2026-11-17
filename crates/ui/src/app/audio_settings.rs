@@ -174,17 +174,23 @@ impl App {
     }
 
     /// Runs `audio.setRenderThreads` with the setting's choice; the output in use opens again.
+    /// A refused choice (an open ASIO control panel) puts the setting back to the one the engine
+    /// runs with, so the two never differ.
     pub(super) fn choose_render_threads(&mut self) {
         let choice = self.settings.render_threads;
-        self.render_threads_applied = Some(choice);
         match self.projects.execute("audio.setRenderThreads", &json!({ "threads": choice })) {
             Ok(result) => {
+                self.render_threads_applied = Some(choice);
                 let threads = result["render_threads"].as_u64().unwrap_or(1);
                 let note = if result["from_environment"] == json!(true) { " (SUHINA_RENDER_THREADS)" } else { "" };
                 self.status =
                     Status::Done(format!("Rendering on {threads} thread{}{note}", if threads == 1 { "" } else { "s" }));
             }
-            Err(e) => self.status = Status::Error(e.message().to_owned()),
+            Err(e) => {
+                self.settings.render_threads = self.render_threads_applied.unwrap_or(1);
+                self.settings_changed = true;
+                self.status = Status::Error(e.message().to_owned());
+            }
         }
     }
 

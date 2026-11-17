@@ -27,8 +27,10 @@ pool at the current lead, off by default, for chains without plug-ins.
   with the new pool, and answers with the threads chosen, the threads the process renders on
   and whether `SUHINA_RENDER_THREADS` decided it. Agents attached over MCP may not run it.
 - **`SUHINA_RENDER_THREADS=n`**, when set, wins over both, for diagnosis.
-- **Automatic** is the threads the system offers (`std::thread::available_parallelism`), at most
-  9: the render thread and 8 workers.
+- **Automatic** is the threads the system offers (`std::thread::available_parallelism`, logical
+  cores), at most 9: the render thread and 8 workers.
+- A choice `audio.setRenderThreads` refuses (an open ASIO control panel) puts the setting back to
+  the one the engine runs with.
 
 ## How a block is rendered
 
@@ -59,8 +61,10 @@ pool at the current lead, off by default, for chains without plug-ins.
 
 ## Late blocks
 
-A chain that comes back from a worker after its block's deadline is counted as a missed block
-of its track (never offline, where there is no deadline). The renderer publishes the total and
+A chain its worker finished after its block's deadline is counted as a missed block of its
+track (never offline, where there is no deadline); the worker judges it when it finishes, so a
+render thread busy with its own share does not make a chain late that was done in time. The
+count is the track's: an edit while playing carries it over to the new graph. The renderer publishes the total and
 the track that missed most beside the plug-in misses. `audio.info` gives `render_threads`,
 `render_misses`, `worst_render_track` and `worst_render_misses`; Settings › Audio › Status
 shows *Render threads* ("4 threads; 3 blocks late, most on Bass (2)"), and the trace's `audio:`
@@ -70,10 +74,14 @@ line gives the late blocks, the track and the thread count.
 
 - Chains with plug-ins on the workers, and their round trips overlapping (phase 2,
   [#1507](https://github.com/suhina-daw/suhina-daw/issues/1507)).
-- Physical and performance cores for Automatic, the workers in a macOS audio workgroup and the
-  thread allowance under rtkit ([#1511](https://github.com/suhina-daw/suhina-daw/issues/1511)).
+- Physical and performance cores for Automatic
+  ([#1522](https://github.com/suhina-daw/suhina-daw/issues/1522)); the workers in a macOS audio
+  workgroup and the thread allowance under rtkit
+  ([#1511](https://github.com/suhina-daw/suhina-daw/issues/1511)).
 - Flush-to-zero on every engine thread (ADR 0038 › 15), a change of its own that blesses the
-  golden renders again.
+  golden renders again ([#1521](https://github.com/suhina-daw/suhina-daw/issues/1521)).
+- The allocation test counts the render thread only: the counter it uses counts one thread, so
+  the workers' loop is covered by the same chain code on one thread.
 - The threshold of four chains, measured ([#1512](https://github.com/suhina-daw/suhina-daw/issues/1512)).
 - Rendering ahead, Live and Studio mode, and the live path's meters (phases 3 and 4).
 - On by default (phase 5).

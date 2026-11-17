@@ -21,7 +21,7 @@
 //!
 //! **Late work is waited for** (ADR 0038 › 3). The render thread spins a moment, then sleeps
 //! until a worker wakes it; it never yields its core. A chain that comes back after its block's
-//! deadline is counted as a missed block of its track.
+//! deadline (when its worker finished it) is counted as a missed block of its track.
 //!
 //! Only chains without plug-ins go to workers in this phase: plug-ins already run in their own
 //! processes, with their blocks out in parallel, and their path stays on the render thread.
@@ -50,7 +50,8 @@ pub const MAX_RENDER_THREADS: usize = 9;
 pub const PARALLEL_MIN: usize = 4;
 
 /// How many renderers can hold a lane of one pool at once: the player and the renders and
-/// exports beside it (tests build many at once).
+/// exports beside it. A renderer that finds none free renders alone (in a parallel test run, the
+/// renderers past the sixteenth).
 const LANES: usize = 16;
 
 /// How long the render thread sleeps at most while a chain is at a worker and no plug-in is
@@ -76,9 +77,10 @@ pub fn render_threads_from_env() -> usize {
     render_threads_from(std::env::var(RENDER_THREADS_VAR).ok().as_deref())
 }
 
-/// The number of threads the automatic choice renders on: the physical cores (the logical ones
-/// where the system does not say), the render thread included, at most [`MAX_RENDER_THREADS`]
-/// (ADR 0038 › 1: the cores less one for workers, at most 8).
+/// The number of threads the automatic choice renders on: the threads the system offers
+/// (`available_parallelism`, logical cores), the render thread included, at most
+/// [`MAX_RENDER_THREADS`], so the workers are those less one, at most 8. ADR 0038 › 1 counts
+/// physical performance cores; telling them apart is #1522.
 pub fn automatic_render_threads() -> usize {
     std::thread::available_parallelism().map_or(1, usize::from).clamp(1, MAX_RENDER_THREADS)
 }
@@ -102,13 +104,14 @@ struct Job {
     reply_to: Thread,
 }
 
-/// A chain coming back: its index, the chain, and whether it ran to the end of the block and
+/// A chain coming back: its index, the chain, whether it ran to the end of the block and
 /// staged its sound (false only when a plug-in took the block, which a worker's chain has none
-/// of).
+/// of), and whether the worker finished it after the block's deadline.
 struct Reply {
     index: usize,
     chain: Chain,
     completed: bool,
+    late: bool,
 }
 
 /// What the renderers and every worker share.
@@ -374,19 +377,20 @@ impl Lane {
     }
 
     /// Puts every chain the workers have given back into its place in `chains`, counts a chain
-    /// back after its block's deadline as a missed block of its track (ADR 0038 › 3), and calls
+    /// its worker finished after the block's deadline as a missed block of its track (ADR 0038 ›
+    /// 3; judged when the worker finished, not when the render thread took it back), and calls
     /// `back` with its index and whether it completed its block. True when one came back. Never
     /// allocates.
     pub(crate) fn receive(&mut self, chains: &mut [Chain], mut back: impl FnMut(&mut [Chain], usize, bool)) -> bool {
         let mut any = false;
         for w in 0..self.workers.len() {
             while let Some(worker) = self.workers.get_mut(w)
-                && let Ok(Reply { index, chain, completed }) = worker.end.replies.pop()
+                && let Ok(Reply { index, chain, completed, late }) = worker.end.replies.pop()
             {
                 if let Some(slot) = chains.get_mut(index) {
                     let mut chain = chain;
                     chain.turn.away = false;
-                    if chain.past_deadline(crate::clock::now()) {
+                    if late {
                         chain.missed_blocks = chain.missed_blocks.saturating_add(1);
                     }
                     worker.spares.push(std::mem::replace(slot, chain));
@@ -454,10 +458,11 @@ fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
             chain.complete(frames, &context);
             chain.stage(frames);
         }
+        let late = chain.past_deadline(crate::clock::now());
         // Never full: the ring holds DEPTH replies, and the worker holds at most DEPTH chains
         // of a lane.
         if let Some(end) = lanes.get_mut(lane) {
-            let _ = end.replies.push(Reply { index, chain, completed });
+            let _ = end.replies.push(Reply { index, chain, completed, late });
         }
         reply_to.unpark();
         if let Some(rt) = realtime.as_mut() {

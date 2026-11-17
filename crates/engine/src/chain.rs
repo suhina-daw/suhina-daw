@@ -1181,6 +1181,8 @@ impl Chain {
         if old.track != self.track {
             return false;
         }
+        // The track's late render blocks are its own, whatever its devices (ADR 0038 › 3).
+        self.missed_blocks = old.missed_blocks;
         // The same kinds alone is not enough: two identical devices that traded places would
         // each keep the other's running state.
         if old.ids == self.ids && old.device_ids == self.device_ids {

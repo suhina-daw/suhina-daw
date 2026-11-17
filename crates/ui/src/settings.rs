@@ -409,6 +409,10 @@ impl Descriptions {
     }
 }
 
+/// The choices of Settings › Audio › Advanced › Render threads, as saved: 1 Off, 0 Automatic,
+/// otherwise the threads (`audio.setRenderThreads`).
+pub const RENDER_THREAD_CHOICES: [u32; 5] = [1, 0, 2, 4, 8];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     /// User-owned PNG beneath translucent surfaces; never captures the desktop.
