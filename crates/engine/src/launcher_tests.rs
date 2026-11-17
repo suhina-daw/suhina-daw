@@ -15,7 +15,16 @@ pub(super) const BEAT: usize = SR as usize / 2;
 pub(super) const BAR: usize = 4 * BEAT;
 
 pub(super) fn note(time: f64, key: u8) -> Note {
-    Note { time, duration: 0.25, key, velocity: 1.0, release_velocity: 0.5, channel: 0, muted: false }
+    Note {
+        time,
+        duration: 0.25,
+        key,
+        velocity: 1.0,
+        release_velocity: 0.5,
+        channel: 0,
+        muted: false,
+        velocity_range: 0,
+    }
 }
 
 /// A clip of `length` beats that loops over its whole length, or plays once.
@@ -1129,4 +1138,103 @@ fn cancelling_a_restored_waiting_start_does_not_keep_the_resume_target() {
     renderer.wait_to_start(0);
     assert_eq!(renderer.graph.launcher.beat, 1.0);
     assert!(renderer.graph.launcher.columns[0].playing.is_none());
+}
+
+/// A clip that resumes, or takes over a position with legato, counts the loop passes the
+/// uninterrupted playback would have made, so its notes roll the same velocities (ADR 0037).
+#[test]
+fn a_resumed_clip_counts_the_loop_passes_already_played() {
+    // Offset 0, loop 0 to 4: beat 8.5 is in the third pass.
+    assert_eq!(super::loop_passes(0.0, Some((0.0, 4.0)), 8.5), 2);
+    assert_eq!(super::loop_passes(0.0, Some((0.0, 4.0)), 3.9), 0);
+    assert_eq!(super::loop_passes(0.0, Some((0.0, 4.0)), 4.0), 1);
+    // A start marker before the loop: the first pass ends at the loop's end, 6 beats in.
+    assert_eq!(super::loop_passes(2.0, Some((4.0, 8.0)), 6.0), 1);
+    // No loop, or an empty one: one pass.
+    assert_eq!(super::loop_passes(0.0, None, 100.0), 0);
+    assert_eq!(super::loop_passes(0.0, Some((4.0, 4.0)), 100.0), 0);
+    // A start marker past the loop turns into it at once, one pass, as a fresh launch counts:
+    // loop 1 to 3, marker 7 plays from 1.
+    assert_eq!(super::loop_passes(7.0, Some((1.0, 3.0)), 0.1), 1);
+    assert_eq!(super::loop_passes(7.0, Some((1.0, 3.0)), 2.5), 2);
+    // A loop vanishingly short for the time played: the count saturates, never wraps.
+    assert_eq!(super::loop_passes(0.0, Some((0.0, 1e-20)), 1e6), u64::MAX);
+}
+
+/// A clip resumed after two loops rolls its notes' velocities as the uninterrupted playback does
+/// (ADR 0037): the pass through the loop is part of the roll, so a resume that counted from 0
+/// would play other velocities.
+#[test]
+fn a_resumed_clip_rolls_the_velocities_the_uninterrupted_playback_rolls() {
+    let rolled = |time: f64, key: u8| Note { velocity: 0.5, velocity_range: 60, ..note(time, key) };
+    resumed_rolls_as_uninterrupted(
+        vec![rolled(0.0, 60), rolled(1.0, 62), rolled(2.0, 64), rolled(3.0, 65)],
+        clip(1, 4.0, true),
+    );
+    // A start marker two loop lengths past the loop's end: the clip turns into the loop at once,
+    // and a resume counts that pass as the launch did.
+    let past = Clip { offset: 7.0, loop_range: Some(LoopRange { start: 1.0, end: 3.0 }), ..clip(1, 8.0, true) };
+    resumed_rolls_as_uninterrupted(vec![rolled(1.0, 60), rolled(1.5, 62), rolled(2.0, 64), rolled(2.5, 65)], past);
+}
+
+/// Renders `clip` of `notes` uninterrupted, and again resumed in a new renderer more than two
+/// loops in, and checks each note after the resume plays as loud as it did uninterrupted.
+fn resumed_rolls_as_uninterrupted(notes_of_clip: Vec<Note>, clip: Clip) {
+    const BLOCK: usize = 512;
+    let p = suhina_test_support::ProjectBuilder::new()
+        .midi_track(1, "T1")
+        .notes(1, "c1", 8.0, notes_of_clip)
+        .slot(1, 0, clip)
+        .build();
+    let blocks = 17 * BEAT / BLOCK;
+    let start = |renderer: &mut Renderer| {
+        renderer.handle(LaunchCommand::SetPosition { beat: 1.0 });
+        renderer.handle(LaunchCommand::Play);
+        renderer.handle(LaunchCommand::LaunchClip { column: 0, slot: 0 });
+    };
+    let mut reference = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    start(&mut reference);
+    let mut expected = vec![0.0f32; 2 * BLOCK * blocks];
+    for block in expected.chunks_mut(2 * BLOCK) {
+        reference.process(block);
+    }
+    // The clip launches at beat 4; 14.3 beats of playback later it is more than two loops in.
+    let mut old = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    start(&mut old);
+    let split = 143 * BEAT / 10 / BLOCK;
+    let mut out = vec![0.0f32; 2 * BLOCK * blocks];
+    for block in out.chunks_mut(2 * BLOCK).take(split) {
+        old.process(block);
+    }
+    let monitor = old.monitor();
+    let (beat, marker) = (monitor.beat(), monitor.start_beat());
+    let elapsed = monitor.elapsed_beats(0).unwrap();
+    // Played from the marker at beat 1, the clip launched at beat 4: 11.3 beats in, its third pass.
+    assert!(elapsed > 8.0 && elapsed < 12.0, "{elapsed}");
+    let mut new = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    for command in [
+        LaunchCommand::SetPosition { beat: marker },
+        LaunchCommand::Play,
+        LaunchCommand::Locate { beat },
+        LaunchCommand::ResumeColumn { column: 0, slot: Some(0), elapsed_beats: elapsed },
+    ] {
+        new.handle(command);
+    }
+    for block in out.chunks_mut(2 * BLOCK).skip(split - 1) {
+        new.process(block);
+    }
+    // Each note's loudness: the peak of its first quarter beat.
+    let peak = |out: &[f32], frame: usize| {
+        out.get(2 * frame..2 * (frame + BEAT / 4)).unwrap_or(&[]).iter().fold(0.0f32, |m, s| m.max(s.abs()))
+    };
+    let resumed_from = split * BLOCK;
+    let after: Vec<usize> = onsets(&expected).into_iter().filter(|at| *at > resumed_from + BEAT / 4).collect();
+    assert!(after.len() >= 2, "notes after the resume: {after:?}");
+    for at in &after {
+        let (want, got) = (peak(&expected, *at), peak(&out, *at));
+        assert!((want - got).abs() <= want * 1e-3, "at {at}: {got} played, {want} uninterrupted");
+    }
+    // The range is at work: the passes roll different loudnesses for the same note.
+    let all: Vec<f32> = onsets(&expected).iter().map(|at| peak(&expected, *at)).collect();
+    assert!(all.windows(2).any(|w| (w[0] - w[1]).abs() > 1e-3), "{all:?}");
 }

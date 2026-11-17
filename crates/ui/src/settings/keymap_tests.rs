@@ -112,7 +112,6 @@ fn alt_l_is_legato_and_the_loop_key_is_left_alone_in_the_piano_roll() {
     // What runs there is listed, so the rest is left alone without being named: the keys of
     // the views behind the notes, and an action nobody has listed yet.
     for id in [
-        "selection.mute",
         "selection.selectAll",
         "selection.launch",
         "arrangement.tool3",
@@ -132,6 +131,7 @@ fn alt_l_is_legato_and_the_loop_key_is_left_alone_in_the_piano_roll() {
         "pianoRoll.legato",
         "selection.delete",
         "selection.copy",
+        "selection.mute",
         "edit.undo",
         "edit.redo",
         "file.save",
@@ -427,4 +427,85 @@ fn a_held_key_toggles_once_and_steps_on_repeat() {
         input.events.push(press(Key::ArrowUp, true));
         assert_eq!(keymap.pressed(&mut input, |_| true), std::slice::from_ref(id), "an arrow steps on");
     }
+}
+
+/// Join, Fit to time range, Crop and Split clip have keys of their own in the piano roll (#1284).
+/// Split clip is Ctrl+E, the split key; the piano roll's own keys win over a window key on the same
+/// key while it has the keyboard (Hide editor's Ctrl+Shift+E stays the window's).
+#[test]
+fn the_clip_edit_keys_are_piano_roll_keys() {
+    let known = actions();
+    for (id, key) in [
+        ("pianoRoll.join", "Ctrl+J"),
+        ("pianoRoll.fitToTime", "Ctrl+Alt+J"),
+        ("pianoRoll.crop", "Ctrl+Shift+J"),
+        ("pianoRoll.splitNotes", "Ctrl+E"),
+    ] {
+        let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
+        assert_eq!(action.group, PIANO_ROLL);
+        assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
+        assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
+    }
+    assert!(Keymap::default().conflicts().is_empty());
+    assert!(!overlap("pianoRoll.splitNotes", "view.editor"), "the piano roll's own scope");
+    assert!(overlap("pianoRoll.splitNotes", "pianoRoll.join"));
+    // A window key the piano roll takes while it has the keyboard: its own action runs, not the
+    // window's.
+    let mut keymap = Keymap::default();
+    keymap.set(
+        "pianoRoll.splitNotes",
+        vec![Shortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::E)],
+    );
+    assert!(keymap.conflicts().is_empty(), "Hide editor's key, taken in the piano roll, is no conflict");
+    let mut input = egui::RawInput::default();
+    input.events.push(egui::Event::Key {
+        key: egui::Key::E,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+    });
+    let ctx = egui::Context::default();
+    let mut fired = Vec::new();
+    let mut output = ctx.run_ui(input, |ui| {
+        fired = ui.input_mut(|i| keymap.pressed(i, |id| !not_in_piano_roll(id)));
+    });
+    output.textures_delta.clear();
+    assert_eq!(fired, vec!["pianoRoll.splitNotes".to_string()]);
+}
+
+/// Ctrl and the arrow keys step and grow the piano roll's note selection: keymap actions read only
+/// while the piano roll has the keyboard, so a preset can change them (#1281).
+#[test]
+fn ctrl_and_the_arrows_are_the_piano_roll_selection_keys() {
+    let known = actions();
+    for (id, key) in [
+        ("pianoRoll.selectNextOnKey", "Ctrl+Right"),
+        ("pianoRoll.selectPreviousOnKey", "Ctrl+Left"),
+        ("pianoRoll.selectNextNote", "Ctrl+Up"),
+        ("pianoRoll.selectPreviousNote", "Ctrl+Down"),
+        ("pianoRoll.growSelectionOnKey", "Ctrl+Shift+Right"),
+        ("pianoRoll.shrinkSelectionOnKey", "Ctrl+Shift+Left"),
+        ("pianoRoll.growSelection", "Ctrl+Shift+Up"),
+        ("pianoRoll.shrinkSelection", "Ctrl+Shift+Down"),
+    ] {
+        let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
+        assert_eq!(action.group, PIANO_ROLL);
+        assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
+        assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
+    }
+    assert!(Keymap::default().conflicts().is_empty());
+}
+
+/// Alt+Shift+Up and Down raise and lower the selection's velocity range in the piano roll (#1282).
+#[test]
+fn alt_shift_up_and_down_step_the_velocity_range() {
+    let known = actions();
+    for (id, key) in [("pianoRoll.rangeUp", "Shift+Alt+Up"), ("pianoRoll.rangeDown", "Shift+Alt+Down")] {
+        let action = known.iter().find(|a| a.id == id).unwrap_or_else(|| panic!("{id}"));
+        assert_eq!(action.group, PIANO_ROLL);
+        assert!(piano_roll_only(id), "{id} is read only while the piano roll has the keyboard");
+        assert_eq!(Keymap::default().binding_text(id).as_deref(), Some(key), "{id}");
+    }
+    assert!(Keymap::default().conflicts().is_empty());
 }

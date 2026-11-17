@@ -1582,12 +1582,10 @@ pub(crate) fn keep_plugin_params_in_step(session: &mut Session) -> bool {
         let monitor = p.monitor();
         (monitor.running(), monitor.beat())
     });
-    // The parameters that take steps: their lanes hold each value, and so do the echoes of it.
-    let stepped: Vec<(u64, u32)> = edits
-        .iter()
-        .filter(|(key, id, _)| session.plugins.stepped(*key, *id))
-        .map(|(key, id, _)| (*key, *id))
-        .collect();
+    // How each parameter plays its lane: a switch or a list of choices holds each value, and so
+    // do the echoes of it; a knob listed with steps echoes the step the plug-in rounded to.
+    let stepped: Vec<(u64, u32, Echo)> =
+        edits.iter().filter_map(|(key, id, _)| Some((*key, *id, session.plugins.echo(*key, *id)?))).collect();
     let before = turns_lanes_off(&session.project, &edits, at, &stepped).then(|| session.project.clone());
     // The parameters moved by hand, for the window to show in their tracks' lanes.
     for touched in touched_by_hand(&session.project, &edits, at, &stepped) {
@@ -1620,7 +1618,7 @@ pub(crate) fn touched_by_hand(
     project: &Project,
     edits: &[(u64, u32, f64)],
     at: Option<(bool, f64)>,
-    stepped: &[(u64, u32)],
+    stepped: &[(u64, u32, Echo)],
 ) -> Vec<(suhina_model::TrackId, usize, u32)> {
     let devices = suhina_engine::plugin_devices(project);
     let mut touched = Vec::new();
@@ -1629,12 +1627,28 @@ pub(crate) fn touched_by_hand(
         let (Some(track), [index]) = (found.track, found.path.as_slice()) else { continue };
         let echo = plugin_device(project, &devices, *key)
             .and_then(|device| playing_lane(device, *id))
-            .is_some_and(|lane| lane_sent(lane, *value, at, stepped.contains(&(*key, *id))));
+            .is_some_and(|lane| lane_sent(lane, *value, at, echo_of(stepped, *key, *id)));
         if !echo && !touched.contains(&(track, *index, *id)) {
             touched.push((track, *index, *id));
         }
     }
     touched
+}
+
+/// How a plug-in parameter plays its lane, for its reports to be matched with what the lane sent
+/// ([`crate::rack::Rack::echo`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Echo {
+    /// A switch or a list of choices: each value holds until the next point.
+    Holds,
+    /// A knob listed with steps of this size (#1482): it moves along the line and the plug-in
+    /// may report the step it rounded the lane's value to.
+    Step(f64),
+}
+
+/// How parameter `id` of the plug-in device `key` plays its lane, as `stepped` lists it.
+fn echo_of(stepped: &[(u64, u32, Echo)], key: u64, id: u32) -> Option<Echo> {
+    stepped.iter().find(|(k, i, _)| *k == key && *i == id).map(|(_, _, echo)| *echo)
 }
 
 /// The enabled lane with points that plays plug-in parameter `id` of `device`, if there is one.
@@ -1647,10 +1661,16 @@ fn playing_lane(device: &Device, id: u32) -> Option<&AutomationLane> {
 /// lane sends its value at the playhead; running, a report may come a little after the value it
 /// echoes, so anything the lane went through in the last two beats counts. A `stepped`
 /// parameter's lane holds each value until the next point, as the engine plays it.
-fn lane_sent(lane: &AutomationLane, value: f64, at: Option<(bool, f64)>, stepped: bool) -> bool {
+fn lane_sent(lane: &AutomationLane, value: f64, at: Option<(bool, f64)>, echo: Option<Echo>) -> bool {
     let Some((running, beat)) = at.filter(|(_, b)| b.is_finite()) else { return false };
+    let stepped = echo == Some(Echo::Holds);
+    // A knob listed with steps gets the line's value and plays (and may report) a step of it.
+    let step = match echo {
+        Some(Echo::Step(step)) if step.is_finite() && step > 0.0 => step,
+        _ => 0.0,
+    };
     let played = |b: f64| lane.value_at(b.max(0.0), stepped, &suhina_model::automation::Plain);
-    let near = |a: f64| (a - value).abs() <= 1e-6f64.max(a.abs() * 1e-4);
+    let near = |a: f64| (a - value).abs() <= 1e-6f64.max(a.abs() * 1e-4).max(step);
     if !running {
         return played(beat).is_some_and(near);
     }
@@ -1677,13 +1697,13 @@ fn turns_lanes_off(
     project: &Project,
     edits: &[(u64, u32, f64)],
     at: Option<(bool, f64)>,
-    stepped: &[(u64, u32)],
+    stepped: &[(u64, u32, Echo)],
 ) -> bool {
     let devices = suhina_engine::plugin_devices(project);
     edits.iter().any(|(key, id, value)| {
         plugin_device(project, &devices, *key)
             .and_then(|device| playing_lane(device, *id))
-            .is_some_and(|lane| !lane_sent(lane, *value, at, stepped.contains(&(*key, *id))))
+            .is_some_and(|lane| !lane_sent(lane, *value, at, echo_of(stepped, *key, *id)))
     })
 }
 
@@ -1696,7 +1716,7 @@ pub(crate) fn take_in_param_edits(
     project: &mut Project,
     edits: &[(u64, u32, f64)],
     at: Option<(bool, f64)>,
-    stepped: &[(u64, u32)],
+    stepped: &[(u64, u32, Echo)],
 ) -> (bool, bool) {
     let devices = suhina_engine::plugin_devices(project);
     let mut changed = false;
@@ -1707,8 +1727,8 @@ pub(crate) fn take_in_param_edits(
             continue;
         };
         let Some(device) = suhina_model::device_at_mut(&mut channel.devices, &device.path) else { continue };
-        let held = stepped.contains(&(*key, *id));
-        let by_hand = playing_lane(device, *id).is_some_and(|lane| !lane_sent(lane, *value, at, held));
+        let echo = echo_of(stepped, *key, *id);
+        let by_hand = playing_lane(device, *id).is_some_and(|lane| !lane_sent(lane, *value, at, echo));
         if by_hand {
             off |= crate::automation::override_lane(&mut device.automation, |l| param_id(&l.param) == Some(*id));
         }
@@ -1816,7 +1836,7 @@ pub(crate) fn plugin_params(session: &mut Session, params: &Value) -> Result<Val
                 json!({
                     "id": p.id, "name": p.name, "group": p.group, "min": p.min, "max": p.max,
                     "default": p.default, "value": p.value, "text": p.text, "steps": p.steps,
-                    "automatable": p.automatable, "read_only": p.read_only,
+                    "list": p.list, "automatable": p.automatable, "read_only": p.read_only,
                 })
             })
             .collect(),

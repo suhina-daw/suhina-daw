@@ -64,6 +64,8 @@ pub(super) fn toolbar(
             own.as_ref().and_then(|c| c.height).map_or(side, |h| h.clamp(8.0, inner.max(8.0))),
         )
     };
+    // The Rows toggles are this tall, and their icons as wide as they are tall.
+    let rows_height = (inner - ROWS_GROUP_INSETS).max(1.0);
     // The menus as wide as their words, so they sit close by.
     let widths = Widths {
         size,
@@ -75,8 +77,9 @@ pub(super) fn toolbar(
             let value = clip.grid_menu.label();
             (menu_width(ui, (Some("Grid"), &value)), menu_width(ui, (None, &value)))
         },
-        rows_height: (inner - ROWS_GROUP_INSETS).max(1.0),
-        rows: ROWS.map(|(_, word)| (row_toggle_width(ui, side, Some(word)), row_toggle_width(ui, side, None))),
+        rows_height,
+        rows: ROWS
+            .map(|(_, word)| (row_toggle_width(ui, rows_height, Some(word)), row_toggle_width(ui, rows_height, None))),
     };
     // The buttons lit this frame are `[checked]` in the layout as they are when painted (the tools and the two columns), so a
     // rule on them (`#piano-select[checked] { display: none }`) takes them out of both.
@@ -376,11 +379,12 @@ fn chevron(painter: &egui::Painter, at: Pos2, color: Color32) {
 const ROWS: [(IconButton, &str); 3] =
     [(IconButton::Fold, "Fold"), (IconButton::Scale, "Scale"), (IconButton::Highlight, "Highlight")];
 
-/// The width of one of the Rows group's toggles: its icon, and its word when `word`.
-fn row_toggle_width(ui: &Ui, side: f32, word: Option<&str>) -> f32 {
+/// The width of one of the Rows group's toggles `height` tall: its icon, a square as tall as the
+/// toggle ([`row_toggle`] draws it so), and its word when `word`.
+pub(super) fn row_toggle_width(ui: &Ui, height: f32, word: Option<&str>) -> f32 {
     match word {
-        Some(word) => side + 10.0 + widgets::text_width(ui, word, theme::ui_font(theme::TEXT_SMALL)),
-        None => side + 6.0,
+        Some(word) => height + 10.0 + widgets::text_width(ui, word, theme::ui_font(theme::TEXT_SMALL)),
+        None => height + 6.0,
     }
 }
 
@@ -702,7 +706,7 @@ impl ButtonPaint<'_> {
         } else {
             crate::kit::skin::State::response(&response, chosen)
         };
-        let role = format!("piano.{}", button.id().trim_start_matches("piano-"));
+        let role = super::layout::tool_role(button);
         if active {
             // Only the chosen tool or an open part has a fill; the others show one on hover.
             let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);

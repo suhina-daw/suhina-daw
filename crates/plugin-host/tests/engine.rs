@@ -86,6 +86,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
         release_velocity: 0.5,
         channel: 0,
         muted: false,
+        velocity_range: 0,
     };
     let notes = if two { vec![note(0.0, 0.5), note(1.0, 0.5)] } else { vec![note(0.0, length)] };
     Project {

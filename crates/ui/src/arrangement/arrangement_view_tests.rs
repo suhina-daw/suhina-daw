@@ -761,17 +761,11 @@ fn a_clip_off_the_grid_keeps_its_place_until_it_moves_half_a_step() {
 }
 
 #[test]
-fn crowded_clip_notes_give_way_as_the_view_zooms_out() {
-    // Sixteenths over four bars: 64 starts.
-    let sixteenths: Vec<f64> = (0..64).map(|i| f64::from(i) * 0.25).collect();
-    assert!(!clip::notes_crowded(sixteenths.clone(), 640.0), "10 points apart: drawn");
-    // A beat about 5 points wide, as at the opening zoom: sixteenths stay drawn.
-    assert!(!clip::notes_crowded(sixteenths.clone(), 80.0), "1.25 points apart: drawn");
-    assert!(clip::notes_crowded(sixteenths, 48.0), "0.75 points apart: the name instead");
-    // A four-note chord on each beat counts once per beat.
-    let chords: Vec<f64> = (0..16).flat_map(|beat| [f64::from(beat); 4]).collect();
-    assert!(!clip::notes_crowded(chords, 16.0), "16 chords a point apart");
-    assert!(!clip::notes_crowded(Vec::new(), 10.0));
+fn clip_notes_give_way_only_to_crowded_pitch_rows() {
+    // Only the pitch rows decide: 40 pitches in a 30-point strip are under a point a row.
+    assert!(clip::pitch_rows_crowded(40, 30.0), "rows under a point: the name instead");
+    assert!(!clip::pitch_rows_crowded(20, 30.0), "a point and a half a row: drawn");
+    assert!(!clip::pitch_rows_crowded(0, 30.0));
 }
 
 #[test]

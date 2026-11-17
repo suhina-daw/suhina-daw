@@ -278,11 +278,11 @@ impl ModuleFile {
         })
     }
 
-    fn test(mix: bool) -> Self {
+    fn test(mix: bool, gate: bool) -> Self {
         Self {
             #[cfg(target_os = "macos")]
             _bundle: None,
-            factory: crate::test_vst3::factory(mix),
+            factory: crate::test_vst3::factory(mix, gate),
             library: None,
         }
     }
@@ -467,9 +467,9 @@ fn shared_module(key: PathBuf, open: impl FnOnce() -> Result<ModuleFile, String>
 
 /// The module and class a plug-in name points at.
 fn open(spec: &str) -> Result<(Module, Option<TUID>), String> {
-    if spec == "test:vst3" || spec == "test:vst3-mix" {
-        let mix = spec == "test:vst3-mix";
-        return Ok((shared_module(PathBuf::from(spec), || Ok(ModuleFile::test(mix)))?, None));
+    if spec == "test:vst3" || spec == "test:vst3-mix" || spec == "test:vst3-gate" {
+        let (mix, gate) = (spec == "test:vst3-mix", spec == "test:vst3-gate");
+        return Ok((shared_module(PathBuf::from(spec), || Ok(ModuleFile::test(mix, gate)))?, None));
     }
     let file = spec.strip_prefix("vst3:").ok_or_else(|| format!("not a VST3 plug-in: {spec:?}"))?;
     let (path, cid) = match file.rsplit_once('#') {
@@ -1394,6 +1394,7 @@ impl Vst3Plugin {
             value: finite(value, 0.0),
             text,
             steps: u32::try_from(info.stepCount).unwrap_or(0),
+            list: flag(Flags::kIsList),
             automatable: flag(Flags::kCanAutomate),
             read_only: flag(Flags::kIsReadOnly),
             hidden: flag(Flags::kIsHidden),

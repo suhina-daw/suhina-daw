@@ -172,7 +172,7 @@ impl PluginInfo {
         let path = self.path.display().to_string();
         if path.starts_with("test:") {
             return match path.as_str() {
-                "test:vst3" | "test:vst3-mix" => PluginFormat::Vst3,
+                "test:vst3" | "test:vst3-mix" | "test:vst3-gate" => PluginFormat::Vst3,
                 "test:vst2" => PluginFormat::Vst2,
                 _ => PluginFormat::Clap,
             };

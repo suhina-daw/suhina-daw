@@ -1,6 +1,6 @@
 ---
 description: The layout of Suhina's own project file (.suhina), field by field, with what a reader accepts
-read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, version history, newer file refused, base64 state, muted note, note flags, clip scale, default_scale, scale root and mode
+read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, version history, newer file refused, base64 state, muted note, note flags, velocity range, clip scale, default_scale, scale root and mode
 type: spec
 status: current
 last_verified: 2026-11-11
@@ -97,6 +97,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | 10 | An audio clip's own `audio` state (gain, gain envelope, transpose, warp, warp markers, tempo source) on the clip, the region keeping the file only; an earlier file's region state is read into every clip of its content ([ADR 0035](../decisions/0035-clip-gain-envelope.md)) | #1190 |
 | 11 | The project's `lane_layouts`: how each channel's automation lanes are laid out in the Arrangement view ([automation](automation.md#in-the-arrangement-view)) | #1322 |
 | 12 | Swing: the project's `transport.swing` and a clip's `swing` `{ amount, own }` ([swing](swing.md) › Project file); an earlier file has none, every clip following a project swing of 0 | #1221 |
+| 13 | A note's `velocity_range`, -127 to 127, written only when it is not 0 ([ADR 0037](../decisions/0037-rolled-note-values.md)); an earlier file's notes have none | #1282 |
 
 ## Parts
 
@@ -111,7 +112,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | scale | `{ "root", "mode" }`: `root` a whole number 0 (C) to 11 (B); `mode` `major`, `minor`, `harmonicMinor`, `melodicMinor`, `dorian`, `phrygian`, `lydian`, `mixolydian`, `locrian`, `majorPentatonic`, `minorPentatonic` or `blues`. A root outside 0 to 11, a mode not in this list or a scale that is not such an object is an error naming where it is, as other bad values are ([ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: clip scales) |
 | `next_id` | in `project`: the next id a lane, clip or scene gets; left out while nothing has an id |
 | `default_scale` | in `project`, beside `transport`: the scale new MIDI clips take, written only when the project has one; missing or `null` means none |
-| note | `time`, `duration` (beats); `key` 0–127; `velocity`, `release_velocity` 0–1; `channel` 0–15; `muted` (written only when the note is muted, missing means it plays; [ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: muted notes) |
+| note | `time`, `duration` (beats); `key` 0–127; `velocity`, `release_velocity` 0–1; `channel` 0–15; `muted` (written only when the note is muted, missing means it plays; [ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: muted notes); `velocity_range` -127 to 127 (from version 13, written only when it is not 0; how far above or below its velocity the note may play, rolled each time it starts: [ADR 0037](../decisions/0037-rolled-note-values.md)) |
 | audio | `file` (relative to the project file, `/` between folders); `absolute_file`; `sample_rate`, `channels`, `duration_seconds` (if known); before version 10 also the state its clips play it with (`warped`, `stretch`, `warp_markers`, `gain`, `transpose`; see clip audio), read into each clip of the content; `stream`: which audio track of a file with several plays (a Stems file: 0 the master, 1 and up the stems; missing or `null` for an ordinary file) |
 | arrangement | `lanes`; `markers` `[{ beat, name }]`: named positions on the timeline, `beat` a number from 0 on; read in any order and kept in beat order; left out when there are none ([arrangement editing](arrangement-editing.md#markers)); `takes` `[{ track, name, clips, color? }]`: the take lanes, recorded passes kept under their tracks in the order recorded, their clips written as a lane's are but without ids, `color` (`"#RRGGBB"`) the take's own colour, left out while it takes the palette's; left out when there are none ([recording](recording.md#take-lanes)) |
 | arrangement lane | `id`; `name`; `track` or `null`; `clips` |

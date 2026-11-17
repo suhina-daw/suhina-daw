@@ -779,3 +779,74 @@ fn muting_a_duplicate_gives_only_that_clip_its_own_content() {
     assert_eq!(mutes(&session), [false, false, false, false], "the original stays unmuted");
     assert_eq!(notes_of(&session, own).iter().map(|n| n.muted).collect::<Vec<_>>(), [true, false, false, false]);
 }
+
+#[test]
+fn setting_a_velocity_range_absolutely_or_by_a_step() {
+    let mut session = Session::new(project(scale_notes()));
+    let before = notes_of(&session, 1);
+    let result =
+        run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0, 1], "range": 20 }))
+            .unwrap();
+    assert_eq!(result, json!({ "notes": [0, 1], "ranges": [20, 20] }));
+    let ranges = |s: &Session| notes_of(s, 1).iter().map(|n| n.velocity_range).collect::<Vec<_>>();
+    assert_eq!(ranges(&session), vec![20, 20, 0, 0]);
+    let listed = run(&mut session, "note.list", json!({ "track": 1, "index": 0 })).unwrap();
+    assert_eq!(listed[0]["velocityRange"], json!(20));
+    assert!(listed[2].get("velocityRange").is_none(), "a note without one lists none");
+    run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0, 2], "by": -1 })).unwrap();
+    assert_eq!(ranges(&session), vec![19, 20, -1, 0]);
+    // Kept to what the velocity (100) allows: 27 above it, 99 below.
+    run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [1], "by": 200 })).unwrap();
+    assert_eq!(ranges(&session)[1], 27);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(notes_of(&session, 1), before, "one undo step each");
+    for _ in 0..3 {
+        run(&mut session, "edit.redo", json!({})).unwrap();
+    }
+    assert_eq!(ranges(&session), vec![19, 27, -1, 0], "redone");
+    run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [2], "range": -127 })).unwrap();
+    assert_eq!(ranges(&session)[2], -99, "down to a velocity of 1");
+    // A note at 127 takes no range above it.
+    let mut loud = Session::new(project(vec![Note::new(0.0, 1.0, 60, 1.0)]));
+    let result =
+        run(&mut loud, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0], "by": 5 })).unwrap();
+    assert_eq!(result["ranges"], json!([0]));
+    let bad = |params: serde_json::Value| {
+        let mut session = Session::new(project(scale_notes()));
+        let before = session.project().clone();
+        let refused = run(&mut session, "note.setVelocityRange", params).is_err();
+        refused && *session.project() == before
+    };
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": -128 })));
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": "20" })), "the wrong type");
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "by": [1] })), "the wrong type");
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": "0", "range": 4 })), "the wrong type");
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [99], "range": 4 })), "no such note");
+    assert!(bad(json!({ "track": 1, "index": 9, "notes": [0], "range": 4 })), "no such clip");
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": 128 })));
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0], "range": 1, "by": 1 })));
+    assert!(bad(json!({ "track": 1, "index": 0, "notes": [0] })));
+    assert!(bad(json!({ "track": 1, "index": 2, "notes": [0], "range": 4 })), "an audio clip has no notes");
+}
+
+/// A note read with `note.list` and written back with `note.add` keeps its velocity range, and a
+/// range out of bounds is refused.
+#[test]
+fn a_velocity_range_survives_a_list_and_add_round_trip() {
+    let mut session = Session::new(project(scale_notes()));
+    run(&mut session, "note.setVelocityRange", json!({ "track": 1, "index": 0, "notes": [0], "range": -20 })).unwrap();
+    let listed = run(&mut session, "note.list", json!({ "track": 1, "index": 0 })).unwrap();
+    let first = &listed[0];
+    let copy = json!({
+        "time": first["time"], "length": first["length"], "key": first["key"],
+        "velocity": first["velocity"], "velocityRange": first["velocityRange"],
+    });
+    run(&mut session, "note.add", json!({ "track": 1, "index": 0, "notes": [copy] })).unwrap();
+    let ranges: Vec<i8> = notes_of(&session, 1).iter().map(|n| n.velocity_range).collect();
+    assert_eq!(ranges.last(), Some(&-20), "{ranges:?}");
+    let bad =
+        json!({ "track": 1, "index": 0, "notes": [{ "time": 0.0, "length": 1.0, "key": 60, "velocityRange": 200 }] });
+    assert!(run(&mut session, "note.add", bad).is_err());
+}

@@ -1558,9 +1558,9 @@ pub(super) fn paint_clip(
     let marks = wave_area(rect);
     let has_name = bar.is_some();
     // On a lane too low for a name bar the strip under the name is too thin for a waveform or
-    // notes to read, so the clip shows its name there instead. On a taller lane, notes that crowd
-    // into a smear give way too, the name staying in its bar. One or the other, never the name
-    // over faint notes.
+    // notes to read, so the clip shows its name there instead. On a taller lane, notes give way
+    // only when their pitch rows crowd, the name staying in its bar. One or the other, never the
+    // name over faint notes.
     let low = !has_name;
     let mut content_hidden = low;
     if low {
@@ -1623,12 +1623,10 @@ pub(super) fn paint_clip(
         let in_view = |n: &&crate::arrangement::timeline::NoteMark| {
             n.start + n.length >= first && n.start <= last && n.start < span_end
         };
-        // Notes that crowd into a smear give way, so a dense part reads by the name in its bar
-        // rather than as noise: zoomed out until their starts run together, or with more pitches
-        // than the strip under the name has room for rows.
-        let shown_width = (rect.right().min(view.right()) - rect.left().max(view.left())).max(0.0);
-        let starts: Vec<f64> = clip.notes.iter().filter(in_view).map(|n| n.start).collect();
-        content_hidden = notes_crowded(starts, shown_width) || pitch_rows_crowded(keys.len(), marks.height());
+        // Notes give way only when their pitches crowd: more of them than the strip under the
+        // name has room for rows. However far the view zooms out in time, a part's notes stay
+        // drawn (merged into a band where they run together), so a clip never looks empty.
+        content_hidden = pitch_rows_crowded(keys.len(), marks.height());
         let note_ink = content_ink;
         if !content_hidden {
             for note in clip.notes.iter().filter(in_view) {
@@ -1759,20 +1757,6 @@ pub(super) fn clip_grab_area(rect: Rect) -> Option<Rect> {
 
 /// Narrowest clip, in points, that has the Edit gain envelope button by its name.
 const ENVELOPE_BUTTON_LEAST: f32 = 48.0;
-
-/// Points between note starts under which a clip's notes are not drawn: only where they merge
-/// into a smear. Sixteenths at an ordinary zoom (a beat about 5 points) lie over a point apart
-/// and stay drawn; at 3 points they were gone at the opening zoom.
-const CROWDED_GAP: f32 = 1.0;
-
-/// Whether a MIDI clip's notes crowd too close to be drawn: their starts (`starts`, in beats,
-/// those in view) fall under [`CROWDED_GAP`] points apart across the `width` points of the clip
-/// in view. Notes that start together (a chord) count once, so chords do not hide a sparse part.
-pub(super) fn notes_crowded(mut starts: Vec<f64>, width: f32) -> bool {
-    starts.sort_unstable_by(f64::total_cmp);
-    starts.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
-    !starts.is_empty() && width / (starts.len() as f32) < CROWDED_GAP
-}
 
 /// Points a pitch row needs for a clip's notes to be drawn. A note is 2 points high, so rows under
 /// 2 overlap a little, and still read as the part's shape; only under a point do they merge.

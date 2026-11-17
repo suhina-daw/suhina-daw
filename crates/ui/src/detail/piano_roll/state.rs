@@ -125,6 +125,9 @@ pub(super) enum Gesture {
     Select { from: Pos2, add: bool },
     /// The selection's velocities follow the grabbed stem.
     Velocity { from: Pos2, grabbed: usize },
+    /// Ctrl and a drag on a stem: the selection's velocity range follows the pointer, from the
+    /// grabbed note's velocity (› Velocity range).
+    VelocityRange { from: Pos2, grabbed: usize },
     /// A note drawn where the press was, as long as the drag reaches.
     Draw { from: Pos2 },
     /// Notes painted along the drag ([`PianoRollState::stroke`]).
@@ -286,6 +289,9 @@ pub struct PianoRollState {
     /// Frames left to keep the selected notes in view: a key moved or sized them, and the view
     /// follows them on the frame the command lands and the one after.
     pub(super) reveal_selection: u8,
+    /// Where Ctrl+Shift and an arrow are anchored, with the selection their last step left: a
+    /// selection changed any other way is anchored afresh.
+    pub(super) step_anchor: Option<(BTreeSet<usize>, super::select_steps::Anchor)>,
     /// The key the key column is playing, if any, and where the pointer last was on it: the
     /// window turns a change into `preview.noteOn` and `preview.noteOff`.
     pub(super) playing_key: Option<u8>,
@@ -342,6 +348,10 @@ pub struct PianoRollState {
     /// How the toolbar folds the rows: Fold to the rows with notes, Scale to the clip's scale
     /// ([`Self::fold_for`]); kept until Suhina closes (› Zoom and scroll).
     pub fold: Fold,
+    /// The right-click menu, while it is open, and one a right click on a ghost note opens once the
+    /// double-click time has passed with no second click (› Right-click menu).
+    pub(super) menu: Option<MenuAt>,
+    pub(super) menu_waiting: Option<(f64, MenuAt)>,
 }
 
 impl Default for PianoRollState {
@@ -396,6 +406,7 @@ impl Default for PianoRollState {
             scrolled_by_hand: false,
             centred_for: 0.0,
             reveal_selection: 0,
+            step_anchor: None,
             playing_key: None,
             hover_key: None,
             last_click: None,
@@ -420,6 +431,8 @@ impl Default for PianoRollState {
             pressed_with: None,
             ghost_source: GhostSource::default(),
             fold: Fold::default(),
+            menu: None,
+            menu_waiting: None,
         }
     }
 }
@@ -578,6 +591,11 @@ impl PianoRollState {
             self.replacing(&mut params);
             return Some(Action::new("note.paste", params));
         }
+        // The selection keys (Ctrl and an arrow) change which notes are selected, never the notes.
+        if let Some(step) = Step::of(action) {
+            self.step_selection(step, clip);
+            return None;
+        }
         match action {
             "pianoRoll.selectAll" => {
                 self.selected = (0..count).collect();
@@ -660,9 +678,18 @@ impl PianoRollState {
                     nothing,
                 };
                 let mut params = tools.params();
-                params["until"] = json!(tools.legato_until(self.span_end()));
+                params["until"] = json!(tools.legato_until(self.legato_span_end()));
                 self.replacing(&mut params);
                 return Some(Action::new("note.legato", params));
+            }
+            // Join, Fit to time range, Crop and Split clip (› Joining, fitting, cropping and
+            // splitting): one command each.
+            "pianoRoll.join"
+            | "pianoRoll.fitToTime"
+            | "pianoRoll.crop"
+            | "pianoRoll.splitNotes"
+            | "pianoRoll.chopNotes" => {
+                return self.clip_edit(action, clip, &acting);
             }
             _ if chosen.is_empty() => return None,
             _ => {}
@@ -679,6 +706,17 @@ impl PianoRollState {
         };
         let (id, beats, keys) = match action {
             "selection.copy" => return Some(Action::new("note.copy", params)),
+            // The mute key (0): the selected notes muted, or unmuted when every one of them is
+            // muted, one `note.setMuted` (› Muting).
+            "selection.mute" => {
+                params["muted"] = json!(!chosen.iter().all(|n| n.muted));
+                return Some(Action::new("note.setMuted", params));
+            }
+            // Alt+Shift+Up and Down: the selection's velocity range by one step (› Velocity range).
+            "pianoRoll.rangeUp" | "pianoRoll.rangeDown" => {
+                params["by"] = json!(if action == "pianoRoll.rangeUp" { 1 } else { -1 });
+                return Some(Action::new("note.setVelocityRange", params));
+            }
             "selection.cut" => {
                 // The insert mark stays where the notes were, so a paste puts them back there.
                 let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
@@ -711,8 +749,13 @@ impl PianoRollState {
                 let mut lengths = Vec::new();
                 for &index in &acting {
                     let Some(note) = clip.notes.get(index) else { continue };
-                    let end = key_step_end(note, grid, longer);
-                    if (end - note.time - note.duration).abs() > EPSILON {
+                    let mut end = key_step_end(note, grid, longer);
+                    // With stacked notes off a longer note stops at the next note of its key,
+                    // rather than running over it: the keys never stack notes.
+                    if longer && self.notes_replace {
+                        end = end.min(next_start_of_key(&clip.notes, note).unwrap_or(f64::INFINITY));
+                    }
+                    if (end - note.time - note.duration).abs() > EPSILON && end > note.time + EPSILON {
                         named.push(index);
                         lengths.push(round_beat(end - note.time));
                     }
@@ -776,6 +819,103 @@ impl PianoRollState {
         Some(Action::new(id, params))
     }
 
+    /// The command a clip edit key runs on `clip`, with `acting` the notes the edit keys act on;
+    /// `None` where it has nothing to act on: Join without two notes, Fit and Crop without a time
+    /// selection, Split notes with nothing to cut.
+    pub(super) fn clip_edit(&mut self, action: &str, clip: &PianoClip, acting: &BTreeSet<usize>) -> Option<Action> {
+        let mut params = clip.address.clone();
+        let span = self.span.as_ref().map(|s| (round_beat(s.start), round_beat(s.end))).filter(|(s, e)| e > s);
+        match action {
+            "pianoRoll.join" => {
+                // Nothing to join (no two notes on one key): the command would refuse it, and
+                // the selection stays to be changed and tried again.
+                if !Self::joins(&clip.notes, acting) {
+                    return None;
+                }
+                params["notes"] = json!(acting.iter().collect::<Vec<_>>());
+                // The selection stays: it follows its notes by id (#1182), the joined note keeping
+                // the first one's, so a refused join leaves it to be tried again.
+                Some(Action::new("note.join", params))
+            }
+            "pianoRoll.fitToTime" => {
+                let (start, end) = span?;
+                if acting.is_empty() {
+                    return None;
+                }
+                params["notes"] = json!(acting.iter().collect::<Vec<_>>());
+                params["start"] = json!(start);
+                params["end"] = json!(end);
+                self.replacing(&mut params);
+                Some(Action::new("note.fitToTime", params))
+            }
+            "pianoRoll.crop" => {
+                let (start, end) = span?;
+                // A time selection outside the part of the clip that plays is refused: it stays.
+                let (from, to) = clip.shape.played();
+                if end <= from + EPSILON || start >= to - EPSILON {
+                    return None;
+                }
+                params["start"] = json!(start);
+                params["end"] = json!(end);
+                // The selection stays, following its notes by id: the deleted ones leave it, and a
+                // refused crop (a stretch too short, a neighbour in the way) leaves it as it was.
+                Some(Action::new("clip.crop", params))
+            }
+            // The selected notes, not the notes that start in the time selection (what the other
+            // keys act on with none selected): a note across its start is cut there too.
+            "pianoRoll.splitNotes" => split_notes(clip, &self.selected, span, self.insert_at)
+                .or_else(|| chop_notes(clip, acting, self.beat_width)),
+            "pianoRoll.chopNotes" => chop_notes(clip, acting, self.beat_width),
+            _ => None,
+        }
+    }
+
+    /// Split clip at the time selection (the menu): the clip cut at the selection's edges, as
+    /// [`Self::split_clip_at`] cuts it; `None` without a time selection.
+    pub(super) fn split_clip_span(&mut self, clip: &PianoClip) -> Option<Action> {
+        let (start, end) =
+            self.span.as_ref().map(|s| (round_beat(s.start), round_beat(s.end))).filter(|(s, e)| e > s)?;
+        self.split_clip_at(clip, &[(start, false), (end, true)])
+    }
+
+    /// Whether `note.join` has something to join among `acting`: two of them on one key, however far
+    /// apart (the first reaches the others as legato does).
+    pub(super) fn joins(notes: &[Note], acting: &BTreeSet<usize>) -> bool {
+        let mut keys = BTreeSet::new();
+        acting.iter().filter_map(|i| notes.get(*i)).any(|n| !keys.insert(n.key))
+    }
+
+    /// `clip.split` of an arrangement clip at content beats `cuts` (on the arrangement where the
+    /// clip plays them first), those inside the clip; `None` for a slot's clip or no cut inside. A
+    /// cut that ends a stretch (`true`) is where the stretch's last moment plays, so a stretch
+    /// ending on the loop's end is cut there and not where the loop starts again.
+    pub(super) fn split_clip_at(&mut self, clip: &PianoClip, cuts: &[(f64, bool)]) -> Option<Action> {
+        if clip.address.get("scene").is_some() {
+            return None;
+        }
+        let placement = clip.placement;
+        let inside = |at: &f64| *at > placement.start + 1e-6 && *at < placement.start + placement.length - 1e-6;
+        const JUST: f64 = 1e-6;
+        let song = |(beat, ends): &(f64, bool)| {
+            if *ends {
+                placement.arrangement_beat(beat - JUST).map(|at| at + JUST)
+            } else {
+                placement.arrangement_beat(*beat)
+            }
+        };
+        let mut ats: Vec<f64> = cuts.iter().filter_map(song).map(round_beat).filter(inside).collect();
+        ats.sort_by(f64::total_cmp);
+        ats.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+        if ats.is_empty() {
+            return None;
+        }
+        let mut params = clip.address.clone();
+        params["ats"] = json!(ats);
+        self.selected.clear();
+        self.clear_span();
+        Some(Action::new("clip.split", params))
+    }
+
     /// Zooms and scrolls time so beats `start` to `end` fill the note grid's width (as far as the
     /// zoom range allows), keys untouched.
     pub(super) fn zoom_to(&mut self, start: f64, end: f64) {
@@ -799,6 +939,8 @@ impl PianoRollState {
         self.erasing.clear();
         self.audition_pending.clear();
         self.key_live = None;
+        self.menu = None;
+        self.menu_waiting = None;
     }
 
     /// Keeps `note`'s length and velocity for the next note drawn, and for the key column's
@@ -876,12 +1018,21 @@ impl PianoRollState {
             FREE_LENGTH
         };
         let velocity = f32::from(self.last_velocity) / 127.0;
-        Some(Note { time, duration: length, key, velocity, release_velocity: 0.5, channel: 0, muted: false })
+        Some(Note {
+            time,
+            duration: length,
+            key,
+            velocity,
+            release_velocity: 0.5,
+            channel: 0,
+            muted: false,
+            velocity_range: 0,
+        })
     }
 }
 
 /// Where a grid key leaves the end of `note`. Longer: the next grid line, over the next note of its
-/// key too (with stacked notes off, that note makes room once the selection is let go). Shorter:
+/// key too (with stacked notes off, the key stops at that note instead: [`next_start_of_key`]). Shorter:
 /// the previous grid line, never less than one step from its start. Off the grid, a whole step
 /// either way.
 pub(super) fn key_step_end(note: &Note, grid: TimelineGrid, longer: bool) -> f64 {
@@ -892,6 +1043,11 @@ pub(super) fn key_step_end(note: &Note, grid: TimelineGrid, longer: bool) -> f64
         let line = if grid.snaps { grid.previous_line(end) } else { end - grid.step };
         line.max(note.time + grid.step).min(end)
     }
+}
+
+/// Where the next note of `note`'s key starts: the earliest note on that key that starts after it.
+pub(super) fn next_start_of_key(notes: &[Note], note: &Note) -> Option<f64> {
+    notes.iter().filter(|n| n.key == note.key && n.time > note.time + EPSILON).map(|n| n.time).reduce(f64::min)
 }
 
 /// The `note.add` params for `notes`.
@@ -943,4 +1099,60 @@ pub struct Context<'a> {
     pub start_marker: Option<f64>,
     /// The clip is on the arrangement: a click on the ruler sets where playback starts (#951).
     pub seeks: bool,
+}
+
+/// The most cuts Chop on grid makes in one go.
+const MAX_CHOPS: usize = 1024;
+
+/// Whether `note` runs across `at`: it starts before and ends after it.
+fn runs_across(note: &Note, at: f64) -> bool {
+    note.time < at - EPSILON && note.time + note.duration > at + EPSILON
+}
+
+/// One `note.split` of `notes` at every beat of `ats`, one undo step.
+fn split_action(clip: &PianoClip, notes: Vec<usize>, ats: Vec<f64>) -> Action {
+    let mut params = clip.address.clone();
+    params["notes"] = json!(notes);
+    params["ats"] = json!(ats);
+    Action::new("note.split", params)
+}
+
+/// The split half of Split notes (Ctrl+E): the notes across the time selection's edges (the
+/// selected ones, or with none every note of the clip) are cut at them; with no time selection and
+/// nothing selected, every note across the insert mark is cut there. `None` with no note across an
+/// edge or the mark, where Ctrl+E chops the notes on the grid instead ([`chop_notes`]).
+fn split_notes(
+    clip: &PianoClip,
+    selected: &BTreeSet<usize>,
+    span: Option<(f64, f64)>,
+    insert_at: Option<f64>,
+) -> Option<Action> {
+    let ats = match (span, insert_at) {
+        (Some((start, end)), _) => vec![start, end],
+        (None, Some(at)) if selected.is_empty() => vec![round_beat(at)],
+        (None, _) => return None,
+    };
+    let named: Vec<usize> =
+        if selected.is_empty() { (0..clip.notes.len()).collect() } else { selected.iter().copied().collect() };
+    let cut: Vec<usize> = named
+        .into_iter()
+        .filter(|i| clip.notes.get(*i).is_some_and(|n| ats.iter().any(|at| runs_across(n, *at))))
+        .collect();
+    (!cut.is_empty()).then(|| split_action(clip, cut, ats))
+}
+
+/// Chop on grid (the menu, and Ctrl+E where it does not split): the notes the edit keys act on, cut at every grid line inside them
+/// into grid-long pieces. One `note.split` with `ats`, one undo step; `None` with nothing to cut
+/// (no notes, or no grid line inside one).
+fn chop_notes(clip: &PianoClip, acting: &BTreeSet<usize>, beat_width: f32) -> Option<Action> {
+    let chosen: Vec<&Note> = acting.iter().filter_map(|i| clip.notes.get(*i)).collect();
+    let first = chosen.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
+    let last = chosen.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
+    let ats: Vec<f64> = note_grid(clip, beat_width)
+        .lines(first, last, MAX_CHOPS)
+        .into_iter()
+        .map(|(beat, _)| round_beat(beat))
+        .filter(|beat| chosen.iter().any(|n| runs_across(n, *beat)))
+        .collect();
+    (!ats.is_empty()).then(|| split_action(clip, acting.iter().copied().collect(), ats))
 }

@@ -1,6 +1,6 @@
 ---
 description: Functional spec of the MIDI clip editor (piano roll): layout, toolbar size and icons, the six tools and the Mute tool, the clip panel's note tools (Notes and Transform tabs), grid and snapping, zoom, drawing, selecting, moving, resizing, velocity, quantise, scales, ghost notes, slicing, a playable key column, chords, shortcuts and keymap presets, and the note.* and preview.* commands
-read_when: piano roll, clip editor, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
+read_when: piano roll, clip editor, velocity range, rolled velocity, note.setVelocityRange, select next note, step through notes, Ctrl+arrow selection, grow selection, keyboard selection, join notes, fit to time range, crop clip, split clip, set 1.1.1 here, clip.setOrigin, right-click menu, context menu, invert selection, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
 last_verified: 2026-11-15
@@ -18,6 +18,8 @@ covers:
   - crates/session/src/notes.rs
   - crates/session/src/scales.rs
   - crates/session/src/note_tools.rs
+  - crates/session/src/clip_edits.rs
+  - crates/model/src/roll.rs
   - crates/session/src/preview.rs
   - crates/session/src/clip_shape.rs
 ---
@@ -208,8 +210,9 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
    three sliders and the audition headphones. The Arrangement's tools draw the same artwork.
 
    The pointer over the grid is the chosen tool: for Draw, Paint, Erase, Slice and Mute the
-   system pointer is hidden and the tool's toolbar icon is drawn in its place, 18 points, in
-   `text.primary` ringed with a point of `window.background` so it reads over notes, with its
+   system pointer is hidden and the tool's toolbar icon is drawn in its place (the theme's own
+   artwork for the button, `piano.draw` and the others, when it has one, so the pointer changes
+   with the toolbar), 18 points, in `text.primary` ringed with a point of `window.background` so it reads over notes, with its
    working point on the pointer: the pencil's and the brush's tip, the eraser's rubbing edge, the
    blade's point (a slice cuts at the pointer's x), the middle of the mute sign (the windowing
    layer has none of these cursors). Select shows the arrow. Draw shows the resize cursor over a note's start or end and the copy
@@ -280,15 +283,20 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
 4. **Velocity lane** (built): under the grid, sharing its time axis, 72 px tall (less in a short
    detail area: at most 30 % of the room under the ruler, and never so tall that fewer than five
    key rows are left above it; when that leaves it under 12 px it is not drawn at all, and the
-   key rows take its room). One stem per note at the
-   note's start, its height the velocity; a selected stem is brighter. **Built
+   key rows take its room). One stem per note at the note's start, whether its key row is in view
+   or not: a line 2 px wide from the lane's foot up to its velocity, a round head there, and from
+   the head a thin line along the note's length, so notes starting together (a chord) are told
+   apart by their heights. With notes selected, their stems are lit and the others step back; a
+   muted note's stem takes the muted colour. The key column names 127, 64 and 1 beside the lane,
+   and a faint line marks 64 across it. A press grabs the stem nearest the pointer: the nearest
+   start, and among notes starting together the head nearest the pointer's height, a selected
+   note before the others. **Built
    ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** the lane's **top edge** can be
    dragged, the pointer within 3 px of it showing a vertical resize cursor (its accessible label is
    "Velocity lane top edge"): up makes the lane taller, down shorter, from 24 px to 480 px and never
    so tall that fewer than five key rows are left above it, so the least height above still holds.
    The height is window state, kept until Suhina closes (not saved, not a command, not an undo
-   step); until it is dragged the lane takes the default height above. **Later:** chord notes on
-   the same start drawn side by side, a few pixels apart, so each can be grabbed; the lane's tools
+   step); until it is dragged the lane takes the default height above. **Later:** the lane's tools
    (randomise, ramp, deviation) ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)).
 
 Everything scales with the detail area: the detail area's splitter (exists) makes the editor taller
@@ -493,6 +501,12 @@ pull up.
   - **Draw**: a click on an empty spot adds a note there; pressing and dragging sideways sets its
     length, its end on the grid (Alt: free), at least one grid step. A click on a note selects it,
     and dragging a note moves or resizes it as with Select. A double-click does nothing more.
+  - **Draw and Paint with Ctrl** (Cmd on macOS) held select instead of drawing, so notes are picked
+    without changing tools: a drag from an empty spot draws a selecting rectangle (with Shift too it
+    adds to the selection), a click on a note adds it to the selection or takes it out, and a click
+    on an empty spot adds nothing. The pointer is the ordinary one while Ctrl is held over the empty
+    grid. With the Draw-first preset the right button already deletes in Draw and Paint, a drag
+    deleting every note it passes over (› Workflow modes).
   - **Draw with Shift held** draws notes **back to back**: the drag stays in the row it started in,
     and the notes it draws follow one another from the press position, each as long as the note
     last drawn or clicked (one grid step until then), the first starting where the press was
@@ -671,6 +685,43 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344)):** while the piano roll has
   the keyboard (after a click in it), **Ctrl+A** selects every note of the clip and **Escape** clears
   the selection. Elsewhere Escape keeps its other uses.
+
+### Selecting from the keyboard
+
+**Built ([#1281](https://github.com/suhina-daw/suhina-daw/issues/1281)):** with **Ctrl** held, the
+arrow keys change which notes are selected instead of moving them; the notes stay where they are.
+They work while the piano roll has the keyboard, and follow a held key's repeat as the other arrow
+keys do.
+
+- **Ctrl+Right, Ctrl+Left** (`pianoRoll.selectNextOnKey`, `.selectPreviousOnKey`): each key with a
+  selected note on it goes on to its next (previous) note, every selected note of that key by one. A
+  key with no further note keeps what it has selected, so a selected chord walks along its keys and
+  the lines that end stay put.
+- **Ctrl+Up, Ctrl+Down** (`pianoRoll.selectNextNote`, `.selectPreviousNote`): the selection becomes
+  one note and steps through every note of the clip one at a time, in time order, and among notes
+  that start together from the lowest key up (Up) or from the highest down (Down). From more than
+  one selected note, Up takes the first of them in that order (a chord's lowest note) and Down the
+  last (its highest). At the clip's last (first) note the note stays selected.
+- **Ctrl+Shift+Right, Ctrl+Shift+Left** (`pianoRoll.growSelectionOnKey`, `.shrinkSelectionOnKey`):
+  as Shift and an arrow do to text, each key's selection has an **anchor** (where it started: its
+  first selected note, for a selection made any other way) and a moving end, which the key steps
+  one note later (Right) or earlier (Left) along the key: away from the anchor the selection takes
+  in the next note, towards it it lets the end note go. So from a key's last note Ctrl+Shift+Left
+  selects back along the key, and a selection grown to the right shrinks back with it first. At the
+  key's first or last note the end stays.
+- **Ctrl+Shift+Up, Ctrl+Shift+Down** (`pianoRoll.growSelection`, `.shrinkSelection`): the same in
+  the Ctrl+Up order, with one anchor for the selection.
+- The anchor holds while the selection is the one the last of these keys left; a selection changed
+  any other way (a click, a rectangle, Ctrl+Right) is anchored afresh.
+- **Nothing selected:** Ctrl+Right or Ctrl+Up (with Shift too) selects the clip's first note in the
+  Ctrl+Up order, Ctrl+Left or Ctrl+Down its last.
+- **What follows the selection:** the view scrolls to keep the selected notes on screen; the time
+  selection over the ruler becomes the selected notes' span, from the earliest start to the latest
+  end, as after a rectangle; with the audition on, the newly selected notes sound, as a click on
+  them does.
+- **Folded rows and the loop:** only notes the rows show are stepped to; notes outside the clip's
+  loop are stepped to like the others.
+
 - **Later:** a click on the ruler selects a time range; a lasso.
   A press or a drag on the key column, which selects the notes of a key or a range of keys, is
   built (› Playing the keys).
@@ -717,9 +768,10 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   first grid line after its start; no selected note gets shorter than a hundredth of a beat.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344),
   [#1115](https://github.com/suhina-daw/suhina-daw/issues/1115)):** **Shift+Right** takes each selected
-  note's end to the next grid line, over the next note of its key too: with **Allow stacked notes**
-  off that note makes room once the selection is let go, and until then shows only what will be
-  left of it. **Shift+Left** takes each end to the previous grid line, and no note gets shorter than one
+  note's end to the next grid line, over the next note of its key too while **Allow stacked notes**
+  is on; with it off (the default) the end stops at the start of the next note of its key, so the
+  key never runs one note over another (a note already touching the next one stays as it is).
+  **Shift+Left** takes each end to the previous grid line, and no note gets shorter than one
   step. One `note.resize` with `lengths`, one undo step; with snapping off, a whole step either way.
   With **Alt** held too, the end goes a 1/128 note either way, off the grid, under the same limits.
 - **Built ([#1113](https://github.com/suhina-daw/suhina-daw/issues/1113)):** with **Allow stacked
@@ -761,7 +813,112 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
 - **Later ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** a drag with the right
   button deletes notes. A **right-click** on a note deletes it in the Draw and Paint tools when
   the **Draw-first** keymap preset is chosen (› Keymap presets), and in every tool when the
-  **Mouse-first** preset's **Right click deletes a note** switch is on; otherwise it does nothing.
+  **Mouse-first** preset's **Right click deletes a note** switch is on; otherwise it opens the
+  right-click menu (› Right-click menu).
+
+## Right-click menu
+
+**Built ([#1283](https://github.com/suhina-daw/suhina-daw/issues/1283)):** the piano roll's own menu,
+at the pointer, with what the toolbar, the clip panel and the keys can do.
+
+- **When it opens:** a right click in the grid (pressed and let go without a drag, and without the
+  wheel turned while the button is held) opens it wherever the workflow setting *Right click on a
+  note* does nothing: the Select-first and Draw-first defaults outside Draw and Paint. Where the
+  right button deletes (Draw and Paint with Draw-first, or Mouse-first), a right click on a note
+  goes on deleting it and only the empty grid opens the menu. Right button with the wheel, Shift and
+  the right button (split) and Alt and the right button (play), where their switches are on, keep
+  their gestures and open no menu.
+- **A ghost note:** two right clicks within the double-click time on a faint note of another clip go
+  into that clip and show no menu, so on a ghost note the menu waits for the double-click time
+  before it opens; anywhere else it opens at once.
+- **On a note:** a right click on a note that is not selected selects it alone first, so the menu
+  acts on what was clicked; on a selected note the selection stays.
+- **Items**, each with its key where it has one, greyed out when there is nothing to act on, and
+  each one undo step (or a change to the view):
+  - Cut, Copy, Paste, Duplicate, Delete (the edit keys);
+  - **Invert selection**, the one item that is new: the notes that were not selected become the
+    selection, and no others;
+  - Quantize (Ctrl+U) and Quantize settings… (the Transform tab's Quantise); Mute or Unmute the
+    selection (`note.setMuted`; Unmute when every note it acts on is muted); Split here
+    (`note.split` of the notes it acts on at the clicked point, on the grid); Chop on grid (as Ctrl+E
+    chops, › Joining, fitting, cropping and splitting); Reverse (`note.reverse`
+    of the notes it acts on, the Notes tab's Reverse: turned round in time inside their own span);
+  - Loop selection (`clip.setLoop` over the time selection, or the selected notes' span); Set start
+    here and Set loop start here, at the clicked point on the grid, as a drag of that marker on the
+    ruler to there would leave it (`clip.setStart`, `clip.setLoop`);
+  - Join notes, Fit to time selection, Crop clip to time selection, Split clip (at the time
+    selection, or here at the clicked point without one; Ctrl+E splits notes, not the clip) and
+    Set the clip's first beat here
+    (› Joining, fitting, cropping and splitting);
+  - the toolbar's grid menu right in the menu, with no submenu (Snap, Adaptive, Fixed, Narrow,
+    Widen, Triplet).
+- No zoom, fold or scale items, no Select all and no end markers: Z and Shift+Z (› Zoom and
+  scroll), the toolbar's Fold, Scale and Highlight, Ctrl+A and a drag of an end on the ruler are
+  quicker than the menu, which the grid's entries already make long.
+- Its rows are lower than the window's others (16 pixels, with no gap between them), so the menu
+  stays short.
+- Escape, a click outside it or a pick closes it; another clip shown closes it too. While it is
+  open it holds the keys: Escape closes the menu alone (the selection stays), and no other shortcut
+  acts behind it.
+
+## Joining, fitting, cropping and splitting
+
+**Built ([#1284](https://github.com/suhina-daw/suhina-daw/issues/1284)):** edits a MIDI clip needs that
+used to be done note by note, each a command, one undo step, with a key and an item in the
+right-click menu. They work on a clip in the Arrangement and in a launcher slot (Split clip on an
+arrangement clip only, as a slot has no lane to put the parts on); notes of other clips and ghost
+notes are untouched, and a clip that holds audio refuses them.
+
+- **Join notes** (`note.join`, **Ctrl+J**): the selected notes on one key become one note, from the
+  first's start to the last's end: the first reaches over any gap to the next, as legato does, and
+  joins it. It keeps the first's velocity and release velocity; notes on different keys join per
+  key, and a key with one selected note keeps it. A note on the key that the joined note covers,
+  selected or not, goes, and one that runs on past its end starts where it ends, so no note sounds
+  twice under it. Without two selected notes on one key it does nothing.
+- **Fit to time selection** (`note.fitToTime`, **Ctrl+Alt+J**): the selected notes (or those that
+  start in the time selection) are stretched or squeezed, starts and lengths alike, so they fill the
+  time selection exactly: the first start at its start, the last end at its end. Nothing without a
+  time selection.
+- **Crop clip to time selection** (`clip.crop`, **Ctrl+Shift+J**): the clip keeps only the time
+  selection: its start marker and length become the selection's, its loop is clipped to it (off
+  where they do not meet), notes outside it are deleted and notes across an edge are cut at it
+  (a piece shorter than a hundredth of a beat goes), in every lane of a pattern. A selection that
+  runs past what the clip plays (before its start marker, after its end or its loop's end) is cut
+  to what it plays, so nothing unheard comes to play. An arrangement clip moves with its start
+  marker, so what is left plays where it played (a marker past the loop's end counts from where
+  the loop turns it); one whose loop meets the selection keeps its end and goes on looping over
+  what is left, one whose loop it misses plays once and is as long as the selection. A time
+  selection outside the part of the clip that plays is refused.
+- **Split notes** (`note.split` with `ats`, **Ctrl+E**, the split key, which the piano roll takes
+  while it has the keyboard), one undo step: the notes across the time selection's two edges
+  (the selected ones, or with none selected every note across them) are cut at them; with no time
+  selection and nothing selected, every note across the insert mark (left by a click on an empty
+  spot) is cut there. Where no note runs across an edge or the mark (a rectangle's time selection
+  is the selected notes' own span), it chops the notes the edit keys act on, as Chop on grid does,
+  and a note no longer than a grid step stays whole. It never splits at the playhead and never
+  splits the clip.
+- **Chop on grid** (`note.split` with `ats`, the menu; Ctrl+E chops the same way where it has
+  nothing to split): the notes the edit keys act
+  on are cut at every grid line inside them, into grid-long pieces, one undo step; with no grid
+  line inside a note it does nothing.
+- **Split clip** (`clip.split` with `ats`, the menu): the clip is cut at the time selection's
+  edges (where the clip first plays them), into clips of their own on the same lane, as the
+  Arrangement's split does, in one undo step; without a time selection, **Split clip here** cuts
+  at the clicked point.
+- **Set the clip's first beat here** (`clip.setOrigin`, the menu): the clicked point on the grid
+  becomes beat 1.1.1 of the clip's content: every note, the start marker and the loop move back by
+  it together, so the clip keeps its sound and its place in the song while its own ruler starts
+  there. The content has no beats before its first, so it is greyed out (and the command refused)
+  where a note, the start marker or the loop's start lies before the point.
+  - **Swing:** swing delays the second sixteenth of each eighth of the content
+    ([swing](swing.md)), so on a clip that plays with swing (its own or the project's) the item is
+    greyed out, and the command refused, off an eighth: a shift by anything else would change which
+    notes are delayed and so the groove. On an eighth every note keeps its place within its eighth
+    and its swing.
+  - **Velocity ranges:** a note's rolled velocity depends on its content beat
+    ([ADR 0037](../decisions/0037-rolled-note-values.md)), so after the move each note with a range
+    rolls a new, equally repeatable series of velocities within the same range. The clip keeps no
+    record of the move.
 
 ## Muting
 
@@ -769,6 +926,9 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   the clip and does not play: the engine emits no voice for it, exactly as if the note were not
   there, through the arrangement, the launcher and an offline render. It keeps its time, length,
   key and velocity.
+- The **mute key 0** (`selection.mute`), while the piano roll has the keyboard, mutes the selected
+  notes, or unmutes them when every one of them is muted: one `note.setMuted`, one undo step. The
+  right-click menu's Mute item shows the key.
 - The **Mute** tool (key **6**) mutes and unmutes the note under the pointer (› Drawing notes); a
   click toggles one note, and a drag sets every note it passes over to the state the first note the
   stroke touched takes, so a run is muted in one go without each note flipping on its own. The drag
@@ -854,8 +1014,37 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   dragging; letting go is one `note.setVelocity` with `velocities` (one value per note), one undo
   step. A line that spans no stem does nothing.
 - **Later ([#351](https://github.com/suhina-daw/suhina-daw/issues/351)):** release velocity and a
-  note's probability and velocity range (a per-note chance to play and a random variation), shown
-  as a second lane; randomise, ramp and deviation tools.
+  note's probability (a per-note chance to play, [#1152](https://github.com/suhina-daw/suhina-daw/issues/1152)),
+  shown as a second lane.
+
+### Velocity range
+
+**Built ([#1282](https://github.com/suhina-daw/suhina-daw/issues/1282)):** each note has a velocity
+range (0 by default): how far above (or, negative, below) its velocity it may play, rolled each
+time it starts. It reaches only as far as the velocity can go: a note of velocity 100 takes a range
+from −99 to +27, one at 127 none above it. A note of velocity 100 with a range of +20 plays somewhere from 100 to
+120 on each pass of a loop; a range of 0 plays exactly 100. The played velocity stays within 1 to
+127. The note keeps its own velocity; the roll happens where the note starts, in the one render
+path, from a pure function of the note and where it plays, so an offline render gives the same
+velocities every time and matches what was heard
+([ADR 0037](../decisions/0037-rolled-note-values.md)). MIDI export writes the note's own velocity.
+
+- **The lane:** a note with a range shows it as a faint whisker beside its stem's head, from its
+  velocity to the furthest it may play, with a tick at that end.
+- **Dragging:** **Ctrl+drag** a stem (Cmd on macOS) sets the range: from the grabbed note's
+  velocity to the pointer's height, above it a range up and below it one down; every selected note
+  takes the same range. The bar follows while dragging; letting go is one `note.setVelocityRange`,
+  one undo step.
+- **Keys:** **Alt+Shift+Up** and **Alt+Shift+Down** raise and lower the selection's range by one
+  (`pianoRoll.rangeUp`, `.rangeDown`; `note.setVelocityRange` with `by`).
+- **The clip panel's figures** show, under the velocities of what the tools act on, a **Plays** row
+  with the velocities they may play at once rolled, from the quietest to the loudest ("100–120"
+  for a note of 100 with a range of +20; "51–100" for one of 80 with −29 and one of 100 without),
+  where any of them has a range. A figure's value keeps to the room right of its name.
+- **Commands:** `note.setVelocityRange {notes, range | by}`, one undo step; `note.list` gives a
+  note's `velocityRange` where it has one; the project file writes `velocity_range` from version 13.
+- **Import:** what another project format holds of a note's velocity range comes in once it is
+  written down in that format's spec from a file of our own.
 
 ## Quantise
 
@@ -1044,8 +1233,8 @@ button opens its clip in the editor.
   the same for named notes at one beat or a beat each, so the CLI and MCP can split too. One stroke
   is one command, one undo step.
 - **Later ([#349](https://github.com/suhina-daw/suhina-daw/issues/349)):** a command that chops the
-  selection into notes of one grid step each; glue (join) touching notes of the same key into one
-  note (Ctrl+G); legato (each note lasts until the next one starts); the command `note.join`.
+  selection into notes of one grid step each. Joining notes of one key into one is built (`note.join`,
+  Ctrl+J, › Joining, fitting, cropping and splitting), and so is legato (the Notes tab).
 
 ## Chords
 
@@ -1084,7 +1273,7 @@ button opens its clip in the editor.
   | **Fit to scale** | Moves each note to the nearest key of the clip's scale. A clip with no scale opens a list of the modes, each with its roots: picking one sets the clip's scale (`clip.setScale`) and fits the notes to it, two undo steps | `note.fitToScale` |
   | **Invert** | Mirrors the pitches around the middle of the selection's range | `note.invert` |
   | **Reverse** | Turns the selection round in time, inside its own span | `note.reverse` |
-  | **Legato** | Makes each note last until the next one starts, at most, and the last notes until the end of a time selection, else the next note after them, else the clip's end | `note.legato` |
+  | **Legato** | Makes each note last until the next one starts, at most, and the last notes until the next note after them, else the clip's end; with no note selected, the notes that start in a time selection last until its end | `note.legato` |
   | **×2**, **÷2** | Stretches or squeezes the selection in time, its starts and its lengths | `note.stretch` |
 
 - **Transform** tab, one under another: a list of transformations, a short line on what the
@@ -1160,8 +1349,12 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Ctrl+A, Escape | Selects every note, clears the selection |
 | Left, Right | Moves the selection one grid step earlier, later |
 | Up, Down; Shift+Up, Shift+Down | Moves the selection a semitone (folded, each note to the next row shown, so it stays in the scale: `note.move` with `keys`); an octave |
-| Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line, over the next note of the key too (› Resizing) |
+| Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line; with stacked notes off, never past the next note of the key (› Resizing) |
 | Alt+Left, Alt+Right; Alt+Shift+Left, Alt+Shift+Right | Moves the selection, or changes its length, by a 1/128 note, off the grid (› Moving, › Resizing) |
+| Ctrl+Right, Ctrl+Left | Each selected key's selection goes to its next, previous note; the notes stay (› Selecting from the keyboard) |
+| Ctrl+Up, Ctrl+Down | Selects the clip's next, previous note, in time and then by key; from a chord its lowest, highest note |
+| Ctrl+Shift+Right, Ctrl+Shift+Left | Moves each selected key's selection end one note later, earlier: away from where it started it grows, back towards it it shrinks |
+| Ctrl+Shift+Up, Ctrl+Shift+Down | The same in the Ctrl+Up order |
 | Ctrl+C, Ctrl+X, Ctrl+V | Copies, cuts, pastes notes |
 | Ctrl+D, or Ctrl+B with Draw-first | Duplicates the selected notes (› Keymap presets) |
 | Ctrl+Z, Ctrl+Shift+Z | Undo, redo (as everywhere) |
@@ -1179,13 +1372,22 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Z, Shift+Z | Zooms to the selected notes (the whole clip when none is selected); to the whole clip (after a click in the piano roll) |
 | Ctrl+L | The clip's own loop: over the time selection (again on the same stretch: off), or with no time selection the clip's loop on or off, as a click on the ruler's loop bar (after a click in the piano roll; elsewhere Ctrl+L is the Arrangement's loop) |
 | Alt+L | Legato, as the Notes tab's button: the selected notes, or every note when none is selected (after a click in the piano roll; › Other note tools) |
+| Ctrl+J; Ctrl+Alt+J | Joins the selected notes on one key, over any gap between them; fits the selected notes to the time selection (› Joining, fitting, cropping and splitting) |
+| Ctrl+Shift+J; Ctrl+E | Crops the clip to the time selection; splits the clip at the time selection's edges (an arrangement clip; the split key, the piano roll's while it has the keyboard) |
+| Alt+Shift+Up, Alt+Shift+Down | Raises, lowers the selection's velocity range by one (› Velocity range) |
+| Ctrl+drag a stem in the velocity lane | Sets the selection's velocity range to the pointer's height (› Velocity range) |
 | Ctrl+Shift+E | Hides the editor (the detail area), or shows it again (`view.editor`, › Least height and closing) |
 
-The keys after a click in the piano roll are keymap actions ([`docs/shortcuts.md`](../shortcuts.md)):
+The piano roll's own keys are a scope of their own: while it has the keyboard they come before a
+window key on the same key (Ctrl+E splits the piano roll's clip there and the selected arrangement
+clip elsewhere), so the two are not a conflict. The keys after a click in the piano roll are keymap actions ([`docs/shortcuts.md`](../shortcuts.md)):
 the `selection.*` ones the window has anyway, and `pianoRoll.selectAll`, `.deselect`, `.earlier`,
-`.later`, `.up`, `.down`, `.octaveUp`, `.octaveDown`, `.shorter`, `.longer`, `.draw`,
+`.later`, `.up`, `.down`, `.octaveUp`, `.octaveDown`, `.shorter`, `.longer`,
+`.selectNextOnKey`, `.selectPreviousOnKey`, `.selectNextNote`, `.selectPreviousNote`,
+`.growSelectionOnKey`, `.shrinkSelectionOnKey`, `.growSelection`, `.shrinkSelection`, `.draw`,
 `.tool1` … `.tool6`, `.gridNarrow`, `.gridWiden`, `.gridTriplet`, `.gridSnap`, `.zoomSelection`,
-`.zoomClip`, `.legato` and `.loop`, which are read only
+`.zoomClip`, `.legato`, `.loop`, `.join`, `.fitToTime`, `.crop`, `.splitNotes`, `.rangeUp` and
+`.rangeDown`, which are read only
 while the piano roll has the keyboard, so they can be changed like the rest. `pianoRoll.quantize`
 (Ctrl+U) means nothing elsewhere, so it works whenever the piano roll shows a clip.
 
@@ -1326,7 +1528,7 @@ note another writer deletes leaves it.
 | `note.paste` | clip, `time?`, `replace?` | Adds the copied notes, the first at `time` (default: right after the copied notes); returns their indices and ids |
 | `note.duplicate` | clip, `notes`, `beats?`, `semitones?` or `keys?`, `replace?` | Adds a copy right after the notes' end; with `beats` or `semitones`, that far from the notes instead (`keys`: the key each copy goes to, one per entry of `notes`, as a copy through folded rows) (a copy made by dragging; the copies keep length, velocity and mute). Returns the copies' indices and ids |
 | `note.makeRoom` | clip, `notes` | Makes room under the named notes as `replace` does (a note of their key covered whole goes, one partly covered is cut); a named note no longer in the clip is left out; returns the removed notes as `replaced`. The piano roll sends it when notes edited while selected are let go |
-| `note.split` | clip, `notes`, `at` or `times`, `keepLonger?` | Splits each named note that spans the beat `at` (or its own entry of `times`, one per entry of `notes`) into two there; a note that starts or ends at its beat is left alone; the first half keeps the note's id; returns the indices and ids of the second halves. With `keepLonger` each note keeps only its longer piece (the first when they are as long), in its place, and `trimmed` lists them |
+| `note.split` | clip, `notes`, `at`, `times` or `ats`, `keepLonger?` | Splits each named note that spans the beat `at` (or its own entry of `times`, one per entry of `notes`) into two there; with `ats` each note is cut at every one of those beats it spans (not with `keepLonger`); a note that starts or ends at its beat is left alone; the first half keeps the note's id; returns the indices and ids of the second halves. With `keepLonger` each note keeps only its longer piece (the first when they are as long), in its place, and `trimmed` lists them |
 | `clip.scale` | clip | The clip's scale, `{ "root": "D", "mode": "dorian" }` or `null`, and the project's `default_scale` the same way; changes nothing |
 | `clip.setScale` | clip, `root?`, `mode?`, `off?` | Sets the clip's scale: `root` (a key name such as `"C"`, `"F#"` or `"Bb"`, or 0 to 11) and `mode` (one of the names `note.fitToScale` takes as `scale`), the one left out kept from the scale the clip has (C, major when it has none); `off: true` clears it, and is an error with `root` or `mode`; one of them is needed. A content other clips play is copied for this clip first (› Scale and key). Returns the scale and whether it changed; the same scale again changes nothing and is no undo step |
 | `project.setDefaultScale` | `root?`, `mode?`, `off?` | The same for the scale new MIDI clips take; clips that exist keep theirs |

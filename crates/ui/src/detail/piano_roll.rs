@@ -37,15 +37,18 @@ use gestures::Part;
 
 mod clip;
 mod clip_strip;
+mod context_menu;
 mod drawing;
 mod edits;
 mod keys;
 mod layout;
+mod select_steps;
 mod span;
 mod state;
 mod toolbar;
 
 pub use self::clip::*;
+use self::context_menu::{MenuAt, MenuCx, RightClick};
 #[cfg(test)]
 pub(crate) use self::drawing::part_style;
 use self::drawing::*;
@@ -53,6 +56,7 @@ use self::edits::*;
 pub use self::keys::ViewPick;
 use self::keys::*;
 pub use self::layout::*;
+use self::select_steps::Step;
 use self::span::*;
 pub use self::state::*;
 pub(crate) use self::toolbar::*;
@@ -266,6 +270,8 @@ pub fn show(
         state.playing_key = None;
         state.key_live = None;
         state.clear_span();
+        state.menu = None;
+        state.menu_waiting = None;
         // The scroll reach a zoom gave the last clip is not this one's.
         state.zoom_reach = 0.0;
     }
@@ -397,9 +403,11 @@ pub fn show(
         ui.ctx().pointer_hover_pos().filter(|p| grid_rect.contains(*p) && ui.rect_contains_pointer(grid_rect))
     {
         let over = note_at(&layout, &clip.notes, pos);
+        let menu_open = state.menu.is_some();
         let mut drawn = |tool: Tool| {
-            tool_icon = tool_pointer(tool).map(|icon| (icon, pos));
-            cursor_for(tool)
+            let (icon, cursor) = grid_pointer(tool, menu_open);
+            tool_icon = icon.map(|icon| (icon, pos));
+            cursor
         };
         let cursor = match (&state.gesture, over, state.tool) {
             (Some(Gesture::Resize { .. } | Gesture::ResizeStart { .. }), _, _) => Some(CursorIcon::ResizeHorizontal),
@@ -410,6 +418,10 @@ pub fn show(
             (Some(Gesture::Slice { .. }), _, _) | (None, _, Tool::Slice) => drawn(Tool::Slice),
             (Some(Gesture::Erase), _, _) | (None, _, Tool::Erase) => drawn(Tool::Erase),
             (Some(Gesture::Mute), _, _) | (None, _, Tool::Mute) => drawn(Tool::Mute),
+            // Ctrl (Cmd) makes Draw and Paint select: the ordinary pointer over the empty grid,
+            // and while their selecting rectangle is dragged (› Drawing notes).
+            (Some(Gesture::Select { .. }), _, _) => None,
+            (None, None, Tool::Draw | Tool::Paint) if ui.input(|i| i.modifiers.command) => None,
             (Some(Gesture::Paint), _, _) | (None, _, Tool::Paint) => drawn(Tool::Paint),
             (Some(Gesture::Draw { .. } | Gesture::DrawRun), _, Tool::Draw) => drawn(Tool::Draw),
             // A note drawn with the Select tool (a double-click, or Left click draws) keeps the
@@ -486,6 +498,8 @@ pub fn show(
     {
         gesture.delete_note(state, actions, index);
     }
+    // A right click that did none of the above opens the menu (› Right-click menu).
+    RightClick { layout: &layout, clip, inputs, workflow, right_deletes }.handle(ui, &response, pointer, state);
     // The right button: the Mouse-first switches, on the press, so a press that never moves (a
     // click) does the same job as a stroke (› Keymap presets).
     let right_pressed = ui.input(|i| i.pointer.button_pressed(PointerButton::Secondary))
@@ -526,10 +540,12 @@ pub fn show(
         && note_at(&layout, &clip.notes, pos).is_none()
     {
         let time = ui.input(|i| i.time);
-        if state
-            .last_click
-            .is_some_and(|(at, from)| time - at < DOUBLE_CLICK_TIME && from.distance(pos) < DOUBLE_CLICK_DISTANCE)
-        {
+        // A click recorded this very frame is this press's own (pressed and let go within one
+        // frame, as a quick click on a slow frame is), never the first of a pair: taking it for
+        // one turned a single click into a drawn note.
+        if state.last_click.is_some_and(|(at, from)| {
+            time > at && time - at < DOUBLE_CLICK_TIME && from.distance(pos) < DOUBLE_CLICK_DISTANCE
+        }) {
             state.last_click = None;
             state.press_draw = true;
             state.selected.clear();
@@ -587,6 +603,7 @@ pub fn show(
         let sounded = match (note_at(&layout, &clip.notes, pos), state.tool) {
             (_, Tool::Erase | Tool::Mute | Tool::Slice) => None,
             (Some((index, _)), _) => clip.notes.get(index).map(|n| n.key),
+            (None, Tool::Draw | Tool::Paint) if inputs.command => None,
             (None, Tool::Draw | Tool::Paint) => state.new_note(&layout, clip, grid, pos, inputs.alt).map(|n| n.key),
             (None, Tool::Select) if workflow.empty_click_draws || state.press_draw => {
                 state.new_note(&layout, clip, grid, pos, inputs.alt).map(|n| n.key)
@@ -622,6 +639,16 @@ pub fn show(
                 Gesture::Mute
             }
             (None, Tool::Mute) => Gesture::Mute,
+            // Ctrl (Cmd) with Draw or Paint, from an empty spot, drags a selecting rectangle as
+            // Select does, so notes are picked without changing tools; Shift adds to what is
+            // selected (› Drawing notes).
+            (None, Tool::Draw | Tool::Paint) if inputs.command => {
+                let add = inputs.shift;
+                if !add {
+                    state.clear_span();
+                }
+                Gesture::Select { from, add }
+            }
             // Shift and Draw repeat the last note's length along the row the drag started in:
             // the first note now, the rest as the drag reaches ([`Gestures::draw_run`]); the
             // whole stroke is one `note.add` when the drag ends.
@@ -696,7 +723,12 @@ pub fn show(
                 if !state.selected.contains(&grabbed) {
                     state.selected = BTreeSet::from([grabbed]);
                 }
-                state.gesture = Some(Gesture::Velocity { from, grabbed });
+                // Ctrl (Cmd) sets the range the velocity is rolled in instead (› Velocity range).
+                state.gesture = Some(if inputs.command {
+                    Gesture::VelocityRange { from, grabbed }
+                } else {
+                    Gesture::Velocity { from, grabbed }
+                });
             } else {
                 state.gesture = Some(Gesture::VelocityLine { from });
             }
@@ -832,6 +864,7 @@ pub fn show(
     let axis = ruler_view::Axis { origin: grid_rect.left() - state.scroll.x, beat_width: state.beat_width };
     ruler_view::draw(ui, ruler, &axis, &shape);
     state.live_span = draw_span_bar(ui, &layout, clip, state, selecting);
+    MenuCx { clip, keymap, copied, grid, playhead: playhead.unwrap_or(0.0) }.show(ui, state, actions);
     if let Some(((icon, hotspot), pos)) = tool_icon {
         draw_tool_pointer(&ui.painter_at(whole), icon, tool_pointer_rect(pos, hotspot, TOOL_POINTER));
     }

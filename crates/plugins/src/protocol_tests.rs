@@ -70,6 +70,7 @@ fn gain() -> ParamInfo {
         value: 0.25,
         text: "-12.0 dB".into(),
         steps: 0,
+        list: false,
         automatable: true,
         read_only: false,
         hidden: false,
@@ -78,7 +79,7 @@ fn gain() -> ParamInfo {
 
 #[test]
 fn every_message_round_trips() {
-    assert_eq!(VERSION, 16);
+    assert_eq!(VERSION, 17);
     let messages = [
         Message::Hello { version: VERSION },
         Message::Reconfigure { instance: 7, sample_rate: 48_000.0 },
@@ -125,7 +126,7 @@ fn every_message_round_trips() {
         Message::GetParams { instance: 4 },
         Message::Params {
             instance: 4,
-            params: vec![gain(), ParamInfo { id: u32::MAX, steps: 1, hidden: true, ..gain() }],
+            params: vec![gain(), ParamInfo { id: u32::MAX, steps: 3, list: true, hidden: true, ..gain() }],
         },
         Message::Params { instance: 4, params: Vec::new() },
         Message::SetParam { instance: 5, id: 7, value: -0.5 },
@@ -285,4 +286,15 @@ fn param_texts_over_the_cap_are_refused() {
     let at_cap =
         serde_json::json!({ "op": "get_param_texts", "instance": 1, "id": 1, "values": vec![0.5; MAX_PARAM_TEXTS] });
     assert!(Message::decode(&at_cap.to_string()).is_some());
+}
+
+/// A parameter holds each automation value until the next point only as a switch or a list of
+/// choices; a knob listed with steps moves along the line (#1482).
+#[test]
+fn only_switches_and_lists_hold() {
+    let held = |steps, list| ParamInfo { steps, list, ..gain() }.holds();
+    assert!(!held(0, false) && !held(0, true), "continuous");
+    assert!(held(1, false) && held(1, true), "a switch");
+    assert!(held(3, true), "a list of choices");
+    assert!(!held(3, false) && !held(1024, false), "a knob with steps");
 }

@@ -32,7 +32,7 @@
 //! VST3 (no input for an instrument), notes and controllers, parameters, editors in a window of
 //! their own or embedded as a child in the engine's window where the engine says (Windows, X11 on
 //! Linux), with state and latency, and test plug-ins (`test:clap`, `test:clap-ports`,
-//! `test:clap-delay`, `test:vst3`, `test:gain`, `test:crash-after:<n>`, `test:hang-after:<n>`,
+//! `test:clap-delay`, `test:vst3` (`-mix`, `-gate`), `test:gain`, `test:crash-after:<n>`, `test:hang-after:<n>`,
 //! `test:slow-load:<ms>`, `test:delay-after:<n>:<frames>`, `test:busy:<µs>`, `test:ring`,
 //! `test:await-ring`). A plug-in that reports another latency while it runs is restarted as its format asks and the engine is told
 //! unasked (`latency_changed`). `--scan <file>` and `--scan-worker` describe plug-in files for the
@@ -244,7 +244,7 @@ fn describe(file: &str) -> Result<Vec<suhina_plugins::scan::PluginInfo>, String>
             thread::sleep(Duration::from_secs(60));
         },
         "test:clap" | "test:clap-mix" | "test:clap-delay" | "test:clap-ports" => clap::describe(file),
-        "test:vst3" | "test:vst3-mix" => vst3::describe(file),
+        "test:vst3" | "test:vst3-mix" | "test:vst3-gate" => vst3::describe(file),
         #[cfg(feature = "vst2")]
         "test:vst2" => vst2::host::describe(file),
         #[cfg(debug_assertions)]
@@ -332,7 +332,7 @@ fn start(
     {
         return clap::ClapPlugin::load(plugin, instance, served, sample_rate).map(|p| Box::new(p) as Loaded);
     }
-    if plugin.starts_with("vst3:") || plugin == "test:vst3" || plugin == "test:vst3-mix" {
+    if plugin.starts_with("vst3:") || plugin == "test:vst3" || plugin == "test:vst3-mix" || plugin == "test:vst3-gate" {
         return vst3::Vst3Plugin::load(plugin, instance, served, sample_rate, ara).map(|p| Box::new(p) as Loaded);
     }
     #[cfg(feature = "vst2")]

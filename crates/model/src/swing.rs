@@ -55,9 +55,27 @@ pub fn swung(beat: f64, amount: f64) -> f64 {
     }
 }
 
+/// Whether content beat `beat` lies on an eighth (a multiple of half a beat). Swing works within
+/// each eighth, so moving every note by such a beat keeps each note's place within its eighth and
+/// the swing it plays with (`clip.setOrigin` on a clip that swings).
+pub fn on_eighth(beat: f64) -> bool {
+    let eighths = beat / 0.5;
+    beat.is_finite() && (eighths - eighths.round()).abs() * 0.5 < 1e-6
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn on_eighth_takes_only_multiples_of_half_a_beat() {
+        for beat in [0.0, 0.5, 1.0, 3.5, 16.0] {
+            assert!(on_eighth(beat), "{beat}");
+        }
+        for beat in [0.25, 0.75, 1.125, 2.4, f64::NAN, f64::INFINITY] {
+            assert!(!on_eighth(beat), "{beat}");
+        }
+    }
 
     #[test]
     fn swing_moves_the_second_sixteenth_and_keeps_the_eighths() {

@@ -1,6 +1,6 @@
 ---
 description: The MCP server for agents: tools, file roots, errors and how to run it
-read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools
+read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools, note.setVelocityRange, velocity range, note.join, note.fitToTime, clip.crop, clip.setOrigin
 type: system
 status: current
 last_verified: 2026-11-11
@@ -237,7 +237,8 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   stack?}` makes an empty clip — MIDI on a notes track, audio with no file yet on an audio
   track — a bar long by default, in an empty slot or at a beat
   ([arrangement editing](spec/arrangement-editing.md#making-an-empty-clip)).
-  `clip.split {track, index, at}` cuts a clip in two at a song position; `clip.consolidate
+  `clip.split {track, index, at}` cuts a clip in two at a song position (`ats` instead: at
+  several positions in one undo step, the result listing the parts' clip ids); `clip.consolidate
   {track, start, end}` turns a range of one track into one clip (audio is rendered to a file next
   to the project, which must have been saved).
 
@@ -254,7 +255,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
 
 - **Notes.** `note.list {track, index | scene}` lists a MIDI clip's notes (index, `id`, time and
   length in beats, key with 60 as C3, velocity 1 to 127, and `muted`); `note.add {..., notes: [{time, length, key,
-  velocity?}]}` appends notes and returns their indices and `ids`; `note.delete`, `note.move {beats?,
+  velocity?, velocityRange?}]}` (`velocityRange` as `note.list` gives it) appends notes and returns their indices and `ids`; `note.delete`, `note.move {beats?,
   semitones?}`, `note.resize {length? | by? | startBy?}` (`startBy` moves each start and keeps
   each end) and `note.setVelocity {velocity? | by? | velocities?}` (`velocities`: one value per
   entry of `notes`) take
@@ -266,6 +267,11 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   ([clip editor spec](spec/ui-clip-editor.md) › Commands). An edit to a clip whose content
   other clips also play (a duplicate) first gives that clip its own copy of the content, so the
   others do not change; the result's indices are the same.
+- **Velocity range.** `note.setVelocityRange {track, index | scene, notes, range | by}` sets how far
+  above (or, negative, below) its velocity each named note may play, rolled each time it starts;
+  each note's range is kept to what its velocity allows, up to 127 and down to 1 (`by` adds steps
+  to each note's range); one undo step.
+  `note.list` gives `velocityRange` on a note that has one ([ADR 0037](decisions/0037-rolled-note-values.md)).
 - **Muting notes.** `note.setMuted {track, index | scene, notes, muted?}` sets the named notes'
   mute (`true` mutes, `false` unmutes); with `muted` left out each named note is flipped, which is
   what a click with the piano roll's Mute tool does. A muted note keeps its place, length, key and
@@ -310,10 +316,25 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   semitones? | keys?}` adds a copy right after the notes' end, or `beats` and `semitones` from them
   (the piano roll's Ctrl+drag; `keys` gives each copy its own key, one per entry of `notes`). The note clipboard is apart from the clip clipboard.
 - **Making room.** `note.makeRoom {track, index | scene, notes, covered?}` makes room under the named notes as `replace` does (the piano roll sends it when notes edited while selected are let go); a note no longer in the clip is left out. `covered` (with `replace` on the other note commands too) says what happens to a note covered from its start that runs on past: `"cut"` (the default) keeps what runs on, `"delete"` removes it whole.
-- **Splitting notes.** `note.split {track, index | scene, notes, at | times, keepLonger?}` splits
-  each named note that spans the beat `at` into two at `at` (the first keeps the start, the second
-  the end); `times` instead gives each note a beat of its own, one per entry of `notes` (the piano
-  roll's slanted cut). A note that starts or ends exactly at its beat is left alone, so a second
+- **Joining, fitting, cropping.** `note.join {track, index | scene, notes}` joins the named notes
+  on one key into one note (the first's start, velocity and release velocity, the last's end, the
+  first reaching over any gap as legato does), each key on its own; it fails without two named
+  notes on one key.
+  `note.fitToTime {..., notes, start, end, replace?, covered?}` stretches or squeezes the named notes,
+  starts and lengths alike, so the first starts at `start` and the last ends at `end` (content beats).
+  `clip.crop {track, index | scene, start, end}` keeps only that stretch of a MIDI clip's content: start
+  marker and length become it, the loop is cut to it, notes outside are deleted and those across an
+  edge cut; an arrangement clip moves with its start marker so what is left plays where it played.
+  `clip.setOrigin {track, index | scene, beat}` makes content beat `beat` the first (1.1.1): the notes,
+  start marker and loop move back by it together and the clip sounds as before (velocity ranges
+  roll anew); it fails when anything of the clip lies before the beat, or, on a clip that swings,
+  when the beat is not on an eighth (a multiple of 0.5). Each is one undo step and refuses an audio clip
+  ([spec](spec/ui-clip-editor.md) › Joining, fitting, cropping and splitting).
+- **Splitting notes.** `note.split {track, index | scene, notes, at | times | ats, keepLonger?}`
+  splits each named note that spans the beat `at` into two at `at` (the first keeps the start, the
+  second the end); `times` instead gives each note a beat of its own, one per entry of `notes` (the
+  piano roll's slanted cut), and `ats` cuts each note at every one of several beats it spans (the
+  piano roll's Ctrl+E and Chop on grid), not with `keepLonger`. A note that starts or ends exactly at its beat is left alone, so a second
   split at the same beat changes nothing. One undo step; it returns the indices and `ids` of the
   notes it made (each first half keeps its note's id), and every beat is from 0 to 120 000. With
   `keepLonger: true` each note split keeps only its longer piece (the first when they are as
