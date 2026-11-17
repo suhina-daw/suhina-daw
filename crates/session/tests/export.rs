@@ -275,3 +275,30 @@ fn an_mp3_export_refuses_what_does_not_apply() {
     assert_eq!(error, "the file name says .wav, and the format says mp3");
     assert!(!wav.exists(), "a refused export wrote the file");
 }
+/// A device with latency delays the whole mix by as much; the export takes it out, so the file
+/// starts where the project does (an imported song's plug-in latency was silence at the start
+/// and missing at the end).
+#[test]
+fn an_export_takes_out_the_devices_latency() {
+    let plain = one_track();
+    let mut limited = plain.clone();
+    limited.channels[0].devices.push(Device::new("Limiter", DeviceKind::Builtin("limiter".into())));
+    assert_eq!(limited.assign_ids(), Ok(()));
+    let renderer = suhina_engine::Renderer::build(
+        &limited,
+        suhina_engine::RenderInputs::from_audio(&suhina_engine::AudioPool::new(), suhina_session::devices()),
+        SR,
+        suhina_engine::RenderOptions::PLAYING,
+    )
+    .unwrap();
+    assert!(renderer.latency() > 0, "the limiter looks ahead");
+    let export = |project: Project, name: &str| {
+        let mut session = suhina_session::Session::new(project);
+        let path = temp_file(name, "wav");
+        run(&mut session, json!({ "path": path.display().to_string() })).unwrap();
+        samples_of(&path)
+    };
+    let (plain, limited) = (export(plain, "plain"), export(limited, "limited"));
+    let first = |s: &[f32]| s.iter().position(|v| v.abs() > 1e-4).unwrap();
+    assert_eq!(first(&limited), first(&plain), "it starts where the project does");
+}
