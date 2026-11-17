@@ -73,7 +73,7 @@ pub fn move_data(from: &Path, to: &Path, only_themes: bool) -> Result<(PathBuf, 
     if from == to || to.starts_with(from) {
         return Err(format!("{} is inside the folder it would move from", to.display()));
     }
-    let stamp = chrono::Local::now().format("%Y-%m-%d-%H%M%S");
+    let stamp = suhina_session::backup::file_stamp_now();
     let name = from.file_name().map_or_else(|| "suhina".into(), |n| n.to_string_lossy().into_owned());
     let backup = from.with_file_name(format!("{name}-backup-{stamp}"));
     let mut copied = 0;
