@@ -126,6 +126,15 @@ impl App {
         if self.browser_part > 0.001 {
             crate::browser::browser_view::list_keys(ui, &mut self.browser);
         }
+        // The piano roll's right-click menu holds the keys while it is open: Escape closes it,
+        // and only it (the piano roll's own Escape would clear the selection and leave the menu
+        // open), and no shortcut acts behind it.
+        if self.piano_roll.menu_open() {
+            if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+                self.piano_roll.close_menu(ui.ctx());
+            }
+            return;
+        }
         // Escape twice in a row (the focus mode, › Pulled to the top), seen before the piano
         // roll's Escape takes the key.
         self.escape_twice = self.double_escape(ui);

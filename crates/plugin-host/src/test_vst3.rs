@@ -18,6 +18,11 @@
 //! host's component handler, as a user turning a knob would. Modelled on the `vst3` crate's gain
 //! example (MIT/Apache-2.0).
 //!
+//! `test:vst3-gate` is the same plug-in, the only one whose state reads honour the tests' state-read
+//! gate (`SUHINA_TEST_PLUGIN_STATE_GATE`): a test that holds reads uses it, in a host process of its
+//! own, so no other test's plug-in, in a host that was running before the gate was named, is held
+//! or misses the gate.
+//!
 //! `test:vst3-mix` is the same plug-in, except that its first output channel is the mean of the
 //! first two, so it shows whether its second input was filled.
 
@@ -64,6 +69,8 @@ struct Processor {
     latency: AtomicU32,
     /// Whether the first output channel is the mean of the first two (`test:vst3-mix`).
     mix: bool,
+    /// Whether its state reads honour the tests' state-read gate (`test:vst3-gate`).
+    gate: bool,
 }
 
 impl Class for Processor {
@@ -148,7 +155,7 @@ impl IComponentTrait for Processor {
         // can keep a read out over a deadline or a cancel for exactly as long as it needs,
         // whatever the machine's load, and let it go by removing the file. A forgotten gate
         // holds a read ten seconds at most.
-        if let Some(gate) = std::env::var_os("SUHINA_TEST_PLUGIN_STATE_GATE") {
+        if let Some(gate) = std::env::var_os("SUHINA_TEST_PLUGIN_STATE_GATE").filter(|_| self.gate) {
             let gate = std::path::Path::new(&gate);
             let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
             while gate.exists() && std::time::Instant::now() < until {
@@ -581,6 +588,8 @@ impl IPlugViewTrait for View {
 struct Factory {
     /// Whether it makes `test:vst3-mix`'s processor.
     mix: bool,
+    /// Whether it makes `test:vst3-gate`'s processor.
+    gate: bool,
 }
 
 impl Class for Factory {
@@ -623,6 +632,7 @@ impl IPluginFactoryTrait for Factory {
                 gain: Arc::new(AtomicU32::new(0.5f32.to_bits())),
                 latency: AtomicU32::new(LATENCY),
                 mix: self.mix,
+                gate: self.gate,
             })
             .to_com_ptr::<FUnknown>(),
             CONTROLLER_CID => ComWrapper::new(Controller::default()).to_com_ptr::<FUnknown>(),
@@ -657,7 +667,8 @@ impl IPluginFactory2Trait for Factory {
     }
 }
 
-/// The factory, as a module's `GetPluginFactory` would give it; with `mix`, `test:vst3-mix`'s.
-pub(crate) fn factory(mix: bool) -> Option<ComPtr<IPluginFactory>> {
-    ComWrapper::new(Factory { mix }).to_com_ptr::<IPluginFactory>()
+/// The factory, as a module's `GetPluginFactory` would give it; with `mix`, `test:vst3-mix`'s, with
+/// `gate`, `test:vst3-gate`'s.
+pub(crate) fn factory(mix: bool, gate: bool) -> Option<ComPtr<IPluginFactory>> {
+    ComWrapper::new(Factory { mix, gate }).to_com_ptr::<IPluginFactory>()
 }

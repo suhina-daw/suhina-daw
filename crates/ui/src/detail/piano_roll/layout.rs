@@ -180,18 +180,26 @@ pub(super) fn note_at(layout: &Layout, notes: &[Note], pos: Pos2) -> Option<(usi
     })
 }
 
-/// The velocity bar under `pos`: a note's bar can be grabbed anywhere over the note's width in
-/// the lane (and a little before its start, where the stem is drawn), the nearest start first,
-/// a selected note before the others.
+/// The velocity stem under `pos`: a note's stem can be grabbed anywhere over the note's width in
+/// the lane (its head and the line along its length, and a little before its start), the nearest
+/// start first and, among notes starting together (a chord), the one whose head is nearest the
+/// pointer's height; a selected note before the others.
 pub(super) fn stem_at(layout: &Layout, notes: &[Note], selected: &BTreeSet<usize>, pos: Pos2) -> Option<usize> {
     let near = |(i, n): &(usize, &Note)| {
         let start = layout.x_of(n.time);
         let end = layout.x_of(n.time + n.duration.max(0.0)).max(start + STEM_REACH);
-        (pos.x >= start - STEM_REACH && pos.x <= end).then_some((*i, (start - pos.x).abs()))
+        let head = layout.lane.bottom() - 2.0 - velocity_height(n.velocity, layout.lane);
+        (pos.x >= start - STEM_REACH && pos.x <= end).then_some((
+            *i,
+            (start - pos.x).abs().round(),
+            (head - pos.y).abs(),
+        ))
     };
-    let candidates: Vec<(usize, f32)> = notes.iter().enumerate().filter_map(|e| near(&e)).collect();
-    let best = |list: &mut dyn Iterator<Item = (usize, f32)>| list.min_by(|a, b| a.1.total_cmp(&b.1)).map(|c| c.0);
-    best(&mut candidates.iter().copied().filter(|(i, _)| selected.contains(i)))
+    let candidates: Vec<(usize, f32, f32)> = notes.iter().enumerate().filter_map(|e| near(&e)).collect();
+    let best = |list: &mut dyn Iterator<Item = (usize, f32, f32)>| {
+        list.min_by(|a, b| a.1.total_cmp(&b.1).then(a.2.total_cmp(&b.2))).map(|c| c.0)
+    };
+    best(&mut candidates.iter().copied().filter(|(i, _, _)| selected.contains(i)))
         .or_else(|| best(&mut candidates.iter().copied()))
 }
 
@@ -232,18 +240,43 @@ pub(super) fn tool_pointer(tool: Tool) -> Option<(IconButton, Vec2)> {
     }
 }
 
+/// The pointer a tool shows over the grid: its icon drawn in place of the hidden system cursor,
+/// or, while the right-click menu is open, the ordinary arrow and no icon, so the pointer never
+/// goes missing on the grid around the menu.
+pub(super) fn grid_pointer(tool: Tool, menu_open: bool) -> (Option<(IconButton, Vec2)>, Option<CursorIcon>) {
+    if menu_open { (None, None) } else { (tool_pointer(tool), cursor_for(tool)) }
+}
+
 /// The square a tool's icon is drawn in for a pointer at `pos`: `size` wide, its hotspot on `pos`.
 pub(super) fn tool_pointer_rect(pos: Pos2, hotspot: Vec2, size: f32) -> Rect {
     Rect::from_min_size(pos - hotspot * size, Vec2::splat(size))
 }
 
-/// A tool's icon in place of the pointer, in `rect`: in the text colour, ringed with a point of
-/// the window's colour so it reads over a note as well as over the empty grid.
+/// The theme's own artwork for a tool's toolbar button (`piano.draw` and the others), the role the
+/// toolbar paints it with, so the pointer changes with the toolbar's icon.
+pub(super) fn tool_role(icon: IconButton) -> String {
+    format!("piano.{}", icon.id().trim_start_matches("piano-"))
+}
+
+/// A tool's icon in place of the pointer, in `rect`: the toolbar's icon (the theme's when it has
+/// one, else the built-in artwork) in the text colour, ringed with a point of the window's colour
+/// so it reads over a note as well as over the empty grid.
 ///
 /// It is `icon[kind="pointer"]`: its `color`, and its `background-color` for the ring.
 pub(super) fn draw_tool_pointer(painter: &egui::Painter, icon: IconButton, rect: Rect) {
     let look = crate::kit::element::ICON.attribute("kind", "pointer").look();
     let ink = look.color();
+    let role = tool_role(icon);
+    if crate::kit::skin::has_own(&role) {
+        let normal = crate::kit::skin::State::Normal;
+        let ring = look.background();
+        for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+            crate::kit::skin::paint(painter, rect.translate(Vec2::new(x, y)), &role, normal, ring, 0.0);
+        }
+        if crate::kit::skin::paint(painter, rect, &role, normal, ink, 0.0) {
+            return;
+        }
+    }
     if let Some(svg) = icon.svg() {
         let ring = look.background();
         for (x, y) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {

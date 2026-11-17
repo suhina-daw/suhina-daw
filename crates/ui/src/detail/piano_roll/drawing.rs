@@ -417,6 +417,9 @@ pub(super) fn draw(
                 let midi = (f64::from(suhina_session::midi_velocity(note.velocity)) + by).clamp(1.0, 127.0);
                 Note { velocity: (midi / 127.0) as f32, ..*note }
             }
+            Some(Effect::VelocityRange(range)) => {
+                Note { velocity_range: i8::try_from(range.clamp(-127, 127)).unwrap_or(0), ..*note }
+            }
             _ => *note,
         }
     };
@@ -460,6 +463,10 @@ pub(super) fn draw(
     // The selected notes are drawn last, over the others: a note moved onto another of its key is
     // seen while it is moved.
     let order = (0..clip.notes.len()).filter(|i| !state.selected.contains(i)).chain(state.selected.iter().copied());
+    // The velocity lane's stems, gathered while the notes are drawn and drawn after them: every
+    // note in time has one, its row in view or not (› Velocity lane).
+    let mut stems: Vec<Stem> = Vec::new();
+    let any_selected = !state.selected.is_empty();
     for i in order {
         let Some(note) = clip.notes.get(i) else { continue };
         let note = shown(i, note);
@@ -472,15 +479,29 @@ pub(super) fn draw(
             }
         };
         let rect = layout.note_rect(&note);
+        {
+            let muted = if state.muting.contains(&i) { state.mute_target } else { note.muted };
+            let selected = state.selected.contains(&i) || selecting.is_some_and(|r| r.intersects(rect));
+            let ink = if muted {
+                muted_stem.color()
+            } else if selected {
+                selected_stem.color()
+            } else {
+                velocity_look.own_color_or(clip.color)
+            };
+            // With notes selected, the others step back, so the selection's stems stand out.
+            let ink = if any_selected && !selected { ink.gamma_multiply(0.45) } else { ink };
+            stems.push(Stem { note, ink, selected });
+        }
         if !rect.intersects(layout.grid) {
             continue;
         }
         let velocity = f32::from(suhina_session::midi_velocity(note.velocity));
-        // A note an erase stroke has passed over is nearly gone; a muted note, and one a mute
-        // stroke holds, is faded with a dashed edge, so it is clearly there and clearly not
-        // playing (› Muting).
-        let muted = note.muted || (state.muting.contains(&i) && state.mute_target);
-        let unmuting = state.muting.contains(&i) && !state.mute_target;
+        // A note an erase stroke has passed over is nearly gone; a muted note is faded with a
+        // dashed edge, so it is clearly there and clearly not playing. A note a mute stroke has
+        // passed over is drawn as the stroke leaves it, muted or unmuted, before the button is
+        // up (› Muting).
+        let muted = if state.muting.contains(&i) { state.mute_target } else { note.muted };
         let erasing = state.erasing.contains(&i);
         let selected = state.selected.contains(&i) || selecting.is_some_and(|r| r.intersects(rect));
         let alpha = note_alpha(velocity, NoteLook { erasing, muted, selected, outside: outside(&note) });
@@ -505,11 +526,6 @@ pub(super) fn draw(
         if selected && style.border.is_none() {
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, outline), StrokeKind::Inside);
         }
-        if unmuting {
-            // The stroke is bringing this note back: a solid edge says so before the button is up.
-            let edge = muted_style.border.unwrap_or(dashes);
-            grid_painter.rect_stroke(rect, 0.0, Stroke::new(1.0, edge), StrokeKind::Inside);
-        }
         // Every note says which it is; on a block too small for its name, as much as fits.
         let readable = if alpha >= 0.55 { name_on_light } else { name_on_dark };
         grid_painter.with_clip_rect(rect.intersect(layout.grid)).text(
@@ -519,18 +535,10 @@ pub(super) fn draw(
             theme::mono_font(theme::TEXT_TINY),
             style.color.unwrap_or(readable),
         );
-        // Its velocity stem.
-        let x = rect.left().round() + 0.5;
-        let top = layout.lane.bottom() - 2.0 - velocity_height(note.velocity, layout.lane);
-        let stem = if muted {
-            muted_stem.color()
-        } else if selected {
-            selected_stem.color()
-        } else {
-            velocity_look.own_color_or(clip.color)
-        };
-        lane_painter.vline(x, egui::Rangef::new(top, layout.lane.bottom()), Stroke::new(1.0, stem));
-        lane_painter.rect_filled(Rect::from_min_size(Pos2::new(x - 2.5, top), Vec2::new(5.0, 2.0)), 0.0, stem);
+    }
+    paint_lane_scale(&lane_painter, layout);
+    for stem in &stems {
+        paint_stem(&lane_painter, layout, stem);
     }
     if let Some(rect) = selecting {
         let edge = crate::kit::element::MARQUEE.attribute("kind", "notes").look().color();
@@ -607,9 +615,21 @@ pub(super) fn draw(
             ),
             Align2::RIGHT_CENTER,
             "1",
-            font,
+            font.clone(),
             hint,
         );
+        // The middle of the scale, where the lane draws its faint line, once there is room for it.
+        if lane_keys.height() >= 48.0 {
+            let y = layout.lane.bottom() - 2.0 - velocity_height(64.0 / 127.0, layout.lane);
+            widgets::text_in(
+                &painter,
+                Rect::from_min_max(Pos2::new(lane_keys.left(), y - 5.0), Pos2::new(lane_keys.right() - 3.0, y + 5.0)),
+                Align2::RIGHT_CENTER,
+                "64",
+                font,
+                hint,
+            );
+        }
     }
     painter.vline(layout.keys.right() - 0.5, layout.keys.y_range(), theme::hairline(band));
 }
@@ -645,6 +665,62 @@ pub(super) fn for_readers(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &Pi
             let response = ui.interact(stem, Id::unique(("piano-roll-stem", i)), Sense::hover());
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, &label));
         }
+    }
+}
+
+/// A note's velocity stem as the lane draws it: the note where it is shown, its ink, and whether
+/// it is selected.
+struct Stem {
+    note: Note,
+    ink: Color32,
+    selected: bool,
+}
+
+/// The lane's scale: a faint line at velocity 64, between the 127 and 1 the key column names
+/// (› Velocity lane).
+fn paint_lane_scale(painter: &egui::Painter, layout: &Layout) {
+    if layout.lane.height() < 24.0 {
+        return;
+    }
+    let y = (layout.lane.bottom() - 2.0 - velocity_height(64.0 / 127.0, layout.lane)).round() + 0.5;
+    let ink = crate::kit::element::PIANO_GRID.look().border().gamma_multiply(0.6);
+    painter.hline(layout.lane.x_range(), y, Stroke::new(1.0, ink));
+}
+
+/// A note's velocity stem (› Velocity lane): a line 2 px wide from the lane's foot up to its
+/// velocity, a round head there to grab, and from the head a thin line along the note's length, so
+/// notes starting together (a chord) are told apart by their heights. A velocity range shows as a
+/// faint whisker beside the head, from the velocity to the furthest the note may play, with a tick
+/// at that end (› Velocity range).
+fn paint_stem(painter: &egui::Painter, layout: &Layout, stem: &Stem) {
+    let note = &stem.note;
+    let x = layout.x_of(note.time).round() + 0.5;
+    let end = layout.x_of(note.time + note.duration.max(0.0));
+    if end < layout.lane.left() - 4.0 || x > layout.lane.right() + 4.0 {
+        return;
+    }
+    let top = layout.lane.bottom() - 2.0 - velocity_height(note.velocity, layout.lane);
+    let ink = stem.ink;
+    if end > x + 4.0 {
+        painter.hline(x..=end, top, Stroke::new(1.0, ink.gamma_multiply(0.7)));
+    }
+    if note.velocity_range != 0 {
+        let own = f32::from(suhina_session::midi_velocity(note.velocity));
+        let far = (own + f32::from(note.velocity_range)).clamp(1.0, 127.0);
+        let far_top = layout.lane.bottom() - 2.0 - velocity_height(far / 127.0, layout.lane);
+        let whisker = x + 6.0;
+        painter.vline(
+            whisker,
+            egui::Rangef::new(top.min(far_top), top.max(far_top)),
+            Stroke::new(3.0, ink.gamma_multiply(0.35)),
+        );
+        painter.hline(whisker - 2.5..=whisker + 2.5, far_top, Stroke::new(1.0, ink.gamma_multiply(0.7)));
+    }
+    painter.vline(x, egui::Rangef::new(top, layout.lane.bottom()), Stroke::new(2.0, ink));
+    let radius = if stem.selected { 3.5 } else { 3.0 };
+    painter.circle_filled(Pos2::new(x, top), radius, ink);
+    if stem.selected {
+        painter.circle_stroke(Pos2::new(x, top), radius + 1.0, Stroke::new(1.0, ink.gamma_multiply(0.5)));
     }
 }
 

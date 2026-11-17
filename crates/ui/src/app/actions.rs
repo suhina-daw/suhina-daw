@@ -213,6 +213,8 @@ impl App {
             {
                 actions.extend(self.piano_key(action))
             }
+            // The mute key mutes the selected notes, or unmutes them when every one is muted.
+            "selection.mute" if self.piano_has_keyboard() => actions.extend(self.piano_key(action)),
             // Notes copied last paste into the clip the piano roll shows, even when a click on
             // that clip in the view took the other keys: copy notes, pick another clip, paste.
             "selection.paste" if self.piano_takes_paste() => {
@@ -222,8 +224,7 @@ impl App {
                 self.piano_roll.focused = paste.is_some();
                 actions.extend(paste)
             }
-            "selection.mute"
-            | "selection.rename"
+            "selection.rename"
             | "selection.split"
             | "selection.consolidate"
             | "selection.takeUp"
@@ -768,12 +769,13 @@ impl App {
                 if self.shown == View::Arrangement && self.session().is_some_and(Session::copied_from_tracks) =>
             {
                 // Copied from several tracks: each part back on its own track, from the play
-                // start marker.
-                let beat = self.timeline.as_ref().map_or(0.0, |(_, _, t)| t.beat);
+                // start marker, never the playhead, which moves on while playing (#1186).
+                let beat = self.timeline.as_ref().map_or(0.0, |(_, _, t)| t.start_beat);
                 actions.push(Action::new("clip.paste", json!({ "start": beat })));
             }
             "selection.paste" => {
-                // After the selected clip, or at the playhead on the selected track.
+                // After the selected clip, or where the lane was clicked, or at the play start
+                // marker on the selected track (never the playhead, which moves on while playing).
                 let timeline = self.timeline.as_ref().map(|(_, _, t)| t);
                 let target = match self.arrangement.selected_clip() {
                     Some((track, id)) => timeline
@@ -781,7 +783,7 @@ impl App {
                         .and_then(|l| l.clips.iter().find(|c| c.id == id))
                         .map(|c| (track, if self.settings.view.replace_clip { c.start } else { c.start + c.length })),
                     None => self.arrangement.insert.or_else(|| {
-                        self.arrangement.selected_tracks.first().map(|t| (*t, timeline.map_or(0.0, |t| t.beat)))
+                        self.arrangement.selected_tracks.first().map(|t| (*t, timeline.map_or(0.0, |t| t.start_beat)))
                     }),
                 };
                 match target {

@@ -2877,6 +2877,14 @@ impl App {
                         (None, None) => self.view.selected = Some(track),
                     }
                 }
+                // A consolidated clip is selected in place of the clips it was made of, so the
+                // detail area (the piano roll) goes on showing what was being edited.
+                if action.id == "clip.consolidate"
+                    && let Some(track) = result["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId)
+                    && let Some(clip) = result["clip"].as_u64().and_then(|c| u32::try_from(c).ok()).map(ClipId)
+                {
+                    self.arrangement.select_clip(track, clip);
+                }
                 // Duplicated devices: the copies are picked, so the next Ctrl+D copies them on.
                 if action.id == "device.duplicateMany"
                     && let Some(track) = action.params["track"].as_u64().and_then(|t| u32::try_from(t).ok())

@@ -128,7 +128,7 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | Undo, redo (`edit.undo`, `edit.redo`) | Ctrl+Z; Ctrl+Shift+Z, Ctrl+Y |
 | Copy, cut, paste the selected clips (`selection.copy`, `.cut`, `.paste`) | Ctrl+C, Ctrl+X, Ctrl+V |
 | Duplicate, delete the selected clips (`selection.duplicate`, `.delete`); in the piano roll, after a click in it, Delete deletes the selected notes instead. The duplicate key is Ctrl+D, or Ctrl+B with the Draw-first preset | Ctrl+D; Delete, Backspace |
-| Mute or unmute the selected clips, or with a range painted in the Arrangement the clips under it (`selection.mute`) | 0 |
+| Mute or unmute the selected clips, or with a range painted in the Arrangement the clips under it, or in the piano roll the selected notes (`selection.mute`) | 0 |
 | Select every clip in the arrangement (`selection.selectAll`); in the piano roll, after a click in it, every note instead | Ctrl+A |
 | In the piano roll, after a click in it: copy, cut, paste, duplicate the selected notes (the same `selection.*` keys; with no note selected, or nothing copied for a paste, they act on the clip) | Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D (Ctrl+B with Draw-first) |
 | In the piano roll: choose the Select, Draw, Paint, Erase, Slice, Mute tool (`pianoRoll.tool1` … `.tool6`, [spec](spec/ui-clip-editor.md) › Drawing notes, › Muting) | 1, 2, 3, 4, 5, 6 |
@@ -138,6 +138,10 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | In the piano roll: move the selected notes a semitone, an octave up or down (`pianoRoll.up`, `.down`, `.octaveUp`, `.octaveDown`) | Up, Down; Shift+Up, Shift+Down |
 | In the piano roll: take the selected notes' ends to the previous, the next grid line, over the next note of the key too (`pianoRoll.shorter`, `.longer`; never shorter than a step) | Shift+Left; Shift+Right |
 | In the piano roll: make the selected notes a fine step shorter, longer, off the grid, over the next note of the key too (`pianoRoll.shorterFine`, `.longerFine`) | Alt+Shift+Left; Alt+Shift+Right |
+| In the piano roll: select the next, the previous note on each selected key, the notes staying where they are (`pianoRoll.selectNextOnKey`, `.selectPreviousOnKey`, [spec](spec/ui-clip-editor.md) › Selecting from the keyboard) | Ctrl+Right; Ctrl+Left |
+| In the piano roll: select the clip's next, previous note, in time and then by key (`pianoRoll.selectNextNote`, `.selectPreviousNote`) | Ctrl+Up; Ctrl+Down |
+| In the piano roll: move each selected key's selection end one note later, earlier, as Shift and an arrow do in text (`pianoRoll.growSelectionOnKey`, `.shrinkSelectionOnKey`) | Ctrl+Shift+Right; Ctrl+Shift+Left |
+| In the piano roll: move the selection's end one note later, earlier in the clip (`pianoRoll.growSelection`, `.shrinkSelection`) | Ctrl+Shift+Up; Ctrl+Shift+Down |
 | In the piano roll: switch between the Select and Draw tools (`pianoRoll.draw`, [spec](spec/ui-clip-editor.md) › Drawing notes) | B |
 | In the piano roll: make the grid finer, coarser (`pianoRoll.gridNarrow`, `.gridWiden`, [spec](spec/ui-clip-editor.md) › Grid and snapping) | Ctrl+1; Ctrl+2 |
 | In the piano roll: turn the triplet grid on or off (`pianoRoll.gridTriplet`) | Ctrl+3 |
@@ -145,6 +149,9 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | In the piano roll: zoom time to the selected notes (the whole clip when none is selected); to the whole clip (`pianoRoll.zoomSelection`, `.zoomClip`, [spec](spec/ui-clip-editor.md) › Zoom and scroll) | Z; Shift+Z |
 | In the piano roll: loop the clip over the time selection (again on the same stretch: off), or turn the clip's loop on or off (`pianoRoll.loop`, `clip.setLoop`, [spec](spec/ui-clip-editor.md) › Shortcuts) | Ctrl+L |
 | In the piano roll: Legato on the selected notes, or on every note when none is selected (`pianoRoll.legato`, [spec](spec/ui-clip-editor.md) › Other note tools) | Alt+L |
+| In the piano roll: join the selected notes on one key, over any gap between them; fit the selected notes to the time selection (`pianoRoll.join`, `.fitToTime`, [spec](spec/ui-clip-editor.md) › Joining, fitting, cropping and splitting) | Ctrl+J; Ctrl+Alt+J |
+| In the piano roll: crop the clip to the time selection; split notes at the time selection's edges or the insert mark, else chop them on the grid (`pianoRoll.crop`, `.splitNotes`; while the piano roll has the keyboard its own keys come before the window's) | Ctrl+Shift+J; Ctrl+E |
+| In the piano roll: raise, lower the selected notes' velocity range by one (`pianoRoll.rangeUp`, `.rangeDown`, [spec](spec/ui-clip-editor.md) › Velocity range) | Alt+Shift+Up; Alt+Shift+Down |
 | In the piano roll: move the loop's start or end, the loop, the clip's start or end marker (on the grid; Alt free); zoom time, scroll it ([spec](spec/ui-clip-editor.md) › Layout) | drag a handle, the loop bar or a marker on the ruler; drag the ruler up and down, sideways |
 | In the piano roll: play a key of the key column through the track's instrument while it is held; Ctrl+click, Ctrl+drag select the notes of that pitch or those pitches ([spec](spec/ui-clip-editor.md) › Playing the keys) | click, drag on the key column; Ctrl+click, Ctrl+drag |
 | In the piano roll: move the selected notes' starts and keep their ends; copy the selection to where it is let go; change the selection's velocity ([spec](spec/ui-clip-editor.md) › Resizing, › Moving, › Velocity) | drag a note's left edge; Ctrl+drag a note (Cmd on macOS); Alt+drag a note up or down (Option on macOS) |

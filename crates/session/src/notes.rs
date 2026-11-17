@@ -208,7 +208,7 @@ pub(crate) fn after_removal(indices: &[usize], removed: &[usize]) -> Vec<usize> 
 }
 
 /// How many clips, on the arrangement and in the launcher, play `content`.
-fn placements(p: &Project, content: ContentId) -> usize {
+pub(crate) fn placements(p: &Project, content: ContentId) -> usize {
     let arranged = p.arrangement.lanes.iter().flat_map(|l| &l.clips).filter(|c| c.content == content).count();
     let launched = p
         .launcher
@@ -298,7 +298,7 @@ pub(crate) fn notes_of<'a>(p: &'a Project, params: &Value) -> Result<&'a Notes, 
 }
 
 /// The notes of the clip `params` names, to change; an empty MIDI clip gets a note lane.
-fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Notes, CommandError> {
+pub(crate) fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mut Notes, CommandError> {
     let (_, id, track) = locate(p, params)?;
     check_midi(p, id)?;
     let content = p.contents.iter_mut().find(|c| c.id == id).ok_or("the clip's content is missing")?;
@@ -367,7 +367,7 @@ pub fn midi_velocity(velocity: f32) -> u8 {
 }
 
 fn note_json(index: usize, id: NoteId, note: &Note) -> Value {
-    json!({
+    let mut out = json!({
         "index": index,
         "id": id.0,
         "time": note.time,
@@ -375,7 +375,12 @@ fn note_json(index: usize, id: NoteId, note: &Note) -> Value {
         "key": note.key,
         "velocity": midi_velocity(note.velocity),
         "muted": note.muted,
-    })
+    });
+    // Only a note that has one lists its velocity range (ADR 0037).
+    if note.velocity_range != 0 {
+        out["velocityRange"] = json!(note.velocity_range);
+    }
+    out
 }
 
 pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -386,8 +391,13 @@ pub(crate) fn list(session: &mut Session, params: &Value) -> Result<Value, Comma
 /// One note `note.add` reads: `{time, length, key, velocity?}`.
 fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
     let object: &Map<String, Value> = value.as_object().ok_or_else(|| format!("note {at} must be an object"))?;
-    if let Some(unknown) = object.keys().find(|k| !matches!(k.as_str(), "time" | "length" | "key" | "velocity")) {
-        return Err(format!("note {at}: unknown field {unknown:?}; expected time, length, key, velocity").into());
+    if let Some(unknown) =
+        object.keys().find(|k| !matches!(k.as_str(), "time" | "length" | "key" | "velocity" | "velocityRange"))
+    {
+        return Err(format!(
+            "note {at}: unknown field {unknown:?}; expected time, length, key, velocity, velocityRange"
+        )
+        .into());
     }
     let number = |key: &str| object.get(key).and_then(Value::as_f64).filter(|n| n.is_finite());
     let time = number("time").ok_or_else(|| format!("note {at}: time must be a number of beats"))?;
@@ -411,6 +421,15 @@ fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
             .filter(|v| (1.0..=127.0).contains(v))
             .ok_or_else(|| format!("note {at}: velocity must be 1 to 127"))?,
     };
+    // As `note.list` gives it, so a note read and written back keeps how its velocity rolls.
+    let velocity_range = match object.get("velocityRange") {
+        None | Some(Value::Null) => 0,
+        Some(v) => v
+            .as_i64()
+            .and_then(|r| i8::try_from(r).ok())
+            .filter(|r| *r >= -127)
+            .ok_or_else(|| format!("note {at}: velocityRange must be a whole number from -127 to 127"))?,
+    };
     Ok(Note {
         time,
         duration: length,
@@ -419,6 +438,7 @@ fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
         release_velocity: RELEASE_VELOCITY,
         channel: 0,
         muted: false,
+        velocity_range,
     })
 }
 
@@ -1012,7 +1032,8 @@ fn spans(note: &Note, at: f64) -> bool {
 
 /// `note.split`: splits each named note that spans its beat (`at` for all of them, or its own
 /// entry of `times`, a slanted cut) into two there, the first keeping its start and id and the
-/// second its end, as a new note. With `keepLonger` only the longer piece of each is kept (the
+/// second its end, as a new note; with `ats` each is cut at every one of those beats it spans,
+/// into as many pieces. With `keepLonger` only the longer piece of each is kept (the
 /// first when they are as long), in the note's place, so nothing is added. One command, one undo
 /// step; the second halves are appended, so the indices of the notes the command did not split
 /// stay valid.
@@ -1020,20 +1041,31 @@ pub(crate) fn split(session: &mut Session, params: &Value) -> Result<Value, Comm
     let args = Args::new(params);
     let at = args.opt_f64("at")?;
     let times = number_list(params, "times")?;
-    match (at, &times) {
-        (Some(_), Some(_)) => return Err("give at or times, not both".into()),
-        (None, None) => {
-            return Err("at must be given: the beat to split the notes at (or times, one beat per note)".into());
-        }
-        _ => {}
+    let ats = number_list(params, "ats")?;
+    match [at.is_some(), times.is_some(), ats.is_some()].iter().filter(|g| **g).count() {
+        0 => return Err("at must be given: the beat to split the notes at (or times, one beat per note)".into()),
+        1 => {}
+        _ => return Err("give one of at, times and ats".into()),
     }
-    for beat in at.iter().chain(times.iter().flatten()) {
+    for beat in at.iter().chain(times.iter().flatten()).chain(ats.iter().flatten()) {
         if !(0.0..=MAX_BEAT).contains(beat) {
-            let name = if at.is_some() { "at" } else { "each of times" };
+            let name = if at.is_some() {
+                "at"
+            } else if times.is_some() {
+                "each of times"
+            } else {
+                "each of ats"
+            };
             return Err(format!("{name} must be 0 to {MAX_BEAT} beats, got {beat}").into());
         }
     }
     let keep_longer = args.flag("keepLonger")?;
+    if keep_longer && ats.is_some() {
+        return Err("keepLonger takes at or times, not ats".into());
+    }
+    if let Some(ats) = ats {
+        return split_at_many(session, params, ats);
+    }
     edit_notes(&mut session.project, params, |notes| {
         let chosen = indices(params, notes)?;
         let at_of = per_note(params, notes, times.as_deref(), "times")?;
@@ -1084,6 +1116,42 @@ pub(crate) fn split(session: &mut Session, params: &Value) -> Result<Value, Comm
             out["trimmed"] = json!(trimmed);
         }
         Ok(out)
+    })
+}
+
+/// `note.split` with `ats`: each named note cut at every one of `ats` it spans, the first piece
+/// keeping its start and id, the others appended in time order. One undo step.
+fn split_at_many(session: &mut Session, params: &Value, mut ats: Vec<f64>) -> Result<Value, CommandError> {
+    ats.sort_by(f64::total_cmp);
+    ats.dedup_by(|a, b| (*a - *b).abs() <= EPSILON);
+    edit_notes(&mut session.project, params, |notes| {
+        let chosen = indices(params, notes)?;
+        let mut firsts: Vec<(usize, f64)> = Vec::new();
+        let mut pieces = Vec::new();
+        for &index in &chosen {
+            let note = *notes.get(index).ok_or("a note is missing")?;
+            let cuts: Vec<f64> = ats.iter().copied().filter(|at| spans(&note, *at)).collect();
+            let Some(&first) = cuts.first() else { continue };
+            firsts.push((index, first - note.time));
+            let end = note.time + note.duration;
+            for (n, &from) in cuts.iter().enumerate() {
+                let to = cuts.get(n + 1).copied().unwrap_or(end);
+                pieces.push(Note { time: from, duration: to - from, ..note });
+            }
+        }
+        let total = notes.len().saturating_add(pieces.len());
+        if total > MAX_NOTES_PER_CLIP {
+            return Err(format!("a clip holds at most {MAX_NOTES_PER_CLIP} notes; this would make {total}").into());
+        }
+        for (index, duration) in firsts {
+            if let Some(note) = notes.get_mut(index) {
+                note.duration = duration;
+            }
+        }
+        let first_new = notes.len();
+        notes.extend(pieces);
+        let made: Vec<usize> = (first_new..notes.len()).collect();
+        Ok(json!({ "notes": made, "ids": ids_at(notes, &made), "count": made.len() }))
     })
 }
 

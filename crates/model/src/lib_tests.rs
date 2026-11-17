@@ -357,3 +357,16 @@ fn a_group_cycle_is_reported_and_walking_it_ends() {
     assert_eq!(own.validate(), Err(vec![ValidationError::GroupCycle(TrackId(1))]));
     assert_eq!(own.ancestors(TrackId(1)), vec![]);
 }
+
+#[test]
+fn a_start_marker_past_the_loop_plays_from_inside_the_loop() {
+    // Loop 1 to 3: a marker at 5 or 7 turns into beat 1, one at 4.5 into 2.5.
+    assert_eq!(played_from(5.0, Some((1.0, 3.0))), 1.0);
+    assert_eq!(played_from(7.0, Some((1.0, 3.0))), 1.0);
+    assert_eq!(played_from(4.5, Some((1.0, 3.0))), 2.5);
+    // Before the loop's end, or with no loop (or an empty one), the marker is where it plays from.
+    assert_eq!(played_from(2.0, Some((1.0, 3.0))), 2.0);
+    assert_eq!(played_from(0.5, Some((1.0, 3.0))), 0.5);
+    assert_eq!(played_from(9.0, None), 9.0);
+    assert_eq!(played_from(9.0, Some((3.0, 3.0))), 9.0);
+}
