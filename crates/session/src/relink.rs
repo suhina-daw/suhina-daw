@@ -44,13 +44,16 @@ pub(crate) fn missing_of(
     trusted: &suhina_media::Trusted,
 ) -> Vec<suhina_media::MissingAudio> {
     let folder = folder.map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    // A decoded file was loaded by the person or found on opening, so its path is looked at on
+    // a local disk wherever it is; a network share or a device path the project names is not
+    // asked about (decided from the path alone, as on opening).
+    let on_disk = suhina_media::Trusted { local: true, ..trusted.clone() };
     suhina_media::missing_audio_trusted(project, &folder, trusted)
         .into_iter()
         .filter(|missing| {
-            // Already decoded paths were explicitly loaded or safely resolved on open.
             let loaded = audio.files.contains_key(&missing.file)
                 || audio.files.contains_key(&suhina_model::stream_key(&missing.file, 0));
-            !loaded || trusted.find(&missing.last_path).is_none()
+            !loaded || on_disk.find(&missing.last_path).is_none()
         })
         .collect()
 }
