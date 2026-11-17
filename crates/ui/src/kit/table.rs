@@ -109,12 +109,29 @@ fn tip(ui: &Ui, cell: Rect, id: Id, text: Option<&str>) {
     }
 }
 
+/// The most characters of a text [`middle_cut`] lays out: far more than a cell shows.
+const MAX_SHOWN: usize = 512;
+
 /// `text` cut in its middle to fit `width` in `font`: a third of what is kept from its start,
 /// the rest from its end, an ellipsis between. Returns the text and whether it was cut.
 pub(crate) fn middle_cut(painter: &Painter, text: &str, font: &FontId, width: f32) -> (String, bool) {
     let measure = |s: &str| painter.layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE).size().x;
+    // A text far longer than any cell (a path a project names is not bounded) is cut to its
+    // ends before anything is laid out or collected.
+    let count = text.chars().count();
+    let capped: String;
+    let text = if count > MAX_SHOWN {
+        let head = MAX_SHOWN / 3;
+        let tail = MAX_SHOWN - head;
+        let start: String = text.chars().take(head).collect();
+        let end: String = text.chars().skip(count.saturating_sub(tail)).collect();
+        capped = format!("{start}…{end}");
+        capped.as_str()
+    } else {
+        text
+    };
     if measure(text) <= width {
-        return (text.to_string(), false);
+        return (text.to_string(), count > MAX_SHOWN);
     }
     let chars: Vec<char> = text.chars().collect();
     let joined = |kept: usize| {
@@ -158,5 +175,19 @@ mod tests {
         assert!(cut.0.starts_with("E:/"), "{}", cut.0);
         assert!(cut.0.ends_with("kick.wav"), "{}", cut.0);
         assert!(cut.0.contains('…'));
+    }
+
+    /// A text far longer than a cell is cut to its ends before it is laid out.
+    #[test]
+    fn an_endless_text_is_capped_before_it_is_measured() {
+        let ctx = egui::Context::default();
+        let long = format!("C:/{}/kick.wav", "a".repeat(1 << 20));
+        let mut cut = (String::new(), false);
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            cut = middle_cut(ui.painter(), &long, &FontId::proportional(11.0), 10_000.0);
+        });
+        assert!(cut.1);
+        assert!(cut.0.chars().count() <= MAX_SHOWN + 1, "{}", cut.0.chars().count());
+        assert!(cut.0.starts_with("C:/") && cut.0.ends_with("kick.wav"));
     }
 }

@@ -132,6 +132,18 @@ impl Row {
         }
     }
 
+    /// Drops the candidates no longer on disk (Search again): one found earlier that moved or
+    /// was deleted is not offered, and a choice by hand of such a file is undone.
+    fn forget_gone(&mut self) {
+        self.candidates.retain(|path| path.is_file());
+        if self.chosen.as_ref().is_some_and(|chosen| !self.candidates.contains(chosen)) {
+            self.by_hand = false;
+        }
+        if !self.by_hand {
+            self.chosen = self.candidates.first().cloned();
+        }
+    }
+
     /// Links it to `path`, chosen by hand.
     fn choose(&mut self, path: PathBuf) {
         if !self.candidates.contains(&path) {
@@ -262,6 +274,9 @@ impl MissingFiles {
                     by_hand: false,
                 });
                 (row.clips, row.samplers) = (m.clips, m.samplers);
+                if again {
+                    row.forget_gone();
+                }
                 row
             })
             .collect();
@@ -276,11 +291,11 @@ impl MissingFiles {
             self.selected = self.rows.iter().find(|r| r.chosen.is_none()).or(self.rows.first()).map(|r| r.file.clone());
         }
         // The project's own folder is walked too, on a thread of its own.
+        // After the walk running, when Search again was asked for during one.
         if (new_project || again)
             && let Some(folder) = self.project_folder.clone().filter(|f| f.is_dir())
-            && self.walk.is_none()
         {
-            self.start_walk(folder);
+            self.walk_or_queue(folder);
         }
     }
 
@@ -319,14 +334,15 @@ impl MissingFiles {
     fn poll(&mut self) -> bool {
         let Some(walk) = &self.walk else { return false };
         match walk.done.try_recv() {
+            // A folder waiting starts as one ends: polling goes on for it.
             Ok(result) => {
                 self.finish_walk(Some(result));
-                false
+                self.walk.is_some()
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => true,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.finish_walk(None);
-                false
+                self.walk.is_some()
             }
         }
     }

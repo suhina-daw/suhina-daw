@@ -50,7 +50,7 @@ pub(crate) fn missing_of(
             // Already decoded paths were explicitly loaded or safely resolved on open.
             let loaded = audio.files.contains_key(&missing.file)
                 || audio.files.contains_key(&suhina_model::stream_key(&missing.file, 0));
-            !loaded || !missing.last_path.is_file()
+            !loaded || trusted.find(&missing.last_path).is_none()
         })
         .collect()
 }
@@ -92,15 +92,19 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
         let names = |d: &suhina_model::Device| {
             d.sample_file() == Some(file.as_str()) || d.sample_absolute_file() == Some(file.as_str())
         };
-        let mut named = suhina_media::sampler_devices(session.project()).into_iter().any(names);
+        // Whether something plays the file whole (a sampler, a clip of no single track): a
+        // sampler finds its source by the file's own name, never by a track's.
+        let mut whole = suhina_media::sampler_devices(session.project()).into_iter().any(names);
+        let mut named = whole;
         for content in &session.project().contents {
             for lane in &content.lanes {
                 if let LaneData::Audio(region) = &lane.data
                     && (region.file == *file || region.absolute_file.as_deref() == Some(file.as_str()))
                 {
                     named = true;
-                    if let Some(n) = region.stream {
-                        streams = Some(streams.map_or(n, |m| m.max(n)));
+                    match region.stream {
+                        Some(n) => streams = Some(streams.map_or(n, |m| m.max(n))),
+                        None => whole = true,
                     }
                 }
             }
@@ -114,6 +118,9 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
                 session
                     .decoded_streams(&target, usize::from(last) + 1)
                     .map_err(|e| format!("{}: {e}", target.display()))?;
+                if whole {
+                    session.decoded_audio(&target).map_err(|e| format!("{}: {e}", target.display()))?;
+                }
             }
             None => {
                 session.decoded_audio(&target).map_err(|e| format!("{}: {e}", target.display()))?;

@@ -42,6 +42,24 @@ fn the_best_candidate_is_chosen_unless_the_user_chose() {
     assert_eq!(r.name(), "kick.wav");
 }
 
+/// Search again forgets a candidate that left the disk, and undoes a choice by hand of one.
+#[test]
+fn search_again_forgets_the_files_that_are_gone() {
+    let dir = temp("gone");
+    let kept = dir.join("Drums/kick.wav");
+    file(&kept);
+    let mut r = row("kick.wav", "/old/Drums/kick.wav");
+    r.offer(vec![dir.join("Old/kick.wav"), kept.clone()]);
+    r.choose(dir.join("Moved/kick.wav"));
+    r.forget_gone();
+    assert_eq!(r.candidates, vec![kept.clone()]);
+    assert_eq!((r.chosen.clone(), r.by_hand), (Some(kept.clone()), false));
+    std::fs::remove_file(&kept).unwrap();
+    r.forget_gone();
+    assert_eq!((r.chosen.clone(), r.state()), (None, State::Missing));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn a_row_says_what_plays_it() {
     let mut r = row("kick.wav", "/old/kick.wav");

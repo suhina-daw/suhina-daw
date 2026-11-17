@@ -167,6 +167,26 @@ fn a_grouped_sampler_s_file_is_decoded_and_missed_like_a_track_s() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A name a sampler and a clip share resolves through whichever of them names a file that is
+/// there: the sampler's stale absolute path does not leave the clip silent or missing.
+#[test]
+fn a_stale_reference_does_not_hide_a_good_one_of_the_same_name() {
+    let dir = temp_dir("shared-name");
+    let good = dir.join("library").join("loop.wav");
+    std::fs::create_dir_all(good.parent().unwrap()).unwrap();
+    write_wav(&good, 1, 100);
+    let mut project = project_with_audio("loop.wav", Some(good.display().to_string()));
+    let mut sampler = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+    sampler.set_sample_reference("loop.wav", &dir.join("gone").join("loop.wav").display().to_string());
+    project.channels.push(Channel::new(ChannelId(1), "Keys"));
+    project.channels[0].devices.push(sampler);
+    let trusted = Trusted { local: true, ..Trusted::default() };
+    let decoded = decode_project_audio_found(&project, &dir.join("set"), &trusted);
+    assert!(decoded.pool.files.contains_key("loop.wav"), "{:?}", decoded.warnings);
+    assert!(missing_audio_trusted(&project, &dir.join("set"), &trusted).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn an_empty_region_names_no_file_so_nothing_is_decoded_or_missed() {
     // An empty audio clip (clip.create on an audio track) has no file yet.

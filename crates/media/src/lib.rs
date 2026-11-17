@@ -149,12 +149,24 @@ pub fn decode_project_audio_found(project: &Project, project_dir: &Path, trusted
     // Each file once (once more when a Stems file is played whole as well as by track), with
     // where to look for it and whether all of its audio tracks are wanted.
     let mut wanted: Vec<(String, Vec<PathBuf>, bool)> = Vec::new();
+    // A name another clip or sampler named already gets this one's file too while none of the
+    // others resolved: one stale absolute path does not leave a name with a good one silent.
+    let mut want = |file: &str, absolute: Option<&str>, streams: bool| match wanted
+        .iter_mut()
+        .find(|(key, _, s)| key == file && *s == streams)
+    {
+        Some((_, candidates, _)) if candidates.is_empty() => {
+            candidates.extend(locate(file, absolute, project_dir, trusted));
+        }
+        Some(_) => {}
+        None => {
+            let candidates = locate(file, absolute, project_dir, trusted).into_iter().collect();
+            wanted.push((file.into(), candidates, streams));
+        }
+    };
     for device in sampler_devices(project) {
-        if let Some(file) = device.sample_file()
-            && !wanted.iter().any(|(key, _, _)| key == file)
-        {
-            let candidates = locate(file, device.sample_absolute_file(), project_dir, trusted).into_iter().collect();
-            wanted.push((file.into(), candidates, false));
+        if let Some(file) = device.sample_file() {
+            want(file, device.sample_absolute_file(), false);
         }
     }
     for content in &project.contents {
@@ -164,13 +176,7 @@ pub fn decode_project_audio_found(project: &Project, project_dir: &Path, trusted
             if region.file.is_empty() {
                 continue;
             }
-            let streams = region.stream.is_some();
-            if wanted.iter().any(|(file, _, s)| *file == region.file && *s == streams) {
-                continue;
-            }
-            let candidates =
-                locate(&region.file, region.absolute_file.as_deref(), project_dir, trusted).into_iter().collect();
-            wanted.push((region.file.clone(), candidates, streams));
+            want(&region.file, region.absolute_file.as_deref(), region.stream.is_some());
         }
     }
 
@@ -361,37 +367,31 @@ pub fn missing_audio(project: &Project, project_dir: &Path) -> Vec<MissingAudio>
 
 /// [`missing_audio`], with the files outside the project's folder that `trusted` names found.
 pub fn missing_audio_trusted(project: &Project, project_dir: &Path, trusted: &Trusted) -> Vec<MissingAudio> {
-    let mut out: Vec<MissingAudio> = Vec::new();
-    for device in sampler_devices(project) {
-        if let Some(file) = device.sample_file()
-            && locate(file, device.sample_absolute_file(), project_dir, trusted).is_none()
-            && !out.iter().any(|m| m.file == file)
-        {
-            out.push(MissingAudio {
-                file: file.into(),
-                last_path: device.sample_absolute_file().map_or_else(|| project_dir.join(file), PathBuf::from),
-                clips: 0,
-                samplers: 0,
-            });
+    // Every sampler and clip that names a file, as (its name, its absolute path): a name is
+    // missing only when none of the ones naming it resolves.
+    let samplers =
+        sampler_devices(project).into_iter().filter_map(|d| Some((d.sample_file()?, d.sample_absolute_file())));
+    let clips = project.contents.iter().flat_map(|c| &c.lanes).filter_map(|lane| match &lane.data {
+        // An empty audio clip has no file yet: it is not a missing file.
+        LaneData::Audio(region) if !region.file.is_empty() => {
+            Some((region.file.as_str(), region.absolute_file.as_deref()))
         }
-    }
+        _ => None,
+    });
+    let mut out: Vec<MissingAudio> = Vec::new();
     let mut found: Vec<&str> = Vec::new();
-    for content in &project.contents {
-        for lane in &content.lanes {
-            let LaneData::Audio(region) = &lane.data else { continue };
-            // An empty audio clip has no file yet: it is not a missing file.
-            if region.file.is_empty() {
-                continue;
-            }
-            if found.contains(&region.file.as_str()) || out.iter().any(|m| m.file == region.file) {
-                continue;
-            }
-            if locate(&region.file, region.absolute_file.as_deref(), project_dir, trusted).is_some() {
-                found.push(&region.file);
-                continue;
-            }
-            let last_path = region.absolute_file.as_ref().map_or_else(|| project_dir.join(&region.file), PathBuf::from);
-            out.push(MissingAudio { file: region.file.clone(), last_path, clips: 0, samplers: 0 });
+    for (file, absolute) in samplers.chain(clips) {
+        if found.contains(&file) {
+            continue;
+        }
+        if locate(file, absolute, project_dir, trusted).is_some() {
+            found.push(file);
+            out.retain(|m| m.file != file);
+            continue;
+        }
+        if !out.iter().any(|m| m.file == file) {
+            let last_path = absolute.map_or_else(|| project_dir.join(file), PathBuf::from);
+            out.push(MissingAudio { file: file.into(), last_path, clips: 0, samplers: 0 });
         }
     }
     // Count the clips that play each missing file.

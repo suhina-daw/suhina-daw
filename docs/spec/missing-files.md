@@ -34,7 +34,8 @@ project opens and helps find the files again.
 ## When a project opens
 
 1. The project's audio is decoded as before, a sampler's inside a device group too; files not
-   found are collected (with how many clips and samplers use each).
+   found are collected (with how many clips and samplers use each). A name several clips and
+   samplers share is missing only when none of their paths is found.
 2. If any are missing, a bar shows under the control bar: "4 audio files are missing" with
    **Find…** and **Later**. Later hides the bar for this project; View › **Missing files (4)…**
    opens the panel until nothing is missing.
@@ -49,7 +50,8 @@ title bar from `dialog-title`, its rows from `list-row[kind="missing-file"]`, it
 `label`. Escape or **Close** closes it; nothing changes until **Apply**.
 
 **Title bar:** "Missing files", the project's name and how many files; **Search again** on the
-right searches the browser's folders and the project's folder again.
+right searches the browser's folders and the project's folder again (after the walk running,
+when one is), and forgets the candidates no longer on disk.
 
 **Searching** (above the table):
 
