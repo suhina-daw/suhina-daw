@@ -220,6 +220,23 @@ enum AfterLeaving {
     Quit(Vec<ProjectId>),
 }
 
+/// A project about to be left (its tab closed, or another project opened in its place) whose
+/// plug-ins are being read, a frame at a time, for edits made in their own windows: the window
+/// keeps drawing meanwhile, and the leaving goes on once the read is done (`Rack::poll_edits`).
+#[derive(Debug, Clone)]
+struct LeaveCheck {
+    project: ProjectId,
+    then: LeaveThen,
+}
+
+#[derive(Debug, Clone)]
+enum LeaveThen {
+    /// Open this file in its place.
+    Replace(PathBuf),
+    /// Run this `project.close` again, its check done.
+    Close(Action),
+}
+
 /// A folder's packs ([docs/spec/nam-amp-and-cab.md] › Folders › Packs): its subfolders, each
 /// with its `extension` files name-sorted (the pack is skipped when it holds none), then the
 /// files beside the packs as `(entered directly)`. At most 2000 files a pack. The folder is
@@ -411,6 +428,11 @@ pub struct App {
     /// A project with unsaved changes waiting for Save, Don't save or Cancel before it is closed,
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
+    /// A project being left while its plug-ins are read for edits ([`LeaveCheck`]).
+    leave_check: Option<LeaveCheck>,
+    /// A `project.close` whose plug-ins were read: run in the next frame without reading them
+    /// again.
+    checked_close: Option<(ProjectId, Action)>,
     /// Clips a plug-in edits about to go to another track, waiting for Keep edits or Copy as
     /// new (ADR 0033 step 6): the move, and the plug-in's name.
     ara_prompt: Option<(Action, String)>,
@@ -752,6 +774,8 @@ impl App {
             stashes: HashMap::new(),
             open_prompt: None,
             unsaved_prompt: None,
+            leave_check: None,
+            checked_close: None,
             traced_output: None,
             ara_prompt: None,
             folder_drop: None,
@@ -1093,16 +1117,35 @@ impl App {
     /// Opens `path` as asked; in place of a project with unsaved changes only after the user
     /// answered whether to save them.
     fn open_as(&mut self, path: PathBuf, how: OpenAs) {
-        if how == OpenAs::Replace
-            && let Some(active) = self.projects.active()
-        {
-            self.check_plugin_edits(active);
-        }
         match self.projects.active() {
-            Some(active) if how == OpenAs::Replace && self.unsaved(active) => {
-                self.unsaved_prompt = Some(Leaving { project: active, then: AfterLeaving::Replace(path) });
+            // Its plug-ins are read for edits first, a frame at a time ([`App::poll_leave_check`]):
+            // reading them all at once here held the window for up to a second.
+            Some(active) if how == OpenAs::Replace => {
+                self.leave_check = Some(LeaveCheck { project: active, then: LeaveThen::Replace(path) });
             }
             _ => self.open_request = Some((path, how)),
+        }
+    }
+
+    /// Advances the read of a project's plug-ins before it is left ([`LeaveCheck`]); once done,
+    /// asks about unsaved changes or goes on.
+    fn poll_leave_check(&mut self, ctx: &egui::Context) {
+        let Some(check) = self.leave_check.take() else { return };
+        let Some(session) = self.projects.get_mut(check.project) else { return };
+        if !session.rack_mut().poll_edits() {
+            self.leave_check = Some(check);
+            ctx.request_repaint_after(std::time::Duration::from_millis(10));
+            return;
+        }
+        match check.then {
+            LeaveThen::Replace(path) if self.unsaved(check.project) => {
+                self.unsaved_prompt = Some(Leaving { project: check.project, then: AfterLeaving::Replace(path) });
+            }
+            LeaveThen::Replace(path) => self.open_request = Some((path, OpenAs::Replace)),
+            LeaveThen::Close(action) => {
+                self.checked_close = Some((check.project, action));
+                ctx.request_repaint();
+            }
         }
     }
 
@@ -1112,12 +1155,6 @@ impl App {
 
     /// Reads the project's running plug-ins' states now, so a change made only in a plug-in's
     /// editor counts as unsaved before the window asks whether to save.
-    fn check_plugin_edits(&mut self, id: ProjectId) {
-        if let Some(session) = self.projects.get_mut(id) {
-            session.rack_mut().check_edits();
-        }
-    }
-
     /// The open projects with unsaved changes, in tab order.
     fn unsaved_projects(&self) -> Vec<ProjectId> {
         self.projects.ids().into_iter().filter(|id| self.unsaved(*id)).collect()
@@ -3064,6 +3101,13 @@ impl App {
         }
         let window = ui.max_rect();
         let mut actions = Vec::new();
+        self.poll_leave_check(ui.ctx());
+        // A close whose plug-ins were read goes on now.
+        let checked = self.checked_close.take();
+        if let Some((_, action)) = &checked {
+            actions.push(action.clone());
+        }
+        let checked = checked.map(|(project, _)| project);
         crate::detail::device_canvas::finish_sample_audition(ui.ctx(), self.projects.active(), &mut actions);
         let revision = self.revision;
         ui.ctx().data_mut(|d| {
@@ -3847,8 +3891,13 @@ impl App {
             let closing = (action.id == "project.close")
                 .then(|| action.params["project"].as_u64().and_then(|n| u32::try_from(n).ok()).map(ProjectId))
                 .flatten();
-            if let Some(project) = closing {
-                self.check_plugin_edits(project);
+            // Its plug-ins are read for edits first, a frame at a time; the close runs again
+            // once they are ([`App::poll_leave_check`]).
+            if let Some(project) = closing
+                && checked != Some(project)
+            {
+                self.leave_check = Some(LeaveCheck { project, then: LeaveThen::Close(action.clone()) });
+                continue;
             }
             if self.window_action(action) {
                 continue;
