@@ -769,12 +769,15 @@ fn removed_placement(name: &str) -> Option<String> {
     let removed = "was a control placement and is no longer read";
     let instead = match name {
         "left" | "top" | "right" | "bottom" => format!(
-            "a part sits where its strip's CSS layout puts it: move it with margin-{name} or order on its \
-             element (#control-NAME, not .control-NAME)"
+            "a part sits where its strip's CSS layout puts it: move it with margin-{name} or order in a rule \
+             for the part's element id, listed in the theme guide's strip parts (#mixer-volume, #control-play); \
+             a .control-NAME rule matches nothing"
         ),
-        "direction" => "lay a strip's parts out with flex-direction on the group that holds them \
+        "direction" | "--suhina-direction" => {
+            "lay a strip's parts out with flex-direction on the group that holds them \
                         (mixer-toggles { flex-direction: column; })"
-            .into(),
+                .into()
+        }
         "anchor-left" | "anchor-top" | "anchor-right" | "anchor-bottom" => {
             "align a part with align-self, or justify-content on its group, and push it to an edge with \
              margin: auto on the other side"
@@ -879,8 +882,12 @@ fn declarations(
         if HOST_PROPERTIES.contains(&name.as_str()) {
             continue;
         }
+        if let Some(notice) = removed_placement(&name) {
+            sheet.notice(at, notice);
+            continue;
+        }
         if !name.starts_with("--") && Property::from_name(&name).is_none() {
-            sheet.notice(at, removed_placement(&name).unwrap_or_else(|| format!("Unknown native property {name}")));
+            sheet.notice(at, format!("Unknown native property {name}"));
             continue;
         }
         let raw = source.get(value_start..value_end).ok_or("Invalid value span")?.trim();
@@ -1023,11 +1030,11 @@ mod tests {
         let sheet = Sheet::parse(
             ".control-play { direction: vertical; anchor-left: 4px; left: 2px; } \
              button { top: 1px; RIGHT: 0; bottom: 0; anchor-bottom: 0; } arrangement { compact-below: 40px; } \
-             knob { colour: red; }",
+             mixer-pan { --suhina-direction: horizontal; } knob { colour: red; }",
         )
         .unwrap();
         let messages: Vec<_> = sheet.notices.iter().map(|notice| notice.message.as_str()).collect();
-        assert_eq!(messages.len(), 9, "{messages:?}");
+        assert_eq!(messages.len(), 10, "{messages:?}");
         let expect = [
             ("direction ", "flex-direction"),
             ("anchor-left ", "align-self"),
@@ -1037,12 +1044,13 @@ mod tests {
             ("bottom ", "margin-bottom or order"),
             ("anchor-bottom ", "justify-content"),
             ("compact-below ", "track-header[layout=\"short\"]"),
+            ("--suhina-direction ", "flex-direction"),
         ];
         for ((start, names), message) in expect.iter().zip(&messages) {
             assert!(message.starts_with(start) && message.contains(names), "{message}");
         }
-        assert!(messages[2].contains("#control-NAME"), "{}", messages[2]);
-        assert_eq!(messages[8], "Unknown native property colour");
+        assert!(messages[2].contains("#mixer-volume"), "{}", messages[2]);
+        assert_eq!(messages[9], "Unknown native property colour");
         assert!(sheet.rules.iter().all(|rule| rule.declarations.is_empty()), "the engine keeps none of them");
     }
 }
