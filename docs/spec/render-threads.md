@@ -1,6 +1,6 @@
 ---
-description: Render threads - the pool of worker threads that renders chains beside the render thread, the setting and command that choose its size, lanes per renderer, the bit-identical sum, waiting for late work, missed blocks per track and what is not built yet
-read_when: render threads, worker pool, render workers, SUHINA_RENDER_THREADS, audio.setRenderThreads, several cores, multicore, parallel rendering, missed block, render blocks late, bit-identical, lane
+description: Render threads - the pool of worker threads that renders chains beside the render thread, plug-in chains included, the setting and command that choose its size, lanes per renderer, the bit-identical sum, waiting for late work, missed blocks per track and what is not built yet
+read_when: render threads, worker pool, render workers, SUHINA_RENDER_THREADS, audio.setRenderThreads, several cores, multicore, parallel rendering, missed block, render blocks late, bit-identical, lane, plug-in chains in parallel, device group branches
 type: spec
 status: draft
 last_verified: 2026-11-17
@@ -8,6 +8,7 @@ covers:
   - crates/engine/src/pool.rs
   - crates/engine/src/pool_tests.rs
   - crates/engine/src/sends.rs
+  - crates/engine/src/group.rs
   - crates/engine/tests/no_allocation.rs
   - crates/session/src/audio.rs
 ---
@@ -15,8 +16,9 @@ covers:
 # Render threads
 
 The decisions are [ADR 0038](../decisions/0038-rendering-on-several-cores.md); this is what is
-built of them. Phase 1 of [#1504](https://github.com/suhina-daw/suhina-daw/issues/1504): the
-pool at the current lead, off by default, for chains without plug-ins.
+built of them. Phases 1 and 2 of [#1504](https://github.com/suhina-daw/suhina-daw/issues/1504):
+the pool at the current lead, off by default, for every chain but Main's, plug-in chains
+included ([#1507](https://github.com/suhina-daw/suhina-daw/issues/1507)).
 
 ## Choosing the threads
 
@@ -49,11 +51,28 @@ pool at the current lead, off by default, for chains without plug-ins.
   (`Renderer::join_real_time`), and the real-time pool's workers join real-time priority with
   the render thread. Changing the threads makes new pools; renderers built before keep theirs
   until they are dropped.
-- **What goes to a worker.** A chain with no plug-in slot and no ARA clip host, other than
-  Main's, once the chains that play into it are done (`sends::run`'s order). A block with fewer
-  than four such chains (`PARALLEL_MIN`) runs them all on the render thread. The render thread
-  hands a chain to whichever of itself and the workers holds the fewest, itself on a tie, runs
-  its own share one at a time and looks at the workers between them.
+- **What goes to a worker.** Every chain but Main's (which runs once every other chain is done,
+  so beside none), its plug-in slots and ARA clip host included, once the chains that play into
+  it are done (`sends::run`'s order). A block with fewer than four such chains (`PARALLEL_MIN`)
+  runs them all on the render thread. The render thread hands a chain to whichever of itself and
+  the workers holds the fewest, itself on a tie, runs its own share one at a time and looks at
+  the workers between them.
+- **Plug-in chains on a worker** (ADR 0038 › 4). A worker holds up to eight chains at once
+  (`HOLD`) and runs them as the render thread runs its own: each as far as it goes without
+  waiting (`Chain::advance`), its next plug-in handed its block, and on as soon as that plug-in
+  answers (`Chain::answered`, `Chain::collect`), while it waits for any of its chains' plug-ins
+  together (`suhina_ipc::wait_any`), at most half a millisecond at a time (`JOB_LOOK`) so a chain
+  sent to it meanwhile is taken soon. The chains' round trips so overlap one another and the
+  built-in work of every thread, instead of the render thread taking each answer in turn between
+  its own devices. A live chain keeps [ADR 0006](../decisions/0006-plug-in-hosting.md) › 4's
+  one-block deadline: its worker waits for a plug-in only until the block's deadline (the chain's
+  limit, from the block's start), and a late plug-in is replaced for its block by its input or by
+  silence, as on the render thread. Offline every plug-in is waited for.
+- **A group's branches overlap.** Inside a chain, on any thread, the branches of a device group
+  hand their plug-ins the block at the same time: each branch runs as far as it goes without
+  waiting, then the group waits for any branch's plug-in and runs that branch on, so a group
+  takes as long as its slowest branch, not the sum of them (`group.rs`). Each branch keeps its own
+  events, so the order the answers come in changes nothing it makes.
 - **By value, without allocating.** A chain goes to its worker through the lane and comes back
   the same way, its devices run and its sound staged (`Chain::stage`); meanwhile one of the
   lane's spare chains, made when the lane was taken, holds its place. Nothing is allocated or
@@ -70,7 +89,8 @@ pool at the current lead, off by default, for chains without plug-ins.
 ## Late blocks
 
 A chain its worker finished after its block's deadline is counted as a missed block of its
-track (never offline, where there is no deadline); the worker judges it when it finishes, so a
+track (never offline, where there is no deadline), unless one of its plug-ins missed that block:
+that is counted once, as the plug-in's late block; the worker judges it when it finishes, so a
 render thread busy with its own share does not make a chain late that was done in time. The
 count is the track's: an edit while playing carries it over to the new graph. The renderer publishes the total and
 the track that missed most beside the plug-in misses. `audio.info` gives `render_threads`,
@@ -80,8 +100,6 @@ line gives the late blocks, the track and the thread count.
 
 ## Not yet
 
-- Chains with plug-ins on the workers, and their round trips overlapping (phase 2,
-  [#1507](https://github.com/suhina-daw/suhina-daw/issues/1507)).
 - Physical and performance cores for Automatic
   ([#1522](https://github.com/suhina-daw/suhina-daw/issues/1522)); the workers in a macOS audio
   workgroup and the thread allowance under rtkit
@@ -90,6 +108,9 @@ line gives the late blocks, the track and the thread count.
   golden renders again ([#1521](https://github.com/suhina-daw/suhina-daw/issues/1521)).
 - The allocation test counts the render thread only: the counter it uses counts one thread, so
   the workers' loop is covered by the same chain code on one thread.
+- A joint round trip (several plug-ins of one host process in one block) stays inside a chain:
+  plug-ins of one process on different chains, now on different threads, each take a round trip
+  of their own, as before.
 - The threshold of four chains, measured ([#1512](https://github.com/suhina-daw/suhina-daw/issues/1512)).
 - Rendering ahead, Live and Studio mode, and the live path's meters (phases 3 and 4).
 - On by default (phase 5).

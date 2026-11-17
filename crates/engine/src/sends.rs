@@ -226,7 +226,8 @@ pub(crate) struct Turn {
     /// its plug-ins are waited for that many shares of the deadline sooner, so those buses
     /// still have time when one of its plug-ins is late.
     pub(crate) levels_after: u32,
-    /// It may run on a render worker ([`crate::pool`]): it has no plug-ins and is not Main.
+    /// It may run on a render worker ([`crate::pool`]): every chain but Main's, which runs once
+    /// every other is done and so beside none.
     pub(crate) parallel: bool,
     /// This block: feeders not done yet; whether it has started and whether it is done.
     left: usize,
@@ -281,12 +282,9 @@ pub(crate) fn plan_turns(chains: &mut [Chain]) {
     let all: Vec<Vec<usize>> = chains.iter().map(targets).collect();
     // A switched-off plug-in passes the sound and sends no block, so it needs no time.
     let plugins: Vec<bool> = chains.iter_mut().map(|c| c.plugin_slots().any(|s| s.enabled)).collect();
-    // A chain with any plug-in slot (or a clip host) stays on the render thread, where the
-    // plug-in path runs as it always has; the others may run on a render worker.
-    let parallel: Vec<bool> = chains
-        .iter_mut()
-        .map(|c| c.track != suhina_model::TrackId::MAIN && c.ara.is_none() && c.plugin_slots().next().is_none())
-        .collect();
+    // Every chain but Main's may run on a render worker, its plug-ins and clip host included
+    // (ADR 0038 › 4): the worker waits for them as the render thread would.
+    let parallel: Vec<bool> = chains.iter().map(|c| c.track != suhina_model::TrackId::MAIN).collect();
     let mut levels = vec![0u32; chains.len()];
     for i in (0..chains.len()).rev() {
         let after = all.get(i).map_or(&[][..], Vec::as_slice);
@@ -327,8 +325,9 @@ pub(crate) fn plan_turns(chains: &mut [Chain]) {
 /// allocates; in real time it returns by the deadline.
 ///
 /// With `pool` (a renderer's lane of the render workers) and at least [`PARALLEL_MIN`] chains
-/// that may go, the chains without plug-ins run on its workers as well as on the render thread
-/// ([`crate::pool`]): what they stage is added exactly as above, so the output is the same, bit
+/// that may go, the chains other than Main's run on its workers as well as on the render thread
+/// ([`crate::pool`]), plug-in chains too, each worker waiting for its chains' plug-ins within
+/// their deadlines: what they stage is added exactly as above, so the output is the same, bit
 /// for bit, whichever thread ran a chain. The render thread waits for a chain at a worker as
 /// long as it takes, as it would take to run it itself.
 pub(crate) fn run(
@@ -369,10 +368,8 @@ pub(crate) fn run(
         let mut moved = false;
         if let Some(pool) = pool.as_deref_mut() {
             // Chains back from the workers are done: the chains they play into may start.
-            moved |= pool.receive(chains, |chains, i, completed| {
-                if completed {
-                    release(chains, i, frames, context, capture.as_ref(), parallel);
-                }
+            moved |= pool.receive(chains, |chains, i| {
+                release(chains, i, frames, context, capture.as_ref(), parallel);
             });
             moved |= pool.distribute(chains, frames, context);
         }

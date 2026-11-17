@@ -1285,10 +1285,15 @@ impl Chain {
         }
     }
 
+    /// Blocks its plug-ins did not answer in time, so far. Never allocates.
+    pub(crate) fn plugin_misses(&mut self) -> u64 {
+        self.plugin_slots().map(|slot| slot.missed).sum()
+    }
+
     /// Blocks its plug-ins did not answer in time, for tests.
     #[cfg(test)]
     pub(crate) fn missed(&mut self) -> u64 {
-        self.plugin_slots().map(|slot| slot.missed).sum()
+        self.plugin_misses()
     }
 }
 

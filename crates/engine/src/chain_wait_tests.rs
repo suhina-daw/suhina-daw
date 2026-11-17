@@ -688,3 +688,45 @@ fn independent_returns_run_their_plug_ins_together() {
     assert!(find(&log, "r2").sent < find(&log, "r1").due, "the second return waited for the first: {log:?}");
     assert_eq!(missed_on(&mut renderer, 3) + missed_on(&mut renderer, 4), 0);
 }
+
+/// ADR 0038 › 4: the branches of a device group hand their plug-ins the block at the same time,
+/// so the group waits for its slowest branch, not the sum of its branches.
+#[test]
+fn a_groups_branches_wait_for_their_plug_ins_together() {
+    let branches = (0..3).map(|_| Branch { devices: vec![plug()], ..Branch::new("B") }).collect();
+    let p = tracks(vec![vec![Device::group("G", DeviceGroup::with_branches(branches))]]);
+    let log = Arc::default();
+    let stands =
+        vec![Timed::new("a", 0.5, SLOW, &log), Timed::new("b", 0.5, SLOW, &log), Timed::new("c", 0.5, SLOW, &log)];
+    let mut renderer = playing(&p, stands);
+    let (out, longest) = play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    assert_eq!(log.len(), 3, "every branch's plug-in had the block: {log:?}");
+    let first = find(&log, "a").sent;
+    assert!(log.iter().all(|hand| hand.sent == first), "a branch waited for another's plug-in: {log:?}");
+    assert!(longest < SLOW * 2, "the group took {longest:?}, more than its slowest branch");
+    assert_eq!(missed_on(&mut renderer, 1), 0);
+    assert!(peak(&out) > 0.0);
+}
+
+/// A slow plug-in in one branch holds up only that branch: the other branch runs its two plug-ins
+/// one after the other meanwhile, each as soon as the one before it answers.
+#[test]
+fn a_branch_goes_on_while_another_branchs_plug_in_is_out() {
+    let branches = vec![
+        Branch { devices: vec![plug()], ..Branch::new("slow") },
+        Branch { devices: vec![plug(), plug()], ..Branch::new("quick") },
+    ];
+    let p = tracks(vec![vec![Device::group("G", DeviceGroup::with_branches(branches))]]);
+    let log = Arc::default();
+    let stands = vec![
+        Timed::new("slow", 0.5, SLOW, &log),
+        Timed::new("q1", 0.5, QUICK, &log),
+        Timed::new("q2", 0.5, QUICK, &log),
+    ];
+    let mut renderer = playing(&p, stands);
+    play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    assert!(find(&log, "q2").sent < find(&log, "slow").due, "q2 waited for the slow branch: {log:?}");
+    assert_eq!(find(&log, "q2").sent, find(&log, "q1").due, "q2 went as soon as q1 answered: {log:?}");
+}

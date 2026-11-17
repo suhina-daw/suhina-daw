@@ -26,8 +26,16 @@
 //! until a worker wakes it; it never yields its core. A chain that comes back after its block's
 //! deadline (when its worker finished it) is counted as a missed block of its track.
 //!
-//! Only chains without plug-ins go to workers in this phase: plug-ins already run in their own
-//! processes, with their blocks out in parallel, and their path stays on the render thread.
+//! **Plug-in chains too** (ADR 0038 › 4, phase 2). A chain with plug-in slots is a job like any
+//! other. A worker holds up to [`HOLD`] chains at once and runs them the way the render thread
+//! runs its own ([`crate::sends::run`]): each as far as it goes without waiting, its next plug-in
+//! handed its block, and on as soon as that plug-in answers, while the worker waits for any of
+//! its chains' plug-ins together ([`suhina_ipc::wait_any`]). So the chains' round trips overlap
+//! one another and the built-in work of every thread. A live chain keeps the one-block deadline
+//! of ADR 0006 › 4: its worker waits for a plug-in only until the block's deadline, and a late
+//! plug-in is replaced for its block, as on the render thread. Offline every plug-in is waited
+//! for, so a render on any number of threads is the same as on one.
+//!
 //! Workers sleep in `park` and are woken with `unpark` (a futex wake on Linux, an event on
 //! Windows; no lock and no allocation).
 
@@ -69,6 +77,14 @@ const DEPTH: usize = 4;
 /// before it sleeps: some microseconds.
 const SPINS: usize = 2_000;
 
+/// The most chains a worker holds at once, from all its lanes: the chains whose plug-ins it
+/// waits for together.
+const HOLD: usize = 2 * DEPTH;
+
+/// How long a worker waits for its chains' plug-ins at most before it looks for new chains: a
+/// renderer that hands it one wakes a parked worker, not one waiting on its plug-ins.
+const JOB_LOOK: Duration = Duration::from_micros(500);
+
 /// The number of threads `value` (the environment variable's) asks for: 1 when it is missing,
 /// 0, or not a number, at most [`MAX_RENDER_THREADS`].
 pub fn render_threads_from(value: Option<&str>) -> usize {
@@ -105,15 +121,15 @@ struct Job {
     frames: usize,
     context: ProcessContext,
     reply_to: Thread,
+    /// The sending thread's clock, which a test may run by hand ([`crate::clock::enter`]).
+    clock: crate::clock::Handle,
 }
 
-/// A chain coming back: its index, the chain, whether it ran to the end of the block and
-/// staged its sound (false only when a plug-in took the block, which a worker's chain has none
-/// of), and whether the worker finished it after the block's deadline.
+/// A chain coming back, run to the end of its block and its sound staged: its index, the chain,
+/// and whether the worker finished it after the block's deadline.
 struct Reply {
     index: usize,
     chain: Chain,
-    completed: bool,
     late: bool,
 }
 
@@ -404,7 +420,14 @@ impl Lane {
         spare.turn = slot.turn;
         spare.turn.away = true;
         let chain = std::mem::replace(slot, spare);
-        let job = Job { index: i, chain, frames, context: *context, reply_to: std::thread::current() };
+        let job = Job {
+            index: i,
+            chain,
+            frames,
+            context: *context,
+            reply_to: std::thread::current(),
+            clock: crate::clock::handle(),
+        };
         match worker.end.jobs.push(job) {
             Ok(()) => {
                 worker.end.thread.unpark();
@@ -425,13 +448,12 @@ impl Lane {
     /// Puts every chain the workers have given back into its place in `chains`, counts a chain
     /// its worker finished after the block's deadline as a missed block of its track (ADR 0038 ›
     /// 3; judged when the worker finished, not when the render thread took it back), and calls
-    /// `back` with its index and whether it completed its block. True when one came back. Never
-    /// allocates.
-    pub(crate) fn receive(&mut self, chains: &mut [Chain], mut back: impl FnMut(&mut [Chain], usize, bool)) -> bool {
+    /// `back` with its index. True when one came back. Never allocates.
+    pub(crate) fn receive(&mut self, chains: &mut [Chain], mut back: impl FnMut(&mut [Chain], usize)) -> bool {
         let mut any = false;
         for w in 0..self.workers.len() {
             while let Some(worker) = self.workers.get_mut(w)
-                && let Ok(Reply { index, chain, completed, late }) = worker.end.replies.pop()
+                && let Ok(Reply { index, chain, late }) = worker.end.replies.pop()
             {
                 if let Some(slot) = chains.get_mut(index) {
                     let mut chain = chain;
@@ -441,7 +463,7 @@ impl Lane {
                     }
                     worker.spares.push(std::mem::replace(slot, chain));
                 }
-                back(chains, index, completed);
+                back(chains, index);
                 any = true;
             }
         }
@@ -479,41 +501,119 @@ impl Drop for Lane {
     }
 }
 
-/// A worker's loop: takes the next chain, real-time lanes first, runs it over the rest of its
-/// block and stages it, gives it back and wakes the render thread that sent it, until the pool
-/// is dropped.
+/// A chain a worker holds: the lane it came from, the job, and its track's plug-in misses when
+/// it came, so a block late only because a plug-in was late is counted once, as the plug-in's.
+struct Held {
+    lane: usize,
+    job: Job,
+    misses: u64,
+}
+
+/// A worker's loop, until the pool is dropped: takes chains, real-time lanes first, while it holds
+/// fewer than [`HOLD`]; runs each as far as it goes without waiting; takes each plug-in's answer
+/// as it comes and runs that chain on; and gives each chain back, run and staged, as soon as it is
+/// done, waking the render thread that sent it. With nothing to do it parks.
 fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
     let mut realtime: Option<suhina_realtime::RealTime> = None;
+    let mut held: [Option<Held>; HOLD] = std::array::from_fn(|_| None);
     while !shared.stop.load(Ordering::Acquire) {
         let frames = shared.real_time.load(Ordering::Acquire);
         if shared.real_time_pool && frames > 0 && realtime.is_none() {
             let rate = u32::try_from(shared.real_time_rate.load(Ordering::Acquire)).unwrap_or(48_000);
             realtime = Some(suhina_realtime::RealTime::join(frames, rate));
         }
-        let Some((lane, job)) = next_job(shared, &mut lanes) else {
+        let started = Instant::now();
+        // New chains, while there is room: each runs as far as it goes at once.
+        while let Some(room) = held.iter_mut().find(|h| h.is_none()) {
+            let Some((lane, mut job)) = next_job(shared, &mut lanes) else { break };
+            crate::clock::enter(&job.clock);
+            let misses = job.chain.plugin_misses();
+            job.chain.advance(job.frames, &job.context);
+            *room = Some(Held { lane, job, misses });
+        }
+        if held.iter().all(Option::is_none) {
             std::thread::park();
             if let Some(rt) = realtime.as_mut() {
                 rt.waited();
             }
             continue;
-        };
-        let Job { index, mut chain, frames, context, reply_to } = job;
-        let started = Instant::now();
-        let completed = !chain.advance(frames, &context);
-        if completed {
-            chain.complete(frames, &context);
-            chain.stage(frames);
         }
-        let late = chain.past_deadline(crate::clock::now());
-        // Never full: the ring holds DEPTH replies, and the worker holds at most DEPTH chains
-        // of a lane.
-        if let Some(end) = lanes.get_mut(lane) {
-            let _ = end.replies.push(Reply { index, chain, completed, late });
+        // Answers in: those chains go on; chains with nothing out are done.
+        let now = crate::clock::now();
+        let mut moved = false;
+        for entry in held.iter_mut() {
+            let Some(h) = entry.as_mut() else { continue };
+            crate::clock::enter(&h.job.clock);
+            let now = crate::clock::now();
+            if h.job.chain.is_waiting() && h.job.chain.answered(now) {
+                h.job.chain.collect(h.job.frames);
+                h.job.chain.advance(h.job.frames, &h.job.context);
+                moved = true;
+            }
+            if !h.job.chain.is_waiting()
+                && let Some(Held { lane, job, misses }) = entry.take()
+            {
+                give_back(&mut lanes, lane, job, misses);
+                moved = true;
+            }
         }
-        reply_to.unpark();
         if let Some(rt) = realtime.as_mut() {
             rt.worked(started.elapsed());
         }
+        if moved {
+            continue;
+        }
+        wait_for_plugins(&mut held, now);
+        if let Some(rt) = realtime.as_mut() {
+            rt.waited();
+        }
+    }
+}
+
+/// Runs the rest of a chain's block, stages its sound and sends it back to the render thread
+/// that sent it, which it wakes. The chain is late when its worker finished it after the block's
+/// deadline, unless one of its plug-ins missed the block: that miss is already counted as the
+/// plug-in's. Never allocates.
+fn give_back(lanes: &mut [WorkerEnd], lane: usize, job: Job, misses: u64) {
+    let Job { index, mut chain, frames, context, reply_to, clock } = job;
+    crate::clock::enter(&clock);
+    chain.complete(frames, &context);
+    chain.stage(frames);
+    let late = chain.past_deadline(crate::clock::now()) && chain.plugin_misses() == misses;
+    // Never full: the ring holds DEPTH replies, and the worker holds at most DEPTH chains of a
+    // lane.
+    if let Some(end) = lanes.get_mut(lane) {
+        let _ = end.replies.push(Reply { index, chain, late });
+    }
+    reply_to.unpark();
+}
+
+/// While none of the chains a worker holds has an answer in: sleeps until one of their plug-ins
+/// answers, the earliest of their limits passes, or [`JOB_LOOK`] has passed, so a chain sent to
+/// it meanwhile is not held up long. When one of them cannot be watched, it waits on the first
+/// one for at most [`crate::chain::ANSWER_SLICE`]. Never allocates.
+fn wait_for_plugins(held: &mut [Option<Held>], now: Instant) {
+    let waiting = |h: &&Option<Held>| h.as_ref().is_some_and(|h| h.job.chain.is_waiting());
+    let all = held.iter().filter(waiting).count();
+    let mut watches: [Option<suhina_ipc::Watch>; HOLD] = [None; HOLD];
+    let mut until = now.checked_add(JOB_LOOK).unwrap_or(now);
+    let mut watched = 0;
+    for h in held.iter().filter(waiting).filter_map(Option::as_ref) {
+        if let (Some(watch), Some(slot)) = (h.job.chain.watch(), watches.get_mut(watched)) {
+            *slot = Some(watch);
+            watched += 1;
+        }
+        if let Some(limit) = h.job.chain.limit() {
+            until = until.min(limit);
+        }
+    }
+    if watched > 0 && watched == all {
+        suhina_ipc::wait_any(watches.get(..watched).unwrap_or_default(), until);
+        return;
+    }
+    if let Some(h) = held.iter_mut().filter_map(Option::as_mut).find(|h| h.job.chain.is_waiting()) {
+        crate::clock::enter(&h.job.clock);
+        h.job.chain.answered(crate::clock::now() + crate::chain::ANSWER_SLICE);
     }
 }
 

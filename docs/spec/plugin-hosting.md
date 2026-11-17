@@ -232,8 +232,8 @@ device takes more than a block at once. WASAPI offers sizes up to 2048 frames: p
 shared stream only gains latency, and interfaces refuse such an exclusive period (N48). Where the device's buffer is not Suhina's to set, the
 Settings row says *Engine block*, since the number is the engine's block and not the device's
 buffer. The session counts each plug-in's blocks and late blocks
-(`device.plugin`: `blocks`, `late_blocks`, `longest_us`, `no_time`), and the device panel
-shows the share. Even so the sum of 25 plug-ins' times (a heavy synth up to 9 ms a block)
+(`device.plugin`: `blocks`, `late_blocks`, `longest_us`, `no_time`, `longest_process_us`,
+`average_process_us`), and the device panel shows the share. Even so the sum of 25 plug-ins' times (a heavy synth up to 9 ms a block)
 passed the budget on half the blocks, so the chains no chain plays into now run their
 plug-ins *at the same time*: every chain hands its block to its first plug-in
 (`Link::send_with_events`, `PluginProcessor::send`); then the engine looks at the chains
@@ -272,13 +272,29 @@ event, a millisecond at a time, so the others are still looked at), and
 `suhina_ipc::a_wait_failed` says it happened. A chain whose plug-in has not answered by the deadline misses that block, as before;
 the others are not held up by it. An offline render gives each block out `OFFLINE_TIMEOUT`
 from when it went. `longest_us` is each plug-in's longest round trip, timed from the block's
-hand-over, since the engine may look at other chains before it takes an answer. A plug-in still at a block it was late with (one whose answer
+hand-over, since the engine may look at other chains before it takes an answer.
+`longest_process_us` and `average_process_us` are the plug-in's own processing time: the host's
+audio thread reads the clock around each instance's part of a block (its own and each follower's
+in a joint block) and hands the times back with the answer (`suhina_ipc::Laps`,
+`Link::process_us`, `Link::follower_process_us`; region version 4,
+[plug-in protocol](plugin-protocol.md)). A follower's time reaches it through the engine
+(`PluginProcessor::follower_process_us`, `followed_process_us`); a block given up on gives its
+times once its late answer is in, before the plug-in's next block goes. Beside the round trip
+it tells a slow plug-in from a host that woke late (#1262, [debugging](../debugging.md) ›
+Audio dropouts). A plug-in still at a block it was late with (one whose answer
 came after its deadline, as when a synthesizer takes longer over the notes of a start or a
 stop's all-notes-off) is waited for like an answer: its chain hands it the next block as
 soon as it is done (`PluginProcessor::ready`, `PluginAudio::ready`, `Link::wait_ready`),
 while the other chains go on, and only until that block's deadline (#506). Only a plug-in
 late with the block before alone is waited for; one that has not answered several in a row
-(hung, or far behind) is not. Measured with `measure_quick_play_and_stop` (see
+(hung, or far behind) is not. With render threads ([render threads](render-threads.md)), every
+chain but Main's may run on a render worker, plug-in chains too (#1507, ADR 0038 › 4): a worker
+runs the chains it holds the same way, each on to its next plug-in as soon as the one before
+answers, waiting for all their plug-ins together, until each block's deadline. Inside a chain,
+the branches of a device group send their plug-ins the block at the same time, and the group goes
+on with each branch as its plug-in answers, so it takes as long as its slowest branch. Each
+plug-in's time counts from the block's start: a plug-in whose input is ready is sent at once, and
+its deadline is the block's, not a share left over by the plug-in before it. Measured with `measure_quick_play_and_stop` (see
 *Measurements*): an instrument that took longer than a whole block over each press of play or
 stop lost two blocks a press, the late one and the next, refused, with the notes it
 brought; it now loses the late one only. A host still busy when the deadline comes refuses

@@ -786,6 +786,12 @@ impl Renderer {
         self.pool = pool::RenderPool::new(threads - 1, self.pool_kind()).and_then(|pool| pool.lane(self.sample_rate));
     }
 
+    /// The chains this renderer has sent to render workers so far, for tests that check a render
+    /// used them.
+    pub fn chains_sent_to_workers(&self) -> u64 {
+        self.pool.as_ref().map_or(0, |lane| lane.sent)
+    }
+
     /// The threads that render each block, the render thread included.
     pub fn render_threads(&self) -> usize {
         self.pool.as_ref().map_or(1, pool::Lane::threads)

@@ -57,6 +57,7 @@ fn a_worker_takes_the_lanes_that_play_to_a_device_first() {
         frames: 64,
         context: ProcessContext::default(),
         reply_to: std::thread::current(),
+        clock: crate::clock::handle(),
     };
     // Lane 0 renders offline, lane 2 plays: lane 2's chain goes first though lane 0 queued first.
     for (lane, index) in [(0usize, 10usize), (2, 20)] {
@@ -238,4 +239,93 @@ fn an_offline_renderer_renders_on_an_offline_pool() {
     assert_eq!(renderer.render_threads(), 3, "turning it offline keeps its threads");
     renderer.set_offline(false);
     assert_eq!(renderer.pool.as_ref().map(Lane::kind), Some(PoolKind::RealTime));
+}
+
+/// A stand-in for a hosted plug-in: hands its block out ([`PluginProcessor::send`]) and gives back
+/// the sound bent through a curve of its own, as a host process would after a round trip.
+struct Bend {
+    drive: f32,
+    result: Vec<f32>,
+}
+
+impl crate::PluginProcessor for Bend {
+    fn process(&mut self, buffer: &mut [f32], _: &[(usize, suhina_device_api::NoteEvent)], _: Duration) -> bool {
+        buffer.iter_mut().for_each(|s| *s = (*s * self.drive).tanh());
+        true
+    }
+
+    fn send(&mut self, buffer: &[f32], _: &[(usize, suhina_device_api::NoteEvent)], _: Duration) -> crate::Sent {
+        self.result.clear();
+        self.result.extend(buffer.iter().map(|s| (s * self.drive).tanh()));
+        crate::Sent::Out
+    }
+
+    fn wait(&mut self, buffer: &mut [f32], _: Duration) -> bool {
+        let len = buffer.len().min(self.result.len());
+        buffer[..len].copy_from_slice(&self.result[..len]);
+        true
+    }
+}
+
+/// [`project`] with a plug-in after every track's instrument, and a device group with a plug-in
+/// in each of its two branches on the group track.
+fn plug_in_project() -> suhina_model::Project {
+    let plug =
+        |n: u32| Device { name: format!("P{n}"), ..Device::new("plug", DeviceKind::Vst3 { id: format!("{n:032}") }) };
+    let mut p = project();
+    for (n, channel) in (1u32..).zip(p.channels.iter_mut()) {
+        let at = channel.devices.len().min(1);
+        channel.devices.insert(at, plug(n));
+        if channel.id == ChannelId(5) {
+            let branches = vec![
+                suhina_model::Branch { devices: vec![plug(100)], ..suhina_model::Branch::new("A") },
+                suhina_model::Branch { devices: vec![plug(101), device("eq", &[])], ..suhina_model::Branch::new("B") },
+            ];
+            channel.devices.push(Device::group("G", suhina_model::DeviceGroup::with_branches(branches)));
+        }
+    }
+    p
+}
+
+/// [`plug_in_project`]'s first `blocks` blocks rendered offline on `threads` threads, and the
+/// chains sent to workers.
+fn render_plug_ins(threads: usize, blocks: usize) -> (Vec<f32>, u64) {
+    let p = plug_in_project();
+    let mut plugins = crate::Plugins::new();
+    for (n, found) in crate::plugin_devices(&p).into_iter().enumerate() {
+        let processor = Bend { drive: 1.0 + n as f32 * 0.25, result: Vec::with_capacity(BLOCK * 2) };
+        plugins.insert(found.key, crate::PluginSlotInfo { instrument: false, latency: 0 }, Box::new(processor));
+    }
+    let mut renderer = Renderer::build(
+        &p,
+        crate::RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins),
+        SR,
+        crate::RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_offline(true);
+    renderer.set_render_threads(threads);
+    let mut out = Vec::with_capacity(blocks * BLOCK * 2);
+    let mut block = vec![0.0f32; BLOCK * 2];
+    for _ in 0..blocks {
+        renderer.process(&mut block);
+        out.extend_from_slice(&block);
+    }
+    (out, renderer.chains_sent_to_workers())
+}
+
+/// ADR 0038 › 4: chains with plug-ins go to the workers too, and a render on any number of threads
+/// is still the render on one, bit for bit, plug-ins in groups included.
+#[test]
+fn plug_in_chains_render_on_several_threads_as_on_one_bit_for_bit() {
+    let blocks = SR as usize / BLOCK;
+    let (alone, sent) = render_plug_ins(1, blocks);
+    assert_eq!(sent, 0);
+    assert!(suhina_test_support::peak(&alone) > 0.01, "the project plays");
+    for threads in [2, 4, 8] {
+        let (parallel, sent) = render_plug_ins(threads, blocks);
+        assert!(sent >= blocks as u64, "{threads} threads sent {sent} chains to workers");
+        assert!(bits(&parallel) == bits(&alone), "{threads} threads render other samples than one");
+    }
 }
