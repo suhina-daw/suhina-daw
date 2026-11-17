@@ -86,6 +86,33 @@ fn may_probe(path: &Path) -> bool {
         && !path.components().any(|c| matches!(c, std::path::Component::ParentDir))
 }
 
+/// How many folders above the project an FL path variable's folder is looked for.
+const FL_DATA_DEPTH: usize = 8;
+
+/// A sample stored under one of FL's path variables (`%FLStudioDownloadsData%/FL CLOUD
+/// Sounds/…`, `%FLStudioUserData%/…`): FL keeps these folders in its shared data folder
+/// (`Downloads` and `FL Studio`), which holds its projects too, so it is looked for above the
+/// project. The factory data's variable names FL's install folder and is not followed. Only
+/// existing regular files on a local disk, without symlinks, count.
+fn fl_variable_path(file: &str, folder: &Path) -> Option<String> {
+    let rest = file.strip_prefix('%')?;
+    let (variable, rest) = rest.split_once('%')?;
+    let below = match variable.to_ascii_lowercase().as_str() {
+        "flstudiodownloadsdata" => "Downloads",
+        "flstudiouserdata" => "FL Studio",
+        _ => return None,
+    };
+    let rest = Path::new(rest.trim_start_matches(['/', '\\']));
+    if rest.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+        return None;
+    }
+    folder.ancestors().take(FL_DATA_DEPTH).find_map(|data| {
+        let path = data.join(below).join(rest);
+        let plain = !std::fs::symlink_metadata(&path).ok()?.file_type().is_symlink();
+        (plain && may_probe(&path) && path.is_file()).then(|| path.to_string_lossy().replace('\\', "/"))
+    })
+}
+
 /// Points each sample at a file that is there and returns the references it resolved, the only
 /// sample paths the rest of the import reads.
 fn relocate_samples(
@@ -94,6 +121,9 @@ fn relocate_samples(
     library: impl FnOnce(&[String]) -> Vec<Option<PathBuf>>,
 ) -> BTreeSet<String> {
     let resolve = |file: &str| -> Option<String> {
+        if let Some(found) = fl_variable_path(file, folder) {
+            return Some(found);
+        }
         let stored = Path::new(file);
         if may_probe(stored) && stored.is_file() {
             return Some(file.to_owned());
@@ -156,12 +186,29 @@ fn relocate_samples(
             missing.insert(file);
         }
     }
+    // Each found file's header, read once: an audio clip's length, rate and channels, which
+    // tempo, stretch and warp edits need (`clip.setTempo`).
+    let mut infos: BTreeMap<String, Option<suhina_media::info::SampleInfo>> = BTreeMap::new();
     for content in &mut import.project.contents {
         for lane in content.lanes.iter_mut() {
             let LaneData::Audio(region) = &mut lane.data else {
                 continue;
             };
             if let Some(local) = resolved.get(&region.file) {
+                let info = infos
+                    .entry(local.clone())
+                    .or_insert_with(|| {
+                        let path =
+                            if Path::new(local).is_absolute() { PathBuf::from(local) } else { folder.join(local) };
+                        suhina_media::info::sample_info(&path).ok()
+                    })
+                    .as_ref();
+                if let Some(info) = info {
+                    region.duration_seconds =
+                        region.duration_seconds.or(info.duration_seconds.filter(|s| s.is_finite() && *s > 0.));
+                    region.sample_rate = region.sample_rate.or(info.sample_rate);
+                    region.channels = region.channels.or(info.channels);
+                }
                 if region.absolute_file.is_none() && Path::new(&region.file).is_absolute() {
                     region.absolute_file = Some(region.file.clone());
                 }

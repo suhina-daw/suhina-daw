@@ -231,8 +231,13 @@ project names is decided from the path alone and never touched
 stored relative path (or an absolute path already inside the project directory), then the
 filename beside the project, in the subdirectory its stored path names (FL records into an
 `Audio` folder beside the project, so a moved project finds its takes there) and in its
-Samples, Recorded and Rendered subdirectories,
-then the caller's library candidates as described below. Only existing regular
+Samples, Recorded and Rendered subdirectories. A path under FL's own variables,
+`%FLStudioDownloadsData%` (FL CLOUD Sounds and other downloads) or `%FLStudioUserData%`, names
+a folder in FL's shared data folder (`Downloads` and `FL Studio`), which usually holds the
+projects too: it is looked for in up to eight folders above the project, local regular files
+only; `%FLStudioFactoryData%` names FL's install folder and is not followed. A found audio
+clip's file gives its length, sample rate and channels from its header, which tempo, stretch
+and warp edits need. Then come the caller's library candidates as described below. Only existing regular
 files are used; no parent traversal or symlinks are followed. A local match becomes a relative
 reference while the original absolute reference is retained. Stretch timing reads a sample's
 duration only from a file resolved this way. Missing media is reported,

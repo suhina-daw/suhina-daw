@@ -1222,3 +1222,55 @@ fn a_moved_projects_samples_are_found_in_their_own_folder_beside_it() {
     assert!(!found.warnings.iter().any(|w| w.contains("Sample not found")));
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// A sample stored under FL's downloads variable is found in FL's shared data folder above the
+/// project, and its audio clip knows its file's length, so its tempo can be set.
+#[test]
+fn a_sample_under_fls_downloads_variable_is_found_with_its_length() {
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let data = std::env::temp_dir().join(format!("suhina-fl-data-{}-{nonce}", std::process::id()));
+    let project = data.join("FL Studio/Projects/Song");
+    std::fs::create_dir_all(&project).unwrap();
+    // One second, 8 kHz mono PCM, authored here.
+    let mut wav = b"RIFF".to_vec();
+    wav.extend(16036u32.to_le_bytes());
+    wav.extend(b"WAVEfmt ");
+    wav.extend(16u32.to_le_bytes());
+    wav.extend(1u16.to_le_bytes());
+    wav.extend(1u16.to_le_bytes());
+    wav.extend(8000u32.to_le_bytes());
+    wav.extend(16000u32.to_le_bytes());
+    wav.extend(2u16.to_le_bytes());
+    wav.extend(16u16.to_le_bytes());
+    wav.extend(b"data");
+    wav.extend(16000u32.to_le_bytes());
+    wav.resize(16044, 0);
+    std::fs::create_dir_all(data.join("Downloads/FL CLOUD Sounds")).unwrap();
+    std::fs::write(data.join("Downloads/FL CLOUD Sounds/loop.wav"), &wav).unwrap();
+    let mut e = Vec::new();
+    event(&mut e, 64, &2u16.to_le_bytes());
+    event(&mut e, 21, &[4]);
+    text(&mut e, 196, "%FLStudioDownloadsData%/FL CLOUD Sounds/loop.wav");
+    event(&mut e, 51, &[0]);
+    let mut clip = [0u8; 32];
+    clip[4..6].copy_from_slice(&0x5000u16.to_le_bytes());
+    clip[6..8].copy_from_slice(&2u16.to_le_bytes());
+    clip[8..12].copy_from_slice(&192u32.to_le_bytes());
+    clip[12..14].copy_from_slice(&499u16.to_le_bytes());
+    event(&mut e, 233, &clip);
+    let path = project.join("song.flp");
+    std::fs::write(&path, appended(fixture(96, 32), &e)).unwrap();
+    let imported = suhina_flp::import_file(&path).unwrap();
+    assert!(!imported.warnings.iter().any(|w| w.contains("loop.wav")), "{:?}", imported.warnings);
+    let region = imported
+        .project
+        .contents
+        .iter()
+        .flat_map(|c| c.lanes.iter())
+        .find_map(|l| if let LaneData::Audio(r) = &l.data { Some(r.clone()) } else { None })
+        .unwrap();
+    assert!(region.file.ends_with("Downloads/FL CLOUD Sounds/loop.wav"), "{}", region.file);
+    assert_eq!(region.duration_seconds, Some(1.0));
+    assert_eq!(region.sample_rate, Some(8000));
+    let _ = std::fs::remove_dir_all(&data);
+}
