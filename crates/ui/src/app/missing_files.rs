@@ -6,6 +6,7 @@
 //! file dropped or a path pasted) tells where the others went: its folder, the folder it moved
 //! into, and that folder's subfolders are looked in for them.
 
+use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -132,10 +133,10 @@ impl Row {
         }
     }
 
-    /// Drops the candidates no longer on disk (Search again): one found earlier that moved or
-    /// was deleted is not offered, and a choice by hand of such a file is undone.
-    fn forget_gone(&mut self) {
-        self.candidates.retain(|path| path.is_file());
+    /// Drops the candidates in `gone`, those no longer on disk (Search again): one found earlier
+    /// that moved or was deleted is not offered, and a choice by hand of such a file is undone.
+    fn forget_gone(&mut self, gone: &BTreeSet<PathBuf>) {
+        self.candidates.retain(|path| !gone.contains(path));
         if self.chosen.as_ref().is_some_and(|chosen| !self.candidates.contains(chosen)) {
             self.by_hand = false;
         }
@@ -160,6 +161,25 @@ struct Walk {
     walked: Arc<AtomicUsize>,
     done: Receiver<Result<Walked, String>>,
     folder: PathBuf,
+}
+
+/// Search again's look at the disk, on another thread: the candidates and the index's paths
+/// that have gone are told apart there, so a network share that does not answer never holds
+/// up the window.
+struct Recheck {
+    done: Receiver<Rechecked>,
+}
+
+/// What a [`Recheck`] found: the candidates no longer on disk, and the index's finds that are.
+struct Rechecked {
+    gone: BTreeSet<PathBuf>,
+    found: Found,
+}
+
+/// Looks at the disk for `candidates` and `found` (a [`Recheck`]'s thread).
+fn recheck(candidates: BTreeSet<PathBuf>, found: Found) -> Rechecked {
+    let gone = candidates.into_iter().filter(|path| !path.is_file()).collect();
+    Rechecked { gone, found: still_on_disk(found) }
 }
 
 /// Which rows the table shows.
@@ -205,6 +225,7 @@ pub struct MissingFiles {
     /// The folder typed into the panel's search field.
     pub folder: String,
     walk: Option<Walk>,
+    recheck: Option<Recheck>,
     pub note: Option<String>,
     /// The row picked (by its file), shown in the panel at the right.
     pub selected: Option<String>,
@@ -248,6 +269,7 @@ impl MissingFiles {
                 walk.stop.store(true, Ordering::Relaxed);
             }
             self.queued.clear();
+            self.recheck = None;
         }
         self.checked = Some((active, revision));
         let Some(session) = projects.get(active) else { return };
@@ -274,9 +296,6 @@ impl MissingFiles {
                     by_hand: false,
                 });
                 (row.clips, row.samplers) = (m.clips, m.samplers);
-                if again {
-                    row.forget_gone();
-                }
                 row
             })
             .collect();
@@ -285,12 +304,14 @@ impl MissingFiles {
             return;
         }
         let names = self.names();
-        let mut found = projects.file_library_mut().find_by_names(&names);
-        // Search again looks at the disk: the index may still list a file that has gone since.
+        let found = projects.file_library_mut().find_by_names(&names);
+        // Search again looks at the disk, on a thread: a candidate found earlier may have gone,
+        // and the index may still list a file that has gone since.
         if again {
-            found = still_on_disk(found);
+            self.start_recheck(found);
+        } else {
+            self.take(found);
         }
-        self.take(found);
         if !self.selected.as_ref().is_some_and(|s| self.rows.iter().any(|r| &r.file == s)) {
             self.selected = self.rows.iter().find(|r| r.chosen.is_none()).or(self.rows.first()).map(|r| r.file.clone());
         }
@@ -338,15 +359,59 @@ impl MissingFiles {
         let (send, done) = channel();
         let (s, w, f) = (Arc::clone(&stop), Arc::clone(&walked), folder.clone());
         let started = std::thread::Builder::new().name("suhina-find-files".into()).spawn(move || {
-            let _ = send.send(walk_for_names(&f, &names, &s, &w));
+            // A file the walk saw may have gone before it ended (a Search again since): looked
+            // at here, off the window's thread.
+            let _ = send.send(on_disk(walk_for_names(&f, &names, &s, &w)));
         });
         if started.is_ok() {
             self.walk = Some(Walk { stop, walked, done, folder });
         }
     }
 
-    /// Takes in a finished walk. Returns whether one is still going.
+    /// Search again's look at the disk for the rows' candidates and `found`, on a thread.
+    fn start_recheck(&mut self, found: Found) {
+        let candidates = self.rows.iter().flat_map(|r| r.candidates.iter().chain(&r.chosen)).cloned().collect();
+        let (send, done) = channel();
+        let started = std::thread::Builder::new().name("suhina-recheck-files".into()).spawn(move || {
+            let _ = send.send(recheck(candidates, found));
+        });
+        if started.is_ok() {
+            self.recheck = Some(Recheck { done });
+        }
+    }
+
+    /// Takes in what Search again's look at the disk found.
+    fn finish_recheck(&mut self, rechecked: Rechecked) {
+        self.recheck = None;
+        for row in &mut self.rows {
+            row.forget_gone(&rechecked.gone);
+        }
+        self.take(rechecked.found);
+        if !self.selected.as_ref().is_some_and(|s| self.rows.iter().any(|r| &r.file == s)) {
+            self.selected = self.rows.iter().find(|r| r.chosen.is_none()).or(self.rows.first()).map(|r| r.file.clone());
+        }
+    }
+
+    /// Takes in a finished walk and Search again's look at the disk. Returns whether either is
+    /// still going.
     fn poll(&mut self) -> bool {
+        let rechecking = match self.recheck.as_ref().map(|r| r.done.try_recv()) {
+            Some(Ok(rechecked)) => {
+                self.finish_recheck(rechecked);
+                false
+            }
+            Some(Err(std::sync::mpsc::TryRecvError::Empty)) => true,
+            Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                self.recheck = None;
+                false
+            }
+            None => false,
+        };
+        self.poll_walk() || rechecking
+    }
+
+    /// Takes in a finished walk. Returns whether one is still going.
+    fn poll_walk(&mut self) -> bool {
         let Some(walk) = &self.walk else { return false };
         match walk.done.try_recv() {
             // A folder waiting starts as one ends: polling goes on for it.
@@ -369,8 +434,7 @@ impl MissingFiles {
             Some(Ok(walked)) => {
                 let folder = walk.folder.display().to_string();
                 let before = self.found_count();
-                // A file the walk saw may have gone before it ended (a Search again since).
-                self.take(still_on_disk(walked.found));
+                self.take(walked.found);
                 let more = self.found_count().saturating_sub(before);
                 self.note = Some(match walked.note {
                     Some(note) => format!("{folder}: {note}"),
@@ -395,6 +459,14 @@ impl MissingFiles {
     fn wait_for_walk(&mut self) {
         let result = self.walk.as_ref().and_then(|walk| walk.done.recv().ok());
         self.finish_walk(result);
+    }
+
+    /// Waits for Search again's look at the disk and takes in what it found (tests).
+    #[cfg(test)]
+    fn wait_for_recheck(&mut self) {
+        if let Some(rechecked) = self.recheck.as_ref().and_then(|r| r.done.recv().ok()) {
+            self.finish_recheck(rechecked);
+        }
     }
 
     fn found_count(&self) -> usize {
@@ -1428,6 +1500,11 @@ fn show_in_folder_label() -> &'static str {
     } else {
         "Show in folder"
     }
+}
+
+/// A walk's result with its finds no longer on disk left out (its thread).
+fn on_disk(walked: Result<Walked, String>) -> Result<Walked, String> {
+    walked.map(|walked| Walked { found: still_on_disk(walked.found), ..walked })
 }
 
 /// `found` without the paths no longer on disk.

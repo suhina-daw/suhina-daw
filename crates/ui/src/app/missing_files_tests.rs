@@ -51,11 +51,12 @@ fn search_again_forgets_the_files_that_are_gone() {
     let mut r = row("kick.wav", "/old/Drums/kick.wav");
     r.offer(vec![dir.join("Old/kick.wav"), kept.clone()]);
     r.choose(dir.join("Moved/kick.wav"));
-    r.forget_gone();
+    let looked = |r: &Row| recheck(r.candidates.iter().cloned().collect(), Vec::new()).gone;
+    r.forget_gone(&looked(&r));
     assert_eq!(r.candidates, vec![kept.clone()]);
     assert_eq!((r.chosen.clone(), r.by_hand), (Some(kept.clone()), false));
     std::fs::remove_file(&kept).unwrap();
-    r.forget_gone();
+    r.forget_gone(&looked(&r));
     assert_eq!((r.chosen.clone(), r.state()), (None, State::Missing));
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -269,26 +270,35 @@ fn search_again_is_not_lost_during_a_walk() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// A walk's finds are looked at on disk when it ends: a file it saw that has gone since is not
-/// offered.
+/// A walk's finds are looked at on disk on its own thread as it ends: a file it saw that has
+/// gone since is not offered.
 #[test]
 fn a_walk_s_finds_that_went_meanwhile_are_not_offered() {
     let dir = temp("walk-gone");
     let there = dir.join("Drums/kick.wav");
     file(&there);
-    let (send, done) = channel();
-    let walk = Walk {
-        stop: Arc::new(AtomicBool::new(false)),
-        walked: Arc::new(AtomicUsize::new(0)),
-        done,
-        folder: dir.clone(),
-    };
-    let mut missing =
-        MissingFiles { rows: vec![row("kick.wav", "/gone/kick.wav")], walk: Some(walk), ..MissingFiles::default() };
     let found = vec![("kick.wav".to_string(), vec![dir.join("Old/kick.wav"), there.clone()])];
-    send.send(Ok(Walked { found, note: None })).unwrap();
-    missing.wait_for_walk();
-    assert_eq!(missing.rows[0].candidates, vec![there]);
+    let walked = on_disk(Ok(Walked { found, note: None })).unwrap();
+    assert_eq!(walked.found, vec![("kick.wav".to_string(), vec![there])]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Search again looks at the disk on a thread: when it answers, a candidate that has gone is
+/// dropped and what the index lists that is still there is offered.
+#[test]
+fn search_again_looks_at_the_disk_on_a_thread() {
+    let dir = temp("recheck");
+    let there = dir.join("Drums/kick.wav");
+    file(&there);
+    let mut r = row("kick.wav", "/old/Drums/kick.wav");
+    r.offer(vec![dir.join("Gone/kick.wav")]);
+    let mut missing = MissingFiles { rows: vec![r], ..MissingFiles::default() };
+    missing.start_recheck(vec![("kick.wav".to_string(), vec![dir.join("Old/kick.wav"), there.clone()])]);
+    assert_eq!(missing.rows[0].candidates, vec![dir.join("Gone/kick.wav")], "unchanged until it answers");
+    missing.wait_for_recheck();
+    assert!(missing.recheck.is_none());
+    assert_eq!(missing.rows[0].candidates, vec![there.clone()]);
+    assert_eq!(missing.rows[0].chosen, Some(there));
     let _ = std::fs::remove_dir_all(dir);
 }
 
