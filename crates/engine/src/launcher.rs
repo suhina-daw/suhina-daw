@@ -374,6 +374,11 @@ pub struct LauncherMonitor {
     pub(crate) plugin_misses: AtomicU64,
     pub(crate) worst_plugin: AtomicU64,
     pub(crate) worst_misses: AtomicU64,
+    /// Blocks a chain came back from a render worker after its deadline (ADR 0038 › 3), and
+    /// the track (its id) that missed most with its count.
+    pub(crate) render_misses: AtomicU64,
+    pub(crate) worst_render_track: AtomicU64,
+    pub(crate) worst_render_misses: AtomicU64,
     /// Plug-in blocks that were not sent at all (the host was still busy with an earlier one),
     /// summed over the playing graph's slots.
     pub(crate) plugin_blocked: AtomicU64,
@@ -447,6 +452,9 @@ impl LauncherMonitor {
             plugin_misses: AtomicU64::new(0),
             worst_plugin: AtomicU64::new(0),
             worst_misses: AtomicU64::new(0),
+            render_misses: AtomicU64::new(0),
+            worst_render_track: AtomicU64::new(0),
+            worst_render_misses: AtomicU64::new(0),
             plugin_blocked: AtomicU64::new(0),
             worst_trip: AtomicU32::new(0),
             frames_per_beat: AtomicU64::new(0),

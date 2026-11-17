@@ -223,6 +223,12 @@ jobs:
       # the next window at that moment has its connection reset.
       - run: xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" cargo test --workspace
         if: runner.os == 'Linux'
+      # The engine's tests again with every renderer on 4 threads (ADR 0038 › 16): a render on
+      # several threads must equal the render on one, bit for bit.
+      - name: Engine tests on 4 render threads
+        run: cargo test -p suhina-engine
+        env:
+          SUHINA_RENDER_THREADS: "4"
 
   # Not part of `ci`: a macOS failure is reported but does not block merging.
   check-macos:

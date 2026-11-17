@@ -116,6 +116,9 @@ pub(crate) struct Chain {
     /// When in a block it runs: after the chains that play into it (#1261), and with how much
     /// of the deadline (see [`crate::sends::Turn`]).
     pub(crate) turn: crate::sends::Turn,
+    /// Blocks it came back from a render worker after their deadline (ADR 0038 › 3): what
+    /// waiting for it cost, counted for its track.
+    pub(crate) missed_blocks: u64,
     /// What it adds to its bus or the output and to the cue bus, staged when it is done
     /// ([`Chain::stage`]) and added in chain order, so a sum never depends on which plug-in
     /// answered first.
@@ -362,6 +365,7 @@ impl Chain {
             span_events: Vec::with_capacity(MAX_PENDING * 2),
             midi_scratch: Vec::with_capacity(MAX_PENDING * 2),
             deadline: None,
+            missed_blocks: 0,
             context: ProcessContext::default(),
             sample_rate: f64::from(sample_rate),
             done: 0,
@@ -416,6 +420,7 @@ impl Chain {
             span_events: Vec::new(),
             midi_scratch: Vec::new(),
             deadline: None,
+            missed_blocks: 0,
             context: ProcessContext::default(),
             // No devices read it; the live volume's smoothing does.
             sample_rate: f64::from(sample_rate),
@@ -716,6 +721,11 @@ impl Chain {
             Some(DeviceSlot::Plugin(plugin)) => plugin.watch(self.behind == Some(index)),
             _ => None,
         }
+    }
+
+    /// Whether `now` is past this block's deadline (never offline, where there is none).
+    pub(crate) fn past_deadline(&self, now: Instant) -> bool {
+        self.deadline.is_some_and(|deadline| now > deadline)
     }
 
     /// Until when the block out may take: the block's deadline, or offline, where there is

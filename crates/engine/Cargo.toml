@@ -21,5 +21,6 @@ suhina-realtime.workspace = true
 workspace = true
 
 [dev-dependencies]
+allocation-counter = "0.8.1" # MIT OR Apache-2.0; the render thread allocates nothing (ADR 0038 › 2)
 suhina-device-registry.workspace = true
 suhina-test-support.workspace = true

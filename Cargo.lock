@@ -5617,6 +5617,7 @@ dependencies = [
 name = "suhina-engine"
 version = "0.0.1"
 dependencies = [
+ "allocation-counter",
  "rtrb",
  "suhina-device-api",
  "suhina-device-registry",

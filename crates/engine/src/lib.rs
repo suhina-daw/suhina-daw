@@ -133,7 +133,10 @@ pub use plugin::{
     Sent, SongPosition, plugin_devices, plugin_key,
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
-pub use pool::{MAX_RENDER_THREADS, RENDER_THREADS_VAR, render_threads_from, render_threads_from_env};
+pub use pool::{
+    MAX_RENDER_THREADS, PARALLEL_MIN, RENDER_THREADS_VAR, RenderPool, automatic_render_threads, process_render_threads,
+    render_threads_from, render_threads_from_env, set_process_render_threads,
+};
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
 pub use record::{
     RECORD_CHUNK, RECORD_CHUNKS, RECORD_NOTES, RecordReceiver, RecordedAudio, RecordedJump, RecordedNote,
@@ -541,8 +544,8 @@ pub struct Renderer {
     /// The level meters, published to the controller's `MeterMonitor`.
     meters: meters::MeterWriter,
     /// The render workers that run chains without plug-ins beside the render thread
-    /// ([`pool`]); `None` renders on the render thread alone.
-    pool: Option<pool::Pool>,
+    /// ([`pool`]): its lane of the process's pool; `None` renders on the render thread alone.
+    pool: Option<pool::Lane>,
 }
 
 /// What a render plays besides the project (#764 › 3): what makes its devices (#1147), the
@@ -763,26 +766,28 @@ impl Renderer {
             recorder: record::Recorder::new(),
             cpu: cpu::CpuMeter::new(),
             meters,
-            pool: pool::Pool::new(pool::render_threads_from_env().saturating_sub(1), sample_rate),
+            pool: pool::process_lane(sample_rate),
         })
     }
 
     /// Renders each block on `threads` threads, the render thread included (0 or 1: the render
     /// thread alone), at most [`MAX_RENDER_THREADS`]. The output is the same, bit for bit, for
-    /// any number. Starts or stops threads: never call it on the render thread. Built renderers
-    /// start with the number `SUHINA_RENDER_THREADS` asks for.
+    /// any number. The threads are a pool of the renderer's own, apart from the process's
+    /// (tests, diagnosis); a renderer is built with a lane of the process's pool
+    /// ([`set_process_render_threads`], `SUHINA_RENDER_THREADS`). Starts or stops threads:
+    /// never call it on the render thread.
     pub fn set_render_threads(&mut self, threads: usize) {
         let threads = threads.clamp(1, MAX_RENDER_THREADS);
         if self.render_threads() == threads {
             return;
         }
         self.pool = None;
-        self.pool = pool::Pool::new(threads - 1, self.sample_rate);
+        self.pool = pool::RenderPool::new(threads - 1).and_then(|pool| pool.lane(self.sample_rate));
     }
 
     /// The threads that render each block, the render thread included.
     pub fn render_threads(&self) -> usize {
-        self.pool.as_ref().map_or(1, pool::Pool::threads)
+        self.pool.as_ref().map_or(1, pool::Lane::threads)
     }
 
     /// Asks the render workers to join real-time priority for blocks of `frames` frames, as the
@@ -790,7 +795,7 @@ impl Renderer {
     /// allocates.
     pub fn join_real_time(&self, frames: usize) {
         if let Some(pool) = self.pool.as_ref() {
-            pool.join_real_time(frames);
+            pool.join_real_time(frames, self.sample_rate);
         }
     }
 
@@ -941,8 +946,8 @@ impl Renderer {
         self.graph.launcher.monitor.plugin_misses.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Publishes the plug-in blocks missed so far and the plug-in that missed most. Never
-    /// allocates.
+    /// Publishes the plug-in blocks missed so far and the plug-in that missed most, and the
+    /// blocks render workers missed and the track that missed most. Never allocates.
     fn publish_plugin_misses(&mut self) {
         let (mut total, mut blocked, mut worst) = (0u64, 0u64, (0u64, 0u64));
         let mut worst_trip = 0u32;
@@ -956,7 +961,19 @@ impl Renderer {
                 }
             }
         }
+        // Blocks a chain came back from a render worker late (ADR 0038 › 3), and the track that
+        // missed most.
+        let (mut late, mut worst_track) = (0u64, (0u64, 0u64));
+        for chain in &self.graph.chains {
+            late = late.saturating_add(chain.missed_blocks);
+            if chain.missed_blocks > worst_track.1 {
+                worst_track = (u64::from(chain.track.0), chain.missed_blocks);
+            }
+        }
         let monitor = &self.graph.launcher.monitor;
+        monitor.render_misses.store(late, std::sync::atomic::Ordering::Relaxed);
+        monitor.worst_render_track.store(worst_track.0, std::sync::atomic::Ordering::Relaxed);
+        monitor.worst_render_misses.store(worst_track.1, std::sync::atomic::Ordering::Relaxed);
         monitor.plugin_misses.store(total, std::sync::atomic::Ordering::Relaxed);
         monitor.plugin_blocked.store(blocked, std::sync::atomic::Ordering::Relaxed);
         monitor.worst_trip.store(worst_trip, std::sync::atomic::Ordering::Relaxed);

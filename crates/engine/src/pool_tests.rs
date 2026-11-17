@@ -15,10 +15,56 @@ fn the_variable_asks_for_one_thread_unless_it_names_more() {
 
 #[test]
 fn a_pool_of_none_is_no_pool() {
-    assert!(Pool::new(0, 8_000).is_none());
-    let pool = Pool::new(3, 8_000);
-    assert_eq!(pool.as_ref().map(Pool::threads), Some(4));
-    assert!(!pool.as_ref().is_some_and(Pool::any_away));
+    assert!(RenderPool::new(0).is_none());
+    let pool = RenderPool::new(3);
+    assert_eq!(pool.as_ref().map(|p| p.threads()), Some(4));
+    let lane = pool.as_ref().and_then(|p| p.lane(8_000));
+    assert_eq!(lane.as_ref().map(Lane::threads), Some(4));
+    assert!(!lane.as_ref().is_some_and(Lane::any_away));
+    assert_eq!(RenderPool::new(100).map(|p| p.threads()), Some(MAX_RENDER_THREADS));
+}
+
+#[test]
+fn a_pool_lends_each_lane_once_and_takes_it_back() {
+    let Some(pool) = RenderPool::new(1) else { panic!("a worker starts") };
+    let lanes: Vec<Lane> = (0..LANES).filter_map(|_| pool.lane(8_000)).collect();
+    assert_eq!(lanes.len(), LANES);
+    assert!(pool.lane(8_000).is_none(), "every lane is taken");
+    drop(lanes);
+    assert!(pool.lane(8_000).is_some(), "a dropped renderer's lane is free again");
+}
+
+#[test]
+fn a_worker_takes_the_lanes_that_play_to_a_device_first() {
+    let shared = Shared {
+        stop: AtomicBool::new(false),
+        real_time: AtomicUsize::new(0),
+        real_time_rate: AtomicUsize::new(0),
+        lane_real_time: std::array::from_fn(|_| AtomicBool::new(false)),
+    };
+    let mut producers = Vec::new();
+    let mut ends = Vec::new();
+    for _ in 0..3 {
+        let (jobs_tx, jobs) = rtrb::RingBuffer::<Job>::new(DEPTH);
+        let (replies, _rx) = rtrb::RingBuffer::<Reply>::new(DEPTH);
+        producers.push(jobs_tx);
+        ends.push(WorkerEnd { jobs, replies });
+    }
+    let job = |index| Job {
+        index,
+        chain: Chain::passthrough(TrackId(1), crate::NO_COLUMN, 8_000),
+        frames: 64,
+        context: ProcessContext::default(),
+        reply_to: std::thread::current(),
+    };
+    // Lane 0 renders offline, lane 2 plays: lane 2's chain goes first though lane 0 queued first.
+    for (lane, index) in [(0usize, 10usize), (2, 20)] {
+        assert!(producers.get_mut(lane).is_some_and(|p| p.push(job(index)).is_ok()));
+    }
+    shared.lane_real_time[2].store(true, Ordering::Release);
+    let order: Vec<(usize, usize)> =
+        std::iter::from_fn(|| next_job(&shared, &mut ends)).map(|(lane, job)| (lane, job.index)).collect();
+    assert_eq!(order, [(2, 20), (0, 10)]);
 }
 
 use suhina_model::{ChannelId, ChannelRole, Clip, ContentId, Device, DeviceKind, DeviceParam, Note, Send};
@@ -95,7 +141,7 @@ fn render(threads: usize, blocks: usize) -> (Vec<f32>, u64) {
         renderer.process(&mut block);
         out.extend_from_slice(&block);
     }
-    let sent = renderer.pool.as_ref().map_or(0, |pool| pool.sent);
+    let sent = renderer.pool.as_ref().map_or(0, |lane| lane.sent);
     (out, sent)
 }
 
@@ -121,11 +167,33 @@ fn a_render_on_several_threads_is_the_render_on_one_bit_for_bit() {
 #[test]
 fn render_threads_can_be_changed_and_turned_off() {
     let mut renderer = Renderer::new(&project(), SR, suhina_device_registry::factory()).unwrap();
-    assert_eq!(renderer.render_threads(), render_threads_from_env());
     renderer.set_render_threads(3);
     assert_eq!(renderer.render_threads(), 3);
     renderer.set_render_threads(0);
     assert_eq!(renderer.render_threads(), 1);
     renderer.set_render_threads(usize::MAX);
     assert_eq!(renderer.render_threads(), MAX_RENDER_THREADS);
+}
+
+#[test]
+fn a_few_chains_stay_on_the_render_thread() {
+    // One instrument track and Main: fewer chains than PARALLEL_MIN, so no worker is woken.
+    let project = ProjectBuilder::new()
+        .midi_track(1, "T1")
+        .notes(1, "c1", 4.0, vec![Note::new(0.0, 1.0, 60, 0.8)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .with(|p| {
+            if let Some(channel) = p.channel_mut(ChannelId(1)) {
+                channel.devices = vec![device("fm-synth", &[])];
+            }
+        })
+        .build();
+    let mut renderer = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap();
+    renderer.set_offline(true);
+    renderer.set_render_threads(4);
+    let mut block = vec![0.0f32; BLOCK * 2];
+    for _ in 0..8 {
+        renderer.process(&mut block);
+    }
+    assert_eq!(renderer.pool.as_ref().map_or(0, |lane| lane.sent), 0);
 }

@@ -18,7 +18,7 @@ use suhina_model::{ChannelId, ChannelRole, Project, TrackId};
 
 use crate::chain::{Chain, LiveVolume, MAX_BLOCK};
 use crate::plugin::Delay;
-use crate::pool::Pool;
+use crate::pool::{Lane, PARALLEL_MIN};
 use crate::track_gains;
 
 /// The most channels a loop check follows, so a malformed project cannot make it run long.
@@ -326,7 +326,8 @@ pub(crate) fn plan_turns(chains: &mut [Chain]) {
 /// return routed into the node's bus plays into the mix, not into the node's file). Never
 /// allocates; in real time it returns by the deadline.
 ///
-/// With `pool`, the chains without plug-ins run on its workers as well as on the render thread
+/// With `pool` (a renderer's lane of the render workers) and at least [`PARALLEL_MIN`] chains
+/// that may go, the chains without plug-ins run on its workers as well as on the render thread
 /// ([`crate::pool`]): what they stage is added exactly as above, so the output is the same, bit
 /// for bit, whichever thread ran a chain. The render thread waits for a chain at a worker as
 /// long as it takes, as it would take to run it itself.
@@ -337,8 +338,12 @@ pub(crate) fn run(
     frames: usize,
     context: &ProcessContext,
     mut capture: Option<Capture>,
-    mut pool: Option<&mut Pool>,
+    mut pool: Option<&mut Lane>,
 ) {
+    // Waking workers costs more than it saves below a few chains (ADR 0038 › 1).
+    if chains.iter().filter(|c| c.turn.parallel).count() < PARALLEL_MIN {
+        pool = None;
+    }
     let parallel = pool.is_some();
     // The capture buffer starts empty; the source chain's mix adds to it.
     if let Some(cap) = capture.as_mut()
