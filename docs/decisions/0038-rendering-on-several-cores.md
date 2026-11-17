@@ -68,18 +68,23 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
 
 ## Decision
 
-1. **One worker pool per process.** Every renderer in the process takes its workers from one
-   pool: the player of the active project ([ADR 0007](0007-several-open-projects.md) › 4) and
-   offline renders and exports. Its size is the physical performance cores less one, at most 8,
-   counted where the system says which cores are which, and the physical cores less one where it
-   does not; one core means no workers. `SUHINA_RENDER_THREADS=n` and an advanced setting in
-   Settings › Audio override it, for diagnosis. The render thread works too: it takes jobs
-   while it waits. Real-time work goes before export work; an export takes a worker only when no
-   real-time job waits. A block with fewer chains to run than a threshold (4 to start with, set
-   by measurement in phase 1) runs them on the render thread, since waking workers would cost
-   more than it saves. Several pools would compete for the same cores and the same real-time
-   thread allowance (rtkit allows 25 real-time threads per user, the plug-in hosts' threads
-   among them).
+1. **One real-time worker pool per process, and one for exports.** Every renderer that plays
+   to a device takes its workers from one real-time pool: the player of the active project
+   ([ADR 0007](0007-several-open-projects.md) › 4). Offline renders and exports take theirs from
+   a second pool whose workers stay at normal priority: an export has no deadline, so the
+   system preempts its workers whenever a real-time thread needs a core, and an export beside
+   playback takes only the time playback leaves. Ordering jobs could not do this: a worker
+   cannot leave a chain's block it has started, so playback would wait for the export chains
+   already running, one on every worker at worst. Each pool's size is the physical performance
+   cores less one, at most 8, counted where the system says which cores are which, and the
+   physical cores less one where it does not; one core means no workers.
+   `SUHINA_RENDER_THREADS=n` and an advanced setting in Settings › Audio override it, for
+   diagnosis. The render thread works too: it takes jobs while it waits. A block with fewer
+   chains to run than a threshold (4 to start with, set by measurement in phase 1) runs them on
+   the render thread, since waking workers would cost more than it saves. More real-time pools
+   would compete for the same cores and the same real-time thread allowance (rtkit allows 25
+   real-time threads per user, the plug-in hosts' threads among them); the export pool's
+   workers take none of it.
 2. **A chain moves by value and nothing is allocated.** As in the prototype, a job is a whole
    chain sent to a worker through an `rtrb` queue and sent back, with a spare chain in its place
    meanwhile, so the render thread allocates and frees nothing (AGENTS.md rule 3). The order is
@@ -228,12 +233,17 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
   modes; bypassing such plug-ins on the path being played is a separate feature, not part of
   this decision.
 - Total processor time grows a little (about 6 % in the prototype) for a shorter wall time.
-- Real-time work goes first between jobs, not inside one: while an export renders beside
-  playback, a live chain may wait for the export chain a worker is running when it is queued,
-  one block of one chain at most per worker, and the render thread runs live chains meanwhile.
+- An export beside playback still shares the cores with the plug-in hosts' audio threads, which
+  run at real-time priority whichever renderer sends them a block (ADR 0006 › 4): its plug-ins
+  compete with playback's, and measurements (#1512) say whether an export needs slowing down
+  while playback runs.
 
 ## Alternatives
 
+- **Exports on the real-time pool, real-time work first, or some workers kept for playback.**
+  Ordering cannot take a worker back from a chain it has started, and a reservation either
+  leaves cores idle or guesses playback's need; the system's scheduler preempts a
+  normal-priority export at once (1).
 - **Drop late work at the deadline.** Needed by an engine with no queue; rejected (3).
 - **Render everything ahead, the mixer included.** Simpler, but the fader and every send would
   answer a lead late; rejected (6).
@@ -250,6 +260,8 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
 
 - Wessel and Wright, problems and prospects for intimate musical control of computers (2002): https://nime.org/proc/nime2001_wessel/
 - McPherson, Jack and Moro, action-sound latency (2016): https://www.nime.org/proceedings/2016/nime2016_paper0005.pdf
+- Buttazzo, Bertogna and Yao, limited preemptive scheduling for real-time systems, a survey (2013; blocking bounded by the longest region that cannot be preempted): https://iris.santannapisa.it/retrieve/dd9e0b31-c093-709e-e053-3705fe0a83fd/TII-13-Survey.pdf
+- Apple, understanding audio workgroups (only real-time threads join one): https://developer.apple.com/documentation/audiotoolbox/understanding-audio-workgroups
 - Apple, adding asynchronous real-time threads to audio workgroups: https://developer.apple.com/documentation/audiotoolbox/adding-asynchronous-real-time-threads-to-audio-workgroups
 - rtkit's limits: https://github.com/heftig/rtkit/blob/master/rtkit-daemon.c
 - JACK2 activation counters: https://github.com/jackaudio/jack2/blob/develop/common/JackActivationCount.cpp
