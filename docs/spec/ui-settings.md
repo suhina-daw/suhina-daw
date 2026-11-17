@@ -70,9 +70,10 @@ what is inside it).
 |---|---|---|
 | Projects and backups | Projects | Open projects in, Startup project, Projects folder, Templates folder, Settings folder (used from the next start; changing it asks, backs up and moves the files), Startup template (shown with Startup project › Template) |
 | Projects and backups | Backups | Backup interval (the note names the newest backup of the active project), Delete old backups |
-| Audio | Status | Audio status: the output and input in use, how long sound takes to come out, dropouts, List devices again (a panel, not a setting) |
+| Audio | Status | Audio status: the output and input in use, how long sound takes to come out, dropouts, the render threads and their late blocks, List devices again (a panel, not a setting) |
 | Audio | Output | Audio device: Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input; Default track input (None, each channel and each pair of the input device; each audio device keeps its own with its Input, so choosing another Device brings both back; only a note while Input is Off) |
 | Audio | Cue | Headphone output: Cue output, Cue volume |
+| Audio | Advanced | Render threads (Off, Automatic, 2, 4, 8; [render threads](render-threads.md)) |
 | MIDI | MIDI inputs | Each MIDI input port, on or off |
 | MIDI | Arming | Arm selected track |
 | Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |

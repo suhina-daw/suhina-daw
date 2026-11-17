@@ -50,6 +50,9 @@ const LIST_LEAST: f32 = 160.0;
 pub struct About {
     /// What the active project plays on now, read every frame (`audio.info`).
     pub audio_live: Option<suhina_session::OutputInfo>,
+    /// The name of the track whose chain came back late from the render workers most often
+    /// (ADR 0038 › 3), when one did.
+    pub audio_late_track: Option<String>,
     /// The audio hosts and their output devices, listed when Settings › Audio opens or is
     /// refreshed (`audio.devices`).
     pub audio_hosts: Vec<suhina_session::audio::HostInfo>,
@@ -82,6 +85,7 @@ impl Default for About {
     fn default() -> Self {
         Self {
             audio_live: None,
+            audio_late_track: None,
             audio_hosts: Vec::new(),
             midi_inputs: Ok(Vec::new()),
             graphics_now: None,
@@ -3193,7 +3197,29 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
         None => "Not playing".to_string(),
     };
     label(painter, r, "Recording input", &input);
+    let r = row(y);
+    label(painter, r, "Render threads", &render_threads_now(about));
     response.clicked()
+}
+
+/// The threads that render each block and the blocks they missed (ADR 0038): "1 thread" when
+/// the render thread works alone.
+pub(crate) fn render_threads_now(about: &About) -> String {
+    let Some(info) = &about.audio_live else { return "Not playing".to_string() };
+    let threads = info.render_threads.max(1);
+    let plural = |n: u64| if n == 1 { "" } else { "s" };
+    if threads == 1 {
+        return "1 thread: the render thread alone".to_string();
+    }
+    match (info.render_misses, &about.audio_late_track) {
+        (0, _) => format!("{threads} threads; no block late"),
+        (late, Some(track)) => format!(
+            "{threads} threads; {late} block{} late, most on {track} ({})",
+            plural(late),
+            info.worst_render_misses
+        ),
+        (late, None) => format!("{threads} threads; {late} block{} late", plural(late)),
+    }
 }
 
 /// A segmented control for the keymap preset: the sets of keys, with the chosen one lit.

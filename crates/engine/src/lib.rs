@@ -135,7 +135,7 @@ pub use plugin::{
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
 pub use pool::{
     MAX_RENDER_THREADS, PARALLEL_MIN, RENDER_THREADS_VAR, RenderPool, automatic_render_threads, process_render_threads,
-    render_threads_from, render_threads_from_env, set_process_render_threads,
+    render_threads_for, render_threads_from, render_threads_from_env, set_process_render_threads,
 };
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
 pub use record::{

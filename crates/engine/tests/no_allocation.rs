@@ -7,6 +7,8 @@
 //! chains out, taking them back, waiting); on 1 thread it is every chain's code, the code the
 //! workers run.
 
+#![allow(clippy::unwrap_used)] // a test's helper outside `#[test]` functions
+
 use suhina_engine::Renderer;
 use suhina_model::{ChannelId, ChannelRole, Clip, ContentId, Device, DeviceKind, Note, Send};
 use suhina_test_support::ProjectBuilder;

@@ -1316,6 +1316,8 @@ impl LiveOutput for Live {
                 &self.progress.input_timeouts,
             ]
             .map(|counter| counter.load(Ordering::Relaxed)),
+            // The player fills in the engine's render threads and their missed blocks.
+            ..OutputInfo::default()
         }
     }
 }

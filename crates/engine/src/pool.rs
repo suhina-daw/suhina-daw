@@ -83,6 +83,16 @@ pub fn automatic_render_threads() -> usize {
     std::thread::available_parallelism().map_or(1, usize::from).clamp(1, MAX_RENDER_THREADS)
 }
 
+/// The threads a choice of the setting renders on, the render thread included: 0 is the
+/// automatic choice ([`automatic_render_threads`]), any other number that many, at most
+/// [`MAX_RENDER_THREADS`]; `SUHINA_RENDER_THREADS`, when set, wins over both (for diagnosis).
+pub fn render_threads_for(choice: usize) -> usize {
+    if std::env::var_os(RENDER_THREADS_VAR).is_some() {
+        return render_threads_from_env();
+    }
+    if choice == 0 { automatic_render_threads() } else { choice.clamp(1, MAX_RENDER_THREADS) }
+}
+
 /// A chain sent to a worker, with what its block needs and the thread to wake when it is done.
 struct Job {
     index: usize,
