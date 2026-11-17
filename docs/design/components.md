@@ -94,7 +94,7 @@ integration target.
 |---|---|
 | Hover | Background one step lighter: `window.background` → `panel.background`, `panel.background` → `#31302C`, `control.background` → `#3F3D3A` |
 | Pressed / dragging | `control.activeBackground` |
-| Selected | A track header and a clip, in both views: `selection.background` (or the colour Settings › Appearance › Selection colour chose), the track's or clip's own colour in its band or leading edge, text in the ink that reads on it; a clip with a 1 px `text.primary` inset; the selected tracks' lanes and Launcher columns tinted with `selection.background` at 12 % ([arrangement editing](../spec/arrangement-editing.md#selection-colour)) |
+| Selected | A track header and a clip, in both views: `selection.background` (or the colour Settings › Appearance › Selection colour chose), the track's or clip's own colour in its band or leading edge, text in the ink that reads on it; an Arrangement clip's name bar keeps its own colour; a clip with a 1 px `text.primary` inset; the selected tracks' lanes and Launcher columns tinted with `selection.background` at 12 % ([arrangement editing](../spec/arrangement-editing.md#selection-colour)) |
 | Keyboard focus | (planned) 1 px inset outline in `accent` |
 | Disabled | Text `text.hint`, no fills |
 | Track off (muted) | Launcher: its name in `text.hint`; its slots, clips, marks and colour strip at 55 % opacity. Arrangement: its header and its clips' bodies grey (`arrangement track-header[muted]`, `arrangement clip[muted]` in the user-agent sheet), the colour band, the clips' leading edges and name bars in their colours ([arrangement](../spec/arrangement-editing.md) › Clips off) |

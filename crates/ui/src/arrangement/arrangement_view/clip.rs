@@ -818,6 +818,11 @@ pub(super) fn clip_box<'a>(
     // A clip picked by a click in its body (the insert marker set there) looks as one not
     // picked, as the play start is what the click chose; picked whole, it is lit.
     let lit = selected && state.picked_whole;
+    // How the clip is drawn: with a selection colour (Settings › Appearance › Selection colour),
+    // every selected clip takes it, however it was picked; with Clip's own colour, only one picked
+    // whole is lit.
+    let drawn_selected =
+        if crate::kit::selection::look().mode == crate::kit::selection::SelectionColour::Own { lit } else { selected };
     let fading = state.gesture.fade().copied().is_some_and(|d| d.key == key)
         || state.gesture.fade_curve().copied().is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
@@ -1040,7 +1045,7 @@ pub(super) fn clip_box<'a>(
             x_of,
             state.beat_width,
             timeline,
-            lit,
+            drawn_selected,
             &state.clip_look(),
         );
     };
@@ -1132,7 +1137,7 @@ pub(super) fn clip_box<'a>(
                         &stretched,
                         state.beat_width * factor as f32,
                         timeline,
-                        lit,
+                        drawn_selected,
                         &state.clip_look(),
                     );
                 }
@@ -1146,16 +1151,17 @@ pub(super) fn clip_box<'a>(
                     x_of,
                     state.beat_width,
                     timeline,
-                    lit,
+                    drawn_selected,
                     &state.clip_look(),
                 ),
             }
             None
         }
     };
-    // Picked by a click in its body: not lit (the play start is what the click chose), but
-    // outlined, so the clip the editor and the keys work on is plain to see.
-    if selected && !lit && state.gesture.clip().is_none() {
+    // With Clip's own colour, a clip picked by a click in its body is not lit (the play start is
+    // what the click chose), but outlined, so the clip the editor and the keys work on is plain to
+    // see. With a selection colour it is filled with it like any selected clip (above).
+    if selected && !drawn_selected && state.gesture.clip().is_none() {
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
         let body = motion::mix(super::panel_surface(), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
@@ -1429,14 +1435,18 @@ pub(super) fn paint_clip(
     // A muted clip's grey is the computed `arrangement clip[muted]` background: the base sheet's
     // rule reads `--clip-mutedBackground`, so a theme that sets only the variable reaches it, and
     // a theme's own rule for the clip still wins.
-    // A selected clip that plays is filled with the one selection colour every selected clip and
-    // header shares (Settings › Appearance › Selection colour), its name bar too; its own colour
-    // stays down its leading edge. With Clip's own colour it keeps its colour, a little brighter.
+    // A selected clip that plays has its body filled with the one selection colour every selected
+    // clip and header shares (Settings › Appearance › Selection colour), while its name bar keeps
+    // the clip's own colour, as when it is not selected, and so does its leading edge. With Clip's
+    // own colour it keeps its colour, a little brighter.
     let selection_fill = if selected && !off { crate::kit::selection::fill(&own) } else { None };
     let fallback = selection_fill.unwrap_or_else(|| clip_body(surface, rgb(clip.color), strength, off, selected));
     let body = if off { own.computed_background_or(fallback) } else { own.background_or(fallback) };
     let bar_fill = match selection_fill {
-        Some(_) => body,
+        Some(_) => {
+            let own_body = clip_body(surface, rgb(clip.color), strength, false, false);
+            name_bar_fill(own_body, surface, rgb(clip.color), strength, false, false)
+        }
         None => name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected),
     };
     let radius = own.radius_or(2.0);

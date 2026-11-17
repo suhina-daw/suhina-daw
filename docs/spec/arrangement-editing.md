@@ -1115,11 +1115,12 @@ whatever its own colour, so ten selected clips of different colours read as one 
 - A selected **track header**, in the Arrangement and over a Launcher column, is filled with it;
   the track's colour stays in the header's colour band (in the Launcher a 3 px band along its
   top), and its name and controls take the ink that reads on it. A group's header is the same.
-- A selected **clip** (picked whole: by its name bar, a box or Ctrl+A), in the Arrangement and in
-  a Launcher slot, has its body and its name bar filled with exactly that colour, the colour of a
-  selected header; its own colour stays down its leading edge, and its waveform or notes keep
-  their colour where it reads on the fill, else take the ink that does. A clip picked by a click
-  in its body stays outlined, not lit (› Selecting clips).
+- A selected **clip** in the Arrangement, however it was picked (its name bar, a click in its
+  body, a box or Ctrl+A), has its body filled with exactly that colour, the colour of a selected
+  header, while its name bar keeps the clip's own colour, as when it is not selected, and so does
+  its leading edge; its waveform or notes keep their colour where it reads on the fill, else take
+  the ink that does. In a Launcher slot the whole clip takes the colour, its own colour down its
+  leading edge.
 - The **lane** of each selected track is tinted with it across the whole timeline, under its
   clips (`arrangement track-lane[selected]`: the colour at 12 %, a theme part a theme can
   restyle); the lane the piano roll edits keeps its own highlight (`[checked]`). In the Launcher a
@@ -1131,7 +1132,7 @@ Settings › Appearance › Selection › **Selection colour** chooses it (saved
 not in the project): *From theme* (the default) uses the theme's; *Clip's own colour* keeps each
 selected header and clip in its own colour, a little brighter and outlined, as before there was
 one selection colour, so a selection still shows which track each clip is on (the lanes keep the
-tint); *Custom* shows **Custom selection colour** (`selection_custom_colour`), one colour from
+tint), and a clip picked by a click in its body is only outlined, not lit (› Selecting clips); *Custom* shows **Custom selection colour** (`selection_custom_colour`), one colour from
 the colour picker, which is written over the theme's `--selection-background` on the window, so
 headers, clips and the tints all take it in every theme until *From theme* is chosen again.
 

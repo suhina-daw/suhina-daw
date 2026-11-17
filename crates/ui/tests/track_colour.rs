@@ -716,6 +716,33 @@ fn selected_headers_and_clips_share_the_themes_selection_colour() {
     assert_eq!(clips, [Some(PICKED), Some(PICKED)], "both selected clips take a header's fill");
 }
 
+/// A clip picked by a click in its body, which sets the play start there, is filled with the
+/// selection colour as one picked by its name bar is, while its name bar keeps the clip's own
+/// colour.
+#[test]
+fn a_clip_picked_in_its_body_takes_the_selection_colour_and_its_name_bar_keeps_its_own() {
+    let mut harness = arrangement();
+    use_colours(&[("selection-background", PICKED)]);
+    harness.run();
+    let beat = "Clip Beat B on Drums at bar 17";
+    let before = fill_of(&harness, harness.get_by_label(beat).rect());
+    pick(&mut harness, beat, false, Modifiers::NONE);
+    let rect = harness.get_by_label(beat).rect();
+    let body = fill_of(&harness, rect);
+    // The name bar along the clip's top: a fill over the clip's width, not the selection colour.
+    let bar = filled_rects(&harness).into_iter().any(|r| {
+        r.fill.a() == 255
+            && r.fill != PICKED
+            && (r.rect.top() - rect.top()).abs() < 1.0
+            && r.rect.height() < rect.height() / 2.0
+            && r.rect.width() > rect.width() * 0.8
+    });
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_ne!(before, Some(PICKED), "not selected before the click");
+    assert_eq!(body, Some(PICKED), "a click in the body selects the clip and fills it");
+    assert!(bar, "the name bar keeps the clip's own colour");
+}
+
 /// With Clip's own colour, two selected clips of different colours keep different fills (#1218).
 #[test]
 fn with_clips_own_colour_two_selected_clips_keep_their_own_colours() {

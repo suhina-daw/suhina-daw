@@ -2615,7 +2615,7 @@
       ],
       "sourceFingerprint": "678e47ae5499c1ff4c3d64fd706feb1f5271df17efe7b9a3ea256499dd53616a",
       "helpStatus": "reviewed",
-      "description": "When you select tracks or clips, in the Arrangement or the Launcher, their headers and clips are filled with one shared selection colour, so several selected items read as one selection even when their own colours differ. The track's or clip's own colour stays in a band at the header's edge and down the clip's leading edge. The selected tracks' lanes, and their columns in the Launcher, take a faint tint of the same colour. Names, waveforms and notes switch to an ink that reads on the selection colour. A track or clip that is switched off stays grey. The choice is saved with your settings, not in the project, and applies at once.",
+      "description": "When you select tracks or clips, in the Arrangement or the Launcher, their headers and clips are filled with one shared selection colour, so several selected items read as one selection even when their own colours differ. The track's or clip's own colour stays in a band at the header's edge and down the clip's leading edge, and an Arrangement clip's name bar keeps its own colour. A clip is filled however you picked it, by its name bar or by a click in its body. The selected tracks' lanes, and their columns in the Launcher, take a faint tint of the same colour. Names, waveforms and notes switch to an ink that reads on the selection colour. A track or clip that is switched off stays grey. The choice is saved with your settings, not in the project, and applies at once.",
       "options": [
         {
           "name": "From theme",
