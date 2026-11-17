@@ -34,6 +34,20 @@ fn soft_blur(
     unit(255.0, &resize(&blurred, width, height, FilterType::CatmullRom))
 }
 
+/// An sRGB-encoded channel as linear light, 0 to 255.
+fn to_linear(encoded: u8) -> f32 {
+    let c = f32::from(encoded) / 255.0;
+    let linear = if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) };
+    linear * 255.0
+}
+
+/// Linear light, 0 to 255, as an sRGB-encoded channel.
+fn from_linear(linear: f32) -> u8 {
+    let l = (linear / 255.0).clamp(0.0, 1.0);
+    let encoded = if l <= 0.003_130_8 { l * 12.92 } else { 1.055 * l.powf(1.0 / 2.4) - 0.055 };
+    (encoded * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
 pub(super) fn apply(source: &image::RgbaImage, sigma: f32) -> ColorImage {
     let size = [source.width() as usize, source.height() as usize];
     if sigma <= 0.0 {
@@ -43,10 +57,11 @@ pub(super) fn apply(source: &image::RgbaImage, sigma: f32) -> ColorImage {
     let premultiplied = image::ImageBuffer::from_fn(source.width(), source.height(), |x, y| {
         let pixel = source.get_pixel(x, y);
         let alpha = f32::from(pixel[3]) / 255.0;
+        // Blurred in linear light, as light mixes, not on the encoded values, which darken it.
         image::Rgba([
-            f32::from(pixel[0]) * alpha,
-            f32::from(pixel[1]) * alpha,
-            f32::from(pixel[2]) * alpha,
+            to_linear(pixel[0]) * alpha,
+            to_linear(pixel[1]) * alpha,
+            to_linear(pixel[2]) * alpha,
             f32::from(pixel[3]),
         ])
     });
@@ -55,12 +70,7 @@ pub(super) fn apply(source: &image::RgbaImage, sigma: f32) -> ColorImage {
         let p = blurred.get_pixel(x, y);
         let alpha = p[3].clamp(0.0, 255.0);
         let factor = if alpha > 0.0 { 255.0 / alpha } else { 0.0 };
-        image::Rgba([
-            (p[0] * factor).clamp(0.0, 255.0) as u8,
-            (p[1] * factor).clamp(0.0, 255.0) as u8,
-            (p[2] * factor).clamp(0.0, 255.0) as u8,
-            alpha as u8,
-        ])
+        image::Rgba([from_linear(p[0] * factor), from_linear(p[1] * factor), from_linear(p[2] * factor), alpha as u8])
     });
     ColorImage::from_rgba_unmultiplied(size, rgba.as_raw())
 }
