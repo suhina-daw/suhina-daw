@@ -639,7 +639,8 @@ cutting a slot.
 
 **Floating surfaces (#1234).** What floats over the window is styled by four elements: `menu`
 (an open menu of the menu bar), `popup` (every other menu: right-click menus, dropdown lists, a
-control's popup, the project switcher), `tooltip` and `dialog`.
+control's popup, the project switcher), `tooltip` and `dialog`. Settings, docked over the views,
+reads `backdrop-filter` too (#1487 F4), from any rule for `settings`; with none it stays sharp.
 
 - **`backdrop-filter`** on these four takes `none` or `blur(<length>)` (a length in `px`, or 0).
   A radius above 0 puts the window's own layers, blurred, under the surface; `none` and

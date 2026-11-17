@@ -637,7 +637,7 @@ pub const ELEMENTS: &[Element] = &[
     element("progress", Drawn, "A progress bar: a dialog's, the sample map's busy card and the MIDI panel's range bar.").parts(&["progress-fill"]),
     element("progress-fill", Part, "A progress bar's done part, in each of those."),
     // Pages and dialogs.
-    element("settings", Region, "The Settings page.").parts(&["settings-nav"]),
+    element("settings", Region, "The Settings page; docked over the views, `backdrop-filter: blur(<length>)` blurs them behind it.").parts(&["settings-nav"]).settings(FLOATING),
     element("settings-nav", Control, "An entry of the Settings page's list, `[checked]` for the page shown.").attributes(&["checked"]),
     element("dialog", Region, "A dialog.").parts(&["dialog-title", "list-row"]).settings(FLOATING),
     element("dialog-title", Part, "A dialog's title row, with its Close button: its `background-color`, its words `label[kind=\"title\"]`."),

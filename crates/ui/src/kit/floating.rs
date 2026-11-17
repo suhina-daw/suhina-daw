@@ -128,6 +128,12 @@ fn style_blurs(style: Option<super::native_css::Computed>) -> bool {
     style.and_then(|style| style.text(Property::BackdropFilter)).is_none_or(|f| suhina_style::property::blurs(&f))
 }
 
+/// Whether a computed style asks for the window blurred behind it: a `backdrop-filter` with a
+/// radius above 0. For a surface that is sharp unless its rule says otherwise (Settings).
+pub(crate) fn asks_to_blur(style: Option<super::native_css::Computed>) -> bool {
+    style.and_then(|style| style.text(Property::BackdropFilter)).is_some_and(|f| suhina_style::property::blurs(&f))
+}
+
 /// Whether surfaces of the element `name` blur the window behind them, from the rules on the
 /// element alone (`popup { … }`).
 pub(crate) fn blurs(name: Name) -> bool {

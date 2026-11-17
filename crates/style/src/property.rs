@@ -70,10 +70,11 @@ pub fn blurs(text: &str) -> bool {
         .is_some_and(|radius| radius.is_finite() && radius > 0.0)
 }
 
-/// The elements `backdrop-filter` reads: they float over the window's own layers. Everything else
-/// sits in the window, whose background the system already blurs behind it. All but `dialog` read
-/// it from rules on the element alone (`popup { … }`), which [`BARE_FILTERED`] lists.
-pub const BACKDROP_FILTERED: &[&str] = &["popup", "menu", "dialog", "tooltip"];
+/// The elements `backdrop-filter` reads: they float over the window's own layers (Settings too,
+/// docked over the views, #1487 F4). Everything else sits in the window, whose background the
+/// system already blurs behind it. All but `dialog` and `settings` read it from rules on the
+/// element alone (`popup { … }`), which [`BARE_FILTERED`] lists.
+pub const BACKDROP_FILTERED: &[&str] = &["popup", "menu", "dialog", "tooltip", "settings"];
 
 /// The floating elements that read `backdrop-filter` only from a rule naming them alone.
 pub const BARE_FILTERED: &[&str] = &["popup", "menu", "tooltip"];
@@ -231,7 +232,7 @@ properties! {
     PanelGradient, "panel-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the panels: none, or an angle and colour stops.";
     TrackGradient, "track-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the tracks: none, or an angle and colour stops.";
     ClipGradient, "clip-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the clips: none, or an angle and colour stops.";
-    BackdropFilter, "backdrop-filter", Text(backdrop_filter), Value::Text(String::new()), false, "What a popup, menu, dialog or tooltip does to the window behind it: blur(<length>) or none; on or off for now.";
+    BackdropFilter, "backdrop-filter", Text(backdrop_filter), Value::Text(String::new()), false, "What a popup, menu, dialog, tooltip or Settings does to the window behind it: blur(<length>) or none; on or off for now.";
     BackdropImage, "backdrop-image", Text(backdrop_image), Value::Text(String::new()), false, "The theme's picture behind the window: none or url(\"<file>.png\").";
     BackdropOpacity, "backdrop-opacity", Integer, Value::Integer(-1), false, "How much the backdrop picture shows, 0 to 100.";
     BackdropBlur, "backdrop-blur", Integer, Value::Integer(-1), false, "How much the backdrop picture is blurred, 0 to 100.";

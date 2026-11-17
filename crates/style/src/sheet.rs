@@ -640,14 +640,14 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                             if declarations.iter().any(|d| d.name == "backdrop-filter")
                                 && !selectors.iter().all(|s| {
                                     s.bare_kind().is_some_and(|kind| crate::property::BARE_FILTERED.contains(&kind))
-                                        || s.subject_is(&["dialog"])
+                                        || s.subject_is(&["dialog", "settings"])
                                 })
                             {
                                 sheet.notice(
                                     location,
-                                    "backdrop-filter is read only on dialog and in a rule for popup, menu or \
-                                     tooltip alone: other elements sit in the window, which the system blurs \
-                                     behind"
+                                    "backdrop-filter is read only on dialog and settings and in a rule for \
+                                     popup, menu or tooltip alone: other elements sit in the window, which the \
+                                     system blurs behind"
                                         .into(),
                                 );
                             }
@@ -960,7 +960,8 @@ mod tests {
     fn backdrop_filter_is_read_on_floating_elements_and_named_elsewhere() {
         let sheet = Sheet::parse(
             "popup, menu { backdrop-filter: blur(20px); } dialog[kind=\"x\"] { backdrop-filter: none; } \
-             tooltip { backdrop-filter: blur(0); } window dialog { backdrop-filter: blur(4.5px); }",
+             tooltip { backdrop-filter: blur(0); } window dialog { backdrop-filter: blur(4.5px); } \
+             settings { backdrop-filter: blur(12px); }",
         )
         .unwrap();
         assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);

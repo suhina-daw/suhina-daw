@@ -2084,3 +2084,22 @@ fn a_dials_rim_scales_with_it_unless_the_sheet_sets_its_width() {
     assert_eq!(rims(""), [2.0, 8.0]);
     assert_eq!(rims("knob[kind=\"dial\"] { border-width: 3px; }"), [3.0, 3.0]);
 }
+
+/// Settings, docked over the views, blurs them behind it where its rule asks, and is sharp with
+/// no rule, as it was (#1487 F4); the sheet takes the property there without a notice.
+#[test]
+fn settings_blurs_the_window_behind_it_only_where_its_rule_asks() {
+    let asks = |css: &str| {
+        let asked = std::cell::Cell::new(None);
+        painted(css, |_| {
+            let settings = crate::kit::element::SETTINGS.enter();
+            asked.set(Some(super::super::floating::asks_to_blur(settings.style())));
+        });
+        asked.get().expect("drawn")
+    };
+    assert!(!asks(""));
+    assert!(asks("settings { backdrop-filter: blur(12px); }"));
+    assert!(!asks("settings { backdrop-filter: none; }"));
+    let sheet = suhina_style::sheet::Sheet::parse("settings { backdrop-filter: blur(12px); }").unwrap();
+    assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+}

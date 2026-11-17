@@ -1024,6 +1024,12 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     let area = ui.available_rect_before_wrap();
     ui.allocate_rect(area, Sense::hover());
     let painter = ui.painter_at(area);
+    // Docked over the views, the window blurred under it where its rule asks
+    // (`settings { backdrop-filter: blur(16px) }`, #1487 F4); in a window of its own nothing of
+    // Suhina's is behind it.
+    if !state.window && crate::kit::floating::asks_to_blur(style_class.style()) {
+        crate::kit::liquid::backdrop(&painter, area, 0.0);
+    }
     let panel_base = crate::kit::liquid::panel_base(ui.ctx());
     painter.rect_filled(area, 0.0, panel_base);
     if !state.window {
