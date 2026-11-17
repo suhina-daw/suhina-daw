@@ -198,6 +198,9 @@ pub struct Track {
     pub midi_input: MidiInput,
     /// Which channels of the audio input the track hears, and when (ADR 0017).
     pub audio_input: AudioInput,
+    /// A presentation folder: a track without a channel that only gathers the tracks inside it
+    /// (`parent`) in view, playing nothing and changing nothing they play (#1416).
+    pub folder: bool,
     pub extensions: Extensions,
 }
 
@@ -381,6 +384,10 @@ pub struct Device {
     /// The device's ports that read another channel's signal: its key, or sidechain
     /// (`docs/spec/sidechain.md`). Empty for almost every device; at most one entry.
     pub inputs: Vec<DeviceInput>,
+    /// It is an instrument whatever its plug-in is now: a hosted device's role while its plug-in
+    /// is missing, or a placeholder (`DeviceKind::Foreign`) that takes notes and plays silence
+    /// (#1416). Imports set it; a device added by the user takes its role from its plug-in.
+    pub instrument: bool,
     pub extensions: Extensions,
 }
 
@@ -466,37 +473,26 @@ impl Device {
     /// an installed plugin is available. Used to keep missing instruments silent.
     pub fn is_external_instrument(&self) -> bool {
         matches!(self.kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. })
-            && self.extensions.0.iter().any(|e| e.format == "suhina" && e.key == "instrument" && e.data.is_empty())
+            && self.instrument
     }
 
     /// Retain the source's instrument role independently of the installed plugin catalog.
     pub fn mark_external_instrument(&mut self) {
-        if matches!(self.kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. })
-            && !self.is_external_instrument()
-        {
-            self.extensions.0.push(Extension { format: "suhina".into(), key: "instrument".into(), data: Vec::new() });
+        if matches!(self.kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. }) {
+            self.instrument = true;
         }
     }
 
     /// An explicitly unavailable instrument consumes notes silently until replaced or removed.
-    /// The neutral extension is preserved by project files; it does not apply to runnable devices.
+    /// It applies to a placeholder (`DeviceKind::Foreign`) only, never to a runnable device.
     pub fn is_missing_instrument(&self) -> bool {
-        matches!(self.kind, DeviceKind::Foreign { .. })
-            && self
-                .extensions
-                .0
-                .iter()
-                .any(|e| e.format == "suhina" && e.key == "missing-instrument" && e.data.is_empty())
+        matches!(self.kind, DeviceKind::Foreign { .. }) && self.instrument
     }
 
     /// Preserve an imported instrument as a silent placeholder, including when soloed or bypassed.
     pub fn mark_missing_instrument(&mut self) {
-        if matches!(self.kind, DeviceKind::Foreign { .. }) && !self.is_missing_instrument() {
-            self.extensions.0.push(Extension {
-                format: "suhina".into(),
-                key: "missing-instrument".into(),
-                data: Vec::new(),
-            });
+        if matches!(self.kind, DeviceKind::Foreign { .. }) {
+            self.instrument = true;
         }
     }
 
@@ -1252,6 +1248,8 @@ pub struct Extension {
 /// A reference in the project that does not resolve, or an id used twice.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValidationError {
+    /// A presentation folder that names a channel (#1416).
+    FolderWithChannel(TrackId),
     DuplicateTrack(TrackId),
     DuplicateChannel(ChannelId),
     DuplicateContent(ContentId),
@@ -1346,6 +1344,7 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::FolderWithChannel(id) => write!(f, "track {} is a folder and cannot have a mixer channel", id.0),
             Self::DuplicateTrack(id) => write!(f, "track id {} is used twice", id.0),
             Self::DuplicateChannel(id) => write!(f, "channel id {} is used twice", id.0),
             Self::DuplicateContent(id) => write!(f, "clip content id {} is used twice", id.0),
@@ -1557,6 +1556,10 @@ impl Project {
         for track in &self.tracks {
             if let Some(channel) = track.channel {
                 channel_ref(channel, &mut errors);
+            }
+            // A folder plays nothing: it has no channel of its own.
+            if track.folder && track.channel.is_some() {
+                errors.push(ValidationError::FolderWithChannel(track.id));
             }
             if let Some(parent) = track.parent {
                 track_ref(parent, &mut errors);

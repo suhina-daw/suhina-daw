@@ -75,6 +75,7 @@ fn project_built() -> Project {
     };
     Project {
         tracks: vec![Track {
+            folder: false,
             id: TrackId(1),
             name: "Keys".into(),
             color: None,

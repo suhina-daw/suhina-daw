@@ -23,6 +23,7 @@ fn eq_device() -> Device {
         .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
         .unwrap_or_default();
     Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: "EQ".into(),
@@ -168,6 +169,7 @@ fn grouped_eq_project() -> Project {
     let mut branch = suhina_engine::model::Branch::new("Branch 1");
     branch.devices.push(grouped);
     let group = Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: "Group".into(),

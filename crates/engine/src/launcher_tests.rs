@@ -70,6 +70,7 @@ pub(super) fn project(contents: Vec<ClipContent>, slots: Vec<Vec<Slot>>) -> Proj
     Project {
         tracks: (1..=n)
             .map(|i| Track {
+                folder: false,
                 id: TrackId(i),
                 name: format!("T{i}"),
                 color: None,

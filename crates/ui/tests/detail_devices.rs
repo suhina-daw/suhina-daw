@@ -22,6 +22,7 @@ const SLOT: &str = "Select Beat B on Drums (scene 3)";
 
 fn device(name: &str) -> Device {
     Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: name.into(),

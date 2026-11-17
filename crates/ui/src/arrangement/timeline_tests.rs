@@ -6,10 +6,10 @@ use crate::demo::demo_project;
 
 #[test]
 fn a_presentation_folder_is_foldable_without_audio_controls() {
-    use suhina_engine::model::{Extension, Track};
+    use suhina_engine::model::Track;
     let mut p = demo_project();
     let mut folder = Track::new(TrackId(900), "Folder");
-    folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+    folder.folder = true;
     p.tracks[0].parent = Some(folder.id);
     p.tracks.insert(0, folder);
     let view = Timeline::build(&p, None);
@@ -440,3 +440,4 @@ fn only_clips_that_share_a_linked_content_show_as_linked() {
     project.arrangement.lanes[0].clips.pop();
     assert!(linked(&project).is_empty(), "a linked content one clip plays shows no mark");
 }
+

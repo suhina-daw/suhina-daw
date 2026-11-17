@@ -43,7 +43,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 14;
+pub const VERSION: u64 = 15;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -367,6 +367,10 @@ fn track_value(t: &Track) -> Value {
         "parent": t.parent.map(|p| p.0),
     });
     if let Some(map) = out.as_object_mut() {
+        // Only a presentation folder says so (#1416).
+        if t.folder {
+            map.insert("folder".into(), json!(true));
+        }
         // Left out while it is the default: every port, every channel.
         if t.midi_input != MidiInput::default() {
             let port = match &t.midi_input.port {
@@ -506,6 +510,10 @@ fn device_value(d: &Device) -> Value {
         // Only a channel's clip host says so (#990), so other devices keep their shape.
         if d.clip_host {
             map.insert("clip_host".into(), json!(true));
+        }
+        // Only an instrument whatever its plug-in is now says so (#1416).
+        if d.instrument {
+            map.insert("instrument".into(), json!(true));
         }
         // Only a device with a key (sidechain) says so, so other devices keep their shape.
         if !d.inputs.is_empty() {
@@ -1265,6 +1273,10 @@ fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
         }
         Some(_) => return Err(format!("{at}.color: expected #RRGGBB").into()),
     };
+    // A presentation folder, from version 15 (#1416); before it the `suhina/folder` extension
+    // (data `[1]`) said so, and it is read into the field and dropped.
+    let mut extensions = extensions(t, at)?;
+    let was_folder = take_extension(&mut extensions, "folder", |data| data == [1]);
     Ok(Track {
         id: TrackId(whole(t, "id", at)?),
         name: text(t, "name", at)?,
@@ -1274,8 +1286,17 @@ fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
         parent: optional_whole(t, "parent", at)?.map(TrackId),
         midi_input: read_midi_input(t.get("midi_input"), at)?,
         audio_input: read_audio_input(t.get("audio_input"), at)?,
-        extensions: extensions(t, at)?,
+        folder: flag(t, "folder", false, at)? || was_folder,
+        extensions,
     })
+}
+
+/// Takes the `suhina/<key>` extension out of `extensions` when there is one whose data `fits`:
+/// a Suhina state a version before 15 kept as an extension (#1416), now a field of its own.
+fn take_extension(extensions: &mut Extensions, key: &str, fits: impl Fn(&[u8]) -> bool) -> bool {
+    let before = extensions.0.len();
+    extensions.0.retain(|e| !(e.format == "suhina" && e.key == key && fits(&e.data)));
+    extensions.0.len() != before
 }
 
 /// A track's `audio_input`: `{ "channels": [] | [n] | [n, n + 1], "monitor": "auto" | "in" |
@@ -1499,8 +1520,16 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
             gain: float_or(input, "gain", 1.0, &at)?,
         });
     }
+    // An instrument whatever its plug-in is now, from version 15 (#1416); before it the
+    // `suhina/instrument` and `suhina/missing-instrument` extensions said so.
+    let mut extensions = extensions(d, at)?;
+    let hosted = matches!(kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. });
+    let placeholder = matches!(kind, DeviceKind::Foreign { .. });
+    let was_instrument = (hosted && take_extension(&mut extensions, "instrument", <[u8]>::is_empty))
+        | (placeholder && take_extension(&mut extensions, "missing-instrument", <[u8]>::is_empty));
     Ok(Device {
         inputs,
+        instrument: flag(d, "instrument", false, at)? || was_instrument,
         // From version 6 (#763 › 1); earlier files' devices get theirs when the project is opened.
         id: DeviceId(read_id(d, at)?),
         name: text(d, "name", at)?,
@@ -1510,7 +1539,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         params,
         automation,
         clip_host: flag(d, "clip_host", false, at)?,
-        extensions: extensions(d, at)?,
+        extensions,
     })
 }
 

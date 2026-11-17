@@ -35,8 +35,7 @@ impl Note {
 impl Track {
     /// A presentation folder groups tracks without an audio mixer channel.
     pub fn is_folder(&self) -> bool {
-        self.channel.is_none()
-            && self.extensions.0.iter().any(|e| e.format == "suhina" && e.key == "folder" && e.data == [1])
+        self.folder && self.channel.is_none()
     }
 
     /// A track that plays nothing yet, on no channel, outside every group, hearing no input.
@@ -50,6 +49,7 @@ impl Track {
             parent: None,
             midi_input: MidiInput::default(),
             audio_input: AudioInput::default(),
+            folder: false,
             extensions: Extensions::default(),
         }
     }
@@ -131,6 +131,7 @@ impl Device {
             automation: Vec::new(),
             clip_host: false,
             inputs: Vec::new(),
+            instrument: false,
             extensions: Extensions::default(),
         }
     }

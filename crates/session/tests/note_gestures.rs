@@ -71,6 +71,7 @@ fn project() -> Project {
 
 fn project_built() -> Project {
     let track = |id: u32, name: &str| Track {
+        folder: false,
         id: TrackId(id),
         name: name.into(),
         color: None,

@@ -7,7 +7,7 @@ use crate::{
     records::{data, dword, error, number},
 };
 use std::collections::{BTreeMap, BTreeSet};
-use suhina_model::{Extension, Rgb, Track, TrackId};
+use suhina_model::{Rgb, Track, TrackId};
 
 #[derive(Default)]
 pub(crate) struct Row {
@@ -150,7 +150,7 @@ pub(crate) fn apply(import: &mut Import, rows: &BTreeMap<u32, Row>) {
         let mut folder =
             Track::new(id, if row.name.is_empty() { format!("Playlist {}", group + 1) } else { row.name.clone() });
         folder.color = row.color;
-        folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+        folder.folder = true;
         order.insert(id, group);
         p.tracks.push(folder);
     }

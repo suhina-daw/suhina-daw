@@ -45,8 +45,7 @@ An explicit playlist row colour takes precedence for both its placements and the
 source track on its first placement. Pattern, sample and source colours are used
 only when the represented playlist row has no custom colour.
 
-Playlist groups become channel-less presentation folders, marked by the neutral
-`suhina/folder` extension `[1]`. Existing mixer families remain intact inside a
+Playlist groups become channel-less presentation folders (a track's `folder` field, #1416). Existing mixer families remain intact inside a
 folder when all their placements belong there; a family shared across folders
 stays outside and produces a warning. No channel output or send is changed.
 
@@ -67,7 +66,7 @@ to reproduce the original envelope. Their source durations remain retained.
 The initial importer extends the container reader. It reads channels, pattern notes and
 playlist placements into the existing project model (ADR 0001). It is a partial import,
 not a promise of identical playback. Import warnings name the unsupported behaviour.
-Unavailable instruments carry the neutral missing-instrument marker, preventing fallback tones even when soloed.
+Unavailable instruments are placeholders with the `instrument` field set, preventing fallback tones even when soloed.
 The existing project.open command opens the result through the same session path in every frontend.
 
 ## Mapping
@@ -280,9 +279,9 @@ foreign effects) with a warning, rather than loading an unintended default prese
 
 Both channel instruments and mixer effects use this decoder. Supported instruments
 retain their source mute state and are matched by the existing scanned-plugin catalog.
-The importer does not load a binary directly from an untrusted project path. A stored
-`suhina/instrument` extension marks hosted instruments so an unavailable installation
-is silent even when soloed or bypassed. An installed host slot takes precedence.
+The importer does not load a binary directly from an untrusted project path. A hosted
+instrument's `instrument` field keeps its role, so an unavailable installation is silent even
+when soloed or bypassed. An installed host slot takes precedence.
 
 ## Audio stretch time encodings
 

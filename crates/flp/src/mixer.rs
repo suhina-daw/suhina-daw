@@ -193,6 +193,7 @@ mod tests {
 
     fn utility() -> Device {
         Device {
+            instrument: false,
             inputs: Vec::new(),
             id: DeviceId::NONE,
             name: "Source level".into(),

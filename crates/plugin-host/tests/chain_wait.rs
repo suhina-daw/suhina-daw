@@ -48,6 +48,7 @@ fn start(spec: &str, sample_rate: u32) -> (Plugin, Hosted) {
 
 fn plugin_device() -> Device {
     Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: "Test".into(),
@@ -94,6 +95,7 @@ fn project(chains: &[usize]) -> Project {
     for (n, &devices) in chains.iter().enumerate() {
         let id = n as u32 + 1;
         p.tracks.push(Track {
+            folder: false,
             id: TrackId(id),
             name: format!("T{id}"),
             color: None,

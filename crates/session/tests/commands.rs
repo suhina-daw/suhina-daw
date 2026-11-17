@@ -26,7 +26,7 @@ fn project_built() -> Project {
 fn presentation_folder_moves_and_ungrouping_never_change_audio_routes() {
     let mut p = project();
     let mut folder = Track::new(TrackId(100), "Folder");
-    folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+    folder.folder = true;
     p.tracks.push(folder);
     let channels = p.channels.clone();
     let mut session = Session::new(p);
@@ -41,6 +41,34 @@ fn presentation_folder_moves_and_ungrouping_never_change_audio_routes() {
     run(&mut session, "track.ungroup", json!({"track":"Folder"})).unwrap();
     assert_eq!(session.project().channels, channels);
     session.project().validate().unwrap();
+}
+
+/// `track.folder` makes a folder of its own (#1416): it gathers the tracks in view, in the place
+/// of the first, and changes nothing they play or where; one undo takes it away.
+#[test]
+fn a_folder_gathers_tracks_without_changing_what_they_play() {
+    let p = project();
+    let channels = p.channels.clone();
+    let mut session = Session::new(p);
+    let made = run(&mut session, "track.folder", json!({"tracks": ["Bass", "Lead"], "name": "Synths"})).unwrap();
+    let id = TrackId(made["track"].as_u64().unwrap() as u32);
+    let project = session.project();
+    let folder = project.track(id).unwrap();
+    assert!(folder.folder && folder.is_folder() && folder.channel.is_none());
+    assert_eq!(folder.name, "Synths");
+    assert_eq!(project.tracks[0].id, id, "in the place of the first track");
+    assert!(project.tracks.iter().filter(|t| t.id != id).all(|t| t.parent == Some(id)));
+    assert_eq!(project.channels, channels, "no channel and no route changes");
+    project.validate().unwrap();
+    // Saved and opened again, it is a folder still.
+    let text = suhina_project_file::to_json(project);
+    assert!(suhina_project_file::from_json(&text).unwrap().track(id).unwrap().is_folder());
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(session.project().track(id).is_none());
+    assert!(session.project().tracks.iter().all(|t| t.parent.is_none()));
+    // Tracks in different groups are not put in one folder.
+    run(&mut session, "track.folder", json!({"tracks": ["Bass"]})).unwrap();
+    assert!(run(&mut session, "track.folder", json!({"tracks": ["Bass", "Folder"]})).is_err());
 }
 
 #[test]

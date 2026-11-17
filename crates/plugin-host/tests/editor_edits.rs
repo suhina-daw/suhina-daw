@@ -54,6 +54,7 @@ fn bank(gain: f32) -> Vec<u8> {
 /// One note track with the test plug-in, given a bank.
 fn project() -> Project {
     let plugin = Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: "Test vst3".into(),

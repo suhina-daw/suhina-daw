@@ -64,6 +64,7 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                instrument: false,
                 inputs: Vec::new(),
                 id: Default::default(),
                 name: "Test vst3".into(),

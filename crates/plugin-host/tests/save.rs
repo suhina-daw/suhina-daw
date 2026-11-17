@@ -56,6 +56,7 @@ fn bank(gain: f32) -> Vec<u8> {
 /// is not installed.
 fn project() -> Project {
     let plugin = Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: "Test vst3".into(),

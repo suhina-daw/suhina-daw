@@ -39,3 +39,7 @@
 - **No tone without an instrument:** a MIDI track with no instrument is silent, unless
   *Tone without instrument* (Settings › Devices) is on; a switched-off or missing instrument is
   always silent.
+- **Folders:** Put in a folder in a track's menu gathers tracks (a selection, or one track) under a
+  folder track that only groups them in view: what they play and where stays as it was. A folder
+  folds, names and colours its tracks like a group, has no mixer controls and is kept in the
+  project file.

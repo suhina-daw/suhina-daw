@@ -68,6 +68,7 @@ fn project(tracks: u32) -> Project {
     };
     for id in 1..=tracks {
         p.tracks.push(Track {
+            folder: false,
             id: TrackId(id),
             name: format!("Synth {id}"),
             color: None,
@@ -90,6 +91,7 @@ fn project(tracks: u32) -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                instrument: false,
                 inputs: Vec::new(),
                 id: Default::default(),
                 name: "Synth".into(),

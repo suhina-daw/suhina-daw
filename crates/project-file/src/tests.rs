@@ -317,7 +317,7 @@ fn presentation_folders_colors_and_cosine_fades_survive_save_and_load() {
     let mut project = everything();
     let mut folder = Track::new(TrackId(900), "Folder");
     folder.color = Some(Rgb(96, 34, 32));
-    folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+    folder.folder = true;
     for track in project.tracks.iter_mut().filter(|t| t.parent.is_none()) {
         track.parent = Some(folder.id);
     }
@@ -1526,6 +1526,13 @@ fn every_feature() -> Project {
     project.channels[0].devices[0].inputs =
         vec![DeviceInput { gain: 0.5, ..DeviceInput::key(key_source, TapPoint::PostFader) }];
     project.arrangement.lanes[0].clips[0].fade_out_curve = FadeCurve { shape: FadeShape::Cosine, curve: 0.25 };
+    // Version 15: a presentation folder and a placeholder instrument as fields (#1416).
+    let folder = TrackId(project.tracks.iter().map(|t| t.id.0).max().unwrap_or(0) + 1);
+    project.tracks.push(Track { folder: true, ..Track::new(folder, "Folder") });
+    let mut placeholder =
+        Device::new("Lost synth", DeviceKind::Foreign { format: "flp".into(), id: "Lost synth".into() });
+    placeholder.mark_missing_instrument();
+    project.channels[0].devices.push(placeholder);
     renumbered(project)
 }
 
@@ -1598,6 +1605,12 @@ fn a_file_of_every_version_reads() {
             expected.channels[0].devices[0].inputs.clear();
             expected.arrangement.lanes[0].clips[0].fade_out_curve =
                 everything().arrangement.lanes[0].clips[0].fade_out_curve;
+        }
+        if version < 15 {
+            // Folders and instrument roles became fields with version 15 (#1416); before it they
+            // were `suhina/*` extensions, which these files do not hold.
+            expected.tracks.retain(|t| !t.folder);
+            expected.channels[0].devices.retain(|d| d.name != "Lost synth");
         }
         if version < 13 {
             // A note's velocity range came with version 13 (#1282).
@@ -1865,4 +1878,29 @@ fn a_notes_velocity_range_round_trips_and_is_checked() {
     assert_eq!(from_json(&to_json(&project)).map(renumbered), Ok(renumbered(project)));
     let bad = written.replace("\"velocity_range\": 20", "\"velocity_range\": 128");
     assert!(from_json(&bad).is_err());
+}
+
+/// A file before version 15 said a folder and an instrument role with `suhina/*` extensions
+/// (#1416): they are read into the fields, and the extensions are gone.
+#[test]
+fn a_version_14_folder_and_instrument_role_become_fields() {
+    let mut project = everything();
+    let mut folder = Track::new(TrackId(900), "Folder");
+    folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+    project.tracks.push(folder);
+    let mut hosted = Device::new("Synth", DeviceKind::Vst2 { id: 1_234 });
+    hosted.extensions.0.push(Extension { format: "suhina".into(), key: "instrument".into(), data: Vec::new() });
+    let mut lost = Device::new("Lost", DeviceKind::Foreign { format: "flp".into(), id: "Lost".into() });
+    lost.extensions.0.push(Extension { format: "suhina".into(), key: "missing-instrument".into(), data: Vec::new() });
+    project.channels[0].devices.extend([hosted, lost]);
+    let old = to_json(&project).replacen(&format!("\"version\": {VERSION}"), "\"version\": 14", 1);
+    assert!(old.contains("\"version\": 14"));
+    let read = from_json(&old).unwrap();
+    let folder = read.track(TrackId(900)).unwrap();
+    assert!(folder.folder && folder.is_folder());
+    assert!(folder.extensions.0.is_empty());
+    let devices = &read.channels[0].devices;
+    let named = |name: &str| devices.iter().find(|d| d.name == name).unwrap();
+    assert!(named("Synth").is_external_instrument() && named("Synth").extensions.0.is_empty());
+    assert!(named("Lost").is_missing_instrument() && named("Lost").extensions.0.is_empty());
 }

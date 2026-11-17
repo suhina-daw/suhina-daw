@@ -43,6 +43,7 @@ pub fn demo_project() -> Project {
     for (index, (name, clips)) in CLIPS.iter().enumerate() {
         let id = index as u32 + 1;
         project.tracks.push(Track {
+            folder: false,
             id: TrackId(id),
             name: (*name).into(),
             color: None,
@@ -92,6 +93,7 @@ pub fn demo_project() -> Project {
     for (offset, (channel_id, name)) in returns.iter().enumerate() {
         let id = 10 + offset as u32;
         project.tracks.push(Track {
+            folder: false,
             id: TrackId(id),
             name: (*name).into(),
             color: None,

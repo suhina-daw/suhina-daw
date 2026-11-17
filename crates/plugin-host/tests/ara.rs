@@ -47,6 +47,7 @@ fn project(clip: bool) -> Project {
     };
     let mut channel = Channel::new(ChannelId(1), "C");
     channel.devices.push(Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: "Test vst3".into(),

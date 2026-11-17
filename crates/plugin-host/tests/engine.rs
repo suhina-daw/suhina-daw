@@ -63,6 +63,7 @@ fn env() -> Arc<PluginEnv> {
 
 fn plugin_device(id: &str) -> Device {
     Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: format!("Test {id}"),
@@ -92,6 +93,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
     let notes = if two { vec![note(0.0, 0.5), note(1.0, 0.5)] } else { vec![note(0.0, length)] };
     Project {
         tracks: vec![Track {
+            folder: false,
             id: TrackId(1),
             name: "T".into(),
             color: None,

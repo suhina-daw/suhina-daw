@@ -114,6 +114,7 @@ pub(crate) fn insert_track(
         automation: Vec::new(),
     });
     let track = Track {
+        folder: false,
         id,
         name: name.to_string(),
         color: None,
@@ -1072,6 +1073,7 @@ fn place_stems(
         for setting in suhina_media::stems::mastering_devices(&info) {
             let Some(device) = suhina_device_registry::info(setting.id) else { continue };
             c.devices.push(suhina_model::Device {
+                instrument: false,
                 inputs: Vec::new(),
                 id: suhina_model::DeviceId::NONE,
                 name: device.name.to_string(),

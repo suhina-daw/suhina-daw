@@ -64,6 +64,7 @@ fn alone(project: &Project, track: TrackId) -> Project {
         // The range is rendered straight through: the arrangement's loop region does not wrap it.
         transport: Transport { loop_enabled: false, ..project.transport.clone() },
         tracks: vec![Track {
+            folder: false,
             id: track,
             name: source.map(|t| t.name.clone()).unwrap_or_default(),
             color: None,

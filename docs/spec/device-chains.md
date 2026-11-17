@@ -75,8 +75,8 @@ applies an event at its next internal block boundary on a grid counted from `res
 keeps the output independent of the host's block sizes at the cost of up to one internal
 block of timing.
 
-An importer can explicitly identify an unavailable instrument using the device extension
-`format="suhina", key="missing-instrument"`, with empty data, on a Foreign device. This
+An importer can explicitly identify an unavailable instrument by setting a Foreign device's
+`instrument` field (#1416; the `suhina/missing-instrument` extension before version 15). This
 placeholder consumes note events and produces silence through a native instrument slot,
 also when solo overrides the channel mute or the placeholder is bypassed. Removing or
 replacing it removes this behaviour. Its original identity and state remain unchanged;
@@ -220,7 +220,8 @@ The native sampler reuses the SDK's sample runtime and theme-aware UI widgets.
 `Device::load_sample` installs immutable decoded audio off the callback; graph
 replacement owns its disposal. This is a native instrument, not an `.sd` node.
 
-Hosted devices marked with the empty `suhina/instrument` extension retain their instrument
+Hosted devices whose `instrument` field is set (the `suhina/instrument` extension before
+version 15) retain their instrument
 role without an installed plugin. A successfully resolved host slot takes precedence;
 otherwise they consume notes silently, including while bypassed or soloed. Changing the
 device to a built-in or foreign kind makes this hosted-role marker inapplicable.

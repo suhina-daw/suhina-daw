@@ -933,12 +933,15 @@ opens). It is window state, not a command.
 
 ### Groups inside groups
 
-A presentation folder is a channel-less track marked by the `suhina/folder`
-extension with bytes `[1]`. It folds, names, colours and orders its children as
-a group does, but has no mixer controls. Moving into or out of a folder and
-ungrouping it leaves channel outputs and sends unchanged. Moving into an audio
-group still changes the output to that group. Folders count toward the same
-nesting limit as audio groups and survive project save/load in their extension.
+A presentation folder is a track without a channel whose `folder` field is set (#1416). It
+folds, names, colours and orders its children as a group does, but has no mixer controls and
+plays nothing: it only gathers tracks in view. `track.folder {tracks, name?}` puts tracks (all in
+the same group, or in none) into a new folder in the place of the first of them; the track menu
+offers it as **Put in a folder**, or **Put selected tracks in a folder** for a selection. Moving
+into or out of a folder and ungrouping it (`track.ungroup`) leave channel outputs and sends
+unchanged. Moving into an audio group still changes the output to that group. Folders count
+toward the same nesting limit as audio groups and are saved as `folder` in the project file
+(version 15; before it the `suhina/folder` extension, read into the field).
 
 ### Cosine fade shape
 

@@ -62,6 +62,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "track.folder",
+        label: "Put tracks into a new folder, which only gathers them in view: they play as before",
+        params: &[
+            param("tracks", ParamType::Tracks, "the tracks to put in it (ids or names), all in the same group or none"),
+            optional("name", ParamType::Text, "the folder's name (\"Folder\" if left out)"),
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::commands::folder_tracks,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "track.setGroup",
         label: "Move a track (a group with its tracks) into a group track, or out of every group, and play into it",
         params: &[

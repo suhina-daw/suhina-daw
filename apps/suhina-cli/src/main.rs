@@ -464,6 +464,7 @@ fn put_fm_synth_on_note_tracks(project: &mut Project, patch: &suhina_device_fm_s
         .filter_map(|(i, p)| synth.param(i).map(|v| DeviceParam::new(&*p.id, v)))
         .collect();
     let device = Device {
+        instrument: false,
         inputs: Vec::new(),
         id: Default::default(),
         name: suhina_device_fm_synth::INFO.name.to_string(),

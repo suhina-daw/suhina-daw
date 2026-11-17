@@ -485,6 +485,12 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         actions.push(Action::new("track.group", json!({ "tracks": tracks })));
         ui.close();
     }
+    // A folder only gathers the tracks in view; they play as before (#1416).
+    let folder_label = if selected { "Put selected tracks in a folder" } else { "Put in a folder" };
+    if ui.button(folder_label).clicked() {
+        actions.push(Action::new("track.folder", json!({ "tracks": tracks })));
+        ui.close();
+    }
     if menu.is_group && ui.button("Ungroup").clicked() {
         actions.push(Action::new("track.ungroup", json!({ "track": track })));
         ui.close();

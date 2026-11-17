@@ -944,6 +944,7 @@ pub(crate) fn group_tracks(session: &mut Session, params: &Value) -> Result<Valu
     p.tracks.retain(|t| !family.contains(&t.id));
     let at = first.min(p.tracks.len());
     let group = Track {
+        folder: false,
         id,
         name,
         color: None,
@@ -961,6 +962,41 @@ pub(crate) fn group_tracks(session: &mut Session, params: &Value) -> Result<Valu
     let member_channels: Vec<ChannelId> = members.iter().filter_map(|m| channel_id_of(p, *m)).collect();
     for channel in p.channels.iter_mut().filter(|c| member_channels.contains(&c.id)) {
         channel.output = Some(channel_id);
+    }
+    Ok(json!({ "track": id.0 }))
+}
+
+/// `track.folder`: a presentation folder (#1416) in the place of the first of `tracks`, holding
+/// them (with theirs). Unlike a group it has no channel: what the tracks play and where they play
+/// it stays as it was.
+pub(crate) fn folder_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &mut session.project;
+    let members = track_list(p, params)?;
+    let parents: Vec<Option<TrackId>> = members.iter().map(|id| p.track(*id).and_then(|t| t.parent)).collect();
+    let parent = parents.first().copied().flatten();
+    if parents.iter().any(|x| *x != parent) {
+        return Err("the tracks to put in a folder must all be in the same group, or in none".into());
+    }
+    // The folder adds a level above every track it takes, as a group does.
+    let deepest = members.iter().map(|&m| p.group_depth(m).unwrap_or(0) + p.nesting_below(m)).max().unwrap_or(0);
+    if deepest + 1 > MAX_GROUP_DEPTH {
+        return Err(format!("groups and folders nest at most {MAX_GROUP_DEPTH} deep; this would go deeper").into());
+    }
+    let name = match Args::new(params).value("name") {
+        None => "Folder".to_string(),
+        Some(v) => v.as_str().filter(|n| !n.trim().is_empty()).ok_or("name must be a text, not empty")?.to_string(),
+    };
+    let id = TrackId(p.tracks.iter().map(|t| t.id.0).max().unwrap_or(0) + 1);
+    // The folder takes the place of its first track; its tracks (with theirs) follow it.
+    let family: Vec<TrackId> = members.iter().flat_map(|m| p.with_descendants(*m)).collect();
+    let first = p.tracks.iter().position(|t| family.contains(&t.id)).unwrap_or(p.tracks.len());
+    let moved: Vec<Track> = p.tracks.iter().filter(|t| family.contains(&t.id)).cloned().collect();
+    p.tracks.retain(|t| !family.contains(&t.id));
+    let at = first.min(p.tracks.len());
+    let folder = Track { parent, folder: true, ..Track::new(id, name) };
+    p.tracks.splice(at..at, std::iter::once(folder).chain(moved));
+    for track in p.tracks.iter_mut().filter(|t| members.contains(&t.id)) {
+        track.parent = Some(id);
     }
     Ok(json!({ "track": id.0 }))
 }
