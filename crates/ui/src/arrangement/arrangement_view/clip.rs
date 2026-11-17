@@ -835,10 +835,15 @@ pub(super) fn clip_box<'a>(
         || state.gesture.fade_curve().copied().is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
     let fits = rect.width() >= 3.0 * FADE_HANDLE && rect.height() >= 2.0 * FADE_HANDLE;
+    // A handle's shape menu keeps the handles: the menu opens under the pointer, which then is
+    // over the menu and not the clip, and a handle gone takes its menu with it.
+    let menu_open = [FadeEdge::In, FadeEdge::Out]
+        .into_iter()
+        .any(|edge| egui::Popup::is_id_open(ui.ctx(), fade_handle_id(clip.id, edge).with("popup")));
     if clip.audio
         && fits
         && state.gesture.clip().copied().is_none_or(|d| !mine(&d))
-        && (pointer_in || selected || fading)
+        && (pointer_in || selected || fading || menu_open)
     {
         let grid = fade_grid;
         for edge in [FadeEdge::In, FadeEdge::Out] {
@@ -857,7 +862,7 @@ pub(super) fn clip_box<'a>(
             }
             let which = if edge == FadeEdge::In { "Fade-in" } else { "Fade-out" };
             let label = format!("{which} of {name} on {}", lane.name);
-            let id = Id::unique(("clip-fade", clip.id.0, edge == FadeEdge::In));
+            let id = fade_handle_id(clip.id, edge);
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             response.widget_info(|| {
@@ -1039,6 +1044,11 @@ pub(super) fn clip_box<'a>(
     if crossfades_at(timeline, clip.id, FadeEdge::Out) {
         shown.fade_out = 0.0;
     }
+    // Where the fade-in handle takes the pointer: the Edit gain envelope button gives it way.
+    let fade_in_hit = (!crossfades_at(timeline, clip.id, FadeEdge::In)).then(|| {
+        fade_handle(rect, FadeEdge::In, shown.fade_in as f32 * state.beat_width)
+            .expand((FADE_HANDLE_HIT - FADE_HANDLE) / 2.0)
+    });
 
     // Copying (Ctrl held): the clip stays where it is drawn, and its copy shows where it lands.
     let copying = state.gesture.clip().copied().is_some_and(|d| d.copy || copy_key) && (at - clip.start).abs() > 1e-9;
@@ -1212,8 +1222,18 @@ pub(super) fn clip_box<'a>(
             let left = rect.left().max(row.clip.left()) + 4.0;
             let size = crate::arrangement::envelope::BUTTON;
             let button = Rect::from_min_size(Pos2::new(left, bar.center().y - size / 2.0), Vec2::splat(size));
-            if crate::arrangement::envelope::edit_button(ui, &envelope_painter, button, clip.id, name, envelope_edited)
-            {
+            // The button takes the pointer only off the fade-in handle, which lies over its left
+            // edge while the fade is short: a right-click there opens the fade's menu (#1527).
+            let hit = fade_in_hit.map_or(button, |handle| beside(button, handle));
+            if crate::arrangement::envelope::edit_button(
+                ui,
+                &envelope_painter,
+                button,
+                hit,
+                clip.id,
+                name,
+                envelope_edited,
+            ) {
                 crate::arrangement::envelope::toggle_editing(ui.ctx(), clip.id);
             }
             if envelope_edited && rect.height() >= bar.height() + size + 6.0 {
@@ -1812,6 +1832,27 @@ const ENVELOPE_BUTTON_LEAST: f32 = 48.0;
 /// Points a pitch row needs for a clip's notes to be drawn. A note is 2 points high, so rows under
 /// 2 overlap a little, and still read as the part's shape; only under a point do they merge.
 const LEAST_PITCH_ROW: f32 = 1.0;
+
+/// What of `button` is left to take the pointer beside `handle`, which wins where they overlap:
+/// the part on the side of the button where most of it is, or all of it when they do not meet.
+pub(super) fn beside(button: Rect, handle: Rect) -> Rect {
+    if !button.intersects(handle) {
+        return button;
+    }
+    let (left, right) = (handle.left() - button.left(), button.right() - handle.right());
+    let mut hit = button;
+    if right >= left {
+        hit.min.x = handle.right().min(button.right());
+    } else {
+        hit.max.x = handle.left().max(button.left());
+    }
+    hit
+}
+
+/// The id of `clip`'s fade handle at `edge`; its shape menu's popup is `.with("popup")` of it.
+fn fade_handle_id(clip: ClipId, edge: FadeEdge) -> Id {
+    Id::unique(("clip-fade", clip.0, edge == FadeEdge::In))
+}
 
 /// The pitches a clip's notes use, lowest first, each once: a row each in the clip.
 pub(super) fn used_keys(keys: impl Iterator<Item = u8>) -> Vec<u8> {
