@@ -442,3 +442,217 @@ fn an_automated_parameter_shows_its_lane_without_a_player() {
     let gain = harness.get_by_label("Gain").accesskit_node().numeric_value();
     assert_eq!(gain, Some(-12.0), "the lane's value, not the device's -3.5");
 }
+
+/// The window on the Arrangement view with the audio project (one clip, `Loop`, warped on two
+/// markers at beats 0 and 4), not opened yet.
+#[allow(clippy::unwrap_used)]
+fn audio_window() -> Harness<'static, App> {
+    let (project, waveforms) = super::project_with_audio();
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    app.set_waveforms(waveforms);
+    let mut harness = window_with_step(app, 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness
+}
+
+/// [`audio_window`] with the clip opened in the audio editor.
+fn opened_audio_editor() -> Harness<'static, App> {
+    let mut harness = audio_window();
+    let at = harness.get_by_label("Clip Loop on Loop at bar 1").rect().center();
+    double_click_at(&mut harness, at);
+    harness.run();
+    harness
+}
+
+/// The warp markers of the `Loop` clip as (beat, seconds).
+#[allow(clippy::unwrap_used)]
+fn loop_markers(harness: &Harness<'static, App>) -> Vec<(f64, f64)> {
+    let project = harness.state().session().unwrap().project();
+    let lane = project.arrangement.lanes.iter().find(|l| l.name == "Loop").unwrap();
+    lane.clips[0].audio.warp_markers.iter().map(|m| (m.time, m.audio_time)).collect()
+}
+
+#[allow(clippy::unwrap_used)]
+fn loop_clip_id(harness: &Harness<'static, App>) -> u32 {
+    let project = harness.state().session().unwrap().project();
+    project.arrangement.lanes.iter().find(|l| l.name == "Loop").unwrap().clips[0].id.0
+}
+
+fn drag_from_to(harness: &mut Harness<'static, App>, from: egui::Pos2, to: egui::Pos2) {
+    harness.hover_at(from);
+    harness.step();
+    harness.drag_at(from);
+    harness.step();
+    harness.hover_at(to);
+    harness.step();
+    harness.drop_at(to);
+    harness.run();
+}
+
+/// An audio clip opened with a double-click shows its waveform in the detail area, where a MIDI
+/// clip shows its piano roll (`docs/spec/ui-audio-editor.md`).
+#[test]
+fn a_double_clicked_audio_clip_opens_the_audio_editor() {
+    let mut harness = audio_window();
+    assert!(harness.query_by_label("Audio editor").is_none(), "nothing is opened yet");
+    let at = harness.get_by_label("Clip Loop on Loop at bar 1").rect().center();
+    double_click_at(&mut harness, at);
+    harness.run();
+    assert!(harness.query_by_label("Audio editor").is_some(), "the waveform is on show");
+    // Its two warp markers, and the buttons along its ruler.
+    assert!(harness.query_by_label("Warp marker 1").is_some() && harness.query_by_label("Warp marker 2").is_some());
+    assert!(harness.query_by_label("Fit").is_some() && harness.query_by_label("Reset warp…").is_some());
+}
+
+/// A double-click on the waveform pins a warp marker where the sound is, a double-click on a
+/// marker takes it away, and each is one undo step.
+#[test]
+fn a_double_click_adds_a_warp_marker_and_a_double_click_on_it_removes_it() {
+    let mut harness = opened_audio_editor();
+    assert_eq!(loop_markers(&harness), [(0.0, 0.0), (4.0, 2.0)]);
+    let (first, last) = (
+        harness.get_by_label("Warp marker 1").rect().center().x,
+        harness.get_by_label("Warp marker 2").rect().center().x,
+    );
+    // Halfway between them is beat 2, where the sound is second 1.
+    let wave = harness.get_by_label("Audio editor").rect();
+    let at = egui::pos2((first + last) / 2.0, wave.center().y + 20.0);
+    double_click_at(&mut harness, at);
+    assert_eq!(loop_markers(&harness), [(0.0, 0.0), (2.0, 1.0), (4.0, 2.0)]);
+    // The new marker is the middle one; a double-click on it takes it away again.
+    let on_it = harness.get_by_label("Warp marker 2").rect().center();
+    double_click_at(&mut harness, egui::pos2(on_it.x, wave.center().y + 20.0));
+    assert_eq!(loop_markers(&harness), [(0.0, 0.0), (4.0, 2.0)]);
+    // A warped clip keeps two: a double-click on one of them does nothing.
+    let on_last = harness.get_by_label("Warp marker 2").rect().center();
+    double_click_at(&mut harness, egui::pos2(on_last.x - 2.0, wave.center().y + 20.0));
+    assert_eq!(loop_markers(&harness).len(), 2);
+}
+
+/// Dragging a warp marker moves it, on the grid, and the sound it is pinned to goes with it.
+#[test]
+fn dragging_a_warp_marker_moves_the_sound_pinned_to_it() {
+    let mut harness = opened_audio_editor();
+    let id = loop_clip_id(&harness);
+    harness.state_mut().run(&Action::new("clip.addWarpMarker", json!({ "clip": id, "beat": 2.0 })));
+    harness.run();
+    assert_eq!(loop_markers(&harness), [(0.0, 0.0), (2.0, 1.0), (4.0, 2.0)]);
+    let (first, last) = (
+        harness.get_by_label("Warp marker 1").rect().center().x,
+        harness.get_by_label("Warp marker 3").rect().center().x,
+    );
+    let per_beat = (last - first) / 4.0;
+    let from = harness.get_by_label("Warp marker 2").rect().center();
+    // Half a beat to the right: beat 2.5 on the grid, the same second of the file.
+    drag_from_to(&mut harness, from, from + egui::vec2(per_beat / 2.0, 0.0));
+    assert_eq!(loop_markers(&harness), [(0.0, 0.0), (2.5, 1.0), (4.0, 2.0)]);
+    // Dragged past its neighbour it stops short of it.
+    let from = harness.get_by_label("Warp marker 2").rect().center();
+    drag_from_to(&mut harness, from, from + egui::vec2(per_beat * 3.0, 0.0));
+    let markers = loop_markers(&harness);
+    assert!(markers[1].0 < 4.0 && markers[1].0 > 3.9, "{markers:?}");
+    assert_eq!(markers.len(), 3);
+}
+
+/// The Reset warp button asks whether to keep the warp markers or reset them; keeping changes
+/// nothing, resetting puts back the two markers at the ends.
+#[test]
+fn the_reset_dialog_keeps_the_markers_or_resets_them() {
+    let mut harness = opened_audio_editor();
+    let id = loop_clip_id(&harness);
+    harness.state_mut().run(&Action::new("clip.addWarpMarker", json!({ "clip": id, "beat": 2.0 })));
+    harness.run();
+    assert!(harness.query_by_label("Keep warp markers").is_none(), "no dialog yet");
+    harness.get_by_label("Reset warp…").click();
+    harness.run();
+    assert!(harness.query_by_label("Keep warp markers").is_some(), "the dialog asks");
+    harness.get_by_label("Keep warp markers").click();
+    harness.run();
+    assert!(harness.query_by_label("Keep warp markers").is_none(), "and goes");
+    assert_eq!(loop_markers(&harness).len(), 3, "the markers are as they were");
+    harness.get_by_label("Reset warp…").click();
+    harness.run();
+    harness.get_by_label("Reset to clip tempo").click();
+    harness.run();
+    assert!(harness.query_by_label("Keep warp markers").is_none());
+    assert_eq!(loop_markers(&harness), [(0.0, 0.0), (4.0, 2.0)]);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(loop_markers(&harness).len(), 3, "one undo step brings the markers back");
+}
+
+/// The clip panel's Warp part shows the settings of the clip's warp mode, and its editor buttons
+/// while the audio editor shows the clip; the editor's ruler has none of them.
+#[test]
+fn the_warp_part_shows_the_modes_settings_and_the_editors_buttons() {
+    let mut harness = opened_audio_editor();
+    let id = loop_clip_id(&harness);
+    // The default mode, Smooth, has no settings; the editor's buttons are there.
+    assert!(harness.query_by_label("Fit").is_some() && harness.query_by_label("Reset warp…").is_some());
+    assert!(harness.query_by_label("Snap to grid: On").is_some(), "the editor's grid snaps");
+    harness.state_mut().run(&Action::new("clip.setAudio", json!({ "clip": id, "mode": "texture" })));
+    harness.run();
+    assert!(harness.query_by_label("Grain: 60 ms").is_some() && harness.query_by_label("Flux: 25 %").is_some());
+    harness.state_mut().run(&Action::new("clip.setAudio", json!({ "clip": id, "mode": "rhythmic", "tail": "off" })));
+    harness.run();
+    assert!(harness.query_by_label("Grain: 60 ms").is_none(), "Rhythmic has its own settings");
+    assert!(harness.query_by_label("Envelope: 100 %").is_some());
+    // Snap off from the panel: the editor's grid stops snapping.
+    harness.get_by_label("Snap to grid: On").click();
+    harness.run();
+    assert!(!harness.state().audio_editor().grid().snap);
+}
+
+/// With the audio editor pressed last, Ctrl+1 and Ctrl+2 make its grid finer and coarser and
+/// Ctrl+4 turns snapping off, leaving the Arrangement's grid alone.
+#[test]
+fn the_grid_keys_change_the_audio_editors_grid() {
+    let mut harness = opened_audio_editor();
+    let arrangement = harness.state().arrangement().grid;
+    let wave = harness.get_by_label("Audio editor").rect();
+    harness.get_by_label("Audio editor").click();
+    harness.run();
+    let _ = wave;
+    let before = harness.state().audio_editor().grid();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Num1);
+    harness.run();
+    let finer = harness.state().audio_editor().grid();
+    assert_ne!(finer, before, "Ctrl+1 made it finer");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Num2);
+    harness.run();
+    assert_eq!(harness.state().audio_editor().grid(), before, "Ctrl+2 made it coarser again");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Num4);
+    harness.run();
+    assert!(!harness.state().audio_editor().grid().snap, "Ctrl+4 turned snapping off");
+    assert_eq!(harness.state().arrangement().grid, arrangement, "the Arrangement's grid is left alone");
+}
+
+/// The audio clip's panel is made narrower by its right edge: its parts fold into fewer columns,
+/// every one still there, and the audio editor takes the room; a double-click makes it as wide
+/// as it goes again (`docs/spec/clip-panel.md` › Layout).
+#[test]
+fn the_audio_clips_panel_narrows_and_folds_its_parts() {
+    let mut harness = opened_audio_editor();
+    let wide = harness.get_by_label("Audio editor").rect();
+    let gain = harness.get_by_label("Envelope: Off").rect();
+    let handle = harness.get_by_label("Clip panel width").rect().center();
+    drag_from_to(&mut harness, handle, egui::pos2(handle.x - 300.0, handle.y));
+    let narrow = harness.get_by_label("Audio editor").rect();
+    assert!(narrow.left() < wide.left() - 150.0, "the editor took the room: {wide:?} -> {narrow:?}");
+    assert!(narrow.left() > wide.left() - 320.0, "the panel stops at its narrowest: {narrow:?}");
+    // Every part is still there, some under others.
+    for label in ["Fit", "Reset warp…", "Snap to grid: On", "Envelope: Off"] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    assert_ne!(harness.get_by_label("Envelope: Off").rect(), gain, "the parts moved as they folded");
+    // A double-click makes it as wide as it goes.
+    let handle = harness.get_by_label("Clip panel width").rect().center();
+    harness.hover_at(handle);
+    harness.step();
+    double_click_at(&mut harness, handle);
+    harness.run();
+    assert_eq!(harness.get_by_label("Audio editor").rect().left(), wide.left());
+}

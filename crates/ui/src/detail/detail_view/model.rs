@@ -340,6 +340,9 @@ pub struct ClipInfo {
     pub warped: bool,
     pub stretch: StretchMode,
     pub transpose: f64,
+    /// The settings of the warp modes that have them (`clip.setAudio`'s slice, tail, envelope,
+    /// grain and flux).
+    pub warp: suhina_engine::model::WarpSettings,
     /// The clip the column's controls edit; none where nothing can be edited.
     pub at: Option<ClipRef>,
     /// Fade-in and fade-out in beats (`clip.setFades`).
@@ -788,6 +791,7 @@ pub fn build_with(
                 warped: audio.is_some() && placed.audio.warped,
                 stretch: if audio.is_some() { placed.audio.stretch } else { Default::default() },
                 transpose: if audio.is_some() { placed.audio.transpose } else { 0.0 },
+                warp: placed.audio.warp,
                 at: Some(match scene {
                     Some(scene) => ClipRef::Slot(id, scene),
                     None => ClipRef::Arrangement(id, placed.id),

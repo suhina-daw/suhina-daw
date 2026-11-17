@@ -876,7 +876,7 @@ fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> C
 }
 
 /// What an audio clip needs to draw its waveform: the engine's mapping from beats to the file.
-fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<AudioView> {
+pub(crate) fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<AudioView> {
     let region = content.lanes.iter().find_map(|l| match &l.data {
         LaneData::Audio(region) => Some(region),
         LaneData::Notes(_) => None,

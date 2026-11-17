@@ -731,6 +731,8 @@ pub struct App {
     sample_drops: Vec<crate::detail::device_canvas::SampleTarget>,
     /// The piano roll a selected MIDI clip shows in the detail area.
     piano_roll: PianoRollState,
+    /// The audio editor's zoom and scroll, for the audio clip it shows.
+    audio_editor: crate::detail::audio_editor::AudioEditorState,
     /// Backups a crash left, offered one at a time (`docs/spec/backups.md` › The offer on
     /// start); the one chosen to open, and a backup to show in the file manager, for the app.
     recovery: Vec<suhina_session::backup::Leftover>,
@@ -930,6 +932,7 @@ impl App {
             expanded_panel: None,
             sample_drops: Vec::new(),
             piano_roll: PianoRollState::default(),
+            audio_editor: crate::detail::audio_editor::AudioEditorState::default(),
             recovery: Vec::new(),
             recovery_open: None,
             reveal: None,
@@ -3348,7 +3351,7 @@ impl App {
         if !self.arrangement.toolbar {
             self.arrangement.tool = arrangement_view::ArrangementTool::Select;
         }
-        self.arrangement.has_focus = !self.piano_roll.focused;
+        self.arrangement.has_focus = !self.piano_roll.focused && !self.audio_editor.focused();
         self.arrangement.take_solo = self.session().and_then(Session::take_solo);
         // The default grid from the settings: at start, and again when the setting changes.
         if self.applied_grid != Some(self.settings.view.default_grid) {
@@ -3705,6 +3708,7 @@ impl App {
                     // A hidden piano roll does not keep the keyboard, nor the view to one track, and
                     // a note its audition sounds goes off.
                     self.piano_roll.focused = false;
+                    self.audio_editor.set_focused(false);
                     actions.extend(self.piano_roll.stop_audition());
                     actions.extend(self.piano_roll.settle_on_hide());
                     self.arrangement.focus = None;

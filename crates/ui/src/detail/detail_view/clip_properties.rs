@@ -52,6 +52,53 @@ pub(super) fn beats_text(beats: f64) -> String {
     format!("{rounded} beats")
 }
 
+fn panel_width_id() -> Id {
+    Id::unique("clip-panel-width")
+}
+
+/// The width of an audio clip's panel in a row, inside its border and padding: the one its right
+/// edge was dragged to, from the narrowest that keeps the Clip and Audio parts side by side to
+/// the widest, where every part is in one row (the first width).
+fn panel_width(ui: &Ui) -> f32 {
+    let (least, most) = (super::clip_panel::LEAST_WIDTH, super::clip_panel::ROW_WIDTH);
+    ui.data(|d| d.get_temp::<f32>(panel_width_id())).unwrap_or(most).clamp(least, most)
+}
+
+/// The handle on the right edge of the audio clip's panel `column`: a drag makes the panel
+/// narrower or wider, a double-click makes it as wide as it goes.
+fn width_handle(ui: &mut Ui, painter: &egui::Painter, column: Rect) {
+    let handle = Rect::from_min_max(
+        Pos2::new(column.right() - 3.0, column.top()),
+        Pos2::new(column.right() + 3.0, column.bottom()),
+    );
+    let response = ui
+        .interact(handle, Id::unique("clip-panel-width-handle"), Sense::click_and_drag())
+        .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Clip panel width"));
+    if response.double_clicked() {
+        ui.data_mut(|d| d.remove::<f32>(panel_width_id()));
+    } else if response.dragged_by(egui::PointerButton::Primary) {
+        // From the width and the place the button went down at, so the edge stays under the
+        // pointer however far the drag goes past the ends.
+        let start_id = panel_width_id().with("drag");
+        if response.drag_started() {
+            let origin = ui.input(|i| i.pointer.press_origin()).map_or(handle.center().x, |p| p.x);
+            let width = panel_width(ui);
+            ui.data_mut(|d| d.insert_temp(start_id, (width, origin)));
+        }
+        let (least, most) = (super::clip_panel::LEAST_WIDTH, super::clip_panel::ROW_WIDTH);
+        let (from, origin) = ui.data(|d| d.get_temp::<(f32, f32)>(start_id)).unwrap_or((panel_width(ui), 0.0));
+        if let Some(pointer) = response.interact_pointer_pos() {
+            let width = (from + pointer.x - origin).clamp(least, most);
+            ui.data_mut(|d| d.insert_temp(panel_width_id(), width));
+        }
+    }
+    if response.hovered() || response.dragged() {
+        let ink = crate::kit::element::row_line();
+        painter.vline(column.right() - 1.0, column.y_range(), egui::Stroke::new(2.0, ink));
+    }
+}
+
 /// The selected clip: its name and where it is, how long, and what it plays; the loop, gain and
 /// warp rows edit it (› Clip column in `docs/spec/ui-clip-editor.md`). In a row it takes a column
 /// of [`CLIP_WIDTH`] at the left of `area`, stacked the rows it needs at the top; returns the
@@ -177,12 +224,17 @@ pub(super) fn clip_properties(
         let [_, right, _, left] = el.insets();
         let width = match &panel {
             Some(_) if !info.audio => super::midi_panel::row_width(show_tools) + left + right,
-            Some(_) => super::clip_panel::ROW_WIDTH + left + right,
+            Some(_) => panel_width(ui) + left + right,
             None => width,
         };
         Rect::from_min_max(area.min, Pos2::new(area.left() + width, area.bottom()))
     }
     .intersect(area);
+    // An audio clip's panel in a row is made narrower or wider by its right edge, its parts
+    // folding into fewer columns (`docs/spec/clip-panel.md` › Layout).
+    if !stacked && info.audio && panel.is_some() {
+        width_handle(ui, painter, column);
+    }
     let boxed = column;
     // What it holds goes in its content box, inside its border and padding (#1336).
     let column = el

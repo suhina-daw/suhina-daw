@@ -1113,6 +1113,12 @@ pub(crate) fn voice_key(
     region.pool_key().hash(&mut hasher);
     (clip.audio.warped, clip.audio.transpose.to_bits()).hash(&mut hasher);
     std::mem::discriminant(&clip.audio.stretch).hash(&mut hasher);
+    // The mode's settings: a changed grain, flux, slice, tail or envelope is heard at once.
+    let warp = clip.audio.warp;
+    (warp.slice.name(), warp.tail.name()).hash(&mut hasher);
+    for value in [warp.envelope, warp.grain, warp.flux] {
+        value.to_bits().hash(&mut hasher);
+    }
     for marker in &clip.audio.warp_markers {
         (marker.time.to_bits(), marker.audio_time.to_bits()).hash(&mut hasher);
     }
@@ -1221,5 +1227,26 @@ mod handover_tests {
         let key = |data: &Arc<crate::AudioData>| voice_key(&clip, &region, data, (0, LENGTH), 1);
         assert_eq!(key(&a), key(&a));
         assert_ne!(key(&a), key(&b), "the voice of the old samples is not taken over");
+    }
+
+    #[test]
+    fn a_changed_warp_mode_setting_is_another_voice() {
+        let region = AudioRegion::new("sine.wav");
+        let data = Arc::new(crate::AudioData { sample_rate: SR, channels: 1, samples: vec![0.0; 16] });
+        let clip = Clip::new(ContentId(1), 0.0, 4.0);
+        let key = |clip: &Clip| voice_key(clip, &region, &data, (0, LENGTH), 1);
+        let mut changed = Vec::new();
+        for edit in [
+            |w: &mut suhina_model::WarpSettings| w.grain += 10.0,
+            |w: &mut suhina_model::WarpSettings| w.flux += 10.0,
+            |w: &mut suhina_model::WarpSettings| w.envelope -= 10.0,
+            |w: &mut suhina_model::WarpSettings| w.slice = suhina_model::SliceAt::Eighth,
+            |w: &mut suhina_model::WarpSettings| w.tail = suhina_model::SliceTail::Off,
+        ] {
+            let mut other = clip.clone();
+            edit(&mut other.audio.warp);
+            changed.push(key(&other) != key(&clip));
+        }
+        assert_eq!(changed, [true; 5], "the old settings' voice is not taken over");
     }
 }
