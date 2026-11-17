@@ -24,6 +24,7 @@ pub mod session_geometry;
 pub mod skin;
 pub mod style_class;
 pub mod surface;
+pub mod table;
 pub mod theme;
 pub mod theme_css;
 pub mod theme_vars;

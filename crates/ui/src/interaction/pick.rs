@@ -43,6 +43,10 @@ pub enum PickField {
     CopyToFolder,
     /// A theme package or zip of themes to bring in (Settings › Themes › More › Import theme…).
     ThemePackage,
+    /// The file a missing file is now (the missing files panel's Locate…).
+    MissingFile,
+    /// A folder the missing files panel searches.
+    MissingFolder,
 }
 
 impl PickField {
@@ -50,7 +54,12 @@ impl PickField {
     pub fn folder(self) -> bool {
         !matches!(
             self,
-            Self::StartTemplate | Self::OpenProject | Self::ExportFile | Self::BackgroundImage | Self::ThemePackage
+            Self::StartTemplate
+                | Self::OpenProject
+                | Self::ExportFile
+                | Self::BackgroundImage
+                | Self::ThemePackage
+                | Self::MissingFile
         )
     }
 
@@ -73,6 +82,8 @@ impl PickField {
             Self::IrFolder => "Cabinet sounds folder",
             Self::CopyToFolder => "Copy the samples to",
             Self::ThemePackage => "Import a theme",
+            Self::MissingFile => "Locate the missing file",
+            Self::MissingFolder => "Search a folder for the missing files",
         }
     }
 
@@ -82,6 +93,7 @@ impl PickField {
             Self::ExportFile => &["wav", "flac", "ogg", "mp3"],
             Self::BackgroundImage => &["png"],
             Self::ThemePackage => &["suhina", "zip", "css", "json"],
+            Self::MissingFile => &["wav", "aif", "aiff", "flac", "mp3", "ogg", "oga", "mp4", "m4a"],
             field if field.folder() => &[],
             _ => &["suhina", "als"],
         }
@@ -92,6 +104,7 @@ impl PickField {
         match self {
             Self::ExportFile => "Audio",
             Self::BackgroundImage => "PNG image",
+            Self::MissingFile => "Audio",
             _ => "Projects",
         }
     }

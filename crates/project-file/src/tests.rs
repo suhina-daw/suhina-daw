@@ -1132,6 +1132,25 @@ fn the_file_that_was_decoded_is_the_one_saved() {
     assert_eq!(region.absolute_file, Some(decoded.display().to_string()));
 }
 
+/// A sampler inside a device group plays its file as one on the track does: saving into
+/// another folder moves its relative path too.
+#[test]
+fn a_grouped_sampler_s_path_is_moved_like_a_track_s() {
+    let mut project = everything();
+    let mut sampler = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+    sampler.set_sample_file("Samples/pad.wav");
+    let mut branch = Branch::new("Branch 1");
+    branch.devices.push(sampler);
+    project.channels[0].devices.push(Device::group("Group", DeviceGroup::with_branches(vec![branch])));
+    let decoded = std::path::absolute("/songs/old/Samples/pad.wav").unwrap_or_default();
+    let from = decoded.clone();
+    rebase_audio(&mut project, Path::new("/songs/old"), Path::new("/songs/new"), &move |_, _| Some(from.clone()));
+    let group = project.channels[0].devices.last().and_then(Device::as_group);
+    let sampler = group.and_then(|g| g.branches.first()).and_then(|b| b.devices.first());
+    assert_eq!(sampler.and_then(Device::sample_file), Some("../old/Samples/pad.wav"));
+    assert_eq!(sampler.and_then(Device::sample_absolute_file), Some(decoded.display().to_string().as_str()));
+}
+
 #[test]
 fn an_empty_audio_region_is_left_alone_by_rebase_audio() {
     // An empty audio clip has no file yet; saving elsewhere does not invent one.

@@ -151,12 +151,21 @@ pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path, found: FoundA
             }
         }
     };
-    for device in project.channels.iter_mut().flat_map(|c| &mut c.devices) {
-        let Some(source) = device.sample_file().map(str::to_owned) else { continue };
-        let (file, absolute) = place(&source, device.sample_absolute_file());
-        let relative = relative_to(&file, &to).map_or_else(|| source.clone(), |p| slashes(&p));
-        let absolute = absolute.unwrap_or_else(|| file.display().to_string());
-        device.set_sample_reference(&relative, &absolute);
+    // Samplers inside device groups too, each found by its path in its channel.
+    for channel in &mut project.channels {
+        let paths: Vec<Vec<usize>> = suhina_model::walk_devices(&channel.devices)
+            .into_iter()
+            .filter(|(_, device)| device.sample_file().is_some())
+            .map(|(path, _)| path)
+            .collect();
+        for path in paths {
+            let Some(device) = suhina_model::device_at_mut(&mut channel.devices, &path) else { continue };
+            let Some(source) = device.sample_file().map(str::to_owned) else { continue };
+            let (file, absolute) = place(&source, device.sample_absolute_file());
+            let relative = relative_to(&file, &to).map_or_else(|| source.clone(), |p| slashes(&p));
+            let absolute = absolute.unwrap_or_else(|| file.display().to_string());
+            device.set_sample_reference(&relative, &absolute);
+        }
     }
     for content in &mut project.contents {
         for lane in &mut content.lanes {

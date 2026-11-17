@@ -739,10 +739,12 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   loading it, such as an Intel-only plug-in on an Apple silicon Mac), is settled and listed
   apart.
 - **Missing files**: a project whose audio files cannot be found says so in a bar when it opens
-  (Find…, Later; View › Missing files). The panel lists them with the clips that use them, finds
-  them by name in the browser's folders and the project's folder at once, or in a folder typed or
-  dropped on it (walked in the background), best match first; Apply relinks them in one undo step
-  ([spec](docs/spec/missing-files.md)).
+  (Find…, Later; View › Missing files). The panel lists them in a table with the clips and
+  samplers that use them (inside device groups too), finds them by name in the browser's folders
+  and the project's folder at once, or in a folder chosen, typed or dropped on it (walked in the
+  background), best match first. A file located by hand (Locate…, dropped on its row, or its path
+  pasted) finds the others beside it and where its folder moved to; Copy file name hands the name
+  to a file search tool. Apply relinks them in one undo step ([spec](docs/spec/missing-files.md)).
 - The **sample map** (the browser's Sample map button, large in the main area, or in a window of its own for a second screen, Ctrl+Alt+M, which keeps its place): the samples
   of the browser's place laid out by how they sound, coloured by kind (kick, snare, clap, hats,
   toms, cymbals, percussion, bass, tonal, vocal, effect), as a free cloud or snapped to a grid that follows the view's shape (`soundmap.layout`
