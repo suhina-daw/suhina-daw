@@ -105,6 +105,10 @@ ignore = [
     # support (usvg) shapes `<text>` in theme artwork with it, on the bundled fonts only, never on
     # fonts from the system or a package. Remove this when resvg moves to harfrust.
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz: unmaintained, shapes SVG text in theme artwork with the bundled fonts; waits for resvg on harfrust" },
+    # chrono is unmaintained in favour of jiff. It is not a vulnerability, and Suhina's own code
+    # uses jiff: only rmcp, the MCP server's SDK, still depends on chrono, and turns on schemars'
+    # chrono04 with it (modelcontextprotocol/rust-sdk#1469). Remove this when rmcp drops chrono.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained, kept only by rmcp (and schemars through rmcp); waits for modelcontextprotocol/rust-sdk#1469" },
     # zbus 5 and its zvariant, zvariant_derive and zbus_names are unmaintained since development
     # moved to zbus 6. It is not a vulnerability, and it is Linux only. Two things pull in zbus 5:
     # the realtime crate, which asks rtkit for real-time priority over D-Bus (ADR 0006), and
