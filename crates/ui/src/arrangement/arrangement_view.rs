@@ -1277,6 +1277,19 @@ fn show_lanes(
             .attr(crate::kit::element::Muted, lane.mute)
             .enter_against_plain(crate::kit::element::Checked, focus == Some(lane.track));
         lane_el.paint(&lanes_painter, row.clip.intersect(lanes_area));
+        // A selected track's lane, tinted with `track-lane[selected]`'s background. A theme's own
+        // rule for it is painted above with the lane; the base sheet's light tint of the selection
+        // colour is not (a base rule's background is the element's computed value, which the
+        // view paints itself), so it is painted here. Not on the lane the piano roll edits, which
+        // keeps its own highlight.
+        if state.selected_tracks.contains(&lane.track)
+            && focus != Some(lane.track)
+            && let Some(style) = lane_el.style()
+            && !style.authored.background
+            && style.background.a() > 0
+        {
+            lanes_painter.rect_filled(row.clip.intersect(lanes_area), 0.0, style.background);
+        }
         // The time selection over this track's whole row, in the selection colour under its clips
         // (the clips light the stretch of their bodies under it), so the grid shows through it.
         if let Some(selection) =

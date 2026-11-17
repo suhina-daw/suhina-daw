@@ -684,12 +684,13 @@ fn pick(harness: &mut Harness<'static, App>, label: &str, name_bar: bool, modifi
     harness.run();
 }
 
-/// The opaque fill of the rectangle the last frame drew over exactly `area`.
+/// The opaque fill of the smallest rectangle the last frame drew over all of `area`: a clip's
+/// body, which may reach past the view where the clip's widget does not.
 fn fill_of(harness: &Harness<'static, App>, area: Rect) -> Option<Color32> {
     filled_rects(harness)
         .into_iter()
-        .filter(|r| r.fill.a() == 255)
-        .find(|r| (r.rect.min - area.min).length() < 0.6 && (r.rect.max - area.max).length() < 0.6)
+        .filter(|r| r.fill.a() == 255 && r.rect.expand(0.6).contains_rect(area))
+        .min_by(|a, b| a.rect.area().total_cmp(&b.rect.area()))
         .map(|r| r.fill)
 }
 
@@ -731,7 +732,7 @@ fn a_clip_picked_in_its_body_takes_the_selection_colour_and_its_name_bar_keeps_i
     let body = fill_of(&harness, rect);
     // The name bar along the clip's top: a fill over the clip's width, not the selection colour.
     let bar = filled_rects(&harness).into_iter().any(|r| {
-        r.fill.a() == 255
+        r.fill.a() > 0
             && r.fill != PICKED
             && (r.rect.top() - rect.top()).abs() < 1.0
             && r.rect.height() < rect.height() / 2.0
