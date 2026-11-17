@@ -3,11 +3,12 @@ description: What happens when a project's audio files cannot be found: the bar 
 read_when: missing files, missing samples, file not found, relink, locate, find files, moved samples, project.missingFiles, project.relinkFiles, library.findFiles
 type: spec
 status: draft
-last_verified: 2026-11-14
+last_verified: 2026-11-17
 covers:
   - crates/library/src/find.rs
   - crates/session/src/relink.rs
   - crates/ui/src/app/missing_files.rs
+  - crates/ui/src/kit/table.rs
 ---
 
 # Missing files
@@ -32,8 +33,9 @@ project opens and helps find the files again.
 
 ## When a project opens
 
-1. The project's audio is decoded as before; files not found are collected (with how many clips
-   use each).
+1. The project's audio is decoded as before, a sampler's inside a device group too; files not
+   found are collected (with how many clips and samplers use each). A name several clips and
+   samplers share is missing only when none of their paths is found.
 2. If any are missing, a bar shows under the control bar: "4 audio files are missing" with
    **Find…** and **Later**. Later hides the bar for this project; View › **Missing files (4)…**
    opens the panel until nothing is missing.
@@ -42,26 +44,84 @@ project opens and helps find the files again.
 
 ## The panel
 
-A dialog over the window, 600 px wide, as high as it needs (at most the window), titled
-"Missing files · <project>". Escape or **Close** closes it; nothing changes until **Apply**.
+A dialog over the window, as wide as the window allows (at most 1180 px) and as high as it
+needs (at most the window), drawn from the theme like every dialog: its box from `dialog`, its
+title bar from `dialog-title`, its rows from `list-row[kind="missing-file"]`, its words from
+`label`. Escape or **Close** closes it; nothing changes until **Apply**.
 
-**Rows**, one per missing file. Each row shows three lines:
+**Title bar:** "Missing files", the project's name and how many files; **Search again** on the
+right searches the browser's folders and the project's folder again (after the walk running,
+when one is, even a walk of the project's folder), offers only the files still on disk, and
+forgets the candidates no longer there. Whether a file is still there is looked at on another
+thread, for Search again as for a walk's finds, so a network share that does not answer never
+holds up the window. Search again looks at the disk first and then walks the project's folder,
+so a file whose choice by hand has gone is searched for by the same click; a file chosen by
+hand while the disk is looked at keeps that choice.
 
-1. A dot for its state (red *missing*, accent *found*, `text.value` *several found*; the state
-   is also the name's tooltip), the file name, how many clips use it, and at the right a
-   **Locate** field for a file path: Enter takes it as the candidate.
-2. The path it had (hint text).
-3. "→" and the candidate it will be linked to: a drop-down of the candidates, best first
-   (below), and *Leave it missing*.
+**Searching** (above the table):
 
-**Searching** (buttons above the rows):
+- **Search a folder**: a field for a folder path, **Browse…** (the system's folder dialog) and
+  **Search** (Enter in the field too); a folder dropped onto the panel is searched the same
+  way. The folder is walked on a thread of its own, with **Stop** in Search's place while it
+  runs and its file count in the bar at the bottom ("Searching D:\Samples: 12 400 files"). A
+  folder asked for while one is walked waits its turn; Stop drops the ones waiting too. A
+  search finds candidates only for files still missing; it never replaces a candidate the user
+  chose. Opening another project stops a walk for the one before.
+- The browser's index and the project's own folder are searched when the panel's list is made.
+- **Filter files**: a field that keeps the rows whose name or old path holds every word typed,
+  and **All**, **Missing** and **Found**, each with its count.
 
-- **Search the browser's folders**: runs by itself when the panel opens, again on click.
-- **Search a folder**: a field for a folder path (or a folder dropped onto the panel) and
-  **Search**. The folder is walked on a thread of its own, its file count shown as it goes
-  ("Searched 12 400 files"), with **Stop**. A search finds candidates only for files still
-  missing; it never replaces a candidate the user chose.
-- The project's own folder is searched with the browser's folders.
+**The table**, one row per missing file:
+
+| Column | Shows |
+|---|---|
+| (mark) | a dot in the state's colour |
+| File name | its name; its old path on hover |
+| Used by | "38 clips", "1 sampler", "2 clips, 1 sampler" |
+| Status | *Missing* (`label[kind="error"]`), *Found* (`ok`), *3 found* (`warning`: others of its name to choose from), *Chosen* (by hand, the accent) |
+| Replacement | the file it will be linked to, cut in its middle so the drive and the name stay; whole on hover |
+| | **Locate…** |
+
+The name's, the uses' and the state's columns are resized by dragging the edge between the
+headings (a double-click fits one to what it holds); the replacement takes the rest. A cut cell
+ends with an ellipsis and shows its whole text on hover. The rows scroll down under headings that
+stay, and sideways with them where the dialog is narrow. A click picks a row (Up and Down move
+through the rows shown), a double-click is Locate…, and the right-click menu has **Copy file
+name**, **Copy original path**, **Locate…** and, for a row with a replacement, **Show in
+Explorer** (Finder on macOS) and **Leave it missing**.
+
+**The selected file**, at the right (left out when the dialog is too narrow for it and the
+table): its name, its state as a tag and what uses it; **Original location**, with **Copy file
+name** (to paste into a file search tool) and **Copy path**; **Replacement**, with **Show in
+Explorer**, and **Locate file…**; then the files of its name, best first, and *Leave it
+missing*, a click choosing one. The panel scrolls when what it holds is taller than it.
+
+**Locating a file by hand** gives the row its file, as the user's choice:
+
+- **Locate…** opens the system's file dialog in the nearest folder of the old path still there.
+- A file **dropped on a row** is that row's file, whatever its name; dropped on the panel at the
+  right, the selected row's; dropped elsewhere, the missing file of its name. Several files
+  dropped at once each find the file of their name.
+- A path **pasted** (Ctrl+V while no field has the keys) is the selected row's file, unless it
+  has another missing file's name and not the selected one's, then that file's; without the
+  quotes a file manager's "copy as path" puts round it. A folder's path is searched. A file
+  copied as a file (not its path) gives no text to paste.
+
+A file located tells where the others went, at once:
+
+1. **Beside it:** each other missing file of its folder is a candidate.
+2. **Where its folder moved to:** the old and the new path less the folders and name they end
+   in alike (without regard to case) give the folder that moved, `C:\Old` → `D:\Samples` for
+   `C:\Old\Lib\Drums\kick.wav` found as `D:\Samples\Lib\Drums\kick.wav`; each other missing
+   file that was under the old folder is looked for at the same place under the new one.
+3. **Under it:** the located file's folder and its subfolders are walked, as a folder search, while
+   files are still missing (after the walk running, when one is).
+
+Rows chosen by hand keep their choice. The bar at the bottom says what was found ("Located
+kick.wav, found 4 more beside it").
+
+**The bar at the bottom:** a dot and "4 ready to relink · 15 still missing" (or the search
+running), the last thing done under it; **Close** and **Apply N** on the right.
 
 **Best candidate first:** the candidate whose folders end like the missing file's did (the most
 folder names in common, counted from the file upwards) comes first; then the shortest path.
@@ -75,7 +135,7 @@ Rows with no candidate stay missing.
 ## What relinking changes
 
 Sampler source paths participate in missing-file discovery and relinking alongside
-audio regions. Relinking decodes the replacement before changing the source and
+audio regions, a sampler inside a device group's branch as one on the track. Relinking decodes the replacement before changing the source and
 uses the same project undo step; the source remains silent while missing.
 
 Every audio clip that names the missing file (by its relative or absolute path) is pointed at the
@@ -91,7 +151,7 @@ Undo goes back to the old paths.
 
 | Command | Kind | Params | Does |
 |---|---|---|---|
-| `project.missingFiles` | read | | the files the project's audio clips and sampler sources name that are not found: `file` (as the clips name it), `lastPath` (where it was looked for), `clips` |
+| `project.missingFiles` | read | | the files the project's audio clips and sampler sources name that are not found: `file` (as the clips name it), `lastPath` (where it was looked for), `clips`, `samplers` (inside device groups too) |
 | `library.findFiles` | library | `names`, `folder?` | candidates for each file name: from the browser's index and the active project's folder, or, with `folder`, from walking that folder; each name with its paths |
 | `project.relinkFiles` | edit | `files`, `to` | points the clips and sampler sources naming each of `files` at the file at the same place in `to`, one undo step; refused when a `to` file does not exist or cannot be decoded |
 

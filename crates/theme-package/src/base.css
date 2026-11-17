@@ -515,6 +515,8 @@ list-row[kind="dialog"] { background-color: transparent; color: var(--text-prima
 list-row[kind="dialog"]:hover { background-color: var(--panel-hoverBackground); }
 list-row[kind="plugin"][selected] { background-color: var(--control-activeBackground); }
 list-row[kind="plugin"]:hover { background-color: var(--panel-hoverBackground); }
+list-row[kind="missing-file"][selected] { background-color: var(--control-activeBackground); }
+list-row[kind="missing-file"]:hover { background-color: var(--panel-hoverBackground); }
 list-row[kind="picker"] { background-color: var(--panel-hoverBackground); color: var(--text-secondary); }
 colour-swatch { border-color: var(--text-primary); }
 colour-swatch[kind="square"] { border-color: var(--border); }

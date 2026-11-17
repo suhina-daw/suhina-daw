@@ -218,3 +218,57 @@ fn a_file_relinked_from_outside_and_saved_opens_with_the_project_again() {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
+
+/// A sampler inside a device group is listed, counted as a sampler, and relinked like one on
+/// the track.
+#[test]
+fn a_grouped_sampler_is_listed_and_relinked() {
+    use suhina_model::{Branch, Device, DeviceGroup, DeviceKind};
+    let settings = temp("grouped-settings");
+    let found = temp("grouped-found").join("pad.wav");
+    wav(&found);
+    let gone = temp("grouped-gone").join("pad.wav");
+    let mut project = blank_project();
+    let mut sampler = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+    sampler.set_sample_file(&gone.display().to_string());
+    let mut branch = Branch::new("Branch 1");
+    branch.devices.push(sampler);
+    project.channels[0].devices.push(Device::group("Group", DeviceGroup::with_branches(vec![branch])));
+
+    let plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), settings.join("no-host"));
+    let mut p = Projects::with_library(plugins);
+    p.set_file_library(Library::new(Some(settings.clone())));
+    p.add(Session::new(project), None).unwrap();
+    let files = run(&mut p, "project.missingFiles", json!({})).unwrap()["files"].clone();
+    assert_eq!(files.as_array().map(Vec::len), Some(1));
+    assert_eq!((files[0]["clips"].clone(), files[0]["samplers"].clone()), (json!(0), json!(1)));
+
+    let to = json!([found.display().to_string()]);
+    run(&mut p, "project.relinkFiles", json!({ "files": [files[0]["file"].clone()], "to": to })).unwrap();
+    assert_eq!(run(&mut p, "project.missingFiles", json!({})).unwrap()["files"], json!([]));
+    let session = p.session_mut(None).unwrap();
+    let group = session.project().channels[0].devices.last().and_then(Device::as_group).unwrap();
+    assert_eq!(group.branches[0].devices[0].sample_file(), Some(found.display().to_string().as_str()));
+    let _ = std::fs::remove_dir_all(settings);
+}
+
+/// A file loaded through a path with a parent step is not missing while it is there, and is
+/// once it is gone.
+#[cfg(not(windows))]
+#[test]
+fn a_file_loaded_through_a_parent_step_is_missing_only_once_it_is_gone() {
+    let dir = temp("parent-step");
+    let kick = dir.join("samples").join("kick.wav");
+    std::fs::create_dir_all(dir.join("set")).unwrap();
+    wav(&kick);
+    let through = dir.join("set").join("..").join("samples").join("kick.wav");
+
+    let mut p = Projects::new();
+    p.add(Session::new(blank_project()), None).unwrap();
+    run(&mut p, "clip.addFiles", json!({ "paths": [through.display().to_string()], "start": 0.0 })).unwrap();
+    assert_eq!(run(&mut p, "project.missingFiles", json!({})).unwrap()["files"], json!([]));
+
+    std::fs::remove_file(&kick).unwrap();
+    assert_eq!(run(&mut p, "project.missingFiles", json!({})).unwrap()["files"].as_array().unwrap().len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
