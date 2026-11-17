@@ -145,6 +145,55 @@ fn plugins_are_switched_off_and_on_and_files_for_another_processor_are_listed() 
     let spec = listed["plugins"][0]["file"].as_str().map(|f| format!("clap:{f}#com.example.echo")).unwrap();
     run(&mut p, "plugin.setEnabled", json!({ "plugin": spec, "enabled": true })).unwrap();
     assert_eq!(p.plugin_env().catalog.plugins().count(), 1);
+
+    assert_eq!(listed["plugins"][0]["owned"], false, "not marked at first");
+    let marked = run(&mut p, "plugin.setOwned", json!({ "plugin": "Echo", "owned": true })).unwrap();
+    assert_eq!(marked["owned"], true);
+    let listed = run(&mut p, "plugin.list", json!({})).unwrap();
+    assert_eq!(listed["plugins"][0]["owned"], true, "listed as owned");
+    assert_eq!(p.plugin_env().catalog.plugins().count(), 1, "a mark leaves it offered");
+    assert!(run(&mut p, "plugin.setOwned", json!({ "plugin": "nothing", "owned": true })).is_err());
+    run(&mut p, "plugin.setOwned", json!({ "plugin": "Echo", "owned": false })).unwrap();
+    let listed = run(&mut p, "plugin.list", json!({})).unwrap();
+    assert_eq!(listed["plugins"][0]["owned"], false, "the mark taken away");
+}
+
+#[test]
+fn a_mark_names_the_product_so_every_format_of_it_is_owned() {
+    let dir = std::env::temp_dir().join(format!("suhina-owned-formats-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("settings")).unwrap();
+    let catalog = r#"{"version":3,"entries":[
+        {"path":"/clap/Echo.clap","modified":1,"size":9,"tried":5,"plugins":[
+            {"id":"com.example.echo","name":"Echo","vendor":"Example","version":"1","features":["audio-effect"]}]},
+        {"path":"/vst3/Echo.vst3","modified":1,"size":9,"tried":5,"plugins":[
+            {"id":"0123456789ABCDEF0123456789ABCDEF","name":"Echo","vendor":"Example","version":"1","features":["Fx"]}]},
+        {"path":"/vst3/Hall.vst3","modified":1,"size":9,"tried":5,"plugins":[
+            {"id":"FEDCBA9876543210FEDCBA9876543210","name":"Hall","vendor":"Example","version":"1","features":["Fx"]}]}]}"#;
+    std::fs::write(dir.join("settings").join("plugin-catalog.json"), catalog).unwrap();
+    let mut p = Projects::with_library(Library::new(Some(dir.join("settings")), dir.join("no-such-host")));
+    let listed = run(&mut p, "plugin.list", json!({})).unwrap();
+    let clap = listed["plugins"].as_array().unwrap().iter().find(|e| e["format"] == "clap").unwrap();
+    let spec = format!("clap:{}#com.example.echo", clap["file"].as_str().unwrap());
+    run(&mut p, "plugin.setOwned", json!({ "plugin": spec, "owned": true })).unwrap();
+    let listed = run(&mut p, "plugin.list", json!({})).unwrap();
+    let owned: Vec<(&str, bool)> = listed["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| (e["name"].as_str().unwrap(), e["owned"].as_bool().unwrap()))
+        .collect();
+    assert_eq!(owned.iter().filter(|(n, o)| *n == "Echo" && *o).count(), 2, "both formats of Echo: {owned:?}");
+    assert!(owned.iter().any(|(n, o)| *n == "Hall" && !*o), "another plug-in stays unmarked");
+    // Several at once, one save: the list form.
+    let both = run(&mut p, "plugin.setEnabled", json!({ "plugins": ["Hall", spec], "enabled": false })).unwrap();
+    assert_eq!(both["plugins"].as_array().map(Vec::len), Some(2));
+    assert!(run(&mut p, "plugin.setEnabled", json!({ "plugins": ["Hall", "nothing"], "enabled": true })).is_err());
+    let listed = run(&mut p, "plugin.list", json!({})).unwrap();
+    let off = listed["plugins"].as_array().unwrap().iter().filter(|e| e["enabled"] == false).count();
+    assert_eq!(off, 2, "a list with an unknown plug-in changed nothing");
+    assert!(run(&mut p, "plugin.setEnabled", json!({ "enabled": true })).is_err(), "neither plugin nor plugins");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

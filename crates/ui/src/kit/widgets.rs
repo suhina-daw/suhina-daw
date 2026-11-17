@@ -1736,16 +1736,39 @@ pub(crate) fn flat_button(
 /// start panel's *Download update now* under Help › Check for updates…) gets a button of its own
 /// (#1229): egui keeps a widget in the layer it was first seen in that frame.
 pub(crate) fn button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str) -> bool {
-    let response = button_area(ui, rect, Id::unique(("dialog-button", ui.layer_id(), label)), label);
+    let id = Id::unique(("dialog-button", ui.layer_id(), label));
+    button_with_id(ui, painter, rect, id, text, label, false).clicked()
+}
+
+/// A [`button`] with an id of the caller's: for buttons whose label two of them may share, such
+/// as a row's for a file whose name another row's file has too (#1461). `primary` draws it as
+/// the one a page means most: filled in the button's `accent-color`, its text in `--text-inverse`.
+pub(crate) fn button_with_id(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    id: Id,
+    text: &str,
+    label: &str,
+    primary: bool,
+) -> Response {
+    let response = button_area(ui, rect, id, label);
     let el = BUTTON.response(&response).enter();
-    let fill = el.hover_fade(hover(ui, &response), Look::background);
+    let hovered = hover(ui, &response);
+    let fill = if primary {
+        motion::mix(el.accent(), el.hover_fade(1.0, Look::background), hovered * 0.25)
+    } else {
+        el.hover_fade(hovered, Look::background)
+    };
     let radius = el.radius_or(0.0);
-    button_surface(painter, rect, &el, &response, false, fill, radius);
-    // Its edge in its `border-color`, its text in its `color`.
-    painter.rect_stroke(rect, radius, theme::hairline(el.border()), egui::StrokeKind::Inside);
+    button_surface(painter, rect, &el, &response, primary, fill, radius);
+    // Its edge in its `border-color` (the accent for the primary one), its text in its `color`.
+    let edge = if primary { el.accent() } else { el.border() };
+    painter.rect_stroke(rect, radius, theme::hairline(edge), egui::StrokeKind::Inside);
     let small = theme::ui_font(theme::TEXT_SMALL);
-    text_in(painter, rect, Align2::CENTER_CENTER, text, small, el.color());
-    response.clicked()
+    let ink = if primary { super::element::LABEL.attribute("kind", "inverse").look().color() } else { el.color() };
+    text_in(painter, rect, Align2::CENTER_CENTER, text, small, ink);
+    response
 }
 
 /// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a

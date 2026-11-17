@@ -472,6 +472,10 @@ widget[kind="field"] { background-color: var(--window-background); }
    splitter. */
 separator[kind="views-top"], separator[kind="views-bottom"] { border-color: var(--border); }
 label[kind="accent"] { color: var(--accent); }
+/* The plug-in manager's states: a plug-in ready, a file that needs attention, words on a lit fill. */
+label[kind="ok"] { color: var(--meter-normal); }
+label[kind="warning"] { color: var(--meter-hot); }
+label[kind="inverse"] { color: var(--text-inverse); }
 label[kind="on-light"] { color: var(--text-onColorLight); }
 label[kind="on-dark"] { color: var(--text-onColorDark); }
 bar-item[kind="menu"] { color: var(--text-secondary); }

@@ -188,6 +188,7 @@ impl App {
                             file,
                             spec,
                             enabled: p["enabled"].as_bool().unwrap_or(true),
+                            owned: p["owned"].as_bool().unwrap_or(false),
                         }
                     })
                     .collect();
@@ -215,6 +216,7 @@ impl App {
                     | PluginRequest::SetFolderEnabled(..)
                     | PluginRequest::SetEnabled(..)
                     | PluginRequest::SetEnabledMany(..)
+                    | PluginRequest::SetOwnedMany(..)
             )
         {
             self.status =
@@ -269,35 +271,73 @@ impl App {
                 self.plugins_read = false;
             }
             PluginRequest::SetEnabledMany(specs, enabled) => {
-                let mut done = 0;
-                for spec in &specs {
-                    match self.projects.execute("plugin.setEnabled", &json!({ "plugin": spec, "enabled": enabled })) {
-                        Ok(_) => done += 1,
-                        Err(e) => {
-                            self.status = Status::Error(e.message().to_owned());
-                            break;
-                        }
+                // One command and one save for them all, however many.
+                match self.projects.execute("plugin.setEnabled", &json!({ "plugins": specs, "enabled": enabled })) {
+                    Ok(_) => {
+                        let what = if specs.len() == 1 {
+                            "1 plug-in is".to_string()
+                        } else {
+                            format!("{} plug-ins are", specs.len())
+                        };
+                        self.status = Status::Done(format!("{what} {}", if enabled { "on" } else { "off" }));
                     }
-                }
-                if done == specs.len() {
-                    self.status = Status::Done(format!("{done} plug-ins are {}", if enabled { "on" } else { "off" }));
+                    Err(e) => self.status = Status::Error(e.message().to_owned()),
                 }
                 self.browser.relist();
                 self.plugins_read = false;
             }
-            PluginRequest::ScanFile(file) => {
+            PluginRequest::SetOwnedMany(specs, owned) => {
+                match self.projects.execute("plugin.setOwned", &json!({ "plugins": specs, "owned": owned })) {
+                    Ok(_) => {
+                        let what = if specs.len() == 1 {
+                            "1 plug-in".to_string()
+                        } else {
+                            format!("{} plug-ins", specs.len())
+                        };
+                        self.status = Status::Done(if owned {
+                            format!("{what} marked as owned")
+                        } else {
+                            format!("{what} no longer marked as owned")
+                        });
+                    }
+                    Err(e) => self.status = Status::Error(e.message().to_owned()),
+                }
+                self.plugins_read = false;
+            }
+            // The desktop app shows it in the system's file manager, as it does a backup.
+            PluginRequest::ShowFile(file) => self.reveal = Some(std::path::PathBuf::from(file)),
+            PluginRequest::ScanFiles(files) => {
                 let mut library = self.projects.library_mut().clone();
                 let (done, receive) = std::sync::mpsc::channel();
+                let count = files.len();
                 let started = std::thread::Builder::new().name("suhina-plugin-scan".into()).spawn(move || {
-                    let report =
-                        library.scan_file_again(std::path::Path::new(&file)).map(|r| (r.read.len(), r.failed.len()));
-                    let _unheard = done.send(ScanDone { library, report });
+                    // Each file read again in turn; the first that cannot be stops the rest.
+                    let mut totals = Ok((0, 0));
+                    for file in &files {
+                        match library.scan_file_again(std::path::Path::new(file)) {
+                            Ok(r) => {
+                                if let Ok((read, failed)) = &mut totals {
+                                    *read += r.read.len();
+                                    *failed += r.failed.len();
+                                }
+                            }
+                            Err(e) => {
+                                totals = Err(e);
+                                break;
+                            }
+                        }
+                    }
+                    let _unheard = done.send(ScanDone { library, report: totals });
                 });
                 match started {
                     Ok(_) => {
                         self.scan = Some(receive);
                         self.plugins.scanning = true;
-                        self.status = Status::Hint("Scanning the file again".into());
+                        self.status = Status::Hint(if count == 1 {
+                            "Scanning the file again".into()
+                        } else {
+                            format!("Scanning {count} files again")
+                        });
                     }
                     Err(e) => self.status = Status::Error(format!("could not start the scan: {e}")),
                 }

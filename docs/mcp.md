@@ -481,7 +481,9 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   of its own and tries files that failed again ([ADR 0006](decisions/0006-plug-in-hosting.md)).
   `plugin.list` with `ignored: true` also lists the files that hold no plug-ins; it always lists
   the files built for another processor (`incompatible`), and each plug-in's type and whether it
-  is switched on. `plugin.setEnabled` switches a plug-in off (not offered, not loaded) or on,
+  is switched on and marked as owned (`owned`). `plugin.setEnabled` switches a plug-in off (not
+  offered, not loaded) or on, `plugin.setOwned` marks one as the user's own (a mark of the product,
+  every format of it, that changes nothing offered or loaded), both for a `plugins` list at once,
   `plugin.scanFile` reads one listed file again, and `plugin.setFolderEnabled` switches a
   plug-in folder off or on for scans. `plugin.check` lists an open
   project's plug-in devices with the installed plug-in found for each (also a VST3 version
@@ -559,8 +561,8 @@ suhina-cli mcp --attach
   `midi.setInput`, `plugin.setHosting`, `library.setPluginsView`, `library.pin`, `library.unpin`,
   `library.tag`, `library.setTag`, `library.removeTag`, `soundmap.setKind`, and
   `project.autosave` with `interval` or `cleanUp`. Transport commands play on the window's output.
-- **Plug-ins.** `plugin.setEnabled` and `plugin.setFolderEnabled` change the person's plug-in
-  library and are refused. So are `plugin.scan` and `plugin.scanFile`: a scan would run on the
+- **Plug-ins.** `plugin.setEnabled`, `plugin.setOwned` and `plugin.setFolderEnabled` change the
+  person's plug-in library and are refused. So are `plugin.scan` and `plugin.scanFile`: a scan would run on the
   window's thread while plug-ins load; the person scans from the plug-in manager. `project_render`
   takes its snapshot with the window's projects and renders on a thread of its own, so the window
   keeps drawing.
