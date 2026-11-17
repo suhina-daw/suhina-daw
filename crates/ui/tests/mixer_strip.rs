@@ -671,7 +671,8 @@ fn session_pan_spans_the_strip_and_sends_have_room_for_values() {
     let harness = window_at(320.0);
     let pan = harness.get_by_label("Drums pan").rect();
     let name = harness.get_by_label("Drums strip").rect();
-    assert_eq!(pan.x_range(), name.x_range());
+    // The name is a bar out to the strip's edges (#1487 L12), the pan inside its padding.
+    assert!(name.left() < pan.left() && pan.right() < name.right(), "{name:?} {pan:?}");
     let a = harness.get_by_label("Drums send to A Reverb").rect();
     let b = harness.get_by_label("Drums send to B Delay").rect();
     assert!(a.width() >= 22.0 && b.width() >= 22.0);

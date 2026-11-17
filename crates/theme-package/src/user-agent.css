@@ -207,7 +207,8 @@ group[kind="mixer-body"] > divider,
 group[kind="mixer-body"] > pan,
 group[kind="mixer-body"] > value,
 group[kind="mixer-body"] > meter { flex-shrink: 0; }
-track-name[kind="mixer-name"] { margin-bottom: 2px; }
+/* The name is a bar along the strip's top, out to its edges past the body's padding (#1487 L12). */
+track-name[kind="mixer-name"] { margin: -6px -6px 2px; }
 group[kind="mixer-output"] { margin-bottom: 4px; }
 /* The divider lies over the gap under the device list, a point into the list and the next part. */
 divider[kind="mixer-divider"] { margin: -1px 0; }

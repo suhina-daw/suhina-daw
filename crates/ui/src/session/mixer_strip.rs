@@ -221,8 +221,11 @@ pub fn layout_in(
     let name = !compact && height >= NAME_AT;
     let output = !compact && height >= OUTPUT_AT;
     let pan = !compact && height >= PAN_AT;
-    let top =
-        inner.top() + if name { NAME + UNDER_NAME } else { 0.0 } + if output { OUTPUT + UNDER_OUTPUT } else { 0.0 };
+    // The name is a bar along the strip's top, in the body's padding (the user-agent sheet's
+    // `margin: -6px -6px 2px`), so the parts under it have that much more room.
+    let top = inner.top()
+        + if name { NAME + UNDER_NAME - PAD } else { 0.0 }
+        + if output { OUTPUT + UNDER_OUTPUT } else { 0.0 };
     let fixed = READOUT + UNDER_READOUT + if pan { KNOB_ROW } else { 0.0 };
     let rest = (bottom - top - fixed).max(0.0);
     // Devices, pan and fader align across tracks, returns and Main, including the send footer.

@@ -86,9 +86,12 @@ fn native(rect: Rect, has_sends: bool, input: bool, shared: Shared, main: bool, 
         return parts;
     }
     let mut top = inner.top();
+    // Since #1487 L12 the name is a bar along the strip's top, out to its edges.
     if height >= NAME_AT {
-        parts.name = Some(row(top, NAME));
-        top += NAME + UNDER_NAME;
+        let strip_top = top - PAD;
+        parts.name =
+            Some(Rect::from_min_max(Pos2::new(rect.left(), strip_top), Pos2::new(rect.right(), strip_top + NAME)));
+        top = strip_top + NAME + UNDER_NAME;
     }
     if height >= OUTPUT_AT {
         parts.output = Some(row(top, OUTPUT));
