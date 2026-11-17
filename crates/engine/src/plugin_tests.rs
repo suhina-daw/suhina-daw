@@ -1596,6 +1596,7 @@ fn stopping_a_plugin_note_joins_the_delayed_release_without_a_step() {
 
 fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::PluginSlot {
     crate::plugin::PluginSlot {
+        song_delay: 0,
         key: 1,
         processor: Some(processor),
         instrument: false,
@@ -1655,4 +1656,53 @@ fn joint_sends_record_busy_and_successful_trip_timing() {
     assert_eq!(slot.send_joint(&mut samples, &[], &[2], None), Sent::Out);
     assert!(slot.finish(&mut samples, None));
     assert_eq!(slot.longest_us, longest, "offline work does not pollute real-time diagnostics");
+}
+
+/// A plug-in after one with latency hears its sound that much later, so it is told the song that
+/// much earlier: a tempo-synced shape lines up with what it hears (#1446). The first plug-in is
+/// told the song as it is.
+#[test]
+fn a_plug_in_after_a_delaying_one_is_told_the_song_of_what_it_hears() {
+    const LATENCY: u32 = 4_800;
+    let p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3()), plug(vst3())]);
+    let (first, second) = (Stand::new(Behaviour::Delay(LATENCY as usize)), Stand::new(Behaviour::Gain(1.0)));
+    let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
+            &p,
+            vec![(first, PluginSlotInfo { latency: LATENCY, ..EFFECT }), (second, EFFECT)],
+        )),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    blocks(&mut renderer, 40, 512);
+    let first = *heard_first.lock().unwrap().last().expect("told of the song");
+    let second = *heard_second.lock().unwrap().last().expect("told of the song");
+    assert!(first.playing && second.playing);
+    assert_eq!(first.position - second.position, u64::from(LATENCY));
+    let beats = f64::from(LATENCY) * first.tempo / (60.0 * f64::from(SR));
+    assert!((first.beat - second.beat - beats).abs() < 1e-9, "{} and {}", first.beat, second.beat);
+}
+
+/// Stepping back across a barline steps the bar back too.
+#[test]
+fn an_earlier_song_position_steps_back_over_a_barline() {
+    let song = SongPosition {
+        playing: true,
+        position: 96_000,
+        tempo: 120.0,
+        beat: 4.25,
+        bar: 1,
+        bar_start: 4.0,
+        ..SongPosition::default()
+    };
+    // Half a beat back at 120 BPM and 48 kHz: 12 000 frames.
+    let earlier = song.earlier(12_000, 48_000.0);
+    assert_eq!((earlier.position, earlier.bar, earlier.bar_start), (84_000, 0, 0.0));
+    assert!((earlier.beat - 3.75).abs() < 1e-12);
+    // Stopped, nothing moves.
+    let stopped = SongPosition { playing: false, ..song };
+    assert_eq!(stopped.earlier(12_000, 48_000.0), stopped);
 }

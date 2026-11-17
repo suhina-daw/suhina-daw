@@ -91,6 +91,26 @@ pub struct SongPosition {
     pub cycle_seconds: Option<(f64, f64)>,
 }
 
+impl SongPosition {
+    /// The song `frames` frames earlier at `sample_rate`: what a plug-in hears that late is from
+    /// there. The tempo of the block stands for the stretch between; the bar steps back with
+    /// the beat. Unchanged while the transport is stopped.
+    pub fn earlier(&self, frames: u32, sample_rate: f64) -> Self {
+        if !self.playing || frames == 0 || sample_rate <= 0.0 || self.tempo <= 0.0 {
+            return *self;
+        }
+        let mut song = *self;
+        song.position = song.position.saturating_sub(u64::from(frames));
+        song.beat -= f64::from(frames) * song.tempo / (60.0 * sample_rate);
+        let bar_beats = f64::from(song.numerator.max(1)) * 4.0 / f64::from(song.denominator.max(1));
+        while song.beat < song.bar_start && song.bar > 0 {
+            song.bar -= 1;
+            song.bar_start -= bar_beats;
+        }
+        song
+    }
+}
+
 impl Default for SongPosition {
     fn default() -> Self {
         Self {
@@ -407,6 +427,10 @@ pub(crate) struct PluginSlot {
     pub(crate) sent_at: Option<Instant>,
     /// The parameter values it sends: set ones and automation.
     pub(crate) params: SlotParams,
+    /// How late the sound it gets is, in frames, from the devices before it in its chain: the
+    /// song position it is told is moved back by this and the chain's input delay, so a plug-in
+    /// that follows the song (a tempo-synced shape, an arpeggio) lines up with what it hears.
+    pub(crate) song_delay: u32,
 }
 
 impl PluginSlot {

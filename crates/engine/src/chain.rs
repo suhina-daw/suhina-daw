@@ -86,6 +86,10 @@ pub(crate) struct Chain {
     pub(crate) instrument: bool,
     /// The delay its devices add together, in frames.
     pub(crate) latency: u32,
+    /// How late the sound coming into it is, in frames: 0 for a track's own sources, the latest
+    /// of the chains that feed a bus or a return (set with the latency compensation). Its
+    /// plug-ins are told the song position of the sound they get ([`PluginSlot::song_delay`]).
+    pub(crate) input_latency: u32,
     /// Latency compensation: delays the chain's output so that it lines up with the chain with
     /// the most latency (set by the graph once every chain is built).
     pub(crate) delay: Delay,
@@ -297,8 +301,11 @@ impl Chain {
             let Some(built) = factory.device(stored, 0, &[position], (&mut device_lanes, slots.len())) else {
                 continue;
             };
+            let mut slot = built.slot;
+            // What the devices before it delay: its plug-ins are told the song that late.
+            set_song_delay(&mut slot, latency);
             latency = latency.saturating_add(built.latency);
-            slots.push(built.slot);
+            slots.push(slot);
             positions.push(position);
             ids.push(built.id);
             device_ids.push(stored.id);
@@ -346,6 +353,7 @@ impl Chain {
             params,
             instrument,
             latency,
+            input_latency: 0,
             delay: Delay::new(0),
             post: (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN),
             device_lanes,
@@ -400,6 +408,7 @@ impl Chain {
             params: Vec::new(),
             instrument: false,
             latency: 0,
+            input_latency: 0,
             delay: Delay::new(0),
             post: (1.0, 1.0),
             device_lanes: DeviceLanes::none(),
@@ -533,9 +542,12 @@ impl Chain {
     /// Tells the chain's plug-ins where the song is as the block starts
     /// ([`PluginProcessor::transport`]). Never allocates.
     pub(crate) fn transport(&mut self, song: &crate::plugin::SongPosition) {
+        let (input, sample_rate) = (self.input_latency, self.sample_rate);
         for slot in self.plugin_slots() {
             if let Some(processor) = slot.processor.as_mut() {
-                processor.transport(song);
+                // The song of the sound it hears: as late as the chain's input and the devices
+                // before it.
+                processor.transport(&song.earlier(input.saturating_add(slot.song_delay), sample_rate));
             }
         }
     }
@@ -1573,6 +1585,21 @@ fn midi_span(
     output.truncate(written + sent);
     for event in output.iter_mut().skip(written) {
         event.0 = (event.0 + start).min(start + final_frame);
+    }
+}
+
+/// Tells the plug-ins of `slot` (itself, or every one inside a group) that the devices before it
+/// delay their sound by `before` frames. A plug-in inside a group is told the delay before the
+/// group.
+fn set_song_delay(slot: &mut DeviceSlot, before: u32) {
+    match slot {
+        DeviceSlot::Plugin(plugin) => plugin.song_delay = before,
+        DeviceSlot::Group(_) => {
+            for plugin in crate::group::PluginSlots::new(std::slice::from_mut(slot)) {
+                plugin.song_delay = before;
+            }
+        }
+        DeviceSlot::Device(_) | DeviceSlot::MidiDevice(_) => {}
     }
 }
 
