@@ -4,7 +4,7 @@ read_when: velocity range, rolled velocity, note roll, seeded roll, note chance,
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-13
+last_verified: 2026-11-17
 covers:
   - crates/model/src/roll.rs
   - crates/engine/src/lib.rs
