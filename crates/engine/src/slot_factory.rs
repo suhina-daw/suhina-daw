@@ -125,6 +125,7 @@ impl SlotFactory<'_> {
         let info = *self.plugins.info.get(&key)?;
         let slot = PluginSlot {
             keyed: false,
+            song_delay: 0,
             key,
             processor: self.plugins.processors.remove(&key),
             instrument: info.instrument,

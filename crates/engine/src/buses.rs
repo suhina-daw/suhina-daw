@@ -256,6 +256,8 @@ pub(crate) fn build(
             }
         };
         chain.delay = Delay::new(to.saturating_sub(arrived) as usize);
+        // The sound coming into it is as late as its input: its plug-ins hear the song that late.
+        chain.input_latency = input.get(i).copied().unwrap_or(0);
         if let Some(mix) = chain.mix.as_mut() {
             mix.set_latency(to);
         }
