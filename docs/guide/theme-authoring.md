@@ -1135,6 +1135,10 @@ The transport (`toolbar-module#transport`) lays out `#control-play`, `#control-s
 - **Pan and send knobs of their own:** `pan.knob.body`, `pan.knob.pointer`, `send.knob.body` and
   `send.knob.pointer` artwork change only those knobs, in the Launcher and the Arrangement.
   `send { appearance: knob; }` makes the Arrangement's sends knobs too.
+- **Device knobs of your own:** `device.knob.body` and `device.knob.pointer` artwork replace the
+  faces and pointers of the knobs a device draws with its own artwork (the Amp Modeler's
+  knobs): `device.knob.body { image: url("assets/my-knob.png"); }`. The pointer turns with the
+  value; the arc around the knob keeps the knob's `accent-color`.
 - **The mixer's colour strip:** `mixer track-colour { display: none; }` hides it; `width`
   sizes it.
 

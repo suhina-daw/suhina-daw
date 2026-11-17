@@ -286,11 +286,16 @@ NAM models/
   - **The pack row** (the name row): a folder icon before it (the design system's folder
     artwork, so a theme supplies its own) and the current file's pack's name (the file's parent
     folder;
-    **(entered directly)** for a loose file), "No model" / "No IR" when none is set. Its
-    dropdown lists every pack's name; its ▲ ▼ steppers step through the packs.
+    **(entered directly)** for a loose file), "No model" / "No IR" when none is set; a capture
+    folder's pack shows as `Group › Capture`. Its dropdown lists every pack: a collection's
+    capture folders under their group's name as a heading, a line between one group and the
+    next, each by its own name; the Cab Loader's ◀ ▶ steppers step through the packs (the Amp
+    Modeler has none).
   - **The file row**: the current file's own name, its dropdown lists the current pack's files
-    by their shown names, its ▲ ▼ steppers step through that pack, wrapping.
-  - Labels: the pack row is `Amp Modeler: pack`, its steppers `previous pack` / `next pack`;
+    by their shown names, its ◀ ▶ steppers step through that pack, wrapping.
+  - Every dropdown row is one line: a long name is cut short, and the whole name shows on hover.
+  - Labels: the pack row is `Amp Modeler: pack`, the Cab Loader's steppers `previous pack` /
+    `next pack`;
     the file row is `Amp Modeler: model file` with `previous file` / `next file` (the Cab
     Loader likewise, with `cab file`). Choosing a pack loads its **first** file; both choices
     run `device.setNamFile`, one undo step each, as everything else on the panel.
@@ -401,53 +406,69 @@ The browser lists the library's presets beside the stock ones, under their devic
 
 Both panels are `devices/<name>/panel.json` layouts ([ADR 0021] › Amendment: device panels):
 the device-SDK's UI system draws them from the layouts and the device's parameters — the host's
-`DeviceSwitch`, `DeviceFiles` and `DeviceNote` widgets for the body's state, its `Dial` dials
-and `Button` toggles for the parameters, drawn controls for the Mid Freq line and the cab's
-volume lane ([sdk-custom-ui.md](sdk-custom-ui.md) › Reusable functional widgets). The existing
-header (the square on/off switch, the name, "Suhina") is unchanged. Everything interactive is
-`device.*` commands; labels are as a user reads them, and the tests find the panels by them.
-Each canvas is 428 × 168: the panel the chain row draws is 440 points wide (the canvas plus its
-padding) and 200 tall, and everything fits a detail area of its default height, no control over
-another.
+`DeviceFiles` and `DeviceNote` widgets for the body's state, its `Dial` dials and `Button`
+toggles for the parameters, a drawn control for the Mid Freq ([sdk-custom-ui.md](sdk-custom-ui.md)
+› Reusable functional widgets). The existing header (the square on/off switch, the name,
+"Suhina") is unchanged and is the only on/off switch. Everything interactive is `device.*`
+commands; labels are as a user reads them, and the tests find the panels by them. Each canvas
+is 428 × 168: the panel the chain row draws is 440 points wide (the canvas plus its padding) and
+200 tall, and everything fits a detail area of its default height, no control over another.
 
-Both panels, top to bottom:
+### The Amp Modeler
 
-1. **The pack row** — a full-width dropdown over the folder's packs ([Folders](#packs) ›
-   Packs: a subfolder of the folder in Settings, each one an amp or cab with several files;
-   **(entered directly)** when files sit beside the packs) with **previous pack** and **next
-   pack** stepper buttons on its right.
-   - The shown text: the current file's pack's name — the file's parent folder; "No model"
-     (Amp Modeler) / "No IR" (Cab Loader) when `state` is empty or the stored path is not a
-     pack's file.
-   - Choosing a pack loads its first file (`device.setNamFile`, one undo step). Labels:
-     "Amp Modeler: pack", "Amp Modeler: previous pack" (next pack); the Cab Loader likewise
-     ("Cab Loader: pack").
-2. **The controls area** — knob dials with a label over each and the value under it, in the
-   canvases' themes; a drag up or down turns, a double-click returns to the default, arrow keys
-   step when a knob has focus. Values read as the SDK's formats write them: dB with one
-   decimal, whole Hz (kHz from 1000), milliseconds two decimals.
-   - **The On button** at the Amp Modeler's controls area's top left ("Amp Modeler: device
-     on" / "… off"): a bigger copy of the header's square, the same `device.setEnabled`, lit
-     while the device runs; both always show the same state.
-   - Amp Modeler: the **EQ**, **HQ** and **Mono** buttons beside the On button, on its row, with the
-     **Mid Freq**'s line right of them — the name beside, a line whose diamond a drag sets and
-     a click jumps, the value past it; under them one row of dials, left to right: **Gain**;
-     **Bass / Mid / Treble**; **Delay**; **Volume** last.
-   - Cab Loader: the **Phase** (Ø) and **HP** buttons at the top; under them one row of
-     dials, left to right: **Delay**; **Bass / Mid / Treble**; **Mid Freq** —; a vertical
-     **Volume** lane at the right, a handle a drag moves and a click jumps, the value under.
-   - Toggles are lit when on: On, EQ, HQ, Mono, Phase, HP. Labels name the device: "Amp Modeler:
-     gain" … "Cab Loader: volume".
-3. **The file row** — the file's own name without its folder or extension ("FNDR BFSR VB Edge WRM2 CAB FREE", #644) in a dropdown
-   with the same previous/next steppers; "Choose a model file…" when none is set. Its dropdown
-   lists the current pack's files by their shown names. Labels: "Amp Modeler: model file",
-   "…previous file", "…next file" (Cab Loader likewise).
-4. **A note row** under the controls when the device's file does not run, one line, plain
-   text: "Model missing: <path>" (the name row falls back to the file's name), or what a file
-   faulted with, from the command's error; nothing while it runs and nothing when no file is
-   set — the pack row and the file row say that in their own texts. A device inside a group's
-   branch reads its name and note as one on the chain does. An A2 model without
-   quality levels notes "This model has no quality levels" when **HQ** is on.
+The Amp Modeler's canvas draws an amp head: its artwork (`devices/nam-amp-modeler/panel/`, the
+frame, the grille with the dark slots its controls sit in, the logo and the brushed plate under
+the knobs) is an image layer under the controls, at three times the canvas's points so it stays
+sharp on a high-DPI screen; the folder's `README.md` records its author and licence. What the
+artwork does not hold follows the theme: the texts, the knobs' arcs and pointers, the buttons'
+fills, the dropdowns and the steppers take the palette's colours, and a theme's
+`device.knob.body` and `device.knob.pointer` artwork replaces the knobs' faces
+([theme-skins.md](theme-skins.md)). Top to bottom:
+
+1. **The file row** — in the grille's top slots, left to right:
+   - **The pack**: a dropdown over the folder's packs ([Folders](#packs) › Packs: a subfolder of
+     the folder in Settings, each one an amp with several files; **(entered directly)** when
+     files sit beside the packs). The shown text is the current file's pack's name — the file's
+     parent folder; "No model" when `state` is empty or the stored path is not a pack's file.
+     Choosing a pack loads its first file (`device.setNamFile`, one undo step). Label:
+     "Amp Modeler: pack". The pack has no steppers: it is chosen from its dropdown.
+   - **The model file**: the file's own name without its folder or extension ("FNDR BFSR VB
+     Edge WRM2 CAB FREE", #644) in a dropdown listing the current pack's files by their shown
+     names; "Choose a model file…" when none is set. Label: "Amp Modeler: model file".
+   - **Previous model** and **next model** steppers (◀ ▶), stepping through the pack's files and
+     wrapping. Labels: "Amp Modeler: previous file", "Amp Modeler: next file".
+2. **The buttons' row** — **EQ**, **HQ** and **Mono**, lit when on (the theme's accent), then
+   **Mid Freq**: its name in a box of its own, and its value in the
+   box beside it, which a vertical drag sets (logarithmic, Shift for precision, a double click
+   resets), whole Hz (kHz from 1000).
+3. **The knobs** — on the plate, one row, left to right: **Gain**; **Bass / Mid / Treble**;
+   **Delay**; **Volume**; each with its name over it and its value under it. A knob's face is the
+   device's own knob (`Dial { image }`, a dark body with a grey rim), its value's arc around it and its pointer over it;
+   a drag up or down turns, a double-click returns to the default, arrow keys step when a knob
+   has focus. Values read as the SDK's formats write them: dB with one decimal, milliseconds two
+   decimals. Labels: "Amp Modeler: gain" … "Amp Modeler: volume".
+4. **A note row** on the frame under the plate when the device's file does not run, one line,
+   plain text: "Model missing: <path>" (the name row falls back to the file's name), or what a
+   file faulted with, from the command's error; nothing while it runs and nothing when no file is
+   set — the pack and the file rows say that in their own texts. A device inside a group's
+   branch reads its name and note as one on the chain does. An A2 model without quality
+   levels notes "This model has no quality levels" when **HQ** is on.
+
+### The Cab Loader
+
+Drawn in the theme's own colours, top to bottom:
+
+1. **The pack row** — a full-width dropdown over the folder's packs with **previous pack** and
+   **next pack** stepper buttons on its right; the shown text and the choice as the Amp
+   Modeler's pack ("No IR" when none). Labels: "Cab Loader: pack", "Cab Loader: previous pack"
+   (next pack).
+2. **The controls area** — the **Phase** (Ø) and **HP** buttons at the top, lit when on; under
+   them one row of dials, left to right: **Delay**; **Bass / Mid / Treble**; **Mid Freq** —; a
+   vertical **Volume** lane at the right, a handle a drag moves and a click jumps, the value
+   under. Labels name the device: "Cab Loader: delay" … "Cab Loader: volume".
+3. **The file row** — the IR's own name in a dropdown with the same previous/next steppers;
+   labels "Cab Loader: cab file", "…previous file", "…next file".
+4. **A note row** under the controls, as the Amp Modeler's.
 
 ## States
 

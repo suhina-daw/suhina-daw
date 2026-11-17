@@ -1612,7 +1612,11 @@ of bars, and a slider id per parameter.
 - **Hovered clips:** `clip:hover { background-color }` replaces the lighter mix of a clip under
   the pointer in a slot; the clip fades toward it and back as the pointer comes and goes.
 - **Knob artwork per part:** `pan.knob.body|pointer` and `send.knob.body|pointer` for a pan's and
-  a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`. An
+  a send's knob, in the Launcher and the Arrangement; without them they use `knob.*`.
+  `device.knob.body|pointer` replace the face and the pointer of a device panel's knobs that draw
+  the device's own artwork (the Amp Modeler's knobs, `Dial { image }`); without them those
+  knobs keep the device's image, never `knob.*`. The arc around them takes the knob's
+  `accent-color`. An
   Arrangement send is a knob with `send { appearance: knob }`, as in the mixer.
 - **Mixer colour strip:** `mixer > track-colour` (`display: none` hides it; `width` sizes it).
 - **`accent-color`** reaches every control in its scope, the built-in effects' parameter knobs too.

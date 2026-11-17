@@ -94,7 +94,10 @@ fn widgets_work_with_unrelated_parameter_names() {
             UiGesture::Drag,
         ),
         (Widget::Knob { label: "Amount".into() }, UiGesture::Drag),
-        (Widget::Dial { label: "Amount".into(), decimals: 0, format: TextFormat::Number }, UiGesture::Drag),
+        (
+            Widget::Dial { label: "Amount".into(), decimals: 0, format: TextFormat::Number, image: None },
+            UiGesture::Drag,
+        ),
         (Widget::Stepper { decimals: 1 }, UiGesture::Drag),
         (Widget::Disclosure { label: "Details".into() }, UiGesture::Toggle),
         (Widget::Menu, UiGesture::Menu),

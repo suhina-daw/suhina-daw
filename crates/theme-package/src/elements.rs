@@ -583,11 +583,20 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Prefixed("mixer-send-"))
         .settings(VALUE_SETTINGS)
         .artwork(&[own("send"), own("send.fill"), own("send.knob.body"), own("send.knob.pointer")]),
-    element("knob", Control, "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`.")
-        .parts(&["knob-body", "knob-pointer", "knob-ring"])
-        .attributes(&["kind"])
+    element(
+        "knob",
+        Control,
+        "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`, and `device.knob.*` replaces the face a device panel draws for its own knobs.",
+    )
+    .parts(&["knob-body", "knob-pointer", "knob-ring"])
+    .attributes(&["kind"])
         .settings(VALUE_SETTINGS)
-        .artwork(&[default_svg!("knob.body", "knob-body"), default_svg!("knob.pointer", "knob-pointer")]),
+        .artwork(&[
+            default_svg!("knob.body", "knob-body"),
+            default_svg!("knob.pointer", "knob-pointer"),
+            own("device.knob.body"),
+            own("device.knob.pointer"),
+        ]),
     element("knob-body", Part, "A knob's body; its artwork takes its `color`."),
     element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),
     element("knob-ring", Part, "The disc between a dial's rim and its inner disc: its `background-color`, where the region the dial is in gives none."),

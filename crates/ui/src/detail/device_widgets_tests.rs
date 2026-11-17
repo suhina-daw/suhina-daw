@@ -172,3 +172,12 @@ fn the_canonical_form_folds_the_root_once_and_the_dot_steps_out() {
     #[cfg(windows)]
     assert_eq!(canonical_paths(r"C:\a\b"), "C:/a/b");
 }
+
+#[test]
+fn a_file_row_shows_its_name_without_the_extension() {
+    assert_eq!(row_name("Bug333-Clean-ESR0,002.nam"), "Bug333-Clean-ESR0,002");
+    assert_eq!(row_name("Cab 412.WAV"), "Cab 412");
+    assert_eq!(row_name("Model metadata name"), "Model metadata name", "a model's own name keeps all of it");
+    assert_eq!(row_name(".nam"), "", "an extension alone leaves nothing, never a panic");
+    assert_eq!(GROUP_JOIN, " / ", "the join the folder scan writes a capture folder's pack name with");
+}

@@ -631,7 +631,12 @@ pub fn nine_slice(mesh: &mut egui::Mesh, rect: Rect, slice: Slice, texel: [f32; 
 fn raster_artwork(source: &str, ink: Color32, width: u32, height: u32, contain: bool) -> Option<egui::ColorImage> {
     let (width, height) = (width.clamp(1, 1024), height.clamp(1, 1024));
     if png_artwork(source) {
-        return super::artwork_png::raster(source, width, height);
+        // A role that keeps its artwork's proportions keeps a PNG's too, as it does an SVG's.
+        return if contain {
+            super::artwork_png::raster_contained(source, width, height)
+        } else {
+            super::artwork_png::raster(source, width, height)
+        };
     }
     let color = super::theme::hex_rgba(ink.to_srgba_unmultiplied());
     let source = source.replace("currentColor", &color);
@@ -870,6 +875,8 @@ fn paint_variant(
                     | "pan.knob.pointer"
                     | "send.knob.body"
                     | "send.knob.pointer"
+                    | "device.knob.body"
+                    | "device.knob.pointer"
             ) || role.starts_with("piano."),
         )
         .map(|image| painter.ctx().load_texture(format!("skin-{key}"), image, egui::TextureOptions::LINEAR));
