@@ -72,10 +72,11 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
    to a device takes its workers from one real-time pool: the player of the active project
    ([ADR 0007](0007-several-open-projects.md) › 4). Offline renders and exports take theirs from
    a second pool whose workers stay at normal priority: an export has no deadline, so the
-   system preempts its workers whenever a real-time thread needs a core, and an export beside
-   playback takes only the time playback leaves. Ordering jobs could not do this: a worker
-   cannot leave a chain's block it has started, so playback would wait for the export chains
-   already running, one on every worker at worst. Each pool's size is the physical performance
+   system preempts its workers whenever a real-time thread needs a core, and an export's own
+   chains beside playback take only the time playback leaves. Ordering jobs could not do this:
+   a worker cannot leave a chain's block it has started, so playback would wait for the export
+   chains already running, one on every worker at worst. An export's plug-ins are not covered:
+   they run in the hosts' audio threads at real-time priority (Consequences). Each pool's size is the physical performance
    cores less one, at most 8, counted where the system says which cores are which, and the
    physical cores less one where it does not; one core means no workers.
    `SUHINA_RENDER_THREADS=n` and an advanced setting in Settings › Audio override it, for
@@ -102,7 +103,9 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
    for the block, as an engine with no queue has to, is rejected: it cuts a gap into the track
    and skips its devices' state by a block, and a render on several threads would no longer
    equal the render on one. With a queue ahead of the device, a short wait costs nothing heard.
-   What is bit-identical is a render on any number of threads against one on one thread:
+   What is bit-identical is a render on any number of threads against one on one thread, for
+   devices whose output depends only on their input and state (every built-in device; a plug-in
+   that draws unseeded random numbers differs between any two renders, on one thread too):
    always offline, where every plug-in is waited for, and in real time only while no plug-in
    misses its deadline, since a late plug-in is replaced for its block
    ([ADR 0006](0006-plug-in-hosting.md) › 4) and whether one is late depends on timing; for the
