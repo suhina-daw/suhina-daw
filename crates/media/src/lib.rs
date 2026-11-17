@@ -288,11 +288,16 @@ impl Trusted {
     /// is decided from the path alone before anything is read, so a path that is neither (a
     /// network share a project names) is never touched.
     pub fn find(&self, path: &Path) -> Option<PathBuf> {
-        if !path.is_absolute() || path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        if !path.is_absolute() {
             return None;
         }
+        // Any file on a local disk may be read, so a parent step there reaches nothing more (a
+        // file loaded through `/set/../samples/kick.wav` keeps that path).
         if self.local && on_local_disk(path) {
             return path.is_file().then(|| path.to_path_buf());
+        }
+        if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return None;
         }
         if !self.files.contains(path) {
             let folder = self.folders.iter().find(|f| f.is_absolute() && path.starts_with(f))?;

@@ -251,3 +251,24 @@ fn a_grouped_sampler_is_listed_and_relinked() {
     assert_eq!(group.branches[0].devices[0].sample_file(), Some(found.display().to_string().as_str()));
     let _ = std::fs::remove_dir_all(settings);
 }
+
+/// A file loaded through a path with a parent step is not missing while it is there, and is
+/// once it is gone.
+#[cfg(not(windows))]
+#[test]
+fn a_file_loaded_through_a_parent_step_is_missing_only_once_it_is_gone() {
+    let dir = temp("parent-step");
+    let kick = dir.join("samples").join("kick.wav");
+    std::fs::create_dir_all(dir.join("set")).unwrap();
+    wav(&kick);
+    let through = dir.join("set").join("..").join("samples").join("kick.wav");
+
+    let mut p = Projects::new();
+    p.add(Session::new(blank_project()), None).unwrap();
+    run(&mut p, "clip.addFiles", json!({ "paths": [through.display().to_string()], "start": 0.0 })).unwrap();
+    assert_eq!(run(&mut p, "project.missingFiles", json!({})).unwrap()["files"], json!([]));
+
+    std::fs::remove_file(&kick).unwrap();
+    assert_eq!(run(&mut p, "project.missingFiles", json!({})).unwrap()["files"].as_array().unwrap().len(), 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}
