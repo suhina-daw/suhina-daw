@@ -239,8 +239,9 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
             Some(t)
         }
     };
-    if warp.is_none() && mode.is_none() && transpose.is_none() {
-        return Err("give warp, mode or transpose".into());
+    let settings = warp_settings(params)?;
+    if warp.is_none() && mode.is_none() && transpose.is_none() && settings.is_none() {
+        return Err("give warp, mode, transpose or a warp mode setting (slice, tail, envelope, grain, flux)".into());
     }
     let (at, clip) = named(session, params)?;
     let clip = clip.clone();
@@ -301,7 +302,10 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
     if let Some(t) = transpose {
         audio.transpose = t;
     }
-    let (warped, stretch, transpose) = (audio.warped, audio.stretch, audio.transpose);
+    if let Some(change) = settings {
+        audio.warp = change(audio.warp);
+    }
+    let (warped, stretch, transpose, settings) = (audio.warped, audio.stretch, audio.transpose, audio.warp);
     if let Some(before) = before {
         crate::audio_timing::follow(clip, &before, transport.tempo_bpm);
     }
@@ -309,7 +313,59 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
     out.insert("warp".into(), json!(warped));
     out.insert("mode".into(), json!(mode_name(stretch)));
     out.insert("transpose".into(), json!(transpose));
+    out.insert(
+        "settings".into(),
+        json!({
+            "slice": settings.slice.name(),
+            "tail": settings.tail.name(),
+            "envelope": settings.envelope,
+            "grain": settings.grain,
+            "flux": settings.flux,
+        }),
+    );
     Ok(Value::Object(with_scene_id(&session.project, out)))
+}
+
+/// A change to the stretch modes' settings `clip.setAudio` was given (`slice`, `tail`,
+/// `envelope`, `grain`, `flux`), as a function of the settings the clip has; `None` when none of
+/// them was given. Every value is checked before anything changes.
+#[allow(clippy::type_complexity)]
+fn warp_settings(
+    params: &Value,
+) -> Result<Option<Box<dyn Fn(suhina_model::WarpSettings) -> suhina_model::WarpSettings>>, CommandError> {
+    use suhina_model::{ENVELOPE_RANGE, FLUX_RANGE, GRAIN_RANGE, SliceAt, SliceTail};
+    let args = Args::new(params);
+    let named = |key: &str, names: &[&str]| -> Result<Option<String>, CommandError> {
+        match args.value(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(name)) if names.contains(&name.as_str()) => Ok(Some(name.clone())),
+            Some(_) => Err(format!("{key} must be one of {}", names.join(", ")).into()),
+        }
+    };
+    let slice_names: Vec<&str> = SliceAt::ALL.iter().map(|s| s.name()).collect();
+    let tail_names: Vec<&str> = SliceTail::ALL.iter().map(|t| t.name()).collect();
+    let slice = named("slice", &slice_names)?.and_then(|n| SliceAt::from_name(&n));
+    let tail = named("tail", &tail_names)?.and_then(|n| SliceTail::from_name(&n));
+    let number = |key: &str, range: std::ops::RangeInclusive<f64>, unit: &str| -> Result<Option<f64>, CommandError> {
+        match args.opt_f64(key)? {
+            None => Ok(None),
+            Some(v) if v.is_finite() && range.contains(&v) => Ok(Some(v)),
+            Some(v) => Err(format!("{key} must be from {} to {} {unit}, got {v}", range.start(), range.end()).into()),
+        }
+    };
+    let envelope = number("envelope", ENVELOPE_RANGE, "percent")?;
+    let grain = number("grain", GRAIN_RANGE, "milliseconds")?;
+    let flux = number("flux", FLUX_RANGE, "percent")?;
+    if slice.is_none() && tail.is_none() && envelope.is_none() && grain.is_none() && flux.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(Box::new(move |w: suhina_model::WarpSettings| suhina_model::WarpSettings {
+        slice: slice.unwrap_or(w.slice),
+        tail: tail.unwrap_or(w.tail),
+        envelope: envelope.unwrap_or(w.envelope),
+        grain: grain.unwrap_or(w.grain),
+        flux: flux.unwrap_or(w.flux),
+    })))
 }
 
 /// Where a clip plays, as the tempo it plays its content at depends on it: an arrangement clip

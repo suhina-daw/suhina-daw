@@ -380,7 +380,7 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["color", "selected", "muted", "playing", "queued", "recording"])
         .settings(&["track-artwork"]),
     element("clip-name", Part, "An arrangement clip's name bar."),
-    element("clip-waveform", Part, "An arrangement clip's waveform."),
+    element("clip-waveform", Part, "An arrangement clip's waveform, and the audio editor's in the detail area: its `color`, where Settings › Waveform colour is on Theme; without a rule the editor draws it in the clip's own colour."),
     element("clip-notes", Part, "An arrangement clip's notes."),
     element("clip-envelope", Drawn, "An audio clip's gain envelope while it is edited: its points and line, in its `color`."),
     element("clip-gain", Control, "An arrangement clip's gain field.").settings(VALUE_SETTINGS),

@@ -64,6 +64,7 @@ mod track_copy;
 mod track_input;
 mod track_names;
 mod trusted_audio;
+mod warp_markers;
 
 #[test]
 fn every_test_file_is_a_module() {

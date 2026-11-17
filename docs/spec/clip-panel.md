@@ -32,9 +32,18 @@ panel shares its title row and its Clip part, with the note tools beside them
 colour does; `clip.setColor`), its **name** (a double-click renames it in a text field, Enter keeps
 it, Escape leaves it; `clip.rename`) and its length in beats at the right. A line under it.
 
-Under it, in a row (the detail area under the views), three parts side by side, 8 points in from the
+Under it, in a row (the detail area under the views), its parts side by side, 8 points in from the
 panel's edges and 12 points apart; with the detail area stacked at the side, one under another, the
-Gain and Pitch part centred. The Gain and Pitch part is at most 150 points tall, as tall as the
+Gain and Pitch part centred.
+
+**Width.** In a row the panel is first as wide as all its parts side by side (680 points with the
+audio editor's part), the most it is ever made. Its right edge (*Clip panel width* to a screen
+reader) is dragged to make it narrower, down to two columns (312 points: the Clip part's and one as
+wide as Gain and Pitch); a double-click on it makes it as wide as it goes again. Narrower, the parts
+fold: they keep their order and go one over another (14 points apart) in as few, as short columns
+as fit the width, the least tall way first. Parts taller than the detail area scroll with the wheel
+over the panel. The width is the view's, not saved with the project, and the editor beside the panel
+takes the room it leaves. The Gain and Pitch part is at most 150 points tall, as tall as the
 other parts, so its fader does not stretch when the detail area is made taller. Every control has its name over it (small, at its left) rather than
 beside it, and controls are 6 points apart, so no two touch.
 
@@ -48,6 +57,8 @@ beside it, and controls are 6 points apart, so no two touch.
 | | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
 | | **Edit gain envelope**: a switch that opens the gain envelope on the waveform for editing (every audio clip's, or the clip's own, by Settings › *Envelope editing*), as Alt+E and the button by the clip's name do | `clip.setEnvelope` |
+| **Warp** (110 points) | The settings of the clip's warp mode (› Warp mode settings) | `clip.setAudio` |
+| **Audio editor** (110 points) | While the editor shows the clip: its **Grid**, **Snap**, **Fit** and **Reset warp…** | the editor's own state |
 | **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
 | | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
 
@@ -65,6 +76,34 @@ pressed keeps the panel's look.
 **Scale.** An audio clip's scale says the key of its audio, as a MIDI clip's says the key its notes
 are written in; it changes nothing that plays. It is the content's, as a MIDI clip's is, and a content
 other clips play is copied for this clip first.
+
+## Warp mode settings
+
+Each warp mode plays the clip in its own way (ADR 0003 › Amendment: a sound of each mode), and the
+Warp part shows the settings of the clip's mode under *Mode settings*. Every setting is the clip's
+own, a `clip.setAudio` parameter and one undo step (a drag one step); a clip keeps the settings of
+every mode, so a mode picked again has its settings back. They are saved with the clip
+([format](suhina-format.md), version 16).
+
+A setting changed is heard at once, while the clip plays: the clip's stretched sound is made again
+with it, as it is after a tempo change.
+
+| Mode | Setting | Range | Default | `clip.setAudio` |
+|---|---|---|---|---|
+| Rhythmic | **Slice at**: where the audio is cut into slices, each played from its own start at the file's speed: at its transients (and a beat wherever no transient is near), or on every 1/4, 1/8, 1/16 or 1/32 of the clip's beats; always at the warp markers too | Transients, 1/4, 1/8, 1/16, 1/32 | Transients | `slice` |
+| | **Tail**: what plays after a slice that ends before the next starts (the clip slower than its audio): nothing, its second half again and again (crossfaded where it jumps back), or its second half back and forth | Off, Loop, Back and forth | Loop | `tail` |
+| | **Envelope**: how level a slice stays over its length; lower fades it out sooner, for a tighter, gated sound | 0 to 100 % | 100 % | `envelope` |
+| Tonal | **Grain**: the length of the grains the sound is made of, each lined up with the one before; longer suits low notes, shorter fast ones | 10 to 400 ms | 60 ms | `grain` |
+| Texture | **Grain**: as Tonal's, without the lining up | 10 to 400 ms | 60 ms | `grain` |
+| | **Flux**: how far each grain's start moves at random, from none to a grain either way: the sound smears into a cloud as it rises | 0 to 100 % | 25 % | `flux` |
+| Re-pitch, Smooth, High quality | No settings (*No settings for this mode*) | | | |
+
+**The audio editor's buttons.** While the [audio editor](ui-audio-editor.md) shows the clip, the
+Audio editor part after the Warp part holds its controls (on its ruler before, where they covered the
+grid): **Editor grid**, a list of Adaptive, 1 bar, 1/2, 1/4, 1/8, 1/16 and 1/32; **Snap**, a switch,
+lit while marks snap to the grid; **Fit**, which fits the file to the editor; and **Reset…**, which
+opens the Reset warp dialog. They change the editor, not the project. Without the editor the part
+is left out.
 
 ## Numbers
 
