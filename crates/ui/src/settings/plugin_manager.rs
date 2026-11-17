@@ -1354,28 +1354,19 @@ fn headings(
     let edges: Vec<usize> = (1..COLUMN_COUNT).filter(|i| resizable(*i) && plugins.manager.shows(*i)).collect();
     for index in edges {
         let (_, right) = columns[index];
-        let edge = Rect::from_min_max(Pos2::new(right - 4.0, header.top()), Pos2::new(right + 4.0, header.bottom()));
-        let Some(edge) = seen(edge) else { continue };
-        let response = ui
-            .interact(edge, Id::unique(("manager-edge", index)), Sense::click_and_drag())
-            .on_hover_cursor(egui::CursorIcon::ResizeColumn);
-        let name = COLUMNS[index];
-        let label = format!("Resize the {name} column");
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Splitter, true, &label));
+        let id = Id::unique(("manager-edge", index));
+        let inks = (ink().line, ink().accent);
+        let edge = crate::kit::table::resize_edge(ui, painter, header, strip, right, id, COLUMNS[index], inks);
         let state = &mut plugins.manager;
-        if response.double_clicked() {
+        if edge.fit {
             state.set_width(index, fit_width(ui, index, lines));
             out.widths = Some(state.widths.clone());
-        } else if response.dragged() {
-            state.set_width(index, raw[index] + response.drag_delta().x);
+        } else if edge.delta != 0.0 {
+            state.set_width(index, raw[index] + edge.delta);
         }
-        if response.drag_stopped() {
+        if edge.released {
             out.widths = Some(state.widths.clone());
         }
-        let lit = response.hovered() || response.dragged();
-        let ink = if lit { ink().accent } else { ink().line };
-        let span = egui::Rangef::new(header.top() + 5.0, header.bottom() - 5.0);
-        painter.vline(right - 0.5, span, egui::Stroke::new(if lit { 2.0 } else { 1.0 }, ink));
     }
 }
 
@@ -1506,23 +1497,10 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
             owned_mark(&painter, Pos2::new(cell.left() + 4.0, rect.center().y));
             cell.min.x += 13.0;
         }
-        let galley = widgets::fitted(&painter, text, small.clone(), color, cell.width());
-        let elided = galley.elided;
-        widgets::paint_text(&painter, Pos2::new(cell.left(), rect.center().y - galley.size().y / 2.0), galley, color);
         // The full text on hover where the cell cuts it, and a file's whole path on its name.
-        let full = if index == 1 && plugin.is_none() {
-            Some(line.file.clone())
-        } else if elided {
-            Some(text.clone())
-        } else {
-            None
-        };
-        if let Some(full) = full
-            && ui.rect_contains_pointer(cell)
-        {
-            let id = Id::unique(("manager-cell", &line.key, index));
-            let _tip = ui.interact(cell, id, Sense::hover()).on_hover_text(full);
-        }
+        let whole = (index == 1 && plugin.is_none()).then_some(line.file.as_str());
+        let id = Id::unique(("manager-cell", &line.key, index));
+        crate::kit::table::cell(ui, &painter, cell, id, text, small.clone(), color, whole);
     }
     let (on_left, on_right) = columns[0];
     let (action_left, action_right) = columns[ACTION];

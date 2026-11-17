@@ -149,7 +149,7 @@ pub fn decode_project_audio_found(project: &Project, project_dir: &Path, trusted
     // Each file once (once more when a Stems file is played whole as well as by track), with
     // where to look for it and whether all of its audio tracks are wanted.
     let mut wanted: Vec<(String, Vec<PathBuf>, bool)> = Vec::new();
-    for device in project.channels.iter().flat_map(|c| &c.devices) {
+    for device in sampler_devices(project) {
         if let Some(file) = device.sample_file()
             && !wanted.iter().any(|(key, _, _)| key == file)
         {
@@ -246,6 +246,8 @@ pub struct MissingAudio {
     pub last_path: PathBuf,
     /// How many clips (in the arrangement and the clip slots) play it.
     pub clips: usize,
+    /// How many samplers play it, inside device groups too.
+    pub samplers: usize,
 }
 
 /// Audio files outside a project's folder that opening it may read (› Project file boundaries
@@ -360,7 +362,7 @@ pub fn missing_audio(project: &Project, project_dir: &Path) -> Vec<MissingAudio>
 /// [`missing_audio`], with the files outside the project's folder that `trusted` names found.
 pub fn missing_audio_trusted(project: &Project, project_dir: &Path, trusted: &Trusted) -> Vec<MissingAudio> {
     let mut out: Vec<MissingAudio> = Vec::new();
-    for device in project.channels.iter().flat_map(|c| &c.devices) {
+    for device in sampler_devices(project) {
         if let Some(file) = device.sample_file()
             && locate(file, device.sample_absolute_file(), project_dir, trusted).is_none()
             && !out.iter().any(|m| m.file == file)
@@ -369,6 +371,7 @@ pub fn missing_audio_trusted(project: &Project, project_dir: &Path, trusted: &Tr
                 file: file.into(),
                 last_path: device.sample_absolute_file().map_or_else(|| project_dir.join(file), PathBuf::from),
                 clips: 0,
+                samplers: 0,
             });
         }
     }
@@ -388,7 +391,7 @@ pub fn missing_audio_trusted(project: &Project, project_dir: &Path, trusted: &Tr
                 continue;
             }
             let last_path = region.absolute_file.as_ref().map_or_else(|| project_dir.join(&region.file), PathBuf::from);
-            out.push(MissingAudio { file: region.file.clone(), last_path, clips: 0 });
+            out.push(MissingAudio { file: region.file.clone(), last_path, clips: 0, samplers: 0 });
         }
     }
     // Count the clips that play each missing file.
@@ -412,10 +415,23 @@ pub fn missing_audio_trusted(project: &Project, project_dir: &Path, trusted: &Tr
                 .flat_map(|c| c.slots.iter().filter_map(|s| s.clip.as_ref().map(|c| c.content))),
         )
         .collect();
+    let samplers: Vec<&str> = sampler_devices(project).into_iter().filter_map(|d| d.sample_file()).collect();
     for missing in &mut out {
         missing.clips = clips.iter().filter(|c| uses(**c, &missing.file)).count();
+        missing.samplers = samplers.iter().filter(|file| **file == missing.file).count();
     }
     out
+}
+
+/// Every device of `project` that may play a sample file, on every channel and inside device
+/// groups too: a sampler in a group's branch plays its file as one on the track does.
+pub fn sampler_devices(project: &Project) -> Vec<&suhina_model::Device> {
+    project
+        .channels
+        .iter()
+        .flat_map(|c| suhina_model::walk_devices(&c.devices).into_iter().map(|(_, device)| device))
+        .filter(|device| device.sample_file().is_some())
+        .collect()
 }
 
 /// Decodes a whole audio file (WAV, AIFF, FLAC, MP3, Ogg Vorbis) to interleaved f32.

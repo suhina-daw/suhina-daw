@@ -137,6 +137,36 @@ fn missing_files_are_listed_with_their_clips() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A sampler inside a device group plays its file as one on the track does: the file is
+/// decoded with the project, listed when it is missing, and counted as a sampler, not a clip.
+#[test]
+fn a_grouped_sampler_s_file_is_decoded_and_missed_like_a_track_s() {
+    let dir = temp_dir("grouped-sampler");
+    write_wav(&dir.join("set").join("kick.wav"), 1, 100);
+    let sampler = |file: &str| {
+        let mut device = Device::new("Sampler", DeviceKind::Builtin("sampler".into()));
+        device.set_sample_file(file);
+        device
+    };
+    let grouped = |file: &str| {
+        let mut branch = Branch::new("Branch 1");
+        branch.devices.push(sampler(file));
+        Device::group("Group", DeviceGroup::with_branches(vec![branch]))
+    };
+    let mut project = Project::default();
+    project.channels.push(Channel::new(ChannelId(1), "Drums"));
+    project.channels[0].devices.push(grouped("kick.wav"));
+    let decoded = decode_project_audio_found(&project, &dir.join("set"), &Trusted::default());
+    assert!(decoded.pool.files.contains_key("kick.wav"), "{:?}", decoded.warnings);
+
+    project.channels[0].devices.push(grouped("gone.wav"));
+    project.channels[0].devices.push(sampler("gone.wav"));
+    let missing = missing_audio(&project, &dir.join("set"));
+    assert_eq!(missing.len(), 1);
+    assert_eq!((missing[0].file.as_str(), missing[0].clips, missing[0].samplers), ("gone.wav", 0, 2));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn an_empty_region_names_no_file_so_nothing_is_decoded_or_missed() {
     // An empty audio clip (clip.create on an audio track) has no file yet.

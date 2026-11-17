@@ -60,7 +60,9 @@ pub(crate) fn missing_files(session: &mut Session, _: &Value) -> Result<Value, C
     let files: Vec<Value> = session
         .missing_files()
         .into_iter()
-        .map(|m| json!({ "file": m.file, "lastPath": m.last_path.display().to_string(), "clips": m.clips }))
+        .map(|m| {
+            json!({ "file": m.file, "lastPath": m.last_path.display().to_string(), "clips": m.clips, "samplers": m.samplers })
+        })
         .collect();
     Ok(json!({ "files": files }))
 }
@@ -87,12 +89,10 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
         }
         // The streams of a Stems file that clips play, so each is decoded with it.
         let mut streams: Option<u16> = None;
-        let mut named = session
-            .project()
-            .channels
-            .iter()
-            .flat_map(|c| &c.devices)
-            .any(|d| d.sample_file() == Some(file.as_str()) || d.sample_absolute_file() == Some(file.as_str()));
+        let names = |d: &suhina_model::Device| {
+            d.sample_file() == Some(file.as_str()) || d.sample_absolute_file() == Some(file.as_str())
+        };
+        let mut named = suhina_media::sampler_devices(session.project()).into_iter().any(names);
         for content in &session.project().contents {
             for lane in &content.lanes {
                 if let LaneData::Audio(region) = &lane.data
@@ -121,10 +121,18 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
         }
         let key = target.display().to_string();
         let mut regions = 0;
-        for device in session.project.channels.iter_mut().flat_map(|c| &mut c.devices) {
-            if device.sample_file() == Some(file.as_str()) || device.sample_absolute_file() == Some(file.as_str()) {
-                device.set_sample_file(&key);
-                regions += 1;
+        // Samplers inside device groups too, each found by its path in its channel.
+        for channel in &mut session.project.channels {
+            let paths: Vec<Vec<usize>> = suhina_model::walk_devices(&channel.devices)
+                .into_iter()
+                .filter(|(_, device)| names(device))
+                .map(|(path, _)| path)
+                .collect();
+            for path in paths {
+                if let Some(device) = suhina_model::device_at_mut(&mut channel.devices, &path) {
+                    device.set_sample_file(&key);
+                    regions += 1;
+                }
             }
         }
         for content in &mut session.project.contents {
