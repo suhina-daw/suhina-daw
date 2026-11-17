@@ -122,7 +122,7 @@ fn what_cannot_be_saved_or_opened_is_an_error() {
     let old = dir.join("good.locr");
     std::fs::copy(dir.join("good.suhina"), &old).unwrap_or_default();
     let error = Session::open(&old).err().map(String::from).unwrap_or_default();
-    assert!(error.contains("Suhina opens a project (.suhina) or imports .als and .flp files"), "{error}");
+    assert!(error.contains("Suhina opens a project (.suhina) or imports .als files"), "{error}");
     assert!(Session::from_template(&old, None).is_err());
     let _clean = std::fs::remove_dir_all(&dir);
 }

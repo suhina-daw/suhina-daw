@@ -53,37 +53,6 @@ impl Gather {
 }
 
 impl Library {
-    /// Unique best indexed candidates for imported source paths. Equal-best names and
-    /// saturated candidate lists are deliberately left for the missing-files dialog.
-    pub fn resolve_import_samples(&mut self, files: &[String]) -> Vec<Option<PathBuf>> {
-        if files.is_empty() {
-            return Vec::new();
-        }
-        let names: Vec<String> = files.iter().map(|f| f.rsplit(['/', '\\']).next().unwrap_or(f).to_owned()).collect();
-        self.find_by_names(&names)
-            .into_iter()
-            .zip(files)
-            .map(|((_, paths), source)| {
-                if paths.len() >= MAX_CANDIDATES {
-                    return None;
-                }
-                let score = |candidate: &Path| {
-                    let path = candidate.to_string_lossy().replace('\\', "/");
-                    let source = source.replace('\\', "/");
-                    path.rsplit('/').zip(source.rsplit('/')).take_while(|(a, b)| a.eq_ignore_ascii_case(b)).count()
-                };
-                let mut candidates: Vec<_> =
-                    paths.into_iter().filter(|p| p.is_file()).map(|p| (score(&p), p)).collect();
-                candidates.sort_by_key(|a| std::cmp::Reverse(a.0));
-                let (best, path) = candidates.first()?;
-                if candidates.get(1).is_some_and(|(next, _)| next == best) {
-                    return None;
-                }
-                Some(path.clone())
-            })
-            .collect()
-    }
-
     /// Files in the browser's folders with any of `names`, from the index (no disk access).
     pub fn find_by_names(&mut self, names: &[String]) -> Found {
         let mut gather = Gather::new(names);
@@ -222,37 +191,6 @@ mod tests {
         assert_eq!(candidates[0], PathBuf::from("/a/very/long/new/place/Drums/Kicks/kick.wav"));
         assert_eq!(candidates[1], PathBuf::from("/new/Kicks/kick.wav"));
         assert_eq!(candidates[2], PathBuf::from("/x/kick.wav"));
-    }
-
-    #[test]
-    fn imported_samples_use_unique_trailing_paths_and_leave_ties_unresolved() {
-        let settings = temp("import-settings");
-        let samples = temp("import-samples");
-        touch(&samples.join("Pack/AMB/Voice.WAV"));
-        touch(&samples.join("Other/Voice.WAV"));
-        touch(&samples.join("Only/Unique.wav"));
-        let mut library = Library::new(Some(settings));
-        library.add_folder(&samples).unwrap();
-        let found = library.resolve_import_samples(&[
-            "D:\\Old\\Pack\\AMB\\voice.wav".into(),
-            "Voice.WAV".into(),
-            "old/Unique.wav".into(),
-            "absent.wav".into(),
-        ]);
-        assert_eq!(found[0], Some(samples.join("Pack/AMB/Voice.WAV")));
-        assert_eq!(found[1], None, "equal filename matches must not be guessed");
-        assert_eq!(found[2], Some(samples.join("Only/Unique.wav")));
-        assert_eq!(found[3], None);
-        for i in 0..MAX_CANDIDATES {
-            touch(&samples.join(format!("{i}/Many.wav")));
-        }
-        let mut library = Library::new(None);
-        library.add_folder(&samples).unwrap();
-        assert_eq!(
-            library.resolve_import_samples(&["0/Many.wav".into()]),
-            vec![None],
-            "a truncated candidate list cannot establish a unique best match"
-        );
     }
 
     #[test]

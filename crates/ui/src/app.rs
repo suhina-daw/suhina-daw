@@ -1111,7 +1111,7 @@ impl App {
             match suhina_session::zipped_project(&path) {
                 Ok(Some(found)) => self.zip_prompt = Some(tabs::ZipPrompt::new(path, found)),
                 Ok(None) => {
-                    self.status = Status::Error(format!("{} holds no project (.flp, .als or .suhina)", path.display()))
+                    self.status = Status::Error(format!("{} holds no project (.als or .suhina)", path.display()))
                 }
                 Err(e) => self.status = Status::Error(e),
             }

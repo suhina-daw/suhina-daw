@@ -67,7 +67,7 @@ pub fn kind_of(path: &Path) -> Option<FileKind> {
         "wav" | "aif" | "aiff" | "flac" | "mp3" | "ogg" | "oga" => Some(FileKind::Sample),
         "mid" | "midi" => Some(FileKind::Midi),
         "syx" => Some(FileKind::Preset),
-        "als" | "flp" => Some(FileKind::Project),
+        "als" => Some(FileKind::Project),
         "sd" => Some(FileKind::Effect),
         _ => None,
     }
@@ -399,7 +399,6 @@ mod tests {
         assert_eq!(kind_of(Path::new("song.suhina")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("old song.SUHINA")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("set.als")), Some(FileKind::Project));
-        assert_eq!(kind_of(Path::new("set.FLP")), Some(FileKind::Project));
         assert_eq!(kind_of(Path::new("effects/gain.SD")), Some(FileKind::Effect));
         assert_eq!(kind_of(Path::new("readme.txt")), None);
         assert_eq!(kind_of(Path::new("noextension")), None);

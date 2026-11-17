@@ -18,7 +18,6 @@ covers:
   - crates/session/src/rack/hosted.rs
   - crates/plugin-host/src/audio.rs
   - crates/ui/src/interaction/menus.rs
-  - crates/flp/src/wrapper.rs
   - devices/compressor/src/lib.rs
 ---
 
@@ -30,7 +29,7 @@ covers:
   (sidechain) and plug-ins with more than one output (multi-timbral). How other formats store a key is
   observed from files we authored (*Import and export*).
 - **Status:** a key read from a channel is built (*As built* below): the model, the file, the engine, the
-  compressor, plug-ins' first auxiliary input, the commands, the panel and the FLP import. Keys from and into a
+  compressor, plug-ins' first auxiliary input, the commands and the panel. Keys from and into a
   device group's branch, auxiliary outputs, `.sd` keys and the `.als` and Studio One imports are not. Where the
   build chose differently from the plan below, *As built* says so and is what holds.
 
@@ -465,7 +464,7 @@ edge stores the key**:
 
 - **FL Studio** stores it on both sides: the source's mixer route to the reader's track at level 0
   ("sidechain to this track"), and the wrapped plug-in's input port, which picks one of the tracks routed into
-  its own. Imported as a key after the source's fader ([flp-model-mapping](flp-model-mapping.md) › Sidechains).
+  its own.
 - **Ableton Live** stores it on the consumer side: the device's `<SideChain>` holds
   `RoutedInput/Routable/Target` (`AudioIn/Track.14/PreFxOut` and the like, naming the source track and a tap)
   and a `Volume`. Not imported yet.

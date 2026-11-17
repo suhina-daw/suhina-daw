@@ -14,7 +14,7 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 /// The project files a zip may carry, by extension.
-const PROJECTS: [&str; 3] = ["flp", "als", "suhina"];
+const PROJECTS: [&str; 2] = ["als", "suhina"];
 /// At most this many entries in the zip.
 const MAX_ENTRIES: usize = 10_000;
 /// At most this many bytes unpacked, all entries together.
@@ -120,7 +120,7 @@ fn inside(into: &Path, name: &Path) -> Option<PathBuf> {
 /// leave `into` are refused, and the files written are capped as a whole.
 pub fn extract_zipped_project(zip: &Path, into: &Path) -> Result<PathBuf, String> {
     let Some(found) = zipped_project(zip)? else {
-        return Err(format!("{}: the zip holds no project (.flp, .als or .suhina)", zip.display()));
+        return Err(format!("{}: the zip holds no project (.als or .suhina)", zip.display()));
     };
     if std::fs::symlink_metadata(into).is_ok_and(|m| m.file_type().is_symlink()) {
         return Err(format!("{}: the folder to unpack into is a link", into.display()));
@@ -196,19 +196,19 @@ mod tests {
     fn a_zip_with_one_project_is_found_and_unpacked_beside_its_samples() {
         let dir = folder("one");
         let zip = dir.join("Song.zip");
-        zip_of(&zip, &[("Song.flp", b"FLhd"), ("Kick.wav", b"RIFF"), ("Samples/Snare.wav", b"RIFF")]);
+        zip_of(&zip, &[("Song.als", b"FLhd"), ("Kick.wav", b"RIFF"), ("Samples/Snare.wav", b"RIFF")]);
         let found = zipped_project(&zip).unwrap().unwrap();
-        assert_eq!((found.project.as_str(), found.files, found.bytes), ("Song.flp", 3, 12));
+        assert_eq!((found.project.as_str(), found.files, found.bytes), ("Song.als", 3, 12));
         assert_eq!(default_extract_folder(&zip), dir.join("Song"));
         let project = extract_zipped_project(&zip, &dir.join("Song")).unwrap();
-        assert_eq!(project, dir.join("Song").join("Song.flp"));
+        assert_eq!(project, dir.join("Song").join("Song.als"));
         assert_eq!(std::fs::read(dir.join("Song/Samples/Snare.wav")).unwrap(), b"RIFF");
         // Unpacked once, the folder is taken: the default moves on, and a second unpack there
         // writes nothing over.
         assert_eq!(default_extract_folder(&zip), dir.join("Song 2"));
         let again = extract_zipped_project(&zip, &dir.join("Song")).unwrap_err();
         assert!(again.contains("not written over"), "{again}");
-        assert_eq!(std::fs::read(dir.join("Song/Song.flp")).unwrap(), b"FLhd");
+        assert_eq!(std::fs::read(dir.join("Song/Song.als")).unwrap(), b"FLhd");
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod tests {
         assert_eq!(zipped_project(&themes).unwrap(), None);
         assert!(extract_zipped_project(&themes, &dir.join("out")).is_err());
         let two = dir.join("two.zip");
-        zip_of(&two, &[("A.flp", b"x"), ("B.als", b"y")]);
+        zip_of(&two, &[("A.suhina", b"x"), ("B.als", b"y")]);
         assert!(zipped_project(&two).unwrap_err().contains("2 projects"));
         std::fs::write(dir.join("not.zip"), b"not a zip").unwrap();
         assert!(zipped_project(&dir.join("not.zip")).is_err());
@@ -229,7 +229,7 @@ mod tests {
     fn names_that_leave_the_folder_are_refused_and_nothing_lands_outside() {
         let dir = folder("slip");
         let zip = dir.join("slip.zip");
-        zip_of(&zip, &[("Song.flp", b"FLhd"), ("../escaped.wav", b"RIFF")]);
+        zip_of(&zip, &[("Song.als", b"FLhd"), ("../escaped.wav", b"RIFF")]);
         let error = extract_zipped_project(&zip, &dir.join("out")).unwrap_err();
         assert!(error.contains("leaves the folder"), "{error}");
         assert!(!dir.join("escaped.wav").exists());

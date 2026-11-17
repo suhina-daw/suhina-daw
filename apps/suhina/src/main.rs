@@ -4,7 +4,7 @@
 //! Suhina, the desktop app: opens a project, plays it on the default audio output and shows it
 //! in the main window (`suhina-ui`).
 //!
-//! In detail: The desktop app: opens a project (argument, a dropped `.suhina`, `.als` or `.flp`, or the
+//! In detail: The desktop app: opens a project (argument, a dropped `.suhina` or `.als`, or the
 //! project dialog), makes new ones (blank or from a template), keeps the recent projects, decodes
 //! its audio into the session, plays it stopped through `output` and runs `ui` in an eframe window;
 //! starts the browser's library (`browser.json` and its indexes in the app-data folder) and records
@@ -59,7 +59,7 @@ const USAGE: &str = "\
 usage: suhina [<project.suhina> | <project.als> | --demo] [--renderer wgpu|glow] [--no-animations]
               [--new-instance] [--trace <file>] [--data-dir <folder>]
 
-  <project.suhina>   a Suhina project to open, or an .als or .flp project to import
+  <project.suhina>   a Suhina project to open, or a Live Set (.als) to import
   --demo             open a small built-in project
   --renderer         how the window is drawn this time: wgpu or glow (OpenGL); the
                      default is the one chosen in Options > Settings
@@ -75,7 +75,7 @@ window as a tab instead. Agents reach the running window with suhina-cli mcp --a
 Options > Settings > Agents and updates > AI agents edit projects is on.
 Without a project the window opens what Options > Settings > Projects and backups > Startup project says (the
 New or open dialog unless changed); Ctrl+T makes a new one or opens one, and a .suhina
-or .als or .flp file dropped on it opens.
+or .als file dropped on it opens.
 Settings are kept in settings.txt, the keys in keymap.json and themes in themes/<name>/,
 in Suhina's folder of the user's app data (or --data-dir). Themes can be kept elsewhere:
 Options > Settings > Theme > Themes folder, or SUHINA_THEMES=<folder>, which wins over it.";

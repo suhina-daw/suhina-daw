@@ -6,25 +6,13 @@
 //! The format is described in `docs/spec/flp-format.md`, a draft written from public
 //! documentation and from projects we authored ourselves. This crate makes a file's structure
 //! readable: the `FLhd` header, the `FLdt` data chunk and the events in it, with their values
-//! decoded on request. [`import_file`] maps supported musical data onto the project model
-//! with warnings; its scope is in `docs/spec/flp-model-mapping.md`.
+//! decoded on request. Mapping the events onto the project model is a later piece of work.
 //!
 //! Every error carries the offset in the file where reading stopped, counted from its first byte.
 
-mod appearance;
-mod automation;
-mod effects;
 mod event;
 
 use std::fmt;
-mod import;
-mod mixer;
-mod normalize;
-mod patcher;
-mod records;
-mod stretch;
-mod wrapper;
-pub use import::{Import, import_bytes, import_file, import_file_with_samples};
 use std::io::Read;
 use std::path::Path;
 
@@ -122,11 +110,6 @@ impl Flp {
 
 #[derive(Debug)]
 pub enum FlpError {
-    /// A structurally readable file whose musical data cannot be imported.
-    Import {
-        offset: usize,
-        reason: String,
-    },
     Io(std::io::Error),
     /// The file is larger than [`MAX_FILE_BYTES`].
     TooLarge,
@@ -189,7 +172,6 @@ pub enum FlpError {
 impl fmt::Display for FlpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Import { offset, reason } => write!(f, "FLP import at offset {offset}: {reason}"),
             Self::Io(e) => write!(f, "could not read the FL Studio project: {e}"),
             Self::TooLarge => write!(f, "the file is larger than {} MiB", MAX_FILE_BYTES / 1024 / 1024),
             Self::BadMagic { offset, expected } => {

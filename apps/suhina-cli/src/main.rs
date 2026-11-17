@@ -93,7 +93,7 @@ commands:
             device.closeEditor commands
 
 options:
-  <project.als>      a project to import (.als or .flp), or a Suhina project (.suhina) to open;
+  <project.als>      a project to import (.als), or a Suhina project (.suhina) to open;
                      a zip holding one is unpacked first into --extract-to <folder>
   --extract-to <dir> where a zipped project is unpacked (made if missing; nothing is written over)
   --demo             use the built-in demo project instead
@@ -349,7 +349,7 @@ fn parse_args(args: &[String], command: Command) -> Result<Args, String> {
         return Err(format!("--launcher works with play, without --scene\n\n{USAGE}"));
     }
     Ok(Args {
-        source: source.ok_or(format!("missing project: give a .suhina, .als or .flp file, or --demo\n\n{USAGE}"))?,
+        source: source.ok_or(format!("missing project: give a .suhina or .als file, or --demo\n\n{USAGE}"))?,
         output,
         cue,
         node,
