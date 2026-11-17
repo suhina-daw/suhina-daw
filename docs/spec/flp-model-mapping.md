@@ -378,8 +378,8 @@ key and a warning. When the source track folds into the generator playing it, th
 reads the generator's channel; a key whose track is pruned, or that would close a loop,
 is dropped.
 
-Authored-project observation (JMS2025, read-only, 2026-11-16): two Pro-C 2 instances,
-on mixer 6 and on the Serum #2 insert, have port 1, and the kick's track routes into
+Authored-project observation (JMS2025, read-only, 2026-11-16): two compressor plug-in
+instances, on mixer 6 and on the Serum #2 insert, have port 1, and the kick's track routes into
 both at level 0; both import keyed from the kick after its fader.
 
 ## Sources
