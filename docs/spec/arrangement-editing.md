@@ -646,7 +646,9 @@ horizontal drag sets the fade with its end on [the grid](#the-grid) (Alt held: f
 the clip's own edge and the other fade snap like grid lines, so a clip that does not start or
 end on the grid can be faded over its whole length; the clip shows the fade while it is dragged, and letting go runs `clip.setFades`. A
 double-click on a handle removes that fade. A right-click on a handle opens a menu of the shapes,
-with the fade's shape checked; choosing one runs `clip.setFades`. Under them **Reset fade** takes
+with the fade's shape checked (the handles stay while it is open, on a clip that is not selected
+too, and where a short fade-in's handle lies over the Edit gain envelope button the handle takes
+the click); choosing one runs `clip.setFades`. Under them **Reset fade** takes
 the fade away and sets its shape and curve back to the defaults (linear, 0), one `clip.setFades`. A fade at least 21 px wide has a
 second, round **curve handle** on its line half-way through the fade. Dragging it up or down
 moves it with the pointer: the curve becomes the one whose line passes through the handle (up
@@ -1099,7 +1101,10 @@ Folding is view state, not part of the project: nothing in a saved project keeps
 that is saved and opened shows every group open, and no command folds or opens one. A folded
 group's header stays its own — name, colour, volume, pan, mute, solo and output are the group's.
 The blocks on a folded lane are a view of the clips, not the clips: to select, move or edit one,
-open the group. The tracks inside a folded group cannot be reached with the mouse, since none of
+open the group. The lane as a whole stands for every track inside it: a time selection painted
+over it is on the group and all of those tracks, so Cut, Copy, Delete, Duplicate, Split and
+Consolidate act on what all of them play there, and a selection rectangle over it picks every
+clip of theirs it crosses. The tracks inside a folded group cannot be reached with the mouse, since none of
 them is drawn.
 
 ## Open
