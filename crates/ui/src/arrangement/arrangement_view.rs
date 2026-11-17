@@ -430,6 +430,19 @@ fn show_lanes(
         inside
     };
     let painter = ui.painter_at(area);
+    // The playhead's look, `playhead { color; width }`, taken before anything else in the view:
+    // the style tree holds a bounded number of elements a frame (ADR 0031), and zoomed far out
+    // the clips of a large project fill it, so the playhead, drawn last over them, got no style
+    // and was drawn transparent.
+    let playhead_stroke = {
+        let el = crate::kit::element::PLAYHEAD.enter();
+        let color = el.color();
+        match el.style().and_then(|c| c.width) {
+            Some(width) if width > 0.0 => Some(egui::Stroke::new(width.min(8.0), color)),
+            Some(_) => None,
+            None => Some(theme::hairline(color)),
+        }
+    };
 
     // The header column, on either side, and the timeline beside it.
     let max_header = (area.width() - 120.0).max(HEADER_COLUMN_RANGE.0);
@@ -2099,21 +2112,12 @@ fn show_lanes(
     drop(divider);
 
     // Playhead through ruler and lanes.
-    if timeline.running || timeline.beat > 0.0 {
+    if (timeline.running || timeline.beat > 0.0)
+        && let Some(stroke) = playhead_stroke
+    {
         let x = x_of(timeline.beat).round() + 0.5;
         if x >= time.left() && x <= time.right() {
-            // `playhead { color; width }`: its colour and thickness.
-            let el = crate::kit::element::PLAYHEAD.enter();
-            let color = el.color();
-            match el.style().and_then(|c| c.width) {
-                Some(width) if width > 0.0 => {
-                    painter.vline(x, time.y_range(), egui::Stroke::new(width.min(8.0), color));
-                }
-                Some(_) => {}
-                None => {
-                    painter.vline(x, time.y_range(), theme::hairline(color));
-                }
-            }
+            painter.vline(x, time.y_range(), stroke);
         }
     }
     // With the toolbar on, the view says when it has the focus (the tool keys act on it): a ring
