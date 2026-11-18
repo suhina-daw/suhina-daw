@@ -727,6 +727,9 @@ pub struct App {
     /// bar shows it and once a second is often enough for a number that moves that slowly.
     ram: Option<u64>,
     next_ram: Option<f64>,
+    /// The CPU load the control bar shows instead of the engine's, in per mille: a fixed figure
+    /// for renders (`hold_cpu`).
+    held_cpu: Option<u32>,
     /// Blur and glass even with animations off (`suhina-theme-render`, whose scenes are still).
     effects_when_still: bool,
     /// The audio's health counters last traced: device underruns, late stretched frames and late
@@ -912,6 +915,7 @@ impl App {
             recovery_open: None,
             reveal: None,
             ram: None,
+            held_cpu: None,
             next_ram: None,
             effects_when_still: false,
             audio_traced: (0, 0, 0, 0, 0, 0),
@@ -1397,6 +1401,13 @@ impl App {
     pub fn hold_ram(&mut self, bytes: Option<u64>) {
         self.ram = bytes;
         self.next_ram = Some(f64::INFINITY);
+    }
+
+    /// Shows `milli` per mille as the engine's CPU load from now on, whether or not an engine
+    /// plays, so that renders of the window show the CPU read-out the same each time
+    /// (`suhina-theme-render`). `None` shows the engine's own again.
+    pub fn hold_cpu(&mut self, milli: Option<u32>) {
+        self.held_cpu = milli;
     }
 
     /// Keeps blur and glass on while animations are off, so that still renders of the window show
@@ -3265,7 +3276,8 @@ impl App {
         });
         let progress = grid.as_ref().map(|g| self.progress(g)).unwrap_or_default();
         // The CPU load the control bar shows, from the engine's monitor, in per mille.
-        let cpu = self.session().and_then(|s| s.player()).map(|p| p.cpu_monitor().load_milli());
+        let cpu =
+            self.held_cpu.or_else(|| self.session().and_then(|s| s.player()).map(|p| p.cpu_monitor().load_milli()));
         // The program's own RAM, the control bar shows it beside the CPU: measured once a
         // second, not every frame. The plug-in host processes report their own once a second,
         // and their share is added: the number is what Suhina and its hosts use together.

@@ -2,19 +2,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `suhina-theme-render <folder | built-in id> [--backdrop <image.png>] [--out <folder>]
-//! [--scale <n>] [--scene <name>] [--budget]`: the theme drawn in every scene, as PNGs (see the
-//! library's documentation).
+//! [--scale <n>] [--scene <name> [--hover <label> | --press <label>]] [--budget]`: the theme drawn
+//! in every scene, as PNGs (see the library's documentation).
 
 use std::path::PathBuf;
 
+use suhina_theme_render::scenes::Pointer;
 use suhina_theme_render::{Subject, budget, composite, render_all, scenes};
 
-const USAGE: &str = "usage: suhina-theme-render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name>] [--budget]
+const USAGE: &str = "usage: suhina-theme-render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name> [--hover <label> | --press <label>]] [--budget]
 
 Draws the theme in each scene of the demo project and writes <scene>.raw.png (the window's own
 pixels, with their alpha) and <scene>.png (the window over the backdrop, blurred behind a
-see-through window) into the out folder (default: theme-shots). --budget prints the style
-engine's counts for each scene instead, with no GPU.";
+see-through window) into the out folder (default: theme-shots). --hover and --press, with
+--scene, put the pointer over the control with that label, its button held down with --press,
+once the scene is driven. --budget prints the style engine's counts for each scene instead, with no GPU.";
 
 struct Args {
     theme: String,
@@ -22,6 +24,7 @@ struct Args {
     out: PathBuf,
     scale: f32,
     scene: Option<String>,
+    pointer: Option<Pointer>,
     budget: bool,
 }
 
@@ -38,6 +41,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
         out: "theme-shots".into(),
         scale: 1.0,
         scene: None,
+        pointer: None,
         budget: false,
     };
     let mut theme = None;
@@ -62,6 +66,17 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
                 }
                 parsed.scene = Some(name);
             }
+            "--hover" | "--press" => {
+                if parsed.pointer.is_some() {
+                    return Err(format!("give one of --hover and --press, once\n\n{USAGE}"));
+                }
+                let label = value(&arg)?;
+                // An option here means the label is missing.
+                if label.starts_with('-') {
+                    return Err(format!("{arg} takes the label of a control, not {label}\n\n{USAGE}"));
+                }
+                parsed.pointer = Some(if arg == "--hover" { Pointer::Hover(label) } else { Pointer::Press(label) });
+            }
             "--budget" => parsed.budget = true,
             "-h" | "--help" => return Ok(Command::Help),
             other if other.starts_with('-') => return Err(format!("unknown option {other}\n\n{USAGE}")),
@@ -70,6 +85,10 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
         }
     }
     parsed.theme = theme.ok_or(USAGE)?;
+    // A label belongs to a scene: every other scene would fail for want of it.
+    if parsed.pointer.is_some() && parsed.scene.is_none() {
+        return Err(format!("--hover and --press need --scene\n\n{USAGE}"));
+    }
     Ok(Command::Run(parsed))
 }
 
@@ -93,19 +112,24 @@ fn run() -> Result<(), String> {
             .ok_or_else(|| format!("{}: neither a theme folder nor a built-in theme's id", args.theme))?
     };
     if args.budget {
-        for scene in &scenes::select(args.scene.as_deref()) {
+        let mut failed = 0;
+        for scene in &scenes::select(args.scene.as_deref(), args.pointer.as_ref()) {
             match budget::count(&subject, scene) {
                 Ok(counts) => println!("{}: {counts:?}", scene.name),
-                Err(e) => println!("{}: not drawn: {e}", scene.name),
+                Err(e) => {
+                    failed += 1;
+                    println!("{}: not drawn: {e}", scene.name);
+                }
             }
         }
-        return Ok(());
+        // As for the pictures: a scene left undrawn, a refused label included, is a failure.
+        return if failed == 0 { Ok(()) } else { Err(format!("{failed} scenes not drawn")) };
     }
     let backdrop = match &args.backdrop {
         Some(path) => image::open(path).map_err(|e| format!("{}: {e}", path.display()))?.to_rgba8(),
         None => composite::default_backdrop(),
     };
-    let done = render_all(&subject, &backdrop, &args.out, args.scale, args.scene.as_deref())?;
+    let done = render_all(&subject, &backdrop, &args.out, args.scale, args.scene.as_deref(), args.pointer.as_ref())?;
     for problem in &done.failed {
         eprintln!("not drawn: {problem}");
     }
@@ -128,5 +152,32 @@ fn main() {
     if let Err(e) = run() {
         eprintln!("{e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parsed(args: &[&str]) -> Result<Args, String> {
+        match parse(args.iter().map(|a| (*a).to_owned()))? {
+            Command::Run(args) => Ok(args),
+            Command::Help => Err("help".into()),
+        }
+    }
+
+    #[test]
+    fn hover_and_press_take_a_label_and_only_one_is_given() {
+        let hover = parsed(&["nord", "--scene", "launcher", "--hover", "Record"]).unwrap().pointer;
+        assert_eq!(hover, Some(Pointer::Hover("Record".into())));
+        let press = parsed(&["nord", "--press", "Solo Drums", "--scene", "launcher"]).unwrap().pointer;
+        assert_eq!(press, Some(Pointer::Press("Solo Drums".into())));
+        assert_eq!(parsed(&["nord"]).unwrap().pointer, None);
+        assert!(parsed(&["nord", "--scene", "launcher", "--hover", "a", "--press", "b"]).is_err());
+        assert!(parsed(&["nord", "--scene", "launcher", "--hover"]).is_err());
+        assert!(
+            parsed(&["nord", "--scene", "launcher", "--hover", "--budget"]).err().unwrap().contains("takes the label")
+        );
+        assert!(parsed(&["nord", "--hover", "Record"]).err().unwrap().contains("need --scene"));
     }
 }
