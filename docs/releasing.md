@@ -101,7 +101,8 @@ release. Running the workflow from `main` with **nightly** checked builds `main`
 as the release **`nightly`**, replacing the previous one: its release and tag are deleted and made
 again on the new commit, published at once without a draft. The workflow has no schedule of its
 own: a scheduled agent starts it twice a day (`gh workflow run release.yml -f nightly=true`) when
-`main` has moved since the last nightly, or a maintainer does by hand. A second agent then rewrites
+`main` has moved since the last nightly (`next`, once it is the default branch:
+[The next branch](#the-next-branch)), or a maintainer does by hand. A second agent then rewrites
 its notes and posts it to Discord (see [Nightly notes](#nightly-notes)).
 
 The nightly's version is the workspace version without a pre-release suffix, the date and the
@@ -154,6 +155,73 @@ Until Suhina has a release of its own (published, not a release candidate), the 
 repository's **latest** release, so the Releases box on the repository page offers its downloads.
 From the first release on, the nightly is published as a pre-release that never becomes the
 latest. Nothing is promoted from it: a release is made from a version tag as above.
+
+## The next branch
+
+Planned, not yet in use: the workflows are ready for it, the settings below are not made. Pull
+requests are to merge into an integration branch, `next`, and `main` to hold only code that
+built and packaged on Linux, Windows and macOS, so that every nightly is green and a pull request
+need not wait for a test build of its own.
+
+1. Pull requests target `next`, the repository's default branch, and merge there through the
+   merge queue with `ci` as today. New branches start from `next`. Test builds stay as they are:
+   a maintainer's own pull request is built on every push, others on `/test-build`.
+2. The scheduled agent starts the nightly from `next` (`--ref next`) when `next` has moved since the
+   last nightly.
+3. When every system's package is published, the release workflow's job `promote` moves `main`
+   to the commit the nightly was built from. It is a fast-forward only: if `main` is not an
+   ancestor of that commit, GitHub refuses and `main` stays. A failed build or publish never
+   reaches the job, and `main` waits for the next night; the fix merges into `next` like any other.
+
+The workflows follow the repository's default branch, so they behave as before while `main` is
+the default and change over with it: `ci.yml`, `test-build.yml` (`cache`) and `docs-generated.yml`
+run on a push to the default branch and save its caches, and do nothing on a push to `main` once
+`next` is the default (the nightly moving it); a pull request's test build compares it with its
+own base branch (`scripts/build_reuse.py`, `branch_update.py`), and `ready to merge` queues a pull
+request into `next` without waiting for a test build of it (`ready-to-merge.yml`), since the
+nightly builds `next` on every system before `main` moves. `docs-generated.yml` keeps one run at
+a time per branch, so a push to `main` never drops a waiting run of `next`. `nightly-notes.yml`
+still runs from `main`.
+
+To turn it on, in this order, after the pull request that prepared the workflows is merged. `main`
+must gain nothing that `next` lacks: a single commit on `main` that is not on `next` keeps
+`promote` from ever moving `main` again (it is a fast-forward only), until someone moves `next` or
+`main` by hand.
+
+1. Stop everything that writes to `main`: let nothing into the merge queue (take `ready to merge`
+   off the queued pull requests), and wait until no run of `docs-generated.yml` (it commits to
+   `main` after a merge), `ci.yml` or the merge queue is queued or in progress on `main`.
+2. Create `next` from `main` as it is then.
+3. Settings › Rules: the rulesets `main` (an approval, the code owner's review, the required `ci`
+   check, no force push or deletion) and `main merge queue` target `~DEFAULT_BRANCH`, not the name
+   `main`, so they move to `next` with the default branch in step 5 by themselves, and leave `main`
+   with no rule at all: anyone who can write could push it and break `promote`'s fast-forward. So
+   first add a ruleset for `refs/heads/main` with the rules *Restrict updates*, *Restrict
+   deletions* and *Block force pushes*, and only the app `suhina-docs-bot` (id 5307338) on its
+   bypass list (Always): `promote` pushes with that app's token, and nothing else moves `main`.
+4. Settings › Environments: add `next` to the deployment branches of every environment that
+   allows `main` today, keeping `main` (and `discord`'s `v*` tags): `docs-bot`, `discord`,
+   `project-board` and `suhina-bot`. GitHub runs `issue_comment`, `issues` and `workflow_run` on
+   the default branch, and `pull_request_target` on the pull request's base branch, so once `next`
+   is the default their jobs run on `next`: without it, linking test builds and posting to
+   Discord (`test-build-links.yml`, `discord.yml`), `/claim` and the board (`claim.yml`,
+   `project-sync.yml`), `/test-build` and the bot's issues and comments (`trusted-requests.yml`,
+   `open-issue.yml`, `comment-pr.yml`), the generated docs, `ready to merge` and `promote` stop
+   at the environment. `next` is as protected as `main` (step 3), so allowing it lets no other
+   branch read their secrets.
+5. Check that `next` and `main` are still the same commit
+   (`gh api repos/suhina-daw/suhina-daw/compare/main...next --jq .behind_by` prints 0); if `main`
+   moved, move `next` to it first. Then Settings › General: make `next` the default branch.
+   From then on a run of `docs-generated.yml` writes only to `next`, a run by hand on `main`
+   included. Dependabot and `ready to merge` follow the default branch.
+6. Point the open pull requests at `next` (`gh pr edit N --base next`), and let the merge queue
+   take pull requests again.
+7. The scheduled agents: the nightly's starts it with `--ref next` and compares `next` with the
+   tag `nightly`; the notes' fetches `next` as well as `main`.
+8. Check the automation on the new default branch: a finished test build is linked on its pull
+   request, `/claim` answers on an issue, and `ready to merge` queues a pull request into `next`.
+9. CONTRIBUTING.md, docs/workflow.md and AGENTS.md: pull requests target `next`; docs/claim-bot.md
+   and this document's Discord section: the environments allow `next` as well as `main`.
 
 ## Test builds
 
