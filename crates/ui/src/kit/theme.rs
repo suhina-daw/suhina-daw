@@ -108,8 +108,9 @@ pub fn is_color_variable(variable: &str) -> bool {
 pub type Colors = std::collections::BTreeMap<String, Color32>;
 
 thread_local! {
-    /// Whether the theme in use is light and whether it lets the desktop show through, as the
-    /// window's computed colours said when the styles last reset (`sync_root_visuals`).
+    /// Whether the theme in use is light (its variant's declared `color-scheme`) and whether it
+    /// lets the desktop show through (the window's computed colours), as of the last style reset
+    /// (`sync_root_visuals`).
     static SCHEME: Cell<(bool, bool)> = const { Cell::new((false, false)) };
     /// The `window`'s computed background when the styles last reset.
     static WINDOW_FILL: Cell<Color32> = const { Cell::new(Color32::TRANSPARENT) };
@@ -129,8 +130,9 @@ pub fn see_through() -> bool {
     SCHEME.with(Cell::get).1
 }
 
-/// Whether the theme in use is a light one, which the system's parts of the window follow: the
-/// window's computed text colour is dark. As of the last time the styles reset.
+/// Whether the theme in use is a light one, which the system's parts of the window follow: what
+/// its variant's `color-scheme` (else its theme's, else dark) says. As of the last time the styles
+/// reset.
 pub fn is_light() -> bool {
     SCHEME.with(Cell::get).0
 }
@@ -427,7 +429,7 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
     let mut warnings = Vec::new();
     theme.skin.css = Some(sheet.into());
     theme.skin.base = theme.meta.base;
-    match super::theme_vars::read(sheet) {
+    match super::theme_vars::read(sheet, theme.meta.light) {
         Ok((declared, base, notices)) => {
             theme.vars.declared = std::sync::Arc::new(declared);
             theme.vars.base = std::sync::Arc::new(base);
@@ -674,6 +676,12 @@ impl Theme {
         let mut theme = Self { name: name.into(), meta: ThemeMeta::new(name, DEFAULT_SWATCH), ..Self::default() };
         theme.skin.css = Some(Arc::from(NEW_THEME_SHEET));
         theme
+    }
+
+    /// Whether the variant in use is a light look: its own `color-scheme`, else the theme's
+    /// (`theme.json`), else dark.
+    pub fn light(&self) -> bool {
+        self.vars.light.unwrap_or(self.meta.light)
     }
 
     /// The colour variable `variable` (a name without `--`) as the theme sets it, else Suhina
@@ -1092,15 +1100,15 @@ fn shaped(mut visuals: egui::Visuals) -> egui::Visuals {
 /// that takes no input, its separators, frames and labels; `[checked]` the selection;
 /// `[kind="window"]` the frames of windows and menus and the panels; `[kind="field"]` behind a text
 /// field), each looked up inside the `window`, so a backdrop's fading reaches them.
-/// Light or dark as the theme is: whether the window's text (its computed `color`) is dark. A
-/// background can be see-through, so its colour alone does not tell; text is always made to read
-/// on what the theme looks like. See-through as the window's or its panels' computed background
-/// is. `None` where no sheet styles the window.
+/// Light or dark as the variant in use declares (`Skin::light`). See-through as the window's or its
+/// panels' computed background is. `None` where no sheet styles the window.
 fn sheet_visuals() -> Option<(egui::Visuals, bool, bool)> {
     use super::element::{Checked, Look, WIDGET, WINDOW};
     let window_look = WINDOW.probe();
     let root = window_look.style()?;
-    let light = luminance(root.color()) < 0.18;
+    // The variant's declared scheme, an input of the styles: never worked out from them, so a
+    // sheet that asks for it (`light-dark()`) cannot flip it.
+    let light = super::skin::current().light;
     let window = WINDOW.enter();
     let look = |builder: super::element::Builder<'static>| builder.probe();
     let rest = look(WIDGET.builder());

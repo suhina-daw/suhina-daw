@@ -40,6 +40,9 @@ pub struct Vars {
     pub variant: Option<String>,
     /// The chosen variant's name, as the picker shows it.
     pub variant_name: Option<String>,
+    /// Whether the chosen variant says it is light (`Some(true)`) or dark; `None` takes the
+    /// theme's own `color-scheme` ([`Theme::light`](super::theme::Theme::light)).
+    pub light: Option<bool>,
     /// Why the theme is still in an earlier file format, when its migration was refused.
     pub kept: Option<Arc<str>>,
 }
@@ -375,12 +378,13 @@ fn gradient(value: &str) -> Option<Option<super::gradient::Gradient>> {
 
 /// Reads a theme's sheet: the properties it declares beyond the core set, every custom
 /// property's value at the root from the sheet alone (its `:root` rules over the initial values, as a
-/// 1280 by 800 dark window sees them), and the sheet's notices.
-pub fn read(text: &str) -> Result<SheetValues, String> {
+/// 1280 by 800 window in the theme's colour scheme, `light` or dark, sees them), and the sheet's
+/// notices.
+pub fn read(text: &str, light: bool) -> Result<SheetValues, String> {
     let sheet = Sheet::parse(text)?;
     let declared: Vec<Registered> = sheet.properties.iter().filter(|p| !is_core(&p.name)).cloned().collect();
     // Every variable the root sees, so a variant's value may refer to the theme's own.
-    let base = sheet_values(&sheet, None)?;
+    let base = sheet_values(&sheet, None, light)?;
     let mut notices: Vec<String> =
         sheet.notices.iter().map(|n| format!("line {}:{}: {}", n.line, n.column, n.message)).collect();
     notices.extend(former_settings(&sheet));
@@ -388,13 +392,13 @@ pub fn read(text: &str) -> Result<SheetValues, String> {
 }
 
 /// Every custom property's value at the root from `sheet`, with `variant`'s sheet above it, as a
-/// 1280 by 800 dark window sees them.
-fn root_variables(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<String, String>, String> {
+/// 1280 by 800 window in the colour scheme `light` (or dark) sees them.
+fn root_variables(sheet: &Sheet, variant: Option<&Sheet>, light: bool) -> Result<BTreeMap<String, String>, String> {
     use suhina_style::cascade::{AppliedSheet, Layer, compute};
     use suhina_style::selector::{Element, Tree};
     let core = core_parsed().ok_or("the core theme properties do not parse")?;
     let tree = Tree::new(vec![Element::new("html", None)])?;
-    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false, light };
     let mut sheets = vec![
         AppliedSheet { sheet: core, layer: Layer::Base, root: None },
         AppliedSheet { sheet, layer: Layer::Theme, root: None },
@@ -408,13 +412,14 @@ fn root_variables(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<Str
 
 /// The styles the core sheet, `sheet`, `variant`'s and `user`'s give the element at the end of
 /// each of `paths` (element names from `window` inward, each path its own line of elements under
-/// one `window`), as a 1280 by 800 dark window sees them: the settings Suhina reads outside a
+/// one `window`), as a 1280 by 800 window in the colour scheme `light` (or dark) sees them: the settings Suhina reads outside a
 /// frame (`native_css::settings_of`) and the ones the theme editor shows ([`setting_values`]).
 pub(in crate::kit) fn element_styles(
     sheet: &Sheet,
     variant: Option<&Sheet>,
     user: Option<&Sheet>,
     paths: &[&[&str]],
+    light: bool,
 ) -> Result<Vec<suhina_style::cascade::ComputedStyle>, String> {
     use suhina_style::cascade::{AppliedSheet, Layer, compute};
     use suhina_style::selector::{Element, Tree};
@@ -430,7 +435,7 @@ pub(in crate::kit) fn element_styles(
         ends.push(parent);
     }
     let tree = Tree::new(elements)?;
-    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+    let viewport = suhina_style::media::Viewport { width: 1280.0, height: 800.0, reduced_motion: false, light };
     let mut sheets = vec![AppliedSheet { sheet: core, layer: Layer::Base, root: None }];
     if let Some(agent) = super::native_css::user_agent() {
         sheets.push(AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None });
@@ -449,12 +454,12 @@ pub(in crate::kit) fn element_styles(
 /// The settings `sheet` gives its elements ([`SETTINGS`]), with `variant`'s sheet above it, as
 /// text, as a 1280 by 800 dark window sees them: Suhina Studio's value for a setting the sheets
 /// do not give. The user's sheet is not the theme's, and is left out.
-fn setting_values(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<String, String>, String> {
+fn setting_values(sheet: &Sheet, variant: Option<&Sheet>, light: bool) -> Result<BTreeMap<String, String>, String> {
     use suhina_style::property::Property;
     use suhina_style::value::{Length, Value};
     let elements = ["window", "session", "meter"];
     let paths: Vec<&[&str]> = elements.iter().map(std::slice::from_ref).collect();
-    let styles = element_styles(sheet, variant, None, &paths)?;
+    let styles = element_styles(sheet, variant, None, &paths, light)?;
     let mut values = setting_defaults();
     for (element, name) in SETTINGS {
         let Some(style) = elements.iter().position(|e| e == element).and_then(|at| styles.get(at)) else {
@@ -483,16 +488,16 @@ fn setting_defaults() -> BTreeMap<String, String> {
 }
 
 /// What `sheet`, under `variant`, gives the root's custom properties and the elements' settings.
-fn sheet_values(sheet: &Sheet, variant: Option<&Sheet>) -> Result<BTreeMap<String, String>, String> {
-    let mut values = root_variables(sheet, variant)?;
-    values.extend(setting_values(sheet, variant)?);
+fn sheet_values(sheet: &Sheet, variant: Option<&Sheet>, light: bool) -> Result<BTreeMap<String, String>, String> {
+    let mut values = root_variables(sheet, variant, light)?;
+    values.extend(setting_values(sheet, variant, light)?);
     Ok(values)
 }
 
 /// Warnings for the settings `sheet` still gives as custom properties of the root, which are
 /// no longer read (#1273), each naming the rule that sets it now.
 fn former_settings(sheet: &Sheet) -> Vec<String> {
-    let Ok(root) = root_variables(sheet, None) else { return Vec::new() };
+    let Ok(root) = root_variables(sheet, None, false) else { return Vec::new() };
     FORMER
         .iter()
         .filter(|(name, _)| root.contains_key(*name))
@@ -566,11 +571,12 @@ pub fn resolve(theme: &mut Theme) -> Vec<String> {
     }
     theme.vars.values.retain(|name, _| chosen.contains_key(name));
     theme.skin.variant = variant_sheet(&theme.vars.values);
+    theme.skin.light = theme.light();
     // The theme's own variables that refer to a value the variant changes follow it, as they do
     // in the painted sheet.
     if let (Some(css), Some(variant)) = (theme.skin.css.as_ref(), theme.skin.variant.as_deref())
         && let (Ok(sheet), Ok(variant)) = (theme_sheet(css), Sheet::parse(variant))
-        && let Ok(full) = sheet_values(&sheet, Some(&variant))
+        && let Ok(full) = sheet_values(&sheet, Some(&variant), theme.light())
     {
         values = full;
     }
@@ -596,7 +602,7 @@ pub fn refresh_view(theme: &mut Theme) {
     match theme.skin.css.as_ref().map(theme_sheet) {
         Some(Ok(sheet)) => {
             let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose().ok().flatten();
-            if let Ok(full) = root_variables(&sheet, variant.as_ref()) {
+            if let Ok(full) = root_variables(&sheet, variant.as_ref(), theme.light()) {
                 theme.skin.variables = Arc::new(full);
             }
         }
@@ -631,7 +637,7 @@ pub fn swatch(theme: &Theme) -> Result<[u8; 4], String> {
         None => Arc::new(Sheet::parse("")?),
     };
     let variant = theme.skin.variant.as_deref().map(Sheet::parse).transpose()?;
-    suhina_theme_package::meta::swatch_color(&theme.meta.swatch, &[core], &sheet, variant.as_ref())
+    suhina_theme_package::meta::swatch_color(&theme.meta.swatch, &[core], &sheet, variant.as_ref(), theme.light())
 }
 
 /// The variant's values as a `:root` rule and its settings as rules of their elements, or
@@ -677,7 +683,7 @@ pub fn sync(theme: &mut Theme) {
 fn values_with_declared(theme: &Theme) -> Arc<BTreeMap<String, String>> {
     if let (Some(css), Some(variant)) = (theme.skin.css.as_deref(), variant_sheet(&theme.vars.values))
         && let (Ok(sheet), Ok(variant)) = (Sheet::parse(css), Sheet::parse(&variant))
-        && let Ok(values) = sheet_values(&sheet, Some(&variant))
+        && let Ok(values) = sheet_values(&sheet, Some(&variant), theme.light())
     {
         return Arc::new(values);
     }
@@ -699,13 +705,17 @@ fn same_value(name: &str, a: &str, b: &str) -> bool {
 /// name. A theme's default variant is its own values, not a file.
 ///
 /// ```json
-/// { "name": "Frost", "values": { "--accent": "#88c0d0" } }
+/// { "name": "Frost", "color-scheme": "light", "values": { "--accent": "#88c0d0" } }
 /// ```
+///
+/// A variant that does not say its `color-scheme` has its theme's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     /// The file's name without `.json`.
     pub id: String,
     pub name: String,
+    /// Whether it is a light look (`Some(true)`) or a dark one; `None` is its theme's.
+    pub light: Option<bool>,
     pub values: BTreeMap<String, String>,
 }
 
@@ -734,9 +744,19 @@ impl Variant {
                 id.to_owned()
             }
         };
-        for key in root.keys().filter(|key| !matches!(key.as_str(), "name" | "values" | "$schema")) {
-            warnings.push(format!("{id}: {key} is not part of a variant, which holds only values"));
+        let scheme = suhina_theme_package::meta::COLOR_SCHEME;
+        for key in root.keys().filter(|key| !matches!(key.as_str(), "name" | "values" | "$schema") && *key != scheme) {
+            warnings
+                .push(format!("{id}: {key} is not part of a variant, which holds a name, a colour scheme and values"));
         }
+        let light = match root.get(scheme).map(suhina_theme_package::meta::scheme) {
+            None => None,
+            Some(Ok(light)) => Some(light),
+            Some(Err(error)) => {
+                warnings.push(format!("{id}: {error}"));
+                None
+            }
+        };
         let mut values = BTreeMap::new();
         if let Some(object) = root.get("values").and_then(|v| v.as_object()) {
             for (name, value) in object.iter().take(MAX_VALUES) {
@@ -756,12 +776,16 @@ impl Variant {
                 warnings.push(format!("{id}: only the first {MAX_VALUES} values are read"));
             }
         }
-        Ok((Self { id: id.to_owned(), name, values }, warnings))
+        Ok((Self { id: id.to_owned(), name, light, values }, warnings))
     }
 
     pub fn to_json(&self) -> String {
         let mut root = serde_json::Map::new();
         root.insert("name".into(), self.name.clone().into());
+        if let Some(light) = self.light {
+            let scheme = suhina_theme_package::meta::scheme_name(light);
+            root.insert(suhina_theme_package::meta::COLOR_SCHEME.into(), scheme.into());
+        }
         let values: serde_json::Map<String, serde_json::Value> =
             self.values.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
         root.insert("values".into(), values.into());
@@ -776,6 +800,7 @@ pub fn with_variant(theme: &Theme, variant: Option<&Variant>) -> (Theme, Vec<Str
     chosen.vars.values = variant.map(|v| v.values.clone()).unwrap_or_default();
     chosen.vars.variant = variant.map(|v| v.id.clone());
     chosen.vars.variant_name = variant.map(|v| v.name.clone());
+    chosen.vars.light = variant.and_then(|v| v.light);
     let warnings = resolve(&mut chosen);
     (chosen, warnings)
 }
@@ -787,6 +812,7 @@ impl Variant {
         Some(Self {
             name: theme.vars.variant_name.clone().unwrap_or_else(|| id.clone()),
             id,
+            light: theme.vars.light,
             values: theme.vars.values.clone(),
         })
     }

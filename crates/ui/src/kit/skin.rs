@@ -132,6 +132,10 @@ pub struct Skin {
     /// Whether Suhina's base sheet applies under the theme's (`suhina_theme_package::BASE_SHEET`):
     /// `theme.json`'s `"base": "none"` turns it off.
     pub base: bool,
+    /// Whether the variant in use says it is light (its `color-scheme`, else its theme's): what
+    /// `@media (prefers-color-scheme: …)` and `light-dark()` ask, and what the native window's
+    /// title bar follows. Dark when nothing says.
+    pub light: bool,
 }
 impl Default for Skin {
     fn default() -> Self {
@@ -151,6 +155,7 @@ impl Default for Skin {
             toolbar_offsets: BTreeMap::new(),
             variables: Arc::default(),
             base: true,
+            light: false,
         }
     }
 }

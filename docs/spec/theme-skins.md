@@ -419,8 +419,15 @@ what is behind it; the base sheet replaces them with Suhina's colours.
   `cymbal`, `percussion`, `bass`, `tonal`, `vocal`, `effect` and `other`. A theme recolours them
   by setting those variables or with rules of its own, and may offer its own quick controls for
   them. The `kind.*` palette tokens (`--kind-kick`, …) are gone.
-- **`@media (prefers-color-scheme)` is not supported.** A theme with light and dark looks ships
-  them as variants; a sheet that uses it gets a notice and the `@media` rule does not apply.
+- **A theme says whether it is light or dark.** `"color-scheme": "light"` or `"dark"` in
+  `theme.json` is the scheme of the theme's own values, and a variant file may say its own
+  (otherwise it has its theme's); a theme that says nothing is dark. The variant editor's
+  *Colour scheme* control sets it. Every sheet (a theme's, a device panel's, `user.css`) asks for
+  it with `@media (prefers-color-scheme: light | dark)` and `light-dark(<light>, <dark>)`, and the
+  native window's title bar follows it. It is an input, never worked out from the theme's colours,
+  so a rule that asks for it cannot change it (a window text colour from `light-dark()` does not
+  flip the scheme). A theme with light and dark looks still ships them as variants, each
+  declaring its scheme. A `light-dark()` value is checked as both schemes see it.
 - **What changes for a theme of an earlier version** (breaking changes, #1019):
   - *Artwork of the theme's own that uses `currentColor` for a knob's body or a fader's rail or
     cap changes colour.* Without `data-suhina-ink`, `currentColor` was the knob's pointer colour
@@ -827,6 +834,7 @@ my-theme/
     "description": "Dark blue with an orange accent",
     "default-variant": "Dark",
     "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)",
+    "color-scheme": "dark",
     "toolbar": { "items": ["browser", "tempo", "transport"], "hidden": [] }
   }
   ```
@@ -834,7 +842,8 @@ my-theme/
   `format`, `name` and `swatch` are required; a newer `format` is refused with a message to
   update Suhina, and keys it does not know are warnings. The theme's name comes only from
   here: a `theme { name }` rule in the sheet is no longer read. `default-variant` names the
-  theme's own values (*Default* when it says none). `toolbar` is the suggested toolbar
+  theme's own values (*Default* when it says none). `color-scheme` (`"light"` or `"dark"`, dark
+  when left out; Suhina always writes it) says whether those values are a light look. `toolbar` is the suggested toolbar
   arrangement (#1021 defines it); Suhina's toolbar editor writes `items`, `hidden` and the
   `offsets` of items moved by hand, and leaves an arrangement with groups or spaces as written.
   Suhina writes `theme.json` when the theme is renamed or its toolbar changes, and only then.
@@ -846,12 +855,12 @@ my-theme/
   comments, `@media` rules and the rest of the author's text stay as they are.
 - `thumbnail.svg` (optional): see *Swatches and thumbnails*.
 - `variants/<variant>.json`: values for the theme's declared controls,
-  `{ "name": "Frost", "values": { "--accent": "#88C0D0" } }`. The file's name is the variant's
+  `{ "name": "Frost", "color-scheme": "light", "values": { "--accent": "#88C0D0" } }`. The file's name is the variant's
   id; `name` is its label; values are CSS text checked against each property's syntax (`var()`
   may refer to the theme's own variables). A variant holds only values: a value for a property
   the theme does not register with `@property` (or that is not one of Suhina's core properties)
-  is left out with a warning, and any key besides `name` and `values` (such as the `appearance`
-  of earlier versions) is a warning. At most 64 variants of 64 KiB each, 256 values of 1 KiB
+  is left out with a warning; `color-scheme` is the variant's scheme, its theme's when left out;
+  any other key (such as the `appearance` of earlier versions) is a warning. At most 64 variants of 64 KiB each, 256 values of 1 KiB
   each. The default variant is the theme's own values and is never a file.
 - `assets/`, `background.png`, and optionally a `README.md` of the author's.
 
@@ -977,7 +986,7 @@ implements what the bundled themes and the editor's examples use:
 - **Syntax and cascade:** `@layer` (named, anonymous, nested, order statements; later
   layers win, unlayered rules win over layers, `!important` reverses), `@media` with
   `min-`/`max-` and range forms (`(400px <= width <= 800px)`), `orientation` and
-  `prefers-reduced-motion` (not `prefers-color-scheme`: a theme's light and dark looks are variants), custom properties with fallbacks,
+  `prefers-reduced-motion`, `prefers-color-scheme` (the variant's declared scheme), `light-dark()`, custom properties with fallbacks,
   `inherit`/`initial`/`unset`, specificity and source order.
 - **Selectors:** type (the element's name, from the registry `suhina_theme_package::elements`;
   the host's elements have no classes), `#id`, `.class` (toolbar group classes), `*`, descendant, `>`, `+`, `~`, `:is()`, `:not()`,

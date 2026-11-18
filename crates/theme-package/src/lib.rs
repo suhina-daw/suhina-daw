@@ -269,12 +269,13 @@ fn check_swatch(theme_meta: &meta::ThemeMeta, files: &BTreeMap<String, Vec<u8>>)
     let core = suhina_style::sheet::Sheet::parse(CORE_SHEET).map_err(|e| format!("the core theme properties: {e}"))?;
     let css = std::str::from_utf8(&files["theme.css"]).map_err(|_| "theme.css: not UTF-8 text")?;
     let sheet = suhina_style::sheet::Sheet::parse(css).map_err(|e| format!("theme.css: {e}"))?;
-    meta::swatch_color(&theme_meta.swatch, &[&core], &sheet, None)
+    meta::swatch_color(&theme_meta.swatch, &[&core], &sheet, None, theme_meta.light)
         .map_err(|e| format!("the swatch for {}: {e}", theme_meta.default_variant()))?;
     for (path, bytes) in files.iter().filter(|(path, _)| path.starts_with("variants/") && path.ends_with(".json")) {
         let variant = meta::variant_sheet(bytes).map_err(|e| format!("{path}: {e}"))?;
         let variant = suhina_style::sheet::Sheet::parse(&variant).map_err(|e| format!("{path}: {e}"))?;
-        meta::swatch_color(&theme_meta.swatch, &[&core], &sheet, Some(&variant))
+        let light = meta::variant_scheme(bytes).unwrap_or(theme_meta.light);
+        meta::swatch_color(&theme_meta.swatch, &[&core], &sheet, Some(&variant), light)
             .map_err(|e| format!("the swatch for {path}: {e}"))?;
     }
     Ok(())

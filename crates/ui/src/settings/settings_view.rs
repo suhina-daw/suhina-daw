@@ -220,6 +220,8 @@ pub struct ThemesView {
     /// The name of what is in use as the editor shows it: the variant's, or the default
     /// variant's, with a name typed and not saved yet.
     pub variant_name: String,
+    /// Whether what is in use is a light look, as the editor shows it.
+    pub light: bool,
     /// What is in use has edits not saved yet (the variant editor's draft).
     pub edited: bool,
     /// The variant editor may save what is in use in place (not a theme's own values, nor a
@@ -262,6 +264,9 @@ pub enum ThemeRequest {
     EditValue { name: String, value: String },
     /// Name the variant in use so, in the editor's draft.
     EditName(String),
+    /// Make the variant in use a light look (`true`) or a dark one, in the editor's draft: its
+    /// `color-scheme`, what sheets ask with `prefers-color-scheme` and `light-dark()`.
+    EditScheme(bool),
     /// Write the editor's draft to the variant in use.
     Save,
     /// Write the editor's draft (or the variant in use) as a new variant, and use it.
@@ -2130,6 +2135,17 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
     if dialog_field(ui, "Name", "Variant name", &mut name).changed() {
         request = Some(ThemeRequest::EditName(name));
     }
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.add_sized([140.0, theme::ROW], egui::Label::new("Colour scheme"))
+            .on_hover_text("Whether this look is light or dark: the window's title bar follows it, and devices pick their light or dark artwork by it");
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(128.0, SEGMENT), egui::Sense::hover());
+        let painter = ui.painter().clone();
+        let options = [("Dark", false), ("Light", true)];
+        if let Some(light) = segmented(ui, &painter, rect, "Colour scheme", &options, themes.light) {
+            request = Some(ThemeRequest::EditScheme(light));
+        }
+    });
     ui.add_space(8.0);
     // A variant holds values for the quick controls its theme declares, and the editor shows only
     // those: the theme's `@property` rules with a label.

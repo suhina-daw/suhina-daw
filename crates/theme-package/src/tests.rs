@@ -150,6 +150,21 @@ fn theme_json_opts_out_of_the_base_sheet_with_base_none() {
     assert!(odd.base && warnings.iter().any(|w| w.contains("base")), "{warnings:?}");
 }
 
+/// `"color-scheme"` says whether the theme's own values are light or dark; left out, the theme
+/// is dark. It is always written, so the file says which it is; any other value is named.
+#[test]
+fn theme_json_says_its_colour_scheme_and_is_dark_when_it_does_not() {
+    let read = |text: &str| meta::ThemeMeta::parse(text.as_bytes()).unwrap();
+    let (plain, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red" }"#);
+    assert!(!plain.light && warnings.is_empty());
+    assert!(plain.to_json().contains(r#""color-scheme": "dark""#), "{}", plain.to_json());
+    let (light, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red", "color-scheme": "light" }"#);
+    assert!(light.light && warnings.is_empty(), "{warnings:?}");
+    assert_eq!(read(&light.to_json()), (light, Vec::new()));
+    let (odd, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red", "color-scheme": "dim" }"#);
+    assert!(!odd.light && warnings.iter().any(|w| w.contains("color-scheme")), "{warnings:?}");
+}
+
 #[test]
 fn the_swatch_must_resolve_to_a_colour_for_every_variant() {
     let with = |swatch: &str, variant: &str| {

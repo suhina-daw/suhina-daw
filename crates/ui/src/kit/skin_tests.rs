@@ -176,6 +176,7 @@ fn skin_round_trip_and_old_defaults() {
         toolbar_offsets: BTreeMap::from([("transport".into(), 80)]),
         variables: Arc::default(),
         base: true,
+        light: false,
     };
     let mut warnings = Vec::new();
     assert_eq!(Skin::from_json(&skin.to_json(), &mut warnings), skin);

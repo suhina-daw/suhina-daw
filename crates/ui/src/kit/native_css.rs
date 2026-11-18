@@ -439,6 +439,8 @@ struct Engine {
     motions: HashMap<u64, Motion>,
     native: Option<native::Paint>,
     motion: bool,
+    /// The colour scheme the styles were worked out in ([`skin::Skin::light`]).
+    light: bool,
     styles_changed: bool,
     /// The user's own sheet (`user.css`), above every theme and device sheet.
     user: Option<(Arc<str>, Arc<suhina_style::sheet::Sheet>)>,
@@ -1152,7 +1154,8 @@ fn snapshot(engine: &mut Engine, opacity: f32) {
     engine.snapshot = Some((style_epoch(), opacity.to_bits()));
 }
 
-/// Refresh only when the sheets, the theme's colours, the window's opacity or the viewport change.
+/// Refresh only when the sheets, the theme's colours or colour scheme, the window's opacity or the
+/// viewport change.
 pub fn begin_frame(ui: &egui::Ui) {
     let skin = skin::current();
     // A theme without a sheet of its own runs the engine on an empty one: the base tier and the
@@ -1166,6 +1169,11 @@ pub fn begin_frame(ui: &egui::Ui) {
     let variant = skin.variant.clone();
     ENGINE.with(|engine| {
         let mut engine = engine.borrow_mut();
+        if engine.light != skin.light {
+            engine.light = skin.light;
+            engine.styles_changed = true;
+            engine.reset_styles();
+        }
         if engine.seen.1 != variant {
             engine.seen.1.clone_from(&variant);
             engine.variant = variant
@@ -1200,7 +1208,7 @@ pub fn begin_frame(ui: &egui::Ui) {
             });
             match native {
                 Some(native) => {
-                    let motion = engine.motion;
+                    let (motion, light) = (engine.motion, engine.light);
                     let user = engine.user.take();
                     let variant = engine.variant.take();
                     let device_sheets = std::mem::take(&mut engine.device_sheets);
@@ -1212,6 +1220,7 @@ pub fn begin_frame(ui: &egui::Ui) {
                         size,
                         native: Some(native),
                         motion,
+                        light,
                         user,
                         variant,
                         seen,
@@ -1472,6 +1481,8 @@ pub fn theme_swatch(color: Color32) -> Option<Computed> {
 /// key, compared by pointer, and held so that no other text can take its address) and parsed.
 struct SettingsSheets {
     sources: (Arc<str>, Option<Arc<str>>, Option<Arc<str>>),
+    /// The variant's colour scheme they were read in.
+    light: bool,
     parsed: Option<(Sheet, Option<Sheet>, Option<Sheet>)>,
     /// The settings looked up by element path.
     found: HashMap<Vec<&'static str>, Option<Computed>>,
@@ -1511,6 +1522,7 @@ pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
             Arc::ptr_eq(theme, &css)
                 && same_arc(variant.as_ref(), skin.variant.as_ref())
                 && same_arc(own.as_ref(), user.as_ref())
+                && cache.light == skin.light
         });
         if !current {
             let parsed = Sheet::parse(&css).ok().map(|sheet| {
@@ -1519,6 +1531,7 @@ pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
             });
             *cache = Some(SettingsSheets {
                 sources: (Arc::clone(&css), skin.variant.clone(), user.clone()),
+                light: skin.light,
                 parsed,
                 found: HashMap::new(),
             });
@@ -1528,7 +1541,7 @@ pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
             return found.clone();
         }
         let (sheet, variant, user) = cache.parsed.as_ref()?;
-        let found = native::settings_of(sheet, variant.as_ref(), user.as_ref(), &key);
+        let found = native::settings_of(sheet, variant.as_ref(), user.as_ref(), &key, skin.light);
         if cache.found.len() < MAX_CONTEXTS {
             cache.found.insert(key, found.clone());
         }

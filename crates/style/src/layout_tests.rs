@@ -17,7 +17,7 @@ fn measured(source: &str, elements: Vec<Element>, width: f32, sizes: &[Option<[O
     let tree = Tree::new(elements).unwrap();
     let styles = cascade::compute(
         &tree,
-        Viewport { width, height: 600.0, reduced_motion: false },
+        Viewport { width, height: 600.0, reduced_motion: false, light: false },
         &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }],
     )
     .unwrap();
@@ -148,7 +148,7 @@ fn padding_in_em_is_where_painters_find_it() {
     assert_eq!((rects[1].unwrap().x, rects[1].unwrap().y), (15.0, 5.0));
     let sheet = Sheet::parse(css).unwrap();
     let tree = Tree::new(vec![Element::new("toolbar", None)]).unwrap();
-    let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false };
+    let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false, light: false };
     let styles =
         cascade::compute(&tree, viewport, &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }]).unwrap();
     assert_eq!(spacing_points(&styles[0], Property::PaddingLeft), Some(15.0));
@@ -174,7 +174,7 @@ fn large_padding_is_where_painters_find_it() {
     assert_eq!((rect.x, rect.y), (600.0, 700.0));
     let sheet = Sheet::parse(css).unwrap();
     let tree = Tree::new(vec![Element::new("toolbar", None)]).unwrap();
-    let viewport = Viewport { width: 1000.0, height: 600.0, reduced_motion: false };
+    let viewport = Viewport { width: 1000.0, height: 600.0, reduced_motion: false, light: false };
     let styles =
         cascade::compute(&tree, viewport, &[AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }]).unwrap();
     assert_eq!(spacing_points_of(&styles[0], Property::PaddingLeft, 1000.0), 600.0);
@@ -252,7 +252,7 @@ fn the_user_agent_sheet_s_flex_lays_out_as_a_theme_s_does() {
     let sizes = [None, Some([Some(40.0), None]), None, Some([Some(40.0), None])];
     let styles = cascade::compute(
         &tree,
-        Viewport { width: 400.0, height: 30.0, reduced_motion: false },
+        Viewport { width: 400.0, height: 30.0, reduced_motion: false, light: false },
         &[AppliedSheet { sheet: &sheet, layer: Layer::UserAgent, root: None }],
     )
     .unwrap();

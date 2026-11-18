@@ -61,7 +61,8 @@ move its rules into `theme.css`.
   "author": "Your name",
   "description": "Dark slate with a mint accent",
   "default-variant": "Dark",
-  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)",
+  "color-scheme": "dark"
 }
 ```
 
@@ -77,6 +78,13 @@ move its rules into `theme.css`.
   each variant from your `@property` rules and `:root` values alone, without applying the rest
   of the sheet, so `currentColor`, `attr()` and units relative to an element do not work in it.
   A theme whose swatch does not give a colour for every variant is refused on import.
+- `color-scheme` (optional) is `"light"` or `"dark"`: whether your theme's own values are a light
+  look. Left out, the theme is dark. A variant file says its own the same way
+  (`"color-scheme": "light"`), or has the theme's; the variant editor's *Colour scheme* control
+  sets it. Suhina never guesses it from your colours: the window's title bar follows it, and any
+  sheet asks for it with `@media (prefers-color-scheme: light)` or
+  `color: light-dark(#222, #eee)` (the first value for light, the second for dark). Device panels
+  with light and dark artwork pick theirs by it, so say `light` for a light theme.
 - `toolbar` (optional) suggests a toolbar arrangement:
   `{ "items": ["browser", "tempo", "transport"], "hidden": ["agents"] }`.
 - `base` (optional): `"none"` leaves Suhina's base sheet out from under your theme (*Suhina's base

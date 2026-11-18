@@ -295,9 +295,10 @@ pub struct GroupClass {
 pub const MAX_GROUP_CLASSES: usize = 64;
 
 /// Properties the host application reads from a theme's rules itself; the engine leaves them
-/// alone without a notice. Read by the app, not the engine: artwork, the name and the background
-/// material.
-pub const HOST_PROPERTIES: &[&str] = &["image", "name", "background-opacity", "background-blur"];
+/// alone without a notice. Read by the app, not the engine: the name and the background material.
+/// Artwork (`image`) is an engine property too: the theme loader still reads a theme's `image`
+/// rules into its artwork roles, and the cascade gives each element its own (`none` removes it).
+pub const HOST_PROPERTIES: &[&str] = &["name", "background-opacity", "background-blur"];
 
 /// The elements whose children the CSS layout places: only there does a padding in percent, which
 /// CSS takes of the width of the box around the element, mean anything. Everywhere else the app
@@ -818,11 +819,16 @@ fn declarations(
                 && !crate::variables::mentions_attr(value)
                 && !matches!(value, "inherit" | "initial" | "unset")
             {
-                let failure = shorthand.longhands().iter().find_map(|property| {
-                    shorthand
-                        .part(*property, value)
-                        .and_then(|part| property.parse(&crate::value::viewport_units(&part, 1000.0, 1000.0)))
-                        .map_or_else(Some, |parsed| percent_padding(rule, *property, &parsed))
+                // A value with `light-dark()` is checked as both schemes see it.
+                let failure = scheme_branches(value).map_or_else(Some, |branches| {
+                    branches.iter().find_map(|value| {
+                        shorthand.longhands().iter().find_map(|property| {
+                            shorthand
+                                .part(*property, value)
+                                .and_then(|part| property.parse(&crate::value::viewport_units(&part, 1000.0, 1000.0)))
+                                .map_or_else(Some, |parsed| percent_padding(rule, *property, &parsed))
+                        })
+                    })
                 });
                 if let Some(message) = failure {
                     sheet.notice(at, format!("{name}: {message}"));
@@ -863,9 +869,13 @@ fn declarations(
             && !crate::variables::mentions_attr(value)
             && !matches!(value, "inherit" | "initial" | "unset")
             && let Some(property) = Property::from_name(&name)
-            && let Some(message) = property
-                .parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
-                .map_or_else(Some, |parsed| percent_padding(rule, property, &parsed))
+            && let Some(message) = scheme_branches(value).map_or_else(Some, |branches| {
+                branches.iter().find_map(|value| {
+                    property
+                        .parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
+                        .map_or_else(Some, |parsed| percent_padding(rule, property, &parsed))
+                })
+            })
         {
             sheet.notice(at, format!("{name}: {message}"));
             continue;
@@ -875,9 +885,32 @@ fn declarations(
     Ok(declarations)
 }
 
+/// `value` as each colour scheme sees it: once with its `light-dark()` calls taken for a light
+/// theme and once for a dark one, or once as it is when it has none.
+fn scheme_branches(value: &str) -> Result<Vec<String>, String> {
+    if crate::variables::mentions_light_dark(value) {
+        Ok(vec![crate::variables::light_dark(value, true)?, crate::variables::light_dark(value, false)?])
+    } else {
+        Ok(vec![value.to_owned()])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A value with `light-dark()` is checked as both schemes see it: each branch must be a value
+    /// of the property, and a call without two values is named.
+    #[test]
+    fn light_dark_is_checked_for_both_schemes() {
+        let notices = |css: &str| Sheet::parse(css).unwrap().notices;
+        let found = notices("a { color: light-dark(#fff, #000); box-shadow: 0 1px 2px light-dark(red, blue); }");
+        assert!(found.is_empty(), "{found:?}");
+        let notices = |css: &str| notices(css).len();
+        assert_eq!(notices("a { color: light-dark(#fff, 4px); }"), 1);
+        assert_eq!(notices("a { color: light-dark(#fff); }"), 1);
+        assert_eq!(notices("a { box-shadow: 0 1px 2px light-dark(red, x y); }"), 1);
+    }
 
     /// Padding in percent is taken only where the CSS layout places an element's children (the
     /// window, the toolbar): elsewhere the app paints the content box without the box around
@@ -927,7 +960,9 @@ mod tests {
         assert!(!accepts("border-width", "1px 2px 3px 4px 5px"));
         assert!(!accepts("border-width", "red"));
         assert!(!accepts("colour", "#fff"));
-        assert!(!accepts("image", "url(a.svg)"));
+        assert!(accepts("image", "url(a.svg)"));
+        assert!(accepts("image", "none"));
+        assert!(!accepts("image", "red"));
     }
 
     #[test]

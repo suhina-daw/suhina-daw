@@ -212,6 +212,35 @@ fn device_controls(theme: &str, device: &str, user: Option<&str>) -> (Computed, 
     styles.unwrap()
 }
 
+/// A sheet asks for the variant's declared colour scheme with `prefers-color-scheme` and
+/// `light-dark()`, and its answers change when the scheme does: a device panel picks its artwork.
+#[test]
+fn a_sheet_follows_the_variants_declared_colour_scheme() {
+    let device = "@media (prefers-color-scheme: light) { #cutoff { display: none; } } \
+                  #cutoff { color: light-dark(#ffffff, #000000); }";
+    let ctx = egui::Context::default();
+    let mut seen = Vec::new();
+    for light in [false, true, false] {
+        skin::configure(&skin::Skin { css: Some(Arc::from("")), light, ..Default::default() });
+        let mut style = None;
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _frame = frame(ui);
+                let _window = test_el("window").enter();
+                let _panel = test_el("device-panel").id("track-1-device-0").sheet(Some(device)).enter();
+                style = test_el("device-control").id("cutoff").enter().style();
+            })
+            .textures_delta
+            .clear();
+        }
+        let style = style.expect("a style");
+        seen.push((style.keyword(Property::Display), style.color));
+    }
+    skin::configure(&skin::Skin::default());
+    let (white, black) = (Color32::WHITE, Color32::BLACK);
+    assert_eq!(seen, [(None, black), (Some("none"), white), (None, black)]);
+}
+
 #[test]
 fn a_device_sheet_styles_its_own_panel_by_control_id_and_never_leaks() {
     let (styled, other, browser) = device_controls(

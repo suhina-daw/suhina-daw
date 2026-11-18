@@ -7,7 +7,7 @@ use crate::kit::theme_css;
 
 /// A theme read back from the sheet written for it, as the theme files do it.
 fn from_sheet(text: &str) -> (Theme, Vec<String>) {
-    let (declared, base, mut warnings) = read(text).unwrap();
+    let (declared, base, mut warnings) = read(text, false).unwrap();
     let mut theme = Theme::default();
     theme.vars.declared = Arc::new(declared);
     theme.vars.base = Arc::new(base);
@@ -127,6 +127,7 @@ fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
 #[test]
 fn variant_files_round_trip_and_bad_ones_are_named() {
     let variant = Variant {
+        light: None,
         id: "polar-night".into(),
         name: "Polar Night".into(),
         values: [("--accent".to_string(), "#81A1C1".to_string())].into(),
@@ -183,7 +184,12 @@ fn the_swatch_and_thumbnail_follow_the_variant() {
     ));
     resolve(&mut theme);
     assert_eq!(theme.swatch, Some(parse_hex("#102030").unwrap()));
-    let variant = Variant { id: "b".into(), name: "B".into(), values: [("--accent".into(), "#405060".into())].into() };
+    let variant = Variant {
+        light: None,
+        id: "b".into(),
+        name: "B".into(),
+        values: [("--accent".into(), "#405060".into())].into(),
+    };
     let (chosen, _) = with_variant(&theme, Some(&variant));
     assert_eq!(chosen.swatch, Some(parse_hex("#405060").unwrap()));
     assert!(chosen.picture.as_deref().unwrap().contains(r##"fill="#405060""##), "{:?}", chosen.picture);
