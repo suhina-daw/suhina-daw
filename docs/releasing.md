@@ -298,6 +298,13 @@ follows every merge used to cancel it, and as a cancelled run saves no cache, Wi
 never saved one and every pull request compiled every dependency there, 23 to 29 minutes instead of
 about 10.
 
+rust-cache saves only when the cache's key changes (`Cargo.lock`, the toolchain), and what a job
+builds is not part of the key. When a job comes to build less, a new `prefix-key` is what makes
+`main` save a smaller cache: `check` has `v1-rust` since the tests moved to `test` and its old
+cache, which still held the test build, took 1.1 to 1.3 GB a system of the 10 GB. A cache nothing
+restores any more is the first GitHub evicts. `gh cache list --sort last_accessed_at` shows what
+the 10 GB holds.
+
 The test build follows the same rule: its `cache` job builds the test build's binaries on every
 push to `main` that changes them, only to save the cache, and pull requests' test builds restore it
 and save none. Their own caches, 0.6 to 0.8 GB per system on every build, had filled the 10 GB and
@@ -326,14 +333,17 @@ nextest runs every test in a process of its own and the tests of every binary si
 each binary. Each partition compiles the tests itself from `main`'s cache, which the first
 partition saves; the doc tests, which nextest does not run, run in the first partition with
 `cargo test --doc`, and the engine's tests again on four render threads
-(`SUHINA_RENDER_THREADS=4`, ADR 0038 › 16) are split between the partitions the same way.
+(`SUHINA_RENDER_THREADS=4`, ADR 0038 › 16) are split between the partitions the same way. They are
+picked from the workspace build with `-E "package(suhina-engine)"`, not built with `-p`: cargo
+resolves the dependencies' features for the one package then, and compiled a share of them again.
 
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
 --no-fail-fast` does the same), and a test that runs a minute or more is named while it runs.
 nextest spreads tests, not the work inside one: a test that loops over many independent cases
-holds one core for all of them, and sets how short a partition can get. A test binary whose tests take turns through a lock inside the binary
-(a `static Mutex`) needs a test group of one thread there, since in processes of their own they no
+holds one core for all of them, and sets how short a partition can get. A test binary whose tests
+take turns through a lock inside the binary (a `static Mutex`) needs a test group of one thread
+there, since in processes of their own they no
 longer wait for each other; `crates/ipc/tests/leftovers.rs` is one. A test that fails only under
 nextest has a race of that kind, not a timing problem: there are no retries. The version is pinned
 with its archives' checksums in [`scripts/install_nextest.sh`](../scripts/install_nextest.sh);
