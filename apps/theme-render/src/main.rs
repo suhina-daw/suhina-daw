@@ -71,6 +71,10 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
                     return Err(format!("give one of --hover and --press, once\n\n{USAGE}"));
                 }
                 let label = value(&arg)?;
+                // An option here means the label is missing.
+                if label.starts_with('-') {
+                    return Err(format!("{arg} takes the label of a control, not {label}\n\n{USAGE}"));
+                }
                 parsed.pointer = Some(if arg == "--hover" { Pointer::Hover(label) } else { Pointer::Press(label) });
             }
             "--budget" => parsed.budget = true,
@@ -108,13 +112,18 @@ fn run() -> Result<(), String> {
             .ok_or_else(|| format!("{}: neither a theme folder nor a built-in theme's id", args.theme))?
     };
     if args.budget {
+        let mut failed = 0;
         for scene in &scenes::select(args.scene.as_deref(), args.pointer.as_ref()) {
             match budget::count(&subject, scene) {
                 Ok(counts) => println!("{}: {counts:?}", scene.name),
-                Err(e) => println!("{}: not drawn: {e}", scene.name),
+                Err(e) => {
+                    failed += 1;
+                    println!("{}: not drawn: {e}", scene.name);
+                }
             }
         }
-        return Ok(());
+        // As for the pictures: a scene left undrawn, a refused label included, is a failure.
+        return if failed == 0 { Ok(()) } else { Err(format!("{failed} scenes not drawn")) };
     }
     let backdrop = match &args.backdrop {
         Some(path) => image::open(path).map_err(|e| format!("{}: {e}", path.display()))?.to_rgba8(),
@@ -166,6 +175,9 @@ mod tests {
         assert_eq!(parsed(&["nord"]).unwrap().pointer, None);
         assert!(parsed(&["nord", "--scene", "launcher", "--hover", "a", "--press", "b"]).is_err());
         assert!(parsed(&["nord", "--scene", "launcher", "--hover"]).is_err());
+        assert!(
+            parsed(&["nord", "--scene", "launcher", "--hover", "--budget"]).err().unwrap().contains("takes the label")
+        );
         assert!(parsed(&["nord", "--hover", "Record"]).err().unwrap().contains("need --scene"));
     }
 }

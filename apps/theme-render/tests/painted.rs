@@ -78,7 +78,12 @@ fn drawings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Res
                 })
             })
             .collect();
-        handles.into_iter().flat_map(|handle| handle.join().unwrap_or_default()).collect()
+        // A worker that panicked fails the test: its drawings are missing, and a recording
+        // written without them would be partial.
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
+            .collect()
     })
 }
 
