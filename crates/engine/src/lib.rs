@@ -82,6 +82,7 @@ mod plugin_params;
 mod plugin_params_tests;
 #[cfg(test)]
 mod plugin_tests;
+mod pool;
 mod preview;
 #[cfg(test)]
 mod preview_tests;
@@ -133,6 +134,11 @@ pub use plugin::{
     Sent, SongPosition, plugin_devices, plugin_key,
 };
 pub use plugin_params::{MAX_BLOCK_PARAMS, ParamEvent, RAMP_STEP, param_id};
+pub use pool::{
+    MAX_RENDER_THREADS, PARALLEL_MIN, PoolKind, RENDER_THREADS_VAR, RenderPool, automatic_render_threads,
+    process_render_threads, render_threads_for, render_threads_from, render_threads_from_env,
+    set_process_render_threads,
+};
 pub use preview::{PreviewMonitor, PreviewNote, PreviewNotes, preview_notes};
 pub use record::{
     RECORD_CHUNK, RECORD_CHUNKS, RECORD_NOTES, RecordReceiver, RecordedAudio, RecordedJump, RecordedNote,
@@ -542,6 +548,9 @@ pub struct Renderer {
     cpu: cpu::CpuMeter,
     /// The level meters, published to the controller's `MeterMonitor`.
     meters: meters::MeterWriter,
+    /// The render workers that run chains without plug-ins beside the render thread
+    /// ([`pool`]): its lane of the process's pool; `None` renders on the render thread alone.
+    pool: Option<pool::Lane>,
 }
 
 /// What a render plays besides the project (#764 › 3): what makes its devices (#1147), the
@@ -763,15 +772,43 @@ impl Renderer {
             recorder: record::Recorder::new(),
             cpu: cpu::CpuMeter::new(),
             meters,
+            pool: pool::process_lane(sample_rate, pool::PoolKind::RealTime),
         })
+    }
+
+    /// Renders each block on `threads` threads, the render thread included (0 or 1: the render
+    /// thread alone), at most [`MAX_RENDER_THREADS`]. The output is the same, bit for bit, for
+    /// any number. The threads are a pool of the renderer's own, apart from the process's
+    /// (tests, diagnosis); a renderer is built with a lane of the process's pool
+    /// ([`set_process_render_threads`], `SUHINA_RENDER_THREADS`). Starts or stops threads:
+    /// never call it on the render thread.
+    pub fn set_render_threads(&mut self, threads: usize) {
+        let threads = threads.clamp(1, MAX_RENDER_THREADS);
+        if self.render_threads() == threads {
+            return;
+        }
+        self.pool = None;
+        self.pool = pool::RenderPool::new(threads - 1, self.pool_kind()).and_then(|pool| pool.lane(self.sample_rate));
+    }
+
+    /// The threads that render each block, the render thread included.
+    pub fn render_threads(&self) -> usize {
+        self.pool.as_ref().map_or(1, pool::Lane::threads)
+    }
+
+    /// Asks the render workers to join real-time priority for blocks of `frames` frames, as the
+    /// render thread does: call it when the renderer starts playing to a device. Never
+    /// allocates.
+    pub fn join_real_time(&self, frames: usize) {
+        if let Some(pool) = self.pool.as_ref() {
+            pool.join_real_time(frames, self.sample_rate);
+        }
     }
 
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
-    /// Renders offline from now on: plug-ins are waited for as long as they take (up to
-    /// [`OFFLINE_TIMEOUT`] a block) instead of until the block's real-time deadline.
     /// Whether a track with no instrument of its own plays its notes as sine tones (#1384), as
     /// [`LaunchCommand::SetImplicitTones`] sets it while playing: on until set.
     pub fn set_implicit_tones(&mut self, on: bool) {
@@ -781,8 +818,29 @@ impl Renderer {
         }
     }
 
+    /// Renders offline from now on: plug-ins are waited for as long as they take (up to
+    /// [`OFFLINE_TIMEOUT`] a block) instead of until the block's real-time deadline.
+    ///
+    /// An offline renderer renders on the process's offline pool, at normal priority, and a
+    /// renderer that plays on its real-time pool (ADR 0038 › 1): turning it offline gives its
+    /// lane back and takes one of the other pool, so call it before the first block, never on
+    /// the render thread.
     pub fn set_offline(&mut self, offline: bool) {
         self.offline = offline;
+        let kind = self.pool_kind();
+        if self.pool.as_ref().is_some_and(|lane| lane.kind() != kind) {
+            let threads = self.render_threads();
+            self.pool = None;
+            self.pool = pool::process_lane(self.sample_rate, kind).filter(|lane| lane.threads() == threads);
+            if self.pool.is_none() && threads > 1 {
+                self.pool = pool::RenderPool::new(threads - 1, kind).and_then(|pool| pool.lane(self.sample_rate));
+            }
+        }
+    }
+
+    /// The pool a renderer of this kind renders on: offline renders at normal priority.
+    fn pool_kind(&self) -> pool::PoolKind {
+        if self.offline { pool::PoolKind::Offline } else { pool::PoolKind::RealTime }
     }
 
     /// Whether playback repeats the project's loop region when it is on (the default). A render
@@ -922,8 +980,8 @@ impl Renderer {
         self.graph.launcher.monitor.plugin_misses.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Publishes the plug-in blocks missed so far and the plug-in that missed most. Never
-    /// allocates.
+    /// Publishes the plug-in blocks missed so far and the plug-in that missed most, and the
+    /// blocks render workers missed and the track that missed most. Never allocates.
     fn publish_plugin_misses(&mut self) {
         let (mut total, mut blocked, mut worst) = (0u64, 0u64, (0u64, 0u64));
         let mut worst_trip = 0u32;
@@ -937,7 +995,19 @@ impl Renderer {
                 }
             }
         }
+        // Blocks a chain came back from a render worker late (ADR 0038 › 3), and the track that
+        // missed most.
+        let (mut late, mut worst_track) = (0u64, (0u64, 0u64));
+        for chain in &self.graph.chains {
+            late = late.saturating_add(chain.missed_blocks);
+            if chain.missed_blocks > worst_track.1 {
+                worst_track = (u64::from(chain.track.0), chain.missed_blocks);
+            }
+        }
         let monitor = &self.graph.launcher.monitor;
+        monitor.render_misses.store(late, std::sync::atomic::Ordering::Relaxed);
+        monitor.worst_render_track.store(worst_track.0, std::sync::atomic::Ordering::Relaxed);
+        monitor.worst_render_misses.store(worst_track.1, std::sync::atomic::Ordering::Relaxed);
         monitor.plugin_misses.store(total, std::sync::atomic::Ordering::Relaxed);
         monitor.plugin_blocked.store(blocked, std::sync::atomic::Ordering::Relaxed);
         monitor.worst_trip.store(worst_trip, std::sync::atomic::Ordering::Relaxed);
@@ -1377,7 +1447,7 @@ impl Renderer {
             keep: &capture.keep,
             buffer: &mut capture.buffer,
         });
-        sends::run(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture);
+        sends::run(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture, self.pool.as_mut());
         // The main fader's move since the graph was built, then the click it leaves alone. With
         // the fader still, the click is in the mix already and this changes nothing.
         if let Some((_, fader)) = self.graph.main_fader.as_ref()

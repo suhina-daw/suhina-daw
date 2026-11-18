@@ -1083,6 +1083,17 @@ impl Controller {
         )
     }
 
+    /// Blocks a chain came back from a render worker after its deadline, and the track (its id)
+    /// that missed most with its count (ADR 0038 › 3).
+    pub fn render_misses(&self) -> (u64, u64, u64) {
+        let m = &self.monitor;
+        (
+            m.render_misses.load(Ordering::Relaxed),
+            m.worst_render_track.load(Ordering::Relaxed),
+            m.worst_render_misses.load(Ordering::Relaxed),
+        )
+    }
+
     /// Plug-in blocks that were not sent at all (their host was still busy with an earlier
     /// one), and the longest round trip a plug-in answered in, in microseconds.
     pub fn plugin_time(&self) -> (u64, u32) {

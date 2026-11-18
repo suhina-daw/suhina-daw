@@ -52,9 +52,25 @@ impl Player {
         Self { controller: seeded(controller), keep_alive, output: Some(output), quantization: None }
     }
 
-    /// What the output runs with now, when it says.
+    /// What the output runs with now, when it says, with the engine's render threads and the
+    /// blocks they missed (ADR 0038).
     pub fn output_info(&self) -> Option<OutputInfo> {
-        self.output.as_ref().map(|o| o.info())
+        self.output.as_ref().map(|o| {
+            let (misses, worst, worst_misses) = self.controller.render_misses();
+            OutputInfo {
+                render_threads: u16::try_from(suhina_engine::process_render_threads()).unwrap_or(u16::MAX),
+                render_misses: misses,
+                worst_render_track: (worst_misses > 0).then(|| u32::try_from(worst).unwrap_or(u32::MAX)),
+                worst_render_misses: worst_misses,
+                ..o.info()
+            }
+        })
+    }
+
+    /// Blocks a chain came back from a render worker late, and the track (its id) that missed
+    /// most with its count (ADR 0038 › 3).
+    pub fn render_misses(&self) -> (u64, u64, u64) {
+        self.controller.render_misses()
     }
 
     pub fn control_panel_open(&self) -> bool {

@@ -156,6 +156,7 @@ fn audio_commands_are_listed_with_their_kind() {
             "audio.setTrackInput",
             "output.setCuePair",
             "output.setCueVolume",
+            "audio.setRenderThreads",
             "audio.info",
         ]
     );
@@ -593,4 +594,34 @@ fn letting_a_project_go_closes_its_output() {
     session.release_player();
     assert!(closed.load(std::sync::atomic::Ordering::Relaxed), "the output closed");
     assert!(session.player().is_none());
+}
+
+#[test]
+fn render_threads_are_chosen_and_the_playing_output_opens_again() {
+    let (mut projects, stand) = with_stand(None);
+    projects.add(Session::new(project()), None).unwrap();
+    assert_eq!(projects.open_output(None).unwrap(), None);
+    stand.run_latest();
+    for bad in [
+        json!({}),
+        json!({ "threads": -1 }),
+        json!({ "threads": 2.5 }),
+        json!({ "threads": "four" }),
+        json!({ "threads": 10 }),
+    ] {
+        let err = run(&mut projects, "audio.setRenderThreads", bad.clone()).unwrap_err();
+        assert!(err.contains("threads"), "{bad}: {err}");
+    }
+    assert_eq!(stand.opened.lock().unwrap().len(), 1, "a refused choice reopens nothing");
+    let environment = std::env::var_os(suhina_engine::RENDER_THREADS_VAR).is_some();
+    let result = run(&mut projects, "audio.setRenderThreads", json!({ "threads": 1 })).unwrap();
+    assert_eq!(result["threads"], json!(1));
+    assert_eq!(result["from_environment"], json!(environment));
+    if !environment {
+        assert_eq!(result["render_threads"], json!(1));
+    }
+    assert_eq!(stand.opened.lock().unwrap().len(), 2, "the playing output opened again");
+    let info = run(&mut projects, "audio.info", json!({})).unwrap();
+    assert_eq!(info["render_misses"], json!(0));
+    assert!(info["render_threads"].as_u64().is_some_and(|n| n >= 1), "{info}");
 }

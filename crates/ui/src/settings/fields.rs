@@ -275,6 +275,7 @@ pub(super) const FIELDS: &[Field] = &[
     switch!("audio_exclusive", audio_exclusive),
     number!("audio_cue_pair", audio_cue_pair, u16, only |p: &u16| *p <= MAX_CUE_PAIR),
     number!("audio_cue_volume", audio_cue_volume, i32, clamp CUE_VOLUMES),
+    number!("render_threads", render_threads, u32, only |n: &u32| RENDER_THREAD_CHOICES.contains(n)),
     Field {
         key: "audio_input",
         write: |s| s.audio_input.clone(),
