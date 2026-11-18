@@ -56,16 +56,17 @@ struct Painted<'a> {
     clips: Vec<Rect>,
 }
 
-/// Where a text is painted, at what angle and what it says: two shapes with the same key are
+/// Where a text is painted (with the transform its shape is painted under), at what angle and what it says: two shapes with the same key are
 /// copies of one text, in whatever colours.
-type Key<'a> = ([u32; 2], [u32; 4], u32, &'a str);
+type Key<'a> = ([u32; 2], [u32; 4], u32, [u32; 3], &'a str);
 
-fn key(text: &TextShape) -> Key<'_> {
+fn key(text: &TextShape, transform: TSTransform) -> Key<'_> {
     let r = text.galley.rect;
     (
         [text.pos.x.to_bits(), text.pos.y.to_bits()],
         [r.min.x.to_bits(), r.min.y.to_bits(), r.max.x.to_bits(), r.max.y.to_bits()],
         text.angle.to_bits(),
+        [transform.scaling.to_bits(), transform.translation.x.to_bits(), transform.translation.y.to_bits()],
         text.galley.job.text.as_str(),
     )
 }
@@ -91,7 +92,7 @@ impl<'a> Frame<'a> {
                     return;
                 }
                 let next = self.painted.len();
-                let at = *self.at.entry(key(text)).or_insert(next);
+                let at = *self.at.entry(key(text, transform)).or_insert(next);
                 match self.painted.get_mut(at) {
                     Some(copy) => copy.clips.push(clip),
                     None => self.painted.push(Painted { shape: text, rect, clips: vec![clip] }),
@@ -285,5 +286,18 @@ mod tests {
         // A clip over the moved text's left half cuts it.
         shape.clip_rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(moved.translation.x + at.center().x, 100.0));
         assert_eq!(hows(&[shape]).len(), 1);
+    }
+
+    #[test]
+    fn copies_under_different_transforms_are_different_texts() {
+        let ctx = context();
+        let text = || shape(&ctx, "Frequency", pos2(10.0, 10.0), None);
+        let at = text().visual_bounding_rect();
+        let moved = egui::emath::TSTransform::from_translation(egui::vec2(100.0, 0.0));
+        let whole = clipped(WIDE, text());
+        let mut cut =
+            clipped(Rect::from_min_max(pos2(0.0, 0.0), pos2(moved.translation.x + at.center().x, 100.0)), text());
+        cut.transform_after_tessellation = moved;
+        assert_eq!(hows(&[whole, cut]), [(How::Clipped, "Frequency".to_owned())]);
     }
 }
