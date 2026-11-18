@@ -491,7 +491,9 @@ fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
             realtime = Some(suhina_realtime::RealTime::join(frames, rate));
         }
         let Some((lane, job)) = next_job(shared, &mut lanes) else {
-            std::thread::park();
+            if !park_unless_stopping(shared) {
+                break;
+            }
             if let Some(rt) = realtime.as_mut() {
                 rt.waited();
             }
@@ -514,6 +516,19 @@ fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
             rt.worked(started.elapsed());
         }
     }
+}
+
+/// Parks the worker until something wakes it, unless the pool is stopping; false when it is. The
+/// stop is looked at again just before parking: the pool's drop sets it before it wakes the
+/// workers, and the wake-up can be spent before the worker parks. Joining real time waits on a
+/// channel, which parks the thread too, so a drop that came then left the worker asleep for good
+/// and the drop waiting on it (a hang on Linux, where the worker waits for rtkit's answer).
+fn park_unless_stopping(shared: &Shared) -> bool {
+    if shared.stop.load(Ordering::Acquire) {
+        return false;
+    }
+    std::thread::park();
+    true
 }
 
 /// The next job for a worker: from a lane that plays to a device if one has any, else from any

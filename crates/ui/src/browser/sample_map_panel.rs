@@ -180,6 +180,37 @@ impl Panel {
         busy
     }
 
+    /// The tests' barrier for the panel's background threads (AGENTS.md rule 7): waits for
+    /// the layout and the grid on the way to arrive, and for the let-go workers to finish.
+    /// An answer that arrives is put back where the next frame's `try_recv` takes it in, so
+    /// the frame does what it does in the app; a worker gone without answering leaves its
+    /// job's receiver disconnected, as it was. Returns whether there was anything to wait for.
+    #[cfg(test)]
+    fn wait_for_workers(&mut self) -> bool {
+        let mut waited = false;
+        if let Some(job) = self.job.as_mut() {
+            let (sender, receiver) = channel();
+            if let Ok(laid) = job.receiver.recv() {
+                let _ = sender.send(laid);
+            }
+            job.receiver = receiver;
+            waited = true;
+        }
+        if let Some((_, answer, _)) = self.grid_job.as_mut() {
+            let (sender, receiver) = channel();
+            if let Ok(grid) = answer.recv() {
+                let _ = sender.send(grid);
+            }
+            *answer = receiver;
+            waited = true;
+        }
+        for worker in std::mem::take(&mut self.retired) {
+            let _ = worker.join();
+            waited = true;
+        }
+        waited
+    }
+
     /// Joins the retired workers that have finished; the others are left running, their
     /// answers going nowhere.
     fn reap(&mut self) {

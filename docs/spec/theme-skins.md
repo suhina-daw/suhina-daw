@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-17
+last_verified: 2026-11-18
 covers:
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
@@ -273,6 +273,9 @@ the meter before the fader; `mixer track-colour { display: none; }` hides the co
 Control placements are gone: `.control-NAME` rules with `left`, `top`, `right`, `bottom`,
 `width`, `height`, `direction` and `anchor-*`, a JSON skin's `controls`, `compact-below` and the
 toolbar modules' `toolbar-NAME` placements. The toolbar's order and offsets in `theme.json` stay.
+A sheet that still sets `left`, `top`, `right`, `bottom`, `direction`, `anchor-*` or
+`compact-below` gets a notice naming its replacement (margins or `order`, `flex-direction`,
+`align-self` and `justify-content`, `track-header[layout="short"]`) and the value is not read.
 A device panel's controls keep the SDK's layout until
 [#1009](https://github.com/suhina-daw/suhina-daw/issues/1009).
 
