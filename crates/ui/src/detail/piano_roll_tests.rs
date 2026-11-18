@@ -1469,6 +1469,7 @@ fn the_first_beat_item_counts_a_patterns_other_lanes() {
     let project = Project {
         tracks: vec![Track::new(TrackId(1), "Keys"), Track::new(TrackId(2), "Bass")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "C1".into(),
             length: 8.0,
@@ -1499,6 +1500,7 @@ fn the_first_beat_item_takes_only_an_eighth_on_a_clip_that_swings() {
     let project = Project {
         tracks: vec![Track::new(TrackId(1), "Keys")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "C1".into(),
             length: 8.0,

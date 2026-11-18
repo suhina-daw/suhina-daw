@@ -1,9 +1,9 @@
 ---
-description: Planned key inputs - a device whose detector reads another channel's signal (sidechain), the tap points it can read from, and the plug-in bus model (aux audio in and out) that carries the same idea across the sandbox boundary
+description: Key inputs - a device whose detector reads another channel's signal (sidechain), the tap points it can read from, and the plug-in bus model (aux audio in and out) that carries the same idea across the sandbox boundary
 read_when: sidechain, key input, key source, tap point, pre FX, post FX, post fader, routing, aux input, aux output, multi-out, multiple outputs, bus, audio port, region version, protocol version, VST2 bus, device input
 type: spec
-status: planned
-last_verified: 2026-11-05
+status: draft
+last_verified: 2026-11-18
 covers:
   - crates/model/src/lib.rs
   - crates/engine/src/chain.rs
@@ -15,6 +15,9 @@ covers:
   - crates/plugin-host/src/vst3.rs
   - crates/plugin-host/src/clap.rs
   - crates/session/src/devices.rs
+  - crates/session/src/rack/hosted.rs
+  - crates/plugin-host/src/audio.rs
+  - crates/ui/src/interaction/menus.rs
   - devices/compressor/src/lib.rs
 ---
 
@@ -23,9 +26,43 @@ covers:
 - **Sources:** Suhina's own design, from the routing model as it is built ([ADR 0001](../decisions/0001-daw-neutral-model.md),
   the device chain in [ADR 0004](../decisions/0004-built-in-devices.md) › 9 and 10, the plug-in boundary in
   [ADR 0006](../decisions/0006-plug-in-hosting.md)) and from what is missing in routing today: a key input
-  (sidechain) and plug-ins with more than one output (multi-timbral). Nothing here is observed from another program; nothing is implemented yet.
-- **Status:** planned. What this document had to choose, it says and why, so work can start without an answer;
-  the choices the maintainer can still turn are in *Open questions*, and the split into issues is at the end.
+  (sidechain) and plug-ins with more than one output (multi-timbral). How other formats store a key is
+  observed from files we authored (*Import and export*).
+- **Status:** a key read from a channel is built (*As built* below): the model, the file, the engine, the
+  compressor, plug-ins' first auxiliary input, the commands and the panel. Keys from and into a
+  device group's branch, auxiliary outputs, `.sd` keys and the `.als` and Studio One imports are not. Where the
+  build chose differently from the plan below, *As built* says so and is what holds.
+
+## As built
+
+The first version (#1446) differs from the plan in these points; the rest of the document is the plan they
+refine.
+
+- **One kind of point.** `SignalPoint` has only `Channel { channel, tap }`; the `Branch` point waits for keys
+  in device groups.
+- **A gain.** `DeviceInput` has `gain` (linear, 0 to +24 dB, unity by default), applied to the key before the
+  device reads it: an imported key keeps its level, and a quiet source can still drive a detector.
+- **Device groups.** A device inside a device group reads no key: `device.setKey` refuses it, and the engine
+  leaves one in a hand-edited file unread.
+- **Its own track.** A key from the reader's own channel is allowed at `PreFx` (the track's signal before its
+  devices, as a detector with its own filter reads it); after its devices it is a loop and refused.
+- **Replace, not refuse.** `device.setKey` on a device that has a key replaces it, in one undo step.
+- **Which devices read one.** The built-in `compressor` and every plug-in (`reads_a_key`,
+  `crates/session/src/devices.rs`). A plug-in that has no auxiliary input ignores the key.
+- **device-api.** `Device::process_keyed(context, key, buffer)`, defaulting to `process`, instead of an
+  `Inputs` value: one key is all a built-in reads today, and the default keeps every other device unchanged.
+- **Plug-ins.** No region table and no protocol change: a plug-in is launched with a 4-channel link, the sound
+  in channels 1-2 and the key in 3-4 (`crates/session/src/rack/hosted.rs`). The host hands channels 3-4 to the
+  plug-in's second input bus when the plug-in says it is auxiliary (VST3 `kAux`), to its first non-main input
+  port (CLAP), or as inputs 3-4 (VST2, whose inputs are one bus). A plug-in without such a bus hears its main
+  input only. A keyed plug-in is not joined with its neighbours in one round trip.
+- **Engine.** A source's taps are kept per block (`Chain::keep_pre_fx`, `keep_post`) and copied into each
+  reader's `KeyRead`, delayed so it lines up with the reader's input (`crates/engine/src/buses.rs`); a reader
+  waits for its sources in the block's turn plan as for a feeder (`sends::plan_turns`).
+- **Interface.** The device's header has an **SC** button, lit while it reads a key; it and the device's menu
+  (*Sidechain*) offer *None*, the tracks it can read (not its own, not one it plays into), the tap point and the
+  gain. A track's menu has **Sidechain to**, listing the devices on other tracks that can read it; a pick sets
+  that device's key from this track, a ticked one clears it. Both are `device.setKey` / `device.clearKey`.
 
 ## What it is
 
@@ -167,6 +204,8 @@ One field on `Device` (ADR 0001 › core: a channel's device chain). Chosen: a l
 though the first commands allow one entry, because a plug-in's auxiliary inputs are the same primitive and the
 project file's version should move once.
 
+As planned (see *As built* for the gain and the single point kind):
+
 ```rust
 pub struct Device {
     pub name: String,
@@ -259,9 +298,9 @@ groups land).
 
 | Command | Kind | Params | What it does |
 |---|---|---|---|
-| `device.setKey` | edit | `track`; `device`; `source` (a track or channel id, `"none"`, or a branch: `device` (a device path) with `branch`); `tap` (text, optional, default `postFx`); `port` (text, optional, default `"key"`) | Makes the device read the point's signal. Refused when the point is inside the device's own chain (that is what no key means), when the point does not exist, when the port is not one the device has, when the device has a key already, and when the edge would close a loop (the message names the loop). One undo step. |
-| `device.clearKey` | edit | `track`; `device`; `port` (text, optional, default `"key"`) | Removes the key. One undo step. |
-| `track.devices` | read | `track` | Already lists each device; a device with a key gains `key: { source: <channel or branch>, sourceName, tap, port }` so the panel and an agent can show it without a second call. |
+| `device.setKey` | edit | `track`; `device`; `source` (a track, or `"none"`); `tap` (`preFx`, `postFx` or `postFader`, optional, default `postFx`); `gain` (dB, -150 to +24, optional, default 0); `port` (text, optional, default `"key"`) | Makes the device read the track's signal, replacing a key it had. Refused for a device that reads no key, for a device inside a device group, for a track without a mixer channel and when the edge would close a loop (the reader's own track is a loop after its devices). `"none"` is `device.clearKey`. One undo step. |
+| `device.clearKey` | edit | `track`; `device` | Removes the key. One undo step. |
+| `track.devices` | read | `track` | Lists each device; a device with a key gains `key: { channel, tap, gain (dB), port }`. |
 
 The command is the only way a key is made: the UI, the CLI and MCP all dispatch it. `device.add` never adds one,
 and a device that is duplicated (`device.duplicate`) or moved keeps its key, since it is a field of the device.
@@ -421,6 +460,17 @@ edge stores the key**:
 - Unknown or unmappable pieces follow the importer's existing rule: keep what can be kept, and add a warning
   that names the device and the source, never a silent drop.
 
+**What our own files show** (read-only, 2026-11-16):
+
+- **FL Studio** stores it on both sides: the source's mixer route to the reader's track at level 0
+  ("sidechain to this track"), and the wrapped plug-in's input port, which picks one of the tracks routed into
+  its own.
+- **Ableton Live** stores it on the consumer side: the device's `<SideChain>` holds
+  `RoutedInput/Routable/Target` (`AudioIn/Track.14/PreFxOut` and the like, naming the source track and a tap)
+  and a `Volume`. Not imported yet.
+- **Studio One** stores it on the producer side: a `Send` on the source track to the device's
+  `AudioInput01` ("Stereo Side Chain"), with `prefader`, `level` and `pan`. Not imported yet.
+
 Chosen: a key whose **source** cannot be resolved (an external input, a track that was dropped, a plug-in bus we
 do not host) is kept as an entry with no channel — the device still plays, the panel shows *missing*, and the
 warning says so — while a key on a device **we do not map at all** (a device kept as a foreign placeholder) is
@@ -432,6 +482,9 @@ A key whose source is a plug-in output (auxiliary outputs, above) is written the
 until then the file never contains one.
 
 ## The interface
+
+*As built* above describes the first version: an **SC** button in the device's header and *Sidechain* in its
+menu instead of a row, *Sidechain to* on the source track's menu, and no branches yet. The plan:
 
 In the device panel ([ADR 0009](../decisions/0009-ui-toolkit-and-look.md), [components](../design/components.md)),
 a device that declares a key port shows a **Sidechain** row: a source chooser and a small tap chooser

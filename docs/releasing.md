@@ -1,11 +1,13 @@
 ---
 description: How versions are numbered, how release builds, the nightly and test builds of pull requests are made, and how many pull requests are merged through the merge queue
-read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy
+read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy, slow CI tests, nextest, test partitions
 type: howto
 status: current
-last_verified: 2026-11-15
+last_verified: 2026-11-18
 covers:
   - .github/workflows/ci.yml
+  - .config/nextest.toml
+  - scripts/install_nextest.sh
   - .github/workflows/release.yml
   - .github/workflows/nightly-notes.yml
   - .github/workflows/discord.yml
@@ -296,6 +298,13 @@ follows every merge used to cancel it, and as a cancelled run saves no cache, Wi
 never saved one and every pull request compiled every dependency there, 23 to 29 minutes instead of
 about 10.
 
+rust-cache saves only when the cache's key changes (`Cargo.lock`, the toolchain), and what a job
+builds is not part of the key. When a job comes to build less, a new `prefix-key` is what makes
+`main` save a smaller cache: `check` has `v1-rust` since the tests moved to `test` and its old
+cache, which still held the test build, took 1.1 to 1.3 GB a system of the 10 GB. A cache nothing
+restores any more is the first GitHub evicts. `gh cache list --sort last_accessed_at` shows what
+the 10 GB holds.
+
 The test build follows the same rule: its `cache` job builds the test build's binaries on every
 push to `main` that changes them, only to save the cache, and pull requests' test builds restore it
 and save none. Their own caches, 0.6 to 0.8 GB per system on every build, had filled the 10 GB and
@@ -310,6 +319,52 @@ macOS, and the tests' run from 108 to 147, 138 to 203 and 148 to 192, about thre
 the window tests (`crates/ui/tests/main.rs`). The crates that process sound stay at 1: with them
 at 0, `suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the
 list if it processes no sound and takes long to compile.
+
+**How CI runs the tests.** `ci.yml`'s `test` job runs the workspace's tests with
+[cargo-nextest](https://nexte.st), split into three partitions on Linux and three on Windows, six
+runners at once; `check` runs clippy, the documentation and the vendored code's tests beside them,
+and macOS runs everything on one runner. `cargo test` ran the test binaries one after another
+(about 140 of them, 5,000 tests): the run took 11 minutes on Windows and 19 on Linux of a 16 and
+22 minute step, much of it waiting for three binaries, the window tests
+(`crates/ui/tests/main.rs`), the theme renders (`apps/theme-render/tests/main.rs`) and the packs
+(`crates/device-registry/tests/pack.rs`), while the runner's other cores had nothing to do.
+nextest runs every test in a process of its own and the tests of every binary side by side, and
+`--partition slice:N/3` gives each runner every third test in order, so each runner gets a third of
+each binary. Each partition compiles the tests itself from `main`'s cache, which the first
+partition saves; the doc tests, which nextest does not run, run in the first partition with
+`cargo test --doc`, and the engine's tests again on four render threads
+(`SUHINA_RENDER_THREADS=4`, ADR 0038 › 16) are split between the partitions the same way. They are
+picked from the workspace build with `-E "package(suhina-engine)"`, not built with `-p`: cargo
+resolves the dependencies' features for the one package then, and compiled a share of them again.
+
+nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
+is reported rather than the run stopping at the first (locally, `cargo test --workspace
+--no-fail-fast` does the same), a test that runs a minute or more is named while it runs, and one
+that runs ten minutes is stopped and fails: it has hung, and would otherwise hold its runner until
+the job's six-hour limit, as `crates/engine`'s `an_offline_pools_workers_never_join_real_time_priority`
+did once on Linux (it takes milliseconds).
+nextest spreads tests, not the work inside one: a test that loops over many independent cases
+holds one core for all of them, and sets how short a partition can get. A test binary whose tests
+take turns through a lock inside the binary (a `static Mutex`) needs a test group of one thread
+there, since in processes of their own they no
+longer wait for each other; `crates/ipc/tests/leftovers.rs` is one. A test that fails only under
+nextest has a race of that kind, not a timing problem: there are no retries. The version is pinned
+with its archives' checksums in [`scripts/install_nextest.sh`](../scripts/install_nextest.sh);
+locally `cargo test --workspace` runs the same tests, and so does `cargo nextest run --workspace`
+once nextest is installed (`cargo install cargo-nextest --locked`).
+
+**The pack's tests.** The shipped pack's tests (`crates/device-registry/tests/pack.rs`) render NAM
+models, and NAM ran at two to four times real time in a test build until `nam-rs` was built at
+`opt-level = 3` without debug assertions or overflow checks there (`[profile.test.package]` in
+`Cargo.toml`; its own tests still run with them in the `check` job): five to six times faster,
+the pack's tests from 207 s on one core to 26 s (measured 2026-11-18). The own models' compares run
+over the first 20 s of their phrases, every amp model over two 1 s passages; the comments there
+give the measurements. Two of them audit the pack's data, every amp model and every stock preset
+that names a file: a pull request that changes none of what they read (`ci.yml`'s `changes` job
+lists it: the pack, the presets, the NAM devices and the crates they are built from, the vendored
+`nam-rs`, the workspace manifest and lock file) leaves them out through nextest's `ci-pr` profile,
+and the merge queue and `main` always run them. In the 300 merges to `main` before 2026-11-18, 61
+changed what they read.
 
 The queue is a setting, not code: Settings › Rules › the ruleset **main merge queue** › *Require
 merge queue*, with the merge method used today, a group size of about 5 and *Only merge

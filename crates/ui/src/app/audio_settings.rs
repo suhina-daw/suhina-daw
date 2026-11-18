@@ -173,6 +173,27 @@ impl App {
         }
     }
 
+    /// Runs `audio.setRenderThreads` with the setting's choice; the output in use opens again.
+    /// A refused choice (an open ASIO control panel) puts the setting back to the one the engine
+    /// runs with, so the two never differ.
+    pub(super) fn choose_render_threads(&mut self) {
+        let choice = self.settings.render_threads;
+        match self.projects.execute("audio.setRenderThreads", &json!({ "threads": choice })) {
+            Ok(result) => {
+                self.render_threads_applied = Some(choice);
+                let threads = result["render_threads"].as_u64().unwrap_or(1);
+                let note = if result["from_environment"] == json!(true) { " (SUHINA_RENDER_THREADS)" } else { "" };
+                self.status =
+                    Status::Done(format!("Rendering on {threads} thread{}{note}", if threads == 1 { "" } else { "s" }));
+            }
+            Err(e) => {
+                self.settings.render_threads = self.render_threads_applied.unwrap_or(1);
+                self.settings_changed = true;
+                self.status = Status::Error(e.message().to_owned());
+            }
+        }
+    }
+
     /// Settings can stay over the main view or move into an independent native window.
     pub(super) fn settings_dialog(&mut self, ui: &Ui, window: Rect) {
         if suhina_plugins::trace::on() {
@@ -325,6 +346,13 @@ impl App {
         };
         let tag_limit = self.projects.file_library_mut().tag_limit();
         self.about.audio_live = self.session().and_then(Session::player).and_then(suhina_session::Player::output_info);
+        self.about.audio_late_track = self
+            .about
+            .audio_live
+            .as_ref()
+            .and_then(|info| info.worst_render_track)
+            .zip(self.session())
+            .map(|(track, session)| session.project().shown_track_name(suhina_engine::model::TrackId(track)));
         if self.page.shows_devices() {
             // The latency and underruns change while it plays, and controllers come and go.
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
@@ -395,10 +423,14 @@ impl App {
         if outcome.changed && self.settings.track_input() != self.projects.track_input() {
             self.choose_track_input();
         }
+        if outcome.changed && Some(self.settings.render_threads) != self.render_threads_applied {
+            self.choose_render_threads();
+        }
         if outcome.changed {
             // Each audio device keeps its input and default track input as the session has them.
             self.settings.keep_device_inputs(self.projects.device_inputs());
             self.projects.set_backup_settings(self.settings.backup, self.settings.backup_clean_up);
+            self.projects.set_implicit_tones(self.settings.implicit_tones);
             motion::set_enabled(ui.ctx(), self.settings.animations);
             crate::kit::widgets::set_drag_hides_pointer(ui.ctx(), self.settings.drag_hides_pointer);
             self.arrangement.headers_left = headers_left(self.settings.track_headers);

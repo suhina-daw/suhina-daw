@@ -25,6 +25,7 @@ fn large(per_lane: u32) -> Project {
         });
         p.channels.push(Channel::new(ChannelId(t + 1), format!("Track {t}")));
         p.contents.push(ClipContent {
+            linked: true,
             id: ContentId(t + 1),
             name: format!("Pattern {t}"),
             length: 4.0,

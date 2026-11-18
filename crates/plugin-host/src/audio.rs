@@ -62,6 +62,27 @@ pub(crate) fn feed_main<B: AsMut<[f32]>>(
     }
 }
 
+/// The link's key channels (its third and fourth, `docs/spec/sidechain.md` › Plug-in buses) into
+/// an auxiliary input bus's channels `bus`, its first `frames` frames: channel `i` of the bus gets
+/// the link's channel `2 + i`, the last key channel when the bus has more. A link with no key
+/// channels leaves the bus as it is (silence).
+pub(crate) fn feed_aux<B: AsMut<[f32]>>(
+    input: &[f32],
+    link_channels: usize,
+    frames: usize,
+    bus: impl IntoIterator<Item = B>,
+) {
+    if link_channels <= 2 {
+        return;
+    }
+    for (index, mut channel) in bus.into_iter().enumerate() {
+        let source = (2 + index).min(link_channels - 1);
+        for (frame, sample) in channel.as_mut().iter_mut().take(frames).enumerate() {
+            *sample = input.get(frame * link_channels + source).copied().unwrap_or(0.0);
+        }
+    }
+}
+
 /// The main output bus's channels `bus` into the link's interleaved `output` of `link_channels`
 /// channels, `frames` frames (see [`feed_main`]). An empty bus leaves `output` as it is.
 pub(crate) fn collect_main<B: AsRef<[f32]>>(

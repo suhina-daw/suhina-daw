@@ -49,3 +49,8 @@ Third-party material
   (third_party/nam-rs/LICENSE, NOTICE), with the fast tanh and sigmoid described in VENDORED.md.
 
 Other bundled material is listed per file (author, source, license) in ATTRIBUTION.md.
+
+- The cosine tension branch in crates/model/src/lib.rs adapts os-model's
+  fade_curve from https://github.com/ItsAlphaNeon/Lemon-Studio at commit
+  011a03f23d9db7f10f07cd7d165cc978a9dda263, Copyright (C) 2026 ItsAlphaNeon,
+  GPL-3.0-or-later, with Suhina's normalized curve mapping.

@@ -14,10 +14,13 @@ suhina-dsp.workspace = true
 # Waiting for several plug-ins' answers at once (#1256).
 suhina-ipc.workspace = true
 rtrb.workspace = true
+# Render workers join real-time priority as the render thread does.
+suhina-realtime.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
+allocation-counter = "0.8.1" # MIT OR Apache-2.0; the render thread allocates nothing (ADR 0038 › 2)
 suhina-device-registry.workspace = true
 suhina-test-support.workspace = true

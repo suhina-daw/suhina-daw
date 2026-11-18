@@ -3,7 +3,7 @@ description: Measurements, states and tokens of every UI component, from the min
 read_when: widget sizes, marker row, clip slot states, value field, slider, knob, toggle, meter, track header levels, device panel, piano roll layout, audition button, velocity lane top edge, ghost menu, ghost notes look, Scale menu, scale rows, key column mark, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-16
+last_verified: 2026-11-18
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/session/session_view.rs
@@ -578,7 +578,7 @@ top. Files dropped anywhere on it open as on the rest of the window.
 | No parameters | Another DAW's device: "Kept so the chain keeps its shape"; a built-in effect or instrument without parameters: "No parameters" (10 px `text.hint`) |
 | Embedded editor | A plug-in's editor shown in its panel: the panel takes the detail area's whole height and the editor is fitted to the room under the panel's header when the plug-in allows resizing (a fixed-size editor keeps its size). The area opens tall enough for the editor once, as it opens; after that its height is the user's, set with the splitter, and is not held to the chain's panels (#689) |
 | Stacked | In a column 272 px wide by default, each device is as tall as its compact panel (20 px header, 6 px padding, then its canvas or its list up to 168 px; a plug-in as tall as its state row and button, then its list or an open embedded editor), 1 px apart |
-| Menu | **Group** (Ctrl+G, `device.group`), **Duplicate device** (`device.duplicate`), **Remove device**; on a device group also **Ungroup** (Ctrl+Shift+G, only with one branch) and **Add branch** ([device groups](../spec/device-groups.md)) |
+| Menu | The device's name in a field, applied with Enter (`device.rename`); on a device that reads a key, **Sidechain: …** with its choices ([sidechain](../spec/sidechain.md) › As built); **Group** (Ctrl+G, `device.group`), **Duplicate device** (`device.duplicate`), **Remove device**; on a device group also **Ungroup** (Ctrl+Shift+G, only with one branch) and **Add branch** ([device groups](../spec/device-groups.md)) |
 
 ### Device group panel
 

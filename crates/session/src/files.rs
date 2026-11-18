@@ -114,6 +114,7 @@ pub(crate) fn insert_track(
         automation: Vec::new(),
     });
     let track = Track {
+        folder: false,
         id,
         name: name.to_string(),
         color: None,
@@ -688,6 +689,7 @@ pub(crate) fn place_clip(
     // A new MIDI clip takes the project's default scale (ADR 0001 › Amendment: clip scales).
     let scale = if matches!(source.lane, LaneData::Notes(_)) { p.default_scale } else { None };
     p.contents.push(ClipContent {
+        linked: false,
         id,
         name: source.name.clone(),
         length,
@@ -1071,6 +1073,8 @@ fn place_stems(
         for setting in suhina_media::stems::mastering_devices(&info) {
             let Some(device) = suhina_device_registry::info(setting.id) else { continue };
             c.devices.push(suhina_model::Device {
+                instrument: false,
+                inputs: Vec::new(),
                 id: suhina_model::DeviceId::NONE,
                 name: device.name.to_string(),
                 kind: suhina_model::DeviceKind::Builtin(setting.id.to_string()),

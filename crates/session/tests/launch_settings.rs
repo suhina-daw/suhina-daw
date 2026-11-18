@@ -30,6 +30,7 @@ fn project_built() -> Project {
     };
     let channel = |id: u32| Channel::new(ChannelId(id), format!("C{id}"));
     let content = |id: u32| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("Loop {id}"),
         length: 1.0,

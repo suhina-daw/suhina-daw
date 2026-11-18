@@ -80,7 +80,7 @@ pub fn vst2_class_id(id: u32, name: &str) -> String {
 
 /// Whether `class_id` is derived from the VST2 id `id` (the name part is not compared: a
 /// project keeps the name a host showed, which need not be the one the id was made from).
-fn derived_from(class_id: &str, id: u32) -> bool {
+pub fn derived_from(class_id: &str, id: u32) -> bool {
     let wanted = format!("{id:08X}");
     VST2_PREFIXES.iter().any(|prefix| {
         class_id.get(..6).is_some_and(|p| p.eq_ignore_ascii_case(prefix))
@@ -180,19 +180,33 @@ impl Catalog {
         if let Some(plugin) = self.vst3_plugins().find(|p| p.replaces.iter().any(|r| derived_from(r, id))) {
             return found(How::Declared, plugin);
         }
+        // The original itself, when it is installed, before a VST3 whose class id only follows
+        // the id convention: such a VST3 promises no state conversion, and one can answer the
+        // saved VST2 state with yes and read none of it (ADR 0006 decision 8, Amendment: the
+        // VST2 itself first). Identical product metadata at multiple paths is one installed
+        // product; distinct products sharing an id remain ambiguous.
+        let wanted = format!("{id:08X}");
+        let mut itself = self.plugins().filter(|p| p.format() == "vst2" && p.id == wanted);
+        if let Some(first) = itself.next() {
+            let mut chosen = first;
+            let mut same_product = true;
+            for other in itself {
+                same_product &= other.name == first.name
+                    && other.vendor == first.vendor
+                    && other.version == first.version
+                    && other.features == first.features;
+                if other.path < chosen.path {
+                    chosen = other;
+                }
+            }
+            if same_product {
+                return found(How::Itself, chosen);
+            }
+        }
         let exact = vst2_class_id(id, name);
         let derived = || self.vst3_plugins().filter(|p| derived_from(&p.id, id));
         if let Some(plugin) = derived().find(|p| p.id.eq_ignore_ascii_case(&exact)).or_else(|| derived().next()) {
             return found(How::Vst2Id, plugin);
-        }
-        // No copy stands in: the scanned VST2 plug-in itself, by its id, before any guess by
-        // name, which promises nothing about the saved state (decision 8: only a real copy is
-        // preferred). Two plug-ins can share a four-character id, and the first of them is no
-        // answer: the name decides, or the device stays unresolved for the user to relink.
-        let wanted = format!("{id:08X}");
-        let mut itself = self.plugins().filter(|p| p.format() == "vst2" && p.id == wanted);
-        if let (Some(plugin), None) = (itself.next(), itself.next()) {
-            return found(How::Itself, plugin);
         }
         self.match_name(name)
     }

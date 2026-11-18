@@ -205,6 +205,7 @@ pub(crate) fn consolidate(session: &mut Session, params: &Value) -> Result<Value
     let p = &mut session.project;
     let id = ContentId(p.contents.iter().map(|c| c.id.0).max().unwrap_or(0).checked_add(1).ok_or("too many clips")?);
     p.contents.push(ClipContent {
+        linked: false,
         id,
         name,
         length: end - start,

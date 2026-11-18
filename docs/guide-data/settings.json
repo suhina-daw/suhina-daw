@@ -324,6 +324,35 @@
       "workInProgress": false
     },
     {
+      "id": "Audio/Advanced/render_threads",
+      "page": "Audio",
+      "section": "Advanced",
+      "name": "Render threads",
+      "note": "Share the work of each block of sound between several processor threads.",
+      "keys": [
+        "render_threads"
+      ],
+      "sourceFingerprint": "b2c13126804610d9a6f0f5e0554a559f7097c5777a00272f36a325d707e642ca",
+      "helpStatus": "reviewed",
+      "description": "Suhina renders sound a few blocks ahead of the audio device on one real-time thread. With Render threads above Off, more threads help it: tracks whose devices do not depend on each other render at the same time, and the render thread adds their sound together in a fixed order, so the result is the same, sample for sample, as on one thread.\n\nIn this version only tracks without plug-ins are shared out; a track with a plug-in, and the Main track, still render on the render thread. A project with fewer than four tracks that can be shared renders on one thread whatever the setting says. Changing the setting opens the audio output again, which stops the sound for a moment. When the environment variable SUHINA_RENDER_THREADS is set, it wins over this setting. Settings › Audio › Status shows how many threads render and how many blocks came back late from a helper thread, with the track that was late most often.",
+      "options": [
+        {
+          "name": "Off",
+          "description": "Render on the render thread alone, as before. This is the default until rendering on several threads has been measured on every platform."
+        },
+        {
+          "name": "Automatic",
+          "description": "Use as many threads as the processor offers, at most nine: the render thread and up to eight helpers."
+        },
+        {
+          "name": "2 / 4 / 8",
+          "description": "Render on that many threads, the render thread included. More threads only help when the project has as many tracks to share out."
+        }
+      ],
+      "whenToChange": "Try Automatic when a project with many tracks of built-in instruments and effects crackles or shows a high engine load while the processor has cores to spare. Go back to Off if sound breaks up more, and report the late blocks Status shows.",
+      "workInProgress": true
+    },
+    {
       "id": "Midi/MIDI inputs/midi_input_off",
       "page": "Midi",
       "section": "MIDI inputs",
@@ -486,6 +515,31 @@
       "description": "An impulse response, or IR, is a short audio recording of how a speaker cabinet and microphone respond to a brief signal. The NAM Cab Loader lists .wav response files from this folder. Type a folder or use Browse; an empty field uses the default shown in Suhina. Changing the folder does not itself replace the response loaded in an effect.",
       "options": [],
       "whenToChange": "Choose your cabinet-response folder when the Cab Loader list does not show the .wav responses you want.",
+      "workInProgress": false
+    },
+    {
+      "id": "Devices/Instruments/implicit_tones",
+      "page": "Devices",
+      "section": "Instruments",
+      "name": "Tone without instrument",
+      "note": "Let a MIDI track with no instrument play its notes as a plain sine tone.",
+      "keys": [
+        "implicit_tones"
+      ],
+      "sourceFingerprint": "fa89eadf8efc7a0431f8ab75ad3469fba2053171f89c4ba9c154e208c4c10662",
+      "helpStatus": "reviewed",
+      "description": "When this is on, a MIDI track that has no instrument (no devices, or only MIDI effects and audio effects) plays its notes as a plain sine tone, so you can hear what the notes are before you choose a sound. When it is off, such a track is silent until you add an instrument.\n\nAn instrument that is switched off or not installed never falls back to the tone, whichever way this is set: the track stays silent and keeps the instrument, its settings and its notes. Previewing a MIDI file in the browser plays it with its own preview sound either way. The setting applies to playback, clip launching, notes from a MIDI keyboard and exports, at once, in every open project. It is off unless you turn it on.",
+      "options": [
+        {
+          "name": "On",
+          "description": "A MIDI track with no instrument plays its notes as a plain sine tone."
+        },
+        {
+          "name": "Off",
+          "description": "A MIDI track sounds only through an instrument; without one it is silent."
+        }
+      ],
+      "whenToChange": "Turn it on to hear the notes of tracks that have no instrument yet, for example while sketching or checking an imported MIDI part. Leave it off so a track never plays a sound you did not choose.",
       "workInProgress": false
     },
     {

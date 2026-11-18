@@ -3,7 +3,7 @@ description: What happens when a project's audio files cannot be found: the bar 
 read_when: missing files, missing samples, file not found, relink, locate, find files, moved samples, project.missingFiles, project.relinkFiles, library.findFiles
 type: spec
 status: draft
-last_verified: 2026-11-17
+last_verified: 2026-11-18
 covers:
   - crates/library/src/find.rs
   - crates/session/src/relink.rs
@@ -41,6 +41,22 @@ project opens and helps find the files again.
    opens the panel until nothing is missing.
 3. The browser's index is searched at once for candidates (instant: it is a list of names in
    memory), so the panel usually opens with most files found.
+
+## Zipped projects
+
+A project can arrive as a zip that holds it and its samples, as another DAW packs a song to send
+it. Opening or dropping such a zip (`.als` or `.suhina` inside, exactly one) does not open
+it at once: a bar asks where to unpack it, with a folder named after the zip beside it filled in
+(a number added when that folder is taken), **Unpack and open** and **Cancel**. The project then
+opens from the unpacked folder, so its samples are found beside it by the rules above.
+`suhina-cli` takes the folder as `--extract-to <folder>`; the MCP server refuses a zip, as an
+agent should not write files outside its roots unasked. A zip with no project is a zip of themes
+as before; one with several projects is refused with a message to unpack it by hand.
+
+Unpacking treats the zip as someone else's file (`crates/session/src/zipped.rs`): an entry whose
+name would leave the folder, a link and an entry beyond 10,000 are refused; the files may unpack
+to 8 GiB at most, counted as they are written rather than as the zip states; a file already in the
+folder is never written over (the unpack stops there with an error, keeping what it wrote).
 
 ## The panel
 
@@ -221,3 +237,9 @@ a network share, or another file on the disk beside a sample in its folder, cann
 copied or trusted by being edited and saved. A NAM model or IR a project names is read only from
 where its audio may be ([nam-amp-and-cab.md](nam-amp-and-cab.md)); one the person chose is read
 wherever it is, and saving trusts the ones the project's devices name with the audio.
+
+An importer follows the same boundary before anything is decoded: of the absolute paths a
+foreign project file names it looks only at those on a local disk without parent steps
+(`suhina_media::on_local_disk`), and it opens a sample (to read its duration, for example) only
+once it has resolved it to a file inside the project folder, a local path that is there or a
+library match. Whether the audio is then read is decided by the rules above.

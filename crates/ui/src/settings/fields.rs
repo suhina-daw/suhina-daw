@@ -275,6 +275,7 @@ pub(super) const FIELDS: &[Field] = &[
     switch!("audio_exclusive", audio_exclusive),
     number!("audio_cue_pair", audio_cue_pair, u16, only |p: &u16| *p <= MAX_CUE_PAIR),
     number!("audio_cue_volume", audio_cue_volume, i32, clamp CUE_VOLUMES),
+    number!("render_threads", render_threads, u32, only |n: &u32| RENDER_THREAD_CHOICES.contains(n)),
     Field {
         key: "audio_input",
         write: |s| s.audio_input.clone(),
@@ -329,8 +330,11 @@ pub(super) const LATER: &[Field] = &[
 ];
 
 /// The settings written after the MCP write folders.
-pub(super) const LAST: &[Field] =
-    &[switch!("auto_arm", auto_arm), named!("setting_descriptions", setting_descriptions, Descriptions)];
+pub(super) const LAST: &[Field] = &[
+    switch!("auto_arm", auto_arm),
+    named!("setting_descriptions", setting_descriptions, Descriptions),
+    switch!("implicit_tones", implicit_tones),
+];
 
 /// The setting `key` names, among all of them.
 pub(super) fn field(key: &str) -> Option<&'static Field> {

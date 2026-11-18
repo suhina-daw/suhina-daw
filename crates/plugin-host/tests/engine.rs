@@ -63,6 +63,8 @@ fn env() -> Arc<PluginEnv> {
 
 fn plugin_device(id: &str) -> Device {
     Device {
+        instrument: false,
+        inputs: Vec::new(),
         id: Default::default(),
         name: format!("Test {id}"),
         kind: DeviceKind::Clap { id: id.into() },
@@ -91,6 +93,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
     let notes = if two { vec![note(0.0, 0.5), note(1.0, 0.5)] } else { vec![note(0.0, length)] };
     Project {
         tracks: vec![Track {
+            folder: false,
             id: TrackId(1),
             name: "T".into(),
             color: None,
@@ -117,6 +120,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
             automation: Vec::new(),
         }],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length,
@@ -405,6 +409,8 @@ fn session(project: Project, offline: bool) -> (Session, Renderer) {
     renderer.set_offline(offline);
     let controller = renderer.controller();
     let mut session = Session::new(project);
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(controller, None));
     session.rack_mut().set_env(env());
     (session, renderer)

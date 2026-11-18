@@ -886,6 +886,7 @@ fn add_content(p: &mut Project, name: &str, length: f64, data: LaneData) -> Resu
     // A new MIDI clip takes the project's default scale (ADR 0001 › Amendment: clip scales).
     let scale = if matches!(data, LaneData::Notes(_)) { p.default_scale } else { None };
     p.contents.push(ClipContent {
+        linked: false,
         id,
         name: name.to_string(),
         length,

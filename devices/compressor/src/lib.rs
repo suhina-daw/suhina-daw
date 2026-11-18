@@ -218,11 +218,31 @@ impl Device for Compressor {
     }
 
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {
-        for frame in buffer.as_chunks_mut::<2>().0 {
+        self.compress(buffer, None);
+    }
+
+    /// The detector reads `key` in place of the device's own input (`docs/spec/sidechain.md`):
+    /// the key's level, through the input gain and the sidechain high-pass, sets the gain
+    /// reduction, which the device's own sound takes.
+    fn process_keyed(&mut self, _context: &ProcessContext, key: &[f32], buffer: &mut [f32]) {
+        self.compress(buffer, Some(key));
+    }
+}
+
+impl Compressor {
+    /// Compresses `buffer` in place; the detector reads `key` frame by frame when given (a
+    /// frame the key does not cover reads silence), else the buffer itself. Never allocates.
+    fn compress(&mut self, buffer: &mut [f32], key: Option<&[f32]>) {
+        let keys = key.map(|k| k.as_chunks::<2>().0);
+        for (index, frame) in buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let [input, threshold, ratio, knee, output, mix] = self.smoothers().map(|s| f64::from(s.next_value()));
             let [left, right] = frame.map(|s| f64::from(s) * input);
+            let heard = match keys {
+                Some(keys) => keys.get(index).map_or([0.0, 0.0], |k| k.map(|s| f64::from(s) * input)),
+                None => [left, right],
+            };
             let mut level = 0.0f64;
-            for (detector, x) in self.detectors.iter_mut().zip([left, right]) {
+            for (detector, x) in self.detectors.iter_mut().zip(heard) {
                 let x = if x.is_finite() { x } else { 0.0 };
                 level = level.max(detector.process(x).abs());
             }

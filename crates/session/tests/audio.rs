@@ -156,6 +156,7 @@ fn audio_commands_are_listed_with_their_kind() {
             "audio.setTrackInput",
             "output.setCuePair",
             "output.setCueVolume",
+            "audio.setRenderThreads",
             "audio.info",
         ]
     );
@@ -363,6 +364,7 @@ fn launcher_project_built() -> Project {
     let mut p = project_built();
     let note = suhina_model::Note::new(0.0, 0.25, 60, 1.0);
     p.contents.push(suhina_model::ClipContent {
+        linked: false,
         id: suhina_model::ContentId(900),
         name: "loop".into(),
         length: 4.0,
@@ -562,4 +564,64 @@ fn the_watch_tells_when_the_devices_change_and_not_before() {
     assert!(watch.changed(names(&["Headphones", "Speakers"])), "connected");
     assert!(!watch.changed(names(&["Headphones", "Speakers"])), "said once");
     assert!(watch.changed(names(&["Speakers"])), "disconnected");
+}
+
+/// An output that says when it is closed.
+struct Closes(Arc<std::sync::atomic::AtomicBool>);
+
+impl suhina_session::OutputHandle for Closes {
+    fn close(self: Box<Self>) -> Option<(u32, suhina_engine::Plugins)> {
+        None
+    }
+}
+
+impl Drop for Closes {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Switching away from a project lets its output go before its plug-ins stop, so it goes quiet at
+/// once instead of one plug-in after another.
+#[test]
+fn letting_a_project_go_closes_its_output() {
+    let project = project();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+    let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut session = Session::new(project);
+    session.attach_player(Player::new(renderer.controller(), Some(Box::new(Closes(closed.clone())))));
+    assert!(!closed.load(std::sync::atomic::Ordering::Relaxed));
+    session.release_player();
+    assert!(closed.load(std::sync::atomic::Ordering::Relaxed), "the output closed");
+    assert!(session.player().is_none());
+}
+
+#[test]
+fn render_threads_are_chosen_and_the_playing_output_opens_again() {
+    let (mut projects, stand) = with_stand(None);
+    projects.add(Session::new(project()), None).unwrap();
+    assert_eq!(projects.open_output(None).unwrap(), None);
+    stand.run_latest();
+    for bad in [
+        json!({}),
+        json!({ "threads": -1 }),
+        json!({ "threads": 2.5 }),
+        json!({ "threads": "four" }),
+        json!({ "threads": 10 }),
+    ] {
+        let err = run(&mut projects, "audio.setRenderThreads", bad.clone()).unwrap_err();
+        assert!(err.contains("threads"), "{bad}: {err}");
+    }
+    assert_eq!(stand.opened.lock().unwrap().len(), 1, "a refused choice reopens nothing");
+    let environment = std::env::var_os(suhina_engine::RENDER_THREADS_VAR).is_some();
+    let result = run(&mut projects, "audio.setRenderThreads", json!({ "threads": 1 })).unwrap();
+    assert_eq!(result["threads"], json!(1));
+    assert_eq!(result["from_environment"], json!(environment));
+    if !environment {
+        assert_eq!(result["render_threads"], json!(1));
+    }
+    assert_eq!(stand.opened.lock().unwrap().len(), 2, "the playing output opened again");
+    let info = run(&mut projects, "audio.info", json!({})).unwrap();
+    assert_eq!(info["render_misses"], json!(0));
+    assert!(info["render_threads"].as_u64().is_some_and(|n| n >= 1), "{info}");
 }

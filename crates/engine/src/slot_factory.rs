@@ -43,7 +43,7 @@ pub(crate) struct Built {
 impl SlotFactory<'_> {
     /// The slot of the device at `path` on the channel (`[position]` at the top of a chain), or
     /// `None` for one that does not run: switched off, unknown, not compiling, or a plug-in that
-    /// is not installed. A switched-off plug-in keeps its slot, and its process, and passes the sound.
+    /// is not installed. A switched-off plug-in keeps its slot and process; instruments stay silent.
     /// `lanes` is the branch's, and `slot` the index the device takes there: the lanes of its
     /// automated parameters are added under it. Allocates.
     pub(crate) fn device(
@@ -54,7 +54,23 @@ impl SlotFactory<'_> {
         (lanes, slot): (&mut DeviceLanes, usize),
     ) -> Option<Built> {
         if matches!(stored.kind, DeviceKind::Clap { .. } | DeviceKind::Vst3 { .. } | DeviceKind::Vst2 { .. }) {
-            return self.plugin(stored, path);
+            let hosted = self.plugin(stored, path);
+            if hosted.is_some() || !stored.is_external_instrument() {
+                return hosted;
+            }
+        }
+        if stored.is_missing_instrument()
+            || stored.is_external_instrument()
+            || (!stored.enabled && self.instrument(stored, depth, path))
+        {
+            return Some(Built {
+                slot: DeviceSlot::Device(Box::new(crate::missing_instrument::MissingInstrument)),
+                id: "silent-instrument".into(),
+                values: Vec::new(),
+                latency: 0,
+                slices: None,
+                edits: None,
+            });
         }
         if !stored.enabled {
             return None;
@@ -67,11 +83,48 @@ impl SlotFactory<'_> {
         }
     }
 
+    /// Classify a disabled device without taking any hosted processors from the next graph.
+    /// Disabled instruments still consume notes; disabled effects are ordinary passthroughs.
+    fn instrument(&self, stored: &suhina_model::Device, depth: usize, path: &[usize]) -> bool {
+        if stored.is_missing_instrument() || stored.is_external_instrument() {
+            return true;
+        }
+        match &stored.kind {
+            DeviceKind::Builtin(id) => self
+                .devices
+                .create(id, f64::from(self.sample_rate), None)
+                .is_some_and(|d| d.info().role == Role::Instrument),
+            DeviceKind::Sd => stored
+                .state
+                .as_deref()
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .and_then(|text| suhina_device_sdk::DeviceGraph::from_sd(text).ok())
+                .is_some_and(|graph| graph.role == suhina_device_sdk::DeviceRole::Instrument),
+            DeviceKind::Group(group) if depth < suhina_model::MAX_DEVICE_GROUP_DEPTH => {
+                group.branches.iter().enumerate().take(suhina_model::MAX_BRANCHES).any(|(b, branch)| {
+                    branch.devices.iter().enumerate().any(|(i, device)| {
+                        let mut inner = path.to_vec();
+                        inner.extend([b, i]);
+                        self.instrument(device, depth + 1, &inner)
+                    })
+                })
+            }
+            DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. } => self
+                .keys
+                .iter()
+                .find(|d| d.channel == self.channel && d.path == path)
+                .and_then(|d| self.plugins.info.get(&d.key))
+                .is_some_and(|info| info.instrument),
+            _ => false,
+        }
+    }
+
     /// A plug-in's slot, by its key: it takes its processor from the plug-ins, or waits for one.
     fn plugin(&mut self, stored: &suhina_model::Device, path: &[usize]) -> Option<Built> {
         let key = self.keys.iter().find(|d| d.channel == self.channel && d.path == path)?.key;
         let info = *self.plugins.info.get(&key)?;
         let slot = PluginSlot {
+            keyed: false,
             song_delay: 0,
             key,
             processor: self.plugins.processors.remove(&key),

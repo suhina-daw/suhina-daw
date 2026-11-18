@@ -44,6 +44,7 @@ fn project() -> Project {
 
 fn project_built() -> Project {
     let track = Track {
+        folder: false,
         id: TrackId(1),
         name: "Keys".into(),
         color: None,
@@ -65,6 +66,7 @@ fn project_built() -> Project {
         velocity_range: 0,
     };
     let content = |id: u32| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,

@@ -279,6 +279,18 @@ pub(super) fn draw(
     };
     let (name_on_light, name_on_dark) = (name_ink(true), name_ink(false));
     let rows = scale_view::RowBase::look();
+    // What a note is seen against: the grid under it and its key's row, so its fill and its name
+    // can be kept readable where the clip's colour comes close to them.
+    let grid_background = grid_style.background.unwrap_or_else(|| crate::detail::detail_fill("window"));
+    let grid_background = composite_note_color(el.background_or(Color32::TRANSPARENT), grid_background);
+    let row_fill = |key| {
+        let own = if is_black(key) { black_row_style.background } else { row_style.background };
+        let highlighted = clip.scale.filter(|_| state.highlight_scale);
+        match (highlighted, own) {
+            (None, Some(own)) => own,
+            _ => scale_view::row_fill(highlighted, key, is_black(key), clip.color, rows),
+        }
+    };
     // The velocity stems: a line takes only the colour its own rule declares, not the text
     // colour of the `piano-roll` around it, so muted and selected stems keep their distinction.
     let velocity_look = crate::kit::element::VELOCITY.look();
@@ -313,12 +325,7 @@ pub(super) fn draw(
         );
         // With a scale highlighted, its keys are lighter; without one, the white keys are
         // (› Scale and key).
-        let own = if is_black(key) { black_row_style.background } else { row_style.background };
-        let highlighted = clip.scale.filter(|_| state.highlight_scale);
-        let fill = match (highlighted, own) {
-            (None, Some(own)) => own,
-            _ => scale_view::row_fill(highlighted, key, is_black(key), clip.color, rows),
-        };
+        let fill = row_fill(key);
         grid_painter.rect_filled(row, 0.0, fill);
         // The row under the pointer, so it can be followed to the strip that names it.
         if state.hover_key() == Some(key) {
@@ -336,6 +343,9 @@ pub(super) fn draw(
     let last_beat = layout.beat_at(layout.grid.right());
     let bar = clip.bar_beats.max(EPSILON);
     let lane_painter = painter.with_clip_rect(layout.lane);
+    let lane_background =
+        composite_note_color(velocity_look.background_or(Color32::TRANSPARENT), crate::detail::detail_fill("panel"));
+    lane_painter.rect_filled(layout.lane, 0.0, lane_background);
     for (beat, on_bar) in grid.lines(first_beat, last_beat, MAX_LINES) {
         let x = layout.x_of(beat).round() + 0.5;
         let color = line_colour(on_bar);
@@ -487,7 +497,8 @@ pub(super) fn draw(
             } else if selected {
                 selected_stem.color()
             } else {
-                velocity_look.own_color_or(clip.color)
+                // Kept visible against the lane, as a dark clip colour on a dark lane is not.
+                visible_note_fill(velocity_look.own_color_or(clip.color), lane_background, 1.0)
             };
             // With notes selected, the others step back, so the selection's stems stand out.
             let ink = if any_selected && !selected { ink.gamma_multiply(0.45) } else { ink };
@@ -514,7 +525,15 @@ pub(super) fn draw(
         };
         let radius = style.radius.unwrap_or(0.0);
         let own = if selected { selected_note_color(clip.color, selected_accent, outline) } else { clip.color };
-        grid_painter.rect_filled(rect, radius, style.background.unwrap_or(own).gamma_multiply(alpha));
+        let background = composite_note_color(row_fill(note.key), grid_background);
+        let background = if outside(&note) { composite_note_color(shade, background) } else { background };
+        let fill = visible_note_fill(style.background.unwrap_or(own), background, alpha);
+        let fill = if muted || erasing || outside(&note) {
+            style.background.unwrap_or(own).gamma_multiply(alpha)
+        } else {
+            fill
+        };
+        grid_painter.rect_filled(rect, radius, fill);
         // A muted note's edge is its dashes alone: a solid edge under them in the same colour would
         // hide them. A selected one keeps its selection's edge.
         if let Some(border) = style.border.filter(|_| selected || !muted) {
@@ -527,13 +546,17 @@ pub(super) fn draw(
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, outline), StrokeKind::Inside);
         }
         // Every note says which it is; on a block too small for its name, as much as fits.
-        let readable = if alpha >= 0.55 { name_on_light } else { name_on_dark };
+        // The theme's name ink for a strong or a faint note, kept where it reads on the note as
+        // seen over its row; otherwise the readable ink for that colour.
+        let shown_fill = composite_note_color(fill, background);
+        let themed = if alpha >= 0.55 { name_on_light } else { name_on_dark };
+        let ink = if theme::text_contrast(themed, shown_fill) >= 4.5 { themed } else { theme::text_on(shown_fill) };
         grid_painter.with_clip_rect(rect.intersect(layout.grid)).text(
             Pos2::new(rect.left() + 2.0, rect.center().y),
             Align2::LEFT_CENTER,
             key_name(note.key),
             theme::mono_font(theme::TEXT_TINY),
-            style.color.unwrap_or(readable),
+            style.color.unwrap_or(ink),
         );
     }
     paint_lane_scale(&lane_painter, layout);
@@ -735,9 +758,28 @@ struct NoteLook {
     outside: bool,
 }
 
-/// How opaque a note is drawn: by its velocity (1 to 127), nearly gone under an erase stroke,
-/// faded while muted, fainter outside the clip's window. Selected, it stays bright enough to tell
-/// at any velocity, unless it is muted or an erase stroke has passed over it.
+/// Composite premultiplied sRGBA before choosing contrasting ink.
+fn composite_note_color(color: Color32, background: Color32) -> Color32 {
+    let [r, g, b, a] = color.to_array();
+    let [br, bg, bb, _] = background.to_array();
+    let blend = |front: u8, back: u8| (u16::from(front) + u16::from(back) * u16::from(255 - a) / 255).min(255) as u8;
+    Color32::from_rgb(blend(r, br), blend(g, bg), blend(b, bb))
+}
+
+/// Keep an active note visible without changing the stored clip colour.
+fn visible_note_fill(color: Color32, background: Color32, alpha: f32) -> Color32 {
+    let fill = composite_note_color(color.gamma_multiply(alpha), background);
+    let target = theme::text_on(background);
+    for step in 0..=32 {
+        let candidate = crate::kit::motion::mix(fill, target, step as f32 / 32.0);
+        if theme::contrast(candidate, background) >= 3.0 {
+            return candidate;
+        }
+    }
+    target
+}
+
+/// Velocity dims notes; muted, erased and out-of-window notes remain quieter still.
 fn note_alpha(velocity: f32, look: NoteLook) -> f32 {
     let alpha = if look.erasing {
         0.12
@@ -753,6 +795,38 @@ fn note_alpha(velocity: f32, look: NoteLook) -> f32 {
 #[cfg(test)]
 mod note_alpha_tests {
     use super::*;
+
+    /// `text_on` reads the theme's inks from the style engine, so the checks run in a frame of the
+    /// built-in theme, not in whatever another test left behind.
+    fn in_built_in_theme(check: impl Fn()) {
+        let ctx = egui::Context::default();
+        theme::use_colors(&ctx, &theme::Colors::new());
+        theme::in_style_frame(&ctx, |_| check());
+    }
+
+    #[test]
+    fn faded_white_note_labels_use_the_composited_dark_background() {
+        in_built_in_theme(|| {
+            let shown = composite_note_color(Color32::WHITE.gamma_multiply(0.12), Color32::BLACK);
+            assert!(theme::contrast(theme::text_on(shown), shown) >= 4.5);
+            assert!(theme::text_on(shown).to_array()[0] > 128);
+        });
+    }
+
+    #[test]
+    fn dark_imported_notes_remain_visible_with_readable_labels() {
+        in_built_in_theme(|| {
+            for background in [Color32::BLACK, Color32::WHITE] {
+                for color in [Color32::from_rgb(23, 17, 17), Color32::BLACK, Color32::WHITE] {
+                    for alpha in [0.4, 0.85, 1.0] {
+                        let fill = visible_note_fill(color, background, alpha);
+                        assert!(theme::contrast(fill, background) >= 3.0);
+                        assert!(theme::contrast(theme::text_on(fill), fill) >= 4.5);
+                    }
+                }
+            }
+        });
+    }
 
     #[test]
     fn an_erase_stroke_dims_a_selected_note_too() {

@@ -86,9 +86,14 @@ pub fn render_started(
     // Run long enough that the delayed output covers what is wanted.
     let total = wanted + latency as usize;
     let block = BLOCK_FRAMES as usize;
+    // A link started as a project's plug-ins are carries a key (silence here) in its third and
+    // fourth channels: the stereo sound goes in the first two, and comes back from them.
+    let channels = (audio.channels() as usize).max(2);
     let mut output = Vec::with_capacity(total * 2 + block * 2);
     let mut chunk_in = vec![0.0f32; block * 2];
     let mut chunk_out = vec![0.0f32; block * 2];
+    let mut link_in = vec![0.0f32; block * channels];
+    let mut link_out = vec![0.0f32; block * channels];
     let mut frame = 0;
     let mut next_event = 0;
     let mut block_events: Vec<Event> = Vec::with_capacity(crate::MAX_EVENTS);
@@ -111,7 +116,25 @@ pub fn render_started(
             block_events.push(Event { frame: (u64::from(event.frame).saturating_sub(frame as u64)) as u32, ..*event });
             next_event += 1;
         }
-        match audio.process_with_events(block_in, &block_events, block_out, BLOCK_TIMEOUT) {
+        let outcome = if channels == 2 {
+            audio.process_with_events(block_in, &block_events, block_out, BLOCK_TIMEOUT)
+        } else {
+            let (Some(wide_in), Some(wide_out)) =
+                (link_in.get_mut(..frames * channels), link_out.get_mut(..frames * channels))
+            else {
+                break;
+            };
+            wide_in.fill(0.0);
+            for (to, from) in wide_in.chunks_exact_mut(channels).zip(block_in.as_chunks::<2>().0) {
+                to.iter_mut().zip(from).for_each(|(t, f)| *t = *f);
+            }
+            let outcome = audio.process_with_events(wide_in, &block_events, wide_out, BLOCK_TIMEOUT);
+            for (to, from) in block_out.as_chunks_mut::<2>().0.iter_mut().zip(wide_out.chunks_exact(channels)) {
+                to.iter_mut().zip(from).for_each(|(t, f)| *t = *f);
+            }
+            outcome
+        };
+        match outcome {
             Outcome::Done => output.extend_from_slice(block_out),
             // A host that died with the block (a plug-in that crashed) is told apart from one
             // that is stuck in it.

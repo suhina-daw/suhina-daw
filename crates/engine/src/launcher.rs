@@ -158,6 +158,9 @@ pub enum LaunchCommand {
     },
     /// The metronome's click sound from the next click on.
     SetMetronomeSound(crate::ClickSound),
+    /// Whether a track with no instrument of its own plays its notes as sine tones (#1384): the
+    /// user's setting, off by default in the app. Notes sounding go on to their ends.
+    SetImplicitTones(bool),
     /// While the transport runs, playback jumps to `beat` at once, as [`LaunchCommand::SetPosition`]
     /// does, but the play start marker stays where it is. Ignored while stopped (the playhead is
     /// at the marker then) and for non-finite beats. A pending start waiting for read-ahead
@@ -374,6 +377,11 @@ pub struct LauncherMonitor {
     pub(crate) plugin_misses: AtomicU64,
     pub(crate) worst_plugin: AtomicU64,
     pub(crate) worst_misses: AtomicU64,
+    /// Blocks a chain came back from a render worker after its deadline (ADR 0038 › 3), and
+    /// the track (its id) that missed most with its count.
+    pub(crate) render_misses: AtomicU64,
+    pub(crate) worst_render_track: AtomicU64,
+    pub(crate) worst_render_misses: AtomicU64,
     /// Plug-in blocks that were not sent at all (the host was still busy with an earlier one),
     /// summed over the playing graph's slots.
     pub(crate) plugin_blocked: AtomicU64,
@@ -447,6 +455,9 @@ impl LauncherMonitor {
             plugin_misses: AtomicU64::new(0),
             worst_plugin: AtomicU64::new(0),
             worst_misses: AtomicU64::new(0),
+            render_misses: AtomicU64::new(0),
+            worst_render_track: AtomicU64::new(0),
+            worst_render_misses: AtomicU64::new(0),
             plugin_blocked: AtomicU64::new(0),
             worst_trip: AtomicU32::new(0),
             frames_per_beat: AtomicU64::new(0),
@@ -1316,6 +1327,12 @@ impl Renderer {
                 self.graph.launcher.monitor.metronome.store(self.metronome.on(), Ordering::Relaxed);
             }
             LaunchCommand::SetMetronomeSound(sound) => self.metronome.set_sound(sound),
+            LaunchCommand::SetImplicitTones(on) => {
+                self.implicit_tones = on;
+                for chain in &mut self.graph.chains {
+                    chain.tones_off = !on;
+                }
+            }
             LaunchCommand::SetCue { gain, separate } => self.cue.set(gain, separate),
             LaunchCommand::FollowTempoMap => {
                 self.graph.launcher.follow_map();
@@ -1689,6 +1706,7 @@ impl Renderer {
             transport: crate::transport::Transport { position, .. },
             sample_rate,
             block_frame,
+            implicit_tones,
             ..
         } = self;
         let map = &graph.tempo;
@@ -1727,7 +1745,7 @@ impl Renderer {
                 scale: note.scale,
                 arranged: false,
             };
-            start_note(voices, chains, frame, *position, *sample_rate, end, start);
+            start_note(voices, chains, frame, *position, *sample_rate, end, start, *implicit_tones);
         };
         if let Some((loop_start, loop_end)) = plan.loop_range
             && beat < p.last_clip_beat

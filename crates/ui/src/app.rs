@@ -425,6 +425,8 @@ pub struct App {
     stashes: HashMap<ProjectId, Stash>,
     /// A dropped file waiting for the user to choose a new tab or replace.
     open_prompt: Option<PathBuf>,
+    /// A zipped project waiting for the person to say where to unpack it.
+    zip_prompt: Option<tabs::ZipPrompt>,
     /// A project with unsaved changes waiting for Save, Don't save or Cancel before it is closed,
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
@@ -730,7 +732,9 @@ pub struct App {
     effects_when_still: bool,
     /// The audio's health counters last traced: device underruns, late stretched frames and late
     /// plug-in blocks, and the input's.
-    audio_traced: (u64, u64, u64, u64, u64),
+    audio_traced: (u64, u64, u64, u64, u64, u64),
+    /// The render threads setting last handed to the engine (`audio.setRenderThreads`).
+    render_threads_applied: Option<u32>,
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
@@ -774,6 +778,7 @@ impl App {
             shown_project: None,
             stashes: HashMap::new(),
             open_prompt: None,
+            zip_prompt: None,
             unsaved_prompt: None,
             leave_checks: std::collections::VecDeque::new(),
             checked_close: None,
@@ -910,7 +915,8 @@ impl App {
             ram: None,
             next_ram: None,
             effects_when_still: false,
-            audio_traced: (0, 0, 0, 0, 0),
+            audio_traced: (0, 0, 0, 0, 0, 0),
+            render_threads_applied: None,
             carry: None,
             device_carry: None,
             applied_grid: None,
@@ -1102,6 +1108,17 @@ impl App {
         if is_theme_package(&path) {
             self.status = Status::Hint(format!("Bringing in the theme {}", path.display()));
             self.themes.import(path);
+            return;
+        }
+        // A zipped project opens once the person said where to unpack it.
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+            match suhina_session::zipped_project(&path) {
+                Ok(Some(found)) => self.zip_prompt = Some(tabs::ZipPrompt::new(path, found)),
+                Ok(None) => {
+                    self.status = Status::Error(format!("{} holds no project (.als or .suhina)", path.display()))
+                }
+                Err(e) => self.status = Status::Error(e),
+            }
             return;
         }
         if self.projects.is_empty() {
@@ -1499,24 +1516,33 @@ impl App {
             .session()
             .and_then(|s| suhina_session::plugin_device_name(s.project(), worst))
             .unwrap_or_else(|| "none".into());
+        let (late, late_track, late_most) = player.render_misses();
+        let late_name = self
+            .session()
+            .filter(|_| late_most > 0)
+            .map(|s| s.project().shown_track_name(TrackId(u32::try_from(late_track).unwrap_or(u32::MAX))))
+            .unwrap_or_else(|| "none".into());
         let cpu = player.cpu_monitor().load_milli();
         let running = player.monitor().running();
-        let (was_device, was_stretched, was_misses, was_blocked, was_input) = self.audio_traced;
+        let (was_device, was_stretched, was_misses, was_blocked, was_input, was_late) = self.audio_traced;
         if running
             || device > was_device
             || input > was_input
             || stretched > was_stretched
             || misses > was_misses
             || blocked > was_blocked
+            || late > was_late
             || cpu >= 700
         {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
+                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, render blocks late {late} (+{}, most {late_name}: {late_most}) on {} threads, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
                 device.saturating_sub(was_device),
                 input.saturating_sub(was_input),
                 stretched.saturating_sub(was_stretched),
                 misses.saturating_sub(was_misses),
                 blocked.saturating_sub(was_blocked),
+                late.saturating_sub(was_late),
+                info.as_ref().map_or(1, |i| i.render_threads),
                 f64::from(cpu) / 10.0,
                 if running { "playing" } else { "stopped" },
                 info.as_ref().map_or(0, |i| i.buffer_frames),
@@ -1530,12 +1556,20 @@ impl App {
                 info.as_ref().map(|i| i.render_diagnostics),
             );
         }
-        self.audio_traced = (device, stretched, misses, blocked, input);
+        self.audio_traced = (device, stretched, misses, blocked, input, late);
     }
 
     /// Uses `settings` from now on, as loaded from the settings file.
     pub fn set_settings(&mut self, ctx: &egui::Context, settings: Settings) {
+        // Before any output opens, so its renderer takes a lane of the chosen pool (ADR 0038).
+        if self.render_threads_applied != Some(settings.render_threads) {
+            suhina_engine::set_process_render_threads(suhina_engine::render_threads_for(
+                settings.render_threads as usize,
+            ));
+            self.render_threads_applied = Some(settings.render_threads);
+        }
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
+        self.projects.set_implicit_tones(settings.implicit_tones);
         motion::set_enabled(ctx, settings.animations);
         crate::kit::widgets::set_drag_hides_pointer(ctx, settings.drag_hides_pointer);
         self.arrangement.headers_left = headers_left(settings.track_headers);
@@ -3360,11 +3394,11 @@ impl App {
         // theme moves them). Each region draws in its rectangle and takes input only there; a
         // region the grid gives none is not drawn.
         self.missing.sync(&mut self.projects, self.revision);
-        let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
+        let prompting = self.open_prompt.is_some() || self.zip_prompt.is_some();
+        let missing_bar = !prompting && self.missing.bar_shows();
         // A newer build is offered in a bar over an open project; the start panel has its own
         // line (`docs/spec/updates.md` › With a project open).
-        let update_bar =
-            self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
+        let update_bar = !prompting && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
         // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
         // its value for when a project opens. It slides in and out from its side, with animations
         // on (#708).
@@ -3374,8 +3408,7 @@ impl App {
         // The grid takes the whole room, as the panels it replaced did: what the window holds
         // reaches its edges, for what is painted behind it.
         ui.advance_cursor_after_rect(room);
-        let input =
-            self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar || update_bar);
+        let input = self.window_input(room.size(), grid.is_some(), prompting || missing_bar || update_bar);
         let layout = crate::kit::native_css::window(&input)
             .map(|layout| layout.translated(room.min.to_vec2()))
             .unwrap_or_default();
@@ -3442,6 +3475,8 @@ impl App {
                 let inside = style.paint(ui.painter(), rect).content;
                 if self.open_prompt.is_some() {
                     in_region(ui, inside, |ui| self.open_prompt_bar(ui));
+                } else if self.zip_prompt.is_some() {
+                    in_region(ui, inside, |ui| self.zip_prompt_bar(ui));
                 } else if missing_bar {
                     in_region(ui, inside, |ui| self.missing.bar(ui, inside));
                 } else if update_bar && let Some(wanted) = in_region(ui, inside, |ui| self.updates.bar(ui, inside)) {

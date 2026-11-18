@@ -74,7 +74,8 @@ CI runners are slow and uneven, so a test that depends on timing fails there now
 
 The checks are in [AGENTS.md › Before you finish a task](../../../AGENTS.md#4-before-you-finish-a-task).
 Besides `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` and
-`cargo test --workspace`, CI also runs:
+`cargo test --workspace --no-fail-fast` (without it cargo stops at the first test binary that
+fails, and the rest go unrun), CI also runs:
 
 ```sh
 python scripts/docs.py check

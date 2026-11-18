@@ -30,6 +30,7 @@ fn project(notes: Vec<Note>) -> Project {
 
 fn project_built(notes: Vec<Note>) -> Project {
     let content = |id: u32, lanes: Vec<ContentLane>| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 8.0,

@@ -64,6 +64,8 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                instrument: false,
+                inputs: Vec::new(),
                 id: Default::default(),
                 name: "Test vst3".into(),
                 // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
@@ -79,6 +81,7 @@ fn project() -> Project {
             automation: Vec::new(),
         }],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
@@ -149,6 +152,8 @@ fn a_render_from_an_open_project_uses_the_running_plug_ins_state() {
     opened.fill_track_colours();
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened.clone());
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });
@@ -196,6 +201,8 @@ fn a_duplicated_track_starts_its_plug_in_with_the_state_it_has_now() {
     opened.fill_track_colours();
     let mut renderer = Renderer::stopped(&opened, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(opened);
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
     let device = json!({ "track": 1, "device": 0 });

@@ -61,6 +61,7 @@ fn project(fades: Option<(FadeShape, f64)>) -> Project {
             .map(|t| Channel { volume: 0.1, ..Channel::new(ChannelId(t), format!("Audio {t}")) })
             .collect(),
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "noise".into(),
             length: CLIP_BEATS,

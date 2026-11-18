@@ -53,6 +53,7 @@ pub(super) fn clip(content: u32, length: f64, looping: bool) -> Clip {
 
 pub(super) fn notes(id: u32, notes: Vec<Note>) -> ClipContent {
     ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("c{id}"),
         length: 4.0,
@@ -69,6 +70,7 @@ pub(super) fn project(contents: Vec<ClipContent>, slots: Vec<Vec<Slot>>) -> Proj
     Project {
         tracks: (1..=n)
             .map(|i| Track {
+                folder: false,
                 id: TrackId(i),
                 name: format!("T{i}"),
                 color: None,
@@ -687,6 +689,7 @@ fn launched_audio_loops_from_its_start_marker() {
         ..ClipAudio::default()
     };
     let content = ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "ramp".into(),
         length: 2.0,
@@ -732,6 +735,7 @@ fn a_launched_clip_s_plan_leaves_its_stretcher_to_the_stretch_thread() {
         ..ClipAudio::default()
     };
     let content = ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "sine".into(),
         length: 3.0,
@@ -771,6 +775,7 @@ fn launched_unwarped_audio_loops_over_the_whole_file() {
         ..ClipAudio::default()
     };
     let content = ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "hit".into(),
         length: 1.5,
@@ -819,6 +824,7 @@ fn stretched_sine() -> (Project, AudioPool) {
         ..ClipAudio::default()
     };
     let content = ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "sine".into(),
         length: 2.0,

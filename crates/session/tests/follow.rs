@@ -26,6 +26,7 @@ fn project_built() -> Project {
         ..Clip::new(ContentId(content), 0.0, 1.0)
     };
     let content = |id: u32, key: u8| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("Beat {id}"),
         length: 1.0,

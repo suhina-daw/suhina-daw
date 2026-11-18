@@ -20,6 +20,7 @@ const BLOCK: usize = 240;
 
 fn track(id: u32, name: &str, audio_input: InputChannels) -> Track {
     Track {
+        folder: false,
         id: TrackId(id),
         name: name.into(),
         color: None,

@@ -5668,6 +5668,7 @@ dependencies = [
 name = "suhina-engine"
 version = "0.0.1"
 dependencies = [
+ "allocation-counter",
  "rtrb",
  "suhina-device-api",
  "suhina-device-registry",
@@ -5675,6 +5676,7 @@ dependencies = [
  "suhina-dsp",
  "suhina-ipc",
  "suhina-model",
+ "suhina-realtime",
  "suhina-stretch",
  "suhina-test-support",
 ]
@@ -5851,6 +5853,7 @@ dependencies = [
  "suhina-project-file",
  "suhina-soundmap",
  "suhina-test-support",
+ "zip",
 ]
 
 [[package]]

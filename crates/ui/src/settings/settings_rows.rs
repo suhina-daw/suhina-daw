@@ -181,6 +181,16 @@ pub(crate) static ROWS: &[Entry] = &[
         &["audio_cue_pair", "audio_cue_volume"],
         crate::settings::settings_view::audio_cue,
     ),
+    row(
+        Page::Audio,
+        "Advanced",
+        "Render threads",
+        "How many processor threads share the work of each block of sound, so heavier projects can play",
+        &["render_threads"],
+        |cx, r| {
+            cx.choose(r, &[("Off", 1u32), ("Automatic", 0), ("2", 2), ("4", 4), ("8", 8)], |s| &mut s.render_threads)
+        },
+    ),
     block(
         Page::Midi,
         "MIDI inputs",
@@ -249,6 +259,14 @@ pub(crate) static ROWS: &[Entry] = &[
             let default = cx.about.irs_default.clone();
             cx.folder(r, &default, crate::interaction::pick::PickField::IrFolder, |s| &mut s.irs_folder);
         },
+    ),
+    row(
+        Page::Devices,
+        "Instruments",
+        "Tone without instrument",
+        "A MIDI track with no instrument plays its notes as a plain sine tone",
+        &["implicit_tones"],
+        |cx, r| cx.on_off(r, |s| &mut s.implicit_tones),
     ),
     row(
         Page::Devices,

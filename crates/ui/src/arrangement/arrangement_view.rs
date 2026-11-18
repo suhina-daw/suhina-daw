@@ -239,6 +239,48 @@ struct Row {
     /// The row with its take and automation lanes under it, down to the next row: a time
     /// selection painted over any of it is on the track (#1322).
     span: egui::Rangef,
+    /// A folded group's row: where the group is in `Timeline::lanes` and how many lanes are
+    /// inside it. Its row stands for all of them, so a selection over it takes every one.
+    folded: Option<(usize, usize)>,
+}
+
+impl DrawnLane {
+    /// The lanes (indexes in `Timeline::lanes`) whose clips this row stands for: a folded
+    /// group's own and every lane inside it, at any depth, else the lane whose clips it draws.
+    fn covered(&self) -> std::ops::Range<usize> {
+        if self.folded { self.lane..self.lane + 1 + self.children } else { self.clips..self.clips + 1 }
+    }
+}
+
+/// The tracks a selection painted over `row` is on: those of every lane a folded group's row
+/// stands for, or the one whose clips the row draws.
+fn row_tracks(row: &Row, lanes: &[Lane]) -> Vec<TrackId> {
+    match row.folded {
+        Some((lane, inside)) => lanes.iter().skip(lane).take(inside + 1).map(|l| l.track).collect(),
+        None => vec![row.clips],
+    }
+}
+
+/// The clips a selection rectangle `whole` touches on `row`, whole: on a folded group's row, any
+/// clip of a track inside it whose time it crosses, as the row draws them all in thin bands.
+fn row_picks(row: &Row, lanes: &[Lane], whole: Rect, x_of: &dyn Fn(f64) -> f32) -> Vec<(TrackId, ClipId)> {
+    let tracks = row_tracks(row, lanes);
+    lanes
+        .iter()
+        .filter(|lane| tracks.contains(&lane.track))
+        .flat_map(|lane| {
+            lane.clips.iter().map(move |clip| {
+                let space = if row.folded.is_none() && clip.rows > 1 {
+                    sub_row(row.time, clip.row, clip.rows)
+                } else {
+                    row.time
+                };
+                ((lane.track, clip.id), clip_rect(space, clip.start, clip.length, x_of))
+            })
+        })
+        .filter(|(_, r)| r.intersects(whole))
+        .map(|(key, _)| key)
+        .collect()
 }
 
 /// One lane the view draws: the lane that owns its header and the lane whose clips it shows. A
@@ -1177,7 +1219,15 @@ fn show_lanes(
         let clips = timeline.lanes.get(shown.clips).map_or(lane.track, |l| l.track);
         let next = y + height + 1.0 + state.below(lane.track, timeline);
         let span = egui::Rangef::new(y, next);
-        rows.push(Row { track: lane.track, clips, time: lane_time, clip: lane_time.intersect(lanes_area), span });
+        let folded = shown.folded.then(|| (shown.lane, shown.covered().len() - 1));
+        rows.push(Row {
+            track: lane.track,
+            clips,
+            time: lane_time,
+            clip: lane_time.intersect(lanes_area),
+            span,
+            folded,
+        });
         y = next;
     }
     // Where the lanes end, scrolled as they are: how far a drag past the bottom may scroll.
@@ -1194,6 +1244,7 @@ fn show_lanes(
             time: lane_time,
             clip: lane_time.intersect(fixed),
             span,
+            folded: None,
         });
         y = next;
     }
@@ -1607,9 +1658,13 @@ fn show_lanes(
             let free = ui.input(|i| i.modifiers.alt);
             let beat_of =
                 |x: f32| grid.place(f64::from((x - time.left() + state.scroll.x) / state.beat_width), free, false);
-            // Over a track's row or the take and automation lanes under it.
-            let tracks: Vec<TrackId> =
-                rows.iter().filter(|r| r.span.intersects(whole.y_range())).map(|r| r.clips).collect();
+            // Over a track's row or the take and automation lanes under it; over a folded
+            // group's row, on every track inside it, as the row shows them all.
+            let tracks: Vec<TrackId> = rows
+                .iter()
+                .filter(|r| r.span.intersects(whole.y_range()))
+                .flat_map(|r| row_tracks(r, &timeline.lanes))
+                .collect();
             let (start, end) = (beat_of(rect.left()), beat_of(rect.right()));
             // Begun in a row of a stack and kept to its track: that row alone.
             let row = started_in.filter(|(track, _, _)| tracks == [*track]).map(|(_, row, rows)| (row, rows));
@@ -1643,18 +1698,8 @@ fn show_lanes(
             if done {
                 state.gesture.end_marquee(|_| true);
                 state.time_selection = None;
-                let picked: Vec<(TrackId, ClipId)> = rows
-                    .iter()
-                    .filter_map(|row| Some((row, timeline.lanes.iter().find(|l| l.track == row.clips)?)))
-                    .flat_map(|(row, lane)| {
-                        lane.clips.iter().map(move |clip| {
-                            let space = if clip.rows > 1 { sub_row(row.time, clip.row, clip.rows) } else { row.time };
-                            ((lane.track, clip.id), clip_rect(space, clip.start, clip.length, &x_of))
-                        })
-                    })
-                    .filter(|(_, r)| r.intersects(whole))
-                    .map(|(key, _)| key)
-                    .collect();
+                let picked: Vec<(TrackId, ClipId)> =
+                    rows.iter().flat_map(|row| row_picks(row, &timeline.lanes, whole, &x_of)).collect();
                 if picked.is_empty() {
                     state.selected.clear();
                     state.anchor = None;

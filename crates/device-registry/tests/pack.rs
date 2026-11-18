@@ -19,7 +19,7 @@ const RATE: u32 = 48_000;
 
 /// The training phrase itself, verbatim: `tests/data/suhina-overdrive-train-phrase.wav`,
 /// 90 s of 16-bit mono. The compare is at distribution only on the content the model
-/// learned from, so the whole phrase is the ground.
+/// learned from, so the phrase is the ground (its [`opening`] for the own models' compares).
 fn phrase() -> Vec<f32> {
     phrase_from("suhina-overdrive-train-phrase.wav")
 }
@@ -36,6 +36,16 @@ fn phrase_from(file: &str) -> Vec<f32> {
         out.extend([sample, sample]);
     }
     out
+}
+
+/// The first 20 s of a training phrase, which the own models' compares run over: still the content
+/// the model learned from, at a quarter of the render. Measured 2026-11-18 over every 20 s stretch
+/// of the phrases, the worst sat at −10.4 dB (Overdrive) and −23.7 dB (Clean) against the −6 dB
+/// bound, the first 20 s at −11.0 and −23.9, the whole phrases at −18.4 and −29.1. Shorter
+/// stretches do not carry the fit: the Overdrive's worst 15 s sits at −4.6 dB.
+fn opening(mut phrase: Vec<f32>) -> Vec<f32> {
+    phrase.truncate(20 * RATE as usize * 2);
+    phrase
 }
 
 /// Runs `device` over the phrase, and drops the lead the device's own `latency()` declares.
@@ -61,7 +71,7 @@ fn the_own_model_renders_within_a_bound_of_its_source_chain() {
     let mut model = create_with("nam-amp-modeler", f64::from(RATE), Some(&asset)).unwrap();
 
     let mut chain = create("overdrive", f64::from(RATE)).unwrap();
-    let mut phrase = phrase();
+    let mut phrase = opening(phrase());
     let model_out = rendered(model.as_mut(), &mut phrase.clone());
     let gold_out = rendered(chain.as_mut(), &mut phrase);
     let n = gold_out.len().min(model_out.len());
@@ -129,7 +139,7 @@ fn the_clean_model_renders_within_a_bound_of_its_source_chain() {
     let mut model = create_with("nam-amp-modeler", f64::from(RATE), Some(&asset)).unwrap();
 
     let mut chain = create("compressor", f64::from(RATE)).unwrap();
-    let mut phrase = phrase_from("suhina-clean-train-phrase.wav");
+    let mut phrase = opening(phrase_from("suhina-clean-train-phrase.wav"));
     let model_out = rendered(model.as_mut(), &mut phrase.clone());
     let gold_out = rendered(chain.as_mut(), &mut phrase);
     let n = gold_out.len().min(model_out.len());
@@ -204,15 +214,18 @@ fn passage(phrase: &[f32], start: usize, seconds: usize) -> Vec<f32> {
 
 /// Every shipped amp model runs the device: each pack model renders two passages of the phrase
 /// through the normal device path, and its output stays finite and off silence ([ADR 0036] › 7,
-/// the offline render is the oracle). Two 6 s passages, not the whole 90 s phrase: over every
-/// model the whole phrase took 11 to 19 minutes of a CI run (#1382). 20 s to 26 s is one of
-/// the phrase's loudest stretches (−16.1 dB RMS against the whole phrase's −21.5 dB), 37 s to
-/// 43 s holds its peak (−1.9 dBFS at 39.84 s). The level checks below keep the whole phrase:
-/// no few seconds of it carry its level through every cabinet and tone within 2 dB.
+/// the offline render is the oracle). Two 1 s passages: whether a model reads and renders a
+/// finite, heard signal shows within its first second, and a WaveNet's receptive field is under
+/// 0.1 s (the whole phrase over every model took 11 to 19 minutes of a CI run, #1382; two 6 s
+/// passages still 69 s on one core). 20 s to 21 s opens one of the phrase's loudest stretches
+/// (−16.1 dB RMS from 20 s to 26 s against the whole phrase's −21.5 dB), 39 s to 40 s holds its
+/// peak (−1.9 dBFS at 39.84 s). The own LSTM models run 20 s each in the compares above. The
+/// level checks below keep the whole phrase: no few seconds of it carry its level through every
+/// cabinet and tone within 2 dB (measured 2026-11-18: up to 15.6 dB apart over a cabinet).
 #[test]
 fn every_pack_amp_model_runs_the_device() {
     let phrase = phrase();
-    let passages = [passage(&phrase, 20, 6), passage(&phrase, 37, 6)];
+    let passages = [passage(&phrase, 20, 1), passage(&phrase, 39, 1)];
     for (name, _) in pack_files("nam-amp-modeler") {
         let asset = load_builtin_file("nam-amp-modeler", name, RATE).unwrap();
         let mut device = create_with("nam-amp-modeler", f64::from(RATE), Some(&asset)).unwrap();

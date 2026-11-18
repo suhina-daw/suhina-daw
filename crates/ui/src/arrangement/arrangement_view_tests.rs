@@ -117,8 +117,47 @@ fn a_folded_group_hides_its_tracks_and_shows_the_one_it_stands_in_for() {
 }
 
 #[test]
+fn a_selection_over_a_folded_groups_row_takes_every_track_inside_it() {
+    let project = crate::demo::grouped_project();
+    let timeline = Timeline::build(&project, None);
+    let track = |name: &str| timeline.lanes.iter().position(|l| l.name == name).unwrap();
+    let (group, drums, bass) = (track("Group"), track("Drums"), track("Bass"));
+    let mut folds = Folds::default();
+    folds.fold(timeline.lanes[group].track);
+    folds.reconcile(&project, None);
+    let shown = drawn_lanes(&timeline.lanes, &folds)[0];
+    assert_eq!(shown.covered(), group..bass + 1);
+
+    let time = Rect::from_min_size(Pos2::ZERO, Vec2::new(10_000.0, 40.0));
+    let row = |folded| Row {
+        track: timeline.lanes[group].track,
+        clips: timeline.lanes[drums].track,
+        time,
+        clip: time,
+        span: time.y_range(),
+        folded,
+    };
+    let folded = row(Some((group, shown.children)));
+    let tracks: Vec<TrackId> = [group, drums, bass].iter().map(|&i| timeline.lanes[i].track).collect();
+    // Cut or Delete over the row's time acts on the group and both tracks, not the one it shows.
+    assert_eq!(row_tracks(&folded, &timeline.lanes), tracks);
+    assert_eq!(row_tracks(&row(None), &timeline.lanes), [timeline.lanes[drums].track]);
+
+    // A selection rectangle over the whole row picks the clips of every track inside it.
+    let x_of = |beat: f64| beat as f32 * 10.0;
+    let picked = row_picks(&folded, &timeline.lanes, time, &x_of);
+    for lane in [drums, bass] {
+        let lane = &timeline.lanes[lane];
+        assert!(!lane.clips.is_empty(), "{} has clips to pick", lane.name);
+        assert!(lane.clips.iter().all(|c| picked.contains(&(lane.track, c.id))), "every clip of {}", lane.name);
+    }
+    assert!(row_picks(&row(None), &timeline.lanes, time, &x_of).iter().all(|(t, _)| *t == timeline.lanes[drums].track));
+}
+
+#[test]
 fn a_fold_inside_a_fold_hides_exactly_what_it_covers() {
     let lane = |track: u32, kind: ColumnKind, depth: usize| Lane {
+        folder: false,
         track: TrackId(track),
         name: format!("T{track}"),
         color: suhina_engine::model::Rgb(0, 0, 0),
@@ -140,6 +179,7 @@ fn a_fold_inside_a_fold_hides_exactly_what_it_covers() {
         pan: 0.0,
         sends: Vec::new(),
         output: None,
+        output_name: None,
         column: None,
         overrides: false,
         clips: Vec::new(),
@@ -273,6 +313,20 @@ fn a_fade_ends_on_the_grid_and_leaves_room_for_the_other() {
     assert_eq!(fade_length(0.4, FadeEdge::Out, &clip, 0.0, Some(beats(4.0))), 0.0);
     // Nearer the grid line, the grid wins.
     assert_eq!(fade_length(6.5, FadeEdge::Out, &clip, 0.0, Some(beats(4.0))), 6.0);
+}
+
+#[test]
+fn the_envelope_button_gives_way_to_the_fade_in_handle() {
+    let button = Rect::from_min_size(Pos2::new(104.0, 12.0), Vec2::splat(14.0));
+    // The handle at the clip's corner lies over the button's left edge: the button keeps the rest.
+    let corner = Rect::from_min_size(Pos2::new(98.0, 8.0), Vec2::splat(11.0));
+    assert_eq!(beside(button, corner), Rect::from_min_max(Pos2::new(109.0, 12.0), button.max));
+    // Over its right edge (a fade that ends there): the button keeps its left part.
+    let right = Rect::from_min_size(Pos2::new(114.0, 8.0), Vec2::splat(11.0));
+    assert_eq!(beside(button, right), Rect::from_min_max(button.min, Pos2::new(114.0, 26.0)));
+    // Apart: all of it.
+    let apart = Rect::from_min_size(Pos2::new(140.0, 8.0), Vec2::splat(11.0));
+    assert_eq!(beside(button, apart), button);
 }
 
 #[test]
@@ -671,6 +725,7 @@ fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
     let mut project = crate::demo::demo_project();
     let audio = ContentId(900);
     project.contents.push(ClipContent {
+        linked: false,
         id: audio,
         name: "Loop".into(),
         length: 4.0,

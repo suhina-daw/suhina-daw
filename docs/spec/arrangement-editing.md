@@ -3,7 +3,7 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-17
+last_verified: 2026-11-18
 covers:
   - crates/session/src/commands.rs
   - crates/session/src/colours.rs
@@ -397,6 +397,31 @@ same for the selection. Points selected on an automation lane are deleted by Del
 clip; selecting a clip ends a selection of points, and selecting points ends the clips' selection
 ([automation](automation.md#in-the-arrangement-view)).
 
+### Linked copies
+
+A duplicate is independent: the first edit through a clip whose content another clip also plays
+gives it its own copy of the content (copy on write, ADR 0001). A **linked copy** keeps one content
+on purpose (#1414): `clip.duplicate {clips, linked: true}` (the menu's **Duplicate linked**)
+places copies that play the clips' content and marks the content linked, so an edit to the notes
+or audio through any of them, or through the original, changes them all, with no copy on write.
+A clip of a linked content that another arrangement clip plays too shows a mark of two chain
+links in its lower right corner, and its name reads ", linked" to a screen reader.
+
+`clip.unlink {clips}` (the menu's **Unlink**, shown on a linked copy) gives each named linked clip
+its own copy of the content as it is now; the other clips stay linked. A content left with one
+clip is no longer linked. A clip that is not linked is left as it is. One undo step.
+
+`clip.link {clips}` (the menu's **Link**, shown when the clips the menu acts on play the same
+notes or audio, every lane and the length alike, from contents of their own) makes them play the
+first clip's content, marked linked; a content no clip, slot or take plays any more goes. Clips
+that play different material are refused, so no edit is lost. One undo step.
+
+An ordinary duplicate, a paste and a drag copy of a linked clip are independent at once: they get
+a content of their own, so they never join the link unasked. A split's parts keep playing the
+content from where it was cut, so they stay linked copies. Placement properties (start,
+length, offset, loop, fades, gain envelope, colour) stay each clip's own, as for any clip. The
+project file keeps `linked` on the content ([format](suhina-format.md) › Parts).
+
 ## Automation lanes
 
 Under a track, the lanes of its automation, shown and hidden with the envelope button on its
@@ -620,7 +645,9 @@ horizontal drag sets the fade with its end on [the grid](#the-grid) (Alt held: f
 the clip's own edge and the other fade snap like grid lines, so a clip that does not start or
 end on the grid can be faded over its whole length; the clip shows the fade while it is dragged, and letting go runs `clip.setFades`. A
 double-click on a handle removes that fade. A right-click on a handle opens a menu of the shapes,
-with the fade's shape checked; choosing one runs `clip.setFades`. Under them **Reset fade** takes
+with the fade's shape checked (the handles stay while it is open, on a clip that is not selected
+too, and where a short fade-in's handle lies over the Edit gain envelope button the handle takes
+the click); choosing one runs `clip.setFades`. Under them **Reset fade** takes
 the fade away and sets its shape and curve back to the defaults (linear, 0), one `clip.setFades`. A fade at least 21 px wide has a
 second, round **curve handle** on its line half-way through the fade. Dragging it up or down
 moves it with the pointer: the curve becomes the one whose line passes through the handle (up
@@ -912,6 +939,28 @@ opens). It is window state, not a command.
 
 ### Groups inside groups
 
+A presentation folder is a track without a channel whose `folder` field is set (#1416). It
+folds, names, colours and orders its children as a group does, but has no mixer controls and
+plays nothing: it only gathers tracks in view. `track.folder {tracks, name?}` puts tracks (all in
+the same group, or in none) into a new folder in the place of the first of them; the track menu
+offers it as **Put in a folder**, or **Put selected tracks in a folder** for a selection. Moving
+into or out of a folder and ungrouping it (`track.ungroup`) leave channel outputs and sends
+unchanged. Moving into an audio group still changes the output to that group. Folders count
+toward the same nesting limit as audio groups and are saved as `folder` in the project file
+(version 15; before it the `suhina/folder` extension, read into the field).
+
+### Cosine fade shape
+
+The additional native `cosine` shape uses `s=(1-cos(pi*t))/2` and an exponential
+tension bend. With `q=2^(32*abs(curve))`, positive curve gives
+`(q-q^(1-s))/(q-1)` and negative curve gives `(q^s-1)/(q-1)`. At zero it is `s`.
+This shape is the exception to the power bend described in the fades section.
+The same editable curve handle and `clip.setFades` command apply; the handle
+inverts the monotonic midpoint law. Realtime playback and offline rendering use
+the same evaluator. Cosine is not included in the earlier performance figures.
+
+### Audio group nesting
+
 Groups nest: a group track can hold tracks and other groups, at most 16 levels deep
 (`MAX_GROUP_DEPTH` in the model, which also refuses a group that is inside itself). A track's
 sound goes through its own channel, its group's, that group's group's and so on to the main
@@ -1051,7 +1100,10 @@ Folding is view state, not part of the project: nothing in a saved project keeps
 that is saved and opened shows every group open, and no command folds or opens one. A folded
 group's header stays its own — name, colour, volume, pan, mute, solo and output are the group's.
 The blocks on a folded lane are a view of the clips, not the clips: to select, move or edit one,
-open the group. The tracks inside a folded group cannot be reached with the mouse, since none of
+open the group. The lane as a whole stands for every track inside it: a time selection painted
+over it is on the group and all of those tracks, so Cut, Copy, Delete, Duplicate, Split and
+Consolidate act on what all of them play there, and a selection rectangle over it picks every
+clip of theirs it crosses. The tracks inside a folded group cannot be reached with the mouse, since none of
 them is drawn.
 
 ## Open

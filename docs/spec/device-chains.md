@@ -3,9 +3,11 @@ description: How the engine runs devices on tracks - chains, instruments and the
 read_when: device chain, chain, instrument notes, note events, MIDI effect, process_events, group bus, bus, sends into returns, device group in the engine, main channel chain, latency compensation, graph swap keeps devices, chain order, Slot::Group
 type: spec
 status: current
-last_verified: 2026-11-14
+last_verified: 2026-11-18
 covers:
   - crates/engine/src/chain.rs
+  - crates/engine/src/slot_factory.rs
+  - crates/engine/src/missing_instrument.rs
   - crates/engine/src/buses.rs
   - crates/engine/src/sends.rs
   - crates/engine/src/group.rs
@@ -56,7 +58,12 @@ output, when it holds devices or its volume, pan or mute follows a lane.
 pressure, all notes off) at the frame where the next `process` starts: the host splits a
 block where an event falls, exactly as for automation, so one mechanism times both and the
 trait needs no event list. Values are plain and in range from a well-behaved host, but a
-device accepts anything without misbehaving. Effects ignore events. Whole-number parameters
+device accepts anything without misbehaving. Effects ignore events. The track's notes end at
+its instrument: a plug-in effect after it (one with a MIDI input, such as a compressor MIDI
+notes can trigger) gets none, as an effect on a mixer channel gets none of the notes its
+instrument plays, while another instrument after it still plays them, in a chain and in a
+device group's branch alike (`chain::notes_ended`). A plug-in effect before the instrument
+gets them. Whole-number parameters
 (a level from 0 to 99, an algorithm number) get their own kind, `ParamKind::Integer`, so they
 never take a fraction. The contract tests add, for instruments, a fixed performance (notes
 that start inside blocks, the sustain pedal, bend, the wheel, pressure) in every block size,
@@ -67,6 +74,19 @@ An instrument that works in fixed internal blocks (the FM synth renders 64 frame
 applies an event at its next internal block boundary on a grid counted from `reset`, which
 keeps the output independent of the host's block sizes at the cost of up to one internal
 block of timing.
+
+An importer can explicitly identify an unavailable instrument by setting a Foreign device's
+`instrument` field (#1416; the `suhina/missing-instrument` extension before version 15). This
+placeholder consumes note events and produces silence through a native instrument slot,
+also when solo overrides the channel mute or the placeholder is bypassed. Removing or
+replacing it removes this behaviour. Its original identity and state remain unchanged;
+an unknown effect without this marker still passes audio through.
+
+A switched-off instrument retains its identity as an instrument and produces silence;
+it must not expose the empty track's default voices or pass incoming audio through.
+This applies to native, file-backed and hosted instruments and instrument groups.
+The stored device, parameters, state and notes remain available for re-enabling.
+Switched-off effects still pass audio through.
 
 ## Automation inside a chain
 
@@ -84,14 +104,14 @@ When a group track's channel holds devices, the tracks routed into it (at any de
 each gets a chain, one without devices when it has none, whose output goes into the group's
 chain buffer at the track's pan and the volumes from its channel up to the group; the
 group's devices run over the sum, and the volumes from the group to the master apply after
-them (a group's pan does not apply, as before). Chains are ordered so a bus comes after
+them, with the group's own pan applied once to the sum. Chains are ordered so a bus comes after
 every chain that feeds it, and a block runs them in that order. Latency compensation follows
 every path: a bus's input waits for the slowest chain feeding it, and the output for the
 slowest path, so a track with a lookahead device inside a group with another still starts
 with the rest (`crates/engine/src/buses.rs`). A device reports its delay with `latency()`
 (the overdrive and vinyl distortion, 31 frames; the limiter, its 1.5 ms lookahead), and every
-other track is delayed to match ([ADR 0006](../decisions/0006-plug-in-hosting.md) › Consequences). A group without devices stays a gain on the
-tracks routed through it, with no buffer of its own. Groups nest (up to 16 levels, ADR
+other track is delayed to match ([ADR 0006](../decisions/0006-plug-in-hosting.md) › Consequences). A group without devices or pan stays a gain on the
+tracks routed through it. A panned group gets a passthrough chain so its pan applies to the sum. Groups nest (up to 16 levels, ADR
 0001): a bus inside a bus runs before it, and a level without devices between two buses is
 a gain on the way; offline renders through three nested buses check the sum at every level,
 solo and mute through the levels and the latency of every path (`crates/engine/src/buses_tests.rs`).
@@ -158,11 +178,16 @@ The contract tests add, for MIDI effects, the same events in spans of every size
 parameter's ends, `reset` while notes are held, hostile events, too little room to write, and
 that no key still sounds after every key played is released, after all-notes-off too.
 `device.add` places a MIDI effect among the MIDI effects that lead the chain, only on a MIDI
-track; an instrument goes right after them (built-in, `.sd` or plug-in). A chain whose MIDI
-effects have no instrument after them plays the notes they change as the sine tones a MIDI
-track without an instrument plays (an instrument of the engine's own, after the MIDI
-effects and before the audio effects), so adding a MIDI effect never silences a track and
-never passes its notes by; notes from a MIDI input reach those tones too. MIDI effects run in
+track; an instrument goes right after them (built-in, `.sd` or plug-in). A MIDI track with no
+instrument of its own (no devices, or only MIDI and audio effects) plays its notes as sine
+tones only while the user's setting *Tone without instrument* is on (Settings › Devices,
+#1384, off by default; the renderer's `LaunchCommand::SetImplicitTones`, applied at once
+and to every export); otherwise it is silent. With the setting on, a chain whose MIDI
+effects have no instrument after them plays the notes they change as those tones (an
+instrument of the engine's own, after the MIDI effects and before the audio effects), and
+notes from a MIDI input reach them too. A switched-off or missing instrument never falls
+back to them (below). The browser's preview of a MIDI file has its own preview instrument
+and is not affected. MIDI effects run in
 the same chain code offline and in real time (golden rule 4): `render_offline`, the player
 and the launcher all start notes through it, so the offline renders in
 `crates/engine/src/midi_effect_tests.rs` are the oracle for playback as well.
@@ -194,3 +219,9 @@ value, which the project stores like any other (stock presets for the other devi
 The native sampler reuses the SDK's sample runtime and theme-aware UI widgets.
 `Device::load_sample` installs immutable decoded audio off the callback; graph
 replacement owns its disposal. This is a native instrument, not an `.sd` node.
+
+Hosted devices whose `instrument` field is set (the `suhina/instrument` extension before
+version 15) retain their instrument
+role without an installed plugin. A successfully resolved host slot takes precedence;
+otherwise they consume notes silently, including while bypassed or soloed. Changing the
+device to a built-in or foreign kind makes this hosted-role marker inapplicable.
