@@ -93,7 +93,7 @@ use suhina_theme_render::{Subject, scenes};
 ///
 /// The Launcher's add-track buttons (a "+" and its words painted apart) and the piano roll's
 /// Fold, Scale and Highlight buttons (ordinary tool buttons) raised the node counts by 4 in the
-/// Launcher and 1 in the FM synth (469 and 716; 482 and 729 on Windows), while the identities
+/// Launcher and 1 in the FM synth (469 and 716; 481 and 728 on Windows, where the FM synth did not move), while the identities
 /// went down (452 and 698).
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
@@ -142,7 +142,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 482,
+            nodes: 481,
             identities: 472,
             unstyled: 0,
             fresh: 0,
@@ -160,7 +160,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 729,
+            nodes: 728,
             identities: 722,
             unstyled: 0,
             fresh: 0,
