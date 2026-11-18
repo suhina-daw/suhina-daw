@@ -25,7 +25,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 17;
+pub const VERSION: u64 = 18;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 
@@ -364,6 +364,13 @@ pub enum AraPlayback {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
+    ResetAudio {
+        instance: u32,
+    },
+    AudioReset {
+        instance: u32,
+        latency: u32,
+    },
     /// Reconfigure a quiescent instance without destroying it. The shared audio link's
     /// maximum block capacity stays unchanged. Answered only after reactivation.
     Reconfigure {
@@ -610,6 +617,8 @@ impl Message {
     pub fn instance(&self) -> Option<u32> {
         match self {
             Self::Load { instance, .. }
+            | Self::ResetAudio { instance }
+            | Self::AudioReset { instance, .. }
             | Self::Reconfigure { instance, .. }
             | Self::Reconfigured { instance, .. }
             | Self::Loaded { instance, .. }
@@ -673,6 +682,10 @@ impl Message {
             }
             Self::Reconfigure { instance, sample_rate } => {
                 json!({ "op": "reconfigure", "instance": instance, "sample_rate": sample_rate })
+            }
+            Self::ResetAudio { instance } => json!({ "op": "reset_audio", "instance": instance }),
+            Self::AudioReset { instance, latency } => {
+                json!({ "op": "audio_reset", "instance": instance, "latency": latency })
             }
             Self::Reconfigured { instance, latency } => {
                 json!({ "op": "reconfigured", "instance": instance, "latency": latency })
@@ -791,6 +804,8 @@ impl Message {
         let instance = || small("instance");
         Some(match value.get("op")?.as_str()? {
             "hello" => Self::Hello { version: number("version")? },
+            "reset_audio" => Self::ResetAudio { instance: instance()? },
+            "audio_reset" => Self::AudioReset { instance: instance()?, latency: small("latency")? },
             "reconfigure" => Self::Reconfigure {
                 instance: instance()?,
                 sample_rate: value

@@ -370,6 +370,27 @@ impl Hosted {
 }
 
 impl PluginProcessor for Hosted {
+    fn reset_audio(&mut self, timeout: Duration) -> Result<(), String> {
+        self.audio.reset_audio(timeout).map_err(|e| e.to_string())?;
+        self.events.clear();
+        self.notes.clear();
+        self.params.clear();
+        // A parameter edit waiting for a busy host is still the user's edit.
+        self.carried.retain(|event| matches!(event.kind, EventKind::Param { .. }));
+        self.stop_notes.clear();
+        self.stop_notes_overflow = false;
+        self.sent_at = None;
+        self.input.fill(0.0);
+        self.output.fill(0.0);
+        self.key.fill(0.0);
+        self.keyed = 0;
+        self.song.playing = false;
+        self.continuation.playing = false;
+        if let Some(gate) = &mut self.gate {
+            gate.suspend();
+        }
+        Ok(())
+    }
     fn smooth_transport_stop(&self) -> bool {
         self.gate.is_some()
     }

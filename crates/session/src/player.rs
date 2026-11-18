@@ -12,7 +12,22 @@ use crate::{CommandError, LiveOutput, OutputInfo, ParamEdit};
 /// What keeps a player's audio output open (a stream, the thread that owns it): closed when it is
 /// dropped, or by [`OutputHandle::close`] when the output layer opens another output and wants the
 /// running plug-ins back.
+/// Device output shutdown is bounded: if it does not finish in time, the output
+/// layer refuses another open until the previous audio thread has ended.
 pub trait OutputHandle: Send {
+    /// Whether the output supports retaining complete project engines.
+    fn can_exchange_renderer(&self) -> bool {
+        false
+    }
+    /// Exchanges the project engine without closing the device. The returned
+    /// engine belongs to the previous project and may be retained until resumed.
+    fn exchange_renderer(
+        &mut self,
+        _next: Box<suhina_engine::Renderer>,
+    ) -> Result<Box<suhina_engine::Renderer>, String> {
+        Err("this audio output cannot retain its device across projects".into())
+    }
+
     /// Closes the output and gives back its sample rate and the plug-ins it ran, when they come
     /// back in time.
     fn close(self: Box<Self>) -> Option<(u32, Plugins)>;
@@ -27,6 +42,8 @@ pub struct Player {
     output: Option<std::sync::Arc<dyn LiveOutput>>,
     /// The launch quantisation last sent, which a new output is given again.
     quantization: Option<suhina_engine::Quantization>,
+    parked: Option<Box<suhina_engine::Renderer>>,
+    live_input: Option<suhina_engine::LiveSender>,
 }
 
 /// `controller`, with the follow actions' random numbers seeded from the clock, so each
@@ -40,7 +57,14 @@ fn seeded(mut controller: Controller) -> Controller {
 
 impl Player {
     pub fn new(controller: Controller, keep_alive: Option<Box<dyn OutputHandle>>) -> Self {
-        Self { controller: seeded(controller), keep_alive, output: None, quantization: None }
+        Self {
+            controller: seeded(controller),
+            keep_alive,
+            output: None,
+            quantization: None,
+            parked: None,
+            live_input: None,
+        }
     }
 
     /// A player whose output reports what it runs with (`audio.info`).
@@ -49,7 +73,116 @@ impl Player {
         keep_alive: Option<Box<dyn OutputHandle>>,
         output: std::sync::Arc<dyn LiveOutput>,
     ) -> Self {
-        Self { controller: seeded(controller), keep_alive, output: Some(output), quantization: None }
+        Self {
+            controller: seeded(controller),
+            keep_alive,
+            output: Some(output),
+            quantization: None,
+            parked: None,
+            live_input: None,
+        }
+    }
+
+    pub(crate) fn can_park(&self) -> bool {
+        self.keep_alive.as_ref().is_some_and(|owner| owner.can_exchange_renderer())
+    }
+
+    pub(crate) fn prepare(
+        project: &Project,
+        audio: &suhina_engine::AudioPool,
+        assets: &suhina_engine::DeviceAssets,
+        rate: u32,
+    ) -> Result<Self, String> {
+        Self::prepare_with_plugins(project, audio, assets, rate, Plugins::new())
+    }
+
+    fn prepare_with_plugins(
+        project: &Project,
+        audio: &suhina_engine::AudioPool,
+        assets: &suhina_engine::DeviceAssets,
+        rate: u32,
+        plugins: Plugins,
+    ) -> Result<Self, String> {
+        let mut renderer = Box::new(
+            suhina_engine::Renderer::build(
+                project,
+                suhina_engine::RenderInputs::from_audio(audio, crate::devices())
+                    .with_assets(assets)
+                    .with_plugins(plugins),
+                rate,
+                suhina_engine::RenderOptions::STOPPED,
+            )
+            .map_err(|e| e.to_string())?,
+        );
+        let mut controller = renderer.controller();
+        controller.run_stretch_worker(&mut renderer).map_err(|e| e.to_string())?;
+        let mut player = Self::new(controller, None);
+        player.parked = Some(renderer);
+        Ok(player)
+    }
+
+    pub(crate) fn reconfigure_suspended(
+        mut self,
+        project: &Project,
+        audio: &suhina_engine::AudioPool,
+        assets: &suhina_engine::DeviceAssets,
+        rate: u32,
+    ) -> Result<Self, String> {
+        self.settle_suspended();
+        let renderer = self.parked.take().ok_or("the project has no retained renderer")?;
+        let mut plugins = renderer.into_plugins();
+        plugins.reconfigure(rate, std::time::Duration::from_secs(10)).map_err(|e| e.to_string())?;
+        Self::prepare_with_plugins(project, audio, assets, rate, plugins)
+    }
+
+    /// Leaves a silent engine on the device, retaining this project's engine.
+    pub(crate) fn park(&mut self) -> Result<Self, String> {
+        let mut silent = Box::new(
+            suhina_engine::Renderer::stopped(
+                &Project::default(),
+                &suhina_engine::AudioPool::new(),
+                self.sample_rate(),
+                crate::devices(),
+            )
+            .map_err(|e| e.to_string())?,
+        );
+        let controller = silent.controller();
+        let owner = self.keep_alive.as_mut().ok_or("the player has no device owner")?;
+        let mut previous = owner.exchange_renderer(silent)?;
+        previous.settle_suspended(&mut self.controller);
+        self.parked = Some(previous);
+        if let Some(renderer) = self.parked.as_mut() {
+            renderer.reset_suspended_plugins(std::time::Duration::from_secs(10)).map_err(|e| e.to_string())?;
+        }
+        Ok(Self {
+            controller,
+            keep_alive: self.keep_alive.take(),
+            output: self.output.take(),
+            quantization: None,
+            parked: None,
+            live_input: None,
+        })
+    }
+
+    /// Returns this project's retained engine to the continuously open device.
+    pub(crate) fn resume(&mut self, idle: &mut Self) -> Result<(), String> {
+        if self.sample_rate() != idle.sample_rate() {
+            return Err("the retained project needs sample-rate reconfiguration".into());
+        }
+        let owner = idle.keep_alive.as_mut().ok_or("the idle player has no device owner")?;
+        self.settle_suspended();
+        let renderer = self.parked.take().ok_or("the project has no retained renderer")?;
+        let retired = owner.exchange_renderer(renderer)?;
+        drop(retired);
+        self.keep_alive = idle.keep_alive.take();
+        self.output = idle.output.take();
+        Ok(())
+    }
+
+    pub(crate) fn settle_suspended(&mut self) {
+        if let Some(renderer) = self.parked.as_mut() {
+            renderer.settle_suspended(&mut self.controller);
+        }
     }
 
     /// What the output runs with now, when it says, with the engine's render threads and the
@@ -233,7 +366,11 @@ impl Player {
 
     /// The sending end of the engine's live-note queue (ADR 0017); `None` once taken.
     pub fn take_live_input(&mut self) -> Option<suhina_engine::LiveSender> {
-        self.controller.take_live_input()
+        self.live_input.take().or_else(|| self.controller.take_live_input())
+    }
+
+    pub(crate) fn retain_live_input(&mut self, sender: suhina_engine::LiveSender) {
+        self.live_input = Some(sender);
     }
 
     /// The reading end of what the engine records (`docs/spec/recording.md`); `None` once taken.

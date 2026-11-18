@@ -644,9 +644,10 @@ be dropped off the audio thread.
 
 While a project plays, the session finds each plug-in device in the catalog
 (`plugin.check`'s matching), starts it with the saved state (and VST3 controller state) on a
-thread of its own, and hands it over; a project's plug-ins stop when it stops playing (a
-tab switch) and each keeps its last state for when it starts again, as one whose device is
-removed does for an undo. A plug-in that is not installed is *missing*: no slot, the sound
+thread of its own, and hands it over. A tab switch retains the project's renderer and
+plug-in instances without processing background audio; returning resumes the same
+instances. Closing the project releases them. Removing a plug-in device stops its
+instance and keeps its last state for undo. A plug-in that is not installed is *missing*: no slot, the sound
 passes, its state stays in the project untouched and is saved back as it was; the status bar
 names it. Every 30 s the session reads each running plug-in's state, so a restart after a
 crash gets back what was set in its editor (ADR 0006 › 5); saving the project
@@ -728,6 +729,16 @@ containing mixed processing rates. A later crash restart reads the acknowledged
 rate shared with the control half.
 
 ## Stopping a hosted instrument
+
+Project suspension is a hard audio boundary after the output has switched to its
+silent renderer. The control thread sends `reset_audio` to retained processors
+with a shared bounded wait. Their existing instances and editors stay loaded,
+but processing is reactivated so old voices and effect buffers cannot replay on
+return. The instrument's host-side stop envelope is set directly to silence;
+the output already supplied the departure fade. A new Play or live note opens
+the envelope again. Pending parameter edits survive; old note events do not.
+Failure aborts the project switch and reports an error instead of resuming an
+instance with uncertain audio state. See [the protocol](plugin-protocol.md).
 
 Some instruments reset their output immediately when the transport's playing flag
 becomes false, even when ordinary note-off messages alone allow a smooth release.

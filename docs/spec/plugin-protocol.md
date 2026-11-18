@@ -40,6 +40,7 @@ raises its version and adds a row here.
 | 15 | `open_editor` may carry the `title` of the editor's own window; `editor_title` changes it later (not answered) |
 | 16 | `get_param_texts` asks for the plug-in's own text of up to 256 values of one parameter; `param_texts` answers (#1205) |
 | 17 | `get_params` marks a parameter whose values are a list of choices (`list`: VST3 `kIsList`, CLAP `CLAP_PARAM_IS_ENUM`), so automation holds only switches and lists (#1482) |
+| 18 | `reset_audio` clears a suspended instance's processing state without unloading its preset or editor; answered `audio_reset` |
 
 **Block region** (`ipc::region`): 2, events as fixed 16-byte records with their frame; 3, the
 block's followers ([plug-in hosting](plugin-hosting.md) › One round trip). **ARA audio source**
@@ -47,6 +48,14 @@ block's followers ([plug-in hosting](plugin-hosting.md) › One round trip). **A
 read; a catalog in format 2 is read as it is.
 
 ## Messages
+
+`reset_audio {instance}` is a control-thread operation on a quiescent audio link.
+The host restarts processing on the existing instance using its existing activation
+path, retaining parameters, saved state, editor and process identity. It acknowledges
+with `audio_reset {instance, latency}` only after the old audio worker has joined
+and the replacement is ready. Failure or timeout is reported; the engine must not
+resume that instance after an ambiguous reset. This is used when suspending a
+project so cached voices and effect tails cannot sound when it is selected again.
 
 Messages go over a local socket or pipe, one JSON object per message with an `op`.
 

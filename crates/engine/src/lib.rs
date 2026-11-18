@@ -922,6 +922,60 @@ impl Renderer {
         Arc::clone(&self.input.diagnostics)
     }
 
+    /// Transfers the persistent device input when exchanging project renderers.
+    /// Both renderers must be exclusively owned at a block boundary. Swapping
+    /// retains all allocations and input diagnostics; it does not free or lock.
+    pub fn exchange_audio_input(&mut self, other: &mut Self) {
+        std::mem::swap(&mut self.input, &mut other.input);
+    }
+
+    /// Stops an exclusively owned project renderer before retaining it off the
+    /// render thread. Commands queued just before switching cannot restart it
+    /// when the project is activated later.
+    pub fn suspend_project(&mut self) {
+        self.drain_commands();
+        self.block_frame = 0;
+        if self.transport.running || self.transport.count_in.is_some() || self.transport.start_waiting.is_some() {
+            self.handle(LaunchCommand::Stop);
+        } else {
+            self.release_sounding(true);
+        }
+        self.live.suspend();
+        self.preview.suspend();
+        // The output fades the departing project while its renderer is detached.
+        // A retained transport must not replay that old transition on reactivation.
+        self.start_guard = declick::StartGuard::new(self.sample_rate);
+        self.declick = Declick::default();
+        self.voices.fill(Voice::default());
+        for column in &mut self.graph.launcher.columns {
+            column.fading = None;
+        }
+        self.songs.clear();
+        self.graph.direct_delay.clear();
+        self.graph.click_delay.clear();
+        for chain in &mut self.graph.chains {
+            chain.clear_suspended_delays();
+        }
+    }
+
+    /// Clears retained plug-in voices and tails after the renderer has been removed
+    /// from the output. Control-thread only; the timeout covers all processors together.
+    pub fn reset_suspended_plugins(&mut self, timeout: Duration) -> Result<(), ControlError> {
+        let started = Instant::now();
+        for chain in &mut self.graph.chains {
+            for slot in chain.plugin_slots() {
+                if let Some(processor) = slot.processor.as_mut() {
+                    let left = timeout.saturating_sub(started.elapsed());
+                    if left.is_zero() {
+                        return Err(ControlError::Plugin("the project plug-ins did not finish stopping".into()));
+                    }
+                    processor.reset_audio(left).map_err(ControlError::Plugin)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Whether a track is armed to play the live input (ADR 0017): someone may be playing, so
     /// the output keeps less queued ahead of the device. Lock-free; for the render thread.
     pub fn live_armed(&self) -> bool {

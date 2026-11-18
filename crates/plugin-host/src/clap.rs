@@ -487,6 +487,12 @@ impl ClapPlugin {
         Ok(self.latency)
     }
 
+    pub(crate) fn reset_audio(&mut self) -> Result<u32, String> {
+        self.reactivate()?;
+        self.latency = read_latency(&mut self.instance);
+        Ok(self.latency)
+    }
+
     /// A latency the plug-in reported since this was last asked. A plug-in that asked for a
     /// restart is restarted first (its latency may change only while it is deactivated).
     pub(crate) fn latency_changed(&mut self) -> Option<u32> {

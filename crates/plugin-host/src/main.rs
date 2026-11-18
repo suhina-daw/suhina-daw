@@ -671,6 +671,13 @@ fn answer<W: Write>(instances: &mut Instances, writer: &Shared<W>, message: Mess
                 Err(why) => failed(instance, why),
             }
         }
+        Message::ResetAudio { instance } => match instances.get_mut(&instance) {
+            Some(plugin) => match plugin.reset_audio() {
+                Ok(latency) => Message::AudioReset { instance, latency },
+                Err(why) => failed(instance, why),
+            },
+            None => return Some(missing(instance)),
+        },
         Message::Unload { instance } => {
             if let Some(mut loaded) = instances.remove(&instance) {
                 let began = std::time::Instant::now();

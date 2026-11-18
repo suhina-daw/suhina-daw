@@ -766,18 +766,9 @@ impl Session {
     /// go to it from now on. Replaces (and so closes) any previous player. It should have been
     /// started with [`Session::audio`]; audio added later reaches it with the next edit.
     pub fn attach_player(&mut self, mut player: Player) {
+        self.sync.suspended = None;
         self.sync.output_open_failed = false;
-        // A new engine starts on its own default grid; it takes this session's instead. Its
-        // command queue is empty, so this send only fails if the engine is gone, and then every
-        // later command says so.
-        let _ = player.send(suhina_engine::LaunchCommand::SetQuantization(self.live.quantization));
-        // Its metronome too: on or off, level and sound, as this session has them.
-        let (on, db, sound) = self.live.metronome;
-        let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
-        let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
-        let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
-        // And whether a track with no instrument plays its notes as sine tones (#1384).
-        let _ = player.send(suhina_engine::LaunchCommand::SetImplicitTones(self.live.implicit_tones));
+        self.configure_player(&mut player);
         // Takes of the engine this one replaces end where it was; a new engine records anew.
         self.end_takes_now();
         let sample_rate = player.sample_rate();
@@ -795,6 +786,16 @@ impl Session {
         }
         // A new engine hears the tracks armed before it.
         self.send_armed();
+    }
+
+    /// A new or resumed engine hears settings changed while it was inactive.
+    fn configure_player(&self, player: &mut Player) {
+        let _ = player.send(suhina_engine::LaunchCommand::SetQuantization(self.live.quantization));
+        let (on, db, sound) = self.live.metronome;
+        let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
+        let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
+        let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
+        let _ = player.send(suhina_engine::LaunchCommand::SetImplicitTones(self.live.implicit_tones));
     }
 
     /// Synchronizes recording and monitoring targets after a new player, arm, edit or undo.
@@ -936,7 +937,99 @@ impl Session {
         self.sync.output_open_failed = false;
         self.end_takes_now();
         drop(self.sync.player.take());
+        if let Some(suspended) = self.sync.suspended.take() {
+            // A retained processor may wait for its sandbox during destruction.
+            let _ =
+                std::thread::Builder::new().name("suhina-project-audio-close".into()).spawn(move || drop(suspended));
+        }
         self.plugins.stop_all();
+    }
+
+    /// Parks a project's renderer while handing its open device to the caller.
+    pub(crate) fn suspend_output(&mut self) -> Result<Option<Player>, CommandError> {
+        if self.sync.player.is_none() {
+            return Ok(None);
+        }
+        if !self.sync.player.as_ref().is_some_and(Player::can_park) {
+            self.release_player();
+            return Ok(None);
+        }
+        self.end_takes_now();
+        let parked = match self.sync.player.as_mut() {
+            Some(player) => player.park(),
+            None => return Ok(None),
+        };
+        let idle = match parked {
+            Ok(idle) => idle,
+            Err(error) => {
+                self.release_player();
+                self.sync.output_open_failed = true;
+                return Err(CommandError(error));
+            }
+        };
+        self.finish_suspended_recording();
+        self.sync.suspended = self.sync.player.take();
+        self.plugins.place_editors(&[]);
+        Ok(Some(idle))
+    }
+
+    /// Uses the already open device, preserving this session's plug-in instances.
+    pub(crate) fn resume_output(&mut self, idle: &mut Player) -> Result<(), CommandError> {
+        self.sync.output_open_failed = false;
+        let changed_rate =
+            self.sync.suspended.as_ref().is_some_and(|player| player.sample_rate() != idle.sample_rate());
+        if changed_rate && let Some(player) = self.sync.suspended.take() {
+            match player.reconfigure_suspended(
+                &self.project,
+                &self.audio.pool,
+                &self.device_files.assets,
+                idle.sample_rate(),
+            ) {
+                Ok(player) => self.sync.suspended = Some(player),
+                Err(error) => {
+                    self.plugins.stop_all();
+                    return Err(CommandError(error));
+                }
+            }
+        }
+        let retained = self.sync.suspended.is_some();
+        if !retained {
+            self.sync_device_files();
+            self.sync.suspended = Some(
+                Player::prepare(&self.project, &self.audio.pool, &self.device_files.assets, idle.sample_rate())
+                    .map_err(CommandError)?,
+            );
+        }
+        if let Some(player) = self.sync.suspended.as_mut() {
+            if retained && !changed_rate {
+                player.settle_suspended();
+                player.set_audio(std::sync::Arc::new(self.audio.pool.clone()));
+                player.set_device_assets(std::sync::Arc::new(self.device_files.assets.clone()));
+                player.update(&self.project)?;
+            }
+            if let Err(error) = player.resume(idle) {
+                self.release_player();
+                self.sync.output_open_failed = true;
+                return Err(CommandError(error));
+            }
+        }
+        if let Some(mut player) = self.sync.suspended.take() {
+            if retained && !changed_rate {
+                self.configure_player(&mut player);
+                self.sync.player = Some(player);
+                self.audio.changed = false;
+                self.device_files.changed = false;
+                self.sync.behind = false;
+                self.send_armed();
+            } else {
+                self.attach_player(player);
+            }
+        }
+        if changed_rate {
+            self.retain_plugins_at_player_rate();
+        }
+        self.sync.output_open_failed = false;
+        Ok(())
     }
 
     /// The project's running plug-ins (`Rack`): their progress, ARA state and edits.
@@ -954,6 +1047,9 @@ impl Session {
     /// from the session's thread, as the window does every frame. Returns what the user should
     /// hear about.
     pub fn sync_plugins(&mut self) -> Vec<String> {
+        if self.sync.suspended.is_some() {
+            return Vec::new();
+        }
         let notices = self.plugins.sync(&self.project, &self.audio.pool, self.sync.player.as_mut());
         crate::devices::keep_plugin_params_in_step(self);
         notices

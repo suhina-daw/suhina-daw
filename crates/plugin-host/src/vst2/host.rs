@@ -787,6 +787,16 @@ impl Vst2Plugin {
         Ok(self.latency)
     }
 
+    pub(crate) fn reset_audio(&mut self) -> Result<u32, String> {
+        if !self.stop_audio(crate::UNLOAD_WAIT) {
+            return Err("its audio thread does not stop".into());
+        }
+        let served =
+            self.audio.take().ok_or("it has no audio thread")?.join().map_err(|_| "its audio thread failed")?;
+        self.start_audio(served)?;
+        Ok(self.latency)
+    }
+
     /// Asks the audio thread to stop and waits up to `wait` for it; whether it stopped.
     pub(crate) fn stop_audio(&mut self, wait: Duration) -> bool {
         crate::audio_stopped(&self.stop, self.audio.as_ref(), wait)

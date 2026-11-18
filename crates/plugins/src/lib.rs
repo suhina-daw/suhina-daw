@@ -173,6 +173,32 @@ pub struct Seat {
 }
 
 impl PluginAudio {
+    /// Clears a quiescent instance's audio state while retaining its preset and editor.
+    /// Control thread only: the host joins and restarts its existing audio worker.
+    pub fn reset_audio(&mut self, timeout: Duration) -> Result<(), PluginError> {
+        let shared = self.group.upgrade().ok_or_else(|| PluginError::Protocol("the plug-in was unloaded".into()))?;
+        let deadline = Instant::now() + timeout;
+        let mut group = lock_until(&shared, deadline).ok_or(PluginError::Timeout("reset_audio"))?;
+        if group.generation != self.process {
+            return Err(PluginError::Protocol("the host process was replaced".into()));
+        }
+        let instance = self.instance;
+        let reply = group.request(
+            Some(instance),
+            &Message::ResetAudio { instance },
+            "reset_audio",
+            deadline.saturating_duration_since(Instant::now()),
+            |m| matches!(m, Message::AudioReset { instance: i, .. } if *i == instance),
+        )?;
+        match reply {
+            Message::AudioReset { latency, .. } => {
+                group.note(&Message::LatencyChanged { instance, latency });
+                Ok(())
+            }
+            _ => Err(PluginError::Protocol("expected audio reset acknowledgement".into())),
+        }
+    }
+
     /// Reconfigures a quiescent audio link. Not real-time safe: call only after the old
     /// renderer has stopped and before the new one starts. The control half may stay on
     /// its session thread, including while an editor is open.

@@ -1353,7 +1353,6 @@ fn check_type_sizes() {
     );
 }
 
-
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
@@ -1371,11 +1370,18 @@ mod lifecycle_tests {
             driver_occupied: Arc::clone(&asio.driver_occupied),
         });
         *asio.loaded_driver.lock().unwrap() = Arc::downgrade(&inner);
+        let shared = asio.load_driver("test driver").unwrap();
+        assert!(Arc::ptr_eq(&inner, &shared.inner));
+        assert!(!shared.destroy().unwrap(), "another strong owner still exists");
+        assert!(asio.driver_occupied.load(Ordering::Acquire));
         // This is also the real Driver::destroy path: the weak reference can no
         // longer upgrade, but the owned DriverInner has not been torn down yet.
         let pending = Arc::try_unwrap(inner).unwrap();
         assert!(asio.loaded_driver().is_none());
-        assert!(matches!(asio.load_driver("test driver"), Err(LoadDriverError::DriverAlreadyExists)));
+        assert!(matches!(
+            asio.load_driver("test driver"),
+            Err(LoadDriverError::DriverAlreadyExists)
+        ));
         drop(pending);
         assert!(!asio.driver_occupied.load(Ordering::Acquire));
     }

@@ -322,6 +322,22 @@ pub(crate) struct Live {
 }
 
 impl Live {
+    /// Discards notes from the previous activation after its sender disconnects.
+    pub(crate) fn suspend(&mut self) {
+        if let Some(consumer) = self.consumer.as_mut() {
+            for _ in 0..LIVE_QUEUE {
+                if consumer.pop().is_err() {
+                    break;
+                }
+            }
+        }
+        self.keys.fill(Keys::EMPTY);
+        self.keys_count = 0;
+        self.waiting_count = 0;
+        self.next_due = u64::MAX;
+        self.cadence = None;
+    }
+
     pub(crate) fn new(sample_rate: u32) -> Self {
         Self {
             consumer: None,

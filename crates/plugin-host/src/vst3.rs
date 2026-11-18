@@ -917,6 +917,11 @@ impl Vst3Plugin {
         self.reactivate_at(None)
     }
 
+    pub(crate) fn reset_audio(&mut self) -> Result<u32, String> {
+        self.latency = self.reactivate()?;
+        Ok(self.latency)
+    }
+
     pub(crate) fn reconfigure(&mut self, sample_rate: f64) -> Result<u32, String> {
         if self.sample_rate == sample_rate {
             return Ok(self.latency);
