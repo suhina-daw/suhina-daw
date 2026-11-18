@@ -972,6 +972,77 @@ fn a_selected_device_s_outline_runs_along_its_panel_s_edge() {
     crate::kit::native_css::set_user_sheet(None);
 }
 
+/// A device group's panel lays out inside its `device` border and padding, in a row and stacked,
+/// as a device's panel does: its header and its rows sit in its content box, the panel grows by
+/// them, and its selection outline still runs along its edge (#1477).
+#[test]
+fn a_group_s_panel_lays_out_inside_its_border_and_padding() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    use suhina_engine::model::{Branch, Channel, ChannelId, Device, DeviceGroup, Track};
+    let mut project = Project::default();
+    project.tracks.push(Track { channel: Some(ChannelId(1)), ..Track::new(TrackId(1), "T") });
+    let mut channel = Channel::new(ChannelId(1), "T");
+    channel.devices = vec![Device::group("G", DeviceGroup::with_branches(vec![Branch::new("B")]))];
+    project.channels.push(channel);
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!("the track's devices") };
+    let selected = [(TrackId(1), chain.devices[0].at.clone())];
+    let detail = Detail::Devices(chain);
+    let panel_of = |sheet: Option<&str>, stacked: bool| {
+        crate::kit::native_css::set_user_sheet(sheet.map(Into::into));
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(600.0, 300.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                let _frame = crate::kit::native_css::frame(ui);
+                let _window = crate::kit::element::WINDOW.enter();
+                let mut places = Vec::new();
+                if stacked {
+                    show_stack(ui, &detail, &selected, actions, &mut places);
+                } else {
+                    show_row(ui, &detail, &selected, actions, &mut places);
+                }
+            },
+            Vec::new(),
+        );
+        harness.run_steps(3);
+        let panel = harness.get_by_label("Device G").rect();
+        let inner: Vec<Rect> = ["Bypass G", "Remove G", "Show branch B", "Add a branch to G"]
+            .into_iter()
+            .map(|label| harness.get_by_label(label).rect())
+            .collect();
+        let outline = harness.output().shapes.iter().find_map(|s| match &s.shape {
+            egui::Shape::Rect(r)
+                if r.stroke.color == crate::kit::theme::studio("selection") && r.stroke.width > 0.0 =>
+            {
+                Some(r.rect)
+            }
+            _ => None,
+        });
+        crate::kit::native_css::set_user_sheet(None);
+        (panel, inner, outline)
+    };
+    for stacked in [false, true] {
+        let (plain, plain_inner, _) = panel_of(None, stacked);
+        let (panel, inner, outline) =
+            panel_of(Some("device[kind=\"group\"] { padding: 10px; border-width: 2px; }"), stacked);
+        let content = panel.shrink(12.0);
+        for rect in &inner {
+            assert!(content.contains_rect(*rect), "stacked {stacked}: {rect:?} inside the content box {content:?}");
+        }
+        // The header's switch and the last row move in by the border and padding.
+        assert_eq!(inner[0].min - plain_inner[0].min, Vec2::splat(12.0), "stacked {stacked}: the switch");
+        assert_eq!(inner[3].left() - plain_inner[3].left(), 12.0, "stacked {stacked}: + Branch");
+        // The panel grows by them: taller stacked, wider in a row (where the row's height is the
+        // tallest panel's or the row's own).
+        if stacked {
+            assert_eq!(panel.height() - plain.height(), 24.0, "stacked: taller by the insets");
+        } else {
+            assert_eq!(panel.width() - plain.width(), 24.0, "row: wider by the insets");
+            assert!(panel.height() >= inner[3].bottom() - panel.top() + 12.0, "row: room for the last row");
+        }
+        assert_eq!(outline, Some(panel), "stacked {stacked}: the outline runs along the panel's edge");
+    }
+}
+
 fn with_plugin() -> Project {
     let mut project = demo_project();
     project.channels[0]

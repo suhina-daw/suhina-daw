@@ -41,9 +41,18 @@ pub(super) fn flattened<'a>(ui: &Ui, track: TrackId, devices: &'a [DeviceBox], o
 }
 
 /// How tall a group's panel is: its header (with Mix and Gain), a row per branch and the row
-/// that adds one.
-pub(super) fn group_height(group: &GroupBox) -> f32 {
-    ROW + PAD + (group.branches.len() + 1) as f32 * BRANCH_ROW + PAD
+/// that adds one, inside the border and padding (`insets`, from [`group_element`]) around them.
+pub(super) fn group_height(group: &GroupBox, insets: [f32; 4]) -> f32 {
+    insets[0] + ROW + PAD + (group.branches.len() + 1) as f32 * BRANCH_ROW + PAD + insets[2]
+}
+
+/// A group's panel to the theme: a `device[kind="group"]`, `[selected]` while selected and
+/// `[muted]` while bypassed, as it is painted and as its size is worked out.
+pub(super) fn group_element(device: &DeviceBox, selected: bool) -> crate::kit::element::Builder<'static> {
+    crate::kit::element::DEVICE
+        .attribute("kind", "group")
+        .attr(crate::kit::element::Selected, selected)
+        .attr(crate::kit::element::Muted, !device.enabled)
 }
 
 /// A value dragged sideways in a group's panel: the change a drag this frame makes, in
@@ -179,13 +188,12 @@ pub(super) fn group_panel(
         menus::device_menu(ui, track, &device.at, Some(group.branches.len()), device.is_builtin, &device.name, actions)
     });
     // A `device` to the theme, `[kind="group"]`, as a device's panel is; `device-header` its header.
-    let device_el = crate::kit::element::DEVICE
-        .attribute("kind", "group")
-        .attr(crate::kit::element::Selected, selected)
-        .attr(crate::kit::element::Muted, !device.enabled)
-        .enter();
+    let device_el = group_element(device, selected).enter();
     let fill = crate::detail::detail_fill("panel");
-    device_el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
+    // What the panel holds goes in its content box, inside its border and padding, as in a
+    // device's panel (#1336, #1477).
+    let panel_box = rect;
+    let rect = device_el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill }).content;
     let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
     let (bright, dim, off_name) = {
         let header_el = crate::kit::element::DEVICE_HEADER.enter();
@@ -447,9 +455,12 @@ pub(super) fn group_panel(
     if response.clicked() {
         actions.push(Action::new("branch.add", json!({ "track": track.0, "device": at })));
     }
+    // The selection outline along the panel's edge, round its border box, once the box is
+    // closed, so a panel that hides its overflow does not cut it at its padding box.
     if selected {
+        device_el.close_box();
         let edge = device_el.accent();
-        painter.rect_stroke(rect, 1.0, theme::hairline(edge), egui::StrokeKind::Inside);
+        painter.rect_stroke(panel_box, 1.0, theme::hairline(edge), egui::StrokeKind::Inside);
     }
     clicked
 }

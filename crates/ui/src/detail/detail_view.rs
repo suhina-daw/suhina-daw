@@ -144,7 +144,16 @@ fn chain_row(
         .iter()
         .map(|device| {
             if let Some(group) = &device.group {
-                return (GROUP_WIDTH, group_height(group), false, 0.0);
+                // Its border and padding round what it holds, in the state it is painted in, as
+                // a device's do (#1477).
+                let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+                let [top, right, bottom, left] = group_element(device, lit).enter().insets();
+                return (
+                    GROUP_WIDTH + left + right,
+                    group_height(group, [top, right, bottom, left]),
+                    false,
+                    top + bottom,
+                );
             }
             // An editor embedded in the panel is placed for devices on the track itself.
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
@@ -676,12 +685,14 @@ fn chain_stack_in(
     let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     for device in entries {
         if let Some(group) = &device.group {
-            let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group)));
+            let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+            let insets = group_element(device, lit).enter().insets();
+            let rect =
+                Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group, insets)));
             y = rect.bottom() + 1.0;
             if rect.top() > visible.bottom() || rect.bottom() < visible.top() {
                 continue;
             }
-            let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
             let clicked =
                 group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions);
             inside_group_mark(&painter.with_clip_rect(area), rect, &device.at);
