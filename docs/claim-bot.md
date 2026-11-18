@@ -245,9 +245,9 @@ today; until the gate exists, the bot names the options the field does have.
 The workflow's `GITHUB_TOKEN` has no access to a project owned by an organization, so the job needs
 a token of its own, the secret **`PROJECT_TOKEN`** in the environment **`project-board`** (Settings →
 Environments → `project-board` → Add environment secret). The environment's *Deployment branches and
-tags* allow `main` only, so a workflow pushed to another branch, or run by hand from one, cannot read
-the token; `claim.yml` (on `issue_comment`) and `project-sync.yml` run from `main`. It is not a
-repository secret, which a workflow on any branch could read.
+tags* allow `main` and `next` only, so a workflow pushed to another branch, or run by hand from one,
+cannot read the token; `claim.yml` (on `issue_comment`) and `project-sync.yml` run from `next`, the
+default branch. It is not a repository secret, which a workflow on any branch could read.
 
 - **Fine-grained, recommended:** owned by the organization, with **Organization permissions →
   Projects: Read and write**, and on `suhina-daw/suhina-daw` the repository permissions

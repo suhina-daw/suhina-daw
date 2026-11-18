@@ -73,7 +73,7 @@ The front matter is the only status; an ADR has no `- **Status:**` line in its t
 A decision also has `built: no | partly | yes`, how far the work has got. The detail is in the spec
 the ADR points at, not in the ADR.
 
-`last_verified` is stamped on `main` after a merge (`python scripts/docs.py stamp`); a pull
+`last_verified` is stamped on `next` after a merge (`python scripts/docs.py stamp`); a pull
 request leaves the line alone.
 
 ## Checks

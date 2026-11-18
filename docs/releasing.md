@@ -96,13 +96,13 @@ binaries are not signed yet.
 
 ## Nightly
 
-The nightly is how people try the current state between releases: a build of `main`, not a
-release. Running the workflow from `main` with **nightly** checked builds `main` and publishes it
-as the release **`nightly`**, replacing the previous one: its release and tag are deleted and made
+The nightly is how people try the current state between releases: a build of `next`, where pull
+requests merge, not a release. Running the workflow from `next` with **nightly** checked builds
+`next` and publishes it as the release **`nightly`**, replacing the previous one: its release and tag are deleted and made
 again on the new commit, published at once without a draft. The workflow has no schedule of its
 own: a scheduled agent starts it twice a day (`gh workflow run release.yml -f nightly=true`) when
-`main` has moved since the last nightly (`next`, once it is the default branch:
-[The next branch](#the-next-branch)), or a maintainer does by hand. A second agent then rewrites
+`next` has moved since the last nightly, or a maintainer does by hand; once every package is
+published, `main` follows ([The next branch](#the-next-branch)). A second agent then rewrites
 its notes and posts it to Discord (see [Nightly notes](#nightly-notes)).
 
 The nightly's version is the workspace version without a pre-release suffix, the date and the
@@ -154,14 +154,13 @@ never posted twice. A maintainer can run the workflow by hand with the same inpu
 Until Suhina has a release of its own (published, not a release candidate), the nightly is the
 repository's **latest** release, so the Releases box on the repository page offers its downloads.
 From the first release on, the nightly is published as a pre-release that never becomes the
-latest. Nothing is promoted from it: a release is made from a version tag as above.
+latest. A release is never made from it: it is made from a version tag as above.
 
 ## The next branch
 
-Planned, not yet in use: the workflows are ready for it, the settings below are not made. Pull
-requests are to merge into an integration branch, `next`, and `main` to hold only code that
-built and packaged on Linux, Windows and macOS, so that every nightly is green and a pull request
-need not wait for a test build of its own.
+In use since 2026-11-18. Pull requests merge into an integration branch, `next`, and `main` holds
+only code that built and packaged on Linux, Windows and macOS, so that every nightly is green and a
+pull request need not wait for a test build of its own.
 
 1. Pull requests target `next`, the repository's default branch, and merge there through the
    merge queue with `ci` as today. New branches start from `next`. Test builds stay as they are:
@@ -172,19 +171,24 @@ need not wait for a test build of its own.
    to the commit the nightly was built from. It is a fast-forward only: if `main` is not an
    ancestor of that commit, GitHub refuses and `main` stays. A failed build or publish never
    reaches the job, and `main` waits for the next night; the fix merges into `next` like any other.
+   Nothing is cherry-picked and no commit is made: `main` gets the very commits of `next`, one
+   squashed commit per pull request, with the same hashes, and only lags behind it.
 
-The workflows follow the repository's default branch, so they behave as before while `main` is
-the default and change over with it: `ci.yml`, `test-build.yml` (`cache`) and `docs-generated.yml`
-run on a push to the default branch and save its caches, and do nothing on a push to `main` once
-`next` is the default (the nightly moving it); a pull request's test build compares it with its
-own base branch (`scripts/build_reuse.py`, `branch_update.py`), and `ready to merge` queues a pull
+The rulesets `main` and `main merge queue` keep their names but target `~DEFAULT_BRANCH`, so they
+apply to `next`; `main follows the nightly` keeps everyone but the app `suhina-docs-bot` from
+moving `main`.
+
+The workflows follow the repository's default branch, `next`: `ci.yml`, `test-build.yml`
+(`cache`) and `docs-generated.yml` run on a push to the default branch and save its caches, and do
+nothing on a push to `main` (the nightly moving it); a pull request's test build compares it with
+its own base branch (`scripts/build_reuse.py`, `branch_update.py`), and `ready to merge` queues a pull
 request into `next` without waiting for a test build of it (`ready-to-merge.yml`), since the
 nightly builds `next` on every system before `main` moves. `docs-generated.yml` keeps one run at
 a time per branch, so a push to `main` never drops a waiting run of `next`. `nightly-notes.yml`
 still runs from `main`.
 
-To turn it on, in this order, after the pull request that prepared the workflows is merged. `main`
-must gain nothing that `next` lacks: a single commit on `main` that is not on `next` keeps
+How it was turned on, in this order, kept for setting it up again. `main` must gain nothing that
+`next` lacks: a single commit on `main` that is not on `next` keeps
 `promote` from ever moving `main` again (it is a fast-forward only), until someone moves `next` or
 `main` by hand.
 
@@ -545,9 +549,9 @@ else. No mention in a post pings anyone.
 
 The Discord secrets, `DISCORD_BOT_TOKEN` among them, are environment secrets rather than repository
 secrets, so a workflow pushed to another branch cannot read them. The environment's *Deployment
-branches and tags* allow `main` and tags matching `v*`: `discord.yml` runs on its tag for a release
-event, the other jobs run on `main`. Only maintainers may create `v*` tags (the `release tags`
-ruleset restricts their creation), so no one else can make a ref that reaches them. The jobs say
+branches and tags* allow `main`, `next` and tags matching `v*`: `discord.yml` runs on its tag for a
+release event, the other jobs run on `next`, the default branch. Only maintainers may create `v*`
+tags (the `release tags` ruleset restricts their creation), so no one else can make a ref that reaches them. The jobs say
 `deployment: false`, so the environment adds no deployment to a pull request's timeline.
 
 | Channel | Secret | Posts |

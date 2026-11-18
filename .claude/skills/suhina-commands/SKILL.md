@@ -46,7 +46,7 @@ Every change a user makes to a project is a command (AGENTS.md rule 6). The regi
    (missing, wrong type, out of range, an id that does not exist). A new test file gets a
    `mod` line in `crates/session/tests/main.rs`.
 6. **Documents:** the spec of the behaviour in `docs/spec/`; `docs/mcp.md` only if agents use it
-   in a new way. `docs/commands.md` is generated on `main`, so leave it alone.
+   in a new way. `docs/commands.md` is generated on `next`, so leave it alone.
 
 ## The menu item or key that runs it
 

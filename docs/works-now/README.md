@@ -15,7 +15,7 @@ docs/works-now/<section>/<name>.md
   lines indented by two spaces, no blank lines and no headings.
 
 After the merge, [`docs-generated.yml`](../../.github/workflows/docs-generated.yml) adds each file
-to the end of its section on `main` and deletes it (`python scripts/works_now.py fold`). CI checks
+to the end of its section on `next` and deletes it (`python scripts/works_now.py fold`). CI checks
 the files with `python scripts/works_now.py check`. A change to a bullet already in `ROADMAP.md`
 (rewording it, or removing a limit it names) is still made in `ROADMAP.md`.
 

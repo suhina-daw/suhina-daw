@@ -125,16 +125,16 @@ takes the label off, and the new commits need a new request. On a pull request f
 this repository, a maintainer may add the `test-build` label instead; on one from a fork the label
 alone is refused, since the fork's own workflow files decide what its run builds. `/test-build` first reuses a
 running build of that commit or a successful build whose requested packages are still available.
-A verified main-only update can reuse the previous build. It starts another build only when no
-suitable build is available.
+A verified update that only merges `next` in can reuse the previous build. It starts another
+build only when no suitable build is available.
 
 ## Merging many pull requests
 
 For maintainers. Merge through the merge queue: on each green pull request press **Merge when
-ready**, and the queue tests the queued pull requests together on top of `main`, in groups, and
+ready**, and the queue tests the queued pull requests together on top of `next`, in groups, and
 merges them in order, so no one presses *Update branch* by hand. To try several pull requests in
 one build before they merge, run Actions › Test build › Run workflow with their numbers
-(`302 303 304`). A push that only merges `main` into a pull request is not built again; its last
+(`302 303 304`). A push that only merges `next` into a pull request is not built again; its last
 test build stays linked. [`docs/releasing.md` › Merging many pull requests](docs/releasing.md#merging-many-pull-requests)
 says how the queue is set up and what runs in it.
 
@@ -144,7 +144,7 @@ added on and turns on *Merge when ready* for that commit: the queue takes the pu
 `ci` is green and every review thread is resolved (CodeRabbit's too), and a red check stops it.
 Adding the label is the maintainer's approval of that exact commit, regardless of the author, and
 it needs a finished test build of that commit: a successful `/test-build` run whose packages are
-still available, or one of an earlier head the branch has only merged `main` into since. Without
+still available, or one of an earlier head the branch has only merged `next` into since. Without
 one the label comes off with a comment asking for `/test-build`; an existing build is reused, so
 asking again starts no second packaging run. A pull request that changes nothing in the binaries (only documentation, scripts or workflows) needs no build, and neither does one that changes only the user interface (`crates/ui`, `crates/ui-gpu`, `crates/style`, `crates/theme-package`, `apps/theme-render`; `/test-build` still builds it). Code-owner approval is still required for
 protected paths. A push by anyone
@@ -361,11 +361,11 @@ any other work.
 
 - **A new built-in effect or instrument** follows [ADR 0004](docs/decisions/0004-built-in-devices.md):
   propose it with the *New effect or instrument* issue form, then open the pull request with the
-  [device template](https://github.com/suhina-daw/suhina-daw/compare/main...main?template=device.md)
+  [device template](https://github.com/suhina-daw/suhina-daw/compare/next...next?template=device.md)
   (choose your branch on that page).
 - **Presets** for them go in `presets/<device id>/` under CC0 1.0
   ([ADR 0014](docs/decisions/0014-stock-presets.md)); open the pull request with the
-  [preset template](https://github.com/suhina-daw/suhina-daw/compare/main...main?template=preset.md).
+  [preset template](https://github.com/suhina-daw/suhina-daw/compare/next...next?template=preset.md).
   Presets need no clean-room review; their names don't name commercial products, and banks or
   files from commercial products are not accepted.
 
