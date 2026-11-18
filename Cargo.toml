@@ -125,7 +125,10 @@ suhina-plugin-host = { opt-level = 0 }
 suhina-plugins = { opt-level = 0 }
 suhina-project-file = { opt-level = 0 }
 suhina-session = { opt-level = 0 }
-suhina-style = { opt-level = 0 }
+# The style engine stays at 1: the window tests and the theme renderer's drawings run it thousands
+# of times (theme-render's every_built_in_theme_paints_each_scene_as_recorded took 86 s on 12
+# threads with it at 0, 47 s at 1, measured 2026-11-18), and it compiles quickly. suhina-ui at 1
+# saved little more and took 3½ to 6 minutes more to compile on CI's Windows runners.
 suhina-theme-package = { opt-level = 0 }
 suhina-ui = { opt-level = 0 }
 suhina-ui-gpu = { opt-level = 0 }

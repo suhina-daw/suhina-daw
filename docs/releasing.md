@@ -325,6 +325,15 @@ the window tests (`crates/ui/tests/main.rs`). The crates that process sound stay
 at 0, `suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the
 list if it processes no sound and takes long to compile.
 
+The style engine, `suhina-style`, stays at 1 although it processes no sound: the window tests and
+theme-render's drawings run it thousands of times, and it compiles quickly. At 0, theme-render's
+`painted::every_built_in_theme_paints_each_scene_as_recorded` took 510 seconds on a Linux runner
+and held one test partition for most of its run; with it at 1, that partition's tests took 133
+seconds instead of 535 on Linux and 111 instead of 393 on Windows, and the compile did not grow
+(2026-11-18, #1553). `suhina-ui`, `suhina-ui-gpu` and `suhina-theme-package` at 1 as well made the
+tests a little faster still, but `suhina-ui` took 3½ to 6 minutes more to compile on Windows, and
+the slowest Windows partition went from 13½ to 19½ minutes.
+
 **How CI runs the tests.** `ci.yml`'s `test` job runs the workspace's tests with
 [cargo-nextest](https://nexte.st), split into three partitions on Linux and three on Windows, six
 runners at once; `check` runs clippy, the documentation and the vendored code's tests beside them,
