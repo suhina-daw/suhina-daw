@@ -66,4 +66,4 @@
 **Documented**
 - [ ] The documents that describe what changed are updated (`python scripts/docs.py impact`).
 - [ ] Generated files are left alone: the `last_verified` dates, `docs/INDEX.md` and
-      `docs/commands.md` are written on `main` after the merge.
+      `docs/commands.md` are written on `next` after the merge.
