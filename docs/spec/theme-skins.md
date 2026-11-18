@@ -1294,11 +1294,16 @@ the theme's `id` and `name`, and under `files` every other entry's path and SHA-
 `suhina-cli theme validate` all use it, so they accept and refuse the same packages.
 
 **Seeing a theme without the app.** `suhina-cli theme render <theme-folder | built-in-theme-id> [--backdrop <image.png>]
-[--out <folder>] [--scale <n>] [--scene <name>] [--budget]` (or `cargo run -p suhina-theme-render -- …` from the source) draws the theme in
+[--out <folder>] [--scale <n>] [--scene <name>] [--hover <label> | --press <label>] [--budget]` (or `cargo run -p suhina-theme-render -- …` from the source) draws the theme in
 a fixed set of scenes of the demo project: the Launcher and Arrangement views, the piano roll,
 the browser (its places, a search, the plug-ins and the sample map), a MIDI clip's and an audio
 clip's panels, a device group's panel, every device in a row and each expanded panel, a menu,
-Settings, a tooltip, and hover and selected states. Each scene is `<scene>.raw.png`, the window's own pixels with their alpha, and
+the toolbar's Quantize, Count-in, time signature and grid menus, the CPU read-out (held at 25%,
+since the renderer plays no audio), a track's devices beside the view (the device layout set to
+Stack), Settings and the New theme dialog over it, a tooltip, and hover and selected states.
+`--hover <label>` rests the pointer on the control with that label once each scene is driven, and
+`--press <label>` holds its button down there, so any control's `:hover` and `:active` can be
+seen without a scene of their own; a scene with no such control is not drawn and says so. Each scene is `<scene>.raw.png`, the window's own pixels with their alpha, and
 `<scene>.png`, those over the backdrop (bright bands by default), blurred where the system blurs
 behind a see-through window. It renders as a window that composites alpha does, so a hole a see-through theme leaves
 shows. `launcher-scrolled` and `arrangement-scrolled` draw both views scrolled down and along on
@@ -1318,6 +1323,16 @@ depends on the one before. A change that differs fails the test, naming the scen
 themes; one that means to change a look records the new digests with `SUHINA_BLESS=1` and says why,
 and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare before and after. The About
 dialog, which shows the build's commit, is left out.
+
+**The texts a theme cuts off are held too** (#1548). The same drawings are read for every text
+shortened with "…" to fit, wrapped onto another line where it has no line break, or painted partly
+outside its clip; a text painted twice at one place, each copy clipped to one side (a value over
+a fill, in two colours), counts as one with its clips joined, and the scrolled scenes' clipped
+texts are left out, since a view scrolled along cuts at its edge on purpose. Some cuts are meant
+and some are bugs not yet fixed, so `apps/theme-render/tests/cut.txt` holds each theme's cut
+texts, each once under the first scene by name that shows it: a change that cuts a new text, or
+stops cutting one, fails until the list is recorded with `SUHINA_BLESS=1`, and the pull request
+says why.
 
 **Every scene starts from a state that is the same on every machine** (#1438). A scene's window
 is `suhina_theme_render::fixed_app()`, not `App::new()`: its plug-in library is a committed
