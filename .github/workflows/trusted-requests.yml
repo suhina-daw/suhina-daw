@@ -197,12 +197,13 @@ jobs:
                 throw new Error('This request already authorized another commit; post a new comment.');
               }
               // One reply is both the answer and the proof; the proof stays last for the build's match.
-              if (!comments.some(c => bot(c) && c.body?.endsWith(proof))) {
+              const hadProof = comments.some(c => bot(c) && c.body?.endsWith(proof));
+              if (!hadProof) {
                 await github.rest.issues.createComment({ ...scope,
                   body: `Requested a test build of ${request.sha}.\n\n${attribution}\n\n${marker}\n${proof}` });
               }
-              // A rerun after the label went on repeats nothing; one that failed before it adds it.
-              if (done && (pr.labels || []).some(l => l.name === 'test-build')) return;
+              // Only an earlier build proof can suppress redispatch; a conflict/reuse reply cannot.
+              if (hadProof && (pr.labels || []).some(l => l.name === 'test-build')) return;
               // Remove/re-add also lets a new request retry a failed build of the same commit.
               try { await github.rest.issues.removeLabel({ ...scope, name: 'test-build' }); }
               catch (error) { if (error.status !== 404) throw error; }

@@ -238,6 +238,27 @@ class TrustedRequests(unittest.TestCase):
         reused = self.act(request=request, reuse=ready, pr={'mergeable': False})
         self.assertIn('Available', reused['calls'][0]['args']['body'])
 
+    def test_conflict_reply_does_not_suppress_dispatch_after_conflict_clears(self):
+        request = {'command':'test-build','actor':'Trusted','comment':12,'number':4,'sha':'a'*40}
+        labels = [{'name':'test-build'}]
+        blocked = self.act(request=request, pr={'mergeable':False, 'labels':labels})
+        self.assertIsNone(blocked['error'])
+        self.assertEqual([c['name'] for c in blocked['calls']], ['comment'])
+        replies = [blocked['calls'][0]['args']]
+        self.assertNotIn('<!-- trusted-build ', replies[0]['body'])
+        # A base change can clear the conflict without changing the authorized head.
+        retried = self.act(request=request, comments=replies,
+                           pr={'mergeable':True, 'labels':labels})
+        self.assertIsNone(retried['error'])
+        self.assertEqual([c['name'] for c in retried['calls']],
+                         ['comment', 'removeLabel', 'addLabels'])
+        replies.append(retried['calls'][0]['args'])
+        self.assertTrue(replies[-1]['body'].endswith('<!-- trusted-build '+ 'a'*40 +' Trusted 12 -->'))
+        completed = self.act(request=request, comments=replies,
+                             pr={'mergeable':True, 'labels':labels})
+        self.assertIsNone(completed['error'])
+        self.assertEqual(completed['calls'], [])
+
     def test_reuse_never_borrows_another_heads_result(self):
         request = {'command':'test-build','actor':'Trusted','comment':12,'number':4,'sha':'a'*40}
         result = self.act(request=request, reuse={'head':'b'*40, 'state':'ready'})
