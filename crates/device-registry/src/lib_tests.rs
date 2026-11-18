@@ -546,5 +546,8 @@ fn the_amp_modelers_artwork_is_embedded_from_its_files() {
         );
         assert!(toggle.drawing.is_empty(), "{id} draws as a button, not a drawing of its own");
     }
+    // The panel's own sheet styles them: its buttons take no theme artwork (`image: none`).
+    let style = canvas.style.as_deref().expect("the amp has a style sheet");
+    assert!(style.contains("button { image: none;"), "{style}");
     assert!(layout_errors().is_empty(), "{:?}", layout_errors());
 }

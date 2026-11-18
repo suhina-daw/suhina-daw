@@ -420,12 +420,22 @@ The Amp Modeler's canvas draws an amp head: its artwork (`devices/nam-amp-modele
 frame, the grille with the dark slots its controls sit in, the logo and the brushed plate under
 the knobs) is an image layer under the controls, at three times the canvas's points so it stays
 sharp on a high-DPI screen; the folder's `README.md` records its author and licence. What the
-artwork does not hold follows the theme: the texts, the knobs' arcs and pointers, the buttons'
-fills, the dropdowns and the steppers take the palette's colours, and a theme's
-`device.knob.body` and `device.knob.pointer` artwork replaces the knobs' faces, else the theme's
-own `knob.body` and `knob.pointer` artwork does ([theme-skins.md](theme-skins.md)). EQ, HQ and
-Mono are the canvas's buttons, so a theme's `button` artwork and rules (its hover and
-`[checked]` looks) reach them, and they are lit in the accent while on (#1500). Top to bottom:
+artwork does not hold follows the theme: the texts, the dropdowns and the steppers take the
+palette's colours. The knobs keep the device's own face, which no theme's knob artwork replaces;
+their pointer line takes `knob-pointer { color }` where the theme gives one. EQ, HQ and Mono are
+the canvas's buttons, styled by the panel's own sheet (`ui.style`,
+[sd-device-format.md](sd-device-format.md) › Panel style sheets): a dark bezel with a cream
+label, lit orange while on (`button[checked]`), and `image: none`, so no theme's button artwork
+replaces that look. The knobs' value arcs take the sheet's orange `accent-color` and the rest of
+the track its warm grey `border-color`. The dropdowns and the Mid Freq field sit in boxes of the
+panel's own colours; the file steppers take the buttons' bezel. The sheet sets every text's
+`font-size`, so a theme with larger text does not push the captions past their boxes. The head
+has two looks, chosen by the colour scheme the theme variant declares
+([theme-skins.md](theme-skins.md)): black tolex with dark boxes, cream text and dark grey buttons
+for a dark theme; cream tolex, a light grille and a bright plate with cream boxes, dark text and
+light metal buttons for a light one. The sheet hides the other look's artwork and boxes with
+`display: none` under `@media (prefers-color-scheme: …)` and gives each colour its two values with
+`light-dark()`; the lit orange stays the same in both. Top to bottom:
 
 1. **The file row** — in the grille's top slots, left to right:
    - **The pack**: a dropdown over the folder's packs ([Folders](#packs) › Packs: a subfolder of

@@ -193,76 +193,6 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     assert!(actions.iter().any(|action| action.id == "device.setParam" && action.params["param"] == "enabled"));
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
 }
-/// A theme's `device.knob.body` replaces a dial's own face in the states it has artwork for, even
-/// with none for the plain state, and the device's image stays where it has none.
-#[test]
-fn a_themes_device_knob_replaces_a_dials_own_face_in_the_states_it_covers() {
-    let face = suhina_device_sdk::ui::ImageAsset::from_bytes(
-        "face",
-        include_bytes!("../../../../devices/nam-amp-modeler/panel/knob.png"),
-    )
-    .unwrap();
-    let canvas = Arc::new(DeviceUi {
-        size: [60.0, 80.0],
-        assets: vec![face],
-        controls: vec![CustomControl {
-            id: "gain".into(),
-            name: "gain".into(),
-            tooltip: String::new(),
-            bounds: [0.0, 0.0, 60.0, 80.0],
-            widget: Some(Widget::Dial {
-                label: "Gain".into(),
-                decimals: 1,
-                format: Default::default(),
-                image: Some("face".into()),
-            }),
-            visible_when: None,
-            gesture: UiGesture::Drag,
-            x: None,
-            y: Some(UiBinding::new("gain")),
-            drawing: Vec::new(),
-        }],
-        ..Default::default()
-    });
-    let parameters = [parameter("gain", false)];
-    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#12AB34\"/></svg>";
-    // Artwork for the hovered knob only.
-    crate::kit::skin::configure(&crate::kit::skin::Skin {
-        assets: [("device.knob.body.hover".into(), svg.into())].into(),
-        ..Default::default()
-    });
-    let ctx = egui::Context::default();
-    let theme_green = Color32::from_rgb(0x12, 0xAB, 0x34);
-    let frame = |pointer: Option<Pos2>| {
-        let events = pointer.map(egui::Event::PointerMoved).into_iter().collect();
-        let mut output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
-            let _frame = crate::kit::native_css::frame(ui);
-            show(
-                ui,
-                Rect::from_min_size(Pos2::ZERO, Vec2::new(60.0, 80.0)),
-                &canvas,
-                &crate::detail::device_widgets::PanelState::none(),
-                &parameters,
-                TrackId(1),
-                &crate::detail::detail_view::DeviceAt(vec![0]),
-                &mut Vec::new(),
-            )
-        });
-        let painted =
-            output.textures_delta.set.values().flat_map(|deltas| deltas.iter()).any(|delta| match &delta.image {
-                egui::ImageData::Color(image) => image.pixels.contains(&theme_green),
-            });
-        // egui asserts in debug builds that a frame's texture deltas were handled before they drop.
-        output.textures_delta.clear();
-        painted
-    };
-    assert!(!frame(None), "not hovered: the device's own face, not the theme's hover artwork");
-    let centre = Pos2::new(30.0, 40.0);
-    let hovered = frame(Some(centre)) | frame(Some(centre)) | frame(Some(centre));
-    assert!(hovered, "hovered: the theme's device.knob.body.hover replaces the face");
-    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
-}
-
 /// A dial's pointer over the device's own dark face stays readable when the theme's text is dark
 /// too (a light theme): it takes the ink that reads on the face, not the theme's text colour.
 #[test]
@@ -334,18 +264,6 @@ fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
         let contrast = crate::kit::theme::text_contrast(ink, fill);
         assert!(contrast >= 3.0, "with text {text:?} the pointer is {ink:?} on {fill:?}, contrast {contrast}");
     }
-    // A theme's light `device.knob.body` replaces the dark face: the pointer stands out from the
-    // theme's face, not from the device's that it hides, so the theme's dark text stays.
-    let light = Color32::from_rgb(0xF0, 0xEE, 0xE8);
-    let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#F0EEE8\"/></svg>";
-    crate::kit::skin::configure(&crate::kit::skin::Skin {
-        assets: [("device.knob.body".into(), svg.into())].into(),
-        ..Default::default()
-    });
-    let ink = pointer(Color32::from_rgb(20, 20, 24));
-    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
-    let contrast = crate::kit::theme::text_contrast(ink, light);
-    assert!(contrast >= 3.0, "over the theme's light face the pointer is {ink:?}, contrast {contrast}");
 }
 
 /// A face's colour is the mean of the opaque pixels in its middle; the transparent corners and the
@@ -2950,21 +2868,231 @@ fn drawn_with(
     (output.shapes, painted)
 }
 
-/// A dial with the device's own face takes the theme's own `knob.body` artwork when the theme has
-/// no `device.knob.body`, as every other knob does; the user-agent sheet's default knob never
-/// covers the device's face (#1500).
+/// A panel's sheet hides a control with `display: none`, so `@media (prefers-color-scheme: …)`
+/// picks artwork made in a light and a dark version by the variant's declared scheme.
 #[test]
-fn a_themes_own_knob_replaces_a_dials_own_face_and_the_default_knob_does_not() {
+fn a_panel_picks_its_light_or_dark_artwork_by_the_declared_colour_scheme() {
+    let artwork = |id: &str, color: [u8; 4]| CustomControl {
+        id: id.into(),
+        name: id.into(),
+        tooltip: String::new(),
+        bounds: [0.0, 0.0, 60.0, 52.0],
+        widget: Some(Widget::Graphic { drawing: vec![Draw::rect([0.0, 0.0, 60.0, 52.0], color)] }),
+        visible_when: None,
+        gesture: UiGesture::default(),
+        x: None,
+        y: None,
+        drawing: Vec::new(),
+    };
+    let canvas = Arc::new(DeviceUi {
+        size: [60.0, 52.0],
+        style: Some(
+            "@media (prefers-color-scheme: dark) { #light-head { display: none; } } \
+             @media (prefers-color-scheme: light) { #dark-head { display: none; } }"
+                .into(),
+        ),
+        controls: vec![artwork("dark-head", [10, 20, 30, 255]), artwork("light-head", [230, 220, 210, 255])],
+        ..Default::default()
+    });
+    let filled = |shapes: &[egui::epaint::ClippedShape], fill: Color32| {
+        shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) => rect.fill == fill,
+            egui::Shape::Mesh(mesh) => mesh.vertices.iter().any(|v| v.color == fill),
+            _ => false,
+        })
+    };
+    let (dark, light) = (Color32::from_rgb(10, 20, 30), Color32::from_rgb(230, 220, 210));
+    for declared in [false, true] {
+        let skin = crate::kit::skin::Skin { light: declared, ..Default::default() };
+        let (shapes, _) = drawn_with(&canvas, skin, &[], Color32::TRANSPARENT);
+        assert_eq!((filled(&shapes, dark), filled(&shapes, light)), (!declared, declared), "light: {declared}");
+    }
+}
+
+/// A dial with the device's own face keeps it: no theme's knob artwork (`device.knob.body`,
+/// `knob.body`) replaces it, since the device is styled and the theme styles only what the device
+/// leaves unstyled.
+#[test]
+fn a_themes_knob_artwork_never_replaces_a_dials_own_face() {
     let canvas = image_dial_canvas();
     let green = Color32::from_rgb(0x12, 0xAB, 0x34);
     let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#12AB34\"/></svg>";
-    let own = crate::kit::skin::Skin { assets: [("knob.body".into(), svg.into())].into(), ..Default::default() };
-    assert!(drawn_with(&canvas, own, &[], green).1, "the theme's own knob.body replaces the face");
-    // The default knob, coloured green through the knob body's colour, is not drawn over it.
-    let default = crate::kit::skin::default_svgs().find(|(role, _)| *role == "knob.body").map(|(_, svg)| svg).unwrap();
-    let skin = crate::kit::skin::Skin { assets: [("knob.body".into(), default.into())].into(), ..Default::default() };
-    let (_, painted) = drawn_with(&canvas, skin, &[("control-background", green)], green);
-    assert!(!painted, "the default knob leaves the device's face");
+    for role in ["device.knob.body", "knob.body"] {
+        let skin = crate::kit::skin::Skin { assets: [(role.into(), svg.into())].into(), ..Default::default() };
+        assert!(!drawn_with(&canvas, skin, &[], green).1, "{role} leaves the device's face");
+    }
+}
+
+/// A canvas with one toggle button bound to `on`, styled by the panel's own `style`, drawn once
+/// under a theme whose button artwork is solid red: whether the red artwork was painted, and
+/// whether any shape was filled with `fill`.
+fn button_drawn(style: Option<&str>, on: bool, fill: Color32) -> (bool, bool) {
+    let canvas = Arc::new(DeviceUi {
+        size: [40.0, 20.0],
+        style: style.map(str::to_owned),
+        controls: vec![CustomControl {
+            id: "eq".into(),
+            name: "eq".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, 40.0, 20.0],
+            widget: Some(Widget::Button { label: "EQ".into(), off_label: None, indicator: false }),
+            visible_when: None,
+            gesture: UiGesture::Toggle,
+            x: Some(UiBinding::new("on")),
+            y: None,
+            drawing: Vec::new(),
+        }],
+        ..Default::default()
+    });
+    let red = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#E01020\"/></svg>";
+    crate::kit::skin::configure(&crate::kit::skin::Skin {
+        assets: [("button".into(), red.into())].into(),
+        ..Default::default()
+    });
+    let ctx = egui::Context::default();
+    let mut toggle = parameter("on", false);
+    toggle.value = if on { 1.0 } else { 0.0 };
+    let parameters = [toggle];
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _frame = crate::kit::native_css::frame(ui);
+        show(
+            ui,
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(40.0, 20.0)),
+            &canvas,
+            &crate::detail::device_widgets::PanelState::none(),
+            &parameters,
+            TrackId(1),
+            &crate::detail::detail_view::DeviceAt(vec![0]),
+            &mut Vec::new(),
+        )
+    });
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    let artwork = output.textures_delta.set.values().flat_map(|deltas| deltas.iter()).any(|delta| match &delta.image {
+        egui::ImageData::Color(image) => image.pixels.contains(&Color32::from_rgb(0xE0, 0x10, 0x20)),
+    });
+    output.textures_delta.clear();
+    let filled = output.shapes.iter().any(|shape| match &shape.shape {
+        egui::Shape::Rect(rect) => rect.fill == fill,
+        egui::Shape::Mesh(mesh) => mesh.vertices.iter().any(|v| v.color == fill),
+        _ => false,
+    });
+    (artwork, filled)
+}
+
+/// A button's label has its capitals centred in the button, whatever the font's line height,
+/// at the SDK's size and at a size a sheet gives it (#1487 B12).
+#[test]
+fn a_buttons_label_sits_centred_in_the_button() {
+    for style in [None, Some("button { font-size: 14px; }")] {
+        let canvas = Arc::new(DeviceUi {
+            size: [60.0, 52.0],
+            style: style.map(str::to_owned),
+            controls: vec![CustomControl {
+                id: "eq".into(),
+                name: "eq".into(),
+                tooltip: String::new(),
+                bounds: [10.0, 16.0, 40.0, 20.0],
+                widget: Some(Widget::Button { label: "EQ".into(), off_label: None, indicator: false }),
+                visible_when: None,
+                gesture: UiGesture::Toggle,
+                x: Some(UiBinding::new("gain")),
+                y: None,
+                drawing: Vec::new(),
+            }],
+            ..Default::default()
+        });
+        let (shapes, _) = drawn_with(&canvas, crate::kit::skin::Skin::default(), &[], Color32::TRANSPARENT);
+        let (top, bottom) = shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.job.text == "EQ" => Some(text),
+                _ => None,
+            })
+            .flat_map(|text| {
+                text.galley.rows.iter().flat_map(move |row| {
+                    row.row.glyphs.iter().filter(|glyph| glyph.chr == 'E').map(move |glyph| {
+                        let top = text.pos.y + row.pos.y + glyph.pos.y + glyph.uv_rect.offset.y;
+                        (top, text.pos.y + row.pos.y + glyph.pos.y)
+                    })
+                })
+            })
+            .next()
+            .expect("the label is drawn");
+        let centre = (top + bottom) / 2.0;
+        assert!((centre - 26.0).abs() <= 0.75, "{style:?}: the capitals' centre {centre} in a button centred at 26");
+    }
+}
+
+/// `image: none` in a panel's own sheet keeps a theme's button artwork off its buttons, which
+/// then draw their CSS look; `button[checked]` styles an on button's.
+#[test]
+fn a_panels_image_none_keeps_theme_artwork_off_its_buttons() {
+    let green = Color32::from_rgb(0x12, 0xAB, 0x34);
+    let blue = Color32::from_rgb(0x20, 0x40, 0xC0);
+    // Unstyled, the theme's artwork is the button.
+    assert!(button_drawn(None, false, green).0, "the theme's button artwork");
+    let sheet = "button { image: none; background-color: #12AB34; } button[checked] { background-color: #2040C0; }";
+    assert_eq!(button_drawn(Some(sheet), false, green), (false, true), "off: the panel's own look");
+    assert_eq!(button_drawn(Some(sheet), true, blue), (false, true), "on: the panel's checked look");
+    // A sheet that styles the button but keeps artwork leaves the theme's artwork in place.
+    assert!(button_drawn(Some("button { background-color: #12AB34; }"), false, green).0);
+}
+
+/// A drawing's text takes the panel sheet's `font-size` over the theme's, so a theme with large
+/// text cannot grow a device's captions past their boxes; with no panel sheet the theme's
+/// applies, as before.
+#[test]
+fn a_panels_font_size_beats_the_themes_for_its_drawn_text() {
+    let caption = |style: Option<&str>| {
+        let canvas = Arc::new(DeviceUi {
+            size: [60.0, 20.0],
+            style: style.map(str::to_owned),
+            controls: vec![CustomControl {
+                id: "caption".into(),
+                name: "caption".into(),
+                tooltip: String::new(),
+                bounds: [0.0, 0.0, 60.0, 20.0],
+                widget: Some(Widget::Graphic {
+                    drawing: vec![Draw::Text {
+                        position: [30.0.into(), 0.0.into()],
+                        text: "Gain".into(),
+                        size: 9.0,
+                        color: [3, 1, 1, 255],
+                        parameter: None,
+                        decimals: 0,
+                        align: TextAlign::Center,
+                        format: TextFormat::Number,
+                    }],
+                }),
+                visible_when: None,
+                gesture: UiGesture::default(),
+                x: None,
+                y: None,
+                drawing: Vec::new(),
+            }],
+            ..Default::default()
+        });
+        let skin =
+            crate::kit::skin::Skin { css: Some("device-control { font-size: 20px; }".into()), ..Default::default() };
+        let (shapes, _) = drawn_with(&canvas, skin, &[], Color32::TRANSPARENT);
+        shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.job.text == "Gain" => {
+                text.galley.job.sections.first().map(|section| section.format.font_id.size)
+            }
+            _ => None,
+        })
+    };
+    assert_eq!(caption(None), Some(20.0), "the theme's size, with no panel sheet");
+    assert_eq!(caption(Some("device-control { font-size: 9px; }")), Some(9.0), "the panel's own size");
+}
+
+/// The Amp Modeler's own sheet parses whole: every declaration is one the engine takes.
+#[test]
+fn the_amp_modelers_sheet_parses_without_notices() {
+    let panel = suhina_device_registry::panel("nam-amp-modeler").unwrap();
+    let style = panel.ui.as_ref().and_then(|ui| ui.style.as_deref()).expect("the amp's sheet");
+    let sheet = suhina_style::sheet::Sheet::parse(style).unwrap();
+    assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
 }
 
 /// The pointer line over the device's face takes `knob-pointer { color }` where the theme gives
@@ -2980,4 +3108,14 @@ fn a_dials_pointer_line_takes_the_themes_knob_pointer_colour() {
         _ => None,
     });
     assert_eq!(line, Some(magenta));
+    // The panel's own sheet sets it over the theme's.
+    let mut own = (*image_dial_canvas()).clone();
+    own.style = Some("knob-pointer { color: #12AB34; }".into());
+    let skin = crate::kit::skin::Skin { css: Some("knob-pointer { color: #FF00FF; }".into()), ..Default::default() };
+    let (shapes, _) = drawn_with(&Arc::new(own), skin, &[], Color32::TRANSPARENT);
+    let line = shapes.iter().find_map(|shape| match &shape.shape {
+        egui::Shape::LineSegment { stroke, .. } => Some(stroke.color),
+        _ => None,
+    });
+    assert_eq!(line, Some(Color32::from_rgb(0x12, 0xAB, 0x34)), "the panel's pointer colour");
 }

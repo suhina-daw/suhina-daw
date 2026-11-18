@@ -320,6 +320,7 @@ impl Sheet {
                             Property::from_name(&declaration.name),
                             Some(
                                 Property::BackgroundImage
+                                    | Property::Image
                                     | Property::Color
                                     | Property::BackgroundColor
                                     | Property::BorderColor

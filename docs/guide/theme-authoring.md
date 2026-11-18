@@ -701,7 +701,7 @@ Elements, by name:
 | `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]` |
 | `waveform`, `envelope` | what a clip shows |
 | `device-panel`, `device-section`, `device-control`, `xy-control` | device panels; `#id` selects a device control |
-| `button`, `value`, `value-fill`, `dropdown`, `dropdown-arrow`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a drop-down's arrow keeps its own `color`, so a rule for the field's text names `dropdown-arrow` too; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` is its too, until `text-input[kind="typed"]` has its own) |
+| `button`, `value`, `value-fill`, `dropdown`, `dropdown-arrow`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a drop-down's arrow keeps its own `color` (every drop-down's, the lists' pickers such as the quantization and count-in ones too), so a rule for the field's text names `dropdown-arrow` too; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` is its too, until `text-input[kind="typed"]` has its own) |
 | `button[kind="toggle"]`, `#control-solo`, `#control-cue`, `#control-arm` | a track's solo, cue and arm buttons and the other switches Suhina draws as buttons (`[kind="solo"]`, `[kind="arm"]`, `[kind="toggle"]`), `[checked]` while on (the arm `[armed]` too): a rule for every `button` (its colour or its background image) is the lit button's too, so state its lit look (`button[kind="toggle"][checked] { background-color: … }`, and for solo and arm `button[kind="solo"][checked]`, `button[kind="arm"][checked]`); under the pointer they are ringed in their `border-color`, and in their `accent-color` while they have the keys |
 | `toggle` | a switch a view draws itself, not as a button (the detail panels' switches), `[checked]` while on: its `color` and `background-color`, a step brighter under the pointer; the base sheet gives it the colours of `button[kind="toggle"]` |
 | `slider`, `slider-rail`, `slider-fill`, `slider-handle` | a slider and its parts' `background-color`; a swing amount is `slider[checked]` while it is the clip's own, its fill then the accent: a rule for every `slider-fill` is the lit one's too, so state `slider[checked] slider-fill` |
@@ -1143,12 +1143,13 @@ The transport (`toolbar-module#transport`) lays out `#control-play`, `#control-s
 - **Pan and send knobs of their own:** `pan.knob.body`, `pan.knob.pointer`, `send.knob.body` and
   `send.knob.pointer` artwork change only those knobs, in the Launcher and the Arrangement.
   `send { appearance: knob; }` makes the Arrangement's sends knobs too.
-- **Device knobs of your own:** `device.knob.body` and `device.knob.pointer` artwork replace the
-  faces and pointers of the knobs a device draws with its own artwork (the Amp Modeler's
-  knobs): `device.knob.body { image: url("assets/my-knob.png"); }`. Without them your
-  `knob-body` and `knob-pointer` artwork is used there too; with neither, the device's own face
-  stays. The pointer turns with the value, and a line pointer takes `knob-pointer { color }`;
-  the arc around the knob keeps the knob's `accent-color`.
+- **Devices with knobs of their own:** a device that draws its knobs with its own artwork (the
+  Amp Modeler's) keeps them: no theme's `knob-body` or `knob-pointer` artwork replaces them,
+  since the theme styles only what a device leaves unstyled. A line pointer takes
+  `knob-pointer { color }`; the arc around the knob keeps the knob's `accent-color`.
+- **Devices with buttons of their own:** a device panel's own sheet can say `image: none` on its
+  buttons (the Amp Modeler's EQ, HQ and Mono do), and then no theme's `button` artwork replaces
+  their look. `image` cascades: a panel's sheet beats the theme's, and `user.css` beats both.
 - **The mixer's colour strip:** `mixer track-colour { display: none; }` hides it; `width`
   sizes it.
 

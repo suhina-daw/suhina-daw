@@ -164,8 +164,7 @@ pub enum Widget {
         #[serde(default)]
         format: TextFormat,
         /// The canvas's image asset drawn as the dial's face: the device's own knob, over which
-        /// the host draws the value's arc and the pointer. A theme's `device.knob.body` and
-        /// `device.knob.pointer` artwork replaces it.
+        /// the host draws the value's arc and the pointer. No theme's knob artwork replaces it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         image: Option<String>,
     },

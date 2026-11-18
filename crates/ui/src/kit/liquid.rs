@@ -247,6 +247,7 @@ fn floating(ctx: &Context, order: &[egui::LayerId]) -> (Vec<Floating>, Vec<egui:
                 })
                 .collect()
         });
+    let in_place = super::floating::styled_in_place(ctx);
     let surfaces = found
         .into_iter()
         .filter_map(|(layer, name, over_app, index, frame)| {
@@ -254,9 +255,18 @@ fn floating(ctx: &Context, order: &[egui::LayerId]) -> (Vec<Floating>, Vec<egui:
             if shown <= 0.0 {
                 return None;
             }
-            // The bar's menus paint `menu` themselves.
-            let restyled = if name == MENU { None } else { super::floating::frame(ctx, name, &frame, shown) };
-            let blur = blurs.iter().any(|(n, on)| *n == name && *on);
+            // A popup styled where it opens (a device panel's drop-down) takes that style, its
+            // frame and its blur; the bar's menus paint `menu` themselves.
+            let own = (name == POPUP).then(|| in_place.get(&layer.id).cloned()).flatten();
+            let restyled = match &own {
+                Some(style) => super::floating::frame_styled(ctx, style.clone(), &frame, shown),
+                None if name == MENU => None,
+                None => super::floating::frame(ctx, name, &frame, shown),
+            };
+            let blur = match own {
+                Some(style) => super::floating::style_blurs(Some(style)),
+                None => blurs.iter().any(|(n, on)| *n == name && *on),
+            };
             (blur || restyled.is_some()).then(|| Floating {
                 layer,
                 index,

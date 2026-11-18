@@ -1672,6 +1672,28 @@ impl Tokens {
     }
 }
 
+/// The top of a row of text in `font` whose capitals sit centred in `rect`: the centre of the cap
+/// height (a capital's ink, from the font itself), not of the row, whose line gap and descent
+/// would put the text low (#1487 B12).
+fn cap_centred_top(painter: &egui::Painter, font: &egui::FontId, rect: Rect) -> f32 {
+    let probe = painter.layout_no_wrap("H".into(), font.clone(), Color32::WHITE);
+    let Some((row, glyph)) = probe.rows.first().and_then(|row| row.row.glyphs.first().map(|glyph| (row, glyph))) else {
+        return rect.center().y - probe.size().y / 2.;
+    };
+    let baseline = row.pos.y + glyph.pos.y;
+    let cap = (-glyph.uv_rect.offset.y).clamp(0.0, probe.size().y);
+    rect.center().y + cap / 2. - baseline
+}
+
+/// A drawing's font: its `size`, or the `font-size` a sheet gives the text in its place, at the
+/// canvas's scale either way, so text a sheet sizes grows and shrinks with the panel as the
+/// drawing's own does.
+fn scaled_font(size: f32, weight: f32) -> egui::FontId {
+    let mut font = crate::kit::theme::ui_font(size.clamp(1.0, 256.0));
+    font.size = (font.size * weight).clamp(1.0, 256.0);
+    font
+}
+
 /// A colour of the SDK's palette: one of its theme tokens ([3, 1, k]) takes the theme's colour,
 /// its alpha times the drawing's, so a translucent theme colour stays translucent.
 fn color(c: [u8; 4]) -> Color32 {
@@ -1714,6 +1736,7 @@ fn paint_scaled(
     loaded: &Loaded,
     tokens: &Tokens,
     scale: Vec2,
+    centre: Option<Rect>,
 ) {
     let color = |c: [u8; 4]| tokens.color(c);
     let weight = scale.x.min(scale.y);
@@ -1803,9 +1826,9 @@ fn paint_scaled(
                         ),
                     },
                 );
-                let position = point(position);
+                let mut position = point(position);
                 let ink = el.color_or(color(*c));
-                let mut font = crate::kit::theme::ui_font((*size * weight).clamp(1.0, 256.0));
+                let mut font = scaled_font(*size, weight);
                 let mut galley = painter.layout_no_wrap(label.clone(), font.clone(), ink);
                 if parameter.is_some() {
                     let clip = painter.clip_rect();
@@ -1814,14 +1837,17 @@ fn paint_scaled(
                     } else {
                         clip.right() - position.x
                     };
-                    let available_height = clip.bottom() - position.y;
+                    let available_height = clip.bottom() - centre.map_or(position.y, |r| r.top());
                     let scale = (available_width / galley.size().x.max(1.))
                         .min(available_height / galley.size().y.max(1.))
                         .clamp(0., 1.);
                     if scale < 1. {
                         font.size = (font.size * scale).max(8.);
-                        galley = painter.layout_no_wrap(label, font, ink);
+                        galley = painter.layout_no_wrap(label, font.clone(), ink);
                     }
+                }
+                if let Some(centre) = centre {
+                    position.y = cap_centred_top(painter, &font, centre);
                 }
                 let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
                 crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
@@ -1829,7 +1855,7 @@ fn paint_scaled(
             Draw::Value { position, value: number, prefix, suffix, color: c, size, decimals, align } => {
                 let label = format!("{prefix}{}{suffix}", fixed(number.number(&lookup), *decimals));
                 let ink = el.color_or(color(*c));
-                let font = crate::kit::theme::ui_font((*size * weight).clamp(1.0, 256.0));
+                let font = scaled_font(*size, weight);
                 let galley = painter.layout_no_wrap(label, font, ink);
                 let position = point(position);
                 let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
@@ -1963,9 +1989,12 @@ fn paint_control(
 ) {
     let class = control_class(control);
     let element = crate::kit::element::named(class).unwrap_or(crate::kit::element::DEVICE_CONTROL);
+    let on = control_selected(control, values);
+    // An on button is `button[checked]`, so a sheet styles its lit state.
+    let checked = on && matches!(control.widget, Some(Widget::Button { .. }));
     let scope = match response {
-        Some(response) => element.response(response).enter(),
-        None => element.enter(),
+        Some(response) => element.response(response).attr(crate::kit::element::Checked, checked).enter(),
+        None => element.builder().attr(crate::kit::element::Checked, checked).enter(),
     };
     let style = scope.style();
     let palette = styled_palette(widget_palette(), style.as_ref());
@@ -1995,7 +2024,6 @@ fn paint_control(
             })
         })
         .flatten();
-    let on = control_selected(control, values);
     let state = response.map_or(crate::kit::skin::State::Normal, |r| crate::kit::skin::State::response(r, !knob && on));
     if control.x.as_ref().is_some_and(|b| b.parameter == "mode")
         && matches!(control.gesture, UiGesture::Set(_))
@@ -2007,12 +2035,14 @@ fn paint_control(
         return;
     }
     let ink = scope.color_or(colours().text_value);
+    // A button's or a number's text: the SDK places it by a guess at the font's height, so the
+    // host centres its capitals in the control, as the font really is (#1487 B12).
+    let label_box = matches!(control.widget, Some(Widget::Button { .. } | Widget::Number { .. })).then_some(bounds);
     let mut body = None;
     let mut knob_effects = false;
-    // A dial with the device's own face (`Dial { image }`): a theme's `device.knob.body` and
-    // `device.knob.pointer` artwork replace the device's image and its pointer line, else the
-    // theme's own `knob.body` and `knob.pointer` do, as on every other knob (#1500); the
-    // user-agent sheet's default knob never covers the device's face.
+    // A dial with the device's own face (`Dial { image }`): the device's image is its artwork, so
+    // no theme's knob artwork replaces it; the theme styles only what the device leaves
+    // unstyled, the pointer line's colour.
     let device_face = matches!(control.widget, Some(Widget::Dial { image: Some(_), .. }));
     let mut face: Option<Rect> = None;
     let mut face_fill: Option<Color32> = None;
@@ -2028,35 +2058,8 @@ fn paint_control(
                     .iter()
                     .position(|a| a.id == *asset)
                     .and_then(|i| loaded.faces.get(i).copied().flatten());
-                // The roles have no default artwork, so `paint_as` paints only a theme's own, in
-                // whichever state it has artwork for (`device.knob.body.hover` alone included).
-                let body_ink = crate::kit::element::KNOB_BODY
-                    .response_if(response)
-                    .enter()
-                    .computed_color_or(colours().control_background);
-                let themed = ["device.knob.body", "knob.body"].into_iter().any(|role| {
-                    (role == "device.knob.body" || crate::kit::skin::has_own(role))
-                        && crate::kit::skin::paint_as(&scope, painter, rect, role, state, body_ink)
-                });
-                if themed {
-                    // The pointer then sits on the theme's face, which the theme pairs with its
-                    // knob's `color` (or its own `device.knob.pointer`): the device's face colour
-                    // no longer says what the pointer must stand out from.
-                    face_fill = None;
-                    continue;
-                }
-            } else if let (Draw::Line { from, to, color: c, width }, Some(rect)) = (draw, face) {
-                let direction = point(to) - point(from);
-                let angle = direction.x.atan2(-direction.y);
+            } else if let (Draw::Line { from, to, color: c, width }, Some(_)) = (draw, face) {
                 let pointer = crate::kit::element::KNOB_POINTER.response_if(response).enter().look();
-                let pointer_ink = pointer.color_or(ink);
-                let turned = ["device.knob.pointer", "knob.pointer"].into_iter().any(|role| {
-                    (role == "device.knob.pointer" || crate::kit::skin::has_own(role))
-                        && crate::kit::skin::paint_turned_as(&scope, painter, rect, role, state, pointer_ink, angle)
-                });
-                if turned {
-                    continue;
-                }
                 // The line takes `knob-pointer { color }` where the theme gives one (#1500).
                 // Otherwise it sits on the device's own face, not on the theme's: in the theme's
                 // text colour where that reads on it, else in the ink that does (a light theme's
@@ -2076,7 +2079,17 @@ fn paint_control(
                         color: colour.to_srgba_unmultiplied(),
                         width: *width,
                     };
-                    paint_scaled(painter, &scope, std::slice::from_ref(&line), origin, values, loaded, tokens, scale);
+                    paint_scaled(
+                        painter,
+                        &scope,
+                        std::slice::from_ref(&line),
+                        origin,
+                        values,
+                        loaded,
+                        tokens,
+                        scale,
+                        None,
+                    );
                     continue;
                 }
             }
@@ -2124,6 +2137,12 @@ fn paint_control(
                     colours().control_background
                 });
                 let radius = scope.radius_or(*radius * scale.x.min(scale.y));
+                if crate::kit::skin::no_artwork(&scope) {
+                    // `image: none`: the button is its CSS box (shadows, fill, gradients, border),
+                    // not the SDK's own rectangle.
+                    scope.paint_with(effects, bounds, crate::kit::element::Native { radius, fill });
+                    return true;
+                }
                 let painted = crate::kit::skin::button(painter, bounds, &scope, state, fill, radius);
                 if painted {
                     scope.paint_background(effects, bounds, radius);
@@ -2134,7 +2153,7 @@ fn paint_control(
                 continue;
             }
         }
-        paint_scaled(painter, &scope, std::slice::from_ref(draw), origin, values, loaded, tokens, scale);
+        paint_scaled(painter, &scope, std::slice::from_ref(draw), origin, values, loaded, tokens, scale, label_box);
         if !knob_effects
             && matches!(draw, Draw::Circle { .. })
             && let Some((center, radius)) = circle
@@ -2319,7 +2338,7 @@ pub(crate) fn show(
     if canvas.animate_when.as_ref().is_some_and(|v| v.evaluate(&|id, norm, log| values.read(id, norm, log)) > 0.0) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
     }
-    paint_scaled(&painter, &panel, &canvas.layers, rect.min, &values, &loaded, &tokens, stretch);
+    paint_scaled(&painter, &panel, &canvas.layers, rect.min, &values, &loaded, &tokens, stretch, None);
     let sample_panel = canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)));
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
     let stroke_id = ui.scope_id().with(("sd-draw", track.0, device));
@@ -2344,7 +2363,15 @@ pub(crate) fn show(
         }
         let [x, y, w, h] = fitted_control_bounds(control, reduction);
         let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y) * stretch, Vec2::new(w, h) * stretch);
-        let _control_scope = crate::kit::element::DEVICE_CONTROL.id(&control.id).enter();
+        let control_scope = crate::kit::element::DEVICE_CONTROL.id(&control.id).enter();
+        // The panel's sheet hides a control with `display: none`: artwork in a light and a dark
+        // version, under `@media (prefers-color-scheme: …)`.
+        if control_scope
+            .style()
+            .is_some_and(|style| style.keyword(suhina_style::property::Property::Display) == Some("none"))
+        {
+            continue;
+        }
         if matches!(control.widget, Some(Widget::Envelope { .. })) {
             let role = crate::kit::element::ENVELOPE.enter();
             let style = role.style();

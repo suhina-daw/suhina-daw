@@ -91,6 +91,18 @@ fn backdrop_image(text: &str) -> bool {
     text.trim() == "none" || backdrop_path(text).is_some()
 }
 
+/// An element's artwork: `none` (no artwork: the element draws its CSS look) or `url(<file>)`. The
+/// theme loader checks the file a theme names; the engine checks only the form.
+fn artwork_image(text: &str) -> bool {
+    let text = text.trim();
+    text == "none"
+        || text
+            .strip_prefix("url(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .map(|path| path.trim().trim_matches(['"', '\'']))
+            .is_some_and(|path| !path.is_empty() && path.len() <= 240 && !path.contains([';', '{', '}', '\0']))
+}
+
 /// The path `url("<path>.png")` names, when it is a PNG inside the theme's folder: relative, at
 /// most 240 bytes, with no empty, `.` or `..` part and no `\`, `:` or NUL. The one check of a
 /// `backdrop-image`, for the engine and for the host that loads the picture.
@@ -233,6 +245,7 @@ properties! {
     TrackGradient, "track-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the tracks: none, or an angle and colour stops.";
     ClipGradient, "clip-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the clips: none, or an angle and colour stops.";
     BackdropFilter, "backdrop-filter", Text(backdrop_filter), Value::Text(String::new()), false, "What a popup, menu, dialog, tooltip or Settings does to the window behind it: blur(<length>) or none; on or off for now.";
+    Image, "image", Text(artwork_image), Value::Text(String::new()), false, "An element's artwork: url(<file>), or none for no artwork, so the element draws its CSS look.";
     BackdropImage, "backdrop-image", Text(backdrop_image), Value::Text(String::new()), false, "The theme's picture behind the window: none or url(\"<file>.png\").";
     BackdropOpacity, "backdrop-opacity", Integer, Value::Integer(-1), false, "How much the backdrop picture shows, 0 to 100.";
     BackdropBlur, "backdrop-blur", Integer, Value::Integer(-1), false, "How much the backdrop picture is blurred, 0 to 100.";
@@ -407,5 +420,17 @@ mod tests {
             assert!(Property::BackdropImage.parse(bad).is_err(), "{bad}");
             assert_eq!(backdrop_path(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn image_is_none_or_one_url_and_is_not_inherited() {
+        for good in ["none", " none ", r#"url("knob.svg")"#, "url('art/a.png')", "url(suhina:knob.body.svg)"] {
+            assert!(Property::Image.parse(good).is_ok(), "{good}");
+        }
+        let long = format!("url({}.svg)", "a".repeat(240));
+        for bad in ["", "red", "url()", r#"url("")"#, "url(a.svg", "url(a;b.svg)", "none none", long.as_str()] {
+            assert!(Property::Image.parse(bad).is_err(), "{bad}");
+        }
+        assert!(!Property::Image.inherits());
     }
 }

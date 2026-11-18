@@ -686,12 +686,24 @@ pub fn paint(painter: &Painter, rect: Rect, role: &str, state: State, ink: Color
 /// The artwork of `el`, a button, in `rect`: its own role's ([`button_role`]) or every
 /// button's, rounded by `radius` where the sheet gives none, and casting `el`'s shadows.
 pub fn button(painter: &Painter, rect: Rect, el: &Entered, state: State, fill: Color32, radius: f32) -> bool {
+    if no_artwork(el) {
+        return false;
+    }
     let role = button_role(el);
     let style = el.style();
     let radius = el.radius_or(radius);
     // A state the button's own artwork leaves out is every button's.
     let paint = |role: &str| paint_variant(painter, rect, role, state, fill, 0.0, radius, None, style.as_ref());
     (role != "button" && paint(&role)) || paint("button")
+}
+
+/// Whether `el`'s cascaded style says `image: none`: it draws no artwork, whatever the theme's
+/// roles hold, and takes its CSS look instead. The cascade decides, so a device's own sheet
+/// beats the theme's for the device's panel and `user.css` beats both.
+pub fn no_artwork(el: &Entered) -> bool {
+    el.style()
+        .and_then(|style| style.text(suhina_style::property::Property::Image))
+        .is_some_and(|image| image.trim() == "none")
 }
 
 /// The artwork role of `el`, a button: its own (`button.play`, with any of its states) when the
@@ -729,6 +741,9 @@ pub fn paint_turned_as(
     ink: Color32,
     angle: f32,
 ) -> bool {
+    if no_artwork(el) {
+        return false;
+    }
     let style = el.style();
     let radius = el.radius_or(0.0);
     paint_variant(painter, rect, role, state, ink, angle, radius, None, style.as_ref())

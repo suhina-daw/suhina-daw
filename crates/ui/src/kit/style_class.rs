@@ -467,22 +467,40 @@ impl WidgetRules {
             }
             visuals.selection.stroke.width = outline(focused, visuals.selection.stroke).width;
         }
-        // egui frames its menus and pop-ups with the window's fill and stroke.
         if let Some(menu) = &self.menu {
-            if menu.authored.background {
-                visuals.window_fill = menu.background;
-            }
-            if menu.authored.border || menu.authored.border_width {
-                visuals.window_stroke = outline(menu, visuals.window_stroke);
-            }
-            if menu.authored.radius {
-                visuals.menu_corner_radius = egui::CornerRadius::same(menu.radius.clamp(0.0, 128.0) as u8);
-            }
-            if menu.authored.box_shadow {
-                visuals.popup_shadow = menu.egui_shadow();
-            }
+            apply_menu(menu, visuals);
         }
     }
+}
+
+/// egui frames its menus and pop-ups with the window's fill and stroke: `menu`'s rules over them.
+pub(super) fn apply_menu(menu: &super::native_css::Computed, visuals: &mut egui::Visuals) {
+    if menu.authored.background {
+        visuals.window_fill = menu.background;
+    }
+    if menu.authored.border || menu.authored.border_width {
+        visuals.window_stroke = outline(menu, visuals.window_stroke);
+    }
+    if menu.authored.radius {
+        visuals.menu_corner_radius = egui::CornerRadius::same(menu.radius.clamp(0.0, 128.0) as u8);
+    }
+    if menu.authored.box_shadow {
+        visuals.popup_shadow = menu.egui_shadow();
+    }
+}
+
+/// `popup`'s style where a pop-up opens from now (a drop-down's list), when a sheet says anything
+/// about its frame or its blur: there, a device panel's sheet reaches it, which the root's never
+/// does.
+pub(super) fn popup_in_scope() -> Option<super::native_css::Computed> {
+    super::element::POPUP.builder().style().filter(|c| {
+        c.authored.background
+            || c.authored.border
+            || c.authored.border_width
+            || c.authored.radius
+            || c.authored.box_shadow
+            || c.text(suhina_style::property::Property::BackdropFilter).is_some()
+    })
 }
 
 /// egui's `Visuals` at the root: `widget`'s (`fallback`), with what the sheet's rules for

@@ -865,17 +865,55 @@ pub fn combo_box<R>(
     let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let menu_style = super::style_class::rows_in_scope(&around, ui.style());
-    ui.scope(|ui| {
-        transparent_control(ui);
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        let response = combo.show_ui(ui, |ui| {
-            ui.set_style(menu_style);
-            contents(ui)
-        });
-        input_line_of(ui, &response.response, &el);
-        response
-    })
-    .inner
+    // The list's frame: egui starts a pop-up from the root's look (the theme's), and the floating
+    // layers' pass frames it as the root's `popup`; `popup` as the drop-down sees it (a device
+    // panel's sheet included) goes over both.
+    let own_popup = super::style_class::popup_in_scope();
+    let combo = match own_popup.clone() {
+        Some(popup) => combo.popup_style(egui::style::StyleModifier::new(move |style| {
+            super::style_class::apply_menu(&popup, &mut style.visuals);
+        })),
+        None => combo,
+    };
+    let response = ui
+        .scope(|ui| {
+            transparent_control(ui);
+            arrow_colour(ui);
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            let response = combo.show_ui(ui, |ui| {
+                ui.set_style(menu_style);
+                contents(ui)
+            });
+            input_line_of(ui, &response.response, &el);
+            response
+        })
+        .inner;
+    if let Some(popup) = own_popup {
+        // egui's id for a combo box's list (`ComboBox::widget_to_popup_id`), its area's and layer's.
+        super::floating::style_in_place(ui.ctx(), response.response.id.with("popup"), popup);
+    }
+    response
+}
+
+/// egui draws a drop-down's arrow in its widgets' foreground colour: `dropdown-arrow { color }` in
+/// the drop-down's scope (the base sheet's `--text-hint`, a device panel's sheet included) goes
+/// over it, as it does for [`form_dropdown`]'s arrow. The text keeps the field's own `color`.
+fn arrow_colour(ui: &mut Ui) {
+    let look = DROPDOWN_ARROW.look();
+    let Some(arrow) = look.style().filter(|style| style.authored.color).map(|style| style.color) else { return };
+    let visuals = &mut ui.style_mut().visuals;
+    if visuals.override_text_color.is_none() {
+        // The text would take the arrow's colour with it: keep it the theme's.
+        visuals.override_text_color = Some(visuals.widgets.inactive.text_color());
+    }
+    for widget in [
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+        &mut visuals.widgets.open,
+    ] {
+        widget.fg_stroke.color = arrow;
+    }
 }
 
 fn transparent_control(ui: &mut Ui) {

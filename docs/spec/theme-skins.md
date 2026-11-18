@@ -804,7 +804,10 @@ toolbar or window layout.
 Host rules the app reads itself, beside the engine: `meter` accepts `style`, `segments`
 and `intensity`; `image` declarations name package-relative SVG/PNG artwork or Suhina's own
 (`url("suhina:knob.body.svg")`), on the element that draws it with its state (*The user-agent
-sheet*) or on a role; `window` accepts a relative PNG, JPEG or WebP `background-image`, `background-opacity` and
+sheet*) or on a role. The engine also cascades `image` (`none` or one `url()`), and an element
+whose cascaded `image` is `none` draws no artwork at all, only its CSS look, whatever the roles
+hold: a device panel's own sheet uses it to keep a theme's artwork off its buttons. Taking
+artwork from the cascade alone, with `image-slice` and filmstrip frames, is #1533; `window` accepts a relative PNG, JPEG or WebP `background-image`, `background-opacity` and
 `background-blur` (0–100). The toolbar's `order`, `hidden` and offsets are
 read only from a sheet of an earlier version, when it is migrated (`order` and `hidden` as
 comma-separated module lists), and Suhina writes them to `theme.json`. In a current `theme.css`
@@ -1554,7 +1557,7 @@ of bars, and a slider id per parameter.
   `slider-rail`, `slider-fill`, `slider-handle`; a rule for every `slider-fill` is the lit
   swing's too, so a theme states `slider[checked] slider-fill`), a send's rail (the send's
   `background-color`), a fader cap without artwork (its own `color`), a drop-down's arrow
-  (`dropdown-arrow`), a routing field (`dropdown[kind="subtle"]`, which only a rule for the kind
+  (`dropdown-arrow`, for egui's drop-downs as for the ones Suhina paints), a routing field (`dropdown[kind="subtle"]`, which only a rule for the kind
   reaches) and a typed number (`text-input[kind="typed"]`; a rule for every `text-input` is its
   too, until it has its own) are the same. A switch a view draws itself with no `button` takes the
   colours of `toggle`. A switch's lit look is the base sheet's rule for its `[checked]` state: a

@@ -241,6 +241,40 @@ fn a_sheet_follows_the_variants_declared_colour_scheme() {
     assert_eq!(seen, [(None, black), (Some("none"), white), (None, black)]);
 }
 
+/// A drop-down's list takes `popup` as the drop-down sees it, so a device panel's sheet frames
+/// the lists of its own drop-downs, and another panel's keep the theme's.
+#[test]
+fn a_device_sheet_frames_its_own_drop_downs_lists() {
+    prepare("popup { background-color: #102030; }", 800.0);
+    let ctx = egui::Context::default();
+    let mut menus = Vec::new();
+    for _ in 0..3 {
+        menus.clear();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = frame(ui);
+            let _window = test_el("window").enter();
+            for panel in ["track-1-device-0", "track-1-device-1"] {
+                let sheet = panel.ends_with('0').then_some("popup { background-color: #ff8000; radius: 6px; }");
+                let _panel = test_el("device-panel").id(panel).sheet(sheet).enter();
+                let _dropdown = crate::kit::element::DROPDOWN.enter();
+                menus.push(crate::kit::style_class::popup_in_scope());
+            }
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    let own = menus[0].clone().expect("the panel's own list");
+    assert_eq!((own.background, own.authored.radius), (Color32::from_rgb(0xff, 0x80, 0x00), true));
+    let other = menus[1].clone().expect("the theme's list");
+    assert_eq!((other.background, other.authored.radius), (Color32::from_rgb(0x10, 0x20, 0x30), false));
+    // What egui frames the list with.
+    let mut visuals = egui::Visuals::dark();
+    crate::kit::style_class::apply_menu(&own, &mut visuals);
+    assert_eq!(visuals.window_fill, Color32::from_rgb(0xff, 0x80, 0x00));
+    assert_eq!(visuals.menu_corner_radius, egui::CornerRadius::same(6));
+}
+
 #[test]
 fn a_device_sheet_styles_its_own_panel_by_control_id_and_never_leaks() {
     let (styled, other, browser) = device_controls(
