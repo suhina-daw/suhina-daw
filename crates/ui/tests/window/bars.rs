@@ -120,6 +120,17 @@ fn a_hidden_rows_toggle_leaves_the_others_their_own_buttons() {
     assert!(exactly("#piano-scale { display: none; }", "Highlight scale").is_some());
 }
 
+/// Fold, Scale and Highlight are buttons of the toolbar like the others, as tall as Select, with
+/// no group frame round them (#1487 L10).
+#[test]
+fn the_rows_toggles_are_buttons_like_the_others() {
+    let select = rect_of("", "Select (").unwrap();
+    for label in ["Fold", "Scale", "Highlight scale"] {
+        let toggle = exactly("", label).unwrap();
+        assert!((toggle.height() - select.height()).abs() < 0.5, "{label}: {toggle:?} {select:?}");
+    }
+}
+
 #[test]
 fn rules_through_the_elements_around_a_bar_lay_it_out() {
     let select = rect_of("", "Select (").unwrap();

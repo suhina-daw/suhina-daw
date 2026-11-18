@@ -160,8 +160,9 @@ fn a_theme_lays_the_parts_out_and_hides_them() {
         340.0,
     );
     let (fader, meter) = (moved.fader.unwrap(), moved.meter.unwrap());
-    assert_eq!(meter.left(), original.fader.unwrap().left(), "the meter before the fader");
-    assert_eq!(fader.left(), meter.right() + 4.0);
+    // The meter goes first in the centred row, before the scale and the fader.
+    assert!(meter.left() < original.scale.unwrap().left(), "the meter before the fader");
+    assert!(fader.left() >= meter.right() + 4.0);
     assert!(moved.band.is_none());
     let pan = moved.pan.unwrap();
     assert_eq!((pan.left(), pan.width()), (original.pan.unwrap().left() + 5.0, 40.0));
@@ -304,11 +305,8 @@ fn wide_meters_fit_track_return_and_main_strips() {
                 assert!(meter.left() >= fader.right() + 4.0);
                 assert!(meter.right() <= rect.right() - PAD);
                 assert_eq!(meter.width(), METER_WIDTH);
-                if width <= theme::SCENE_COLUMN {
-                    assert!((fader.center().x - rect.center().x).abs() < 0.01);
-                } else {
-                    assert_eq!(fader.left(), rect.left() + PAD);
-                }
+                // Every strip centres its fader, a track's as Main's (#1487 B19).
+                assert!((fader.center().x - rect.center().x).abs() < 0.01, "{width}: {fader:?}");
             }
         }
     }

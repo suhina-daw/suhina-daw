@@ -1,5 +1,6 @@
 {
   "name": "Darker",
+  "color-scheme": "dark",
   "values": {
     "--ground": "#181818",
     "--surface": "#1F1F1F",

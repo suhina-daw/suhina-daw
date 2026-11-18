@@ -299,6 +299,30 @@ fn backdrop_filter_none_keeps_a_surface_sharp() {
     assert_eq!(shapes.iter().filter(|s| is_image(s)).count(), 1, "only the tooltip is blurred: {shapes:?}");
 }
 
+/// A popup styled where it opens (a device panel's drop-down) takes that style for its frame and
+/// its blur, not the root's `popup`: here the theme's glass is green and blurred, the place's
+/// style orange and sharp.
+#[test]
+fn a_popup_styled_in_place_takes_that_frame_and_blur_over_the_root_s() {
+    let css = "popup { background-color: #00ff00; } \
+               tooltip { background-color: #ff8000; radius: 4px; backdrop-filter: none; }";
+    let (shapes, calls, _) = floating_frames(Some(css), |ctx| {
+        odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
+        let place = super::super::native_css::settings_of(&[super::super::element::TOOLTIP]).expect("a style");
+        super::super::floating::style_in_place(ctx, Id::unique("menu"), place);
+    });
+    let rects: Vec<_> = shapes
+        .iter()
+        .filter_map(|s| match s {
+            egui::Shape::Rect(r) => Some(r.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(rects.iter().any(|r| r.fill == Color32::from_rgb(0xff, 0x80, 0x00)), "the place's frame: {rects:?}");
+    assert!(!rects.iter().any(|r| r.fill == Color32::from_rgb(0, 255, 0)), "not the root's popup");
+    assert_eq!(calls, 0, "the place's style blurs nothing");
+}
+
 #[test]
 fn a_theme_s_popup_and_tooltip_frames_replace_egui_s() {
     let css = "popup { background-color: #00ff00; border-radius: 6px; } \

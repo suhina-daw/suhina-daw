@@ -208,16 +208,13 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                             Ok(())
                         }
                         "background-image" => {
-                            if let Some(path) = value.strip_prefix("url(").and_then(|s| s.strip_suffix(')')) {
-                                let path = path.trim().trim_matches(['\'', '"']);
-                                if path.ends_with(".png") && skin::asset_path(&path.replace(".png", ".svg")) {
-                                    theme.skin.background = Some(std::sync::Arc::from(path));
-                                    Ok(())
-                                } else {
-                                    Err("background-image must name a relative PNG")
-                                }
-                            } else {
+                            if !value.trim_start().starts_with("url(") {
                                 Err("background-image requires url()")
+                            } else if let Some(path) = suhina_style::property::backdrop_path(value) {
+                                theme.skin.background = Some(std::sync::Arc::from(path));
+                                Ok(())
+                            } else {
+                                Err("background-image must name a relative PNG, JPEG or WebP picture")
                             }
                         }
                         _ => {

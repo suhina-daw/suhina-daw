@@ -179,6 +179,54 @@ fn expand_tokens(
     Ok(output)
 }
 
+/// Whether `source` calls `light-dark()`.
+pub(crate) fn mentions_light_dark(source: &str) -> bool {
+    source.as_bytes().windows(11).any(|window| window.eq_ignore_ascii_case(b"light-dark("))
+}
+
+/// Replaces each `light-dark(<light>, <dark>)` with its first value where `light` (the theme in use
+/// is a light one), else its second: a device panel's colour for either kind of theme. Nested
+/// calls are resolved too; a call without exactly two values is invalid.
+pub(crate) fn light_dark(source: &str, light: bool) -> Result<String, String> {
+    let mut output = source.to_owned();
+    for _ in 0..64 {
+        let lower = output.to_ascii_lowercase();
+        let Some(start) = lower.match_indices("light-dark(").map(|(at, _)| at).find(|&at| {
+            at == 0 || !output.as_bytes()[at - 1].is_ascii_alphanumeric() && output.as_bytes()[at - 1] != b'-'
+        }) else {
+            return Ok(output);
+        };
+        let open = start + "light-dark(".len();
+        let (mut depth, mut comma, mut close) = (0usize, None, None);
+        for (offset, byte) in output.as_bytes()[open..].iter().enumerate() {
+            match byte {
+                b'(' => depth += 1,
+                b')' if depth == 0 => {
+                    close = Some(open + offset);
+                    break;
+                }
+                b')' => depth -= 1,
+                b',' if depth == 0 && comma.is_none() => comma = Some(open + offset),
+                b',' if depth == 0 => return Err("light-dark() takes two values".into()),
+                _ => {}
+            }
+        }
+        let (Some(comma), Some(close)) = (comma, close) else {
+            return Err("light-dark() takes two values".into());
+        };
+        let (first, second) = (output[open..comma].trim(), output[comma + 1..close].trim());
+        if first.is_empty() || second.is_empty() {
+            return Err("light-dark() takes two values".into());
+        }
+        let chosen = if light { first } else { second };
+        output = format!("{}{chosen}{}", &output[..start], &output[close + 1..]);
+        if output.len() > MAX_EXPANSION {
+            return Err("light-dark() expansion exceeds 16 KiB".into());
+        }
+    }
+    Err("Too many light-dark() calls".into())
+}
+
 /// Whether `source` calls `attr()`, so a value without one skips the substitution.
 pub(crate) fn mentions_attr(source: &str) -> bool {
     source.as_bytes().windows(5).any(|window| window.eq_ignore_ascii_case(b"attr("))
@@ -286,6 +334,24 @@ fn attributes(
 mod tests {
     use super::*;
     use crate::selector::Element;
+
+    #[test]
+    fn light_dark_takes_the_value_for_the_scheme_nested_and_inside_other_values() {
+        assert_eq!(light_dark("light-dark(#fff, #000)", true).unwrap(), "#fff");
+        assert_eq!(light_dark("light-dark(#fff, #000)", false).unwrap(), "#000");
+        // Commas inside a colour function belong to it.
+        assert_eq!(light_dark("light-dark(rgb(1, 2, 3), rgba(4, 5, 6, 0.5))", false).unwrap(), "rgba(4, 5, 6, 0.5)");
+        assert_eq!(
+            light_dark("linear-gradient(180deg, light-dark(#eee, #222) 0%, #000 100%)", true).unwrap(),
+            "linear-gradient(180deg, #eee 0%, #000 100%)"
+        );
+        assert_eq!(light_dark("LIGHT-DARK(light-dark(red, blue), green)", true).unwrap(), "red");
+        assert_eq!(light_dark("0 1px 2px #000", true).unwrap(), "0 1px 2px #000", "nothing to choose");
+        for bad in ["light-dark(#fff)", "light-dark(#fff, #000, #111)", "light-dark(#fff, )", "light-dark(#fff, #000"] {
+            assert!(light_dark(bad, true).is_err(), "{bad}");
+        }
+        assert!(mentions_light_dark("a light-dark(b, c)") && !mentions_light_dark("#fff"));
+    }
 
     #[test]
     fn attr_reads_the_element_s_own_attribute_by_type_with_a_fallback() {

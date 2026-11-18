@@ -1,5 +1,6 @@
 {
   "name": "Forest",
+  "color-scheme": "dark",
   "values": {
     "--ground": "#131F19",
     "--surface": "#1B2A22",

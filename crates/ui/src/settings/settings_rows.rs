@@ -1014,7 +1014,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Appearance,
         "Background",
         "Background image",
-        "A picture of your own, a PNG file, drawn behind the window's panels",
+        "A picture of your own, a PNG, JPEG or WebP file, drawn behind the window's panels",
         &["background_image"],
         |cx, r| {
             cx.folder(r, "No image", crate::interaction::pick::PickField::BackgroundImage, |s| &mut s.background_image)

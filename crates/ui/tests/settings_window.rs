@@ -74,7 +74,12 @@ fn variant_swatches_fill_their_rectangle_and_cards_are_one_height() {
     assert!(warnings.is_empty(), "{warnings:?}");
     let (plain, warnings) = theme::from_folder(theme::ThemeMeta::new("Plain", "#445566"), &sheet("#654321"));
     assert!(warnings.is_empty(), "{warnings:?}");
-    let dim = suhina_ui::kit::theme_vars::Variant { id: "dim".into(), name: "Dim".into(), values: Default::default() };
+    let dim = suhina_ui::kit::theme_vars::Variant {
+        light: None,
+        id: "dim".into(),
+        name: "Dim".into(),
+        values: Default::default(),
+    };
     let (ink_dim, _) = suhina_ui::kit::theme_vars::with_variant(&ink, Some(&dim));
     use suhina_ui::settings::themes::ThemeEntry;
     let entries = vec![
@@ -146,7 +151,8 @@ fn many_variant_swatches_narrow_to_fit_on_one_line() {
     for count in [12, 80] {
         let mut entries = vec![ThemeEntry { id: "ink".into(), theme: ink.clone() }];
         for index in 0..count {
-            let variant = Variant { id: format!("v{index}"), name: format!("V{index}"), values: Default::default() };
+            let variant =
+                Variant { light: None, id: format!("v{index}"), name: format!("V{index}"), values: Default::default() };
             let (chosen, _) = with_variant(&ink, Some(&variant));
             entries.push(ThemeEntry { id: format!("ink@v{index}"), theme: chosen });
         }
@@ -1087,6 +1093,7 @@ fn ink_and_dim(harness: &mut Harness<'static, App>) {
     let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), sheet);
     assert!(warnings.is_empty(), "{warnings:?}");
     let dim = suhina_ui::kit::theme_vars::Variant {
+        light: None,
         id: "dim".into(),
         name: "Dim".into(),
         values: [("--glow".to_string(), "20".to_string())].into(),

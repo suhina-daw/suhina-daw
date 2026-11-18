@@ -154,9 +154,11 @@ fn native_toolbar_css_styles_modules_and_buttons_without_reflow_or_sibling_leaks
     // Suhina's own button artwork is not drawn under it.
     assert!(!harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
             egui::Shape::Rect(rect) if rect.rect == play && rect.brush.is_some())));
+    // On whole pixels, as egui puts the button's border.
+    let face = egui::emath::GuiRounding::round_to_pixels(play, harness.ctx.pixels_per_point());
     assert!(
         harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
-            egui::Shape::Mesh(mesh) if mesh.calc_bounds() == play && mesh.vertices.len() > 4)),
+            egui::Shape::Mesh(mesh) if mesh.calc_bounds() == face && mesh.vertices.len() > 4)),
         "gradient must remain visible above the button's surface"
     );
     harness.get_by_label("Play").click();
