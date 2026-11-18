@@ -39,10 +39,15 @@ trap 'rm -rf "$work"' EXIT
 
 curl -sSfL -o "$work/$name" \
   "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${VERSION}/${name}"
-if command -v sha256sum >/dev/null; then
-  echo "${sha256}  $work/$name" | sha256sum --check
+# Compared here rather than with `--check`: macOS's sha256sum is BSD's, which has no long options.
+if [ "$(uname -s)" = Darwin ]; then
+  actual="$(shasum -a 256 "$work/$name" | cut -d' ' -f1)"
 else
-  echo "${sha256}  $work/$name" | shasum -a 256 --check
+  actual="$(sha256sum "$work/$name" | cut -d' ' -f1)"
+fi
+if [ "$actual" != "$sha256" ]; then
+  echo "$name has checksum $actual, not the pinned $sha256." >&2
+  exit 1
 fi
 tar -xzf "$work/$name" -C "$work"
 
