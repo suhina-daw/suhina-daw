@@ -1521,6 +1521,11 @@ impl Joined {
 /// its own and ends the run (a follower gets them at its own turn): a joint block carries one
 /// event list, the first plug-in's, which every plug-in in it is given, so parameter values of
 /// one plug-in would reach the others too, or not reach a follower at all.
+///
+/// For the same reason a plug-in told another song than the first one ends the run: the song
+/// travels in that event list, so a follower after a plug-in with latency would hear the first
+/// one's song, not the song of the sound it gets ([`PluginSlot::song_delay`]). Plug-ins with no
+/// latency between them hear the same song and still share the round trip.
 fn find_joined(
     slots: &mut [DeviceSlot],
     at: usize,
@@ -1529,10 +1534,10 @@ fn find_joined(
     members: &mut [u32; MAX_JOINED],
 ) {
     joined.len = 0;
-    let Some(lead) = (match slots.get_mut(at) {
+    let Some((lead, song_delay)) = (match slots.get_mut(at) {
         Some(DeviceSlot::Plugin(first)) => {
             let automated = first.automate(from, to);
-            first.joint().filter(|_| !automated)
+            first.joint().filter(|_| !automated).map(|joint| (joint, first.song_delay))
         }
         _ => None,
     }) else {
@@ -1543,7 +1548,7 @@ fn find_joined(
         if !plugin.enabled {
             continue;
         }
-        if plugin.has_params(from, to) {
+        if plugin.has_params(from, to) || plugin.song_delay != song_delay {
             break;
         }
         let Some(joint) = plugin.joint().filter(|j| j.process == lead.process) else { break };

@@ -81,7 +81,11 @@ block's releases wait in each. A hang anywhere in the block so makes every plug-
 *hung*, as the engine cannot tell which one is stuck; the process is restarted either way.
 A plug-in with parameter events in the block (#109) runs on its own, and ends the run: a
 joint block carries one event list, which every plug-in in it is given, so one plug-in's
-values would reach the others. An instance restarted for a latency change (#110) serves
+values would reach the others. For the same reason a plug-in told another song than the
+first one ends the run: the song travels in that event list, so a follower after a plug-in
+with latency would hear the first one's song, not the song of the sound it gets (*Events in
+a block* below); plug-ins with no latency between them hear the same song and still share
+one round trip. An instance restarted for a latency change (#110) serves
 under the same number again, so blocks go on naming it.
 The output is the same, sample for sample, as one round trip each.
 

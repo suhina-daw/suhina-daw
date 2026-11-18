@@ -1269,6 +1269,35 @@ fn a_plug_in_with_parameter_events_runs_on_its_own_and_gets_them() {
     assert_eq!(trips.load(Ordering::SeqCst), joint + 2);
 }
 
+/// Two plug-ins of one process, the first with latency: the second hears its sound later and is
+/// told another song, which a joint block (one event list, the first one's) cannot carry, so each
+/// runs in a round trip of its own. Without latency between them they share one (the test
+/// above).
+#[test]
+fn a_plug_in_after_a_delaying_one_of_its_process_runs_on_its_own() {
+    let clap = |id: &str| plug(DeviceKind::Clap { id: id.into() });
+    let p = project(vec![note(0.0, 2.0, 69)], 2.0, vec![clap("a"), clap("b")]);
+    let (table, trips) = (Arc::default(), Arc::new(AtomicUsize::new(0)));
+    let first = Member::new(1, 1, 0.5, &table, &trips);
+    let second = Member::new(1, 2, 0.8, &table, &trips);
+    let followed = Arc::clone(&second.followed);
+    let found = plugin_devices(&p);
+    let mut plugins = Plugins::new();
+    plugins.insert(found[0].key, PluginSlotInfo { latency: 4_800, ..EFFECT }, Box::new(first));
+    plugins.insert(found[1].key, EFFECT, Box::new(second));
+    render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    assert!(followed.lock().unwrap().is_empty(), "b never followed a");
+    let trips = trips.load(Ordering::SeqCst);
+    assert!(trips > 0 && trips % 2 == 0, "a round trip each, every block: {trips}");
+}
+
 fn grouped(branches: Vec<Vec<Device>>) -> Device {
     let branches = branches.into_iter().map(|devices| Branch { devices, ..Branch::new("B") }).collect();
     Device::group("G", DeviceGroup::with_branches(branches))
