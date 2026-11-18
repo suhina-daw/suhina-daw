@@ -409,6 +409,10 @@ impl Descriptions {
     }
 }
 
+/// The choices of Settings › Audio › Advanced › Render threads, as saved: 1 Off, 0 Automatic,
+/// otherwise the threads (`audio.setRenderThreads`).
+pub const RENDER_THREAD_CHOICES: [u32; 5] = [1, 0, 2, 4, 8];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     /// User-owned PNG beneath translucent surfaces; never captures the desktop.
@@ -545,6 +549,10 @@ pub struct Settings {
     /// Selecting a track arms it, so a MIDI controller plays what the user looks at (Settings ›
     /// MIDI, #834); off until the person turns it on.
     pub auto_arm: bool,
+    /// How many threads render each block, the render thread included (Settings › Audio ›
+    /// Advanced, `audio.setRenderThreads`, ADR 0038): 1, the render thread alone, until
+    /// rendering on several threads is measured on every platform; 0 lets Suhina choose.
+    pub render_threads: u32,
     /// The size of the whole window, in percent (`ZOOMS`): everything is drawn this much larger
     /// or smaller.
     pub zoom: u32,
@@ -634,6 +642,7 @@ impl Default for Settings {
             mcp_project_folder: true,
             mcp_write_folders: Vec::new(),
             auto_arm: false,
+            render_threads: 1,
         }
     }
 }

@@ -324,6 +324,35 @@
       "workInProgress": false
     },
     {
+      "id": "Audio/Advanced/render_threads",
+      "page": "Audio",
+      "section": "Advanced",
+      "name": "Render threads",
+      "note": "Share the work of each block of sound between several processor threads.",
+      "keys": [
+        "render_threads"
+      ],
+      "sourceFingerprint": "b2c13126804610d9a6f0f5e0554a559f7097c5777a00272f36a325d707e642ca",
+      "helpStatus": "reviewed",
+      "description": "Suhina renders sound a few blocks ahead of the audio device on one real-time thread. With Render threads above Off, more threads help it: tracks whose devices do not depend on each other render at the same time, and the render thread adds their sound together in a fixed order, so the result is the same, sample for sample, as on one thread.\n\nIn this version only tracks without plug-ins are shared out; a track with a plug-in, and the Main track, still render on the render thread. A project with fewer than four tracks that can be shared renders on one thread whatever the setting says. Changing the setting opens the audio output again, which stops the sound for a moment. When the environment variable SUHINA_RENDER_THREADS is set, it wins over this setting. Settings › Audio › Status shows how many threads render and how many blocks came back late from a helper thread, with the track that was late most often.",
+      "options": [
+        {
+          "name": "Off",
+          "description": "Render on the render thread alone, as before. This is the default until rendering on several threads has been measured on every platform."
+        },
+        {
+          "name": "Automatic",
+          "description": "Use as many threads as the processor offers, at most nine: the render thread and up to eight helpers."
+        },
+        {
+          "name": "2 / 4 / 8",
+          "description": "Render on that many threads, the render thread included. More threads only help when the project has as many tracks to share out."
+        }
+      ],
+      "whenToChange": "Try Automatic when a project with many tracks of built-in instruments and effects crackles or shows a high engine load while the processor has cores to spare. Go back to Off if sound breaks up more, and report the late blocks Status shows.",
+      "workInProgress": true
+    },
+    {
       "id": "Midi/MIDI inputs/midi_input_off",
       "page": "Midi",
       "section": "MIDI inputs",
