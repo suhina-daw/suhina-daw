@@ -4,7 +4,8 @@
 """Read-only test-build lookup for trusted-requests.yml. Never checks out PR code.
 
 Run from the default-branch checkout, with REQUEST, GITHUB_REPOSITORY, GH_TOKEN,
-MAINTAINERS and TRUSTED_CONTRIBUTORS. Prints a JSON reuse decision, or {} to build.
+MAINTAINERS and TRUSTED_CONTRIBUTORS. Prints a JSON reuse decision, or {} to build; either
+carries "ui_only": true when the pull request changes only user interface code (UI_PATHS).
 Git objects are used only to compare main-only merges with branch_update.py.
 API errors stop the request instead of accidentally starting another build.
 """
@@ -21,6 +22,10 @@ import sys
 import branch_update as bu
 
 PLATFORMS = ("linux-x86_64", "windows-x86_64", "macos-universal")
+# The crates that draw the window, its controls and its themes, and the theme renderer. A pull
+# request whose built files are all here needs no test build to merge (`ui_only` in the decision,
+# ready-to-merge.yml); /test-build still builds one when asked.
+UI_PATHS = ("crates/ui/", "crates/ui-gpu/", "crates/style/", "crates/theme-package/", "apps/theme-render/")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 PROOF = re.compile(r"<!-- trusted-build ([0-9a-f]{40}) ([\w-]+) ([0-9]+) -->\s*$")
 
@@ -183,6 +188,22 @@ def builds_binary(files, paths):
     return any(match(f, p) for f in files for p in paths)
 
 
+def changed_files(api, number, pr):
+    """The pull request's files, a renamed file's old name too, and whether that is all of them.
+    GitHub lists at most 3000 files of a pull request; a longer list is cut short without saying
+    so, and only the count in the pull request itself shows it."""
+    listed = list(api.pages(f"pulls/{number}/files"))
+    files = [f["filename"] for f in listed]
+    files += [f["previous_filename"] for f in listed if f.get("previous_filename")]
+    return files, len(listed) == pr.get("changed_files")
+
+
+def ui_only(files, paths):
+    """Whether every one of these files that goes into the binaries is user interface code."""
+    built = [f for f in files if builds_binary([f], paths)]
+    return bool(built) and all(f.startswith(UI_PATHS) for f in built)
+
+
 def main():
     request = json.loads(os.environ["REQUEST"])
     if request["command"] != "test-build":
@@ -201,17 +222,20 @@ def main():
         paths = build_paths(workflow.read())
     if not paths:
         raise ValueError("test-build.yml has no paths filter to read.")
-    files = [f["filename"] for f in api.pages(f"pulls/{number}/files")]
-    files += [f["previous_filename"] for f in api.pages(f"pulls/{number}/files") if f.get("previous_filename")]
-    if not builds_binary(files, paths):
+    # Both exceptions below hold only for a complete list: the files left out of a cut-short one
+    # may be built ones.
+    files, complete = changed_files(api, number, pr)
+    if complete and not builds_binary(files, paths):
         return {"head": head, "source": head, "state": "no-binary", "url": ""}
     candidates = [head]
     if pr["base"]["ref"] == "main":
         # Fetch objects only: do not check out files, submodules, build scripts or hooks from PRs.
         bu.git("fetch", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main", f"refs/pull/{number}/head")
         candidates = eligible_heads(head, "origin/main")
-    return find_reuse(api, repo, pr, head, candidates, members(os.environ.get("MAINTAINERS", "")),
-                      members(os.environ.get("TRUSTED_CONTRIBUTORS", "")))
+    found = find_reuse(api, repo, pr, head, candidates, members(os.environ.get("MAINTAINERS", "")),
+                       members(os.environ.get("TRUSTED_CONTRIBUTORS", "")))
+    # Beside the build, not in place of it: /test-build still builds a user interface change.
+    return {**found, "ui_only": True} if complete and ui_only(files, paths) else found
 
 
 if __name__ == "__main__":

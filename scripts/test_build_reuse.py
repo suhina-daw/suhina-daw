@@ -206,6 +206,34 @@ class BinaryPaths(unittest.TestCase):
         self.assertIn("Cargo.lock", paths)
         self.assertNotIn("docs/**", paths)
 
+    def test_a_file_list_cut_short_is_not_complete(self):
+        class Files:
+            def __init__(self, listed):
+                self.listed = listed
+
+            def pages(self, path):
+                assert path == "pulls/7/files", path
+                return self.listed
+
+        renamed = [{"filename": "crates/ui/src/a.rs", "previous_filename": "crates/ui/src/old.rs"},
+                   {"filename": "docs/b.md"}]
+        files, complete = br.changed_files(Files(renamed), 7, {"changed_files": 2})
+        self.assertEqual(files, ["crates/ui/src/a.rs", "docs/b.md", "crates/ui/src/old.rs"])
+        self.assertTrue(complete, "a rename is one changed file")
+        # GitHub lists at most 3000 files: the rest of a longer pull request is missing.
+        cut = [{"filename": f"crates/ui/src/{n}.rs"} for n in range(3000)]
+        self.assertFalse(br.changed_files(Files(cut), 7, {"changed_files": 3500})[1])
+        self.assertFalse(br.changed_files(Files(cut), 7, {})[1], "no count, no proof")
+
+    def test_user_interface_files_alone_are_ui_only(self):
+        paths = ["apps/**", "crates/**", "devices/**", "Cargo.lock"]
+        self.assertTrue(br.ui_only(["crates/ui/src/a.rs", "crates/style/src/b.rs", "docs/c.md"], paths))
+        self.assertTrue(br.ui_only(["apps/theme-render/src/a.rs", "crates/ui-gpu/src/b.rs"], paths))
+        self.assertFalse(br.ui_only(["crates/ui/src/a.rs", "crates/engine/src/b.rs"], paths))
+        self.assertFalse(br.ui_only(["crates/ui/src/a.rs", "Cargo.lock"], paths))
+        self.assertFalse(br.ui_only(["crates/uitest/src/a.rs"], paths), "a crate whose name starts with ui")
+        self.assertFalse(br.ui_only(["docs/a.md"], paths), "nothing built is no-binary, not ui-only")
+
     def test_only_binary_paths_need_a_build(self):
         paths = ["crates/**", "Cargo.lock", ".github/workflows/test-build.yml"]
         self.assertFalse(br.builds_binary(["docs/a.md", ".github/workflows/ci.yml", "scripts/x.py"], paths))

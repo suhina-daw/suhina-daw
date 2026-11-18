@@ -141,7 +141,7 @@ Adding the label is the maintainer's approval of that exact commit, regardless o
 it needs a finished test build of that commit: a successful `/test-build` run whose packages are
 still available, or one of an earlier head the branch has only merged `main` into since. Without
 one the label comes off with a comment asking for `/test-build`; an existing build is reused, so
-asking again starts no second packaging run. A pull request that changes nothing in the binaries (only documentation, scripts or workflows) needs no build. Code-owner approval is still required for
+asking again starts no second packaging run. A pull request that changes nothing in the binaries (only documentation, scripts or workflows) needs no build, and neither does one that changes only the user interface (`crates/ui`, `crates/ui-gpu`, `crates/style`, `crates/theme-package`, `apps/theme-render`; `/test-build` still builds it). Code-owner approval is still required for
 protected paths. A push by anyone
 but a maintainer takes the label off, so new commits are never merged unread; taking the label off
 by hand stops the merge. Only a maintainer adds it: an agent never adds `ready to merge`, also not

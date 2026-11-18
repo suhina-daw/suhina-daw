@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MergeApproval(unittest.TestCase):
-    def run_queue(self, sender="Maintainer", label=True, changed_head=False, build="ready", build_head="a" * 40):
+    def run_queue(self, sender="Maintainer", label=True, changed_head=False, build="ready", build_head="a" * 40,
+                  ui_only=False):
         workflow = (ROOT / ".github/workflows/ready-to-merge.yml").read_text(encoding="utf-8")
         step = workflow.split("      - name: Approve the commit and turn on merge when ready", 1)[1]
         source = step.split("        run: |\n", 1)[1].split("\n  unlabel:", 1)[0]
@@ -34,7 +35,10 @@ class MergeApproval(unittest.TestCase):
             env = dict(os.environ, MAINTAINERS="Maintainer", SENDER=sender, AUTHOR="Contributor",
                        AUTHOR_TYPE="User", HEAD_REF="feature/panel", HAS_TEST_BUILD="false",
                        GITHUB_REPOSITORY="owner/repo", NUMBER="960", SHA="a" * 40,
-                       LABEL="ready to merge", BUILD=json.dumps({"head": build_head, "state": build} if build else {}), CALLS=log.as_posix(), CHANGED_HEAD=str(changed_head).lower(),
+                       LABEL="ready to merge",
+                       BUILD=json.dumps({**({"head": build_head, "state": build} if build else {}),
+                                         **({"ui_only": True} if ui_only else {})}),
+                       CALLS=log.as_posix(), CHANGED_HEAD=str(changed_head).lower(),
                        HELPERS=f"has_label() {{ return {0 if label else 1}; }}\nstop_merge() {{ gh stop; }}")
             result = subprocess.run([bash, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", stub + source],
                                     env=env, capture_output=True, text=True)
@@ -52,6 +56,15 @@ class MergeApproval(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("event=APPROVE", calls)
         self.assertNotIn("--remove-label", calls)
+
+    def test_user_interface_change_queues_without_a_build(self):
+        for build in (None, "running", "requested"):
+            with self.subTest(build=build):
+                result, calls = self.run_queue(build=build, ui_only=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("event=APPROVE", calls)
+                self.assertIn("--match-head-commit " + "a" * 40, calls)
+                self.assertNotIn("--remove-label", calls)
 
     def test_no_build_running_build_or_build_of_another_head_never_queues(self):
         for build, head in ((None, "a" * 40), ("running", "a" * 40), ("requested", "a" * 40), ("ready", "b" * 40)):
