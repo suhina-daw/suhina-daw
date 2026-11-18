@@ -1630,6 +1630,7 @@ fn stopping_a_plugin_note_joins_the_delayed_release_without_a_step() {
 
 fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::PluginSlot {
     crate::plugin::PluginSlot {
+        song_delay: 0,
         key: 1,
         processor: Some(processor),
         instrument: false,
@@ -1690,4 +1691,238 @@ fn joint_sends_record_busy_and_successful_trip_timing() {
     assert_eq!(slot.send_joint(&mut samples, &[], &[2], None), Sent::Out);
     assert!(slot.finish(&mut samples, None));
     assert_eq!(slot.longest_us, longest, "offline work does not pollute real-time diagnostics");
+}
+
+/// A plug-in after one with latency hears its sound that much later, so it is told the song that
+/// much earlier: a tempo-synced shape lines up with what it hears (#1446). The first plug-in is
+/// told the song as it is.
+#[test]
+fn a_plug_in_after_a_delaying_one_is_told_the_song_of_what_it_hears() {
+    const LATENCY: u32 = 4_800;
+    let p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3()), plug(vst3())]);
+    let (first, second) = (Stand::new(Behaviour::Delay(LATENCY as usize)), Stand::new(Behaviour::Gain(1.0)));
+    let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(first, PluginSlotInfo { latency: LATENCY, ..EFFECT }), (second, EFFECT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    blocks(&mut renderer, 40, 512);
+    let first = *heard_first.lock().unwrap().last().expect("told of the song");
+    let second = *heard_second.lock().unwrap().last().expect("told of the song");
+    assert!(first.playing && second.playing);
+    assert_eq!(first.position - second.position, u64::from(LATENCY));
+    let beats = f64::from(LATENCY) * first.tempo / (60.0 * f64::from(SR));
+    assert!((first.beat - second.beat - beats).abs() < 1e-9, "{} and {}", first.beat, second.beat);
+}
+
+/// Stepping back across a barline steps the bar back too.
+#[test]
+fn an_earlier_song_position_steps_back_over_a_barline() {
+    let song = SongPosition {
+        playing: true,
+        position: 96_000,
+        tempo: 120.0,
+        beat: 4.25,
+        bar: 1,
+        bar_start: 4.0,
+        ..SongPosition::default()
+    };
+    // Half a beat back at 120 BPM and 48 kHz: 12 000 frames.
+    let earlier = song.earlier(12_000, 48_000.0);
+    assert_eq!((earlier.position, earlier.bar, earlier.bar_start), (84_000, 0, 0.0));
+    assert!((earlier.beat - 3.75).abs() < 1e-12);
+    // Stopped, nothing moves.
+    let stopped = SongPosition { playing: false, ..song };
+    assert_eq!(stopped.earlier(12_000, 48_000.0), stopped);
+}
+
+/// A playing song at `beat` and `tempo`, in bar 0 of 4/4.
+fn playing(position: u64, beat: f64, tempo: f64) -> SongPosition {
+    SongPosition { playing: true, position, tempo, beat, ..SongPosition::default() }
+}
+
+/// Blocks of 4800 frames (a tenth of a second at 48 kHz) recorded one after another.
+fn history(songs: &[SongPosition]) -> crate::plugin::SongHistory {
+    let mut history = crate::plugin::SongHistory::new(SR);
+    for song in songs {
+        history.record(*song, 4_800);
+    }
+    history
+}
+
+/// Across a tempo change the song heard late is the one the transport played then, at its
+/// tempo: 120 BPM until beat 0.8, 60 BPM after it.
+#[test]
+fn the_song_heard_late_keeps_the_tempo_it_was_played_at() {
+    let songs = history(&[
+        playing(0, 0.0, 120.0),
+        playing(4_800, 0.2, 120.0),
+        playing(9_600, 0.4, 120.0),
+        playing(14_400, 0.6, 120.0),
+        playing(19_200, 0.8, 60.0),
+        playing(24_000, 0.9, 60.0),
+        playing(28_800, 1.0, 60.0),
+    ]);
+    // Two blocks back: the first block at 60 BPM, as it started.
+    let heard = songs.heard(9_600);
+    assert_eq!((heard.position, heard.tempo), (19_200, 60.0));
+    assert!((heard.beat - 0.8).abs() < 1e-12);
+    // Half a block further back: within the last block at 120 BPM.
+    let heard = songs.heard(12_000);
+    assert_eq!((heard.position, heard.tempo), (16_800, 120.0));
+    assert!((heard.beat - 0.7).abs() < 1e-12, "{}", heard.beat);
+    // Nothing late: the current block.
+    assert_eq!(songs.heard(0), playing(28_800, 1.0, 60.0));
+}
+
+/// After a loop's wrap, a plug-in that hears its sound late still hears the end of the pass
+/// before; on the first way into the loop it hears what came before the loop.
+#[test]
+fn the_song_heard_late_follows_a_loop_wrap() {
+    let looped = |position, beat| SongPosition {
+        cycle: Some((4.0, 7.0)),
+        cycle_seconds: Some((2.0, 3.5)),
+        bar: 1,
+        bar_start: 4.0,
+        ..playing(position, beat, 120.0)
+    };
+    // The pass ends at beat 7 (frame 168 000); the next block starts at beat 4 again.
+    let wrapped = history(&[looped(158_400, 6.6), looped(163_200, 6.8), looped(96_000, 4.0), looped(100_800, 4.2)]);
+    let heard = wrapped.heard(7_200);
+    assert!((heard.beat - 6.9).abs() < 1e-12, "{}", heard.beat);
+    assert_eq!(heard.position, 165_600);
+    // Into the loop from before it: beat 3.6 on, played straight into beat 4.
+    let entered = history(&[
+        SongPosition { bar: 0, bar_start: 0.0, ..looped(86_400, 3.6) },
+        SongPosition { bar: 0, bar_start: 0.0, ..looped(91_200, 3.8) },
+        looped(96_000, 4.0),
+        looped(100_800, 4.2),
+    ]);
+    let heard = entered.heard(7_200);
+    assert!((heard.beat - 3.9).abs() < 1e-12, "{}", heard.beat);
+    assert_eq!((heard.position, heard.bar, heard.bar_start), (93_600, 0, 0.0));
+}
+
+/// Across a time signature change the song heard late is in the bar and signature it was played
+/// in: bar 0 in 4/4, bar 1 from beat 4 in 3/4.
+#[test]
+fn the_song_heard_late_keeps_its_time_signature() {
+    let three =
+        |position, beat| SongPosition { bar: 1, bar_start: 4.0, numerator: 3, ..playing(position, beat, 120.0) };
+    let songs =
+        history(&[playing(86_400, 3.6, 120.0), playing(91_200, 3.8, 120.0), three(96_000, 4.0), three(100_800, 4.2)]);
+    let heard = songs.heard(7_200);
+    assert!((heard.beat - 3.9).abs() < 1e-12, "{}", heard.beat);
+    assert_eq!((heard.bar, heard.bar_start, heard.numerator, heard.denominator), (0, 0.0, 4, 4));
+    // Before the first block played, the oldest steps back at its own tempo.
+    let first = history(&[playing(0, 0.0, 120.0)]);
+    assert!((first.heard(4_800).beat + 0.2).abs() < 1e-12);
+    // With nothing played, the song stands at the start.
+    assert_eq!(crate::plugin::SongHistory::new(SR).heard(4_800), SongPosition::default());
+}
+
+/// Two plug-ins one after the other in a group's branch: the second hears the first's latency,
+/// as after one in the chain; a plug-in in a branch beside them hears none.
+#[test]
+fn plug_ins_in_a_group_branch_are_told_the_song_of_the_devices_before_them() {
+    const LATENCY: u32 = 4_800;
+    let p = project(
+        vec![note(0.0, 1.0, 60)],
+        8.0,
+        vec![grouped(vec![vec![plug(vst3()), plug(vst3())], vec![plug(vst3())]])],
+    );
+    let stands = [
+        Stand::new(Behaviour::Delay(LATENCY as usize)),
+        Stand::new(Behaviour::Gain(1.0)),
+        Stand::new(Behaviour::Gain(1.0)),
+    ];
+    let heard: Vec<_> = stands.iter().map(|s| Arc::clone(&s.songs)).collect();
+    let infos = [PluginSlotInfo { latency: LATENCY, ..EFFECT }, EFFECT, EFFECT];
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, stands.into_iter().zip(infos).collect())),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    blocks(&mut renderer, 40, 512);
+    let last = |i: usize| *heard[i].lock().unwrap().last().expect("told of the song");
+    let (first, second, beside) = (last(0), last(1), last(2));
+    assert_eq!(first.position - second.position, u64::from(LATENCY));
+    assert_eq!(beside.position, first.position, "a parallel branch has nothing before it");
+}
+
+/// The main channel's plug-ins hear the whole mix, as late as its latest path: they are told the
+/// song that much earlier, and as it is when nothing delays the mix.
+#[test]
+fn the_main_channels_plug_ins_are_told_the_song_of_the_mix_they_hear() {
+    for latency in [0_u32, 4_800] {
+        let mut p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3())]);
+        p.channels.push(Channel {
+            role: ChannelRole::Master,
+            devices: vec![plug(vst3())],
+            ..Channel::new(ChannelId(2), "Main")
+        });
+        let (track, main) = (Stand::new(Behaviour::Delay(latency as usize)), Stand::new(Behaviour::Gain(1.0)));
+        let (heard_track, heard_main) = (Arc::clone(&track.songs), Arc::clone(&main.songs));
+        let mut renderer = Renderer::build(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, vec![(track, PluginSlotInfo { latency, ..EFFECT }), (main, EFFECT)])),
+            SR,
+            RenderOptions::PLAYING,
+        )
+        .unwrap();
+        blocks(&mut renderer, 40, 512);
+        let track = *heard_track.lock().unwrap().last().expect("told of the song");
+        let main = *heard_main.lock().unwrap().last().expect("the main channel's plug-in is told too");
+        assert_eq!(track.position - main.position, u64::from(latency), "latency {latency}");
+    }
+}
+
+/// A plug-in reports its latency once it has loaded, after the graph was built: the plug-in after
+/// it is told the song that much earlier from the next graph on, as it is when the latency was
+/// known from the start (the running slot takes the new delay with the rest of its settings).
+#[test]
+fn a_latency_reported_later_moves_the_song_the_next_plug_in_is_told() {
+    const LATENCY: u32 = 2_401;
+    let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3()), plug(vst3())]);
+    let keys: Vec<u64> = plugin_devices(&p).iter().map(|d| d.key).collect();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let info = |first: u32| {
+        let mut info = std::collections::HashMap::new();
+        info.insert(keys[0], PluginSlotInfo { latency: first, ..EFFECT });
+        info.insert(keys[1], EFFECT);
+        info
+    };
+    controller.set_plugin_info(info(0));
+    let (first, second) = (Stand::new(Behaviour::Gain(1.0)), Stand::new(Behaviour::Gain(1.0)));
+    let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
+    controller.send_plugin(keys[0], Box::new(first)).unwrap();
+    controller.send_plugin(keys[1], Box::new(second)).unwrap();
+    blocks(&mut renderer, 2, 480);
+    controller.update(&p).unwrap();
+    blocks(&mut renderer, 4, 480);
+    let gap = |a: &Arc<std::sync::Mutex<Vec<SongPosition>>>, b: &Arc<std::sync::Mutex<Vec<SongPosition>>>| {
+        let (a, b) = (*a.lock().unwrap().last().unwrap(), *b.lock().unwrap().last().unwrap());
+        a.position - b.position
+    };
+    assert_eq!(gap(&heard_first, &heard_second), 0, "no latency yet");
+    // The first one tells its latency: a new graph, the same running plug-ins.
+    controller.set_plugin_info(info(LATENCY));
+    controller.update(&p).unwrap();
+    blocks(&mut renderer, 4, 480);
+    assert_eq!(gap(&heard_first, &heard_second), u64::from(LATENCY));
 }

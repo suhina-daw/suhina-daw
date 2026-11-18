@@ -18,6 +18,7 @@ mod browser_preview;
 mod detail_devices;
 mod detail_eq_panel;
 mod follow;
+mod large_project;
 mod launch_keys;
 mod meters;
 mod mixer_strip;

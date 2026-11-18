@@ -72,6 +72,7 @@ impl SlotFactory<'_> {
         let key = self.keys.iter().find(|d| d.channel == self.channel && d.path == path)?.key;
         let info = *self.plugins.info.get(&key)?;
         let slot = PluginSlot {
+            song_delay: 0,
             key,
             processor: self.plugins.processors.remove(&key),
             instrument: info.instrument,

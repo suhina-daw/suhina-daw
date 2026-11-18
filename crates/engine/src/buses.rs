@@ -240,6 +240,8 @@ pub(crate) fn build(
             }
         };
         chain.delay = Delay::new(to.saturating_sub(arrived) as usize);
+        // The sound coming into it is as late as its input: its plug-ins hear the song that late.
+        chain.input_latency = input.get(i).copied().unwrap_or(0);
         if let Some(mix) = chain.mix.as_mut() {
             mix.set_latency(to);
         }
@@ -265,8 +267,10 @@ pub(crate) fn build(
     // The main channel's chain comes last, after everything that plays into the main output; a
     // node render stops below it.
     if source.is_none()
-        && let Some(main) = main_chain(project, audio, sample_rate, plugins, assets)
+        && let Some(mut main) = main_chain(project, audio, sample_rate, plugins, assets)
     {
+        // It hears the whole mix, which reaches it as late as the latest path.
+        main.input_latency = latency;
         chains.push(main);
     }
     // When each chain runs in a block, and with how much of the deadline (#1261).

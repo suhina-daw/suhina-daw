@@ -216,7 +216,10 @@ impl SlotFactory<'_> {
                 let mut inner = path.to_vec();
                 inner.extend([b, i]);
                 let slot = run.slots.len();
-                if let Some(built) = self.device(device, depth + 1, &inner, (&mut run.lanes, slot)) {
+                if let Some(mut built) = self.device(device, depth + 1, &inner, (&mut run.lanes, slot)) {
+                    // The devices before it in its branch delay its sound; the chain adds the
+                    // delay before the group.
+                    crate::chain::set_song_delay(&mut built.slot, run.latency);
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
                     run.positions.push(i);

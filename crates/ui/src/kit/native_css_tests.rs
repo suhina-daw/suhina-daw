@@ -1189,11 +1189,11 @@ fn the_ruler_loop_region_and_playhead_take_their_classes() {
 fn the_playhead_keeps_its_colour_when_the_clips_fill_the_style_tree() {
     use crate::arrangement::{arrangement_view, timeline};
     let mut project = crate::demo::demo_project();
-    // Every track's first clip, again on each beat for 400 beats: more clips in view than the
-    // style tree holds elements.
+    // Every track's first clip, again on each beat for 2000 beats: more clips in view than the
+    // style tree holds elements (a clip is one element of it, its parts read once per kind).
     for lane in project.arrangement.lanes.iter_mut().filter(|l| !l.clips.is_empty()) {
         let first = lane.clips[0].clone();
-        lane.clips = (0..400)
+        lane.clips = (0..2000)
             .map(|beat| suhina_engine::model::Clip {
                 id: suhina_engine::model::ClipId::NONE,
                 start: f64::from(beat),
@@ -1207,8 +1207,8 @@ fn the_playhead_keeps_its_colour_when_the_clips_fill_the_style_tree() {
     timeline.running = true;
     timeline.beat = 300.0;
     let mut state = arrangement_view::ArrangementViewState::default();
-    // A beat a point: the 400 beats fit in the view.
-    state.beat_width = 1.0;
+    // A fifth of a point a beat: the 2000 beats fit in the view.
+    state.beat_width = 0.2;
     let css = "playhead { color: #0000FF; }";
     let shapes = painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
     assert!(super::budget().nodes >= super::MAX_NODES, "the clips fill the style tree");
@@ -1217,6 +1217,43 @@ fn the_playhead_keeps_its_colour_when_the_clips_fill_the_style_tree() {
             if stroke.color == egui::Color32::from_rgb(0, 0, 0xFF))),
         "the playhead keeps its colour"
     );
+}
+
+/// The parts of clips alike (one lane, one kind) are styled once a frame, not once for each of
+/// the clips drawn (ADR 0031 › A drawn item's style is read once per kind), and read again the
+/// next frame.
+#[test]
+fn clips_alike_share_their_parts_looks_for_the_frame() {
+    use crate::arrangement::{arrangement_view, timeline};
+    let mut project = crate::demo::demo_project();
+    for lane in project.arrangement.lanes.iter_mut().filter(|l| !l.clips.is_empty()) {
+        let first = lane.clips[0].clone();
+        lane.clips = (0..200)
+            .map(|beat| suhina_engine::model::Clip {
+                id: suhina_engine::model::ClipId::NONE,
+                start: f64::from(beat),
+                length: 1.0,
+                ..first.clone()
+            })
+            .collect();
+    }
+    project.assign_ids().expect("the copies get ids");
+    let timeline = timeline::Timeline::build(&project, None);
+    let lanes = timeline.lanes.iter().filter(|l| !l.clips.is_empty()).count();
+    let mut state = arrangement_view::ArrangementViewState::default();
+    state.beat_width = 2.0;
+    painted("", |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
+    let kinds = state.clip_parts.borrow().len();
+    assert!((1..=lanes).contains(&kinds), "{kinds} looks read for {lanes} lanes of 200 clips alike");
+    // A new frame reads them again, from the sheet as it is then.
+    let (kind, look) = {
+        let parts = state.clip_parts.borrow();
+        let (&(_, kind), look) = parts.iter().next().expect("a look");
+        (kind, look.clone())
+    };
+    state.clip_parts.borrow_mut().insert((suhina_engine::model::TrackId(u32::MAX), kind), look);
+    painted("", |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
+    assert_eq!(state.clip_parts.borrow().len(), kinds, "last frame's looks are gone");
 }
 
 #[test]

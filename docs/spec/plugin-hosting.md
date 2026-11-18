@@ -87,6 +87,18 @@ bend, channel pressure, parameter value) as fixed 16-byte records with their fra
 Two more kinds carry the song: `Transport` (playing, position in samples) and `Tempo`, sent
 with every block to a plug-in that follows the song (one loaded with an ARA document,
 [ADR 0033](../decisions/0033-ara-hosting.md)), which a VST3 host puts in the block's process context.
+The song a plug-in is told is the song of the sound it gets: as late as the latency of the
+devices before it in its chain and its chain's input delay (a bus or a return hears its
+sources as late as the latest of them, the main channel the whole mix as late as its latest
+path), so a plug-in that follows the song (a tempo-synced volume shape, an arpeggiator) lines up
+with what it hears after a linear-phase EQ or a look-ahead device. A plug-in inside a device
+group adds the devices before it in its branch to the delay before the group; a branch beside
+it does not. The engine keeps the song as each recent block started (`SongHistory`), and the
+song that late is read from the block that played then: a loop's wrap, a jump, a tempo or time
+signature change reach a delayed plug-in when its sound does, with the bar, tempo and signature
+of that moment. Further back than the blocks kept (more than five seconds of the smallest
+blocks), the oldest is stepped back at its tempo. While the transport is stopped the position
+is not moved.
 A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
 pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
 through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins

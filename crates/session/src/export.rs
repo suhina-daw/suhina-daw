@@ -226,7 +226,12 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
         )
         .into());
     }
-    let mut out = vec![0.0f32; total * 2];
+    // The devices' latency, compensated: everything comes out of the mix this much later, so the
+    // render runs this much longer and drops it from the start, and the file's first frame is the
+    // project's (an imported song's 277 ms of plug-in latency was silence at the start and missing
+    // at the end).
+    let latency = renderer.latency() as usize;
+    let mut out = vec![0.0f32; total.saturating_add(latency) * 2];
     for block in out.chunks_mut(BLOCK_FRAMES * 2) {
         renderer.process(block);
     }
@@ -235,7 +240,7 @@ pub fn export_from(data: &ExportData, params: &Value) -> Result<Value, CommandEr
     // dropped in place so no second buffer of the render's size is ever made.
     let start_frame =
         range.map_or(0, |(start, _)| suhina_engine::frame_of_beat(&data.project, start, sample_rate) as usize);
-    let skip = start_frame.saturating_mul(2).min(out.len());
+    let skip = start_frame.saturating_add(latency).saturating_mul(2).min(out.len());
     out.drain(..skip);
     let mut written = out;
     if written.is_empty() {

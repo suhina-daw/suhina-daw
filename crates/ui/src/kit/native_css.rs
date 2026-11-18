@@ -47,8 +47,11 @@ const MAX_NODES: usize = 4096;
 /// Most element identities whose styles are kept, and most ids the app gives elements (`track-3`,
 /// `device-compressor`) kept interned. Past the identities' limit their cache starts again empty;
 /// a full id table starts again at the next frame, and until then a new id is not given.
-const MAX_IDENTITIES: usize = 4096;
-const MAX_IDS: usize = 8192;
+/// Room for a large arrangement's clips in view (each clip is one element, its parts read once
+/// per kind) besides the window's own elements, so zooming across a song of thousands of clips
+/// does not empty the cache every frame.
+const MAX_IDENTITIES: usize = 8192;
+const MAX_IDS: usize = 16384;
 
 /// A computed style: as the style engine gives it, and as painters read it.
 #[derive(Clone)]

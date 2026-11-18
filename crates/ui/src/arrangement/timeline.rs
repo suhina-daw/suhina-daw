@@ -117,9 +117,11 @@ pub struct ClipBox {
     pub latest_end: Option<f64>,
     /// The colour it shows: its own, or its track's.
     pub color: Rgb,
-    /// What the clip is known by from one build to the next (its content and its start), so a
-    /// stacked clip keeps its sub-row when another goes.
-    pub stack_key: (u32, u64),
+    /// What the clip is known by from one build to the next (its content, its start and its id),
+    /// so a stacked clip keeps its sub-row when another goes. The id tells apart two clips that
+    /// play the same content from the same beat (an import's doubled placements): with the
+    /// content and the start alone they shared one entry and swapped rows on every build.
+    pub stack_key: (u32, u64, u32),
     /// The number on its track (from 1) of the take it was comped from, for a part of a comp: it
     /// is named and coloured after that take (#989).
     pub take: Option<usize>,
@@ -189,7 +191,7 @@ pub struct LoopBrace {
 /// The sub-row each stacked clip was put in, by track and [`ClipBox::stack_key`], with the span
 /// it had: the next build keeps it there, and a new clip inside that span (a split's parts) takes
 /// that row.
-pub type StackRows = std::collections::HashMap<(TrackId, (u32, u64)), (usize, f64, f64)>;
+pub type StackRows = std::collections::HashMap<(TrackId, (u32, u64, u32)), (usize, f64, f64)>;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Timeline {
@@ -801,7 +803,7 @@ fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> C
     ClipBox {
         id: clip.id,
         color: clip.color.unwrap_or(track_color),
-        stack_key: (clip.content.0, clip.start.to_bits()),
+        stack_key: (clip.content.0, clip.start.to_bits(), clip.id.0),
         // A MIDI clip goes on before its notes (#832); an audio clip's audio starts where it does.
         earliest_start: if looped || !audio { 0.0 } else { (clip.start - clip.offset).max(0.0) },
         latest_end: content.filter(|_| audio && !looped).map(|c| clip.start - clip.offset + c.length),
