@@ -138,6 +138,7 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha }}
           SENDER: ${{ github.event.sender.login }}
           BUILD: ${{ steps.build.outputs.result }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           eval "$HELPERS"
           is_maintainer() {
@@ -149,15 +150,17 @@ jobs:
             exit 0
           fi
           # Nothing merges without a finished test build of this head (or of the head it updated
-          # with main only), unless it builds nothing or only user interface code. A lookup that
-          # failed has already failed the job, label kept.
+          # with main only), unless it builds nothing or only user interface code, or merges into
+          # `next`. A lookup that failed has already failed the job, label kept.
           state=$(printf '%s' "$BUILD" | jq -r --arg sha "$SHA" 'if .head == $sha then .state // "" else "" end')
           # no-binary: test-build.yml never runs for this change (documentation, scripts or other
           # workflows only), so there is no build to wait for. ui_only: the change is user
           # interface code alone (build_reuse.py's UI_PATHS), which merges without a build; one is
           # still built on /test-build or for a maintainer's own pull request.
           ui_only=$(printf '%s' "$BUILD" | jq -r 'if .ui_only == true then "true" else "false" end')
-          if [ "$state" != "ready" ] && [ "$state" != "no-binary" ] && [ "$ui_only" != true ]; then
+          # Into `next`, no build is waited for: the nightly builds and packages `next` on every
+          # system before main moves to it (docs/releasing.md › The next branch).
+          if [ "$BASE_REF" != next ] && [ "$state" != "ready" ] && [ "$state" != "no-binary" ] && [ "$ui_only" != true ]; then
             gh pr edit "$NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
             gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --body \
               "\`$LABEL\` needs a finished test build of ${SHA:0:7}: comment \`/test-build\`, wait for the build to succeed, then add \`$LABEL\` again (CONTRIBUTING.md › Merging many pull requests)."

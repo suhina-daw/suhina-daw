@@ -177,8 +177,11 @@ The workflows follow the repository's default branch, so they behave as before w
 the default and change over with it: `ci.yml`, `test-build.yml` (`cache`) and `docs-generated.yml`
 run on a push to the default branch and save its caches, and do nothing on a push to `main` once
 `next` is the default (the nightly moving it); a pull request's test build compares it with its
-own base branch (`scripts/build_reuse.py`, `branch_update.py`). `nightly-notes.yml` still runs
-from `main`.
+own base branch (`scripts/build_reuse.py`, `branch_update.py`), and `ready to merge` queues a pull
+request into `next` without waiting for a test build of it (`ready-to-merge.yml`), since the
+nightly builds `next` on every system before `main` moves. `docs-generated.yml` keeps one run at
+a time per branch, so a push to `main` never drops a waiting run of `next`. `nightly-notes.yml`
+still runs from `main`.
 
 To turn it on, in this order, after the pull request that prepared the workflows is merged:
 

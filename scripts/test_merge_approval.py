@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class MergeApproval(unittest.TestCase):
     def run_queue(self, sender="Maintainer", label=True, changed_head=False, build="ready", build_head="a" * 40,
-                  ui_only=False):
+                  ui_only=False, base="main"):
         workflow = (ROOT / ".github/workflows/ready-to-merge.yml").read_text(encoding="utf-8")
         step = workflow.split("      - name: Approve the commit and turn on merge when ready", 1)[1]
         source = step.split("        run: |\n", 1)[1].split("\n  unlabel:", 1)[0]
@@ -35,7 +35,7 @@ class MergeApproval(unittest.TestCase):
             env = dict(os.environ, MAINTAINERS="Maintainer", SENDER=sender, AUTHOR="Contributor",
                        AUTHOR_TYPE="User", HEAD_REF="feature/panel", HAS_TEST_BUILD="false",
                        GITHUB_REPOSITORY="owner/repo", NUMBER="960", SHA="a" * 40,
-                       LABEL="ready to merge",
+                       LABEL="ready to merge", BASE_REF=base,
                        BUILD=json.dumps({**({"head": build_head, "state": build} if build else {}),
                                          **({"ui_only": True} if ui_only else {})}),
                        CALLS=log.as_posix(), CHANGED_HEAD=str(changed_head).lower(),
@@ -65,6 +65,21 @@ class MergeApproval(unittest.TestCase):
                 self.assertIn("event=APPROVE", calls)
                 self.assertIn("--match-head-commit " + "a" * 40, calls)
                 self.assertNotIn("--remove-label", calls)
+
+    def test_a_pull_request_into_next_queues_without_a_build(self):
+        # The nightly builds and packages `next` before main moves to it (docs/releasing.md › The
+        # next branch), so a pull request into it does not wait for a build of its own.
+        for build, head in ((None, "a" * 40), ("running", "a" * 40), ("requested", "a" * 40), ("ready", "b" * 40)):
+            with self.subTest(build=build, head=head):
+                result, calls = self.run_queue(build=build, build_head=head, base="next")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("event=APPROVE", calls)
+                self.assertIn("--match-head-commit " + "a" * 40, calls)
+                self.assertNotIn("--remove-label", calls)
+        # Not a maintainer: still refused, into `next` too.
+        _, calls = self.run_queue(sender="Contributor", build=None, base="next")
+        self.assertIn("--remove-label", calls)
+        self.assertNotIn("event=APPROVE", calls)
 
     def test_no_build_running_build_or_build_of_another_head_never_queues(self):
         for build, head in ((None, "a" * 40), ("running", "a" * 40), ("requested", "a" * 40), ("ready", "b" * 40)):

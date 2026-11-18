@@ -35,9 +35,11 @@ on:
 permissions:
   contents: read
 
-# One run at a time, in order; a run that finds the branch moved on leaves the work to the newer run.
+# One run at a time per branch, in order; a run that finds the branch moved on leaves the work to
+# the newer run. Per branch, since a group keeps one waiting run: a push to main (the nightly moving
+# it) must not drop a waiting run of `next`.
 concurrency:
-  group: docs-generated
+  group: docs-generated-${{ github.ref_name }}
   cancel-in-progress: false
 
 env:
