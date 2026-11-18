@@ -1521,7 +1521,9 @@ fn two_closes_asked_in_a_row_both_go_on() {
 }
 
 /// A checked close that comes due while a dialog holds the window's actions waits for it, and
-/// runs once the dialog is gone.
+/// runs once the dialog is gone. While it waits it is a leave check again, not an action handed
+/// to the held ones every frame, and its plug-ins are read again before it runs: an edit made in
+/// a plug-in's editor while the dialog was open still asks whether to save.
 #[test]
 fn a_checked_close_waits_for_a_dialog_that_holds_the_actions() {
     let mut app = App::new();
@@ -1533,10 +1535,36 @@ fn a_checked_close_waits_for_a_dialog_that_holds_the_actions() {
         .allow_missing_glyphs()
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
-    harness.run_steps(2);
+    harness.run_steps(3);
     assert!(harness.state().projects.get(closing).is_some(), "the dialog holds it");
-    assert!(harness.state().checked_close.is_some(), "kept for later");
+    assert!(harness.state().checked_close.is_none(), "not handed to the held actions");
+    let waiting = |app: &App| {
+        app.leave_checks.iter().filter(|c| c.project == closing && matches!(c.then, LeaveThen::Close(_))).count()
+    };
+    assert_eq!(waiting(harness.state()), 1, "a leave check again, once");
     harness.state_mut().about_open = false;
-    harness.run_steps(2);
+    harness.run_steps(3);
     assert!(harness.state().projects.get(closing).is_none(), "closed once the dialog is gone");
+    assert_eq!(waiting(harness.state()), 0);
+}
+
+/// Two files asked to open in place of a project with unsaved changes, one after the other: the
+/// question about the first one stays until it is answered, and the second one's check waits
+/// behind it instead of taking its place.
+#[test]
+fn a_second_open_in_place_waits_for_the_first_ones_question() {
+    let mut app = App::new();
+    let dirty = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    app.projects.get_mut(dirty).unwrap().execute("track.delete", &json!({ "track": 1 })).unwrap();
+    app.open_as(PathBuf::from("first.suhina"), OpenAs::Replace);
+    app.open_as(PathBuf::from("second.suhina"), OpenAs::Replace);
+    poll_leave_checks(&mut app);
+    let asked = |app: &App| match &app.unsaved_prompt {
+        Some(Leaving { then: AfterLeaving::Replace(path), .. }) => Some(path.clone()),
+        _ => None,
+    };
+    assert_eq!(asked(&app), Some(PathBuf::from("first.suhina")));
+    poll_leave_checks(&mut app);
+    assert_eq!(asked(&app), Some(PathBuf::from("first.suhina")), "still the first one's question");
+    assert_eq!(app.leave_checks.len(), 1, "the second waits");
 }

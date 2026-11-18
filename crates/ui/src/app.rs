@@ -1148,8 +1148,12 @@ impl App {
     /// Advances the read of a project's plug-ins before it is left ([`LeaveCheck`]); once done,
     /// asks about unsaved changes or goes on.
     fn poll_leave_check(&mut self, ctx: &egui::Context) {
-        // A checked close not yet run keeps the next one waiting: it holds the one slot.
-        if self.checked_close.is_some() {
+        // A checked close not yet run keeps the next one waiting: it holds the one slot. So does a
+        // question about unsaved changes, or the save it led to: the next check's question would
+        // take its place, and the file it was asked for would be lost unanswered.
+        // A dialog that holds the actions holds the checks too: a close checked now would only
+        // wait for it, its plug-ins read before edits made while it is open.
+        if self.checked_close.is_some() || self.unsaved_prompt_open() || self.dialog_holds_actions() {
             return;
         }
         let Some(check) = self.leave_checks.pop_front() else { return };
@@ -3156,6 +3160,15 @@ impl App {
         }
         let window = ui.max_rect();
         let mut actions = Vec::new();
+        // A close whose plug-ins were read, held by a dialog that opened since: it goes back to
+        // the front of the leave checks, so its plug-ins are read again once the dialog is gone (an
+        // edit made in a plug-in's editor meanwhile still asks whether to save), and it is not
+        // handed to the held actions every frame, which would keep asking for frames.
+        if self.dialog_holds_actions()
+            && let Some((project, action)) = self.checked_close.take()
+        {
+            self.leave_checks.push_front(LeaveCheck { project, then: LeaveThen::Close(action) });
+        }
         self.poll_leave_check(ui.ctx());
         // A close whose plug-ins were read goes on now.
         let checked_close = self.checked_close.take();
