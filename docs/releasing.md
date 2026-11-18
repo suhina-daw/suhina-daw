@@ -179,8 +179,9 @@ only code that built and packaged on Linux, Windows and macOS, so that every nig
 pull request need not wait for a test build of its own.
 
 1. Pull requests target `next`, the repository's default branch, and are squashed into it once
-   `ci` is green. New branches start from `next`. Test builds stay as they are:
-   a maintainer's own pull request is built on every push, others on `/test-build`.
+   `ci` is green. New branches start from `next`. A maintainer's own pull request is built for
+   Windows on every push, since the nightly builds every system before `main` moves;
+   `/test-build` builds all three, for anyone's pull request.
 2. The scheduled agent starts the nightly from `next` (`--ref next`) when `next` has moved since the
    last nightly.
 3. When every system's package is published, the release workflow's job `promote` moves `main`
@@ -265,13 +266,14 @@ request there, and is grouped by its head repository and branch instead.
 
 | Pull request | Built |
 |---|---|
-| opened and pushed by a maintainer | on every push; a newer push cancels a build still running |
+| opened and pushed by a maintainer | for Windows on every push, a newer push cancelling a build still running; for every system on `/test-build` |
 | anyone else's, from a branch in this repository | when a maintainer adds `test-build`, or a trusted contributor comments `/test-build`, for the authorized commit |
 | from a fork | when a maintainer or trusted contributor comments `/test-build`, for that commit; the label alone, a maintainer's too, is refused |
 
-A pull request with the `test-build-windows` label is built for Windows only, which keeps the
-shared runners free while only that platform is being tried; its comment lists the other two as
-not built.
+A maintainer's push, and any build of a pull request with the `test-build-windows` label, is
+built for Windows only, which keeps the shared runners free; its comment lists the other two as
+not built and, without the label, says that `/test-build` builds them. `/test-build` never takes a
+Windows-only build for one of every system (`scripts/build_reuse.py`), so it starts a new build.
 
 Only a pull request that changes what goes into the binaries is built: `apps/`, `crates/`,
 `devices/`, `presets/`, `third_party/`, `Cargo.toml`, `Cargo.lock`, `.cargo/` or `test-build.yml`

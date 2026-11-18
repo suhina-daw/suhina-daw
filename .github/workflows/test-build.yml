@@ -4,7 +4,8 @@ name: Test build
 # it: the same binaries as the nightly's, uploaded as workflow artifacts kept for 7 days. test-build-links.yml then
 # links it from the pull request. See docs/releasing.md › Test builds.
 #
-# Who gets one: a pull request opened and pushed by a maintainer is built on every push. Another
+# Who gets one: a pull request opened and pushed by a maintainer is built for Windows on every
+# push, and for all three systems on /test-build (the `test-build` label). Another
 # pull request from a branch in this repository is built when a maintainer adds `test-build`, or
 # the bot adds it for an authorized /test-build request. One from a fork is built only through
 # /test-build: the bot adds the label for a maintainer's or trusted contributor's request for that
@@ -160,9 +161,11 @@ jobs:
           BEFORE: ${{ github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-          # A pull request labelled `test-build-windows` is built for Windows only, to keep the
-          # shared runners free when only that platform is being tried.
-          WINDOWS_ONLY: ${{ contains(github.event.pull_request.labels.*.name, 'test-build-windows') }}
+          # Windows only, to keep the shared runners free: a maintainer's push (the nightly builds
+          # every system before `main` moves, docs/releasing.md › The next branch), and a pull
+          # request labelled `test-build-windows`. The `test-build` label (a /test-build request)
+          # and a run by hand build all three.
+          WINDOWS_ONLY: ${{ (github.event_name == 'pull_request' && github.event.action != 'labeled') || contains(github.event.pull_request.labels.*.name, 'test-build-windows') }}
         run: |
           # As release.yml: the oldest supported Ubuntu, so the binary runs on older glibc too;
           # macOS builds both architectures, joined into one universal binary with lipo.
