@@ -171,7 +171,9 @@ jobs:
           git add docs/INDEX.md docs/commands.md
           git add -u -- 'docs/*.md' ROADMAP.md
           # The subject starts "Docs: regenerate", which `docs.py stamp` skips (scripts/docs.py).
-          git commit -m "Docs: regenerate INDEX.md, commands.md and last_verified dates"
+          # [skip ci]: the commit changes generated documents only, and starts no workflow on
+          # main, so it neither queues behind nor holds up the CI run of the merge before it.
+          git commit -m "Docs: regenerate INDEX.md, commands.md and last_verified dates" -m "[skip ci]"
           if ! git push origin HEAD:main; then
             echo "::notice::main moved on during this run; the run for the newer commit regenerates the files."
           fi

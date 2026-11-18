@@ -292,11 +292,16 @@ show as skipped and `ci` passes.
 **The build cache.** Only `main` saves `ci.yml`'s Rust cache; pull requests and the merge queue
 restore `main`'s. The repository's caches share GitHub's 10 GB, and when every pull request push
 saved its own (about 0.8 GB per system), `main`'s were evicted and about half the runs compiled
-every dependency again: 11 to 12 minutes of compiling on Linux instead of 3½ to 4½. Each push to
-`main` runs CI to the end in a concurrency group of its own: the generated-docs commit that
-follows every merge used to cancel it, and as a cancelled run saves no cache, Windows (the slowest)
-never saved one and every pull request compiled every dependency there, 23 to 29 minutes instead of
-about 10.
+every dependency again: 11 to 12 minutes of compiling on Linux instead of 3½ to 4½. A run on
+`main` is never cancelled, since a cancelled run saves no cache: when the generated-docs commit
+that follows every merge cancelled it, Windows (the slowest) never saved one and every pull
+request compiled every dependency there, 23 to 29 minutes instead of about 10. The pushes to
+`main` share one concurrency group without cancelling: the running run goes to the end, only the
+newest push waits, and the ones in between get no run (GitHub keeps one waiting run a group).
+When every push had a group of its own, five merges in twenty minutes filled the organisation's
+runners (about 20 jobs at once, 5 on macOS) for half an hour with the runs of superseded commits,
+nine jobs each, and the pull requests' runs queued behind them. The generated-docs commit says
+`[skip ci]` and starts no workflow.
 
 rust-cache saves only when the cache's key changes (`Cargo.lock`, the toolchain), and what a job
 builds is not part of the key. When a job comes to build less, a new `prefix-key` is what makes
