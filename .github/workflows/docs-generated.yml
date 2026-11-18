@@ -46,8 +46,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The default branch only, a run by hand too: once `next` is the default, a commit pushed to main
+  # that `next` lacks would keep the nightly's `promote` from moving main forward for good.
   generate:
-    if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
+    if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

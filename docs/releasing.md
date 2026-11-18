@@ -183,19 +183,30 @@ nightly builds `next` on every system before `main` moves. `docs-generated.yml` 
 a time per branch, so a push to `main` never drops a waiting run of `next`. `nightly-notes.yml`
 still runs from `main`.
 
-To turn it on, in this order, after the pull request that prepared the workflows is merged:
+To turn it on, in this order, after the pull request that prepared the workflows is merged. `main`
+must gain nothing that `next` lacks: a single commit on `main` that is not on `next` keeps
+`promote` from ever moving `main` again (it is a fast-forward only), until someone moves `next` or
+`main` by hand.
 
-1. Create `next` from `main`.
-2. Settings › Rules: give `next` the rules `main` has today (an approval, the code owner's review,
+1. Stop everything that writes to `main`: let nothing into the merge queue (take `ready to merge`
+   off the queued pull requests), and wait until no run of `docs-generated.yml` (it commits to
+   `main` after a merge), `ci.yml` or the merge queue is queued or in progress on `main`.
+2. Create `next` from `main` as it is then.
+3. Settings › Rules: give `next` the rules `main` has today (an approval, the code owner's review,
    the required `ci` check, resolved threads) and the merge queue ruleset. Leave `main` to the
    docs bot's app alone (it is on the bypass list already), so only `promote` moves it.
-3. Settings › Environments: let `docs-bot` deploy from `next` as well as `main` (the generated
+4. Settings › Environments: let `docs-bot` deploy from `next` as well as `main` (the generated
    docs are pushed to `next`, and `promote` runs on `next`).
-4. Settings › General: make `next` the default branch. Dependabot and `ready to merge` follow it.
-5. Point the open pull requests at `next` (`gh pr edit N --base next`).
-6. The scheduled agents: the nightly's starts it with `--ref next` and compares `next` with the
+5. Check that `next` and `main` are still the same commit
+   (`gh api repos/suhina-daw/suhina-daw/compare/main...next --jq .behind_by` prints 0); if `main`
+   moved, move `next` to it first. Then Settings › General: make `next` the default branch.
+   From then on a run of `docs-generated.yml` writes only to `next`, a run by hand on `main`
+   included. Dependabot and `ready to merge` follow the default branch.
+6. Point the open pull requests at `next` (`gh pr edit N --base next`), and let the merge queue
+   take pull requests again.
+7. The scheduled agents: the nightly's starts it with `--ref next` and compares `next` with the
    tag `nightly`; the notes' fetches `next` as well as `main`.
-7. CONTRIBUTING.md, docs/workflow.md and AGENTS.md: pull requests target `next`.
+8. CONTRIBUTING.md, docs/workflow.md and AGENTS.md: pull requests target `next`.
 
 ## Test builds
 
