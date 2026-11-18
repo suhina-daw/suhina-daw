@@ -257,3 +257,32 @@ fn a_driver_with_one_size_says_it_instead_of_offering_it() {
     assert_eq!(buffer_row(&[256], true, false), BufferRow::Choose);
     assert_eq!(buffer_row(&[1024], false, false), BufferRow::Choose);
 }
+
+#[test]
+fn the_status_says_how_many_threads_render_and_which_track_was_late_most() {
+    let mut about = About::default();
+    assert_eq!(render_threads_now(&about), "Not playing");
+    about.audio_live = Some(suhina_session::OutputInfo { render_threads: 1, ..Default::default() });
+    assert_eq!(render_threads_now(&about), "1 thread: the render thread alone");
+    about.audio_live = Some(suhina_session::OutputInfo { render_threads: 4, ..Default::default() });
+    assert_eq!(render_threads_now(&about), "4 threads; no block late");
+    about.audio_live = Some(suhina_session::OutputInfo {
+        render_threads: 4,
+        render_misses: 3,
+        worst_render_track: Some(2),
+        worst_render_misses: 2,
+        ..Default::default()
+    });
+    about.audio_late_track = Some("Bass".into());
+    assert_eq!(render_threads_now(&about), "4 threads; 3 blocks late, most on Bass (2)");
+}
+
+#[test]
+fn option_buttons_that_run_past_the_row_become_a_drop_down() {
+    let row = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(560.0, 24.0));
+    let inside = Rect::from_min_max(Pos2::new(240.0, 1.0), Pos2::new(560.0, 23.0));
+    let past = Rect::from_min_max(Pos2::new(240.0, 1.0), Pos2::new(640.0, 23.0));
+    assert!(buttons_fit(5, inside, row));
+    assert!(!buttons_fit(5, past, row), "five long names past the edge");
+    assert!(!buttons_fit(6, inside, row), "more than five choices");
+}

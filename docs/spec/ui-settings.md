@@ -70,9 +70,10 @@ what is inside it).
 |---|---|---|
 | Projects and backups | Projects | Open projects in, Startup project, Projects folder, Templates folder, Settings folder (used from the next start; changing it asks, backs up and moves the files), Startup template (shown with Startup project › Template) |
 | Projects and backups | Backups | Backup interval (the note names the newest backup of the active project), Delete old backups |
-| Audio | Status | Audio status: the output and input in use, how long sound takes to come out, dropouts, List devices again (a panel, not a setting) |
+| Audio | Status | Audio status: the output and input in use, how long sound takes to come out, dropouts, the render threads and their late blocks, List devices again (a panel, not a setting) |
 | Audio | Output | Audio device: Driver, Device, Sample rate, Buffer size (or Engine block), Exclusive mode, Input; Default track input (None, each channel and each pair of the input device; each audio device keeps its own with its Input, so choosing another Device brings both back; only a note while Input is Off) |
 | Audio | Cue | Headphone output: Cue output, Cue volume |
+| Audio | Advanced | Render threads (Off, Automatic, 2, 4, 8; [render threads](render-threads.md)) |
 | MIDI | MIDI inputs | Each MIDI input port, on or off |
 | MIDI | Arming | Arm selected track |
 | Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |
@@ -116,7 +117,8 @@ what is inside it).
 
 The Settings window opens on the page used last in the session. Descriptions are shown whole: they
 wrap under the setting's name. A yes/no setting is a switch; a choice of up to five is a row of
-option buttons, each as wide as its text needs; more than five is a drop-down.
+option buttons, each as wide as its text needs; more than five, or buttons that would run past
+the row's right edge (long names, a narrow window), is a drop-down.
 
 Where a setting is shown never changes how it is saved: each keeps the key it has in
 `settings.txt` (or `keymap.json` for keys and the mouse switches), so a settings file written
@@ -331,8 +333,8 @@ checks the ones a machine can check and names this section when one fails.
      setting's options or help when someone needs it. No file paths into the docs, no ADR or issue
      numbers, no code names.
 5. **One control per kind of choice:** a switch (`cx.on_off`) for yes/no, option buttons
-   (`cx.choose`) for up to five choices that exclude each other, a drop-down beyond that
-   (`cx.choose` switches by itself). No text is cut off.
+   (`cx.choose`) for up to five choices that exclude each other, a drop-down beyond that or when
+   the buttons would run past the row (`cx.choose` switches by itself). No text is cut off.
 6. **The stored key never changes** when a setting moves: it keeps its key in `settings.txt`
    (`keymap.json` for keys and the mouse switches). A new setting gets a new key, listed in the
    entry's keys.

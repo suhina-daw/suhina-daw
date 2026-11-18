@@ -50,6 +50,9 @@ const LIST_LEAST: f32 = 160.0;
 pub struct About {
     /// What the active project plays on now, read every frame (`audio.info`).
     pub audio_live: Option<suhina_session::OutputInfo>,
+    /// The name of the track whose chain came back late from the render workers most often
+    /// (ADR 0038 › 3), when one did.
+    pub audio_late_track: Option<String>,
     /// The audio hosts and their output devices, listed when Settings › Audio opens or is
     /// refreshed (`audio.devices`).
     pub audio_hosts: Vec<suhina_session::audio::HostInfo>,
@@ -82,6 +85,7 @@ impl Default for About {
     fn default() -> Self {
         Self {
             audio_live: None,
+            audio_late_track: None,
             audio_hosts: Vec::new(),
             midi_inputs: Ok(Vec::new()),
             graphics_now: None,
@@ -642,8 +646,11 @@ impl Cx<'_> {
         field: impl FnOnce(&mut Settings) -> &mut T,
     ) {
         let value = field(self.settings);
-        // Option buttons for up to five choices that exclude each other, a drop-down beyond that.
-        if options.len() > MAX_BUTTONS {
+        // Option buttons for up to five choices that exclude each other, a drop-down beyond that,
+        // and when the buttons would run past the row's right edge (long names, a narrow window).
+        let widths = option_widths(self.ui, options);
+        let rect = fitted_rect(row, &widths);
+        if !buttons_fit(options.len(), rect, row) {
             let listed: Vec<(String, T)> = options.iter().map(|(text, v)| (text.to_string(), *v)).collect();
             if let Some(picked) = choice_dropdown(self.ui, self.painter, row, self.name, &listed, value) {
                 *value = picked;
@@ -651,8 +658,7 @@ impl Cx<'_> {
             }
             return;
         }
-        let rect = options_rect(self.ui, row, options);
-        if let Some(picked) = segmented(self.ui, self.painter, rect, self.name, options, *value) {
+        if let Some(picked) = segmented_parts(self.ui, self.painter, rect, &widths, self.name, options, *value) {
             *value = picked;
             self.outcome.changed = true;
         }
@@ -3215,7 +3221,29 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
         None => "Not playing".to_string(),
     };
     label(painter, r, "Recording input", &input);
+    let r = row(y);
+    label(painter, r, "Render threads", &render_threads_now(about));
     response.clicked()
+}
+
+/// The threads that render each block and the blocks they missed (ADR 0038): "1 thread" when
+/// the render thread works alone.
+pub(crate) fn render_threads_now(about: &About) -> String {
+    let Some(info) = &about.audio_live else { return "Not playing".to_string() };
+    let threads = info.render_threads.max(1);
+    let plural = |n: u64| if n == 1 { "" } else { "s" };
+    if threads == 1 {
+        return "1 thread: the render thread alone".to_string();
+    }
+    match (info.render_misses, &about.audio_late_track) {
+        (0, _) => format!("{threads} threads; no block late"),
+        (late, Some(track)) => format!(
+            "{threads} threads; {late} block{} late, most on {track} ({})",
+            plural(late),
+            info.worst_render_misses
+        ),
+        (late, None) => format!("{threads} threads; {late} block{} late", plural(late)),
+    }
 }
 
 /// A segmented control for the keymap preset: the sets of keys, with the chosen one lit.
@@ -3444,6 +3472,25 @@ fn options_rect<T>(ui: &Ui, row: Rect, options: &[(&str, T)]) -> Rect {
     Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
 }
 
+/// The width of each option button of a setting's choice: as wide as its text needs, at least
+/// 48 points (`docs/spec/ui-settings.md` › Pages and groups).
+fn option_widths<T>(ui: &Ui, options: &[(&str, T)]) -> Vec<f32> {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    options.iter().map(|(text, _)| (widgets::text_width(ui, text, font.clone()) + 16.0).max(48.0).ceil()).collect()
+}
+
+/// Where the option buttons of `widths` sit in `row`: from the control column, one point apart.
+fn fitted_rect(row: Rect, widths: &[f32]) -> Rect {
+    let width = widths.iter().sum::<f32>() + widths.len().saturating_sub(1) as f32;
+    Rect::from_min_size(Pos2::new(control_x(row), row.top() + 1.0), Vec2::new(width, SEGMENT))
+}
+
+/// Whether `count` choices fit `row` as option buttons in `rect`: at most [`MAX_BUTTONS`], and
+/// not past the row's right edge.
+pub(crate) fn buttons_fit(count: usize, rect: Rect, row: Rect) -> bool {
+    count <= MAX_BUTTONS && rect.right() <= row.right() + 0.5
+}
+
 /// Where a setting's control starts in `row`: the second column.
 fn control_x(row: Rect) -> f32 {
     row.left() + CONTROL_COLUMN
@@ -3467,10 +3514,25 @@ fn segmented<T: Copy + PartialEq>(
 ) -> Option<T> {
     let count = options.len().max(1) as f32;
     let part = (rect.width() - (count - 1.0)) / count;
+    let widths = vec![part; options.len()];
+    segmented_parts(ui, painter, rect, &widths, name, options, current)
+}
+
+/// [`segmented`] with a width of its own for each part, from the left of `rect`.
+fn segmented_parts<T: Copy + PartialEq>(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    widths: &[f32],
+    name: &str,
+    options: &[(&str, T)],
+    current: T,
+) -> Option<T> {
     let mut picked = None;
-    for (index, (text, value)) in options.iter().enumerate() {
-        let x = rect.left() + index as f32 * (part + 1.0);
-        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(part, rect.height()));
+    let mut x = rect.left();
+    for (index, ((text, value), part)) in options.iter().zip(widths).enumerate() {
+        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(*part, rect.height()));
+        x += part + 1.0;
         let response = widgets::button_area(ui, cell, Id::unique(("setting", name, index)), format!("{name}: {text}"));
         if response.clicked() && *value != current {
             picked = Some(*value);

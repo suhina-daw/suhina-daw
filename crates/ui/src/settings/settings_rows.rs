@@ -182,6 +182,16 @@ pub(crate) static ROWS: &[Entry] = &[
         &["audio_cue_pair", "audio_cue_volume"],
         crate::settings::settings_view::audio_cue,
     ),
+    row(
+        Page::Audio,
+        "Advanced",
+        "Render threads",
+        "How many processor threads share the work of each block of sound, so heavier projects can play",
+        &["render_threads"],
+        |cx, r| {
+            cx.choose(r, &[("Off", 1u32), ("Automatic", 0), ("2", 2), ("4", 4), ("8", 8)], |s| &mut s.render_threads)
+        },
+    ),
     block(
         Page::Midi,
         "MIDI inputs",
