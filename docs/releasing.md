@@ -101,7 +101,8 @@ release. Running the workflow from `main` with **nightly** checked builds `main`
 as the release **`nightly`**, replacing the previous one: its release and tag are deleted and made
 again on the new commit, published at once without a draft. The workflow has no schedule of its
 own: a scheduled agent starts it twice a day (`gh workflow run release.yml -f nightly=true`) when
-`main` has moved since the last nightly, or a maintainer does by hand. A second agent then rewrites
+`main` has moved since the last nightly (`next`, once it is the default branch:
+[The next branch](#the-next-branch)), or a maintainer does by hand. A second agent then rewrites
 its notes and posts it to Discord (see [Nightly notes](#nightly-notes)).
 
 The nightly's version is the workspace version without a pre-release suffix, the date and the
@@ -154,6 +155,44 @@ Until Suhina has a release of its own (published, not a release candidate), the 
 repository's **latest** release, so the Releases box on the repository page offers its downloads.
 From the first release on, the nightly is published as a pre-release that never becomes the
 latest. Nothing is promoted from it: a release is made from a version tag as above.
+
+## The next branch
+
+Planned, not yet in use: the workflows are ready for it, the settings below are not made. Pull
+requests are to merge into an integration branch, `next`, and `main` to hold only code that
+built and packaged on Linux, Windows and macOS, so that every nightly is green and a pull request
+need not wait for a test build of its own.
+
+1. Pull requests target `next`, the repository's default branch, and merge there through the
+   merge queue with `ci` as today. New branches start from `next`. Test builds stay as they are:
+   a maintainer's own pull request is built on every push, others on `/test-build`.
+2. The scheduled agent starts the nightly from `next` (`--ref next`) when `next` has moved since the
+   last nightly.
+3. When every system's package is published, the release workflow's job `promote` moves `main`
+   to the commit the nightly was built from. It is a fast-forward only: if `main` is not an
+   ancestor of that commit, GitHub refuses and `main` stays. A failed build or publish never
+   reaches the job, and `main` waits for the next night; the fix merges into `next` like any other.
+
+The workflows follow the repository's default branch, so they behave as before while `main` is
+the default and change over with it: `ci.yml`, `test-build.yml` (`cache`) and `docs-generated.yml`
+run on a push to the default branch and save its caches, and do nothing on a push to `main` once
+`next` is the default (the nightly moving it); a pull request's test build compares it with its
+own base branch (`scripts/build_reuse.py`, `branch_update.py`). `nightly-notes.yml` still runs
+from `main`.
+
+To turn it on, in this order, after the pull request that prepared the workflows is merged:
+
+1. Create `next` from `main`.
+2. Settings › Rules: give `next` the rules `main` has today (an approval, the code owner's review,
+   the required `ci` check, resolved threads) and the merge queue ruleset. Leave `main` to the
+   docs bot's app alone (it is on the bypass list already), so only `promote` moves it.
+3. Settings › Environments: let `docs-bot` deploy from `next` as well as `main` (the generated
+   docs are pushed to `next`, and `promote` runs on `next`).
+4. Settings › General: make `next` the default branch. Dependabot and `ready to merge` follow it.
+5. Point the open pull requests at `next` (`gh pr edit N --base next`).
+6. The scheduled agents: the nightly's starts it with `--ref next` and compares `next` with the
+   tag `nightly`; the notes' fetches `next` as well as `main`.
+7. CONTRIBUTING.md, docs/workflow.md and AGENTS.md: pull requests target `next`.
 
 ## Test builds
 

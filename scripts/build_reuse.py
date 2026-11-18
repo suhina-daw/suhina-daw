@@ -228,10 +228,14 @@ def main():
     if complete and not builds_binary(files, paths):
         return {"head": head, "source": head, "state": "no-binary", "url": ""}
     candidates = [head]
-    if pr["base"]["ref"] == "main":
+    base = pr["base"]["ref"]
+    # The branch pull requests merge into: main, or `next` once it is the default branch
+    # (docs/releasing.md › The next branch).
+    if base in ("main", pr["base"].get("repo", {}).get("default_branch")):
         # Fetch objects only: do not check out files, submodules, build scripts or hooks from PRs.
-        bu.git("fetch", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main", f"refs/pull/{number}/head")
-        candidates = eligible_heads(head, "origin/main")
+        bu.git("fetch", "--no-tags", "origin", f"+refs/heads/{base}:refs/remotes/origin/{base}",
+               f"refs/pull/{number}/head")
+        candidates = eligible_heads(head, f"origin/{base}")
     found = find_reuse(api, repo, pr, head, candidates, members(os.environ.get("MAINTAINERS", "")),
                        members(os.environ.get("TRUSTED_CONTRIBUTORS", "")))
     # Beside the build, not in place of it: /test-build still builds a user interface change.

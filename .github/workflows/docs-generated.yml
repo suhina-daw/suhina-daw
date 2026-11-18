@@ -1,6 +1,7 @@
 name: Generated docs
 
-# Regenerates, on main after every merge, and commits when they changed:
+# Regenerates, on the default branch after every merge (main, or `next` once it is the default:
+# docs/releasing.md › The next branch), and commits when they changed:
 #   - docs/commands.md, from the command registry;
 #   - last_verified in the front matter of every document changed since it was last set
 #     (scripts/docs.py stamp);
@@ -17,20 +18,24 @@ name: Generated docs
 # The push uses a short-lived token of the GitHub App `suhina-docs-bot`, which the main ruleset
 # lets bypass pull requests (the organisation does not allow deploy keys). Setup: the app has
 # Repository permissions › Contents: Read and write and is installed on this repository only; the
-# environment `docs-bot` (Settings › Environments), limited to the `main` branch, holds its public
-# Client ID in the variable DOCS_BOT_CLIENT_ID and a private key in the secret DOCS_BOT_PRIVATE_KEY;
-# the app is on the bypass list of the main ruleset (Always). Without either, files are not pushed.
+# environment `docs-bot` (Settings › Environments), limited to the `main` branch (and `next`, once
+# it is the default), holds its public Client ID in the variable DOCS_BOT_CLIENT_ID and a private
+# key in the secret DOCS_BOT_PRIVATE_KEY; the app is on the bypass list of the ruleset of the
+# branch it pushes to (Always). Without either, files are not pushed.
 # ready-to-merge.yml uses the same app and environment, and needs Pull requests and Issues: Read
 # and write too.
 on:
   push:
-    branches: [main]
+    # The default branch only (job `generate`): main until `next` is the default, then `next`,
+    # where the pull requests merge. A push to main then is the nightly moving main to a commit
+    # of `next` that already has its generated files.
+    branches: [main, next]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# One run at a time, in order; a run that finds main moved on leaves the work to the newer run.
+# One run at a time, in order; a run that finds the branch moved on leaves the work to the newer run.
 concurrency:
   group: docs-generated
   cancel-in-progress: false
@@ -40,6 +45,7 @@ env:
 
 jobs:
   generate:
+    if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -174,6 +180,6 @@ jobs:
           # [skip ci]: the commit changes generated documents only, and starts no workflow on
           # main, so it neither queues behind nor holds up the CI run of the merge before it.
           git commit -m "Docs: regenerate INDEX.md, commands.md and last_verified dates" -m "[skip ci]"
-          if ! git push origin HEAD:main; then
-            echo "::notice::main moved on during this run; the run for the newer commit regenerates the files."
+          if ! git push origin "HEAD:$GITHUB_REF_NAME"; then
+            echo "::notice::$GITHUB_REF_NAME moved on during this run; the run for the newer commit regenerates the files."
           fi

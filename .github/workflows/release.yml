@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       nightly:
-        description: Publish the build as the nightly (from main only)
+        description: Publish the build as the nightly (from the default branch or main only)
         type: boolean
         default: false
 
@@ -55,6 +55,7 @@ jobs:
         shell: bash
         env:
           NIGHTLY_INPUT: ${{ inputs.nightly }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           version=$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "suhina-cli") | .version')
@@ -73,8 +74,10 @@ jobs:
           fi
           nightly=false
           if [ "$NIGHTLY_INPUT" = "true" ]; then
-            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-              echo "::error::the nightly is built from main only"
+            # From the default branch, where the pull requests merge (`next` once it is the
+            # default; job `promote` then moves main to the nightly's commit), or from main.
+            if [ "$GITHUB_REF" != "refs/heads/main" ] && [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+              echo "::error::the nightly is built from the default branch ($DEFAULT_BRANCH) or main only"
               exit 1
             fi
             nightly=true
@@ -370,7 +373,7 @@ jobs:
           changes=$(python3 scripts/release_notes.py --repo "$GITHUB_REPOSITORY" \
             --base "$PREVIOUS" --head "$GITHUB_SHA" --style nightly)
           notes=$(cat <<EOF
-          **A development build, not a release.** Built from \`main\` at $GITHUB_SHA: whatever works there today, unfinished parts and bugs included. Projects saved with it may not open in later builds.
+          **A development build, not a release.** Built from \`$GITHUB_REF_NAME\` at $GITHUB_SHA: whatever works there today, unfinished parts and bugs included. Projects saved with it may not open in later builds.
 
           The desktop app is \`$APP\`; \`$BIN\` is the command-line tool, and \`$HOST\` is the process plug-ins run in, kept in the same folder. The binaries are not signed: macOS and Windows warn before running them. On Linux they need the ALSA library (\`libasound2\`).
 
@@ -455,3 +458,35 @@ jobs:
                   gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
                 fi
               done
+
+  # Once `next` is the default branch, the pull requests merge there and main follows the nightly:
+  # when every system's nightly is published, main moves to the commit it was built from, so main
+  # holds only code that built and packaged on Linux, Windows and macOS (docs/releasing.md › The
+  # next branch). A fast-forward only: if main is not an ancestor of that commit, GitHub refuses
+  # and main stays where it was. A build or publish that failed never gets here, and main waits
+  # for the next night. The docs bot's app pushes it, since main's ruleset lets only it bypass.
+  promote:
+    name: main to the nightly
+    needs: [version, nightly]
+    if: needs.version.outputs.nightly == 'true' && github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: docs-bot
+    steps:
+      - name: Token of the docs bot app
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
+      - name: Move main to the nightly's commit
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          before=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$before" = "$GITHUB_SHA" ]; then
+            echo "main is already at ${GITHUB_SHA::7}."
+            exit 0
+          fi
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/main" \
+            -f sha="$GITHUB_SHA" -F force=false --jq .object.sha >/dev/null
+          echo "main moved from ${before::7} to ${GITHUB_SHA::7} ($GITHUB_REF_NAME's nightly)." >> "$GITHUB_STEP_SUMMARY"
