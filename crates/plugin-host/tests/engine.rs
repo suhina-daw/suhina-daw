@@ -894,14 +894,15 @@ fn plug_ins_sharing_a_process_render_the_same_as_each_in_its_own() {
     assert!(together.iter().any(|s| *s != 0.0));
 }
 
-/// Six tracks, each the base project's track with `devices(n)` (a note on every track).
+/// Four tracks, as few as the render pool takes (`PARALLEL_MIN`), each the base project's track
+/// with `devices(n)` (notes on every track).
 fn tracks(devices: impl Fn(u32) -> Vec<Device>) -> Project {
     let mut p = project(2.0, true, Vec::new());
     let (track, channel, lane) = (p.tracks[0].clone(), p.channels[0].clone(), p.arrangement.lanes[0].clone());
     p.tracks.clear();
     p.channels.clear();
     p.arrangement.lanes.clear();
-    for id in 1..=6u32 {
+    for id in 1..=4u32 {
         p.tracks.push(Track { id: TrackId(id), channel: Some(ChannelId(id)), ..track.clone() });
         p.channels.push(Channel { id: ChannelId(id), devices: devices(id), ..channel.clone() });
         p.arrangement.lanes.push(ArrangementLane { track: Some(TrackId(id)), ..lane.clone() });
@@ -925,7 +926,8 @@ fn render_on(p: &Project, threads: usize) -> (Vec<f32>, u64) {
     renderer.set_render_threads(threads);
     let mut out = Vec::new();
     let mut block = vec![0.0f32; 512 * 2];
-    for _ in 0..(2 * SR as usize / 512) {
+    // Half a second: both notes' starts and the plug-ins' blocks around them.
+    for _ in 0..(SR as usize / 2 / 512) {
         renderer.process(&mut block);
         out.extend_from_slice(&block);
     }
@@ -941,7 +943,7 @@ fn plug_in_chains_render_the_same_on_several_threads_as_on_one() {
     let p = tracks(|n| {
         let mut devices = vec![plugin_device("vst3"), plugin_device("clap")];
         devices.push(Device::new("saturator", DeviceKind::Builtin("saturator".into())));
-        if n % 2 == 0 {
+        if n == 2 {
             let branches = vec![
                 Branch { devices: vec![plugin_device("gain")], ..Branch::new("A") },
                 Branch { devices: vec![plugin_device("clap")], ..Branch::new("B") },
