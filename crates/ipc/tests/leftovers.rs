@@ -73,13 +73,23 @@ fn a_killed_processs_memory_is_freed() {
     assert_eq!(opens(&made), (true, true));
     let _ = child.kill();
     let _ = child.wait();
-    // Nothing removed a file of it, but on Windows and Linux there is none, and the memory went
-    // with the process.
+    // On Windows and Linux there is no file, and the memory went with the process.
     if cfg!(any(windows, target_os = "linux")) {
         assert!(files_of(pid).is_empty(), "{:?}", files_of(pid));
         assert_eq!(opens(&made), (false, false));
     } else {
-        assert_eq!(files_of(pid).len(), 2, "{made:?}");
+        // On macOS its files stay until a sweep. That need not be this test's: every process
+        // sweeps when it first makes shared memory, and nextest runs each test of the workspace
+        // as a process of its own, at the same time as this one. So some or all may be gone
+        // already; any left are the peer's two. The sweep's own tests (`sweep_tests.rs`) show
+        // that a sweep is what removes them.
+        let left = files_of(pid);
+        assert!(left.len() <= 2, "{left:?}");
+        let named = |file: &PathBuf| {
+            let name = file.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+            made.iter().any(|address| address.contains(name.as_str()))
+        };
+        assert!(left.iter().all(named), "{left:?} {made:?}");
     }
     sweep_leftovers();
     assert!(files_of(pid).is_empty(), "{:?}", files_of(pid));
