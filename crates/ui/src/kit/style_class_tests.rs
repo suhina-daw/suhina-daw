@@ -306,10 +306,10 @@ fn with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme() {
         } else {
             assert_eq!(built, expected, "{id}");
         }
-        // Without a sheet: the fallback alone.
+        // Without a sheet: the fallback alone, in the scheme the theme declares.
         let ctx = egui::Context::default();
         theme::use_colors(&ctx, &theme.colors);
-        skin::configure(&skin::Skin::default());
+        skin::configure(&skin::Skin { light: theme.light(), ..Default::default() });
         assert_eq!(frames_in(&ctx, 800.0), expected, "{id}: no sheet");
     }
     theme::use_colors(&egui::Context::default(), &theme::Colors::new());

@@ -287,7 +287,8 @@ alone (*Amendment: no guide in theme files*).
 | --- | --- |
 | `width`, `height`, `aspect-ratio`, `orientation` | The window (with `min-` and `max-`) |
 | `resolution` | The display's scale factor (`2dppx` on a Retina screen) |
-| `prefers-contrast`, `prefers-reduced-motion`, `prefers-reduced-transparency` | The OS settings (`prefers-color-scheme` is not supported: amendment of 2026-11-10) |
+| `prefers-contrast`, `prefers-reduced-motion`, `prefers-reduced-transparency` | The OS settings |
+| `prefers-color-scheme` | The scheme the variant in use declares (amendment of 2026-11-18) |
 | `transparency` | `on` when the window is transparent (section 6) |
 | `desktop-blur` | `on` when the OS blurs the desktop behind it |
 | `platform` | `windows`, `macos`, `linux` |
@@ -1348,3 +1349,19 @@ the packages it exports or the backups it writes, and *Export template* is gone.
 is a document of the repository, [`docs/guide/theme-authoring.md`](../guide/theme-authoring.md),
 with every colour token and its Suhina Studio value; a test keeps that table in step with the
 token registry. A README an author put in a theme's folder is the author's, and travels with it.
+
+## Amendment: a theme declares its colour scheme (2026-11-18)
+
+This replaces the amendment of 2026-11-10's refusal of `prefers-color-scheme`. Lightness was
+worked out from the window's computed text colour, an output of the cascade, so a sheet that asked
+for the scheme could flip it on every reset. The scheme is now an input:
+
+- `theme.json` and each variant file say `"color-scheme": "light"` or `"dark"`; a variant that
+  says nothing has its theme's, and a theme that says nothing is dark. The variant editor has a
+  *Colour scheme* control for it.
+- Every sheet may use `@media (prefers-color-scheme: …)` and `light-dark(<light>, <dark>)`; the
+  styles reset when the scheme changes. A `light-dark()` value is checked in both schemes.
+- The native window's scheme (`theme::is_light`) is the declared one.
+- A device panel shows artwork in a light and a dark version by hiding one control with
+  `display: none` under `@media (prefers-color-scheme: …)`; the `#light` value its drawings and
+  `visible_when` read before is gone.

@@ -1,5 +1,6 @@
 {
   "name": "Light",
+  "color-scheme": "light",
   "values": {
     "--ground": "#FFFFFF",
     "--surface": "#F5F5F5",

@@ -9,6 +9,9 @@ pub struct Viewport {
     pub width: f32,
     pub height: f32,
     pub reduced_motion: bool,
+    /// Whether the theme variant in use says it is light (its `color-scheme`), for
+    /// `prefers-color-scheme` and `light-dark()`. An input, never worked out from the styles.
+    pub light: bool,
 }
 
 impl Viewport {
@@ -32,6 +35,8 @@ enum Feature {
         size: f32,
     },
     Landscape(bool),
+    /// `prefers-color-scheme`: light (`true`) or dark.
+    Light(bool),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -151,12 +156,12 @@ impl Media {
                 let name = name.trim();
                 let value = value.trim();
                 let feature = match name {
-                    // A theme with light and dark looks ships them as variants (#1019).
-                    "prefers-color-scheme" => {
-                        return Err("prefers-color-scheme is not supported: give a theme's light and dark looks as \
-                                    variants"
-                            .into());
-                    }
+                    // The scheme the theme variant in use declares (its `color-scheme`).
+                    "prefers-color-scheme" => Feature::Light(match value {
+                        "light" => true,
+                        "dark" => false,
+                        _ => return Err("Unknown colour scheme".into()),
+                    }),
                     "prefers-reduced-motion" => Feature::Motion(match value {
                         "reduce" => true,
                         "no-preference" => false,
@@ -221,6 +226,7 @@ impl Media {
                     }
                     Feature::Landscape(landscape) => (viewport.width >= viewport.height) == *landscape,
                     Feature::Motion(reduced) => viewport.reduced_motion == *reduced,
+                    Feature::Light(light) => viewport.light == *light,
                 })
             })
     }
@@ -230,7 +236,7 @@ impl Media {
 mod tests {
     use super::*;
     fn at(width: f32, height: f32) -> Viewport {
-        Viewport { width, height, reduced_motion: false }
+        Viewport { width, height, reduced_motion: false, light: false }
     }
     #[test]
     fn ranges_orientation_and_classic_forms_agree() {
@@ -242,10 +248,19 @@ mod tests {
         assert!(reversed.matches(at(1.0, 700.0)) && !reversed.matches(at(1.0, 800.0)));
         assert!(Media::parse("(orientation: portrait)").unwrap().matches(at(400.0, 800.0)));
         assert!(Media::parse("(max-width: 500px) and (orientation: landscape)").unwrap().matches(at(500.0, 400.0)));
-        for bad in
-            ["(depth > 1px)", "(width >)", "(1px < width = 2px)", "(width > 1em)", "(prefers-color-scheme: dark)"]
+        for bad in ["(depth > 1px)", "(width >)", "(1px < width = 2px)", "(width > 1em)", "(prefers-color-scheme: dim)"]
         {
             assert!(Media::parse(bad).is_err(), "{bad}");
         }
+    }
+
+    /// `prefers-color-scheme` asks for the scheme the theme variant in use declares.
+    #[test]
+    fn the_colour_scheme_is_the_viewports() {
+        let light = Viewport { light: true, ..at(800.0, 600.0) };
+        let query = Media::parse("(prefers-color-scheme: light)").unwrap();
+        assert!(query.matches(light) && !query.matches(at(800.0, 600.0)));
+        let query = Media::parse("(prefers-color-scheme: dark)").unwrap();
+        assert!(!query.matches(light) && query.matches(at(800.0, 600.0)));
     }
 }

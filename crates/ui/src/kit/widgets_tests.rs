@@ -443,3 +443,33 @@ fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
         (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60))
     );
 }
+
+/// A drop-down draws its arrow in `dropdown-arrow { color }` as its scope sees it, as the painted
+/// drop-downs do, not in the theme's widget colour.
+#[test]
+fn a_drop_downs_arrow_takes_the_sheets_dropdown_arrow_colour() {
+    let magenta = Color32::from_rgb(0xFF, 0x00, 0xFF);
+    let painted = |css: &str| {
+        crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
+        let ctx = egui::Context::default();
+        let mut shapes = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _frame = crate::kit::native_css::frame(ui);
+                combo_box(ui, egui::ComboBox::from_id_salt("files").selected_text("No model"), |_| ());
+            });
+            output.textures_delta.clear();
+            shapes = output.shapes;
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Path(path) => {
+                path.fill == magenta || path.stroke.color == egui::epaint::ColorMode::Solid(magenta)
+            }
+            egui::Shape::Mesh(mesh) => mesh.vertices.iter().any(|v| v.color == magenta),
+            _ => false,
+        })
+    };
+    assert!(painted("dropdown-arrow { color: #FF00FF; }"), "the arrow takes the sheet's colour");
+    assert!(!painted("dropdown-arrow { color: #00FF00; }"), "and only that");
+}
