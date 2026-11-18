@@ -35,7 +35,10 @@
   them, and leave DSP and real-time behaviour to the tests and renders. The check is never red and
   never required. It reviews the push that opens the pull request (or turns a draft ready), not
   the pushes after it: each review is one of the author's few free reviews an hour. Comment
-  `@coderabbitai review` to review the latest push, also when a review was skipped at the limit.
+  `@coderabbitai review` to review the latest push. Push nothing while that first review runs:
+  a push supersedes it, its result never reaches the pull request, and no review follows by
+  itself. A review skipped at the limit is not run later either, and asking again at once is
+  refused too: `@coderabbitai rate limit` says when the next review is available.
 - **Codex:** the maintainer requests a review with `@codex review` once the `ci` check has
   finished on the pull request's latest push; contributors ask the maintainer for one. The
   reviewer runs no tests or builds and reads the CI results of the push it reviews. Codex follows
