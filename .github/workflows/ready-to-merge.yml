@@ -1,9 +1,9 @@
 name: Ready to merge
 
 # The label `ready to merge` is a maintainer's decision that a pull request may go in. This
-# workflow does the rest: it approves the commit the label was added on and turns on *merge when
-# ready* for that commit, so the merge queue takes the pull request once every required check is
-# green, with no other click. A red check stops it there. See docs/releasing.md › Merging many pull
+# workflow does the rest: it approves the commit the label was added on and turns on auto-merge
+# (squash) for that commit, so GitHub squashes the pull request into its base once every required
+# check is green, with no other click (there is no merge queue). A red check stops it there. See docs/releasing.md › Merging many pull
 # requests.
 #
 # - Labelled by a maintainer: the app approves the head commit as the event saw it (main's rule
@@ -15,12 +15,12 @@ name: Ready to merge
 #   (scripts/build_reuse.py, the lookup /test-build uses). Without one the label comes off with a
 #   comment asking for /test-build; a build that is still running counts as none yet. A pull
 #   request that changes nothing test-build.yml's paths filter builds needs none.
-# - A push by anyone but a maintainer takes the label off, turns auto-merge off and leaves the
-#   pull request out of the queue: the new commits wait for a maintainer to read them, as the
+# - A push by anyone but a maintainer takes the label off, and turns auto-merge off: the new commits wait for a maintainer to read them, as the
 #   `test-build` label does (test-build-links.yml, job `unlabel`). main's rule dismisses the
 #   approval of the older commit. A maintainer's push keeps the label: the app approves the new
 #   head and enables auto-merge for it again.
-# - The label taken off, by hand or by the job above: auto-merge off, out of the queue, and the
+# - The label taken off, by hand or by the job above: auto-merge off (and out of a queue, if one is
+#   ever turned on again), and the
 #   app's approvals dismissed, so the label and the approval come and go together.
 #
 # pull_request_target runs this file as it is on main, and it never checks out or runs the pull
@@ -32,7 +32,7 @@ name: Ready to merge
 # Repository permissions › Contents, Pull requests and Issues: Read and write; its public
 # Client ID is the DOCS_BOT_CLIENT_ID variable and its key the DOCS_BOT_PRIVATE_KEY secret in `docs-bot`
 # (pull_request_target runs on main, which the environment allows); Settings › General › Allow
-# auto-merge is on. The queue merges as the app, and GitHub closes the issues a description
+# auto-merge is on. Auto-merge merges as the app, and GitHub closes the issues a description
 # closes (`Closes #N`) as the one who merged: without Issues, they stay open and nothing reports it.
 # A permission added to the app reaches the token only once the organisation's installation
 # accepts it (Settings › GitHub Apps › suhina-docs-bot › Configure › Accept new permissions).
@@ -168,7 +168,7 @@ jobs:
             exit 0
           fi
           # The maintainer's label approves this exact head. CODEOWNERS and all required checks
-          # still gate the merge queue.
+          # still gate the merge.
           gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/reviews" \
             -f commit_id="$SHA" -f event=APPROVE \
             -f body="\`$LABEL\`: a maintainer read ${SHA:0:7}; merge when every check is green." >/dev/null
@@ -180,7 +180,7 @@ jobs:
             echo "::notice::The label was taken off while this run waited; nothing queued."
             exit 0
           fi
-          # With main's merge queue this adds the pull request to the queue once it is mergeable;
+          # Squashes the pull request once every required check is green;
           # --match-head-commit refuses if the head is no longer the commit approved above.
           gh pr merge "$NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash --match-head-commit "$SHA"
           # Taken off between the read above and the merge call: the `stop` run may already have

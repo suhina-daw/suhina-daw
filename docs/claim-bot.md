@@ -3,7 +3,7 @@ description: How the claim bot moves an issue's card on the project board, holds
 read_when: claim, /claim, /claim @user, claim for someone else, on behalf, /unclaim, /hold, /ready, claim bot, project board, PROJECT_TOKEN, status automation, good first issue, lapsed claim, duplicate pull request, feature not agreed, project sync, board out of date, cards missing from the board, Touches, overlapping work, overlap, blocked by, blocked, dependency, Depends on, stacked pull requests, merge order, trusted contributor, TRUSTED_CONTRIBUTORS, maintainer, who may claim, claim limit, too many claims
 type: howto
 status: current
-last_verified: 2026-11-01
+last_verified: 2026-11-18
 covers:
   - .github/workflows/trusted-requests.yml
   - scripts/test_trusted_requests.py
@@ -220,14 +220,14 @@ own in its description: `Depends on #123`, `Depends-On: #123`, or a link to an i
 of this repository (lines inside HTML comments do not count). The check fails, naming them, while any
 is not done: a pull request is done when it is merged, an issue when it is closed, and a pull request
 closed without merging still blocks. It is a job of the `ci` check (`ci.yml` calls the workflow), so
-it runs with every push and in the merge queue, where it reads the description of the pull request
-being tested (from the queue's branch name), so a dependency that was reopened is caught there too.
+it runs with every push (and in a merge queue, if one is turned on again, where it reads the
+description of the pull request being tested from the queue's branch name).
 It also runs on its own when the description is edited, so a line added or removed shows at once;
-`ci` reads the description again on the next push, and the queue always does. Stacked pull
+`ci` reads the description again on the next push. Stacked pull
 requests in this repository (`gh stack`) are ordered by their base branches and need no line.
 
-It stops the merge queue through `ci`, the one check the rules for `main` require: a check of its
-own that `main` did not require could fail without stopping a merge.
+It stops a merge through `ci`, the one check the rules for the default branch require: a check of its
+own that the rules did not require could fail without stopping a merge.
 
 ## Holding work
 
@@ -247,9 +247,9 @@ today; until the gate exists, the bot names the options the field does have.
 The workflow's `GITHUB_TOKEN` has no access to a project owned by an organization, so the job needs
 a token of its own, the secret **`PROJECT_TOKEN`** in the environment **`project-board`** (Settings →
 Environments → `project-board` → Add environment secret). The environment's *Deployment branches and
-tags* allow `main` only, so a workflow pushed to another branch, or run by hand from one, cannot read
-the token; `claim.yml` (on `issue_comment`) and `project-sync.yml` run from `main`. It is not a
-repository secret, which a workflow on any branch could read.
+tags* allow `main` and `next` only, so a workflow pushed to another branch, or run by hand from one,
+cannot read the token; `claim.yml` (on `issue_comment`) and `project-sync.yml` run from `next`, the
+default branch. It is not a repository secret, which a workflow on any branch could read.
 
 - **Fine-grained, recommended:** owned by the organization, with **Organization permissions →
   Projects: Read and write**, and on `suhina-daw/suhina-daw` the repository permissions
