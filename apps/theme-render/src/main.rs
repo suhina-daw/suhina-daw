@@ -2,21 +2,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `suhina-theme-render <folder | built-in id> [--backdrop <image.png>] [--out <folder>]
-//! [--scale <n>] [--scene <name>] [--hover <label> | --press <label>] [--budget]`: the theme drawn in every scene, as PNGs (see the
-//! library's documentation).
+//! [--scale <n>] [--scene <name> [--hover <label> | --press <label>]] [--budget]`: the theme drawn
+//! in every scene, as PNGs (see the library's documentation).
 
 use std::path::PathBuf;
 
 use suhina_theme_render::scenes::Pointer;
 use suhina_theme_render::{Subject, budget, composite, render_all, scenes};
 
-const USAGE: &str = "usage: suhina-theme-render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name>] [--hover <label> | --press <label>] [--budget]
+const USAGE: &str = "usage: suhina-theme-render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name> [--hover <label> | --press <label>]] [--budget]
 
 Draws the theme in each scene of the demo project and writes <scene>.raw.png (the window's own
 pixels, with their alpha) and <scene>.png (the window over the backdrop, blurred behind a
-see-through window) into the out folder (default: theme-shots). --hover and --press put the
-pointer over the control with that label, its button held down with --press, once each scene is
-driven. --budget prints the style engine's counts for each scene instead, with no GPU.";
+see-through window) into the out folder (default: theme-shots). --hover and --press, with
+--scene, put the pointer over the control with that label, its button held down with --press,
+once the scene is driven. --budget prints the style engine's counts for each scene instead, with no GPU.";
 
 struct Args {
     theme: String,
@@ -81,6 +81,10 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
         }
     }
     parsed.theme = theme.ok_or(USAGE)?;
+    // A label belongs to a scene: every other scene would fail for want of it.
+    if parsed.pointer.is_some() && parsed.scene.is_none() {
+        return Err(format!("--hover and --press need --scene\n\n{USAGE}"));
+    }
     Ok(Command::Run(parsed))
 }
 
@@ -155,13 +159,13 @@ mod tests {
 
     #[test]
     fn hover_and_press_take_a_label_and_only_one_is_given() {
-        assert_eq!(parsed(&["nord", "--hover", "Record"]).unwrap().pointer, Some(Pointer::Hover("Record".into())));
-        assert_eq!(
-            parsed(&["nord", "--press", "Solo Drums"]).unwrap().pointer,
-            Some(Pointer::Press("Solo Drums".into()))
-        );
+        let hover = parsed(&["nord", "--scene", "launcher", "--hover", "Record"]).unwrap().pointer;
+        assert_eq!(hover, Some(Pointer::Hover("Record".into())));
+        let press = parsed(&["nord", "--press", "Solo Drums", "--scene", "launcher"]).unwrap().pointer;
+        assert_eq!(press, Some(Pointer::Press("Solo Drums".into())));
         assert_eq!(parsed(&["nord"]).unwrap().pointer, None);
-        assert!(parsed(&["nord", "--hover", "a", "--press", "b"]).is_err());
-        assert!(parsed(&["nord", "--hover"]).is_err());
+        assert!(parsed(&["nord", "--scene", "launcher", "--hover", "a", "--press", "b"]).is_err());
+        assert!(parsed(&["nord", "--scene", "launcher", "--hover"]).is_err());
+        assert!(parsed(&["nord", "--hover", "Record"]).err().unwrap().contains("need --scene"));
     }
 }

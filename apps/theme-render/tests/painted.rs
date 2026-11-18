@@ -25,7 +25,7 @@ use suhina_theme_render::scenes::Scene;
 use suhina_theme_render::{Subject, painted, scenes};
 
 /// The scenes left out: the About dialog shows the build's commit.
-pub const LEFT_OUT: [&str; 1] = ["about-dialog"];
+const LEFT_OUT: [&str; 1] = ["about-dialog"];
 
 /// A theme to draw, by the name its digests are recorded under. Every theme runs the style engine,
 /// Suhina Studio too (#1448).
@@ -96,15 +96,15 @@ pub fn all() -> &'static BTreeMap<(String, String), Result<Drawing, String>> {
 
 #[test]
 fn every_built_in_theme_paints_each_scene_as_recorded() {
-    let listings: BTreeMap<(String, String), Result<String, String>> = all()
+    let listings: BTreeMap<&(String, String), Result<&str, &str>> = all()
         .iter()
-        .map(|(key, drawing)| (key.clone(), drawing.as_ref().map(|d| d.listing.clone()).map_err(Clone::clone)))
+        .map(|(key, drawing)| (key, drawing.as_ref().map(|d| d.listing.as_str()).map_err(String::as_str)))
         .collect();
     if let Some(folder) = std::env::var_os("SUHINA_PAINTED_DUMP") {
         let folder = PathBuf::from(folder);
         std::fs::create_dir_all(&folder).unwrap();
         for ((scene, theme), listing) in &listings {
-            let text = listing.clone().unwrap_or_else(|e| format!("error: {e}\n"));
+            let text = listing.map(str::to_owned).unwrap_or_else(|e| format!("error: {e}\n"));
             std::fs::write(folder.join(format!("{scene}.{theme}.txt")), text).unwrap();
         }
     }
@@ -115,7 +115,7 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
                 Ok(text) => format!("{:016x}", painted::digest(text)),
                 Err(e) => format!("error:{}", e.replace(char::is_whitespace, "_")),
             };
-            (key.clone(), digest)
+            ((*key).clone(), digest)
         })
         .collect();
     let mut text = String::from(

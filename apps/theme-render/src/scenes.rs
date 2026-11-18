@@ -198,7 +198,7 @@ pub fn find(name: &str) -> Option<Scene> {
     scenes().into_iter().find(|s| s.name == name)
 }
 
-/// What the pointer does in a scene once it is driven, on the control with a label: `--hover`
+/// What the pointer does in a scene once it is driven, on the first control with a label: `--hover`
 /// and `--press` of `suhina-theme-render`, to show a control's `:hover` or `:active` without a
 /// scene for each (#1549).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -226,6 +226,11 @@ pub fn with_pointer(scene: Scene, pointer: Pointer) -> Scene {
                 .ok_or_else(|| format!("no control labelled {label:?} to point at"))?
                 .rect()
                 .center();
+            // A control scrolled or laid out of the window has nothing to point at. One under a
+            // dialog is pointed at all the same, and shows no hover.
+            if !h.ctx.content_rect().contains(at) {
+                return Err(format!("the control labelled {label:?} is outside the window"));
+            }
             h.hover_at(at);
             if press {
                 h.step();

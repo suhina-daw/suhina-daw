@@ -6,7 +6,9 @@
 //! shapes, so it finds a cut whatever code painted the text.
 //!
 //! A text painted twice at the same place, each copy clipped to one side (a value over a fill, in
-//! two colours), is one text whose clips are joined: it is cut only where neither copy shows it.
+//! two colours), is one text whose clips are joined when they touch: it is cut only where neither
+//! copy shows it. A text wholly outside its clip shows nothing and is not listed, so a label
+//! pushed out of sight entirely is not found here.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -85,7 +87,10 @@ impl<'a> Frame<'a> {
                 let next = self.painted.len();
                 let at = *self.at.entry(key(text)).or_insert(next);
                 match self.painted.get_mut(at) {
-                    Some(copy) => copy.clip = copy.clip.union(clip),
+                    // Clips that touch join into their bounding box; apart, the gap between them
+                    // hides the text, so the first copy's clip alone stands.
+                    Some(copy) if copy.clip.expand(0.5).intersects(clip) => copy.clip = copy.clip.union(clip),
+                    Some(_) => {}
                     None => self.painted.push(Painted { shape: text, clip }),
                 }
             }
@@ -119,4 +124,99 @@ pub fn texts(shapes: &[ClippedShape]) -> Vec<Cut> {
         }
     }
     cuts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::text::{LayoutJob, TextWrapping};
+    use egui::{Color32, FontId, Pos2, pos2};
+
+    /// `text` laid out in the default font, wrapped or shortened at `width` when given.
+    fn shape(ctx: &egui::Context, text: &str, at: Pos2, width: Option<(f32, bool)>) -> Shape {
+        let mut job = LayoutJob::simple(text.into(), FontId::proportional(14.0), Color32::WHITE, f32::INFINITY);
+        if let Some((width, shorten)) = width {
+            job.wrap =
+                if shorten { TextWrapping::truncate_at_width(width) } else { TextWrapping::wrap_at_width(width) };
+        }
+        let galley = ctx.fonts_mut(|fonts| fonts.layout_job(job));
+        Shape::galley(at, galley, Color32::WHITE)
+    }
+
+    fn context() -> egui::Context {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |_| {});
+        // Nothing draws the font atlas here: its upload is dropped on purpose.
+        output.textures_delta.clear();
+        ctx
+    }
+
+    fn clipped(clip: Rect, shape: Shape) -> ClippedShape {
+        ClippedShape::new(clip, shape)
+    }
+
+    const WIDE: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 100.0));
+
+    fn hows(shapes: &[ClippedShape]) -> Vec<(How, String)> {
+        texts(shapes).into_iter().map(|cut| (cut.how, cut.text)).collect()
+    }
+
+    #[test]
+    fn a_text_that_fits_is_not_cut() {
+        let ctx = context();
+        assert!(hows(&[clipped(WIDE, shape(&ctx, "Quantize", pos2(10.0, 10.0), None))]).is_empty());
+    }
+
+    #[test]
+    fn a_shortened_text_is_cut_and_says_what_shows() {
+        let ctx = context();
+        let cuts = texts(&[clipped(WIDE, shape(&ctx, "Quantize", pos2(10.0, 10.0), Some((20.0, true))))]);
+        assert_eq!(cuts.len(), 1, "{cuts:?}");
+        assert_eq!(cuts[0].how, How::Shortened);
+        assert!(cuts[0].shown.ends_with('…') && cuts[0].shown.len() < "Quantize…".len(), "{:?}", cuts[0].shown);
+    }
+
+    #[test]
+    fn a_text_wrapped_without_a_line_break_is_cut_and_one_with_breaks_is_not() {
+        let ctx = context();
+        let wrapped = shape(&ctx, "8 bars", pos2(10.0, 10.0), Some((15.0, false)));
+        assert_eq!(hows(&[clipped(WIDE, wrapped)]), [(How::Wrapped, "8 bars".to_owned())]);
+        let broken = shape(&ctx, "8\nbars", pos2(10.0, 10.0), None);
+        assert!(hows(&[clipped(WIDE, broken)]).is_empty());
+    }
+
+    #[test]
+    fn a_text_partly_outside_its_clip_is_cut_and_one_wholly_outside_is_not_listed() {
+        let ctx = context();
+        let half = Rect::from_min_max(pos2(0.0, 0.0), pos2(20.0, 100.0));
+        assert_eq!(
+            hows(&[clipped(half, shape(&ctx, "Frequency", pos2(10.0, 10.0), None))]),
+            [(How::Clipped, "Frequency".to_owned())]
+        );
+        assert!(hows(&[clipped(half, shape(&ctx, "Frequency", pos2(500.0, 10.0), None))]).is_empty());
+        // A glyph's edge on the clip's edge, within half a point, is not cut.
+        let text = shape(&ctx, "Frequency", pos2(10.0, 10.0), None);
+        let edge = text.visual_bounding_rect().expand(0.25);
+        assert!(hows(&[clipped(edge, text)]).is_empty());
+    }
+
+    #[test]
+    fn two_copies_clipped_to_touching_sides_are_one_whole_text() {
+        let ctx = context();
+        let text = || shape(&ctx, "-6.0", pos2(10.0, 10.0), None);
+        let whole = text().visual_bounding_rect();
+        let split = whole.center().x;
+        let left = Rect::from_min_max(whole.min - egui::vec2(1.0, 1.0), pos2(split, whole.max.y + 1.0));
+        let right = Rect::from_min_max(pos2(split, whole.min.y - 1.0), whole.max + egui::vec2(1.0, 1.0));
+        assert!(hows(&[clipped(left, text()), clipped(right, text())]).is_empty(), "joined, the copies show it all");
+        // Apart, the gap between the clips hides part of the text.
+        let gap = right.translate(egui::vec2(3.0, 0.0));
+        assert_eq!(hows(&[clipped(left, text()), clipped(gap, text())]), [(How::Clipped, "-6.0".to_owned())]);
+    }
+
+    #[test]
+    fn a_text_with_no_glyphs_is_not_listed() {
+        let ctx = context();
+        assert!(hows(&[clipped(WIDE, shape(&ctx, "", pos2(10.0, 10.0), Some((1.0, true))))]).is_empty());
+    }
 }
