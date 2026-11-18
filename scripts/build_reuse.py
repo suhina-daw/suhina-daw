@@ -4,7 +4,8 @@
 """Read-only test-build lookup for trusted-requests.yml. Never checks out PR code.
 
 Run from the default-branch checkout, with REQUEST, GITHUB_REPOSITORY, GH_TOKEN,
-MAINTAINERS and TRUSTED_CONTRIBUTORS. Prints a JSON reuse decision, or {} to build.
+MAINTAINERS and TRUSTED_CONTRIBUTORS. Prints a JSON reuse decision, or {} to build; either
+carries "ui_only": true when the pull request changes only user interface code (UI_PATHS).
 Git objects are used only to compare main-only merges with branch_update.py.
 API errors stop the request instead of accidentally starting another build.
 """
@@ -21,6 +22,10 @@ import sys
 import branch_update as bu
 
 PLATFORMS = ("linux-x86_64", "windows-x86_64", "macos-universal")
+# The crates that draw the window, its controls and its themes, and the theme renderer. A pull
+# request whose built files are all here needs no test build to merge (`ui_only` in the decision,
+# ready-to-merge.yml); /test-build still builds one when asked.
+UI_PATHS = ("crates/ui/", "crates/ui-gpu/", "crates/style/", "crates/theme-package/", "apps/theme-render/")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 PROOF = re.compile(r"<!-- trusted-build ([0-9a-f]{40}) ([\w-]+) ([0-9]+) -->\s*$")
 
@@ -183,6 +188,12 @@ def builds_binary(files, paths):
     return any(match(f, p) for f in files for p in paths)
 
 
+def ui_only(files, paths):
+    """Whether every one of these files that goes into the binaries is user interface code."""
+    built = [f for f in files if builds_binary([f], paths)]
+    return bool(built) and all(f.startswith(UI_PATHS) for f in built)
+
+
 def main():
     request = json.loads(os.environ["REQUEST"])
     if request["command"] != "test-build":
@@ -210,8 +221,10 @@ def main():
         # Fetch objects only: do not check out files, submodules, build scripts or hooks from PRs.
         bu.git("fetch", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main", f"refs/pull/{number}/head")
         candidates = eligible_heads(head, "origin/main")
-    return find_reuse(api, repo, pr, head, candidates, members(os.environ.get("MAINTAINERS", "")),
-                      members(os.environ.get("TRUSTED_CONTRIBUTORS", "")))
+    found = find_reuse(api, repo, pr, head, candidates, members(os.environ.get("MAINTAINERS", "")),
+                       members(os.environ.get("TRUSTED_CONTRIBUTORS", "")))
+    # Beside the build, not in place of it: /test-build still builds a user interface change.
+    return {**found, "ui_only": True} if ui_only(files, paths) else found
 
 
 if __name__ == "__main__":

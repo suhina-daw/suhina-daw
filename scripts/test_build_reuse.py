@@ -206,6 +206,15 @@ class BinaryPaths(unittest.TestCase):
         self.assertIn("Cargo.lock", paths)
         self.assertNotIn("docs/**", paths)
 
+    def test_user_interface_files_alone_are_ui_only(self):
+        paths = ["apps/**", "crates/**", "devices/**", "Cargo.lock"]
+        self.assertTrue(br.ui_only(["crates/ui/src/a.rs", "crates/style/src/b.rs", "docs/c.md"], paths))
+        self.assertTrue(br.ui_only(["apps/theme-render/src/a.rs", "crates/ui-gpu/src/b.rs"], paths))
+        self.assertFalse(br.ui_only(["crates/ui/src/a.rs", "crates/engine/src/b.rs"], paths))
+        self.assertFalse(br.ui_only(["crates/ui/src/a.rs", "Cargo.lock"], paths))
+        self.assertFalse(br.ui_only(["crates/uitest/src/a.rs"], paths), "a crate whose name starts with ui")
+        self.assertFalse(br.ui_only(["docs/a.md"], paths), "nothing built is no-binary, not ui-only")
+
     def test_only_binary_paths_need_a_build(self):
         paths = ["crates/**", "Cargo.lock", ".github/workflows/test-build.yml"]
         self.assertFalse(br.builds_binary(["docs/a.md", ".github/workflows/ci.yml", "scripts/x.py"], paths))
