@@ -54,6 +54,8 @@ pub(crate) use self::drawing::part_style;
 use self::drawing::*;
 use self::edits::*;
 pub use self::keys::ViewPick;
+/// The magnifier drawn for a pointer where a drag zooms, which the audio editor's ruler shows too.
+pub(crate) use self::keys::draw_magnifier;
 use self::keys::*;
 pub use self::layout::*;
 use self::select_steps::Step;

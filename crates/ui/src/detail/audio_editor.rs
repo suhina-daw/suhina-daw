@@ -28,6 +28,8 @@ pub const RULER_HEIGHT: f32 = 28.0;
 pub const LEAST_HEIGHT: f32 = RULER_HEIGHT + 90.0;
 /// Room left on either side of the file when it is fitted to the area.
 const MARGIN: f32 = 8.0;
+/// How much a drag on the ruler zooms: the zoom changes by this much (as an exponent) per point.
+const RULER_ZOOM_PER_POINT: f32 = 0.012;
 /// Zoom limits, in points per beat.
 const BEAT_WIDTHS: std::ops::RangeInclusive<f32> = 0.05..=20_000.0;
 /// Most pixel columns one frame lays out, whatever the area's width.
@@ -371,7 +373,20 @@ pub fn show(
         return;
     }
     // The ruler's own response, over the area's: a double-click on it fits the file again.
-    let ruler_response = ui.interact(ruler_rect, egui::Id::unique(("audio-editor-ruler", &key)), Sense::click());
+    // Hovering it shows a magnifier: drag up to zoom in, down to zoom out (around where the drag
+    // began), sideways to scroll.
+    let ruler_response =
+        ui.interact(ruler_rect, egui::Id::unique(("audio-editor-ruler", &key)), Sense::click_and_drag());
+    // The windowing layer has no magnifier cursor everywhere, so the pointer is hidden and the
+    // piano roll's magnifier is drawn where it is.
+    // It is there on hover and gone while the button is held, as on the piano roll's strip.
+    if ruler_response.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+    } else if ruler_response.hovered()
+        && let Some(pos) = ui.input(|i| i.pointer.latest_pos())
+    {
+        crate::detail::piano_roll::draw_magnifier(ui, pos);
+    }
     // A clip not shown before starts with its file fitted to the area.
     if state.shown.as_ref() != Some(&clip.address) || state.beat_width <= 0.0 {
         state.shown = Some(clip.address.clone());
@@ -409,7 +424,12 @@ pub fn show(
         }
         state.scroll -= if scroll.x != 0.0 { scroll.x } else { scroll.y };
     }
-    if response.dragged_by(egui::PointerButton::Primary) {
+    if ruler_response.dragged_by(egui::PointerButton::Primary) {
+        let delta = ruler_response.drag_delta();
+        let anchor = ui.input(|i| i.pointer.press_origin()).map_or(area.width() / 2.0, |p| p.x - area.left());
+        state.zoom((-delta.y * RULER_ZOOM_PER_POINT).exp(), anchor);
+        state.scroll -= delta.x;
+    } else if response.dragged_by(egui::PointerButton::Primary) && !ruler_response.is_pointer_button_down_on() {
         state.scroll -= response.drag_delta().x;
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     }
