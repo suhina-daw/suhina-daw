@@ -189,8 +189,12 @@ jobs:
       # caches share 10 GB, and a save from every pull request push (about 0.8 GB per system)
       # evicted main's, so about half the runs compiled every dependency again (7 to 8 minutes
       # more on Linux).
+      # v1: this job's cache from before the tests moved to `test` also held the test build (1.1 to
+      # 1.3 GB a system), and the cache is saved only when its key changes, so a new prefix is what
+      # makes main save one of clippy's alone; the old ones go unused and GitHub evicts them first.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
+          prefix-key: v1-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
@@ -280,7 +284,10 @@ jobs:
       # without plug-ins stays on the render thread. Split like the rest: each partition runs its
       # share.
       - name: Engine tests on 4 render threads (partition ${{ matrix.partition }} of 3)
-        run: cargo nextest run -p suhina-engine --profile ci --partition "slice:${{ matrix.partition }}/3"
+        # The workspace build the step above made, with the engine's tests picked by a filter: with
+        # `-p suhina-engine`, cargo resolves the dependencies' features for the engine alone and
+        # compiled a share of them again in every partition.
+        run: cargo nextest run --workspace -E "package(suhina-engine)" --profile ci --partition "slice:${{ matrix.partition }}/3"
         env:
           SUHINA_RENDER_THREADS: "4"
       # nextest does not run documentation tests; the first partition runs them with cargo.
