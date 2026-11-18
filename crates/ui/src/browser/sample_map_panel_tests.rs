@@ -60,15 +60,15 @@ fn the_map_shows_the_place_and_acts_on_the_browser() {
         });
         output.textures_delta.clear();
     };
-    draw(&mut panel, &mut state, &mut projects, &mut settings);
-    // The layout runs on a thread of its own; it arrives on a later frame.
-    for _ in 0..200 {
-        if panel.map.is_some() {
-            break;
+    // The layout runs on a thread of its own and arrives on a later frame: a frame, then the
+    // panel's barrier for its workers and another frame, until nothing is on the way.
+    let settle = |panel: &mut Panel, state: &mut BrowserState, projects: &mut Projects, settings: &mut Settings| {
+        draw(panel, state, projects, settings);
+        while panel.wait_for_workers() || panel.stale {
+            draw(panel, state, projects, settings);
         }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        draw(&mut panel, &mut state, &mut projects, &mut settings);
-    }
+    };
+    settle(&mut panel, &mut state, &mut projects, &mut settings);
     let map = panel.map.as_ref().expect("laid out");
     assert_eq!(map.points.len(), 16);
     assert_eq!(map.too_long, 1);
@@ -109,13 +109,7 @@ fn the_map_shows_the_place_and_acts_on_the_browser() {
     // A longer limit takes in the long sample.
     settings.map_max_seconds = 10;
     state.place = None;
-    for _ in 0..200 {
-        draw(&mut panel, &mut state, &mut projects, &mut settings);
-        if panel.map.as_ref().is_some_and(|m| m.points.len() == 17) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    settle(&mut panel, &mut state, &mut projects, &mut settings);
     assert_eq!(panel.map.as_ref().unwrap().points.len(), 17);
 
     // A kind set by hand shows at once and the scope is laid out again with it; Automatic
@@ -128,25 +122,14 @@ fn the_map_shows_the_place_and_acts_on_the_browser() {
     panel.handle(MapEvent::SetKind { item: hat, kind: Some(Kind::Tom) }, &mut state, &mut projects, &mut settings);
     assert_eq!(panel.map.as_ref().unwrap().points[hat].kind, Kind::Tom);
     assert!(panel.map.as_ref().unwrap().points[hat].by_hand);
-    for _ in 0..200 {
-        draw(&mut panel, &mut state, &mut projects, &mut settings);
-        if panel.shown.as_ref().map(|k| k.layout_key) != key && panel.job.is_none() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    settle(&mut panel, &mut state, &mut projects, &mut settings);
+    assert!(panel.job.is_none());
     assert_ne!(panel.shown.as_ref().map(|k| k.layout_key), key);
     let hat = index(&panel);
     assert_eq!(panel.points[hat].kind, Kind::Tom);
     assert!(panel.points[hat].by_hand);
     panel.handle(MapEvent::SetKind { item: hat, kind: None }, &mut state, &mut projects, &mut settings);
-    for _ in 0..200 {
-        draw(&mut panel, &mut state, &mut projects, &mut settings);
-        if panel.map.as_ref().is_some_and(|m| m.points[index(&panel)].kind == Kind::Hat) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    settle(&mut panel, &mut state, &mut projects, &mut settings);
     let hat = index(&panel);
     assert_eq!((panel.points[hat].kind, panel.points[hat].by_hand), (Kind::Hat, false));
     drop(projects);
