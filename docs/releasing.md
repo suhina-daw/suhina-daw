@@ -195,8 +195,16 @@ must gain nothing that `next` lacks: a single commit on `main` that is not on `n
 3. Settings › Rules: give `next` the rules `main` has today (an approval, the code owner's review,
    the required `ci` check, resolved threads) and the merge queue ruleset. Leave `main` to the
    docs bot's app alone (it is on the bypass list already), so only `promote` moves it.
-4. Settings › Environments: let `docs-bot` deploy from `next` as well as `main` (the generated
-   docs are pushed to `next`, and `promote` runs on `next`).
+4. Settings › Environments: add `next` to the deployment branches of every environment that
+   allows `main` today, keeping `main` (and `discord`'s `v*` tags): `docs-bot`, `discord`,
+   `project-board` and `suhina-bot`. GitHub runs `issue_comment`, `issues` and `workflow_run` on
+   the default branch, and `pull_request_target` on the pull request's base branch, so once `next`
+   is the default their jobs run on `next`: without it, linking test builds and posting to
+   Discord (`test-build-links.yml`, `discord.yml`), `/claim` and the board (`claim.yml`,
+   `project-sync.yml`), `/test-build` and the bot's issues and comments (`trusted-requests.yml`,
+   `open-issue.yml`, `comment-pr.yml`), the generated docs, `ready to merge` and `promote` stop
+   at the environment. `next` is as protected as `main` (step 3), so allowing it lets no other
+   branch read their secrets.
 5. Check that `next` and `main` are still the same commit
    (`gh api repos/suhina-daw/suhina-daw/compare/main...next --jq .behind_by` prints 0); if `main`
    moved, move `next` to it first. Then Settings › General: make `next` the default branch.
@@ -206,7 +214,10 @@ must gain nothing that `next` lacks: a single commit on `main` that is not on `n
    take pull requests again.
 7. The scheduled agents: the nightly's starts it with `--ref next` and compares `next` with the
    tag `nightly`; the notes' fetches `next` as well as `main`.
-8. CONTRIBUTING.md, docs/workflow.md and AGENTS.md: pull requests target `next`.
+8. Check the automation on the new default branch: a finished test build is linked on its pull
+   request, `/claim` answers on an issue, and `ready to merge` queues a pull request into `next`.
+9. CONTRIBUTING.md, docs/workflow.md and AGENTS.md: pull requests target `next`; docs/claim-bot.md
+   and this document's Discord section: the environments allow `next` as well as `main`.
 
 ## Test builds
 
