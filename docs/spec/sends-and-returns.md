@@ -28,8 +28,8 @@ per return track, all after the fader ([als format](als-format.md) › Mixer).
   level; the track's volume and pan do not change it. A track turned all the way down still
   feeds a return through a pre-fader send.
 - The volume of a group the track plays into does not change its sends: they tap the track's
-  own channel. A group's own sends take the group's sum. A group's pan does not apply to its
-  output yet, so not to its post-fader sends either.
+  own channel. A group's own sends take the group's sum; its pan applies once to its output
+  and its post-fader sends.
 - A track that is not heard sends nothing: turned off (mute), or silent because other tracks
   are soloed, or inside a group that is turned off.
 
@@ -45,6 +45,11 @@ the return it goes to already plays, through outputs and other sends, into the s
 (`track.setSend` says it would make a loop), and a return cannot send to itself. A project that
 holds such a loop anyway (a hand-edited file) opens and plays; the engine leaves out each send
 that closes a loop, in channel order.
+
+A shared group may also receive sends, through the same channel and device chain as its primary
+inputs. Solo follows both primary routes and positive sends to and from that group. The send
+commands accept a group target; return removal and renaming still require a return. Groups
+with incoming sends appear among send destinations without becoming duplicate return tracks.
 
 ## Latency
 
@@ -64,8 +69,8 @@ track delays what it sends, once.
 | `return.remove` | `return` | Removes the return and every send to it |
 | `return.rename` | `return`, `name` | Renames it |
 
-Each is one undo step. `return` names a return track (id or name); another kind of track is an
-error, as is a level above 0 dB. A project saved with a louder send keeps it until the send is moved. `project.tracks` lists every track's sends (return, level in
+Each is one undo step. `return` names a return track (id or name), or a group for the send
+commands. Other kinds of track are an error, as is a level above 0 dB. A project saved with a louder send keeps it until the send is moved. `project.tracks` lists every track's sends (return, level in
 dB, mode).
 
 ## In the window
@@ -91,4 +96,3 @@ view's strip moves its selection the same way.
 - Send fields in the Arrangement track headers (planned at 114 px and taller), and a way to
   reach returns beyond the third in a narrow strip.
 - Sends to returns as automation targets (with automation).
-- Pan of a group on its output and its sends.

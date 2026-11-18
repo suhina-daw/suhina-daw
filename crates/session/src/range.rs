@@ -142,7 +142,7 @@ fn place(
             clip.content
         } else {
             let id = new_content_id(p)?;
-            p.contents.push(ClipContent { id, ..content });
+            p.contents.push(ClipContent { id, linked: false, ..content });
             id
         };
         let at = clip.start + offset;
@@ -641,7 +641,7 @@ pub(crate) fn move_clips(session: &mut Session, params: &Value) -> Result<Value,
             if !take_spans.iter().any(|s| s.is_of(clip)) {
                 let id = new_content_id(p)?;
                 let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
-                p.contents.push(ClipContent { id, ..content });
+                p.contents.push(ClipContent { id, linked: false, ..content });
                 clip.content = id;
             }
             // A copy is a new clip (ADR 0025); a moved clip keeps its id.

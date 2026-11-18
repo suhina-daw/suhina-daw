@@ -148,6 +148,59 @@ fn plugins(project: &Project, stands: Vec<(Stand, PluginSlotInfo)>) -> Plugins {
 const EFFECT: PluginSlotInfo = PluginSlotInfo { instrument: false, latency: 0 };
 const INSTRUMENT: PluginSlotInfo = PluginSlotInfo { instrument: true, latency: 0 };
 
+#[test]
+fn disabled_hosted_instrument_silences_upstream_sound_and_retains_state() {
+    let mut instrument = plug(vst3());
+    instrument.state = Some(b"saved preset".to_vec().into());
+    instrument.enabled = false;
+    let mut p = project(vec![note(0., 1., 60)], 1., vec![device("fm-synth", &[]), instrument]);
+    for enabled in [false, true] {
+        p.channels[0].devices[1].enabled = enabled;
+        let stand = Stand::new(Behaviour::Instrument);
+        let seen = Arc::clone(&stand.seen);
+        let out = render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+            SR,
+            512,
+            None,
+        )
+        .unwrap();
+        if enabled {
+            assert!(peak(&out) > 0.4);
+        } else {
+            assert_eq!(peak(&out), 0.);
+            assert!(!seen.lock().unwrap().iter().any(|(_, e)| matches!(e, NoteEvent::On { .. })));
+        }
+        assert_eq!(p.channels[0].devices[1].state.as_deref(), Some(b"saved preset".as_slice()));
+    }
+}
+
+#[test]
+fn a_hosted_instrument_enabled_during_playback_receives_later_notes() {
+    let mut instrument = plug(vst3());
+    instrument.enabled = false;
+    let mut p = project(vec![note(0., 0.25, 60), note(1., 0.25, 64), note(2., 0.25, 67)], 4., vec![instrument]);
+    p.assign_ids().unwrap();
+    let stand = Stand::new(Behaviour::Instrument);
+    let seen = Arc::clone(&stand.seen);
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(stand, INSTRUMENT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    assert_eq!(peak(&blocks(&mut renderer, 25, 480)), 0.);
+    p.channels[0].devices[0].enabled = true;
+    controller.update(&p).unwrap();
+    assert!(peak(&blocks(&mut renderer, 100, 480)) > 0.4);
+    assert!(seen.lock().unwrap().iter().any(|(_, e)| matches!(e, NoteEvent::On { key: 64, .. })));
+}
+
 /// An EQ after a VST3 instrument rings what the EQ output: its defaults are flat, so its
 /// output is the plug-in's (docs/spec/eq.md › The panel › The analyser).
 #[test]
@@ -1596,6 +1649,8 @@ fn stopping_a_plugin_note_joins_the_delayed_release_without_a_step() {
 
 fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::PluginSlot {
     crate::plugin::PluginSlot {
+        song_delay: 0,
+        keyed: false,
         key: 1,
         processor: Some(processor),
         instrument: false,
@@ -1655,4 +1710,197 @@ fn joint_sends_record_busy_and_successful_trip_timing() {
     assert_eq!(slot.send_joint(&mut samples, &[], &[2], None), Sent::Out);
     assert!(slot.finish(&mut samples, None));
     assert_eq!(slot.longest_us, longest, "offline work does not pollute real-time diagnostics");
+}
+
+/// A plug-in in a host process with others that reads a key: what it was handed as its key.
+struct KeyedMember {
+    joint: crate::Joint,
+    heard: Arc<std::sync::Mutex<f32>>,
+    followed: Arc<AtomicUsize>,
+}
+
+impl PluginProcessor for KeyedMember {
+    fn process(&mut self, _buffer: &mut [f32], _events: &[(usize, NoteEvent)], _timeout: Duration) -> bool {
+        true
+    }
+
+    fn joint(&self) -> Option<crate::Joint> {
+        Some(self.joint)
+    }
+
+    fn followed(&mut self, _events: &[(usize, NoteEvent)], _how: crate::Followed) {
+        self.followed.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn set_key(&mut self, key: &[f32]) {
+        if let Ok(mut heard) = self.heard.lock() {
+            *heard = key.iter().fold(*heard, |m, v| m.max(v.abs()));
+        }
+    }
+}
+
+/// A plug-in that reads a key, right after another plug-in of the same host process: it runs
+/// its blocks on its own and hears its key, rather than following the other in a joint round
+/// trip that carries only the first one's key.
+#[test]
+fn a_keyed_plug_in_after_another_of_its_process_hears_its_key() {
+    let clap = |id: &str| plug(DeviceKind::Clap { id: id.into() });
+    let mut p = two_tracks(vec![note(0.0, 2.0, 69)], vec![clap("a"), clap("b")]);
+    p.channels[0].devices[1].inputs =
+        vec![suhina_model::DeviceInput::key(ChannelId(2), suhina_model::TapPoint::PostFx)];
+    let table = Arc::default();
+    let trips = Arc::new(AtomicUsize::new(0));
+    let heard = Arc::new(std::sync::Mutex::new(0.0f32));
+    let followed = Arc::new(AtomicUsize::new(0));
+    let mut plugins = Plugins::new();
+    let found = plugin_devices(&p);
+    plugins.insert(found[0].key, EFFECT, Box::new(Member::new(1, 1, 1.0, &table, &trips)));
+    let keyed = KeyedMember {
+        joint: crate::Joint { process: 1, member: 2 },
+        heard: Arc::clone(&heard),
+        followed: Arc::clone(&followed),
+    };
+    plugins.insert(found[1].key, EFFECT, Box::new(keyed));
+    render_offline_from(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        512,
+        None,
+    )
+    .unwrap();
+    assert!(*heard.lock().unwrap() > 0.1, "the key reached it: {}", heard.lock().unwrap());
+    assert_eq!(followed.load(Ordering::SeqCst), 0, "it never followed the other plug-in");
+}
+
+/// The track's notes end at its instrument: a plug-in effect after it (one with a MIDI input,
+/// such as a compressor that MIDI notes can trigger) gets none, as an effect on a mixer channel
+/// gets none of its instrument's notes; one before the instrument still gets them. The same in
+/// a device group's branch.
+#[test]
+fn notes_end_at_the_instrument_and_an_effect_after_it_gets_none() {
+    let seen = || -> Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>> { Arc::default() };
+    let render = |devices: Vec<Device>, stands: Vec<(Stand, PluginSlotInfo)>| {
+        let p = project(vec![note(0.0, 1.0, 60)], 2.0, devices);
+        render_offline_from(
+            &p,
+            RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+                .with_plugins(plugins(&p, stands)),
+            SR,
+            512,
+            None,
+        )
+        .unwrap()
+    };
+    let stands = |before: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>,
+                  instrument: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>,
+                  after: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>| {
+        let mut a = Stand::new(Behaviour::Gain(1.0));
+        a.seen = Arc::clone(before);
+        let mut b = Stand::new(Behaviour::Instrument);
+        b.seen = Arc::clone(instrument);
+        let mut c = Stand::new(Behaviour::Gain(1.0));
+        c.seen = Arc::clone(after);
+        vec![(a, EFFECT), (b, INSTRUMENT), (c, EFFECT)]
+    };
+    let ons = |s: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>| {
+        s.lock().unwrap().iter().filter(|(_, e)| matches!(e, NoteEvent::On { .. })).count()
+    };
+    let (before, instrument, after) = (seen(), seen(), seen());
+    let out = render(vec![plug(vst3()), plug(vst3()), plug(vst3())], stands(&before, &instrument, &after));
+    assert!(peak(&out) > 0.0);
+    assert_eq!((ons(&before), ons(&instrument), ons(&after)), (1, 1, 0));
+    // In a branch of a device group.
+    let (before, instrument, after) = (seen(), seen(), seen());
+    render(vec![grouped(vec![vec![plug(vst3()), plug(vst3()), plug(vst3())]])], stands(&before, &instrument, &after));
+    assert_eq!((ons(&before), ons(&instrument), ons(&after)), (1, 1, 0));
+}
+
+/// A plug-in after one with latency hears its sound that much later, so it is told the song that
+/// much earlier: a tempo-synced shape lines up with what it hears (#1446). The first plug-in is
+/// told the song as it is.
+#[test]
+fn a_plug_in_after_a_delaying_one_is_told_the_song_of_what_it_hears() {
+    const LATENCY: u32 = 4_800;
+    let p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3()), plug(vst3())]);
+    let (first, second) = (Stand::new(Behaviour::Delay(LATENCY as usize)), Stand::new(Behaviour::Gain(1.0)));
+    let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins(&p, vec![(first, PluginSlotInfo { latency: LATENCY, ..EFFECT }), (second, EFFECT)])),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    blocks(&mut renderer, 40, 512);
+    let first = *heard_first.lock().unwrap().last().expect("told of the song");
+    let second = *heard_second.lock().unwrap().last().expect("told of the song");
+    assert!(first.playing && second.playing);
+    assert_eq!(first.position - second.position, u64::from(LATENCY));
+    let beats = f64::from(LATENCY) * first.tempo / (60.0 * f64::from(SR));
+    assert!((first.beat - second.beat - beats).abs() < 1e-9, "{} and {}", first.beat, second.beat);
+}
+
+/// Stepping back across a barline steps the bar back too.
+#[test]
+fn an_earlier_song_position_steps_back_over_a_barline() {
+    let song = SongPosition {
+        playing: true,
+        position: 96_000,
+        tempo: 120.0,
+        beat: 4.25,
+        bar: 1,
+        bar_start: 4.0,
+        ..SongPosition::default()
+    };
+    // Half a beat back at 120 BPM and 48 kHz: 12 000 frames.
+    let earlier = song.earlier(12_000, 48_000.0);
+    assert_eq!((earlier.position, earlier.bar, earlier.bar_start), (84_000, 0, 0.0));
+    assert!((earlier.beat - 3.75).abs() < 1e-12);
+    // Stopped, nothing moves.
+    let stopped = SongPosition { playing: false, ..song };
+    assert_eq!(stopped.earlier(12_000, 48_000.0), stopped);
+}
+
+/// A plug-in reports its latency once it has loaded, after the graph was built: the plug-in after
+/// it is told the song that much earlier from the next graph on, as it is when the latency was
+/// known from the start (the running slot takes the new delay with the rest of its settings).
+#[test]
+fn a_latency_reported_later_moves_the_song_the_next_plug_in_is_told() {
+    const LATENCY: u32 = 2_401;
+    let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3()), plug(vst3())]);
+    let keys: Vec<u64> = plugin_devices(&p).iter().map(|d| d.key).collect();
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut controller = renderer.controller();
+    let info = |first: u32| {
+        let mut info = std::collections::HashMap::new();
+        info.insert(keys[0], PluginSlotInfo { latency: first, ..EFFECT });
+        info.insert(keys[1], EFFECT);
+        info
+    };
+    controller.set_plugin_info(info(0));
+    let (first, second) = (Stand::new(Behaviour::Gain(1.0)), Stand::new(Behaviour::Gain(1.0)));
+    let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
+    controller.send_plugin(keys[0], Box::new(first)).unwrap();
+    controller.send_plugin(keys[1], Box::new(second)).unwrap();
+    blocks(&mut renderer, 2, 480);
+    controller.update(&p).unwrap();
+    blocks(&mut renderer, 4, 480);
+    let gap = |a: &Arc<std::sync::Mutex<Vec<SongPosition>>>, b: &Arc<std::sync::Mutex<Vec<SongPosition>>>| {
+        let (a, b) = (*a.lock().unwrap().last().unwrap(), *b.lock().unwrap().last().unwrap());
+        a.position - b.position
+    };
+    assert_eq!(gap(&heard_first, &heard_second), 0, "no latency yet");
+    // The first one tells its latency: a new graph, the same running plug-ins.
+    controller.set_plugin_info(info(LATENCY));
+    controller.update(&p).unwrap();
+    blocks(&mut renderer, 4, 480);
+    assert_eq!(gap(&heard_first, &heard_second), u64::from(LATENCY));
 }

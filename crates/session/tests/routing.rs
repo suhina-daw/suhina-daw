@@ -20,6 +20,7 @@ fn project() -> Project {
 
 fn project_built() -> Project {
     let track = |id: u32, name: &str, notes: bool| Track {
+        folder: false,
         id: TrackId(id),
         name: name.into(),
         color: None,
@@ -59,6 +60,7 @@ fn project_built() -> Project {
             channel(4, ChannelRole::Effect),
         ],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "Riff".into(),
             length: 1.0,

@@ -160,3 +160,12 @@ fn a_previewed_loop_gets_its_tempo_too() {
     println!("audio ready after {:?}, tempo after {:?}", ready_after.unwrap_or_default(), started.elapsed());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// The same file listed twice in the results (in two of the list's groups) gets two widget
+/// ids, so egui never reports one id used twice.
+#[test]
+fn the_same_item_listed_twice_has_two_row_ids() {
+    use crate::browser::browser_view::row_id;
+    assert_ne!(row_id("C:/Samples/2 - Kick.wav", 3), row_id("C:/Samples/2 - Kick.wav", 9));
+    assert_eq!(row_id("C:/Samples/2 - Kick.wav", 3), row_id("C:/Samples/2 - Kick.wav", 3));
+}

@@ -83,6 +83,7 @@ mod take_carry;
 mod tempo;
 mod track_copy;
 mod track_kind;
+mod zipped;
 
 use std::collections::HashMap;
 use std::fmt;
@@ -101,6 +102,7 @@ pub use commands::{
     parse_quantization,
 };
 pub use demo::{demo_project, grouped_project};
+pub use devices::reads_a_key;
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::stage_and_rename;
 pub use files::{MAX_FILES, file_tempo};
@@ -127,6 +129,7 @@ pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
 pub use suhina_plugins::Placement;
 pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
+pub use zipped::{ZippedProject, default_extract_folder, extract_zipped_project, zipped_project};
 
 /// What makes the devices a project names: the device registry, handed to every renderer the
 /// session, the app, the CLI and the MCP server build (#1147). The engine knows no device itself.
@@ -238,11 +241,14 @@ pub struct Session {
     one_new_track_colour: bool,
     /// A new clip takes its track's colour rather than the MIDI or audio default.
     new_clips_take_track_colour: bool,
+    /// The audio engine and its output. Declared before the plug-ins, so a closed project's
+    /// output goes quiet at once when the session is let go: the fields drop in this order, and
+    /// with the plug-ins first each went silent in turn while the output played on.
+    pub(crate) sync: player_sync::PlayerSync,
     /// The project's plug-ins, running while it plays (ADR 0006).
     pub(crate) plugins: rack::Rack,
     audio: project_audio::ProjectAudio,
     device_files: device_files::DeviceFiles,
-    pub(crate) sync: player_sync::PlayerSync,
     /// Plug-in parameters the user moved in a plug-in's own editor since the window last asked
     /// (track, device on the track's chain, parameter id), for its lanes to show them (#1205).
     pub(crate) touched: Vec<(suhina_model::TrackId, usize, u32)>,
@@ -742,6 +748,20 @@ impl Session {
         Ok(data)
     }
 
+    /// Whether a track with no instrument of its own plays its notes as sine tones (#1384), the
+    /// user's setting: off by default, heard at once while playing and in every export.
+    pub fn set_implicit_tones(&mut self, on: bool) {
+        self.live.implicit_tones = on;
+        if let Some(player) = self.sync.player.as_mut() {
+            let _ = player.send(suhina_engine::LaunchCommand::SetImplicitTones(on));
+        }
+    }
+
+    /// Whether a track with no instrument plays its notes as sine tones ([`Session::set_implicit_tones`]).
+    pub fn implicit_tones(&self) -> bool {
+        self.live.implicit_tones
+    }
+
     /// Connects an audio engine playing this session's project; transport and launcher commands
     /// go to it from now on. Replaces (and so closes) any previous player. It should have been
     /// started with [`Session::audio`]; audio added later reaches it with the next edit.
@@ -756,6 +776,8 @@ impl Session {
         let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
+        // And whether a track with no instrument plays its notes as sine tones (#1384).
+        let _ = player.send(suhina_engine::LaunchCommand::SetImplicitTones(self.live.implicit_tones));
         // Takes of the engine this one replaces end where it was; a new engine records anew.
         self.end_takes_now();
         let sample_rate = player.sample_rate();
@@ -905,6 +927,16 @@ impl Session {
         self.plugins.stop_all();
         self.end_takes_now();
         self.sync.player.take()
+    }
+
+    /// Lets the audio engine go, its output first, so the project goes quiet at once, and then
+    /// its plug-ins (each keeps its last state for when the project plays again). Stopping the
+    /// plug-ins with the output still on silenced them one after another.
+    pub fn release_player(&mut self) {
+        self.sync.output_open_failed = false;
+        self.end_takes_now();
+        drop(self.sync.player.take());
+        self.plugins.stop_all();
     }
 
     /// The project's running plug-ins (`Rack`): their progress, ARA state and edits.
@@ -1158,7 +1190,7 @@ impl Session {
         })
     }
 
-    /// Opens a project: a Suhina project (`.suhina`) or a Live Set to import (`.als`). Returns
+    /// Opens a project (`.suhina`) or imports a project (`.als`). Returns
     /// the session and the importer's warnings. Any other file is refused by its extension.
     /// The NAM devices' files are read here, so the session is ready for the planned audio
     /// before a player is attached.
@@ -1175,9 +1207,17 @@ impl Session {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (project, Vec::new())
+        } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+            // A zipped project opens once it is unpacked into a folder the person chose
+            // (`extract_zipped_project`): the window asks where, the CLI takes --extract-to.
+            return Err(format!(
+                "{}: a zipped project; unpack it first (the window asks where, suhina-cli takes --extract-to)",
+                path.display()
+            )
+            .into());
         } else if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("als")) {
             return Err(format!(
-                "{}: Suhina opens a Suhina project (.{}) or a Live Set (.als), not this file",
+                "{}: Suhina opens a project (.{}) or imports .als files, not this file",
                 path.display(),
                 suhina_project_file::EXTENSION
             )

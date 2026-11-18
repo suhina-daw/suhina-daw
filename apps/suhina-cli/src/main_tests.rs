@@ -19,6 +19,7 @@ fn a_project_files_device_params_reach_the_render() {
             }],
             channels: vec![Channel { devices, ..Channel::new(ChannelId(1), "C") }],
             contents: vec![ClipContent {
+                linked: false,
                 id: ContentId(1),
                 name: "c".into(),
                 length: 2.0,
@@ -137,6 +138,7 @@ fn a_source_render_writes_the_nodes_sum_alone() {
         cue: None,
         node: node.map(str::to_string),
         scene: None,
+        extract_to: None,
         launcher: false,
         sample_rate: 48_000,
         fm: None,

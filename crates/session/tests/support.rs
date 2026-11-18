@@ -37,3 +37,11 @@ pub fn without_ids(result: &Value) -> Value {
     }
     result
 }
+
+/// A session whose tracks with no instrument play their notes as sine tones (#1384), as every
+/// session did before the setting: for the tests that hear notes on such tracks.
+pub fn toned(project: suhina_model::Project) -> suhina_session::Session {
+    let mut session = suhina_session::Session::new(project);
+    session.set_implicit_tones(true);
+    session
+}

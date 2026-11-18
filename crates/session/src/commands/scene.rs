@@ -165,7 +165,7 @@ fn duplicate_scene(session: &mut Session, params: &Value) -> Result<Value, Comma
         {
             next_content = next_content.checked_add(1).ok_or("the project has too many clip contents")?;
             let id = suhina_model::ContentId(next_content);
-            p.contents.push(suhina_model::ClipContent { id, ..content });
+            p.contents.push(suhina_model::ClipContent { id, linked: false, ..content });
             clip.content = id;
         }
         // The copy is a new clip: it gets its own id when the command is done.

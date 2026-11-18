@@ -315,6 +315,18 @@ pub fn device_at_mut<'a>(devices: &'a mut [Device], path: &[usize]) -> Option<&'
 
 /// Every device among `devices` with its path, depth-first: a group comes before the devices
 /// in it, a branch's devices before the next branch's.
+/// Calls `visit` on every device in `devices`, the ones inside device groups too, at every depth.
+pub fn visit_devices_mut(devices: &mut [Device], visit: &mut dyn FnMut(&mut Device)) {
+    for device in devices {
+        visit(device);
+        if let DeviceKind::Group(group) = &mut device.kind {
+            for branch in &mut group.branches {
+                visit_devices_mut(&mut branch.devices, visit);
+            }
+        }
+    }
+}
+
 pub fn walk_devices(devices: &[Device]) -> Vec<(Vec<usize>, &Device)> {
     fn walk<'a>(devices: &'a [Device], prefix: &[usize], out: &mut Vec<(Vec<usize>, &'a Device)>) {
         for (index, device) in devices.iter().enumerate() {

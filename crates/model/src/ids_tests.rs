@@ -21,6 +21,7 @@ fn project() -> Project {
     Project {
         tracks: vec![Track::new(TrackId(1), "1"), Track::new(TrackId(2), "2")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: String::new(),
             length: 4.0,

@@ -35,7 +35,7 @@ pub use clip_audio::{
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
     MacroMapping, MappedDevice, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups,
-    walk_devices,
+    visit_devices_mut, walk_devices,
 };
 
 /// The extension of a Suhina project file, without the dot.
@@ -198,6 +198,9 @@ pub struct Track {
     pub midi_input: MidiInput,
     /// Which channels of the audio input the track hears, and when (ADR 0017).
     pub audio_input: AudioInput,
+    /// A presentation folder: a track without a channel that only gathers the tracks inside it
+    /// (`parent`) in view, playing nothing and changing nothing they play (#1416).
+    pub folder: bool,
     pub extensions: Extensions,
 }
 
@@ -259,6 +262,12 @@ pub enum MidiPort {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
+
+/// The colour a new MIDI track or clip gets (and every new track with *One colour*).
+pub const NEW_MIDI_COLOUR: Rgb = Rgb(0x4F, 0xC3, 0xF7);
+
+/// The colour a new audio track or clip gets.
+pub const NEW_AUDIO_COLOUR: Rgb = Rgb(0xFF, 0x9A, 0x3C);
 
 /// What a track saved without a colour of its own (a project from before tracks stored one)
 /// shows, by its place among the tracks: these four in turn. Fixed, since it says what a saved
@@ -372,13 +381,121 @@ pub struct Device {
     /// The channel's ARA plug-in that edits its clips (ADR 0033 › 2, #990): always its first
     /// device, not shown in its device list.
     pub clip_host: bool,
+    /// The device's ports that read another channel's signal: its key, or sidechain
+    /// (`docs/spec/sidechain.md`). Empty for almost every device; at most one entry.
+    pub inputs: Vec<DeviceInput>,
+    /// It is an instrument whatever its plug-in is now: a hosted device's role while its plug-in
+    /// is missing, or a placeholder (`DeviceKind::Foreign`) that takes notes and plays silence
+    /// (#1416). Imports set it; a device added by the user takes its role from its plug-in.
+    pub instrument: bool,
     pub extensions: Extensions,
+}
+
+/// A port of a device that reads a signal other than the device's own input: a key
+/// (`docs/spec/sidechain.md` › Model).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeviceInput {
+    /// Which port reads it: `"key"` for a built-in detector or a plug-in's first auxiliary input,
+    /// or the plug-in's own name for that input (`"Stereo Side Chain"`).
+    pub port: String,
+    pub source: SignalPoint,
+    /// The key's level before the device reads it, linear: 1 leaves it as the source has it.
+    pub gain: f64,
+}
+
+impl DeviceInput {
+    /// The port every key goes to by default.
+    pub const KEY: &'static str = "key";
+    /// The highest gain a key takes (+24 dB).
+    pub const MAX_GAIN: f64 = 15.848_931_924_611_133;
+
+    /// A key from `channel` at `tap`, at unity gain, on the default port.
+    pub fn key(channel: ChannelId, tap: TapPoint) -> Self {
+        Self { port: Self::KEY.into(), source: SignalPoint::Channel { channel, tap }, gain: 1.0 }
+    }
+}
+
+/// Where a key is read: a channel at one of its tap points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalPoint {
+    Channel { channel: ChannelId, tap: TapPoint },
+}
+
+impl SignalPoint {
+    /// The channel the point reads.
+    pub fn channel(self) -> ChannelId {
+        match self {
+            Self::Channel { channel, .. } => channel,
+        }
+    }
+
+    pub fn tap(self) -> TapPoint {
+        match self {
+            Self::Channel { tap, .. } => tap,
+        }
+    }
+}
+
+/// Where in a channel's signal a key is taken (`docs/spec/sidechain.md` › Tap points).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TapPoint {
+    /// What plays on the channel's track, before its devices and its fader.
+    PreFx,
+    /// The channel's devices' output, before its fader. The default.
+    #[default]
+    PostFx,
+    /// The channel's output after its fader, mute and pan.
+    PostFader,
+}
+
+impl TapPoint {
+    pub const ALL: [Self; 3] = [Self::PreFx, Self::PostFx, Self::PostFader];
+
+    /// The name the commands and the project file use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::PreFx => "preFx",
+            Self::PostFx => "postFx",
+            Self::PostFader => "postFader",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.name().eq_ignore_ascii_case(name))
+    }
 }
 
 /// Maximum persisted manual slice boundaries per source.
 pub const MAX_SAMPLE_SLICES: usize = 4096;
 
 impl Device {
+    /// Whether an imported hosted device is known to generate notes' audio, even before
+    /// an installed plugin is available. Used to keep missing instruments silent.
+    pub fn is_external_instrument(&self) -> bool {
+        matches!(self.kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. })
+            && self.instrument
+    }
+
+    /// Retain the source's instrument role independently of the installed plugin catalog.
+    pub fn mark_external_instrument(&mut self) {
+        if matches!(self.kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. }) {
+            self.instrument = true;
+        }
+    }
+
+    /// An explicitly unavailable instrument consumes notes silently until replaced or removed.
+    /// It applies to a placeholder (`DeviceKind::Foreign`) only, never to a runnable device.
+    pub fn is_missing_instrument(&self) -> bool {
+        matches!(self.kind, DeviceKind::Foreign { .. }) && self.instrument
+    }
+
+    /// Preserve an imported instrument as a silent placeholder, including when soloed or bypassed.
+    pub fn mark_missing_instrument(&mut self) {
+        if matches!(self.kind, DeviceKind::Foreign { .. }) {
+            self.instrument = true;
+        }
+    }
+
     /// Versioned source corrections; interpreted by the device API, not the project model.
     pub fn sample_edit_data(&self) -> Option<&[u8]> {
         let bytes = &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_edits")?.data;
@@ -429,6 +546,20 @@ impl Device {
         });
         Ok(())
     }
+    /// The extension key (format `"suhina"`) that keeps a renamed plug-in's own name.
+    pub const PLUGIN_NAME: &'static str = "pluginName";
+
+    /// The name the plug-in itself has, which finding it among the installed plug-ins goes by:
+    /// the name it had before it was first renamed (`device.rename`), else its name.
+    pub fn plugin_name(&self) -> &str {
+        self.extensions
+            .0
+            .iter()
+            .find(|e| e.format == "suhina" && e.key == Self::PLUGIN_NAME)
+            .and_then(|e| std::str::from_utf8(&e.data).ok())
+            .unwrap_or(&self.name)
+    }
+
     /// A sampler's source path, versioned independently of parameter values.
     pub fn sample_file(&self) -> Option<&str> {
         let bytes = if self.kind == DeviceKind::Sd {
@@ -521,6 +652,10 @@ pub struct ClipContent {
     /// The scale the notes are written in, if any: the piano roll marks its keys
     /// ([ADR 0001](../../docs/decisions/0001-daw-neutral-model.md) › Amendment: clip scales).
     pub scale: Option<Scale>,
+    /// The clips that play it are linked copies on purpose: an edit through one changes them all,
+    /// with no copy on write, until a clip is unlinked (`docs/spec/arrangement-editing.md` ›
+    /// Linked copies).
+    pub linked: bool,
 }
 
 /// One lane of a clip content. `target` is `None` when the lane plays on whichever track the
@@ -722,10 +857,13 @@ pub enum FadeShape {
     Slow,
     /// `t² (3 − 2t)`: flat at both ends.
     SCurve,
+    /// Raised cosine with an exponential tension bend.
+    Cosine,
 }
 
 impl FadeShape {
-    pub const ALL: [FadeShape; 5] = [Self::Linear, Self::EqualPower, Self::Fast, Self::Slow, Self::SCurve];
+    pub const ALL: [FadeShape; 6] =
+        [Self::Linear, Self::EqualPower, Self::Fast, Self::Slow, Self::SCurve, Self::Cosine];
 
     /// The name used in project files and commands.
     pub fn name(self) -> &'static str {
@@ -735,6 +873,7 @@ impl FadeShape {
             Self::Fast => "fast",
             Self::Slow => "slow",
             Self::SCurve => "s_curve",
+            Self::Cosine => "cosine",
         }
     }
 
@@ -747,6 +886,28 @@ impl FadeShape {
     /// out beforehand.
     pub fn gain_bent(self, t: f64, exponent: f64) -> f64 {
         let shaped = self.gain(t);
+        // SPDX-SnippetBegin
+        // SPDX-SnippetCopyrightText: 2026 ItsAlphaNeon
+        // SPDX-License-Identifier: GPL-3.0-or-later
+        // From Lemon Studio crates/os-model/src/lib.rs (fade_curve) at
+        // 011a03f23d9db7f10f07cd7d165cc978a9dda263; the tension law written over Suhina's
+        // normalised curve, with bounded inputs.
+        if self == Self::Cosine && exponent != 1.0 {
+            let base = if exponent < 1.0 { 1.0 / exponent } else { exponent };
+            let squared = base * base;
+            let fourth = squared * squared;
+            let eighth = fourth * fourth;
+            let q = eighth * eighth;
+            if q - 1.0 < 1e-6 {
+                return shaped;
+            }
+            return if exponent < 1.0 {
+                (q - q.powf(1.0 - shaped)) / (q - 1.0)
+            } else {
+                (q.powf(shaped) - 1.0) / (q - 1.0)
+            };
+        }
+        // SPDX-SnippetEnd
         if exponent == 1.0 { shaped } else { shaped.powf(exponent) }
     }
 
@@ -759,12 +920,13 @@ impl FadeShape {
             Self::Fast => 1.0 - (1.0 - t) * (1.0 - t),
             Self::Slow => t * t,
             Self::SCurve => t * t * (3.0 - 2.0 * t),
+            Self::Cosine => (1.0 - (t * std::f64::consts::PI).cos()) * 0.5,
         }
     }
 }
 
 /// How one fade rises: a shape, bent by `curve` (−1 … +1, 0 the shape exactly). The gain is
-/// `shape(t)^(4^(−curve))`: + starts faster, − slower.
+/// `shape(t)^(4^(−curve))`, except cosine's exponential tension: + starts faster, − slower.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FadeCurve {
     pub shape: FadeShape,
@@ -800,6 +962,22 @@ impl FadeCurve {
         }
         if gain >= 1.0 {
             return 1.0;
+        }
+        if (gain - half).abs() < 1e-12 {
+            return 0.0;
+        }
+        if shape == FadeShape::Cosine {
+            let mut low = -1.0;
+            let mut high = 1.0;
+            for _ in 0..48 {
+                let mid = (low + high) * 0.5;
+                if (Self { shape, curve: mid }).gain(0.5) < gain {
+                    low = mid;
+                } else {
+                    high = mid;
+                }
+            }
+            return (low + high) * 0.5;
         }
         // gain = half^(4^(−curve)), so 4^(−curve) = ln gain / ln half.
         let curve = -((gain.ln() / half.ln()).ln() / 4f64.ln());
@@ -1070,6 +1248,8 @@ pub struct Extension {
 /// A reference in the project that does not resolve, or an id used twice.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValidationError {
+    /// A presentation folder that names a channel (#1416).
+    FolderWithChannel(TrackId),
     DuplicateTrack(TrackId),
     DuplicateChannel(ChannelId),
     DuplicateContent(ContentId),
@@ -1124,6 +1304,18 @@ pub enum ValidationError {
         channel: ChannelId,
         device: Vec<usize>,
     },
+    /// The device at this path has more than one key, or one that reads a channel that is not
+    /// there (`docs/spec/sidechain.md` › Model).
+    BadKey {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
+    /// The device at this path reads a key whose source plays into it, through outputs, sends
+    /// and other keys, or reads its own channel: it would have to run before itself.
+    KeyCycle {
+        channel: ChannelId,
+        device: Vec<usize>,
+    },
     /// The device group at this path is inside more than [`MAX_DEVICE_GROUP_DEPTH`] levels of groups,
     /// itself counted.
     DeviceGroupTooDeep {
@@ -1152,6 +1344,7 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::FolderWithChannel(id) => write!(f, "track {} is a folder and cannot have a mixer channel", id.0),
             Self::DuplicateTrack(id) => write!(f, "track id {} is used twice", id.0),
             Self::DuplicateChannel(id) => write!(f, "channel id {} is used twice", id.0),
             Self::DuplicateContent(id) => write!(f, "clip content id {} is used twice", id.0),
@@ -1200,6 +1393,20 @@ impl fmt::Display for ValidationError {
                 path(device),
                 channel.0
             ),
+            Self::BadKey { channel, device } => {
+                write!(
+                    f,
+                    "the device at {device:?} on channel {} has more than one key, or one that reads a channel that does not exist",
+                    channel.0
+                )
+            }
+            Self::KeyCycle { channel, device } => {
+                write!(
+                    f,
+                    "the key of the device at {device:?} on channel {} reads a channel that plays into it, or its own",
+                    channel.0
+                )
+            }
             Self::DeviceGroupTooDeep { channel, device } => write!(
                 f,
                 "device group {} on channel {} is inside more than {MAX_DEVICE_GROUP_DEPTH} levels of groups",
@@ -1235,6 +1442,58 @@ fn path(device: &[usize]) -> String {
 impl Project {
     /// Checks that ids are unique and every reference resolves. Importers call this so a
     /// malformed file becomes an error instead of a crash later.
+    /// Whether a key that a device on channel `reader` reads from `point` would close a loop:
+    /// `reader` plays into the point's channel through outputs, sends and other keys, or the point
+    /// is its own channel after its devices, so neither could run first
+    /// (`docs/spec/sidechain.md` › Ordering and cycles). Its own channel before its devices
+    /// (`PreFx`) is no loop: that signal exists before the devices run. Bounded by the number of
+    /// channels, so a malformed project's own routing loop cannot make it run forever.
+    pub fn key_closes_loop(&self, point: SignalPoint, reader: ChannelId) -> bool {
+        let source = point.channel();
+        if source == reader {
+            return point.tap() != TapPoint::PreFx;
+        }
+        self.channels_after(reader).contains(&source)
+    }
+
+    /// The channels `from` plays into, at any depth: through its output, its sends and the keys
+    /// read from it (a channel whose device reads a key from one of them runs after it). A key a
+    /// device on `from` reads from one of them would close a loop. One walk over the graph, the
+    /// key edges gathered once, so a caller can ask for every track at once.
+    pub fn channels_after(&self, from: ChannelId) -> Vec<ChannelId> {
+        let keyed: Vec<(ChannelId, ChannelId)> = self
+            .channels
+            .iter()
+            .flat_map(|reader| {
+                groups::walk_devices(&reader.devices)
+                    .into_iter()
+                    .flat_map(|(_, d)| d.inputs.iter().map(|i| i.source.channel()).collect::<Vec<_>>())
+                    .map(move |source| (source, reader.id))
+            })
+            .collect();
+        let mut seen = vec![from];
+        let mut at = 0;
+        while let Some(&channel_id) = seen.get(at) {
+            at += 1;
+            if seen.len() > self.channels.len() + 1 {
+                break;
+            }
+            let Some(channel) = self.channel(channel_id) else { continue };
+            let next = channel
+                .output
+                .into_iter()
+                .chain(channel.sends.iter().map(|s| s.target))
+                .chain(keyed.iter().filter(|(source, _)| *source == channel_id).map(|(_, reader)| *reader));
+            for id in next.collect::<Vec<_>>() {
+                if !seen.contains(&id) {
+                    seen.push(id);
+                }
+            }
+        }
+        seen.remove(0);
+        seen
+    }
+
     pub fn validate(&self) -> Result<(), Vec<ValidationError>> {
         let mut errors = Vec::new();
 
@@ -1298,6 +1557,10 @@ impl Project {
             if let Some(channel) = track.channel {
                 channel_ref(channel, &mut errors);
             }
+            // A folder plays nothing: it has no channel of its own.
+            if track.folder && track.channel.is_some() {
+                errors.push(ValidationError::FolderWithChannel(track.id));
+            }
             if let Some(parent) = track.parent {
                 track_ref(parent, &mut errors);
                 match self.group_depth(track.id) {
@@ -1327,6 +1590,16 @@ impl Project {
                 channel_ref(send.target, &mut errors);
             }
             groups::validate_devices(channel.id, &channel.devices, &mut errors);
+            for (path, device) in groups::walk_devices(&channel.devices) {
+                let bad_source = device.inputs.iter().any(|i| {
+                    !channels.contains(&i.source.channel()) || !(0.0..=DeviceInput::MAX_GAIN).contains(&i.gain)
+                });
+                if device.inputs.len() > 1 || bad_source {
+                    errors.push(ValidationError::BadKey { channel: channel.id, device: path.clone() });
+                } else if device.inputs.iter().any(|i| self.key_closes_loop(i.source, channel.id)) {
+                    errors.push(ValidationError::KeyCycle { channel: channel.id, device: path });
+                }
+            }
         }
         for content in &self.contents {
             for lane in &content.lanes {

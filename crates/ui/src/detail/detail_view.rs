@@ -144,7 +144,16 @@ fn chain_row(
         .iter()
         .map(|device| {
             if let Some(group) = &device.group {
-                return (GROUP_WIDTH, group_height(group), false, 0.0);
+                // Its border and padding round what it holds, in the state it is painted in, as
+                // a device's do (#1477).
+                let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+                let [top, right, bottom, left] = group_element(device, lit).enter().insets();
+                return (
+                    GROUP_WIDTH + left + right,
+                    group_height(group, [top, right, bottom, left]),
+                    false,
+                    top + bottom,
+                );
             }
             // An editor embedded in the panel is placed for devices on the track itself.
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
@@ -676,12 +685,14 @@ fn chain_stack_in(
     let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     for device in entries {
         if let Some(group) = &device.group {
-            let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group)));
+            let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+            let insets = group_element(device, lit).enter().insets();
+            let rect =
+                Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group, insets)));
             y = rect.bottom() + 1.0;
             if rect.top() > visible.bottom() || rect.bottom() < visible.top() {
                 continue;
             }
-            let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
             let clicked =
                 group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions);
             inside_group_mark(&painter.with_clip_rect(area), rect, &device.at);
@@ -1015,6 +1026,7 @@ fn device_panel(
             device.group.as_ref().map(|g| g.branches.len()),
             device.is_builtin,
             &device.name,
+            device.sidechain.as_ref(),
             actions,
         )
     });
@@ -1142,6 +1154,38 @@ fn device_panel(
             painter.line_segment([corner, corner + Vec2::new(4.0 * x, 0.0)], egui::Stroke::new(1.2, ink));
             painter.line_segment([corner, corner + Vec2::new(0.0, 4.0 * y)], egui::Stroke::new(1.2, ink));
         }
+    }
+    // A device that reads a key (sidechain) has a button for it beside its X: lit while it reads
+    // one, it opens the same choices as Sidechain in its menu (`docs/spec/sidechain.md` ›
+    // Choosing a source).
+    if let Some(side) = &device.sidechain {
+        let font = theme::ui_font(theme::TEXT_TINY);
+        let width = widgets::text_width(ui, "SC", font.clone()) + 6.0;
+        let button =
+            Rect::from_center_size(Pos2::new(kind_right - width / 2.0, header.center().y), Vec2::new(width, 12.0));
+        kind_right = button.left() - 4.0;
+        let label = match &side.key {
+            Some(key) => format!(
+                "{} sidechain: {}, {}, {:+.1} dB",
+                device.name,
+                key.name,
+                menus::tap_label(key.tap).to_lowercase(),
+                key.gain_db
+            ),
+            None => format!("{} sidechain: none", device.name),
+        };
+        let response = widgets::button_area(ui, button, Id::unique(("device-sidechain", track.0, &device.at)), &label)
+            .on_hover_text(&label);
+        let ink = if side.key.is_some() {
+            header_el.accent()
+        } else if response.hovered() {
+            bright
+        } else {
+            dim
+        };
+        painter.text(button.center(), egui::Align2::CENTER_CENTER, "SC", font, ink);
+        let at = device.at.value();
+        egui::Popup::menu(&response).show(|ui| menus::sidechain_choices(ui, track, &at, side, actions));
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
     // What a canvas's device widgets read: the device's own state (its name, whether it

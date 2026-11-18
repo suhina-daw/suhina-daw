@@ -4,6 +4,26 @@
 use super::*;
 
 #[test]
+fn an_inputless_processor_receives_no_input_bus_pointer() {
+    use crate::audio::Block;
+    let (module, _) = open("test:vst3").unwrap();
+    let cid = module.audio_classes().unwrap()[0].0;
+    let processor = module.create::<IAudioProcessor>(&cid).unwrap();
+    let link = suhina_ipc::Link::create(2, 16).unwrap();
+    let served = Served::open(&link.address()).unwrap();
+    let mut block = Vst3Block::new(
+        processor,
+        &served,
+        (vec![], vec![2]),
+        48_000.0,
+        (ParamQueue::default(), Arc::new(ParamNotes::new()), Arc::new(ParamNotes::new()), MidiMapping::of(None)),
+    );
+    let mut output = [0.0; 32];
+    block.process(&[0.0; 32], &[], &mut output);
+    assert_eq!(output, [0.5; 32]);
+}
+
+#[test]
 fn the_trace_watch_merges_peaks_and_starts_each_interval_from_silence() {
     let watch = Watch::default();
     watch.merge_peak(&[0.25, -0.75, 0.5]);

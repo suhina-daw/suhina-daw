@@ -228,6 +228,23 @@ fn an_offline_pools_workers_never_join_real_time_priority() {
     assert_eq!(playing.shared.real_time.load(Ordering::Acquire), 256);
 }
 
+/// A worker whose wake-up was spent while it was away (joining real time waits on a channel, which
+/// parks the thread too) does not park once the pool is stopping: nothing would wake it again, and
+/// the pool's drop would wait on it for good. `an_offline_pools_workers_never_join_real_time_priority`
+/// hung so on Linux, now and then.
+#[test]
+fn a_worker_does_not_park_once_its_pool_is_stopping() {
+    let shared = Shared {
+        stop: AtomicBool::new(true),
+        real_time_pool: true,
+        real_time: AtomicUsize::new(0),
+        real_time_rate: AtomicUsize::new(0),
+        lane_real_time: std::array::from_fn(|_| AtomicBool::new(false)),
+    };
+    // No wake-up waits for this thread: a park here would never return.
+    assert!(!park_unless_stopping(&shared));
+}
+
 #[test]
 fn an_offline_renderer_renders_on_an_offline_pool() {
     let mut renderer = Renderer::new(&project(), SR, suhina_device_registry::factory()).unwrap();

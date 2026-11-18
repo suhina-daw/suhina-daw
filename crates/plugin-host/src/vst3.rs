@@ -707,6 +707,8 @@ pub(crate) struct Vst3Plugin {
     midi_watch: Option<Arc<MidiWatch>>,
     /// The plug-in's name, for its editor's window.
     name: String,
+    /// Canonical class id; name guesses cannot authorize indexed state.
+    class_id: String,
     editor: Option<crate::vst3::editor::Editor>,
     /// The ARA document it is bound to, when it was loaded with one (ADR 0033); let go of
     /// before the component is terminated.
@@ -724,6 +726,17 @@ pub(crate) struct Vst3Plugin {
 /// Channels in a speaker arrangement (one bit each).
 fn channel_count(arrangement: SpeakerArrangement) -> usize {
     arrangement.count_ones() as usize
+}
+
+/// Only the class id derived from the original format id permits the legacy index fallback.
+/// A similarly named newer version may reuse ids for entirely different controls.
+fn indexed_state_matches(data: &[u8], class_id: &str) -> bool {
+    if data.get(..4) != Some(b"CcnK".as_slice()) {
+        return false;
+    }
+    let Some(bytes) = data.get(16..20).and_then(|b| <[u8; 4]>::try_from(b).ok()) else { return false };
+    let id = u32::from_be_bytes(bytes);
+    suhina_plugins::matching::derived_from(class_id, id)
 }
 
 impl Vst3Plugin {
@@ -792,6 +805,7 @@ impl Vst3Plugin {
             shown: None,
             midi_watch: None,
             name,
+            class_id: cid_hex(&cid),
             editor: None,
             ara: None,
             supports_ara: false,
@@ -1011,6 +1025,18 @@ impl Vst3Plugin {
                 let _ = unsafe { self.component.activateBus(audio, direction as BusDirection, 0, 1) };
             }
         }
+        // The second input bus, when the plug-in says it is an auxiliary one (a sidechain): the
+        // link's key channels go there (`docs/spec/sidechain.md` › Plug-in buses).
+        if inputs > 1 {
+            let mut info: BusInfo = blank();
+            let input = BusDirections_::kInput as BusDirection;
+            // SAFETY: a live component writing one value for a bus it counted.
+            let described = ok(unsafe { self.component.getBusInfo(audio, input, 1, &mut info) });
+            if described && info.busType == BusTypes_::kAux as BusType {
+                // SAFETY: a live component; bus 1 exists.
+                let _ = unsafe { self.component.activateBus(audio, input, 1, 1) };
+            }
+        }
         // An instrument takes notes on its first event input.
         let event = MediaTypes_::kEvent as MediaType;
         let input = BusDirections_::kInput as BusDirection;
@@ -1063,6 +1089,15 @@ impl Vst3Plugin {
         Ok(crate::ara::wrap_state(stream.bytes(), self.ara.as_deref().and_then(crate::ara::Document::store)))
     }
 
+    /// The component's own state as it gives it, without an ARA document's edits; `None` when
+    /// it gives none.
+    fn component_bytes(&self) -> Option<Vec<u8>> {
+        let stream = ComWrapper::new(MemoryStream::new(Vec::new()));
+        let raw = stream.to_com_ptr::<IBStream>()?;
+        // SAFETY: a live component writing to a live stream.
+        ok(unsafe { self.component.getState(raw.as_ptr()) }).then(|| stream.bytes())
+    }
+
     /// The controller's own state, when it is a separate object that gives one.
     pub(crate) fn controller_state(&mut self) -> Option<Vec<u8>> {
         let controller = self.controller.as_ref()?;
@@ -1084,11 +1119,22 @@ impl Vst3Plugin {
         if let Some(suhina_plugins::vst2::Program::Chunk(_)) = suhina_plugins::vst2::single_program(data) {
             return Err("a VST3 plug-in does not read a VST2 program chunk (.fxp); give it a bank (.fxb) or its own saved state".into());
         }
+        let indexed = indexed_state_matches(data, &self.class_id);
+        // Some plug-ins answer yes to a bank of parameter values and leave their state as it was;
+        // only then are the values set by number. One whose state changed converted the bank
+        // itself, and the raw numbers must not overwrite that (`plugin-hosting.md` › Handing
+        // over the state).
+        let before = if indexed { self.component_bytes() } else { None };
         let stream = ComWrapper::new(MemoryStream::new(data.to_vec()));
         let raw = stream.to_com_ptr::<IBStream>().ok_or("stream")?;
         // SAFETY: a live component reading from a live stream.
         let taken = ok(unsafe { self.component.setState(raw.as_ptr()) });
-        let parameters = suhina_plugins::vst2::program_values(data).map_or(0, |values| self.set_parameters(&values));
+        let ignored = taken && before.is_some() && self.component_bytes() == before;
+        let parameters = if indexed && (!taken || ignored) {
+            suhina_plugins::vst2::program_values(data).map_or(0, |values| self.set_parameters(&values))
+        } else {
+            0
+        };
         if !taken && parameters == 0 {
             return Err("the plug-in did not take the state".into());
         }
@@ -1692,7 +1738,7 @@ impl Vst3Block {
             numSamples: 0,
             numInputs: self.inputs.len() as int32,
             numOutputs: self.outputs.len() as int32,
-            inputs: self.inputs.as_mut_ptr(),
+            inputs: if self.inputs.is_empty() { std::ptr::null_mut() } else { self.inputs.as_mut_ptr() },
             outputs: self.outputs.as_mut_ptr(),
             inputParameterChanges: self.changes.take(std::iter::empty()),
             outputParameterChanges: std::ptr::null_mut(),
@@ -1809,6 +1855,11 @@ impl crate::audio::Block for Vst3Block {
             self.in_buffers.silence(bus, frames);
         }
         crate::audio::feed_main(input, link_channels, frames, self.in_buffers.bus_mut(0));
+        // A key (sidechain) rides in the link's third and fourth channels: the second input bus
+        // hears it. One that is not an auxiliary bus is not active and ignores it.
+        if self.in_buffers.bus_count() > 1 {
+            crate::audio::feed_aux(input, link_channels, frames, self.in_buffers.bus_mut(1));
+        }
         follow_song(&mut self.context, events);
         self.watch_events(events, frames);
         let mapping = &self.mapping;
@@ -1818,7 +1869,7 @@ impl crate::audio::Block for Vst3Block {
             numSamples: frames as int32,
             numInputs: self.inputs.len() as int32,
             numOutputs: self.outputs.len() as int32,
-            inputs: self.inputs.as_mut_ptr(),
+            inputs: if self.inputs.is_empty() { std::ptr::null_mut() } else { self.inputs.as_mut_ptr() },
             outputs: self.outputs.as_mut_ptr(),
             inputParameterChanges: self.changes.take(events.iter().filter_map(|e| mapping.change(e))),
             outputParameterChanges: std::ptr::null_mut(),

@@ -43,6 +43,11 @@ lane, the grid and zoom, and the `note.*` commands.
 
 ## Where it opens
 
+Active notes and velocity stems retain a minimum 3:1 contrast against the editor surface,
+including clips with very dark imported colours. This is a display adjustment only; the
+saved clip colour is unchanged. Note labels choose contrasting ink from the actual fill,
+not from velocity or opacity. Muted, erased and out-of-window notes remain dimmed.
+
 - **Built:** selecting a MIDI clip in the Arrangement view shows the clip's properties column on the
   left of the detail area and the piano roll in the rest of it, in place of the track's devices.
   Selecting a track, or an audio clip, shows what it showed before (devices; an audio clip's

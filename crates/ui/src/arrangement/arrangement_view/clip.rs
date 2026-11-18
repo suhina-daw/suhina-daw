@@ -126,6 +126,7 @@ pub(super) fn shape_label(shape: FadeShape) -> &'static str {
         FadeShape::Fast => "Fast",
         FadeShape::Slow => "Slow",
         FadeShape::SCurve => "S-curve",
+        FadeShape::Cosine => "Cosine",
     }
 }
 
@@ -256,7 +257,7 @@ pub(super) fn clip_box<'a>(
     } else if response.hovered() {
         ui.ctx().set_cursor_icon(if copy_key { egui::CursorIcon::Copy } else { egui::CursorIcon::Grab });
     }
-    let label = format!("Clip {name} on {} at bar {bar}", lane.name);
+    let label = format!("Clip {name} on {} at bar {bar}{}", lane.name, if clip.linked { ", linked" } else { "" });
     // Selected or not, as it is drawn: a screen reader and the tests read it (#695).
     let picked = state.is_selected(key);
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, picked, &label));
@@ -279,7 +280,19 @@ pub(super) fn clip_box<'a>(
         ui.ctx().data_mut(|d| d.remove::<String>(Id::unique(("clip-rename", key.1.0))));
     }
     egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-        menus::clip_menu(ui, &menu_clips, stack, clip.enabled, &clip.name, actions);
+        // Link, when the clips play the same notes or audio but not yet one content.
+        let shown: Vec<&ClipBox> = menu_clips
+            .iter()
+            .filter_map(|(track, id)| {
+                timeline.lanes.iter().filter(|l| l.track == *track).flat_map(|l| &l.clips).find(|c| c.id == *id)
+            })
+            .collect();
+        let linkable = shown.len() > 1
+            && shown.len() == menu_clips.len()
+            && shown.iter().all(|c| c.material != 0 && c.material == shown[0].material)
+            && shown.iter().any(|c| c.stack_key.0 != shown[0].stack_key.0);
+        let links = menus::ClipLinks { linked: clip.linked, linkable };
+        menus::clip_menu(ui, &menu_clips, stack, clip.enabled, links, &clip.name, actions);
         let ara = state
             .ara_tracks
             .iter()
@@ -822,10 +835,15 @@ pub(super) fn clip_box<'a>(
         || state.gesture.fade_curve().copied().is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
     let fits = rect.width() >= 3.0 * FADE_HANDLE && rect.height() >= 2.0 * FADE_HANDLE;
+    // A handle's shape menu keeps the handles: the menu opens under the pointer, which then is
+    // over the menu and not the clip, and a handle gone takes its menu with it.
+    let menu_open = [FadeEdge::In, FadeEdge::Out]
+        .into_iter()
+        .any(|edge| egui::Popup::is_id_open(ui.ctx(), fade_handle_id(clip.id, edge).with("popup")));
     if clip.audio
         && fits
         && state.gesture.clip().copied().is_none_or(|d| !mine(&d))
-        && (pointer_in || selected || fading)
+        && (pointer_in || selected || fading || menu_open)
     {
         let grid = fade_grid;
         for edge in [FadeEdge::In, FadeEdge::Out] {
@@ -844,7 +862,7 @@ pub(super) fn clip_box<'a>(
             }
             let which = if edge == FadeEdge::In { "Fade-in" } else { "Fade-out" };
             let label = format!("{which} of {name} on {}", lane.name);
-            let id = Id::unique(("clip-fade", clip.id.0, edge == FadeEdge::In));
+            let id = fade_handle_id(clip.id, edge);
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             response.widget_info(|| {
@@ -1026,6 +1044,11 @@ pub(super) fn clip_box<'a>(
     if crossfades_at(timeline, clip.id, FadeEdge::Out) {
         shown.fade_out = 0.0;
     }
+    // Where the fade-in handle takes the pointer: the Edit gain envelope button gives it way.
+    let fade_in_hit = (!crossfades_at(timeline, clip.id, FadeEdge::In)).then(|| {
+        fade_handle(rect, FadeEdge::In, shown.fade_in as f32 * state.beat_width)
+            .expand((FADE_HANDLE_HIT - FADE_HANDLE) / 2.0)
+    });
 
     // Copying (Ctrl held): the clip stays where it is drawn, and its copy shows where it lands.
     let copying = state.gesture.clip().copied().is_some_and(|d| d.copy || copy_key) && (at - clip.start).abs() > 1e-9;
@@ -1199,8 +1222,18 @@ pub(super) fn clip_box<'a>(
             let left = rect.left().max(row.clip.left()) + 4.0;
             let size = crate::arrangement::envelope::BUTTON;
             let button = Rect::from_min_size(Pos2::new(left, bar.center().y - size / 2.0), Vec2::splat(size));
-            if crate::arrangement::envelope::edit_button(ui, &envelope_painter, button, clip.id, name, envelope_edited)
-            {
+            // The button takes the pointer only off the fade-in handle, which lies over its left
+            // edge while the fade is short: a right-click there opens the fade's menu (#1527).
+            let hit = fade_in_hit.map_or(button, |handle| beside(button, handle));
+            if crate::arrangement::envelope::edit_button(
+                ui,
+                &envelope_painter,
+                button,
+                hit,
+                clip.id,
+                name,
+                envelope_edited,
+            ) {
                 crate::arrangement::envelope::toggle_editing(ui.ctx(), clip.id);
             }
             if envelope_edited && rect.height() >= bar.height() + size + 6.0 {
@@ -1366,6 +1399,18 @@ pub(super) fn clip_element<'a>(
     timeline: &Timeline,
     selected: bool,
 ) -> crate::kit::element::Builder<'a> {
+    let kind = clip_kind(lane, clip, timeline, selected);
+    crate::kit::element::CLIP
+        .id(id)
+        .color(kind.color)
+        .attr(crate::kit::element::Selected, kind.selected)
+        .attr(crate::kit::element::Muted, kind.muted)
+        .attr(crate::kit::element::Playing, kind.playing)
+        .attr(crate::kit::element::Recording, kind.recording)
+}
+
+/// What the `clip` element of an Arrangement clip is styled by ([`clip_element`]).
+pub(super) fn clip_kind(lane: &Lane, clip: &ClipBox, timeline: &Timeline, selected: bool) -> super::state::ClipKind {
     let off = drawn_muted(lane.mute, clip.enabled);
     let end = clip.start + clip.length;
     let playing = timeline.running && !off && (clip.start..end).contains(&timeline.beat);
@@ -1373,13 +1418,24 @@ pub(super) fn clip_element<'a>(
         .recording_spans
         .iter()
         .any(|(track, from, to)| *track == lane.track && *from < end && *to > clip.start);
-    crate::kit::element::CLIP
-        .id(id)
-        .color(rgb(clip.color))
-        .attr(crate::kit::element::Selected, selected)
-        .attr(crate::kit::element::Muted, off)
-        .attr(crate::kit::element::Playing, playing)
-        .attr(crate::kit::element::Recording, recording)
+    super::state::ClipKind { color: rgb(clip.color), selected, muted: off, playing, recording, audio: clip.audio }
+}
+
+/// The looks of the parts of a clip of `kind`, inside its entered `clip` element: read for the
+/// first clip of its kind this frame and kept in `look`, so the parts add no elements to the
+/// style tree for each clip.
+fn clip_parts(look: &super::state::ClipLook, kind: super::state::ClipKind) -> super::state::ClipParts {
+    if let Some(parts) = look.parts.borrow().get(&kind) {
+        return parts.clone();
+    }
+    use crate::kit::element::{CLIP_FADE, CLIP_NAME, CLIP_NOTES, CLIP_WAVEFORM};
+    let parts = super::state::ClipParts {
+        name: CLIP_NAME.probe(),
+        content: if kind.audio { CLIP_WAVEFORM.probe() } else { CLIP_NOTES.probe() },
+        fade: CLIP_FADE.probe(),
+    };
+    look.parts.borrow_mut().insert(kind, parts.clone());
+    parts
 }
 
 /// Draws a clip's body, colour strip, name and the marks of its notes (only those in view).
@@ -1400,11 +1456,12 @@ pub(super) fn paint_clip(
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("arrangement clip");
     let off = drawn_muted(lane.mute, clip.enabled);
     let id = clip_element_id(clip);
-    let own = clip_element(&id, lane, clip, timeline, selected).enter();
     let view = painter.clip_rect();
     if !rect.intersects(view) {
         return;
     }
+    let own = clip_element(&id, lane, clip, timeline, selected).enter();
+    let parts = clip_parts(look, clip_kind(lane, clip, timeline, selected));
     // The sheet's opacity fades the whole clip, its waveform, notes and name too.
     let faded;
     let painter = match own.style().map(|style| style.opacity).filter(|o| *o < 1.0) {
@@ -1441,7 +1498,7 @@ pub(super) fn paint_clip(
     // The name bar as the sheet's `clip-name` styles it: its fill, and the ink of the name and
     // the mute mark on that fill.
     let name_look = bar.map(|bar| {
-        let look = name_bar_look(bar_fill);
+        let look = name_bar_look(&parts.name, bar_fill);
         // The bar keeps the clip's rounded top corners and reaches both its edges: inset, the
         // body showed in a strip at the right, lighter while selected (#1487 B11). The leading
         // edge is drawn over its left end.
@@ -1494,11 +1551,20 @@ pub(super) fn paint_clip(
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = look.waveform_appearance;
     // Theme: the sheet's `clip-waveform` and `clip-notes` colours, else Dark.
-    let themed = |part: crate::kit::element::Name| part.enter().color_or(appearance.ink(ink));
     let content_ink = if appearance.mode == crate::settings::view_settings::WaveformColour::Theme {
-        themed(if clip.audio { crate::kit::element::CLIP_WAVEFORM } else { crate::kit::element::CLIP_NOTES })
+        parts.content.color_or(appearance.ink(ink))
     } else {
         appearance.ink(ink)
+    };
+    // Notes the theme or the clip's colour chose that are lost on the body (an imported clip's own
+    // colour can be as dark as its notes) take the body's readable ink instead; a colour the user
+    // chose in Settings (Light, Dark, Custom) is kept as chosen.
+    use crate::settings::view_settings::WaveformColour;
+    let chosen = matches!(appearance.mode, WaveformColour::Light | WaveformColour::Dark | WaveformColour::Custom);
+    let content_ink = if !clip.audio && !chosen && theme::text_contrast(content_ink, body) < 3.0 {
+        theme::text_on(body)
+    } else {
+        content_ink
     };
     // A muted clip's notes and waveform step back, so the grey reads first.
     let content_ink = if off { motion::mix(body, content_ink, 0.6) } else { content_ink };
@@ -1629,7 +1695,7 @@ pub(super) fn paint_clip(
     // A clip with a name bar already shows its name; a low lane's clip shows it in the body.
     if content_hidden && !has_name {
         let name = if clip.name.is_empty() { lane.name.as_str() } else { clip.name.as_str() };
-        let el = crate::kit::element::CLIP_NAME.enter();
+        let el = &parts.name;
         let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
         let ink = el.color_or(text_color);
         // A clip turned off has its mute mark first, the name after it, as in a name bar.
@@ -1693,8 +1759,7 @@ pub(super) fn paint_clip(
     // A fade is a line over the waveform, from the clip's bottom corner to where it ends at
     // the top, following its shape and curve.
     if clip.audio {
-        let fade_stroke =
-            theme::hairline(crate::kit::element::CLIP_FADE.look().own_color_or(dim(Color32::TRANSPARENT)));
+        let fade_stroke = theme::hairline(parts.fade.own_color_or(dim(Color32::TRANSPARENT)));
         if shown.fade_in > 0.0 {
             let end = (rect.left() + shown.fade_in as f32 * beat_width).min(rect.right());
             painter.line(fade_line(rect, FadeEdge::In, rect.left(), end, shown.fade_in_curve), fade_stroke);
@@ -1709,6 +1774,9 @@ pub(super) fn paint_clip(
     }
     if clip.take.is_some() {
         paint_take_marker(painter, rect, ink);
+    }
+    if clip.linked {
+        paint_link_marker(painter, rect, ink);
     }
 }
 
@@ -1743,6 +1811,20 @@ pub(super) fn stacked_lines(painter: &egui::Painter, x: egui::Rangef, bottom: f3
     }
 }
 
+/// The small mark in a clip's lower right corner that says it is a linked copy: two links of a
+/// chain (#1414).
+fn paint_link_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
+    if rect.height() < 16.0 || rect.width() < 24.0 {
+        return;
+    }
+    let centre = Pos2::new(rect.right() - 10.0, rect.bottom() - 6.0);
+    let stroke = Stroke::new(1.0, ink);
+    for dx in [-2.5, 2.5] {
+        let link = Rect::from_center_size(centre + egui::vec2(dx, 0.0), egui::vec2(6.0, 4.0));
+        painter.rect_stroke(link, 2.0, stroke, StrokeKind::Inside);
+    }
+}
+
 /// The part of a clip a drag moves it from: its lower half, on a lane tall enough to have an
 /// upper half for painting time; `None` when the whole clip moves it.
 pub(super) fn clip_grab_area(rect: Rect) -> Option<Rect> {
@@ -1755,6 +1837,27 @@ const ENVELOPE_BUTTON_LEAST: f32 = 48.0;
 /// Points a pitch row needs for a clip's notes to be drawn. A note is 2 points high, so rows under
 /// 2 overlap a little, and still read as the part's shape; only under a point do they merge.
 const LEAST_PITCH_ROW: f32 = 1.0;
+
+/// What of `button` is left to take the pointer beside `handle`, which wins where they overlap:
+/// the part on the side of the button where most of it is, or all of it when they do not meet.
+pub(super) fn beside(button: Rect, handle: Rect) -> Rect {
+    if !button.intersects(handle) {
+        return button;
+    }
+    let (left, right) = (handle.left() - button.left(), button.right() - handle.right());
+    let mut hit = button;
+    if right >= left {
+        hit.min.x = handle.right().min(button.right());
+    } else {
+        hit.max.x = handle.left().max(button.left());
+    }
+    hit
+}
+
+/// The id of `clip`'s fade handle at `edge`; its shape menu's popup is `.with("popup")` of it.
+fn fade_handle_id(clip: ClipId, edge: FadeEdge) -> Id {
+    Id::unique(("clip-fade", clip.0, edge == FadeEdge::In))
+}
 
 /// The pitches a clip's notes use, lowest first, each once: a row each in the clip.
 pub(super) fn used_keys(keys: impl Iterator<Item = u8>) -> Vec<u8> {
@@ -1888,8 +1991,7 @@ pub(super) struct NameBarLook {
 /// The name bar of a clip whose own bar colour is `bar_fill`, as the sheet styles it. The ink is
 /// worked out from the fill the bar is drawn in, so a theme's dark bar gets light ink even where
 /// it gives the name no colour of its own.
-pub(super) fn name_bar_look(bar_fill: Color32) -> NameBarLook {
-    let name = crate::kit::element::CLIP_NAME.enter();
+pub(super) fn name_bar_look(name: &crate::kit::element::Look, bar_fill: Color32) -> NameBarLook {
     let fill = name.background_or(bar_fill);
     NameBarLook { fill, ink: name.color_or(ink_on(fill)), font_size: name.font_size_or(theme::TEXT) }
 }
@@ -2745,10 +2847,12 @@ pub(super) fn paint_live_take(
         earliest_start: take.start,
         latest_end: None,
         color: lane.color,
-        stack_key: (0, take.start.to_bits()),
+        stack_key: (0, take.start.to_bits(), 0),
         // It holds takes from its first pass on: the corner mark says so (#1078).
         take: Some(0),
         ara: false,
+        linked: false,
+        material: 0,
     };
     paint_clip(painter, rect, lane, &clip, Shown::of(&clip), take.start, x_of, beat_width, timeline, false, look);
     // An audio take's waveform so far: a line per peak, about the middle of the clip.

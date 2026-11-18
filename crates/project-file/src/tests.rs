@@ -176,6 +176,7 @@ fn everything() -> Project {
         ],
         contents: vec![
             ClipContent {
+                linked: false,
                 id: ContentId(1),
                 name: "Chords".into(),
                 length: 8.0,
@@ -194,6 +195,7 @@ fn everything() -> Project {
                 scale: None,
             },
             ClipContent {
+                linked: false,
                 id: ContentId(2),
                 name: "Loop".into(),
                 length: 16.0,
@@ -307,6 +309,24 @@ fn everything() -> Project {
 fn every_part_of_a_project_survives_a_round_trip() {
     let project = everything();
     assert_eq!(project.validate(), Ok(()));
+    assert_eq!(from_json(&to_json(&project)), Ok(project));
+}
+
+#[test]
+fn presentation_folders_colors_and_cosine_fades_survive_save_and_load() {
+    let mut project = everything();
+    let mut folder = Track::new(TrackId(900), "Folder");
+    folder.color = Some(Rgb(96, 34, 32));
+    folder.folder = true;
+    for track in project.tracks.iter_mut().filter(|t| t.parent.is_none()) {
+        track.parent = Some(folder.id);
+    }
+    project.tracks.insert(0, folder);
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.fade_in_curve = FadeCurve { shape: FadeShape::Cosine, curve: 0.2 };
+        clip.color = Some(Rgb(73, 130, 185));
+    }
+    project.validate().unwrap();
     assert_eq!(from_json(&to_json(&project)), Ok(project));
 }
 
@@ -1156,6 +1176,7 @@ fn an_empty_audio_region_is_left_alone_by_rebase_audio() {
     // An empty audio clip has no file yet; saving elsewhere does not invent one.
     let mut project = everything();
     project.contents.push(ClipContent {
+        linked: false,
         id: ContentId(900),
         name: "Audio clip".into(),
         length: 4.0,
@@ -1499,6 +1520,19 @@ fn every_feature() -> Project {
     {
         note.velocity_range = 20;
     }
+    // Version 14: linked copies, the cosine fade shape and a device's key (sidechain).
+    project.contents[0].linked = true;
+    let key_source = project.channels.iter().map(|c| c.id).find(|id| *id != project.channels[0].id).unwrap();
+    project.channels[0].devices[0].inputs =
+        vec![DeviceInput { gain: 0.5, ..DeviceInput::key(key_source, TapPoint::PostFader) }];
+    project.arrangement.lanes[0].clips[0].fade_out_curve = FadeCurve { shape: FadeShape::Cosine, curve: 0.25 };
+    // Version 15: a presentation folder and a placeholder instrument as fields (#1416).
+    let folder = TrackId(project.tracks.iter().map(|t| t.id.0).max().unwrap_or(0) + 1);
+    project.tracks.push(Track { folder: true, ..Track::new(folder, "Folder") });
+    let mut placeholder =
+        Device::new("Lost synth", DeviceKind::Foreign { format: "flp".into(), id: "Lost synth".into() });
+    placeholder.mark_missing_instrument();
+    project.channels[0].devices.push(placeholder);
     renumbered(project)
 }
 
@@ -1564,6 +1598,19 @@ fn a_file_of_every_version_reads() {
             for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
                 clip.swing = ClipSwing::default();
             }
+        }
+        if version < 14 {
+            // Linked copies, the cosine fade shape and keys came with version 14.
+            expected.contents[0].linked = false;
+            expected.channels[0].devices[0].inputs.clear();
+            expected.arrangement.lanes[0].clips[0].fade_out_curve =
+                everything().arrangement.lanes[0].clips[0].fade_out_curve;
+        }
+        if version < 15 {
+            // Folders and instrument roles became fields with version 15 (#1416); before it they
+            // were `suhina/*` extensions, which these files do not hold.
+            expected.tracks.retain(|t| !t.folder);
+            expected.channels[0].devices.retain(|d| d.name != "Lost synth");
         }
         if version < 13 {
             // A note's velocity range came with version 13 (#1282).
@@ -1766,6 +1813,55 @@ fn an_older_content_with_lanes_of_different_audio_is_refused() {
     assert!(error.0.contains("different gain"), "{error}");
 }
 
+#[test]
+fn linked_copies_survive_a_round_trip_and_older_files_read_unlinked() {
+    let mut project = everything();
+    if let Some(content) = project.contents.first_mut() {
+        content.linked = true;
+    }
+    let text = to_json(&project);
+    let written: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(written["project"]["contents"][0]["linked"], json!(true));
+    // Only the linked content says so.
+    let contents = written["project"]["contents"].as_array().unwrap();
+    assert_eq!(contents.iter().filter(|c| c.get("linked").is_some()).count(), 1, "{text}");
+    assert_eq!(from_json(&text), Ok(project.clone()));
+    let mut older: Value = serde_json::from_str(&text).unwrap();
+    older["project"]["contents"][0].as_object_mut().unwrap().remove("linked");
+    let read = from_json(&older.to_string()).unwrap();
+    assert!(read.contents.iter().all(|c| !c.linked));
+    let mut wrong = written;
+    wrong["project"]["contents"][0]["linked"] = json!("yes");
+    assert!(from_json(&wrong.to_string()).is_err());
+}
+
+#[test]
+fn a_key_survives_a_round_trip_and_a_bad_one_is_refused() {
+    let mut project = everything();
+    let source = project.channels.iter().map(|c| c.id).find(|id| *id != project.channels[0].id).unwrap();
+    project.channels[0].devices.insert(0, Device::new("Compressor", DeviceKind::Builtin("compressor".into())));
+    project.channels[0].devices[0].inputs =
+        vec![DeviceInput { port: "Stereo Side Chain".into(), gain: 2.0, ..DeviceInput::key(source, TapPoint::PreFx) }];
+    let text = to_json(&project);
+    let written: Value = serde_json::from_str(&text).unwrap();
+    let key = &written["project"]["channels"][0]["devices"][0]["inputs"][0];
+    assert_eq!(key["source"], json!({ "channel": source.0, "tap": "preFx" }));
+    let read = from_json(&text).unwrap();
+    assert_eq!(read.channels[0].devices[0].inputs, project.channels[0].devices[0].inputs);
+    // A file with an unknown tap point names it.
+    let mut wrong = written.clone();
+    wrong["project"]["channels"][0]["devices"][0]["inputs"][0]["source"]["tap"] = json!("sideways");
+    assert!(from_json(&wrong.to_string()).unwrap_err().to_string().contains("sideways"));
+    // No tap and no gain: the defaults, Post FX at unity.
+    let mut plain = written;
+    let input = plain["project"]["channels"][0]["devices"][0]["inputs"][0].as_object_mut().unwrap();
+    input.remove("gain");
+    input["source"].as_object_mut().unwrap().remove("tap");
+    let read = from_json(&plain.to_string()).unwrap();
+    let key = &read.channels[0].devices[0].inputs[0];
+    assert_eq!((key.source.tap(), key.gain), (TapPoint::PostFx, 1.0));
+}
+
 /// A note's velocity range is written only when it is not 0, read back as it was, and a value out
 /// of range refuses the file (#1282).
 #[test]
@@ -1782,4 +1878,29 @@ fn a_notes_velocity_range_round_trips_and_is_checked() {
     assert_eq!(from_json(&to_json(&project)).map(renumbered), Ok(renumbered(project)));
     let bad = written.replace("\"velocity_range\": 20", "\"velocity_range\": 128");
     assert!(from_json(&bad).is_err());
+}
+
+/// A file before version 15 said a folder and an instrument role with `suhina/*` extensions
+/// (#1416): they are read into the fields, and the extensions are gone.
+#[test]
+fn a_version_14_folder_and_instrument_role_become_fields() {
+    let mut project = everything();
+    let mut folder = Track::new(TrackId(900), "Folder");
+    folder.extensions.0.push(Extension { format: "suhina".into(), key: "folder".into(), data: vec![1] });
+    project.tracks.push(folder);
+    let mut hosted = Device::new("Synth", DeviceKind::Vst2 { id: 1_234 });
+    hosted.extensions.0.push(Extension { format: "suhina".into(), key: "instrument".into(), data: Vec::new() });
+    let mut lost = Device::new("Lost", DeviceKind::Foreign { format: "flp".into(), id: "Lost".into() });
+    lost.extensions.0.push(Extension { format: "suhina".into(), key: "missing-instrument".into(), data: Vec::new() });
+    project.channels[0].devices.extend([hosted, lost]);
+    let old = to_json(&project).replacen(&format!("\"version\": {VERSION}"), "\"version\": 14", 1);
+    assert!(old.contains("\"version\": 14"));
+    let read = from_json(&old).unwrap();
+    let folder = read.track(TrackId(900)).unwrap();
+    assert!(folder.folder && folder.is_folder());
+    assert!(folder.extensions.0.is_empty());
+    let devices = &read.channels[0].devices;
+    let named = |name: &str| devices.iter().find(|d| d.name == name).unwrap();
+    assert!(named("Synth").is_external_instrument() && named("Synth").extensions.0.is_empty());
+    assert!(named("Lost").is_missing_instrument() && named("Lost").extensions.0.is_empty());
 }

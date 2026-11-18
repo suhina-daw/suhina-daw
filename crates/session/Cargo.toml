@@ -25,6 +25,7 @@ suhina-device-registry.workspace = true
 serde_json.workspace = true
 jiff.workspace = true
 hound.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 suhina-device-fm-synth.workspace = true

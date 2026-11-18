@@ -71,6 +71,7 @@ mod tests {
             TakeLane { track, name: "Take 2".into(), clips: vec![pass(8.0)], color: None },
         ];
         p.contents.push(suhina_model::ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "take".into(),
             length: 24.0,

@@ -55,6 +55,7 @@ fn tree(group_devices: Vec<Device>, premaster_devices: Vec<Device>, master_devic
             channel(4, Some(5), ChannelRole::Regular, vec![]),
         ],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,

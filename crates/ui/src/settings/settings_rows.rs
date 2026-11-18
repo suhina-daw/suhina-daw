@@ -262,6 +262,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Devices,
+        "Instruments",
+        "Tone without instrument",
+        "A MIDI track with no instrument plays its notes as a plain sine tone",
+        &["implicit_tones"],
+        |cx, r| cx.on_off(r, |s| &mut s.implicit_tones),
+    ),
+    row(
+        Page::Devices,
         "Device panels",
         "Device chain layout",
         "Whether a track's devices sit in a row under the view or in a column beside it",
