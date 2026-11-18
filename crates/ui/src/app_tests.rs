@@ -1592,7 +1592,7 @@ fn a_retargeted_open_in_place_keeps_its_place_in_the_queue() {
 }
 
 /// A checked close and a second close of the same project in one frame (a click on its tab's
-/// close button as its read ended): it closes once, and the second reports no error.
+/// close button released as its read ended): it closes once, and the second reports no error.
 #[test]
 fn a_checked_close_and_a_click_on_its_tab_close_it_once() {
     use egui_kittest::kittest::Queryable;
@@ -1605,8 +1605,16 @@ fn a_checked_close_and_a_click_on_its_tab_close_it_once() {
         .with_size(Vec2::new(1280.0, 800.0))
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     harness.run_steps(2);
+    // The pointer moves over the close button and presses it, a frame each; the release, which
+    // makes the click, comes in the frame the checked close runs in.
+    let pos = harness.get_by_label(&label).rect().center();
+    let (button, modifiers) = (egui::PointerButton::Primary, egui::Modifiers::NONE);
+    harness.input_mut().events.push(egui::Event::PointerMoved(pos));
+    harness.step();
+    harness.input_mut().events.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers });
+    harness.step();
     harness.state_mut().checked_close = Some((closing, Action::new("project.close", json!({ "project": closing.0 }))));
-    harness.get_by_label(&label).click();
+    harness.input_mut().events.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers });
     harness.step();
     assert!(harness.state().projects.get(closing).is_none(), "closed");
     assert!(!matches!(harness.state().status, Status::Error(_)), "{:?}", harness.state().status);

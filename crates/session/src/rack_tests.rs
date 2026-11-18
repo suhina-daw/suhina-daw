@@ -86,17 +86,17 @@ fn polling_a_busy_host_returns_without_waiting_and_finishes_at_the_deadline() {
     assert!(!rack.poll_edits(), "the next quit starts a fresh check");
 }
 
-/// A check paused past its deadline and then restarted reads again, rather than ending at once
-/// on the states read before the pause.
+/// A check paused past its deadline and then restarted is dropped: the next poll begins a fresh
+/// one, both reads and a new deadline, rather than ending at once on the states read before the
+/// pause.
 #[test]
-fn a_restarted_check_reads_again_instead_of_ending_on_its_old_deadline() {
+fn a_restarted_check_is_dropped_for_a_fresh_one() {
     let mut rack = Rack::default();
     rack.instances.insert(1, Instance::new(PluginStatus::Running, None, 0));
-    // Begun, then paused until its second has passed: polled now, it would end.
-    rack.edit_check = Some((Instant::now(), 2));
+    // Begun, one read done, then paused until its deadline passed: polled now, it would end.
+    rack.edit_check = Some((Instant::now(), 1));
     rack.restart_edit_check();
-    assert!(!rack.poll_edits(), "a fresh check waits for the host instead of ending");
-    assert_eq!(rack.edit_check.map(|(_, rounds)| rounds), Some(2), "both reads still to come");
+    assert!(rack.edit_check.is_none(), "the next poll starts a check of its own");
 }
 
 #[test]

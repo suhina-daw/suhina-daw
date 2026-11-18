@@ -433,6 +433,9 @@ pub struct App {
     /// Projects being left while their plug-ins are read for edits ([`LeaveCheck`]), one after
     /// another in the order asked: a second close while a read goes on waits its turn.
     leave_checks: std::collections::VecDeque<LeaveCheck>,
+    /// The leave checks waited this frame or an earlier one (a dialog, a question, a checked
+    /// close held them): the waiting check's read starts again once, when they go on.
+    leave_checks_paused: bool,
     /// A `project.close` whose plug-ins were read: run without reading them again once actions
     /// run (kept while a dialog holds them).
     checked_close: Option<(ProjectId, Action)>,
@@ -781,6 +784,7 @@ impl App {
             zip_prompt: None,
             unsaved_prompt: None,
             leave_checks: std::collections::VecDeque::new(),
+            leave_checks_paused: false,
             checked_close: None,
             traced_output: None,
             ara_prompt: None,
@@ -1154,14 +1158,18 @@ impl App {
         // A dialog that holds the actions holds the checks too: a close checked now would only
         // wait for it, its plug-ins read before edits made while it is open.
         if self.checked_close.is_some() || self.unsaved_prompt_open() || self.dialog_holds_actions() {
-            // The read under way starts again when the check goes on: its second may pass while
-            // it waits, and it would then end on the states read before the pause.
-            if let Some(waiting) = self.leave_checks.front()
-                && let Some(session) = self.projects.get_mut(waiting.project)
-            {
-                session.rack_mut().restart_edit_check();
-            }
+            self.leave_checks_paused = true;
             return;
+        }
+        // The read under way starts again once, as the checks go on: its second may have passed
+        // while they waited, and it would then end on the states read before the pause. Not on
+        // every paused frame: quitting reads the same plug-ins meanwhile, and a check started
+        // again each frame would never end.
+        if std::mem::take(&mut self.leave_checks_paused)
+            && let Some(waiting) = self.leave_checks.front()
+            && let Some(session) = self.projects.get_mut(waiting.project)
+        {
+            session.rack_mut().restart_edit_check();
         }
         let Some(check) = self.leave_checks.pop_front() else { return };
         let Some(session) = self.projects.get_mut(check.project) else {
@@ -1187,6 +1195,7 @@ impl App {
             // still ahead of the requests made after it.
             LeaveThen::Replace(path) if self.projects.active() != Some(check.project) => {
                 self.retarget(path);
+                ctx.request_repaint();
             }
             LeaveThen::Replace(path) if self.unsaved(check.project) => {
                 self.unsaved_prompt = Some(Leaving { project: check.project, then: AfterLeaving::Replace(path) });
@@ -3997,7 +4006,14 @@ impl App {
                 }
                 continue;
             }
-            checked_ran |= closing.is_some() && closing == checked;
+            if closing.is_some() && closing == checked {
+                // A second close of it in the same frame (a click on its tab released as its read
+                // ended) has nothing left to close: it would only report the project as gone.
+                if checked_ran {
+                    continue;
+                }
+                checked_ran = true;
+            }
             if self.window_action(action) {
                 continue;
             }
