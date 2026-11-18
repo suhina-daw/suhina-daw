@@ -124,7 +124,9 @@ fn shape(out: &mut String, ctx: &egui::Context, depth: usize, shape: &Shape) {
                 .sections
                 .iter()
                 .map(|s| {
-                    let text = job.text.get(s.byte_range.start.0..s.byte_range.end.0).unwrap_or("");
+                    // A path as Linux writes it: a dialog joins its folder and file with the
+                    // system's separator, `\` on Windows.
+                    let text = job.text.get(s.byte_range.start.0..s.byte_range.end.0).unwrap_or("").replace('\\', "/");
                     // The whole format: font, colours, background, italics, lines, alignment.
                     format!("{text:?} {:?}", s.format)
                 })
@@ -213,9 +215,10 @@ pub fn digest(text: &str) -> u64 {
 /// sheet) starts afresh and goes with it: one drawing never depends on the one before, and the
 /// caller's state is left alone. The window looks like Linux whichever system draws it
 /// ([`suhina_ui::kit::platform`]): shortcuts as `Ctrl+C`, Settings' plug-in formats and notes as
-/// Linux has them and no title bar of Suhina's own, so a listing is the same on every system. A scene that still repaints after the most frames a scene may
-/// take says so in its first line: with the fixed step that is the same each run, as long as no
-/// scene plays the transport (which repaints by the clock).
+/// Linux has them and no title bar of Suhina's own, and the listing writes paths with `/`, so a
+/// listing is the same on every system. A scene that still repaints after the most frames a scene
+/// may take says so in its first line: with the fixed step that is the same each run, as long as
+/// no scene plays the transport (which repaints by the clock).
 pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene) -> Result<String, String> {
     std::thread::scope(|scope| {
         scope
@@ -223,9 +226,10 @@ pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene) -> Result<S
                 suhina_ui::kit::platform::set(suhina_ui::kit::platform::Platform::Linux);
                 let mut h = crate::headless((scene.app)()?, subject, scene.width);
                 (scene.drive)(&mut h)?;
-                // A background picture is read on another thread: wait for it before the scene
-                // settles, or whether its mesh is in the listing depends on which thread is first.
-                h.state_mut().wait_for_background();
+                // A background picture is read, and the sample map laid out, on other threads:
+                // wait for them before the scene settles, or whether the picture's mesh or the
+                // map is in the listing depends on which thread is first.
+                h.state_mut().wait_for_workers();
                 let settled = h.try_run().is_ok();
                 h.step();
                 let listing = last_frame(&h);

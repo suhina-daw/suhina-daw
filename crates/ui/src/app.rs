@@ -2655,6 +2655,14 @@ impl App {
         self.background.wait();
     }
 
+    /// For tests and renders: waits for the work the window has on other threads, the background
+    /// image being loaded ([`App::wait_for_background`]) and the sample map's layout, so the next
+    /// frame takes in their results. Returns at once when nothing is on the way.
+    pub fn wait_for_workers(&mut self) {
+        self.background.wait();
+        self.sample_map.wait_for_workers();
+    }
+
     /// A theme file read again after it changed on disk; the window redraws in it if it is the
     /// theme in use.
     pub fn put_theme(&mut self, ctx: &egui::Context, entry: ThemeEntry) {

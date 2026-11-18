@@ -180,13 +180,13 @@ impl Panel {
         busy
     }
 
-    /// The tests' barrier for the panel's background threads (AGENTS.md rule 7): waits for
-    /// the layout and the grid on the way to arrive, and for the let-go workers to finish.
-    /// An answer that arrives is put back where the next frame's `try_recv` takes it in, so
-    /// the frame does what it does in the app; a worker gone without answering leaves its
-    /// job's receiver disconnected, as it was. Returns whether there was anything to wait for.
-    #[cfg(test)]
-    fn wait_for_workers(&mut self) -> bool {
+    /// The tests' and the theme renders' barrier for the panel's background threads (AGENTS.md
+    /// rule 7): waits for the layout and the grid on the way to arrive, and for the let-go
+    /// workers to finish. An answer that arrives is put back where the next frame's `try_recv`
+    /// takes it in, so the frame does what it does in the app; a worker gone without answering
+    /// leaves its job's receiver disconnected, as it was. Returns whether there was anything to
+    /// wait for.
+    pub(crate) fn wait_for_workers(&mut self) -> bool {
         let mut waited = false;
         if let Some(job) = self.job.as_mut() {
             let (sender, receiver) = channel();
