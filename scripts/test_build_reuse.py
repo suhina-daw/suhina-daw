@@ -197,6 +197,20 @@ class PreferReady(unittest.TestCase):
         self.assertEqual(api.find([HEAD, OLD])["state"], "running")
 
 
+class Platforms(unittest.TestCase):
+    def test_a_push_builds_windows_and_a_request_every_system(self):
+        # A maintainer's push is built for Windows only; the `test-build` label (a /test-build
+        # request) and a run by hand build all three, and find_reuse above asks a request for all
+        # three (test_platform_request_is_respected), so a push's build never stands in for one.
+        from pathlib import Path
+        import re
+        text = (Path(__file__).resolve().parents[1] / ".github/workflows/test-build.yml").read_text(encoding="utf-8")
+        expression = re.search(r"^\s+WINDOWS_ONLY: \$\{\{ (.+) \}\}$", text, flags=re.M)[1]
+        self.assertEqual(expression,
+                         "(github.event_name == 'pull_request' && github.event.action != 'labeled')"
+                         " || contains(github.event.pull_request.labels.*.name, 'test-build-windows')")
+
+
 class BinaryPaths(unittest.TestCase):
     def test_paths_come_from_test_build_workflow(self):
         from pathlib import Path

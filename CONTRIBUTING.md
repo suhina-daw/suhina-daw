@@ -119,7 +119,7 @@ needs no issue and no claim; one pull request per issue, at most three open at a
 A pull request can be tried without building it: GitHub Actions builds packages of it for
 Windows, macOS and Linux ([`docs/releasing.md` › Test builds](docs/releasing.md#test-builds)) and
 links the downloads from the pull request in a comment, updated with every new build. A maintainer's own pull requests are
-built on every push. A contributor's pull request is built once a maintainer has read the diff and
+built for Windows on every push, and for all three systems on `/test-build`. A contributor's pull request is built once a maintainer has read the diff and
 commented `/test-build`, or a trusted contributor requests it with `/test-build`; a later push
 takes the label off, and the new commits need a new request. On a pull request from a branch in
 this repository, a maintainer may add the `test-build` label instead; on one from a fork the label
