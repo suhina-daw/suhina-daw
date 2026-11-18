@@ -125,10 +125,10 @@ suhina-plugin-host = { opt-level = 0 }
 suhina-plugins = { opt-level = 0 }
 suhina-project-file = { opt-level = 0 }
 suhina-session = { opt-level = 0 }
-suhina-style = { opt-level = 0 }
-suhina-theme-package = { opt-level = 0 }
-suhina-ui = { opt-level = 0 }
-suhina-ui-gpu = { opt-level = 0 }
+# The user interface's crates stay at 1: the window tests and the theme renderer's drawings run
+# them thousands of times, and with them at 0 those tests were most of a CI run (the style engine
+# most of all: theme-render's every_built_in_theme_paints_each_scene_as_recorded took 86 s on 12
+# threads at 0, 47 s with suhina-style at 1 and 32 s with these four at 1, measured 2026-11-18).
 # NAM inference, which the pack's and the amp modeler's tests run over seconds of audio, as a
 # release build runs it: five to six times faster than at 2 with the checks on (docs/releasing.md ›
 # The pack's tests). Its own tests keep the checks (ci.yml runs them from its own manifest).
