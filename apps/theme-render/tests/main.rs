@@ -9,6 +9,7 @@ use std::path::Path;
 use suhina_theme_render::Subject;
 
 mod budget;
+mod cut;
 mod painted;
 mod render;
 mod scenes;

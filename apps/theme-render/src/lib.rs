@@ -11,10 +11,12 @@
 //! the backdrop, blurred where the system blurs behind the window.
 //!
 //! [`budget`] counts the style engine's work in a scene, for the tests that hold it, and
-//! [`painted`] lists what a scene paints, for the test that holds every built-in theme's look.
+//! [`painted`] lists what a scene paints, for the test that holds every built-in theme's look, and
+//! [`cut`] the texts it cuts off, for the test that holds those (#1548).
 
 pub mod budget;
 pub mod composite;
+pub mod cut;
 pub mod painted;
 pub mod scenes;
 

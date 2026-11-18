@@ -17,13 +17,15 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use suhina_theme_render::painted::Drawing;
 use suhina_theme_render::scenes::Scene;
 use suhina_theme_render::{Subject, painted, scenes};
 
 /// The scenes left out: the About dialog shows the build's commit.
-const LEFT_OUT: [&str; 1] = ["about-dialog"];
+pub const LEFT_OUT: [&str; 1] = ["about-dialog"];
 
 /// A theme to draw, by the name its digests are recorded under. Every theme runs the style engine,
 /// Suhina Studio too (#1448).
@@ -58,9 +60,9 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
         .collect()
 }
 
-/// Every (scene, theme) listing, drawn by as many workers as the machine has cores; each drawing
+/// Every (scene, theme) drawing, drawn by as many workers as the machine has cores; each drawing
 /// is on a thread of its own ([`painted::scene`]).
-fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<String, String>> {
+fn drawings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<Drawing, String>> {
     let jobs: Vec<(&Scene, &Drawn)> = scenes.iter().flat_map(|scene| drawn.iter().map(move |d| (scene, d))).collect();
     let next = AtomicUsize::new(0);
     let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
@@ -80,11 +82,24 @@ fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Res
     })
 }
 
+/// Every scene but [`LEFT_OUT`] drawn in every built-in theme and variant, `(scene, theme)` to its
+/// drawing: drawn once for the test binary, and shared by the tests of what is painted and what is
+/// cut off (`cut.rs`).
+pub fn all() -> &'static BTreeMap<(String, String), Result<Drawing, String>> {
+    static ALL: OnceLock<BTreeMap<(String, String), Result<Drawing, String>>> = OnceLock::new();
+    ALL.get_or_init(|| {
+        let scenes: Vec<Scene> =
+            scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
+        drawings(&scenes, &drawn())
+    })
+}
+
 #[test]
 fn every_built_in_theme_paints_each_scene_as_recorded() {
-    let scenes: Vec<Scene> = scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
-    let drawn = drawn();
-    let listings = listings(&scenes, &drawn);
+    let listings: BTreeMap<(String, String), Result<String, String>> = all()
+        .iter()
+        .map(|(key, drawing)| (key.clone(), drawing.as_ref().map(|d| d.listing.clone()).map_err(Clone::clone)))
+        .collect();
     if let Some(folder) = std::env::var_os("SUHINA_PAINTED_DUMP") {
         let folder = PathBuf::from(folder);
         std::fs::create_dir_all(&folder).unwrap();
@@ -166,8 +181,8 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
 fn a_listing_is_the_same_each_time() {
     let scene = scenes::find("launcher").unwrap();
     let subject = Subject::built_in("nord").unwrap();
-    let first = painted::scene(&subject, &scene).unwrap();
-    let second = painted::scene(&subject, &scene).unwrap();
+    let first = painted::scene(&subject, &scene).unwrap().listing;
+    let second = painted::scene(&subject, &scene).unwrap().listing;
     assert!(first.lines().count() > 100, "the launcher paints: {first}");
     let differ: Vec<(usize, (&str, &str))> =
         first.lines().zip(second.lines()).enumerate().filter(|(_, (a, b))| a != b).take(5).collect();
