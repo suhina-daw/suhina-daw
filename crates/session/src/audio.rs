@@ -379,6 +379,13 @@ pub struct OutputInfo {
     /// Output cycles, ASIO input callbacks, render blocks, maximum blocks per cycle,
     /// extra blocks in a cycle, and input-grace expirations. Reset on output reopen.
     pub render_diagnostics: [u64; 6],
+    /// The threads that render each block, the render thread included (ADR 0038 › 1).
+    pub render_threads: u16,
+    /// Blocks a chain came back from a render worker after its deadline, and the track (its
+    /// id) that missed most with its count (ADR 0038 › 3). Filled in by the player.
+    pub render_misses: u64,
+    pub worst_render_track: Option<u32>,
+    pub worst_render_misses: u64,
 }
 
 impl OutputInfo {
@@ -406,6 +413,10 @@ impl OutputInfo {
             "input_backlog_drops": self.input_diagnostics.backlog_drops,
             "input_backlog_frames": self.input_diagnostics.backlog_frames,
             "render_diagnostics": self.render_diagnostics,
+            "render_threads": self.render_threads,
+            "render_misses": self.render_misses,
+            "worst_render_track": self.worst_render_track,
+            "worst_render_misses": self.worst_render_misses,
         })
     }
 
@@ -602,6 +613,14 @@ static AUDIO_COMMANDS: &[CommandSpec<Projects>] = &[
         policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
     },
     CommandSpec {
+        id: "audio.setRenderThreads",
+        label: "Choose how many threads render each block, the render thread included (ADR 0038): 1 renders on the render thread alone (the default), 0 lets Suhina choose from the processor's cores, 2 to 9 that many. Off by default until rendering on several threads is measured on every platform. The output in use opens again so the choice is heard at once; SUHINA_RENDER_THREADS, when set, wins over it",
+        params: &[param("threads", ParamType::Integer, "0 for automatic, 1 for the render thread alone, 2 to 9")],
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
+        run: set_render_threads,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
+    CommandSpec {
         id: "audio.info",
         label: "Say what the active project plays on now: host, device, sample rate, buffer frames, the engine's block, measured latency, the longest a key on a MIDI controller takes to be heard, whether a track is armed (which keeps less queued) and underruns, and whether it plays in place of a chosen device that is not there",
         params: &[],
@@ -672,6 +691,25 @@ fn set_track_input(projects: &mut Projects, params: &Value) -> Result<Value, Com
     Ok(json!({
         "track_input": crate::commands::input_channels_text(input),
         "input_device": device,
+    }))
+}
+
+/// `audio.setRenderThreads`: the process's render pool from now on; the output in use opens
+/// again, so its renderer takes a lane of the new pool.
+fn set_render_threads(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let choice = Args::new(params).index("threads", "from 0 to 9")?;
+    if choice > suhina_engine::MAX_RENDER_THREADS {
+        return Err(format!("threads must be from 0 to {}", suhina_engine::MAX_RENDER_THREADS).into());
+    }
+    projects.ensure_output_can_close()?;
+    let threads = suhina_engine::render_threads_for(choice);
+    suhina_engine::set_process_render_threads(threads);
+    let notice = projects.reopen_output()?;
+    Ok(json!({
+        "threads": choice,
+        "render_threads": suhina_engine::process_render_threads(),
+        "from_environment": std::env::var_os(suhina_engine::RENDER_THREADS_VAR).is_some(),
+        "notice": notice,
     }))
 }
 

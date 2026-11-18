@@ -205,6 +205,7 @@ fn settings_survive_a_round_trip() {
         plugin_manager_hidden: vec!["Vendor".into(), "File".into()],
         plugin_manager_owned_first: true,
         auto_arm: true,
+        render_threads: 4,
     };
     assert_eq!(Settings::from_text(&settings.to_text()), (settings, Vec::new()));
     assert_eq!(Settings::from_text(&Settings::default().to_text()).0, Settings::default());
