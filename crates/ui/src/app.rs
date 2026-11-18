@@ -1154,14 +1154,21 @@ impl App {
         // A dialog that holds the actions holds the checks too: a close checked now would only
         // wait for it, its plug-ins read before edits made while it is open.
         if self.checked_close.is_some() || self.unsaved_prompt_open() || self.dialog_holds_actions() {
+            // The read under way starts again when the check goes on: its second may pass while
+            // it waits, and it would then end on the states read before the pause.
+            if let Some(waiting) = self.leave_checks.front()
+                && let Some(session) = self.projects.get_mut(waiting.project)
+            {
+                session.rack_mut().restart_edit_check();
+            }
             return;
         }
         let Some(check) = self.leave_checks.pop_front() else { return };
         let Some(session) = self.projects.get_mut(check.project) else {
             // Closed meanwhile: a file to open goes where the active project is now, after its
-            // own check; a close has nothing left to do.
+            // own check, in this one's place in the queue; a close has nothing left to do.
             if let LeaveThen::Replace(path) = check.then {
-                self.open_as(path, OpenAs::Replace);
+                self.retarget(path);
             }
             ctx.request_repaint();
             return;
@@ -1176,9 +1183,10 @@ impl App {
         }
         match check.then {
             // Another project became the active one while this one was read: the file opens in
-            // its place only after the same check of that one, its unsaved changes asked about.
+            // its place only after the same check of that one, its unsaved changes asked about,
+            // still ahead of the requests made after it.
             LeaveThen::Replace(path) if self.projects.active() != Some(check.project) => {
-                self.open_as(path, OpenAs::Replace);
+                self.retarget(path);
             }
             LeaveThen::Replace(path) if self.unsaved(check.project) => {
                 self.unsaved_prompt = Some(Leaving { project: check.project, then: AfterLeaving::Replace(path) });
@@ -1188,6 +1196,18 @@ impl App {
                 self.checked_close = Some((check.project, action));
                 ctx.request_repaint();
             }
+        }
+    }
+
+    /// A file to open in place of the project that was to be left, which is no longer the active
+    /// one: checked against the active project now, at the front of the queue, where the request
+    /// stood ([`App::open_as`] would put it behind the requests made since).
+    fn retarget(&mut self, path: PathBuf) {
+        match self.projects.active() {
+            Some(active) => {
+                self.leave_checks.push_front(LeaveCheck { project: active, then: LeaveThen::Replace(path) })
+            }
+            None => self.open_request = Some((path, OpenAs::Replace)),
         }
     }
 

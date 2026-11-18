@@ -1568,3 +1568,46 @@ fn a_second_open_in_place_waits_for_the_first_ones_question() {
     assert_eq!(asked(&app), Some(PathBuf::from("first.suhina")), "still the first one's question");
     assert_eq!(app.leave_checks.len(), 1, "the second waits");
 }
+
+/// A file asked to open in place of one project, then another project made active and a second
+/// file asked for it: when the first check ends, the first file is checked against the project
+/// active now, ahead of the second, so its question comes first.
+#[test]
+fn a_retargeted_open_in_place_keeps_its_place_in_the_queue() {
+    let mut app = App::new();
+    let clean = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    let dirty = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    app.projects.get_mut(dirty).unwrap().execute("track.delete", &json!({ "track": 1 })).unwrap();
+    app.projects.switch(clean).unwrap();
+    app.open_as(PathBuf::from("first.suhina"), OpenAs::Replace);
+    app.projects.switch(dirty).unwrap();
+    app.open_as(PathBuf::from("second.suhina"), OpenAs::Replace);
+    poll_leave_checks(&mut app);
+    assert!(
+        matches!(&app.unsaved_prompt, Some(Leaving { project, then: AfterLeaving::Replace(path) })
+            if *project == dirty && path == &PathBuf::from("first.suhina")),
+        "{:?}",
+        app.unsaved_prompt
+    );
+}
+
+/// A checked close and a second close of the same project in one frame (a click on its tab's
+/// close button as its read ended): it closes once, and the second reports no error.
+#[test]
+fn a_checked_close_and_a_click_on_its_tab_close_it_once() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = App::new();
+    app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    let closing = app.open_project(Session::new(crate::demo::demo_project()), &[], OpenAs::NewTab).unwrap();
+    let label = format!("Close {}", app.projects.name(closing).unwrap());
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run_steps(2);
+    harness.state_mut().checked_close = Some((closing, Action::new("project.close", json!({ "project": closing.0 }))));
+    harness.get_by_label(&label).click();
+    harness.step();
+    assert!(harness.state().projects.get(closing).is_none(), "closed");
+    assert!(!matches!(harness.state().status, Status::Error(_)), "{:?}", harness.state().status);
+}
