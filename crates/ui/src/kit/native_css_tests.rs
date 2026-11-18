@@ -2139,3 +2139,42 @@ fn settings_blurs_the_window_behind_it_only_where_its_rule_asks() {
     let sheet = suhina_style::sheet::Sheet::parse("settings { backdrop-filter: blur(12px); }").unwrap();
     assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
 }
+
+/// A box at a fraction of a pixel paints its gradient face on whole pixels, as egui puts its
+/// border: a scaled device panel's buttons showed a light edge past their border, on one side or
+/// another as the panel moved or zoomed.
+#[test]
+fn a_box_at_a_fraction_of_a_pixel_paints_its_gradient_on_whole_pixels() {
+    prepare(
+        "button { background-image: linear-gradient(180deg, #ffffff 0%, #000000 100%); border-width: 1px; border-color: #ff0000; }",
+        800.0,
+    );
+    let ctx = egui::Context::default();
+    let mut shapes = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = frame(ui);
+            let button = test_el("button").enter();
+            let rect = Rect::from_min_size(egui::pos2(10.4, 20.3), Vec2::new(30.5, 15.2));
+            button.paint_with(
+                ui.painter(),
+                rect,
+                crate::kit::element::Native { radius: 0.0, fill: Color32::TRANSPARENT },
+            );
+        });
+        output.textures_delta.clear();
+        shapes = output.shapes;
+    }
+    skin::configure(&skin::Skin::default());
+    let vertices: Vec<egui::Pos2> = shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Mesh(mesh) => Some(mesh.vertices.iter().map(|v| v.pos).collect::<Vec<_>>()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert!(!vertices.is_empty(), "the gradient is a mesh");
+    let (left, top) = vertices.iter().fold((f32::MAX, f32::MAX), |(x, y), p| (x.min(p.x), y.min(p.y)));
+    assert_eq!((left, top), (10.0, 20.0), "the face starts where the border does");
+}
