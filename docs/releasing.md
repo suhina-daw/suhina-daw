@@ -192,9 +192,13 @@ must gain nothing that `next` lacks: a single commit on `main` that is not on `n
    off the queued pull requests), and wait until no run of `docs-generated.yml` (it commits to
    `main` after a merge), `ci.yml` or the merge queue is queued or in progress on `main`.
 2. Create `next` from `main` as it is then.
-3. Settings › Rules: give `next` the rules `main` has today (an approval, the code owner's review,
-   the required `ci` check, resolved threads) and the merge queue ruleset. Leave `main` to the
-   docs bot's app alone (it is on the bypass list already), so only `promote` moves it.
+3. Settings › Rules: the rulesets `main` (an approval, the code owner's review, the required `ci`
+   check, no force push or deletion) and `main merge queue` target `~DEFAULT_BRANCH`, not the name
+   `main`, so they move to `next` with the default branch in step 5 by themselves, and leave `main`
+   with no rule at all: anyone who can write could push it and break `promote`'s fast-forward. So
+   first add a ruleset for `refs/heads/main` with the rules *Restrict updates*, *Restrict
+   deletions* and *Block force pushes*, and only the app `suhina-docs-bot` (id 5307338) on its
+   bypass list (Always): `promote` pushes with that app's token, and nothing else moves `main`.
 4. Settings › Environments: add `next` to the deployment branches of every environment that
    allows `main` today, keeping `main` (and `discord`'s `v*` tags): `docs-bot`, `discord`,
    `project-board` and `suhina-bot`. GitHub runs `issue_comment`, `issues` and `workflow_run` on
