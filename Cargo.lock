@@ -5853,6 +5853,7 @@ dependencies = [
  "suhina-project-file",
  "suhina-soundmap",
  "suhina-test-support",
+ "zip",
 ]
 
 [[package]]

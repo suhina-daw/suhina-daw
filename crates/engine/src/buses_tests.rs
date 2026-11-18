@@ -35,6 +35,7 @@ pub(crate) fn grouped(group_devices: Vec<Device>, outside: bool) -> Project {
         tracks,
         channels,
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
@@ -407,4 +408,46 @@ fn latency_through_nested_buses_is_compensated_on_every_path() {
             "block {size}"
         );
     }
+}
+
+#[test]
+fn group_pan_automation_and_live_pan_apply_once_after_the_sum() {
+    let mut p = grouped(vec![device("utility", &[])], false);
+    p.channels[2].pan = -0.25;
+    let mut renderer = Renderer::new(&p, SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let mut live = blocks(&mut renderer, 10, 480);
+    controller.set_device_param(TrackId(3), crate::MIXER_PAN, 0, -1.0).unwrap();
+    live.extend(blocks(&mut renderer, 30, 480));
+    p.channels[2].pan = -1.0;
+    let mut reference = Renderer::new(&p, SR, suhina_device_registry::factory()).unwrap();
+    let expected = blocks(&mut reference, 40, 480);
+    assert!(max_diff(&live[39 * 480 * 2..], &expected[39 * 480 * 2..]) < 1e-5);
+    let mut pan = AutomationLane::new("pan");
+    pan.insert(AutomationPoint::new(0.0, -1.0));
+    p.channels[2].pan = 0.0;
+    p.channels[2].automation.push(pan);
+    let mut automated = Renderer::new(&p, SR, suhina_device_registry::factory()).unwrap();
+    assert!(max_diff(&blocks(&mut automated, 40, 480), &expected) < 1e-5);
+}
+
+#[test]
+fn a_group_panned_hard_left_renders_like_its_golden_file() {
+    // A low rate keeps the golden file small; both channels are kept, interleaved.
+    const RATE: u32 = 8_000;
+    let render = |devices: Vec<Device>| {
+        let mut p = grouped(devices, false);
+        p.channels[2].pan = -1.0;
+        render_offline(&p, RATE, 512, suhina_device_registry::factory()).unwrap()
+    };
+    let plain = render(vec![]);
+    // Everything the group plays is on the left; nothing reaches the right.
+    assert!(peak(&left(&plain)) > 0.1);
+    assert!(plain.as_chunks::<2>().0.iter().all(|[_, r]| r.abs() < 1e-7));
+    crate::fade_tests::assert_golden("group-pan-left", &plain);
+    // A group with devices is a bus: the same sound, then the silence its chain's tail renders.
+    let bus = render(vec![device("utility", &[])]);
+    assert!(bus.len() >= plain.len());
+    assert!(max_diff(&bus[..plain.len()], &plain) < 1e-6);
+    assert!(bus[plain.len()..].iter().all(|s| s.abs() < 1e-7));
 }

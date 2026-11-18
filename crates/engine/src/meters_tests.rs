@@ -110,6 +110,23 @@ fn a_track_meter_follows_its_own_volume_and_pan_not_the_group_or_main_volume() {
 }
 
 #[test]
+fn a_group_meter_shows_the_sum_after_the_groups_own_pan() {
+    for devices in [vec![], vec![device("utility", &[])]] {
+        let mut project = held(devices);
+        channel(&mut project, 3).pan = 1.0;
+        let (renderer, _) = play(&project, 3.0);
+        // Fully right: nothing left, the right side up by the equal-power pan's 3 dB.
+        let group = track(&renderer, 3);
+        assert!(group.peak[0] < 1e-4, "{group:?}");
+        assert!(close(group.peak[1], 2.0 * NOTE * std::f32::consts::SQRT_2, 0.01), "{group:?}");
+        // The tracks inside it read their own level, before the group's pan.
+        assert_level(track(&renderer, 1), [NOTE; 2], "track 1");
+        let main = renderer.meter_monitor().main();
+        assert!(main.peak[0] < NOTE + 1e-3, "only track 4 is left of the group: {main:?}");
+    }
+}
+
+#[test]
 fn devices_are_measured_after_they_run_on_a_track_and_on_a_group() {
     let mut project = held(vec![device("utility", &[("gain", 6.0)])]);
     channel(&mut project, 4).devices = vec![device("utility", &[("gain", -6.0)])];

@@ -221,6 +221,7 @@ pub(super) fn project_with_audio() -> (suhina_engine::model::Project, suhina_ui:
         ..ClipAudio::default()
     };
     project.contents.push(ClipContent {
+        linked: false,
         id: ContentId(300),
         name: "Loop".into(),
         length: 4.0,
@@ -276,6 +277,8 @@ pub(super) fn project_with_a_device() -> suhina_engine::model::Project {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
     let mut project = demo_project();
     project.channels[0].devices.push(Device {
+        instrument: false,
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),

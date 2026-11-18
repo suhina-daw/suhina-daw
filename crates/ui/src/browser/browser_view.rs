@@ -1102,7 +1102,7 @@ fn results_view(
         if shown.height() <= 0.0 {
             continue;
         }
-        let response = ui.interact(shown, Id::unique(("browser-row", row.node())), Sense::click_and_drag());
+        let response = ui.interact(shown, row_id(row.node(), index), Sense::click_and_drag());
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Browser {}", row.item.name)));
         let selected = state.selected.iter().any(|s| s.key == row.item.key);
@@ -1137,7 +1137,7 @@ fn results_view(
             let button = widgets::button_area(
                 ui,
                 lead,
-                Id::unique(("browser-play", row.node())),
+                row_id(row.node(), index).with("play"),
                 format!("Preview {}", row.item.name),
             );
             let playing = state.preview_active_for(&row.item.key);
@@ -1208,7 +1208,7 @@ fn results_view(
                 let dot = ui
                     .interact(
                         Rect::from_center_size(center, Vec2::splat(DOT_HIT)),
-                        Id::unique(("browser-tag-dot", row.node(), tag.id)),
+                        row_id(row.node(), index).with(("tag-dot", tag.id)),
                         Sense::hover(),
                     )
                     .on_hover_text(format!("Tag {}", tag.name));
@@ -3482,6 +3482,12 @@ fn paint_faded_row(painter: &egui::Painter, el: &Entered, rect: Rect, hover: f32
 fn paint_row(painter: &egui::Painter, el: &Entered, rect: Rect, fill: egui::Color32) {
     painter.rect_filled(rect, 0.0, el.background_or(fill));
     el.paint_background(painter, rect, 0.0);
+}
+
+/// A result row's widget id: its node and its place in the list, since the same item can be
+/// listed twice (in two of the list's groups) and two widgets must never share an id.
+pub(crate) fn row_id(node: &str, index: usize) -> Id {
+    Id::unique(("browser-row", node, index))
 }
 
 #[cfg(test)]

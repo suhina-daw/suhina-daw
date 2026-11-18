@@ -1000,6 +1000,7 @@ fn device_panel(
             device.group.as_ref().map(|g| g.branches.len()),
             device.is_builtin,
             &device.name,
+            device.sidechain.as_ref(),
             actions,
         )
     });
@@ -1127,6 +1128,38 @@ fn device_panel(
             painter.line_segment([corner, corner + Vec2::new(4.0 * x, 0.0)], egui::Stroke::new(1.2, ink));
             painter.line_segment([corner, corner + Vec2::new(0.0, 4.0 * y)], egui::Stroke::new(1.2, ink));
         }
+    }
+    // A device that reads a key (sidechain) has a button for it beside its X: lit while it reads
+    // one, it opens the same choices as Sidechain in its menu (`docs/spec/sidechain.md` ›
+    // Choosing a source).
+    if let Some(side) = &device.sidechain {
+        let font = theme::ui_font(theme::TEXT_TINY);
+        let width = widgets::text_width(ui, "SC", font.clone()) + 6.0;
+        let button =
+            Rect::from_center_size(Pos2::new(kind_right - width / 2.0, header.center().y), Vec2::new(width, 12.0));
+        kind_right = button.left() - 4.0;
+        let label = match &side.key {
+            Some(key) => format!(
+                "{} sidechain: {}, {}, {:+.1} dB",
+                device.name,
+                key.name,
+                menus::tap_label(key.tap).to_lowercase(),
+                key.gain_db
+            ),
+            None => format!("{} sidechain: none", device.name),
+        };
+        let response = widgets::button_area(ui, button, Id::unique(("device-sidechain", track.0, &device.at)), &label)
+            .on_hover_text(&label);
+        let ink = if side.key.is_some() {
+            header_el.accent()
+        } else if response.hovered() {
+            bright
+        } else {
+            dim
+        };
+        painter.text(button.center(), egui::Align2::CENTER_CENTER, "SC", font, ink);
+        let at = device.at.value();
+        egui::Popup::menu(&response).show(|ui| menus::sidechain_choices(ui, track, &at, side, actions));
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
     // What a canvas's device widgets read: the device's own state (its name, whether it

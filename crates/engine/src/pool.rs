@@ -503,8 +503,7 @@ fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
         let started = Instant::now();
         let completed = !chain.advance(frames, &context);
         if completed {
-            chain.complete(frames, &context);
-            chain.stage(frames);
+            chain.finish(frames, &context);
         }
         let late = chain.past_deadline(crate::clock::now());
         // Never full: the ring holds DEPTH replies, and the worker holds at most DEPTH chains

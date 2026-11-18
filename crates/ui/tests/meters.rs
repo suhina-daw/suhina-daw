@@ -35,6 +35,8 @@ fn a_playing_tracks_meter_moves_and_its_clip_light_turns_off_on_a_click() {
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
+    // Its MIDI tracks have no instrument: they play the sine tones (#1384).
+    app.projects_mut().set_implicit_tones(true);
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()

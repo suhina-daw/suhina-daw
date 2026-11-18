@@ -15,6 +15,7 @@ fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Proje
     Project {
         tracks: (1..=tracks)
             .map(|i| Track {
+                folder: false,
                 id: TrackId(i),
                 name: format!("T{i}"),
                 color: None,
@@ -44,6 +45,7 @@ fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Proje
             })
             .collect(),
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 4.0,
@@ -1180,6 +1182,8 @@ fn the_metronome_follows_a_tempo_edit() {
 
 fn with_utility(project: &mut Project) {
     project.channels[0].devices.push(Device {
+        instrument: false,
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Utility".into(),
         kind: DeviceKind::Builtin("utility".into()),
@@ -1264,6 +1268,8 @@ fn a_device_parameter_on_the_main_channel_is_heard_from_the_next_block() {
     project.channels.push(main);
     if let Some(main) = project.channels.last_mut() {
         main.devices.push(Device {
+            instrument: false,
+            inputs: Vec::new(),
             id: Default::default(),
             name: "Utility".into(),
             kind: DeviceKind::Builtin("utility".into()),

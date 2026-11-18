@@ -38,6 +38,7 @@ fn warped(id: u32, file: &str) -> ClipContent {
     let region =
         AudioRegion { sample_rate: Some(SR), channels: Some(1), duration_seconds: Some(2.0), ..AudioRegion::new(file) };
     ClipContent {
+        linked: false,
         id: ContentId(id),
         name: file.into(),
         length: 2.0,

@@ -46,7 +46,8 @@ fn latency_frames(value: f64) -> u32 {
     (value.clamp(0.0, 1.0) * f64::from(MAX_LATENCY)).round() as u32
 }
 
-const PROCESSOR_CID: TUID = uid(0x4C6F6F70, 0x7765726B, 0x54657374, 0x47616931);
+// The SDK-derived class id of the Gain predecessor, for indexed-state tests.
+const PROCESSOR_CID: TUID = uid(0x56535447, 0x61696E67, 0x61696E00, 0x00000000);
 const CONTROLLER_CID: TUID = uid(0x4C6F6F70, 0x7765726B, 0x54657374, 0x43746C31);
 /// The id of its gain parameter.
 const GAIN_PARAMETER: u32 = 0;
@@ -137,6 +138,21 @@ impl IComponentTrait for Processor {
                 Some([a, b, c, d]) => f32::from_le_bytes([*a, *b, *c, *d]),
                 _ => return kResultFalse,
             },
+            // Our version 99 fixture migrates a value using a different parameter law.
+            program if program.get(8..12) == Some(b"FxCk") && program.get(20..24) == Some(&99u32.to_be_bytes()) => {
+                let Some(bytes) = program.get(56..60).and_then(|b| <[u8; 4]>::try_from(b).ok()) else {
+                    return kResultFalse;
+                };
+                1.0 - f32::from_be_bytes(bytes)
+            }
+            // Version 98 of the predecessor's bank: answered yes and not read, as a measured
+            // effect does with a parameter bank, so the host has to set its values by number.
+            bank if bank.starts_with(b"CcnK")
+                && bank.get(8..12) == Some(b"FxBk")
+                && bank.get(20..24) == Some(&98u32.to_be_bytes()) =>
+            {
+                return kResultOk;
+            }
             // As a plug-in seen in #1167 does: a single program's chunk is answered yes and read
             // not at all, so only the host can tell the caller it did not take.
             program if program.starts_with(b"CcnK") && program.get(8..12) == Some(b"FPCh") => return kResultOk,
@@ -213,6 +229,23 @@ impl IAudioProcessorTrait for Processor {
     unsafe fn process(&self, data: *mut ProcessData) -> tresult {
         // SAFETY: the host passes its process data for the call.
         let Some(data) = (unsafe { data.as_ref() }) else { return kInvalidArgument };
+        if data.numInputs == 0 && data.numOutputs > 0 {
+            if !data.inputs.is_null() || data.outputs.is_null() {
+                return kInvalidArgument;
+            }
+            // SAFETY: the host supplies the output bus and its channel pointer array.
+            let output = unsafe { &*data.outputs };
+            // SAFETY: the host selected 32-bit samples.
+            let targets = unsafe { output.__field0.channelBuffers32 };
+            for channel in 0..output.numChannels.max(0) as usize {
+                // SAFETY: the bus has numChannels pointers, each covering numSamples frames.
+                let target = unsafe { *targets.wrapping_add(channel) };
+                // SAFETY: the host owns this writable channel for the processing call.
+                let samples = unsafe { std::slice::from_raw_parts_mut(target, data.numSamples.max(0) as usize) };
+                samples.fill(0.5);
+            }
+            return kResultOk;
+        }
         if data.numInputs < 1 || data.numOutputs < 1 {
             return kResultOk;
         }

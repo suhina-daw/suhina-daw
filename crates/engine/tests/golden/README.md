@@ -23,7 +23,12 @@ playback: both run the same `Renderer::process` (AGENTS.md › One render path).
   1e-4, not 1e-6: the stretcher's floating-point maths differs in the last digits between
   platforms.
 
-Each file is little-endian 32-bit floats, one channel, one per frame. The tests also check every
+- `group-pan-left.f32` (`src/buses_tests.rs`): two tracks each playing an A4 for a beat into a
+  group panned hard left, 8 kHz, both channels interleaved: the group's sum on the left and
+  silence on the right (#1340). The test also checks that a group with a utility sounds the
+  same.
+
+Each file is little-endian 32-bit floats, one channel, one per frame (`group-pan-left.f32`: two). The tests also check every
 frame against the envelope written out in the test (linear fades times the 2 ms click guard,
 `docs/spec/arrangement-editing.md` › Fades), so a golden file cannot hold a wrong envelope.
 
@@ -39,4 +44,10 @@ SUHINA_BLESS=1 cargo test -p suhina-engine fade_tests
 
 ```sh
 SUHINA_BLESS=1 cargo test -p suhina-engine launched_stretched_clips_render_like_their_golden_file
+```
+
+`group-pan-left.f32` only when a change to how a group's pan sounds is intended:
+
+```sh
+SUHINA_BLESS=1 cargo test -p suhina-engine a_group_panned_hard_left_renders_like_its_golden_file
 ```

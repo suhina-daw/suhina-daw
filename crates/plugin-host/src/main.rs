@@ -345,7 +345,7 @@ fn start(
     if ara.is_some() {
         return Err("only a VST3 plug-in can be bound to an ARA document".into());
     }
-    let processor = processors::create(plugin)?;
+    let processor = processors::create(plugin, served.channels())?;
     let stop = Arc::new(AtomicBool::new(false));
     let (block, audio_stop, mut served) = (processors::TestBlock(processor.clone()), stop.clone(), served);
     let audio = thread::Builder::new()

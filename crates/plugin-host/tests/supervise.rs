@@ -306,19 +306,26 @@ fn a_bank_of_programs_is_set_as_parameters() {
     let mut bank = b"CcnK".to_vec();
     bank.extend_from_slice(&[0; 4]);
     bank.extend_from_slice(b"FxBk");
-    for word in [2u32, 7, 1, 1, 0] {
+    for word in [2u32, 0x4761696e, 1, 1, 0] {
         bank.extend_from_slice(&word.to_be_bytes());
     }
     bank.resize(156, 0);
     bank.extend_from_slice(b"CcnK");
     bank.extend_from_slice(&(4u32 * 5 + 28 + 4).to_be_bytes());
     bank.extend_from_slice(b"FxCk");
-    for word in [1u32, 7, 1, 1] {
+    for word in [1u32, 0x4761696e, 1, 1] {
         bank.extend_from_slice(&word.to_be_bytes());
     }
     bank.extend_from_slice(&[0; 28]);
     bank.extend_from_slice(&0.125f32.to_be_bytes());
     plugin.load_state(bank.clone()).unwrap();
+    assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
+    let mut other = bank.clone();
+    other[16..20].copy_from_slice(&0x42616421u32.to_be_bytes());
+    other[172..176].copy_from_slice(&0x42616421u32.to_be_bytes());
+    let last = other.len() - 4;
+    other[last..].copy_from_slice(&0.0f32.to_be_bytes());
+    assert!(matches!(plugin.load_state(other), Err(PluginError::Host(_))));
     assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
     // A bank with more parameters than the plug-in has ids for (two: gain and latency) is not
     // set by number.
@@ -332,12 +339,37 @@ fn a_bank_of_programs_is_set_as_parameters() {
     assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
 }
 
-/// An `.fxp` file of `kind` for plug-in 7: the header, the name, then `rest`.
+#[test]
+fn a_bank_answered_yes_but_not_read_is_still_set_as_parameters() {
+    let (mut plugin, mut audio) = start("test:vst3");
+    let before = block(&mut audio, PATIENT);
+    // The fixture's version 98 bank: the component says it took it and changes nothing.
+    let mut bank = b"CcnK".to_vec();
+    bank.extend_from_slice(&[0; 4]);
+    bank.extend_from_slice(b"FxBk");
+    for word in [2u32, 0x4761696e, 98, 1, 0] {
+        bank.extend_from_slice(&word.to_be_bytes());
+    }
+    bank.resize(156, 0);
+    bank.extend_from_slice(b"CcnK");
+    bank.extend_from_slice(&(4u32 * 5 + 28 + 4).to_be_bytes());
+    bank.extend_from_slice(b"FxCk");
+    for word in [1u32, 0x4761696e, 1, 1] {
+        bank.extend_from_slice(&word.to_be_bytes());
+    }
+    bank.extend_from_slice(&[0; 28]);
+    bank.extend_from_slice(&0.125f32.to_be_bytes());
+    assert_ne!(before.1, 0.125, "the default differs from the bank's value");
+    plugin.load_state(bank).unwrap();
+    assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125));
+}
+
+/// An `.fxp` file of `kind` for the declared Gain predecessor: the header, the name, then `rest`.
 fn fxp(kind: &[u8; 4], count: u32, rest: &[u8]) -> Vec<u8> {
     let mut out = b"CcnK".to_vec();
     out.extend_from_slice(&u32::try_from(4 * 5 + 28 + rest.len()).unwrap().to_be_bytes());
     out.extend_from_slice(kind);
-    for value in [1, 7, 1, count] {
+    for value in [1, 0x4761696e, 1, count] {
         out.extend_from_slice(&u32::to_be_bytes(value));
     }
     out.extend_from_slice(&[0; 28]);
@@ -355,6 +387,25 @@ fn a_vst3_plugin_takes_a_single_programs_values_and_refuses_its_chunk() {
     let chunk = fxp(b"FPCh", 1, &[&4u32.to_be_bytes()[..], &0.5f32.to_le_bytes()].concat());
     assert!(matches!(plugin.load_state(chunk), Err(PluginError::Host(_))));
     assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.125), "left as it was");
+}
+
+#[test]
+fn vst3_native_state_migration_is_not_overwritten_by_legacy_values() {
+    let (mut plugin, mut audio) = start("test:vst3");
+    let mut state = fxp(b"FxCk", 1, &0.125f32.to_be_bytes());
+    state[20..24].copy_from_slice(&99u32.to_be_bytes());
+    plugin.load_state(state).unwrap();
+    assert_eq!(block(&mut audio, PATIENT), (Outcome::Done, 0.875));
+}
+
+#[test]
+fn vst3_does_not_apply_another_plugins_parameter_numbers() {
+    let (mut plugin, mut audio) = start("test:vst3");
+    let before = block(&mut audio, PATIENT);
+    let mut state = fxp(b"FxCk", 1, &0.0f32.to_be_bytes());
+    state[16..20].copy_from_slice(&0x42616421u32.to_be_bytes());
+    assert!(matches!(plugin.load_state(state), Err(PluginError::Host(_))));
+    assert_eq!(block(&mut audio, PATIENT), before, "rejected state must not mute the processor");
 }
 
 #[test]

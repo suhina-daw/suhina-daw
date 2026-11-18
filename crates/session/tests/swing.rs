@@ -16,6 +16,7 @@ use crate::support::run;
 /// Track 1 "Keys" with a MIDI clip (index 0) and an audio clip (index 1) on the arrangement.
 fn project() -> Project {
     let content = |id: u32, lanes: Vec<ContentLane>| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,

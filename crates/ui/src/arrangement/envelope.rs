@@ -942,11 +942,19 @@ fn grid_menu(ui: &mut Ui) {
     });
 }
 
-/// The Edit gain envelope button at `rect` (left of the clip's name), lit while `on`. Returns
-/// whether it was clicked.
-pub fn edit_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, name: &str, on: bool) -> bool {
+/// The Edit gain envelope button at `rect` (left of the clip's name), lit while `on`, taking the
+/// pointer within `hit` (the part of it no fade handle lies over). Returns whether it was clicked.
+pub fn edit_button(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    hit: Rect,
+    clip: ClipId,
+    name: &str,
+    on: bool,
+) -> bool {
     let response = ui
-        .interact(rect, Id::unique(("clip-envelope-edit", clip.0)), Sense::click())
+        .interact(hit, Id::unique(("clip-envelope-edit", clip.0)), Sense::click())
         .on_hover_text("Edit gain envelope (Alt+E)")
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| {

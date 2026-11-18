@@ -99,6 +99,7 @@ mod tests {
                 ..Track::new(TrackId(1), "Lead")
             }],
             contents: vec![ClipContent {
+                linked: false,
                 id: ContentId(1),
                 name: "Riff".into(),
                 length: 4.0,

@@ -41,6 +41,7 @@ fn project(notes: Vec<Vec<Note>>, slots: Vec<Slot>) -> Project {
             .into_iter()
             .zip(1..)
             .map(|(notes, id)| ClipContent {
+                linked: false,
                 id: ContentId(id),
                 name: format!("c{id}"),
                 length: 4.0,

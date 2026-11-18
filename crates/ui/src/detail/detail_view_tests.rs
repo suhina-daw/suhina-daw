@@ -2156,3 +2156,131 @@ fn the_height_a_padded_panel_asks_for_does_not_outlive_its_frame() {
     assert_eq!(shown_device_insets(&ctx, 6.0), 40.0, "the frame after the panel was shown");
     assert_eq!(shown_device_insets(&ctx, 6.0), 6.0, "gone when nothing leaves it again");
 }
+
+/// A compressor reads a key (sidechain): its panel's SC button lists the other tracks, and a
+/// pick runs `device.setKey`; once it reads one, the button names it, and Sidechain to on the
+/// source's menu lists the compressor as keyed from there.
+#[test]
+fn a_compressors_sidechain_button_picks_a_source_track() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let mut project = demo_project();
+    let reader = project.track(TrackId(1)).and_then(|t| t.channel).unwrap();
+    project
+        .channel_mut(reader)
+        .unwrap()
+        .devices
+        .push(Device::new("Compressor", DeviceKind::Builtin("compressor".into())));
+    let source_name = project.shown_track_name(TrackId(2));
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let side = chain.devices[0].sidechain.clone().expect("a compressor reads a key");
+    assert_eq!(side.key, None);
+    assert!(side.sources.iter().any(|(t, _)| *t == TrackId(2)), "{:?}", side.sources);
+    assert!(side.sources.iter().all(|(t, _)| *t != TrackId(1)), "not its own track: {:?}", side.sources);
+    let detail = Detail::Devices(chain);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(700.0, 500.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            let mut places = Vec::new();
+            show_row(ui, &detail, &[], actions, &mut places);
+        },
+        Vec::new(),
+    );
+    harness.get_by_label("Compressor sidechain: none").click();
+    harness.run();
+    harness.get_by_label(&source_name).click();
+    harness.run();
+    let set: Vec<_> = harness.state().iter().filter(|a| a.id == "device.setKey").cloned().collect();
+    assert_eq!(set.len(), 1, "{:?}", harness.state());
+    assert_eq!((&set[0].params["track"], &set[0].params["source"]), (&json!(1), &json!(2)));
+
+    // Keyed: the button says from where, and the source's Sidechain to has it ticked.
+    let source = project.track(TrackId(2)).and_then(|t| t.channel).unwrap();
+    project.channel_mut(reader).unwrap().devices[0].inputs =
+        vec![suhina_engine::model::DeviceInput::key(source, suhina_engine::model::TapPoint::PostFader)];
+    let Detail::Devices(chain) = build(&project, Some(TrackId(1)), None) else { panic!() };
+    let key = chain.devices[0].sidechain.as_ref().and_then(|s| s.key.clone()).unwrap();
+    assert_eq!((key.track, key.tap, key.gain_db), (TrackId(2), suhina_engine::model::TapPoint::PostFader, 0.0));
+    let readers = crate::interaction::menus::key_readers(&project);
+    let compressor = readers.iter().find(|r| r.track == TrackId(1)).unwrap();
+    assert_eq!((compressor.device, compressor.source), (0, Some(TrackId(2))));
+    assert!(compressor.refused.contains(&TrackId(1)), "its own track is no source");
+}
+
+/// A device's menu renames it: the name typed in its field, applied with Enter, is one
+/// `device.rename`; Enter on the unchanged name sends nothing.
+#[test]
+fn a_devices_menu_renames_it() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let at = crate::detail::detail_view::DeviceAt(vec![2]);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 300.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            crate::interaction::menus::device_menu(ui, TrackId(3), &at, None, true, "Utility", None, actions);
+        },
+        Vec::new(),
+    );
+    harness.get_by_label("Rename Utility").click();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert!(harness.state().iter().all(|a| a.id != "device.rename"), "{:?}", harness.state());
+    harness.get_by_label("Rename Utility").click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Rename Utility").type_text("Source level");
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let renamed: Vec<_> = harness.state().iter().filter(|a| a.id == "device.rename").collect();
+    assert_eq!(renamed.len(), 1, "{:?}", harness.state());
+    assert_eq!(renamed[0].params, json!({ "track": 3, "device": 2, "name": "Source level" }));
+}
+
+/// A track's Sidechain to has a search field over a list that scrolls: typed words keep the
+/// devices whose "Track › Device" has them all, and a pick runs `device.setKey` from this track.
+#[test]
+fn sidechain_to_searches_the_keyed_devices() {
+    use crate::interaction::menus::{KeyReader, TrackMenu, track_menu};
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let readers: Vec<KeyReader> = (0..10)
+        .map(|i| KeyReader {
+            track: TrackId(10 + i),
+            device: 0,
+            label: format!("{} › Compressor", if i == 7 { "Bass".to_string() } else { format!("Pad {i}") }),
+            source: None,
+            refused: vec![TrackId(10 + i)],
+        })
+        .collect();
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(700.0, 600.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            let menu = TrackMenu {
+                track: TrackId(1),
+                name: "Kick",
+                colour: suhina_engine::model::Rgb(200, 100, 50),
+                is_group: false,
+                is_return: false,
+                selection: &[],
+                into: &[],
+                out: None,
+                midi: None,
+                audio: None,
+                tracks_copied: false,
+                key_readers: &readers,
+            };
+            track_menu(ui, &menu, actions);
+        },
+        Vec::new(),
+    );
+    harness.run();
+    harness.get_by_label("Sidechain to").click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label("Pad 3 › Compressor").is_some(), "every device is listed");
+    harness.get_by_label("Search devices").type_text("bass");
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label("Pad 3 › Compressor").is_none(), "the others are filtered out");
+    harness.get_by_label("Bass › Compressor").click();
+    harness.run();
+    let set: Vec<_> = harness.state().iter().filter(|a| a.id == "device.setKey").cloned().collect();
+    assert_eq!(set.len(), 1, "{:?}", harness.state());
+    assert_eq!((&set[0].params["track"], &set[0].params["source"]), (&json!(17), &json!(1)));
+}

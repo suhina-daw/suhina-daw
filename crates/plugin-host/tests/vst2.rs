@@ -217,6 +217,8 @@ fn project() -> Project {
             output: None,
             sends: Vec::new(),
             devices: vec![Device {
+                instrument: false,
+                inputs: Vec::new(),
                 id: Default::default(),
                 name: "Suhina Test Gain".into(),
                 kind: DeviceKind::Vst2 { id: 0x5368_5447 },
@@ -231,6 +233,7 @@ fn project() -> Project {
             automation: Vec::new(),
         }],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 1.0,
@@ -268,6 +271,8 @@ fn a_project_s_vst2_plug_in_plays_with_its_saved_settings() {
     assert_eq!(project.assign_ids(), Ok(()));
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     let mut session = Session::new(project.clone());
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(vst2_env());
     let device = json!({ "track": 1, "device": 0 });

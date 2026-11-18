@@ -307,6 +307,7 @@ fn with_audio() -> Result<App, String> {
         stream: None,
     };
     project.contents.push(ClipContent {
+        linked: false,
         id: ContentId(300),
         name: "Loop".into(),
         length: 4.0,

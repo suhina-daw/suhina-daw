@@ -57,6 +57,7 @@ fn project() -> Project {
 
 fn project_built() -> Project {
     let content = |id: u32, data: LaneData| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
@@ -74,6 +75,7 @@ fn project_built() -> Project {
     };
     Project {
         tracks: vec![Track {
+            folder: false,
             id: TrackId(1),
             name: "Keys".into(),
             color: None,

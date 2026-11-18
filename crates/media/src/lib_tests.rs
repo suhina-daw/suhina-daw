@@ -24,6 +24,7 @@ fn write_wav(path: &Path, channels: u16, frames: usize) {
 fn project_with_audio(file: &str, absolute: Option<String>) -> Project {
     Project {
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "a".into(),
             length: 4.0,
@@ -61,6 +62,8 @@ fn project_sources_cannot_escape_by_absolute_path_parent_or_symlink() {
         let mut project = project_with_audio(&name, Some(name.clone()));
         project.channels.push(Channel::new(ChannelId(1), "Sampler"));
         project.channels[0].devices.push(Device {
+            instrument: false,
+            inputs: Vec::new(),
             id: Default::default(),
             name: "Sampler".into(),
             kind: DeviceKind::Builtin("sampler".into()),
@@ -282,4 +285,12 @@ fn a_stems_file_is_decoded_once_with_a_key_per_track() {
         ]
     );
     assert_eq!(pool.files["tones-aac.stem.mp4#1"].frames(), 44_100);
+}
+
+/// A project opened by its bare file name has the empty path as its folder: its files are
+/// found in the current folder (the tests run in the crate's folder).
+#[test]
+fn a_project_opened_by_its_bare_name_finds_its_files_beside_it() {
+    let found = locate("tests/data/tones-plain.stem.mp4", None, std::path::Path::new(""), &Trusted::default());
+    assert!(found.is_some_and(|p| p.ends_with("tones-plain.stem.mp4")));
 }

@@ -27,6 +27,8 @@ fn project() -> suhina_engine::model::Project {
     let mut project = demo_project();
     for (name, enabled) in [("Utility", true), ("Limiter", false)] {
         project.channels[0].devices.push(Device {
+            instrument: false,
+            inputs: Vec::new(),
             id: Default::default(),
             name: name.into(),
             kind: DeviceKind::Builtin(name.to_lowercase()),

@@ -59,7 +59,7 @@ impl crate::audio::Block for TestBlock {
     }
 }
 
-pub(crate) fn create(plugin: &str) -> Result<std::sync::Arc<dyn Processor>, String> {
+pub(crate) fn create(plugin: &str, channels: u32) -> Result<std::sync::Arc<dyn Processor>, String> {
     let after = |prefix: &str| plugin.strip_prefix(prefix).and_then(|n| n.parse::<u32>().ok());
     if plugin == "test:gain" {
         Ok(std::sync::Arc::new(Gain(AtomicU32::new(0.5f32.to_bits()))))
@@ -77,7 +77,13 @@ pub(crate) fn create(plugin: &str) -> Result<std::sync::Arc<dyn Processor>, Stri
             return Err(format!("unknown plug-in {plugin:?}"));
         };
         let frames = frames.min(MAX_DELAY);
-        Ok(std::sync::Arc::new(DelayAfter { after, frames, blocks: AtomicU32::new(0), line: Mutex::default() }))
+        Ok(std::sync::Arc::new(DelayAfter {
+            after,
+            frames,
+            channels: channels.max(1) as usize,
+            blocks: AtomicU32::new(0),
+            line: Mutex::default(),
+        }))
     } else if let Some(micros) = after("test:busy:") {
         Ok(std::sync::Arc::new(Busy(Duration::from_micros(u64::from(micros.min(1_000_000))))))
     } else if let Some(micros) = after("test:burst:") {
@@ -336,12 +342,11 @@ impl Processor for Failing {
 /// Longest delay a `test:delay-after` plug-in takes, in frames.
 const MAX_DELAY: u32 = 96_000;
 
-/// Channels a `test:delay-after` plug-in's blocks carry, interleaved.
-const DELAY_CHANNELS: usize = 2;
-
 struct DelayAfter {
     after: u32,
     frames: u32,
+    /// The link's channels, interleaved in each block: two, or four with a key.
+    channels: usize,
     blocks: AtomicU32,
     /// The samples on their way through, once it delays.
     line: Mutex<VecDeque<f32>>,
@@ -359,7 +364,7 @@ impl Processor for DelayAfter {
             return;
         };
         if block == self.after {
-            line.resize(self.frames as usize * DELAY_CHANNELS, 0.0);
+            line.resize(self.frames as usize * self.channels, 0.0);
         }
         for (o, i) in output.iter_mut().zip(input) {
             line.push_back(*i);
@@ -386,7 +391,7 @@ mod tests {
 
     #[test]
     fn a_delay_after_plug_in_delays_from_its_block_on_and_says_so() {
-        let delay = create("test:delay-after:1:2").unwrap();
+        let delay = create("test:delay-after:1:2", 2).unwrap();
         let mut output = [0.0f32; 8];
         delay.process(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &mut output);
         assert_eq!(output, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
@@ -397,19 +402,19 @@ mod tests {
         delay.process(&[0.0; 8], &mut output);
         assert_eq!(output, [5.0, 6.0, 7.0, 8.0, 0.0, 0.0, 0.0, 0.0]);
         for bad in ["test:delay-after:1", "test:delay-after:x:2", "test:delay-after:1:-2"] {
-            assert!(create(bad).is_err(), "{bad}");
+            assert!(create(bad, 2).is_err(), "{bad}");
         }
     }
 
     #[test]
     fn a_busy_plug_in_takes_its_time_and_halves() {
-        let busy = create("test:busy:2000").unwrap();
+        let busy = create("test:busy:2000", 2).unwrap();
         let mut output = [0.0f32; 4];
         let started = std::time::Instant::now();
         busy.process(&[1.0, 2.0, 3.0, 4.0], &mut output);
         assert!(started.elapsed() >= Duration::from_millis(2));
         assert_eq!(output, [0.5, 1.0, 1.5, 2.0]);
-        assert!(create("test:busy:x").is_err());
+        assert!(create("test:busy:x", 2).is_err());
     }
 
     #[test]
@@ -418,17 +423,17 @@ mod tests {
         // With no events a burst takes no time: one an hour long would not come back otherwise.
         Burst(Duration::from_secs(3600)).process_events(&[1.0, 0.0, 0.0, 0.0], &[], &mut output);
         assert_eq!(output, [1.25, 0.25, 0.25, 0.25]);
-        let burst = create("test:burst:5000").unwrap();
+        let burst = create("test:burst:5000", 2).unwrap();
         let started = std::time::Instant::now();
         burst.process_events(&[0.0; 4], &[suhina_ipc::Event::note_on(0, 0, 60, 1.0)], &mut output);
         assert!(started.elapsed() >= Duration::from_millis(5));
-        assert!(create("test:burst:x").is_err());
+        assert!(create("test:burst:x", 2).is_err());
     }
 
     #[test]
     fn an_awaiting_plug_in_answers_each_block_once_the_ring_has_had_it() {
-        let ring = create("test:ring").unwrap();
-        let awaiting = create("test:await-ring").unwrap();
+        let ring = create("test:ring", 2).unwrap();
+        let awaiting = create("test:await-ring", 2).unwrap();
         let mut output = [0.0f32; 2];
         ring.process(&[1.0, 2.0], &mut output);
         assert_eq!(output, [1.0, 2.0]);
