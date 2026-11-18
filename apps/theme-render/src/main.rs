@@ -2,19 +2,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `suhina-theme-render <folder | built-in id> [--backdrop <image.png>] [--out <folder>]
-//! [--scale <n>] [--scene <name>] [--budget]`: the theme drawn in every scene, as PNGs (see the
+//! [--scale <n>] [--scene <name>] [--hover <label> | --press <label>] [--budget]`: the theme drawn in every scene, as PNGs (see the
 //! library's documentation).
 
 use std::path::PathBuf;
 
+use suhina_theme_render::scenes::Pointer;
 use suhina_theme_render::{Subject, budget, composite, render_all, scenes};
 
-const USAGE: &str = "usage: suhina-theme-render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name>] [--budget]
+const USAGE: &str = "usage: suhina-theme-render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name>] [--hover <label> | --press <label>] [--budget]
 
 Draws the theme in each scene of the demo project and writes <scene>.raw.png (the window's own
 pixels, with their alpha) and <scene>.png (the window over the backdrop, blurred behind a
-see-through window) into the out folder (default: theme-shots). --budget prints the style
-engine's counts for each scene instead, with no GPU.";
+see-through window) into the out folder (default: theme-shots). --hover and --press put the
+pointer over the control with that label, its button held down with --press, once each scene is
+driven. --budget prints the style engine's counts for each scene instead, with no GPU.";
 
 struct Args {
     theme: String,
@@ -22,6 +24,7 @@ struct Args {
     out: PathBuf,
     scale: f32,
     scene: Option<String>,
+    pointer: Option<Pointer>,
     budget: bool,
 }
 
@@ -38,6 +41,7 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
         out: "theme-shots".into(),
         scale: 1.0,
         scene: None,
+        pointer: None,
         budget: false,
     };
     let mut theme = None;
@@ -61,6 +65,13 @@ fn parse(mut args: impl Iterator<Item = String>) -> Result<Command, String> {
                     return Err(format!("no scene {name:?}; the scenes are {}", names.join(", ")));
                 }
                 parsed.scene = Some(name);
+            }
+            "--hover" | "--press" => {
+                if parsed.pointer.is_some() {
+                    return Err(format!("give one of --hover and --press, once\n\n{USAGE}"));
+                }
+                let label = value(&arg)?;
+                parsed.pointer = Some(if arg == "--hover" { Pointer::Hover(label) } else { Pointer::Press(label) });
             }
             "--budget" => parsed.budget = true,
             "-h" | "--help" => return Ok(Command::Help),
@@ -93,7 +104,7 @@ fn run() -> Result<(), String> {
             .ok_or_else(|| format!("{}: neither a theme folder nor a built-in theme's id", args.theme))?
     };
     if args.budget {
-        for scene in &scenes::select(args.scene.as_deref()) {
+        for scene in &scenes::select(args.scene.as_deref(), args.pointer.as_ref()) {
             match budget::count(&subject, scene) {
                 Ok(counts) => println!("{}: {counts:?}", scene.name),
                 Err(e) => println!("{}: not drawn: {e}", scene.name),
@@ -105,7 +116,7 @@ fn run() -> Result<(), String> {
         Some(path) => image::open(path).map_err(|e| format!("{}: {e}", path.display()))?.to_rgba8(),
         None => composite::default_backdrop(),
     };
-    let done = render_all(&subject, &backdrop, &args.out, args.scale, args.scene.as_deref())?;
+    let done = render_all(&subject, &backdrop, &args.out, args.scale, args.scene.as_deref(), args.pointer.as_ref())?;
     for problem in &done.failed {
         eprintln!("not drawn: {problem}");
     }
@@ -128,5 +139,29 @@ fn main() {
     if let Err(e) = run() {
         eprintln!("{e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parsed(args: &[&str]) -> Result<Args, String> {
+        match parse(args.iter().map(|a| (*a).to_owned()))? {
+            Command::Run(args) => Ok(args),
+            Command::Help => Err("help".into()),
+        }
+    }
+
+    #[test]
+    fn hover_and_press_take_a_label_and_only_one_is_given() {
+        assert_eq!(parsed(&["nord", "--hover", "Record"]).unwrap().pointer, Some(Pointer::Hover("Record".into())));
+        assert_eq!(
+            parsed(&["nord", "--press", "Solo Drums"]).unwrap().pointer,
+            Some(Pointer::Press("Solo Drums".into()))
+        );
+        assert_eq!(parsed(&["nord"]).unwrap().pointer, None);
+        assert!(parsed(&["nord", "--hover", "a", "--press", "b"]).is_err());
+        assert!(parsed(&["nord", "--hover"]).is_err());
     }
 }

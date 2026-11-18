@@ -11,7 +11,7 @@ pub(crate) fn theme(args: &[String]) -> Result<(), String> {
     use suhina_theme_package as package;
     let usage = || {
         format!(
-            "usage: suhina-cli theme (pack <theme-folder> [-o <out.theme.suhina>] | validate (<file.theme.suhina> | <folder>) | render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name>] [--budget])\n\n{USAGE}"
+            "usage: suhina-cli theme (pack <theme-folder> [-o <out.theme.suhina>] | validate (<file.theme.suhina> | <folder>) | render <theme-folder | built-in-theme-id> [--backdrop <image.png>] [--out <folder>] [--scale <n>] [--scene <name>] [--hover <label> | --press <label>] [--budget])\n\n{USAGE}"
         )
     };
     let print_warnings = |warnings: &[String]| {

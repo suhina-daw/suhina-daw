@@ -286,19 +286,20 @@ pub fn restless(harness: &Harness<'static, App>) -> bool {
     harness.output().viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.repaint_delay.is_zero())
 }
 
-/// Renders `subject` in every scene, or only the one called `only`, into `out` over `backdrop`:
-/// two PNGs a scene.
+/// Renders `subject` in every scene, or only the one called `only`, with `pointer` done in each,
+/// into `out` over `backdrop`: two PNGs a scene.
 pub fn render_all(
     subject: &Subject,
     backdrop: &image::RgbaImage,
     out: &Path,
     scale: f32,
     only: Option<&str>,
+    pointer: Option<&scenes::Pointer>,
 ) -> Result<Rendered, String> {
     std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     let gpu = Gpu::new()?;
     let mut done = Rendered::default();
-    for scene in scenes::select(only) {
+    for scene in scenes::select(only, pointer) {
         let app = match (scene.app)() {
             Ok(app) => app,
             Err(e) => {
