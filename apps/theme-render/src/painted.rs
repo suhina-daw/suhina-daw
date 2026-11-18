@@ -3,7 +3,7 @@
 
 //! What a scene paints, as text: one line per shape of its last frame, in paint order, with its
 //! place, size and colours. A change that should leave a theme's look alone leaves this listing
-//! alone, so its digest, held in `tests/painted/<system>.txt`, checks "looks the same" without a GPU (#1023).
+//! alone, so its digest, held in `tests/painted.txt`, checks "looks the same" without a GPU (#1023).
 //!
 //! Places and sizes are rounded to a quarter of a point, so a last-bit difference in a system's
 //! `sin` or `cos` between machines does not change a listing; colours are exact.
@@ -211,13 +211,16 @@ pub fn digest(text: &str) -> u64 {
 ///
 /// Drawn on a thread of its own, whose window state (the colour map, the style engine, the user
 /// sheet) starts afresh and goes with it: one drawing never depends on the one before, and the
-/// caller's state is left alone. A scene that still repaints after the most frames a scene may
+/// caller's state is left alone. The window looks like Linux whichever system draws it
+/// ([`suhina_ui::kit::platform`]): shortcuts as `Ctrl+C`, Settings' plug-in formats and notes as
+/// Linux has them and no title bar of Suhina's own, so a listing is the same on every system. A scene that still repaints after the most frames a scene may
 /// take says so in its first line: with the fixed step that is the same each run, as long as no
 /// scene plays the transport (which repaints by the clock).
 pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene) -> Result<String, String> {
     std::thread::scope(|scope| {
         scope
             .spawn(|| {
+                suhina_ui::kit::platform::set(suhina_ui::kit::platform::Platform::Linux);
                 let mut h = crate::headless((scene.app)()?, subject, scene.width);
                 (scene.drive)(&mut h)?;
                 // A background picture is read on another thread: wait for it before the scene

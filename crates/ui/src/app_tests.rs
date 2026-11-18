@@ -786,7 +786,7 @@ fn wide_green_rects(css: &str) -> Vec<Rect> {
 /// How far down the window's own bars start: where Suhina draws its title bar (Windows), the
 /// application bar's 28 points, its line included, are above the menu bar.
 fn application_bar() -> f32 {
-    if cfg!(target_os = "windows") { 28.0 } else { 0.0 }
+    if crate::kit::platform::current().draws_own_title_bar() { 28.0 } else { 0.0 }
 }
 
 #[test]

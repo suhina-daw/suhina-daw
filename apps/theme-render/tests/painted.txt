@@ -1,5 +1,6 @@
-# What each built-in theme paints in each scene on linux: `scene theme digest`, written by
-# `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/painted.rs).
+# What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
+# digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
+# (tests/painted.rs).
 agent-dialog catppuccin-latte 8afe1a222fa559d9
 agent-dialog catppuccin-mocha 835d9d094fa2e2b4
 agent-dialog catppuccin-mocha@macchiato b8dc5aa880a5763e

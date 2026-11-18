@@ -509,3 +509,14 @@ fn alt_shift_up_and_down_step_the_velocity_range() {
     }
     assert!(Keymap::default().conflicts().is_empty());
 }
+
+/// Menus write a key with the system's signs where the window looks like macOS, and as the
+/// keymap file does elsewhere: the system the window looks like decides, not the one built for.
+#[test]
+fn a_key_is_shown_as_the_window_s_system_writes_it() {
+    use crate::kit::platform::{self, Platform};
+    let key = Shortcut::parse("Ctrl+Shift+D").unwrap();
+    assert_eq!(platform::with(Platform::MacOs, || key.display()), "⇧⌘D");
+    assert_eq!(platform::with(Platform::Linux, || key.display()), "Ctrl+Shift+D");
+    assert_eq!(platform::with(Platform::Windows, || key.display()), "Ctrl+Shift+D");
+}

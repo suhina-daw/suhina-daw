@@ -5,6 +5,7 @@ type: spec
 status: draft
 last_verified: 2026-11-18
 covers:
+  - crates/ui/src/kit/platform.rs
   - crates/ui/src/kit/session_geometry.rs
   - crates/ui/src/kit/artwork_png.rs
   - crates/ui/src/kit/artwork.rs
@@ -1295,9 +1296,10 @@ repainting every frame in a scene. `--budget` prints the style engine's counts i
 `suhina-theme-render` draws each scene in every built-in theme and variant without a GPU, and Suhina
 Studio once more with the style engine on, and lists what the last frame paints: each shape's
 place and size to a quarter point, its colours, its text and its texture by name. Each listing's
-digest is held in `apps/theme-render/tests/painted/<system>.txt`, one for macOS and one for Linux
-(some text, such as shortcuts, differs between them; a run that differs prints its whole file, so
-one system's file can be taken from its CI run). Each drawing runs on a thread of its own, so none
+digest is held in `apps/theme-render/tests/painted.txt`, one file for every system: the scenes
+are drawn with the window looking like Linux wherever they run (`crate::kit::platform`), so the
+text that differs between systems (shortcuts as `Ctrl+C` or `⌘C`, the plug-in formats Settings
+names, the title bar Suhina draws on Windows) is the same in every run. Each drawing runs on a thread of its own, so none
 depends on the one before. A change that differs fails the test, naming the scenes and
 themes; one that means to change a look records the new digests with `SUHINA_BLESS=1` and says why,
 and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare before and after. The About

@@ -3352,7 +3352,7 @@ impl App {
             .unwrap_or_default();
         // The application bar is the window's title bar where Suhina draws its own (Windows); where
         // the system draws one, it would be a second.
-        if cfg!(target_os = "windows") {
+        if crate::kit::platform::current().draws_own_title_bar() {
             let bar = crate::kit::element::APPLICATION_BAR.enter();
             egui::Panel::top("application-bar")
                 .exact_size(bar_height(ui, &bar, 28.0))
