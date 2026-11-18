@@ -3,7 +3,7 @@ description: Render threads - the pool of worker threads that renders chains bes
 read_when: render threads, worker pool, render workers, SUHINA_RENDER_THREADS, audio.setRenderThreads, several cores, multicore, parallel rendering, missed block, render blocks late, bit-identical, lane
 type: spec
 status: draft
-last_verified: 2026-11-17
+last_verified: 2026-11-18
 covers:
   - crates/engine/src/pool.rs
   - crates/engine/src/pool_tests.rs
