@@ -135,6 +135,12 @@ fn the_scenes_cover_the_views_the_devices_and_the_floating_surfaces() {
         "start-panel",
         "control-bar-toggles",
         "grid-menu",
+        "quantize-menu",
+        "count-in-menu",
+        "time-signature-menu",
+        "new-theme-dialog",
+        "cpu",
+        "detail-beside",
     ] {
         assert!(names.iter().any(|n| n == wanted), "{wanted} in {names:?}");
     }
@@ -179,4 +185,60 @@ fn the_scenes_plug_in_catalogue_is_the_fixture_alone() {
     let mut names: Vec<String> = app.projects_mut().plugin_env().catalog.plugins().map(|p| p.name.clone()).collect();
     names.sort();
     assert_eq!(names, ["Test Delay", "Test Sampler", "Test Synth"]);
+}
+
+/// A scene driven in Suhina Studio, with `pointer` done after it when there is one.
+fn driven(
+    name: &str,
+    pointer: Option<scenes::Pointer>,
+) -> Result<egui_kittest::Harness<'static, suhina_ui::App>, String> {
+    let scene = scenes::find(name).ok_or("no such scene")?;
+    let scene = match pointer {
+        Some(pointer) => scenes::with_pointer(scene, pointer),
+        None => scene,
+    };
+    let theme = Subject::built_in("suhina-studio").ok_or("no such theme")?;
+    let mut h = headless((scene.app)()?, &theme, scene.width);
+    (scene.drive)(&mut h)?;
+    Ok(h)
+}
+
+/// #1549: the renderer has no audio engine, so without a held figure the toolbar shows the RAM
+/// alone.
+#[test]
+fn the_cpu_scene_shows_the_held_load() {
+    use egui_kittest::kittest::Queryable;
+    let h = driven("cpu", None).unwrap();
+    assert!(h.query_by_label("CPU load 25.0%").is_some(), "the CPU read-out shows");
+    let h = driven("launcher", None).unwrap();
+    assert!(h.query_all_by_label_contains("CPU load").next().is_none(), "no CPU without an engine");
+}
+
+/// #1549: with the device layout set to Stack, Keys' devices stand beside the view, to the right
+/// of the Launcher's last column.
+#[test]
+fn the_detail_beside_scene_puts_the_devices_beside_the_view() {
+    use egui_kittest::kittest::Queryable;
+    let h = driven("detail-beside", None).unwrap();
+    let main = h.query_by_label("Stop all clips").unwrap().rect();
+    let device = h.query_by_label("Remove Compressor").unwrap().rect();
+    assert!(device.left() >= main.right(), "the devices {device:?} are right of the view {main:?}");
+    assert!(device.top() < main.bottom(), "and beside it, not under it");
+}
+
+/// #1549: `--hover` rests the pointer on the control and `--press` holds its button down there;
+/// a label no control has is refused by name.
+#[test]
+fn a_pointer_is_done_after_the_scene_on_the_labelled_control() {
+    use egui_kittest::kittest::Queryable;
+    let label = "Record into the arrangement";
+    let h = driven("launcher", Some(scenes::Pointer::Hover(label.into()))).unwrap();
+    let at = h.query_by_label(label).unwrap().rect();
+    let (over, down) = h.ctx.input(|i| (i.pointer.hover_pos(), i.pointer.primary_down()));
+    assert!(over.is_some_and(|p| at.contains(p)) && !down, "hovered, not pressed: {over:?} in {at:?}");
+    let h = driven("launcher", Some(scenes::Pointer::Press(label.into()))).unwrap();
+    let (over, down) = h.ctx.input(|i| (i.pointer.hover_pos(), i.pointer.primary_down()));
+    assert!(over.is_some_and(|p| at.contains(p)) && down, "pressed there: {over:?} in {at:?}");
+    let e = driven("launcher", Some(scenes::Pointer::Hover("No such control".into()))).err().unwrap();
+    assert!(e.contains("No such control"), "{e}");
 }

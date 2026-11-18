@@ -17,8 +17,10 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use suhina_theme_render::painted::Drawing;
 use suhina_theme_render::scenes::Scene;
 use suhina_theme_render::{Subject, painted, scenes};
 
@@ -58,9 +60,9 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
         .collect()
 }
 
-/// Every (scene, theme) listing, drawn by as many workers as the machine has cores; each drawing
+/// Every (scene, theme) drawing, drawn by as many workers as the machine has cores; each drawing
 /// is on a thread of its own ([`painted::scene`]).
-fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<String, String>> {
+fn drawings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<Drawing, String>> {
     let jobs: Vec<(&Scene, &Drawn)> = scenes.iter().flat_map(|scene| drawn.iter().map(move |d| (scene, d))).collect();
     let next = AtomicUsize::new(0);
     let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
@@ -76,20 +78,50 @@ fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Res
                 })
             })
             .collect();
-        handles.into_iter().flat_map(|handle| handle.join().unwrap_or_default()).collect()
+        // A worker that panicked fails the test: its drawings are missing, and a recording
+        // written without them would be partial.
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
+            .collect()
     })
 }
 
+/// Every scene but [`LEFT_OUT`] drawn in every built-in theme and variant, `(scene, theme)` to its
+/// drawing: drawn once for the test binary, and shared by the tests of what is painted and what is
+/// cut off (`cut.rs`).
+pub fn all() -> &'static BTreeMap<(String, String), Result<Drawing, String>> {
+    static ALL: OnceLock<BTreeMap<(String, String), Result<Drawing, String>>> = OnceLock::new();
+    ALL.get_or_init(|| {
+        let scenes: Vec<Scene> =
+            scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
+        drawings(&scenes, &drawn())
+    })
+}
+
+/// One test for both recordings: nextest runs each test in a process of its own, and two tests
+/// would each draw every scene in every theme (the slowest thing in the workspace's tests). Both
+/// are checked even when the first differs, so one run shows both files.
 #[test]
-fn every_built_in_theme_paints_each_scene_as_recorded() {
-    let scenes: Vec<Scene> = scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
-    let drawn = drawn();
-    let listings = listings(&scenes, &drawn);
+fn every_built_in_theme_paints_and_cuts_as_recorded() {
+    let painted = std::panic::catch_unwind(paints_each_scene_as_recorded);
+    super::cut::cuts_off_only_the_texts_recorded();
+    if let Err(panic) = painted {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[allow(clippy::unwrap_used)] // called by the test above, outside a #[test] function
+fn paints_each_scene_as_recorded() {
+    let listings: BTreeMap<&(String, String), Result<&str, &str>> = all()
+        .iter()
+        .map(|(key, drawing)| (key, drawing.as_ref().map(|d| d.listing.as_str()).map_err(String::as_str)))
+        .collect();
     if let Some(folder) = std::env::var_os("SUHINA_PAINTED_DUMP") {
         let folder = PathBuf::from(folder);
         std::fs::create_dir_all(&folder).unwrap();
         for ((scene, theme), listing) in &listings {
-            let text = listing.clone().unwrap_or_else(|e| format!("error: {e}\n"));
+            let text = listing.map(str::to_owned).unwrap_or_else(|e| format!("error: {e}\n"));
             std::fs::write(folder.join(format!("{scene}.{theme}.txt")), text).unwrap();
         }
     }
@@ -100,7 +132,7 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
                 Ok(text) => format!("{:016x}", painted::digest(text)),
                 Err(e) => format!("error:{}", e.replace(char::is_whitespace, "_")),
             };
-            (key.clone(), digest)
+            ((*key).clone(), digest)
         })
         .collect();
     let mut text = String::from(
@@ -166,8 +198,8 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
 fn a_listing_is_the_same_each_time() {
     let scene = scenes::find("launcher").unwrap();
     let subject = Subject::built_in("nord").unwrap();
-    let first = painted::scene(&subject, &scene).unwrap();
-    let second = painted::scene(&subject, &scene).unwrap();
+    let first = painted::scene(&subject, &scene).unwrap().listing;
+    let second = painted::scene(&subject, &scene).unwrap().listing;
     assert!(first.lines().count() > 100, "the launcher paints: {first}");
     let differ: Vec<(usize, (&str, &str))> =
         first.lines().zip(second.lines()).enumerate().filter(|(_, (a, b))| a != b).take(5).collect();
