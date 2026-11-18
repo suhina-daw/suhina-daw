@@ -39,6 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.diff.outputs.code }}
+      pack: ${{ steps.diff.outputs.pack }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,15 +54,24 @@ jobs:
               || github.event.before }}
         run: |
           if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
+            printf 'code=true\npack=true\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          code=$(git diff --name-only "$BASE" HEAD \
+          changed=$(git diff --no-renames --name-only "$BASE" HEAD)
+          code=$(printf '%s\n' "$changed" \
             | grep -Ev '^docs/|\.md$|^LICENSE$|^NOTICE$|^scripts/|^\.github/' || true)
-          if git diff --name-only "$BASE" HEAD | grep -qx '\.github/workflows/ci\.yml'; then
+          if printf '%s\n' "$changed" | grep -qx '\.github/workflows/ci\.yml'; then
             code=true
           fi
           if [ -n "$code" ]; then echo "code=true"; else echo "code=false"; fi >> "$GITHUB_OUTPUT"
+          # The shipped pack's data audits (.config/nextest.toml › ci-pr) read the pack, the
+          # presets and the two NAM devices with what they are built from; a pull request runs them
+          # only when one of these changes. The merge queue and main always run them.
+          if printf '%s\n' "$changed" | grep -Eq '^(packs/|presets/|devices/nam-amp-modeler/|devices/nam-cab-loader/|crates/(dsp|device-api|fs|device-registry)/|third_party/nam-rs/|Cargo\.(toml|lock)$|\.config/nextest\.toml$|\.github/workflows/ci\.yml$)'; then
+            echo "pack=true"
+          else
+            echo "pack=false"
+          fi >> "$GITHUB_OUTPUT"
 
   # Runs on every change, documentation included.
   docs:
@@ -156,8 +166,10 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all --check
 
+  # clippy, the documentation and the vendored code's own tests; the workspace's tests run in the
+  # `test` job below, at the same time.
   check:
-    name: clippy and tests (${{ matrix.os }})
+    name: clippy (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     strategy:
@@ -167,9 +179,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install ALSA headers (cpal) and an X server for plug-in editors (Xvfb)
+      - name: Install ALSA headers (cpal)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev xvfb
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy
@@ -216,23 +228,68 @@ jobs:
         if: runner.os == 'Linux'
         env:
           RUSTDOCFLAGS: -D warnings -A rustdoc::private_intra_doc_links
+
+  # The workspace's tests, run by cargo-nextest (.config/nextest.toml) in three partitions per
+  # system, each on a runner of its own (docs/releasing.md › How CI runs the tests). `cargo test`
+  # ran the test binaries one after another, 11 to 19 minutes of a 16 to 22 minute step; nextest
+  # runs the tests of every binary side by side, and each partition runs a third of each binary's
+  # tests (slice: the tests in order, dealt out in turn). Each partition compiles the tests itself.
+  test:
+    name: tests (${{ matrix.os }}, ${{ matrix.partition }}/3)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        partition: [1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install ALSA headers (cpal) and an X server for plug-in editors (Xvfb)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev xvfb
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      # The partitions build the same thing, so they share one cache, which the first saves on
+      # main (the other two would only race it to the same key).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.partition == 1 }}
+      - name: Install cargo-nextest
+        shell: bash
+        run: scripts/install_nextest.sh
       # On Linux under a virtual X server, so the plug-in editor tests open real windows.
-      - run: cargo test --workspace
-        if: runner.os != 'Linux'
       # -noreset: without it the X server resets as its last client leaves, and a test that opens
       # the next window at that moment has its connection reset.
-      - run: xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" cargo test --workspace
-        if: runner.os == 'Linux'
+      # A pull request that changes none of the pack's inputs leaves out its data audits
+      # (.config/nextest.toml › ci-pr); the merge queue and main run them.
+      - name: Tests (partition ${{ matrix.partition }} of 3)
+        shell: bash
+        env:
+          PROFILE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.pack != 'true' && 'ci-pr' || 'ci' }}
+        run: |
+          run=(cargo nextest run --workspace --profile "$PROFILE" --partition "slice:${{ matrix.partition }}/3")
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" "${run[@]}"
+          else
+            "${run[@]}"
+          fi
       # The engine's tests again with renderers on 4 threads (ADR 0038 › 16): a render on several
       # threads must equal the render on one, bit for bit. A renderer that finds no free lane of
       # the process's pool (past 16 at once) renders alone, and a block with fewer than 4 chains
-      # without plug-ins stays on the render thread.
-      - name: Engine tests on 4 render threads
-        run: cargo test -p suhina-engine
+      # without plug-ins stays on the render thread. Split like the rest: each partition runs its
+      # share.
+      - name: Engine tests on 4 render threads (partition ${{ matrix.partition }} of 3)
+        run: cargo nextest run -p suhina-engine --profile ci --partition "slice:${{ matrix.partition }}/3"
         env:
           SUHINA_RENDER_THREADS: "4"
+      # nextest does not run documentation tests; the first partition runs them with cargo.
+      - name: Documentation tests
+        if: matrix.partition == 1
+        run: cargo test --workspace --doc
 
-  # Not part of `ci`: a macOS failure is reported but does not block merging.
+  # Not part of `ci`: a macOS failure is reported but does not block merging. One runner: the
+  # tests are not split here.
   check-macos:
     name: clippy and tests (macos-latest)
     needs: changes
@@ -243,14 +300,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy
-      # Only main saves, as in the job above.
+      # Only main saves, as in the jobs above.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install cargo-nextest
+        run: scripts/install_nextest.sh
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo nextest run --workspace --profile "$PROFILE"
+        env:
+          PROFILE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.pack != 'true' && 'ci-pr' || 'ci' }}
+      - run: cargo test --workspace --doc
 
   # Pull requests from forks: every commit must carry a Signed-off-by line (Developer
   # Certificate of Origin, CONTRIBUTING.md). Branches of this repository are the maintainers', and
@@ -307,7 +369,7 @@ jobs:
   # on pull requests and in the merge queue alike, so the queue waits on the same check.
   ci:
     if: always()
-    needs: [changes, docs, fmt, check, dco, deny, depends-on, settings-guide]
+    needs: [changes, docs, fmt, check, test, dco, deny, depends-on, settings-guide]
     runs-on: ubuntu-latest
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
