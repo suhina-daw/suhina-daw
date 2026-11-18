@@ -389,6 +389,7 @@ impl ThemeFiles {
             let mut file = Variant::of(theme).unwrap_or_else(|| Variant {
                 id: variant.into(),
                 name: variant.into(),
+                light: theme.vars.light,
                 values: theme.vars.values.clone(),
             });
             file.id = variant.into();

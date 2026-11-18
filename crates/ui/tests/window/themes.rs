@@ -340,6 +340,7 @@ fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
     let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), sheet);
     assert!(warnings.is_empty(), "{warnings:?}");
     let dim = suhina_ui::kit::theme_vars::Variant {
+        light: None,
         id: "dim".into(),
         name: "Dim".into(),
         values: [("--accent".to_string(), "#ABCDEF".to_string())].into(),

@@ -476,6 +476,11 @@ impl Look {
         self.themed(Paint::OwnColor).unwrap_or(token)
     }
 
+    /// The item's own `color` ([`Paint::OwnColor`]), where a theme's rule on it gives one.
+    pub fn own_color(&self) -> Option<Color32> {
+        self.themed(Paint::OwnColor)
+    }
+
     /// The item's text colour, inherited from a sheet's rule around it too; else `token`.
     pub fn color_or(&self, token: Color32) -> Color32 {
         self.themed(Paint::Color).unwrap_or(token)

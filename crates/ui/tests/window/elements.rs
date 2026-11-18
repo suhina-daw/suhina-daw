@@ -481,8 +481,9 @@ fn fills_at(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
     fn walk(shape: &egui::Shape, rect: egui::Rect, found: &mut Vec<egui::Color32>) {
         match shape {
             egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, rect, found)),
+            // Within a pixel: a box is painted on whole pixels, half a pixel each way at most.
             egui::Shape::Rect(shape)
-                if (shape.rect.min - rect.min).length() < 0.5 && (shape.rect.max - rect.max).length() < 0.5 =>
+                if (shape.rect.min - rect.min).length() <= 1.0 && (shape.rect.max - rect.max).length() <= 1.0 =>
             {
                 found.push(shape.fill)
             }

@@ -187,6 +187,7 @@ pub(in crate::kit) fn box_begin(
     if !rect.is_positive() || !rect.is_finite() {
         return 0.0;
     }
+    let rect = on_pixels(painter, rect);
     let radius = style.filter(|s| s.authored.radius).map_or(radius, |s| s.radius);
     let radius = radius.min(rect.height().min(rect.width()) / 2.0).max(0.0);
     let fill = style.filter(|s| s.authored.background).map_or(fill, |s| s.background);
@@ -212,6 +213,14 @@ pub(in crate::kit) fn box_begin(
     }
     edge(painter, rect, radius, style);
     radius
+}
+
+/// `rect` on whole pixels, when it stays a box there. egui puts a plain fill and a border on whole
+/// pixels as it draws them, but not a gradient's mesh: a box at a fraction of a pixel (a device
+/// panel's control, scaled) showed its gradient face a pixel past its border on one side.
+fn on_pixels(painter: &Painter, rect: Rect) -> Rect {
+    let snapped = egui::emath::GuiRounding::round_to_pixels(rect, painter.pixels_per_point());
+    if snapped.is_positive() { snapped } else { rect }
 }
 
 /// What an element paints once its contents are: its outline, over them.

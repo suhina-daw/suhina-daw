@@ -212,6 +212,69 @@ fn device_controls(theme: &str, device: &str, user: Option<&str>) -> (Computed, 
     styles.unwrap()
 }
 
+/// A sheet asks for the variant's declared colour scheme with `prefers-color-scheme` and
+/// `light-dark()`, and its answers change when the scheme does: a device panel picks its artwork.
+#[test]
+fn a_sheet_follows_the_variants_declared_colour_scheme() {
+    let device = "@media (prefers-color-scheme: light) { #cutoff { display: none; } } \
+                  #cutoff { color: light-dark(#ffffff, #000000); }";
+    let ctx = egui::Context::default();
+    let mut seen = Vec::new();
+    for light in [false, true, false] {
+        skin::configure(&skin::Skin { css: Some(Arc::from("")), light, ..Default::default() });
+        let mut style = None;
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _frame = frame(ui);
+                let _window = test_el("window").enter();
+                let _panel = test_el("device-panel").id("track-1-device-0").sheet(Some(device)).enter();
+                style = test_el("device-control").id("cutoff").enter().style();
+            })
+            .textures_delta
+            .clear();
+        }
+        let style = style.expect("a style");
+        seen.push((style.keyword(Property::Display), style.color));
+    }
+    skin::configure(&skin::Skin::default());
+    let (white, black) = (Color32::WHITE, Color32::BLACK);
+    assert_eq!(seen, [(None, black), (Some("none"), white), (None, black)]);
+}
+
+/// A drop-down's list takes `popup` as the drop-down sees it, so a device panel's sheet frames
+/// the lists of its own drop-downs, and another panel's keep the theme's.
+#[test]
+fn a_device_sheet_frames_its_own_drop_downs_lists() {
+    prepare("popup { background-color: #102030; }", 800.0);
+    let ctx = egui::Context::default();
+    let mut menus = Vec::new();
+    for _ in 0..3 {
+        menus.clear();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = frame(ui);
+            let _window = test_el("window").enter();
+            for panel in ["track-1-device-0", "track-1-device-1"] {
+                let sheet = panel.ends_with('0').then_some("popup { background-color: #ff8000; radius: 6px; }");
+                let _panel = test_el("device-panel").id(panel).sheet(sheet).enter();
+                let _dropdown = crate::kit::element::DROPDOWN.enter();
+                menus.push(crate::kit::style_class::popup_in_scope());
+            }
+        })
+        .textures_delta
+        .clear();
+    }
+    skin::configure(&skin::Skin::default());
+    let own = menus[0].clone().expect("the panel's own list");
+    assert_eq!((own.background, own.authored.radius), (Color32::from_rgb(0xff, 0x80, 0x00), true));
+    let other = menus[1].clone().expect("the theme's list");
+    assert_eq!((other.background, other.authored.radius), (Color32::from_rgb(0x10, 0x20, 0x30), false));
+    // What egui frames the list with.
+    let mut visuals = egui::Visuals::dark();
+    crate::kit::style_class::apply_menu(&own, &mut visuals);
+    assert_eq!(visuals.window_fill, Color32::from_rgb(0xff, 0x80, 0x00));
+    assert_eq!(visuals.menu_corner_radius, egui::CornerRadius::same(6));
+}
+
 #[test]
 fn a_device_sheet_styles_its_own_panel_by_control_id_and_never_leaks() {
     let (styled, other, browser) = device_controls(
@@ -1183,6 +1246,43 @@ fn the_ruler_loop_region_and_playhead_take_their_classes() {
     );
 }
 
+/// The lines under the ruler and the loop bar run across the time area, where those rows are,
+/// and not through the header column's corner beside them (#1487 B10).
+#[test]
+fn the_ruler_and_loop_bar_lines_stay_in_the_time_area() {
+    use crate::arrangement::{arrangement_view, timeline};
+    let timeline = timeline::Timeline::build(&crate::demo::demo_project(), None);
+    let css = "ruler { background-color: #FF0000; } separator[kind=\"row\"] { color: #FF00FF; }";
+    for headers_left in [true, false] {
+        let mut state = arrangement_view::ArrangementViewState::default();
+        state.headers_left = headers_left;
+        let shapes = painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
+        let ruler = rects(&shapes).into_iter().find(|r| r.fill == egui::Color32::RED).expect("the ruler").rect;
+        // The two row lines under the ruler and the loop bar, above the first track.
+        let lines: Vec<egui::Rangef> = shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::LineSegment { points, stroke }
+                    if stroke.color == egui::Color32::from_rgb(0xFF, 0, 0xFF)
+                        && points[0].y == points[1].y
+                        && points[0].y < ruler.bottom() + 30.0 =>
+                {
+                    Some(egui::Rangef::new(points[0].x.min(points[1].x), points[0].x.max(points[1].x)))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(lines.len(), 2, "headers left: {headers_left}, {lines:?}");
+        for line in lines {
+            assert!(
+                line.min >= ruler.left() - 0.5 && line.max <= ruler.right() + 0.5,
+                "headers left: {headers_left}, {line:?} leaves the ruler's {:?}",
+                ruler.x_range()
+            );
+        }
+    }
+}
+
 /// Zoomed far out over a large project, the clips in view fill the style tree; the playhead, drawn
 /// over them last, keeps its colour all the same instead of turning transparent.
 #[test]
@@ -2059,4 +2159,85 @@ fn a_resolve_works_out_only_what_changed_in_every_built_in_theme() {
         assert_eq!(back, 0, "{name}: a tree seen before takes every style from the cache");
     }
     skin::configure(&skin::Skin::default());
+}
+
+/// A dial's rim arc is a sixth of its radius wide, so a small dial's is thin for its size as a
+/// large one's (#1487 S4: it was 4 points at every size), unless the sheet gives the dial a
+/// `border-width`.
+#[test]
+fn a_dials_rim_scales_with_it_unless_the_sheet_sets_its_width() {
+    let rims = |css: &str| {
+        let shapes = painted(css, |ui| {
+            for (x, size) in [(40.0, 24.0), (200.0, 96.0)] {
+                crate::kit::widgets::dial(ui.painter(), egui::pos2(x, 100.0), size, 0.5, None);
+            }
+        });
+        shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Path(path) if !path.closed => Some(path.stroke.width),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(rims(""), [2.0, 8.0]);
+    assert_eq!(rims("knob[kind=\"dial\"] { border-width: 3px; }"), [3.0, 3.0]);
+}
+
+/// Settings, docked over the views, blurs them behind it where its rule asks, and is sharp with
+/// no rule, as it was (#1487 F4); the sheet takes the property there without a notice.
+#[test]
+fn settings_blurs_the_window_behind_it_only_where_its_rule_asks() {
+    let asks = |css: &str| {
+        let asked = std::cell::Cell::new(None);
+        painted(css, |_| {
+            let settings = crate::kit::element::SETTINGS.enter();
+            asked.set(Some(super::super::floating::asks_to_blur(settings.style())));
+        });
+        asked.get().expect("drawn")
+    };
+    assert!(!asks(""));
+    assert!(asks("settings { backdrop-filter: blur(12px); }"));
+    assert!(!asks("settings { backdrop-filter: none; }"));
+    let sheet = suhina_style::sheet::Sheet::parse("settings { backdrop-filter: blur(12px); }").unwrap();
+    assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
+}
+
+/// A box at a fraction of a pixel paints its gradient face on whole pixels, as egui puts its
+/// border: a scaled device panel's buttons showed a light edge past their border, on one side or
+/// another as the panel moved or zoomed.
+#[test]
+fn a_box_at_a_fraction_of_a_pixel_paints_its_gradient_on_whole_pixels() {
+    prepare(
+        "button { background-image: linear-gradient(180deg, #ffffff 0%, #000000 100%); border-width: 1px; border-color: #ff0000; }",
+        800.0,
+    );
+    let ctx = egui::Context::default();
+    let mut shapes = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = frame(ui);
+            let button = test_el("button").enter();
+            let rect = Rect::from_min_size(egui::pos2(10.4, 20.3), Vec2::new(30.5, 15.2));
+            button.paint_with(
+                ui.painter(),
+                rect,
+                crate::kit::element::Native { radius: 0.0, fill: Color32::TRANSPARENT },
+            );
+        });
+        output.textures_delta.clear();
+        shapes = output.shapes;
+    }
+    skin::configure(&skin::Skin::default());
+    let vertices: Vec<egui::Pos2> = shapes
+        .iter()
+        .filter_map(|shape| match &shape.shape {
+            egui::Shape::Mesh(mesh) => Some(mesh.vertices.iter().map(|v| v.pos).collect::<Vec<_>>()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert!(!vertices.is_empty(), "the gradient is a mesh");
+    let (left, top) = vertices.iter().fold((f32::MAX, f32::MAX), |(x, y), p| (x.min(p.x), y.min(p.y)));
+    assert_eq!((left, top), (10.0, 20.0), "the face starts where the border does");
 }

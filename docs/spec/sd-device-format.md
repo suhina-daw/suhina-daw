@@ -3,7 +3,7 @@ description: Version 6 of the data-only Suhina device graph format, SDK, track l
 read_when: .sd, Suhina device, device graph, device SDK, community effect, visual node, device UI
 type: spec
 status: current
-last_verified: 2026-11-07
+last_verified: 2026-11-18
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-sdk/Cargo.toml
@@ -349,7 +349,9 @@ host applies style tiers in order (ADR 0031 › Device panels use the same style
 A higher tier wins over a lower one even against `!important`; within a tier importance,
 `@layer`, specificity and source order apply. Each control is a `device-control` element whose id
 is the control's `id`, so `#cutoff { color: #ffd27f; accent-color: #ff8a00; }` styles the control
-`cutoff`. Built-in widgets take `color` (text and ink), `background-color` (body), `border-color`
+`cutoff`. `image: none` keeps a theme's artwork off a widget, which then draws its CSS look
+(`button { image: none; background-image: linear-gradient(…); }`), and an on button is
+`button[checked]`. Built-in widgets take `color` (text and ink), `background-color` (body), `border-color`
 and `accent-color` (arc, switched-on fill) from it; what a sheet leaves out keeps the theme. A
 sheet that does not parse is ignored and the panel keeps the theme.
 

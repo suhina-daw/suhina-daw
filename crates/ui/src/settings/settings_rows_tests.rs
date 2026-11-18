@@ -165,12 +165,21 @@ fn a_search_finds_a_setting_by_a_word_of_its_description_or_its_group() {
     assert!(by("previews").contains(&"Preview selected file"), "the group's name");
 }
 
-/// The note under Editors is the one for this system; a system that can embed needs none.
+/// The note under Editors is the one for the system the window looks like; a system that can
+/// embed needs none.
 #[test]
 fn the_editors_note_is_the_one_for_this_system() {
-    assert_eq!(editors_note(true), None);
-    let expected = if cfg!(target_os = "macos") { EDITORS_NOTE_EMBED } else { EDITORS_NOTE_NONE };
-    assert_eq!(editors_note(false), Some(expected));
+    use crate::kit::platform::{self, Platform};
+    for (system, expected) in [
+        (Platform::MacOs, EDITORS_NOTE_EMBED),
+        (Platform::Linux, EDITORS_NOTE_NONE),
+        (Platform::Windows, EDITORS_NOTE_NONE),
+    ] {
+        platform::with(system, || {
+            assert_eq!(editors_note(true), None);
+            assert_eq!(editors_note(false), Some(expected), "on {system:?}");
+        });
+    }
 }
 
 /// Both notes under Editors fit the row's one line, measured in the window's own fonts:

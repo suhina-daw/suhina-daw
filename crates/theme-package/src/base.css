@@ -35,6 +35,9 @@ progress-fill { background-color: var(--accent); }
 
 /* Where something dragged lands: the line it goes in at, and the outline of the place it goes. */
 drop-target[kind="insert"], drop-target[kind="area"] { color: var(--accent); }
+/* The slot after a chain's last device that a dropped effect goes in: a + on a control's fill. */
+drop-target[kind="append"] { background-color: var(--control-background); border-radius: 4px; color: var(--text-hint); }
+drop-target[kind="append"]:hover { background-color: var(--control-hoverBackground); color: var(--text-primary); }
 
 /* A browser row's icon, by the kind of item; folders, headings and projects take the row's text. */
 browser-icon[kind="midi"], browser-icon[kind="midi-effect"] { color: var(--browser-icon-midi); }
@@ -431,13 +434,11 @@ piano-range, piano-time-selection { accent-color: var(--accent); }
 piano-insert-mark { background-color: var(--text-primary); }
 piano-clip-strip { color: var(--text-primary); }
 piano-clip-strip[selected] { color: var(--text-inverse); }
-group[kind="piano-roll-rows"] { border-color: var(--border-strong); }
 piano-roll-toolbar separator[kind="bar"] { color: var(--border-strong); }
 piano-tool { color: var(--text-secondary); }
 piano-tool[checked] { color: var(--text-primary); background-color: var(--control-activeBackground); }
 piano-tool:hover { background-color: var(--control-hoverBackground); }
 piano-tool:disabled { color: var(--text-hint); }
-group[kind="piano-roll-rows"] piano-tool:hover { color: var(--text-primary); }
 piano-roll-toolbar bar-item[kind="menu"] { color: var(--text-secondary); }
 piano-roll-toolbar bar-item[kind="menu"][muted] { color: var(--text-hint); }
 piano-roll-toolbar bar-item[kind="menu"][checked] { color: var(--text-primary); }

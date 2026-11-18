@@ -3,7 +3,7 @@ description: Rendering the mix to an audio file the user chose: the File › Exp
 read_when: export, export dialog, mixdown, bounce, render to a file, render the mix, render a track, render a group, stems, premaster, source, node, WAV, AIFF, FLAC, Ogg Vorbis, MP3, bit depth, 32-bit float, 24-bit, 16-bit, dither, normalize, sample rate, tail, range, loop region, project.export, overwrite, PickField, export a project, parallel rendering, thread count, pre-roll, deterministic, check it renders
 type: spec
 status: draft
-last_verified: 2026-10-24
+last_verified: 2026-11-18
 covers:
   - crates/automation/src/render.rs
   - crates/engine/src/buses.rs

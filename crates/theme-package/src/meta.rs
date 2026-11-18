@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `theme.json`, a theme's metadata (`docs/spec/theme-skins.md` › Theme folders): the format
-//! version, name, author, description, the default variant's name, the swatch colour, an
-//! optional suggested toolbar arrangement and, with `"base": "none"`, the opt-out of Suhina's
-//! base sheet. The theme's name comes from here, not from its CSS.
+//! version, name, author, description, the default variant's name, the swatch colour, whether
+//! the default variant is light or dark (`color-scheme`), an optional suggested toolbar
+//! arrangement and, with `"base": "none"`, the opt-out of Suhina's base sheet. The theme's name
+//! comes from here, not from its CSS.
 //!
 //! ```json
 //! {
@@ -13,6 +14,7 @@
 //!   "author": "Someone",
 //!   "description": "Dark blue with an orange accent",
 //!   "default-variant": "Dark",
+//!   "color-scheme": "dark",
 //!   "swatch": "color-mix(in oklab, var(--window-background), var(--accent) 30%)"
 //! }
 //! ```
@@ -41,7 +43,7 @@ const MAX_DESCRIPTION: usize = 500;
 /// A swatch value: at most this many bytes.
 const MAX_SWATCH: usize = 512;
 /// How a theme is checked when there is no window to ask: the size `theme_vars` reads a sheet at.
-pub const CHECK_VIEWPORT: Viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+pub const CHECK_VIEWPORT: Viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false, light: false };
 
 /// A theme's `theme.json`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +57,11 @@ pub struct ThemeMeta {
     pub swatch: String,
     /// The suggested toolbar arrangement, kept as written (#1021 reads it).
     pub toolbar: Option<serde_json::Value>,
+    /// Whether the theme's own values (its default variant) are a light look: `"color-scheme":
+    /// "light"`. A theme that does not say is dark. Sheets ask for it with
+    /// `@media (prefers-color-scheme: …)` and `light-dark()`, and the system's parts of the window
+    /// (the title bar) follow it.
+    pub light: bool,
     /// Whether Suhina's base sheet ([`crate::BASE_SHEET`]) applies under the theme: `false` for
     /// `"base": "none"`, which leaves the theme on the user-agent sheet's bare look (plain text on an opaque window).
     pub base: bool,
@@ -73,6 +80,7 @@ impl ThemeMeta {
             default_variant: None,
             swatch: swatch.to_owned(),
             toolbar: None,
+            light: false,
             base: true,
             extra: serde_json::Map::new(),
         }
@@ -142,7 +150,16 @@ impl ThemeMeta {
                 true
             }
         };
-        let known = ["format", "name", "author", "description", "default-variant", "swatch", "toolbar", "base"];
+        let light = match root.get(COLOR_SCHEME).map(scheme) {
+            None => false,
+            Some(Ok(light)) => light,
+            Some(Err(error)) => {
+                warnings.push(format!("{FILE}: {error}"));
+                false
+            }
+        };
+        let known =
+            ["format", "name", "author", "description", "default-variant", "swatch", "toolbar", COLOR_SCHEME, "base"];
         let mut extra = serde_json::Map::new();
         for (key, value) in root.iter().filter(|(key, _)| !known.contains(&key.as_str())) {
             if key != "$schema" {
@@ -150,7 +167,7 @@ impl ThemeMeta {
             }
             extra.insert(key.clone(), value.clone());
         }
-        Ok((Self { name, author, description, default_variant, swatch, toolbar, base, extra }, warnings))
+        Ok((Self { name, author, description, default_variant, swatch, toolbar, light, base, extra }, warnings))
     }
 
     /// The file's text, as Suhina writes it.
@@ -166,6 +183,7 @@ impl ThemeMeta {
             }
         }
         root.insert("swatch".into(), self.swatch.clone().into());
+        root.insert(COLOR_SCHEME.into(), scheme_name(self.light).into());
         if let Some(toolbar) = &self.toolbar {
             root.insert("toolbar".into(), toolbar.clone());
         }
@@ -174,6 +192,23 @@ impl ThemeMeta {
         }
         serde_json::to_string_pretty(&serde_json::Value::Object(root)).unwrap_or_default() + "\n"
     }
+}
+
+/// The key of `theme.json` and of a variant file that says whether its look is light or dark.
+pub const COLOR_SCHEME: &str = "color-scheme";
+
+/// A `color-scheme` value: `true` for `"light"`, `false` for `"dark"`.
+pub fn scheme(value: &serde_json::Value) -> Result<bool, String> {
+    match value.as_str().map(str::trim) {
+        Some("light") => Ok(true),
+        Some("dark") => Ok(false),
+        _ => Err(format!("{COLOR_SCHEME} is \"light\" or \"dark\"")),
+    }
+}
+
+/// How a file writes a `color-scheme`.
+pub fn scheme_name(light: bool) -> &'static str {
+    if light { "light" } else { "dark" }
 }
 
 /// A variant file's values as the `:root` rule they set, from `variants/<id>.json`'s text.
@@ -195,15 +230,23 @@ pub fn variant_sheet(text: &[u8]) -> Result<String, String> {
 }
 
 /// The swatch's colour over `defaults` (sheets of the host's own, such as its registered
-/// properties), the theme's sheet `css` and a variant's sheet: `var()` takes the root values the
-/// sheets give, without applying them.
+/// properties), the theme's sheet `css` and a variant's sheet, in the variant's colour scheme
+/// (`light`): `var()` takes the root values the sheets give, without applying them.
 pub fn swatch_color(
     swatch: &str,
     defaults: &[&Sheet],
     theme: &Sheet,
     variant: Option<&Sheet>,
+    light: bool,
 ) -> Result<[u8; 4], String> {
-    swatch_color_at(swatch, defaults, theme, variant, CHECK_VIEWPORT)
+    swatch_color_at(swatch, defaults, theme, variant, Viewport { light, ..CHECK_VIEWPORT })
+}
+
+/// Whether a variant file (`variants/<id>.json`'s text) says its look is light (`Some(true)`) or
+/// dark; `None` when it does not say, and the variant is as light as the theme's own values.
+pub fn variant_scheme(text: &[u8]) -> Option<bool> {
+    let root: serde_json::Value = serde_json::from_slice(text).ok()?;
+    scheme(root.get(COLOR_SCHEME)?).ok()
 }
 
 /// [`swatch_color`] as a window of `viewport` sees it (`@media` rules that change `:root`).

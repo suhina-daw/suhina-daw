@@ -421,7 +421,10 @@ pub fn show(
         let menu =
             crate::interaction::empty_space::EmptyMenu { selection: &selection, tracks_copied: state.tracks_copied };
         crate::interaction::empty_space::empty_space_menu(&space, &menu, actions);
-        empty_space(ui, &painter, empty, actions);
+        // The buttons stand below the line under the track headers, in the part of the space that
+        // lies beside the slots.
+        let below_headers = Rect::from_min_max(Pos2::new(empty.left(), header.bottom() + 1.0), empty.max);
+        empty_space(ui, &painter, below_headers, actions);
     }
     if let Some(probe) = state.drop.as_mut() {
         let row_of = |y: f32| ((y - bands.top) / slot_pitch()).floor().max(0.0) as usize;
@@ -948,7 +951,7 @@ fn column_header(
     // The header is the track's colour, its name in the text colour that reads on it; a selected
     // track's header is the selection colour every selected header and clip shares (Settings ›
     // Appearance › Selection colour; its own colour with Clip's own colour), with its own colour
-    // in a band along its top, and an outline in its name's colour.
+    // in a band along its top; its column is outlined as a whole (below), not its header again.
     let selection_fill = (selected && !column.mute).then(|| crate::kit::selection::fill(&own)).flatten();
     let fill = selection_fill.unwrap_or_else(|| colour_picker::fill(column.color, column.mute));
     if !crate::kit::skin::paint_in_view(
@@ -975,9 +978,6 @@ fn column_header(
     name_style.paint_background(painter, rect, 0.0);
     // Ink that reads on the fill, unless the sheet gives the name a colour.
     let color = name_style.color_or(theme::text_on(shown));
-    if selected {
-        painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5, color), StrokeKind::Inside);
-    }
     // Nested tracks step in a little; a group's name follows its fold arrow.
     let mut text = rect.shrink2(Vec2::new(PAD, 0.0));
     text.min.x += (column.depth as f32 * 4.0).min(text.width() / 2.0);

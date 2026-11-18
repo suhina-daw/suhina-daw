@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The building blocks every view draws with: the theme, widgets, meters, motion, the logo, a
-//! floating list picked from with the keyboard, the scroll bar of a self-drawn list and
-//! waveforms. Nothing here knows about a view.
+//! floating list picked from with the keyboard, the system the window looks like, the scroll bar
+//! of a self-drawn list and waveforms. Nothing here knows about a view.
 
 pub mod artwork;
 pub mod artwork_png;
@@ -19,6 +19,7 @@ pub mod meter;
 pub mod mixer_controls;
 pub mod motion;
 pub mod native_css;
+pub mod platform;
 pub mod scroll;
 pub mod selection;
 pub mod session_geometry;

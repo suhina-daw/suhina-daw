@@ -2708,13 +2708,13 @@
       "page": "Appearance",
       "section": "Background",
       "name": "Background image",
-      "note": "A picture of your own, a PNG file, drawn behind the window's panels",
+      "note": "A picture of your own, a PNG, JPEG or WebP file, drawn behind the window's panels",
       "keys": [
         "background_image"
       ],
-      "sourceFingerprint": "cb84cfb0b6841953122680abcc34e5bfdcaf253ed403faad61c6acf20f748718",
+      "sourceFingerprint": "e46c660e4f0fee56d819e8b04222eb9ae4b33b82d38e4f2cfb49c15634e97976",
       "helpStatus": "reviewed",
-      "description": "Choose a user-owned PNG or type its path. Clear the field to remove it and restore desktop transparency where the GPU host supports it.\n\nWhile displayed, surfaces blend over the image even on transparent hosts. The image is drawn over an opaque fill, so the desktop does not show through it, and nothing is captured from the screen.\n\nImages are decoded away from the UI thread, limited to 32 MiB and 8192 pixels per axis, and displayed at up to 1600 pixels per axis. High Contrast suppresses the image. If loading fails, repair the PNG and choose it again with Browse to retry; failures are not retried continuously.",
+      "description": "Choose a user-owned PNG, JPEG or WebP picture or type its path. Clear the field to remove it and restore desktop transparency where the GPU host supports it.\n\nWhile displayed, surfaces blend over the image even on transparent hosts. The image is drawn over an opaque fill, so the desktop does not show through it, and nothing is captured from the screen.\n\nImages are decoded away from the UI thread, limited to 32 MiB and 8192 pixels per axis, and displayed at up to 1600 pixels per axis. High Contrast suppresses the image. If loading fails, repair the picture and choose it again with Browse to retry; failures are not retried continuously.",
       "options": [],
       "whenToChange": "Choose an image when you want a private decorative backdrop behind neutral panels.",
       "workInProgress": false

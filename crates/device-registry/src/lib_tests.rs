@@ -535,5 +535,19 @@ fn the_amp_modelers_artwork_is_embedded_from_its_files() {
     let face = |c: &&suhina_device_sdk::ui::CustomControl| matches!(&c.widget, Some(suhina_device_sdk::ui::Widget::Dial { image: Some(id), .. }) if id == "knob");
     // Each knob once, the same face on either head.
     assert_eq!(canvas.controls.iter().filter(face).count(), 6, "every knob draws the device's face");
+    // Its toggles are the canvas's buttons, so a theme's button artwork and rules reach them
+    // (#1500): drawn in their own colours they took none of it.
+    for (id, label) in [("eq", "EQ"), ("hq", "HQ"), ("mono", "Mono")] {
+        let toggle = canvas.controls.iter().find(|c| c.id == id).expect("the toggle");
+        assert!(
+            matches!(&toggle.widget, Some(suhina_device_sdk::ui::Widget::Button { label: l, .. }) if l == label),
+            "{id}: {:?}",
+            toggle.widget
+        );
+        assert!(toggle.drawing.is_empty(), "{id} draws as a button, not a drawing of its own");
+    }
+    // The panel's own sheet styles them: its buttons take no theme artwork (`image: none`).
+    let style = canvas.style.as_deref().expect("the amp has a style sheet");
+    assert!(style.contains("button { image: none;"), "{style}");
     assert!(layout_errors().is_empty(), "{:?}", layout_errors());
 }

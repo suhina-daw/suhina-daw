@@ -455,10 +455,8 @@ pub(super) fn track_header(
         drop(lit);
         // Three stacked lines: the lanes under the track.
         let glyph = button.shrink2(Vec2::new(4.0, 4.0));
-        for i in 0..3 {
-            let y = glyph.top() + glyph.height() * i as f32 / 2.0;
-            painter.hline(glyph.x_range(), y, egui::Stroke::new(1.0, text));
-        }
+        let stroke = egui::Stroke::new(1.0, text);
+        super::clip::stacked_lines(painter, glyph.x_range(), glyph.bottom(), glyph.height() / 2.0, stroke);
     }
     let name_visible = parts.name.is_some();
     let mut name = parts.name.unwrap_or(Rect::NOTHING);

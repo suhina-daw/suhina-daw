@@ -68,10 +68,10 @@ impl Shortcut {
         parts.join("+")
     }
 
-    /// The key as menus and Settings show it: as [`Shortcut::text`] writes it, but on macOS with
-    /// the system's signs (⌘C, ⇧⌘D, ⌥⌘M).
+    /// The key as menus and Settings show it: as [`Shortcut::text`] writes it, but where the
+    /// window looks like macOS ([`crate::kit::platform`]) with the system's signs (⌘C, ⇧⌘D, ⌥⌘M).
     pub fn display(&self) -> String {
-        if !cfg!(target_os = "macos") {
+        if !crate::kit::platform::current().writes_key_signs() {
             return self.text();
         }
         let mut text = String::new();
