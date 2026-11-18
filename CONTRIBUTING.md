@@ -33,7 +33,9 @@
 - **CodeRabbit:** reviews every pull request that is not a draft against AGENTS.md
   (`.coderabbit.yaml`) and shows a **CodeRabbit** check beside CI. Its comments are suggestions, not requirements: answer or resolve
   them, and leave DSP and real-time behaviour to the tests and renders. The check is never red and
-  never required. Comment `@coderabbitai review` to run it again.
+  never required. It reviews the push that opens the pull request (or turns a draft ready), not
+  the pushes after it: each review is one of the author's few free reviews an hour. Comment
+  `@coderabbitai review` to review the latest push, also when a review was skipped at the limit.
 - **Codex:** the maintainer requests a review with `@codex review` once the `ci` check has
   finished on the pull request's latest push; contributors ask the maintainer for one. The
   reviewer runs no tests or builds and reads the CI results of the push it reviews. Codex follows
