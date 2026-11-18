@@ -247,7 +247,7 @@ blocking issue is closed.
 ### Merging
 
 Merging is a maintainer's decision. An agent never adds the `ready to merge` label, which approves
-a pull request and sends it to the merge queue
+a pull request and turns on its auto-merge
 ([CONTRIBUTING.md › Merging many pull requests](../CONTRIBUTING.md#merging-many-pull-requests)), and
 never merges or queues a pull request itself unless the person asks for that one. It gets a pull
 request green and mergeable and says it is ready; the maintainer adds the label.

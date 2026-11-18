@@ -157,7 +157,7 @@ batch and nested execution must preserve the caller's restrictions.
 
 Report actionable defects supported by the current code. Keep verified defects, unmeasured
 risks and optional improvements apart. Optional suggestions belong in the summary, not inline
-threads: the merge queue waits until every thread is resolved. State the reviewed head commit
+threads: a pull request merges only once every thread is resolved. State the reviewed head commit
 and material limits; use the severity definitions and reporting limits in the review guide.
 
 Review output does not grant permission to approve, request changes through a formal GitHub

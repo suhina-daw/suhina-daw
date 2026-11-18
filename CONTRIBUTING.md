@@ -44,7 +44,7 @@
   reviewer runs no tests or builds and reads the CI results of the push it reviews. Codex follows
   [AGENTS.md](AGENTS.md#code-review-rules) and
   [`docs/code-review.md`](docs/code-review.md). Actionable inline threads must be answered or
-  resolved before the merge queue takes the pull request; optional suggestions stay in the
+  resolved before the pull request can merge; optional suggestions stay in the
   summary. Hosted review reporting limits are described in the guide.
 - **Asking for a review:** ask a maintainer (**Reviewers** on the pull request). Comments by
   `suhina-bot[bot]` are a maintainer's agent's feedback, posted for them; the bot takes no
@@ -60,7 +60,7 @@ Every crate in `Cargo.lock`, with all features on and for every platform, must h
 that [`deny.toml`](deny.toml) allows: the list in AGENTS.md rule 10, plus a few exceptions, each
 named for one crate with the reason. Dependencies come from crates.io only, and a crate with an
 open RustSec advisory fails unless `deny.toml` ignores it with a reason. The `ci` check runs this
-on every pull request and in the merge queue (`.github/workflows/deny.yml`, called from `ci.yml`),
+on every pull request and on the default branch (`.github/workflows/deny.yml`, called from `ci.yml`),
 and `deny.toml` needs the owner's review like the workflows. Run it locally with the version pinned
 in that workflow:
 
@@ -74,7 +74,7 @@ names a crate Suhina uses, and on Mondays the week's version updates
 ([`.github/dependabot.yml`](.github/dependabot.yml)): minor and patch updates of the Cargo
 workspace grouped in one pull request, the major updates (for a 0.x crate, 0.14 to 0.15) in a
 second one, and the GitHub Actions the workflows use. Every update rewrites `Cargo.lock`, so two
-of them in the merge queue at once conflict; queue one, and after it merges ask the other to rebase
+of them conflict once one merges; merge one, and then ask the other to rebase
 (`@dependabot rebase`). They go through CI and review like any other pull request; a major
 update that changes an API needs the code changed in the same pull request. One that cannot be
 fixed there goes in the `cargo-major` group's `exclude-patterns` in `.github/dependabot.yml`, so it
@@ -130,17 +130,17 @@ build only when no suitable build is available.
 
 ## Merging many pull requests
 
-For maintainers. Merge through the merge queue: on each green pull request press **Merge when
-ready**, and the queue tests the queued pull requests together on top of `next`, in groups, and
-merges them in order, so no one presses *Update branch* by hand. To try several pull requests in
+For maintainers. Pull requests are squashed into `next`, one commit each, as soon as their own
+`ci` is green; there is no merge queue, and no one presses *Update branch* (`next`'s CI and the
+nightly catch two pull requests that break each other before `main` moves). To try several pull requests in
 one build before they merge, run Actions › Test build › Run workflow with their numbers
 (`302 303 304`). A push that only merges `next` into a pull request is not built again; its last
 test build stays linked. [`docs/releasing.md` › Merging many pull requests](docs/releasing.md#merging-many-pull-requests)
-says how the queue is set up and what runs in it.
+says how merging is set up and what runs.
 
 **The `ready to merge` label** does the waiting for you. A maintainer who has read a pull request
 adds it, and [`ready-to-merge.yml`](.github/workflows/ready-to-merge.yml) approves the commit it was
-added on and turns on *Merge when ready* for that commit: the queue takes the pull request once
+added on and turns on auto-merge (squash) for that commit: GitHub merges the pull request once
 `ci` is green and every review thread is resolved (CodeRabbit's too), and a red check stops it.
 Adding the label is the maintainer's approval of that exact commit, regardless of the author, and
 it needs a finished test build of that commit: a successful `/test-build` run whose packages are
@@ -158,7 +158,7 @@ repository's secrets, [`.github/CODEOWNERS`](.github/CODEOWNERS) names the repos
 approval for the protected paths: `ready to merge` alone does not merge such a change, also
 not one from another maintainer. Checked on 2026-11-13 (#1087): #1366, which changed a file that
 then had a code owner, got `ready to merge` from a maintainer who is not the owner, the app's
-approval and *Merge when ready*, and stayed blocked until the owner approved, although the app is
+approval and auto-merge, and stayed blocked until the owner approved, although the app is
 a bypass actor of the main ruleset.
 
 **The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
