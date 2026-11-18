@@ -339,7 +339,10 @@ resolves the dependencies' features for the one package then, and compiled a sha
 
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
---no-fail-fast` does the same), and a test that runs a minute or more is named while it runs.
+--no-fail-fast` does the same), a test that runs a minute or more is named while it runs, and one
+that runs ten minutes is stopped and fails: it has hung, and would otherwise hold its runner until
+the job's six-hour limit, as `crates/engine`'s `an_offline_pools_workers_never_join_real_time_priority`
+did once on Linux (it takes milliseconds).
 nextest spreads tests, not the work inside one: a test that loops over many independent cases
 holds one core for all of them, and sets how short a partition can get. A test binary whose tests
 take turns through a lock inside the binary (a `static Mutex`) needs a test group of one thread
