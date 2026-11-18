@@ -142,6 +142,7 @@ step.
 | The wheel | Scroll along the file |
 | A drag on the waveform (not on a marker) | Pan |
 | **Fit** in the clip panel's Warp part, or a double-click on the ruler | Fit the file again |
+| A drag on the ruler | Up zooms in and down zooms out, the beat where the drag began staying put; sideways scrolls. The pointer is a magnifier over the ruler and hidden while the button is held, as on the piano roll's ruler |
 
 Zoom stays between 0.05 and 20 000 points per beat, scroll between the file's two ends. Another
 clip starts fitted. The zoom and scroll are the view's and are not saved with the project.
