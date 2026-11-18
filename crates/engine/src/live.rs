@@ -591,7 +591,12 @@ impl Live {
         let hearing = || armed.iter().filter(|(_, f)| f.takes(source)).map(|(t, _)| *t);
         let targets = chains
             .iter_mut()
-            .filter(|c| c.instrument && monitored.iter().any(|(t, f)| *t == c.track && f.takes(source)));
+            // The implicit tones, while they are not played, take no live notes either (#1384).
+            .filter(|c| {
+                c.instrument
+                    && !(c.implicit_tones && c.tones_off)
+                    && monitored.iter().any(|(t, f)| *t == c.track && f.takes(source))
+            });
         match event {
             LiveEvent::NoteOn { key, velocity } => {
                 let Some(held) = keys.held.get_mut(usize::from(key)) else { return };

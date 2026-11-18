@@ -254,6 +254,9 @@ The offline render the matrix stands on is parallel, and its result does not dep
 threads ran. These are promises, written down so the first slice does not foreclose them; they
 are built when the slices below need them.
 
+- **Latency is taken out.** Devices with latency (a look-ahead limiter, a plug-in) delay the whole
+  mix by the project's compensated latency; the export renders that much longer and drops it from
+  the start, so the file's first frame is the project's (or the range's) first, as it plays.
 - **Parallel.** An offline render may use every core: independent sources render at the same
   time, and a group sums its children once they are all done. Ranges render in parallel too,
   each starting with a pre-roll so reverb and delay state is warm — the range render of this

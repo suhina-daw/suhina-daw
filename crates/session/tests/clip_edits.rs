@@ -22,6 +22,7 @@ fn note(time: f64, duration: f64, key: u8) -> Note {
 /// an audio clip at beat 16 (index 1); in the launcher's first slot a clip of the same notes.
 fn project(notes: Vec<Note>) -> Project {
     let content = |id: u32, lanes: Vec<ContentLane>| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 8.0,

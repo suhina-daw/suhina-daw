@@ -216,6 +216,7 @@ fn a_stop_during_the_count_in_ends_it_and_a_count_of_nothing_starts_at_once() {
 fn input_track() -> Project {
     Project {
         tracks: vec![Track {
+            folder: false,
             id: TrackId(1),
             name: "Mic".into(),
             color: None,

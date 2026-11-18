@@ -36,6 +36,151 @@ pub struct TrackMenu<'a> {
     pub audio: Option<(&'a AudioInput, u16)>,
     /// Whole tracks have been copied, so Paste can add them (#919).
     pub tracks_copied: bool,
+    /// The project's devices that read a key (sidechain), for Sidechain to.
+    pub key_readers: &'a [KeyReader],
+}
+
+/// A device that reads a key (sidechain), as a track's Sidechain to menu lists it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyReader {
+    /// Its track ([`TrackId::MAIN`] for the main channel's) and place among the track's devices.
+    pub track: TrackId,
+    pub device: usize,
+    /// "Track › Device".
+    pub label: String,
+    /// The track it reads its key from now.
+    pub source: Option<TrackId>,
+    /// The tracks it cannot read from: its own, and those that play into it (a loop).
+    pub refused: Vec<TrackId>,
+}
+
+/// The devices on the project's tracks (not inside a device group) that read a key, in track
+/// order, Main's last (`docs/spec/sidechain.md` › Choosing a source).
+pub fn key_readers(project: &suhina_engine::model::Project) -> Vec<KeyReader> {
+    use suhina_engine::model::ChannelRole;
+    let mut readers = Vec::new();
+    let owners =
+        project.tracks.iter().filter_map(|t| t.channel.map(|c| (t.id, c, project.shown_track_name(t.id)))).chain(
+            project
+                .channels
+                .iter()
+                .find(|c| c.role == ChannelRole::Master)
+                .map(|c| (TrackId::MAIN, c.id, "Main".to_owned())),
+        );
+    for (track, channel_id, name) in owners {
+        let Some(channel) = project.channel(channel_id) else { continue };
+        let mut refused = None;
+        for (index, device) in channel.devices.iter().enumerate() {
+            if device.clip_host || !suhina_session::reads_a_key(device) {
+                continue;
+            }
+            // One walk per reading channel: its own track and the tracks it plays into. The
+            // views build this list every frame, so never a walk per track.
+            let refused = refused
+                .get_or_insert_with(|| {
+                    let after = project.channels_after(channel_id);
+                    project
+                        .tracks
+                        .iter()
+                        .filter_map(|t| t.channel.map(|c| (t.id, c)))
+                        .filter(|&(_, c)| c == channel_id || after.contains(&c))
+                        .map(|(t, _)| t)
+                        .collect::<Vec<_>>()
+                })
+                .clone();
+            let source = device
+                .inputs
+                .first()
+                .and_then(|i| project.tracks.iter().find(|t| t.channel == Some(i.source.channel())))
+                .map(|t| t.id);
+            readers.push(KeyReader {
+                track,
+                device: index,
+                label: format!("{name} › {}", device.name),
+                source,
+                refused,
+            });
+        }
+    }
+    readers
+}
+
+/// How a key's tap point reads in the menus.
+pub fn tap_label(tap: suhina_engine::model::TapPoint) -> &'static str {
+    match tap {
+        suhina_engine::model::TapPoint::PreFx => "Before its devices",
+        suhina_engine::model::TapPoint::PostFx => "After its devices",
+        suhina_engine::model::TapPoint::PostFader => "After its fader",
+    }
+}
+
+/// A device's sidechain choices (`device.setKey`, `device.clearKey`): no key, or one of the
+/// tracks it can read; with a key, where on the track it is read and how loud. The device
+/// panel's Sidechain button and the device's menu show the same.
+pub fn sidechain_choices(
+    ui: &mut Ui,
+    track: TrackId,
+    device: &serde_json::Value,
+    side: &crate::detail::detail_view::SidechainBox,
+    actions: &mut Vec<Action>,
+) {
+    ui.set_min_width(180.0);
+    let key = side.key.as_ref();
+    let set = |source: TrackId, tap: suhina_engine::model::TapPoint, gain: f64| {
+        Action::new(
+            "device.setKey",
+            json!({ "track": track.0, "device": device, "source": source.0, "tap": tap.name(), "gain": gain }),
+        )
+    };
+    if ui.selectable_label(key.is_none(), "None").clicked() {
+        if key.is_some() {
+            actions.push(Action::new("device.clearKey", json!({ "track": track.0, "device": device })));
+        }
+        ui.close();
+    }
+    let (tap, gain) = key.map_or((suhina_engine::model::TapPoint::default(), 0.0), |k| (k.tap, k.gain_db));
+    egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+        for (source, name) in &side.sources {
+            let on = key.is_some_and(|k| k.track == *source);
+            if ui.selectable_label(on, name).clicked() {
+                if !on {
+                    actions.push(set(*source, tap, gain));
+                }
+                ui.close();
+            }
+        }
+    });
+    if side.sources.is_empty() {
+        ui.label("No other track to read");
+    }
+    let Some(key) = key else { return };
+    ui.separator();
+    for choice in suhina_engine::model::TapPoint::ALL {
+        if ui.selectable_label(key.tap == choice, tap_label(choice)).clicked() {
+            if key.tap != choice {
+                actions.push(set(key.track, choice, key.gain_db));
+            }
+            ui.close();
+        }
+    }
+    ui.separator();
+    // The key's level: a drag or a typed value, one undo step when it is let go.
+    let id = Id::unique(("key-gain", track, device.to_string()));
+    let mut draft: f64 = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(key.gain_db.max(-60.0));
+    let response = ui
+        .horizontal(|ui| {
+            ui.label("Gain");
+            ui.add(egui::DragValue::new(&mut draft).range(-60.0..=24.0).speed(0.1).suffix(" dB").max_decimals(1))
+        })
+        .inner;
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, "Sidechain gain"));
+    ui.ctx().data_mut(|d| d.insert_temp(id, draft));
+    if response.drag_stopped() || (response.lost_focus() && !response.dragged()) {
+        if (draft - key.gain_db).abs() > 1e-9 {
+            actions.push(set(key.track, key.tap, draft));
+        }
+        ui.ctx().data_mut(|d| d.remove::<f64>(id));
+    }
 }
 
 /// How a track's audio input reads: "No input", "In 3" or "In 1/2", with its monitoring.
@@ -307,6 +452,74 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
             midi_input_choices(ui, menu.track, input, ports, actions);
         });
     }
+    // The devices on other tracks that can read this track as their key (sidechain): a pick
+    // sets it, a picked one clears it again; the device's own Sidechain choice is the same.
+    let readers: Vec<&KeyReader> =
+        menu.key_readers.iter().filter(|r| !r.refused.contains(&menu.track) && !menu.is_group).collect();
+    if !readers.is_empty() {
+        ui.menu_button("Sidechain to", |ui| {
+            ui.set_min_width(240.0);
+            // A search field over a list that scrolls, as the parameter chooser has: a project
+            // with many keyed devices listed them all, taller than the screen.
+            let query_id = egui::Id::unique(("sidechain-to-query", menu.track.0));
+            // The search starts empty each time the menu opens: what was typed is kept only
+            // while it stays open, frame after frame.
+            let frame = ui.ctx().cumulative_frame_nr();
+            let last: Option<u64> = ui.data(|d| d.get_temp(query_id.with("frame")));
+            if last.is_none_or(|last| last + 1 < frame) {
+                ui.data_mut(|d| {
+                    d.remove::<String>(query_id);
+                    d.remove::<bool>(query_id.with("shown"));
+                });
+            }
+            ui.data_mut(|d| d.insert_temp(query_id.with("frame"), frame));
+            let mut query: String = ui.data(|d| d.get_temp(query_id)).unwrap_or_default();
+            let field = ui.add(
+                egui::TextEdit::singleline(&mut query)
+                    .id(query_id.with("field"))
+                    .hint_text("Search devices")
+                    .desired_width(f32::INFINITY),
+            );
+            field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Search devices"));
+            if !ui.data(|d| d.get_temp::<bool>(query_id.with("shown")).unwrap_or(false)) {
+                field.request_focus();
+                ui.data_mut(|d| d.insert_temp(query_id.with("shown"), true));
+            }
+            ui.data_mut(|d| d.insert_temp(query_id, query.clone()));
+            let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+            let shown: Vec<&&KeyReader> = readers
+                .iter()
+                .filter(|r| {
+                    let label = r.label.to_lowercase();
+                    words.iter().all(|w| label.contains(w.as_str()))
+                })
+                .collect();
+            let height = (ui.ctx().content_rect().height() * 0.5).max(120.0);
+            egui::ScrollArea::vertical().max_height(height).auto_shrink([true, true]).show(ui, |ui| {
+                if shown.is_empty() {
+                    ui.label(egui::RichText::new("No device matches").color(crate::kit::element::hint_ink()));
+                }
+                for reader in shown {
+                    let on = reader.source == Some(menu.track);
+                    if ui.selectable_label(on, &reader.label).clicked() {
+                        let at = json!({ "track": reader.track.0, "device": reader.device });
+                        if on {
+                            actions.push(Action::new("device.clearKey", at));
+                        } else {
+                            let mut params = at;
+                            params["source"] = json!(track);
+                            actions.push(Action::new("device.setKey", params));
+                        }
+                        ui.data_mut(|d| {
+                            d.remove::<String>(query_id);
+                            d.remove::<bool>(query_id.with("shown"));
+                        });
+                        ui.close();
+                    }
+                }
+            });
+        });
+    }
     ui.separator();
 
     let selected = menu.selection.contains(&menu.track) && menu.selection.len() > 1;
@@ -315,6 +528,12 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     let group_label = if selected { "Group selected tracks" } else { "Group" };
     if ui.add(egui::Button::new(group_label).shortcut_text(shown("Ctrl+G"))).clicked() {
         actions.push(Action::new("track.group", json!({ "tracks": tracks })));
+        ui.close();
+    }
+    // A folder only gathers the tracks in view; they play as before (#1416).
+    let folder_label = if selected { "Put selected tracks in a folder" } else { "Put in a folder" };
+    if ui.button(folder_label).clicked() {
+        actions.push(Action::new("track.folder", json!({ "tracks": tracks })));
         ui.close();
     }
     if menu.is_group && ui.button("Ungroup").clicked() {
@@ -404,17 +623,30 @@ fn rename_item(ui: &mut Ui, target: serde_json::Value, name: &str, actions: &mut
     }
 }
 
+/// What a clip menu offers of linking (#1414): Unlink for a linked copy, Link for clips that play
+/// the same material from contents of their own.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClipLinks {
+    /// The clicked clip is a linked copy.
+    pub linked: bool,
+    /// The clips the menu acts on play the same notes or audio, not yet one content.
+    pub linkable: bool,
+}
+
 /// The menu of arrangement clips; `stack` is true when the stacking setting for the clips' kind
 /// is on, so their copies leave the clips they land on as they are. `clips` is the selection the
-/// click fell in, or the one clip it fell on; `enabled` is whether the clicked clip plays now.
+/// click fell in, or the one clip it fell on; `enabled` is whether the clicked clip plays now, and
+/// `links` what it offers of linking ([`ClipLinks`]).
 pub fn clip_menu(
     ui: &mut Ui,
     clips: &[(TrackId, ClipId)],
     stack: bool,
     enabled: bool,
+    links: ClipLinks,
     name: &str,
     actions: &mut Vec<Action>,
 ) {
+    let ClipLinks { linked, linkable } = links;
     if clips.is_empty() {
         return;
     }
@@ -467,6 +699,23 @@ pub fn clip_menu(
             params["stack"] = json!(true);
         }
         actions.push(Action::new("clip.duplicate", params));
+        ui.close();
+    }
+    if ui.button("Duplicate linked").clicked() {
+        let mut params = json!({ "clips": list.clone(), "linked": true });
+        if stack {
+            params["stack"] = json!(true);
+        }
+        actions.push(Action::new("clip.duplicate", params));
+        ui.close();
+    }
+    // Clips that play the same notes or audio, not yet linked: one content from now on.
+    if linkable && ui.button("Link").clicked() {
+        actions.push(Action::new("clip.link", json!({ "clips": list.clone() })));
+        ui.close();
+    }
+    if linked && ui.button("Unlink").clicked() {
+        actions.push(Action::new("clip.unlink", json!({ "clips": list.clone() })));
         ui.close();
     }
     let mute = if enabled { "Mute" } else { "Unmute" };
@@ -732,7 +981,9 @@ pub fn time_signature_list(
 /// The menu of a device in a track's chain: removing it takes it off the track, settings and
 /// all.
 /// A device's menu in the detail area; `branches` is how many branches it has when it is a
-/// device group (`docs/spec/device-groups.md` › The device panel).
+/// device group (`docs/spec/device-groups.md` › The device panel); `sidechain` its key choices
+/// when it reads one.
+#[allow(clippy::too_many_arguments)]
 pub fn device_menu(
     ui: &mut Ui,
     track: TrackId,
@@ -740,10 +991,36 @@ pub fn device_menu(
     branches: Option<usize>,
     is_builtin: bool,
     name: &str,
+    sidechain: Option<&crate::detail::detail_view::SidechainBox>,
     actions: &mut Vec<Action>,
 ) {
     ui.set_min_width(140.0);
     let device = at.value();
+    // Its name: edited in place, applied with Enter (`device.rename`), as a track's is.
+    let id = Id::unique(("device-rename", track, device.to_string()));
+    let mut text = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| name.to_string());
+    let response = crate::kit::widgets::text_input(
+        ui,
+        egui::TextEdit::singleline(&mut text).hint_text("Name").desired_width(140.0),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename {name}")));
+    if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+        let renamed = text.trim();
+        if !renamed.is_empty() && renamed != name {
+            actions.push(Action::new("device.rename", json!({ "track": track.0, "device": device, "name": renamed })));
+        }
+        ui.data_mut(|d| d.remove::<String>(id));
+        ui.close();
+        return;
+    }
+    ui.data_mut(|d| d.insert_temp(id, text));
+    ui.separator();
+    // The key it reads (sidechain), as the panel's Sidechain button chooses it.
+    if let Some(side) = sidechain {
+        let label = side.key.as_ref().map_or("Sidechain: none".to_owned(), |k| format!("Sidechain: {}", k.name));
+        ui.menu_button(label, |ui| sidechain_choices(ui, track, &device, side, actions));
+        ui.separator();
+    }
     // Save as preset (`device.savePreset`, docs/decisions/0036-library-and-shipped-content.md ›
     // 5): the menu stays open while the name is typed, as a rename's field does.
     if is_builtin {

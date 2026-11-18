@@ -62,6 +62,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "track.folder",
+        label: "Put tracks into a new folder, which only gathers them in view: they play as before",
+        params: &[
+            param("tracks", ParamType::Tracks, "the tracks to put in it (ids or names), all in the same group or none"),
+            optional("name", ParamType::Text, "the folder's name (\"Folder\" if left out)"),
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::commands::folder_tracks,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "track.setGroup",
         label: "Move a track (a group with its tracks) into a group track, or out of every group, and play into it",
         params: &[
@@ -562,6 +573,11 @@ fn channel_ids(p: &Project, params: &Value) -> Result<Vec<(TrackId, ChannelId)>,
     let mut out = Vec::new();
     for track in track_list(p, params)? {
         let found = p.track(track).ok_or("the track is missing")?;
+        // Presentation folders can be part of a multi-selection, but have no mixer
+        // control of their own. The selected audio tracks still receive the command.
+        if found.is_folder() {
+            continue;
+        }
         let channel = found.channel.ok_or_else(|| format!("track {:?} has no mixer channel", found.name))?;
         out.push((track, channel));
     }
@@ -576,6 +592,14 @@ fn track_ids(channels: &[(TrackId, ChannelId)]) -> Vec<u32> {
 fn ungroup_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
     let group = track_id(p, params)?;
+    if p.track(group).is_some_and(|t| t.is_folder()) {
+        let parent = p.track(group).and_then(|t| t.parent);
+        for track in p.tracks.iter_mut().filter(|t| t.parent == Some(group)) {
+            track.parent = parent;
+        }
+        p.tracks.retain(|t| t.id != group);
+        return Ok(json!({ "ungrouped": group.0 }));
+    }
     let channel = channel_id_of(p, group).and_then(|id| p.channel(id));
     let Some(channel) = channel.filter(|c| c.role == ChannelRole::Submix) else {
         return Err("only a group track can be ungrouped".into());
@@ -598,9 +622,6 @@ fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     let p = &mut session.project;
     let track = track_id(p, params)?;
     let role_of = |p: &Project, t: TrackId| channel_id_of(p, t).and_then(|id| p.channel(id)).map(|c| c.role);
-    if matches!(role_of(p, track), Some(ChannelRole::Effect | ChannelRole::Master)) {
-        return Err("a return track cannot go into a group".into());
-    }
     let group = match Args::new(params).value("group") {
         Some(Value::String(none)) if none.eq_ignore_ascii_case("none") => None,
         Some(_) => Some(track_at(p, params, "group")?),
@@ -611,11 +632,19 @@ fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         Some(v) => Some(v.as_u64().ok_or("index must be a whole number from 0")?),
     };
     let family = p.with_descendants(track);
+    let presentation_only = group.is_some_and(|id| p.track(id).is_some_and(|t| t.is_folder()))
+        || (group.is_none()
+            && p.track(track).and_then(|t| t.parent).and_then(|id| p.track(id)).is_some_and(|t| t.is_folder()));
+    if role_of(p, track) == Some(ChannelRole::Master)
+        || (role_of(p, track) == Some(ChannelRole::Effect) && !presentation_only)
+    {
+        return Err("a return track can only move into or out of a presentation folder".into());
+    }
     let output = match group {
         None => None,
         Some(g) => {
             let name = p.track(g).map(|t| t.name.clone()).unwrap_or_default();
-            if role_of(p, g) != Some(ChannelRole::Submix) {
+            if role_of(p, g) != Some(ChannelRole::Submix) && !p.track(g).is_some_and(|t| t.is_folder()) {
                 return Err(format!("{name:?} is not a group track").into());
             }
             if family.contains(&g) {
@@ -654,7 +683,8 @@ fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     if let Some(t) = p.track_mut(track) {
         t.parent = group;
     }
-    if let Some(channel) = channel_id_of(p, track)
+    if !presentation_only
+        && let Some(channel) = channel_id_of(p, track)
         && let Some(c) = p.channel_mut(channel)
     {
         c.output = output;
@@ -849,7 +879,7 @@ fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandE
     let track = track_id(&session.project, params)?;
     let p = &session.project;
     let is_group = channel_id_of(p, track).and_then(|id| p.channel(id)).is_some_and(|c| c.role == ChannelRole::Submix);
-    if is_group {
+    if is_group || p.track(track).is_some_and(|t| t.is_folder()) {
         ungroup_track(session, params)?;
         return Ok(json!({ "deleted": track.0 }));
     }

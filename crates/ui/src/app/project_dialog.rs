@@ -150,7 +150,9 @@ fn draw(
     let edit = crate::kit::widgets::text_input_at(
         ui,
         field,
-        egui::TextEdit::singleline(&mut state.path).hint_text("Path to a .suhina or .als file").font(small.clone()),
+        egui::TextEdit::singleline(&mut state.path)
+            .hint_text("Path to a .suhina or .als file, or a zip holding one")
+            .font(small.clone()),
     );
     edit.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Project path"));
     if std::mem::take(&mut state.focus_path) {

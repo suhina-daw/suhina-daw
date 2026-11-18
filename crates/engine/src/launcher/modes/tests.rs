@@ -203,6 +203,7 @@ fn legato_audio_continues_from_the_replaced_clips_position() {
     let mut audio = AudioPool::new();
     audio.files.insert("ramp.wav".into(), Arc::new(AudioData { sample_rate: sr, channels: 1, samples }));
     let content = |id: u32| ClipContent {
+        linked: false,
         id: ContentId(id),
         name: "ramp".into(),
         length: 2.0,

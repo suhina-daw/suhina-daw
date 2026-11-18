@@ -481,6 +481,11 @@ impl Look {
         self.themed(Paint::Color).unwrap_or(token)
     }
 
+    /// The item's `font-size`, where the sheet sets one; else `fallback`.
+    pub fn font_size_or(&self, fallback: f32) -> f32 {
+        self.0.as_ref().filter(|s| s.authored.font_size).map_or(fallback, |s| s.font_size)
+    }
+
     /// The item's `background-color`, where the sheet sets one; else `token`.
     pub fn background_or(&self, token: Color32) -> Color32 {
         self.themed(Paint::Background).unwrap_or(token)

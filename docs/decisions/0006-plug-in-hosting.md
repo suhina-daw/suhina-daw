@@ -116,14 +116,16 @@ workspace forbids.
    formats, every other port gets silent buffers with the channels it declared, and both formats
    have a test plug-in built into the host (`test:clap`, `test:vst3`) so the whole path is tested
    without a plug-in installed.
-8. **VST2: through a VST3 copy where one is installed, else the plug-in itself.** A project
-   that names a VST2 plug-in is opened with the installed VST3 that declares it replaces it or
-   whose class id is derived from its id, and the saved VST2 state is handed to it. Without such
-   a VST3, the scanned VST2 plug-in with the project's id runs through the VST2 host with its
-   saved state ([ADR 0022](0022-vst2-interface-description.md)). Without that either, a VST3
+8. **VST2: through a VST3 that declares it replaces it, else the plug-in itself.** A project
+   that names a VST2 plug-in is opened with the installed VST3 that declares it replaces it,
+   and the saved VST2 state is handed to it. Without such a VST3, the scanned VST2 plug-in with
+   the project's id runs through the VST2 host with its saved state
+   ([ADR 0022](0022-vst2-interface-description.md)); without that, a VST3 whose class id is
+   derived from its id. Without those either, a VST3
    found by name or as a newer version may stand in, or the device stays in the project as a
    *missing plug-in* with its state intact, and the user can relink it by hand to a VST3 or
-   CLAP version. *Amended 2026-11-01.*
+   CLAP version. *Amended 2026-11-01; amended 2026-11-17, see Amendment: the VST2 itself
+   first.*
 9. **Scanning** runs in short-lived worker processes with a timeout per file, a cache keyed by
    path, modification time and size, and the failures kept with their reasons and tried again
    later; it reads metadata without loading a plug-in where it can. It looks in the system's
@@ -152,6 +154,14 @@ workspace forbids.
     transport stopped, so an instrument that resets on stop does not click
     ([plug-in hosting](../spec/plugin-hosting.md) › Keeping instances across an output change,
     Stopping a hosted instrument).
+
+## Amendment: the VST2 itself first (2026-11-17)
+
+[#1446](https://github.com/suhina-daw/suhina-daw/pull/1446). A VST3 whose class id only
+follows the SDK's id convention promises no state conversion: one answered a project's saved
+VST2 chunk bank with yes, kept its own empty state and played nothing. So the installed VST2
+plug-in itself now comes before such a VST3; a VST3 that declares it replaces the plug-in
+still comes first, since its vendor promises to read the state. Decision 8 is amended in place.
 
 ## Not decided yet
 

@@ -5,6 +5,21 @@ use super::*;
 use crate::demo::demo_project;
 
 #[test]
+fn a_presentation_folder_is_foldable_without_audio_controls() {
+    use suhina_engine::model::Track;
+    let mut p = demo_project();
+    let mut folder = Track::new(TrackId(900), "Folder");
+    folder.folder = true;
+    p.tracks[0].parent = Some(folder.id);
+    p.tracks.insert(0, folder);
+    let view = Timeline::build(&p, None);
+    assert!(view.lanes[0].folder);
+    assert_eq!(view.lanes[0].kind, ColumnKind::Group);
+    assert_eq!(view.lanes[1].parent, Some(TrackId(900)));
+    assert!(!view.lanes[1].folder);
+}
+
+#[test]
 fn the_ruler_marks_tempo_and_time_signature_changes() {
     use suhina_engine::model::{TempoPoint, TimeSignature, TimeSignatureChange};
     let mut project = demo_project();
@@ -400,4 +415,50 @@ fn a_dragged_tempo_or_pitch_draws_the_clip_at_its_new_length() {
     let tempo = preview(Dragged::Tempo(166.0)).factor(&warped).unwrap_or(0.0);
     assert!((tempo - 2.0).abs() < 1e-9, "{tempo}");
     assert_eq!(preview(Dragged::Tempo(120.0)).factor(&unwarped), None, "unwarped audio has no tempo");
+}
+
+#[test]
+fn only_clips_that_share_a_linked_content_show_as_linked() {
+    let mut project = demo_project();
+    let lane = &mut project.arrangement.lanes[0];
+    let content = lane.clips[0].content;
+    let mut copy = lane.clips[0].clone();
+    copy.start += 256.0;
+    lane.clips.push(copy);
+    let linked = |project: &Project| -> Vec<bool> {
+        Timeline::build(project, None)
+            .lanes
+            .iter()
+            .flat_map(|l| &l.clips)
+            .filter(|c| c.linked)
+            .map(|c| c.linked)
+            .collect()
+    };
+    assert!(linked(&project).is_empty(), "a shared content that is not linked is no linked copy");
+    project.contents.iter_mut().filter(|c| c.id == content).for_each(|c| c.linked = true);
+    assert_eq!(linked(&project).len(), 2, "both clips of the linked content");
+    project.arrangement.lanes[0].clips.pop();
+    assert!(linked(&project).is_empty(), "a linked content one clip plays shows no mark");
+}
+
+/// Two clips that play the same content from the same beat (an import's doubled placements) each
+/// keep their own row from one build to the next: they no longer swap rows on every rebuild, as
+/// soloing another track made them do.
+#[test]
+fn two_clips_of_one_content_at_one_beat_keep_their_rows_across_builds() {
+    let mut project = demo_project();
+    let lane = &mut project.arrangement.lanes[0];
+    let first = lane.clips[0].clone();
+    let mut second = first.clone();
+    second.id = suhina_engine::model::ClipId(first.id.0 + 10_000);
+    second.length = first.length / 2.0;
+    lane.clips = vec![first, second];
+    let ids = |t: &Timeline| t.lanes[0].clips.iter().map(|c| (c.id, c.row)).collect::<Vec<_>>();
+    let mut built = Timeline::build(&project, None);
+    let rows = ids(&built);
+    assert_ne!(rows[0].1, rows[1].1, "they stack");
+    for _ in 0..4 {
+        built = Timeline::build_after(&project, None, &built.stack_rows);
+        assert_eq!(ids(&built), rows);
+    }
 }

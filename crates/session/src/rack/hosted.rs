@@ -38,6 +38,7 @@ impl BlockCounts {
 
 /// The audio half of a hosted plug-in, as the engine runs it: real-time safe.
 pub struct Hosted {
+    parameter_identity_matches: bool,
     gate: Option<super::transport_gate::TransportGate>,
     continuation: suhina_engine::SongPosition,
     rate: u32,
@@ -48,6 +49,12 @@ pub struct Hosted {
     audio: PluginAudio,
     input: Vec<f32>,
     output: Vec<f32>,
+    /// The link carries four channels: the sound in the first two, the key (sidechain) in the
+    /// next two (`docs/spec/sidechain.md` › Plug-in buses).
+    wide: bool,
+    /// The key for the next block, and how many of its samples were set (0: none, silence).
+    key: Vec<f32>,
+    keyed: usize,
     /// The block's events as sent: parameter values and notes merged in frame order.
     events: Vec<Event>,
     /// The block's notes and its parameter values, before they are merged.
@@ -70,16 +77,26 @@ pub struct Hosted {
 }
 
 impl Hosted {
+    /// The link's samples for a block of `buffer`'s (stereo) frames: twice as many on a wide
+    /// link, which carries the key beside the sound.
+    fn link_len(&self, buffer: &[f32]) -> usize {
+        if self.wide { buffer.len() * 2 } else { buffer.len() }
+    }
+
     pub fn new(audio: PluginAudio) -> Self {
         Self {
+            parameter_identity_matches: true,
             gate: None,
             continuation: suhina_engine::SongPosition::default(),
             rate: 1,
             stop_notes: Vec::with_capacity(MAX_EVENTS / 2),
             stop_notes_overflow: false,
+            wide: audio.channels() >= 4,
+            input: vec![0.0; MAX_BLOCK_FRAMES * audio.channels().clamp(2, 4) as usize],
+            output: vec![0.0; MAX_BLOCK_FRAMES * audio.channels().clamp(2, 4) as usize],
+            key: vec![0.0; MAX_BLOCK_FRAMES * 2],
+            keyed: 0,
             audio,
-            input: vec![0.0; MAX_BLOCK_FRAMES * 2],
-            output: vec![0.0; MAX_BLOCK_FRAMES * 2],
             events: Vec::with_capacity(MAX_EVENTS),
             notes: Vec::with_capacity(MAX_EVENTS),
             params: Vec::with_capacity(MAX_EVENTS),
@@ -89,6 +106,12 @@ impl Hosted {
             sent_at: None,
             song: suhina_engine::SongPosition::default(),
         }
+    }
+
+    /// Keep notes and audio running when an imported parameter identity cannot be mapped.
+    pub fn with_parameter_identity(mut self, matches: bool) -> Self {
+        self.parameter_identity_matches = matches;
+        self
     }
 
     /// The counts this keeps while the engine runs it.
@@ -215,8 +238,22 @@ pub(super) fn push_event(out: &mut Vec<Event>, frame: u32, event: DeviceEvent) {
 impl Hosted {
     /// Copies the block and its events in, ready to send; `false` for a block too big.
     fn take(&mut self, buffer: &[f32], events: &[(usize, DeviceEvent)]) -> bool {
-        let Some(input) = self.input.get_mut(..buffer.len()) else { return false };
-        input.copy_from_slice(buffer);
+        if self.wide {
+            // The sound in the first two channels, the key (or silence) in the next two.
+            let keyed = std::mem::take(&mut self.keyed);
+            let Some(input) = self.input.get_mut(..buffer.len() * 2) else { return false };
+            for (frame, (to, [l, r])) in
+                input.as_chunks_mut::<4>().0.iter_mut().zip(buffer.as_chunks::<2>().0).enumerate()
+            {
+                let key = self.key.get(frame * 2..frame * 2 + 2).filter(|_| frame * 2 + 1 < keyed);
+                let (kl, kr) =
+                    key.map_or((0.0, 0.0), |k| (k.first().copied().unwrap_or(0.0), k.get(1).copied().unwrap_or(0.0)));
+                *to = [*l, *r, kl, kr];
+            }
+        } else {
+            let Some(input) = self.input.get_mut(..buffer.len()) else { return false };
+            input.copy_from_slice(buffer);
+        }
         self.notes.clear();
         self.params.clear();
         // What earlier blocks could not send goes first.
@@ -287,7 +324,13 @@ impl Hosted {
     fn outcome(&mut self, outcome: suhina_plugins::Outcome, buffer: &mut [f32]) -> bool {
         match outcome {
             suhina_plugins::Outcome::Done => {
-                if let Some(output) = self.output.get(..buffer.len()) {
+                if self.wide {
+                    // The plug-in's sound is the first two channels; the others carry nothing.
+                    let output = self.output.get(..buffer.len() * 2).unwrap_or_default();
+                    for (to, [l, r, _, _]) in buffer.as_chunks_mut::<2>().0.iter_mut().zip(output.as_chunks::<4>().0) {
+                        *to = [*l, *r];
+                    }
+                } else if let Some(output) = self.output.get(..buffer.len()) {
                     buffer.copy_from_slice(output);
                 }
                 if let Some(gate) = &mut self.gate {
@@ -315,7 +358,8 @@ impl Hosted {
             self.counts.no_time.fetch_add(1, Ordering::Relaxed);
         }
         let started = self.sent_at.take().unwrap_or_else(std::time::Instant::now);
-        let outcome = match self.output.get_mut(..buffer.len()) {
+        let len = self.link_len(buffer);
+        let outcome = match self.output.get_mut(..len) {
             Some(output) => self.audio.finish(output, timeout),
             None => suhina_plugins::Outcome::Busy,
         };
@@ -363,6 +407,16 @@ impl PluginProcessor for Hosted {
         self.wait_for(buffer, timeout)
     }
 
+    /// The key (sidechain) for the next block: it rides in the link's third and fourth channels,
+    /// which the host hands the plug-in's first auxiliary input. A narrow link has no room for it.
+    fn set_key(&mut self, key: &[f32]) {
+        let len = key.len().min(self.key.len());
+        if let (Some(to), Some(from)) = (self.key.get_mut(..len), key.get(..len)) {
+            to.copy_from_slice(from);
+        }
+        self.keyed = len;
+    }
+
     fn poll(&mut self, until: std::time::Instant) -> bool {
         self.audio.poll(until)
     }
@@ -397,11 +451,12 @@ impl PluginProcessor for Hosted {
         patience: Duration,
     ) -> Sent {
         // A block longer than the link holds (none is, today) cannot be taken in at all.
-        let Some(input) = self.take(buffer, events).then(|| self.input.get(..buffer.len())).flatten() else {
+        let len = self.link_len(buffer);
+        let Some(input) = self.take(buffer, events).then(|| self.input.get(..len)).flatten() else {
             self.counts.late.fetch_add(1, Ordering::Relaxed);
             return Sent::Refused;
         };
-        if self.audio.send_joint(input, &self.events, followers, buffer.len(), patience) {
+        if self.audio.send_joint(input, &self.events, followers, len, patience) {
             self.sent_at = Some(std::time::Instant::now());
             return Sent::Out;
         }
@@ -444,6 +499,9 @@ impl PluginProcessor for Hosted {
 
     fn automate(&mut self, params: &[ParamEvent]) {
         self.automated.clear();
+        if !self.parameter_identity_matches {
+            return;
+        }
         let room = self.automated.capacity();
         for param in params.iter().take(room) {
             let frame = u32::try_from(param.frame).unwrap_or(u32::MAX);

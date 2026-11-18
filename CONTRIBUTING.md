@@ -88,7 +88,9 @@ actions and need no SHA.
 When it rejects a licence, prefer another crate. Add an exception only for a licence that is
 GPLv3-compatible, for the crate that needs it, with a comment saying what the crate is for and
 why the licence is fine. To update `cargo-deny`, change `CARGO_DENY_VERSION` and
-`CARGO_DENY_SHA256` in the workflow together, and the version above.
+`CARGO_DENY_SHA256` in the workflow together, and the version above. `cargo-nextest`, which runs
+CI's tests, is pinned the same way in `scripts/install_nextest.sh`: its version and the checksums
+of its three archives change together.
 
 **C libraries.** The program is Rust only ([AGENTS.md](AGENTS.md)), and one dependency bends it,
 recorded here: the Ogg Vorbis encoder, `vorbis_rs`, is bindings to libvorbis — C source packaged

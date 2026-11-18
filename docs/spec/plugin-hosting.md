@@ -23,6 +23,12 @@ design; how other hosts do it is in the ADR's Context.
 
 ## Processes and instances
 
+An audio processor with no input buses receives a null `ProcessData.inputs` pointer,
+including zero-frame parameter flushes. An empty Rust vector's non-null sentinel is
+not passed across this boundary. A local installed-instrument check demonstrated that
+the sentinel crashes processing, while null permits processing and state round-trips;
+the built-in test processor covers the same inputless case without external software.
+
 a host process runs any number of instances, each loaded and unloaded on its own
 under a number the engine gives it, with its own link (shared memory and doorbells) and its
 own audio thread; the host's main thread serves every instance's callbacks and editors, and
@@ -87,6 +93,12 @@ bend, channel pressure, parameter value) as fixed 16-byte records with their fra
 Two more kinds carry the song: `Transport` (playing, position in samples) and `Tempo`, sent
 with every block to a plug-in that follows the song (one loaded with an ARA document,
 [ADR 0033](../decisions/0033-ara-hosting.md)), which a VST3 host puts in the block's process context.
+The song a plug-in is told is the song of the sound it gets: moved back by the latency of the
+devices before it in its chain and by its chain's input delay (a bus or a return hears its
+sources as late as the latest of them), so a plug-in that follows the song (a tempo-synced
+volume shape, an arpeggiator) lines up with what it hears after a linear-phase EQ or a
+look-ahead device; the bar steps back with the beat. A plug-in inside a device group is told the
+delay before the group. While the transport is stopped the position is not moved.
 A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
 pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
 through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins
@@ -278,7 +290,11 @@ stop's all-notes-off) is waited for like an answer: its chain hands it the next 
 soon as it is done (`PluginProcessor::ready`, `PluginAudio::ready`, `Link::wait_ready`),
 while the other chains go on, and only until that block's deadline (#506). Only a plug-in
 late with the block before alone is waited for; one that has not answered several in a row
-(hung, or far behind) is not. Measured with `measure_quick_play_and_stop` (see
+(hung, or far behind) is not. After repeated misses, readiness lets the chain attempt a
+send immediately, and no recovery watch is offered to the scheduler. The link refuses
+the send until the old answer arrives; downstream devices and buses keep their block
+budget. A later answer still permits the next send and resets the miss count.
+Measured with `measure_quick_play_and_stop` (see
 *Measurements*): an instrument that took longer than a whole block over each press of play or
 stop lost two blocks a press, the late one and the next, refused, with the notes it
 brought; it now loses the late one only. A host still busy when the deadline comes refuses
@@ -376,26 +392,30 @@ module's own description and imported projects.
 ## VST2 projects
 
 A project that names a VST2 plug-in is opened with the installed VST3 that declares it
-replaces it or whose class id is derived from its id, and the saved VST2 state is handed to
-it. Without such a VST3, the scanned VST2 plug-in with the project's id runs through the VST2
-host with its saved state ([ADR 0022](../decisions/0022-vst2-interface-description.md),
-[the VST2 interface](plugin-vst2.md)). Without that either, a VST3 found by name or as a newer
+replaces it, and the saved VST2 state is handed to it. Without such a VST3, the scanned VST2
+plug-in with the project's id runs through the VST2 host with its saved state
+([ADR 0022](../decisions/0022-vst2-interface-description.md),
+[the VST2 interface](plugin-vst2.md)); without that, a VST3 whose class id is derived from
+its id. Without those either, a VST3 found by name or as a newer
 version may stand in, or the device stays in the project as a *missing plug-in* with its state
 intact, and the user can relink it by hand to a VST3 or CLAP version (ADR 0006 decision 8).
 
 *Finding the replacement* (`crates/plugins/src/matching.rs`, `plugin.check`). The catalog is
 searched in order of how sure the answer is: the same id; an installed VST3 that declares it
 replaces the plug-in (`Compatibility` in `moduleinfo.json`, or the module's
-`Plugin Compatibility Class`, which the scanner asks through `IPluginCompatibility`); a VST3
-whose class id is derived from the VST2 id by the SDK's convention (`VST`, the 4-byte id, the
-first nine bytes of the name in lower case; the name part is not compared, as a project keeps
-the name its host showed); the scanned VST2 plug-in itself, by its id, when exactly one has
-it; the same name once build words (`x64`, `64bit`, `.64`) and a
+`Plugin Compatibility Class`, which the scanner asks through `IPluginCompatibility`); the
+scanned VST2 plug-in itself, by its id, when exactly one has it (installation copies with
+identical name, vendor, version and features count as one, chosen by stable path order); a
+VST3 whose class id is derived from the VST2 id by the SDK's convention (`VST`, the 4-byte id,
+the first nine bytes of the name in lower case; the name part is not compared, as a project
+keeps the name its host showed), which promises no state conversion: one answered a saved
+chunk bank with yes and kept its own empty state (ADR 0006, Amendment: the VST2 itself
+first); the same name once build words (`x64`, `64bit`, `.64`) and a
 leading vendor name are set aside, or the name without its number when the installed
 plug-in's version starts with that number (`Synth 5` finds a VST3 named `Synth` whose
 version is 5.x and whose class id follows no convention); and last the nearest newer version
 of the same name (`Synth` → `Synth 2`, `EQ 2` → `EQ 3`, and with the number inside
-the name, `Suite 8 Imager` → `Suite 11 Imager`). Only the first four promise that the state carries over;
+the name, `Suite 8 Imager` → `Suite 11 Imager`). The first four are expected to carry the state over (the third and fourth without a promise from the vendor);
 for the last two the state is handed over and the plug-in decides, and the result says
 which (`keeps_state`). Vendors declare their own older builds rather than older products:
 an `EQ 3` module declares the VST2 builds of `EQ 3`, not `EQ 2`, which is why the name
@@ -408,16 +428,30 @@ state goes with the component's (`set_state` carries both) and is
 restored after a restart. A plug-in that refuses the state runs with its defaults and the
 caller is told (`offline::render_with_state`, `suhina-cli plugin run-device`). Measured on
 a real project: two effects read their VST2 chunk banks (the output changes with the saved
-settings); a third takes a parameter bank (`FxBk`) in `setState` without applying it. So the host also sets a parameter bank's current program as
-parameters, value `i` to parameter id `i`, the numbering a VST3 version keeps from its VST2
-one, but only when the plug-in has every id from 0 to the last value's: on the controller
-(`setParamNormalized`) and on the processor through the next block's parameter changes
-(`crates/plugin-host/src/vst3/params.rs`). With that the third plays with the project's settings.
+settings); a third takes a parameter bank (`FxBk`) in `setState` without applying it. A
+component that converts the state itself is authoritative: a newer synth that migrated its
+predecessor's bank lost its sound when the host then queued the raw values over it. So the
+host compares the component's own state (`getState`) before and after `setState`, and sets the
+current program's value `i` to parameter id `i` only when the component refused the bank or
+answered yes and left its state unchanged, and only when the VST3 class id is derived from
+that bank's VST2 id and every required parameter id exists. With that the third plays with the
+project's settings and the migrated synth keeps its own.
+The values go to the controller (`setParamNormalized`) and to the processor through the
+next block's parameter changes (`crates/plugin-host/src/vst3/params.rs`). A compatibility
+declaration promises state conversion, not identical parameter numbering, so it does not
+authorize this fallback.
 A single program of values (`FxCk`, an `.fxp` file, from the CLI's `--state`) is set as
 parameters the same way; a program chunk (`FPCh`) is refused, since the plug-in may answer
 `setState` without reading it, and the caller is told (#1167;
 [the VST2 interface](plugin-vst2.md) › State: chunks and banks).
-A newer version of an EQ refuses its predecessor's state and runs with its defaults. An
+A newer-version match gets a private host process, regardless of the installed plugin's
+normal sharing setting. Both playback and offline rendering still try the saved state,
+but a crash during that trial cannot terminate genuine instances of the replacement.
+
+A name or newer-version match alone never authorizes copying numbered parameters. The
+component may translate that state itself; if it refuses, the caller is told and the original
+state remains in the project. A newer version of an EQ refuses its predecessor's state and
+runs with its defaults. An
 instrument found by the id convention plays a project's notes with its saved settings. A
 synth's second version refuses the first version's state in every form tried: the bank, a
 single program (`FPCh`, an `.fxp` file's contents) and the bare chunk; it opens the first

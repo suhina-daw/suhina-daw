@@ -23,6 +23,8 @@ fn eq_device() -> Device {
         .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
         .unwrap_or_default();
     Device {
+        instrument: false,
+        inputs: Vec::new(),
         id: Default::default(),
         name: "EQ".into(),
         kind: DeviceKind::Builtin("eq".into()),
@@ -113,6 +115,8 @@ fn the_eq_panels_analyser_receives_the_playing_output() {
     let mut session = Session::new(eq_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
+    // Its MIDI tracks have no instrument: they play the sine tones (#1384).
+    app.projects_mut().set_implicit_tones(true);
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = Harness::builder()
@@ -165,6 +169,8 @@ fn grouped_eq_project() -> Project {
     let mut branch = suhina_engine::model::Branch::new("Branch 1");
     branch.devices.push(grouped);
     let group = Device {
+        instrument: false,
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Group".into(),
         kind: DeviceKind::Group(Box::new(suhina_engine::model::DeviceGroup::with_branches(vec![branch]))),

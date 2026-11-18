@@ -61,6 +61,7 @@ fn per_track_clip_project_validates() {
         channels: vec![channel(1)],
         contents: vec![
             ClipContent {
+                linked: false,
                 id: ContentId(1),
                 name: "Bass A".into(),
                 length: 4.0,
@@ -69,6 +70,7 @@ fn per_track_clip_project_validates() {
                 scale: None,
             },
             ClipContent {
+                linked: false,
                 id: ContentId(2),
                 name: "Bass B".into(),
                 length: 4.0,
@@ -107,6 +109,7 @@ fn per_track_clip_project_validates() {
 #[test]
 fn shared_pattern_project_validates_and_shares_content() {
     let pattern = ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "Pattern 1".into(),
         length: 4.0,
@@ -213,6 +216,26 @@ fn fade_shapes_and_curves_follow_the_spec() {
 }
 
 #[test]
+fn cosine_fades_keep_endpoints_tension_and_mirror_symmetry() {
+    for tension in [-255f64, -4.83, 0., 3.36, 255.] {
+        let curve = tension.signum() * tension.abs().ln_1p() / (32. * std::f64::consts::LN_2);
+        let fade = FadeCurve { shape: FadeShape::Cosine, curve };
+        assert_eq!((fade.gain(0.), fade.gain(1.)), (0., 1.));
+        let mirror = FadeCurve { curve: -curve, ..fade };
+        let mut previous = 0.;
+        for i in 0..=100 {
+            let t = f64::from(i) / 100.;
+            let actual = fade.gain(t);
+            assert!(actual >= previous && actual <= 1.);
+            assert!((actual + mirror.gain(1. - t) - 1.).abs() < 1e-12);
+            previous = actual;
+        }
+    }
+    let fade = FadeCurve { shape: FadeShape::Cosine, curve: 4.36f64.ln() / (32. * std::f64::consts::LN_2) };
+    assert!((fade.gain(0.5) - 0.676).abs() < 0.0005);
+}
+
+#[test]
 fn fades_must_be_non_negative_and_fit_the_clip() {
     let with = |fade_in: f64, fade_out: f64| Clip { fade_in, fade_out, ..clip(1, 0.0) };
     assert!(with(0.0, 0.0).fades_valid());
@@ -226,6 +249,7 @@ fn fades_must_be_non_negative_and_fit_the_clip() {
     assert!(!bent(1.5).fades_valid() && !bent(f64::NAN).fades_valid(), "a curve outside -1 … +1");
 
     let content = ClipContent {
+        linked: false,
         id: ContentId(1),
         name: String::new(),
         length: 4.0,
@@ -356,6 +380,49 @@ fn a_group_cycle_is_reported_and_walking_it_ends() {
     own.tracks[0].parent = Some(TrackId(1));
     assert_eq!(own.validate(), Err(vec![ValidationError::GroupCycle(TrackId(1))]));
     assert_eq!(own.ancestors(TrackId(1)), vec![]);
+}
+
+#[test]
+fn a_key_reads_a_channel_that_exists_and_never_closes_a_loop() {
+    // Track 1 plays into group 3; track 2 plays to the output on its own.
+    let mut p = Project::default();
+    for (id, output) in [(1, Some(3)), (2, None), (3, None)] {
+        let mut channel = Channel::new(ChannelId(id), format!("C{id}"));
+        channel.output = output.map(ChannelId);
+        channel.devices.push(Device::new("Compressor", DeviceKind::Builtin("compressor".into())));
+        p.channels.push(channel);
+        p.tracks.push(Track { channel: Some(ChannelId(id)), ..Track::new(TrackId(id), format!("T{id}")) });
+    }
+    let keyed = |p: &mut Project, reader: u32, input: DeviceInput| {
+        let mut p = p.clone();
+        p.channel_mut(ChannelId(reader)).unwrap().devices[0].inputs = vec![input];
+        p.validate()
+    };
+    // Another track, the own track before its devices, a group from a track that is not in it.
+    assert_eq!(keyed(&mut p, 1, DeviceInput::key(ChannelId(2), TapPoint::PostFx)), Ok(()));
+    assert_eq!(keyed(&mut p, 1, DeviceInput::key(ChannelId(1), TapPoint::PreFx)), Ok(()));
+    assert_eq!(keyed(&mut p, 2, DeviceInput::key(ChannelId(3), TapPoint::PostFader)), Ok(()));
+    // A group keyed by a track inside it runs after it: no loop.
+    assert_eq!(keyed(&mut p, 3, DeviceInput::key(ChannelId(1), TapPoint::PostFx)), Ok(()));
+    let cycle = |errors: Result<(), Vec<ValidationError>>| {
+        errors.is_err_and(|e| e.iter().any(|e| matches!(e, ValidationError::KeyCycle { .. })))
+    };
+    // A track keyed by the group it plays into, or by itself after its devices: a loop.
+    assert!(cycle(keyed(&mut p, 1, DeviceInput::key(ChannelId(3), TapPoint::PostFx))));
+    assert!(cycle(keyed(&mut p, 1, DeviceInput::key(ChannelId(1), TapPoint::PostFx))));
+    let bad = |errors: Result<(), Vec<ValidationError>>| {
+        errors.is_err_and(|e| e.iter().any(|e| matches!(e, ValidationError::BadKey { .. })))
+    };
+    assert!(bad(keyed(&mut p, 1, DeviceInput::key(ChannelId(99), TapPoint::PostFx))));
+    let loud = DeviceInput { gain: DeviceInput::MAX_GAIN * 2.0, ..DeviceInput::key(ChannelId(2), TapPoint::PostFx) };
+    assert!(bad(keyed(&mut p, 1, loud)));
+    let mut two = p.clone();
+    two.channel_mut(ChannelId(1)).unwrap().devices[0].inputs =
+        vec![DeviceInput::key(ChannelId(2), TapPoint::PostFx), DeviceInput::key(ChannelId(2), TapPoint::PreFx)];
+    assert!(bad(two.validate()));
+    for tap in TapPoint::ALL {
+        assert_eq!(TapPoint::from_name(tap.name()), Some(tap));
+    }
 }
 
 #[test]

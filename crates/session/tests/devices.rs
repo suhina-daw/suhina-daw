@@ -1210,6 +1210,7 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
     saved.channels[0].devices[0].set_sample_reference("tone.wav", &wav.display().to_string());
     assert_eq!(saved.channels[0].devices[0].state, state, "asset reference must not replace graph data");
     saved.contents.push(ClipContent {
+        linked: false,
         id: ContentId(1),
         name: "Note".into(),
         length: 1.,
@@ -1412,4 +1413,54 @@ fn the_randomizer_refuses_what_it_cannot_do() {
     assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 9 })).is_err());
     assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "seed": -1 })).is_err());
     assert!(run(&mut session, "device.randomize", json!({ "track": 1, "device": 0, "amount": 2 })).is_err());
+}
+
+/// `device.rename`: the panel's name changes, one undo step; an empty or too long name is refused;
+/// a renamed plug-in is still found among the installed ones by the name it had.
+#[test]
+fn a_device_is_renamed_and_a_renamed_plug_in_is_still_found() {
+    use suhina_plugins::scan::{Catalog, PluginInfo};
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" })).unwrap();
+    let out = run(&mut session, "device.rename", json!({ "track": "Keys", "device": 0, "name": "  Source level  " }))
+        .unwrap();
+    assert_eq!(out["name"], "Source level");
+    let name = |s: &Session| s.project().channels.iter().flat_map(|c| &c.devices).next().map(|d| d.name.clone());
+    assert_eq!(name(&session).as_deref(), Some("Source level"));
+    assert!(run(&mut session, "device.rename", json!({ "track": "Keys", "device": 0, "name": " " })).is_err());
+    let long = "x".repeat(201);
+    assert!(run(&mut session, "device.rename", json!({ "track": "Keys", "device": 0, "name": long })).is_err());
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(name(&session).as_deref(), Some("Utility"));
+    // A built-in keeps no second name.
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert!(session.project().channels.iter().flat_map(|c| &c.devices).all(|d| d.extensions.0.is_empty()));
+
+    // A plug-in saved by name only (its id is not installed) is found by that name after a rename.
+    let mut catalog = Catalog::new();
+    let verb = PluginInfo {
+        path: std::path::PathBuf::from("Verb.vst3"),
+        id: "ABCDEF0123456789ABCDEF0123456789".into(),
+        name: "Verb".into(),
+        vendor: "Vendor".into(),
+        version: "1".into(),
+        features: vec!["Fx".into()],
+        replaces: Vec::new(),
+        ara: false,
+    };
+    catalog.insert(verb.path.clone(), vec![verb]);
+    let mut project = project();
+    let keys = project.tracks[0].channel.unwrap();
+    project.channel_mut(keys).unwrap().devices.push(Device::new("Verb", DeviceKind::Vst2 { id: 7 }));
+    let mut session = Session::new(project);
+    for name in ["Long tail", "Hall"] {
+        run(&mut session, "device.rename", json!({ "track": "Keys", "device": 0, "name": name })).unwrap();
+        let device = &session.project().channel(keys).unwrap().devices[0];
+        assert_eq!((device.name.as_str(), device.plugin_name()), (name, "Verb"));
+        let found = suhina_session::device_plugin(&catalog, device).map(|(m, _)| m.plugin.name.clone());
+        assert_eq!(found.as_deref(), Some("Verb"));
+    }
+    // Saved and opened again, it keeps both.
+    let saved = suhina_project_file::from_json(&suhina_project_file::to_json(session.project())).unwrap();
+    assert_eq!(saved.channel(keys).unwrap().devices[0].plugin_name(), "Verb");
 }

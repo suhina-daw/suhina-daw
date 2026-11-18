@@ -159,6 +159,11 @@ pub struct PluginRow {
     pub enabled: bool,
     /// Marked as the user's own (`plugin.setOwned`).
     pub owned: bool,
+    /// How its instances share host processes (`plugin.setHosting`): `binary` (one process per
+    /// plug-in file, the default), `vendor` or `instance` (a process of its own for each).
+    pub hosting: String,
+    /// It edits clips over ARA: its instances share their document's process, never one each.
+    pub ara: bool,
 }
 
 /// What the page or the plug-in manager asks the app to do with the plug-in library.
@@ -180,6 +185,9 @@ pub enum PluginRequest {
     SetEnabledMany(Vec<String>, bool),
     /// Mark several plug-ins (by spec) as owned, or take the mark away.
     SetOwnedMany(Vec<String>, bool),
+    /// How several plug-ins' (by spec) instances share host processes, from their next start:
+    /// `binary`, `vendor` or `instance` (`plugin.setHosting`).
+    SetHostingMany(Vec<String>, String),
     /// Read these files again now, one after another.
     ScanFiles(Vec<String>),
     /// Show a file in the system's file manager (Explorer, Finder), picked in its folder.

@@ -21,6 +21,9 @@ pub(crate) struct LiveInput {
     /// The grid launches wait for, which the Arrangement view's grid follows too. Kept here,
     /// not in the project: it reaches a player when one is attached (`launcher.setQuantization`).
     pub(crate) quantization: Quantization,
+    /// A track with no instrument plays its notes as sine tones (#1384): the user's setting, off
+    /// unless the app turns it on. A new output and an export get it.
+    pub(crate) implicit_tones: bool,
 }
 
 impl Default for LiveInput {
@@ -31,6 +34,7 @@ impl Default for LiveInput {
             recording: Recording::default(),
             metronome: (false, -6.0, ClickSound::Beep),
             quantization: Quantization::Bars(1),
+            implicit_tones: false,
         }
     }
 }

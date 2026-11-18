@@ -45,6 +45,7 @@ pub fn blank_project_with(returns: bool) -> Project {
     for (index, (name, notes)) in tracks.into_iter().enumerate() {
         let id = index as u32 + 1;
         project.tracks.push(Track {
+            folder: false,
             id: TrackId(id),
             name: name.into(),
             color: None,
@@ -62,6 +63,7 @@ pub fn blank_project_with(returns: bool) -> Project {
     for (offset, &(id, name)) in returns.iter().enumerate() {
         let track = TrackId(10 + offset as u32);
         project.tracks.push(Track {
+            folder: false,
             id: track,
             name: name.into(),
             color: None,

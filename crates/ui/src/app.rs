@@ -220,6 +220,23 @@ enum AfterLeaving {
     Quit(Vec<ProjectId>),
 }
 
+/// A project about to be left (its tab closed, or another project opened in its place) whose
+/// plug-ins are being read, a frame at a time, for edits made in their own windows: the window
+/// keeps drawing meanwhile, and the leaving goes on once the read is done (`Rack::poll_edits`).
+#[derive(Debug, Clone)]
+struct LeaveCheck {
+    project: ProjectId,
+    then: LeaveThen,
+}
+
+#[derive(Debug, Clone)]
+enum LeaveThen {
+    /// Open this file in its place.
+    Replace(PathBuf),
+    /// Run this `project.close` again, its check done.
+    Close(Action),
+}
+
 /// A folder's packs ([docs/spec/nam-amp-and-cab.md] › Folders › Packs): its subfolders, each
 /// with its `extension` files name-sorted (the pack is skipped when it holds none), then the
 /// files beside the packs as `(entered directly)`. At most 2000 files a pack. The folder is
@@ -408,9 +425,16 @@ pub struct App {
     stashes: HashMap<ProjectId, Stash>,
     /// A dropped file waiting for the user to choose a new tab or replace.
     open_prompt: Option<PathBuf>,
+    /// A zipped project waiting for the person to say where to unpack it.
+    zip_prompt: Option<tabs::ZipPrompt>,
     /// A project with unsaved changes waiting for Save, Don't save or Cancel before it is closed,
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
+    /// A project being left while its plug-ins are read for edits ([`LeaveCheck`]).
+    leave_check: Option<LeaveCheck>,
+    /// A `project.close` whose plug-ins were read: run in the next frame without reading them
+    /// again.
+    checked_close: Option<(ProjectId, Action)>,
     /// Clips a plug-in edits about to go to another track, waiting for Keep edits or Copy as
     /// new (ADR 0033 step 6): the move, and the plug-in's name.
     ara_prompt: Option<(Action, String)>,
@@ -753,7 +777,10 @@ impl App {
             shown_project: None,
             stashes: HashMap::new(),
             open_prompt: None,
+            zip_prompt: None,
             unsaved_prompt: None,
+            leave_check: None,
+            checked_close: None,
             traced_output: None,
             ara_prompt: None,
             folder_drop: None,
@@ -1082,6 +1109,17 @@ impl App {
             self.themes.import(path);
             return;
         }
+        // A zipped project opens once the person said where to unpack it.
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+            match suhina_session::zipped_project(&path) {
+                Ok(Some(found)) => self.zip_prompt = Some(tabs::ZipPrompt::new(path, found)),
+                Ok(None) => {
+                    self.status = Status::Error(format!("{} holds no project (.als or .suhina)", path.display()))
+                }
+                Err(e) => self.status = Status::Error(e),
+            }
+            return;
+        }
         if self.projects.is_empty() {
             self.open_request = Some((path, OpenAs::NewTab));
             return;
@@ -1096,16 +1134,35 @@ impl App {
     /// Opens `path` as asked; in place of a project with unsaved changes only after the user
     /// answered whether to save them.
     fn open_as(&mut self, path: PathBuf, how: OpenAs) {
-        if how == OpenAs::Replace
-            && let Some(active) = self.projects.active()
-        {
-            self.check_plugin_edits(active);
-        }
         match self.projects.active() {
-            Some(active) if how == OpenAs::Replace && self.unsaved(active) => {
-                self.unsaved_prompt = Some(Leaving { project: active, then: AfterLeaving::Replace(path) });
+            // Its plug-ins are read for edits first, a frame at a time ([`App::poll_leave_check`]):
+            // reading them all at once here held the window for up to a second.
+            Some(active) if how == OpenAs::Replace => {
+                self.leave_check = Some(LeaveCheck { project: active, then: LeaveThen::Replace(path) });
             }
             _ => self.open_request = Some((path, how)),
+        }
+    }
+
+    /// Advances the read of a project's plug-ins before it is left ([`LeaveCheck`]); once done,
+    /// asks about unsaved changes or goes on.
+    fn poll_leave_check(&mut self, ctx: &egui::Context) {
+        let Some(check) = self.leave_check.take() else { return };
+        let Some(session) = self.projects.get_mut(check.project) else { return };
+        if !session.rack_mut().poll_edits() {
+            self.leave_check = Some(check);
+            ctx.request_repaint_after(std::time::Duration::from_millis(10));
+            return;
+        }
+        match check.then {
+            LeaveThen::Replace(path) if self.unsaved(check.project) => {
+                self.unsaved_prompt = Some(Leaving { project: check.project, then: AfterLeaving::Replace(path) });
+            }
+            LeaveThen::Replace(path) => self.open_request = Some((path, OpenAs::Replace)),
+            LeaveThen::Close(action) => {
+                self.checked_close = Some((check.project, action));
+                ctx.request_repaint();
+            }
         }
     }
 
@@ -1115,12 +1172,6 @@ impl App {
 
     /// Reads the project's running plug-ins' states now, so a change made only in a plug-in's
     /// editor counts as unsaved before the window asks whether to save.
-    fn check_plugin_edits(&mut self, id: ProjectId) {
-        if let Some(session) = self.projects.get_mut(id) {
-            session.rack_mut().check_edits();
-        }
-    }
-
     /// The open projects with unsaved changes, in tab order.
     fn unsaved_projects(&self) -> Vec<ProjectId> {
         self.projects.ids().into_iter().filter(|id| self.unsaved(*id)).collect()
@@ -1497,6 +1548,7 @@ impl App {
             self.render_threads_applied = Some(settings.render_threads);
         }
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
+        self.projects.set_implicit_tones(settings.implicit_tones);
         motion::set_enabled(ctx, settings.animations);
         crate::kit::widgets::set_drag_hides_pointer(ctx, settings.drag_hides_pointer);
         self.arrangement.headers_left = headers_left(settings.track_headers);
@@ -3087,6 +3139,13 @@ impl App {
         }
         let window = ui.max_rect();
         let mut actions = Vec::new();
+        self.poll_leave_check(ui.ctx());
+        // A close whose plug-ins were read goes on now.
+        let checked = self.checked_close.take();
+        if let Some((_, action)) = &checked {
+            actions.push(action.clone());
+        }
+        let checked = checked.map(|(project, _)| project);
         crate::detail::device_canvas::finish_sample_audition(ui.ctx(), self.projects.active(), &mut actions);
         let revision = self.revision;
         ui.ctx().data_mut(|d| {
@@ -3316,11 +3375,11 @@ impl App {
         // theme moves them). Each region draws in its rectangle and takes input only there; a
         // region the grid gives none is not drawn.
         self.missing.sync(&mut self.projects, self.revision);
-        let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
+        let prompting = self.open_prompt.is_some() || self.zip_prompt.is_some();
+        let missing_bar = !prompting && self.missing.bar_shows();
         // A newer build is offered in a bar over an open project; the start panel has its own
         // line (`docs/spec/updates.md` › With a project open).
-        let update_bar =
-            self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
+        let update_bar = !prompting && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
         // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
         // its value for when a project opens. It slides in and out from its side, with animations
         // on (#708).
@@ -3330,8 +3389,7 @@ impl App {
         // The grid takes the whole room, as the panels it replaced did: what the window holds
         // reaches its edges, for what is painted behind it.
         ui.advance_cursor_after_rect(room);
-        let input =
-            self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar || update_bar);
+        let input = self.window_input(room.size(), grid.is_some(), prompting || missing_bar || update_bar);
         let layout = crate::kit::native_css::window(&input)
             .map(|layout| layout.translated(room.min.to_vec2()))
             .unwrap_or_default();
@@ -3398,6 +3456,8 @@ impl App {
                 let inside = style.paint(ui.painter(), rect).content;
                 if self.open_prompt.is_some() {
                     in_region(ui, inside, |ui| self.open_prompt_bar(ui));
+                } else if self.zip_prompt.is_some() {
+                    in_region(ui, inside, |ui| self.zip_prompt_bar(ui));
                 } else if missing_bar {
                     in_region(ui, inside, |ui| self.missing.bar(ui, inside));
                 } else if update_bar && let Some(wanted) = in_region(ui, inside, |ui| self.updates.bar(ui, inside)) {
@@ -3702,7 +3762,9 @@ impl App {
                                 }
                             };
                             let mut timeline = timeline;
+                            self.frame_trace.mark("timeline build");
                             timeline.automation.take_plugins(session.project(), plugin_lists);
+                            self.frame_trace.mark("lane plug-ins");
                             // A parameter moved in a plug-in's own editor shows in its track's
                             // lanes, against the parameters just built (#1205).
                             for (track, key) in std::mem::take(&mut self.touched_lanes) {
@@ -3710,6 +3772,7 @@ impl App {
                             }
                             timeline.follow_automation(session.project());
                             timeline.follow_drag(self.arrangement.automation.dragged.as_ref());
+                            self.frame_trace.mark("lane values");
                             timeline.recording_spans = session.arrangement_recording_spans();
                             timeline.midi_ports = self.projects.midi_ports().to_vec();
                             // What ARA plug-ins found in the audio clips, as it is now (#720).
@@ -3726,6 +3789,7 @@ impl App {
                                 .filter(|l| l.clips.iter().any(|c| c.audio))
                                 .filter_map(|l| Some((l.track, session.rack().ara_activity(l.track)?)))
                                 .collect();
+                            self.frame_trace.mark("ara notes");
                             if !timeline.ara_activity.is_empty() {
                                 // Its progress moves without input.
                                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
@@ -3870,8 +3934,13 @@ impl App {
             let closing = (action.id == "project.close")
                 .then(|| action.params["project"].as_u64().and_then(|n| u32::try_from(n).ok()).map(ProjectId))
                 .flatten();
-            if let Some(project) = closing {
-                self.check_plugin_edits(project);
+            // Its plug-ins are read for edits first, a frame at a time; the close runs again
+            // once they are ([`App::poll_leave_check`]).
+            if let Some(project) = closing
+                && checked != Some(project)
+            {
+                self.leave_check = Some(LeaveCheck { project, then: LeaveThen::Close(action.clone()) });
+                continue;
             }
             if self.window_action(action) {
                 continue;

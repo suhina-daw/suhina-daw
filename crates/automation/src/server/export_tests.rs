@@ -10,8 +10,13 @@ use suhina_engine::model::*;
 fn project() -> Project {
     Project {
         tracks: vec![Track { channel: Some(ChannelId(1)), ..Track::new(TrackId(1), "Bass") }],
-        channels: vec![Channel::new(ChannelId(1), "Bass")],
+        // An instrument: a track without one is silent (#1384).
+        channels: vec![Channel {
+            devices: vec![Device::new("fm-synth", DeviceKind::Builtin("fm-synth".into()))],
+            ..Channel::new(ChannelId(1), "Bass")
+        }],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "Note".into(),
             length: 1.0,

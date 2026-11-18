@@ -131,7 +131,7 @@ When the task changed code (a review changes nothing and runs nothing):
 ```sh
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo test --workspace --no-fail-fast   # every test binary runs, past a failing one
 cargo deny check             # when Cargo.lock changed
 python scripts/docs.py check
 ```

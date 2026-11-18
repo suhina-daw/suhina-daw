@@ -153,6 +153,8 @@ fn a_pan_drag_is_heard_while_dragging_and_is_one_undo_step() {
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
+    // Its MIDI tracks have no instrument: they play the sine tones (#1384).
+    app.projects_mut().set_implicit_tones(true);
     app.set_browser_open(false);
     app.set_session(session, &[]);
     // Frames close enough together for a double-click.
@@ -220,6 +222,8 @@ fn a_volume_drag_in_the_arrangement_is_heard_while_dragging_and_is_one_undo_step
     let mut session = Session::new(project);
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
     let mut app = App::new();
+    // Its MIDI tracks have no instrument: they play the sine tones (#1384).
+    app.projects_mut().set_implicit_tones(true);
     app.set_browser_open(false);
     app.set_session(session, &[]);
     let mut harness = window(app);

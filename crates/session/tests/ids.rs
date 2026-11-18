@@ -13,6 +13,7 @@ use crate::support::run;
 
 fn content(id: u32, name: &str, key: u8) -> ClipContent {
     ClipContent {
+        linked: false,
         id: ContentId(id),
         name: name.into(),
         length: 4.0,

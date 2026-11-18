@@ -146,6 +146,9 @@ pub struct Projects {
     /// With no project open, the empty session previews play in, with a player of its own
     /// (ADR 0011); made on the first preview and dropped before a project opens its output.
     preview: Option<Session>,
+    /// A track with no instrument plays its notes as sine tones (#1384): the user's setting, off
+    /// by default; every project opened gets it.
+    implicit_tones: bool,
 }
 
 /// How often an output whose device reported an error is opened again.
@@ -515,6 +518,8 @@ impl Projects {
             .unwrap_or_else(|| format!("Untitled {}", id.0));
         self.close_preview_output();
         let mut session = session;
+        // Every project plays as the user set it (#1384).
+        session.set_implicit_tones(self.implicit_tones);
         if session.trusted() == &suhina_media::Trusted::default() {
             let source = session.source().map(Path::to_path_buf);
             session.set_trusted(self.trusted_audio_for(source.as_deref()));
@@ -719,6 +724,16 @@ impl Projects {
         }
         suhina_plugins::trace!("quit: projects let go in {:?}", started.elapsed());
         true
+    }
+
+    /// Whether a track with no instrument plays its notes as sine tones (#1384), the user's
+    /// setting: every open project and every one opened later plays so, off by default. The
+    /// browser's preview of a MIDI file is its own and keeps its instrument.
+    pub fn set_implicit_tones(&mut self, on: bool) {
+        self.implicit_tones = on;
+        for open in &mut self.tabs.open {
+            open.session.set_implicit_tones(on);
+        }
     }
 
     /// Uses `library` for the `plugin.*` commands instead of the one in Suhina's settings
@@ -1034,7 +1049,7 @@ impl Projects {
             return;
         }
         if let Some(previous) = self.tabs.active.and_then(|a| self.get_mut(a)) {
-            previous.detach_player();
+            previous.release_player();
         }
         self.tabs.active = Some(id);
     }

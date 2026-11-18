@@ -693,7 +693,8 @@ fn menus_delete_a_track_and_duplicate_a_clip() {
     let before = clips(&harness);
     harness.get_by_label("Clip Fill on Drums at bar 29").click_secondary();
     harness.run();
-    harness.get_by_label_contains("Duplicate").click();
+    // "Duplicate", not "Duplicate linked".
+    harness.get_by(|n| n.label().is_some_and(|l| l.starts_with("Duplicate") && !l.contains("linked"))).click();
     harness.run();
     // The copy sits after Fill and shortens the clip it lands on, so there is one more clip.
     assert_eq!(clips(&harness), before + 1);
@@ -987,6 +988,34 @@ fn a_fades_menu_resets_it() {
         .session()
         .and_then(|s| s.project().arrangement.lanes.iter().flat_map(|l| &l.clips).next().map(|c| c.fade_in));
     assert_eq!(fade_in, Some(0.0));
+}
+
+/// A fade's menu stays open on a clip that is only hovered, not selected: the menu opens under
+/// the pointer, and the handles it belongs to stay while it is open.
+#[test]
+fn a_fades_menu_stays_open_on_a_clip_not_selected() {
+    use suhina_engine::model::{FadeCurve, FadeShape};
+    let mut harness = window_with_step(audio_app(), 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    // Hovered, not selected: the handles show while the pointer is over the clip.
+    let clip = harness.get_by_label("Clip Loop on Loop at bar 1").rect();
+    harness.hover_at(clip.center());
+    harness.run();
+    // Then onto the fade-in handle at the clip's corner, over the Edit gain envelope button's
+    // edge, and a right-click: the handle takes it, and its menu stays while the pointer is on it.
+    let handle = harness.get_by_label("Fade-in of Loop on Loop").rect().center();
+    harness.hover_at(handle);
+    harness.run();
+    harness.get_by_label("Fade-in of Loop on Loop").click_secondary();
+    harness.run();
+    for _ in 0..10 {
+        harness.step();
+    }
+    assert!(harness.query_by_label("Cosine").is_some(), "the shape menu is still open");
+    harness.get_by_label("Cosine").click();
+    harness.run();
+    assert_eq!(loop_fade_in_curve(&harness), Some(FadeCurve { shape: FadeShape::Cosine, curve: 0.0 }));
 }
 
 /// A right-click on a fade handle picks the shape; the curve handle on the fade's line bends it

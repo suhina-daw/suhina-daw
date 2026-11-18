@@ -231,7 +231,7 @@ pub(crate) fn scale_audio(p: &mut Project, clip: &mut Clip, factor: f64) -> Resu
     if shared {
         let id = new_content_id(p)?;
         let content = p.content(clip.content).cloned().ok_or("the clip's content is missing")?;
-        p.contents.push(suhina_model::ClipContent { id, ..content });
+        p.contents.push(suhina_model::ClipContent { id, linked: false, ..content });
         clip.content = id;
     }
     let content = p.contents.iter_mut().find(|c| c.id == clip.content).ok_or("the clip's content is missing")?;

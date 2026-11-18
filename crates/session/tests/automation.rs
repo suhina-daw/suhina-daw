@@ -36,6 +36,8 @@ fn sd_device() -> Device {
     graph.connections =
         vec![suhina_device_sdk::Connection::new("in", "gain"), suhina_device_sdk::Connection::new("gain", "out")];
     Device {
+        instrument: false,
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Test Gain".into(),
         kind: DeviceKind::Sd,

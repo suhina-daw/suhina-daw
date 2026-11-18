@@ -1436,3 +1436,36 @@ fn a_nam_device_inside_a_group_has_its_name_and_note_looked_up() {
         "the grouped device's note is read as the chain's is: {notes:?}"
     );
 }
+
+/// Opening a file in place of a project reads its plug-ins for edits a frame at a time, never all
+/// at once in the click's frame (that held the window for up to a second with many plug-ins);
+/// once read, unsaved changes are asked about, and a project without any is replaced at once.
+#[test]
+fn opening_in_place_reads_the_plug_ins_across_frames_then_asks_or_opens() {
+    let frame = |app: &mut App| {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| app.poll_leave_check(ui.ctx()));
+        output.textures_delta.clear();
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(crate::demo::demo_project()), &[]);
+    let id = app.projects.active().unwrap();
+    app.projects.get_mut(id).unwrap().execute("track.delete", &json!({ "track": 1 })).unwrap();
+    app.open_as(PathBuf::from("next.suhina"), OpenAs::Replace);
+    assert!(app.leave_check.is_some(), "the click only starts the read");
+    assert!(app.unsaved_prompt.is_none() && app.open_request.is_none());
+    for _ in 0..4 {
+        frame(&mut app);
+    }
+    assert!(app.leave_check.is_none());
+    assert!(matches!(app.unsaved_prompt, Some(Leaving { then: AfterLeaving::Replace(_), .. })));
+
+    let mut clean = App::new();
+    clean.set_session(Session::new(crate::demo::demo_project()), &[]);
+    clean.open_as(PathBuf::from("next.suhina"), OpenAs::Replace);
+    for _ in 0..4 {
+        frame(&mut clean);
+    }
+    assert!(clean.unsaved_prompt.is_none());
+    assert!(matches!(clean.open_request, Some((_, OpenAs::Replace))));
+}
