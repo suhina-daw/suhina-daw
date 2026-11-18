@@ -564,6 +564,32 @@ fn with_stacked_notes_off_a_longer_key_stops_at_the_next_note_of_the_key() {
     assert_eq!(grow.params["notes"], json!([0, 1]));
 }
 
+/// With stacked notes off, a note that is not selected does not stop Shift+Right: the selected
+/// note runs over it to the grid line, and the note under it makes room once the selection is
+/// let go (Covered notes), as after a drag. Only the selected notes stop each other.
+#[test]
+fn with_stacked_notes_off_a_longer_key_runs_over_a_note_that_is_not_selected() {
+    let piano = clip(vec![note(0.0, 0.25, 60), note(0.25, 0.25, 60), note(0.5, 0.25, 60)]);
+    for fine in [false, true] {
+        let action = if fine { "pianoRoll.longerFine" } else { "pianoRoll.longer" };
+        let mut state = PianoRollState { notes_replace: true, ..focused_on(&piano) };
+        state.selected = BTreeSet::from([0]);
+        let grow = state.key_action(action, &piano, 0.0, None).expect("note.resize");
+        assert_eq!(grow.params["notes"], json!([0]), "{action}");
+        let length = grow.params["lengths"][0].as_f64().unwrap_or(0.0);
+        assert!(length > 0.25 + 1e-9, "{action}: past the next note's start, {length}");
+        assert!(state.settle_pending, "{action}: the note under it makes room once let go");
+    }
+    // The first and the last selected, the middle one not: the first runs over the middle one
+    // and stops at the last, which is selected, before the grid line.
+    let mixed = clip(vec![note(0.0, 0.2, 60), note(0.21, 0.02, 60), note(0.24, 0.5, 60)]);
+    let mut state = PianoRollState { notes_replace: true, ..focused_on(&mixed) };
+    state.selected = BTreeSet::from([0, 2]);
+    let grow = state.key_action("pianoRoll.longer", &mixed, 0.0, None).expect("note.resize");
+    assert_eq!(grow.params["notes"][0], json!(0));
+    assert!((grow.params["lengths"][0].as_f64().unwrap_or(0.0) - 0.24).abs() < 1e-9, "{}", grow.params);
+}
+
 /// A note under selected notes that are to make room shows what `note.makeRoom` will leave of it.
 #[test]
 fn notes_under_selected_ones_show_what_making_room_leaves() {
@@ -874,14 +900,14 @@ fn alt_and_an_arrow_key_go_a_fine_step_off_the_grid() {
     assert_eq!(shorter["lengths"][0].as_f64(), Some(0.96875));
 }
 
-/// A fine step longer stops at the next note of the key with stacked notes off, and runs over it
-/// with them on.
+/// A fine step longer stops at the next selected note of the key with stacked notes off, and runs
+/// over it with them on.
 #[test]
-fn a_fine_step_longer_stops_at_the_next_note_of_the_key_unless_notes_stack() {
+fn a_fine_step_longer_stops_at_the_next_selected_note_of_the_key_unless_notes_stack() {
     let clip = clip(vec![note(1.0, 1.24, 60), note(2.25, 1.0, 60)]);
     let length = |stack: bool| {
         let mut state = PianoRollState { notes_replace: !stack, ..focused_on(&clip) };
-        state.selected = BTreeSet::from([0]);
+        state.selected = BTreeSet::from([0, 1]);
         let longer = state.key_action("pianoRoll.longerFine", &clip, 0.0, None).map(|a| a.params);
         longer.and_then(|p| p["lengths"][0].as_f64()).unwrap_or(0.0)
     };
