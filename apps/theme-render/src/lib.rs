@@ -254,8 +254,9 @@ pub struct Shot {
 
 /// Draws the scene the harness is in.
 pub fn shoot(harness: &mut Harness<'static, App>) -> Result<Shot, String> {
-    // A background picture is read on another thread: wait for it, and draw a frame with it.
-    harness.state_mut().wait_for_background();
+    // A background picture is read, and the sample map laid out, on other threads: wait for
+    // them, and draw a frame with them.
+    harness.state_mut().wait_for_workers();
     harness.run_steps(2);
     let pixels = harness.render()?;
     let see_through = theme::window_fill().a() < u8::MAX;

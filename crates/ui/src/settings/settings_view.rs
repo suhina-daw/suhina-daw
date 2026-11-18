@@ -2477,11 +2477,12 @@ pub(crate) fn plugin_folders(
         *y += height;
         rect
     };
+    let mac = crate::kit::platform::current() == crate::kit::platform::Platform::MacOs;
     let format_name = |format: &str| match format {
         "vst3" => "VST3",
         "clap" => "CLAP",
         "vst2" => "VST2",
-        "any" if cfg!(target_os = "macos") => "CLAP, VST3 and VST2",
+        "any" if mac => "CLAP, VST3 and VST2",
         _ => "CLAP and VST3",
     };
 

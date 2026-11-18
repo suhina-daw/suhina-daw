@@ -22,7 +22,7 @@ pub(super) fn show(
     let whole = ui.max_rect();
     // The window's buttons, where Suhina draws them (Windows), keep their own room at the right
     // end: they are the system's, like the title bar, and no sheet moves or hides them.
-    let custom_controls = cfg!(target_os = "windows");
+    let custom_controls = crate::kit::platform::current().draws_own_title_bar();
     let controls_width = if custom_controls { 3.0 * CONTROL_WIDTH } else { 0.0 };
     let controls =
         Rect::from_min_max(egui::pos2((whole.right() - controls_width).max(whole.left()), whole.top()), whole.max);
@@ -120,7 +120,9 @@ fn group(ui: &Ui, rect: Rect, text: String, color: egui::Color32) {
 
 /// The Windows custom title bar keeps all eight native resize directions.
 pub(super) fn resize_edges(ui: &Ui) {
-    if !cfg!(target_os = "windows") || ui.input(|input| input.viewport().maximized.unwrap_or(false)) {
+    if !crate::kit::platform::current().draws_own_title_bar()
+        || ui.input(|input| input.viewport().maximized.unwrap_or(false))
+    {
         return;
     }
     let Some(position) = ui.input(|input| input.pointer.hover_pos()) else { return };
@@ -157,15 +159,26 @@ mod tests {
     use super::*;
     use egui_kittest::{Harness, kittest::Queryable};
 
+    /// The window's buttons are in the bar only where Suhina draws the title bar (Windows); where
+    /// the system draws one, they are the system's.
     #[test]
     fn native_decorations_do_not_duplicate_window_buttons() {
-        let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {
-            let bar = crate::kit::element::APPLICATION_BAR.enter();
-            show(ui, &bar, ViewSettings::default(), "Project", "120 BPM");
-        });
-        harness.run();
-        for label in ["Window Minimize", "Window Maximize", "Window Close"] {
-            assert_eq!(harness.query_by_label(label).is_some(), cfg!(target_os = "windows"));
+        use crate::kit::platform::{self, Platform};
+        for system in [Platform::Windows, Platform::MacOs, Platform::Linux] {
+            platform::with(system, || {
+                let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {
+                    let bar = crate::kit::element::APPLICATION_BAR.enter();
+                    show(ui, &bar, ViewSettings::default(), "Project", "120 BPM");
+                });
+                harness.run();
+                for label in ["Window Minimize", "Window Maximize", "Window Close"] {
+                    assert_eq!(
+                        harness.query_by_label(label).is_some(),
+                        system == Platform::Windows,
+                        "{label} on {system:?}"
+                    );
+                }
+            });
         }
     }
 
@@ -212,7 +225,11 @@ mod tests {
         assert_eq!(gap(&spaced).zip(gap(&plain)).map(|(a, b)| a - b), Some(10.0));
         let (hidden, close) = painted("#project-name { display: none; } bar-item { display: none; }");
         assert!(x(&plain, "Project").is_some() && x(&hidden, "Project").is_none());
-        assert_eq!(close, cfg!(target_os = "windows"), "the window's buttons are not the sheet's");
+        assert_eq!(
+            close,
+            crate::kit::platform::current().draws_own_title_bar(),
+            "the window's buttons are not the sheet's"
+        );
     }
 
     /// The colour the bar's text containing `text` is painted in, under `css`.

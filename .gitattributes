@@ -15,3 +15,8 @@ docs/commands.md linguist-generated=true
 # The pack's files are shipped byte for byte (`packs/`): nothing converts them.
 *.nam -text
 *.wav -text
+
+# Artwork and sheets built into the app with include_str!: the theme renders' recorded digests name
+# textures by a hash of this text, so it is LF on every system (apps/theme-render/tests/painted.rs).
+*.svg text eol=lf
+*.css text eol=lf

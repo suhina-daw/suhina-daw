@@ -638,13 +638,7 @@ pub struct ManagerOut {
 
 /// "Show in Explorer" on Windows, "Show in Finder" on macOS.
 fn show_in_folder_label() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "Show in Explorer"
-    } else if cfg!(target_os = "macos") {
-        "Show in Finder"
-    } else {
-        "Show in folder"
-    }
+    crate::kit::platform::current().show_in_folder_label()
 }
 
 /// A warning mark: a triangle in `color` around `center`.
