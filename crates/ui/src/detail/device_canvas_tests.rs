@@ -2909,18 +2909,15 @@ fn a_panel_picks_its_light_or_dark_artwork_by_the_declared_colour_scheme() {
     }
 }
 
-/// A dial with the device's own face keeps it: no theme's knob artwork (`device.knob.body`,
-/// `knob.body`) replaces it, since the device is styled and the theme styles only what the device
+/// A dial with the device's own face keeps it: no theme's knob artwork (`knob.body`) replaces it, since the device is styled and the theme styles only what the device
 /// leaves unstyled.
 #[test]
 fn a_themes_knob_artwork_never_replaces_a_dials_own_face() {
     let canvas = image_dial_canvas();
     let green = Color32::from_rgb(0x12, 0xAB, 0x34);
     let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\"><rect width=\"20\" height=\"20\" fill=\"#12AB34\"/></svg>";
-    for role in ["device.knob.body", "knob.body"] {
-        let skin = crate::kit::skin::Skin { assets: [(role.into(), svg.into())].into(), ..Default::default() };
-        assert!(!drawn_with(&canvas, skin, &[], green).1, "{role} leaves the device's face");
-    }
+    let skin = crate::kit::skin::Skin { assets: [("knob.body".into(), svg.into())].into(), ..Default::default() };
+    assert!(!drawn_with(&canvas, skin, &[], green).1, "knob.body leaves the device's face");
 }
 
 /// A canvas with one toggle button bound to `on`, styled by the panel's own `style`, drawn once

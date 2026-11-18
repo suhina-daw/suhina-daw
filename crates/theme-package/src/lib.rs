@@ -30,7 +30,6 @@ const VERSION: u64 = 1;
 
 /// A style sheet or an SVG is at most this big, as the app reads them.
 pub const MAX_TEXT: usize = 128 * 1024;
-/// A PNG is at most this big.
 /// The kind of picture a file named `lower` (in lower case) is by its extension: a PNG, or a
 /// JPEG or WebP photo a theme's `backdrop-image` may name (#1487 F1).
 pub fn picture(lower: &str) -> Option<&'static str> {
@@ -53,6 +52,7 @@ pub fn picture_kind(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
+/// A PNG is at most this big.
 pub const MAX_PNG: usize = 8 * 1024 * 1024;
 /// Any other file (a README, say) is at most this big.
 const MAX_OTHER: usize = 1024 * 1024;

@@ -103,12 +103,12 @@ fn artwork_image(text: &str) -> bool {
             .is_some_and(|path| !path.is_empty() && path.len() <= 240 && !path.contains([';', '{', '}', '\0']))
 }
 
-/// The path `url("<path>.png")` names, when it is a PNG inside the theme's folder: relative, at
-/// most 240 bytes, with no empty, `.` or `..` part and no `\`, `:` or NUL. The one check of a
-/// `backdrop-image`, for the engine and for the host that loads the picture.
 /// The files a `backdrop-image` may name: a PNG, a JPEG or a WebP picture (#1487 F1).
 pub const BACKDROP_EXTENSIONS: [&str; 4] = [".png", ".jpg", ".jpeg", ".webp"];
 
+/// The path `url("<path>")` names, when it is a PNG, JPEG or WebP picture inside the theme's
+/// folder: relative, at most 240 bytes, with no empty, `.` or `..` part and no `\`, `:` or NUL.
+/// The one check of a `backdrop-image`, for the engine and for the host that loads the picture.
 pub fn backdrop_path(text: &str) -> Option<&str> {
     let path = text.trim().strip_prefix("url(")?.strip_suffix(')')?.trim().trim_matches(['"', '\'']);
     (path.len() <= 240

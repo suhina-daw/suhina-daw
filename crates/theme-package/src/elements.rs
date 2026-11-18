@@ -585,7 +585,7 @@ pub const ELEMENTS: &[Element] = &[
     element(
         "knob",
         Control,
-        "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`, and `device.knob.*` replaces the face a device panel draws for its own knobs.",
+        "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`; a device panel's own knob face is never replaced.",
     )
     .parts(&["knob-body", "knob-pointer", "knob-ring"])
     .attributes(&["kind"])
@@ -593,8 +593,6 @@ pub const ELEMENTS: &[Element] = &[
         .artwork(&[
             default_svg!("knob.body", "knob-body"),
             default_svg!("knob.pointer", "knob-pointer"),
-            own("device.knob.body"),
-            own("device.knob.pointer"),
         ]),
     element("knob-body", Part, "A knob's body; its artwork takes its `color`."),
     element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),

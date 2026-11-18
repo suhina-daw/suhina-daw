@@ -30,7 +30,8 @@ pub(super) fn load(path: &str) -> Result<image::RgbaImage, String> {
     limits.max_image_height = Some(8192);
     limits.max_alloc = Some(128 * 1024 * 1024);
     reader.limits(limits);
-    let image = reader.decode().map_err(|error| format!("Background image: {error}"))?;
+    let image =
+        crate::kit::artwork_png::decode_oriented(reader).map_err(|error| format!("Background image: {error}"))?;
     let image = if image.width() > 1600 || image.height() > 1600 { image.thumbnail(1600, 1600) } else { image };
     Ok(image.into_rgba8())
 }
@@ -69,5 +70,17 @@ mod tests {
         std::fs::write(&path, b"GIF89a\x01\x00\x01\x00").unwrap();
         assert!(load(path.to_str().unwrap()).unwrap_err().contains("not a PNG, JPEG or WebP"));
         std::fs::remove_file(&path).unwrap();
+    }
+
+    /// A JPEG with the EXIF orientation 6 (a portrait phone photo stored on its side) is turned
+    /// upright: its width and height swap, and its top-left pixel comes from its bottom-left.
+    #[test]
+    fn a_photos_exif_orientation_turns_it_upright() {
+        let bytes = crate::kit::artwork_png::tests_support::sideways_jpeg();
+        let path = std::env::temp_dir().join(format!("suhina-background-oriented-{}.jpg", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let image = load(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(image.dimensions(), (16, 32));
     }
 }

@@ -420,8 +420,8 @@ The Amp Modeler's canvas draws an amp head: its artwork (`devices/nam-amp-modele
 frame, the grille with the dark slots its controls sit in, the logo and the brushed plate under
 the knobs) is an image layer under the controls, at three times the canvas's points so it stays
 sharp on a high-DPI screen; the folder's `README.md` records its author and licence. What the
-artwork does not hold follows the theme: the texts, the dropdowns and the steppers take the
-palette's colours. The knobs keep the device's own face, which no theme's knob artwork replaces;
+artwork does not hold follows the panel's own sheet: the texts, the dropdowns and the steppers
+sit in the panel's own colours, in light and dark. The knobs keep the device's own face, which no theme's knob artwork replaces;
 their pointer line takes `knob-pointer { color }` where the theme gives one. EQ, HQ and Mono are
 the canvas's buttons, styled by the panel's own sheet (`ui.style`,
 [sd-device-format.md](sd-device-format.md) › Panel style sheets): a dark bezel with a cream
