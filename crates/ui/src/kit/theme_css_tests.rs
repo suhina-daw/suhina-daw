@@ -48,7 +48,10 @@ fn a_control_placement_is_no_longer_read() {
     assert_eq!(theme, Theme::default());
     assert!(!export(&theme).contains(".control-"));
     let notices = super::super::native_css::inspect(css).unwrap();
-    assert!(notices.iter().any(|notice| notice.message.contains("left")), "{notices:?}");
+    // Each removed placement's notice names what took its place (#1478).
+    for replacement in ["margin-left", "flex-direction", "align-self"] {
+        assert!(notices.iter().any(|notice| notice.message.contains(replacement)), "{replacement}: {notices:?}");
+    }
 }
 
 #[test]

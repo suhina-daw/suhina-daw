@@ -293,6 +293,19 @@ on `track-header` or `mixer` itself, as padding under one of those attributes mo
 does not make room for them. The selector reference below lists each strip's parts
 (*The strips' parts*). A device panel's controls keep Suhina's layout for now.
 
+Control placement properties are gone, and a sheet that still writes one of them gets a notice
+naming what to write instead. The notice comes from the property, not the selector: a
+`.control-NAME` rule that sets only other properties, such as `width`, matches nothing and gets no
+notice.
+
+| Removed | Write instead |
+|---|---|
+| `.control-NAME { … }` | a rule for the part's element id, listed in *The strips' parts* (`#mixer-volume` for a mixer's fader, `button#control-play` for a toolbar button); a `.control-*` rule matches nothing |
+| `left`, `top`, `right`, `bottom` | `margin-left`, `margin-top`, `margin-right`, `margin-bottom`, or `order` to move a part before or after the others |
+| `direction`, `--suhina-direction` | `flex-direction` on the group that holds the parts (`mixer-toggles { flex-direction: column; }`) |
+| `anchor-left`, `anchor-top`, `anchor-right`, `anchor-bottom` | `align-self` on the part, `justify-content` on its group, or `margin-left: auto` (and the other sides) to push it to an edge |
+| `compact-below` on `arrangement` | nothing to set: Suhina picks a header's lines by its size; style the one-line header with `track-header[layout="short"]` |
+
 Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds, with a
 variant for a state if you like. Artwork is not chosen by a track's colour; an SVG that draws in
 `currentColor` takes the track's colour as Suhina draws it (dimmed while muted, and grey in a
