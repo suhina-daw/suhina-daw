@@ -236,6 +236,11 @@ pub struct ArrangementViewState {
     /// The looks of clips' parts read this frame ([`ClipLook::parts`]), shared by every clip
     /// drawn in it and emptied as the frame starts (`arrangement_view::show`).
     pub(crate) clip_parts: ClipPartsCache,
+    /// Whether clips drawn now are inside their row's `track-lane` element: true while a lane's
+    /// clips are drawn in it, false for the clips drawn outside it (take lanes, takes recording,
+    /// a dragged clip, return tracks). Their parts are kept apart in [`ClipLook::parts`], as a
+    /// rule for the lane (`track-lane[selected] clip-name`) reaches only the first.
+    pub(crate) in_lane: bool,
     /// The time selection, the picked clips and the range painted on automation lanes as the
     /// last frame left them: whichever was made since gives the others up (#1322).
     seen_selections:
@@ -363,6 +368,7 @@ impl Default for ArrangementViewState {
             zoom_reach: 0.0,
             beat_width: DEFAULT_BEAT_WIDTH,
             clip_parts: ClipPartsCache::default(),
+            in_lane: false,
             grid: PianoGrid::from_value("1 bar"),
             headers_left: false,
             returns_hidden: false,
@@ -1121,12 +1127,18 @@ pub(crate) struct ClipLook {
     /// each kind of clip there is in each track's lane ([`ClipKind`]): the style tree grows with
     /// kinds, not with clips (ADR 0031 › A drawn item's style is read once per kind), so thousands
     /// of clips in view keep their styles and are not styled one by one. The lane is in the key
-    /// because a rule for the lane (`track-lane[selected] clip-name`) reaches the parts.
+    /// because a rule for the lane (`track-lane[selected] clip-name`) reaches the parts, and so is
+    /// whether the clip is drawn inside the lane's element ([`ClipLook::in_lane`]): one drawn
+    /// outside it (a take piece) is not reached by that rule.
     pub(crate) parts: ClipPartsCache,
+    /// Whether the clip is drawn inside its row's `track-lane` element
+    /// ([`ArrangementViewState::in_lane`]).
+    pub(crate) in_lane: bool,
 }
 
-/// The looks of clips' parts this frame, by lane and kind of clip ([`ClipLook::parts`]).
-pub(crate) type ClipPartsCache = std::rc::Rc<std::cell::RefCell<HashMap<(TrackId, ClipKind), ClipParts>>>;
+/// The looks of clips' parts this frame, by lane, inside its element or not, and kind of clip
+/// ([`ClipLook::parts`]).
+pub(crate) type ClipPartsCache = std::rc::Rc<std::cell::RefCell<HashMap<(TrackId, bool, ClipKind), ClipParts>>>;
 
 /// What a clip's parts can be styled by: its states and its colour, and whether it holds audio.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1158,6 +1170,7 @@ impl ArrangementViewState {
             audio_colour_strength: self.audio_colour_strength,
             editor_span: self.editor_span,
             parts: std::rc::Rc::clone(&self.clip_parts),
+            in_lane: self.in_lane,
         }
     }
 }

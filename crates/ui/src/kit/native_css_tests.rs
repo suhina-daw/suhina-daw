@@ -1348,12 +1348,41 @@ fn clips_alike_share_their_parts_looks_for_the_frame() {
     // A new frame reads them again, from the sheet as it is then.
     let (kind, look) = {
         let parts = state.clip_parts.borrow();
-        let (&(_, kind), look) = parts.iter().next().expect("a look");
+        let (&(_, _, kind), look) = parts.iter().next().expect("a look");
         (kind, look.clone())
     };
-    state.clip_parts.borrow_mut().insert((suhina_engine::model::TrackId(u32::MAX), kind), look);
+    state.clip_parts.borrow_mut().insert((suhina_engine::model::TrackId(u32::MAX), true, kind), look);
     painted("", |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
     assert_eq!(state.clip_parts.borrow().len(), kinds, "last frame's looks are gone");
+}
+
+/// A take piece is drawn outside its track's `track-lane`, so a rule for the lane does not reach
+/// it: its parts are kept apart from those of the lane's own clips of the same kind, and each
+/// keeps its own colour whichever is drawn first in the frame.
+#[test]
+fn a_take_piece_keeps_its_own_parts_beside_a_lane_clip_of_its_kind() {
+    use crate::arrangement::{arrangement_view, timeline};
+    let mut project = crate::demo::demo_project();
+    let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).expect("a lane");
+    let (track, clip) = (lane.track.expect("a track"), lane.clips[0].clone());
+    project.arrangement.takes = vec![suhina_engine::model::TakeLane {
+        track,
+        name: "Take 1".into(),
+        clips: vec![suhina_engine::model::Clip { id: suhina_engine::model::ClipId::NONE, ..clip }],
+        color: None,
+    }];
+    project.assign_ids().expect("the take gets an id");
+    let timeline = timeline::Timeline::build(&project, None);
+    let mut state = arrangement_view::ArrangementViewState::default();
+    state.selected_tracks = vec![track];
+    let css = "clip-name { color: #0000FF; } track-lane[selected] clip-name { color: #FF0000; }";
+    painted(css, |ui| arrangement_view::show(ui, &timeline, &mut state, &mut Vec::new()));
+    let parts = state.clip_parts.borrow();
+    let name = |in_lane: bool| {
+        parts.iter().find(|((t, inside, _), _)| *t == track && *inside == in_lane).map(|(_, p)| p.name.color())
+    };
+    assert_eq!(name(true), Some(egui::Color32::from_rgb(0xFF, 0, 0)), "the lane's clip: the lane's rule");
+    assert_eq!(name(false), Some(egui::Color32::from_rgb(0, 0, 0xFF)), "the take piece: its own");
 }
 
 #[test]

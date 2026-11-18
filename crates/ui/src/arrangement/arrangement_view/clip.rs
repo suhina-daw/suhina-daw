@@ -1425,7 +1425,8 @@ pub(super) fn clip_kind(lane: &Lane, clip: &ClipBox, timeline: &Timeline, select
 /// first clip of its kind this frame and kept in `look`, so the parts add no elements to the
 /// style tree for each clip.
 fn clip_parts(look: &super::state::ClipLook, track: TrackId, kind: super::state::ClipKind) -> super::state::ClipParts {
-    if let Some(parts) = look.parts.borrow().get(&(track, kind)) {
+    let key = (track, look.in_lane, kind);
+    if let Some(parts) = look.parts.borrow().get(&key) {
         return parts.clone();
     }
     use crate::kit::element::{CLIP_FADE, CLIP_NAME, CLIP_NOTES, CLIP_WAVEFORM};
@@ -1434,7 +1435,7 @@ fn clip_parts(look: &super::state::ClipLook, track: TrackId, kind: super::state:
         content: if kind.audio { CLIP_WAVEFORM.probe() } else { CLIP_NOTES.probe() },
         fade: CLIP_FADE.probe(),
     };
-    look.parts.borrow_mut().insert((track, kind), parts.clone());
+    look.parts.borrow_mut().insert(key, parts.clone());
     parts
 }
 
