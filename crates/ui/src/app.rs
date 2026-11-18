@@ -731,7 +731,9 @@ pub struct App {
     effects_when_still: bool,
     /// The audio's health counters last traced: device underruns, late stretched frames and late
     /// plug-in blocks, and the input's.
-    audio_traced: (u64, u64, u64, u64, u64),
+    audio_traced: (u64, u64, u64, u64, u64, u64),
+    /// The render threads setting last handed to the engine (`audio.setRenderThreads`).
+    render_threads_applied: Option<u32>,
     /// A clip carried between the views, and the view whose name it hovers over since when.
     carry: Option<Carry>,
     /// A device carried from a chain or a strip's list onto another track (#688): its track and
@@ -912,7 +914,8 @@ impl App {
             ram: None,
             next_ram: None,
             effects_when_still: false,
-            audio_traced: (0, 0, 0, 0, 0),
+            audio_traced: (0, 0, 0, 0, 0, 0),
+            render_threads_applied: None,
             carry: None,
             device_carry: None,
             applied_grid: None,
@@ -1492,24 +1495,33 @@ impl App {
             .session()
             .and_then(|s| suhina_session::plugin_device_name(s.project(), worst))
             .unwrap_or_else(|| "none".into());
+        let (late, late_track, late_most) = player.render_misses();
+        let late_name = self
+            .session()
+            .filter(|_| late_most > 0)
+            .map(|s| s.project().shown_track_name(TrackId(u32::try_from(late_track).unwrap_or(u32::MAX))))
+            .unwrap_or_else(|| "none".into());
         let cpu = player.cpu_monitor().load_milli();
         let running = player.monitor().running();
-        let (was_device, was_stretched, was_misses, was_blocked, was_input) = self.audio_traced;
+        let (was_device, was_stretched, was_misses, was_blocked, was_input, was_late) = self.audio_traced;
         if running
             || device > was_device
             || input > was_input
             || stretched > was_stretched
             || misses > was_misses
             || blocked > was_blocked
+            || late > was_late
             || cpu >= 700
         {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
+                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, render blocks late {late} (+{}, most {late_name}: {late_most}) on {} threads, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
                 device.saturating_sub(was_device),
                 input.saturating_sub(was_input),
                 stretched.saturating_sub(was_stretched),
                 misses.saturating_sub(was_misses),
                 blocked.saturating_sub(was_blocked),
+                late.saturating_sub(was_late),
+                info.as_ref().map_or(1, |i| i.render_threads),
                 f64::from(cpu) / 10.0,
                 if running { "playing" } else { "stopped" },
                 info.as_ref().map_or(0, |i| i.buffer_frames),
@@ -1523,11 +1535,18 @@ impl App {
                 info.as_ref().map(|i| i.render_diagnostics),
             );
         }
-        self.audio_traced = (device, stretched, misses, blocked, input);
+        self.audio_traced = (device, stretched, misses, blocked, input, late);
     }
 
     /// Uses `settings` from now on, as loaded from the settings file.
     pub fn set_settings(&mut self, ctx: &egui::Context, settings: Settings) {
+        // Before any output opens, so its renderer takes a lane of the chosen pool (ADR 0038).
+        if self.render_threads_applied != Some(settings.render_threads) {
+            suhina_engine::set_process_render_threads(suhina_engine::render_threads_for(
+                settings.render_threads as usize,
+            ));
+            self.render_threads_applied = Some(settings.render_threads);
+        }
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
         self.projects.set_implicit_tones(settings.implicit_tones);
         motion::set_enabled(ctx, settings.animations);
