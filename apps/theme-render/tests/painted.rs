@@ -94,8 +94,20 @@ pub fn all() -> &'static BTreeMap<(String, String), Result<Drawing, String>> {
     })
 }
 
+/// One test for both recordings: nextest runs each test in a process of its own, and two tests
+/// would each draw every scene in every theme (the slowest thing in the workspace's tests). Both
+/// are checked even when the first differs, so one run shows both files.
 #[test]
-fn every_built_in_theme_paints_each_scene_as_recorded() {
+fn every_built_in_theme_paints_and_cuts_as_recorded() {
+    let painted = std::panic::catch_unwind(paints_each_scene_as_recorded);
+    super::cut::cuts_off_only_the_texts_recorded();
+    if let Err(panic) = painted {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[allow(clippy::unwrap_used)] // called by the test above, outside a #[test] function
+fn paints_each_scene_as_recorded() {
     let listings: BTreeMap<&(String, String), Result<&str, &str>> = all()
         .iter()
         .map(|(key, drawing)| (key, drawing.as_ref().map(|d| d.listing.as_str()).map_err(String::as_str)))

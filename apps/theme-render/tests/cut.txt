@@ -1,6 +1,6 @@
 # The texts each built-in theme cuts off, drawn as on Linux on every system: `theme scene: how
 # "text"`, under the first scene that shows it. Written by
-# `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main cut` (tests/cut.rs).
+# `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/cut.rs).
 catppuccin-latte devices: clipped "-60"
 catppuccin-latte devices: clipped "4"
 catppuccin-latte devices: clipped "Analog Clip"

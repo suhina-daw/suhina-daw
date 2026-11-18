@@ -9,7 +9,7 @@
 //! Some cuts are meant (a long path in a dialog, a name in a narrow column) and some are bugs not
 //! yet fixed, so the test holds the list rather than an empty one: a change that cuts a new text,
 //! or stops cutting one, fails until the list is recorded again with
-//! `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main cut`, and the pull request says
+//! `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`, and the pull request says
 //! why. A theme's cut is listed once, under the first scene that shows it by name: a text the
 //! toolbar cuts in every scene is one line.
 //!
@@ -46,8 +46,9 @@ fn lines<'a>(drawings: impl Iterator<Item = (&'a (String, String), &'a [Cut])>) 
     first.into_iter().map(|((theme, cut), scene)| format!("{theme} {scene}: {cut}")).collect()
 }
 
-#[test]
-fn every_built_in_theme_cuts_off_only_the_texts_recorded() {
+/// Checked by the painted test (`painted.rs`), which draws the scenes once for both.
+#[allow(clippy::unwrap_used)] // called by the painted test, outside a #[test] function
+pub fn cuts_off_only_the_texts_recorded() {
     let all = super::painted::all();
     let failed: Vec<String> = all
         .iter()
@@ -58,7 +59,7 @@ fn every_built_in_theme_cuts_off_only_the_texts_recorded() {
     let mut text = String::from(
         "# The texts each built-in theme cuts off, drawn as on Linux on every system: `theme scene: how\n\
          # \"text\"`, under the first scene that shows it. Written by\n\
-         # `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main cut` (tests/cut.rs).\n",
+         # `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/cut.rs).\n",
     );
     for line in &now {
         text.push_str(line);
