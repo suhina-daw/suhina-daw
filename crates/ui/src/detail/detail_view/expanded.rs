@@ -53,8 +53,7 @@ pub fn expanded_device(ctx: &egui::Context, detail: &Detail) -> Option<(TrackId,
 }
 
 /// Gives every canvas among `devices`, inside their groups too, what the host hands it:
-/// `#expanded` (1 for the device at `open`), `#light` (1 while the theme is a light one) and the
-/// device's live values from `readouts`. Returns whether any device had live values.
+/// `#expanded` (1 for the device at `open`) and the device's live values from `readouts`. Returns whether any device had live values.
 pub fn give_host_values(
     devices: &mut [DeviceBox],
     open: Option<&DeviceAt>,
@@ -72,10 +71,6 @@ pub fn give_host_values(
         graph
             .parameters
             .push(GraphParameter::host_value(suhina_device_sdk::ui::EXPANDED_ID, if is_open { 1.0 } else { 0.0 }));
-        graph.parameters.push(GraphParameter::host_value(
-            suhina_device_sdk::ui::LIGHT_ID,
-            if crate::kit::theme::is_light() { 1.0 } else { 0.0 },
-        ));
         if let Some(values) = readouts(&device.at) {
             graph.parameters.extend(values.iter().enumerate().filter_map(|(i, &v)| GraphParameter::readout(i, v)));
             live = true;

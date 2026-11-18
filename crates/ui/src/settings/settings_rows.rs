@@ -38,7 +38,11 @@ pub(crate) fn editors_note(editors_embeddable: bool) -> Option<&'static str> {
     if editors_embeddable {
         return None;
     }
-    Some(if cfg!(target_os = "macos") { EDITORS_NOTE_EMBED } else { EDITORS_NOTE_NONE })
+    Some(if crate::kit::platform::current() == crate::kit::platform::Platform::MacOs {
+        EDITORS_NOTE_EMBED
+    } else {
+        EDITORS_NOTE_NONE
+    })
 }
 
 /// Every setting the window shows, page by page.
@@ -1010,7 +1014,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Appearance,
         "Background",
         "Background image",
-        "A picture of your own, a PNG file, drawn behind the window's panels",
+        "A picture of your own, a PNG, JPEG or WebP file, drawn behind the window's panels",
         &["background_image"],
         |cx, r| {
             cx.folder(r, "No image", crate::interaction::pick::PickField::BackgroundImage, |s| &mut s.background_image)

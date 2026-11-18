@@ -164,8 +164,7 @@ pub enum Widget {
         #[serde(default)]
         format: TextFormat,
         /// The canvas's image asset drawn as the dial's face: the device's own knob, over which
-        /// the host draws the value's arc and the pointer. A theme's `device.knob.body` and
-        /// `device.knob.pointer` artwork replaces it.
+        /// the host draws the value's arc and the pointer. No theme's knob artwork replaces it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         image: Option<String>,
     },
@@ -438,7 +437,12 @@ impl Widget {
             }
             Self::Dial { label, decimals, format, image } => {
                 let label_height = if label.is_empty() { 0. } else { 24. };
-                let r = ((height - label_height - 18.) / 2.).min(w / 2. - 2.).max(1.);
+                let room = ((height - label_height - 18.) / 2.).min(w / 2. - 2.).max(1.);
+                // The rim's width grows with the dial (3 up to a radius of 18), and the dark ring
+                // inside the arc is as wide as the arc, so a big dial keeps its proportions; the
+                // arc's outer edge stays where it was, two units past the room.
+                let rim = (room / 6.).max(3.);
+                let r = (room + 2. - rim / 2.).max(1.);
                 let cx = w / 2.;
                 let cy = label_height + (height - label_height - 18.) / 2.;
                 let angle = UiValue::from(2.35) + UiValue::normalized(id, binding.logarithmic) * 4.7.into();
@@ -501,12 +505,12 @@ impl Widget {
                         start: 2.35.into(),
                         end: 7.05.into(),
                         color: RIM,
-                        width: 4.,
+                        width: rim,
                     },
-                    Draw::Circle { center: [cx.into(), cy.into()], radius: (r - 2.).max(0.).into(), color: DARK },
+                    Draw::Circle { center: [cx.into(), cy.into()], radius: (r - rim / 2.).max(0.).into(), color: DARK },
                     Draw::Circle {
                         center: [cx.into(), cy.into()],
-                        radius: (r - 6.).max(0.).into(),
+                        radius: (r - rim * 1.5).max(0.).into(),
                         color: [46, 45, 42, 255],
                     },
                     Draw::Line {

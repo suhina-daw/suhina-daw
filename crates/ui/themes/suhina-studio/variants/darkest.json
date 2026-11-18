@@ -1,5 +1,6 @@
 {
   "name": "Darkest",
+  "color-scheme": "dark",
   "values": {
     "--ground": "#000000",
     "--surface": "#0C0C0C",

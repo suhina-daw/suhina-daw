@@ -4,32 +4,41 @@
     "viewport_size": [428, 168],
     "background": [12, 12, 12, 255],
     "accent_on": true,
+    "style": "* { text-shadow: none; } device-control { font-size: 9px; color: light-dark(#26231e, #ddd6c8); } @media (prefers-color-scheme: dark) { #artwork-light, #pack-box-light, #file-box-light, #mid-freq-box-light, #mid-freq-name-back { display: none; } } @media (prefers-color-scheme: light) { #artwork-dark, #pack-box, #file-box, #mid-freq-box { display: none; } } #mid-freq-name device-control { font-size: 8px; color: light-dark(#1e1b16, #e2dccf); } button { image: none; font-size: 9px; radius: 3px; border-width: 1px; border-color: light-dark(#7a7466, #080808); color: light-dark(#3a352c, #e2dccf); background-color: light-dark(#e4e0d6, #2c2a25); background-image: light-dark(linear-gradient(180deg, #fdfcf8 0%, #d2cdc1 100%), linear-gradient(180deg, #605e58 0%, #26251f 100%)); box-shadow: 0 1px 2px light-dark(#00000040, #000000b0), inset 0 1px 0 light-dark(#ffffffd0, #ffffff26); } button:hover { background-image: light-dark(linear-gradient(180deg, #ffffff 0%, #dcd8cd 100%), linear-gradient(180deg, #6e6c65 0%, #2e2d27 100%)); } button:active { background-image: light-dark(linear-gradient(180deg, #c9c4b8 0%, #e2ded4 100%), linear-gradient(180deg, #26251f 0%, #3a3832 100%)); box-shadow: inset 0 1px 2px light-dark(#00000050, #000000c0); } button[checked] { color: #2a1208; accent-color: #ff7840; background-color: #e86a32; background-image: linear-gradient(180deg, #ffa060 0%, #c4501c 100%); box-shadow: 0 0 6px light-dark(#ff784060, #ff784090), inset 0 1px 0 #ffffff59; } button[checked]:hover { background-image: linear-gradient(180deg, #ffb070 0%, #d05a24 100%); } dropdown { font-size: 11px; color: light-dark(#26231e, #eee8d8); border-color: transparent; } dropdown-arrow { color: light-dark(#26231e, #eee8d8); } icon[kind=\"folder\"] { color: light-dark(#5e574a, #b8b0a0); } #mid-freq device-control { color: light-dark(#26231e, #eee8d8); } knob { font-size: 10px; color: light-dark(#26231e, #ddd6c8); accent-color: #ff7840; border-color: light-dark(#8a8476, #3a3832); } knob-pointer { color: #eee8d8; } popup { backdrop-filter: none; background-color: light-dark(#f6f3ec, #1e1d1a); color: light-dark(#26231e, #eee8d8); border-width: 1px; border-color: light-dark(#8d877a, #080808); radius: 4px; box-shadow: 0 4px 12px light-dark(#00000040, #000000a0); }",
     "hidden_parameters": [
       "inputGain", "eqBass", "eqMid", "eqTreble", "eqMidFreq", "eqOn", "delay", "hq", "outputVolume", "mono"
     ],
     "controls": [
       { "id": "artwork-dark", "name": "Amp Modeler: artwork", "bounds": [0, 0, 428, 168],
-        "visible_when": { "op": "add", "a": 1, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "#light" }, "b": -1 } },
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "image", "asset": "background-dark", "rect": [0, 0, 428, 168] }
         ] } },
       { "id": "artwork-light", "name": "Amp Modeler: artwork", "bounds": [0, 0, 428, 168],
-        "visible_when": { "op": "parameter", "parameter": "#light" },
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "image", "asset": "background-light", "rect": [0, 0, 428, 168] }
         ] } },
 
       { "id": "pack-box", "name": "Amp Modeler: pack-box", "bounds": [35, 25, 112.5, 20],
         "widget": { "kind": "graphic", "drawing": [
-          { "kind": "rect", "rect": [0, 0, 112.5, 20], "color": [3, 1, 4, 255], "radius": 3 },
-          { "kind": "rect", "rect": [1, 1, 110.5, 18], "color": [3, 1, 3, 255], "radius": 2.5 }
+          { "kind": "rect", "rect": [0, 0, 112.5, 20], "color": [8, 8, 8, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 110.5, 18], "color": [30, 29, 26, 255], "radius": 2.5 }
+        ] } },
+      { "id": "pack-box-light", "name": "Amp Modeler: pack-box light", "bounds": [35, 25, 112.5, 20],
+        "widget": { "kind": "graphic", "drawing": [
+          { "kind": "rect", "rect": [0, 0, 112.5, 20], "color": [128, 120, 104, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 110.5, 18], "color": [247, 243, 234, 255], "radius": 2.5 }
         ] } },
       { "id": "pack", "name": "Amp Modeler: pack", "bounds": [35, 25, 112.5, 20],
         "widget": { "kind": "device_files", "part": "pack", "what": "model" } },
       { "id": "file-box", "name": "Amp Modeler: file-box", "bounds": [164.5, 25, 176, 20],
         "widget": { "kind": "graphic", "drawing": [
-          { "kind": "rect", "rect": [0, 0, 176, 20], "color": [3, 1, 4, 255], "radius": 3 },
-          { "kind": "rect", "rect": [1, 1, 174, 18], "color": [3, 1, 3, 255], "radius": 2.5 }
+          { "kind": "rect", "rect": [0, 0, 176, 20], "color": [8, 8, 8, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 174, 18], "color": [30, 29, 26, 255], "radius": 2.5 }
+        ] } },
+      { "id": "file-box-light", "name": "Amp Modeler: file-box light", "bounds": [164.5, 25, 176, 20],
+        "widget": { "kind": "graphic", "drawing": [
+          { "kind": "rect", "rect": [0, 0, 176, 20], "color": [128, 120, 104, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 174, 18], "color": [247, 243, 234, 255], "radius": 2.5 }
         ] } },
       { "id": "file", "name": "Amp Modeler: model file", "bounds": [164.5, 25, 176, 20],
         "widget": { "kind": "device_files", "part": "file", "what": "model" } },
@@ -40,49 +49,35 @@
 
       { "id": "eq", "name": "Amp Modeler: eq", "bounds": [33.5, 53.25, 30, 15],
         "tooltip": "Click to switch the EQ on or off", "x": { "parameter": "eqOn" }, "gesture": "toggle",
-        "drawing": [
-          { "kind": "rect", "rect": [0, 0, 30, 15], "color": [3, 1, 4, 255], "radius": 3 },
-          { "kind": "rect", "rect": [1, 1, 28, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
-          { "kind": "rect", "rect": [1, 1, { "op": "multiply", "a": { "op": "parameter", "parameter": "eqOn", "normalized": true }, "b": 28 }, 13], "color": [3, 1, 5, 255], "radius": 2.5 },
-          { "kind": "text", "align": "center", "text": "EQ", "color": [3, 1, 1, 255], "size": 9,
-            "position": [{ "op": "add", "a": 15.0, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "eqOn", "normalized": true }, "b": 4096 } }, 1.9] },
-          { "kind": "text", "align": "center", "text": "EQ", "color": [3, 1, 2, 255], "size": 9,
-            "position": [{ "op": "add", "a": 4111.0, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "eqOn", "normalized": true }, "b": -4096 } }, 1.9] }
-        ] },
+        "widget": { "kind": "button", "label": "EQ" } },
       { "id": "hq", "name": "Amp Modeler: hq", "bounds": [77.25, 53.25, 28.75, 15],
         "tooltip": "Click to switch the HQ on or off", "x": { "parameter": "hq" }, "gesture": "toggle",
-        "drawing": [
-          { "kind": "rect", "rect": [0, 0, 28.75, 15], "color": [3, 1, 4, 255], "radius": 3 },
-          { "kind": "rect", "rect": [1, 1, 26.75, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
-          { "kind": "rect", "rect": [1, 1, { "op": "multiply", "a": { "op": "parameter", "parameter": "hq", "normalized": true }, "b": 26.75 }, 13], "color": [3, 1, 5, 255], "radius": 2.5 },
-          { "kind": "text", "align": "center", "text": "HQ", "color": [3, 1, 1, 255], "size": 9,
-            "position": [{ "op": "add", "a": 14.375, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "hq", "normalized": true }, "b": 4096 } }, 1.9] },
-          { "kind": "text", "align": "center", "text": "HQ", "color": [3, 1, 2, 255], "size": 9,
-            "position": [{ "op": "add", "a": 4110.375, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "hq", "normalized": true }, "b": -4096 } }, 1.9] }
-        ] },
+        "widget": { "kind": "button", "label": "HQ" } },
       { "id": "mono", "name": "Amp Modeler: mono", "bounds": [118.75, 53.25, 30, 15],
         "tooltip": "Click to feed the model one signal, the mean of both sides, or each side its own", "x": { "parameter": "mono" }, "gesture": "toggle",
-        "drawing": [
-          { "kind": "rect", "rect": [0, 0, 30, 15], "color": [3, 1, 4, 255], "radius": 3 },
-          { "kind": "rect", "rect": [1, 1, 28, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
-          { "kind": "rect", "rect": [1, 1, { "op": "multiply", "a": { "op": "parameter", "parameter": "mono", "normalized": true }, "b": 28 }, 13], "color": [3, 1, 5, 255], "radius": 2.5 },
-          { "kind": "text", "align": "center", "text": "Mono", "color": [3, 1, 1, 255], "size": 9,
-            "position": [{ "op": "add", "a": 15.0, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "mono", "normalized": true }, "b": 4096 } }, 1.9] },
-          { "kind": "text", "align": "center", "text": "Mono", "color": [3, 1, 2, 255], "size": 9,
-            "position": [{ "op": "add", "a": 4111.0, "b": { "op": "multiply", "a": { "op": "parameter", "parameter": "mono", "normalized": true }, "b": -4096 } }, 1.9] }
-        ] },
+        "widget": { "kind": "button", "label": "Mono" } },
+      { "id": "mid-freq-name-back", "name": "Amp Modeler: mid freq caption backing", "bounds": [164.5, 53.25, 45, 15],
+        "widget": { "kind": "graphic", "drawing": [
+          { "kind": "rect", "rect": [3.5, 1, 38, 13], "color": [247, 243, 234, 110], "radius": 2.5 }
+        ] } },
       { "id": "mid-freq-name", "name": "Amp Modeler: mid freq caption", "bounds": [164.5, 53.25, 45, 15],
         "widget": { "kind": "graphic", "drawing": [
-          { "kind": "rect", "rect": [0, 0, 45, 15], "color": [3, 1, 4, 255], "radius": 3 },
-          { "kind": "rect", "rect": [1, 1, 43, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
           { "kind": "text", "position": [22.5, 2], "text": "Mid Freq", "align": "center", "color": [3, 1, 1, 200], "size": 8 }
+        ] } },
+      { "id": "mid-freq-box", "name": "Amp Modeler: mid-freq-box", "bounds": [217.5, 53.25, 71, 15],
+        "widget": { "kind": "graphic", "drawing": [
+          { "kind": "rect", "rect": [0, 0, 71, 15], "color": [8, 8, 8, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 69, 13], "color": [30, 29, 26, 255], "radius": 2.5 }
+        ] } },
+      { "id": "mid-freq-box-light", "name": "Amp Modeler: mid-freq-box light", "bounds": [217.5, 53.25, 71, 15],
+        "widget": { "kind": "graphic", "drawing": [
+          { "kind": "rect", "rect": [0, 0, 71, 15], "color": [128, 120, 104, 255], "radius": 3 },
+          { "kind": "rect", "rect": [1, 1, 69, 13], "color": [247, 243, 234, 255], "radius": 2.5 }
         ] } },
       { "id": "mid-freq", "name": "Amp Modeler: mid freq", "bounds": [217.5, 53.25, 71, 15],
         "tooltip": "Drag vertically; Shift for precision; double click resets",
         "y": { "parameter": "eqMidFreq", "logarithmic": true }, "gesture": "drag",
         "drawing": [
-          { "kind": "rect", "rect": [0, 0, 71, 15], "color": [3, 1, 4, 255], "radius": 3 },
-          { "kind": "rect", "rect": [1, 1, 69, 13], "color": [3, 1, 3, 255], "radius": 2.5 },
           { "kind": "text", "position": [35.5, 1.9], "text": "", "parameter": "eqMidFreq",
             "decimals": 0, "align": "center", "format": "frequency", "color": [3, 1, 1, 255], "size": 9 }
         ] },
@@ -91,7 +86,7 @@
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "text", "position": [30, 0], "text": "Gain", "align": "center", "color": [3, 1, 1, 255], "size": 9 }
         ] } },
-      { "id": "gain", "name": "Amp Modeler: gain", "bounds": [31.0, 100, 60, 52],
+      { "id": "gain", "name": "Amp Modeler: gain", "bounds": [31.0, 102, 60, 52],
         "tooltip": "Drag vertically; Shift for precision; double click resets",
         "y": { "parameter": "inputGain" },
         "widget": { "kind": "dial", "label": "", "decimals": 1, "format": "decibels", "image": "knob" } },
@@ -99,7 +94,7 @@
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "text", "position": [30, 0], "text": "Bass", "align": "center", "color": [3, 1, 1, 255], "size": 9 }
         ] } },
-      { "id": "bass", "name": "Amp Modeler: bass", "bounds": [92.6, 100, 60, 52],
+      { "id": "bass", "name": "Amp Modeler: bass", "bounds": [92.6, 102, 60, 52],
         "tooltip": "Drag vertically; Shift for precision; double click resets",
         "y": { "parameter": "eqBass" },
         "widget": { "kind": "dial", "label": "", "decimals": 1, "format": "decibels", "image": "knob" } },
@@ -107,7 +102,7 @@
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "text", "position": [30, 0], "text": "Mid", "align": "center", "color": [3, 1, 1, 255], "size": 9 }
         ] } },
-      { "id": "mid", "name": "Amp Modeler: mid", "bounds": [154.2, 100, 60, 52],
+      { "id": "mid", "name": "Amp Modeler: mid", "bounds": [154.2, 102, 60, 52],
         "tooltip": "Drag vertically; Shift for precision; double click resets",
         "y": { "parameter": "eqMid" },
         "widget": { "kind": "dial", "label": "", "decimals": 1, "format": "decibels", "image": "knob" } },
@@ -115,7 +110,7 @@
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "text", "position": [30, 0], "text": "Treble", "align": "center", "color": [3, 1, 1, 255], "size": 9 }
         ] } },
-      { "id": "treble", "name": "Amp Modeler: treble", "bounds": [215.8, 100, 60, 52],
+      { "id": "treble", "name": "Amp Modeler: treble", "bounds": [215.8, 102, 60, 52],
         "tooltip": "Drag vertically; Shift for precision; double click resets",
         "y": { "parameter": "eqTreble" },
         "widget": { "kind": "dial", "label": "", "decimals": 1, "format": "decibels", "image": "knob" } },
@@ -123,7 +118,7 @@
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "text", "position": [30, 0], "text": "Delay", "align": "center", "color": [3, 1, 1, 255], "size": 9 }
         ] } },
-      { "id": "delay", "name": "Amp Modeler: delay", "bounds": [277.4, 100, 60, 52],
+      { "id": "delay", "name": "Amp Modeler: delay", "bounds": [277.4, 102, 60, 52],
         "tooltip": "Drag vertically; Shift for precision; double click resets",
         "y": { "parameter": "delay" },
         "widget": { "kind": "dial", "label": "", "decimals": 2, "format": "seconds", "image": "knob" } },
@@ -131,7 +126,7 @@
         "widget": { "kind": "graphic", "drawing": [
           { "kind": "text", "position": [30, 0], "text": "Volume", "align": "center", "color": [3, 1, 1, 255], "size": 9 }
         ] } },
-      { "id": "volume", "name": "Amp Modeler: volume", "bounds": [339.0, 100, 60, 52],
+      { "id": "volume", "name": "Amp Modeler: volume", "bounds": [339.0, 102, 60, 52],
         "tooltip": "Drag vertically; Shift for precision; double click resets",
         "y": { "parameter": "outputVolume" },
         "widget": { "kind": "dial", "label": "", "decimals": 1, "format": "decibels", "image": "knob" } },

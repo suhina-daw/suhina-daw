@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Every built-in theme and variant paints each scene as recorded in `painted/<system>.txt` (#1023): what
+//! Every built-in theme and variant paints each scene as recorded in `painted.txt` (#1023): what
 //! moves the views onto elements, or the colours into the sheet, changes no theme's look unless
 //! it means to. Headless: the digest of [`painted::scene`]'s listing, no GPU.
 //!
@@ -10,27 +10,21 @@
 //! request. To see what changed, write the listings before and after the change with
 //! `SUHINA_PAINTED_DUMP=<folder>` and compare the two folders.
 //!
-//! Each system has its own file (`macos.txt`, `linux.txt`): some text differs between them (shortcuts
-//! say Cmd or Ctrl, Settings names the plug-in formats each system has). A change records the file
-//! of the system it runs on; when another system's file must change, its CI run fails and prints
-//! that whole file, ready to replace it. Not on Windows, where the window draws its own title bar
-//! (the application bar): its scenes differ in that bar alone, and the other systems check the rest.
+//! One file for every system: the scenes are drawn with the window looking like Linux
+//! ([`suhina_ui::kit::platform`]), so shortcuts say Ctrl and Settings names Linux's plug-in formats
+//! on a Mac and on Windows too, and no system draws the title bar Suhina draws on Windows. A
+//! recording made on any system holds on the others.
 
 use std::collections::BTreeMap;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::{Path, PathBuf};
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use suhina_theme_render::scenes::Scene;
 use suhina_theme_render::{Subject, painted, scenes};
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 /// The scenes left out: the About dialog shows the build's commit.
 const LEFT_OUT: [&str; 1] = ["about-dialog"];
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 /// A theme to draw, by the name its digests are recorded under. Every theme runs the style engine,
 /// Suhina Studio too (#1448).
 struct Drawn {
@@ -38,7 +32,6 @@ struct Drawn {
     subject: Subject,
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn drawn() -> Vec<Drawn> {
     let mut drawn: Vec<Drawn> =
         Subject::built_ins().into_iter().map(|subject| Drawn { name: subject.id.clone(), subject }).collect();
@@ -50,9 +43,8 @@ fn drawn() -> Vec<Drawn> {
     drawn
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn file() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/painted/{}.txt", std::env::consts::OS))
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/painted.txt")
 }
 
 /// The recorded digests: `scene theme digest` a line.
@@ -66,7 +58,6 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
         .collect()
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 /// Every (scene, theme) listing, drawn by as many workers as the machine has cores; each drawing
 /// is on a thread of its own ([`painted::scene`]).
 fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<String, String>> {
@@ -89,7 +80,6 @@ fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Res
     })
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn every_built_in_theme_paints_each_scene_as_recorded() {
     let scenes: Vec<Scene> = scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
@@ -113,10 +103,10 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
             (key.clone(), digest)
         })
         .collect();
-    let mut text = format!(
-        "# What each built-in theme paints in each scene on {}: `scene theme digest`, written by\n\
-         # `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/painted.rs).\n",
-        std::env::consts::OS
+    let mut text = String::from(
+        "# What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme\n\
+         # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`\n\
+         # (tests/painted.rs).\n",
     );
     for ((scene, theme), digest) in &now {
         text.push_str(&format!("{scene} {theme} {digest}\n"));

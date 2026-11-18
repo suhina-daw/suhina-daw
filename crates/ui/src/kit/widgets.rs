@@ -865,17 +865,55 @@ pub fn combo_box<R>(
     let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;
     let menu_style = super::style_class::rows_in_scope(&around, ui.style());
-    ui.scope(|ui| {
-        transparent_control(ui);
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        let response = combo.show_ui(ui, |ui| {
-            ui.set_style(menu_style);
-            contents(ui)
-        });
-        input_line_of(ui, &response.response, &el);
-        response
-    })
-    .inner
+    // The list's frame: egui starts a pop-up from the root's look (the theme's), and the floating
+    // layers' pass frames it as the root's `popup`; `popup` as the drop-down sees it (a device
+    // panel's sheet included) goes over both.
+    let own_popup = super::style_class::popup_in_scope();
+    let combo = match own_popup.clone() {
+        Some(popup) => combo.popup_style(egui::style::StyleModifier::new(move |style| {
+            super::style_class::apply_menu(&popup, &mut style.visuals);
+        })),
+        None => combo,
+    };
+    let response = ui
+        .scope(|ui| {
+            transparent_control(ui);
+            arrow_colour(ui);
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            let response = combo.show_ui(ui, |ui| {
+                ui.set_style(menu_style);
+                contents(ui)
+            });
+            input_line_of(ui, &response.response, &el);
+            response
+        })
+        .inner;
+    if let Some(popup) = own_popup {
+        // egui's id for a combo box's list (`ComboBox::widget_to_popup_id`), its area's and layer's.
+        super::floating::style_in_place(ui.ctx(), response.response.id.with("popup"), popup);
+    }
+    response
+}
+
+/// egui draws a drop-down's arrow in its widgets' foreground colour: `dropdown-arrow { color }` in
+/// the drop-down's scope (the base sheet's `--text-hint`, a device panel's sheet included) goes
+/// over it, as it does for [`form_dropdown`]'s arrow. The text keeps the field's own `color`.
+fn arrow_colour(ui: &mut Ui) {
+    let look = DROPDOWN_ARROW.look();
+    let Some(arrow) = look.style().filter(|style| style.authored.color).map(|style| style.color) else { return };
+    let visuals = &mut ui.style_mut().visuals;
+    if visuals.override_text_color.is_none() {
+        // The text would take the arrow's colour with it: keep it the theme's.
+        visuals.override_text_color = Some(visuals.widgets.inactive.text_color());
+    }
+    for widget in [
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+        &mut visuals.widgets.open,
+    ] {
+        widget.fg_stroke.color = arrow;
+    }
 }
 
 fn transparent_control(ui: &mut Ui) {
@@ -1559,26 +1597,36 @@ pub fn dial(painter: &Painter, center: Pos2, size: f32, position: f32, response:
     // disc and its `accent-color` for the pointer.
     let el = KNOB.response_if(response).attribute("kind", "dial").enter();
     let radius = (size * 0.5).max(1.0);
+    let rim = dial_rim(el.style().as_ref(), radius);
     // The face: the rim arc (2.35 to 7.05 rad as an `.sd` dial's is, i.e. 135° past each side
     // over the top), the ring disc inside it, the inner disc — the theme's tokens.
     let points: Vec<Pos2> = (0..=48)
         .map(|i| {
             let a = (-135.0 + 270.0 * i as f32 / 48.0).to_radians();
-            center + Vec2::new(a.sin(), -a.cos()) * (radius - 2.0).max(0.0)
+            center + Vec2::new(a.sin(), -a.cos()) * (radius - rim / 2.0).max(0.0)
         })
         .collect();
-    painter.add(egui::Shape::line(points, Stroke::new(4.0, el.border())));
+    painter.add(egui::Shape::line(points, Stroke::new(rim, el.border())));
     painter.circle_filled(
         center,
-        (radius - 4.0).max(0.0),
+        (radius - rim).max(0.0),
         crate::kit::style_class::surface_or(super::element::KNOB_RING.look().background()),
     );
-    painter.circle_filled(center, (radius - 8.0).max(0.0), el.background());
+    painter.circle_filled(center, (radius - 2.0 * rim).max(0.0), el.background());
     // The pointer: a quarter in, three quarters to the rim, in the accent token.
     let angle = (-135.0 + 270.0 * position.clamp(0.0, 1.0)).to_radians();
     let dir = Vec2::new(angle.sin(), -angle.cos());
     painter
         .line_segment([center + dir * (radius * 0.25), center + dir * (radius * 0.72)], Stroke::new(2.0, el.accent()));
+}
+
+/// The width of a dial's rim arc of `radius`: the `knob[kind="dial"]`'s `border-width` where the
+/// sheet sets one (at most the radius), else a sixth of the radius, so a small dial's arc is as
+/// thin for its size as a large one's (#1487 S4: a constant 4 points filled a small dial). The
+/// ring and the inner disc are set in by one and two widths.
+pub(crate) fn dial_rim(style: Option<&super::native_css::Computed>, radius: f32) -> f32 {
+    let themed = style.filter(|style| style.authored.border_width).map(|style| style.border_width);
+    themed.map_or(radius / 6.0, |width| width.min(radius)).max(1.0)
 }
 
 /// `bpm` on the steps of the place a drag holds, counted from where it started (`grab`: the step

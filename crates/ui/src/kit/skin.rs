@@ -132,6 +132,10 @@ pub struct Skin {
     /// Whether Suhina's base sheet applies under the theme's (`suhina_theme_package::BASE_SHEET`):
     /// `theme.json`'s `"base": "none"` turns it off.
     pub base: bool,
+    /// Whether the variant in use says it is light (its `color-scheme`, else its theme's): what
+    /// `@media (prefers-color-scheme: …)` and `light-dark()` ask, and what the native window's
+    /// title bar follows. Dark when nothing says.
+    pub light: bool,
 }
 impl Default for Skin {
     fn default() -> Self {
@@ -151,6 +155,7 @@ impl Default for Skin {
             toolbar_offsets: BTreeMap::new(),
             variables: Arc::default(),
             base: true,
+            light: false,
         }
     }
 }
@@ -299,13 +304,13 @@ impl Skin {
                     } else {
                         warnings.push("invalid embedded background PNG".into());
                     }
-                } else if asset_path(&source.replace(".png", ".svg")) && source.ends_with(".png") {
+                } else if suhina_style::property::backdrop_path(&format!("url({source})")) == Some(source) {
                     skin.background = Some(Arc::from(source));
                 } else {
-                    warnings.push("background must be a relative PNG path or embedded PNG".into());
+                    warnings.push("background must be a relative PNG, JPEG or WebP path or an embedded PNG".into());
                 }
             } else {
-                warnings.push("background must be a PNG path".into());
+                warnings.push("background must be a picture's path".into());
             }
         }
         for (key, slot) in
@@ -681,12 +686,24 @@ pub fn paint(painter: &Painter, rect: Rect, role: &str, state: State, ink: Color
 /// The artwork of `el`, a button, in `rect`: its own role's ([`button_role`]) or every
 /// button's, rounded by `radius` where the sheet gives none, and casting `el`'s shadows.
 pub fn button(painter: &Painter, rect: Rect, el: &Entered, state: State, fill: Color32, radius: f32) -> bool {
+    if no_artwork(el) {
+        return false;
+    }
     let role = button_role(el);
     let style = el.style();
     let radius = el.radius_or(radius);
     // A state the button's own artwork leaves out is every button's.
     let paint = |role: &str| paint_variant(painter, rect, role, state, fill, 0.0, radius, None, style.as_ref());
     (role != "button" && paint(&role)) || paint("button")
+}
+
+/// Whether `el`'s cascaded style says `image: none`: it draws no artwork, whatever the theme's
+/// roles hold, and takes its CSS look instead. The cascade decides, so a device's own sheet
+/// beats the theme's for the device's panel and `user.css` beats both.
+pub fn no_artwork(el: &Entered) -> bool {
+    el.style()
+        .and_then(|style| style.text(suhina_style::property::Property::Image))
+        .is_some_and(|image| image.trim() == "none")
 }
 
 /// The artwork role of `el`, a button: its own (`button.play`, with any of its states) when the
@@ -724,6 +741,9 @@ pub fn paint_turned_as(
     ink: Color32,
     angle: f32,
 ) -> bool {
+    if no_artwork(el) {
+        return false;
+    }
     let style = el.style();
     let radius = el.radius_or(0.0);
     paint_variant(painter, rect, role, state, ink, angle, radius, None, style.as_ref())
@@ -875,8 +895,6 @@ fn paint_variant(
                     | "pan.knob.pointer"
                     | "send.knob.body"
                     | "send.knob.pointer"
-                    | "device.knob.body"
-                    | "device.knob.pointer"
             ) || role.starts_with("piano."),
         )
         .map(|image| painter.ctx().load_texture(format!("skin-{key}"), image, egui::TextureOptions::LINEAR));

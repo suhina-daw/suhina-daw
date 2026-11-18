@@ -18,13 +18,16 @@ on:
 permissions:
   contents: read
 
-# A newer push to a pull request cancels its run. Each push to main runs to the end in a group of
-# its own: every merge is followed a minute later by the generated-docs commit
-# (docs-generated.yml), which would cancel it, and a cancelled run saves no cache. Windows takes
-# longest, so main never saved one and every pull request compiled every dependency on Windows.
+# A newer push to a pull request cancels its run. On main a run is never cancelled, since a
+# cancelled run saves no cache (Windows, the slowest, once never saved one and every pull request
+# compiled every dependency there): the pushes to main share one group, the running run goes to the
+# end and only the newest push waits, the ones in between are dropped. Each push to main had a run
+# of its own, so a few merges in a row filled the organisation's runners for half an hour with runs
+# of commits already superseded (nine jobs each, #1538). The generated-docs commit that follows a
+# merge says [skip ci] (docs-generated.yml) and starts no run.
 concurrency:
-  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'push' && 'main' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
   CARGO_TERM_COLOR: always

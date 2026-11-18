@@ -150,6 +150,21 @@ fn theme_json_opts_out_of_the_base_sheet_with_base_none() {
     assert!(odd.base && warnings.iter().any(|w| w.contains("base")), "{warnings:?}");
 }
 
+/// `"color-scheme"` says whether the theme's own values are light or dark; left out, the theme
+/// is dark. It is always written, so the file says which it is; any other value is named.
+#[test]
+fn theme_json_says_its_colour_scheme_and_is_dark_when_it_does_not() {
+    let read = |text: &str| meta::ThemeMeta::parse(text.as_bytes()).unwrap();
+    let (plain, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red" }"#);
+    assert!(!plain.light && warnings.is_empty());
+    assert!(plain.to_json().contains(r#""color-scheme": "dark""#), "{}", plain.to_json());
+    let (light, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red", "color-scheme": "light" }"#);
+    assert!(light.light && warnings.is_empty(), "{warnings:?}");
+    assert_eq!(read(&light.to_json()), (light, Vec::new()));
+    let (odd, warnings) = read(r#"{ "format": 1, "name": "A", "swatch": "red", "color-scheme": "dim" }"#);
+    assert!(!odd.light && warnings.iter().any(|w| w.contains("color-scheme")), "{warnings:?}");
+}
+
 #[test]
 fn the_swatch_must_resolve_to_a_colour_for_every_variant() {
     let with = |swatch: &str, variant: &str| {
@@ -493,4 +508,22 @@ fn image_rules_read_selector_lists_and_skip_comments_and_at_rules() {
                @import \"more.css\";
                f { image: url(f.svg); }";
     assert_eq!(image_rules(css), vec![("e".to_owned(), "e.svg".to_owned()), ("f".to_owned(), "f.svg".to_owned())]);
+}
+
+/// A theme's background may be a JPEG or a WebP photo as well as a PNG, whose first bytes must
+/// say the kind its name does (#1487 F1).
+#[test]
+fn a_jpeg_or_webp_background_is_read_when_its_bytes_say_so() {
+    let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10].to_vec();
+    let webp = b"RIFF\x10\x00\x00\x00WEBPVP8L".to_vec();
+    for (path, bytes) in [("photo.jpg", &jpeg), ("photo.jpeg", &jpeg), ("photo.webp", &webp)] {
+        let mut files = theme();
+        files.insert(path.into(), bytes.clone());
+        assert!(validate(&files).is_ok(), "{path}");
+    }
+    let mut files = theme();
+    files.insert("photo.jpg".into(), webp.clone());
+    assert!(validate(&files).unwrap_err().contains("not a JPEG image"));
+    assert_eq!(picture("art/photo.webp"), Some("WebP"));
+    assert_eq!(picture("art/photo.gif"), None);
 }
