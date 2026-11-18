@@ -126,7 +126,9 @@ this repository, a maintainer may add the `test-build` label instead; on one fro
 alone is refused, since the fork's own workflow files decide what its run builds. `/test-build` first reuses a
 running build of that commit or a successful build whose requested packages are still available.
 A verified update that only merges `next` in can reuse the previous build. It starts another
-build only when no suitable build is available.
+build only when no suitable build is available. A pull request with merge conflicts against its
+base gets no build at all (GitHub starts no workflow for it): the bot says so, and `/test-build`
+works again once the conflicts are resolved.
 
 ## Merging many pull requests
 

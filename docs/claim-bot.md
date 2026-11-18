@@ -118,7 +118,9 @@ A completed request is not repeated when its Actions run is rerun. Issue creatio
 issue created before a failed reply. A partially failed test-build request may repeat a label
 event for the same commit, but cannot authorize another commit. A new build request gets one
 reply carrying the proof the build checks (its last line). A reuse reply links the existing run
-and grants no new build or merge authorization.
+and grants no new build or merge authorization. A conflict reply also grants no build proof:
+if the conflict clears without changing the head, rerunning the request creates its first proof
+and removes/re-adds any existing `test-build` label to start the build.
 
 Authorized test-build requests for the same PR run one at a time; a newer pending request replaces
 an older pending one. Repeated comments reuse an active build for the same head, or a successful
