@@ -53,7 +53,7 @@ After `## Sources` come only further sources.
 - Decisions are numbered items `N. **The decision.** Why.` under `## Decision`, in order from 1.
   A reference names the decision: `ADR 0010 › 6`.
 - ADR numbers are unique: a new ADR takes the next number after the highest in `decisions/`,
-  after fetching `main`.
+  after fetching `next` and checking its `decisions/` directory.
 
 ## Status
 

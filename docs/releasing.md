@@ -55,7 +55,7 @@ candidates as `MAJOR.MINOR.PATCH-rc.N`. A release goes out as one or more releas
 the final release is the last candidate unchanged, under the plain version:
 
 ```text
-0.1.0-rc.1  →  testers find a bug, fixed on main  →  0.1.0-rc.2  →  no new bugs  →  0.1.0
+0.1.0-rc.1  →  testers find a bug, fixed on next  →  0.1.0-rc.2  →  no new bugs  →  0.1.0
 ```
 
 The workflow accepts only these two forms. Release candidates are published as GitHub
@@ -65,11 +65,17 @@ becomes the latest.
 ## Making a release
 
 1. Set the version in the root `Cargo.toml` (`[workspace.package] version`), for example
-   `0.1.0-rc.1`, run `cargo check` so `Cargo.lock` follows, and merge that through a pull request.
-2. Tag the merge commit on `main` with the same version and push the tag:
+   `0.1.0-rc.1`, run `cargo check` so `Cargo.lock` follows, and merge that through a pull request
+   into `next`. Record its squashed commit's full SHA.
+2. Wait for a successful nightly to promote that commit (or a descendant) to `main`. Fetch
+   `main` and check that it contains the recorded commit, then tag that exact commit with the
+   same version and push the tag. Replace `<version-commit>` below with the recorded SHA;
+   stop if the ancestry check fails:
 
    ```sh
-   git tag v0.1.0-rc.1
+   git fetch origin main
+   git merge-base --is-ancestor <version-commit> origin/main
+   git tag v0.1.0-rc.1 <version-commit>
    git push origin v0.1.0-rc.1
    ```
 
@@ -105,6 +111,14 @@ own: a scheduled agent starts it twice a day (`gh workflow run release.yml -f ni
 published, `main` follows ([The next branch](#the-next-branch)). A second agent then rewrites
 its notes and posts it to Discord (see [Nightly notes](#nightly-notes)).
 
+If the rolling `nightly` release is published but the dated release fails, `promote` does not
+run and `main` stays behind. The scheduled agent's commit comparison can then see `next` as
+already published and skip another build. After fixing the failure, re-run all jobs of the
+failed Release run, so all three platforms' packages are available, and check that the dated
+release is published and `promote` succeeds. The dated-tag lookup reuses a tag only when both
+its version date and commit match; a new run on a later day can create a new dated release
+for the same commit.
+
 The nightly's version is the workspace version without a pre-release suffix, the date and the
 commit: `0.0.1-nightly.20261013+a15ad35`. The workflow writes it into `Cargo.toml` and
 `Cargo.lock` before building (nothing is committed), so `suhina-cli --version`, the desktop
@@ -120,8 +134,8 @@ Each night is also kept as a pre-release of its own under the tag **`nightly-YYY
 the latest. A tester can go back to an earlier night to check when something broke, or return
 to a build that opens their project. A second nightly on the same day is kept as
 **`nightly-YYYYMMDD-2`** beside the first, and so on; the name is chosen when the nightly is
-published, so a rerun of a failed run replaces only a dated release of its own commit and never
-another build's. The nightly job deletes the dated nightlies older than `NIGHTLY_KEEP_DAYS` (30) with
+published, so a rerun replaces only a dated release matching its version date and commit, never
+another build's. Without a match, it creates a new dated release. The nightly job deletes the dated nightlies older than `NIGHTLY_KEEP_DAYS` (30) with
 their tags; it touches no other release, and a failure there leaves the new nightly published.
 
 ### Nightly notes
@@ -140,7 +154,9 @@ script's list, and it is published either way.
 
 The agent runs in a Claude cloud session, which may start workflows but may not edit releases, so
 it hands the notes to **Actions › Nightly notes** ([`nightly-notes.yml`](../.github/workflows/nightly-notes.yml))
-as its `tag` and `notes` inputs. [`scripts/nightly_notes.py`](../scripts/nightly_notes.py) checks
+as its `tag` and `notes` inputs, selecting **main** in **Run workflow** (or passing `--ref main`
+to `gh workflow run nightly-notes.yml`). The publish job runs only from `main`; selecting the
+default branch, `next`, skips it. [`scripts/nightly_notes.py`](../scripts/nightly_notes.py) checks
 them before anything changes: the tag is `nightly-YYYYMMDD` or `nightly-YYYYMMDD-N`, the notes
 start with `### New since the previous nightly`, carry no HTML, images, `@`, character references
 (`&#58;`) or `]:` (which starts a reference-style link definition, `[label]: …`), and link only
@@ -460,17 +476,19 @@ ruleset with *Require merge queue* and the merge method *Squash*) without changi
 
 **The `ready to merge` label.** A maintainer who has read a pull request adds the label instead of
 coming back to press *Squash and merge* once CI is green. That label is their approval of the
-current head, given with a finished test build of it: nothing merges without one, but a build that
-already exists is reused, so a stale review never forces a new packaging run.
+current head. Pull requests into `next` need no test build: the nightly builds and packages it
+on every system before `main` moves. For other base branches, a finished test build is required
+unless the change builds nothing or only user interface code, as below. An existing build is
+reused when eligible.
 [`ready-to-merge.yml`](../.github/workflows/ready-to-merge.yml) (`pull_request_target`, checking out
 only `main`'s automation for the build lookup, never running the pull request's code) then:
 
 | Event | What happens |
 |---|---|
-| a maintainer adds the label and a finished test build of the head exists | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge (squash) with that commit as the expected head; GitHub squashes the pull request into its base once `ci` is green and every review thread is resolved |
-| a maintainer adds the label and no finished test build of the head exists | the label comes off with a comment asking for `/test-build`; nothing is approved or queued. A build counts when it is a successful, authorized `test build` run of the head, or of an earlier head the branch only merged `main` into, with every requested package still available (`scripts/build_reuse.py`); a build still running does not count yet. This applies to every author, maintainers and dependency updates included. A pull request that changes nothing `test-build.yml` builds (only documentation, scripts or other workflows) needs no build, and neither does one whose built files are all user interface code (`UI_PATHS` in `scripts/build_reuse.py`: `crates/ui`, `crates/ui-gpu`, `crates/style`, `crates/theme-package`, `apps/theme-render`), which its tests cover in CI; `/test-build` still builds one |
+| a maintainer adds the label and the base is `next`, a finished test build exists, or the change is exempt below | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge (squash) with that commit as the expected head; GitHub squashes the pull request into its base once `ci` is green and every review thread is resolved |
+| a maintainer adds the label, the base is not `next`, and a required test build is missing | the label comes off with a comment asking for `/test-build`; nothing is approved or queued. A build counts when it is a successful, authorized `test build` run of the head, or of an earlier head the branch only merged `main` into, with every requested package still available (`scripts/build_reuse.py`); a build still running does not count yet. For bases other than `next`, this applies to every author, maintainers and dependency updates included. A pull request that changes nothing `test-build.yml` builds (only documentation, scripts or other workflows) needs no build, and neither does one whose built files are all user interface code (`UI_PATHS` in `scripts/build_reuse.py`: `crates/ui`, `crates/ui-gpu`, `crates/style`, `crates/theme-package`, `apps/theme-render`), which its tests cover in CI; `/test-build` still builds one |
 | anyone else adds the label | it comes off |
-| a push by a maintainer | the label stays and the new head goes through the same check: with a finished test build of it (a push that only merged `main` reuses the earlier one) the app approves it and turns auto-merge on for it; without one the label comes off with the same comment |
+| a push by a maintainer | the label stays and the new head goes through the same check: when the base is `next`, the change is exempt, or a finished test build exists (an eligible base-branch update reuses the earlier one) the app approves it and turns auto-merge on for it; if a required build is missing, the label comes off with the same comment |
 | a push by anyone else | the label comes off, so the new commits wait to be read (the rule for `main` dismisses the older approval) |
 | the label comes off | auto-merge off, and the app's approvals dismissed; a call that fails fails the run. When the label was added again meanwhile, the run fails and asks for the label to be taken off and added again, so the pull request waits rather than merging |
 
