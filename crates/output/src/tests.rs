@@ -577,3 +577,17 @@ fn input_wait_expires_once_per_cycle_and_preserves_the_next_cycles_wait() {
     progress.set_input_wakes_render(false);
     assert!(!wait.waiting(&progress, start + grace * 3, 44_100));
 }
+
+#[test]
+fn dropping_an_owner_requests_close_even_when_live_output_keeps_a_sender() {
+    let (close, requests) = mpsc::channel();
+    let live_sender = close.clone();
+    let (back_tx, back) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        back_tx.send((48_000, None)).unwrap();
+    });
+    thread.join().unwrap();
+    drop(Owner { close, back, thread: None });
+    assert!(matches!(requests.try_recv(), Ok(OwnerRequest::Close)));
+    drop(live_sender);
+}

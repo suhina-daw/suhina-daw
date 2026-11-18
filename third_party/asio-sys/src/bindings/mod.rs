@@ -38,6 +38,9 @@ pub struct Asio {
     //
     // This is necessary as ASIO only supports one `Driver` at a time.
     loaded_driver: Mutex<Weak<DriverInner>>,
+    // Weak::upgrade fails before the last owner's destructor finishes. Keep the
+    // slot occupied through teardown, including explicit Driver::destroy.
+    driver_occupied: Arc<AtomicBool>,
 }
 
 /// A handle to a single ASIO driver.
@@ -65,6 +68,7 @@ pub struct Driver {
 // which is disallowed by ASIO.
 #[derive(Debug)]
 struct DriverInner {
+    driver_occupied: Arc<AtomicBool>,
     state: Mutex<DriverState>,
     // Input/output buffer state, shared across every `Driver` handle for this driver.
     streams: Arc<Mutex<AsioStreams>>,
@@ -460,6 +464,12 @@ impl Asio {
             }
         }
 
+        // A zero strong count does not mean ASIOStop/ASIOExit have completed.
+        // Refuse instead of waiting on a possibly stuck driver destructor.
+        if self.driver_occupied.load(Ordering::Acquire) {
+            return Err(LoadDriverError::DriverAlreadyExists);
+        }
+
         // Make owned CString to send to load driver
         let driver_name_cstring =
             CString::new(driver_name).map_err(|_| LoadDriverError::LoadDriverFailed)?;
@@ -483,7 +493,9 @@ impl Asio {
                     }));
                     let name = driver_name.to_string();
                     let destroyed = false;
+                    self.driver_occupied.store(true, Ordering::Release);
                     let inner = Arc::new(DriverInner {
+                        driver_occupied: Arc::clone(&self.driver_occupied),
                         name,
                         state,
                         streams,
@@ -1049,6 +1061,11 @@ impl Drop for DriverInner {
             // though either.
             self.destroy_inner().ok();
         }
+        // Failed teardown keeps the slot unavailable: a new initialization must
+        // not run against a partially stopped driver.
+        if self.destroyed {
+            self.driver_occupied.store(false, Ordering::Release);
+        }
     }
 }
 
@@ -1334,4 +1351,32 @@ fn check_type_sizes() {
         std::mem::size_of::<AsioTime>(),
         std::mem::size_of::<ai::ASIOTime>()
     );
+}
+
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn a_zero_strong_count_does_not_allow_loading_before_teardown_finishes() {
+        let asio = Asio::default();
+        asio.driver_occupied.store(true, Ordering::Release);
+        // No driver was loaded: mark it destroyed so Drop does not call the SDK.
+        let inner = Arc::new(DriverInner {
+            state: Mutex::new(DriverState::Initialized),
+            streams: Arc::new(Mutex::new(AsioStreams { input: None, output: None })),
+            name: "test driver".into(),
+            destroyed: true,
+            driver_occupied: Arc::clone(&asio.driver_occupied),
+        });
+        *asio.loaded_driver.lock().unwrap() = Arc::downgrade(&inner);
+        // This is also the real Driver::destroy path: the weak reference can no
+        // longer upgrade, but the owned DriverInner has not been torn down yet.
+        let pending = Arc::try_unwrap(inner).unwrap();
+        assert!(asio.loaded_driver().is_none());
+        assert!(matches!(asio.load_driver("test driver"), Err(LoadDriverError::DriverAlreadyExists)));
+        drop(pending);
+        assert!(!asio.driver_occupied.load(Ordering::Acquire));
+    }
 }

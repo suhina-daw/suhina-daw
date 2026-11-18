@@ -238,6 +238,34 @@ dialog runs on the owner thread, independently of render and device callbacks.
 A superseded plug-in start is released on a worker thread, since unloading its host
 may wait for a sibling loading after a sample-rate change.
 
+## Releasing an output before opening another
+
+Dropping a player and explicitly closing one both request audio-owner shutdown.
+A background joiner waits for the entire audio thread to end, including stream,
+input and driver destruction, before releasing the process-wide output slot.
+The caller waits at most five seconds. A timeout leaves the slot occupied and
+subsequent output opens report an error; they never start another driver over an
+unfinished shutdown. Once shutdown finishes, an explicit output selection can
+retry. A panicked audio thread keeps the slot unavailable until app restart.
+Project data and the requested output settings remain intact.
+
+This applies to tab switches, new projects, closing a project, preview outputs,
+failed startup and automatic output recovery. Closing a project releases its
+player before returning the session for background cleanup. Ordinary disposal
+also drops its audio plug-in processors in the background; explicit reopening
+can hand them to the next owner after the old audio thread has ended.
+
+The ASIO wrapper separately keeps its driver slot occupied until final teardown
+succeeds. An expired weak reference alone does not allow a new load: the final
+strong reference reaches zero before its destructor finishes. A load during that
+interval returns DriverAlreadyExists, without waiting for the old driver. A
+failed teardown leaves the slot unavailable rather than initializing over a
+partially stopped driver. This also covers explicit Driver::destroy.
+
+These ordering guarantees are tested with channels and a simulated driver
+lifetime, without hardware. They do not establish that any particular driver
+survives the original large-project reproduction; that requires a hardware test.
+
 ## Audio output startup and diagnostics
 
 Before starting a device stream, the output owner primes its ring with silence to the normal
@@ -271,3 +299,5 @@ the real-time thread never writes the log.
 
 - [Steinberg ASIO SDK 2.3 specification, section 5](https://dspace.tul.cz/bitstream/handle/15240/49466/ASIO_SDK_2.3.pdf?sequence=1).
 - [CPAL single-buffer compatibility report](https://github.com/RustAudio/cpal/pull/1077).
+- [CPAL upstream teardown/load fix](https://github.com/RustAudio/cpal/commit/bfb4f70214366ae59c6dfc107faf4864c3c0659a): identifies the expired-weak-reference window during ASIO destruction. Suhina keeps an occupied flag through teardown instead of adding a blocking destructor lock.
+- [CPAL follow-up on dropping a driver under the load lock](https://github.com/RustAudio/cpal/commit/09aca1eac90518d53424fef1e19ce0ea56959057).
