@@ -70,10 +70,11 @@ pub fn blurs(text: &str) -> bool {
         .is_some_and(|radius| radius.is_finite() && radius > 0.0)
 }
 
-/// The elements `backdrop-filter` reads: they float over the window's own layers. Everything else
-/// sits in the window, whose background the system already blurs behind it. All but `dialog` read
-/// it from rules on the element alone (`popup { … }`), which [`BARE_FILTERED`] lists.
-pub const BACKDROP_FILTERED: &[&str] = &["popup", "menu", "dialog", "tooltip"];
+/// The elements `backdrop-filter` reads: they float over the window's own layers (Settings too,
+/// docked over the views, #1487 F4). Everything else sits in the window, whose background the
+/// system already blurs behind it. All but `dialog` and `settings` read it from rules on the
+/// element alone (`popup { … }`), which [`BARE_FILTERED`] lists.
+pub const BACKDROP_FILTERED: &[&str] = &["popup", "menu", "dialog", "tooltip", "settings"];
 
 /// The floating elements that read `backdrop-filter` only from a rule naming them alone.
 pub const BARE_FILTERED: &[&str] = &["popup", "menu", "tooltip"];
@@ -84,18 +85,34 @@ fn surface_gradient(text: &str) -> bool {
     text == "none" || (text.len() <= 1024 && text.contains(',') && !text.contains([';', '{', '}']))
 }
 
-/// An image of the theme's own folder: `none` or `url("<path>.png")` ([`backdrop_path`]).
+/// An image of the theme's own folder: `none` or `url("<path>.png")`, `.jpg`, `.jpeg` or `.webp`
+/// ([`backdrop_path`]).
 fn backdrop_image(text: &str) -> bool {
     text.trim() == "none" || backdrop_path(text).is_some()
 }
 
-/// The path `url("<path>.png")` names, when it is a PNG inside the theme's folder: relative, at
-/// most 240 bytes, with no empty, `.` or `..` part and no `\`, `:` or NUL. The one check of a
-/// `backdrop-image`, for the engine and for the host that loads the picture.
+/// An element's artwork: `none` (no artwork: the element draws its CSS look) or `url(<file>)`. The
+/// theme loader checks the file a theme names; the engine checks only the form.
+fn artwork_image(text: &str) -> bool {
+    let text = text.trim();
+    text == "none"
+        || text
+            .strip_prefix("url(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .map(|path| path.trim().trim_matches(['"', '\'']))
+            .is_some_and(|path| !path.is_empty() && path.len() <= 240 && !path.contains([';', '{', '}', '\0']))
+}
+
+/// The files a `backdrop-image` may name: a PNG, a JPEG or a WebP picture (#1487 F1).
+pub const BACKDROP_EXTENSIONS: [&str; 4] = [".png", ".jpg", ".jpeg", ".webp"];
+
+/// The path `url("<path>")` names, when it is a PNG, JPEG or WebP picture inside the theme's
+/// folder: relative, at most 240 bytes, with no empty, `.` or `..` part and no `\`, `:` or NUL.
+/// The one check of a `backdrop-image`, for the engine and for the host that loads the picture.
 pub fn backdrop_path(text: &str) -> Option<&str> {
     let path = text.trim().strip_prefix("url(")?.strip_suffix(')')?.trim().trim_matches(['"', '\'']);
     (path.len() <= 240
-        && path.ends_with(".png")
+        && BACKDROP_EXTENSIONS.iter().any(|extension| path.ends_with(extension))
         && !path.contains(['\\', ':', '\0'])
         && path.split('/').all(|part| !part.is_empty() && part != "." && part != ".."))
     .then_some(path)
@@ -227,7 +244,8 @@ properties! {
     PanelGradient, "panel-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the panels: none, or an angle and colour stops.";
     TrackGradient, "track-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the tracks: none, or an angle and colour stops.";
     ClipGradient, "clip-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the clips: none, or an angle and colour stops.";
-    BackdropFilter, "backdrop-filter", Text(backdrop_filter), Value::Text(String::new()), false, "What a popup, menu, dialog or tooltip does to the window behind it: blur(<length>) or none; on or off for now.";
+    BackdropFilter, "backdrop-filter", Text(backdrop_filter), Value::Text(String::new()), false, "What a popup, menu, dialog, tooltip or Settings does to the window behind it: blur(<length>) or none; on or off for now.";
+    Image, "image", Text(artwork_image), Value::Text(String::new()), false, "An element's artwork: url(<file>), or none for no artwork, so the element draws its CSS look.";
     BackdropImage, "backdrop-image", Text(backdrop_image), Value::Text(String::new()), false, "The theme's picture behind the window: none or url(\"<file>.png\").";
     BackdropOpacity, "backdrop-opacity", Integer, Value::Integer(-1), false, "How much the backdrop picture shows, 0 to 100.";
     BackdropBlur, "backdrop-blur", Integer, Value::Integer(-1), false, "How much the backdrop picture is blurred, 0 to 100.";
@@ -373,14 +391,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_backdrop_image_is_a_png_inside_the_theme_s_folder_and_its_one_check_is_the_engine_s() {
-        for good in [r#"url("back.png")"#, "url('art/back.png')", "url(back.png)", "none"] {
+    fn a_backdrop_image_is_a_picture_inside_the_theme_s_folder_and_its_one_check_is_the_engine_s() {
+        for good in [
+            r#"url("back.png")"#,
+            "url('art/back.png')",
+            "url(back.png)",
+            "url(photo.jpg)",
+            "url(photo.jpeg)",
+            "url(photo.webp)",
+            "none",
+        ] {
             assert!(Property::BackdropImage.parse(good).is_ok(), "{good}");
         }
         assert_eq!(backdrop_path(r#" url( "art/back.png" ) "#), Some("art/back.png"));
         let long = format!("url({}.png)", "a".repeat(240));
         for bad in [
             r#"url("back.svg")"#,
+            r#"url("back.gif")"#,
             r#"url("/back.png")"#,
             r#"url("../back.png")"#,
             r#"url("./back.png")"#,
@@ -393,5 +420,17 @@ mod tests {
             assert!(Property::BackdropImage.parse(bad).is_err(), "{bad}");
             assert_eq!(backdrop_path(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn image_is_none_or_one_url_and_is_not_inherited() {
+        for good in ["none", " none ", r#"url("knob.svg")"#, "url('art/a.png')", "url(suhina:knob.body.svg)"] {
+            assert!(Property::Image.parse(good).is_ok(), "{good}");
+        }
+        let long = format!("url({}.svg)", "a".repeat(240));
+        for bad in ["", "red", "url()", r#"url("")"#, "url(a.svg", "url(a;b.svg)", "none none", long.as_str()] {
+            assert!(Property::Image.parse(bad).is_err(), "{bad}");
+        }
+        assert!(!Property::Image.inherits());
     }
 }

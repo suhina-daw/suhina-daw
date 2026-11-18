@@ -349,7 +349,7 @@ impl App {
             Edits::None
         };
         let insets = DetailInsets::around(top + bottom, boxes, shown_device, editing);
-        self.detail_height = (self.detail_height + insets.area - self.detail_insets.area).max(0.0);
+        self.detail_height = (self.detail_height + insets.devices - self.detail_insets.devices).max(0.0);
         self.detail_insets = insets;
         let focus = match clip {
             _ if !pulled || self.settings.piano_roll_top != PianoRollTop::Track => None,
@@ -990,7 +990,7 @@ impl App {
         if divider.response.double_clicked() {
             self.show_editor();
             // The default content height, with the area's border and padding round it (#1336).
-            self.detail_height = DETAIL_HEIGHT + self.detail_insets.area;
+            self.detail_height = DETAIL_HEIGHT + self.detail_insets.devices;
             self.detail_shown = Vec2::new(detail_view::STACK_WIDTH, self.detail_height);
             self.detail_width = detail_view::STACK_WIDTH;
         }

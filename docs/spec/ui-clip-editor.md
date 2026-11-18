@@ -169,7 +169,8 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
    [#443](https://github.com/suhina-daw/suhina-daw/issues/443) and
    [#460](https://github.com/suhina-daw/suhina-daw/issues/460)): from near its left edge the
    tools, then the note clipboard, then **Quantise** and the note tools' toggle, then the **Rows**
-   group (**Fold**, **Scale** and **Highlight**, framed together; › Scale and key,
+   group (**Fold** and **Scale**, framed together) and **Highlight** framed on its own beside it,
+   since it turns on by itself (› Scale and key,
    [#347](https://github.com/suhina-daw/suhina-daw/issues/347)), each group after a divider; at
    the right the **workflow menu** (› Workflow modes), the **ghost menu** (› Ghost notes), a
    divider, the piano roll's grid value with its **Grid** caption (› Grid and snapping) and, at the
@@ -1134,8 +1135,8 @@ clip scales) and is saved with the project; a clip has none until one is set.
   it. The panel's other lists (the Transform tab's transformation, Quantise's grid, the clip being
   edited) take the arrows the same way, and while one has them the window's arrow keys (the piano
   roll's, the Launcher's) wait.
-- **The toolbar's Rows group** (› Layout): **Fold** (› Zoom and scroll), **Scale** and
-  **Highlight** (Highlight scale), each lit while on. **Scale** folds the rows to the clip's
+- **The toolbar's Rows group** (› Layout): **Fold** (› Zoom and scroll) and **Scale**, then
+  **Highlight** (Highlight scale), toolbar buttons like the others, with no frame round them, each lit while on. **Scale** folds the rows to the clip's
   scale (› Zoom and scroll), turning the scale on first when the clip has none (as the clip
   panel's switch does); off again, every row shows and the clip keeps its scale. The clip panel's
   switch, root and mode set the scale without folding a row, and the switch off leaves Scale

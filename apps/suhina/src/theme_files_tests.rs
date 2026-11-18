@@ -571,7 +571,12 @@ fn a_deleted_variant_or_theme_goes_to_the_trash() {
         "@property --tint { syntax: \"<color>\"; initial-value: #112233; label: \"Tint\"; }",
     );
     std::fs::create_dir_all(themes.join("ink").join(VARIANTS)).unwrap();
-    let warm = Variant { id: "warm".into(), name: "Warm".into(), values: [("--tint".into(), "#884400".into())].into() };
+    let warm = Variant {
+        light: None,
+        id: "warm".into(),
+        name: "Warm".into(),
+        values: [("--tint".into(), "#884400".into())].into(),
+    };
     std::fs::write(themes.join("ink").join(VARIANTS).join("warm.json"), warm.to_json()).unwrap();
     let mut files = ThemeFiles::new(Some(themes.clone()));
     files.trash = fake_trash;

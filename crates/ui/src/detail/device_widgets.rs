@@ -506,9 +506,15 @@ fn row_name(name: &str) -> &str {
 fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) -> egui::Response {
     let painter = ui.painter();
     let response = ui.interact(rect, egui::Id::unique(id_salt), Sense::click());
-    // A `button`: its background where the sheet gives one, its `color` for the triangle.
+    // A `button`: its CSS box where the sheet gives one (background, gradients, radius, border,
+    // shadows). Its triangle is a drop-down's arrow (`dropdown-arrow { color }`), as the row's
+    // drop-downs draw theirs.
+    // The sheet's radius, as a canvas button takes it.
     let look = crate::kit::element::BUTTON.response(&response).look();
-    painter.rect_filled(rect, 2.0, look.background());
+    let button = crate::kit::element::BUTTON.response(&response).enter();
+    let radius = button.radius_or(2.0);
+    button.paint_with(painter, rect, crate::kit::element::Native { radius, fill: look.background() });
+    drop(button);
     let inner = rect.shrink(5.0);
     let center = inner.center();
     let dir = if up { -1.0 } else { 1.0 };
@@ -518,7 +524,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
             egui::pos2(center.x - 1.5 * dir, center.y + 3.5),
             egui::pos2(center.x - 1.5 * dir, center.y - 3.5),
         ],
-        look.own_color_or(crate::detail::detail_view::hint_ink()),
+        crate::kit::element::DROPDOWN_ARROW.look().color(),
         egui::Stroke::NONE,
     ));
     response.widget_info(move || egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));

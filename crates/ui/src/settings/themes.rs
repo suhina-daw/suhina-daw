@@ -85,6 +85,8 @@ pub struct Themes {
 struct Draft {
     id: String,
     name: Option<String>,
+    /// The colour scheme chosen in the editor, when one was.
+    light: Option<bool>,
     values: BTreeMap<String, String>,
     theme: Theme,
     /// A new variant started from `id` (the + box): nothing is written until it is saved, as a
@@ -218,6 +220,7 @@ impl Themes {
             },
             variant: variant.and(theme.vars.variant_name.clone()),
             variant_name: self.draft_for(shown).and_then(|d| d.name.clone()).unwrap_or(saved_name),
+            light: theme.light(),
             edited: self.edited(shown),
             saveable: self.saveable(shown),
             new_variant: self.draft_for(shown).is_some_and(|d| d.new),
@@ -312,6 +315,13 @@ impl Themes {
                 self.rebuild_draft();
                 None
             }
+            ThemeRequest::EditScheme(light) => {
+                self.open_draft(current)?;
+                let draft = self.draft.as_mut()?;
+                draft.light = Some(light);
+                self.rebuild_draft();
+                None
+            }
             ThemeRequest::Save => {
                 let real = self.real_id(current);
                 if !self.saveable(&real) {
@@ -361,8 +371,14 @@ impl Themes {
                 // Numbered as its id would be, so two new variants are told apart by name too.
                 let number = id.rsplit_once('-').and_then(|(_, n)| n.parse::<u32>().ok());
                 let name = number.map_or_else(|| "New variant".to_owned(), |n| format!("New variant {n}"));
-                self.draft =
-                    Some(Draft { id: from.clone(), name: Some(name), values: BTreeMap::new(), theme, new: true });
+                self.draft = Some(Draft {
+                    id: from.clone(),
+                    name: Some(name),
+                    light: None,
+                    values: BTreeMap::new(),
+                    theme,
+                    new: true,
+                });
                 self.rebuild_draft();
                 (!same_id(&from, current)).then_some(from)
             }
@@ -418,6 +434,7 @@ impl Themes {
                         if variant {
                             theme.meta.default_variant = Some(label);
                         }
+                        theme.meta.light = theme.light();
                         theme
                     }
                     _ => Theme::new_blank(&name),
@@ -523,7 +540,10 @@ impl Themes {
         let Some(draft) = self.draft_for(current) else { return false };
         let Some(entry) = self.entries.iter().find(|e| e.id == draft.id) else { return false };
         let renamed = typed_name(draft).is_some_and(|n| n != self.saved_name(&draft.id));
-        draft.new || renamed || draft.theme.vars.values != entry.theme.vars.values
+        draft.new
+            || renamed
+            || draft.theme.vars.values != entry.theme.vars.values
+            || draft.theme.light() != entry.theme.light()
     }
 
     /// Whether the theme or variant `id` went because this moved it to the Trash.
@@ -580,7 +600,7 @@ impl Themes {
         let real = self.real_id(current);
         if self.draft_for(&real).is_none() {
             let theme = self.entries.iter().find(|e| e.id == real)?.theme.clone();
-            self.draft = Some(Draft { id: real, name: None, values: BTreeMap::new(), theme, new: false });
+            self.draft = Some(Draft { id: real, name: None, light: None, values: BTreeMap::new(), theme, new: false });
         }
         Some(())
     }
@@ -606,6 +626,9 @@ impl Themes {
             && crate::kit::theme_vars::split_id(&draft.id).1.is_some()
         {
             theme.vars.variant_name = Some(name);
+        }
+        if let Some(light) = draft.light {
+            theme.vars.light = Some(light);
         }
         crate::kit::theme_vars::resolve(&mut theme);
         // A theme read from a sheet keeps its edited settings as values over the sheet's.
