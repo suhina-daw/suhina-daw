@@ -20,7 +20,9 @@ pub(super) struct ColourWindow {
     tracks: Vec<TrackId>,
     selection_seen: Vec<TrackId>,
     panel: Panel,
-    position: Option<Pos2>,
+    // A stable opening position, not the last reported native position. eframe reads geometry
+    // before applying queued moves, so feeding observations back here oscillates.
+    initial_position: Option<Pos2>,
     height: f32,
     focus_requested: bool,
     focused: bool,
@@ -65,7 +67,7 @@ impl App {
         self.finish_colour_gesture(false);
         self.colour_window.panel.discard_drafts();
         if !self.colour_window.open {
-            self.colour_window.position = None;
+            self.colour_window.initial_position = None;
         }
         self.colour_window.open = true;
         self.colour_window.project = self.projects.active();
@@ -166,20 +168,28 @@ impl App {
             )
         });
         let bounds = main_rect.unwrap_or_else(|| Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0)));
+        let id = egui::ViewportId::from_hash_of("track-colour-window");
         let height = (if self.colour_window.panel.expanded { 720.0_f32 } else { 400.0 })
             .min((bounds.height() - 48.0).max(180.0));
         if self.colour_window.height != height {
             // Expanding near the bottom must keep the new controls on screen. Ordinary
             // moves are left alone; only a size change rechecks the available bounds.
-            self.colour_window.position =
-                self.colour_window.position.map(|at| place(bounds, Vec2::new(WIDTH, height + 32.0), Some(at)));
+            if let Some(requested) = self.colour_window.initial_position {
+                let observed =
+                    self.settings.colour_window_rect.map_or(requested, |[x, y, _, _]| Pos2::new(x as f32, y as f32));
+                let adjusted = place(bounds, Vec2::new(WIDTH, height + 32.0), Some(observed));
+                if adjusted != observed {
+                    // An explicit one-shot move also works if the clamped position
+                    // happens to equal the builder's unchanged opening position.
+                    ctx.send_viewport_cmd_to(id, egui::ViewportCommand::OuterPosition(adjusted));
+                }
+            }
             self.colour_window.height = height;
         }
-        let position = *self.colour_window.position.get_or_insert_with(|| {
+        let position = *self.colour_window.initial_position.get_or_insert_with(|| {
             let proposed = self.settings.colour_window_rect.map(|[x, y, _, _]| Pos2::new(x as f32, y as f32));
             place(bounds, Vec2::new(WIDTH, height + 32.0), proposed)
         });
-        let id = egui::ViewportId::from_hash_of("track-colour-window");
         let builder = egui::ViewportBuilder::default()
             .with_title(title.clone())
             .with_position(position)
@@ -331,8 +341,8 @@ impl App {
             && self.settings.colour_window_rect != Some(rect)
         {
             self.settings.colour_window_rect = Some(rect);
-            // Keep live placement in memory; persist once on close, not on every move frame.
-            self.colour_window.position = Some(Pos2::new(rect[0] as f32, rect[1] as f32));
+            // Observe native moves for reopening/expansion, but never replay them through
+            // the viewport builder. Persist once on close, not on every move frame.
         }
         if self.colour_window.focus_requested {
             ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);

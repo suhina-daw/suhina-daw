@@ -173,7 +173,7 @@ Track colours: the track's own colour if it has one, else Suhina's fixed colour 
 
 ### Colour palette
 
-Suhina offers 24 fixed suggestions in three rows of eight, shared by colour controls and
+Suhina offers 36 fixed suggestions in three rows of twelve, shared by colour controls and
 independent of the theme. The track menu uses 14 px swatches with 3 px gaps and a clearly
 outlined current colour. A swatch applies the colour to the selected tracks as one undo step
 and closes the menu. A choice matching every target's current colour makes no edit.
@@ -181,7 +181,8 @@ and closes the menu. A choice matching every target's current colour makes no ed
 The **+ More colours** row shows the configured shortcut (F2 by default) and opens a separate
 non-modal colour window. It is 340 points wide, initially centred, movable and kept open while
 the DAW is used. The surface, text, field border and focus indicators use the `colour-picker`,
-`colour-field` and `colour-swatch` elements. Its default layout has compact 30 × 18 swatches:
+`colour-field` and `colour-swatch` elements. Swatches are 18 points tall, up to 30 wide;
+the twelve-column palette fits the available width without widening the window:
 Palette, Related shades, Recent colours, current swatch/hex/copy, collapsed Fine adjustment,
 then Random and Default. There is no per-track list; Recent colours is bounded to eight.
 Fine adjustment reveals Field/Wheel, hue/value selection, RGB/HSL and Steps/Soft colours.
@@ -189,7 +190,7 @@ A short screen scrolls the contents. Exact values and keyboard behaviour are spe
 [Track colours](../spec/colour-picker.md). Every pointer adjustment appears live, with one
 Undo step per complete drag; closing the window keeps completed edits.
 
-Clip and browser colour controls share the 24 suggestions and retain their inline custom
+Clip and browser colour controls share the 36 suggestions and retain their inline custom
 field. Track and clip colours are exact project data. Themes never provide a palette, and a
 user palette editor remains deferred by #1025.
 

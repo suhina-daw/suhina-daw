@@ -164,7 +164,7 @@ impl Panel {
         ui.spacing_mut().item_spacing = Vec2::new(4.0, 5.0);
         ui.spacing_mut().button_padding = Vec2::new(5.0, 2.0);
         ui.label("Palette");
-        for row in super::swatches().chunks(8) {
+        for row in super::swatches().chunks(suhina_session::colours::PALETTE_COLUMNS) {
             if let Some(colour) = swatch_line(ui, "Palette", row, self.colour) {
                 self.choose(colour, true, &mut edits);
             }
@@ -372,10 +372,12 @@ impl Panel {
 
 fn swatch_line(ui: &mut Ui, label: &str, colours: &[Rgb], current: Rgb) -> Option<Rgb> {
     let mut picked = None;
+    let gaps = colours.len().saturating_sub(1) as f32 * ui.spacing().item_spacing.x;
+    let width = ((ui.available_width() - gaps) / colours.len().max(1) as f32).clamp(14.0, 30.0);
     ui.horizontal(|ui| {
         for (index, &colour) in colours.iter().enumerate() {
             ui.push_id((label, index, colour.0, colour.1, colour.2), |ui| {
-                let (rect, response) = ui.allocate_exact_size(Vec2::new(30.0, 18.0), Sense::click());
+                let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 18.0), Sense::click());
                 let name = format!("{label} {}", hex(colour));
                 response.widget_info(|| {
                     egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), colour == current, &name)

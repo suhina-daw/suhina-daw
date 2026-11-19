@@ -24,9 +24,9 @@ const SWATCH_GAP: f32 = 3.0;
 /// How much of its colour a muted track's colour area keeps over `control.background`.
 const MUTED: f32 = 0.55;
 
-/// The palette: Suhina's 24 track colours, the same in every theme (a theme draws a track's
+/// The palette: Suhina's 36 track colours, the same in every theme (a theme draws a track's
 /// colour but never chooses it, #1020).
-pub fn swatches() -> [Rgb; 24] {
+pub fn swatches() -> [Rgb; 36] {
     suhina_session::colours::PALETTE
 }
 
@@ -74,7 +74,7 @@ pub(crate) fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     let mut picked = None;
     // A `colour-swatch`'s `border-color` outlines the chosen swatch and the one under the pointer.
     let ring = crate::kit::element::COLOUR_SWATCH.look().border();
-    for colours in swatches().chunks(8) {
+    for colours in swatches().chunks(suhina_session::colours::PALETTE_COLUMNS) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::splat(SWATCH_GAP);
             for &colour in colours {

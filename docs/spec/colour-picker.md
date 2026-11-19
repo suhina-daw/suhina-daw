@@ -22,7 +22,7 @@ Track colours remain exact sRGB bytes in project data, independent of the theme.
 
 ## Opening and choosing
 
-Track menus offer 24 colours in three rows of eight. The **+ More colours** entry and
+Track menus offer 36 colours in three rows of twelve. The **+ More colours** entry and
 the configurable **F2** shortcut open the same floating colour window. Reopening focuses
 that window. It initially opens centred over Suhina, can be moved, and remains open while
 the DAW is used. It follows selected track headers, showing the track name or selected
@@ -37,6 +37,8 @@ intact; clips and lane selection shading keep their ordinary look. Closing the t
 the configured header appearance without changing the selection or saved appearance setting.
 The native client area must paint the active theme's background, and idle rendering must
 settle without alternating content, geometry or scale.
+Native position observations are saved for reopening; they never become continuous move
+requests. Only opening and an explicit size-change adjustment may position the window.
 
 The compact order is **Palette**, **Related shades**, **Recent colours**, the current
 colour and editable/copyable hex value, collapsed **Fine adjustment**, and **Random** /
@@ -54,8 +56,9 @@ This is a descriptive aid, not quantisation: displaying a name never changes the
 RGB or the value copied to the clipboard. The bounded table ships with the app and requires
 no network access; its provenance and curation are recorded beside the data.
 
-The palette's first row retains the eight bright defaults. The second adds red and deeper
-warm/cool hues; the third offers four pale colours and four neutrals. These are suggestions,
+The palette's first row retains the eight bright defaults and adds coral, lime, green and
+magenta. The second offers deeper warm/cool hues; the third offers eight pale colours and
+four neutrals. These are suggestions,
 not a change to the legacy defaults of tracks saved without an explicit colour. An older
 keymap that already assigns F2 to another window action keeps that assignment; the colour
 action starts unbound until the user chooses a key.
@@ -116,15 +119,15 @@ Automatic text on track colours prefers the theme's two inks, falling back to bl
 when neither reaches 4.5:1. Explicit theme rules that override a label's ink remain the theme
 author's responsibility. The same contrast helper covers solid, selected and muted fills.
 Normal text targets 4.5:1 contrast and essential selection indicators 3:1. These do not
-require every adjacent pair of palette swatches to have 3:1 contrast, or promise that 24
+require every adjacent pair of palette swatches to have 3:1 contrast, or promise that 36
 colours are distinguishable under every colour-vision deficiency.
 
-[The palette check](colour-picker-palette.svg) shows the final 24 suggestions on dark and
+[The palette check](colour-picker-palette.svg) shows the 36 suggestions on dark and
 light surfaces, a relative-luminance greyscale and Machado-model severity-1 protan/deutan
 simulations plus a tritan approximation. The transformations apply the published matrices
 to linear sRGB, clamp to the display gamut, then encode sRGB. The numbered chart was checked
 visually: red/green and blue/purple distinctions converge, and many different hues share
-similar greyscale values. It is not a 24-class accessible categorical palette. Track names,
+similar greyscale values. It is not a 36-class accessible categorical palette. Track names,
 hierarchy and independent selection outlines remain necessary. A simulation does not
 replace feedback from people with colour-vision deficiencies or native-window testing.
 

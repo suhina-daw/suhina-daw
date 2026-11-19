@@ -5,6 +5,48 @@ use super::*;
 use suhina_engine::model::Rgb;
 
 #[test]
+fn the_menu_and_tool_offer_three_full_rows_of_twelve_clickable_colours() {
+    use suhina_ui::interaction::colour_picker::{hex, swatches};
+    let palette = swatches();
+    let distinct: std::collections::BTreeSet<_> = palette.iter().map(|Rgb(r, g, b)| (*r, *g, *b)).collect();
+    assert_eq!(distinct.len(), 36);
+    for tool in [false, true] {
+        let mut app = demo_app();
+        if tool {
+            app.run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+        }
+        let mut h = window(app);
+        if !tool {
+            h.get_by_label("Track Drums").click_secondary();
+            h.run();
+        }
+        let prefix = if tool { "Palette" } else { "Colour" };
+        let rects: Vec<_> =
+            palette.iter().map(|colour| h.get_by_label(&format!("{prefix} {}", hex(*colour))).rect()).collect();
+        let bounds = if tool {
+            h.ctx.memory(|m| m.area_rect(egui::Id::unique("track-colour-window"))).unwrap()
+        } else {
+            h.get_by_label("+ More colours").rect()
+        };
+        for row in rects.chunks(12) {
+            for rect in row {
+                assert_eq!(rect.top(), row[0].top(), "each palette row stays on one line");
+                assert!(rect.width() >= 14.0 && rect.right() <= bounds.right(), "{rect:?} outside {bounds:?}");
+            }
+            for pair in row.windows(2) {
+                assert!(pair[0].right() < pair[1].left(), "swatches do not overlap");
+            }
+        }
+        assert!(rects[0].bottom() < rects[12].top() && rects[12].bottom() < rects[24].top());
+        // The newly added last column remains reachable and dispatches the same command.
+        let chosen = palette[11];
+        h.get_by_label(&format!("{prefix} {}", hex(chosen))).click();
+        h.run();
+        assert_eq!(h.state().session().unwrap().project().track(TrackId(1)).unwrap().color, Some(chosen));
+    }
+}
+
+#[test]
 fn embedded_colour_background_stays_inside_its_fitted_window_in_every_mode() {
     fn fills(shape: &egui::Shape, clip: egui::Rect, found: &mut Vec<(egui::Rect, egui::Color32)>) {
         match shape {
