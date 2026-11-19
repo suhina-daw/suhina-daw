@@ -776,6 +776,7 @@ impl Session {
         let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
+        let _ = player.send(suhina_engine::LaunchCommand::SetClickRoute(self.live.click_route));
         // And whether a track with no instrument plays its notes as sine tones (#1384).
         let _ = player.send(suhina_engine::LaunchCommand::SetImplicitTones(self.live.implicit_tones));
         // Takes of the engine this one replaces end where it was; a new engine records anew.

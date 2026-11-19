@@ -158,6 +158,8 @@ pub enum LaunchCommand {
     },
     /// The metronome's click sound from the next click on.
     SetMetronomeSound(crate::ClickSound),
+    /// Where the metronome's click joins the output, from the next block on.
+    SetClickRoute(crate::ClickRoute),
     /// Whether a track with no instrument of its own plays its notes as sine tones (#1384): the
     /// user's setting, off by default in the app. Notes sounding go on to their ends.
     SetImplicitTones(bool),
@@ -1327,6 +1329,7 @@ impl Renderer {
                 self.graph.launcher.monitor.metronome.store(self.metronome.on(), Ordering::Relaxed);
             }
             LaunchCommand::SetMetronomeSound(sound) => self.metronome.set_sound(sound),
+            LaunchCommand::SetClickRoute(route) => self.click_route = route,
             LaunchCommand::SetImplicitTones(on) => {
                 self.implicit_tones = on;
                 for chain in &mut self.graph.chains {

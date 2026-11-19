@@ -1293,6 +1293,18 @@ impl Chain {
         }
     }
 
+    /// The gains [`Chain::mix`] puts its output at on frame `frame` of the block: the track's
+    /// gains, its mixer lanes, its fader's move and its live pan. For a click that follows the
+    /// main channel's fader past its devices ([`crate::ClickRoute::PostFader`]).
+    pub(crate) fn fader_gains(&self, frame: usize) -> (f32, f32) {
+        let (lanes_left, lanes_right) = self.mix.as_ref().map_or((1.0, 1.0), |mix| mix.gains(frame));
+        let fader = self.live.at(frame);
+        (
+            self.post.0 * lanes_left * fader * self.pan.0.at(frame),
+            self.post.1 * lanes_right * fader * self.pan.1.at(frame),
+        )
+    }
+
     /// The first `frames` frames of the block's output, before the track's gains, once
     /// [`Chain::complete`] has run.
     pub(crate) fn output(&self, frames: usize) -> &[f32] {

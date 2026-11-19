@@ -51,7 +51,8 @@ From top to bottom:
    - groove amount, metronome, global launch quantisation (the Arrangement view's grid is apart from it: [arrangement editing](arrangement-editing.md) › The grid). **Suhina:** the
      metronome's button, here and in the main strip, is held and dragged for its level: a
      slider opens above it, or below where there is no room above, and the pointer's height on
-     it is the level (−60 to +6 dB), so the whole range is one drag
+     it is the level (−60 to +6 dB), so the whole range is one drag; its right-click menu, in both
+     places, picks the click's sound and where it plays ([metronome](metronome.md))
    - key and scale
    - transport: arrangement position, play, stop, record, overdub, automation arm, loop region
      start, punch, loop, loop length. **Suhina:** play starts from the play start marker, or

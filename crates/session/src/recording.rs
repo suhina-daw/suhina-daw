@@ -173,6 +173,11 @@ impl Session {
         (self.live.metronome.0, self.live.metronome.1, self.live.metronome.2)
     }
 
+    /// Where the metronome's click joins the output, as `transport.setMetronome` left it.
+    pub fn click_route(&self) -> suhina_engine::ClickRoute {
+        self.live.click_route
+    }
+
     pub fn count_in_bars(&self) -> u8 {
         self.live.recording.count_in_bars
     }

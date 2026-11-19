@@ -147,3 +147,27 @@ fn the_arm_key_arms_the_selected_track_and_disarms_it() {
         other => panic!("expected a hint, got {other:?}"),
     }
 }
+
+#[test]
+fn the_metronome_menu_picks_its_sound_and_where_it_plays() {
+    let mut renderer =
+        Renderer::stopped(&demo_project(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+    let mut harness = app_with_engine(&mut renderer);
+    let metronome = |h: &Harness<'static, App>| h.state().session().map(|s| (s.metronome().2, s.click_route()));
+    harness.get_by_label("Metronome on").click_secondary();
+    harness.run_steps(3);
+    harness.get_by_label("Knock").click();
+    harness.run_steps(3);
+    assert_eq!(metronome(&harness), Some((suhina_engine::ClickSound::Knock, suhina_engine::ClickRoute::PreFader)));
+    harness.get_by_label("Metronome on").click_secondary();
+    harness.run_steps(3);
+    harness.get_by_label("Post-fader").click();
+    harness.run_steps(3);
+    assert_eq!(metronome(&harness), Some((suhina_engine::ClickSound::Knock, suhina_engine::ClickRoute::PostFader)));
+    // The main strip's metronome has the same menu.
+    harness.get_by_label("Main metronome").click_secondary();
+    harness.run_steps(3);
+    harness.get_by_label("Through Main").click();
+    harness.run_steps(3);
+    assert_eq!(metronome(&harness).map(|m| m.1), Some(suhina_engine::ClickRoute::ThroughMain));
+}

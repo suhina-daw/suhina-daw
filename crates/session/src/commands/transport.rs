@@ -143,7 +143,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "sound",
                 ParamType::Text,
-                "the click's sound: beep (the first), wood or soft; keeps it if left out",
+                "the click's sound: beep (the first), wood, soft, muted, deep, tick or knock; keeps it if left out",
+            ),
+            optional(
+                "route",
+                ParamType::Text,
+                "where the click joins the output: pre-fader (the first: past the main channel, which leaves it alone), post-fader (past the main channel's devices, at its fader and mute), cue (only the cue output, when it has outputs of its own) or through-main (into the main channel, its devices too); keeps it if left out",
             ),
         ],
         kind: CommandKind::TRANSPORT,
@@ -215,17 +220,31 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
             Some(if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) })
         }
     };
+    let sounds = || suhina_engine::ClickSound::ALL.map(|s| s.name()).join(", ");
     let sound = match Args::new(params).value("sound") {
         None => None,
         Some(Value::String(name)) => Some(
             suhina_engine::ClickSound::from_name(name)
-                .ok_or_else(|| CommandError(format!("sound must be beep, wood or soft, got {name}")))?,
+                .ok_or_else(|| CommandError(format!("sound must be one of {}, got {name}", sounds())))?,
         ),
-        Some(other) => return Err(format!("sound must be beep, wood or soft, got {other}").into()),
+        Some(other) => return Err(format!("sound must be one of {}, got {other}", sounds()).into()),
+    };
+    let routes = || suhina_engine::ClickRoute::ALL.map(|r| r.name()).join(", ");
+    let route = match Args::new(params).value("route") {
+        None => None,
+        Some(Value::String(name)) => Some(
+            suhina_engine::ClickRoute::from_name(name)
+                .ok_or_else(|| CommandError(format!("route must be one of {}, got {name}", routes())))?,
+        ),
+        Some(other) => return Err(format!("route must be one of {}, got {other}", routes()).into()),
     };
     send(session, LaunchCommand::SetMetronome { on, gain: gain.map(|g| g as f32) })?;
     if let Some(sound) = sound {
         send(session, LaunchCommand::SetMetronomeSound(sound))?;
+    }
+    if let Some(route) = route {
+        send(session, LaunchCommand::SetClickRoute(route))?;
+        session.live.click_route = route;
     }
     session.live.metronome.0 = on;
     if let Some(gain) = gain {
@@ -235,7 +254,12 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
         session.live.metronome.2 = sound;
     }
     let (_, db, sound) = session.live.metronome;
-    Ok(json!({ "metronome": on, "db": if db.is_finite() { json!(db) } else { json!("-inf") }, "sound": sound.name() }))
+    Ok(json!({
+        "metronome": on,
+        "db": if db.is_finite() { json!(db) } else { json!("-inf") },
+        "sound": sound.name(),
+        "route": session.live.click_route.name(),
+    }))
 }
 
 fn set_position(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

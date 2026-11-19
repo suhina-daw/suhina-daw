@@ -604,28 +604,32 @@ pub fn show(
     }
     // The metronome in the main strip's toggle row, as the main channel's click control.
     if let Some(click) = parts.metronome {
-        main_metronome(ui, &painter.with_clip_rect(main_mixer), click, grid.metronome, actions);
+        main_metronome(ui, &painter.with_clip_rect(main_mixer), click, (grid.metronome, grid.click_route), actions);
     }
     let bounds = mixer_bounds(area.height(), grid.scenes.len(), rows_top + rows_bottom);
     mixer_edge(ui, &painter, (area, mixer), mixer_height, bounds, state);
 }
 
 /// The main strip's metronome button: a click turns the click on or off; held, a slider shows
-/// over it and dragging up or down sets the click's level until the button is let go.
+/// over it and dragging up or down sets the click's level until the button is let go; the
+/// right-click menu picks its sound and where it plays, against the main channel.
 fn main_metronome(
     ui: &Ui,
     painter: &egui::Painter,
     rect: Rect,
-    (on, db, _): (bool, f64, suhina_engine::ClickSound),
+    ((on, db, sound), route): ((bool, f64, suhina_engine::ClickSound), suhina_engine::ClickRoute),
     actions: &mut Vec<Action>,
 ) {
     let response = ui
         .interact(rect.intersect(painter.clip_rect()), Id::unique("main-metronome"), Sense::click_and_drag())
-        .on_hover_text("Metronome: click to turn it on or off; hold and drag up or down for its level");
+        .on_hover_text(
+            "Metronome: click to turn it on or off; hold and drag up or down for its level; right-click for its sound and where it plays",
+        );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Main metronome"));
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
+    response.context_menu(|ui| crate::session::record_controls::metronome_menu(ui, on, sound, route, actions));
     // `button#main-metronome` as the control bar's: `button[kind="metronome"]`, `[checked]` while on.
     let crate::kit::widgets::Lit { el, toggle, lit } = crate::kit::widgets::lit_toggle_kind(
         ui,

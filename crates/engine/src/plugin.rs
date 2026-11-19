@@ -685,6 +685,11 @@ impl Delay {
         }
     }
 
+    /// How many frames it delays by.
+    pub(crate) fn frames(&self) -> usize {
+        self.buffer.len() / 2
+    }
+
     /// Takes over what `old` holds when it is as long, so a graph swap that keeps the delay
     /// does not drop the sound in it. Never allocates.
     pub(crate) fn adopt(&mut self, old: &mut Delay) {

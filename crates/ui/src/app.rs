@@ -3262,6 +3262,7 @@ impl App {
             let mut grid = TrackGrid::build(s.project(), s.player().map(|p| p.monitor()));
             grid.midi_ports = self.projects.midi_ports().to_vec();
             grid.metronome = s.metronome();
+            grid.click_route = s.click_route();
             grid.input_channels =
                 s.player().and_then(suhina_session::Player::output_info).map_or(0, |i| i.input_channels);
             for column in &mut grid.columns {

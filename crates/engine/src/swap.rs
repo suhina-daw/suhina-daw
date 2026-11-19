@@ -437,6 +437,8 @@ impl Renderer {
             }
         }
         self.graph.direct_delay.adopt(&mut old.direct_delay);
+        self.graph.click_delay.adopt(&mut old.click_delay);
+        self.graph.click_cue_delay.adopt(&mut old.click_cue_delay);
         self.meters.assign(self.graph.levels.tracks());
         // The new graph's chains capture their watched devices' output into the meter
         // monitor's spectrum rings, on every path that runs them

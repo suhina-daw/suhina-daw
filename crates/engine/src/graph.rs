@@ -46,9 +46,16 @@ pub(crate) struct Graph {
     /// built with, and a fader move since as a factor on the mix (#763 › 4). `None` when the
     /// main channel runs a chain (its chain takes the move), is muted or has a volume lane.
     pub(crate) main_fader: Option<(f64, crate::chain::LiveVolume)>,
-    /// The click's latency compensation while the main fader moves: the click is kept out of
-    /// the mix the fader scales, and delayed here as the mix is in `direct_delay`.
+    /// The click's latency compensation where it joins the main output past the main channel
+    /// ([`crate::ClickRoute`]): as late as a sound that goes straight to the output is when it
+    /// leaves the main channel, through `direct_delay` and the main channel's chain.
     pub(crate) click_delay: Delay,
+    /// The click's latency compensation where it joins the cue output: as late as the tracks
+    /// cued there.
+    pub(crate) click_cue_delay: Delay,
+    /// The main channel is there, runs no chain and is silent (muted, or its volume at nothing):
+    /// a click that follows its fader is silent too. A project without one plays at unity.
+    pub(crate) main_silent: bool,
     /// The clips whose gain envelope arrived as a message on this graph (`Controller::
     /// set_clip_envelope`): the message's number, the clip's lane and index. A graph built before
     /// a message and swapped in after it takes those clips' envelopes from the graph it replaces,
@@ -319,6 +326,14 @@ impl Graph {
             ms(launcher_took),
             ms(levels_took),
         ));
+        // The main channel's chain delays what reaches the output by its devices' latency and
+        // its own compensation; a click joining after it is that much later too.
+        let click_latency = chains
+            .iter()
+            .find(|c| c.track == TrackId::MAIN)
+            .map_or(0, |main| u64::from(main.latency) + main.delay.frames() as u64)
+            .saturating_add(u64::from(latency))
+            .min(u64::from(sample_rate.saturating_mul(crate::MAX_LATENCY_SECONDS)));
         Ok(Box::new(Graph {
             envelope_messages: Vec::with_capacity(ENVELOPE_MESSAGES),
             inputs_heard: vec![false; inputs.len()],
@@ -346,7 +361,9 @@ impl Graph {
             latency,
             direct_delay: Delay::new(latency as usize),
             main_fader: main_fader(project, source),
-            click_delay: Delay::new(latency as usize),
+            click_delay: Delay::new(click_latency as usize),
+            click_cue_delay: Delay::new(latency as usize),
+            main_silent: project.main_channel().is_some() && main_fader(project, source).is_none(),
         }))
     }
 }

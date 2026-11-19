@@ -53,36 +53,25 @@ pub const METRONOME_RANGE: (f64, f64) = (-60.0, 6.0);
 const LEVEL_SLIDER: f32 = 128.0;
 
 /// The metronome's switch in `rect`: lit while it clicks; a click turns it on or off, held and
-/// dragged it sets its level ([`metronome_level`]), the right-click menu picks its sound
-/// (`transport.setMetronome`).
+/// dragged it sets its level ([`metronome_level`]), the right-click menu picks its sound and
+/// where it plays ([`metronome_menu`], `transport.setMetronome`).
 pub fn metronome_button(
     ui: &Ui,
     painter: &Painter,
     rect: Rect,
     (on, db, sound): (bool, f64, suhina_engine::ClickSound),
+    route: suhina_engine::ClickRoute,
     actions: &mut Vec<Action>,
 ) {
     let label = if on { "Metronome off" } else { "Metronome on" };
     let response = ui.interact(rect, Id::unique("metronome"), egui::Sense::click_and_drag()).on_hover_text(
-        "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound",
+        "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound and where it plays",
     );
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
-    response.context_menu(|ui| {
-        for choice in suhina_engine::ClickSound::ALL {
-            let name = match choice {
-                suhina_engine::ClickSound::Beep => "Beep",
-                suhina_engine::ClickSound::Wood => "Wood",
-                suhina_engine::ClickSound::Soft => "Soft",
-            };
-            if ui.selectable_label(choice == sound, name).clicked() && choice != sound {
-                actions.push(Action::new("transport.setMetronome", json!({ "on": on, "sound": choice.name() })));
-                ui.close();
-            }
-        }
-    });
+    response.context_menu(|ui| metronome_menu(ui, on, sound, route, actions));
     // `button#metronome-toggle`, `[checked]` while it clicks: the sheet's `button[kind="metronome"]`.
     // The glyph keeps reading on a lit fill the sheet gives (`widgets::lit_toggle_kind`).
     let Lit { el, toggle, lit } =
@@ -93,6 +82,50 @@ pub fn metronome_button(
     drop(el);
     // The level's slider is a popup of its own (`#metronome-level`), not part of the button.
     metronome_level(ui, &response, rect, (on, db), actions);
+}
+
+/// The metronome's right-click menu: its sound, then where its click joins the output
+/// (`transport.setMetronome`), the current ones marked.
+pub fn metronome_menu(
+    ui: &mut Ui,
+    on: bool,
+    sound: suhina_engine::ClickSound,
+    route: suhina_engine::ClickRoute,
+    actions: &mut Vec<Action>,
+) {
+    use suhina_engine::{ClickRoute, ClickSound};
+    ui.label("Sound");
+    for choice in ClickSound::ALL {
+        let name = match choice {
+            ClickSound::Beep => "Beep",
+            ClickSound::Wood => "Wood",
+            ClickSound::Soft => "Soft",
+            ClickSound::Muted => "Muted",
+            ClickSound::Deep => "Deep",
+            ClickSound::Tick => "Tick",
+            ClickSound::Knock => "Knock",
+        };
+        if ui.selectable_label(choice == sound, name).clicked() && choice != sound {
+            actions.push(Action::new("transport.setMetronome", json!({ "on": on, "sound": choice.name() })));
+            ui.close();
+        }
+    }
+    ui.separator();
+    ui.label("Plays");
+    for choice in ClickRoute::ALL {
+        let (name, hint) = match choice {
+            ClickRoute::PreFader => {
+                ("Pre-fader", "Past the main channel: its devices, fader and mute leave the click alone")
+            }
+            ClickRoute::PostFader => ("Post-fader", "Past the main channel's devices, at its fader and mute"),
+            ClickRoute::Cue => ("Cue output only", "Only on the cue output, when it has outputs of its own"),
+            ClickRoute::ThroughMain => ("Through Main", "Into the main channel: its devices, fader and mute apply"),
+        };
+        if ui.selectable_label(choice == route, name).on_hover_text(hint).clicked() && choice != route {
+            actions.push(Action::new("transport.setMetronome", json!({ "on": on, "route": choice.name() })));
+            ui.close();
+        }
+    }
 }
 
 /// While the metronome's button (`response`, in `button`) is held: its level's slider beside it,
