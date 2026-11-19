@@ -14,6 +14,9 @@ type Tree = row::Tree<Slot>;
 /// What a header's layout depends on besides its size.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Header {
+    /// Groups and folders reserve a full-height disclosure gutter facing the timeline.
+    pub(super) container: bool,
+    pub(super) headers_left: bool,
     /// How deep in groups the track is: the band of its own colour gets narrower.
     pub(super) depth: usize,
     /// How many groups it is in, whose bands run down its indent.
@@ -37,6 +40,7 @@ pub(super) struct Parts {
     pub(super) band: Option<Rect>,
     pub(super) meter: Option<Rect>,
     pub(super) fold: Option<Rect>,
+    pub(super) disclosure: Option<Rect>,
     pub(super) automation: Option<Rect>,
     pub(super) takes: Option<Rect>,
     pub(super) track_on: Option<Rect>,
@@ -67,9 +71,12 @@ pub(super) struct Parts {
 }
 
 impl Parts {
-    /// A container's disclosure uses its free vertical gutter. Theme layouts may place any
-    /// neighbour below or above the glyph, so stop at the nearest occupied rectangle.
+    /// A container owns a full-height layout column. A theme that omits that column keeps
+    /// the old free-gutter fallback, stopping before any neighbouring control.
     pub(super) fn fold_target(&self, bounds: Rect) -> Option<Rect> {
+        if let Some(disclosure) = self.disclosure {
+            return Some(disclosure.intersect(bounds));
+        }
         let fold = self.fold?;
         let mut target =
             Rect::from_min_max(Pos2::new(fold.left(), bounds.top()), Pos2::new(fold.right(), bounds.bottom()));
@@ -236,12 +243,21 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     let meter_height =
         if tall { header_row + gap + field } else { header_row }.min(inside.height() - 2.0 * pad).max(0.0);
 
-    bar = bar.attribute("layout", shape.word()).attribute("size", size).flag("name-first", name_first);
+    bar = bar
+        .attribute("layout", shape.word())
+        .attribute("size", size)
+        .flag("name-first", name_first)
+        .attribute("header-side", if header.headers_left { "left" } else { "right" });
+    if header.container {
+        bar = bar.attribute("disclosure", if header.headers_left { "right" } else { "left" });
+    }
     let mut tree = Tree::default();
     if header.ancestors > 0 {
         tree.add(Item::part("group", "header-indent").width(indent * indent_scale), Slot::Indent);
     }
     tree.add(Item::part("track-colour", "arrangement-color").width(band), Slot::Band);
+    let disclosure =
+        header.container.then(|| tree.add(Item::part("group", "header-disclosure").width(FOLD), Slot::Disclosure));
     let body = tree.add(Item::part("group", "header-body"), Slot::None);
     tree.add(Item::part("meter", "arrangement-meter").width(meter::WIDTH).height(meter_height), Slot::Meter);
     let first_line = tree.add(Item::part("group", "header-first").in_group(body), Slot::None);
@@ -268,7 +284,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
         }
     };
     let name = [None, Some(header_row)];
-    tree.put("fold", "arrangement-fold", [Some(FOLD), Some(header_row)], first_line, Slot::Fold);
+    tree.put("fold", "arrangement-fold", [Some(FOLD), Some(header_row)], disclosure.unwrap_or(first_line), Slot::Fold);
     match (shape, second_line) {
         (Shape::Short, _) | (_, None) => {
             tree.put("button", "automation", button, first_line, Slot::Automation);
@@ -344,6 +360,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
             Slot::Band => parts.band = at,
             Slot::Meter => parts.meter = at,
             Slot::Fold => parts.fold = at,
+            Slot::Disclosure => parts.disclosure = at,
             Slot::Automation => parts.automation = at,
             Slot::Takes => parts.takes = at,
             Slot::TrackOn => parts.track_on = at,
@@ -385,6 +402,7 @@ enum Slot {
     Band,
     Meter,
     Fold,
+    Disclosure,
     Automation,
     Takes,
     TrackOn,

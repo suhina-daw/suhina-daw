@@ -234,6 +234,8 @@ pub(super) fn track_header(
         Some(&own),
         rect,
         super::header_layout::Header {
+            container: lane.kind == ColumnKind::Group,
+            headers_left: state.headers_left,
             depth: lane.depth,
             ancestors: ancestors.len(),
             armable: lane.armable,
@@ -335,14 +337,16 @@ pub(super) fn track_header(
     work_trace.mark("background");
     // The groups' bands down the indent, at the scale the layout gave them.
     if let Some(indent) = parts.indent {
-        let mut band_left = indent.left();
+        let mut edge = if state.headers_left { indent.right() } else { indent.left() };
         for (level, color) in ancestors.iter().rev().enumerate() {
             let width = super::header_layout::nesting_band_width(level) * parts.indent_scale;
+            let band_left = if state.headers_left { edge - width } else { edge };
             let strip = Rect::from_min_size(Pos2::new(band_left, indent.top()), Vec2::new(width, indent.height()));
             if strip.intersects(clip) {
                 painter.rect_filled(strip.intersect(clip), 0.0, rgb(*color));
             }
-            band_left += width + 2.0 * parts.indent_scale;
+            let step = width + 2.0 * parts.indent_scale;
+            edge += if state.headers_left { -step } else { step };
         }
     }
     // The track's own band follows its ancestors and opens its colour palette.
@@ -398,12 +402,13 @@ pub(super) fn track_header(
         let drawn = crate::kit::skin::paint_as(&el, painter, fold, "fold", fold_state, color);
         let center = fold.center();
         let (wide, tall) = (7.0, 4.0);
-        // Pointing right while the group is folded, down while it is open.
+        // A closed container points into its header; an open one points down.
+        let direction = if group_fold && state.headers_left { -1.0 } else { 1.0 };
         let points = if folded {
             vec![
-                Pos2::new(center.x - tall / 2.0, center.y - wide / 2.0),
-                Pos2::new(center.x - tall / 2.0, center.y + wide / 2.0),
-                Pos2::new(center.x + tall / 2.0, center.y),
+                Pos2::new(center.x - direction * tall / 2.0, center.y - wide / 2.0),
+                Pos2::new(center.x - direction * tall / 2.0, center.y + wide / 2.0),
+                Pos2::new(center.x + direction * tall / 2.0, center.y),
             ]
         } else {
             vec![

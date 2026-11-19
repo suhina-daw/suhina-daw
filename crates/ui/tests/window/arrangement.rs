@@ -925,6 +925,61 @@ fn container_headers_have_wide_fold_targets_and_double_click_toggles_them() {
 }
 
 #[test]
+fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_separate() {
+    struct Arrangement {
+        timeline: Timeline,
+        state: ArrangementViewState,
+        actions: Vec<Action>,
+    }
+    for headers_left in [false, true] {
+        for folder in [false, true] {
+            let mut session = Session::new(demo_project());
+            session
+                .execute(
+                    if folder { "track.folder" } else { "track.group" },
+                    &json!({"tracks": ["Drums"], "name": "Container"}),
+                )
+                .unwrap();
+            let container = session.project().tracks.iter().find(|t| t.name == "Container").unwrap().id;
+            let mut state = ArrangementViewState::default();
+            state.headers_left = headers_left;
+            state.set_lane_height(container, 160.0);
+            let view = Arrangement { timeline: Timeline::build(session.project(), None), state, actions: Vec::new() };
+            let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
+                |ui, v: &mut Arrangement| arrangement_view::show(ui, &v.timeline, &mut v.state, &mut v.actions),
+                view,
+            );
+            theme::install(&harness.ctx);
+            harness.run();
+            let header = harness.get_by_label("Track Container").rect();
+            let target = harness.get_by_label("Fold Container").rect();
+            let colour = harness.get_by_label("Container colour").rect();
+            assert!((target.top() - header.top()).abs() <= 1.0, "{target:?} / {header:?}");
+            assert!((target.bottom() - header.bottom()).abs() <= 1.0, "{target:?} / {header:?}");
+            assert_eq!(target.center().x > header.center().x, headers_left);
+            assert!(!target.intersects(colour), "the colour strip keeps its own action");
+            // Exercise the entire gutter, well away from the small glyph at the top.
+            for fraction in [0.08, 0.5, 0.92] {
+                let at = egui::pos2(target.center().x, target.top() + target.height() * fraction);
+                for folded in [true, false] {
+                    harness.hover_at(at);
+                    harness.run();
+                    harness.drag_at(at);
+                    harness.drop_at(at);
+                    harness.run();
+                    assert_eq!(harness.query_by_label("Track Drums").is_none(), folded);
+                }
+            }
+            assert!(harness.state().actions.is_empty(), "folding is view state");
+            harness.get_by_label("Container colour").click();
+            harness.run();
+            assert!(harness.query_by_label("Any colour").is_some(), "the strip opens the colour menu");
+            assert!(harness.query_by_label("Track Drums").is_some(), "colour selection does not fold");
+        }
+    }
+}
+
+#[test]
 fn dragging_an_audio_clips_gain_sets_it() {
     let mut harness = window(audio_app());
     harness.get_by_label("Arrangement view").click();

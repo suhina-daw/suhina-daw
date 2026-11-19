@@ -314,6 +314,22 @@ track-header[layout="side"] group[kind="header-first"] > button[kind="automation
 track-header[layout="side"] button[kind="takes"] { margin-left: 2px; }
 track-header[layout="side"] track-name[kind="arrangement-name"] { margin-right: 4px; }
 
+/* Containers keep disclosure clear of every row of controls. Only the outer columns
+   reverse when the header moves left; names and mixer controls keep their reading order. */
+track-header[disclosure] group[kind="header-disclosure"] { flex-shrink: 0; margin-left: 6px; }
+track-header[disclosure] group[kind="header-disclosure"] > fold { flex-shrink: 0; margin-top: 4px; }
+track-header[disclosure][size="tiny"] group[kind="header-disclosure"] > fold { margin-top: 1px; }
+track-header[disclosure][size="small"] group[kind="header-disclosure"] > fold { margin-top: 2px; }
+track-header[disclosure][size="spacious"] group[kind="header-disclosure"] > fold { margin-top: 6px; }
+track-header[disclosure] group[kind="header-body"] { margin-left: 2px; }
+track-header[disclosure][layout="stacked"] group[kind="header-second"],
+track-header[disclosure][layout="side"][name-first] group[kind="header-second"] { padding-left: 0; }
+track-header[disclosure][layout="side"] group[kind="header-second"] { padding-left: 32px; }
+track-header[header-side="left"] { flex-direction: row-reverse; }
+track-header[disclosure="right"] group[kind="header-disclosure"] { margin-left: 0; margin-right: 6px; }
+track-header[disclosure="right"] group[kind="header-body"] { margin-left: 6px; margin-right: 2px; }
+track-header[header-side="left"] > meter { margin-left: 6px; margin-right: 0; }
+
 /* Default artwork. Each image takes its colour only from its element's `color` (currentColor), so a
    copy of it works in any theme. A theme replaces one with its own rule for the same element. */
 icon[kind="midi"] { image: url("suhina:track.midi.svg"); }

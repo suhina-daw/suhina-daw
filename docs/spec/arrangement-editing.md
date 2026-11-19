@@ -991,9 +991,11 @@ the fold triangle at the start of its header (Folded groups): the lanes of every
 depth, are hidden while it is folded, and the Launcher view hides their columns; both views fold
 the same groups, and folding is part of the view, not an edit, so it does not undo. The fold
 button reserves 20 px of width, with the small triangle kept at its established position.
-For a container, its target extends vertically through the unused part of that header's
-gutter, stopping before any other control; it never covers the colour band, name or mixer
-controls. Hover reveals the whole clickable surface with a subtle rounded fill and border;
+For a container, a dedicated disclosure gutter spans the full height of its header, including
+tall headers with routing controls. It faces the timeline: on the left when headers are on
+the right, and on the right when headers are on the left. The small glyph follows that gutter;
+the name and mixer controls stay outside it. The adjacent thin colour band remains a separate
+colour action. Hover reveals the whole clickable surface with a subtle rounded fill and border;
 keyboard focus uses the theme's accent outline. A tooltip names Fold/Unfold and explains
 the header double-click alternative. The Launcher uses the full height of the title strip.
 Single-click elsewhere still selects, Ctrl/Shift selection and dragging remain independent,
