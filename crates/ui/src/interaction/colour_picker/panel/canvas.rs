@@ -151,7 +151,7 @@ mod tests {
         let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(268.0, 110.0));
         let hsv = Hsv { h: 0.137, s: 0.6, v: 0.8 };
         let mesh = build(rect, hsv, false, true, false);
-        for cell in mesh.vertices.chunks_exact(4) {
+        for cell in mesh.vertices.as_chunks::<4>().0 {
             let centre = (cell[0].pos.to_vec2() + cell[3].pos.to_vec2()) * 0.5;
             let pointer = Hsv { h: hsv.h, s: centre.x / rect.width(), v: 1.0 - centre.y / rect.height() };
             let [r, g, b] = super::super::constrain(pointer, true, false).to_srgb();

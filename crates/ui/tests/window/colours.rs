@@ -164,3 +164,26 @@ fn deleting_the_last_target_disables_the_open_picker() {
     assert_eq!(h.state().session().unwrap().project(), &before);
     assert!(h.query_by_label("Hex colour").is_some());
 }
+
+#[test]
+fn closing_keeps_the_applied_colour_and_reopening_preserves_exact_values() {
+    let mut app = demo_app();
+    app.run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+    let mut h = window(app);
+    h.get_by_label("Palette #2fd9c4").click();
+    h.run();
+    let chosen = h.state().session().unwrap().project().clone();
+    h.get_by_label("Close window").click();
+    h.run();
+    assert!(h.query_by_label("Hex colour").is_none());
+    assert_eq!(h.state().session().unwrap().project(), &chosen);
+    h.state_mut().run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+    h.run();
+    h.get_by_label("› Fine adjustment").click();
+    h.run();
+    h.get_by_label("Wheel").click();
+    h.run();
+    assert_eq!(h.state().session().unwrap().project(), &chosen);
+    assert_eq!(h.state().session().unwrap().undo_steps().0, 1);
+    assert_eq!(h.state().settings().recent_colours, [Rgb(47, 217, 196)]);
+}

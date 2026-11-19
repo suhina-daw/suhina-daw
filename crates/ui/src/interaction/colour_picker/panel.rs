@@ -50,6 +50,7 @@ pub(crate) struct Panel {
     pub colour: Rgb,
     hsv: Hsv,
     text: String,
+    name: String,
     numbers: [String; 6],
     invalid: bool,
     wheel: bool,
@@ -69,6 +70,7 @@ impl Default for Panel {
             colour,
             hsv: Hsv::from_srgb([colour.0, colour.1, colour.2]),
             text: String::new(),
+            name: String::new(),
             numbers: Default::default(),
             invalid: false,
             wheel: false,
@@ -104,6 +106,7 @@ impl Panel {
 
     fn fields(&mut self) {
         self.text = hex(self.colour);
+        self.name = super::names::describe(self.colour);
         let Rgb(r, g, b) = self.colour;
         let [h, s, l] = srgb_to_hsl([r, g, b]);
         self.numbers = [
@@ -179,7 +182,8 @@ impl Panel {
             self.choose(colour, true, &mut edits);
         }
         ui.separator();
-        ui.label("Current colour");
+        ui.label(format!("Current colour · {}", self.name))
+            .on_hover_text("CSS colour name; ≈ means the nearest named shade. The hex value remains exact.");
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(Vec2::new(62.0, 20.0), Sense::hover());
             ui.painter().rect_filled(rect, 0.0, color32(self.colour));
@@ -201,6 +205,9 @@ impl Panel {
                     }
                 } else {
                     self.invalid = true;
+                    // Enter normally surrenders text focus. An invalid draft stays editable
+                    // so Escape can discard it and the error does not strand the controls.
+                    response.request_focus();
                 }
             }
             if ui.button("Copy").on_hover_text("Copy exact #RRGGBB colour").clicked() {
@@ -369,7 +376,9 @@ fn swatch_line(ui: &mut Ui, label: &str, colours: &[Rgb], current: Rgb) -> Optio
                 if response.clicked() {
                     picked = Some(colour);
                 }
-                response.on_hover_text(hex(colour));
+                response.on_hover_ui(|ui| {
+                    ui.label(format!("{} · {}", super::names::describe(colour), hex(colour)));
+                });
             });
         }
     });

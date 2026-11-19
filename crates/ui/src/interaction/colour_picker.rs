@@ -15,6 +15,7 @@ use crate::kit::motion;
 use crate::kit::theme;
 use crate::kit::widgets::{self, Action};
 
+mod names;
 pub(crate) mod panel;
 
 /// A swatch's side, and the space between swatches.
@@ -94,7 +95,9 @@ pub(crate) fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
                 if response.clicked() {
                     picked = Some(colour);
                 }
-                response.on_hover_text(hex(colour));
+                response.on_hover_ui(|ui| {
+                    ui.label(format!("{} · {}", names::describe(colour), hex(colour)));
+                });
             }
         });
     }

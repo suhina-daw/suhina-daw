@@ -21,6 +21,7 @@ pub(super) struct ColourWindow {
     selection_seen: Vec<TrackId>,
     panel: Panel,
     position: Option<Pos2>,
+    height: f32,
     focus_requested: bool,
     focused: bool,
     minimised: bool,
@@ -151,6 +152,13 @@ impl App {
         let bounds = main_rect.unwrap_or_else(|| Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0)));
         let height = (if self.colour_window.panel.expanded { 650.0_f32 } else { 350.0 })
             .min((bounds.height() - 48.0).max(180.0));
+        if self.colour_window.height != height {
+            // Expanding near the bottom must keep the new controls on screen. Ordinary
+            // moves are left alone; only a size change rechecks the available bounds.
+            self.colour_window.position =
+                self.colour_window.position.map(|at| place(bounds, Vec2::new(WIDTH, height + 32.0), Some(at)));
+            self.colour_window.height = height;
+        }
         let position = *self.colour_window.position.get_or_insert_with(|| {
             let proposed = self.settings.colour_window_rect.map(|[x, y, _, _]| Pos2::new(x as f32, y as f32));
             place(bounds, Vec2::new(WIDTH, height + 32.0), proposed)
@@ -290,4 +298,22 @@ fn place(bounds: Rect, size: Vec2, remembered: Option<Pos2>) -> Pos2 {
         proposed.x.clamp(bounds.left(), (bounds.right() - size.x).max(bounds.left())),
         proposed.y.clamp(bounds.top(), (bounds.bottom() - size.y).max(bounds.top())),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn initial_placement_centres_and_expansion_or_stale_positions_stay_inside_bounds() {
+        let bounds = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(1280.0, 900.0));
+        let compact = Vec2::new(WIDTH, 382.0);
+        let centre = place(bounds, compact, None);
+        assert_eq!(centre + compact * 0.5, bounds.center());
+        let expanded = Vec2::new(WIDTH, 682.0);
+        for remembered in [centre, Pos2::new(-3000.0, 2000.0), Pos2::new(f32::NAN, 0.0)] {
+            let rect = Rect::from_min_size(place(bounds, expanded, Some(remembered)), expanded);
+            assert!(bounds.contains_rect(rect));
+        }
+    }
 }

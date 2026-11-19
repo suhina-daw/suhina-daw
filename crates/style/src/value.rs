@@ -237,6 +237,28 @@ pub fn srgb_to_oklch(rgb: [u8; 3]) -> [f32; 3] {
     if h.is_finite() { [l.clamp(0.0, 1.0), c, h] } else { [l.clamp(0.0, 1.0), 0.0, 0.0] }
 }
 
+/// The nearest standard CSS name in Oklab, and whether its RGB matches exactly.
+/// Names describe the input; callers must never replace the input with the named colour.
+pub fn nearest_named_colour(rgb: [u8; 3]) -> (&'static str, bool) {
+    type Named = (&'static str, [u8; 3], [f32; 3]);
+    static NAMED: std::sync::OnceLock<Vec<Named>> = std::sync::OnceLock::new();
+    let names = NAMED.get_or_init(|| {
+        cssparser::color::all_named_colors()
+            .filter(|(name, _)| !name.contains("gray") && !matches!(*name, "aqua" | "fuchsia"))
+            .map(|(name, (r, g, b))| {
+                let rgb = [r, g, b];
+                (name, rgb, Space::Oklab.to(rgb.map(|v| f32::from(v) / 255.0)))
+            })
+            .collect()
+    });
+    let lab = Space::Oklab.to(rgb.map(|v| f32::from(v) / 255.0));
+    let distance = |other: [f32; 3]| lab.into_iter().zip(other).map(|(a, b)| (a - b).powi(2)).sum::<f32>();
+    names
+        .iter()
+        .min_by(|a, b| distance(a.2).total_cmp(&distance(b.2)).then_with(|| a.0.cmp(b.0)))
+        .map_or(("", false), |(name, value, _)| (*name, *value == rgb))
+}
+
 /// Maps finite OKLCH to sRGB by reducing chroma at fixed lightness and hue. Bounded
 /// bisection finds an in-gamut colour; only floating-point boundary error is clipped.
 pub fn oklch_to_srgb(oklch: [f32; 3]) -> Option<[u8; 3]> {
@@ -741,6 +763,27 @@ mod tests {
 #[cfg(test)]
 mod picker_colour_tests {
     use super::*;
+
+    #[test]
+    fn familiar_names_are_exact_or_approximate_without_changing_the_input() {
+        for (name, rgb) in [
+            ("gold", [255, 215, 0]),
+            ("khaki", [240, 230, 140]),
+            ("goldenrod", [218, 165, 32]),
+            ("lemonchiffon", [255, 250, 205]),
+            ("grey", [128, 128, 128]),
+            ("cyan", [0, 255, 255]),
+            ("magenta", [255, 0, 255]),
+        ] {
+            assert_eq!(nearest_named_colour(rgb), (name, true));
+        }
+        assert_eq!(nearest_named_colour([254, 214, 1]), ("gold", false));
+        for (name, (r, g, b)) in cssparser::color::all_named_colors() {
+            let (nearest, exact) = nearest_named_colour([r, g, b]);
+            assert!(exact, "{name} => {nearest}");
+            assert_eq!(cssparser::color::parse_named_color(nearest), Ok((r, g, b)));
+        }
+    }
 
     #[test]
     fn colour_conversions_round_trip_boundaries_and_reject_nonfinite_values() {

@@ -438,6 +438,12 @@ partition saves; the doc tests, which nextest does not run, run in the first par
 picked from the workspace build with `-E "package(suhina-engine)"`, not built with `-p`: cargo
 resolves the dependencies' features for the one package then, and compiled a share of them again.
 
+The first Linux partition also renders the colour picker in its compact, field and wheel
+states using Suhina Studio's dark/light variants and High contrast. The PNGs are kept for
+14 days in the `colour-picker-previews` artifact, including when a paint golden differs.
+These use the actual embedded controls; operating-system window behaviour still needs a
+native test build.
+
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
 --no-fail-fast` does the same), a test that runs a minute or more is named while it runs, and one

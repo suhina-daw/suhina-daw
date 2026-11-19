@@ -36,6 +36,14 @@ colour and editable/copyable hex value, collapsed **Fine adjustment**, and **Ran
 Clicking a swatch applies it immediately. Copying a sibling's exact hex value and pasting
 it on another track reuses it without transcribing its components.
 
+The current colour and swatch tooltips also show a familiar CSS colour name (for example
+Gold, Khaki or Goldenrod). For an arbitrary RGB value, choose the nearest named colour by
+Euclidean distance in Oklab and mark the name with `≈`; an exact match has no approximation
+mark. Resolve synonymous CSS names consistently to Cyan, Magenta and the Grey spellings.
+This is a descriptive aid, not quantisation: displaying a name never changes the selected
+RGB or the value copied to the clipboard. Names come from the existing CSS parser's standard
+table, not a proprietary application's palette.
+
 The palette's first row retains the eight bright defaults. The second adds red and deeper
 warm/cool hues; the third offers four pale colours and four neutrals. These are suggestions,
 not a change to the legacy defaults of tracks saved without an explicit colour. An older
@@ -104,10 +112,16 @@ similar greyscale values. It is not a 24-class accessible categorical palette. T
 hierarchy and independent selection outlines remain necessary. A simulation does not
 replace feedback from people with colour-vision deficiencies or native-window testing.
 
+The theme renderer includes compact, expanded-field and expanded-wheel colour-picker scenes.
+They participate in every built-in theme's paint and clipped-text checks. Linux CI also renders
+these scenes in the dark, light and high-contrast themes as the `colour-picker-previews` artifact;
+these show the actual controls in an embedded window, not the operating system's title bar.
+
 ## Sources
 
 - Maintainer's project-arranging observations and approved original Suhina sketches, issue #1570.
 - [W3C CSS Color 4: Oklab and OKLCH](https://www.w3.org/TR/css-color-4/#ok-lab).
+- [W3C CSS Color 4: named colours](https://www.w3.org/TR/css-color-4/#named-colors).
 - [Carbon: categorical and sequential palettes](https://www.carbondesignsystem.com/building-blocks/data-visualization/color-palettes).
 - [W3C: text contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html),
   [non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html),
