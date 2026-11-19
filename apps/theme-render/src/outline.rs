@@ -10,7 +10,7 @@
 
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont, point};
 use egui::LayerId;
-use image::{Rgba, RgbaImage};
+use image::RgbaImage;
 use suhina_ui::kit::native_css::inspector::FrameElement;
 
 /// Colours by depth, distinct on light and dark windows.
@@ -26,12 +26,12 @@ pub fn draw(image: &RgbaImage, elements: &[FrameElement], layers: &[LayerId], sc
     let font = FontRef::try_from_slice(epaint_default_fonts::HACK_REGULAR).map_err(|e| e.to_string())?;
     let mut out = image.clone();
     let depths = depths(elements);
-    let mut order: Vec<(Option<usize>, usize)> = elements
+    let mut order: Vec<((egui::Order, Option<usize>), usize)> = elements
         .iter()
         .enumerate()
         .filter_map(|(index, element)| {
             let (_, layer) = element.painted?;
-            Some((layers.iter().position(|l| *l == layer), index))
+            Some((crate::inspect::layer_rank(layers, layer), index))
         })
         .collect();
     order.sort_unstable();
@@ -124,9 +124,4 @@ fn text(image: &mut RgbaImage, font: &FontRef<'_>, label: &str, at: [i64; 2], wi
             });
         }
     }
-}
-
-/// Whether two pictures differ anywhere: what the outline test checks.
-pub fn differs(a: &RgbaImage, b: &RgbaImage) -> bool {
-    a.dimensions() != b.dimensions() || a.pixels().zip(b.pixels()).any(|(p, q): (&Rgba<u8>, &Rgba<u8>)| p != q)
 }

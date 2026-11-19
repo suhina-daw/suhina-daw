@@ -322,10 +322,13 @@ impl Sheet {
         self.id
     }
 
-    /// Each rule's line (from 1) and selector list as written, in source order: the rules a
-    /// diagnostic numbers by their index ([`crate::cascade::MatchedRule::rule`]).
-    pub fn rule_sources(&self) -> impl Iterator<Item = (u32, &str)> {
-        self.rules.iter().map(|rule| (rule.line, rule.selector.as_ref()))
+    /// Each rule's line (from 1), selector list as written and the properties it declares, in
+    /// source order: the rules a diagnostic numbers by their index
+    /// ([`crate::cascade::MatchedRule::rule`]). A shorthand is declared as its longhands.
+    pub fn rule_sources(&self) -> impl Iterator<Item = (u32, &str, Vec<&str>)> {
+        self.rules.iter().map(|rule| {
+            (rule.line, rule.selector.as_ref(), rule.declarations.iter().map(|d| d.name.as_str()).collect())
+        })
     }
 
     /// True only when this whole sheet can use the staged native paint adapter.

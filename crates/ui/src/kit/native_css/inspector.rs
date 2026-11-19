@@ -42,7 +42,7 @@ impl FrameElement {
             if value.is_empty() {
                 text.push_str(&format!("[{name}]"));
             } else {
-                text.push_str(&format!("[{name}={value:?}]"));
+                text.push_str(&format!("[{name}=\"{}\"]", css_string(value)));
             }
         }
         for state in &self.states {
@@ -51,6 +51,23 @@ impl FrameElement {
         }
         text
     }
+}
+
+/// `value` as the inside of a CSS string in double quotes: a quote, a backslash and a control
+/// character escaped as CSS escapes them (`\"`, `\\`, `\9 `).
+fn css_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '"' | '\\' => {
+                out.push('\\');
+                out.push(c);
+            }
+            c if c.is_control() => out.push_str(&format!("\\{:x} ", u32::from(c))),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// The elements of the last frame, in the order they were entered: an element's children come
@@ -105,13 +122,32 @@ pub fn explain(index: usize) -> Result<Explanation, String> {
     })
 }
 
+/// A rule of the theme's sheet.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThemeRule {
+    /// The line it starts on, from 1.
+    pub line: u32,
+    /// Its selector list as written, each run of white space one space.
+    pub selector: String,
+    /// The properties it declares, a shorthand as its longhands.
+    pub properties: Vec<String>,
+}
+
 /// The window's theme sheet, as it styled the last frame: its [`suhina_style::sheet::Sheet::id`]
-/// and each rule's line and selector, in order. `None` when no theme sheet styles the window.
-pub fn theme_rules() -> Option<(u64, Vec<(u32, String)>)> {
+/// and its rules, in order. `None` when no theme sheet styles the window.
+pub fn theme_rules() -> Option<(u64, Vec<ThemeRule>)> {
     ENGINE.with(|engine| {
         let engine = engine.borrow();
         let sheet = native::theme_sheet(&engine)?;
-        Some((sheet.id(), sheet.rule_sources().map(|(line, selector)| (line, selector.to_owned())).collect()))
+        let rules = sheet
+            .rule_sources()
+            .map(|(line, selector, properties)| ThemeRule {
+                line,
+                selector: selector.to_owned(),
+                properties: properties.into_iter().map(str::to_owned).collect(),
+            })
+            .collect();
+        Some((sheet.id(), rules))
     })
 }
 

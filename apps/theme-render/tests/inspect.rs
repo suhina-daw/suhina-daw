@@ -75,6 +75,15 @@ fn the_topmost_layer_wins_a_hit_and_on_one_layer_the_last_entered_element() {
     assert_eq!(inspect::hit(&elements, &layers, pos2(50.0, 50.0)), Some(2));
     assert_eq!(inspect::hit(&elements, &layers, pos2(500.0, 50.0)), None);
     assert_eq!(inspect::path(&elements, 3), ["window", "arrangement", "clip"]);
+    // A foreground layer that is no area of the window's (a drag's preview) is over the view all
+    // the same.
+    let drag = LayerId::new(Order::Foreground, Id::NULL.with("drag"));
+    let dragged = [element("clip", None, Some((small, drag))), element("arrangement", None, Some((all, view)))];
+    assert_eq!(inspect::hit(&dragged, &layers, pos2(15.0, 15.0)), Some(0));
+    // An attribute's value is written as a CSS string.
+    let mut named = element("clip", None, None);
+    named.attributes.push(("color".into(), "a\"b\\c\t".into()));
+    assert_eq!(named.selector(), r#"clip[color="a\"b\\c\9 "]"#);
 }
 
 #[test]
@@ -86,20 +95,26 @@ fn coverage_lists_the_theme_rules_no_element_matched() {
     std::fs::write(
         folder.join("theme.css"),
         "toolbar { color: #eeeeee; }\nbutton#no-such-control { color: red; }\n\
-         tooltip { background-color: #102030; }\nfader.cap { image: url(\"suhina:fader.cap.svg\"); }\n",
+         tooltip { background-color: #102030; }\nfader.cap { image: url(\"suhina:fader.cap.svg\"); }\n\
+         knob-body { background-color: red; }\n",
     )
     .unwrap();
     let (subject, _) = Subject::folder(&folder).unwrap();
     let driven = [scenes::find("launcher").unwrap(), scenes::find("tooltip").unwrap()];
-    let (unused, failed) = inspect::coverage(&subject, &driven);
+    let found = inspect::coverage(&subject, &driven).unwrap();
     std::fs::remove_dir_all(&folder).ok();
-    assert!(failed.is_empty(), "{failed:?}");
+    assert!(found.failed.is_empty(), "{:?}", found.failed);
+    assert_eq!(found.driven, 2);
     let listed: Vec<_> =
-        unused.iter().map(|rule| (rule.line, rule.selector.as_str(), rule.artwork.as_deref())).collect();
+        found.unused.iter().map(|rule| (rule.line, rule.selector.as_str(), rule.artwork.as_deref())).collect();
     // The tooltip's frame is styled outside the frame's tree, from a copy of the sheet of its
     // own, which counts as the theme's sheet (in the tooltip scene: the launcher shows none); an
     // artwork rule is told apart.
-    assert_eq!(listed, [(2, "button#no-such-control", None), (4, "fader.cap", Some("fader-cap"))]);
+    // A rule for an artwork role's element that sets no `image` is no artwork rule.
+    assert_eq!(
+        listed,
+        [(2, "button#no-such-control", None), (4, "fader.cap", Some("fader-cap")), (5, "knob-body", None)]
+    );
 }
 
 #[test]
@@ -107,16 +122,16 @@ fn the_outline_draws_boxes_and_names_and_skips_elements_without_one() {
     let blank = image::RgbaImage::from_pixel(200, 100, image::Rgba([20, 20, 20, 255]));
     let layer = LayerId::background();
     let boxed = Rect::from_min_size(pos2(10.0, 10.0), egui::vec2(80.0, 30.0));
-    assert!(!outline::differs(&outline::draw(&blank, &[element("clip", None, None)], &[layer], 1.0).unwrap(), &blank));
+    assert_eq!(outline::draw(&blank, &[element("clip", None, None)], &[layer], 1.0).unwrap(), blank);
     let drawn = outline::draw(&blank, &[element("clip", None, Some((boxed, layer)))], &[layer], 2.0).unwrap();
-    assert!(outline::differs(&drawn, &blank));
+    assert_ne!(drawn, blank);
     // A menu's box is drawn over the view's, whichever was entered first.
     let menu = LayerId::new(Order::Foreground, Id::NULL.with("menu"));
     let both = [element("popup", None, Some((boxed, menu))), element("clip", None, Some((boxed, layer)))];
     let over = outline::draw(&blank, &both, &[layer, menu], 2.0).unwrap();
     let popup_only = outline::draw(&blank, &both[..1], &[layer, menu], 2.0).unwrap();
     assert_eq!(over.get_pixel(20, 20), popup_only.get_pixel(20, 20));
-    assert!(outline::differs(&drawn, &blank));
+    assert_ne!(drawn, blank);
     // At scale 2 the box's corner is at (20, 20) and its name's plate inside it.
     assert_ne!(drawn.get_pixel(20, 20), blank.get_pixel(20, 20));
     assert_ne!(drawn.get_pixel(24, 24), blank.get_pixel(24, 24));

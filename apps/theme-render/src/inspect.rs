@@ -11,13 +11,13 @@
 //! styled with. A part that reads an element's colour without entering the element has no box of
 //! its own, so a probe at it names the element around it.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use egui::{LayerId, Pos2};
 use egui_kittest::Harness;
 use suhina_ui::App;
-use suhina_ui::kit::native_css::inspector::{self, FrameElement, Layer, MatchedRule, Outcome};
+use suhina_ui::kit::native_css::inspector::{self, FrameElement, Layer, MatchedRule, Outcome, ThemeRule};
 
 use crate::Subject;
 use crate::scenes::Scene;
@@ -34,16 +34,23 @@ pub fn settled(subject: &Subject, scene: &Scene) -> Result<Harness<'static, App>
     Ok(h)
 }
 
+/// Where `layer` is painted among the window's layers, back to front: by its order (background,
+/// middle, foreground, tooltip), then by its place among the windows' areas (`layers`, back to
+/// front), a layer that is no area first.
+pub fn layer_rank(layers: &[LayerId], layer: LayerId) -> (egui::Order, Option<usize>) {
+    (layer.order, layers.iter().position(|l| *l == layer))
+}
+
 /// The element of `elements` painted at `at`: of those whose box holds the point, the one on the
-/// topmost layer (`layers` back to front: an open menu over the view), and on that layer the one
-/// entered last, which painted over the others.
+/// topmost layer ([`layer_rank`]: an open menu over the view), and on that layer the one entered
+/// last, which painted over the others.
 pub fn hit(elements: &[FrameElement], layers: &[LayerId], at: Pos2) -> Option<usize> {
     elements
         .iter()
         .enumerate()
         .filter_map(|(index, element)| {
             let (rect, layer) = element.painted?;
-            rect.contains(at).then(|| (layers.iter().position(|l| *l == layer), index))
+            rect.contains(at).then(|| (layer_rank(layers, layer), index))
         })
         .max()
         .map(|(_, index)| index)
@@ -141,60 +148,67 @@ fn write_rule(out: &mut String, rule: &MatchedRule) {
 pub struct Unused {
     pub line: u32,
     pub selector: String,
-    /// For a rule that names artwork (`icon[kind="play"]`, or `fader.cap` in the earlier form),
-    /// whose `image` Suhina reads when it loads the theme whether an element matches it or not:
-    /// the selector Suhina writes for that artwork now (`fader-cap`).
+    /// For a rule that sets the `image` of an artwork role (`icon[kind="play"]`, or `fader.cap`
+    /// in the earlier form), which Suhina reads when it loads the theme whether an element matches
+    /// it or not: the selector Suhina writes for that artwork now (`fader-cap`).
     pub artwork: Option<String>,
 }
 
-/// The selector Suhina writes now for the artwork that `selector` names, when it names some.
-fn artwork(selector: &str) -> Option<String> {
+/// The selector Suhina writes now for the artwork that `rule` names, when it is an artwork rule:
+/// one selector that names an artwork role, and an `image`.
+fn artwork(rule: &ThemeRule) -> Option<String> {
     use suhina_ui::kit::{skin, theme_css};
-    if selector.contains(',') {
+    if rule.selector.contains(',') || !rule.properties.iter().any(|p| p == "image") {
         return None;
     }
-    let role = theme_css::artwork_role(selector);
+    let role = theme_css::artwork_role(&rule.selector);
     skin::valid_role(&role).then(|| theme_css::artwork_selector(&role))
 }
 
+/// What [`coverage`] found.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Coverage {
+    /// The theme's rules that matched no element in any scene driven.
+    pub unused: Vec<Unused>,
+    /// How many scenes were driven, and the ones that could not be, with why.
+    pub driven: usize,
+    pub failed: Vec<String>,
+}
+
 /// The rules of `subject`'s own sheet (not its variant's) that matched no element in any of
-/// `scenes`, with the scenes that could not be driven. The scenes are driven on this thread,
-/// which records the matches while they run.
-pub fn coverage(subject: &Subject, scenes: &[Scene]) -> (Vec<Unused>, Vec<String>) {
+/// `scenes`. The scenes are driven on this thread, which records the matches while they run.
+/// `Err` when no scene was styled with a theme sheet at all (none could be driven, or the
+/// theme's CSS does not parse), so that nothing is called unused or used unchecked.
+pub fn coverage(subject: &Subject, scenes: &[Scene]) -> Result<Coverage, String> {
     inspector::record_matches(true);
-    // The theme's sheet as each window styled with it: the same text, so the same id, unless a
-    // window changed it.
-    let mut sheets: BTreeMap<u64, Vec<(u32, String)>> = BTreeMap::new();
-    let mut failed = Vec::new();
+    // The theme's sheet as the first window styled with it, by its id: every window parses the
+    // same text, so the same id.
+    let mut sheet: Option<(u64, Vec<ThemeRule>)> = None;
+    let mut found = Coverage::default();
     for scene in scenes {
         match settled(subject, scene) {
             Ok(_) => {
-                if let Some((id, rules)) = inspector::theme_rules() {
-                    sheets.insert(id, rules);
+                found.driven += 1;
+                match (inspector::theme_rules(), &sheet) {
+                    (Some(rules), None) => sheet = Some(rules),
+                    (Some((id, _)), Some((first, _))) if id != *first => {
+                        found.failed.push(format!("{}: styled with another theme sheet, not counted", scene.name));
+                    }
+                    _ => {}
                 }
             }
-            Err(e) => failed.push(format!("{}: {e}", scene.name)),
+            Err(e) => found.failed.push(format!("{}: {e}", scene.name)),
         }
     }
     let matched = inspector::matched_rules();
     inspector::record_matches(false);
-    let used: BTreeSet<usize> =
-        matched.iter().filter(|(sheet, _)| sheets.contains_key(sheet)).map(|(_, rule)| *rule).collect();
-    let unused = sheets
-        .values()
-        .next()
-        .map(|rules| {
-            rules
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| !used.contains(index))
-                .map(|(_, (line, selector))| Unused {
-                    line: *line,
-                    selector: selector.clone(),
-                    artwork: artwork(selector),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    (unused, failed)
+    let (id, rules) = sheet.ok_or("no scene was styled with the theme's sheet: does its CSS parse?")?;
+    let used: BTreeSet<usize> = matched.iter().filter(|(sheet, _)| *sheet == id).map(|(_, rule)| *rule).collect();
+    found.unused = rules
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !used.contains(index))
+        .map(|(_, rule)| Unused { line: rule.line, selector: rule.selector.clone(), artwork: artwork(rule) })
+        .collect();
+    Ok(found)
 }

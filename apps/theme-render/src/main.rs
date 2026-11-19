@@ -23,9 +23,9 @@ name drawn over the window.
 Instead of drawing, with no GPU:
   --budget     prints the style engine's counts for each scene.
   --coverage   lists the rules of the theme's own sheet that matched no element in any scene.
-  --probe x,y  with --scene: the element at that point of the window (in points, from the top
-               left corner of the 1280 by 900 window), the elements it is in, and every rule that
-               matches it with what became of each declaration.";
+  --probe x,y  with --scene: the element at that point of the window (in points, from its top
+               left corner; most scenes' window is 1280 by 900), the elements it is in, and every
+               rule that matches it, the strongest first, with what became of each declaration.";
 
 struct Args {
     theme: String,
@@ -161,11 +161,12 @@ fn run() -> Result<(), String> {
         Mode::Draw | Mode::Budget => {}
         Mode::Coverage => {
             let scenes = scenes::select(args.scene.as_deref(), args.pointer.as_ref());
-            let (unused, failed) = inspect::coverage(&subject, &scenes);
-            for problem in &failed {
+            let found = inspect::coverage(&subject, &scenes)?;
+            for problem in &found.failed {
                 eprintln!("not driven: {problem}");
             }
-            let (artwork, unused): (Vec<_>, Vec<_>) = unused.into_iter().partition(|rule| rule.artwork.is_some());
+            let driven = found.driven;
+            let (artwork, unused): (Vec<_>, Vec<_>) = found.unused.into_iter().partition(|rule| rule.artwork.is_some());
             if !artwork.is_empty() {
                 println!(
                     "Artwork rules no element matched: Suhina reads their image when it loads the theme, but \
@@ -179,9 +180,9 @@ fn run() -> Result<(), String> {
                 }
             }
             if unused.is_empty() {
-                println!("Every other rule of the theme's sheet matched an element in {} scenes.", scenes.len());
+                println!("Every other rule of the theme's sheet matched an element in {driven} scenes.");
             } else {
-                println!("Rules of the theme's sheet that matched no element in {} scenes:", scenes.len());
+                println!("Rules of the theme's sheet that matched no element in {driven} scenes:");
                 for rule in &unused {
                     println!("  line {}: {}", rule.line, rule.selector);
                 }
@@ -190,7 +191,11 @@ fn run() -> Result<(), String> {
                      other colour scheme, cannot match here, and is listed too."
                 );
             }
-            return if failed.is_empty() { Ok(()) } else { Err(format!("{} scenes not driven", failed.len())) };
+            return if found.failed.is_empty() {
+                Ok(())
+            } else {
+                Err(format!("{} scenes not counted", found.failed.len()))
+            };
         }
         Mode::Probe(at) => {
             let scene = scenes::select(args.scene.as_deref(), args.pointer.as_ref())

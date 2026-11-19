@@ -735,12 +735,12 @@ fn explain_lists_the_matching_rules_in_cascade_order_and_marks_each_winner() {
         rules.iter().map(|rule| (rule.sheet, rule.layer, rule.line, rule.selector.as_str())).collect();
     assert_eq!(
         matched,
-        [(0, Layer::Base, 1, "knob"), (1, Layer::Theme, 1, "knob#cutoff"), (1, Layer::Theme, 4, "knob")]
+        [(0, Layer::Base, 1, "knob"), (1, Layer::Theme, 4, "knob"), (1, Layer::Theme, 1, "knob#cutoff")]
     );
     // `!important` beats the more specific rule of the same tier, and both beat the base.
     assert_eq!(
         outcomes(&rules, "color"),
-        [(1, Outcome::Overridden), (1, Outcome::Overridden), (4, Outcome::Applied("#333333".into()))]
+        [(1, Outcome::Overridden), (4, Outcome::Applied("#333333".into())), (1, Outcome::Overridden)]
     );
     assert_eq!(outcomes(&rules, "radius"), [(1, Outcome::Applied("2px".into()))]);
     assert_eq!(style, compute(&tree(), viewport(1138.0), &sheets).unwrap()[2]);
@@ -769,6 +769,13 @@ fn explain_names_a_winning_declaration_whose_value_did_not_hold() {
         parts,
         [("padding-top", true), ("padding-right", false), ("padding-bottom", true), ("padding-left", false)]
     );
+    // A custom property whose value does not hold keeps the inherited one, and is dropped.
+    let sheet = Sheet::parse("window { --ink: #123456; }\nknob { --ink: attr(missing); --ok: 1px; }").unwrap();
+    let sheets = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    let (style, rules) = explain(&tree(), 2, viewport(1138.0), &sheets).unwrap();
+    assert_eq!(style.variable("--ink"), Some("#123456"));
+    assert!(matches!(outcomes(&rules, "--ink").as_slice(), [(2, Outcome::Dropped(_))]), "{rules:?}");
+    assert_eq!(outcomes(&rules, "--ok"), [(2, Outcome::Applied("1px".into()))]);
     // A custom property set on an ancestor is the window's rule, not the knob's.
     let (_, window) = explain(&tree(), 0, viewport(1138.0), &sheets).unwrap();
     assert_eq!(outcomes(&window, "--ink"), [(1, Outcome::Applied("#123456".into()))]);
@@ -795,5 +802,5 @@ fn recorded_matches_hold_every_rule_that_matched_any_element_styled() {
     assert_eq!(matched, BTreeSet::from([(sheet.id(), 0), (sheet.id(), 2), (other.id(), 0), (other.id(), 1)]));
     assert!(matched_rules().is_empty());
     let sources: Vec<_> = sheet.rule_sources().collect();
-    assert_eq!(sources, [(1, "knob"), (2, "slider"), (3, "#cutoff")]);
+    assert_eq!(sources, [(1, "knob", vec!["color"]), (2, "slider", vec!["color"]), (3, "#cutoff", vec!["radius"])]);
 }
