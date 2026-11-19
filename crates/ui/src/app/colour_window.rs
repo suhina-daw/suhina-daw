@@ -208,15 +208,26 @@ impl App {
                     suhina_plugins::trace::state(
                         "colour window surface",
                         format!(
-                            "rect {:?}, scale {}, fill {:?}, geometry {:?}",
+                            "rect {:?}, clip {:?}, scale {}, fill {:?}, authored {:?}, geometry {:?}",
                             ui.max_rect(),
+                            ui.clip_rect(),
                             ui.ctx().pixels_per_point(),
                             style.background(),
+                            style.style().map(|s| (s.background, s.authored.background, s.opacity)),
                             ui.input(|i| (i.viewport().outer_rect, i.viewport().inner_rect)),
                         ),
                     );
                 }
                 let inside = style.paint(ui.painter(), ui.max_rect()).content;
+                if !embedded && suhina_plugins::trace::on() {
+                    let mut fills = Vec::new();
+                    ui.painter().for_each_shape(|shape| {
+                        if let egui::Shape::Rect(fill) = &shape.shape {
+                            fills.push((fill.rect, fill.fill, shape.clip_rect));
+                        }
+                    });
+                    suhina_plugins::trace::state("colour window painted surface", format!("{fills:?}"));
+                }
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
                     let mut styled = style.ui(ui);
                     egui::ScrollArea::vertical().show(&mut styled, |ui| {
