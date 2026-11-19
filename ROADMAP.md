@@ -680,6 +680,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   `longest_process_us` and `average_process_us`, so a slow plug-in and a host that woke late can
   be told apart.
 
+- Device automation follows the audio reaching each native or hosted device, including upstream
+  latency in nested branches, buses, returns and Main. Loop and seek boundaries keep their sample
+  offsets; manual controls still respond from the next block.
+
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
   stopped on the output chosen in Settings › Audio and shows the **Launcher view**: tracks as
