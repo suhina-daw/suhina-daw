@@ -79,7 +79,10 @@ fn malformed_keys_and_velocities_are_rejected_before_dispatch() {
             let event = NoteInstanceEvent::On { key, velocity, expression: NoteExpressionState::NEUTRAL };
             let valid = event.validated();
             assert_eq!(valid.is_some(), key <= 127 && velocity.is_finite());
-            if let Some(NoteInstanceEvent::On { velocity, .. } | NoteInstanceEvent::Off { velocity, .. }) = valid {
+            if let Some(event) = valid {
+                let NoteInstanceEvent::On { velocity, .. } = event else {
+                    panic!("native validation must not change the event kind");
+                };
                 assert!((0.0..=1.0).contains(&velocity));
             }
         }
@@ -88,11 +91,23 @@ fn malformed_keys_and_velocities_are_rejected_before_dispatch() {
 }
 
 #[test]
-fn zero_velocity_is_release_and_choke_remains_distinct() {
-    let on = NoteInstanceEvent::On { key: 60, velocity: 0.0, expression: NoteExpressionState::NEUTRAL };
+fn native_zero_velocity_starts_an_identified_note_with_its_initial_expression() {
+    let mut device = Endpoint { identified: true, ..Endpoint::default() };
+    let id = NoteInstanceId::from_parts(7, 123).unwrap();
+    let expression = NoteExpressionState::new(3.5, 0.8, 0.2).unwrap();
+    let on = NoteInstanceEvent::On { key: 60, velocity: 0.0, expression };
+    assert_eq!(dispatch_note_instance(&mut device, id, on), Ok(()));
+    assert_eq!(device.received, Some((id, on)));
+
+    // Native note-on, explicit release and immediate choke are different lifecycle events.
     let off = NoteInstanceEvent::Off { key: 60, velocity: 0.0 };
-    assert_eq!(on.validated(), Some(off));
-    assert_ne!(off.validated(), NoteInstanceEvent::Choke { key: 60 }.validated());
+    let choke = NoteInstanceEvent::Choke { key: 60 };
+    for event in [off, choke] {
+        assert_eq!(dispatch_note_instance(&mut device, id, event), Ok(()));
+        assert_eq!(device.received, Some((id, event)));
+        assert_ne!(event, on);
+    }
+    assert_ne!(off, choke);
 }
 
 /// Records one call in fixed storage; it does not pretend to be an instrument implementation.

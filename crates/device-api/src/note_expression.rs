@@ -152,8 +152,9 @@ impl NoteExpressionState {
 /// [`crate::NoteEvent`]. There is no second frame offset or protocol-specific addressing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NoteInstanceEvent {
-    /// Starts a new occurrence with its complete initial controls. A velocity at or below
-    /// zero becomes `Off` during validation; key must be in 0..=127.
+    /// Starts a new occurrence with its complete initial controls, including at velocity zero.
+    /// The key must be in 0..=127; finite velocity is bounded to 0..=1. MIDI 1.0 zero-velocity
+    /// note-on bytes must become `Off` in the protocol adapter, before entering this contract.
     On { key: u8, velocity: f32, expression: NoteExpressionState },
     /// Releases this occurrence, not every occurrence at `key`. The carried key is metadata
     /// for explicit legacy adaptation; the identity remains authoritative in a native core.
@@ -165,16 +166,13 @@ pub enum NoteInstanceEvent {
 }
 
 impl NoteInstanceEvent {
-    /// Validates keys and finite values, clamps finite controls, and normalizes zero-velocity
-    /// note-ons. Invalid events are ignored without changing any sounding occurrence.
+    /// Validates keys and finite values and clamps finite controls without changing the event
+    /// kind. Native zero-velocity note-on remains `On`; protocol-specific normalization belongs
+    /// in adapters. Invalid events are ignored without changing any sounding occurrence.
     pub fn validated(self) -> Option<Self> {
         match self {
             Self::On { key, velocity, expression } if key <= 127 && velocity.is_finite() => {
-                if velocity <= 0.0 {
-                    Some(Self::Off { key, velocity: 0.0 })
-                } else {
-                    Some(Self::On { key, velocity: velocity.min(1.0), expression })
-                }
+                Some(Self::On { key, velocity: velocity.clamp(0.0, 1.0), expression })
             }
             Self::Off { key, velocity } if key <= 127 && velocity.is_finite() => {
                 Some(Self::Off { key, velocity: velocity.clamp(0.0, 1.0) })

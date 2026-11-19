@@ -59,6 +59,11 @@ What is built: [MPE specification](../spec/mpe.md#status).
    data. The initial state is atomic with note-on so queue exhaustion cannot partly initialize
    a new voice.
 
+   Native `On` with velocity zero remains a new occurrence with its initial state, as in
+   CLAP. Finite velocities are bounded to 0..=1 without changing the event kind. MIDI 1.0's
+   zero-velocity note-on encoding is converted to `Off` only by the MIDI protocol adapter,
+   before entering this common contract; the existing MIDI byte parser already does this.
+
    The same payload first enters opted-in devices through `Device::note_instances`, a
    `NoteInstanceDevice` capability with event input and bounded finished-note output. This
    capability also supports exported cores before the engine queue migrates. The eventual
@@ -180,7 +185,9 @@ of note copying and edit commands. These are implementation work, not solved by 
   appendices B-D. Public specification; reference copy supplied in the research library.
   [MIDI Association MPE resource](https://midi.org/tag/midi-polyphonic-expression).
 - [CLAP event definitions](https://github.com/free-audio/clap/blob/main/include/clap/events.h):
-  note address tuples, expression units and note-end notification.
+  note address tuples, valid zero-velocity note-on, expression units and note-end notification.
+- [MMA/AMEI UMP and MIDI 2.0 Protocol v1.0](https://amei.or.jp/midistandardcommittee/MIDI2.0/MIDI2.0-DOCS/M2-104-UM_v1-0_UMP_and_MIDI_2-0_Protocol_Specification.pdf),
+  appendix D.3.1: MIDI 1.0 zero-velocity note-on is converted to note-off at the protocol boundary.
 - [VST3 note expression](https://steinbergmedia.github.io/vst3_doc/vstinterfaces/structSteinberg_1_1Vst_1_1NoteExpressionValueEvent.html):
   note IDs, ordering and normalized expression values.
 - [MMA/AMEI MPE Profile v2.0.3](https://amei-music.github.io/midi2.0-docs/amei-pdf/M2-120-UM_v2-0-3_MIDI_Polyphonic_Expression_Profile.pdf):

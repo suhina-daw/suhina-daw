@@ -42,6 +42,13 @@ targets the occurrence, not every voice at its key. Note-off starts release (or 
 sustain); choke ends it immediately. The final voice ending retires the occurrence. A note
 can own several layered voices; ending one layer does not retire the other layers' ID.
 
+Native identified `On` remains note-on at velocity zero and retains its initial expression
+state. Validation bounds finite attack and release velocities to 0..=1 without changing the
+event kind; invalid keys and nonfinite velocities are rejected. MIDI 1.0 zero-velocity
+note-on bytes encode note-off and are normalized by the MIDI protocol adapter before entering
+the common event stream. The existing MIDI parser and legacy ordinary-note path retain that
+behavior. Native CLAP note-on must not inherit that MIDI 1.0 encoding rule.
+
 Expression uses semitones for pitch, 0..=1 for pressure/timbre, and `f64` values throughout
 the control path. Defaults are pitch 0, pressure 0, timbre 0.5. Nonfinite input is ignored;
 finite expression is bounded before it reaches DSP. A patch decides how pressure and timbre
@@ -187,5 +194,7 @@ exists; the contract does not close the parent epic.
   2.2.5-2.2.8, 2.3, appendices C-D; supplied reference copy. Publication information:
   [MIDI Association](https://midi.org/tag/midi-polyphonic-expression).
 - [CLAP events](https://github.com/free-audio/clap/blob/main/include/clap/events.h).
+- [MMA/AMEI UMP and MIDI 2.0 Protocol v1.0](https://amei.or.jp/midistandardcommittee/MIDI2.0/MIDI2.0-DOCS/M2-104-UM_v1-0_UMP_and_MIDI_2-0_Protocol_Specification.pdf),
+  appendix D.3.1: MIDI 1.0 zero-velocity note-on conversion.
 - [VST3 expression events](https://steinbergmedia.github.io/vst3_doc/vstinterfaces/structSteinberg_1_1Vst_1_1NoteExpressionValueEvent.html).
 - [MIDI-CI MPE Profile v2.0.3](https://amei-music.github.io/midi2.0-docs/amei-pdf/M2-120-UM_v2-0-3_MIDI_Polyphonic_Expression_Profile.pdf).
