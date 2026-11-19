@@ -1013,7 +1013,9 @@ A dragged selection uses `track.moveTo`. A group or folder header's middle half 
 **inside** target whether open or folded, highlighted with an outline. Its outer quarters
 mean **before** and **after**, shown with an insertion line; an ordinary track splits into
 before/after halves. The Arrangement uses the vertical axis and the Launcher the horizontal
-axis. An inside drop does not change the destination's fold state. Selected roots keep their
+axis. An Arrangement **after** line on an expanded container sits below its last visible
+descendant, including that descendant's displayed take and automation lanes, matching the
+resulting order. An inside drop does not change the destination's fold state. Selected roots keep their
 relative project order, their nested contents and the order of unselected tracks. No valid
 drop is offered on a moving track or anywhere inside its subtree. After a folded group is
 after everything inside it. Save/reload retains the resulting hierarchy and order; undo and
@@ -1035,6 +1037,8 @@ same routing cleanup as **Ungroup**: remaining channels playing into the removed
 play into its former output, and sends and sidechain references to it are removed. Undo
 restores every removed group, its processing and all references as well as the moved tracks.
 This is not a global cleanup of older projects or unrelated empty groups.
+After deletion or cut, selection takes the next surviving track in the original order, or
+the nearest preceding survivor when none follows; ancestors removed by cleanup are skipped.
 
 A neutral group is removed without a question. A group has processing to confirm when it
 has devices (disabled ones included), mixer automation, non-default gain/pan/mute/solo/cue,
@@ -1043,12 +1047,16 @@ sidechain references. Such a group is not removed implicitly. The command fails 
 changing the project or clipboard and identifies the group ids; retrying requires those
 ids in the optional `removeGroupProcessing` list. This applies to explicit Ungroup and
 group deletion too; cutting a selected group keeps its own processing in the clipboard,
-but removing its last sibling still checks the source ancestors.
+but still checks references from channels outside the cut and any source ancestors emptied
+by the edit. The consent list accepts omitted or null as no consent, accepts duplicate ids,
+and has the same 1024-entry bound as the project's track limit. A refused or cancelled cut
+preserves the internal clipboard, the system clipboard and which kind of copy will paste.
 
 A group's own non-default audio or MIDI input settings also require consent: removing its
 last member must not silently disconnect a live input that still plays through the group.
 
-The desktop asks **Remove group processing?**, identifies the affected groups, explains that
+The desktop asks **Remove group processing?**, lists every affected group in a wrapped,
+scrollable area, explains that
 their effects, mixer settings, routing and any clips or takes owned by those group tracks
 will be removed, and offers
 **Remove processing** or **Cancel**. Cancel, Escape and the close button leave the original

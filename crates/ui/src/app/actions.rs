@@ -1498,9 +1498,6 @@ pub(super) fn describe(action: &Action) -> Option<String> {
     })
 }
 
-/// The track to select once `removed` are deleted: the first track after the last of them that
-/// stays, or the last one before them when nothing stays after; returns and Main are left out
-/// (#918).
 /// Whether `track` records what it hears: it plays notes or audio and is a regular track, not a
 /// return, the main track or a group.
 fn takes_input(project: &suhina_engine::model::Project, track: TrackId) -> bool {
@@ -1510,11 +1507,13 @@ fn takes_input(project: &suhina_engine::model::Project, track: TrackId) -> bool 
     })
 }
 
-pub(super) fn track_after_removing(project: &suhina_engine::model::Project, removed: &[TrackId]) -> Option<TrackId> {
+/// Neighbours in selection order: following tracks, then preceding tracks nearest first.
+/// Keep alternatives because empty-container cleanup may remove the closest neighbour too.
+pub(super) fn tracks_after_removing(project: &suhina_engine::model::Project, removed: &[TrackId]) -> Vec<TrackId> {
     let numbered: Vec<TrackId> =
         project.tracks.iter().map(|t| t.id).filter(|id| project.track_number(*id).is_some()).collect();
-    let last = numbered.iter().rposition(|id| removed.contains(id))?;
-    let first = numbered.iter().position(|id| removed.contains(id))?;
+    let Some(last) = numbered.iter().rposition(|id| removed.contains(id)) else { return Vec::new() };
+    let Some(first) = numbered.iter().position(|id| removed.contains(id)) else { return Vec::new() };
     // A deleted group takes the tracks inside it along.
     let inside = |track: TrackId| {
         let mut parent = project.track(track).and_then(|t| t.parent);
@@ -1528,10 +1527,5 @@ pub(super) fn track_after_removing(project: &suhina_engine::model::Project, remo
         false
     };
     let gone = |id: &TrackId| removed.contains(id) || inside(*id);
-    numbered
-        .iter()
-        .skip(last + 1)
-        .find(|id| !gone(id))
-        .or_else(|| numbered.iter().take(first).rev().find(|id| !gone(id)))
-        .copied()
+    numbered.iter().skip(last + 1).chain(numbered.iter().take(first).rev()).filter(|id| !gone(id)).copied().collect()
 }

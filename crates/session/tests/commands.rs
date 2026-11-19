@@ -873,6 +873,73 @@ fn refused_cut_keeps_the_clipboard_and_bad_consent_does_not_change_the_project()
 }
 
 #[test]
+fn null_group_consent_is_omitted_but_does_not_authorize_processing_removal() {
+    let mut session = Session::new(project());
+    let before = session.project().clone();
+    let params = json!({"tracks": ["Lead"], "target": "Bass", "placement": "before", "removeGroupProcessing": null});
+    session.execute("track.moveTo", &params).unwrap();
+    assert_eq!(order(&session), ["Lead", "Bass"]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+    let group = run(&mut session, "track.group", json!({"tracks": ["Bass"], "name": "Band"})).unwrap()["track"].clone();
+    run(&mut session, "device.add", json!({"track": group, "id": "utility"})).unwrap();
+    let before = session.project().clone();
+    let error = session.execute("track.cut", &json!({"tracks": ["Bass"], "removeGroupProcessing": null})).unwrap_err();
+    assert!(!error.group_processing().is_empty());
+    assert_eq!(session.project(), &before);
+}
+
+#[test]
+fn cutting_a_group_confirms_surviving_references_but_preserves_its_own_processing() {
+    let mut setup = Session::new(project());
+    let group = run(&mut setup, "track.group", json!({"tracks": ["Bass"], "name": "Band"})).unwrap()["track"]
+        .as_u64()
+        .unwrap() as u32;
+    run(&mut setup, "device.add", json!({"track": group, "id": "utility"})).unwrap();
+    run(&mut setup, "device.add", json!({"track": "Lead", "id": "compressor"})).unwrap();
+    let original = setup.project().clone();
+    let channel = original.track(TrackId(group)).unwrap().channel.unwrap();
+    let lead = original.track(TrackId(2)).unwrap().channel.unwrap();
+    for sidechain in [false, true] {
+        let mut p = original.clone();
+        if sidechain {
+            p.channel_mut(lead).unwrap().devices[0].inputs.push(DeviceInput::key(channel, TapPoint::PostFader));
+        } else {
+            p.channel_mut(lead).unwrap().output = Some(channel);
+        }
+        let mut session = Session::new(p.clone());
+        run(&mut session, "track.copy", json!({"tracks": ["Lead"]})).unwrap();
+        let undo = session.undo_steps();
+        let error = session.execute("track.cut", &json!({"tracks": [group]})).unwrap_err();
+        assert_eq!(error.group_processing(), [TrackId(group)]);
+        assert_eq!(session.project(), &p);
+        assert_eq!(session.undo_steps(), undo);
+        let pasted = run(&mut session, "track.paste", json!({})).unwrap();
+        let copy = TrackId(pasted["tracks"][0].as_u64().unwrap() as u32);
+        assert!(session.project().track(copy).unwrap().name.starts_with("Lead"), "refusal preserves the clipboard");
+        run(&mut session, "edit.undo", json!({})).unwrap();
+        session.execute("track.cut", &json!({"tracks": [group], "removeGroupProcessing": [group]})).unwrap();
+        assert_eq!(order(&session), ["Lead"]);
+        let remaining = session.project().channel(lead).unwrap();
+        assert!(remaining.devices[0].inputs.is_empty());
+        assert_eq!(remaining.output, None);
+        run(&mut session, "edit.undo", json!({})).unwrap();
+        assert_eq!(session.project(), &p, "one Undo restores every external reference");
+    }
+    // Both the group's processing and references in another cut track survive in the copy.
+    let mut p = original.clone();
+    p.channel_mut(lead).unwrap().devices[0].inputs.push(DeviceInput::key(channel, TapPoint::PostFader));
+    let mut session = Session::new(p);
+    run(&mut session, "track.cut", json!({"tracks": [group, "Lead"]})).unwrap();
+    assert_eq!(session.copied_tracks(), 3, "references owned by cut tracks need no removal consent");
+    let mut session = Session::new(original);
+    run(&mut session, "track.cut", json!({"tracks": [group]})).unwrap();
+    let pasted = run(&mut session, "track.paste", json!({})).unwrap();
+    let group_copy = TrackId(pasted["tracks"][0].as_u64().unwrap() as u32);
+    assert_eq!(session.project().channel_of_track(group_copy).unwrap().devices.len(), 1);
+}
+
+#[test]
 fn invalid_multi_track_moves_roll_back_every_root_and_add_no_undo_step() {
     let mut session = Session::new(project());
     for params in [

@@ -938,6 +938,7 @@ fn cut_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     let count = copied.len();
     // The tracks in groups first, so deleting a group leaves none of them behind.
     let mut gone = crate::track_copy::with_their_tracks(&session.project, &tracks);
+    removal.check_cut(&session.project, &gone);
     gone.reverse();
     for track in gone {
         delete_track(session, &json!({ "track": track.0 }))?;

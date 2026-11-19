@@ -261,6 +261,24 @@ fn row_tracks(row: &Row, lanes: &[Lane]) -> Vec<TrackId> {
     }
 }
 
+/// A drop after an open container follows its visible subtree, including the last
+/// descendant's takes/automation; folded groups and ordinary tracks keep their row edge.
+fn track_drop_after(row: &Row, rows: &[Row], lanes: &[Lane]) -> f32 {
+    if row.folded.is_none()
+        && let Some(index) = lanes.iter().position(|lane| lane.track == row.track && lane.kind == ColumnKind::Group)
+        && let Some(last) = lanes
+            .iter()
+            .skip(index + 1)
+            .take(inside_lanes(lanes, index))
+            .filter_map(|lane| rows.iter().find(|row| row.track == lane.track))
+            .next_back()
+    {
+        last.span.max - 0.5
+    } else {
+        row.time.bottom() + 0.5
+    }
+}
+
 /// The clips a selection rectangle `whole` touches on `row`, whole: on a folded group's row, any
 /// clip of a track inside it whose time it crosses, as the row draws them all in thin bands.
 fn row_picks(row: &Row, lanes: &[Lane], whole: Rect, x_of: &dyn Fn(f64) -> f32) -> Vec<(TrackId, ClipId)> {
@@ -1811,7 +1829,11 @@ fn show_lanes(
             let target = Rect::from_x_y_ranges(area.x_range(), row.time.y_range());
             painter.rect_stroke(target.shrink(1.0), 0.0, egui::Stroke::new(2.0, ink), egui::StrokeKind::Inside);
         } else {
-            let y = if placement == nesting::Placement::After { row.time.bottom() + 0.5 } else { row.time.top() - 0.5 };
+            let y = if placement == nesting::Placement::After {
+                track_drop_after(&row, &rows, &timeline.lanes)
+            } else {
+                row.time.top() - 0.5
+            };
             let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color();
             painter.hline(area.x_range(), y, egui::Stroke::new(2.0, ink));
         }
