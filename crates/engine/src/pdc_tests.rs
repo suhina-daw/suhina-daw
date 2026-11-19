@@ -639,13 +639,13 @@ fn pdc_automation_adopts_new_upstream_latency_with_running_instances() {
 /// An implementation that extrapolates an evicted record cannot reproduce this sequence.
 fn history_song(frame: u32) -> crate::SongPosition {
     crate::SongPosition {
-        playing: frame % 17 != 0,
+        playing: !frame.is_multiple_of(17),
         position: u64::from((frame * 7) % 4096 + 1000),
-        tempo: if frame % 3 == 0 { 90.0 } else { 150.0 },
+        tempo: if frame.is_multiple_of(3) { 90.0 } else { 150.0 },
         beat: f64::from(frame % 32),
         bar: frame % 8,
         bar_start: f64::from(frame % 8) * 4.0,
-        numerator: if frame % 5 == 0 { 3 } else { 4 },
+        numerator: if frame.is_multiple_of(5) { 3 } else { 4 },
         denominator: 4,
         cycle: Some((0.0, 32.0)),
         cycle_seconds: Some((0.0, 16.0)),
@@ -660,7 +660,7 @@ fn pdc_history_covers_the_horizon_after_one_frame_callbacks_and_ring_wraps() {
         // Cross the full ring twice. The exact horizon must still address its real record.
         for now in 0..=horizon * 2 + 3 {
             history.record(history_song(now), 1);
-            if now >= horizon && (now % 8192 == 0 || now == horizon * 2 + 3 || now == horizon) {
+            if now >= horizon && (now.is_multiple_of(8192) || now == horizon * 2 + 3 || now == horizon) {
                 let allocations = allocation_counter::measure(|| {
                     for delay in [0, 1, 8192, horizon - 1, horizon] {
                         let expected = history_song(now - delay);
@@ -810,6 +810,30 @@ fn pdc_parallel_branches_use_the_maximum_and_disabled_latency_does_not_count() {
     let renderer =
         Renderer::build(&project, latency_inputs(&project, &audio, &[u32::MAX]), RATE, RenderOptions::PLAYING).unwrap();
     assert_eq!(renderer.latency(), 0);
+}
+
+#[test]
+fn pdc_latency_limit_scales_with_rate_and_invalid_rates_are_rejected() {
+    let (project, audio, _) = fixture(false, false, 0, Layout::Serial);
+    for rate in [8_000, 44_100, 48_000, 96_000, 192_000, crate::MAX_SAMPLE_RATE] {
+        let limit = rate * crate::MAX_LATENCY_SECONDS;
+        let renderer =
+            Renderer::build(&project, latency_inputs(&project, &audio, &[limit]), rate, RenderOptions::PLAYING)
+                .unwrap();
+        assert_eq!(renderer.latency(), limit);
+        let error =
+            Renderer::build(&project, latency_inputs(&project, &audio, &[limit + 1]), rate, RenderOptions::PLAYING)
+                .err()
+                .unwrap();
+        assert_eq!(error, crate::RenderError::LatencyLimit { track: TrackId(1), frames: limit + 1, limit });
+    }
+    for rate in [0, 7_999, crate::MAX_SAMPLE_RATE + 1, u32::MAX] {
+        let error =
+            Renderer::build(&project, latency_inputs(&project, &audio, &[u32::MAX]), rate, RenderOptions::PLAYING)
+                .err()
+                .unwrap();
+        assert_eq!(error, crate::RenderError::InvalidSampleRate(rate));
+    }
 }
 
 #[test]
