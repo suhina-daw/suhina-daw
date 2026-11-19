@@ -284,7 +284,10 @@ fn losing_the_window_focus_ends_the_drag_and_holds_no_press_back() {
 fn escape_ends_the_drag_and_its_held_press() {
     let mut state = ArrangementViewState::default();
     assert!(!state.gesture_under_way());
-    assert!(state.gesture.begin(Gesture::Track(TrackId(3))));
+    assert!(state.gesture.begin(Gesture::Track(crate::interaction::nesting::TrackDrag {
+        source: TrackId(3),
+        tracks: vec![TrackId(3)]
+    })));
     state.pressed_clip = Some((TrackId(1), ClipId(1)));
     assert!(state.gesture_under_way());
     assert!(state.cancel_gesture());

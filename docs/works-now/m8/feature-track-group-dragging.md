@@ -1,0 +1,1 @@
+- Selected track headers move together in project order into open or folded groups and folders, with separate inside and before/after drop feedback in the Arrangement and Launcher. Moves undo together; wider fold buttons and header double-clicks open and close groups and folders (#1569).

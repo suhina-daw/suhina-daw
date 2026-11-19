@@ -190,15 +190,20 @@ pub(super) fn track_header(
         state.devices_clicked = true;
         state.automation.let_go();
     }
-    // A double-click shows the track's devices in the detail area.
+    // A container header double-click folds it; an ordinary track opens its devices.
     if body.double_clicked() {
-        state.open_devices = Some(lane.track);
+        if lane.kind == ColumnKind::Group {
+            state.folds.toggle(lane.track);
+            ui.ctx().request_repaint();
+        } else {
+            state.open_devices = Some(lane.track);
+        }
     }
     if body.drag_started_by(egui::PointerButton::Primary) {
-        state.gesture.begin(Gesture::Track(lane.track));
+        state.gesture.begin(Gesture::Track(nesting::TrackDrag::new(nest.places, lane.track, &state.selected_tracks)));
     }
     if body.drag_stopped_by(egui::PointerButton::Primary)
-        && let Some(dragged) = state.gesture.end_track(|t| *t == lane.track)
+        && let Some(dragged) = state.gesture.end_track(|t| t.source == lane.track)
         && let Some(pointer) = body.interact_pointer_pos().or_else(|| ui.ctx().pointer_latest_pos())
     {
         state.track_drop = Some((dragged, pointer.y));

@@ -67,7 +67,7 @@ pub(crate) enum Gesture {
     /// A header's send knob: the track, the return and the level so far (dB).
     Send((TrackId, TrackId, f64)),
     /// A track header being moved to a new place.
-    Track(TrackId),
+    Track(crate::interaction::nesting::TrackDrag),
     /// A marker: its index and where the pointer is, in beats before snapping.
     Marker((usize, f64)),
     /// The loop brace row: what it changes and where the pointer is, in beats before snapping.
@@ -302,7 +302,7 @@ kinds! {
     Value(ValueDrag) => value, value_mut, end_value;
     Main(f64) => main, main_mut, end_main;
     Send((TrackId, TrackId, f64)) => send, send_mut, end_send;
-    Track(TrackId) => track, track_mut, end_track;
+    Track(crate::interaction::nesting::TrackDrag) => track, track_mut, end_track;
     Marker((usize, f64)) => marker, marker_mut, end_marker;
     Loop((LoopGrab, f64)) => loop_brace, loop_brace_mut, end_loop_brace;
     Take((TrackId, usize, f64)) => take, take_mut, end_take;

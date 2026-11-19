@@ -105,6 +105,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "track.moveTo",
+        label: "Move selected tracks together before, inside or after another track",
+        params: &[
+            TRACKS,
+            param("target", ParamType::Track, "the destination track, group or folder (id or name)"),
+            param("placement", ParamType::Text, "before, inside or after the target"),
+        ],
+        kind: CommandKind::EDIT,
+        run: move_to,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "track.rename",
         label: "Rename a track",
         params: &[TRACK, param("name", ParamType::Text, "the new name, not empty")],
@@ -619,6 +631,10 @@ fn ungroup_track(session: &mut Session, params: &Value) -> Result<Value, Command
 /// Moves a track, with everything inside it, into a group or to the top level: it becomes the
 /// group's track at `index` among the group's own tracks, and its channel plays into the group.
 fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    set_group_with_routing(session, params, true)
+}
+
+fn set_group_with_routing(session: &mut Session, params: &Value, route: bool) -> Result<Value, CommandError> {
     let p = &mut session.project;
     let track = track_id(p, params)?;
     let role_of = |p: &Project, t: TrackId| channel_id_of(p, t).and_then(|id| p.channel(id)).map(|c| c.role);
@@ -683,13 +699,73 @@ fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     if let Some(t) = p.track_mut(track) {
         t.parent = group;
     }
-    if !presentation_only
+    if route
+        && !presentation_only
         && let Some(channel) = channel_id_of(p, track)
         && let Some(c) = p.channel_mut(channel)
     {
         c.output = output;
     }
     Ok(json!({ "track": track.0, "group": group.map(|g| g.0), "position": at }))
+}
+
+/// One edit and one graph update for the whole drag. The command executor restores the
+/// pre-edit project if any root fails validation, including failures after earlier roots moved.
+fn move_to(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let p = &session.project;
+    let selected = track_list(p, params)?;
+    let target = track_at(p, params, "target")?;
+    let placement = Args::new(params).text("placement")?;
+    if !matches!(placement, "before" | "inside" | "after") {
+        return Err("placement must be before, inside or after".into());
+    }
+    let roots: Vec<TrackId> = p
+        .tracks
+        .iter()
+        .filter(|t| {
+            selected.contains(&t.id) && !selected.iter().any(|&ancestor| crate::files::within(p, t.id, ancestor))
+        })
+        .map(|t| t.id)
+        .collect();
+    if roots.iter().any(|&root| root == target || crate::files::within(p, target, root)) {
+        return Err("the destination is inside a moving track, or is that track".into());
+    }
+    let destination = p.track(target).ok_or("the destination track is missing")?;
+    if destination
+        .channel
+        .and_then(|id| p.channel(id))
+        .is_some_and(|c| matches!(c.role, ChannelRole::Master | ChannelRole::Effect))
+    {
+        return Err("the destination cannot be Main or a return track".into());
+    }
+    let parent = if placement == "inside" { Some(target) } else { destination.parent };
+    // Keep the target as the anchor while each source block is removed. Reversing the roots
+    // for after/inside prevents previously inserted roots from reversing their project order.
+    let mut moving = roots.clone();
+    if placement != "before" {
+        moving.reverse();
+    }
+    for track in moving {
+        let p = &session.project;
+        let route = p.track(track).and_then(|t| t.parent) != parent;
+        let index = if placement == "inside" {
+            0
+        } else {
+            p.tracks
+                .iter()
+                .filter(|t| {
+                    t.parent == parent
+                        && t.id != track
+                        && !t.channel.and_then(|id| p.channel(id)).is_some_and(|c| c.role == ChannelRole::Effect)
+                })
+                .position(|t| t.id == target)
+                .ok_or("the destination track is missing")?
+                + usize::from(placement == "after")
+        };
+        let group = parent.map_or_else(|| json!("none"), |id| json!(id.0));
+        set_group_with_routing(session, &json!({ "track": track.0, "group": group, "index": index }), route)?;
+    }
+    Ok(json!({ "tracks": roots.iter().map(|id| id.0).collect::<Vec<_>>(), "target": target.0, "placement": placement }))
 }
 
 fn move_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

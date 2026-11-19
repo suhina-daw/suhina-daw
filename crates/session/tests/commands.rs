@@ -642,6 +642,124 @@ fn groups_nest_and_tracks_move_between_them() {
 }
 
 #[test]
+fn moving_selected_tracks_keeps_project_order_before_inside_and_after() {
+    let p = ProjectBuilder::new()
+        .midi_track(1, "A")
+        .midi_track(2, "B")
+        .midi_track(3, "C")
+        .midi_track(4, "D")
+        .midi_track(5, "E")
+        .build();
+    for (placement, target, expected) in
+        [("before", "E", ["A", "C", "B", "D", "E"]), ("after", "A", ["A", "B", "D", "C", "E"])]
+    {
+        let mut session = Session::new(p.clone());
+        run(&mut session, "track.moveTo", json!({"tracks": ["D", "B", "B"], "target": target, "placement": placement}))
+            .unwrap();
+        assert_eq!(order(&session), expected);
+        let moved = session.project().clone();
+        run(&mut session, "edit.undo", json!({})).unwrap();
+        assert_eq!(session.project(), &p);
+        run(&mut session, "edit.redo", json!({})).unwrap();
+        assert_eq!(session.project(), &moved);
+    }
+    let mut session = Session::new(p);
+    run(&mut session, "track.group", json!({"tracks": ["C"], "name": "Inner"})).unwrap();
+    run(&mut session, "track.folder", json!({"tracks": ["E"], "name": "Folder"})).unwrap();
+    let before = session.project().clone();
+    let channels = before.channels.clone();
+    let result = run(
+        &mut session,
+        "track.moveTo",
+        json!({
+            "tracks": ["D", "C", "B", "Inner"], "target": "Folder", "placement": "inside"
+        }),
+    )
+    .unwrap();
+    assert_eq!(result["tracks"].as_array().unwrap().len(), 3, "C travels with Inner once");
+    assert_eq!(order(&session), ["A", "Folder", "B", "Inner", "C", "D", "E"]);
+    assert_eq!(parent_of(&session, "Inner").as_deref(), Some("Folder"));
+    assert_eq!(parent_of(&session, "C").as_deref(), Some("Inner"));
+    assert_eq!(session.project().channels, channels, "folder moves keep routing");
+    let moved = session.project().clone();
+    assert_eq!(suhina_project_file::from_json(&suhina_project_file::to_json(&moved)).unwrap(), moved);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(session.project(), &moved);
+}
+
+#[test]
+fn moving_within_a_parent_keeps_custom_outputs_and_between_groups_changes_them() {
+    let mut session = Session::new(project());
+    run(&mut session, "track.group", json!({"tracks": ["Bass", "Lead"], "name": "Band"})).unwrap();
+    run(&mut session, "track.setOutput", json!({"track": "Bass", "to": "main"})).unwrap();
+    run(&mut session, "track.moveTo", json!({"tracks": ["Bass"], "target": "Lead", "placement": "after"})).unwrap();
+    assert_eq!(order(&session), ["Band", "Lead", "Bass"]);
+    assert_eq!(output_of(&session, "Bass"), None);
+    run(&mut session, "track.group", json!({"tracks": ["Lead"], "name": "Inner"})).unwrap();
+    run(&mut session, "track.moveTo", json!({"tracks": ["Bass"], "target": "Inner", "placement": "inside"})).unwrap();
+    assert_eq!(output_of(&session, "Bass").as_deref(), Some("Inner"));
+    run(&mut session, "track.moveTo", json!({"tracks": ["Bass", "Lead"], "target": "Band", "placement": "after"}))
+        .unwrap();
+    assert_eq!(order(&session), ["Band", "Inner", "Bass", "Lead"]);
+    assert_eq!(parent_of(&session, "Bass"), None);
+    assert_eq!(output_of(&session, "Bass"), None);
+    assert_eq!(output_of(&session, "Lead"), None);
+}
+
+#[test]
+fn invalid_multi_track_moves_roll_back_every_root_and_add_no_undo_step() {
+    let mut session = Session::new(project());
+    for params in [
+        json!({"tracks": [], "target": "Bass", "placement": "before"}),
+        json!({"tracks": ["Lead"], "target": "Missing", "placement": "before"}),
+        json!({"tracks": ["Lead"], "target": "Bass", "placement": "inside"}),
+        json!({"tracks": ["Lead"], "target": "Lead", "placement": "after"}),
+        json!({"tracks": ["Lead"], "target": "Bass", "placement": "below"}),
+        json!({"tracks": ["Lead"], "target": "Bass", "placement": 1}),
+    ] {
+        let before = session.project().clone();
+        assert!(run(&mut session, "track.moveTo", params.clone()).is_err(), "{params}");
+        assert_eq!(session.project(), &before);
+    }
+    for level in 0..MAX_GROUP_DEPTH {
+        let inner = if level == 0 { "Bass".to_string() } else { format!("G{}", level - 1) };
+        run(&mut session, "track.group", json!({"tracks": [inner], "name": format!("G{level}")})).unwrap();
+    }
+    run(&mut session, "track.group", json!({"tracks": ["Lead"], "name": "Tall"})).unwrap();
+    let before_add = session.project().clone();
+    run(&mut session, "track.add", json!({"kind": "midi", "name": "New"})).unwrap();
+    let before = session.project().clone();
+    // Inside inserts in reverse root order: New fits, then Tall exceeds the depth cap.
+    assert!(
+        run(
+            &mut session,
+            "track.moveTo",
+            json!({
+                "tracks": ["Tall", "New"], "target": "G0", "placement": "inside"
+            })
+        )
+        .unwrap_err()
+        .contains("nest at most")
+    );
+    assert_eq!(session.project(), &before);
+    assert!(
+        run(
+            &mut session,
+            "track.moveTo",
+            json!({
+                "tracks": ["G1", "New"], "target": "Bass", "placement": "before"
+            })
+        )
+        .is_err()
+    );
+    assert_eq!(session.project(), &before);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before_add, "failed moves add no undo step");
+}
+
+#[test]
 fn moving_into_a_group_refuses_loops_non_groups_and_bad_params() {
     let mut session = Session::new(project());
     run(&mut session, "track.group", json!({ "tracks": ["Bass"], "name": "Low" })).unwrap();

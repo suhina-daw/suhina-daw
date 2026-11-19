@@ -92,7 +92,7 @@ const LEAST_NAME: f32 = 48.0;
 const ON_TOGGLE: f32 = 30.0;
 const SOLO: f32 = 26.0;
 /// A group's fold triangle at the start of its header row.
-const FOLD: f32 = 12.0;
+const FOLD: f32 = 20.0;
 /// How far a track inside a group is indented in its header, a level.
 /// The track colour's band down a header's left edge.
 const COLOUR_BAND: f32 = 6.0;
@@ -1791,29 +1791,34 @@ fn show_lanes(
             ui.ctx().request_repaint();
         }
     }
-    // A track header let go over a lane moves the track (and a group's tracks) there, into the
-    // lane's group: above the lane under the pointer, or below it from its lower half; below an
-    // open group's header is into that group.
+    // The same three drop zones work for open and folded containers.
     let tracks: Vec<&Lane> = drawn.iter().filter_map(|d| timeline.lanes.get(d.lane)).collect();
     let target_of = |y: f32| {
         let lane = tracks.iter().find(|l| row_of(l.track).is_some_and(|r| r.time.y_range().contains(y)))?;
         let row = row_of(lane.track)?;
-        Some((*lane, y > row.time.center().y))
+        let fraction = (y - row.time.top()) / row.time.height().max(1.0);
+        Some((*lane, nesting::Placement::at(fraction, lane.kind == ColumnKind::Group)))
     };
-    if let Some(dragged) = state.gesture.track().copied()
+    if let Some(dragged) = state.gesture.track()
         && let Some(pointer) = ui.ctx().pointer_interact_pos()
-        && let Some((lane, below)) = target_of(pointer.y)
+        && let Some((lane, placement)) = target_of(pointer.y)
+        && nesting::drop_action(&places, &dragged.tracks, lane.track, placement).is_some()
         && let Some(row) = row_of(lane.track)
     {
-        let y = if below { row.time.bottom() + 0.5 } else { row.time.top() - 0.5 };
-        if lane.track != dragged {
+        let painter = painter.with_clip_rect(lanes_area);
+        if placement == nesting::Placement::Inside {
+            let ink = crate::kit::element::DROP_TARGET.attribute("kind", "area").look().color();
+            let target = Rect::from_x_y_ranges(area.x_range(), row.time.y_range());
+            painter.rect_stroke(target.shrink(1.0), 0.0, egui::Stroke::new(2.0, ink), egui::StrokeKind::Inside);
+        } else {
+            let y = if placement == nesting::Placement::After { row.time.bottom() + 0.5 } else { row.time.top() - 0.5 };
             let ink = crate::kit::element::DROP_TARGET.attribute("kind", "insert").look().color();
-            painter.with_clip_rect(lanes_area).hline(area.x_range(), y, egui::Stroke::new(2.0, ink));
+            painter.hline(area.x_range(), y, egui::Stroke::new(2.0, ink));
         }
     }
     if let Some((dragged, y)) = state.track_drop.take()
-        && let Some((lane, below)) = target_of(y)
-        && let Some(action) = nesting::drop_action(&places, dragged, lane.track, below, &state.folds.groups())
+        && let Some((lane, placement)) = target_of(y)
+        && let Some(action) = nesting::drop_action(&places, &dragged.tracks, lane.track, placement)
     {
         actions.push(action);
     }
