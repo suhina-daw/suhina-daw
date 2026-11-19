@@ -171,6 +171,35 @@ separate configuration protocol; it is not a synonym for native per-note MIDI 2.
 
 ## Acceptance and implementation order
 
+### Live implementation boundary (#926)
+
+The MIDI input worker owns protocol state for each physical port: selected RPN/NRPN,
+lower/upper zones, controller latches and physical key/pedal state. It resolves these into
+the shared identified events before the engine's live queue. The queue retains the original
+source channel and timestamp. The engine carries `NoteEvent::Instance` through its existing
+sample-accurate split spans; it does not quantize expression to an audio block or reinterpret
+native zero-velocity note-ons as MIDI bytes.
+
+The first live implementation supports independent pitch, pressure and timbre in the FM
+instrument and the shared sample runtime. Each owns bounded occurrence admission and final
+retirement, including stolen voices and layered tails. A note-off never frees an identity
+while it can still sound. Ordinary MIDI and unsupported-chain compatibility remain playable;
+the MIDI settings describe which instruments support independent expression. An unsupported
+device does not advertise the opt-in capability. MIDI effects must preserve identity for
+one-to-one transformations; an effect without that contract selects the documented ordinary
+compatibility path for the whole chain.
+
+Input configuration is a session command and a persistent setting per port. Changing mode
+or manual zones terminates the affected input's old occurrences before accepting new notes.
+Automatic mode follows valid RPN 6 messages; manual mode retains the user's zone sizes and
+bend ranges. No input configuration, expression state or runtime note identity is written
+into saved project notes by this work; recording and curve editing remain #928 and #930.
+
+Implementation is checked in this order: bounded protocol fixtures, identified FM/sample
+voice fixtures, live routing/golden renders, then command/settings round trips and UI flows.
+The draft remains incomplete until all #926 rows below pass, including recycled-channel
+tails, per-zone sustain and queue/capacity recovery.
+
 | Work | Required deterministic evidence |
 |---|---|
 | #924 shared contract | Identity and retirement rules; curve operations; protocol sources; agreement on this ADR/spec. |
