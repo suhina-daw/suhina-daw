@@ -161,7 +161,9 @@ impl Player {
                     .reset_suspended_plugins(std::time::Duration::from_secs(10))
                     .map(|()| previous)
                     .map_err(|e| e.to_string());
-                let _ = send.send(result);
+                if send.send(result).is_ok() {
+                    suhina_plugins::wake();
+                }
             })
             .map_err(|e| e.to_string())?;
         self.resetting = Some(receive);

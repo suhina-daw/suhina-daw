@@ -1695,7 +1695,9 @@ fn take_in_edit(edits: &EditInbox, instance: u32, id: u32, value: f64) {
     }
 }
 
-fn wake() {
+/// Wakes the control window after asynchronous host or retained-engine work completes.
+/// Control threads only: this reads the registered callback under a lock.
+pub fn wake() {
     if let Some(waker) = lock(&WAKER).clone() {
         waker();
     }

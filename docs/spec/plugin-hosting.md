@@ -739,7 +739,8 @@ the output already supplied the departure fade. A new Play or live note opens
 the envelope again. Pending parameter edits survive; old note events do not.
 The tab switch does not wait for this worker. Returning before its reply keeps the
 project silent on the retained device; the existing control poll resumes it only
-after successful completion. Failure reports an error instead of resuming an
+after successful completion. Completion wakes the existing control window once,
+without a polling timer or continuous repaint requests. Failure reports an error instead of resuming an
 instance with uncertain audio state. Closing a resetting project never joins the
 busy worker on the UI thread. See [the protocol](plugin-protocol.md).
 
