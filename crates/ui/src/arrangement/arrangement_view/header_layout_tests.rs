@@ -355,3 +355,21 @@ fn a_header_s_words_change_only_where_it_crosses_its_sizes() {
         assert!(seen.iter().all(|(_, size, _)| *size == seen[0].1), "{height}: {seen:?}");
     }
 }
+
+#[test]
+fn compact_headers_keep_the_fold_target_wide_and_clear_of_other_controls() {
+    for height in [20.0, 22.0, 26.0, 40.0] {
+        for width in [220.0, 300.0, 460.0] {
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height));
+            let parts = layout(None, rect, Header::default());
+            let fold = parts.fold.unwrap();
+            assert!(fold.width() >= 20.0, "{width}×{height}: {fold:?}");
+            for control in [parts.automation, parts.track_on, parts.solo, parts.cue, parts.name, parts.volume]
+                .into_iter()
+                .flatten()
+            {
+                assert!(!fold.intersects(control), "{width}×{height}: {fold:?} overlaps {control:?}");
+            }
+        }
+    }
+}
