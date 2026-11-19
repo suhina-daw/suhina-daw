@@ -314,16 +314,16 @@ jobs:
         if: ${{ !cancelled() && runner.os == 'Linux' && matrix.partition == 1 }}
         env:
           XDG_RUNTIME_DIR: ${{ runner.temp }}
-            WGPU_BACKEND: vulkan
+          WGPU_BACKEND: vulkan
         run: |
-            sudo apt-get install -y mesa-vulkan-drivers libvulkan1
-            # Hosted runners have no hardware GPU. Use Mesa's software Vulkan driver.
-            for driver in /usr/share/vulkan/icd.d/lvp_icd*.json; do
-              if [ -f "$driver" ]; then
-                export VK_DRIVER_FILES="$driver"
-                break
-              fi
-            done
+          sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+          # Hosted runners have no hardware GPU. Use Mesa's software Vulkan driver.
+          for driver in /usr/share/vulkan/icd.d/lvp_icd*.json; do
+            if [ -f "$driver" ]; then
+              export VK_DRIVER_FILES="$driver"
+              break
+            fi
+          done
           for theme in suhina-studio suhina-studio@light high-contrast; do
             for scene in colour-picker colour-picker-field colour-picker-wheel; do
               cargo run --locked -p suhina-theme-render -- "$theme" --scene "$scene" --out "colour-picker-previews/$theme"
