@@ -2883,6 +2883,7 @@ impl App {
         // of what was there before, so it lets go.
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
+            self.colour_history_changed();
         }
         // Which copy came last decides what Ctrl+V pastes (› `CopiedLast`).
         match action.id {

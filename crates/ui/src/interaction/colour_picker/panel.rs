@@ -6,12 +6,32 @@
 
 mod canvas;
 
-use egui::{Id, Key, Sense, Ui, Vec2, ecolor::Hsva};
+use egui::{Id, Key, Sense, Ui, Vec2};
 use suhina_engine::model::Rgb;
 use suhina_style::value::{hsl_to_srgb, oklch_to_srgb, srgb_to_hsl, srgb_to_oklch};
 
 use super::{color32, hex};
 use crate::kit::{element, theme, widgets};
+
+/// Conventional HSV of encoded sRGB, so its hue agrees with numeric HSL. Reuse egui's
+/// component conversion, without its linear-light Hsva transfer functions.
+#[derive(Clone, Copy)]
+pub(super) struct Hsv {
+    h: f32,
+    s: f32,
+    v: f32,
+}
+
+impl Hsv {
+    fn from_srgb(rgb: [u8; 3]) -> Self {
+        let (h, s, v) = egui::ecolor::hsv_from_rgb(rgb.map(|c| f32::from(c) / 255.0));
+        Self { h, s, v }
+    }
+
+    fn to_srgb(self) -> [u8; 3] {
+        egui::ecolor::rgb_from_hsv((self.h, self.s, self.v)).map(|c| (c * 255.0).round().clamp(0.0, 255.0) as u8)
+    }
+}
 
 pub(crate) const GESTURE: &str = "track-colour-window";
 
@@ -28,7 +48,7 @@ pub(crate) struct Panel {
     pub dragging: bool,
     cancelled_drag: bool,
     pub colour: Rgb,
-    hsv: Hsva,
+    hsv: Hsv,
     text: String,
     numbers: [String; 6],
     invalid: bool,
@@ -47,7 +67,7 @@ impl Default for Panel {
             dragging: false,
             cancelled_drag: false,
             colour,
-            hsv: Hsva::from_srgb([colour.0, colour.1, colour.2]),
+            hsv: Hsv::from_srgb([colour.0, colour.1, colour.2]),
             text: String::new(),
             numbers: Default::default(),
             invalid: false,
@@ -66,6 +86,15 @@ impl Default for Panel {
 }
 
 impl Panel {
+    pub fn discard_drafts(&mut self) {
+        self.fields();
+    }
+
+    pub fn cancel_pointer(&mut self) {
+        self.dragging = false;
+        self.cancelled_drag = true;
+    }
+
     /// Follow commands, Undo and selection changes without converting unchanged exact RGB.
     pub fn sync(&mut self, colour: Rgb) {
         if self.colour != colour {
@@ -90,7 +119,7 @@ impl Panel {
 
     fn set(&mut self, colour: Rgb) {
         self.colour = colour;
-        let mut next = Hsva::from_srgb([colour.0, colour.1, colour.2]);
+        let mut next = Hsv::from_srgb([colour.0, colour.1, colour.2]);
         if next.s <= f32::EPSILON || next.v <= f32::EPSILON {
             next.h = self.hsv.h;
         }
@@ -110,7 +139,7 @@ impl Panel {
         edits.push(Edit::Colour(colour, false));
     }
 
-    fn pointer_colour(&mut self, hsv: Hsva, dragging: bool, edits: &mut Vec<Edit>) {
+    fn pointer_colour(&mut self, hsv: Hsv, dragging: bool, edits: &mut Vec<Edit>) {
         if self.cancelled_drag {
             return;
         }
@@ -202,8 +231,7 @@ impl Panel {
             ui.label(egui::RichText::new("Changes apply immediately").small().color(element::caption_ink()));
         });
         if self.dragging && ui.input(|i| i.key_pressed(Key::Escape)) {
-            self.dragging = false;
-            self.cancelled_drag = true;
+            self.cancel_pointer();
             edits.clear();
             edits.push(Edit::Cancel);
         } else if self.dragging && !ui.input(|i| i.pointer.any_down()) {
@@ -359,7 +387,7 @@ pub(crate) fn remember(recent: &mut Vec<Rgb>, colour: Rgb) {
     recent.truncate(8);
 }
 
-fn constrain(mut hsv: Hsva, steps: bool, soft: bool) -> Hsva {
+fn constrain(mut hsv: Hsv, steps: bool, soft: bool) -> Hsv {
     if steps {
         hsv.h = (hsv.h * 24.0).round() / 24.0;
         hsv.s = (hsv.s * 10.0).round() / 10.0;
@@ -374,7 +402,7 @@ fn constrain(mut hsv: Hsva, steps: bool, soft: bool) -> Hsva {
 pub(crate) fn random_colour(current: Rgb, steps: bool, soft: bool, random: u64) -> Rgb {
     let mut choices = Vec::with_capacity(24);
     for colour in super::swatches() {
-        let [r, g, b] = constrain(Hsva::from_srgb([colour.0, colour.1, colour.2]), steps, soft).to_srgb();
+        let [r, g, b] = constrain(Hsv::from_srgb([colour.0, colour.1, colour.2]), steps, soft).to_srgb();
         let colour = Rgb(r, g, b);
         if colour != current && !choices.contains(&colour) {
             choices.push(colour);
@@ -389,6 +417,17 @@ pub(crate) fn random_colour(current: Rgb, steps: bool, soft: bool, random: u64) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn field_and_numeric_hsl_share_hue_without_changing_exact_rgb() {
+        for colour in super::super::swatches().into_iter().chain([Rgb(37, 119, 231), Rgb(0, 0, 0), Rgb(255, 255, 255)])
+        {
+            let rgb = [colour.0, colour.1, colour.2];
+            let hsv = Hsv::from_srgb(rgb);
+            assert_eq!(hsv.to_srgb(), rgb);
+            assert!((hsv.h * 360.0 - srgb_to_hsl(rgb)[0]).abs() < 0.001);
+        }
+    }
 
     #[test]
     fn related_shades_keep_exact_source_hue_and_lightness_order() {
@@ -447,7 +486,7 @@ mod tests {
                 assert!(super::super::swatches().contains(&free));
                 let soft = random_colour(current, true, true, seed);
                 assert_ne!(soft, current);
-                let hsv = Hsva::from_srgb([soft.0, soft.1, soft.2]);
+                let hsv = Hsv::from_srgb([soft.0, soft.1, soft.2]);
                 assert!((0.24..=0.71).contains(&hsv.s));
                 assert!((0.44..=0.91).contains(&hsv.v));
             }

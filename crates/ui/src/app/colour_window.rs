@@ -28,6 +28,15 @@ pub(super) struct ColourWindow {
 }
 
 impl App {
+    pub(super) fn colour_history_changed(&mut self) {
+        if self.colour_window.pending_recent.take().is_some() {
+            self.colour_window.panel.cancel_pointer();
+            if self.open_gesture.as_deref() == Some(panel::GESTURE) {
+                self.open_gesture = None;
+            }
+        }
+    }
+
     pub(super) fn open_colour_window(&mut self, tracks: Option<Vec<TrackId>>) {
         let selection = self.focused_tracks();
         let tracks = tracks.unwrap_or_else(|| selection.clone());
@@ -37,6 +46,7 @@ impl App {
             return;
         }
         self.finish_colour_gesture(false);
+        self.colour_window.panel.discard_drafts();
         if !self.colour_window.open {
             self.colour_window.position = None;
         }
@@ -156,10 +166,10 @@ impl App {
             let embedded = class == egui::ViewportClass::EmbeddedWindow;
             let render = |ui: &mut Ui| {
                 let style = crate::kit::element::COLOUR_PICKER.enter();
-                style.paint(ui.painter(), ui.max_rect());
-                let mut styled = style.ui(ui);
-                egui::Frame::new().inner_margin(10.0).show(&mut styled, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                let inside = style.paint(ui.painter(), ui.max_rect()).content;
+                ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
+                    let mut styled = style.ui(ui);
+                    egui::ScrollArea::vertical().show(&mut styled, |ui| {
                         ui.add_enabled_ui(enabled, |ui| {
                             edits.extend(panel.show(ui, recent));
                         });
@@ -173,7 +183,7 @@ impl App {
                     .open(&mut open)
                     .collapsible(false)
                     .resizable(false)
-                    .default_width(WIDTH)
+                    .fixed_size([WIDTH, height])
                     .default_pos(ui.max_rect().center() - Vec2::new(WIDTH, height) * 0.5)
                     .show(ui.ctx(), render);
                 close = !open;

@@ -4,10 +4,9 @@
 //! Fixed-size meshes, cached while their colour plane stays the same. Moving the marker
 //! never rebuilds the field; the wheel only rebuilds when its value/mode/rectangle changes.
 
+use super::Hsv;
 use crate::kit::{element, theme};
-use egui::{
-    Color32, Key, Mesh, Modifiers, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind, Ui, Vec2, ecolor::Hsva,
-};
+use egui::{Color32, Key, Mesh, Modifiers, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -17,11 +16,17 @@ pub(super) struct Cache {
 }
 
 impl Cache {
-    pub fn show(&mut self, ui: &mut Ui, hsv: &mut Hsva, wheel: bool, steps: bool, soft: bool) -> Response {
+    pub fn show(&mut self, ui: &mut Ui, hsv: &mut Hsv, wheel: bool, steps: bool, soft: bool) -> Response {
         let size = if wheel { Vec2::splat(150.0) } else { Vec2::new(268.0, 110.0) };
         let (rect, mut response) = ui.allocate_exact_size(size, Sense::click_and_drag());
         let label = if wheel { "Colour wheel" } else { "Colour field" };
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, label));
+        let field =
+            element::COLOUR_FIELD.attribute("kind", if wheel { "wheel" } else { "field" }).response(&response).enter();
+        let rect = field.paint(ui.painter(), rect).content;
+        if !rect.is_positive() {
+            return response;
+        }
         let key = (rect, if wheel { hsv.v } else { hsv.h }, wheel, steps, soft);
         if self.key != Some(key) {
             self.mesh = Arc::new(build(rect, *hsv, wheel, steps, soft));
@@ -70,19 +75,11 @@ impl Cache {
         };
         let [r, g, b] = hsv.to_srgb();
         ui.painter().circle_stroke(marker, 4.0, Stroke::new(2.0, theme::text_on(Color32::from_rgb(r, g, b))));
-        let field =
-            element::COLOUR_FIELD.attribute("kind", if wheel { "wheel" } else { "field" }).response(&response).enter();
-        ui.painter().rect_stroke(
-            rect,
-            0.0,
-            Stroke::new(if response.has_focus() { 2.0 } else { 1.0 }, field.border()),
-            StrokeKind::Inside,
-        );
         response
     }
 }
 
-fn build(rect: Rect, hsv: Hsva, wheel: bool, steps: bool, soft: bool) -> Mesh {
+fn build(rect: Rect, hsv: Hsv, wheel: bool, steps: bool, soft: bool) -> Mesh {
     let mut mesh = Mesh::default();
     let columns = if wheel {
         if steps { 24 } else { 64 }
@@ -102,12 +99,12 @@ fn build(rect: Rect, hsv: Hsva, wheel: bool, steps: bool, soft: bool) -> Mesh {
                     let angle = x * std::f32::consts::TAU;
                     (
                         rect.center() + Vec2::new(angle.cos(), angle.sin()) * y * rect.width() * 0.5,
-                        Hsva { h: x, s: y, v: hsv.v, a: 1.0 },
+                        Hsv { h: x, s: y, v: hsv.v },
                     )
                 } else {
                     (
                         Pos2::new(rect.left() + x * rect.width(), rect.top() + y * rect.height()),
-                        Hsva { h: hsv.h, s: x, v: 1.0 - y, a: 1.0 },
+                        Hsv { h: hsv.h, s: x, v: 1.0 - y },
                     )
                 };
                 // A stepped cell has one colour, with a visibly discrete boundary.

@@ -36,6 +36,12 @@ colour and editable/copyable hex value, collapsed **Fine adjustment**, and **Ran
 Clicking a swatch applies it immediately. Copying a sibling's exact hex value and pasting
 it on another track reuses it without transcribing its components.
 
+The palette's first row retains the eight bright defaults. The second adds red and deeper
+warm/cool hues; the third offers four pale colours and four neutrals. These are suggestions,
+not a change to the legacy defaults of tracks saved without an explicit colour. An older
+keymap that already assigns F2 to another window action keeps that assignment; the colour
+action starts unbound until the user chooses a key.
+
 Recent colours holds the last eight distinct explicit colours successfully applied to
 tracks, newest first. Reusing a colour moves it to the front. It is bounded even with
 hundreds of tracks, and persists in local settings. Opening the window, intermediate drag
@@ -82,6 +88,9 @@ project-sized colour enumeration or per-frame disk I/O.
 
 Names, hierarchy and focus/selection indicators remain available independently of colour.
 Foregrounds and outlines adapt to their composited backgrounds without changing saved RGB.
+Automatic text on track colours prefers the theme's two inks, falling back to black or white
+when neither reaches 4.5:1. Explicit theme rules that override a label's ink remain the theme
+author's responsibility. The same contrast helper covers solid, selected and muted fills.
 Normal text targets 4.5:1 contrast and essential selection indicators 3:1. These do not
 require every adjacent pair of palette swatches to have 3:1 contrast, or promise that 24
 colours are distinguishable under every colour-vision deficiency.
