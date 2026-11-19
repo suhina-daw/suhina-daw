@@ -30,6 +30,32 @@ allocation, envelopes, patch interpretation, parameter IDs and defaults remain w
 The extraction preserves its reference renders and its 64-frame control grid; it introduces no
 new device, preset, parameter or claim of MPE support.
 
+## Integration boundaries for later phases
+
+Per-note expression follows [#921](https://github.com/suhina-daw/suhina-daw/issues/921) and its
+event/model decision [#924](https://github.com/suhina-daw/suhina-daw/issues/924), rather than a
+second instrument-specific event system. The current `Device::event` contract delivers an event
+between processing spans: the host splits at its frame (ADR 0004). Any change to that rule belongs
+in the shared decision first. [ADR 0025](../decisions/0025-object-identity.md) keeps note IDs out of
+saved files and places future expression curves on their notes; persistent curve ownership and
+runtime voice identity are different contracts.
+
+The existing MIDI parser drops polyphonic key pressure and combines All Sound Off with All Notes
+Off. [Recording](recording.md) currently stores neither the channel nor pedal events as such.
+These gaps must be resolved through the shared MPE work before this instrument claims complete
+expression recording and replay.
+
+Exports and reusable panel drawing build on
+[#931](https://github.com/suhina-daw/suhina-daw/issues/931). Framework, FFI/`unsafe` boundary,
+parameter identity, state and editor choices need that wrapper's decision before implementation;
+this extraction selects no framework and adds no FFI exception.
+
+The content-size target concerns installed libraries, not the executable's embedded starter pack.
+[ADR 0036](../decisions/0036-library-and-shipped-content.md) caps that pack at 16 MiB and leaves
+larger downloads to separate content-delivery work. Calibration recordings require an external
+dataset/provenance plan. [ADR 0016](../decisions/0016-scope.md) permits MPE when requested; any
+broader scope that conflicts with its exclusions needs an explicit decision before implementation.
+
 ## Fixed-point FM contract
 
 The shared `dsp::fm` module has no device, project, UI or file-system dependency. Its operator
