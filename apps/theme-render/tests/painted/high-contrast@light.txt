@@ -9,10 +9,10 @@ browser-plug-ins high-contrast@light a5a9ebb6fdedc44d
 browser-search high-contrast@light ce42a88330290bd7
 clip-audio high-contrast@light ea8e09f0d48047f0
 clip-midi high-contrast@light 5644c8f916cead8e
-colour-picker high-contrast@light 7320344f1e9a616e
-colour-picker-field high-contrast@light cf6ce0a83055f745
-colour-picker-wheel high-contrast@light 63d3012d8b4e5e67
-context-menu high-contrast@light d83e25debf49a89b
+colour-picker high-contrast@light 35824703c60b5365
+colour-picker-field high-contrast@light 2712a2c53bad8596
+colour-picker-wheel high-contrast@light 1231cfa3a459b3d0
+context-menu high-contrast@light 919b780d927b09bd
 control-bar-toggles high-contrast@light bff6475f58750c91
 count-in-menu high-contrast@light bb83aabd405ca3ce
 cpu high-contrast@light c3b518eb07a0ee8f

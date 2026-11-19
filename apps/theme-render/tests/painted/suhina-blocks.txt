@@ -9,10 +9,10 @@ browser-plug-ins suhina-blocks c99399c3dd6d6339
 browser-search suhina-blocks a1314e8e143ed20b
 clip-audio suhina-blocks 8f7d3bbf2b232324
 clip-midi suhina-blocks 443a1a340df7e040
-colour-picker suhina-blocks b5d73701f9110d7f
-colour-picker-field suhina-blocks 91d542e1a17ee27d
-colour-picker-wheel suhina-blocks f0c725a5b10caf74
-context-menu suhina-blocks 6da535845997e5c5
+colour-picker suhina-blocks f069a32bfe42764c
+colour-picker-field suhina-blocks aab0bcc9ac98ed12
+colour-picker-wheel suhina-blocks 9261161933dcd767
+context-menu suhina-blocks 6fa22fdb8d9bebce
 control-bar-toggles suhina-blocks a23a7d4a69d08a92
 count-in-menu suhina-blocks 6dc2c7fe466e80a4
 cpu suhina-blocks ef18d0a4e4371399

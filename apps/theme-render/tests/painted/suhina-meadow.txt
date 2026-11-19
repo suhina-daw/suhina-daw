@@ -9,10 +9,10 @@ browser-plug-ins suhina-meadow c08e590777c61ca6
 browser-search suhina-meadow d06850a5e2ea68f1
 clip-audio suhina-meadow bbb35a8a6ed7a76a
 clip-midi suhina-meadow 9fa54a33b1a27a80
-colour-picker suhina-meadow 6cd033973f2196a8
-colour-picker-field suhina-meadow 47525dbf673b439f
-colour-picker-wheel suhina-meadow 4080a0a94b88394a
-context-menu suhina-meadow 2a549949c901060c
+colour-picker suhina-meadow 25310c6bdba6fc7b
+colour-picker-field suhina-meadow fd4de12468603f44
+colour-picker-wheel suhina-meadow 4aecc748c3da9925
+context-menu suhina-meadow 3903dd9359d9aa75
 control-bar-toggles suhina-meadow fea5e456d49e96f0
 count-in-menu suhina-meadow 0b2fe1bcd0b18932
 cpu suhina-meadow bca5087e1ae79094
