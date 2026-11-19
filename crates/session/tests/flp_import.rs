@@ -5,7 +5,7 @@
 #![allow(clippy::unwrap_used)] // fixture helpers outside test functions
 
 use std::sync::Arc;
-use suhina_engine::{AudioData, AudioPool, RenderInputs};
+use suhina_engine::{AudioData, AudioPool, RenderInputs, RenderOptions, Renderer};
 use suhina_model::*;
 use suhina_session::{OpenOptions, Projects};
 use suhina_test_support::{WavFormat, write_wav};
@@ -35,7 +35,8 @@ fn text(out: &mut Vec<u8>, id: u8, value: &str) {
 fn events() -> Vec<u8> {
     let mut out = Vec::new();
     event(&mut out, 199, b"26.1.0\0");
-    event(&mut out, 156, &120000u32.to_le_bytes());
+    // Ten beats per second keeps the playback regressions short without changing their beats.
+    event(&mut out, 156, &600000u32.to_le_bytes());
     out
 }
 
@@ -135,15 +136,23 @@ fn imported_headers_and_stretch_obey_frontend_media_trust_without_audio_decoding
     assert_eq!(region(local.project()).duration_seconds, Some(0.5));
 }
 
-fn render(project: &Project, pool: &AudioPool) -> Vec<f32> {
-    suhina_engine::render_offline_from(
+// Render only the frames each assertion needs; the whole-arrangement helper also renders
+// two seconds of device tails, which none of these regressions exercise.
+fn render(project: &Project, pool: &AudioPool, frames: usize) -> Vec<f32> {
+    let mut renderer = Renderer::build(
         project,
         RenderInputs::from_audio(pool, suhina_session::devices()),
         8000,
-        64,
-        None,
+        RenderOptions::PLAYING,
     )
-    .unwrap()
+    .unwrap();
+    renderer.set_offline(true);
+    renderer.set_follow_loop(false);
+    let mut out = vec![0.; frames * 2];
+    for block in out.chunks_mut(128) {
+        renderer.process(block);
+    }
+    out
 }
 
 fn peak(out: &[f32], from: f64, to: f64) -> f32 {
@@ -177,7 +186,7 @@ fn an_untrimmed_pattern_plays_late_notes_but_an_explicit_window_stays_trimmed() 
     event(&mut base, 51, &[0]);
     let mut pool = AudioPool::new();
     pool.files
-        .insert("note.wav".into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: vec![0.25; 800] }));
+        .insert("note.wav".into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: vec![0.25; 160] }));
     for (offset, expected_length, late_note) in [(u32::MAX, 2.5, true), (0, 1., false), (192, 1., false)] {
         let mut bytes = base.clone();
         placement(&mut bytes, 0x5001, 96, offset);
@@ -185,11 +194,11 @@ fn an_untrimmed_pattern_plays_late_notes_but_an_explicit_window_stays_trimmed() 
         let clip = &project.arrangement.lanes[0].clips[0];
         assert_eq!(clip.length, expected_length);
         assert_eq!(clip.offset, if offset == u32::MAX { 0. } else { f64::from(offset) / 96. });
-        let out = render(&project, &pool);
-        assert!(peak(&out, 0.02, 0.08) > 0.01);
-        assert_eq!(peak(&out, 1.02, 1.08) > 0.01, late_note);
+        let out = render(&project, &pool, 2400);
+        assert!(peak(&out, 0.004, 0.016) > 0.01);
+        assert_eq!(peak(&out, 0.204, 0.216) > 0.01, late_note);
         let restored = suhina_project_file::from_json(&suhina_project_file::to_json(&project)).unwrap();
-        assert_eq!(render(&restored, &pool), out);
+        assert_eq!(render(&restored, &pool, 2400), out);
     }
 }
 
@@ -273,21 +282,21 @@ fn a_sidechain_only_source_follows_imported_fader_automation_and_fader_edits() {
     let mut pool = AudioPool::new();
     for (name, level) in [("key.wav", 0.5), ("pad.wav", 0.001)] {
         pool.files
-            .insert(name.into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: vec![level; 16000] }));
+            .insert(name.into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: vec![level; 3200] }));
     }
-    let out = render(&project, &pool);
-    let quiet_key = peak(&out, 0.2, 0.4);
-    let loud_key = peak(&out, 1.2, 1.4);
+    let out = render(&project, &pool, 3200);
+    let quiet_key = peak(&out, 0.04, 0.08);
+    let loud_key = peak(&out, 0.24, 0.28);
     assert!(quiet_key > 0.0001);
     assert!(loud_key < quiet_key * 0.5, "automated key: {loud_key} vs {quiet_key}");
     project.channel_mut(ChannelId(0)).unwrap().automation.clear();
     project.channel_mut(ChannelId(0)).unwrap().volume = 0.;
-    let zero = render(&project, &pool);
+    let zero = render(&project, &pool, 800);
     project.channel_mut(ChannelId(0)).unwrap().volume = 1.;
-    let one = render(&project, &pool);
-    assert!(peak(&one, 0.2, 0.4) < peak(&zero, 0.2, 0.4) * 0.5);
+    let one = render(&project, &pool, 800);
+    assert!(peak(&one, 0.04, 0.08) < peak(&zero, 0.04, 0.08) * 0.5);
     // Remove the pad: the key alone never reaches Main, even with its fader at unity.
     pool.files
-        .insert("pad.wav".into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: vec![0.; 16000] }));
-    assert!(render(&project, &pool).iter().all(|sample| *sample == 0.));
+        .insert("pad.wav".into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: vec![0.; 3200] }));
+    assert!(render(&project, &pool, 800).iter().all(|sample| *sample == 0.));
 }
