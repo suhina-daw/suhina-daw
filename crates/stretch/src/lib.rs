@@ -17,7 +17,7 @@
 //!
 //! Beside the port, Suhina's own simpler stretches for the modes that want another sound: grains
 //! ([`Grains`], Tonal and Texture), slices at the sound's transients ([`Slices`], Rhythmic), and
-//! the [`transients`] they are cut at.
+//! the [`transients()`] they are cut at.
 
 mod grains;
 mod slices;

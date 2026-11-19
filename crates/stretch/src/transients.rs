@@ -1,5 +1,5 @@
 // Copyright (C) 2026 The Suhina contributors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Where a sound's transients are: the frames at which its level jumps, for the slicing stretch
 //! (`docs/decisions/0003-time-stretching.md` › Amendment: a sound of each mode). The level is
