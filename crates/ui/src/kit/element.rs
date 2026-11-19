@@ -705,6 +705,7 @@ impl Entered {
         let [top, right, bottom, left] = style.border_sides;
         let padding_box = shrink(rect, [top, right, bottom, left]);
         super::native_css::set_box(self.scope.node, padding_box, painter);
+        super::native_css::set_border_box(self.scope.node, rect, painter);
         let content = shrink(rect, style.insets_in(rect.width()));
         let clip = style.hides_overflow().then(|| {
             let from = painter.ctx().graphics_mut(|layers| layers.entry(painter.layer_id()).next_idx());

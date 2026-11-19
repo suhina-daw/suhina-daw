@@ -136,3 +136,27 @@ fn the_outline_draws_boxes_and_names_and_skips_elements_without_one() {
     assert_ne!(drawn.get_pixel(24, 24), blank.get_pixel(24, 24));
     assert_eq!(drawn.get_pixel(5, 5), blank.get_pixel(5, 5));
 }
+
+#[test]
+fn an_elements_painted_box_includes_its_border() {
+    let folder = std::env::temp_dir().join(format!("suhina-border-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("theme.json"), r##"{ "format": 1, "name": "Border test", "swatch": "#334455" }"##)
+        .unwrap();
+    std::fs::write(folder.join("theme.css"), "toolbar-module#browser { border: 6px solid #ff0000; }\n").unwrap();
+    let (subject, _) = Subject::folder(&folder).unwrap();
+    let scene = scenes::find("launcher").unwrap();
+    let h = inspect::settled(&subject, &scene).unwrap();
+    std::fs::remove_dir_all(&folder).ok();
+    let elements = inspector::frame_elements();
+    let (index, browser) = elements
+        .iter()
+        .enumerate()
+        .find(|(_, e)| e.name == "toolbar-module" && e.id.as_deref() == Some("browser"))
+        .expect("the control bar's browser button");
+    let (rect, _) = browser.painted.expect("it painted");
+    // A point on the border, a pixel inside its outer edge, selects the button.
+    let on_border = pos2(rect.left() + 1.0, rect.center().y);
+    let layers = h.ctx.memory(|m| m.layer_ids().collect::<Vec<_>>());
+    assert_eq!(inspect::hit(&elements, &layers, on_border), Some(index));
+}

@@ -414,6 +414,10 @@ struct Engine {
     /// For each node of this frame: the box it takes on screen, once it painted or gave one, and
     /// the layer it was painted on.
     boxes: Vec<Option<(Rect, egui::LayerId)>>,
+    /// For each node of this frame: its border box as far as it shows, for the inspector
+    /// ([`inspector::frame_elements`]) only: `boxes` holds the padding box that clips and shadows
+    /// use.
+    borders: Vec<Option<Rect>>,
     /// For each node of this frame: the style it was painted with, to compare with the full tree's
     /// at the frame's end.
     served: Vec<Option<Arc<suhina_style::cascade::ComputedStyle>>>,
@@ -626,6 +630,7 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
         engine.occurrences.clear();
         engine.chains.clear();
         engine.boxes.clear();
+        engine.borders.clear();
         engine.served.clear();
         engine.held.clear();
         engine.unstyled = 0;
@@ -682,6 +687,7 @@ pub(super) fn enter(
         engine.nodes.push(node);
         engine.chains.push(0);
         engine.boxes.push(None);
+        engine.borders.push(None);
         engine.served.push(None);
         engine.held.push(false);
         engine.parents.push(index);
@@ -779,8 +785,24 @@ pub(super) fn node_name(node: usize) -> Option<String> {
 pub(super) fn set_box(node: Option<usize>, rect: Rect, painter: &egui::Painter) {
     let Some(node) = node else { return };
     ENGINE.with(|engine| {
-        if let Some(slot) = engine.borrow_mut().boxes.get_mut(node) {
-            *slot = Some((rect.intersect(painter.clip_rect()), painter.layer_id()));
+        let mut engine = engine.borrow_mut();
+        let shown = rect.intersect(painter.clip_rect());
+        if let Some(slot) = engine.boxes.get_mut(node) {
+            *slot = Some((shown, painter.layer_id()));
+        }
+        if let Some(slot) = engine.borders.get_mut(node) {
+            *slot = Some(shown);
+        }
+    });
+}
+
+/// The border box of the element at `node`, when it is bigger than the box [`set_box`] was given
+/// (its padding box): for the inspector, so a point on the border selects the element.
+pub(super) fn set_border_box(node: Option<usize>, rect: Rect, painter: &egui::Painter) {
+    let Some(node) = node else { return };
+    ENGINE.with(|engine| {
+        if let Some(slot) = engine.borrow_mut().borders.get_mut(node) {
+            *slot = Some(rect.intersect(painter.clip_rect()));
         }
     });
 }
@@ -862,6 +884,7 @@ pub(super) fn discard(node: Option<usize>) {
         let Some(gone) = engine.nodes.pop() else { return };
         engine.chains.truncate(at);
         engine.boxes.truncate(at);
+        engine.borders.truncate(at);
         engine.served.truncate(at);
         engine.held.truncate(at);
         let parent_key = gone.parent.and_then(|p| engine.nodes.get(p)).map_or(0, |n| n.key);

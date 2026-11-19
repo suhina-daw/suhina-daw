@@ -194,6 +194,10 @@ pub struct StyleCache {
     /// identity's number, and with `:empty`, whether it has children.
     runs: std::collections::HashMap<(Option<u32>, u32, bool), u32>,
     computed: usize,
+    /// The [`record_matches`] run the styles kept were worked out under (0: none), so that a
+    /// run starts from styles worked out while it was on, not from kept ones that recorded
+    /// nothing.
+    recording: u64,
 }
 
 impl StyleCache {
@@ -325,7 +329,11 @@ pub fn compute_shared(
     let elements = tree.elements();
     // A tree whose new places might not fit starts the cache again before any is numbered, so
     // the numbers this call hands out stay the places they were given for.
-    if cache.inputs != Some((viewport, sheets_key)) || cache.places.len() + elements.len() > MAX_CACHED_STYLES {
+    let recording = RECORDING.with(std::cell::Cell::get);
+    if cache.inputs != Some((viewport, sheets_key))
+        || cache.places.len() + elements.len() > MAX_CACHED_STYLES
+        || (recording != 0 && cache.recording != recording)
+    {
         let structure = Structure::of(sheets);
         cache.clear();
         cache.structure = structure;
@@ -334,6 +342,7 @@ pub fn compute_shared(
             selector.ids(&mut cache.tested_ids);
         }
         cache.inputs = Some((viewport, sheets_key));
+        cache.recording = recording;
     }
     cache.computed = 0;
     let structure = cache.structure;
@@ -493,13 +502,27 @@ thread_local! {
     /// The rules matched on this thread since [`record_matches`] was turned on, by their sheet's
     /// [`Sheet::id`] and their index in it; `None` while it is off.
     static MATCHES: std::cell::RefCell<Option<BTreeSet<(u64, usize)>>> = const { std::cell::RefCell::new(None) };
+    /// The number of the current recording run on this thread, 0 while it is off.
+    static RECORDING: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// How many runs were started on this thread.
+    static RUNS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// Starts (`true`) or stops recording, on this thread, which rules match any element styled:
 /// for listing a theme's rules that never matched (#1582). Turning it on starts the record
-/// empty. Every style the cascade works out counts, whichever host asked for it.
+/// empty. Every style the cascade works out counts, whichever host asked for it; a
+/// [`StyleCache`] holding styles from before the run starts again, so that its hits are recorded.
 pub fn record_matches(on: bool) {
     MATCHES.with(|matches| *matches.borrow_mut() = on.then(BTreeSet::new));
+    let run = if on {
+        RUNS.with(|runs| {
+            runs.set(runs.get() + 1);
+            runs.get()
+        })
+    } else {
+        0
+    };
+    RECORDING.with(|recording| recording.set(run));
 }
 
 /// The rules matched on this thread since [`record_matches`] was turned on, by their sheet's
@@ -864,8 +887,10 @@ fn cascade_variables<'a>(
     // stand for it) is invalid at computed-value time: it takes its initial value, and the
     // variables that read it are resolved again with that value.
     let mut dropped = false;
+    let mut fell_back: Vec<&str> = Vec::new();
     for registered in sheets.iter().flat_map(|applied| applied.sheet.properties.iter()) {
         if variables.contains_key(&registered.name) && !resolved.contains_key(&registered.name) {
+            fell_back.push(&registered.name);
             match &registered.initial {
                 Some(initial) => variables.insert(registered.name.clone(), initial.clone()),
                 None => variables.remove(&registered.name),
@@ -875,6 +900,13 @@ fn cascade_variables<'a>(
     }
     if dropped {
         resolved = crate::variables::resolve(&variables)?;
+        // A winner that reads a fallen-back property resolves now: it was dropped only for
+        // that, so its value holds. The registered properties themselves keep their reason.
+        if let Some(dropped) = dropped_winners.as_deref_mut() {
+            dropped.retain(|name, _| {
+                !own.contains(&name.as_str()) || fell_back.contains(&name.as_str()) || !resolved.contains_key(name)
+            });
+        }
     }
     // A registered property's value that does not match its syntax is invalid at
     // computed-value time: the property takes its initial value.

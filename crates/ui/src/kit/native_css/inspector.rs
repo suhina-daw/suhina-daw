@@ -7,10 +7,10 @@
 //! before the next one begins; the app itself never calls it.
 
 use egui::{LayerId, Rect};
-use suhina_style::cascade;
 pub use suhina_style::cascade::{ExplainedDeclaration, Layer, MatchedRule, Outcome};
+use suhina_style::{cascade, property::Property, value::Value};
 
-use super::{ENGINE, name_of, native};
+use super::{ENGINE, Engine, name_of, native};
 
 /// An element of the last frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -25,7 +25,8 @@ pub struct FrameElement {
     pub states: Vec<String>,
     /// The element it is in, by its index in [`frame_elements`]; `None` at the top.
     pub parent: Option<usize>,
-    /// Its padding box as far as it shows, and the layer it was painted on; `None` for an element
+    /// Its border box as far as it shows (and as far as the boxes of the elements around it that
+    /// hide their overflow let it show), and the layer it was painted on; `None` for an element
     /// that painted nothing of its own and gave no box.
     pub painted: Option<(Rect, LayerId)>,
 }
@@ -89,11 +90,36 @@ pub fn frame_elements() -> Vec<FrameElement> {
                     attributes: element.attributes.clone(),
                     states: element.states.iter().filter(|state| *state != "enabled").cloned().collect(),
                     parent: node.parent,
-                    painted: engine.boxes.get(at).copied().flatten(),
+                    painted: painted_box(&engine, at),
                 })
             })
             .collect()
     })
+}
+
+/// The box the element at `at` painted: its border box, cut by the padding box of each element
+/// around it that hides its overflow, on the same layer (the cut `clip_contents` makes to what is
+/// painted). The stored boxes stay as they are: shadows and outlines read them.
+fn painted_box(engine: &Engine, at: usize) -> Option<(Rect, LayerId)> {
+    let (padding, layer) = engine.boxes.get(at).copied().flatten()?;
+    let mut rect = engine.borders.get(at).copied().flatten().unwrap_or(padding);
+    let mut parent = engine.nodes.get(at)?.parent;
+    while let Some(up) = parent {
+        let hides = engine
+            .served
+            .get(up)
+            .cloned()
+            .flatten()
+            .is_some_and(|style| matches!(style.get(Property::Overflow), Value::Keyword("hidden" | "clip")));
+        if hides
+            && let Some(Some((clip, clip_layer))) = engine.boxes.get(up).copied()
+            && clip_layer == layer
+        {
+            rect = rect.intersect(clip);
+        }
+        parent = engine.nodes.get(up)?.parent;
+    }
+    Some((rect, layer))
 }
 
 /// Why the element at `index` of [`frame_elements`] looks as it does.

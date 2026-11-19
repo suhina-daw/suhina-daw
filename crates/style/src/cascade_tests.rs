@@ -804,3 +804,36 @@ fn recorded_matches_hold_every_rule_that_matched_any_element_styled() {
     let sources: Vec<_> = sheet.rule_sources().collect();
     assert_eq!(sources, [(1, "knob", vec!["color"]), (2, "slider", vec!["color"]), (3, "#cutoff", vec!["radius"])]);
 }
+
+#[test]
+fn explain_keeps_a_winner_that_reads_a_fallen_back_property_applied() {
+    // `--base` is invalid and takes its initial value; `--derived` reads it and resolves with it.
+    let sheet = Sheet::parse(
+        "@property --base { syntax: \"<length>\"; initial-value: 2px; }\n\
+         knob { --base: var(--missing); --derived: var(--base); }",
+    )
+    .unwrap();
+    let sheets = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    let (style, rules) = explain(&tree(), 2, viewport(1138.0), &sheets).unwrap();
+    assert_eq!(style.variable("--derived"), Some("2px"));
+    assert!(matches!(outcomes(&rules, "--base").as_slice(), [(2, Outcome::Dropped(_))]), "{rules:?}");
+    assert_eq!(outcomes(&rules, "--derived"), [(2, Outcome::Applied("2px".into()))]);
+}
+
+#[test]
+fn a_cache_that_held_styles_before_recording_starts_is_worked_out_again() {
+    let sheet = Sheet::parse("knob { color: red; }\nslider { color: blue; }").unwrap();
+    let sheets = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    let mut cache = StyleCache::default();
+    compute_shared(&tree(), viewport(1138.0), &sheets, 1, &mut cache).unwrap();
+    record_matches(true);
+    compute_shared(&tree(), viewport(1138.0), &sheets, 1, &mut cache).unwrap();
+    let first = matched_rules();
+    // A second run on the same cache starts empty and records again.
+    record_matches(true);
+    compute_shared(&tree(), viewport(1138.0), &sheets, 1, &mut cache).unwrap();
+    let second = matched_rules();
+    record_matches(false);
+    assert_eq!(first, BTreeSet::from([(sheet.id(), 0)]));
+    assert_eq!(second, first);
+}
