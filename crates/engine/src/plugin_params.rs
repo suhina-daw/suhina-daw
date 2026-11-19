@@ -6,7 +6,7 @@
 //! parameter events at their frames in the block a plug-in slot hands over (ADR 0006,
 //! decision 3), so automation is sample-accurate where the format allows.
 //!
-//! Each block a slot plans its events once ([`SlotParams::plan`]), before any of the block
+//! Each block a slot plans its events once ([`SlotParams::plan_delayed`]), before any of the block
 //! runs, and hands each span it runs the ones that fall in it ([`SlotParams::span`]). Nothing
 //! here allocates after the graph is built.
 //!
