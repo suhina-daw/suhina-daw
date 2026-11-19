@@ -1172,7 +1172,7 @@ impl Rack {
             if (reopen || fall_back)
                 && let Err(e) = self.open_editor(key)
             {
-                notices.push(format!("the editor did not open again: {}", e.0));
+                notices.push(format!("the editor did not open again: {}", e.message));
             }
             // An open or close asked meanwhile, now that the control half is back.
             let wanted = self.instances.get_mut(&key).and_then(|i| i.editor_wanted.take());
@@ -1184,7 +1184,7 @@ impl Rack {
                 _ => Ok(()),
             };
             if let Err(e) = result {
-                notices.push(e.0);
+                notices.push(e.message);
             }
         }
         self.pump_texts();
@@ -1534,7 +1534,7 @@ impl Rack {
         if changed {
             player.set_plugin_info(self.slot_info());
             if let Err(e) = player.update(project) {
-                notices.push(format!("plug-ins: {}", e.0));
+                notices.push(format!("plug-ins: {}", e.message));
             }
         }
         notices
@@ -1789,7 +1789,7 @@ impl Rack {
                     instance.counts = Some(hosted.counts());
                     match player.send_plugin(started.key, Box::new(hosted)) {
                         Ok(()) => instance.status = PluginStatus::Running,
-                        Err(e) => instance.status = PluginStatus::Failed(e.0),
+                        Err(e) => instance.status = PluginStatus::Failed(e.message),
                     }
                     // The host found it supports ARA where the catalog did not say so: it is
                     // loaded again with its track's clips ([`Rack::follow_clips`]).
@@ -1822,7 +1822,7 @@ impl Rack {
         }
         for key in reopen {
             if let Err(e) = self.open_editor(key) {
-                notices.push(format!("the editor did not open again: {}", e.0));
+                notices.push(format!("the editor did not open again: {}", e.message));
             }
         }
         changed

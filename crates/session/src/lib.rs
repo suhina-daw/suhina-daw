@@ -90,7 +90,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use suhina_engine::Quantization;
-use suhina_model::Project;
+use suhina_model::{Project, TrackId};
 
 pub use ara::ClipNotes;
 pub use audio::{AudioSystem, InputChoice, LiveOutput, OutputChoice, OutputInfo, audio_commands};
@@ -405,7 +405,7 @@ impl Session {
             }
         }
         if changed && let Err(e) = self.update_player(None) {
-            suhina_plugins::trace!("default track input: the playing engine could not follow: {}", e.0);
+            suhina_plugins::trace!("default track input: the playing engine could not follow: {}", e.message);
         }
     }
 

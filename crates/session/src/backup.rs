@@ -581,7 +581,7 @@ impl Projects {
 
     fn back_up_noting(&mut self, id: ProjectId) {
         if let Err(e) = self.back_up(id) {
-            self.backups.note(e.0);
+            self.backups.note(e.message);
         }
     }
 

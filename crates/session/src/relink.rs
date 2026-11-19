@@ -355,7 +355,7 @@ mod copy_name_tests {
         std::fs::write(&a, [1u8; 100]).unwrap_or_else(|e| panic!("{e}"));
         std::fs::write(&b, [2u8; 100]).unwrap_or_else(|e| panic!("{e}"));
         std::fs::write(into.join("Kick.wav"), [1u8; 100]).unwrap_or_else(|e| panic!("{e}"));
-        let name = |file: &Path| copy_name(&into, file).unwrap_or_else(|e| panic!("{}", e.0));
+        let name = |file: &Path| copy_name(&into, file).unwrap_or_else(|e| panic!("{}", e.message));
         assert_eq!(name(&a), into.join("Kick.wav"), "the same bytes: the copy there is reused");
         assert_eq!(name(&b), into.join("Kick (2).wav"), "other bytes: a name of its own");
         let _ = std::fs::remove_dir_all(&dir);

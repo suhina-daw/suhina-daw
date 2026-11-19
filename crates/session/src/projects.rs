@@ -919,7 +919,7 @@ impl Projects {
                     said.extend(notice);
                     said
                 }
-                Err(e) => vec![e.0],
+                Err(e) => vec![e.message],
             };
         }
         if info.fallback { self.return_to_chosen() } else { Vec::new() }
@@ -937,7 +937,7 @@ impl Projects {
             return Vec::new();
         }
         if let Err(e) = self.reopen_output() {
-            return vec![e.0];
+            return vec![e.message];
         }
         // Gone again meanwhile: it plays in place of it again, and the next look tries again.
         let now = self.session_mut(None).ok().and_then(|s| s.player()).and_then(crate::Player::output_info);

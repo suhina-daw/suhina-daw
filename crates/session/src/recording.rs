@@ -480,7 +480,7 @@ impl Session {
         for index in done.into_iter().rev() {
             let take = self.live.recording.takes.remove(index);
             if let Err(e) = self.commit_take(take, now_clock) {
-                self.live.recording.notices.push(e.0);
+                self.live.recording.notices.push(e.message);
             }
         }
         if self.live.recording.takes.is_empty() && self.live.recording.engine_on {
