@@ -8,9 +8,14 @@ name: CI
 # merge_group: the merge queue (CONTRIBUTING.md › Merging many pull requests) tests its
 # temporary branch, main with the queued pull requests merged onto it, with the same jobs, so the
 # `ci` check a ruleset requires reports there too. Jobs that need a pull request skip.
+#
+# Pull requests merge into the repository's default branch: `next` once it is the default, main
+# until then (docs/releasing.md › The next branch). A push to the default branch runs every job and
+# saves the caches; a push to main once `next` is the default is the nightly moving main to a commit
+# `next` already ran, so it builds nothing.
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
   merge_group:
   workflow_dispatch:
@@ -26,7 +31,7 @@ permissions:
 # of commits already superseded (nine jobs each, #1538). The generated-docs commit that follows a
 # merge says [skip ci] (docs-generated.yml) and starts no run.
 concurrency:
-  group: ci-${{ github.event_name == 'push' && 'main' || github.ref }}
+  group: ci-${{ github.event_name == 'push' && format('push-{0}', github.ref_name) || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
@@ -55,7 +60,13 @@ jobs:
             ${{ github.event_name == 'pull_request' && 'HEAD^1'
               || github.event_name == 'merge_group' && github.event.merge_group.base_sha
               || github.event.before }}
+          # A push to a branch that is not the default one: main moved to a commit of `next`.
+          PROMOTED: ${{ github.event_name == 'push' && github.ref_name != github.event.repository.default_branch }}
         run: |
+          if [ "$PROMOTED" = true ]; then
+            printf 'code=false\npack=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
             printf 'code=true\npack=true\n' >> "$GITHUB_OUTPUT"
             exit 0
@@ -198,7 +209,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           prefix-key: v1-rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -261,7 +272,7 @@ jobs:
       # main (the other two would only race it to the same key).
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' && matrix.partition == 1 }}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch && matrix.partition == 1 }}
       - name: Install cargo-nextest
         shell: bash
         run: scripts/install_nextest.sh
@@ -313,7 +324,7 @@ jobs:
       # Only main saves, as in the jobs above.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
       - name: Install cargo-nextest
         run: scripts/install_nextest.sh
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature

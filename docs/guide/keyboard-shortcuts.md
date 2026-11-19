@@ -3,7 +3,7 @@ description: User guide to the keyboard shortcuts, one entry per action with its
 read_when: user guide, keyboard shortcuts, what does this key do, list of keys, every shortcut explained, keybindings, hotkeys, action ids, which action a key runs, back up keys, share keymap, keymap.json, rebind a key, keys for agents
 type: howto
 status: current
-last_verified: 2026-11-17
+last_verified: 2026-11-18
 covers:
   - crates/ui/src/settings/keymap.rs
   - crates/ui/src/settings/settings_view.rs
@@ -185,9 +185,9 @@ Settings go on working. Click in the Arrangement or the Launcher to give the key
 | Shift+Up | `pianoRoll.octaveUp` | Piano roll | Moves the selected notes one octave (12 semitones) higher. |
 | Shift+Down | `pianoRoll.octaveDown` | Piano roll | Moves the selected notes one octave lower. |
 | Shift+Left | `pianoRoll.shorter` | Piano roll | Makes the selected notes one grid step shorter. A note never gets shorter than one step. |
-| Shift+Right | `pianoRoll.longer` | Piano roll | Takes each selected note's end to the next grid line, or to the start of the next note of its key when that comes first (unless stacked notes are allowed). |
+| Shift+Right | `pianoRoll.longer` | Piano roll | Takes each selected note's end to the next grid line, or to the start of the next selected note of its key when that comes first (unless stacked notes are allowed). A note that is not selected does not stop it: the note under it is deleted or cut once the selection is let go, as the Covered notes setting says. |
 | Alt+Shift+Left | `pianoRoll.shorterFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) shorter, off the grid. |
-| Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next note of their key unless stacked notes are allowed. |
+| Alt+Shift+Right | `pianoRoll.longerFine` | Piano roll | Makes the selected notes a fine step (a 1/128 note) longer, off the grid, stopping at the next selected note of their key unless stacked notes are allowed. |
 | Ctrl+Right | `pianoRoll.selectNextOnKey` | Piano roll | Selects the next note on each selected note's key, without moving any note. A key with no later note keeps its note selected, so a selected chord walks along its keys. With nothing selected it selects the clip's first note. |
 | Ctrl+Left | `pianoRoll.selectPreviousOnKey` | Piano roll | Selects the previous note on each selected note's key. With nothing selected it selects the clip's last note. |
 | Ctrl+Up | `pianoRoll.selectNextNote` | Piano roll | Selects the clip's next note, one note at a time: in time order, and among notes that start together from the lowest key up. From a chord it takes the chord's lowest note. |

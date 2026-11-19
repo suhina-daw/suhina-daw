@@ -517,6 +517,8 @@ pub struct Renderer {
     implicit_tones: bool,
     /// The frame of the current block being rendered, for events sent to device chains.
     block_frame: usize,
+    /// The song as each recent block started, read by plug-ins that hear their sound late.
+    songs: plugin::SongHistory,
     /// Rendering offline: plug-ins are waited for without a real-time deadline (ADR 0006).
     offline: bool,
     /// The last frame written, and the step a new graph made from it, eased away over
@@ -757,6 +759,7 @@ impl Renderer {
             metronome: metronome::Metronome::new(sample_rate),
             implicit_tones: true,
             block_frame: 0,
+            songs: plugin::SongHistory::new(sample_rate),
             offline: false,
             declick: Declick::default(),
             render_lead: None,
@@ -1302,8 +1305,9 @@ impl Renderer {
                 (seconds(start), seconds(end))
             }),
         };
+        self.songs.record(song, frames);
         for chain in &mut self.graph.chains {
-            chain.transport(&song);
+            chain.transport(&self.songs);
             chain.automate(at, time, frames);
             chain.automate_mix(time, frames, self.transport.running);
         }

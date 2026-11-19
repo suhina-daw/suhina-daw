@@ -749,10 +749,12 @@ impl PianoRollState {
                 for &index in &acting {
                     let Some(note) = clip.notes.get(index) else { continue };
                     let mut end = key_step_end(note, grid, longer);
-                    // With stacked notes off a longer note stops at the next note of its key,
-                    // rather than running over it: the keys never stack notes.
+                    // With stacked notes off a longer note stops at the next selected note of its
+                    // key, so the selected notes never run over each other. A note that is not
+                    // selected does not stop it: that one makes room once the selection is let go
+                    // (Covered notes), as after a drag.
                     if longer && self.notes_replace {
-                        end = end.min(next_start_of_key(&clip.notes, note).unwrap_or(f64::INFINITY));
+                        end = end.min(next_start_of_key(&clip.notes, &acting, note).unwrap_or(f64::INFINITY));
                     }
                     if (end - note.time - note.duration).abs() > EPSILON && end > note.time + EPSILON {
                         named.push(index);
@@ -1031,7 +1033,8 @@ impl PianoRollState {
 }
 
 /// Where a grid key leaves the end of `note`. Longer: the next grid line, over the next note of its
-/// key too (with stacked notes off, the key stops at that note instead: [`next_start_of_key`]). Shorter:
+/// key too (with stacked notes off, the key stops at the next selected note instead:
+/// [`next_start_of_key`]; an unselected one makes room once the selection is let go). Shorter:
 /// the previous grid line, never less than one step from its start. Off the grid, a whole step
 /// either way.
 pub(super) fn key_step_end(note: &Note, grid: TimelineGrid, longer: bool) -> f64 {
@@ -1044,9 +1047,15 @@ pub(super) fn key_step_end(note: &Note, grid: TimelineGrid, longer: bool) -> f64
     }
 }
 
-/// Where the next note of `note`'s key starts: the earliest note on that key that starts after it.
-pub(super) fn next_start_of_key(notes: &[Note], note: &Note) -> Option<f64> {
-    notes.iter().filter(|n| n.key == note.key && n.time > note.time + EPSILON).map(|n| n.time).reduce(f64::min)
+/// Where the next note of `among` on `note`'s key starts: the earliest of those notes on that key
+/// that starts after it.
+pub(super) fn next_start_of_key(notes: &[Note], among: &BTreeSet<usize>, note: &Note) -> Option<f64> {
+    among
+        .iter()
+        .filter_map(|i| notes.get(*i))
+        .filter(|n| n.key == note.key && n.time > note.time + EPSILON)
+        .map(|n| n.time)
+        .reduce(f64::min)
 }
 
 /// The `note.add` params for `notes`.

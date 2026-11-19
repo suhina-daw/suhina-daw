@@ -414,6 +414,8 @@ pub(crate) fn grid_over(painter: &egui::Painter, rect: Rect, lines: &[(f32, bool
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
     let arrangement = crate::kit::element::ARRANGEMENT.enter();
     read_surfaces();
+    // Clips' parts are read again each frame: the sheet or the clips may have changed.
+    state.clip_parts.borrow_mut().clear();
     let mut styled_ui = arrangement.ui(ui);
     let ui = &mut *styled_ui;
 
@@ -1371,6 +1373,7 @@ fn show_lanes(
                 grid_over(&lanes_painter, lit, &lane_grid, fill);
             }
         }
+        state.in_lane = true;
         // A click on an empty spot of a lane clears the clip selection (arrangement-editing ›
         // Selecting clips). A double-click on an empty spot of a lane that holds clips makes a
         // one-bar clip there in the grid cell under the pointer (Alt: where the pointer is) — MIDI
@@ -1595,6 +1598,7 @@ fn show_lanes(
         // The row's scope ends with its clips: a theme's `overflow: hidden` on it must not cut the
         // header, the take lanes or the automation lanes, which are not inside it.
         drop(lane_el);
+        state.in_lane = false;
         let header = Rect::from_x_y_ranges(headers, row.time.y_range());
         let nest = Nest { places: &places, groups: &groups };
         let order = HeaderOrder { children: shown.children, tracks: &track_order };
