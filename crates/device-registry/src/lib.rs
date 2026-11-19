@@ -69,7 +69,13 @@ enum LayoutSource {
 }
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const ENTRIES: [Entry; 17] = [
+pub const ENTRIES: [Entry; 18] = [
+    Entry {
+        info: &suhina_device_instrument::INFO,
+        make: |rate| boxed(suhina_device_instrument::Instrument::with_rate(rate)),
+        layout: LayoutSource::Rust(suhina_device_instrument::panel::layout),
+        file: None,
+    },
     Entry {
         info: &suhina_device_fm_synth::INFO,
         make: |rate| boxed(suhina_device_fm_synth::FmSynth::with_rate(rate)),
@@ -251,7 +257,13 @@ pub fn layout_files() -> impl Iterator<Item = (&'static str, &'static str)> {
 
 /// What a device just added to a project starts with beside its parameters' defaults.
 pub fn new_device_params(id: &str) -> &'static [(&'static str, f64)] {
-    if id == suhina_device_fm_synth::INFO.id { &suhina_device_fm_synth::params::NEW_DEVICE } else { &[] }
+    if id == suhina_device_fm_synth::INFO.id {
+        &suhina_device_fm_synth::params::NEW_DEVICE
+    } else if id == suhina_device_instrument::INFO.id {
+        &[("model_revision", suhina_device_instrument::MODEL_REVISION as f64)]
+    } else {
+        &[]
+    }
 }
 
 /// New values for a device's randomizer from its current `values`, in parameter order: which

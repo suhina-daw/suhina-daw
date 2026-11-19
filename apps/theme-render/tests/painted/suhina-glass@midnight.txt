@@ -27,6 +27,7 @@ expanded-reverb suhina-glass@midnight 82e2ce9c7679e963
 expanded-vinyl-distortion suhina-glass@midnight ff5fa579e09b4c55
 export-dialog suhina-glass@midnight 09beb5cf42285595
 grid-menu suhina-glass@midnight c7f0f1c1ac2b83fc
+instrument-instrument suhina-glass@midnight 86865b61d01a96f0
 instrument-sampler suhina-glass@midnight 9ab142451c5bd72e
 launcher suhina-glass@midnight 509a7c8485e297c3
 launcher-hover suhina-glass@midnight 673fd296634b8024
@@ -39,7 +40,7 @@ new-theme-dialog suhina-glass@midnight 143e279ddf0e8f71
 piano-roll suhina-glass@midnight b781021a6093d51e
 project-dialog suhina-glass@midnight 9b50b156fe7cd398
 quantize-menu suhina-glass@midnight d868cf8be0c49002
-quick-add suhina-glass@midnight 5eb8b9fad9002108
+quick-add suhina-glass@midnight 7eb3216a0b60a0f1
 sample-map suhina-glass@midnight 53eba8de19e63db5
 save-dialog suhina-glass@midnight 85b9fe9bd05fef50
 settings suhina-glass@midnight 9a6360330d3fad95

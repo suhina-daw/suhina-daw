@@ -210,6 +210,13 @@ recapture its current level on every request, including while already releasing.
 release captures its own current level at the same event. AMP completion stops the voice before
 filter/pitch processing for that frame; note reuse with Retrigger off preserves envelope state.
 
+The sustain pedal (CC64, down at 0.5 or above) defers a gate's note-off on its own voice. A later
+note with the same key owns a separate voice: pedal-up releases the old sustained voices without
+releasing the newly held note. Only deferred releases are applied on pedal-up, so an already
+releasing AMP/filter tail is not restarted. A reused or stolen voice drops its old pending
+release. One-shot playback still ignores note-off and runs to its boundary. All Notes Off and
+reset clear pedal state; All Notes Off releases every voice regardless of the playback mode.
+
 A dedicated filter ADSR drives Env amount in octaves independently of AMP.
 Cutoff < Vel adds octaves proportional to note velocity. Cutoff < Key adds the
 signed amount in octaves per octave above the root key. All modulation amounts

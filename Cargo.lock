@@ -5532,6 +5532,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-device-instrument"
+version = "0.0.1"
+dependencies = [
+ "suhina-device-api",
+ "suhina-device-sdk",
+ "suhina-dsp",
+]
+
+[[package]]
 name = "suhina-device-limiter"
 version = "0.0.1"
 dependencies = [
@@ -5597,6 +5606,7 @@ dependencies = [
  "suhina-device-dj-eq",
  "suhina-device-eq",
  "suhina-device-fm-synth",
+ "suhina-device-instrument",
  "suhina-device-limiter",
  "suhina-device-multiband",
  "suhina-device-nam-amp-modeler",

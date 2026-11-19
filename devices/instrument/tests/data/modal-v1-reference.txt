@@ -1,0 +1,19 @@
+# CC0-1.0: self-authored analytical reference, no recorded or third-party audio.
+# Frame and left-channel amplitude; modal revision 1 defaults, key60, velocity0.8, 48000Hz.
+# Computed directly as the normalized sum of damped sine modes described by docs/spec/instrument.md.
+0 0
+1 2.23249063424e-05
+2 8.45661315521e-05
+3 0.000218751871532
+7 0.00164916904188
+23 0.0182478020205
+63 0.00991444637814
+95 -0.000694471534403
+96 -0.000342785665648
+127 -0.0273332308814
+255 0.0142317886256
+511 -0.0546244484131
+1023 0.00724591508855
+2047 0.0297005118575
+4095 0.010714813974
+8191 -0.0242170680552

@@ -27,6 +27,7 @@ expanded-reverb catppuccin-mocha 8cb4273f2656d797
 expanded-vinyl-distortion catppuccin-mocha 295b0199e959a1fe
 export-dialog catppuccin-mocha c25236570d2476d1
 grid-menu catppuccin-mocha eddb6fc65576e714
+instrument-instrument catppuccin-mocha 1f3ba849414076ee
 instrument-sampler catppuccin-mocha 14650c0510b5678d
 launcher catppuccin-mocha 77002c157fb028f0
 launcher-hover catppuccin-mocha 4b4383e13df94ba8
@@ -39,7 +40,7 @@ new-theme-dialog catppuccin-mocha f28a9dada759476b
 piano-roll catppuccin-mocha f187314475f99e97
 project-dialog catppuccin-mocha 8d9ddba85e23bdac
 quantize-menu catppuccin-mocha ea4f1af20f30a77f
-quick-add catppuccin-mocha e7631983ca267d80
+quick-add catppuccin-mocha aa7feb4137fc2387
 sample-map catppuccin-mocha e08654d5c8c91140
 save-dialog catppuccin-mocha 5485c36d522a9aef
 settings catppuccin-mocha d16d05fe9bd9bec5

@@ -27,6 +27,7 @@ expanded-reverb nord 5599b1813dfe4b74
 expanded-vinyl-distortion nord 1932c0fdf7f20365
 export-dialog nord 95a9af335ff90085
 grid-menu nord c7758ac8b737a623
+instrument-instrument nord 511be10e0f5352c3
 instrument-sampler nord 24f595f1cd4ae3fc
 launcher nord ab7c96ba45c9b6ed
 launcher-hover nord 2a05de8d42670d89
@@ -39,7 +40,7 @@ new-theme-dialog nord a582c4af1a2ec3e3
 piano-roll nord 647137a40c94b3a1
 project-dialog nord 48f5157dfe9d010b
 quantize-menu nord 3bcc040ec2f59bcd
-quick-add nord 3da0880fb546dc57
+quick-add nord 4c829f03035bbd84
 sample-map nord 7000377a1d7e7407
 save-dialog nord cc6bde2de98185d0
 settings nord 8c70d03eea2b6e98

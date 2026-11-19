@@ -564,7 +564,7 @@ impl Device {
     pub fn sample_file(&self) -> Option<&str> {
         let bytes = if self.kind == DeviceKind::Sd {
             &self.extensions.0.iter().find(|e| e.format == "suhina" && e.key == "sample_reference")?.data
-        } else if matches!(&self.kind, DeviceKind::Builtin(id) if id == "sampler") {
+        } else if matches!(&self.kind, DeviceKind::Builtin(id) if matches!(id.as_str(), "sampler" | "instrument")) {
             self.state.as_deref()?
         } else {
             return None;
