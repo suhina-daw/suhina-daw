@@ -526,6 +526,9 @@ impl ClapPlugin {
             .ok()
             .flatten()
             .ok_or("its audio thread failed")?;
+        // This activation satisfies requests from the old audio run, including shutdown.
+        // Clear them before activation so a request from the new run is still serviced.
+        self.instance.access_shared_handler(|s| s.restart_requested.store(false, Ordering::Release));
         self.instance.deactivate(stopped);
         let stopped = self.instance.activate(|_, _| (), self.configuration).map_err(|e| e.to_string())?;
         // What it said while activating is what is read next.
@@ -1121,6 +1124,39 @@ fn push_event(buffer: &mut EventBuffer, event: &Event) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn reactivation_satisfies_old_restart_requests_without_discarding_new_audio() {
+        use suhina_ipc::{Link, Outcome};
+
+        for reconfigure in [false, true] {
+            let timeout = Duration::from_secs(10);
+            let mut link = Link::create(2, 128).unwrap();
+            let served = Served::open(&link.address()).unwrap();
+            link.host_opened();
+            let mut plugin = ClapPlugin::load("test:clap-delay", u32::MAX - 10, served, 48_000.0).unwrap();
+            plugin.set_param(0, 128.0).unwrap();
+            let mut output = [0.0; 256];
+            assert_eq!(link.process(&[0.0; 256], &mut output, timeout), Outcome::Done);
+            // The block acknowledgement proves the fixture has requested a restart.
+            // The test controls main-thread servicing, so it cannot run before reset.
+            assert!(plugin.instance.access_shared_handler(|s| s.restart_requested.load(Ordering::Acquire)));
+            let latency = if reconfigure { plugin.reconfigure(96_000.0) } else { plugin.reset_audio() };
+            assert_eq!(latency.unwrap(), 128);
+            assert_eq!(link.process(&[0.5; 256], &mut output, timeout), Outcome::Done);
+            assert_eq!(output, [0.0; 256]);
+            assert_eq!(plugin.latency_changed(), None);
+            assert_eq!(link.process(&[0.0; 256], &mut output, timeout), Outcome::Done);
+            assert_eq!(output, [0.5; 256], "reconfigure={reconfigure}: servicing an old request lost new audio");
+
+            // A later request must still be serviced on the retained instance.
+            plugin.set_param(0, 64.0).unwrap();
+            assert_eq!(link.process(&[0.0; 256], &mut output, timeout), Outcome::Done);
+            assert_eq!(plugin.latency_changed(), Some(64));
+            assert_eq!(plugin.latency_changed(), None);
+        }
+    }
 
     #[test]
     fn ports_keep_their_layout_and_find_the_main_one() {

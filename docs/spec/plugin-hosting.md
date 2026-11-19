@@ -737,6 +737,10 @@ but processing is reactivated so old voices and effect buffers cannot replay on
 return. The instrument's host-side stop envelope is set directly to silence;
 the output already supplied the departure fade. A new Play or live note opens
 the envelope again. Pending parameter edits survive; old note events do not.
+Reactivation satisfies CLAP restart requests made by the previous processing run.
+After joining its audio thread, the host consumes those requests before deactivation
+and activation. A request made by the new activation or processing run remains pending.
+Servicing latency changes after reset must not discard audio buffered since the reset.
 The tab switch does not wait for this worker. Returning before its reply keeps the
 project silent on the retained device; the existing control poll resumes it only
 after successful completion. Completion wakes the existing control window once,
