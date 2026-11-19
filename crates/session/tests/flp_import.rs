@@ -268,7 +268,7 @@ fn keyed_project() -> Project {
     assert_eq!(detector.inputs.len(), 1);
     detector.kind = DeviceKind::Builtin("compressor".into());
     detector.state = None;
-    detector.params = [("threshold", -40.), ("ratio", 20.), ("knee", 0.), ("attack", 0.1)]
+    detector.params = [("threshold", -40.), ("ratio", 20.), ("knee", 0.), ("attack", 0.0001)]
         .into_iter()
         .map(|(id, value)| DeviceParam::new(id, value))
         .collect();
@@ -281,8 +281,11 @@ fn a_sidechain_only_source_follows_imported_fader_automation_and_fader_edits() {
     let mut project = keyed_project();
     let mut pool = AudioPool::new();
     for (name, level) in [("key.wav", 0.5), ("pad.wav", 0.001)] {
-        pool.files
-            .insert(name.into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: vec![level; 3200] }));
+        // A 500 Hz key survives the compressor's detector high-pass; a DC key would
+        // exercise only the transient when its fader changes. The attack above is in seconds.
+        let samples =
+            (0..3200).map(|frame| if name == "key.wav" && frame % 16 >= 8 { -level } else { level }).collect();
+        pool.files.insert(name.into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples }));
     }
     let out = render(&project, &pool, 3200);
     let quiet_key = peak(&out, 0.04, 0.08);

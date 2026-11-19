@@ -112,7 +112,8 @@ fn fl_variable_path(file: &str, folder: &Path, trusted: &suhina_media::Trusted) 
     }
     folder.ancestors().take(FL_DATA_DEPTH).find_map(|data| {
         let path = data.join(below).join(rest);
-        if !may_probe(&path) || suhina_media::locate(&path.to_string_lossy(), None, folder, trusted).is_none() {
+        let name = path.to_string_lossy();
+        if !may_probe(&path) || suhina_media::locate(&name, Some(&name), folder, trusted).is_none() {
             return None;
         }
         let plain = !std::fs::symlink_metadata(&path).ok()?.file_type().is_symlink();
@@ -133,7 +134,7 @@ fn relocate_samples(
             return Some(found);
         }
         let stored = Path::new(file);
-        if may_probe(stored) && suhina_media::locate(file, None, folder, trusted).is_some() {
+        if may_probe(stored) && suhina_media::locate(file, Some(file), folder, trusted).is_some() {
             return Some(file.to_owned());
         }
         let relative = if stored.is_absolute() { stored.strip_prefix(folder).ok() } else { Some(stored) };
@@ -178,9 +179,10 @@ fn relocate_samples(
         files.iter().filter_map(|file| resolve(file).map(|path| (file.clone(), path))).collect();
     let missing: Vec<String> = files.into_iter().filter(|f| !resolved.contains_key(f)).collect();
     for (file, candidate) in missing.iter().zip(library(&missing)) {
-        if let Some(candidate) = candidate
-            .filter(|p| p.is_absolute() && suhina_media::locate(&p.to_string_lossy(), None, folder, trusted).is_some())
-        {
+        if let Some(candidate) = candidate.filter(|p| {
+            let name = p.to_string_lossy();
+            p.is_absolute() && suhina_media::locate(&name, Some(&name), folder, trusted).is_some()
+        }) {
             resolved.insert(file.clone(), candidate.to_string_lossy().replace('\\', "/"));
         }
     }
