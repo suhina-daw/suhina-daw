@@ -8,8 +8,6 @@ use std::rc::Rc;
 
 #[test]
 fn native_colour_window_paints_its_dark_background_and_settles_without_input() {
-    let trace = tempfile::NamedTempFile::new().unwrap();
-    suhina_plugins::trace::start(trace.path());
     let ctx = egui::Context::default();
     theme::install(&ctx);
     ctx.set_embed_viewports(false);
@@ -66,7 +64,6 @@ fn native_colour_window_paints_its_dark_background_and_settles_without_input() {
         ctx.run_ui(input, |ui| app.ui(ui)).textures_delta.clear();
     }
     let expected = live("panel-background");
-    let trace = std::fs::read_to_string(trace.path()).unwrap();
     let frames = frames.borrow();
     assert!(frames.len() >= 24);
     for (rect, frame) in frames.iter().rev().take(8) {
@@ -85,7 +82,7 @@ fn native_colour_window_paints_its_dark_background_and_settles_without_input() {
                 egui::Shape::Rect(fill) if fill.fill == expected && fill.rect.contains_rect(*rect)
                     && shape.clip_rect.contains_rect(*rect)
             )),
-            "native client area {rect:?} must paint the theme background {expected:?}; largest fills: {fills:?}; trace: {trace}"
+            "native client area {rect:?} must paint the theme background {expected:?}; largest fills: {fills:?}"
         );
     }
     let last = &frames.last().unwrap().1.shapes;

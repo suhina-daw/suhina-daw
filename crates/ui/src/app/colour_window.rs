@@ -218,16 +218,16 @@ impl App {
                         ),
                     );
                 }
-                let inside = style.paint(ui.painter(), ui.max_rect()).content;
-                if !embedded && suhina_plugins::trace::on() {
-                    let mut fills = Vec::new();
-                    ui.painter().for_each_shape(|shape| {
-                        if let egui::Shape::Rect(fill) = &shape.shape {
-                            fills.push((fill.rect, fill.fill, shape.clip_rect));
-                        }
-                    });
-                    suhina_plugins::trace::state("colour window painted surface", format!("{fills:?}"));
-                }
+                // A base-sheet background is not an authored theme override. Give it to
+                // paint as the native fill too: a detached viewport has no Window frame
+                // beneath this panel, and its renderer clears to transparent.
+                let inside = style
+                    .paint_with(
+                        ui.painter(),
+                        ui.max_rect(),
+                        crate::kit::element::Native { fill: style.background(), ..Default::default() },
+                    )
+                    .content;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
                     let mut styled = style.ui(ui);
                     egui::ScrollArea::vertical().show(&mut styled, |ui| {
