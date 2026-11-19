@@ -308,12 +308,11 @@ frame; event edges are acyclic. Unconnected native event inputs retain the legac
 stream. MIDI value nodes remain legacy global controls. VoiceInput emits key, velocity, gate,
 trigger/release one-frame pulses, bend, pressure and selected controller values. Its appended
 `pitch` output is native per-note pitch in semitones and `timbre` is 0..1 with neutral 0.5;
-the legacy `bend` signal remains separate. Shared channel pressure and native note pressure
+the legacy `bend` signal remains separate and normalized. Shared channel pressure and native note pressure
 retain separate latches; the `pressure` signal is their maximum, so lowering a global control
 does not erase the note's own expression. New identified voices inherit shared controllers
 and bend before applying their atomic note state.
-the existing `bend` output remains normalized channel bend. Explicit
-MidiController, PitchBend and Pressure nodes provide the same channel controls. Sustain defers
+Explicit MidiController, PitchBend and Pressure nodes provide the same channel controls. Sustain defers
 note-offs until controller 64 falls below 0.5; note-on zero means note-off. VelocityRange remembers
 accepted keys so rejected notes cannot lose their corresponding releases. Fixed transpose reuses
 the existing MIDI processor. Event batches are bounded at 256; overflow increments a counter,

@@ -120,8 +120,9 @@ Suhina's routing policies are:
 - Reset-all-controllers resets controls and lifts sustain for the scope without fabricating
   new key presses. The MIDI mode controls are distinct from ordinary controller reset.
 
-The router retains source provenance and timestamp for recording. It emits resolved musical
-events without allocating in the callback. It rejects an entire new note when there is no
+The router retains source provenance and timestamp for recording. Translation itself emits
+resolved musical events without allocating. The existing opt-in MIDI trace runs only on the
+driver thread, outside the audio render callback. The router rejects an entire new note when there is no
 bounded lifetime slot. Overflow recovery must still terminate already accepted notes.
 
 The input worker conservatively retains up to 256 protocol occurrences per physical port;

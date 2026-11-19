@@ -162,6 +162,10 @@ impl MidiSystem for Midi {
             .ok_or_else(|| format!("{name} is not there"))?;
         let sink = Arc::clone(&input);
         let id = port_id(name);
+        let port_name = name.to_owned();
+        // Trace initialization is off the driver callback. Optional diagnostics run on
+        // the MIDI driver's own thread, never on the audio render thread.
+        let tracing = suhina_plugins::trace::on();
         // The live clock starts before the first message, so its first stamp is not at 0.
         let _started = live_now();
         let connection = client
@@ -170,9 +174,31 @@ impl MidiSystem for Midi {
                 &format!("{CLIENT} input"),
                 move |stamp, message, state: &mut PortState| {
                     let time = state.clock.time(stamp, live_now());
+                    let mut emitted = false;
                     state.expression.process(message, &mut |channel, event| {
+                        emitted = true;
+                        if tracing
+                            && !matches!(
+                                event,
+                                LiveEvent::NoteOn { .. }
+                                    | LiveEvent::NoteOff { .. }
+                                    | LiveEvent::Instance {
+                                        event: suhina_device_api::NoteInstanceEvent::On { .. }
+                                            | suhina_device_api::NoteInstanceEvent::Off { .. },
+                                        ..
+                                    }
+                            )
+                        {
+                            suhina_plugins::trace!(
+                                "midi in {port_name}: {message:02x?} read as {:?}",
+                                Some((channel, event))
+                            );
+                        }
                         sink.send_at(LiveSource { port: id, channel }, event, time)
                     });
+                    if tracing && !emitted {
+                        suhina_plugins::trace!("midi in {port_name}: {message:02x?} read as None (no outgoing event)");
+                    }
                 },
                 PortState { clock: StampClock::default(), expression },
             )
