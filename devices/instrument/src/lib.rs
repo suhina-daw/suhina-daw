@@ -307,7 +307,10 @@ impl Device for Instrument {
     }
 
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
-        if self.sample_mix.current() > 0.0 || self.sample_mix.target() > 0.0 {
+        // Hybrid is a live blend: both layers advance even at an endpoint, so opening the
+        // blend reveals a held note at its current phase, never a frozen or restarted source.
+        let hybrid = self.params.get(param::SOURCE) == 2.0;
+        if hybrid || self.sample_mix.current() > 0.0 || self.sample_mix.target() > 0.0 {
             self.sampler.process(context, buffer);
             self.sample_silent = false;
         } else {
@@ -335,7 +338,7 @@ impl Device for Instrument {
             for sample in frame {
                 *sample = (*sample * sample_mix + modal) * gain;
             }
-            if self.modal_mix.current() == 0.0 && self.modal_mix.is_settled() {
+            if !hybrid && self.modal_mix.current() == 0.0 && self.modal_mix.is_settled() {
                 for voice in &mut self.voices {
                     if voice.bank.is_active() || voice.stolen_fade.current() != 0.0 {
                         *voice = Voice::default();
@@ -345,7 +348,7 @@ impl Device for Instrument {
         }
         // Once its fade is inaudible, retire the source instead of freezing a hidden playhead
         // that could reappear on a later Source switch. The callback reset never frees storage.
-        if !self.sample_silent && self.sample_mix.current() == 0.0 && self.sample_mix.is_settled() {
+        if !hybrid && !self.sample_silent && self.sample_mix.current() == 0.0 && self.sample_mix.is_settled() {
             self.sampler.reset();
             self.sampler.event(NoteEvent::PitchBend((self.bend_semitones / 2.0) as f32));
             self.sample_silent = true;
@@ -357,6 +360,9 @@ impl Device for Instrument {
         let event = match event {
             NoteEvent::On { key, velocity } if velocity.is_finite() && velocity <= 0.0 => {
                 NoteEvent::Off { key, velocity: 0.0 }
+            }
+            NoteEvent::On { key, velocity } if velocity.is_finite() => {
+                NoteEvent::On { key, velocity: velocity.min(1.0) }
             }
             NoteEvent::Off { velocity, .. } if !velocity.is_finite() => return,
             _ => event,

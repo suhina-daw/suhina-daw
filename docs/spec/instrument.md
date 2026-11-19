@@ -27,7 +27,11 @@ Quality selects 8 or 16 modes. Modes at or above 0.45 times the sample rate are 
 folded into the audible band.
 Release damps a released key; the sustain pedal holds it. Gain and the Hybrid sample blend are
 smoothed. Changing the body controls or Source affects the next strike, so a held body does
-not jump to another body's state. Inaudible sources do not start new voices.
+not jump to another body's state. Modal mode starts no sample voices; Sample mode starts no
+modal voices. Hybrid starts and advances both layers even at Blend 0% or 100%, so moving Blend
+during a held note reveals its current source position and decay rather than a stale onset.
+Released hidden layers still advance to silence. Switching to a pure Source retires the other
+layer after its fade; switching back requires another note.
 The ordinary pitch wheel bends both sources by two semitones in either direction. Retuning a
 modal voice retains phase; a mode pushed past the anti-alias margin is stopped. Sustain delays
 the sample gate's note-off as well as the modal release. One-shot samples still run to their end.

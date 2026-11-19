@@ -140,3 +140,57 @@ fn retiring_a_hidden_source_preserves_the_current_pitch_wheel_for_the_next_note(
     instrument.process(&ProcessContext::default(), &mut after);
     assert_eq!(after, before);
 }
+
+#[test]
+fn hybrid_blend_endpoints_advance_held_and_released_layers() {
+    for released in [false, true] {
+        let mut hybrid = Instrument::new();
+        let mut sample = Instrument::new();
+        for instrument in [&mut hybrid, &mut sample] {
+            let source: std::sync::Arc<[f32]> = (0..4800).map(|i| (i as f32 * 0.04).sin() * 0.2).collect();
+            instrument.samples().unwrap().load_sample(48000, 1, source);
+            instrument.set_param(param::SOURCE, 1.0);
+            instrument.set_param(param::PLAYBACK, 2.0);
+            instrument.set_param(param::RELEASE, 0.005);
+        }
+        hybrid.set_param(param::SOURCE, 2.0);
+        hybrid.set_param(param::BLEND, 0.0);
+        for instrument in [&mut hybrid, &mut sample] {
+            instrument.reset();
+            instrument.event(NoteEvent::On { key: 60, velocity: 1.0 });
+            let mut silent = [0.0; 4096];
+            instrument.process(&ProcessContext::default(), &mut silent);
+            if released {
+                instrument.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+            }
+            instrument.process(&ProcessContext::default(), &mut silent);
+        }
+        hybrid.set_param(param::BLEND, 1.0);
+        let mut got = [0.0; 4096];
+        let mut reference = [0.0; 4096];
+        hybrid.process(&ProcessContext::default(), &mut got);
+        sample.process(&ProcessContext::default(), &mut reference);
+        assert_eq!(&got[1024..], &reference[1024..], "the blend reveals current sample phase or completed release");
+        assert_eq!(got[1024..].iter().all(|value| *value == 0.0), released);
+    }
+}
+
+#[test]
+fn finite_velocities_are_normalized_before_both_source_layers_receive_them() {
+    for source in [0.0, 1.0, 2.0] {
+        let mut normal = Instrument::new();
+        let mut hostile = Instrument::new();
+        for instrument in [&mut normal, &mut hostile] {
+            instrument.samples().unwrap().load_sample(48000, 1, std::sync::Arc::from(vec![0.2; 4800]));
+            instrument.set_param(param::SOURCE, source);
+            instrument.reset();
+        }
+        normal.event(NoteEvent::On { key: 60, velocity: 1.0 });
+        hostile.event(NoteEvent::On { key: 60, velocity: 10.0 });
+        let mut expected = [0.0; 1024];
+        let mut actual = [0.0; 1024];
+        normal.process(&ProcessContext::default(), &mut expected);
+        hostile.process(&ProcessContext::default(), &mut actual);
+        assert_eq!(actual, expected, "source {source}");
+    }
+}
