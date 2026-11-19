@@ -330,6 +330,17 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
    same `process` in a loop, so an offline render is the test oracle for playback, and the output
    does not depend on the block size.
 
+### Per-note expression (planned)
+
+Live MIDI, clip playback and plug-in input adapters resolve their source addressing to the
+same runtime note identity and expression events in `device-api`. A source/channel router
+owns MPE configuration and controller state; device voices retain identity through sustain
+and release, independently of channel reuse. The engine dispatches events between processing
+spans at their exact frames. Native instruments and exported forms share this contract.
+Saved expression curves belong to model notes, never to runtime voice IDs.
+[ADR 0039](decisions/0039-per-note-expression.md) owns the identity and compatibility decisions;
+[the MPE specification](spec/mpe.md) defines routing, editing and the staged acceptance checks.
+
 ## Devices from the SDK
 
 Built-in devices are native Rust crates; `.sd` devices are data-only graphs that `device-sdk`
