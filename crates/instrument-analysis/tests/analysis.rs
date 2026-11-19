@@ -106,7 +106,8 @@ fn malformed_input_and_cancellation_are_explicit_errors() {
         assert_eq!(analyze(&samples, RATE, channels, 0..1, |_, _| true), Err(Error::InvalidFormat));
     }
     assert_eq!(analyze(&samples, 0, 1, 0..1, |_, _| true), Err(Error::InvalidFormat));
-    assert_eq!(analyze(&samples, RATE, 1, 3..2, |_, _| true), Err(Error::InvalidRange));
+    let reversed = std::ops::Range { start: 3, end: 2 };
+    assert_eq!(analyze(&samples, RATE, 1, reversed, |_, _| true), Err(Error::InvalidRange));
     assert_eq!(analyze(&samples, RATE, 1, 0..usize::MAX, |_, _| true), Err(Error::InvalidRange));
     let mut invalid = samples.clone();
     invalid[15] = f32::INFINITY;

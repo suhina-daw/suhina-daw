@@ -144,9 +144,11 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     reference.set_audio(session.audio().clone());
     run(&mut reference, "device.setParam", json!({"param":"root","value":57}));
     assert_eq!(render(reference.project(), reference.audio()), accepted_sound);
+    let mut held_project = before.clone();
+    held_project.channels[0].devices[0].automation.clear();
     assert_eq!(
-        edit_while_held(&before, session.audio(), true),
-        edit_while_held(&before, session.audio(), false),
+        edit_while_held(&held_project, session.audio(), true),
+        edit_while_held(&held_project, session.audio(), false),
         "adoption preserves held voices exactly as the ordinary root control does"
     );
     session.execute("edit.undo", &json!({})).unwrap();

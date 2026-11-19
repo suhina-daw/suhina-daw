@@ -83,7 +83,7 @@ No wall-clock deadline determines correctness, and background work never runs in
 callback. Tests can wait on an explicit completion signal.
 
 Each job retains the session-owned target identity, device id, immutable source identity, source
-reference, trim and original root. A moved device keeps its stable identity; removal, replacement,
+reference, trim and original root. Moving within its channel keeps the device's stable identity; removal, replacement,
 source/trim/root changes or a different job make a result stale. Acceptance revalidates all these
 preconditions before changing anything. A stale, cancelled, incomplete or failed job cannot edit
 the project or consume an undo step. Completion messages never target another open project.
