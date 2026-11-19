@@ -1,5 +1,5 @@
 // Copyright (C) 2026 The Suhina contributors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The slice stretch, for the Rhythmic mode (`docs/decisions/0003-time-stretching.md` ›
 //! Amendment: a sound of each mode). The file is cut into slices (at its transients, or at a note

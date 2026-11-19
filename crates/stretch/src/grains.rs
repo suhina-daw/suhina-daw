@@ -1,5 +1,5 @@
 // Copyright (C) 2026 The Suhina contributors
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The grain stretch, for the Tonal and Texture modes (`docs/decisions/0003-time-stretching.md`
 //! › Amendment: a sound of each mode). The output is made of overlapping grains: every half grain
