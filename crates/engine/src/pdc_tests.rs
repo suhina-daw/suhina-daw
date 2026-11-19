@@ -404,6 +404,69 @@ fn pdc_historical_span_endpoint_stays_within_the_lane_event_budget() {
 }
 
 #[test]
+fn pdc_later_span_starts_survive_a_full_parameter_buffer() {
+    let mut songs = crate::plugin::SongHistory::new(RATE);
+    songs.record(crate::SongPosition { playing: true, ..Default::default() }, 64);
+    songs.record(crate::SongPosition { position: 1000, playing: true, ..Default::default() }, 64);
+    for dense in [false, true] {
+        let mut device = gain(true, false);
+        device.automation = (0..256)
+            .map(|id| AutomationLane {
+                param: id.to_string(),
+                enabled: true,
+                points: if dense {
+                    (0..64).map(|frame| AutomationPoint::new(f64::from(frame), f64::from(frame % 2))).collect()
+                } else {
+                    vec![
+                        AutomationPoint::new(0.0, 0.0),
+                        AutomationPoint::new(64.0, 0.0),
+                        AutomationPoint::new(65.0, 1.0),
+                    ]
+                    .into()
+                },
+            })
+            .collect();
+        let mut params = crate::plugin_params::SlotParams::new(&device, 1.0, &[]);
+        let allocation = allocation_counter::measure(|| params.plan_delayed(&songs, 33, 64));
+        assert_eq!(allocation.count_total, 0);
+        assert_eq!(params.block().len(), crate::MAX_BLOCK_PARAMS);
+        for id in 0..256 {
+            assert!(params.block().iter().any(|event| event.id == id && event.frame == 0));
+            assert!(params.block().contains(&ParamEvent { frame: 33, id, value: 1.0 }), "dense {dense}, lane {id}");
+        }
+    }
+}
+
+#[test]
+fn pdc_already_sent_stopped_value_holds_until_resume() {
+    for delay in [1, 33] {
+        let mut songs = crate::plugin::SongHistory::new(RATE);
+        let mut device = gain(true, false);
+        device.automation.push(AutomationLane {
+            param: "0".into(),
+            enabled: true,
+            points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(100.0, 1.0)].into(),
+        });
+        let mut params = crate::plugin_params::SlotParams::new(&device, 1.0, &[]);
+        let mut processor = interpolating_gain();
+        // Open stopped at another position, then move to 100 and send its value once.
+        params.plan(None, 0, 64);
+        params.plan(None, 100, 64);
+        processor.automate(params.block());
+        processor.process(&mut [1.0; 128], &[], Duration::ZERO);
+        songs.record(crate::SongPosition { position: 100, ..Default::default() }, 64);
+        songs.record(crate::SongPosition { playing: true, ..Default::default() }, 64);
+        params.plan_delayed(&songs, delay, 64);
+        processor.automate(params.block());
+        let mut output = [1.0; 128];
+        processor.process(&mut output, &[], Duration::ZERO);
+        let boundary = delay as usize * 2;
+        assert!(output[..boundary].iter().all(|sample| *sample == 1.0), "delay {delay}: early ramp");
+        assert_eq!(&output[boundary..boundary + 2], &[0.0, 0.0], "delay {delay}: late resume");
+    }
+}
+
+#[test]
 fn pdc_native_automation_follows_delayed_audio() {
     check(false, Layout::Serial);
 }

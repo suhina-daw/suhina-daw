@@ -36,7 +36,8 @@ pub struct ParamEvent {
     pub value: f64,
 }
 
-/// Most parameter events one block of a slot carries; the latest ones beyond are dropped.
+/// Most parameter events one block of a slot carries. Span starts have priority over extra
+/// lane points; when even the required values do not fit, later ones are dropped.
 pub const MAX_BLOCK_PARAMS: usize = 512;
 /// Frames between the values a moving lane sends inside a block.
 pub const RAMP_STEP: usize = 64;
@@ -83,6 +84,21 @@ enum Parked {
     Sent(u64),
     /// Playing, or the lanes changed: the next stopped block sends their values.
     Due,
+}
+
+impl Parked {
+    /// Whether a span needs a first value, also advancing the stopped-editor state. Used
+    /// both to reserve the block's required events and to emit those same events.
+    fn starts(&mut self, time: Option<u64>, parked: u64) -> bool {
+        let send = time.is_some()
+            || match *self {
+                Self::Fresh => false,
+                Self::Sent(at) => at != parked,
+                Self::Due => true,
+            };
+        *self = if time.is_some() { Self::Due } else { Self::Sent(parked) };
+        send
+    }
 }
 
 /// The plug-in parameter id a project names, `None` when it is not one.
@@ -219,7 +235,7 @@ impl SlotParams {
         }));
     }
 
-    fn plan_spans(&mut self, spans: impl IntoIterator<Item = crate::plugin::AutomationSpan>) {
+    fn plan_spans(&mut self, spans: impl Iterator<Item = crate::plugin::AutomationSpan> + Clone) {
         let Self { base, base_sent, lanes, queued, block, parked: parked_state, .. } = self;
         block.clear();
         let room = block.capacity().min(MAX_BLOCK_PARAMS);
@@ -236,39 +252,56 @@ impl SlotParams {
         for (id, value) in queued.drain(..) {
             push(ParamEvent { frame: 0, id, value });
         }
-        let mut spans = spans.into_iter().peekable();
+        let mut spans = spans.peekable();
+        let mut counted_state = *parked_state;
+        let mut starts_left = spans
+            .clone()
+            .filter(|span| counted_state.starts(span.time, span.parked))
+            .count()
+            .saturating_mul(lanes.len());
         while let Some(span) = spans.next() {
             // VST3 joins parameter points with straight lines. Close a historical span
             // before the next one starts, even if its last value has not changed.
-            let boundary_end = span.frames.checked_sub(1).filter(|&frame| frame > 0 && spans.peek().is_some());
+            let boundary_end = span.frames.checked_sub(1).filter(|_| spans.peek().is_some());
             let (time, parked) = (span.time, span.parked);
             let frames = if span.advancing { span.frames } else { span.frames.min(1) };
+            let fresh = *parked_state == Parked::Fresh;
+            let starts = parked_state.starts(time, parked);
+            let mut push = |event: ParamEvent, start: bool| {
+                // Intermediate and closing points must not consume later spans' first
+                // values. Keep the existing cap even when required values alone exceed it.
+                if start {
+                    starts_left = starts_left.saturating_sub(1);
+                }
+                let limit = if start { room } else { room.saturating_sub(starts_left) };
+                if block.len() < limit {
+                    block.push(event);
+                }
+            };
             match time {
                 Some(time) => {
                     for lane in lanes.iter() {
                         lane_events(&lane.envelope, time, frames, boundary_end, |frame, value| {
-                            push(ParamEvent { frame: span.offset + frame, id: lane.id, value })
+                            push(ParamEvent { frame: span.offset + frame, id: lane.id, value }, frame == 0)
                         });
                     }
-                    *parked_state = Parked::Due;
                 }
                 // Stopped: each lane's value where the transport stands, once, so the plug-in and
                 // its editor show what plays there (#1205); a processor that just started keeps its
                 // state until the transport moves.
-                None => match *parked_state {
-                    Parked::Fresh => *parked_state = Parked::Sent(parked),
-                    Parked::Sent(at) if at == parked => {}
-                    Parked::Sent(_) | Parked::Due => {
+                None => {
+                    if !fresh && (starts || boundary_end.is_some()) {
                         for lane in lanes.iter() {
                             let value = lane.envelope.value_at(parked);
-                            push(ParamEvent { frame: span.offset, id: lane.id, value });
-                            if let Some(frame) = boundary_end {
-                                push(ParamEvent { frame: span.offset + frame, id: lane.id, value });
+                            if starts {
+                                push(ParamEvent { frame: span.offset, id: lane.id, value }, true);
+                            }
+                            if let Some(frame) = boundary_end.filter(|&frame| frame > 0 || !starts) {
+                                push(ParamEvent { frame: span.offset + frame, id: lane.id, value }, false);
                             }
                         }
-                        *parked_state = Parked::Sent(parked);
                     }
-                },
+                }
             }
         }
         // In frame order, keeping the order of events at one frame (a lane after a set value).

@@ -143,7 +143,9 @@ The slot hands each span it runs its share through `PluginProcessor::automate`, 
 session's processor merges them with the notes in frame order, a value before a note at
 the same frame; a block the host could not take carries the latest value of each
 parameter to the next. Nothing allocates on the audio thread: each slot has room for 512
-events a block. A parameter value that reaches the processor from the engine (a panel
+events a block. After set and manual values, required starts of historical spans take
+priority over intermediate lane points and boundary holds; overload retains the limits
+described in [PDC](plugin-delay-compensation.md). A parameter value that reaches the processor from the engine (a panel
 set, an automation lane) also goes to the edit controller on the main thread
 (`setParamNormalized`: the same call a MIDI controller's mapped parameter gets, #812),
 so the plug-in's editor follows the sound; and the host reports what was changed in its

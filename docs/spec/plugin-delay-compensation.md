@@ -45,7 +45,9 @@ at the preceding span's final sample, even when that value has been constant. To
 with the next span's first value this preserves a discontinuity for processors that
 interpolate parameter points, rather than starting the change before the delayed audio
 arrives. A priming span holds the value at zero through its final sample. These boundary
-points use the existing bounded event storage and keep their offsets in sub-blocks.
+points use the existing bounded event storage and keep their offsets in sub-blocks. A stopped
+span that already sent its value still sends this closing point before playback resumes;
+a fresh processor keeps its loaded state until the playhead moves.
 
 For example, an effect delays audio by 257 frames. A gain step at source frame 1000 on the
 next device must reach that device at processed frame 1257. Both the audio and the step
@@ -72,7 +74,12 @@ Manual parameter values retain their next-block behaviour. They are not held in 
 automation history; disabling a lane and moving a control must remain responsive. Set
 values and queued manual values are emitted once per block, even when its automation
 contains several historical spans. Lanes retain their existing event limits and smoothing
-rules, and take precedence over a set value at the same frame.
+rules, and take precedence over a set value at the same frame. Within the hosted slot's
+512-event budget, reserve room for all spans' required first values before adding lane
+intermediate points or closing points. Set and manual values keep their existing priority.
+If those values and the span starts alone exceed the budget, later events are still dropped;
+if only optional points exceed it, interpolation detail, including boundary holds, can be
+lost, but optional points cannot displace a later span's first value.
 
 All history reads and event planning are bounded and allocate nothing in the audio
 callback. Preparation occurs before worker dispatch. Offline rendering uses the same
