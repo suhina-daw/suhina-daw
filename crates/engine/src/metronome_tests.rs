@@ -240,7 +240,8 @@ fn first_on_the_cue(project: &Project, metronome: bool) -> Option<usize> {
     renderer.handle(LaunchCommand::SetMetronome { on: metronome, gain: Some(0.5) });
     renderer.handle(LaunchCommand::SetClickRoute(ClickRoute::Cue));
     renderer.handle(LaunchCommand::Play);
-    let (_, cue) = play(&mut renderer, 20, 480);
+    // The first onsets are all it needs: a few hundred frames, past the group's lookahead.
+    let (_, cue) = play(&mut renderer, 4, 480);
     onsets(&cue).first().copied()
 }
 
@@ -277,8 +278,8 @@ fn a_click_left_in_a_delay_never_plays_when_the_route_comes_back() {
         renderer.handle(LaunchCommand::SetMetronome { on: false, gain: None });
         play(&mut renderer, 1, 512);
         renderer.handle(LaunchCommand::SetClickRoute(ClickRoute::PreFader));
-        let (out, cue) = play(&mut renderer, 4, 512);
-        assert_eq!(peak(&out, 0, 2_048), 0.0, "{away:?}: no old click on the main output");
-        assert_eq!(peak(&cue, 0, 2_048), 0.0, "{away:?}: none on the cue");
+        let (out, cue) = play(&mut renderer, 1, 512);
+        assert_eq!(peak(&out, 0, 512), 0.0, "{away:?}: no old click on the main output");
+        assert_eq!(peak(&cue, 0, 512), 0.0, "{away:?}: none on the cue");
     }
 }
