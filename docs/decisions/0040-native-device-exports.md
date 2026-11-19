@@ -3,7 +3,7 @@ description: Export native devices through the existing plug-in ABI boundary, sh
 read_when: native device export, stock CLAP, stock VST3, export adapter, plugin factory
 type: decision
 status: proposed
-built: no
+built: partly
 last_verified: 2026-11-19
 covers:
   - crates/plugin-host/src/lib.rs

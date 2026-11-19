@@ -5,6 +5,8 @@
 
 import argparse
 import os
+import platform
+import plistlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -23,9 +25,23 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     clap = output / "SuhinaDevices.clap"
     shutil.copy2(target / "debug" / filename, clap)
+    machine = platform.machine().lower()
+    architecture = {"amd64": "x86_64", "x86_64": "x86_64", "arm64": "aarch64", "aarch64": "aarch64"}.get(machine)
+    if architecture is None:
+        raise SystemExit(f"Unsupported plug-in architecture: {machine}")
+    bundle = output / "SuhinaDevices.vst3"
+    folder = "MacOS" if sys.platform == "darwin" else f"{architecture}-{'win' if sys.platform == 'win32' else 'linux'}"
+    binary = "SuhinaDevices" if sys.platform == "darwin" else "SuhinaDevices.vst3" if sys.platform == "win32" else "SuhinaDevices.so"
+    destination = bundle / "Contents" / folder
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(target / "debug" / filename, destination / binary)
+    if sys.platform == "darwin":
+        with (bundle / "Contents" / "Info.plist").open("wb") as output_file:
+            plistlib.dump({"CFBundleExecutable": binary, "CFBundleIdentifier": "org.suhina.devices", "CFBundlePackageType": "BNDL"}, output_file)
     print(f"CLAP: {clap}", flush=True)
+    print(f"VST3: {bundle}", flush=True)
     if args.action == "test":
-        environment = dict(os.environ, SUHINA_TEST_EXPORT_CLAP=str(clap))
+        environment = dict(os.environ, SUHINA_TEST_EXPORT_CLAP=str(clap), SUHINA_TEST_EXPORT_VST3=str(bundle))
         subprocess.run(["cargo", "test", "-p", "suhina-plugin-host", "--features", "device-exports", "--test", "device_exports", "--", "--ignored"], cwd=root, env=environment, check=True)
 
 

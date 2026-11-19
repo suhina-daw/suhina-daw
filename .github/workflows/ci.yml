@@ -216,6 +216,8 @@ jobs:
       # The vst2 feature is on by default (ADR 0022's amendment), so the workspace steps
       # above check it; this checks that a build opting out still compiles.
       - run: cargo clippy -p suhina-plugin-host --all-targets --no-default-features -- -D warnings
+      - name: Native device export adapters
+        run: cargo clippy -p suhina-plugin-host --lib --tests --features device-exports -- -D warnings
       # third_party/nam-rs is outside the workspace, so the steps above skip its tests: these
       # cover Suhina's changes to it (third_party/nam-rs/VENDORED.md). The published crate leaves
       # out tests/fixtures, which the model_runtime and top-level wavenet tests read.
@@ -308,6 +310,12 @@ jobs:
       - name: Documentation tests
         if: matrix.partition == 1
         run: cargo test --workspace --doc
+      - name: Native device export runtime
+        if: matrix.partition == 1
+        run: cargo test -p suhina-plugin-host --lib --features device-exports
+      - name: Native CLAP and VST3 artifacts through the sandbox host
+        if: matrix.partition == 1
+        run: python scripts/device_exports.py test
 
   # Not part of `ci`: a macOS failure is reported but does not block merging. One runner: the
   # tests are not split here.
@@ -334,6 +342,9 @@ jobs:
         env:
           PROFILE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.pack != 'true' && 'ci-pr' || 'ci' }}
       - run: cargo test --workspace --doc
+      - run: cargo clippy -p suhina-plugin-host --lib --tests --features device-exports -- -D warnings
+      - run: cargo test -p suhina-plugin-host --lib --features device-exports
+      - run: python3 scripts/device_exports.py test
 
   # Pull requests from forks: every commit must carry a Signed-off-by line (Developer
   # Certificate of Origin, CONTRIBUTING.md). Branches of this repository are the maintainers', and

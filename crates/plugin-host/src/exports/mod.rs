@@ -5,6 +5,7 @@
 
 mod clap;
 pub mod state;
+mod vst3;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use suhina_device_api::{Device, DeviceInfo, NoteEvent, ProcessContext};
@@ -108,6 +109,19 @@ impl Parameters {
         }
     }
 
+    /// Main-thread edit, ordered after state even before an audio processor exists.
+    pub fn control_set(&self, id: u32, value: f64) {
+        if self.revision.load(Ordering::SeqCst) != self.applied.load(Ordering::SeqCst) {
+            if let Some(index) = self.index(id)
+                && let Some(parameter) = self.info.params.get(index)
+            {
+                let _ = self.restore(&[(&parameter.id, value)]);
+            }
+        } else {
+            self.set(id, value);
+        }
+    }
+
     /// Publish a validated state off RT. All fields are atomic; a render reads a snapshot once
     /// and defers the update if the revision changes, never spinning on the control thread.
     fn restore(&self, values: &[(&str, f64)]) -> Result<(), ExportError> {
@@ -170,8 +184,13 @@ impl Processor {
         suhina_device_api::check_sample_rate(sample_rate).map_err(|_| ExportError::InvalidConfiguration)?;
         let device =
             suhina_device_registry::create(&parameters.info.id, sample_rate).ok_or(ExportError::UnknownDevice)?;
-        let mut processor =
-            Self { device, sample_rate, max_frames, values: vec![0.0; parameters.info.params.len()], revision: 0 };
+        let mut processor = Self {
+            device,
+            sample_rate,
+            max_frames,
+            values: vec![0.0; parameters.info.params.len()],
+            revision: parameters.applied.load(Ordering::SeqCst),
+        };
         processor.sync_parameters(parameters);
         processor.device.reset();
         Ok(processor)

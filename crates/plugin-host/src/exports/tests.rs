@@ -5,6 +5,62 @@ use super::*;
 use suhina_device_api::Role;
 
 #[test]
+fn pending_state_is_immediately_visible_and_applied_before_automation() {
+    let info = suhina_device_registry::DEVICES.iter().find(|info| info.id == "utility").unwrap();
+    let parameters = Parameters::new(info).unwrap();
+    let id = parameters.id(0).unwrap();
+    let mut processor = Processor::new(&parameters, 48_000.0, 16).unwrap();
+    parameters.restore(&[(&info.params[0].id, 0.5)]).unwrap();
+    assert_eq!(parameters.value(0), Some(0.5));
+    let saved = state::save(&parameters);
+    let copy = Parameters::new(info).unwrap();
+    state::load(&copy, &saved).unwrap();
+    assert_eq!(copy.value(0), Some(0.5));
+    processor
+        .process(
+            &parameters,
+            ProcessContext::default(),
+            &mut [0.0; 32],
+            None,
+            &[Event { frame: 0, kind: EventKind::Parameter { id, value: 0.7 } }],
+        )
+        .unwrap();
+    assert_eq!(processor.device.param(0), Some(0.7));
+    drop(processor);
+    let resumed = Processor::new(&parameters, 48_000.0, 16).unwrap();
+    assert_eq!(resumed.device.param(0), Some(0.7), "reactivation must not replay already-consumed state");
+}
+
+#[test]
+fn control_flush_after_load_before_activation_wins_over_pending_state() {
+    let info = suhina_device_registry::DEVICES.iter().find(|info| info.id == "utility").unwrap();
+    let parameters = Parameters::new(info).unwrap();
+    parameters.restore(&[(&info.params[0].id, 0.5)]).unwrap();
+    parameters.control_set(parameters.id(0).unwrap(), 0.7);
+    assert_eq!(parameters.value(0), Some(0.7));
+    let processor = Processor::new(&parameters, 48_000.0, 16).unwrap();
+    assert_eq!(processor.device.param(0), Some(0.7));
+}
+
+#[test]
+fn incomplete_publication_defers_without_waiting_or_applying_partial_values() {
+    let info = suhina_device_registry::DEVICES.iter().find(|info| info.id == "utility").unwrap();
+    let parameters = Parameters::new(info).unwrap();
+    let mut processor = Processor::new(&parameters, 48_000.0, 16).unwrap();
+    let before = processor.device.param(0);
+    // Deterministically stop the single control writer midway through publication.
+    parameters.revision.store(1, Ordering::SeqCst);
+    parameters.pending[0].store(0.5f64.to_bits(), Ordering::SeqCst);
+    processor.sync_parameters(&parameters);
+    assert_eq!(processor.device.param(0), before);
+    assert_eq!(parameters.applied.load(Ordering::SeqCst), 0);
+    parameters.revision.store(2, Ordering::SeqCst);
+    processor.sync_parameters(&parameters);
+    assert_eq!(processor.device.param(0), Some(0.5));
+    assert_eq!(parameters.applied.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn every_registry_device_has_collision_free_stable_parameter_ids() {
     for info in suhina_device_registry::DEVICES {
         let parameters = Parameters::new(info).unwrap();

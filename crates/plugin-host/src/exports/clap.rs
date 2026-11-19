@@ -211,11 +211,20 @@ impl PluginMainThreadParams for MainThread<'_> {
         value.is_finite().then(|| parameter.clamp(value))
     }
     fn flush(&self, input: &InputEvents, _output: &mut OutputEvents) {
-        flush(&self.shared.parameters, input);
+        for event in input {
+            if let Some(CoreEventSpace::ParamValue(value)) = event.as_core_event()
+                && let Some(id) = value.param_id()
+            {
+                self.shared.parameters.control_set(id.get(), value.value());
+            }
+        }
     }
 }
 
 fn flush(parameters: &Parameters, input: &InputEvents) {
+    if input.len() as usize > MAX_EVENTS {
+        return;
+    }
     for event in input {
         if let Some(CoreEventSpace::ParamValue(value)) = event.as_core_event()
             && let Some(id) = value.param_id()
@@ -227,6 +236,7 @@ fn flush(parameters: &Parameters, input: &InputEvents) {
 
 impl PluginAudioProcessorParams for AudioProcessor<'_> {
     fn flush(&mut self, input: &InputEvents, _output: &mut OutputEvents) {
+        self.processor.sync_parameters(&self.shared.parameters);
         flush(&self.shared.parameters, input);
         self.processor.sync_parameters(&self.shared.parameters);
     }
@@ -296,6 +306,9 @@ impl AudioProcessor<'_> {
         audio: &mut Audio,
         events: Events,
     ) -> Result<ProcessStatus, PluginError> {
+        if events.input.len() as usize > MAX_EVENTS {
+            return Err(PluginError::Message("too many events"));
+        }
         let frames = audio.frames_count() as usize;
         let Some(buffer) = self.buffer.get_mut(..frames * 2) else {
             return Err(PluginError::Message("block too large"));
