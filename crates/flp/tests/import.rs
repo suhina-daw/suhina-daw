@@ -85,6 +85,54 @@ fn appended(mut file: Vec<u8>, events: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn automatic_pattern_length_survives_metadata_order_and_rounds_to_whole_bars() {
+    for (note_end, explicit, bar, expected) in [
+        (3072, None, (4, 4), 32.),
+        (3072, Some(0), (4, 4), 32.),
+        (3064, Some(0), (4, 4), 32.),
+        (3073, Some(0), (4, 4), 36.),
+        (1, Some(0), (4, 4), 4.),
+        (3072, Some(288), (4, 4), 3.),
+        (480, Some(0), (3, 4), 6.),
+        (480, Some(0), (7, 2), 7.),
+    ] {
+        for after_notes in [false, true] {
+            let original = fixture(note_end, 32);
+            let flp = suhina_flp::read_bytes(&original).unwrap();
+            let mut bytes = Vec::new();
+            event(&mut bytes, 17, &[bar.0]);
+            event(&mut bytes, 18, &[bar.1]);
+            for e in flp.events {
+                use suhina_flp::Payload;
+                let payload = match e.payload {
+                    Payload::Byte(v) => vec![v],
+                    Payload::Word(v) => v.to_le_bytes().to_vec(),
+                    Payload::Dword(v) => v.to_le_bytes().to_vec(),
+                    Payload::Data(v) => v,
+                };
+                event(&mut bytes, e.id, &payload);
+                if e.id == if after_notes { 224 } else { 65 }
+                    && let Some(length) = explicit
+                {
+                    event(&mut bytes, 164, &u32::to_le_bytes(length));
+                }
+            }
+            let p = import_bytes(&appended(original[..22].to_vec(), &bytes)).unwrap().project;
+            assert!(!p.contents.is_empty());
+            for content in &p.contents {
+                assert_eq!(content.length, expected, "note end {note_end}, explicit {explicit:?}, after {after_notes}");
+                let LaneData::Notes(notes) = &content.lanes[0].data else { panic!("notes") };
+                assert_eq!(notes[0].duration, f64::from(note_end) / 96., "source notes stay intact");
+            }
+            for clip in p.arrangement.lanes.iter().flat_map(|l| &l.clips) {
+                assert_eq!(clip.length, expected, "untrimmed placements use the resolved pattern length");
+            }
+            p.validate().unwrap();
+        }
+    }
+}
+
+#[test]
 fn playlist_colors_take_precedence_over_source_and_pattern_colors() {
     let original = fixture(96, 32);
     let flp = suhina_flp::read_bytes(&original).unwrap();

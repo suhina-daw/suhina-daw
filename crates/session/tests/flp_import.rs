@@ -179,6 +179,8 @@ fn an_untrimmed_pattern_plays_late_notes_but_an_explicit_window_stays_trimmed() 
         notes.extend(note);
     }
     event(&mut base, 224, &notes);
+    // Automatic length metadata follows notes in real project files.
+    event(&mut base, 164, &0u32.to_le_bytes());
     event(&mut base, 64, &0u16.to_le_bytes());
     event(&mut base, 21, &[0]);
     text(&mut base, 196, "note.wav");
@@ -187,7 +189,7 @@ fn an_untrimmed_pattern_plays_late_notes_but_an_explicit_window_stays_trimmed() 
     let mut pool = AudioPool::new();
     pool.files
         .insert("note.wav".into(), Arc::new(AudioData { sample_rate: 8000, channels: 1, samples: vec![0.25; 160] }));
-    for (offset, expected_length, late_note) in [(u32::MAX, 2.5, true), (0, 1., false), (192, 1., false)] {
+    for (offset, expected_length, late_note) in [(u32::MAX, 4., true), (0, 1., false), (192, 1., false)] {
         let mut bytes = base.clone();
         placement(&mut bytes, 0x5001, 96, offset);
         let project = suhina_flp::import_bytes(&file(&bytes)).unwrap().project;

@@ -185,12 +185,25 @@ data but do not become project tracks.
   interpreted. A note whose length is all ones (a step-sequencer step, which has no
   note-off) or zero is left out of the pattern, stays in the retained source and is counted in
   one warning; it never stops the import.
+- Pattern event 164 is an explicit length in ticks; zero means automatic, whether it
+  precedes or follows the note records. Automatic length is the last note end rounded
+  up to a whole project bar, at least one bar. Events 17 and 18 give beats per bar and
+  sixteenth-note steps per beat (both default to 4); a bar is `PPQ * 17 * 18 / 4`
+  ticks, at least one tick. Keep this calculation in ticks to avoid rounding an exact
+  bar boundary up again after floating-point conversion. A positive explicit length
+  wins over the note extent. Step and zero-length records count as one tick for this
+  extent without enabling their playback. Pattern-local time-signature markers are
+  retained but not interpreted by this importer yet.
+  These rules follow `os-model`'s `Project::bar_ticks` and `Project::pattern_length`
+  at the pinned Lemon Studio revision. The maintainer's self-authored project
+  inspected on 2026-11-19 contains 32-beat patterns followed by event 164 = 0;
+  that event must not erase their note extent.
 - Playlist event 233 contains records of 32, 60, 80 or 88 bytes, selected only when all
   records have the 0x5000 marker at offset 4. Records hold position at 0, source at 6,
   length at 8, reversed row at 12, mute flag 0x20 at 19 and pattern offsets at 24/28.
   A source at least 0x5000 names pattern source - 0x5000. Pattern placements reference
   shared content, preserving their start, trim offset and mute. A pattern offset of
-  `0xffffffff` means an untrimmed placement: it plays the pattern's full note duration,
+  `0xffffffff` means an untrimmed placement: it plays the pattern's resolved length,
   even when the stored placement length is shorter. An explicit offset, including zero,
   keeps the stored placement length. This distinction follows the pinned `os-flp`
   `decode_clip` and `os-engine` pattern scheduling and `song_respects_mutes_and_clip_windows`

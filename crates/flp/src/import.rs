@@ -7,6 +7,7 @@
 //! 011a03f23d9db7f10f07cd7d165cc978a9dda263 (<https://github.com/ItsAlphaNeon/Lemon-Studio>).
 //! Changes: Suhina mapping, bounded inputs, retained source and explicit partial-import warnings.
 //! Gain and mixer-EQ parameter laws also adapt os-dsp/src/{level,mixer}.rs at that revision.
+//! Automatic pattern lengths follow os-model/src/lib.rs at that revision.
 //! See docs/spec/flp-model-mapping.md.
 
 use crate::{
@@ -282,6 +283,9 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
         return Err(error(0, "this importer supports FLP versions 10 through 26; save a copy in a supported version"));
     }
     let ppq = f64::from(flp.header.ppq);
+    let beats = flp.first(17).map(number).transpose()?.unwrap_or(4).max(1);
+    let steps_per_beat = flp.first(18).map(number).transpose()?.unwrap_or(4).max(1);
+    let bar_ticks = (u64::from(flp.header.ppq) * u64::from(beats) * u64::from(steps_per_beat) / 4).max(1);
     let mut project = Project::default();
     let mut warnings = vec!["Partial FLP import: unsupported plug-ins, unmapped automation, note expression and advanced sample processing are retained but not played.".into()];
     if major < 12 {
@@ -336,7 +340,7 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
                 let value = number(e)?;
                 p.color = (value >> 24 == 255).then(|| color(value));
             }
-            164 => p.length = f64::from(number(e)?) / ppq,
+            164 => p.length = number(e)?,
             224 => {
                 let d = data(e)?;
                 if !d.len().is_multiple_of(24) {
@@ -347,6 +351,9 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
                     return Err(error(e.offset, "too many notes"));
                 }
                 for r in d.as_chunks::<24>().0 {
+                    let duration = dword(r, 8, e.offset)?;
+                    let duration = if duration == u32::MAX { 1 } else { duration.max(1) };
+                    p.note_end = p.note_end.max(u64::from(dword(r, 0, e.offset)?) + u64::from(duration));
                     let Some(n) = note(r, ppq, e.offset)? else {
                         steps += 1;
                         continue;
@@ -367,7 +374,6 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
                         return Err(error(e.offset, "layer note limit"));
                     }
                     expression |= n.expression;
-                    p.length = p.length.max(n.note.time + n.note.duration);
                     for target in targets {
                         p.notes.entry(target).or_default().push(n.note);
                     }
@@ -386,6 +392,13 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
     }
     let pattern_colors: BTreeMap<_, _> = patterns.iter().filter_map(|(&id, p)| p.color.map(|c| (id, c))).collect();
     for (id, p) in patterns {
+        // Zero selects automatic length, even when event 164 follows the notes. Resolve
+        // the last note's tick against the bar before converting either to beats.
+        let length = if p.length > 0 {
+            f64::from(p.length) / ppq
+        } else {
+            (p.note_end.div_ceil(bar_ticks).max(1) * bar_ticks) as f64 / ppq
+        };
         let lanes = p
             .notes
             .into_iter()
@@ -398,7 +411,7 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
             linked: false,
             id: ContentId(id),
             name: if p.name.is_empty() { format!("Pattern {id}") } else { p.name },
-            length: p.length.max(1.),
+            length,
             lanes: lanes.into(),
             extensions: Extensions::default(),
             scale: None,
@@ -622,7 +635,8 @@ fn validate_routes(project: &Project) -> Result<(), FlpError> {
 struct Pattern {
     name: String,
     color: Option<suhina_model::Rgb>,
-    length: f64,
+    length: u32,
+    note_end: u64,
     notes: BTreeMap<TrackId, Vec<Note>>,
 }
 
