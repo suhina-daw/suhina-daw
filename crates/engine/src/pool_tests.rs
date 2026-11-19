@@ -288,7 +288,7 @@ fn a_completed_chain_is_returned_before_the_next_job_runs() {
         (1.0, 1.0),
         8_000,
         &mut plugins,
-        (&crate::DeviceAssets::new(), &suhina_device_registry::factory()),
+        (&crate::DeviceAssets::new(), suhina_device_registry::factory().as_ref()),
     )
     .unwrap();
     for (index, chain) in [first, next].into_iter().enumerate() {
