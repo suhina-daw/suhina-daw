@@ -2307,3 +2307,56 @@ fn a_box_at_a_fraction_of_a_pixel_paints_its_gradient_on_whole_pixels() {
     let (left, top) = vertices.iter().fold((f32::MAX, f32::MAX), |(x, y), p| (x.min(p.x), y.min(p.y)));
     assert_eq!((left, top), (10.0, 20.0), "the face starts where the border does");
 }
+
+/// The out-of-frame lookups read the window's own cascade (#1585): its size, its colour map, its
+/// faded colours and its `body`, as an element the window paints does.
+#[test]
+fn out_of_frame_settings_follow_the_window_s_size() {
+    let css = "@media (max-width: 1000px) { arrangement { track-height: 48px; } }";
+    prepare(css, 800.0);
+    assert_eq!(super::super::style_class::theme_track_height(), Some(48.0));
+    prepare(css, 1280.0);
+    assert_eq!(super::super::style_class::theme_track_height(), None);
+    skin::configure(&skin::Skin::default());
+}
+
+#[test]
+fn out_of_frame_settings_take_the_theme_s_colour_map_and_the_window_s_fade() {
+    use super::super::element::TOOLTIP;
+    let panel = Color32::from_rgb(0x20, 0x40, 0x80);
+    set_colors(&[("panel-background".to_owned(), panel)].into());
+    prepare("tooltip { background-color: var(--panel-background); }", 800.0);
+    assert_eq!(settings_of(&[TOOLTIP]).map(|style| style.background), Some(panel));
+    // Over a backdrop the window's panel colour is faded, for a tooltip's frame too.
+    let ctx = egui::Context::default();
+    set_window_opacity(&ctx, 0.5);
+    prepare("tooltip { background-color: var(--panel-background); }", 800.0);
+    let faded = settings_of(&[TOOLTIP]).map(|style| style.background);
+    set_window_opacity(&ctx, 1.0);
+    set_colors(&theme::Colors::new());
+    skin::configure(&skin::Skin::default());
+    assert_eq!(faded, Some(panel.gamma_multiply(0.5)));
+}
+
+#[test]
+fn out_of_frame_settings_see_the_window_under_body() {
+    use super::super::element::TOOLTIP;
+    prepare("body > window tooltip { border-radius: 9px; }", 800.0);
+    let radius = settings_of(&[TOOLTIP]).map(|style| style.radius);
+    skin::configure(&skin::Skin::default());
+    assert_eq!(radius, Some(9.0));
+}
+
+#[test]
+fn an_out_of_frame_lookup_while_the_engine_is_busy_gives_none() {
+    use super::super::element::TOOLTIP;
+    prepare("tooltip { border-radius: 9px; }", 800.0);
+    let busy = ENGINE.with(|engine| {
+        let _held = engine.borrow_mut();
+        settings_of(&[TOOLTIP])
+    });
+    let free = settings_of(&[TOOLTIP]).map(|style| style.radius);
+    skin::configure(&skin::Skin::default());
+    assert!(busy.is_none());
+    assert_eq!(free, Some(9.0));
+}

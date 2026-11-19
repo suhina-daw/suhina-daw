@@ -103,7 +103,7 @@ impl Shorthand {
         text.ok_or_else(|| format!("Invalid {} shorthand", self.name()))
     }
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Background => "background",
             Self::Gap => "gap",
@@ -260,6 +260,10 @@ pub(crate) struct Rule {
     pub media: Vec<Media>,
     /// The cascade layer (`@layer`), by its index in [`Sheet::layers`]; `None` is unlayered.
     pub layer: Option<u16>,
+    /// Where the rule starts in its sheet, counted from 1, and its selector list as written, each
+    /// run of white space one space: what the theme renderer's diagnostics name a rule by (#1582).
+    pub line: u32,
+    pub selector: Box<str>,
 }
 
 /// Most named cascade layers in one sheet.
@@ -277,6 +281,8 @@ pub struct Sheet {
     pub properties: Vec<crate::registered::Registered>,
     /// `@group-class` rules in source order; a later rule for the same name replaces an earlier one.
     pub group_classes: Vec<GroupClass>,
+    /// A fingerprint of the text it was parsed from ([`Sheet::id`]).
+    id: u64,
 }
 
 /// A toolbar group class a theme offers in the toolbar editor:
@@ -309,6 +315,22 @@ pub const PERCENT_PADDING_ELEMENTS: &[&str] = &["window", "toolbar"];
 pub(crate) type KeyframeRule = Vec<(f32, Vec<Declaration>)>;
 
 impl Sheet {
+    /// A fingerprint of the text the sheet was parsed from: the same for every sheet parsed from
+    /// that text, as when the window and the theme editor each parse the theme's sheet, and almost surely
+    /// different for any other. What [`crate::cascade::matched_rules`] tells sheets apart by.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// Each rule's line (from 1), selector list as written and the properties it declares, in
+    /// source order: the rules a diagnostic numbers by their index
+    /// ([`crate::cascade::MatchedRule::rule`]). A shorthand is declared as its longhands.
+    pub fn rule_sources(&self) -> impl Iterator<Item = (u32, &str, Vec<&str>)> {
+        self.rules.iter().map(|rule| {
+            (rule.line, rule.selector.as_ref(), rule.declarations.iter().map(|d| d.name.as_str()).collect())
+        })
+    }
+
     /// True only when this whole sheet can use the staged native paint adapter.
     /// Unknown syntax and layout declarations stay on the compatibility adapter.
     pub fn supports_native_paint(&self) -> bool {
@@ -355,7 +377,13 @@ impl Sheet {
 
     pub fn parse(source: &str) -> Result<Self, String> {
         crate::syntax::validate(source)?;
-        let mut sheet = Self::default();
+        let id = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::hash::DefaultHasher::new();
+            source.hash(&mut hasher);
+            hasher.finish()
+        };
+        let mut sheet = Self { id, ..Self::default() };
         rules(&mut Parser::new(source), source, &Scope::default(), &mut sheet, 0)?;
         sheet.rank_layers();
         Ok(sheet)
@@ -661,6 +689,8 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                                 declarations,
                                 media: media.to_vec(),
                                 layer: scope.layer.as_ref().map(|(_, index)| *index),
+                                line: location.line.saturating_add(1),
+                                selector: header.split_whitespace().collect::<Vec<_>>().join(" ").into(),
                             });
                         }
                         Err(message) => {

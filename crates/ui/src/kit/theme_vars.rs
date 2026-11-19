@@ -410,14 +410,14 @@ fn root_variables(sheet: &Sheet, variant: Option<&Sheet>, light: bool) -> Result
     Ok(styles.first().map(|style| style.variables().clone()).unwrap_or_default())
 }
 
-/// The styles the core sheet, `sheet`, `variant`'s and `user`'s give the element at the end of
-/// each of `paths` (element names from `window` inward, each path its own line of elements under
-/// one `window`), as a 1280 by 800 window in the colour scheme `light` (or dark) sees them: the settings Suhina reads outside a
-/// frame (`native_css::settings_of`) and the ones the theme editor shows ([`setting_values`]).
-pub(in crate::kit) fn element_styles(
+/// The styles the core sheet, `sheet` and `variant`'s give the element at the end of each of
+/// `paths` (element names from `window` inward, each path its own line of elements under one
+/// `window`), as a 1280 by 800 window in the colour scheme `light` (or dark) sees them: a theme's
+/// settings read from its sheets alone, as the theme editor shows them ([`setting_values`]). The
+/// window's own settings come from the style engine (`native_css::settings_of`).
+fn element_styles(
     sheet: &Sheet,
     variant: Option<&Sheet>,
-    user: Option<&Sheet>,
     paths: &[&[&str]],
     light: bool,
 ) -> Result<Vec<suhina_style::cascade::ComputedStyle>, String> {
@@ -444,9 +444,6 @@ pub(in crate::kit) fn element_styles(
     if let Some(variant) = variant {
         sheets.push(AppliedSheet { sheet: variant, layer: Layer::Variant, root: None });
     }
-    if let Some(user) = user {
-        sheets.push(AppliedSheet { sheet: user, layer: Layer::User, root: None });
-    }
     let styles = compute(&tree, viewport, &sheets)?;
     ends.iter().map(|&at| styles.get(at).cloned().ok_or_else(|| "a path's element has no style".to_owned())).collect()
 }
@@ -459,7 +456,7 @@ fn setting_values(sheet: &Sheet, variant: Option<&Sheet>, light: bool) -> Result
     use suhina_style::value::{Length, Value};
     let elements = ["window", "session", "meter"];
     let paths: Vec<&[&str]> = elements.iter().map(std::slice::from_ref).collect();
-    let styles = element_styles(sheet, variant, None, &paths, light)?;
+    let styles = element_styles(sheet, variant, &paths, light)?;
     let mut values = setting_defaults();
     for (element, name) in SETTINGS {
         let Some(style) = elements.iter().position(|e| e == element).and_then(|at| styles.get(at)) else {

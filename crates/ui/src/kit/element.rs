@@ -556,12 +556,15 @@ struct Rest {
     /// The first shape of its contents in the painter's layer, and the padding box they are kept
     /// in, when it hides its overflow.
     clip: Option<(egui::layers::ShapeIdx, Rect)>,
+    /// The element's node in the frame's style tree, for telling the inspector where its clip ends.
+    node: Option<usize>,
 }
 
 impl Rest {
     fn paint(self) {
         if let Some((from, to)) = self.clip {
             clip_contents(&self.painter, from, to);
+            super::native_css::set_clip_end(self.node);
         }
         super::native_css::box_end(&self.painter, self.rect, self.radius, &self.style, self.outer);
     }
@@ -699,19 +702,21 @@ impl Entered {
         outer: Option<Rect>,
     ) -> Rect {
         let Some(style) = style else {
-            super::native_css::set_box(self.scope.node, rect, painter.clip_rect());
+            super::native_css::set_box(self.scope.node, rect, painter);
             return rect;
         };
         let [top, right, bottom, left] = style.border_sides;
         let padding_box = shrink(rect, [top, right, bottom, left]);
-        super::native_css::set_box(self.scope.node, padding_box, painter.clip_rect());
+        super::native_css::set_box(self.scope.node, padding_box, painter);
+        super::native_css::set_border_box(self.scope.node, rect, painter);
         let content = shrink(rect, style.insets_in(rect.width()));
         let clip = style.hides_overflow().then(|| {
             let from = painter.ctx().graphics_mut(|layers| layers.entry(painter.layer_id()).next_idx());
             (from, padding_box)
         });
         if clip.is_some() || style.outline().is_some() {
-            *self.rest.borrow_mut() = Some(Rest { painter: painter.clone(), rect, radius, style, outer, clip });
+            *self.rest.borrow_mut() =
+                Some(Rest { painter: painter.clone(), rect, radius, style, outer, clip, node: self.scope.node });
         }
         content
     }
@@ -862,7 +867,7 @@ impl Entered {
     /// The element's shadows, gradients and inset shadows in `rect`, with `radius` where the sheet
     /// gives none: for a surface whose fill its caller paints. Whether it painted anything.
     pub fn paint_background(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
-        super::native_css::set_box(self.scope.node, rect, painter.clip_rect());
+        super::native_css::set_box(self.scope.node, rect, painter);
         self.style().is_some_and(|style| super::native_css::background_rounded(painter, rect, radius, style))
     }
 

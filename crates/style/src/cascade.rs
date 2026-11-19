@@ -194,6 +194,10 @@ pub struct StyleCache {
     /// identity's number, and with `:empty`, whether it has children.
     runs: std::collections::HashMap<(Option<u32>, u32, bool), u32>,
     computed: usize,
+    /// The [`record_matches`] run the styles kept were worked out under (0: none), so that a
+    /// run starts from styles worked out while it was on, not from kept ones that recorded
+    /// nothing.
+    recording: u64,
 }
 
 impl StyleCache {
@@ -325,7 +329,11 @@ pub fn compute_shared(
     let elements = tree.elements();
     // A tree whose new places might not fit starts the cache again before any is numbered, so
     // the numbers this call hands out stay the places they were given for.
-    if cache.inputs != Some((viewport, sheets_key)) || cache.places.len() + elements.len() > MAX_CACHED_STYLES {
+    let recording = RECORDING.with(std::cell::Cell::get);
+    if cache.inputs != Some((viewport, sheets_key))
+        || cache.places.len() + elements.len() > MAX_CACHED_STYLES
+        || (recording != 0 && cache.recording != recording)
+    {
         let structure = Structure::of(sheets);
         cache.clear();
         cache.structure = structure;
@@ -334,6 +342,7 @@ pub fn compute_shared(
             selector.ids(&mut cache.tested_ids);
         }
         cache.inputs = Some((viewport, sheets_key));
+        cache.recording = recording;
     }
     cache.computed = 0;
     let structure = cache.structure;
@@ -411,6 +420,117 @@ impl Default for Budget {
     }
 }
 
+/// A rule that matched an element, as [`explain`] tells it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MatchedRule {
+    /// The sheet's index in the `sheets` given, and its tier.
+    pub sheet: usize,
+    pub layer: Layer,
+    /// The rule's index in its sheet ([`Sheet::rule_sources`]), its line (from 1) and its
+    /// selector list as written.
+    pub rule: usize,
+    pub line: u32,
+    pub selector: String,
+    pub declarations: Vec<ExplainedDeclaration>,
+    /// What the rule weighs in the cascade for a declaration that is not `!important`: its tier,
+    /// `@layer`, specificity and place.
+    rank: Priority,
+}
+
+/// A declaration of a [`MatchedRule`] and what became of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExplainedDeclaration {
+    /// The property it sets: a longhand, or a custom property (`--accent`).
+    pub name: String,
+    /// Its value as written; for a part of a shorthand, the whole shorthand's.
+    pub value: String,
+    pub important: bool,
+    /// The shorthand it was written as (`padding`), when it was.
+    pub shorthand: Option<&'static str>,
+    pub outcome: Outcome,
+}
+
+/// What became of a declaration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// It won and the element took its value: the text after variables and `attr()` were
+    /// substituted (a custom property's value as the element sees it).
+    Applied(String),
+    /// It won, but its value did not hold (an undefined variable, a value the property does not
+    /// take), so the property keeps what it inherits or its initial value: the next rule down is
+    /// not used, as in CSS.
+    Dropped(String),
+    /// A rule of a higher tier, more important, more specific or later set the property.
+    Overridden,
+}
+
+/// The rules that match `tree`'s element at `node`, weakest first as the cascade weighs a
+/// declaration that is not `!important` (its tier, `@layer`, specificity, then place), with
+/// what became of each declaration; and the element's style. The styles of the elements around
+/// it are worked out along the way, as [`compute`] works them out (#1582).
+pub fn explain(
+    tree: &Tree,
+    node: usize,
+    viewport: Viewport,
+    sheets: &[AppliedSheet<'_>],
+) -> Result<(ComputedStyle, Vec<MatchedRule>), String> {
+    if !viewport.valid() || sheets.len() > 32 {
+        return Err("Invalid style viewport or sheet count".into());
+    }
+    let mut chain = vec![node];
+    while let Some(parent) = chain.last().and_then(|&at| tree.elements().get(at)).and_then(|element| element.parent) {
+        if chain.len() > tree.elements().len() {
+            return Err("A style tree with a cycle".into());
+        }
+        chain.push(parent);
+    }
+    chain.reverse();
+    let mut budget = Budget::default();
+    let mut parent: Option<ComputedStyle> = None;
+    let (last, above) = chain.split_last().ok_or("An empty style chain")?;
+    for &at in above {
+        parent = Some(element_style(tree, at, parent.as_ref(), viewport, sheets, false, &mut budget)?);
+    }
+    let mut rules = Vec::new();
+    let style =
+        element_style_traced(tree, *last, parent.as_ref(), viewport, sheets, false, &mut budget, Some(&mut rules))?;
+    rules.sort_by_key(|rule| rule.rank);
+    Ok((style, rules))
+}
+
+thread_local! {
+    /// The rules matched on this thread since [`record_matches`] was turned on, by their sheet's
+    /// [`Sheet::id`] and their index in it; `None` while it is off.
+    static MATCHES: std::cell::RefCell<Option<BTreeSet<(u64, usize)>>> = const { std::cell::RefCell::new(None) };
+    /// The number of the current recording run on this thread, 0 while it is off.
+    static RECORDING: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// How many runs were started on this thread.
+    static RUNS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Starts (`true`) or stops recording, on this thread, which rules match any element styled:
+/// for listing a theme's rules that never matched (#1582). Turning it on starts the record
+/// empty. Every style the cascade works out counts, whichever host asked for it; a
+/// [`StyleCache`] holding styles from before the run starts again, so that its hits are recorded.
+pub fn record_matches(on: bool) {
+    MATCHES.with(|matches| *matches.borrow_mut() = on.then(BTreeSet::new));
+    let run = if on {
+        RUNS.with(|runs| {
+            runs.set(runs.get() + 1);
+            runs.get()
+        })
+    } else {
+        0
+    };
+    RECORDING.with(|recording| recording.set(run));
+}
+
+/// The rules matched on this thread since [`record_matches`] was turned on, by their sheet's
+/// [`Sheet::id`] and their index in it ([`Sheet::rule_sources`]); empty while it is off.
+pub fn matched_rules() -> BTreeSet<(u64, usize)> {
+    MATCHES.with(|matches| matches.borrow().clone().unwrap_or_default())
+}
+
 /// The style of one element of `tree`, given its parent's computed style.
 pub(crate) fn element_style(
     tree: &Tree,
@@ -421,6 +541,24 @@ pub(crate) fn element_style(
     checked: bool,
     budget: &mut Budget,
 ) -> Result<ComputedStyle, String> {
+    element_style_traced(tree, node, parent, viewport, sheets, checked, budget, None)
+}
+
+/// [`element_style`], telling `trace` the rules that matched and what became of their
+/// declarations.
+#[allow(clippy::too_many_arguments)]
+fn element_style_traced(
+    tree: &Tree,
+    node: usize,
+    parent: Option<&ComputedStyle>,
+    viewport: Viewport,
+    sheets: &[AppliedSheet<'_>],
+    checked: bool,
+    budget: &mut Budget,
+    mut trace: Option<&mut Vec<MatchedRule>>,
+) -> Result<ComputedStyle, String> {
+    let recording = MATCHES.with(|matches| matches.borrow().is_some());
+    let mut matched: Vec<(u64, usize)> = Vec::new();
     let element = tree.elements().get(node).ok_or("Invalid style element")?;
     let Budget { work, variable_bytes } = budget;
     let mut computed = ComputedStyle::default();
@@ -443,13 +581,14 @@ pub(crate) fn element_style(
             computed.variables = Arc::new(initial);
         }
     }
-    let mut winners: BTreeMap<&str, (Priority, &Declaration)> = BTreeMap::new();
+    // Each winner with where it is in `trace`: its rule's place there and its own in the rule.
+    let mut winners: BTreeMap<&str, (Priority, &Declaration, (usize, usize))> = BTreeMap::new();
     let mut order = 0usize;
-    for applied in sheets {
+    for (sheet_index, applied) in sheets.iter().enumerate() {
         if applied.root.is_some_and(|root| !tree.contains(node, root)) {
             continue;
         }
-        for rule in &applied.sheet.rules {
+        for (rule_index, rule) in applied.sheet.rules.iter().enumerate() {
             order += 1;
             *work = work.checked_sub(1).ok_or("Style cascade exceeded its work budget")?;
             if !rule.media.iter().all(|media| media.matches(viewport)) {
@@ -468,25 +607,85 @@ pub(crate) fn element_style(
             let Some(specificity) = specificity else {
                 continue;
             };
-            for declaration in &rule.declarations {
+            if recording {
+                matched.push((applied.sheet.id(), rule_index));
+            }
+            let traced = trace.as_deref_mut().map(|trace| {
+                trace.push(MatchedRule {
+                    sheet: sheet_index,
+                    layer: applied.layer,
+                    rule: rule_index,
+                    line: rule.line,
+                    selector: rule.selector.to_string(),
+                    declarations: rule
+                        .declarations
+                        .iter()
+                        .map(|declaration| ExplainedDeclaration {
+                            name: declaration.name.clone(),
+                            value: declaration.value.clone(),
+                            important: declaration.important,
+                            shorthand: declaration.shorthand.map(crate::sheet::Shorthand::name),
+                            outcome: Outcome::Overridden,
+                        })
+                        .collect(),
+                    rank: priority(applied.layer, false, rule.layer, specificity, order),
+                });
+                trace.len() - 1
+            });
+            for (at, declaration) in rule.declarations.iter().enumerate() {
                 let priority = priority(applied.layer, declaration.important, rule.layer, specificity, order);
-                if winners.get(declaration.name.as_str()).is_none_or(|(previous, _)| *previous <= priority) {
-                    winners.insert(&declaration.name, (priority, declaration));
+                if winners.get(declaration.name.as_str()).is_none_or(|(previous, _, _)| *previous <= priority) {
+                    winners.insert(&declaration.name, (priority, declaration, (traced.unwrap_or(usize::MAX), at)));
                 }
             }
         }
     }
+    if recording {
+        MATCHES.with(|matches| {
+            if let Some(set) = matches.borrow_mut().as_mut() {
+                set.extend(matched);
+            }
+        });
+    }
+    // The custom properties whose winning declaration did not hold, with why: only when tracing.
+    let mut dropped_variables: BTreeMap<String, String> = BTreeMap::new();
     if winners.keys().any(|key| key.starts_with("--")) {
-        let custom = winners.iter().map(|(name, (_, declaration))| (*name, *declaration));
-        let resolved = cascade_variables(&computed.variables, custom, sheets, Some(element), checked)?;
+        let custom = winners.iter().map(|(name, (_, declaration, _))| (*name, *declaration));
+        let resolved = cascade_variables(
+            &computed.variables,
+            custom,
+            sheets,
+            Some(element),
+            checked,
+            trace.is_some().then_some(&mut dropped_variables),
+        )?;
         *variable_bytes = variable_bytes
             .checked_add(resolved.values().map(String::len).sum::<usize>())
             .filter(|bytes| *bytes <= 16 * 1024 * 1024)
             .ok_or("Computed variables exceed 16 MiB")?;
         computed.variables = Arc::new(resolved);
     }
-    for (name, (priority, declaration)) in winners {
+    let tracing = trace.is_some();
+    let mut outcome = |at: (usize, usize), outcome: Outcome| {
+        if let Some(slot) =
+            trace.as_deref_mut().and_then(|trace| trace.get_mut(at.0)).and_then(|rule| rule.declarations.get_mut(at.1))
+        {
+            slot.outcome = outcome;
+        }
+    };
+    for (name, (priority, declaration, at)) in winners {
         let Some(property) = Property::from_name(name) else {
+            if tracing {
+                let custom = name.starts_with("--");
+                let fate = match (dropped_variables.get(name), computed.variables.get(name)) {
+                    (Some(why), _) if custom => Outcome::Dropped(why.clone()),
+                    (None, Some(value)) if custom => Outcome::Applied(value.clone()),
+                    // `initial` with no registered value: the property is unset.
+                    (None, None) if custom => Outcome::Applied(declaration.value.trim().to_owned()),
+                    _ => Outcome::Dropped("not a property Suhina knows".into()),
+                };
+                outcome(at, fate);
+            }
             continue;
         };
         let value = match crate::variables::substitute_attributes(&declaration.value, element)
@@ -498,8 +697,12 @@ pub(crate) fn element_style(
             }) {
             Ok(value) => value,
             Err(error) if checked => return Err(error),
-            Err(_) => continue,
+            Err(error) => {
+                outcome(at, Outcome::Dropped(error));
+                continue;
+            }
         };
+        let text = tracing.then(|| value.trim().to_owned());
         let value = match value.trim() {
             "inherit" => parent.map_or_else(|| property.initial(), |parent| parent.get(property)),
             "initial" => property.initial(),
@@ -508,9 +711,15 @@ pub(crate) fn element_style(
             other => match property.parse(&crate::value::viewport_units(other, viewport.width, viewport.height)) {
                 Ok(value) => value,
                 Err(error) if checked => return Err(error),
-                Err(_) => continue,
+                Err(error) => {
+                    outcome(at, Outcome::Dropped(error));
+                    continue;
+                }
             },
         };
+        if let Some(text) = text {
+            outcome(at, Outcome::Applied(text));
+        }
         computed.values.insert(property, value);
         // A user-agent or base rule on the element replaces what it inherited from a sheet's rule
         // above it: its value is Suhina's, not one a theme wrote (`knob-body` under a styled
@@ -623,8 +832,11 @@ fn cascade_variables<'a>(
     sheets: &[AppliedSheet<'_>],
     element: Option<&crate::selector::Element>,
     checked: bool,
+    mut dropped_winners: Option<&mut BTreeMap<String, String>>,
 ) -> Result<BTreeMap<String, String>, String> {
     let mut variables = inherited.clone();
+    // The winners that set a value of their own, for telling which of them held.
+    let mut own: Vec<&str> = Vec::new();
     for (name, declaration) in winners.filter(|(name, _)| name.starts_with("--")) {
         match declaration.value.trim() {
             "initial" => {
@@ -649,21 +861,36 @@ fn cascade_variables<'a>(
                 match substituted {
                     Ok(value) => {
                         variables.insert(name.into(), value);
+                        own.push(name);
                     }
                     // Invalid at computed-value time: the inherited value stays.
                     Err(error) if checked => return Err(error),
-                    Err(_) => {}
+                    Err(error) => {
+                        if let Some(dropped) = dropped_winners.as_deref_mut() {
+                            dropped.insert(name.into(), error);
+                        }
+                    }
                 }
             }
         }
     }
     let mut resolved = crate::variables::resolve(&variables)?;
+    if let Some(dropped) = dropped_winners.as_deref_mut() {
+        for name in own.iter().filter(|name| !resolved.contains_key(**name)) {
+            dropped.insert(
+                (*name).into(),
+                "a var() in it has no value to stand for, or the variables refer to each other".into(),
+            );
+        }
+    }
     // A registered property that substitution dropped (a cycle, or a `var()` with nothing to
     // stand for it) is invalid at computed-value time: it takes its initial value, and the
     // variables that read it are resolved again with that value.
     let mut dropped = false;
+    let mut fell_back: Vec<&str> = Vec::new();
     for registered in sheets.iter().flat_map(|applied| applied.sheet.properties.iter()) {
         if variables.contains_key(&registered.name) && !resolved.contains_key(&registered.name) {
+            fell_back.push(&registered.name);
             match &registered.initial {
                 Some(initial) => variables.insert(registered.name.clone(), initial.clone()),
                 None => variables.remove(&registered.name),
@@ -673,6 +900,13 @@ fn cascade_variables<'a>(
     }
     if dropped {
         resolved = crate::variables::resolve(&variables)?;
+        // A winner that reads a fallen-back property resolves now: it was dropped only for
+        // that, so its value holds. The registered properties themselves keep their reason.
+        if let Some(dropped) = dropped_winners.as_deref_mut() {
+            dropped.retain(|name, _| {
+                !own.contains(&name.as_str()) || fell_back.contains(&name.as_str()) || !resolved.contains_key(name)
+            });
+        }
     }
     // A registered property's value that does not match its syntax is invalid at
     // computed-value time: the property takes its initial value.
@@ -680,6 +914,13 @@ fn cascade_variables<'a>(
         if let Some(value) = resolved.get(&registered.name)
             && !registered.syntax.accepts(value)
         {
+            if let Some(dropped) = dropped_winners.as_deref_mut()
+                && own.contains(&registered.name.as_str())
+            {
+                dropped
+                    .entry(registered.name.clone())
+                    .or_insert_with(|| "the value does not match its @property syntax".into());
+            }
             match &registered.initial {
                 Some(initial) => resolved.insert(registered.name.clone(), initial.clone()),
                 None => resolved.remove(&registered.name),
@@ -723,7 +964,7 @@ pub fn root_variables(viewport: Viewport, sheets: &[AppliedSheet<'_>]) -> Result
         }
     }
     let custom = winners.iter().map(|(name, (_, declaration))| (*name, *declaration));
-    cascade_variables(&initial, custom, sheets, None, false)
+    cascade_variables(&initial, custom, sheets, None, false, None)
 }
 
 /// Resolves a `<color>` value (a theme's swatch) for the given theme and variant sheets

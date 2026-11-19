@@ -1294,7 +1294,7 @@ the theme's `id` and `name`, and under `files` every other entry's path and SHA-
 `suhina-cli theme validate` all use it, so they accept and refuse the same packages.
 
 **Seeing a theme without the app.** `suhina-cli theme render <theme-folder | built-in-theme-id> [--backdrop <image.png>]
-[--out <folder>] [--scale <n>] [--scene <name> [--hover <label> | --press <label>]] [--budget]` (or `cargo run -p suhina-theme-render -- …` from the source) draws the theme in
+[--out <folder>] [--scale <n>] [--scene <name> [--hover <label> | --press <label>]] [--outline] [--budget | --coverage | --probe <x,y>]` (or `cargo run -p suhina-theme-render -- …` from the source) draws the theme in
 a fixed set of scenes of the demo project: the Launcher and Arrangement views, the piano roll,
 the browser (its places, a search, the plug-ins and the sample map), a MIDI clip's and an audio
 clip's panels, a device group's panel, every device in a row and each expanded panel, a menu,
@@ -1311,6 +1311,44 @@ shows. `launcher-scrolled` and `arrangement-scrolled` draw both views scrolled d
 a project with more tracks and scenes than fit, so whatever shows through a header that stays
 shows there. A scene wider than the GPU's textures allow is drawn at a smaller `--scale`, with a warning. A built-in theme's id works in place of a folder. It warns when the window would keep
 repainting every frame in a scene. `--budget` prints the style engine's counts instead.
+
+**Finding out why a rule does nothing** (#1582). Three more modes read what the style engine did
+in a scene's last frame, the frame that is drawn:
+
+- `--probe x,y`, with `--scene`, prints the element painted at that point of the window (in
+  points from its top left corner): of the elements whose padding box holds the point, the one on
+  the topmost layer (an open menu over the view), and on that layer the one entered last. It
+  prints the element as a selector (`button#play[checked]:hover`), its box, the elements it is in
+  from the window down, and every rule that matches it, the strongest first, each with its sheet
+  (the user-agent sheet, the base sheet, `theme.css`, the chosen variant, a device panel's sheet or
+  `user.css`), its line and its selectors. Each declaration says what became of it: it *applies*
+  (with its value once variables and `attr()` are substituted, when that differs from what is
+  written), it is *overridden* by a stronger rule, or it is *dropped* with the reason, as when it
+  names an undefined variable or gives a value the property does not take. A dropped winner is not
+  replaced by the next rule down: the property keeps what it inherits or its initial value, as in
+  CSS. The part of a shorthand is named as its longhand (`padding-top (from padding)`). The
+  explanation is worked out from the same tree and sheets the frame was styled with; when the
+  frame painted the element with another style (held for a transition), the probe says so. It
+  needs no GPU.
+- `--outline` writes `<scene>.outline.png` beside each picture: the picture over the backdrop with
+  every element's padding box drawn as a one-pixel rectangle, coloured by its depth, and its name
+  (`button#play`) in the box's top left corner, cut to the box's width.
+- `--coverage` drives every scene (or the one `--scene` names) without a GPU and lists the rules
+  of the theme's own sheet that matched no element in any of them, by line and selector. Every
+  style the scenes work out counts, including those read before an element is drawn (the frames
+  of menus, popups and tooltips, the Arrangement's track height, device panels' columns) and the
+  theme editor's reading of the theme's settings, which parses the theme's text again: a sheet
+  is known by a fingerprint of its text, so every copy of the theme's sheet counts as the one. Rules that name artwork (`icon[kind="play"]`, or the earlier `fader.cap` form) are listed
+  apart: Suhina reads their `image` when it loads the theme, whether an element matches them or
+  not, so only their other properties did nothing. A rule for a state no scene shows, or inside an
+  `@media` block for another window size or the other colour scheme, cannot match in the scenes
+  and is listed too. The variant's values are not listed: the variant is one rule for `:root`.
+
+An element has a box only when it paints or gives one; a part that reads an element's colour
+without entering the element (#1487 › B1) has none, so a probe at it names the element around it,
+and the outline does not draw it. Rules are numbered by the line their selectors start on in the
+sheet as Suhina reads it: in a `theme.css` the file's own lines; in an older JSON theme, whose
+rules Suhina writes into a sheet, that sheet's.
 
 **Every built-in theme keeps its look unless a change means to change it.** The painted tests of
 `suhina-theme-render` draw each scene in every built-in theme and variant without a GPU, and list
@@ -1515,6 +1553,14 @@ of bars, and a slider id per parameter.
 - **Sizes:** `send { width; height }` within the sends row; `track-height` (20–400
   points) on `arrangement` for tracks without a height of their own; `piano-tool { height }`
   grows the toolbar band to the height plus 6 points.
+- **Read before an element is drawn, in the window's cascade** (#1585): the frames and blur of
+  `menu`, `popup` and `tooltip`, `arrangement`'s `track-height`, `track-headers`,
+  `header-min-width` and `header-tint`, and a device panel's `grid-template-columns`,
+  `device-control` `height` and `param-label` are read for an element under
+  `html > body > window` with the same sheets, tiers, window size and colour scheme the window is
+  styled with: the base sheet, the theme's colour map, the window's faded colours over a backdrop
+  and `@media` for the window's size all apply, as to any element the window paints. Before the
+  first frame the window counts as 1280 by 800.
 - **Device panels:** a themed panel's generated list keeps one column that follows its width and scrolls; `device value
   { width }`; the columns of `device { grid-template-columns }` (1–8) and the `height` of
   `device device-control` (16–160 points) lay parameters a device places nowhere itself in
