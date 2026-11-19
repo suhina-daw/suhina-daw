@@ -145,3 +145,13 @@ fn parking_returns_while_a_plugin_is_still_resetting() {
     assert!(player.parked.is_none());
     drop(renderer);
 }
+
+#[test]
+fn changing_the_output_during_reset_keeps_the_retained_device_available() {
+    let (mut projects, first, send) = pending_project();
+    projects.switch(first).unwrap();
+    assert!(projects.reopen_output().is_err());
+    send.send(Ok(prepared().parked.take().unwrap())).unwrap();
+    projects.poll_plugins();
+    assert!(projects.get(first).unwrap().player().is_some());
+}

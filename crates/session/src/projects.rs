@@ -480,6 +480,12 @@ impl Projects {
     /// Returns a notice as [`Projects::open_output`].
     pub fn reopen_output(&mut self) -> Result<Option<String>, CommandError> {
         self.ensure_output_can_close()?;
+        if self.tabs.active.and_then(|id| self.get(id)).is_some_and(|s| s.sync.suspended.is_some()) {
+            self.open_output(None)?;
+            if self.tabs.active.and_then(|id| self.get(id)).is_some_and(|s| s.sync.suspended.is_some()) {
+                return Err("the project audio is still stopping; retry the device change when it is ready".into());
+            }
+        }
         // The preview output opens on the new choice when next needed.
         self.close_preview_output();
         self.devices.idle = None;
