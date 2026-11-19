@@ -7,8 +7,8 @@
 
 use crate::core::{self, Buses, FB_IN, FB_OUT, LEVEL_THRESHOLD, OUT_BUS_ADD, OpParams};
 use crate::ext::{Frame, Mods, NoteExt, glide};
-use crate::tables::{LG_N, N, Tables};
 use crate::wave::{self, TABLE};
+use suhina_dsp::fm::{LG_N, N, Tables};
 
 /// What an operator plays this block.
 enum Source<'a> {
@@ -51,7 +51,7 @@ pub fn render(
         let settings = ext.ops.get(op);
         let (freq, depth) = (param.freq, mods.lfo_depth.get(op).copied().unwrap_or(0.0));
         let mut phase = param.phase;
-        let step = core::gain_step(gain1, gain2);
+        let step = suhina_dsp::fm::gain_step(gain1, gain2);
 
         if gain1 >= LEVEL_THRESHOLD || gain2 >= LEVEL_THRESHOLD {
             if !has_contents.get(out_bus).copied().unwrap_or(false) {
@@ -126,11 +126,11 @@ pub fn render(
                         ((n as f32 / u32::MAX as f32 * 2.0 - 1.0) * ONE) as i32
                     }
                 };
-                let y = core::scale(y, gain);
+                let y = suhina_dsp::fm::scale(y, gain);
                 if voice_loop || own_loop {
                     state = [state[1], y];
                 }
-                core::write(slot, y, add);
+                suhina_dsp::fm::write(slot, y, add);
                 let wobble = lfo.get(i).copied().unwrap_or(0.0) * depth;
                 let moved = if wobble == 0.0 { freq } else { freq.wrapping_add((freq as f32 * wobble) as i32) };
                 phase = phase.wrapping_add(moved);

@@ -4,7 +4,7 @@
 //! Signal-processing building blocks for Suhina's built-in effects and instruments (ADR 0004): gain
 //! conversions, the pan law, parameter smoothing, attack/release followers, filters, crossovers,
 //! LFO waveforms and tempo sync, waveshapers, oversampling, delay lines and allpasses, and a
-//! band spectrum for panels.
+//! band spectrum for panels, plus fixed-point FM sine operators and lookup tables.
 //!
 //! Nothing here depends on the engine, the model or a device: every block is plain state plus a
 //! per-sample or per-block `process`, so it can be tested on its own and reused by any device.
@@ -30,6 +30,7 @@ pub mod dc;
 pub mod delay;
 pub mod emphasis;
 pub mod first_order;
+pub mod fm;
 pub mod follower;
 pub mod gain;
 pub mod iir_oversample;
@@ -72,7 +73,7 @@ pub(crate) fn usable_frequency(frequency: f64, sample_rate: f64) -> f64 {
     if frequency.is_finite() { frequency.clamp(1.0, top) } else { 1_000.0f64.min(top) }
 }
 
-/// `sample_rate`, or 48 kHz when it is not a positive finite number.
+/// `sample_rate`, or 48 kHz when it is non-finite or below 1 kHz.
 pub(crate) fn usable_sample_rate(sample_rate: f64) -> f64 {
     if sample_rate.is_finite() && sample_rate >= 1_000.0 { sample_rate } else { 48_000.0 }
 }

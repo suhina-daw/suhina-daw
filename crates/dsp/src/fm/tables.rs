@@ -7,6 +7,7 @@
 // Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE in this crate).
 // Changes: translated to Rust; the global tables became one struct per synth, built off the
 // audio thread; arithmetic that overflowed in C at low sample rates is done in 64 bits.
+// Moved to shared DSP; invalid and sub-1-kHz rates use the shared 48-kHz fallback.
 
 //! Lookup tables and the constants that depend on the sample rate.
 //!
@@ -49,8 +50,10 @@ pub struct Tables {
 }
 
 impl Tables {
+    /// Prepare lookup data off the audio thread. Non-finite rates and rates below
+    /// 1 kHz use 48 kHz, matching the shared DSP sample-rate policy.
     pub fn new(sample_rate: f64) -> Self {
-        let sample_rate = if sample_rate.is_finite() && sample_rate > 0.0 { sample_rate } else { 48_000.0 };
+        let sample_rate = crate::usable_sample_rate(sample_rate);
         let block = N as f64;
         let mut porta = [0; PORTA_STEPS];
         let mut porta_glissando = [0; PORTA_STEPS];

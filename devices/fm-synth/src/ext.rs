@@ -8,9 +8,9 @@
 use suhina_dsp::{Circuit, Multimode, MultimodeSettings, Response};
 
 use crate::params::{self, ENV_FIELDS, HARMONICS, MATRIX_SOURCES, OP_EXT_FIELDS, env, filter, lfo, opx, pitch};
-use crate::tables::N;
 use crate::time_env::{Clock, EnvSettings, LoopMode, SILENCE_DB, TimeEnv};
 use crate::wave::{self, DrawnSettings, DrawnWave};
+use suhina_dsp::fm::N;
 
 /// Destinations in [`params::DESTINATIONS`] order.
 pub mod dest {
