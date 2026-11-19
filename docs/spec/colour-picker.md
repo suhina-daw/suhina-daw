@@ -121,9 +121,14 @@ hierarchy and independent selection outlines remain necessary. A simulation does
 replace feedback from people with colour-vision deficiencies or native-window testing.
 
 The theme renderer includes compact, expanded-field and expanded-wheel colour-picker scenes.
-They participate in every built-in theme's paint and clipped-text checks. Linux CI also renders
-these scenes in the dark, light and high-contrast themes as the `colour-picker-previews` artifact;
-these show the actual controls in an embedded window, not the operating system's title bar.
+They participate in every built-in theme's paint and clipped-text checks. The rendered examples
+below show the actual controls in an embedded window, not the operating system's title bar.
+
+| Theme | Compact | Field | Wheel |
+|---|---|---|---|
+| Dark | [Preview](../design/reference/colour-picker-dark-compact.png) | [Preview](../design/reference/colour-picker-dark-field.png) | [Preview](../design/reference/colour-picker-dark-wheel.png) |
+| Light | [Preview](../design/reference/colour-picker-light-compact.png) | [Preview](../design/reference/colour-picker-light-field.png) | [Preview](../design/reference/colour-picker-light-wheel.png) |
+| High contrast | [Preview](../design/reference/colour-picker-contrast-compact.png) | [Preview](../design/reference/colour-picker-contrast-field.png) | [Preview](../design/reference/colour-picker-contrast-wheel.png) |
 
 ## Sources
 
