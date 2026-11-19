@@ -143,9 +143,45 @@ fn a_replaced_click_set_comes_back_to_be_freed_by_the_controller() {
     assert_eq!(Arc::strong_count(&first), 2, "the renderer plays it");
     controller.set_clicks(Arc::new(ClickSet::default())).unwrap();
     play(&mut renderer, 1, 16);
-    // The next send frees what came back.
-    controller.set_clicks(Arc::new(ClickSet::default())).unwrap();
+    // Normal collection frees it without another sound selection.
+    controller.collect();
     assert_eq!(Arc::strong_count(&first), 1, "back and freed off the audio thread");
+}
+
+#[test]
+fn a_send_reserves_room_for_its_predecessor_even_when_the_renderer_catches_up() {
+    let mut clicks = Clicks::new();
+    let mut sender = clicks.sender();
+    for _ in 0..CLICK_QUEUE {
+        sender.send(Arc::new(ClickSet::default())).unwrap();
+    }
+    // The renderer runs between the two steps of send: collection sees nothing, then all
+    // pending sets come back. A new set must not be accepted into a queue with no way back.
+    sender.collect();
+    clicks.receive();
+    let next = Arc::new(ClickSet::new(steady(0.25, 10), None));
+    assert!(sender.enqueue(Arc::clone(&next)).is_err());
+    sender.send(Arc::clone(&next)).unwrap();
+    clicks.receive();
+    assert!(Arc::ptr_eq(&clicks.set, &next), "an accepted set reaches the renderer without another send");
+}
+
+#[test]
+fn suspending_a_project_clears_a_click_waiting_for_the_cue() {
+    let mut project = crate::buses_tests::grouped(vec![], false);
+    project.channels[0].devices.push(crate::chain_tests::device("limiter", &[]));
+    project.channels[0].cue = true;
+    project.arrangement.lanes.clear();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    renderer.handle(LaunchCommand::SetCue { gain: Some(1.0), separate: Some(true) });
+    renderer.handle(LaunchCommand::SetClickRoute(ClickRoute::Cue));
+    renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(1.0) });
+    renderer.handle(LaunchCommand::Play);
+    let (_, cue) = play(&mut renderer, 1, 8);
+    assert!(cue.iter().all(|s| *s == 0.0), "the click is waiting in the cue delay");
+    renderer.suspend_project();
+    let (main, cue) = play(&mut renderer, 4, 480);
+    assert!(main.iter().chain(&cue).all(|s| *s == 0.0), "a retained, stopped project reopens silently");
 }
 
 /// Frames where sound starts after more than 100 silent frames.

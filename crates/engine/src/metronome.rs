@@ -56,7 +56,8 @@ impl ClickSet {
         Self { beat, bar }
     }
 
-    fn click(&self, bar: bool) -> &Click {
+    /// The already loaded beat or bar sound, for replacing one without rereading the other.
+    pub fn click(&self, bar: bool) -> &Click {
         if bar { &self.bar } else { &self.beat }
     }
 }
@@ -382,7 +383,7 @@ impl Clicks {
         let (outgoing, retired) = rtrb::RingBuffer::new(CLICK_QUEUE);
         self.incoming = Some(incoming);
         self.retired = Some(outgoing);
-        ClickSender { sets, retired }
+        ClickSender { sets, retired, outstanding: 0 }
     }
 
     /// Takes the sets that arrived, the last one staying; each one replaced goes back to be
@@ -404,13 +405,32 @@ impl Clicks {
 pub(crate) struct ClickSender {
     sets: rtrb::Producer<std::sync::Arc<ClickSet>>,
     retired: rtrb::Consumer<std::sync::Arc<ClickSet>>,
+    // Each accepted set reserves a return slot until its predecessor is collected. Counting
+    // both queues keeps that slot reserved even if the renderer runs during a send.
+    outstanding: usize,
 }
 
 impl ClickSender {
+    pub(crate) fn collect(&mut self) {
+        while self.retired.pop().is_ok() {
+            self.outstanding = self.outstanding.saturating_sub(1);
+        }
+    }
+
     /// Frees the sets that came back, then sends `set`. Fails while the queue is full.
     pub(crate) fn send(&mut self, set: std::sync::Arc<ClickSet>) -> Result<(), crate::ControlError> {
-        while self.retired.pop().is_ok() {}
-        self.sets.push(set).map_err(|_| crate::ControlError::Full("metronome sound"))
+        self.collect();
+        self.enqueue(set)
+    }
+
+    /// Reserves the return slot before accepting a set, without collecting again.
+    fn enqueue(&mut self, set: std::sync::Arc<ClickSet>) -> Result<(), crate::ControlError> {
+        if self.outstanding >= CLICK_QUEUE {
+            return Err(crate::ControlError::Full("metronome sound"));
+        }
+        self.sets.push(set).map_err(|_| crate::ControlError::Full("metronome sound"))?;
+        self.outstanding += 1;
+        Ok(())
     }
 }
 

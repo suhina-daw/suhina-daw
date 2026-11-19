@@ -968,10 +968,11 @@ impl Controller {
     }
 
     /// Drops processors the audio thread has given back (replaced, or of removed devices), and
-    /// what the preview voice let go of.
+    /// what the preview voice and metronome let go of.
     pub fn collect(&mut self) {
         self.updater.collect();
         self.preview.collect();
+        self.clicks.collect();
     }
 
     /// Builds the graphs from now on with `audio` (ADR 0011): the session's pool after files

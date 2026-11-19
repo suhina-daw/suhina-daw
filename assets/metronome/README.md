@@ -14,6 +14,7 @@ To make the variations again:
 python -I assets/metronome/make_variations.py assets/metronome/soft.wav assets/metronome
 ```
 
-From `soft.wav` it makes the same files again, equal within float rounding (the original hit
-was longer, so `muted.wav` and `deep.wav` come out a few silent frames shorter); it rewrites
-`soft.wav` unchanged.
+The script reads IEEE-float WAV directly, including on Python versions before 3.15. It writes
+the four variations and leaves the source untouched, so repeated runs do not fade it again.
+The shipped variations were made from the original, longer hit; regenerating from the trimmed
+`soft.wav` can differ in their tails. It does not reproduce those original files byte for byte.

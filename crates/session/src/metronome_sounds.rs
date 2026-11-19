@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use suhina_engine::{Click, ClickFamily, ClickSet};
+use suhina_engine::{Click, ClickFamily};
 
 use crate::Session;
 
@@ -72,7 +72,7 @@ fn names(folder: &Path, dirs: bool, most: usize) -> Vec<String> {
         .flatten()
         .filter(|e| e.file_type().is_ok_and(|t| if dirs { t.is_dir() } else { t.is_file() }))
         .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|name| !name.starts_with('.'))
+        .filter(|name| plain(name))
         .filter(|name| dirs || is_sound(Path::new(name)))
         .take(most.saturating_mul(4))
         .collect();
@@ -119,7 +119,10 @@ pub(crate) fn click(base: Option<&Path>, id: &str) -> Result<Click, String> {
         return Err(unknown());
     }
     let base = base.ok_or("there is no library to read the sound from")?;
-    let path = library_folder(base).join(family).join(file);
+    let folder = library_folder(base);
+    // Use the same containment and link checks as project audio, including the family folder.
+    let relative = format!("{family}/{file}");
+    let path = suhina_media::locate(&relative, None, &folder, &suhina_media::Trusted::default()).ok_or_else(unknown)?;
     let meta = std::fs::symlink_metadata(&path).map_err(|_| unknown())?;
     if !meta.is_file() {
         return Err(unknown());
@@ -127,15 +130,9 @@ pub(crate) fn click(base: Option<&Path>, id: &str) -> Result<Click, String> {
     if meta.len() > MAX_FILE_BYTES {
         return Err(format!("{id:?} is larger than {} MB; a click is at most two seconds", MAX_FILE_BYTES >> 20));
     }
-    let data = suhina_media::decode_file(&path).map_err(|e| format!("{id:?} could not be read: {e}"))?;
+    let data = suhina_media::decode_file_prefix(&path, suhina_engine::MAX_CLICK_SECONDS)
+        .map_err(|e| format!("{id:?} could not be read: {e}"))?;
     Click::from_audio(&data).ok_or_else(|| format!("{id:?} holds no sound"))
-}
-
-/// The clicks `sound` on the beat and `accent` (or `sound` higher) on the bar's first beat.
-pub(crate) fn click_set(base: Option<&Path>, sound: &str, accent: Option<&str>) -> Result<ClickSet, String> {
-    let beat = click(base, sound)?;
-    let bar = accent.map(|id| click(base, id)).transpose()?;
-    Ok(ClickSet::new(beat, bar))
 }
 
 impl Session {

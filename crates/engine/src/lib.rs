@@ -990,6 +990,7 @@ impl Renderer {
         self.songs.clear();
         self.graph.direct_delay.clear();
         self.graph.click_delay.clear();
+        self.graph.click_cue_delay.clear();
         for chain in &mut self.graph.chains {
             chain.clear_suspended_delays();
         }

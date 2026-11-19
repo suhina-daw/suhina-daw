@@ -562,7 +562,7 @@ pub struct Controller {
     pub(crate) updater: crate::swap::Updater,
     pub(crate) preview: crate::preview::PreviewSender,
     /// The metronome's click sets on their way to the renderer, and back to be freed.
-    clicks: crate::metronome::ClickSender,
+    pub(crate) clicks: crate::metronome::ClickSender,
     pub(crate) preview_monitor: Arc<crate::preview::PreviewMonitor>,
     pub(crate) cpu_monitor: Arc<crate::cpu::CpuMonitor>,
     pub(crate) meter_monitor: Arc<crate::meters::MeterMonitor>,

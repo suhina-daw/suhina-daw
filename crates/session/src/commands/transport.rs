@@ -250,8 +250,22 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
     let clicks = if sound.is_some() || accent.is_some() {
         let sound = sound.clone().unwrap_or_else(|| session.live.metronome.2.clone());
         let accent = accent.clone().unwrap_or_else(|| session.live.accent.clone());
-        let set = crate::metronome_sounds::click_set(session.library_base(), &sound, accent.as_deref())
-            .map_err(CommandError)?;
+        let beat = if sound == session.live.metronome.2 {
+            session.live.clicks.click(false).clone()
+        } else {
+            crate::metronome_sounds::click(session.library_base(), &sound).map_err(CommandError)?
+        };
+        let bar = accent
+            .as_deref()
+            .map(|id| {
+                if accent == session.live.accent {
+                    Ok(session.live.clicks.click(true).clone())
+                } else {
+                    crate::metronome_sounds::click(session.library_base(), id).map_err(CommandError)
+                }
+            })
+            .transpose()?;
+        let set = suhina_engine::ClickSet::new(beat, bar);
         Some((sound, accent, std::sync::Arc::new(set)))
     } else {
         None
@@ -266,21 +280,20 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
         Some(other) => return Err(format!("route must be one of {}, got {other}", routes()).into()),
     };
     send(session, LaunchCommand::SetMetronome { on, gain: gain.map(|g| g as f32) })?;
-    if let Some((_, _, set)) = &clicks {
-        session.player_mut()?.set_clicks(std::sync::Arc::clone(set))?;
-    }
-    if let Some(route) = route {
-        send(session, LaunchCommand::SetClickRoute(route))?;
-        session.live.click_route = route;
-    }
+    // A later queue can be full. Mirror each accepted update before attempting the next one.
     session.live.metronome.0 = on;
     if let Some(gain) = gain {
         session.live.metronome.1 = to_db(gain).unwrap_or(f64::NEG_INFINITY);
     }
     if let Some((sound, accent, set)) = clicks {
+        session.player_mut()?.set_clicks(std::sync::Arc::clone(&set))?;
         session.live.metronome.2 = sound;
         session.live.accent = accent;
         session.live.clicks = set;
+    }
+    if let Some(route) = route {
+        send(session, LaunchCommand::SetClickRoute(route))?;
+        session.live.click_route = route;
     }
     let (_, db, ref sound) = session.live.metronome;
     Ok(json!({

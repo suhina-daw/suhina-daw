@@ -52,14 +52,16 @@ folder, and each sound file in it (WAV, AIFF, FLAC, MP3, Ogg) one of its sounds,
 file without its extension. A sound's id is `library/<folder>/<file>`.
 
 - Families come after the built-in ones, folders and files in name order without regard to
-  case; a hidden folder or file (its name starting with a dot), a file that is no sound and a
-  folder without one are left out. At most 64 families and 64 sounds in each are listed.
+  case; a hidden folder or file (its name starting with a dot), a name containing a separator
+  or colon, a symbolic link, a file that is no sound and a folder without one are left out.
+  At most 64 families and 64 sounds in each are listed.
 - The folder is looked at again whenever the metronome's menu opens and
   `transport.metronomeSounds` runs, so a folder added while Suhina runs is there the next time.
-- A sound is read when it is picked: its channels mixed to one and cut to two seconds. A file
-  over 16 MB, one that does not decode, and an id that names anything outside its family's
-  folder (a separator, `..`, a hidden name) are refused, and the metronome keeps the sounds it
-  had.
+- A changed sound is read when it is picked: only its first two seconds are decoded and its
+  channels mixed to one. The other sound keeps its loaded samples, even if its file has gone.
+  A file over 16 MB, one that does not decode, and an id that names anything outside its
+  family's folder (a separator, `..`, a hidden name or a link through a family folder) are
+  refused, and the metronome keeps the sounds it had.
 
 ### Playing
 
@@ -67,7 +69,9 @@ A recorded click is read with linear interpolation at the output's sample rate; 
 beat with `accent` `higher` it plays a fifth higher, and so shorter. A synthesized one plays at
 its bar pitch there. The count-in clicks with the same sounds. A new pair of sounds reaches the
 audio thread by a queue of its own, and the pair it replaces goes back the same way to be freed,
-so the audio thread never allocates or frees one.
+so the audio thread never allocates or frees one. Each accepted pair reserves a return slot;
+a full queue refuses it. If a later setting in a command cannot be queued, the session keeps
+the state of the earlier settings already accepted by the engine.
 
 ## Level
 

@@ -193,6 +193,119 @@ fn without_a_library_only_the_built_in_sounds_are_there() {
     assert_eq!(listed["library"], Value::Null);
 }
 
+#[test]
+fn changing_one_sound_keeps_the_loaded_other_after_both_files_are_removed() {
+    // Try both orders: either menu can replace its sound after the files disappear.
+    for change_beat_first in [true, false] {
+        let base = library();
+        let (mut session, mut renderer) = playing(&base);
+        run(
+            &mut session,
+            "transport.setMetronome",
+            json!({
+                "on": true, "db": 0, "sound": "library/Claps/A.wav", "accent": "library/Claps/b.wav"
+            }),
+        )
+        .unwrap();
+        let folder = suhina_session::metronome_folder(&base).join("Claps");
+        std::fs::remove_file(folder.join("A.wav")).unwrap();
+        std::fs::remove_file(folder.join("b.wav")).unwrap();
+        let (first, second) = if change_beat_first { ("sound", "accent") } else { ("accent", "sound") };
+        let mut params = json!({ "on": true });
+        params[first] = json!("wood");
+        run(&mut session, "transport.setMetronome", params).unwrap();
+        run(&mut session, "transport.play", json!({})).unwrap();
+        let peaks = beat_peaks(&mut renderer, 2);
+        let (beat, expected) = if change_beat_first { (0, 0.25) } else { (1, 0.5) };
+        assert!((peaks[beat] - expected).abs() < 0.01, "the unchanged sound still plays: {peaks:?}");
+        let mut params = json!({ "on": true });
+        params[second] = json!("beep");
+        run(&mut session, "transport.setMetronome", params).unwrap();
+    }
+}
+
+#[test]
+fn a_full_sound_queue_keeps_the_state_of_the_settings_already_sent() {
+    let base = library();
+    let (mut session, mut renderer) = playing(&base);
+    // No rendering while filling: this is queue pressure, independent of thread timing.
+    let mut full = false;
+    for _ in 0..16 {
+        if run(&mut session, "transport.setMetronome", json!({ "on": true, "db": 0, "sound": "wood" })).is_err() {
+            full = true;
+            break;
+        }
+    }
+    assert!(full);
+    assert!(
+        run(
+            &mut session,
+            "transport.setMetronome",
+            json!({
+                "on": false, "db": -20, "sound": "soft", "route": "cue"
+            })
+        )
+        .is_err()
+    );
+    let state = session.metronome();
+    assert!(!state.on);
+    assert!((state.db + 20.0).abs() < 1e-6);
+    assert_eq!(state.sound, "wood", "the refused sound is not stored");
+    renderer.process(&mut [0.0; 32]);
+    assert_eq!(session.player().unwrap().monitor().metronome(), state.on);
+}
+
+#[cfg(unix)]
+#[test]
+fn discovery_omits_names_the_sound_command_cannot_select() {
+    let base = library();
+    let root = suhina_session::metronome_folder(&base);
+    std::fs::create_dir(root.join("Bad:family")).unwrap();
+    write_wav(&root.join("Bad:family/ok.wav"), 0.5, 16);
+    write_wav(&root.join("Claps/bad:name.wav"), 0.5, 16);
+    let (mut session, mut renderer) = playing(&base);
+    let listed = run(&mut session, "transport.metronomeSounds", json!({})).unwrap();
+    for (_, sounds) in names(&listed) {
+        for id in sounds {
+            assert!(!id.contains(':'));
+            run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": id })).unwrap();
+            renderer.process(&mut [0.0; 32]);
+        }
+    }
+}
+
+#[test]
+fn direct_sound_selection_refuses_a_linked_family_or_file() {
+    let base = library();
+    let root = suhina_session::metronome_folder(&base);
+    let outside = base.join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    write_wav(&outside.join("hit.wav"), 0.5, 16);
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&outside, root.join("Linked")).unwrap();
+        std::os::unix::fs::symlink(outside.join("hit.wav"), root.join("Claps/link.wav")).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        // Windows needs Developer Mode or the symlink privilege; CI may have neither.
+        if std::os::windows::fs::symlink_dir(&outside, root.join("Linked")).is_err() {
+            return;
+        }
+        std::os::windows::fs::symlink_file(outside.join("hit.wav"), root.join("Claps/link.wav")).unwrap();
+    }
+    let (mut session, _renderer) = playing(&base);
+    for id in ["library/Linked/hit.wav", "library/Claps/link.wav"] {
+        assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": id })).is_err());
+    }
+    let listed = run(&mut session, "transport.metronomeSounds", json!({})).unwrap();
+    assert!(
+        !names(&listed)
+            .iter()
+            .any(|(name, sounds)| name == "Linked" || sounds.iter().any(|id| id.ends_with("link.wav")))
+    );
+}
+
 fn beat_peaks(renderer: &mut Renderer, beats: usize) -> Vec<f32> {
     let mut buffer = vec![0.0f32; 2 * BEAT];
     (0..beats)

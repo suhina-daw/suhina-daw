@@ -456,14 +456,32 @@ pub fn sampler_devices(project: &Project) -> Vec<&suhina_model::Device> {
 
 /// Decodes a whole audio file (WAV, AIFF, FLAC, MP3, Ogg Vorbis) to interleaved f32.
 pub fn decode_file(path: &Path) -> Result<AudioData, crate::MediaError> {
+    decode_file_with_limit(path, None)
+}
+
+/// Decodes at most the first `seconds` of audio, stopping after the packet containing the
+/// last requested frame. The remaining packets are neither read nor decoded. Useful for
+/// short sounds taken from long, compressed files. `seconds` must be positive and finite.
+pub fn decode_file_prefix(path: &Path, seconds: f64) -> Result<AudioData, crate::MediaError> {
+    if !seconds.is_finite() || seconds <= 0.0 || seconds > MAX_SECONDS {
+        return Err("audio prefix duration must be positive and at most two hours".into());
+    }
+    decode_file_with_limit(path, Some(seconds))
+}
+
+fn decode_file_with_limit(path: &Path, seconds: Option<f64>) -> Result<AudioData, crate::MediaError> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(extension) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(extension);
     }
+    decode_stream(stream, &hint, seconds)
+}
+
+fn decode_stream(stream: MediaSourceStream, hint: &Hint, seconds: Option<f64>) -> Result<AudioData, MediaError> {
     let mut format = symphonia::default::get_probe()
-        .probe(&hint, stream, FormatOptions::default(), MetadataOptions::default())
+        .probe(hint, stream, FormatOptions::default(), MetadataOptions::default())
         .map_err(|e| format!("unsupported or unreadable format: {e}"))?;
     let track = format.default_track(TrackType::Audio).ok_or("no audio track")?;
     let track_id = track.id;
@@ -472,10 +490,19 @@ pub fn decode_file(path: &Path) -> Result<AudioData, crate::MediaError> {
     let channels =
         params.channels.as_ref().map(|c| c.count()).filter(|c| (1..=32).contains(c)).ok_or("unknown channel count")?;
     let channels = u16::try_from(channels).map_err(|_| "too many channels")?;
-    let max_samples = decode_limit(sample_rate, usize::from(channels))?;
-    if track
-        .num_frames
-        .is_some_and(|frames| frames.checked_mul(u64::from(channels)).is_none_or(|n| n > max_samples as u64))
+    let full_limit = decode_limit(sample_rate, usize::from(channels))?;
+    let max_samples = match seconds {
+        Some(seconds) => ((seconds * f64::from(sample_rate)).floor() as usize)
+            .max(1)
+            .checked_mul(usize::from(channels))
+            .filter(|n| *n <= full_limit)
+            .ok_or("audio prefix exceeds the memory budget")?,
+        None => full_limit,
+    };
+    if seconds.is_none()
+        && track
+            .num_frames
+            .is_some_and(|frames| frames.checked_mul(u64::from(channels)).is_none_or(|n| n > max_samples as u64))
     {
         return Err("audio header exceeds the duration or 1 GiB memory budget".into());
     }
@@ -496,12 +523,24 @@ pub fn decode_file(path: &Path) -> Result<AudioData, crate::MediaError> {
         }
         match decoder.decode(&packet) {
             Ok(decoded) => {
-                let count = decoded.samples_interleaved();
+                if decoded.num_planes() != usize::from(channels) {
+                    return Err("decoded channel count changed".into());
+                }
+                let frames = if seconds.is_some() {
+                    decoded.frames().min(max_samples.saturating_sub(samples.len()) / usize::from(channels))
+                } else {
+                    decoded.frames()
+                };
+                let prefix = decoded.slice(..frames);
+                let count = prefix.samples_interleaved();
                 reserve_audio(&mut samples, count, max_samples)?;
                 packet_samples.clear();
                 reserve_audio(&mut packet_samples, count, max_samples)?;
-                decoded.copy_to_vec_interleaved(&mut packet_samples);
+                prefix.copy_to_vec_interleaved(&mut packet_samples);
                 samples.extend_from_slice(&packet_samples);
+                if seconds.is_some() && samples.len() == max_samples {
+                    break;
+                }
             }
             // A damaged packet is skipped, as players do.
             Err(SymphoniaError::DecodeError(_) | SymphoniaError::IoError(_)) => continue,
