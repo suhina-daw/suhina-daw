@@ -184,13 +184,14 @@ impl Panel {
             let (rect, _) = ui.allocate_exact_size(Vec2::new(62.0, 20.0), Sense::hover());
             ui.painter().rect_filled(rect, 0.0, color32(self.colour));
             let id = Id::unique("track-colour-hex");
-            let focused = ui.memory(|m| m.has_focus(id));
+            let focused = ui.memory(|m| m.has_focus(id) || m.had_focus_last_frame(id));
             let response = widgets::text_input(
                 ui,
                 egui::TextEdit::singleline(&mut self.text).id(id).desired_width(100.0).char_limit(16),
             );
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Hex colour"));
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, ui.is_enabled(), "Hex colour"));
             if (focused || response.has_focus()) && ui.input(|i| i.key_pressed(Key::Escape)) {
+                ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
                 self.fields();
                 response.surrender_focus();
             } else if response.lost_focus() || (response.has_focus() && ui.input(|i| i.key_pressed(Key::Enter))) {
@@ -231,6 +232,7 @@ impl Panel {
             ui.label(egui::RichText::new("Changes apply immediately").small().color(element::caption_ink()));
         });
         if self.dragging && ui.input(|i| i.key_pressed(Key::Escape)) {
+            ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
             self.cancel_pointer();
             edits.clear();
             edits.push(Edit::Cancel);
@@ -296,10 +298,10 @@ impl Panel {
                 ui.label(label);
                 let Some(text) = self.numbers.get_mut(start + offset) else { continue };
                 let id = Id::unique(("track-colour-number", name));
-                let focused = ui.memory(|m| m.has_focus(id));
+                let focused = ui.memory(|m| m.has_focus(id) || m.had_focus_last_frame(id));
                 let response =
                     widgets::text_input(ui, egui::TextEdit::singleline(text).id(id).desired_width(45.0).char_limit(12));
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, name));
+                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, ui.is_enabled(), name));
                 cancel |= (focused || response.has_focus()) && ui.input(|i| i.key_pressed(Key::Escape));
                 commit |= response.lost_focus() || (response.has_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
                 if cancel {
@@ -308,6 +310,7 @@ impl Panel {
             }
         });
         if cancel {
+            ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
             self.fields();
             return;
         }
@@ -351,7 +354,9 @@ fn swatch_line(ui: &mut Ui, label: &str, colours: &[Rgb], current: Rgb) -> Optio
             ui.push_id((label, index, colour.0, colour.1, colour.2), |ui| {
                 let (rect, response) = ui.allocate_exact_size(Vec2::new(30.0, 18.0), Sense::click());
                 let name = format!("{label} {}", hex(colour));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, colour == current, &name));
+                response.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), colour == current, &name)
+                });
                 ui.painter().rect_filled(rect, 0.0, color32(colour));
                 if colour == current || response.hovered() || response.has_focus() {
                     ui.painter().rect_stroke(

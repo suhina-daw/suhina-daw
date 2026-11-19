@@ -244,7 +244,10 @@ pub fn oklch_to_srgb(oklch: [f32; 3]) -> Option<[u8; 3]> {
     if !oklch.iter().all(|v| v.is_finite()) || !(0.0..=1.0).contains(&l) || !(0.0..=1.0).contains(&c) {
         return None;
     }
-    let inside = |rgb: [f32; 3]| rgb.iter().all(|v| (-0.000_001..=1.000_001).contains(v));
+    // Polar f32 round trips can put a primary about 0.000002 outside encoded sRGB.
+    // This tolerance is under 0.003 of one byte; mapping that numerical noise instead
+    // would unnecessarily desaturate a boundary colour (especially pure blue).
+    let inside = |rgb: [f32; 3]| rgb.iter().all(|v| (-0.000_01..=1.000_01).contains(v));
     let mut rgb = Space::Oklch.from(oklch);
     if !inside(rgb) {
         let (mut low, mut high) = (0.0, c);
@@ -750,6 +753,17 @@ mod picker_colour_tests {
         for invalid in [[f32::NAN, 0.5, 0.5], [0.5, f32::INFINITY, 0.5], [0.5, 0.5, f32::NAN]] {
             assert!(hsl_to_srgb(invalid).is_none());
             assert!(oklch_to_srgb(invalid).is_none());
+        }
+        // All six RGB faces, including nearly saturated primary colours.
+        for a in (0..=255).step_by(17) {
+            for b in (0..=255).step_by(17) {
+                for edge in [0, 255] {
+                    for rgb in [[edge, a, b], [a, edge, b], [a, b, edge]] {
+                        let got = oklch_to_srgb(srgb_to_oklch(rgb)).unwrap();
+                        assert!(rgb.into_iter().zip(got).all(|(a, b)| a.abs_diff(b) <= 1), "{rgb:?} → {got:?}");
+                    }
+                }
+            }
         }
         assert!(oklch_to_srgb([1.5, 0.2, 40.0]).is_none());
         let gamut = oklch_to_srgb([0.7, 0.9, 145.0]).unwrap();

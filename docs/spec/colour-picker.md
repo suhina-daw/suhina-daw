@@ -95,6 +95,15 @@ Normal text targets 4.5:1 contrast and essential selection indicators 3:1. These
 require every adjacent pair of palette swatches to have 3:1 contrast, or promise that 24
 colours are distinguishable under every colour-vision deficiency.
 
+[The palette check](colour-picker-palette.svg) shows the final 24 suggestions on dark and
+light surfaces, a relative-luminance greyscale and Machado-model severity-1 protan/deutan
+simulations plus a tritan approximation. The transformations apply the published matrices
+to linear sRGB, clamp to the display gamut, then encode sRGB. The numbered chart was checked
+visually: red/green and blue/purple distinctions converge, and many different hues share
+similar greyscale values. It is not a 24-class accessible categorical palette. Track names,
+hierarchy and independent selection outlines remain necessary. A simulation does not
+replace feedback from people with colour-vision deficiencies or native-window testing.
+
 ## Sources
 
 - Maintainer's project-arranging observations and approved original Suhina sketches, issue #1570.
@@ -103,3 +112,6 @@ colours are distinguishable under every colour-vision deficiency.
 - [W3C: text contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html),
   [non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html),
   [use of colour](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html).
+- [Machado, Oliveira and Fernandes (2009)](https://doi.org/10.1109/TVCG.2009.113);
+  numerical matrices checked against the [Colour Science dataset](https://github.com/colour-science/colour/blob/develop/colour/blindness/datasets/machado2010.py),
+  with the [model's tritan limitation](https://colour.readthedocs.io/en/master/_modules/colour/blindness/machado2009.html).

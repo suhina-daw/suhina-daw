@@ -20,7 +20,7 @@ impl Cache {
         let size = if wheel { Vec2::splat(150.0) } else { Vec2::new(268.0, 110.0) };
         let (rect, mut response) = ui.allocate_exact_size(size, Sense::click_and_drag());
         let label = if wheel { "Colour wheel" } else { "Colour field" };
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, label));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, ui.is_enabled(), label));
         let field =
             element::COLOUR_FIELD.attribute("kind", if wheel { "wheel" } else { "field" }).response(&response).enter();
         let rect = field.paint(ui.painter(), rect).content;
@@ -84,17 +84,29 @@ fn build(rect: Rect, hsv: Hsv, wheel: bool, steps: bool, soft: bool) -> Mesh {
     let columns = if wheel {
         if steps { 24 } else { 64 }
     } else if steps {
-        10
+        11
     } else {
         24
     };
-    let rows = if steps { 10 } else { 16 };
+    let rows = if steps { 11 } else { 16 };
     for row in 0..rows {
         for column in 0..columns {
             let index = mesh.vertices.len() as u32;
             for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                let x = (column + dx) as f32 / columns as f32;
-                let y = (row + dy) as f32 / rows as f32;
+                // Quantised values sit at the centres of their nearest-value cells. Edge
+                // cells are half-width, so the displayed colour is also the clicked colour.
+                let x = if steps && wheel {
+                    (column as f32 + dx as f32 - 0.5) / 24.0
+                } else if steps {
+                    ((column as f32 + dx as f32 - 0.5) / 10.0).clamp(0.0, 1.0)
+                } else {
+                    (column + dx) as f32 / columns as f32
+                };
+                let y = if steps {
+                    ((row as f32 + dy as f32 - 0.5) / 10.0).clamp(0.0, 1.0)
+                } else {
+                    (row + dy) as f32 / rows as f32
+                };
                 let (position, mut colour) = if wheel {
                     let angle = x * std::f32::consts::TAU;
                     (
@@ -109,11 +121,10 @@ fn build(rect: Rect, hsv: Hsv, wheel: bool, steps: bool, soft: bool) -> Mesh {
                 };
                 // A stepped cell has one colour, with a visibly discrete boundary.
                 if steps {
-                    colour.h = if wheel { (column as f32 + 0.5) / columns as f32 } else { hsv.h };
-                    colour.s =
-                        if wheel { (row as f32 + 0.5) / rows as f32 } else { (column as f32 + 0.5) / columns as f32 };
+                    colour.h = if wheel { column as f32 / 24.0 } else { hsv.h };
+                    colour.s = if wheel { row as f32 / 10.0 } else { column as f32 / 10.0 };
                     if !wheel {
-                        colour.v = 1.0 - (row as f32 + 0.5) / rows as f32;
+                        colour.v = 1.0 - row as f32 / 10.0;
                     }
                     colour = super::constrain(colour, true, false);
                 }
@@ -129,4 +140,30 @@ fn build(rect: Rect, hsv: Hsv, wheel: bool, steps: bool, soft: bool) -> Mesh {
         }
     }
     mesh
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discrete_field_cells_match_pointer_quantisation_and_geometry_is_bounded() {
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(268.0, 110.0));
+        let hsv = Hsv { h: 0.137, s: 0.6, v: 0.8 };
+        let mesh = build(rect, hsv, false, true, false);
+        for cell in mesh.vertices.chunks_exact(4) {
+            let centre = (cell[0].pos.to_vec2() + cell[3].pos.to_vec2()) * 0.5;
+            let pointer = Hsv { h: hsv.h, s: centre.x / rect.width(), v: 1.0 - centre.y / rect.height() };
+            let [r, g, b] = super::super::constrain(pointer, true, false).to_srgb();
+            assert!(cell.iter().all(|v| v.color == Color32::from_rgb(r, g, b)));
+        }
+        for wheel in [false, true] {
+            for steps in [false, true] {
+                let mesh = build(rect, hsv, wheel, steps, true);
+                assert!(mesh.vertices.len() <= 4096);
+                assert!(mesh.indices.len() <= 6144);
+                assert!(mesh.vertices.iter().all(|v| v.pos.x.is_finite() && v.pos.y.is_finite()));
+            }
+        }
+    }
 }

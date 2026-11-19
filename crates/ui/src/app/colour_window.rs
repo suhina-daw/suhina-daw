@@ -108,8 +108,19 @@ impl App {
             return;
         }
         let selection = self.focused_tracks();
-        if !selection.is_empty() && selection != self.colour_window.selection_seen {
+        let targets_removed = self.session().is_some_and(|s| {
+            !self.colour_window.tracks.is_empty()
+                && self.colour_window.tracks.iter().all(|id| s.project().track(*id).is_none())
+        });
+        if targets_removed {
+            // Deletion may automatically focus the next track. Do not silently colour it;
+            // a subsequent header selection or reopening the picker chooses a new target.
             self.finish_colour_gesture(false);
+            self.colour_window.tracks.clear();
+            self.colour_window.selection_seen = selection.clone();
+        } else if !selection.is_empty() && selection != self.colour_window.selection_seen {
+            self.finish_colour_gesture(false);
+            self.colour_window.panel.discard_drafts();
             self.colour_window.selection_seen = selection.clone();
             self.colour_window.tracks = selection;
         }
@@ -138,7 +149,7 @@ impl App {
             )
         });
         let bounds = main_rect.unwrap_or_else(|| Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0)));
-        let height = (if self.colour_window.panel.expanded { 610.0_f32 } else { 315.0 })
+        let height = (if self.colour_window.panel.expanded { 650.0_f32 } else { 350.0 })
             .min((bounds.height() - 48.0).max(180.0));
         let position = *self.colour_window.position.get_or_insert_with(|| {
             let proposed = self.settings.colour_window_rect.map(|[x, y, _, _]| Pos2::new(x as f32, y as f32));
@@ -162,9 +173,8 @@ impl App {
         let mut close = false;
         let mut focused = false;
         let mut placement = None;
-        ctx.show_viewport_immediate(id, builder, |ui, class| {
-            let embedded = class == egui::ViewportClass::EmbeddedWindow;
-            let render = |ui: &mut Ui| {
+        let mut render = |ui: &mut Ui, embedded: bool| {
+            {
                 let style = crate::kit::element::COLOUR_PICKER.enter();
                 let inside = style.paint(ui.painter(), ui.max_rect()).content;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
@@ -175,21 +185,8 @@ impl App {
                         });
                     });
                 });
-            };
-            if embedded {
-                let mut open = true;
-                egui::Window::new(&title)
-                    .id(Id::unique("track-colour-window"))
-                    .open(&mut open)
-                    .collapsible(false)
-                    .resizable(false)
-                    .fixed_size([WIDTH, height])
-                    .default_pos(ui.max_rect().center() - Vec2::new(WIDTH, height) * 0.5)
-                    .show(ui.ctx(), render);
-                close = !open;
-            } else {
-                let mut render = render;
-                render(ui);
+            }
+            if !embedded {
                 close = ui.input(|i| i.viewport().close_requested());
             }
             // A focused colour control still permits transport and Undo. Text drafts own
@@ -211,7 +208,26 @@ impl App {
                     });
                 }
             });
-        });
+        };
+        if ctx.embed_viewports() {
+            // egui 0.37 already wraps an embedded viewport in a Window. Own that
+            // fallback here instead, to provide closing and changing compact/fine size
+            // without nesting one floating Window inside another.
+            let mut open = true;
+            egui::Window::new(&title)
+                .id(Id::unique("track-colour-window"))
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .fixed_size([WIDTH, height])
+                .default_pos(ctx.content_rect().center() - Vec2::new(WIDTH, height) * 0.5)
+                .show(ctx, |ui| render(ui, true));
+            close = !open;
+        } else {
+            ctx.show_viewport_immediate(id, builder, |ui, class| {
+                render(ui, class == egui::ViewportClass::EmbeddedWindow);
+            });
+        }
         self.colour_window.focused = focused;
         if let Some(rect) = placement
             && self.settings.colour_window_rect != Some(rect)

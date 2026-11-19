@@ -3331,11 +3331,12 @@ impl App {
                 self.run_menu_item(&id, ui.ctx(), &mut actions);
             }
         }
+        // The floating colour tool owns Escape while a text draft or drag is active.
+        self.show_colour_window(ui.ctx(), &mut actions);
         self.shortcuts(ui, &mut actions);
         self.apply_zoom(ui.ctx());
         self.frame_trace.mark("keys");
         self.sample_map_window(ui.ctx(), &mut actions);
-        self.show_colour_window(ui.ctx(), &mut actions);
         self.frame_trace.mark("sample map window");
         let scale = if self.settings.waveform_db {
             crate::kit::waveform::Scale::Db

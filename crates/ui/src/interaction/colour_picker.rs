@@ -80,15 +80,21 @@ pub(crate) fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
                 let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
                 let name = format!("Colour {}", hex(colour));
                 let chosen = current == Some(colour);
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &name));
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), chosen, &name));
                 ui.painter().rect_filled(rect, 0.0, color32(colour));
-                if chosen || response.hovered() {
+                if chosen || response.hovered() || response.has_focus() {
                     let width = if chosen { 1.5 } else { 1.0 };
+                    let ring = if theme::text_contrast(ring, color32(colour)) >= 3.0 {
+                        ring
+                    } else {
+                        theme::text_on(color32(colour))
+                    };
                     ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, ring), StrokeKind::Inside);
                 }
                 if response.clicked() {
                     picked = Some(colour);
                 }
+                response.on_hover_text(hex(colour));
             }
         });
     }
@@ -109,7 +115,9 @@ pub fn track_row(ui: &mut Ui, current: Rgb, tracks: &[TrackId], actions: &mut Ve
         ui.close();
     }
     let shortcut = ui.data(|d| d.get_temp::<String>(Id::unique("colour-picker-shortcut"))).unwrap_or_default();
-    if ui.add(egui::Button::new("+ More colours").shortcut_text(shortcut)).clicked() {
+    let more = ui.add(egui::Button::new("+ More colours").shortcut_text(shortcut));
+    more.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "+ More colours"));
+    if more.clicked() {
         actions.push(Action::new(
             "ui.colourPicker",
             json!({
