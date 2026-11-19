@@ -1204,20 +1204,21 @@ impl Session {
     /// when the base arrives later — a load that ran without it is a parse and, for an IR, a
     /// resample the session's thread spends twice ([`Session::set_library_base`], the review).
     pub fn open_with_base(path: &Path, base: Option<&Path>) -> Result<(Self, Vec<String>), CommandError> {
-        Self::open_with_import_samples(path, base, |files| vec![None; files.len()])
+        Self::open_with_import_samples(path, base, &suhina_media::Trusted::default(), |files| vec![None; files.len()])
     }
 
     fn open_with_import_samples(
         path: &Path,
         base: Option<&Path>,
+        trusted: &suhina_media::Trusted,
         resolve: impl FnOnce(&[String]) -> Vec<Option<PathBuf>>,
     ) -> Result<(Self, Vec<String>), CommandError> {
         let (project, warnings) = if suhina_project_file::is_project_file(path) {
             let project = suhina_project_file::read_file(path).map_err(|e| format!("{}: {e}", path.display()))?;
             (project, Vec::new())
         } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("flp")) {
-            let import =
-                suhina_flp::import_file_with_samples(path, resolve).map_err(|e| format!("{}: {e}", path.display()))?;
+            let import = suhina_flp::import_file_with_samples(path, trusted, resolve)
+                .map_err(|e| format!("{}: {e}", path.display()))?;
             (import.project, import.warnings)
         } else if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
             // A zipped project opens once it is unpacked into a folder the person chose

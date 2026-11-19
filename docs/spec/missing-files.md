@@ -247,4 +247,5 @@ An importer follows the same boundary before anything is decoded: of the absolut
 foreign project file names it looks only at those on a local disk without parent steps
 (`suhina_media::on_local_disk`), and it opens a sample (to read its duration, for example) only
 once it has resolved it to a file inside the project folder, a local path that is there or a
-library match. Whether the audio is then read is decided by the rules above.
+library match permitted by the caller's media trust. Header reads use the same trust as
+audio decoding, including when a CLI or MCP import has audio decoding disabled.

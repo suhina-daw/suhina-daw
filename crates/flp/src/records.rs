@@ -90,6 +90,8 @@ pub(crate) struct Placement {
     pub start: f64,
     pub length: f64,
     pub offset: f64,
+    /// Pattern placements without a trim window play the whole pattern.
+    pub untrimmed_pattern: bool,
     pub enabled: bool,
     pub fades: [(f64, f64); 2],
     pub gain: f64,
@@ -124,6 +126,7 @@ pub(crate) fn placements(e: &Event, ppq: f64, old_rows: bool) -> Result<Vec<Plac
                 source,
                 start: f64::from(dword(r, 0, e.offset)?) / ppq,
                 length,
+                untrimmed_pattern: source >= 0x5000 && trim == u32::MAX,
                 offset: if source >= 0x5000 {
                     if trim != u32::MAX { f64::from(trim) / ppq } else { 0. }
                 } else {

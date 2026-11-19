@@ -824,8 +824,9 @@ impl Projects {
         // file state may be a library-relative path, which resolves against it, and a load
         // that ran without it is built again when the base arrives ([ADR 0036] › 4, the
         // review).
+        let trusted = self.trusted_audio_for(Some(path));
         let (mut session, mut warnings) =
-            Session::open_with_import_samples(path, self.devices.library_base.as_deref(), |files| {
+            Session::open_with_import_samples(path, self.devices.library_base.as_deref(), &trusted, |files| {
                 self.browser.files.resolve_import_samples(files)
             })?;
         if options.audio {

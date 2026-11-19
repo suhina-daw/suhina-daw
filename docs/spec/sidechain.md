@@ -43,6 +43,9 @@ refine.
   in device groups.
 - **A gain.** `DeviceInput` has `gain` (linear, 0 to +24 dB, unity by default), applied to the key before the
   device reads it: an imported key keeps its level, and a quiet source can still drive a detector.
+- **Post Fader level.** The tap follows its source channel's fader, pan and automation. Downstream
+  output gains are applied only to the audible route, so a source routed to a zero-level output
+  can still key another device. Existing mute and solo eligibility still applies.
 - **Device groups.** A device inside a device group reads no key: `device.setKey` refuses it, and the engine
   leaves one in a hand-edited file unread.
 - **Its own track.** A key from the reader's own channel is allowed at `PreFx` (the track's signal before its

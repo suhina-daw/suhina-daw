@@ -16,6 +16,7 @@ covers:
   - crates/flp/src/patcher.rs
   - crates/flp/src/mixer.rs
   - crates/flp/tests/import.rs
+  - crates/session/tests/flp_import.rs
   - crates/session/src/lib.rs
 ---
 
@@ -188,7 +189,12 @@ data but do not become project tracks.
   records have the 0x5000 marker at offset 4. Records hold position at 0, source at 6,
   length at 8, reversed row at 12, mute flag 0x20 at 19 and pattern offsets at 24/28.
   A source at least 0x5000 names pattern source - 0x5000. Pattern placements reference
-  shared content, preserving their start, length, trim offset and mute. Rows count down
+  shared content, preserving their start, trim offset and mute. A pattern offset of
+  `0xffffffff` means an untrimmed placement: it plays the pattern's full note duration,
+  even when the stored placement length is shorter. An explicit offset, including zero,
+  keeps the stored placement length. This distinction follows the pinned `os-flp`
+  `decode_clip` and `os-engine` pattern scheduling and `song_respects_mutes_and_clip_windows`
+  regression fixture. Rows count down
   from 198 before 12.9 and 499 afterwards. Audio placements reference their source channel;
   automation placements stay disabled. Only the selected arrangement (event 100, numbered
   by 99) is played. A placement whose source brought no content (a pattern with no
@@ -224,7 +230,7 @@ points per clip and one million points per import.
 ## Limits and validation
 
 File import first keeps a stored absolute sample path that is on a local disk (a drive letter on
-Windows) without parent steps and names an existing file; a network share or a device path the
+Windows) without parent steps and names an existing file the caller may read; a network share or a device path the
 project names is decided from the path alone and never touched
 ([missing files](missing-files.md) › Project file boundaries). Otherwise it checks the
 stored relative path (or an absolute path already inside the project directory), then the
@@ -240,7 +246,10 @@ and warp edits need. Then come the caller's library candidates as described belo
 files are used; no parent traversal or symlinks are followed. A local match becomes a relative
 reference while the original absolute reference is retained. Stretch timing reads a sample's
 duration only from a file resolved this way. Missing media is reported,
-not a failure to open the project. Nothing is created in, moved from or removed from an
+not a failure to open the project. The caller's media trust applies to every candidate before
+it is probed, including variable paths and library matches, whether audio decoding is enabled
+or not. The desktop may read local files; CLI and MCP imports read outside the project only
+from trusted files and folders. Nothing is created in, moved from or removed from an
 imported project directory.
 
 Imports are capped at 64 MiB, 4096 channels, 4096 patterns, one million notes and
@@ -390,9 +399,9 @@ any level, a sidechain route included), in track order, Main and the track itsel
 out; 0 picks none (pinned Lemon os-flp/src/wrapper.rs `input_ports`, os-app/src/mixer.rs
 `inputs`). The plug-in gets a key (`docs/spec/sidechain.md`) read from that track after
 its fader, as the source plays it, at unity gain. A plug-in on Main picks the same way, over
-the tracks routed into Main. A track whose only route is at level 0 plays nothing: it is
-muted, and its key is read after its devices at its fader's gain, so the plug-in still hears
-it (its pan is left out). A port past the routed tracks gives no
+the tracks routed into Main. A track whose only route is at level 0 plays nothing: its
+output goes to the silent output sink, while its key remains after its live fader, pan and
+mute, including mixer automation. A port past the routed tracks gives no
 key and a warning. When the source track folds into the generator playing it, the key
 reads the generator's channel; a key whose track is pruned, or that would close a loop,
 is dropped.

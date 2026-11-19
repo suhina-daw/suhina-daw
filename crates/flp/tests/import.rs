@@ -436,10 +436,14 @@ fn samples_are_found_beside_the_project_or_reported_missing_without_writing_sour
     assert!(missing.warnings.iter().any(|w| w.contains("Sample not found")));
     let library_file = folder.join("library.wav");
     std::fs::write(&library_file, b"authored library fixture").unwrap();
-    let library = suhina_flp::import_file_with_samples(&path, |files| {
-        assert_eq!(files, &["own.wav".to_string()]);
-        vec![Some(library_file.clone())]
-    })
+    let library = suhina_flp::import_file_with_samples(
+        &path,
+        &suhina_media::Trusted { local: true, ..Default::default() },
+        |files| {
+            assert_eq!(files, &["own.wav".to_string()]);
+            vec![Some(library_file.clone())]
+        },
+    )
     .unwrap();
     assert_eq!(
         library.project.channels[0].devices[0].sample_file(),
@@ -587,9 +591,11 @@ fn file_import_fits_audio_to_stored_beats_and_converts_source_trim() {
         let bytes = appended(fixture(96, 32), &e);
         let path = folder.join("authored.flp");
         std::fs::write(&path, &bytes).unwrap();
-        let result = suhina_flp::import_file_with_samples(&path, |files| {
-            files.iter().map(|f| (f == "authored.wav").then(|| folder.join("Library/authored.wav"))).collect()
-        })
+        let result = suhina_flp::import_file_with_samples(
+            &path,
+            &suhina_media::Trusted { local: true, ..Default::default() },
+            |files| files.iter().map(|f| (f == "authored.wav").then(|| folder.join("Library/authored.wav"))).collect(),
+        )
         .unwrap();
         let lane = result.project.arrangement.lanes.iter().find(|l| l.track == Some(suhina_model::TrackId(2))).unwrap();
         let clip = &lane.clips[0];
@@ -639,7 +645,9 @@ fn a_sample_path_outside_the_project_is_never_read_for_its_stretch() {
     event(&mut e, 233, &clip);
     let path = folder.join("authored.flp");
     std::fs::write(&path, appended(fixture(96, 32), &e)).unwrap();
-    let result = suhina_flp::import_file_with_samples(&path, |files| vec![None; files.len()]).unwrap();
+    let result =
+        suhina_flp::import_file_with_samples(&path, &suhina_media::Trusted::default(), |files| vec![None; files.len()])
+            .unwrap();
     let lane = result.project.arrangement.lanes.iter().find(|l| l.track == Some(suhina_model::TrackId(2))).unwrap();
     assert!(!lane.clips[0].audio.warped, "a path out of the project folder is not opened");
     assert!(result.warnings.iter().any(|w| w.contains("sample duration unavailable")), "{:?}", result.warnings);
@@ -1124,18 +1132,24 @@ fn a_sidechain_route_keys_the_plugin_that_picks_it_after_the_source_fader() {
 }
 
 #[test]
-fn a_track_routed_only_at_level_0_is_muted_and_still_keys_the_plugin() {
+fn a_track_routed_only_at_level_0_has_a_silent_output_and_a_live_post_fader_key() {
     // Kick's only route is to Bus at level 0: it plays nothing, and the plug-in on Bus hears it
-    // before its mute, at its fader's gain (unity here).
+    // after its fader, including subsequent fader edits and automation.
     let imported = import_bytes(&sidechain_fixture_with(1, &[3], 3, 3).unwrap()).unwrap();
     let p = &imported.project;
     let kick = suhina_model::ChannelId(0);
     let channel = p.channel(kick).unwrap();
-    assert!(channel.mute, "{channel:?}");
+    assert!(!channel.mute, "{channel:?}");
+    let output = p.channel(channel.output.unwrap()).unwrap();
+    assert_eq!(output.volume, 0.0);
+    assert!(channel.sends.is_empty());
     let bus = p.channel(suhina_model::ChannelId(131_075)).unwrap();
     let device = bus.devices.iter().find(|d| matches!(d.kind, DeviceKind::Vst2 { .. })).unwrap();
     let key = device.inputs.first().unwrap_or_else(|| panic!("{:?}", bus.devices));
-    assert_eq!(key.source, suhina_model::SignalPoint::Channel { channel: kick, tap: suhina_model::TapPoint::PostFx });
+    assert_eq!(
+        key.source,
+        suhina_model::SignalPoint::Channel { channel: kick, tap: suhina_model::TapPoint::PostFader }
+    );
     assert_eq!(key.gain, 1.0);
     assert_eq!(p.validate(), Ok(()));
 }

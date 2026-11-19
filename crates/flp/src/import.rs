@@ -57,20 +57,24 @@ pub struct Import {
 
 /// Opens a project for import without writing to it or loading any plug-in.
 pub fn import_file(path: &Path) -> Result<Import, FlpError> {
-    import_file_with_samples(path, |files| vec![None; files.len()])
+    import_file_with_samples(path, &suhina_media::Trusted { local: true, ..Default::default() }, |files| {
+        vec![None; files.len()]
+    })
 }
 
 /// Import using the caller's library candidates for unresolved paths, in the supplied order.
 /// Candidates are read-only references; ambiguous results should be returned as `None`.
+/// `trusted` applies before probing any sample, including its header or stretch duration.
 pub fn import_file_with_samples(
     path: &Path,
+    trusted: &suhina_media::Trusted,
     resolve: impl FnOnce(&[String]) -> Vec<Option<PathBuf>>,
 ) -> Result<Import, FlpError> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)?.take(MAX_IMPORT_BYTES + 1).read_to_end(&mut bytes)?;
     let mut imported = parse_project(&bytes)?;
     if let Some(folder) = path.parent() {
-        let found = relocate_samples(&mut imported, folder, resolve);
+        let found = relocate_samples(&mut imported, folder, trusted, resolve);
         crate::stretch::apply(&crate::read_bytes(&bytes)?, &mut imported, folder, &found)?;
     }
     finish(&mut imported)?;
@@ -94,7 +98,7 @@ const FL_DATA_DEPTH: usize = 8;
 /// (`Downloads` and `FL Studio`), which holds its projects too, so it is looked for above the
 /// project. The factory data's variable names FL's install folder and is not followed. Only
 /// existing regular files on a local disk, without symlinks, count.
-fn fl_variable_path(file: &str, folder: &Path) -> Option<String> {
+fn fl_variable_path(file: &str, folder: &Path, trusted: &suhina_media::Trusted) -> Option<String> {
     let rest = file.strip_prefix('%')?;
     let (variable, rest) = rest.split_once('%')?;
     let below = match variable.to_ascii_lowercase().as_str() {
@@ -108,8 +112,11 @@ fn fl_variable_path(file: &str, folder: &Path) -> Option<String> {
     }
     folder.ancestors().take(FL_DATA_DEPTH).find_map(|data| {
         let path = data.join(below).join(rest);
+        if !may_probe(&path) || suhina_media::locate(&path.to_string_lossy(), None, folder, trusted).is_none() {
+            return None;
+        }
         let plain = !std::fs::symlink_metadata(&path).ok()?.file_type().is_symlink();
-        (plain && may_probe(&path) && path.is_file()).then(|| path.to_string_lossy().replace('\\', "/"))
+        plain.then(|| path.to_string_lossy().replace('\\', "/"))
     })
 }
 
@@ -118,14 +125,15 @@ fn fl_variable_path(file: &str, folder: &Path) -> Option<String> {
 fn relocate_samples(
     import: &mut Import,
     folder: &Path,
+    trusted: &suhina_media::Trusted,
     library: impl FnOnce(&[String]) -> Vec<Option<PathBuf>>,
 ) -> BTreeSet<String> {
     let resolve = |file: &str| -> Option<String> {
-        if let Some(found) = fl_variable_path(file, folder) {
+        if let Some(found) = fl_variable_path(file, folder, trusted) {
             return Some(found);
         }
         let stored = Path::new(file);
-        if may_probe(stored) && stored.is_file() {
+        if may_probe(stored) && suhina_media::locate(file, None, folder, trusted).is_some() {
             return Some(file.to_owned());
         }
         let relative = if stored.is_absolute() { stored.strip_prefix(folder).ok() } else { Some(stored) };
@@ -170,7 +178,9 @@ fn relocate_samples(
         files.iter().filter_map(|file| resolve(file).map(|path| (file.clone(), path))).collect();
     let missing: Vec<String> = files.into_iter().filter(|f| !resolved.contains_key(f)).collect();
     for (file, candidate) in missing.iter().zip(library(&missing)) {
-        if let Some(candidate) = candidate.filter(|p| p.is_absolute() && p.is_file()) {
+        if let Some(candidate) = candidate
+            .filter(|p| p.is_absolute() && suhina_media::locate(&p.to_string_lossy(), None, folder, trusted).is_some())
+        {
             resolved.insert(file.clone(), candidate.to_string_lossy().replace('\\', "/"));
         }
     }
@@ -445,14 +455,15 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
                     if kind == 1 { p.offset / 1000. * project.transport.tempo_bpm / 60. } else { p.offset },
                 )
             };
-            if !content_indices.contains_key(&content) {
+            let Some(source_content) = content_indices.get(&content).and_then(|&i| project.contents.get(i)) else {
                 // A pattern with no notes has no pattern records, yet the playlist may place it,
                 // and an audio clip channel may bring no content: such a clip plays nothing and
                 // belongs to no source track, so it is left out and counted.
                 empty_placements += 1;
                 continue;
-            }
-            let mut clip = Clip::new(content, p.start, p.length);
+            };
+            let length = if p.untrimmed_pattern { source_content.length } else { p.length };
+            let mut clip = Clip::new(content, p.start, length);
             clip.extensions.0.push(Extension {
                 format: "flp".into(),
                 key: "playlist-index".into(),
@@ -852,8 +863,6 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
     // Per mixer track, the tracks routed into it (a sidechain route included), for the
     // plug-ins that pick one of them as their key.
     let mut routes: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
-    // Mixer tracks whose only route is at level 0: they play nothing but may still key a plug-in.
-    let mut silent: BTreeSet<u32> = BTreeSet::new();
     for (i, e) in flp.events.iter().enumerate() {
         if e.id != 236 {
             continue;
@@ -1048,14 +1057,17 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
         if let [route] = bus.sends.as_slice() {
             let target = route.target;
             let level = route.level;
-            bus.output = Some(if target == main_send { ChannelId(131_072) } else { target });
+            bus.output = Some(if level == 0. {
+                // Suppress only the audible route. A post-fader key must still follow the
+                // source's live fader, pan, mute and automation.
+                sink_id
+            } else if target == main_send {
+                ChannelId(131_072)
+            } else {
+                target
+            });
             bus.sends.clear();
-            if level == 0. {
-                // Silent, though a plug-in may still read it as its key: the track is muted rather
-                // than turned down after its devices, so a key read before the mute hears it.
-                bus.mute = true;
-                silent.insert(index as u32);
-            } else if level != 1. {
+            if level != 0. && level != 1. {
                 let mut gain = source_utility(level, 0.);
                 gain.name = "Output level".into();
                 bus.devices.push(gain);
@@ -1080,10 +1092,7 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
     // Sidechains: a route at level 0 ("sidechain to this track") carries no sound; a plug-in on
     // the track it reaches hears it as its key, picking it by its place among the tracks routed
     // into its own, in track order (`docs/spec/flp-model-mapping.md` › Sidechains). Heard after
-    // the source's fader, as the source plays it; a source muted because its only route is at
-    // level 0 is read before its mute, at its fader's gain. Main reads keys as any track does.
-    let faders: BTreeMap<u32, f64> =
-        project.channels.iter().filter_map(|c| Some((c.id.0.checked_sub(131_072)?, c.volume))).collect();
+    // the source's fader, as the source plays it. Main reads keys as any track does.
     let mut unresolved = 0usize;
     for channel in &mut project.channels {
         let Some(own) = channel.id.0.checked_sub(131_072).filter(|&i| i < 501) else { continue };
@@ -1093,16 +1102,13 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
             let Some(port) = crate::wrapper::sidechain_input(device) else { return };
             match port.checked_sub(1).and_then(|i| inputs.get(i)) {
                 Some(&source) => {
-                    let (tap, gain) = if silent.contains(&source) {
-                        let fader = faders.get(&source).copied().filter(|g| g.is_finite()).unwrap_or(1.);
-                        (suhina_model::TapPoint::PostFx, fader.clamp(0., suhina_model::DeviceInput::MAX_GAIN))
-                    } else {
-                        (suhina_model::TapPoint::PostFader, 1.0)
-                    };
                     device.inputs = vec![suhina_model::DeviceInput {
                         port: suhina_model::DeviceInput::KEY.into(),
-                        source: suhina_model::SignalPoint::Channel { channel: ChannelId(131_072 + source), tap },
-                        gain,
+                        source: suhina_model::SignalPoint::Channel {
+                            channel: ChannelId(131_072 + source),
+                            tap: suhina_model::TapPoint::PostFader,
+                        },
+                        gain: 1.0,
                     }];
                 }
                 None => unresolved += 1,
