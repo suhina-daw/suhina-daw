@@ -21,6 +21,8 @@ struct Resonance {
     imaginary: f64,
     cosine: f64,
     sine: f64,
+    frequency_hz: f64,
+    radius: f64,
 }
 
 /// At most `N` modes. Invalid or inaudible modes are silent; amplitudes are normalized so
@@ -61,6 +63,8 @@ impl<const N: usize> ModalBank<N> {
             target.real = mode.amplitude.clamp(-1.0, 1.0);
             target.cosine = cosine * radius;
             target.sine = sine * radius;
+            target.frequency_hz = mode.frequency_hz;
+            target.radius = radius;
             amplitude_sum += target.real.abs();
         }
         let normalization = amplitude_sum.max(1.0);
@@ -68,6 +72,27 @@ impl<const N: usize> ModalBank<N> {
             mode.real /= normalization;
         }
         self.active = amplitude_sum > 0.0;
+    }
+
+    /// Retune a ringing bank without resetting its phase or decay. The offset is absolute
+    /// relative to the strike's frequencies, limited to eight octaves. A mode crossing the
+    /// anti-alias margin is stopped; it is never aliased or resurrected with invented energy.
+    pub fn transpose(&mut self, sample_rate: f64, semitones: f64) {
+        if !sample_rate.is_finite() || !(1000.0..=384000.0).contains(&sample_rate) || !semitones.is_finite() {
+            return;
+        }
+        let ratio = 2.0_f64.powf(semitones.clamp(-96.0, 96.0) / 12.0);
+        for mode in &mut self.modes {
+            let frequency = mode.frequency_hz * ratio;
+            if frequency >= sample_rate * 0.45 {
+                mode.real = 0.0;
+                mode.imaginary = 0.0;
+                continue;
+            }
+            let (sine, cosine) = (TAU * frequency / sample_rate).sin_cos();
+            mode.cosine = cosine * mode.radius;
+            mode.sine = sine * mode.radius;
+        }
     }
 
     /// Advance one sample. Silent banks return immediately; tiny tails are cleared before
@@ -142,5 +167,22 @@ mod tests {
         bank.strike(8000.0, &[Mode { frequency_hz: 3600.0, decay_seconds: 1.0, amplitude: 1.0 }]);
         assert!(!bank.is_active());
         assert_eq!(bank.next_sample(), 0.0);
+    }
+
+    #[test]
+    fn retuning_keeps_phase_and_applies_an_absolute_pitch_offset() {
+        let mut bank = ModalBank::<1>::default();
+        bank.strike(48000.0, &[Mode { frequency_hz: 440.0, decay_seconds: 1.0, amplitude: 0.5 }]);
+        for _ in 0..100 {
+            bank.next_sample();
+        }
+        bank.transpose(48000.0, 12.0);
+        bank.transpose(48000.0, 12.0);
+        for n in 0..100 {
+            let expected = 0.5
+                * (-1000.0_f64.ln() * (100 + n) as f64 / 48000.0).exp()
+                * (TAU * (440.0 * 100.0 + 880.0 * n as f64) / 48000.0).sin();
+            assert!((f64::from(bank.next_sample()) - expected).abs() < 2e-8);
+        }
     }
 }

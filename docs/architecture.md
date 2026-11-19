@@ -128,6 +128,7 @@ reads the program's RAM for the control bar and the plug-in hosts' reports their
 | `devices/delay` | Stereo delay: one line per side read with cubic interpolation, a Butterworth band-pass inside the feedback loop, times synced to the tempo or free, an LFO on the time and the band, Repitch/Fade/Jump, ping-pong and freeze ([spec](spec/delay.md)); no latency. | dsp, device-api |
 | `devices/reverb` | Algorithmic reverb: input band, Live's early-reflection taps and their families, a measured feedback delay network of 4 to 10 lines with allpasses and damping in the loop, chorus, freeze and a stereo rotation ([spec](spec/reverb.md)); no latency. | dsp, device-api |
 | `devices/pitch` | The pitch MIDI effect: transposes notes by semitones or by steps along the clip's scale, and keeps them in a window of keys by blocking, folding or limiting them; note-offs follow their note-ons ([spec](spec/pitch.md)). Events only, no latency. | device-api |
+| `devices/instrument` | Experimental public Instrument core and SDK stock panel: a bounded struck-modal body, shared single-source sample playback and Hybrid blend ([spec](spec/instrument.md)). | dsp, device-api, device-sdk |
 | `devices/fm-synth` | The FM synth, an instrument: six operators, 43 algorithms, up to 32 voices, waveforms, time envelopes, a filter per note, two LFOs, a matrix, a randomizer ([spec](spec/fm-synth.md)); fixed-point operators and lookup tables come from `dsp`; the engine is a port of MSFA (the engine in Dexed, Apache-2.0) that matches it sample for sample; reads and writes DX7 voice files ([spec](spec/dx7-voice-format.md)). | dsp, device-api |
 | `devices/nam-amp-modeler` | The NAM Amp Modeler: a `.nam` model through `nam-rs` (MIT, vendored with a fast tanh) inference, one instance per side (only the left one runs while both sides are the same, or while the Mono toggle, on by default, feeds both the mean of the two), with the input trim, an EQ (shelves and a mid peak), an HQ toggle (the A2 width dial's widest sub-model), a trim delay and an output trim; a rate mismatch runs both ways through `dsp`'s resampler. The fixed schedule and the one-chunk trail make the sound independent of the host's block sizes ([spec](spec/nam-amp-and-cab.md)). | dsp, device-api, nam-rs |
 | `devices/nam-cab-loader` | The NAM Cab Loader: a `.wav` impulse response through `dsp`'s IR convolution, per side, with a phase invert, a high pass, bass/mid/treble cuts, a trim delay and a volume; the same fixed schedule ([spec](spec/nam-amp-and-cab.md)). | dsp, device-api, hound |
@@ -350,6 +351,12 @@ and does not add processing nodes or a runtime/UI dependency. The current node l
 render this layout. See the [layout contract](spec/sd-device-format.md#visual-connection-layout).
 
 ### The sampler
+
+The experimental `devices/instrument` runtime adds a native struck-modal body and combines it
+with the same SDK sample runtime. Its public `Instrument` implements the device API without
+an engine dependency, and its panel is an SDK layout. `dsp::modal` supplies fixed-capacity
+damped modes. A single-source import uses the same model reference, decoded pool and graph
+preparation as Sampler; see [Instrument](spec/instrument.md) for its revision and limits.
 
 The sampler in `devices/sampler` uses the shared SDK sample runtime and SDK UI
 widgets. A sampler's versioned source path is kept in `Device.state`; media loads

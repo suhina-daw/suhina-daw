@@ -72,6 +72,33 @@ fn the_counter_counts_this_threads_allocations() {
 }
 
 #[test]
+fn instrument_render_events_and_reset_allocate_and_free_nothing() {
+    let mut instrument = with_test_sample(create("instrument", 48000.0).unwrap());
+    let source = instrument.info().param_index("source").unwrap();
+    let blend = instrument.info().param_index("blend").unwrap();
+    let mut buffer = [0.0; 128];
+    let counted = allocation_counter::measure(|| {
+        for mode in [0.0, 1.0, 2.0] {
+            instrument.set_param(source, mode);
+            instrument.reset();
+            for key in 0..127 {
+                instrument.event(NoteEvent::Controller { number: 64, value: 1.0 });
+                instrument.event(NoteEvent::On { key, velocity: 0.8 });
+                instrument.set_param(blend, f64::from(key) / 127.0);
+                instrument.event(NoteEvent::PitchBend(f32::from(key) / 127.0));
+                instrument.process(&ProcessContext::default(), &mut buffer);
+                instrument.event(NoteEvent::Off { key, velocity: 0.0 });
+                instrument.event(NoteEvent::Controller { number: 64, value: 0.0 });
+            }
+            instrument.event(NoteEvent::AllNotesOff);
+            instrument.reset();
+        }
+    });
+    assert_eq!(counted.count_total, 0, "callback allocated: {counted:?}");
+    assert_eq!(counted.count_current, 0, "callback freed existing storage: {counted:?}");
+}
+
+#[test]
 fn reset_allocates_nothing_in_any_listed_device() {
     let mut failures = Vec::new();
     for info in DEVICES.iter() {

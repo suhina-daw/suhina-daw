@@ -163,6 +163,52 @@ fn failed_sampler_decode_leaves_the_empty_track_unchanged() {
 }
 
 #[test]
+fn instrument_import_undo_clears_the_waveform_cache_and_keeps_its_sdk_panel() {
+    let path = std::env::temp_dir().join(format!("suhina-instrument-panel-{}.wav", std::process::id()));
+    let mut writer = hound::WavWriter::create(
+        &path,
+        hound::WavSpec {
+            channels: 1,
+            sample_rate: 48000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        },
+    )
+    .unwrap();
+    for i in 0..4800 {
+        writer.write_sample(((i as f32 * 0.04).sin() * 8000.0) as i16).unwrap();
+    }
+    writer.finalize().unwrap();
+    let mut session = Session::new(suhina_session::blank_project());
+    session.execute("device.add", &json!({"track":1,"id":"instrument"})).unwrap();
+    session.execute("device.loadSample", &json!({"track":1,"device":0,"path":path})).unwrap();
+    let mut app = App::new();
+    app.set_session(session, &[]);
+    app.view.selected = Some(TrackId(1));
+    app.detail_open = true;
+    app.detail_showing = detail_view::Showing::Devices;
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run_steps(4);
+    let id = crate::detail::device_canvas::sample_source_id(TrackId(1), 0);
+    assert!(harness.ctx.data(|data| data.get_temp::<std::sync::Arc<suhina_engine::AudioData>>(id)).is_some());
+    if let Some(output) = std::env::var_os("SUHINA_INSTRUMENT_PANEL_PNG") {
+        harness.render().unwrap().save(output).unwrap();
+    }
+    harness.state_mut().run(&crate::kit::widgets::Action::new("edit.undo", json!({})));
+    harness.run_steps(4);
+    harness.ctx.data(|data| {
+        assert!(data.get_temp::<std::sync::Arc<suhina_engine::AudioData>>(id).is_none());
+        assert_eq!(data.get_temp::<String>(id.with("name")).as_deref(), Some(""));
+        assert_eq!(data.get_temp::<[Option<f32>; 32]>(id.with("position")), Some([None; 32]));
+    });
+    assert!(harness.state().session().unwrap().project().channels[0].devices[0].sample_file().is_none());
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
 fn sampler_source_uses_the_shown_track_when_two_tracks_share_a_channel() {
     let mut project = suhina_session::blank_project();
     project.tracks[1].channel = project.tracks[0].channel;

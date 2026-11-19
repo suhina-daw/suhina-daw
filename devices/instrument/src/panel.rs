@@ -62,12 +62,21 @@ pub fn layout() -> Layout {
         control(
             &mut ui,
             id,
-            Widget::Dial { label: name.into(), decimals: 2, format, image: None },
+            Widget::Dial { label: name.into(), decimals: if id == "structure" { 4 } else { 2 }, format, image: None },
             [434.0 + i as f32 * 76.0, 30.0, 68.0, 72.0],
             UiGesture::Drag,
         );
         if let Some(control) = ui.controls.last_mut() {
             control.y = control.x.take();
+            control.tooltip = match id {
+                "body_decay" => "Modal: time for the fundamental to decay by 60 dB; affects the next strike",
+                "brightness" => "Modal: energy in the higher resonances; affects the next strike",
+                "structure" => "Modal: stretch the resonance frequencies away from integer harmonics",
+                "strike" => "Modal: excitation position along the resonant body",
+                "blend" => "Hybrid only: mix the local sample with the modal body",
+                _ => "Output gain for both sources",
+            }
+            .into();
         }
     }
     for (i, (id, name)) in [
@@ -89,7 +98,13 @@ pub fn layout() -> Layout {
             id,
             Widget::Number {
                 decimals: if i < 3 { 0 } else { 2 },
-                format: if matches!(id, "attack" | "release") { TextFormat::Seconds } else { TextFormat::Number },
+                format: if matches!(id, "attack" | "release") {
+                    TextFormat::Seconds
+                } else if i >= 5 {
+                    TextFormat::Percent
+                } else {
+                    TextFormat::Number
+                },
                 color: [166, 163, 255, 255],
                 center: false,
                 bordered: true,

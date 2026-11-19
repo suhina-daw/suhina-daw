@@ -86,11 +86,24 @@ struct Voice {
     serial: u64,
     amplitude: f32,
     gate: Smoother,
+    last_output: f32,
+    stolen_tail: f32,
+    stolen_fade: Smoother,
 }
 
 impl Default for Voice {
     fn default() -> Self {
-        Self { bank: ModalBank::default(), key: 0, held: false, serial: 0, amplitude: 0.0, gate: Smoother::new(0.0, 1) }
+        Self {
+            bank: ModalBank::default(),
+            key: 0,
+            held: false,
+            serial: 0,
+            amplitude: 0.0,
+            gate: Smoother::new(0.0, 1),
+            last_output: 0.0,
+            stolen_tail: 0.0,
+            stolen_fade: Smoother::new(0.0, 1),
+        }
     }
 }
 
@@ -100,9 +113,12 @@ pub struct Instrument {
     sample_rate: f64,
     params: ParamBank<{ param::COUNT }>,
     sampler: Sampler,
+    sample_silent: bool,
     voices: [Voice; MAX_VOICES],
     serial: u64,
     pedal: bool,
+    bend_semitones: f64,
+    deferred_sample_off: [bool; 128],
     gain: Smoother,
     sample_mix: Smoother,
     modal_mix: Smoother,
@@ -116,25 +132,26 @@ impl Default for Instrument {
 
 impl Instrument {
     pub fn new() -> Self {
-        Self::at_rate(DEFAULT_SAMPLE_RATE)
+        Self::at_rate(DEFAULT_SAMPLE_RATE, Sampler::new())
     }
 
     pub fn with_rate(sample_rate: f64) -> Result<Self, DeviceError> {
-        Ok(Self::at_rate(check_sample_rate(sample_rate)?))
+        let sample_rate = check_sample_rate(sample_rate)?;
+        Ok(Self::at_rate(sample_rate, Sampler::with_rate(sample_rate)?))
     }
 
-    fn at_rate(sample_rate: f64) -> Self {
+    fn at_rate(sample_rate: f64, sampler: Sampler) -> Self {
         let ramp = Smoother::ramp_frames(0.01, sample_rate);
-        // The constructor has validated the rate. The fallback is only a defensive guard
-        // against a future SDK constructor adding an unrelated failure mode.
-        let sampler = Sampler::with_rate(sample_rate).unwrap_or_else(|_| Sampler::new());
         let mut core = Self {
             sample_rate,
             params: ParamBank::new(&PARAMS),
             sampler,
+            sample_silent: true,
             voices: [Voice::default(); MAX_VOICES],
             serial: 0,
             pedal: false,
+            bend_semitones: 0.0,
+            deferred_sample_off: [false; 128],
             gain: Smoother::new(0.0, ramp),
             sample_mix: Smoother::new(0.0, ramp),
             modal_mix: Smoother::new(1.0, ramp),
@@ -205,7 +222,14 @@ impl Instrument {
             });
         self.serial = self.serial.saturating_add(1);
         if let Some(voice) = slot.and_then(|index| self.voices.get_mut(index)) {
+            voice.stolen_tail = voice.last_output;
+            voice.stolen_fade = Smoother::new(
+                if voice.last_output == 0.0 { 0.0 } else { 1.0 },
+                Smoother::ramp_frames(0.002, self.sample_rate),
+            );
+            voice.stolen_fade.set_target(0.0);
             voice.bank.strike(self.sample_rate, &modes);
+            voice.bank.transpose(self.sample_rate, self.bend_semitones);
             voice.key = key;
             voice.held = true;
             voice.serial = self.serial;
@@ -245,7 +269,10 @@ impl Device for Instrument {
         self.voices.fill(Voice::default());
         self.serial = 0;
         self.pedal = false;
+        self.bend_semitones = 0.0;
+        self.deferred_sample_off.fill(false);
         self.sampler.reset();
+        self.sample_silent = true;
         let (sample, modal) = self.mix_targets();
         self.sample_mix.reset(sample);
         self.modal_mix.reset(modal);
@@ -282,23 +309,25 @@ impl Device for Instrument {
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
         if self.sample_mix.current() > 0.0 || self.sample_mix.target() > 0.0 {
             self.sampler.process(context, buffer);
+            self.sample_silent = false;
         } else {
-            for frame in buffer.chunks_exact_mut(2) {
+            for frame in buffer.as_chunks_mut::<2>().0 {
                 frame.fill(0.0);
             }
         }
-        for frame in buffer.chunks_exact_mut(2) {
+        for frame in buffer.as_chunks_mut::<2>().0 {
             let mut modal = 0.0;
             for voice in &mut self.voices {
-                if !voice.bank.is_active() {
+                if !voice.bank.is_active() && voice.stolen_fade.current() == 0.0 {
                     continue;
                 }
                 let gate = voice.gate.next_value();
                 if gate == 0.0 && voice.gate.is_settled() {
                     voice.bank.reset();
-                    continue;
                 }
-                modal += voice.bank.next_sample() * gate * voice.amplitude;
+                voice.last_output = voice.bank.next_sample() * gate * voice.amplitude
+                    + voice.stolen_tail * voice.stolen_fade.next_value();
+                modal += voice.last_output;
             }
             let sample_mix = self.sample_mix.next_value();
             let modal = modal * self.modal_mix.next_value();
@@ -308,18 +337,50 @@ impl Device for Instrument {
             }
             if self.modal_mix.current() == 0.0 && self.modal_mix.is_settled() {
                 for voice in &mut self.voices {
-                    if voice.bank.is_active() {
-                        voice.bank.reset();
+                    if voice.bank.is_active() || voice.stolen_fade.current() != 0.0 {
+                        *voice = Voice::default();
                     }
                 }
             }
         }
+        // Once its fade is inaudible, retire the source instead of freezing a hidden playhead
+        // that could reappear on a later Source switch. The callback reset never frees storage.
+        if !self.sample_silent && self.sample_mix.current() == 0.0 && self.sample_mix.is_settled() {
+            self.sampler.reset();
+            self.sampler.event(NoteEvent::PitchBend((self.bend_semitones / 2.0) as f32));
+            self.sample_silent = true;
+            self.deferred_sample_off.fill(false);
+        }
     }
 
     fn event(&mut self, event: NoteEvent) {
+        let event = match event {
+            NoteEvent::On { key, velocity } if velocity.is_finite() && velocity <= 0.0 => {
+                NoteEvent::Off { key, velocity: 0.0 }
+            }
+            NoteEvent::Off { velocity, .. } if !velocity.is_finite() => return,
+            _ => event,
+        };
+        // The shared sample runtime has no pedal policy. Keep key releases here so Hybrid
+        // releases both sources on the same musical gesture, including velocity-zero notes.
+        let defer_sample_off = match event {
+            NoteEvent::Off { key, .. } if self.pedal => {
+                if let Some(pending) = self.deferred_sample_off.get_mut(usize::from(key)) {
+                    *pending = true;
+                }
+                true
+            }
+            NoteEvent::On { key, velocity } if velocity.is_finite() => {
+                if let Some(pending) = self.deferred_sample_off.get_mut(usize::from(key)) {
+                    *pending = false;
+                }
+                false
+            }
+            _ => false,
+        };
         // A mode change applies to the next played note. Off/pedal messages still release
         // existing voices during the crossfade, even if their source is now inaudible.
-        if self.params.get(param::SOURCE) != 0.0 || !matches!(event, NoteEvent::On { .. }) {
+        if !defer_sample_off && (self.params.get(param::SOURCE) != 0.0 || !matches!(event, NoteEvent::On { .. })) {
             self.sampler.event(event);
         }
         match event {
@@ -340,6 +401,12 @@ impl Device for Instrument {
                 let old = self.pedal;
                 self.pedal = value >= 0.5;
                 if old && !self.pedal {
+                    for (key, pending) in self.deferred_sample_off.iter_mut().enumerate() {
+                        if *pending {
+                            self.sampler.event(NoteEvent::Off { key: key as u8, velocity: 0.0 });
+                            *pending = false;
+                        }
+                    }
                     let frames = Smoother::ramp_frames(self.params.get(param::RELEASE), self.sample_rate);
                     for voice in &mut self.voices {
                         if !voice.held {
@@ -351,7 +418,16 @@ impl Device for Instrument {
             }
             NoteEvent::AllNotesOff => {
                 self.pedal = false;
+                self.deferred_sample_off.fill(false);
                 self.release(None);
+            }
+            NoteEvent::PitchBend(value) if value.is_finite() => {
+                self.bend_semitones = f64::from(value.clamp(-1.0, 1.0)) * 2.0;
+                for voice in &mut self.voices {
+                    if voice.bank.is_active() {
+                        voice.bank.transpose(self.sample_rate, self.bend_semitones);
+                    }
+                }
             }
             _ => {}
         }
