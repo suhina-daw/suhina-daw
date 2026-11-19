@@ -125,6 +125,11 @@ GPL-compatible stretchers usable from Rust (checked 2026-10-11):
    check that both give the same samples. Launched clips' voices still run on the audio thread;
    their stretchers are built on the worker (decision 7). An arrangement voice's stretcher is
    built when the worker first renders it.
+   Engine unit tests that run this thread call `Controller::sync_stretch_worker` between fixed
+   audio blocks: the thread accepts the workers already queued and acknowledges once its current
+   work can make no more progress without the renderer. This also covers launch preparation and
+   voice handover after an edit. The acknowledgement exists only under `cfg(test)`, outside
+   `Renderer::process`; the tests wait on that signal rather than sleeping for a device period.
 7. **Launched clips' stretchers are built on the worker thread.** Building one takes 1 to 4 ms
    (a mono clip at 48 kHz, release build: 1.3 ms on an Apple silicon laptop, about 4 ms
    measured elsewhere; 40 warped slots added 52 ms to every graph build), too long for the audio thread and, for every warped
