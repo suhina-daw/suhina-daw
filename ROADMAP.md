@@ -1288,3 +1288,8 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   Automation colour can draw every automation line and point in one colour of the theme's or
   picked ones, instead of the track's colour.
 
+- Track colour menus offer 36 colours; + or F2 opens a persistent floating colour window
+  with perceptual related shades, eight recent colours, exact hex/RGB/HSL, field and wheel,
+  optional stepped/soft selection, random colours and default restoration. Live adjustments
+  and multi-track choices form one Undo step each; the DAW stays usable while it is open.
+
