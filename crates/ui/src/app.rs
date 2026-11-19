@@ -624,6 +624,7 @@ pub struct App {
     settings_open: bool,
     /// The plug-in loading dialog was sent to the background for the project shown now.
     plugin_dialog_hidden: bool,
+    audio_preparation_hidden: bool,
     about: About,
     /// When Settings › Audio last listed the MIDI ports, so a controller plugged in shows up.
     midi_listed: Option<std::time::Instant>,
@@ -877,6 +878,7 @@ impl App {
             settings_changed: false,
             settings_open: false,
             plugin_dialog_hidden: false,
+            audio_preparation_hidden: false,
             about: About::default(),
             midi_listed: None,
             audio_devices: suhina_session::audio::DeviceWatch::default(),

@@ -396,6 +396,13 @@ impl Session {
         notices
     }
 
+    /// No renderer writes more frames after a project is parked. Finish its
+    /// recording writers now, preserving notices for the next foreground poll.
+    pub(crate) fn finish_suspended_recording(&mut self) {
+        let notices = self.sync_recording(true);
+        self.live.recording.notices.extend(notices);
+    }
+
     fn poll_recording_after(&mut self, settle: Duration) -> Vec<String> {
         for thread in &self.live.recording.threads {
             while let Some(report) = thread.report() {

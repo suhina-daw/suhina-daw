@@ -416,6 +416,7 @@ enum Module {
 pub(crate) struct Vst2Plugin {
     audio: Option<thread::JoinHandle<Served>>,
     stop: Arc<AtomicBool>,
+    wake_audio: Option<suhina_ipc::ServeWaker>,
     latency: u32,
     instance: u32,
     name: String,
@@ -510,6 +511,7 @@ impl Vst2Plugin {
         let mut plugin = Self {
             audio: None,
             stop: Arc::new(AtomicBool::new(false)),
+            wake_audio: None,
             latency: latency_of(&read),
             instance,
             name: String::new(),
@@ -591,6 +593,7 @@ impl Vst2Plugin {
     /// and suspending it when the thread stops (a reconfigure, an unload).
     fn start_audio(&mut self, served: Served) -> Result<(), String> {
         self.stop = Arc::new(AtomicBool::new(false));
+        self.wake_audio = Some(served.waker().map_err(|e| e.to_string())?);
         let stop = self.stop.clone();
         let block = Vst2Block {
             effect: self.effect,
@@ -787,9 +790,19 @@ impl Vst2Plugin {
         Ok(self.latency)
     }
 
+    pub(crate) fn reset_audio(&mut self) -> Result<u32, String> {
+        if !self.stop_audio(crate::UNLOAD_WAIT) {
+            return Err("its audio thread does not stop".into());
+        }
+        let served =
+            self.audio.take().ok_or("it has no audio thread")?.join().map_err(|_| "its audio thread failed")?;
+        self.start_audio(served)?;
+        Ok(self.latency)
+    }
+
     /// Asks the audio thread to stop and waits up to `wait` for it; whether it stopped.
     pub(crate) fn stop_audio(&mut self, wait: Duration) -> bool {
-        crate::audio_stopped(&self.stop, self.audio.as_ref(), wait)
+        crate::audio_stopped(&self.stop, self.wake_audio.as_ref(), self.audio.as_ref(), wait)
     }
 
     /// The plug-in's state as the standard VST2 bank, the form the model keeps and a VST3

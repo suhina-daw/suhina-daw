@@ -162,6 +162,13 @@ pub(crate) struct SongHistory {
 }
 
 impl SongHistory {
+    /// Discards transport from before a project was suspended, keeping its storage.
+    pub(crate) fn clear(&mut self) {
+        self.next = 0;
+        self.len = 0;
+        self.played = 0;
+    }
+
     /// An empty history. Allocates.
     pub(crate) fn new(sample_rate: u32) -> Self {
         Self {
@@ -247,6 +254,11 @@ impl Default for SongPosition {
 /// The audio half of a running plug-in, as the engine sees it. Implemented outside the engine
 /// (the session, over `suhina-plugins`); test doubles implement it too.
 pub trait PluginProcessor: Send {
+    /// Clears voices and buffered audio while retaining the instance and its parameters.
+    /// Called only on the control thread after its renderer has left the output.
+    fn reset_audio(&mut self, _timeout: Duration) -> Result<(), String> {
+        Err("this processor does not support audio reset".into())
+    }
     /// The instrument softens its own transport stop before handing audio to effects.
     fn smooth_transport_stop(&self) -> bool {
         false
@@ -816,6 +828,12 @@ pub(crate) struct Delay {
 }
 
 impl Delay {
+    /// Drops sound from before a project was suspended, keeping its allocation.
+    pub(crate) fn clear(&mut self) {
+        self.buffer.fill(0.0);
+        self.at = 0;
+    }
+
     pub(crate) fn new(frames: usize) -> Self {
         Self { buffer: vec![0.0; frames * 2], at: 0 }
     }

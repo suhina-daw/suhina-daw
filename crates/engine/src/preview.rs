@@ -225,6 +225,19 @@ fn glided(gain: f32, target: f32, glide: f32) -> f32 {
 }
 
 impl Preview {
+    /// Clears a suspended project's preview on its control thread. The command
+    /// endpoints stay connected for the next activation. May free preview data.
+    pub(crate) fn suspend(&mut self) {
+        if let Some(commands) = self.commands.as_mut() {
+            while commands.pop().is_ok() {}
+        }
+        self.waiting = None;
+        self.sample = None;
+        self.notes = None;
+        self.tail = None;
+        self.monitor.playing.store(false, Ordering::Relaxed);
+    }
+
     pub(crate) fn new(sample_rate: u32) -> Self {
         Self {
             commands: None,

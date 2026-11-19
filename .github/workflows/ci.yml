@@ -221,11 +221,11 @@ jobs:
       # out tests/fixtures, which the model_runtime and top-level wavenet tests read.
       - name: Vendored nam-rs (fast tanh, state copy, block kernel)
         run: cargo test --manifest-path third_party/nam-rs/Cargo.toml --lib -- fast_math wavenet::gating wavenet::layer wavenet::conv wavenet::array wavenet::head wavenet::film lstm
-      - name: ASIO driver initialization contract
+      - name: ASIO driver initialization and lifecycle contracts
         if: runner.os == 'Windows'
         env:
           LIBCLANG_PATH: C:/Program Files/LLVM/bin
-        run: cargo test --manifest-path third_party/asio-sys/Cargo.toml --lib driver_info
+        run: cargo test --manifest-path third_party/asio-sys/Cargo.toml --lib -- driver_info lifecycle_tests
       - name: ASIO callback cycle contract
         if: runner.os == 'Windows'
         run: |

@@ -27,6 +27,10 @@ const NOT_ARA: &str = "only a VST3 plug-in can be bound to an ARA document";
 pub(crate) trait HostedPlugin {
     fn latency(&self) -> u32;
 
+    fn reset_audio(&mut self) -> Result<u32, String> {
+        Err("this processor cannot reset its audio".into())
+    }
+
     /// A latency the plug-in reported since this was last asked, after restarting its
     /// processing where its format asks for that: the engine is to be told.
     fn latency_changed(&mut self) -> Option<u32>;
@@ -152,6 +156,9 @@ impl dyn HostedPlugin {
 }
 
 impl HostedPlugin for clap::ClapPlugin {
+    fn reset_audio(&mut self) -> Result<u32, String> {
+        clap::ClapPlugin::reset_audio(self)
+    }
     fn latency(&self) -> u32 {
         clap::ClapPlugin::latency(self)
     }
@@ -215,6 +222,9 @@ impl HostedPlugin for clap::ClapPlugin {
 
 #[cfg(feature = "vst2")]
 impl HostedPlugin for vst2::host::Vst2Plugin {
+    fn reset_audio(&mut self) -> Result<u32, String> {
+        vst2::host::Vst2Plugin::reset_audio(self)
+    }
     fn latency(&self) -> u32 {
         vst2::host::Vst2Plugin::latency(self)
     }
@@ -277,6 +287,9 @@ impl HostedPlugin for vst2::host::Vst2Plugin {
 }
 
 impl HostedPlugin for vst3::Vst3Plugin {
+    fn reset_audio(&mut self) -> Result<u32, String> {
+        vst3::Vst3Plugin::reset_audio(self)
+    }
     fn latency(&self) -> u32 {
         vst3::Vst3Plugin::latency(self)
     }
@@ -379,6 +392,7 @@ impl AraHost for vst3::Vst3Plugin {
 pub(crate) struct TestPlugin {
     pub(crate) processor: Arc<dyn Processor>,
     pub(crate) stop: Arc<AtomicBool>,
+    pub(crate) wake_audio: suhina_ipc::ServeWaker,
     pub(crate) audio: thread::JoinHandle<()>,
     pub(crate) reported: u32,
 }
@@ -401,8 +415,8 @@ impl HostedPlugin for TestPlugin {
         self.processor.set_state(data)
     }
     fn unload(self: Box<Self>) {
-        let Self { stop, audio, .. } = *self;
-        if audio_stopped(&stop, Some(&audio), UNLOAD_WAIT) {
+        let Self { stop, wake_audio, audio, .. } = *self;
+        if audio_stopped(&stop, Some(&wake_audio), Some(&audio), UNLOAD_WAIT) {
             let _ = audio.join();
         }
     }

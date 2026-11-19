@@ -58,6 +58,7 @@ pub use source::{AudioSource, MAX_SOURCE_FRAMES};
 pub use sweep::sweep_leftovers;
 
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use doorbell::Doorbell;
@@ -262,7 +263,8 @@ impl Link {
         self.region.write_followers(followers);
         self.sequence = self.sequence.wrapping_add(1);
         self.region.set_request(self.sequence);
-        self.to_host.ring(self.region.request_word());
+        self.region.wake();
+        self.to_host.ring(self.region.wake_word());
         self.in_flight = Some(samples);
         true
     }
@@ -405,6 +407,12 @@ impl Served {
         self.region.max_frames()
     }
 
+    /// A control-thread handle for waking a cancelled wait, without sending or
+    /// acknowledging an audio block. Keeps the mapping alive after the link closes.
+    pub fn waker(&self) -> Result<ServeWaker, IpcError> {
+        Ok(ServeWaker { region: self.region.share_for_wake(), doorbell: Doorbell::open(self.region.name(), "host")? })
+    }
+
     /// Waits until `timeout` has passed for a block, runs `process(input, output)` on it
     /// (interleaved, the same length, the output zeroed) and answers. Returns whether a block
     /// was served.
@@ -427,9 +435,25 @@ impl Served {
         timeout: Duration,
         process: impl FnOnce(&[f32], &[Event], &[u32], &mut [f32], &mut Laps<'_>),
     ) -> bool {
+        self.serve_joint_until(timeout, &AtomicBool::new(false), process)
+    }
+
+    /// Like [`Served::serve_joint`], but also returns without taking a block when
+    /// `stop` is set. Store the flag before calling [`ServeWaker::wake`].
+    pub fn serve_joint_until(
+        &mut self,
+        timeout: Duration,
+        stop: &AtomicBool,
+        process: impl FnOnce(&[f32], &[Event], &[u32], &mut [f32], &mut Laps<'_>),
+    ) -> bool {
         let deadline = Instant::now() + timeout;
         let seen = self.seen;
-        if !self.to_host.wait(self.region.request_word(), |v| v != seen, deadline) {
+        if !self.to_host.wait(
+            self.region.wake_word(),
+            |_| stop.load(Ordering::Acquire) || self.region.request() != seen,
+            deadline,
+        ) || stop.load(Ordering::Acquire)
+        {
             return false;
         }
         let request = self.region.request();
@@ -451,6 +475,21 @@ impl Served {
         self.region.set_response(request);
         self.to_engine.ring(self.region.response_word());
         true
+    }
+}
+
+/// Wakes a host audio wait after its stop flag was set. It never touches audio
+/// buffers or their request/response sequence, so the same link can resume later.
+pub struct ServeWaker {
+    region: Region,
+    doorbell: Doorbell,
+}
+
+impl ServeWaker {
+    /// Interrupts the wait after its caller has set the host's stop flag.
+    pub fn wake(&self) {
+        self.region.wake();
+        self.doorbell.ring(self.region.wake_word());
     }
 }
 

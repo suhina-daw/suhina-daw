@@ -8,6 +8,7 @@
 //! The region is shared memory mapped by both processes ([`crate::shm`]): the operating system
 //! frees it when both have let go of it, however they end.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::events::{EVENT_BYTES, Event, MAX_EVENTS};
@@ -15,7 +16,7 @@ use crate::shm::{Access, Shared};
 use crate::{IpcError, MAX_CHANNELS, MAX_FOLLOWERS, MAX_FRAMES};
 
 const MAGIC: u32 = 0x4C57_4950;
-const VERSION: u32 = 4;
+const VERSION: u32 = 5;
 /// The header's size; the buffers start after it.
 const HEADER_BYTES: usize = 256;
 // Byte offsets of the header fields. The words the two sides write sit on cache lines of their
@@ -25,6 +26,9 @@ const AT_VERSION: usize = 4;
 const AT_CHANNELS: usize = 8;
 const AT_MAX_FRAMES: usize = 12;
 const AT_REQUEST: usize = 64;
+// Changes for both a new block and a host-side interruption. A futex wait must
+// observe this word so an interruption between checking and sleeping is not lost.
+const AT_WAKE: usize = 68;
 const AT_RESPONSE: usize = 128;
 /// How long the link's own instance took to process the block the response answers, in
 /// microseconds: on the host's cache line, written before the response.
@@ -55,7 +59,7 @@ fn size(channels: u32, max_frames: u32) -> Option<usize> {
 const KIND: &str = "ipc";
 
 pub(crate) struct Region {
-    map: Shared,
+    map: Arc<Shared>,
     channels: u32,
     max_frames: u32,
 }
@@ -64,7 +68,7 @@ impl Region {
     pub(crate) fn create(channels: u32, max_frames: u32) -> Result<Self, IpcError> {
         let len = size(channels, max_frames).ok_or(IpcError::BadSize { channels, max_frames })?;
         // New shared memory is zeroed.
-        let region = Self { map: Shared::create(KIND, len)?, channels, max_frames };
+        let region = Self { map: Arc::new(Shared::create(KIND, len)?), channels, max_frames };
         region.word(AT_MAGIC).store(MAGIC, Ordering::Relaxed);
         region.word(AT_VERSION).store(VERSION, Ordering::Relaxed);
         region.word(AT_CHANNELS).store(channels, Ordering::Relaxed);
@@ -77,7 +81,7 @@ impl Region {
         if map.len() < HEADER_BYTES {
             return Err(IpcError::BadLink("too short"));
         }
-        let mut region = Self { map, channels: 0, max_frames: 0 };
+        let mut region = Self { map: Arc::new(map), channels: 0, max_frames: 0 };
         if region.word(AT_MAGIC).load(Ordering::Acquire) != MAGIC {
             return Err(IpcError::BadLink("wrong magic number"));
         }
@@ -97,6 +101,12 @@ impl Region {
         Ok(region)
     }
 
+    /// Shares the mapping with a wake handle, which only accesses header atomics.
+    /// The serving side alone retains mutable access to the audio buffers.
+    pub(crate) fn share_for_wake(&self) -> Self {
+        Self { map: Arc::clone(&self.map), channels: self.channels, max_frames: self.max_frames }
+    }
+
     pub(crate) fn address(&self) -> &str {
         self.map.address()
     }
@@ -107,7 +117,9 @@ impl Region {
 
     /// The host has opened the region: its name can go ([`Shared::unlink`]).
     pub(crate) fn unlink(&mut self) {
-        self.map.unlink();
+        if let Some(map) = Arc::get_mut(&mut self.map) {
+            map.unlink();
+        }
     }
 
     pub(crate) fn channels(&self) -> u32 {
@@ -135,6 +147,14 @@ impl Region {
 
     pub(crate) fn request_word(&self) -> &AtomicU32 {
         self.word(AT_REQUEST)
+    }
+
+    pub(crate) fn wake_word(&self) -> &AtomicU32 {
+        self.word(AT_WAKE)
+    }
+
+    pub(crate) fn wake(&self) {
+        self.wake_word().fetch_add(1, Ordering::Release);
     }
 
     pub(crate) fn response_word(&self) -> &AtomicU32 {

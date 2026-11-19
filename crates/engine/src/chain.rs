@@ -308,6 +308,24 @@ pub(crate) fn device_identity(
 }
 
 impl Chain {
+    /// Drops compensation audio left by the previous active period.
+    pub(crate) fn clear_suspended_delays(&mut self) {
+        self.delay.clear();
+        for send in &mut self.sends {
+            send.delay.clear();
+        }
+        for key in &mut self.key_reads {
+            key.delay.clear();
+        }
+        for slot in &mut self.slots {
+            match slot {
+                DeviceSlot::Device(device) | DeviceSlot::MidiDevice(device) => device.reset(),
+                DeviceSlot::Group(group) => group.clear_suspended_delays(),
+                DeviceSlot::Plugin(_) => {}
+            }
+        }
+    }
+
     /// The first device in the chain that has live values for its panel, with its position.
     pub(crate) fn readouts(&self, visit: &mut dyn FnMut(u64, [f32; suhina_device_api::MAX_READOUTS])) {
         crate::group::visit_readouts(&self.slots, &self.positions, crate::meters::READOUT_PATH, visit);

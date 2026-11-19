@@ -253,6 +253,8 @@ pub(crate) enum Failure {
     DeviceGone = 6,
     /// Any other error the device reported.
     Other = 7,
+    /// A renderer exchange did not complete; this output cannot accept more.
+    ProjectSwitch = 8,
 }
 
 impl Failure {
@@ -265,6 +267,7 @@ impl Failure {
             Self::DriverChanged,
             Self::DeviceGone,
             Self::Other,
+            Self::ProjectSwitch,
         ]
         .into_iter()
         .find(|failure| *failure as u8 == code)
@@ -279,6 +282,7 @@ impl Failure {
             Self::DriverChanged => "the driver's buffer sizes changed",
             Self::DeviceGone => "the device is gone or taken",
             Self::Other => "the device reported an error",
+            Self::ProjectSwitch => "the audio project switch did not complete",
         }
     }
 
@@ -526,9 +530,115 @@ pub struct Stream {
     priority: Option<Priority>,
     /// Why the render thread could not have real-time priority, the first time in this process.
     priority_notice: Option<String>,
+    exchange: ExchangeControl,
+}
+
+/// Each direction has one slot. The control side owns destruction of retired
+/// renderers; the render side only moves their boxes between these queues.
+struct ExchangeControl {
+    next: rtrb::Producer<Box<Renderer>>,
+    retired: rtrb::Consumer<Box<Renderer>>,
+}
+
+struct ExchangeRender {
+    next: rtrb::Consumer<Box<Renderer>>,
+    retired: rtrb::Producer<Box<Renderer>>,
+    pending: Option<Box<Renderer>>,
+}
+
+fn renderer_exchange() -> (ExchangeControl, ExchangeRender) {
+    let (send, next) = rtrb::RingBuffer::new(1);
+    let (retired, receive) = rtrb::RingBuffer::new(1);
+    (ExchangeControl { next: send, retired: receive }, ExchangeRender { next, retired, pending: None })
+}
+
+/// The session supplies the current cue level; the retained device supplies its
+/// actual routing. Its opening cue level may have changed since it was opened.
+fn prepare_project_renderer(renderer: &mut Renderer, separate_cue: bool, frames: usize) {
+    renderer.handle(LaunchCommand::SetCue { gain: None, separate: Some(separate_cue) });
+    renderer.join_real_time(frames);
+}
+
+impl ExchangeRender {
+    fn between_blocks(&mut self, current: &mut Box<Renderer>) -> bool {
+        let mut changed = false;
+        // If retirement has not been collected, retain ownership instead of
+        // destroying a renderer or accepting another switch on this thread.
+        if self.pending.is_none()
+            && self.retired.slots() > 0
+            && let Ok(mut next) = self.next.pop()
+        {
+            current.exchange_audio_input(&mut next);
+            std::mem::swap(current, &mut next);
+            self.pending = Some(next);
+            changed = true;
+        }
+        if let Some(old) = self.pending.take()
+            && let Err(rtrb::PushError::Full(old)) = self.retired.push(old)
+        {
+            self.pending = Some(old);
+        }
+        changed
+    }
+}
+
+/// Smooths the boundary from the last queued frame into a new project's engine.
+/// The device ring is never flushed, and both main and cue share the same ramp.
+struct ProjectFade {
+    last: [f32; 4],
+    from: [f32; 4],
+    total: usize,
+    left: usize,
+}
+
+impl ProjectFade {
+    fn new(rate: u32) -> Self {
+        Self { last: [0.0; 4], from: [0.0; 4], total: (rate as usize / 200).max(1), left: 0 }
+    }
+
+    fn begin(&mut self) {
+        self.from = self.last;
+        self.left = self.total;
+    }
+
+    fn apply(&mut self, main: &mut [f32], cue: &mut [f32]) {
+        for (main, cue) in main.as_chunks_mut::<2>().0.iter_mut().zip(cue.as_chunks_mut::<2>().0.iter_mut()) {
+            let gain = 1.0 - self.left as f32 / self.total as f32;
+            for ((sample, previous), last) in main.iter_mut().chain(cue.iter_mut()).zip(self.from).zip(&mut self.last) {
+                if self.left > 0 {
+                    *sample = previous * (1.0 - gain) + *sample * gain;
+                }
+                *last = *sample;
+            }
+            self.left = self.left.saturating_sub(1);
+        }
+    }
 }
 
 impl Stream {
+    /// Exchanges whole project engines while leaving the device and input open.
+    /// Only the owner thread waits; rendering and device callbacks never do.
+    fn exchange_renderer(&mut self, next: Box<Renderer>) -> Result<Box<Renderer>, String> {
+        if self.progress.failed() {
+            return Err("the audio output needs to be reopened before switching projects".into());
+        }
+        self.exchange.next.push(next).map_err(|_| "an audio project switch is already pending".to_owned())?;
+        let started = Instant::now();
+        loop {
+            if let Ok(old) = self.exchange.retired.pop() {
+                return Ok(old);
+            }
+            if self.progress.failed() || started.elapsed() >= CLOSE_TIMEOUT {
+                self.progress.fail_because(Failure::ProjectSwitch);
+                self.stop.store(true, Ordering::Release);
+                return Err("the audio renderer did not finish the project switch".into());
+            }
+            if let Some(render) = &self.render {
+                render.thread().unpark();
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
     /// The priority the render thread got; `None` when it did not say in time.
     pub fn priority(&self) -> Option<Priority> {
         self.priority
@@ -949,9 +1059,10 @@ impl Output {
         let stop = Arc::new(AtomicBool::new(false));
         let (stopping, watching, block) = (Arc::clone(&stop), Arc::clone(progress), self.block);
         let (joined, priority) = mpsc::sync_channel(1);
+        let (exchange, exchanging) = renderer_exchange();
         let render = std::thread::Builder::new()
             .name("suhina-render".into())
-            .spawn(move || render_ahead(renderer, producer, block, &stopping, &watching, &joined))
+            .spawn(move || render_ahead(renderer, producer, block, &stopping, &watching, &joined, exchanging))
             .map_err(|e| format!("could not start the render thread: {e}"))?;
         let _set = progress.render.set(render.thread().clone());
         let asio = self.host == "ASIO";
@@ -970,6 +1081,7 @@ impl Output {
             asio,
             priority,
             priority_notice,
+            exchange,
         };
         stream
             .device
@@ -1029,13 +1141,15 @@ impl RenderCycles {
 /// the system allows ([`RealTime`]), which it says through `joined` before it renders, and never
 /// allocating after its scratch block.
 fn render_ahead(
-    mut renderer: Renderer,
+    renderer: Renderer,
     mut ring: rtrb::Producer<f32>,
     frames: usize,
     stop: &AtomicBool,
     progress: &Progress,
     joined: &mpsc::SyncSender<(Priority, Option<String>)>,
+    mut exchanging: ExchangeRender,
 ) -> Renderer {
+    let mut renderer = Box::new(renderer);
     let mut realtime = RealTime::join(frames, renderer.sample_rate());
     // The render workers, when there are any (`SUHINA_RENDER_THREADS`), join it too.
     renderer.join_real_time(frames);
@@ -1047,7 +1161,11 @@ fn render_ahead(
     // Since when the render thread has waited for the input's frames of this cycle.
     let mut input_wait = InputWait::default();
     let mut cycles = RenderCycles::default();
+    let mut project_fade = ProjectFade::new(renderer.sample_rate());
     while !stop.load(Ordering::Acquire) {
+        if exchanging.between_blocks(&mut renderer) {
+            project_fade.begin();
+        }
         // The device's last take before what is queued: a take marks itself once its frames
         // are gone, so read in this order a take in between can only shorten the deadline.
         let last_take = progress.last_take.get();
@@ -1086,6 +1204,7 @@ fn render_ahead(
         renderer.set_last_take(last_take);
         cycles.started(progress);
         renderer.process_with_cue(&mut block, &mut cue);
+        project_fade.apply(&mut block, &mut cue);
         // A device that takes faster than it plays, or a project too heavy to render in time,
         // keeps the thread from waiting: it rests rather than outlive its real-time limit.
         realtime.worked(started.elapsed());
@@ -1094,7 +1213,7 @@ fn render_ahead(
             chunk.fill_from_iter(frames.flat_map(|([l, r], [cl, cr])| [*l, *r, *cl, *cr]));
         }
     }
-    renderer
+    *renderer
 }
 
 /// Render-thread-owned grace period. Expiry belongs to one output cycle, so catching up
@@ -1209,35 +1328,137 @@ fn open_fitting(choice: &OutputChoice) -> Result<(Output, DeviceStream, rtrb::Pr
 /// hands back the renderer's plug-ins.
 struct Owner {
     close: mpsc::Sender<OwnerRequest>,
-    back: mpsc::Receiver<(u32, Option<Plugins>)>,
-    thread: Option<std::thread::JoinHandle<()>>,
+    back: Option<mpsc::Receiver<Option<(u32, Plugins)>>>,
+    /// Tests synchronize with channels instead of depending on the scheduler
+    /// completing shutdown within the production deadline.
+    #[cfg(test)]
+    wait_without_timeout: bool,
 }
 
 enum OwnerRequest {
-    Close,
+    Exchange {
+        renderer: Box<Renderer>,
+        reply: mpsc::Sender<Result<Box<Renderer>, String>>,
+    },
+    Close {
+        keep_plugins: bool,
+    },
     ControlPanel,
     /// Ask the ASIO driver whether its buffer sizes changed ([`Output::driver_changed`]).
     CheckDriver,
 }
 
 impl suhina_session::OutputHandle for Owner {
+    fn can_exchange_renderer(&self) -> bool {
+        true
+    }
+    fn exchange_renderer(&mut self, renderer: Box<Renderer>) -> Result<Box<Renderer>, String> {
+        let (reply, answer) = mpsc::channel();
+        self.close
+            .send(OwnerRequest::Exchange { renderer, reply })
+            .map_err(|_| "the audio owner stopped".to_owned())?;
+        #[cfg(test)]
+        let received = if self.wait_without_timeout {
+            answer.recv().map_err(|_| "the audio owner stopped".to_owned())
+        } else {
+            answer
+                .recv_timeout(CLOSE_TIMEOUT)
+                .map_err(|_| "the audio owner did not finish the project switch".to_owned())
+        };
+        #[cfg(not(test))]
+        let received = answer
+            .recv_timeout(CLOSE_TIMEOUT)
+            .map_err(|_| "the audio owner did not finish the project switch".to_owned());
+        let result = received.and_then(|result| result);
+        if result.is_err() {
+            // A late exchange cannot acknowledge a different project's request.
+            let _ = self.close.send(OwnerRequest::Close { keep_plugins: false });
+        }
+        result
+    }
+
     fn close(self: Box<Self>) -> Option<(u32, Plugins)> {
         Owner::close(*self)
     }
 }
 
 impl Owner {
+    /// Reserves the output until a background joiner has observed the whole audio
+    /// thread finish. No driver may open after a close timeout while it still runs.
+    fn start(
+        occupied: Arc<AtomicBool>,
+        run: impl FnOnce(mpsc::Sender<OwnerRequest>, mpsc::Receiver<OwnerRequest>) -> Option<(u32, Plugins)>
+        + Send
+        + 'static,
+    ) -> Result<Self, String> {
+        occupied.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).map_err(|_| {
+            "the previous audio output is still open or shutting down; retry after it closes".to_string()
+        })?;
+        let (close, requests) = mpsc::channel();
+        let owner_requests = close.clone();
+        let (done, back) = mpsc::channel();
+        let joining = Arc::clone(&occupied);
+        std::thread::Builder::new()
+            .name("suhina-audio-join".into())
+            .spawn(move || {
+                let thread = std::thread::Builder::new()
+                    .name("suhina-audio".into())
+                    .spawn(move || run(owner_requests, requests));
+                let result = match thread {
+                    Ok(thread) => match thread.join() {
+                        Ok(result) => {
+                            joining.store(false, Ordering::Release);
+                            result
+                        }
+                        // A panic may leave the driver partially destroyed. Keep the
+                        // slot occupied until process exit instead of reopening it.
+                        Err(_) => None,
+                    },
+                    Err(_) => {
+                        joining.store(false, Ordering::Release);
+                        None
+                    }
+                };
+                let _ = done.send(result);
+            })
+            .map_err(|e| {
+                // No audio thread exists if the joiner itself could not start.
+                occupied.store(false, Ordering::Release);
+                format!("could not start the audio joiner: {e}")
+            })?;
+        Ok(Self {
+            close,
+            back: Some(back),
+            #[cfg(test)]
+            wait_without_timeout: false,
+        })
+    }
+
+    fn finish(&mut self, keep_plugins: bool, timeout: Duration) -> Option<(u32, Plugins)> {
+        let back = self.back.take()?;
+        let _ = self.close.send(OwnerRequest::Close { keep_plugins });
+        #[cfg(test)]
+        if self.wait_without_timeout {
+            return back.recv().ok().flatten();
+        }
+        back.recv_timeout(timeout).ok().flatten()
+    }
+
     /// Closes the stream and returns its sample rate and plug-ins, when they come back in
     /// time.
     fn close(mut self) -> Option<(u32, Plugins)> {
-        let _closed = self.close.send(OwnerRequest::Close);
-        let back = self.back.recv_timeout(CLOSE_TIMEOUT).ok();
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-        back.and_then(|(rate, plugins)| plugins.map(|p| (rate, p)))
+        self.finish(true, CLOSE_TIMEOUT)
     }
 }
+
+impl Drop for Owner {
+    fn drop(&mut self) {
+        let _ = self.finish(false, CLOSE_TIMEOUT);
+    }
+}
+
+static OUTPUT_OCCUPIED: std::sync::LazyLock<Arc<AtomicBool>> =
+    std::sync::LazyLock::new(|| Arc::new(AtomicBool::new(false)));
 
 /// What a playing output runs with, for `audio.info`.
 struct Live {
@@ -1341,118 +1562,141 @@ pub fn open_chosen(
     let (project, audio, assets, choice) =
         (project.clone(), audio.clone(), std::sync::Arc::new(assets.clone()), choice.clone());
     let (ready, opened) = mpsc::channel();
-    let (close, closed) = mpsc::channel::<OwnerRequest>();
-    let owner_requests = close.clone();
-    let (back_tx, back) = mpsc::channel();
-    let thread = std::thread::Builder::new()
-        .name("suhina-audio".into())
-        .spawn(move || {
-            let started = (|| {
-                let (mut output, device, producer, progress) = open_fitting(&choice)?;
-                let (plugins, kept) = match carried {
-                    Some((rate, mut plugins)) => {
-                        if rate != output.sample_rate {
-                            plugins.reconfigure(output.sample_rate, std::time::Duration::from_secs(10))?;
-                        }
-                        (plugins, true)
+    let owner = Owner::start(Arc::clone(&OUTPUT_OCCUPIED), move |owner_requests, closed| {
+        let started = (|| {
+            let (mut output, device, producer, progress) = open_fitting(&choice)?;
+            let (plugins, kept) = match carried {
+                Some((rate, mut plugins)) => {
+                    if rate != output.sample_rate {
+                        plugins.reconfigure(output.sample_rate, std::time::Duration::from_secs(10))?;
                     }
-                    _ => (Plugins::new(), false),
+                    (plugins, true)
+                }
+                _ => (Plugins::new(), false),
+            };
+            let mut renderer = Renderer::build(
+                &project,
+                RenderInputs::from_audio(&audio, suhina_session::devices()).with_assets(&assets).with_plugins(plugins),
+                output.sample_rate,
+                RenderOptions::STOPPED,
+            )
+            .map_err(|e| e.to_string())?;
+            // The input device, when one is chosen: a failure leaves the output playing.
+            // Its buffer rides the render thread's block (or, on ASIO, the output's), so
+            // the input's delivery and the engine's reads share the device's cycle.
+            let input = match input::open(
+                &output.host,
+                &choice.input,
+                output.sample_rate,
+                output.asked,
+                Arc::clone(&progress),
+                output.block,
+            ) {
+                Ok(Some((stream, ring))) => {
+                    renderer.set_audio_input(ring, stream.channels, Arc::clone(&stream.underruns));
+                    Some(stream)
+                }
+                Ok(None) => None,
+                Err(e) => {
+                    output.notices.push(format!("{e}; there is no audio input"));
+                    None
+                }
+            };
+            let mut controller = renderer.controller();
+            controller
+                .run_stretch_worker(&mut renderer)
+                .map_err(|e| format!("could not start the stretch worker: {e}"))?;
+            let _ = progress.input_diagnostics.set(renderer.input_diagnostics());
+            let stream = output.play(device, renderer, producer, &progress)?;
+            output.notices.extend(stream.priority_notice().map(str::to_owned));
+            Ok::<_, String>((output, controller, progress, stream, kept, input))
+        })();
+        match started {
+            Ok((output, controller, progress, mut stream, kept, input)) => {
+                suhina_plugins::trace!(
+                    "audio device opened: {} on {}, {} Hz",
+                    output.device_name,
+                    output.host,
+                    output.sample_rate
+                );
+                let panel_pending = Arc::new(AtomicBool::new(false));
+                let watched = Arc::clone(&progress);
+                let live = Live {
+                    owner: owner_requests,
+                    panel_pending: Arc::clone(&panel_pending),
+                    progress,
+                    host: output.host.clone(),
+                    device: output.device_name.clone(),
+                    sample_rate: output.sample_rate,
+                    block: output.block,
+                    exclusive: output.exclusive,
+                    fallback: in_place_of(&choice, &output.host, &output.device_name),
+                    channels: output.channels,
+                    cue_pair: output.cue_pair(),
+                    input: input.as_ref().map(|i| (i.name.clone(), i.channels, Arc::clone(&i.underruns))),
                 };
-                let mut renderer = Renderer::build(
-                    &project,
-                    RenderInputs::from_audio(&audio, suhina_session::devices())
-                        .with_assets(&assets)
-                        .with_plugins(plugins),
-                    output.sample_rate,
-                    RenderOptions::STOPPED,
-                )
-                .map_err(|e| e.to_string())?;
-                // The input device, when one is chosen: a failure leaves the output playing.
-                // Its buffer rides the render thread's block (or, on ASIO, the output's), so
-                // the input's delivery and the engine's reads share the device's cycle.
-                let input = match input::open(
-                    &output.host,
-                    &choice.input,
-                    output.sample_rate,
-                    output.asked,
-                    Arc::clone(&progress),
-                    output.block,
-                ) {
-                    Ok(Some((stream, ring))) => {
-                        renderer.set_audio_input(ring, stream.channels, Arc::clone(&stream.underruns));
-                        Some(stream)
-                    }
-                    Ok(None) => None,
-                    Err(e) => {
-                        output.notices.push(format!("{e}; there is no audio input"));
-                        None
-                    }
-                };
-                let mut controller = renderer.controller();
-                controller
-                    .run_stretch_worker(&mut renderer)
-                    .map_err(|e| format!("could not start the stretch worker: {e}"))?;
-                let _ = progress.input_diagnostics.set(renderer.input_diagnostics());
-                let stream = output.play(device, renderer, producer, &progress)?;
-                output.notices.extend(stream.priority_notice().map(str::to_owned));
-                Ok::<_, String>((output, controller, progress, stream, kept, input))
-            })();
-            match started {
-                Ok((output, controller, progress, stream, kept, input)) => {
-                    let panel_pending = Arc::new(AtomicBool::new(false));
-                    let watched = Arc::clone(&progress);
-                    let live = Live {
-                        owner: owner_requests,
-                        panel_pending: Arc::clone(&panel_pending),
-                        progress,
-                        host: output.host.clone(),
-                        device: output.device_name.clone(),
-                        sample_rate: output.sample_rate,
-                        block: output.block,
-                        exclusive: output.exclusive,
-                        fallback: in_place_of(&choice, &output.host, &output.device_name),
-                        channels: output.channels,
-                        cue_pair: output.cue_pair(),
-                        input: input.as_ref().map(|i| (i.name.clone(), i.channels, Arc::clone(&i.underruns))),
-                    };
-                    let notice = (!output.notices.is_empty()).then(|| output.notices.join("; "));
-                    if ready.send(Ok((controller, live, notice, kept))).is_ok() {
-                        // Returns once the player, which holds `close`, closes or is dropped.
-                        while let Ok(request) = closed.recv() {
-                            match request {
-                                OwnerRequest::Close => break,
-                                OwnerRequest::ControlPanel => {
-                                    if let Some(device) = &stream.device
-                                        && let Err(error) = device.control_panel()
-                                    {
-                                        eprintln!("ASIO control panel: {error}");
-                                    }
-                                    panel_pending.store(false, Ordering::Release);
+                let notice = (!output.notices.is_empty()).then(|| output.notices.join("; "));
+                let mut keep_plugins = false;
+                if ready.send(Ok((controller, live, notice, kept))).is_ok() {
+                    // Returns once the player, which holds `close`, closes or is dropped.
+                    while let Ok(request) = closed.recv() {
+                        match request {
+                            OwnerRequest::Exchange { mut renderer, reply } => {
+                                let next = std::ptr::from_ref(renderer.as_ref());
+                                prepare_project_renderer(&mut renderer, output.cue.is_some(), output.block);
+                                let exchanged = stream.exchange_renderer(renderer);
+                                match &exchanged {
+                                    Ok(previous) => suhina_plugins::trace!(
+                                        "audio project swap: {:p} -> {next:p}; device retained",
+                                        previous.as_ref()
+                                    ),
+                                    Err(error) => suhina_plugins::trace!("audio project swap failed: {error}"),
                                 }
-                                // Asked on this thread, which holds the driver: a size set in
-                                // its control panel that the driver did not announce opens the
-                                // output again, as a reset it asked for does.
-                                OwnerRequest::CheckDriver => {
-                                    if output.driver_changed() {
-                                        watched.fail_because(Failure::DriverChanged);
-                                    }
+                                let _ = reply.send(exchanged);
+                            }
+                            OwnerRequest::Close { keep_plugins: keep } => {
+                                keep_plugins = keep;
+                                break;
+                            }
+                            OwnerRequest::ControlPanel => {
+                                if let Some(device) = &stream.device
+                                    && let Err(error) = device.control_panel()
+                                {
+                                    eprintln!("ASIO control panel: {error}");
+                                }
+                                panel_pending.store(false, Ordering::Release);
+                            }
+                            // Asked on this thread, which holds the driver: a size set in
+                            // its control panel that the driver did not announce opens the
+                            // output again, as a reset it asked for does.
+                            OwnerRequest::CheckDriver => {
+                                if output.driver_changed() {
+                                    watched.fail_because(Failure::DriverChanged);
                                 }
                             }
                         }
                     }
-                    let plugins = stream.close().map(Renderer::into_plugins);
-                    drop(input);
-                    let _unheard = back_tx.send((output.sample_rate, plugins));
                 }
-                Err(e) => {
-                    let _unheard = ready.send(Err(e));
+                suhina_plugins::trace!("audio device closing: {} on {}", output.device_name, output.host);
+                let plugins = stream.close().map(Renderer::into_plugins);
+                drop(input);
+                if keep_plugins {
+                    plugins.map(|plugins| (output.sample_rate, plugins))
+                } else {
+                    // Plug-in processor destruction can wait for its host. Keep
+                    // that work on the audio owner, within the caller's timeout.
+                    drop(plugins);
+                    None
                 }
             }
-        })
-        .map_err(|e| format!("could not start the audio thread: {e}"))?;
+            Err(e) => {
+                let _unheard = ready.send(Err(e));
+                None
+            }
+        }
+    })?;
     let (controller, live, notice, plugins_kept) =
         opened.recv().map_err(|_| "the audio thread stopped".to_string())??;
-    let owner = Owner { close, back, thread: Some(thread) };
     let player = Player::with_output(controller, Some(Box::new(owner)), Arc::new(live));
     Ok(Opened { player, notice, plugins_kept })
 }

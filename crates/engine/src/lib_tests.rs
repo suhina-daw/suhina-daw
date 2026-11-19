@@ -118,6 +118,27 @@ fn empty_project_renders_nothing() {
 }
 
 #[test]
+fn a_suspended_project_has_no_held_note_release_on_return() {
+    let project = project_with(untargeted(vec![note(0.0, 4.0, 60)]), vec![clip(0.0, 4.0)], 1);
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    renderer.handle(LaunchCommand::Play);
+    let mut block = [0.0; 128];
+    for _ in 0..16 {
+        renderer.process(&mut block);
+    }
+    assert!(block.iter().any(|sample| sample.abs() > 0.01));
+    renderer.settle_suspended(&mut controller);
+    renderer.process(&mut block);
+    assert!(block.iter().all(|sample| *sample == 0.0), "an old note release resumed after suspension");
+    renderer.handle(LaunchCommand::Play);
+    for _ in 0..16 {
+        renderer.process(&mut block);
+    }
+    assert!(block.iter().any(|sample| sample.abs() > 0.01), "new playback remains audible");
+}
+
+#[test]
 fn note_on_beat_two_starts_half_a_second_in_at_120_bpm() {
     let project = project_with(untargeted(vec![note(1.0, 1.0, 69)]), vec![clip(0.0, 4.0)], 1);
     let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
