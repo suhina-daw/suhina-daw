@@ -861,6 +861,9 @@ open.
   `backdrop-blur` (on `window`) and `track-width`, `return-width`, `scene-width`,
   `slot-height`, `header-height` (on `session`). Each is read from its element's computed style,
   so selectors, `:is()`, `@media`, layers and `var()` work for settings as for any property.
+  Those read before their element is drawn (`arrangement`'s and `device`'s, and the frames of
+  `menu`, `popup` and `tooltip`) are worked out by the same style engine with the window's sheets,
+  tiers, size and colour scheme, under `html > body > window` (#1585).
   The core set is the palette only; a variant may hold settings too, written as rules of their
   elements. A theme still offers quick controls through its own `@property`
   (`window { liquid: var(--glassiness) 24 12; }`). Settings that a CSS layout replaces are
