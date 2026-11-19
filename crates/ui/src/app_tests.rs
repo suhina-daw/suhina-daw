@@ -624,15 +624,15 @@ fn a_second_export_is_refused_while_one_runs_and_a_reopened_dialog_shows_it() {
     assert!(app.export_dialog.as_ref().is_some_and(|d| d.busy), "the dialog shows the running one");
     assert!(app.export.is_some(), "the first export's result is still coming");
 
+    // Wait for the real worker's result without a clock, then return that result through
+    // a ready channel so the normal polling path still owns all completion behaviour.
+    let result = app.export.as_ref().unwrap().recv().unwrap();
+    let (done, receive) = std::sync::mpsc::channel();
+    done.send(result).unwrap();
+    app.export = Some(receive);
     // The first export lands its result; the dialog closes with it.
     let ctx = egui::Context::default();
-    for _ in 0..600 {
-        app.poll_export(&ctx);
-        if matches!(app.status, Status::Done(_)) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    app.poll_export(&ctx);
     assert!(matches!(&app.status, Status::Done(text) if text.contains("Exported")), "{:?}", app.status);
     assert!(app.export.is_none(), "the finished export's receiver went with it");
     assert!(app.export_dialog.is_none(), "the finished export closed the dialog");
