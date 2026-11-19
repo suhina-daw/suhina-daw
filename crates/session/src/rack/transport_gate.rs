@@ -15,6 +15,15 @@ pub(super) struct TransportGate {
 }
 
 impl TransportGate {
+    pub(super) fn suspend(&mut self) {
+        self.playing = false;
+        self.gain = 0.0;
+        self.from = 0.0;
+        self.target = 0.0;
+        self.frame = self.frames;
+        self.live_at = None;
+    }
+
     pub(super) fn new(rate: u32) -> Self {
         Self { playing: false, gain: 1.0, from: 1.0, target: 1.0, frame: 0, frames: (rate / 200).max(1), live_at: None }
     }
@@ -70,6 +79,23 @@ impl TransportGate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn suspension_discards_the_stop_fade_but_allows_new_live_notes() {
+        let mut gate = TransportGate::new(48_000);
+        gate.transport(true);
+        gate.suspend();
+        gate.transport(false);
+        let mut audio = [1.0; 1024];
+        gate.process(&mut audio);
+        assert!(audio.iter().all(|sample| *sample == 0.0));
+        assert!(!gate.holds_transport());
+        gate.live_note(64);
+        audio.fill(1.0);
+        gate.process(&mut audio);
+        assert!(audio[..128].iter().all(|sample| *sample == 0.0));
+        assert_eq!(audio[1023], 1.0);
+    }
 
     #[test]
     fn stop_fades_the_waveform_before_reporting_stopped() {

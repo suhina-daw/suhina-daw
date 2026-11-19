@@ -40,6 +40,8 @@ raises its version and adds a row here.
 | 15 | `open_editor` may carry the `title` of the editor's own window; `editor_title` changes it later (not answered) |
 | 16 | `get_param_texts` asks for the plug-in's own text of up to 256 values of one parameter; `param_texts` answers (#1205) |
 | 17 | `get_params` marks a parameter whose values are a list of choices (`list`: VST3 `kIsList`, CLAP `CLAP_PARAM_IS_ENUM`), so automation holds only switches and lists (#1482) |
+| 18 | `reset_audio` clears a suspended instance's processing state without unloading its preset or editor; answered `audio_reset` |
+| 19 | Requires block region 5 so an idle host audio wait can be interrupted without sending a block |
 
 **Block region** (`ipc::region`): 2, events as fixed 16-byte records with their frame; 3, the
 block's followers ([plug-in hosting](plugin-hosting.md) › One round trip); 4, how long each
@@ -47,11 +49,23 @@ instance took to process the block, in microseconds, as the host's audio thread 
 (#1262): the link's own instance in a header word beside the response, on the host's cache line,
 and the followers' in an area of 63 words after the followers list, in their order. The host
 writes them before it sets the response; the engine reads them once the response answers the
-block it sent, also for a block it gave up on, until it sends the next one. **ARA audio source**
+block it sent, also for a block it gave up on, until it sends the next one; 5, a wake counter
+separate from the request sequence. Sending a block or cancelling a host wait advances it
+before ringing the doorbell. The waiter observes that counter before checking the request
+and stop flag, so a cancellation between checking and sleeping cannot be lost. Cancellation
+never changes a request or acknowledges a block. **ARA audio source**
 (`ipc::source`): 1. **Plug-in catalog** (`plugin-catalog.json`): 3 keeps when each file was last
 read; a catalog in format 2 is read as it is.
 
 ## Messages
+
+`reset_audio {instance}` is a control-thread operation on a quiescent audio link.
+The host restarts processing on the existing instance using its existing activation
+path, retaining parameters, saved state, editor and process identity. It acknowledges
+with `audio_reset {instance, latency}` only after the old audio worker has joined
+and the replacement is ready. Failure or timeout is reported; the engine must not
+resume that instance after an ambiguous reset. This is used when suspending a
+project so cached voices and effect tails cannot sound when it is selected again.
 
 Messages go over a local socket or pipe, one JSON object per message with an `op`.
 

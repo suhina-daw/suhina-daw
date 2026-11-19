@@ -423,6 +423,38 @@ fn a_wait_over_more_links_than_one_wait_takes_wakes_for_the_last() {
     a_wait_wakes_for_the_last_of(64);
 }
 
+#[test]
+fn stopping_a_host_wait_keeps_the_pending_block_for_its_replacement() {
+    let mut link = Link::create(2, 4).unwrap();
+    let mut served = Served::open(&link.address()).unwrap();
+    let wake = served.waker().unwrap();
+    let stop = AtomicBool::new(true);
+    assert!(link.send_with_events(&[0.25; 8], &[], 8));
+    let before = served.region.wake_word().load(Ordering::Acquire);
+    wake.wake();
+    assert_eq!(served.region.wake_word().load(Ordering::Acquire), before.wrapping_add(1));
+    assert!(!served.serve_joint_until(Duration::ZERO, &stop, |_, _, _, _, _| panic!("cancelled")));
+    assert_eq!(served.region.response(), 0, "cancellation is not an audio acknowledgement");
+    stop.store(false, Ordering::Release);
+    assert!(served.serve_joint_until(Duration::ZERO, &stop, |input, _, _, output, _| output.copy_from_slice(input)));
+    let mut output = [0.0; 8];
+    assert_eq!(link.wait(&mut output, Instant::now()), Outcome::Done);
+    assert_eq!(output, [0.25; 8]);
+}
+
+#[test]
+fn a_host_waker_keeps_its_mapping_alive_without_creating_a_block() {
+    let link = Link::create(2, 4).unwrap();
+    let served = Served::open(&link.address()).unwrap();
+    let wake = served.waker().unwrap();
+    drop(served);
+    drop(link);
+    wake.wake();
+    assert_eq!(wake.region.wake_word().load(Ordering::Acquire), 1);
+    assert_eq!(wake.region.request(), 0);
+    assert_eq!(wake.region.response(), 0);
+}
+
 /// A clock that moves only when it is read (by `STEP`) or when a test moves it, shared with the
 /// test.
 struct Stepping(Arc<std::sync::atomic::AtomicU64>);
@@ -503,11 +535,11 @@ fn a_plain_block_is_timed_as_the_links_own() {
     assert!(host.join().is_ok());
 }
 
-/// A region made by the version before (3, without the processing times) is refused, as any
+/// A region made by the version before (4, without the wake counter) is refused, as any
 /// other version is.
 #[test]
 fn a_region_of_the_version_before_is_refused() {
     let region = region::Region::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
-    region.set_version(3);
+    region.set_version(4);
     assert!(matches!(Served::open(region.address()), Err(IpcError::BadLink("made by another version"))));
 }

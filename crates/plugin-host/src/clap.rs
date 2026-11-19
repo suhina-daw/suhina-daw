@@ -318,6 +318,7 @@ pub(crate) struct ClapPlugin {
     /// Its number in the process, which its audio thread serves as.
     number: u32,
     stop: Arc<AtomicBool>,
+    wake_audio: Option<suhina_ipc::ServeWaker>,
     latency: u32,
     /// How it was activated, to activate it the same way after a restart.
     configuration: PluginAudioConfiguration,
@@ -438,6 +439,7 @@ impl ClapPlugin {
             instance,
             audio: None,
             stop: Arc::new(AtomicBool::new(false)),
+            wake_audio: None,
             latency,
             configuration,
             ports,
@@ -455,6 +457,7 @@ impl ClapPlugin {
     /// Starts an audio thread that serves blocks from `served` through the activated plug-in.
     fn start_audio(&mut self, stopped: StoppedPluginAudioProcessor<Host>, served: Served) -> Result<(), String> {
         self.stop = Arc::new(AtomicBool::new(false));
+        self.wake_audio = Some(served.waker().map_err(|e| e.to_string())?);
         let (audio_stop, audio_pending, audio_edited, ports, number) =
             (self.stop.clone(), self.pending.clone(), self.edited.clone(), self.ports.clone(), self.number);
         let sample_rate = self.configuration.sample_rate;
@@ -483,6 +486,12 @@ impl ClapPlugin {
             self.configuration.sample_rate = previous;
             return Err(why);
         }
+        self.latency = read_latency(&mut self.instance);
+        Ok(self.latency)
+    }
+
+    pub(crate) fn reset_audio(&mut self) -> Result<u32, String> {
+        self.reactivate()?;
         self.latency = read_latency(&mut self.instance);
         Ok(self.latency)
     }
@@ -520,6 +529,9 @@ impl ClapPlugin {
             .ok()
             .flatten()
             .ok_or("its audio thread failed")?;
+        // This activation satisfies requests from the old audio run, including shutdown.
+        // Clear them before activation so a request from the new run is still serviced.
+        self.instance.access_shared_handler(|s| s.restart_requested.store(false, Ordering::Release));
         self.instance.deactivate(stopped);
         let stopped = self.instance.activate(|_, _| (), self.configuration).map_err(|e| e.to_string())?;
         // What it said while activating is what is read next.
@@ -534,7 +546,7 @@ impl ClapPlugin {
 
     /// Asks the audio thread to stop and waits up to `wait` for it; whether it stopped.
     pub(crate) fn stop_audio(&mut self, wait: Duration) -> bool {
-        crate::audio_stopped(&self.stop, self.audio.as_ref(), wait)
+        crate::audio_stopped(&self.stop, self.wake_audio.as_ref(), self.audio.as_ref(), wait)
     }
 
     /// Runs the plug-in's main-thread callback if it asked for one, and returns what the
@@ -785,6 +797,9 @@ impl Drop for ClapPlugin {
     fn drop(&mut self) {
         self.close_editor();
         self.stop.store(true, Ordering::Release);
+        if let Some(wake) = &self.wake_audio {
+            wake.wake();
+        }
         if let Some(audio) = self.audio.take()
             && let Ok(Some((stopped, _served))) = audio.join()
         {
@@ -1115,6 +1130,39 @@ fn push_event(buffer: &mut EventBuffer, event: &Event) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn reactivation_satisfies_old_restart_requests_without_discarding_new_audio() {
+        use suhina_ipc::{Link, Outcome};
+
+        for reconfigure in [false, true] {
+            let timeout = Duration::from_secs(10);
+            let mut link = Link::create(2, 128).unwrap();
+            let served = Served::open(&link.address()).unwrap();
+            link.host_opened();
+            let mut plugin = ClapPlugin::load("test:clap-delay", u32::MAX - 10, served, 48_000.0).unwrap();
+            plugin.set_param(0, 128.0).unwrap();
+            let mut output = [0.0; 256];
+            assert_eq!(link.process(&[0.0; 256], &mut output, timeout), Outcome::Done);
+            // The block acknowledgement proves the fixture has requested a restart.
+            // The test controls main-thread servicing, so it cannot run before reset.
+            assert!(plugin.instance.access_shared_handler(|s| s.restart_requested.load(Ordering::Acquire)));
+            let latency = if reconfigure { plugin.reconfigure(96_000.0) } else { plugin.reset_audio() };
+            assert_eq!(latency.unwrap(), 128);
+            assert_eq!(link.process(&[0.5; 256], &mut output, timeout), Outcome::Done);
+            assert_eq!(output, [0.0; 256]);
+            assert_eq!(plugin.latency_changed(), None);
+            assert_eq!(link.process(&[0.0; 256], &mut output, timeout), Outcome::Done);
+            assert_eq!(output, [0.5; 256], "reconfigure={reconfigure}: servicing an old request lost new audio");
+
+            // A later request must still be serviced on the retained instance.
+            plugin.set_param(0, 64.0).unwrap();
+            assert_eq!(link.process(&[0.0; 256], &mut output, timeout), Outcome::Done);
+            assert_eq!(plugin.latency_changed(), Some(64));
+            assert_eq!(plugin.latency_changed(), None);
+        }
+    }
 
     #[test]
     fn ports_keep_their_layout_and_find_the_main_one() {

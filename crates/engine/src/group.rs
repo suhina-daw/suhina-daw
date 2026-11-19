@@ -392,6 +392,20 @@ pub(crate) fn find_group(slots: &mut [DeviceSlot], number: usize) -> Option<&mut
 }
 
 impl GroupSlot {
+    pub(crate) fn clear_suspended_delays(&mut self) {
+        self.dry_delay.clear();
+        for branch in &mut self.branches {
+            branch.delay.clear();
+            for slot in &mut branch.slots {
+                match slot {
+                    DeviceSlot::Device(device) | DeviceSlot::MidiDevice(device) => device.reset(),
+                    DeviceSlot::Group(group) => group.clear_suspended_delays(),
+                    DeviceSlot::Plugin(_) => {}
+                }
+            }
+        }
+    }
+
     /// Moves branch `branch`'s volume (linear, at most +6 dB), pan (-1 to 1), mute or solo (on
     /// at 0.5 and above): its gains, and with a solo every branch's, go to their new targets and
     /// get there smoothed. Ignored for a branch it does not have or a value that is not finite.

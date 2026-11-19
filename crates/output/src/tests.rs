@@ -7,6 +7,150 @@ use super::*;
 const RINGED: [f32; 8] = [0.5, -0.5, 0.25, -0.25, 1.0, 0.0, 0.1, 0.2];
 
 #[test]
+fn exchange_preparation_keeps_the_current_cue_gain_and_applies_device_routing() {
+    for separate in [false, true] {
+        for gain in [0.0, 0.25] {
+            let mut renderer =
+                Renderer::stopped(&Project::default(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+            let mut controller = renderer.controller();
+            renderer.handle(LaunchCommand::SetCue { gain: Some(gain), separate: Some(!separate) });
+            prepare_project_renderer(&mut renderer, separate, 512);
+            let data =
+                Arc::new(suhina_engine::AudioData { sample_rate: 48_000, channels: 2, samples: vec![0.5; 4096] });
+            controller.preview_sample(data, 0.0, 1.0).unwrap();
+            let (mut main, mut cue) = ([0.0; 2048], [0.0; 2048]);
+            renderer.process_with_cue(&mut main, &mut cue);
+            assert_eq!(cue[1000], gain * 0.5);
+            assert_eq!(main[1000], if separate { 0.0 } else { gain * 0.5 });
+        }
+    }
+}
+
+#[test]
+fn project_exchange_fades_main_and_cue_across_render_blocks() {
+    let mut fade = ProjectFade::new(1_000);
+    let mut main = [1.0, -1.0];
+    let mut cue = [0.5, -0.5];
+    fade.apply(&mut main, &mut cue);
+    assert_eq!(main, [1.0, -1.0], "ordinary rendering is unchanged");
+    fade.begin();
+    let mut main = [0.0; 12];
+    let mut cue = [0.0; 12];
+    fade.apply(&mut main[..4], &mut cue[..4]);
+    fade.apply(&mut main[4..], &mut cue[4..]);
+    for (frame, expected) in [1.0_f32, 0.8, 0.6, 0.4, 0.2, 0.0].into_iter().enumerate() {
+        assert!((main[frame * 2] - expected).abs() < 1e-6);
+        assert!((main[frame * 2 + 1] + expected).abs() < 1e-6);
+        assert!((cue[frame * 2] - expected * 0.5).abs() < 1e-6);
+        assert!((cue[frame * 2 + 1] + expected * 0.5).abs() < 1e-6);
+    }
+}
+
+#[test]
+fn renderer_exchange_returns_the_same_project_and_retains_device_input() {
+    fn stopped() -> Box<Renderer> {
+        Box::new(Renderer::stopped(&Project::default(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap())
+    }
+    let (mut owner, mut render) = renderer_exchange();
+    let mut first = stopped();
+    let first_address = std::ptr::from_ref(first.as_ref());
+    let input_diagnostics = first.input_diagnostics();
+    let second = stopped();
+    let second_address = std::ptr::from_ref(second.as_ref());
+    assert!(owner.next.push(second).is_ok());
+    render.between_blocks(&mut first);
+    assert_eq!(std::ptr::from_ref(first.as_ref()), second_address);
+    assert!(Arc::ptr_eq(&input_diagnostics, &first.input_diagnostics()));
+
+    // A queued third project cannot evict the uncollected first project.
+    assert!(owner.next.push(stopped()).is_ok());
+    render.between_blocks(&mut first);
+    assert_eq!(std::ptr::from_ref(first.as_ref()), second_address);
+    let original = owner.retired.pop().unwrap();
+    assert_eq!(std::ptr::from_ref(original.as_ref()), first_address);
+    render.between_blocks(&mut first);
+    let second = owner.retired.pop().unwrap();
+    assert_eq!(std::ptr::from_ref(second.as_ref()), second_address);
+
+    // Resuming uses the retained renderer allocation, not a reconstructed graph.
+    assert!(owner.next.push(original).is_ok());
+    render.between_blocks(&mut first);
+    assert_eq!(std::ptr::from_ref(first.as_ref()), first_address);
+    assert!(Arc::ptr_eq(&input_diagnostics, &first.input_diagnostics()));
+}
+
+#[test]
+fn exchanged_renderers_keep_distinct_plugin_instances_with_equal_device_ids() {
+    use suhina_model::{Channel, ChannelId, Device, DeviceKind, Track, TrackId};
+    struct Processor {
+        calls: Arc<AtomicUsize>,
+        drops: Arc<AtomicUsize>,
+    }
+    impl suhina_engine::PluginProcessor for Processor {
+        fn process(&mut self, _: &mut [f32], _: &[(usize, suhina_engine::DeviceEvent)], _: Duration) -> bool {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            true
+        }
+    }
+    impl Drop for Processor {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    fn project_renderer(calls: &Arc<AtomicUsize>, drops: &Arc<AtomicUsize>) -> Box<Renderer> {
+        let project = Project {
+            tracks: vec![Track { channel: Some(ChannelId(1)), ..Track::new(TrackId(1), "track") }],
+            channels: vec![Channel {
+                devices: vec![Device::new("effect", DeviceKind::Vst3 { id: "test".into() })],
+                ..Channel::new(ChannelId(1), "channel")
+            }],
+            ..Project::default()
+        };
+        let key = suhina_engine::plugin_devices(&project)[0].key;
+        let mut plugins = Plugins::new();
+        plugins.insert(
+            key,
+            suhina_engine::PluginSlotInfo { instrument: false, latency: 0 },
+            Box::new(Processor { calls: Arc::clone(calls), drops: Arc::clone(drops) }),
+        );
+        Box::new(
+            Renderer::build(
+                &project,
+                RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(plugins),
+                48_000,
+                RenderOptions::STOPPED,
+            )
+            .unwrap(),
+        )
+    }
+    let calls_a = Arc::new(AtomicUsize::new(0));
+    let calls_b = Arc::new(AtomicUsize::new(0));
+    let drops = Arc::new(AtomicUsize::new(0));
+    let mut active = project_renderer(&calls_a, &drops);
+    let second = project_renderer(&calls_b, &drops);
+    let (mut owner, mut render) = renderer_exchange();
+    let mut block = [0.0; 128];
+    active.process(&mut block);
+    let calls_before = calls_a.load(Ordering::Relaxed);
+    assert!(calls_before > 0);
+    assert!(owner.next.push(second).is_ok());
+    render.between_blocks(&mut active);
+    let first = owner.retired.pop().unwrap();
+    active.process(&mut block);
+    assert_eq!(calls_a.load(Ordering::Relaxed), calls_before, "background processors do not run");
+    assert!(calls_b.load(Ordering::Relaxed) > 0);
+    assert_eq!(drops.load(Ordering::Relaxed), 0, "switching does not unload either instance");
+    assert!(owner.next.push(first).is_ok());
+    render.between_blocks(&mut active);
+    let second = owner.retired.pop().unwrap();
+    active.process(&mut block);
+    assert!(calls_a.load(Ordering::Relaxed) > calls_before);
+    assert_eq!(drops.load(Ordering::Relaxed), 0);
+    drop((active, second));
+    assert_eq!(drops.load(Ordering::Relaxed), 2, "closing releases both retained instances");
+}
+
+#[test]
 fn control_panel_targets_the_current_owner_once_and_rejects_other_hosts() {
     let (owner, requests) = mpsc::channel();
     let mut live = Live {
@@ -307,7 +451,8 @@ fn the_render_thread_says_its_priority_first() {
         let (producer, _consumer) = ring(256);
         let (stop, progress) = (AtomicBool::new(true), Progress::default());
         let (joined, said) = mpsc::sync_channel(1);
-        let _renderer = render_ahead(renderer, producer, 256, &stop, &progress, &joined);
+        let (_control, exchange) = renderer_exchange();
+        let _renderer = render_ahead(renderer, producer, 256, &stop, &progress, &joined, exchange);
         said.try_recv().unwrap()
     })
     .join()
@@ -379,7 +524,9 @@ fn the_render_thread_keeps_less_ahead_while_a_track_is_armed() {
     let stop = Arc::new(AtomicBool::new(false));
     let (stopping, watching) = (Arc::clone(&stop), Arc::clone(&progress));
     let (joined, _said) = mpsc::sync_channel(1);
-    let render = std::thread::spawn(move || render_ahead(renderer, producer, BLOCK, &stopping, &watching, &joined));
+    let (_control, exchange) = renderer_exchange();
+    let render =
+        std::thread::spawn(move || render_ahead(renderer, producer, BLOCK, &stopping, &watching, &joined, exchange));
     let queued = |c: &Ring| c.slots() / RING_CHANNELS;
 
     // Nobody plays: two blocks ahead.
@@ -576,4 +723,262 @@ fn input_wait_expires_once_per_cycle_and_preserves_the_next_cycles_wait() {
     assert!(wait.waiting(&progress, start + grace * 3, 44_100));
     progress.set_input_wakes_render(false);
     assert!(!wait.waiting(&progress, start + grace * 3, 44_100));
+}
+
+#[test]
+fn dropping_an_owner_requests_close_even_when_live_output_keeps_a_sender() {
+    let (close, requests) = mpsc::channel();
+    let live_sender = close.clone();
+    let (back_tx, back) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        back_tx.send(None).unwrap();
+    });
+    thread.join().unwrap();
+    drop(Owner { close, back: Some(back), wait_without_timeout: true });
+    assert!(matches!(requests.try_recv(), Ok(OwnerRequest::Close { keep_plugins: false })));
+    drop(live_sender);
+}
+
+#[test]
+fn owner_drop_waits_for_thread_exit_before_the_next_owner_can_start() {
+    struct Tail {
+        entered: mpsc::Sender<()>,
+        release: mpsc::Receiver<()>,
+    }
+    impl Drop for Tail {
+        fn drop(&mut self) {
+            let _ = self.entered.send(());
+            let _ = self.release.recv();
+        }
+    }
+    thread_local! {
+        static TAIL: std::cell::RefCell<Option<Tail>> = const { std::cell::RefCell::new(None) };
+    }
+    let occupied = Arc::new(AtomicBool::new(false));
+    let (entered, at_tail) = mpsc::channel();
+    let (release, proceed) = mpsc::channel();
+    let mut owner = Owner::start(Arc::clone(&occupied), move |_sender, requests| {
+        TAIL.set(Some(Tail { entered, release: proceed }));
+        let _ = requests.recv();
+        None
+    })
+    .unwrap();
+    owner.wait_without_timeout = true;
+    let dropping = std::thread::spawn(move || drop(owner));
+    // The worker body returned, but even its thread-local destructors must finish.
+    at_tail.recv().unwrap();
+    assert!(Owner::start(Arc::clone(&occupied), |_, _| None).is_err());
+    release.send(()).unwrap();
+    dropping.join().unwrap();
+    assert!(!occupied.load(Ordering::Acquire));
+    let mut next = Owner::start(occupied, |_, _| None).unwrap();
+    next.wait_without_timeout = true;
+    drop(next);
+}
+
+#[test]
+fn a_close_timeout_never_allows_another_owner_over_unfinished_teardown() {
+    let occupied = Arc::new(AtomicBool::new(false));
+    let (entered, running) = mpsc::channel();
+    let (release, proceed) = mpsc::channel();
+    let mut owner = Owner::start(Arc::clone(&occupied), move |_, requests| {
+        entered.send(()).unwrap();
+        proceed.recv().unwrap();
+        assert!(matches!(requests.recv(), Ok(OwnerRequest::Close { keep_plugins: true })));
+        None
+    })
+    .unwrap();
+    running.recv().unwrap();
+    // The channel barrier guarantees no answer exists; zero exercises the timeout
+    // branch without a sleep, scheduling assumption or measured deadline.
+    assert!(owner.finish(true, Duration::ZERO).is_none());
+    drop(owner);
+    assert!(Owner::start(Arc::clone(&occupied), |_, _| None).is_err());
+    release.send(()).unwrap();
+}
+
+#[test]
+fn a_failed_start_releases_its_owner_before_retry() {
+    let occupied = Arc::new(AtomicBool::new(false));
+    let mut owner = Owner::start(Arc::clone(&occupied), |_, _| None).unwrap();
+    owner.wait_without_timeout = true;
+    drop(owner);
+    assert!(!occupied.load(Ordering::Acquire));
+}
+
+#[test]
+fn a_panicked_audio_owner_keeps_the_driver_slot_unavailable() {
+    let occupied = Arc::new(AtomicBool::new(false));
+    let mut owner = Owner::start(Arc::clone(&occupied), |_, _| panic!("simulated driver panic")).unwrap();
+    owner.wait_without_timeout = true;
+    drop(owner);
+    assert!(Owner::start(occupied, |_, _| None).is_err());
+}
+
+#[test]
+fn explicit_close_carries_plugins_after_the_audio_thread_has_ended() {
+    let occupied = Arc::new(AtomicBool::new(false));
+    let mut owner = Owner::start(Arc::clone(&occupied), |_, requests| {
+        assert!(matches!(requests.recv(), Ok(OwnerRequest::Close { keep_plugins: true })));
+        Some((48_000, Plugins::new()))
+    })
+    .unwrap();
+    owner.wait_without_timeout = true;
+    assert_eq!(owner.close().map(|(rate, _)| rate), Some(48_000));
+    assert!(!occupied.load(Ordering::Acquire));
+}
+
+#[test]
+fn project_switch_new_close_and_preview_retain_one_owner() {
+    use suhina_session::{Projects, Session};
+
+    struct TestOutput(Arc<AtomicBool>, Arc<AtomicUsize>);
+    impl AudioSystem for TestOutput {
+        fn hosts(&self) -> Vec<HostInfo> {
+            Vec::new()
+        }
+
+        fn open(
+            &self,
+            project: &Project,
+            _audio: &AudioPool,
+            _assets: &suhina_engine::DeviceAssets,
+            choice: &OutputChoice,
+            previous: Option<Player>,
+        ) -> Result<Opened, String> {
+            drop(previous);
+            let mut renderer = Renderer::new(project, choice.sample_rate.unwrap_or(48_000), suhina_session::devices())
+                .map_err(|e| e.to_string())?;
+            let controller = renderer.controller();
+            self.1.fetch_add(1, Ordering::Relaxed);
+            let mut owner = Owner::start(Arc::clone(&self.0), move |_, requests| {
+                let mut renderer = Box::new(renderer);
+                while let Ok(request) = requests.recv() {
+                    match request {
+                        OwnerRequest::Exchange { renderer: mut next, reply } => {
+                            renderer.exchange_audio_input(&mut next);
+                            let _ = reply.send(Ok(std::mem::replace(&mut renderer, next)));
+                        }
+                        OwnerRequest::Close { .. } => break,
+                        _ => {}
+                    }
+                }
+                None
+            })?;
+            owner.wait_without_timeout = true;
+            Ok(Opened { player: Player::new(controller, Some(Box::new(owner))), notice: None, plugins_kept: false })
+        }
+    }
+
+    let occupied = Arc::new(AtomicBool::new(false));
+    let opens = Arc::new(AtomicUsize::new(0));
+    let mut projects = Projects::new();
+    projects.set_audio_system(Arc::new(TestOutput(Arc::clone(&occupied), Arc::clone(&opens))));
+    projects.preview_session_mut().unwrap();
+    assert!(occupied.load(Ordering::Acquire));
+    let first = projects.add(Session::new(Project::default()), None).unwrap();
+    assert!(occupied.load(Ordering::Acquire), "adding a project retains the preview owner");
+    projects.open_output(None).unwrap();
+    let first_meter = projects.get(first).unwrap().player().unwrap().meter_monitor_arc();
+    projects.poll_plugins();
+    assert!(projects.live_input().is_connected());
+    let second = projects.add(Session::new(Project::default()), None).unwrap();
+    assert!(occupied.load(Ordering::Acquire), "New Blank retains the old project owner");
+    projects.open_output(None).unwrap();
+    for id in [first, second, first] {
+        projects.switch(id).unwrap();
+        assert!(!projects.live_input().is_connected(), "background engines receive no MIDI");
+        assert!(occupied.load(Ordering::Acquire), "switch retains the same owner");
+        projects.open_output(None).unwrap();
+        projects.poll_plugins();
+        assert!(projects.live_input().is_connected(), "the retained MIDI endpoint reconnects");
+        if id == first {
+            assert!(Arc::ptr_eq(&first_meter, &projects.get(first).unwrap().player().unwrap().meter_monitor_arc()));
+        }
+    }
+    // Several tab selections can happen before the frontend asks for audio.
+    projects.switch(second).unwrap();
+    projects.switch(first).unwrap();
+    projects.switch(second).unwrap();
+    projects.switch(first).unwrap();
+    projects.open_output(None).unwrap();
+    assert!(Arc::ptr_eq(&first_meter, &projects.get(first).unwrap().player().unwrap().meter_monitor_arc()));
+    assert_eq!(opens.load(Ordering::Relaxed), 1, "all project changes used one device");
+    let mut choice = projects.output_choice().clone();
+    choice.sample_rate = Some(44_100);
+    projects.set_output_choice(choice);
+    projects.reopen_output().unwrap();
+    assert_eq!(opens.load(Ordering::Relaxed), 2, "a sample-rate change explicitly reopens the device");
+    projects.switch(second).unwrap();
+    projects.open_output(None).unwrap();
+    assert_eq!(projects.get(second).unwrap().player().unwrap().sample_rate(), 44_100);
+    projects.switch(first).unwrap();
+    projects.open_output(None).unwrap();
+    // Retaining the returned Session must not retain the old driver's owner.
+    let closed = projects.close(first).unwrap();
+    assert!(occupied.load(Ordering::Acquire));
+    assert!(closed.player().is_none());
+    projects.open_output(None).unwrap();
+    let closed_second = projects.close(second).unwrap();
+    assert!(occupied.load(Ordering::Acquire));
+    projects.preview_session_mut().unwrap();
+    projects.close_preview_output();
+    assert!(!occupied.load(Ordering::Acquire));
+    assert_eq!(opens.load(Ordering::Relaxed), 2);
+    drop((closed, closed_second));
+}
+
+#[test]
+fn rejected_renderer_exchange_closes_the_owner_before_retry() {
+    let occupied = Arc::new(AtomicBool::new(false));
+    let mut owner = Owner::start(Arc::clone(&occupied), |_, requests| {
+        let request = requests.recv().unwrap();
+        match request {
+            OwnerRequest::Exchange { reply, .. } => {
+                reply.send(Err("simulated exchange failure".into())).unwrap();
+            }
+            _ => panic!("expected renderer exchange"),
+        }
+        assert!(matches!(requests.recv(), Ok(OwnerRequest::Close { keep_plugins: false })));
+        None
+    })
+    .unwrap();
+    owner.wait_without_timeout = true;
+    let renderer =
+        Box::new(Renderer::stopped(&Project::default(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap());
+    let error = suhina_session::OutputHandle::exchange_renderer(&mut owner, renderer).err().unwrap();
+    assert_eq!(error, "simulated exchange failure");
+    drop(owner);
+    assert!(!occupied.load(Ordering::Acquire));
+}
+
+#[test]
+fn suspended_project_does_not_replay_a_queued_start() {
+    let mut renderer =
+        Renderer::stopped(&Project::default(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+    let mut controller = renderer.controller();
+    controller.send(LaunchCommand::Play).unwrap();
+    renderer.suspend_project();
+    renderer.process(&mut [0.0; 128]);
+    assert!(!controller.monitor().running());
+    controller.send(LaunchCommand::Play).unwrap();
+    renderer.process(&mut [0.0; 128]);
+    assert!(controller.monitor().running(), "the retained controller still starts playback");
+}
+
+#[test]
+fn suspended_graph_edits_are_settled_without_rendering_audio() {
+    let project = Project::default();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+    let mut controller = renderer.controller();
+    for _ in 0..8 {
+        for _ in 0..8 {
+            controller.update(&project).unwrap();
+        }
+        renderer.settle_suspended(&mut controller);
+        assert!(!controller.monitor().running());
+    }
+    controller.send(LaunchCommand::Play).unwrap();
+    renderer.process(&mut [0.0; 128]);
+    assert!(controller.monitor().running());
 }

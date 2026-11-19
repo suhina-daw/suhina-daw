@@ -103,6 +103,8 @@ pub struct DeviceInputs {
 /// The audio and MIDI devices the open projects play through.
 #[derive(Default)]
 struct Devices {
+    /// The continuously open device while no project renderer is attached.
+    idle: Option<crate::Player>,
     /// The system's audio devices, when this program plays out loud (the desktop app, the MCP
     /// server with `--audio`).
     audio: Option<std::sync::Arc<dyn crate::AudioSystem>>,
@@ -143,8 +145,8 @@ pub struct Projects {
     devices: Devices,
     /// Backups of the open projects: the settings and the thread that writes them.
     pub(crate) backups: crate::backup::Backups,
-    /// With no project open, the empty session previews play in, with a player of its own
-    /// (ADR 0011); made on the first preview and dropped before a project opens its output.
+    /// With no project open, previews use an empty session on the retained output
+    /// (ADR 0011). Its renderer is retired when a project becomes active.
     preview: Option<Session>,
     /// A track with no instrument plays its notes as sine tones (#1384): the user's setting, off
     /// by default; every project opened gets it.
@@ -415,6 +417,31 @@ impl Projects {
     /// plays instead.
     pub fn open_output(&mut self, id: Option<ProjectId>) -> Result<Option<String>, CommandError> {
         self.ensure_output_can_close()?;
+        if id.is_some() && id != self.tabs.active {
+            return Err("only the active project can open the audio output".into());
+        }
+        if self.session_mut(id)?.player().is_some() {
+            return Ok(None);
+        }
+        if let Some(player) = self.session_mut(id)?.sync.suspended.as_mut() {
+            match player.reset_ready() {
+                Ok(false) => return Ok(None),
+                Ok(true) => {}
+                Err(error) => {
+                    self.session_mut(id)?.release_player();
+                    return Err(CommandError(error));
+                }
+            }
+        }
+        if let Some(mut idle) = self.devices.idle.take() {
+            let cue_gain = self.devices.output_choice.cue_gain;
+            let session = self.session_mut(id)?;
+            let result = session.resume_output(&mut idle, cue_gain);
+            if result.is_err() && !session.sync.output_open_failed {
+                self.devices.idle = Some(idle);
+            }
+            return result.map(|()| None);
+        }
         let system = self.devices.audio.clone().ok_or("no audio output here")?;
         let choice = self.devices.output_choice.clone();
         let session = self.session_mut(id)?;
@@ -454,8 +481,15 @@ impl Projects {
     /// Returns a notice as [`Projects::open_output`].
     pub fn reopen_output(&mut self) -> Result<Option<String>, CommandError> {
         self.ensure_output_can_close()?;
+        if self.tabs.active.and_then(|id| self.get(id)).is_some_and(|s| s.sync.suspended.is_some()) {
+            self.open_output(None)?;
+            if self.tabs.active.and_then(|id| self.get(id)).is_some_and(|s| s.sync.suspended.is_some()) {
+                return Err("the project audio is still stopping; retry the device change when it is ready".into());
+            }
+        }
         // The preview output opens on the new choice when next needed.
         self.close_preview_output();
+        self.devices.idle = None;
         let Some(system) = self.devices.audio.clone() else { return Ok(None) };
         let choice = self.devices.output_choice.clone();
         let Ok(session) = self.session_mut(None) else { return Ok(None) };
@@ -516,7 +550,12 @@ impl Projects {
         let name = name
             .or_else(|| session.source().and_then(|s| s.file_stem()).map(|s| s.to_string_lossy().into_owned()))
             .unwrap_or_else(|| format!("Untitled {}", id.0));
-        self.close_preview_output();
+        if let Some(preview) = self.preview.as_mut()
+            && let Some(idle) = preview.suspend_output()?
+        {
+            self.devices.idle = Some(idle);
+        }
+        self.preview = None;
         let mut session = session;
         // Every project plays as the user set it (#1384).
         session.set_implicit_tones(self.implicit_tones);
@@ -528,8 +567,9 @@ impl Projects {
         if let Some(base) = &self.devices.library_base {
             session.set_library_base(base.clone());
         }
+        self.suspend_active()?;
         self.tabs.open.push(Open { id, name, session });
-        self.activate(id);
+        self.tabs.active = Some(id);
         Ok(id)
     }
 
@@ -554,14 +594,23 @@ impl Projects {
             let system = self.devices.audio.clone().ok_or("no audio output here: open or make a project to preview")?;
             let choice = self.devices.output_choice.clone();
             let mut session = Session::new(suhina_model::Project::default());
-            session
-                .replace_player(|project, audio, assets, previous| {
-                    system.open(project, audio, assets, &choice, previous).map(|opened| opened.player)
-                })
-                .map_err(|e| {
-                    suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
-                    CommandError(format!("no audio output: {e}"))
-                })?;
+            if let Some(mut idle) = self.devices.idle.take() {
+                if let Err(error) = session.resume_output(&mut idle, choice.cue_gain) {
+                    if !session.sync.output_open_failed {
+                        self.devices.idle = Some(idle);
+                    }
+                    return Err(error);
+                }
+            } else {
+                session
+                    .replace_player(|project, audio, assets, previous| {
+                        system.open(project, audio, assets, &choice, previous).map(|opened| opened.player)
+                    })
+                    .map_err(|e| {
+                        suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
+                        CommandError(format!("no audio output: {e}"))
+                    })?;
+            }
             self.preview = Some(session);
         }
         if let Some(session) = self.preview.as_mut()
@@ -587,7 +636,8 @@ impl Projects {
     pub fn ensure_output_can_close(&self) -> Result<(), CommandError> {
         let panel_open =
             self.tabs.open.iter().any(|o| o.session.player().is_some_and(crate::Player::control_panel_open))
-                || self.preview.as_ref().and_then(Session::player).is_some_and(crate::Player::control_panel_open);
+                || self.preview.as_ref().and_then(Session::player).is_some_and(crate::Player::control_panel_open)
+                || self.devices.idle.as_ref().is_some_and(crate::Player::control_panel_open);
         if panel_open { Err(CommandError("close the ASIO control panel first".into())) } else { Ok(()) }
     }
 
@@ -651,14 +701,14 @@ impl Projects {
         self.get_mut(id).ok_or_else(|| unknown_project(id))
     }
 
-    /// Makes `id` active. The previously active project's player is closed, so only one project
-    /// plays at a time.
+    /// Makes `id` active. The previous project's engine is suspended while its
+    /// device stays open for the destination, so only one project plays at a time.
     pub fn switch(&mut self, id: ProjectId) -> Result<(), CommandError> {
         self.ensure_output_can_close()?;
         if self.get(id).is_none() {
             return Err(unknown_project(id));
         }
-        self.activate(id);
+        self.activate(id)?;
         Ok(())
     }
 
@@ -671,7 +721,7 @@ impl Projects {
         let distance = step.unsigned_abs() % len;
         let target = if step >= 0 { (current + distance) % len } else { (current + len - distance) % len };
         let id = self.tabs.open.get(target).map(|o| o.id).ok_or_else(no_project)?;
-        self.activate(id);
+        self.activate(id)?;
         Ok(id)
     }
 
@@ -685,14 +735,20 @@ impl Projects {
             return Err(unknown_project(id));
         }
         self.back_up_critical(id);
+        if self.tabs.active == Some(id) {
+            self.suspend_active()?;
+        }
         self.backups_after_close(id);
         let index = self.tabs.open.iter().position(|o| o.id == id).ok_or_else(|| unknown_project(id))?;
-        let closed = self.tabs.open.remove(index);
+        let mut closed = self.tabs.open.remove(index);
+        // The device has already moved to the idle engine. Retire this session's
+        // cached engine and plug-ins independently of the neighbouring project.
+        closed.session.release_player();
         if self.tabs.active == Some(id) {
             self.tabs.active = None;
             let neighbour = self.tabs.open.get(index).or_else(|| self.tabs.open.last()).map(|o| o.id);
             if let Some(next) = neighbour {
-                self.activate(next);
+                self.activate(next)?;
             }
         }
         Ok(closed.session)
@@ -702,6 +758,8 @@ impl Projects {
     /// a thread of its own ([`let_go`]): their names and threads, to wait for. A window shows
     /// the projects still going meanwhile.
     pub fn let_go_all(&mut self) -> Vec<(String, std::thread::JoinHandle<()>)> {
+        self.devices.idle = None;
+        self.preview = None;
         self.tabs.active = None;
         self.tabs.open.drain(..).filter_map(|o| Some((o.name, let_go(o.session)?))).collect()
     }
@@ -893,6 +951,14 @@ impl Projects {
             session.catch_up_player();
             notices.extend(session.poll_recording());
         }
+        // A tab can return before its retained plug-ins finish clearing their tails.
+        // Keep the device silent until the worker completes; never join a busy worker.
+        if self.devices.idle.is_some()
+            && self.tabs.active.and_then(|id| self.get(id)).is_some_and(|s| s.sync.suspended.is_some())
+            && let Err(error) = self.open_output(None)
+        {
+            notices.push(error.to_string());
+        }
         notices.extend(self.check_output());
         notices.extend(self.sync_active_plugins());
         notices.extend(self.poll_midi());
@@ -1048,14 +1114,28 @@ impl Projects {
         }
     }
 
-    fn activate(&mut self, id: ProjectId) {
+    fn activate(&mut self, id: ProjectId) -> Result<(), CommandError> {
         if self.tabs.active == Some(id) {
-            return;
+            return Ok(());
         }
-        if let Some(previous) = self.tabs.active.and_then(|a| self.get_mut(a)) {
-            previous.release_player();
-        }
+        self.suspend_active()?;
         self.tabs.active = Some(id);
+        Ok(())
+    }
+
+    fn suspend_active(&mut self) -> Result<(), CommandError> {
+        let sender = self.devices.midi.input.disconnect();
+        if let Some(previous) = self.tabs.active.and_then(|a| self.get_mut(a)) {
+            if let Some(player) = previous.sync.player.as_mut()
+                && let Some(sender) = sender
+            {
+                player.retain_live_input(sender);
+            }
+            if let Some(idle) = previous.suspend_output()? {
+                self.devices.idle = Some(idle);
+            }
+        }
+        Ok(())
     }
 }
 

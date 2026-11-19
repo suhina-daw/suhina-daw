@@ -664,9 +664,10 @@ be dropped off the audio thread.
 
 While a project plays, the session finds each plug-in device in the catalog
 (`plugin.check`'s matching), starts it with the saved state (and VST3 controller state) on a
-thread of its own, and hands it over; a project's plug-ins stop when it stops playing (a
-tab switch) and each keeps its last state for when it starts again, as one whose device is
-removed does for an undo. A plug-in that is not installed is *missing*: no slot, the sound
+thread of its own, and hands it over. A tab switch retains the project's renderer and
+plug-in instances without processing background audio; returning resumes the same
+instances. Closing the project releases them. Removing a plug-in device stops its
+instance and keeps its last state for undo. A plug-in that is not installed is *missing*: no slot, the sound
 passes, its state stays in the project untouched and is saved back as it was; the status bar
 names it. Every 30 s the session reads each running plug-in's state, so a restart after a
 crash gets back what was set in its editor (ADR 0006 › 5); saving the project
@@ -748,6 +749,30 @@ containing mixed processing rates. A later crash restart reads the acknowledged
 rate shared with the control half.
 
 ## Stopping a hosted instrument
+
+Project suspension is a hard audio boundary after the output has switched to its
+silent renderer. A background control worker sends `reset_audio` to retained processors
+with a shared bounded wait. Stopping an idle audio worker sets its stop flag and wakes
+its IPC wait immediately; it does not wait for the periodic idle timeout. A request
+already being processed still finishes before the worker joins. Their existing instances and editors stay loaded,
+but processing is reactivated so old voices and effect buffers cannot replay on
+return. The instrument's host-side stop envelope is set directly to silence;
+the output already supplied the departure fade. A new Play or live note opens
+the envelope again. Pending parameter edits survive; old note events do not.
+Reactivation satisfies CLAP restart requests made by the previous processing run.
+After joining its audio thread, the host consumes those requests before deactivation
+and activation. A request made by the new activation or processing run remains pending.
+Servicing latency changes after reset must not discard audio buffered since the reset.
+The tab switch does not wait for this worker. Returning before its reply keeps the
+project silent on the retained device; the existing control poll resumes it only
+after successful completion. While waiting, the window shows **Preparing audio** with a
+**Continue in the background** button, and the status bar keeps the preparation message
+visible. Play during preparation asks the user to wait and try again; it does not
+report a missing audio device or queue unexpected playback. Completion closes the
+notice and changes the status to **Audio ready**. Completion wakes the existing control window once,
+without a polling timer or continuous repaint requests. Failure reports an error instead of resuming an
+instance with uncertain audio state. Closing a resetting project never joins the
+busy worker on the UI thread. See [the protocol](plugin-protocol.md).
 
 Some instruments reset their output immediately when the transport's playing flag
 becomes false, even when ordinary note-off messages alone allow a smooth release.

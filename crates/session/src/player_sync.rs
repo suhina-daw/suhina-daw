@@ -10,6 +10,8 @@ use crate::{ParamEdit, Player};
 #[derive(Default)]
 pub(crate) struct PlayerSync {
     pub(crate) player: Option<Player>,
+    /// A background project's complete engine and live plug-in processors.
+    pub(crate) suspended: Option<Player>,
     /// A failed replacement can be retried by an explicit output choice.
     pub(crate) output_open_failed: bool,
     /// Set by an edit command whose changes are device parameters.

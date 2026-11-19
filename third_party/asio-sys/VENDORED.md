@@ -7,6 +7,14 @@ upstream commit. Registry bookkeeping and the crate's separate lockfile are omit
 
 Local changes:
 
+- Keep the driver slot occupied through final destruction and explicit
+  `Driver::destroy`, even after its weak reference can no longer upgrade. Loads
+  during teardown return `DriverAlreadyExists`; failed destruction keeps the
+  slot unavailable. A deterministic test covers the zero-strong-reference gap
+  without loading hardware. This addresses the same race as upstream commit
+  `bfb4f70214366ae59c6dfc107faf4864c3c0659a`, using a nonblocking occupied flag
+  rather than adding a destructor/load mutex and its lock-order constraints.
+
 - Expose ASIOControlPanel through the retained Driver. Bindgen refreshes an older
   cached binding file if this entry point is absent. The call holds no callback
   lock and belongs to the driver's non-audio owner thread.
@@ -31,5 +39,5 @@ crate gains unsafe code or a different audio backend.
 
 To update: compare a new crates.io release with these changes, run the initializer
 test and the Windows hardware tests, then remove the Cargo patch when upstream
-provides equivalent initialization and channel query ordering. Do not edit
+provides equivalent initialization, channel query ordering and teardown exclusion. Do not edit
 Cargo's shared registry copy.

@@ -805,6 +805,14 @@ impl Renderer {
         self.pool.as_ref().map_or(1, pool::Lane::threads)
     }
 
+    /// Takes a lane of the currently configured process pool without rebuilding the graph
+    /// or its devices. Call before resuming a retained renderer, on the control thread only:
+    /// returning the old lane and acquiring the new one can lock, allocate and stop workers.
+    pub fn use_process_render_pool(&mut self) {
+        self.pool = None;
+        self.pool = pool::process_lane(self.sample_rate, self.pool_kind());
+    }
+
     /// Asks the render workers to join real-time priority for blocks of `frames` frames, as the
     /// render thread does: call it when the renderer starts playing to a device. Never
     /// allocates.
@@ -926,6 +934,65 @@ impl Renderer {
     /// Shared input diagnostics; obtain before moving the renderer to the audio thread.
     pub fn input_diagnostics(&self) -> Arc<InputDiagnostics> {
         Arc::clone(&self.input.diagnostics)
+    }
+
+    /// Transfers the persistent device input when exchanging project renderers.
+    /// Both renderers must be exclusively owned at a block boundary. Swapping
+    /// retains all allocations and input diagnostics; it does not free or lock.
+    pub fn exchange_audio_input(&mut self, other: &mut Self) {
+        std::mem::swap(&mut self.input, &mut other.input);
+    }
+
+    /// Stops an exclusively owned project renderer before retaining it off the
+    /// render thread. Commands queued just before switching cannot restart it
+    /// when the project is activated later.
+    pub fn suspend_project(&mut self) {
+        self.drain_commands();
+        self.block_frame = 0;
+        if self.transport.running || self.transport.count_in.is_some() || self.transport.start_waiting.is_some() {
+            self.handle(LaunchCommand::Stop);
+        } else {
+            self.release_sounding(true);
+        }
+        self.live.suspend();
+        self.preview.suspend();
+        // The output fades the departing project while its renderer is detached.
+        // A retained transport must not replay that old transition on reactivation.
+        self.start_guard = declick::StartGuard::new(self.sample_rate);
+        self.declick = Declick::default();
+        self.voices.fill(Voice::default());
+        for column in &mut self.graph.launcher.columns {
+            column.fading = None;
+        }
+        self.songs.clear();
+        self.graph.direct_delay.clear();
+        self.graph.click_delay.clear();
+        for chain in &mut self.graph.chains {
+            chain.clear_suspended_delays();
+        }
+    }
+
+    /// Whether a detached renderer has hosted processors that need an audio reset.
+    pub fn has_retained_plugins(&mut self) -> bool {
+        self.graph.chains.iter_mut().any(|chain| chain.plugin_slots().any(|slot| slot.processor.is_some()))
+    }
+
+    /// Clears retained plug-in voices and tails after the renderer has been removed
+    /// from the output. Control-thread only; the timeout covers all processors together.
+    pub fn reset_suspended_plugins(&mut self, timeout: Duration) -> Result<(), ControlError> {
+        let started = Instant::now();
+        for chain in &mut self.graph.chains {
+            for slot in chain.plugin_slots() {
+                if let Some(processor) = slot.processor.as_mut() {
+                    let left = timeout.saturating_sub(started.elapsed());
+                    if left.is_zero() {
+                        return Err(ControlError::Plugin("the project plug-ins did not finish stopping".into()));
+                    }
+                    processor.reset_audio(left).map_err(ControlError::Plugin)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Whether a track is armed to play the live input (ADR 0017): someone may be playing, so
