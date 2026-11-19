@@ -1,0 +1,78 @@
+---
+description: Instrument's compact stock panel and expanded Play, Model and Sample editor, sharing native controls and UI-only page navigation
+read_when: changing the Instrument panel, expanded instrument editor, or local SDK page navigation
+type: spec
+status: current
+last_verified: 2026-11-20
+covers:
+  - devices/instrument/src/panel.rs
+  - devices/instrument/src/editor.rs
+  - crates/ui/src/detail/device_canvas.rs
+---
+
+# Instrument editor
+
+The editor presents the experimental [Instrument](instrument.md) implemented in #1590.
+It does not claim a calibrated acoustic family, automatic fitting, a preset library, effects
+or per-note expression that the current core does not implement. This is the presentation
+slice #1597 of #1579, designed from the maintainer's requested interactions and Suhina's SDK.
+
+## Compact panel
+
+The lower device area presents Source, a local sample waveform/drop target, Body decay,
+Brightness, Release, Hybrid sample blend and Gain. A visible Open editor button and the
+standard device-header expand button open the same expanded editor. The current model is
+identified as experimental struck modal revision 1, separately from its sound controls.
+The panel fits the standard 168-point body height and uses less width than the initial
+900-point panel. Narrow device areas scroll instead of shrinking controls below readable sizes.
+
+## Expanded editor
+
+The larger canvas uses the existing centred, scrollable SDK expanded-panel path. Its header
+identifies Instrument and its experimental model, with Source always available. The pages are:
+
+- **Play:** the shared Gain and Release, Hybrid sample blend, sample Attack and Sustain,
+  and key/velocity admission ranges. Labels distinguish sample-only and Hybrid-only controls.
+- **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
+  describe the actual struck-modal model, and apply to the next strike.
+- **Sample:** local waveform/drop target, Root, Playback, source Start/End, loop Start/End,
+  Attack and Sustain. A source imported here uses `device.loadSample`, including the same
+  Source automation override and one-step undo as the compact panel.
+
+All sound controls use the existing stable parameter IDs and `device.setParam`, including
+gesture coalescing, automation overrides, reset and undo/redo. All sound parameters are
+reachable; `model_revision` remains hidden persisted metadata. Both presentations read the
+same project values rather than keeping local copies of sound controls.
+
+## Navigation and host contract
+
+The built-in SDK reserves `#page` as a bounded UI-only selector, initially zero and at most
+15. A native built-in canvas may bind a button's `Set` or `Expand` gesture to it and read it
+in expressions such as `visible_when`. Other gestures/bindings are rejected. It is not a
+DeviceInfo parameter, is never sent to the engine, is never automated, and does not create
+an undo entry or dirty the project. The host keeps it in temporary view memory keyed by
+track and complete device address, shared by that device's compact and expanded canvases.
+`Expand` selects the requested page and opens the existing editor. A repeated selection
+keeps that page. Project reload starts with the host's ordinary fresh view state.
+
+This host binding is initially available to built-in layouts only; `.sd` version 6's
+parameter-binding contract is unchanged. A future standalone SDK editor can implement
+the same local state without modifying the DSP or exported parameter list.
+
+## Appearance and validation
+
+Controls, labels, focus and selection use native SDK widgets, theme palette tokens and
+Suhina typography. The supplied warm background is visual direction only: this slice
+ships no unverified bitmap and keeps text/branding independent from artwork. The canvas
+uses a quiet centre with grouped controls, distinct primary controls and explicit source
+limitations; all themes retain their own contrast. Narrow windows scroll the full editor.
+
+Tests validate every binding and hidden parameter, local-page bounds and malformed layouts,
+keyboard/click navigation without project actions, parameter command parity, sample target
+handling, and representative compact/expanded pages in every built-in theme. An automated
+render and a rebuilt app support inspection without Computer Use. Listening is a separate
+quality gate for the sound engine and is not implied by UI tests.
+
+Analysis/job controls are a coordinated later integration through the same host commands;
+this layout does not display nonfunctional analysis buttons. Family, library, MPE and effects
+pages remain explicit future work in #1579.
