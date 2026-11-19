@@ -3,7 +3,7 @@ description: Initial FLP project import, shared patterns and sampler channels, a
 read_when: FLP import, FL Studio patterns, FLP model mapping, imported sampler
 type: spec
 status: draft
-last_verified: 2026-11-12
+last_verified: 2026-11-19
 covers:
   - crates/flp/src/import.rs
   - crates/flp/src/appearance.rs
