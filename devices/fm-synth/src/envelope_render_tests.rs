@@ -35,7 +35,7 @@ fn modern_envelopes_preserve_the_reference_render() {
     s.reset();
     s.event(on(79, 0.73));
     let mut audio = vec![0.0; 512 * 128];
-    for (block, out) in audio.chunks_exact_mut(128).enumerate() {
+    for (block, out) in audio.as_chunks_mut::<128>().0.iter_mut().enumerate() {
         match block {
             96 => s.set_param(index("op1.env.sustain"), -8.0),
             160 => s.set_param(index("op1.env.loop"), 2.0),
@@ -50,8 +50,8 @@ fn modern_envelopes_preserve_the_reference_render() {
     let bytes = include_bytes!("../tests/golden/time-envelope.f32");
     assert_eq!(bytes.len(), audio.len() * 4);
     assert!(audio.iter().any(|v| v.abs() > 0.01));
-    for (i, (actual, bytes)) in audio.iter().zip(bytes.chunks_exact(4)).enumerate() {
-        let expected = f32::from_le_bytes(bytes.try_into().unwrap());
+    for (i, (actual, bytes)) in audio.iter().zip(bytes.as_chunks::<4>().0).enumerate() {
+        let expected = f32::from_le_bytes(*bytes);
         assert!(actual.is_finite() && (actual - expected).abs() < 1e-6, "sample {i}: {actual} != {expected}");
     }
 }
