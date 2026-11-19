@@ -46,6 +46,36 @@ fn render(project: &Project, audio: &AudioPool) -> Vec<f32> {
     output
 }
 
+fn edit_while_held(project: &Project, audio: &AudioPool, adopt: bool) -> Vec<f32> {
+    let mut renderer = Renderer::stopped(project, audio, 48000, suhina_session::devices()).unwrap();
+    let mut controller = renderer.controller();
+    let mut live = controller.take_live_input().unwrap();
+    let mut session = Session::new(project.clone());
+    session.set_audio(audio.clone());
+    let proposal = if adopt {
+        let job = run(&mut session, "instrument.analyzeSample", json!({}));
+        session.sync_instrument_analysis();
+        Some(job)
+    } else {
+        None
+    };
+    session.attach_player(Player::new(controller, None));
+    session.execute("track.setArm", &json!({"track":1,"armed":true})).unwrap();
+    live.send(suhina_engine::LiveEvent::NoteOn { key: 60, velocity: 0.8 });
+    let mut output = vec![0.0; 8192];
+    for (index, block) in output.chunks_mut(256).enumerate() {
+        if index == 8 {
+            if let Some(job) = &proposal {
+                run(&mut session, "instrument.acceptAnalysis", json!({"job":job["job"]}));
+            } else {
+                run(&mut session, "device.setParam", json!({"param":"root","value":57}));
+            }
+        }
+        renderer.process(block);
+    }
+    output
+}
+
 #[test]
 fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_source() {
     let folder = super::temp_dir::TempDir::new("instrument-analysis");
@@ -114,6 +144,11 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     reference.set_audio(session.audio().clone());
     run(&mut reference, "device.setParam", json!({"param":"root","value":57}));
     assert_eq!(render(reference.project(), reference.audio()), accepted_sound);
+    assert_eq!(
+        edit_while_held(&before, session.audio(), true),
+        edit_while_held(&before, session.audio(), false),
+        "adoption preserves held voices exactly as the ordinary root control does"
+    );
     session.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(session.project(), &before);
     session.execute("edit.redo", &json!({})).unwrap();

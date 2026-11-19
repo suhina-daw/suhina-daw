@@ -58,6 +58,8 @@ have the same waveform as a single source with a missing fundamental. Version 1 
 polyphony. The command report names `sourceAssumption: singleIsolatedPitchedNote` and
 `polyphonyAssessed: false`; the ready UI always warns about ambiguous chords. Conservative
 mixture screening and its evaluation remain a separate follow-up, not a delivered capability.
+That remaining acceptance point is tracked in
+[Follow-up #1639](https://github.com/suhina-daw/suhina-daw/issues/1639).
 
 Accepting an integer root does not remove the displayed residual cents offset. The person may
 choose a different root, but that choice is explicit and is not presented as a measured result.

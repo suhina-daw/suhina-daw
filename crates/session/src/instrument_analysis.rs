@@ -11,9 +11,9 @@ use std::sync::{
 
 use serde_json::{Value, json};
 use suhina_instrument_analysis::{Outcome, Report};
-use suhina_model::{AudioData, ChannelId, Device, DeviceId, DeviceKind, DeviceParam};
+use suhina_model::{AudioData, ChannelId, Device, DeviceId, DeviceKind};
 
-use crate::commands::{Args, device_channel, device_channel_read, with_override};
+use crate::commands::{Args, device_channel_read};
 use crate::device_groups::device_path;
 use crate::{CommandError, Session};
 
@@ -369,17 +369,16 @@ pub(crate) fn accept(session: &mut Session, params: &Value) -> Result<Value, Com
     let proposal = job.report.as_ref().and_then(|r| r.proposal).ok_or("analysis found no stable root-note proposal")?;
     let root = Args::new(params).opt_index("root", "MIDI root key")?.unwrap_or(usize::from(proposal.root));
     let root = u8::try_from(root).ok().filter(|v| *v <= 127).ok_or("root must be an integer from 0 to 127")?;
-    let channel = device_channel(session, params)?;
-    let path = device_path(&channel.devices, params, "device")?;
-    let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
-    if let Some(param) = device.params.iter_mut().find(|p| p.id == "root") {
-        param.value = f64::from(root);
-    } else {
-        device.params.push(DeviceParam::new("root", f64::from(root)));
-    }
-    let overridden = crate::automation::override_lane(&mut device.automation, |lane| lane.param == "root");
+    // Reuse the actual manual-edit path, including parameter messages to the running graph.
+    // Merely assigning the model value would rebuild the graph and interrupt held voices.
+    let mut edit = params.clone();
+    edit["param"] = json!("root");
+    edit["value"] = json!(root);
+    let mut result = crate::devices::set_param(session, &edit)?;
+    result["root"] = json!(root);
+    result["accepted"] = json!(true);
     if let Some(job) = &mut session.analysis.current {
         job.pending_root = Some(root);
     }
-    Ok(with_override(json!({"root":root,"accepted":true}), overridden))
+    Ok(result)
 }
