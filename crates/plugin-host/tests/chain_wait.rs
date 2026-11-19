@@ -48,6 +48,8 @@ fn start(spec: &str, sample_rate: u32) -> (Plugin, Hosted) {
 
 fn plugin_device() -> Device {
     Device {
+        instrument: false,
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Test".into(),
         kind: DeviceKind::Clap { id: "x".into() },
@@ -64,6 +66,7 @@ fn plugin_device() -> Device {
 fn project(chains: &[usize]) -> Project {
     let mut p = Project {
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length: 64.0,
@@ -92,6 +95,7 @@ fn project(chains: &[usize]) -> Project {
     for (n, &devices) in chains.iter().enumerate() {
         let id = n as u32 + 1;
         p.tracks.push(Track {
+            folder: false,
             id: TrackId(id),
             name: format!("T{id}"),
             color: None,

@@ -1,5 +1,6 @@
 {
   "name": "Macchiato",
+  "color-scheme": "dark",
   "values": {
     "--ground": "#181926",
     "--surface": "#1E2030",

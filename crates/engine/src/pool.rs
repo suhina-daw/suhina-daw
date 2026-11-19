@@ -532,7 +532,9 @@ fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
             *room = Some(Held { lane, job, misses });
         }
         if held.iter().all(Option::is_none) {
-            std::thread::park();
+            if !park_unless_stopping(shared) {
+                break;
+            }
             if let Some(rt) = realtime.as_mut() {
                 rt.waited();
             }
@@ -577,8 +579,7 @@ fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
 fn give_back(lanes: &mut [WorkerEnd], lane: usize, job: Job, misses: u64) {
     let Job { index, mut chain, frames, context, reply_to, clock } = job;
     crate::clock::enter(&clock);
-    chain.complete(frames, &context);
-    chain.stage(frames);
+    chain.finish(frames, &context);
     let late = chain.past_deadline(crate::clock::now()) && chain.plugin_misses() == misses;
     // Never full: the ring holds DEPTH replies, and the worker holds at most DEPTH chains of a
     // lane.
@@ -616,6 +617,19 @@ fn wait_for_plugins(held: &mut [Option<Held>], now: Instant) {
         crate::clock::enter(&h.job.clock);
         h.job.chain.answered(crate::clock::now() + crate::chain::ANSWER_SLICE);
     }
+}
+
+/// Parks the worker until something wakes it, unless the pool is stopping; false when it is. The
+/// stop is looked at again just before parking: the pool's drop sets it before it wakes the
+/// workers, and the wake-up can be spent before the worker parks. Joining real time waits on a
+/// channel, which parks the thread too, so a drop that came then left the worker asleep for good
+/// and the drop waiting on it (a hang on Linux, where the worker waits for rtkit's answer).
+fn park_unless_stopping(shared: &Shared) -> bool {
+    if shared.stop.load(Ordering::Acquire) {
+        return false;
+    }
+    std::thread::park();
+    true
 }
 
 /// The next job for a worker: from a lane that plays to a device if one has any, else from any

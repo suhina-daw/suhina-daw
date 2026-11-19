@@ -3,7 +3,7 @@
 
 //! What a scene paints, as text: one line per shape of its last frame, in paint order, with its
 //! place, size and colours. A change that should leave a theme's look alone leaves this listing
-//! alone, so its digest, held in `tests/painted/<system>.txt`, checks "looks the same" without a GPU (#1023).
+//! alone, so its digest, held in `tests/painted.txt`, checks "looks the same" without a GPU (#1023).
 //!
 //! Places and sizes are rounded to a quarter of a point, so a last-bit difference in a system's
 //! `sin` or `cos` between machines does not change a listing; colours are exact.
@@ -124,7 +124,9 @@ fn shape(out: &mut String, ctx: &egui::Context, depth: usize, shape: &Shape) {
                 .sections
                 .iter()
                 .map(|s| {
-                    let text = job.text.get(s.byte_range.start.0..s.byte_range.end.0).unwrap_or("");
+                    // A path as Linux writes it: a dialog joins its folder and file with the
+                    // system's separator, `\` on Windows.
+                    let text = job.text.get(s.byte_range.start.0..s.byte_range.end.0).unwrap_or("").replace('\\', "/");
                     // The whole format: font, colours, background, italics, lines, alignment.
                     format!("{text:?} {:?}", s.format)
                 })
@@ -207,26 +209,41 @@ pub fn digest(text: &str) -> u64 {
     text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3))
 }
 
-/// The listing of `scene` drawn in `subject`: driven, settled, then one more frame.
+/// A scene drawn: what its last frame paints, and the texts it cuts off.
+#[derive(Clone, Debug)]
+pub struct Drawing {
+    /// The frame's listing ([`listing`]), with `restless` first if the window never settled.
+    pub listing: String,
+    /// The texts the frame cuts off ([`crate::cut::texts`]).
+    pub cut: Vec<crate::cut::Cut>,
+}
+
+/// `scene` drawn in `subject`: driven, settled, then one more frame.
 ///
 /// Drawn on a thread of its own, whose window state (the colour map, the style engine, the user
 /// sheet) starts afresh and goes with it: one drawing never depends on the one before, and the
-/// caller's state is left alone. A scene that still repaints after the most frames a scene may
-/// take says so in its first line: with the fixed step that is the same each run, as long as no
-/// scene plays the transport (which repaints by the clock).
-pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene) -> Result<String, String> {
+/// caller's state is left alone. The window looks like Linux whichever system draws it
+/// ([`suhina_ui::kit::platform`]): shortcuts as `Ctrl+C`, Settings' plug-in formats and notes as
+/// Linux has them and no title bar of Suhina's own, and the listing writes paths with `/`, so a
+/// listing is the same on every system. A scene that still repaints after the most frames a scene
+/// may take says so in its first line: with the fixed step that is the same each run, as long as
+/// no scene plays the transport (which repaints by the clock).
+pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene) -> Result<Drawing, String> {
     std::thread::scope(|scope| {
         scope
             .spawn(|| {
+                suhina_ui::kit::platform::set(suhina_ui::kit::platform::Platform::Linux);
                 let mut h = crate::headless((scene.app)()?, subject, scene.width);
                 (scene.drive)(&mut h)?;
-                // A background picture is read on another thread: wait for it before the scene
-                // settles, or whether its mesh is in the listing depends on which thread is first.
-                h.state_mut().wait_for_background();
+                // A background picture is read, and the sample map laid out, on other threads:
+                // wait for them before the scene settles, or whether the picture's mesh or the
+                // map is in the listing depends on which thread is first.
+                h.state_mut().wait_for_workers();
                 let settled = h.try_run().is_ok();
                 h.step();
                 let listing = last_frame(&h);
-                Ok(if settled { listing } else { format!("restless\n{listing}") })
+                let cut = crate::cut::texts(&h.output().shapes);
+                Ok(Drawing { listing: if settled { listing } else { format!("restless\n{listing}") }, cut })
             })
             .join()
             .unwrap_or_else(|_| Err(format!("{} panicked", scene.name)))

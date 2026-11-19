@@ -117,8 +117,47 @@ fn a_folded_group_hides_its_tracks_and_shows_the_one_it_stands_in_for() {
 }
 
 #[test]
+fn a_selection_over_a_folded_groups_row_takes_every_track_inside_it() {
+    let project = crate::demo::grouped_project();
+    let timeline = Timeline::build(&project, None);
+    let track = |name: &str| timeline.lanes.iter().position(|l| l.name == name).unwrap();
+    let (group, drums, bass) = (track("Group"), track("Drums"), track("Bass"));
+    let mut folds = Folds::default();
+    folds.fold(timeline.lanes[group].track);
+    folds.reconcile(&project, None);
+    let shown = drawn_lanes(&timeline.lanes, &folds)[0];
+    assert_eq!(shown.covered(), group..bass + 1);
+
+    let time = Rect::from_min_size(Pos2::ZERO, Vec2::new(10_000.0, 40.0));
+    let row = |folded| Row {
+        track: timeline.lanes[group].track,
+        clips: timeline.lanes[drums].track,
+        time,
+        clip: time,
+        span: time.y_range(),
+        folded,
+    };
+    let folded = row(Some((group, shown.children)));
+    let tracks: Vec<TrackId> = [group, drums, bass].iter().map(|&i| timeline.lanes[i].track).collect();
+    // Cut or Delete over the row's time acts on the group and both tracks, not the one it shows.
+    assert_eq!(row_tracks(&folded, &timeline.lanes), tracks);
+    assert_eq!(row_tracks(&row(None), &timeline.lanes), [timeline.lanes[drums].track]);
+
+    // A selection rectangle over the whole row picks the clips of every track inside it.
+    let x_of = |beat: f64| beat as f32 * 10.0;
+    let picked = row_picks(&folded, &timeline.lanes, time, &x_of);
+    for lane in [drums, bass] {
+        let lane = &timeline.lanes[lane];
+        assert!(!lane.clips.is_empty(), "{} has clips to pick", lane.name);
+        assert!(lane.clips.iter().all(|c| picked.contains(&(lane.track, c.id))), "every clip of {}", lane.name);
+    }
+    assert!(row_picks(&row(None), &timeline.lanes, time, &x_of).iter().all(|(t, _)| *t == timeline.lanes[drums].track));
+}
+
+#[test]
 fn a_fold_inside_a_fold_hides_exactly_what_it_covers() {
     let lane = |track: u32, kind: ColumnKind, depth: usize| Lane {
+        folder: false,
         track: TrackId(track),
         name: format!("T{track}"),
         color: suhina_engine::model::Rgb(0, 0, 0),
@@ -140,6 +179,7 @@ fn a_fold_inside_a_fold_hides_exactly_what_it_covers() {
         pan: 0.0,
         sends: Vec::new(),
         output: None,
+        output_name: None,
         column: None,
         overrides: false,
         clips: Vec::new(),
@@ -273,6 +313,20 @@ fn a_fade_ends_on_the_grid_and_leaves_room_for_the_other() {
     assert_eq!(fade_length(0.4, FadeEdge::Out, &clip, 0.0, Some(beats(4.0))), 0.0);
     // Nearer the grid line, the grid wins.
     assert_eq!(fade_length(6.5, FadeEdge::Out, &clip, 0.0, Some(beats(4.0))), 6.0);
+}
+
+#[test]
+fn the_envelope_button_gives_way_to_the_fade_in_handle() {
+    let button = Rect::from_min_size(Pos2::new(104.0, 12.0), Vec2::splat(14.0));
+    // The handle at the clip's corner lies over the button's left edge: the button keeps the rest.
+    let corner = Rect::from_min_size(Pos2::new(98.0, 8.0), Vec2::splat(11.0));
+    assert_eq!(beside(button, corner), Rect::from_min_max(Pos2::new(109.0, 12.0), button.max));
+    // Over its right edge (a fade that ends there): the button keeps its left part.
+    let right = Rect::from_min_size(Pos2::new(114.0, 8.0), Vec2::splat(11.0));
+    assert_eq!(beside(button, right), Rect::from_min_max(button.min, Pos2::new(114.0, 26.0)));
+    // Apart: all of it.
+    let apart = Rect::from_min_size(Pos2::new(140.0, 8.0), Vec2::splat(11.0));
+    assert_eq!(beside(button, apart), button);
 }
 
 #[test]
@@ -671,6 +725,7 @@ fn a_stretch_goes_past_the_audio_and_a_midi_clip_before_its_notes() {
     let mut project = crate::demo::demo_project();
     let audio = ContentId(900);
     project.contents.push(ClipContent {
+        linked: false,
         id: audio,
         name: "Loop".into(),
         length: 4.0,
@@ -861,6 +916,58 @@ fn a_narrow_clip_draws_no_name_and_nothing_outside_itself() {
     assert!(shapes.iter().any(|s| matches!(s.shape, egui::Shape::Text(_))), "a wide clip shows its name");
 }
 
+/// The time selection over a clip's track lights the stretch of its body under it in the selection
+/// colour, under its name bar, as a selected clip's body is; the rest of the clip keeps its colour.
+#[test]
+fn the_time_selection_lights_a_clips_body_in_the_selection_colour() {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let clip =
+        timeline.lanes.iter().flat_map(|l| l.clips.iter()).find(|c| !c.audio && c.length >= 4.0).cloned().unwrap();
+    let lane = timeline.lanes.iter().find(|l| l.clips.iter().any(|c| c.id == clip.id)).unwrap();
+    let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(20.0 * clip.length as f32, 60.0));
+    let fill = crate::kit::theme::studio("selection-background");
+    let lit = |time_lit: Option<(f64, f64)>| {
+        crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some("".into()), ..Default::default() });
+        let ctx = egui::Context::default();
+        let mut shown = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * 20.0;
+                let look = ClipLook { time_lit, ..ArrangementViewState::default().clip_look() };
+                paint_clip(
+                    ui.painter(),
+                    rect,
+                    lane,
+                    &clip,
+                    Shown::of(&clip),
+                    clip.start,
+                    &x_of,
+                    20.0,
+                    &timeline,
+                    false,
+                    &look,
+                );
+            });
+            output.textures_delta.clear();
+            shown = output.shapes;
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        shown
+            .into_iter()
+            .filter_map(|shape| match shape.shape {
+                egui::Shape::Rect(r) if r.fill == fill => Some(r.rect),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let shown = lit(Some((clip.start + 1.0, clip.start + 3.0)));
+    assert_eq!(shown.len(), 1, "{shown:?}");
+    assert_eq!((shown[0].left(), shown[0].right()), (120.0, 160.0), "beats 1 to 3 of the clip");
+    assert!(shown[0].top() > rect.top(), "under the name bar");
+    assert!(lit(None).is_empty(), "no time selection, nothing lit");
+}
+
 /// The piano roll's time selection is lit on the clip it edits, where those beats of the content
 /// play from the clip's start, within the clip, and on no other clip.
 #[test]
@@ -1034,4 +1141,87 @@ fn the_mute_mark_takes_the_ink_of_the_name_bar_as_drawn() {
     // Unstyled, the bar is the clip's own colour and the ink reads on it, as before.
     let plain = name_bar_look_with("", grey);
     assert_eq!((plain.fill, plain.ink), (grey, clip::ink_on(grey)));
+}
+
+/// The shapes `paint_clip` draws for `clip` in `rect` under `css`, `selected` or not, as the
+/// style engine gives them after a few frames.
+fn painted_clip(css: &str, rect: Rect, selected: bool) -> Vec<egui::epaint::ClippedShape> {
+    let timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let lane = timeline.lanes.iter().find(|l| !l.clips.is_empty()).unwrap();
+    let mut clip = lane.clips[0].clone();
+    clip.take = Some(Default::default());
+    let beat_width = rect.width() / clip.length.max(1e-3) as f32;
+    crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
+    let ctx = egui::Context::default();
+    let mut shown = Vec::new();
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+            let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * beat_width;
+            let look = ArrangementViewState::default().clip_look();
+            let clip = &clip;
+            paint_clip(
+                ui.painter(),
+                rect,
+                lane,
+                clip,
+                Shown::of(clip),
+                clip.start,
+                &x_of,
+                beat_width,
+                &timeline,
+                selected,
+                &look,
+            );
+        });
+        output.textures_delta.clear();
+        shown = output.shapes;
+    }
+    crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+    shown
+}
+
+/// A clip's name bar reaches its right edge, selected or not (#1487 B11): it stopped 2 points
+/// short, and the body's lighter selected shade showed in the gap.
+#[test]
+fn a_clips_name_bar_reaches_its_right_edge() {
+    let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(160.0, 60.0));
+    for selected in [false, true] {
+        let shapes = painted_clip("clip-name { background-color: #00FF00; }", rect, selected);
+        let bar = shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.fill == Color32::from_rgb(0, 0xFF, 0) => Some(r.rect),
+                _ => None,
+            })
+            .expect("the name bar");
+        assert_eq!(bar.right(), rect.right(), "selected: {selected}");
+    }
+}
+
+/// The take mark's three bars are evenly spaced on whole pixels, wherever the clip's bottom
+/// falls (#1487 B14): 2.5 points apart, each rounded on its own, they were 2 and 3 apart.
+#[test]
+fn the_take_marks_bars_are_evenly_spaced() {
+    for bottom in [100.0, 100.25, 100.5, 100.75] {
+        let rect = Rect::from_min_max(Pos2::new(100.0, 40.0), Pos2::new(260.0, bottom));
+        let shapes = painted_clip("", rect, false);
+        let mut ys: Vec<f32> = shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::LineSegment { points, .. }
+                    if points[0].y == points[1].y
+                        && points[0].x == rect.left() + 4.0
+                        && points[1].x == rect.left() + 11.0 =>
+                {
+                    Some(points[0].y)
+                }
+                _ => None,
+            })
+            .collect();
+        ys.sort_by(f32::total_cmp);
+        assert_eq!(ys.len(), 3, "bottom {bottom}: {ys:?}");
+        assert_eq!(ys[1] - ys[0], ys[2] - ys[1], "bottom {bottom}: {ys:?}");
+        assert_eq!(ys[0].fract(), 0.5, "on a pixel's centre: {ys:?}");
+    }
 }

@@ -721,7 +721,10 @@ impl BranchRun {
     fn advance(&mut self, midi_scratch: &mut Vec<(usize, NoteEvent)>, run: &Span<'_>) {
         let &Span { from, to, context, sample_rate, deadline } = run;
         let Self { slots, buffer, lanes, events, span_events, at, out, caught_up, .. } = self;
-        while let Some(slot) = slots.get_mut(*at) {
+        while *at < slots.len() {
+            // As in a top-level chain, notes stop at the branch's instrument.
+            let notes_ended = crate::chain::notes_ended(slots, *at);
+            let Some(slot) = slots.get_mut(*at) else { break };
             match slot {
                 DeviceSlot::Device(device) => {
                     crate::chain::run_device(device, *at, buffer, from, to, events, lanes, context, sample_rate);
@@ -756,8 +759,10 @@ impl BranchRun {
                     *caught_up = None;
                     let last = (to - from).saturating_sub(1);
                     span_events.clear();
-                    span_events
-                        .extend(events.iter().map(|&(frame, event)| (frame.saturating_sub(from).min(last), event)));
+                    if !notes_ended {
+                        span_events
+                            .extend(events.iter().map(|&(frame, event)| (frame.saturating_sub(from).min(last), event)));
+                    }
                     plugin.automate(from, to);
                     if let Some(span) = buffer.get_mut(from * 2..to * 2) {
                         match plugin.send(span, span_events, deadline) {

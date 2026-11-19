@@ -433,6 +433,7 @@ fn keys_project(tracks: usize) -> Project {
             .collect(),
         channels: ids.clone().map(|i| Channel::new(ChannelId(i), "Keys")).collect(),
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "Notes".into(),
             length: 4.0,

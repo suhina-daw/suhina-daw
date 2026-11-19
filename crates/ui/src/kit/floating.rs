@@ -41,12 +41,32 @@ const DECLARED: &str = "floating-declared";
 /// More layers than any frame has; the rest are taken for popups.
 const MAX_DECLARED: usize = 256;
 
+const SCOPED: &str = "floating-scoped-style";
+
 /// Forgets last frame's declarations; called at the start of each frame.
 pub fn begin_frame(ctx: &Context) {
     ctx.data_mut(|data| {
         data.remove_temp::<HashMap<Id, Kind>>(Id::unique(DECLARED));
         data.remove_temp::<Vec<egui::LayerId>>(Id::unique(OVERLAYS));
+        data.remove_temp::<HashMap<Id, super::native_css::Computed>>(Id::unique(SCOPED));
     });
+}
+
+/// Says that the popup with `id` (a drop-down's list) is styled as `popup` is where it opens
+/// from, not as at the window's root: there a device panel's own sheet reaches it, so its frame
+/// and its blur are the panel's where the panel's sheet gives them.
+pub fn style_in_place(ctx: &Context, id: Id, style: super::native_css::Computed) {
+    ctx.data_mut(|data| {
+        let scoped = data.get_temp_mut_or_default::<HashMap<Id, super::native_css::Computed>>(Id::unique(SCOPED));
+        if scoped.len() < MAX_DECLARED || scoped.contains_key(&id) {
+            scoped.insert(id, style);
+        }
+    });
+}
+
+/// The popups styled where they open from this frame ([`style_in_place`]).
+pub(crate) fn styled_in_place(ctx: &Context) -> HashMap<Id, super::native_css::Computed> {
+    ctx.data(|data| data.get_temp::<HashMap<Id, super::native_css::Computed>>(Id::unique(SCOPED))).unwrap_or_default()
 }
 
 /// Says that the layer with `id` (at any order) is the app's own, and what it is.
@@ -124,8 +144,14 @@ pub(crate) fn shown(ctx: &Context, id: Id) -> f32 {
 
 /// Whether a computed style blurs what is behind (`backdrop-filter`): yes unless it says `none`
 /// or a radius of 0; a style that says nothing blurs.
-fn style_blurs(style: Option<super::native_css::Computed>) -> bool {
+pub(crate) fn style_blurs(style: Option<super::native_css::Computed>) -> bool {
     style.and_then(|style| style.text(Property::BackdropFilter)).is_none_or(|f| suhina_style::property::blurs(&f))
+}
+
+/// Whether a computed style asks for the window blurred behind it: a `backdrop-filter` with a
+/// radius above 0. For a surface that is sharp unless its rule says otherwise (Settings).
+pub(crate) fn asks_to_blur(style: Option<super::native_css::Computed>) -> bool {
+    style.and_then(|style| style.text(Property::BackdropFilter)).is_some_and(|f| suhina_style::property::blurs(&f))
 }
 
 /// Whether surfaces of the element `name` blur the window behind them, from the rules on the
@@ -203,7 +229,16 @@ pub(crate) struct Restyled {
 /// sets none. `None` when the sheet styles none of these, and egui's frame stays.
 /// The contents keep egui's margins: `padding` does not move them.
 pub(crate) fn frame(ctx: &Context, name: Name, frame: &Frame, opacity: f32) -> Option<Restyled> {
-    let style = super::native_css::settings_of(&[name])?;
+    frame_styled(ctx, super::native_css::settings_of(&[name])?, frame, opacity)
+}
+
+/// [`frame`] in `style`: a popup's own, as it is where the popup opens ([`style_in_place`]).
+pub(crate) fn frame_styled(
+    ctx: &Context,
+    style: super::native_css::Computed,
+    frame: &Frame,
+    opacity: f32,
+) -> Option<Restyled> {
     let authored = style.authored.background
         || style.authored.border
         || style.authored.border_width

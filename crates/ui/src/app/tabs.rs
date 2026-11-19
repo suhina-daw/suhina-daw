@@ -276,4 +276,72 @@ impl App {
             self.remember_choice = false;
         }
     }
+
+    /// The question asked when a zipped project is opened: where to unpack it. The folder field
+    /// starts beside the zip; Unpack and open writes it there and opens the project from it.
+    pub(super) fn zip_prompt_bar(&mut self, ui: &mut Ui) {
+        let Some(prompt) = self.zip_prompt.as_mut() else { return };
+        let bar = ui.max_rect();
+        ui.painter().rect_filled(bar, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")));
+        let mut unpack = false;
+        let mut cancel = false;
+        ui.scope_builder(egui::UiBuilder::new().max_rect(bar.shrink2(Vec2::new(PAD, 6.0))), |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.label(egui::RichText::new(prompt.summary()).color(crate::kit::element::name_ink()));
+                let field = crate::kit::widgets::text_input(
+                    ui,
+                    egui::TextEdit::singleline(&mut prompt.into).desired_width(320.0),
+                );
+                field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Unpack into folder"));
+                if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                    unpack = true;
+                }
+                if ui.button("Unpack and open").clicked() {
+                    unpack = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+            });
+        });
+        if ui.input(|i| i.key_pressed(Key::Escape)) {
+            cancel = true;
+        }
+        if cancel {
+            self.zip_prompt = None;
+        } else if unpack && let Some(prompt) = self.zip_prompt.take() {
+            let into = std::path::PathBuf::from(prompt.into.trim());
+            match suhina_session::extract_zipped_project(&prompt.zip, &into) {
+                Ok(project) => self.request_open(project),
+                Err(e) => {
+                    self.status = Status::Error(e);
+                    self.zip_prompt = Some(prompt);
+                }
+            }
+        }
+    }
+}
+
+/// A zipped project waiting to be unpacked: the zip, what it holds and the folder typed so far.
+pub(crate) struct ZipPrompt {
+    pub zip: std::path::PathBuf,
+    found: suhina_session::ZippedProject,
+    pub into: String,
+}
+
+impl ZipPrompt {
+    pub fn new(zip: std::path::PathBuf, found: suhina_session::ZippedProject) -> Self {
+        let into = suhina_session::default_extract_folder(&zip).display().to_string();
+        Self { zip, found, into }
+    }
+
+    /// "Unpack Song.zip (Song.als and 24 more files, 50 MB) into:"
+    pub fn summary(&self) -> String {
+        let name =
+            self.zip.file_name().map_or_else(|| self.zip.display().to_string(), |n| n.to_string_lossy().into_owned());
+        let project = self.found.project.rsplit('/').next().unwrap_or(&self.found.project);
+        let more = self.found.files.saturating_sub(1);
+        let size = self.found.bytes as f64 / 1_000_000.0;
+        format!("Unpack {name} ({project} and {more} more files, {size:.0} MB) into:")
+    }
 }

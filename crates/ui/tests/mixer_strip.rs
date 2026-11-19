@@ -27,6 +27,8 @@ fn project() -> suhina_engine::model::Project {
     let mut project = demo_project();
     for (name, enabled) in [("Utility", true), ("Limiter", false)] {
         project.channels[0].devices.push(Device {
+            instrument: false,
+            inputs: Vec::new(),
             id: Default::default(),
             name: name.into(),
             kind: DeviceKind::Builtin(name.to_lowercase()),
@@ -671,7 +673,8 @@ fn session_pan_spans_the_strip_and_sends_have_room_for_values() {
     let harness = window_at(320.0);
     let pan = harness.get_by_label("Drums pan").rect();
     let name = harness.get_by_label("Drums strip").rect();
-    assert_eq!(pan.x_range(), name.x_range());
+    // The name is a bar out to the strip's edges (#1487 L12), the pan inside its padding.
+    assert!(name.left() < pan.left() && pan.right() < name.right(), "{name:?} {pan:?}");
     let a = harness.get_by_label("Drums send to A Reverb").rect();
     let b = harness.get_by_label("Drums send to B Delay").rect();
     assert!(a.width() >= 22.0 && b.width() >= 22.0);
@@ -680,8 +683,9 @@ fn session_pan_spans_the_strip_and_sends_have_room_for_values() {
     assert!(b.right() <= pan.right());
     let volume = harness.get_by_label("Drums volume").rect();
     let meter = harness.get_by_label_contains("Drums level:").rect();
-    // Fader stays left; sends occupy one horizontal row below the controls.
-    assert_eq!(volume.left(), pan.left());
+    // The fader is centred in the strip, as Main's is (#1487 B19); sends occupy one horizontal row
+    // below the controls.
+    assert!((volume.center().x - pan.center().x).abs() <= 0.5, "{volume:?} {pan:?}");
     assert_eq!(a.left(), pan.left());
     assert!(a.top() > meter.bottom());
 }

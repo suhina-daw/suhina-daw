@@ -491,6 +491,7 @@ pub(crate) fn element_style(
         };
         let value = match crate::variables::substitute_attributes(&declaration.value, element)
             .and_then(|value| crate::variables::substitute(&value, &computed.variables))
+            .and_then(|value| crate::variables::light_dark(&value, viewport.light))
             .and_then(|value| match declaration.shorthand {
                 Some(shorthand) => shorthand.part(property, &value),
                 None => Ok(value),
@@ -539,6 +540,7 @@ pub(crate) fn element_style(
                     let Some(property) = Property::from_name(&declaration.name) else { continue };
                     let value = crate::variables::substitute_attributes(&declaration.value, element)
                         .and_then(|value| crate::variables::substitute(&value, &computed.variables))
+                        .and_then(|value| crate::variables::light_dark(&value, viewport.light))
                         .and_then(|value| match declaration.shorthand {
                             Some(shorthand) => shorthand.part(property, &value),
                             None => Ok(value),

@@ -18,6 +18,13 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+    # The opening push is reviewed, the pushes after it are not: each push reviewed is one review
+    # of the PR author's free open-source allowance (a few an hour, per developer and repository),
+    # and fix-up pushes used it up before the next pull request was opened. Comment
+    # `@coderabbitai review` on a pull request for another review: after a push that landed while
+    # the first review ran (which supersedes it), or once `@coderabbitai rate limit` says one is
+    # available again after a review was skipped at the limit (CONTRIBUTING.md › CodeRabbit).
+    auto_incremental_review: false
   # Generated on main after every merge, or by tools: not reviewed.
   path_filters:
     - "!docs/INDEX.md"

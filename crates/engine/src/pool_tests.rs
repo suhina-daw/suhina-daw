@@ -229,6 +229,23 @@ fn an_offline_pools_workers_never_join_real_time_priority() {
     assert_eq!(playing.shared.real_time.load(Ordering::Acquire), 256);
 }
 
+/// A worker whose wake-up was spent while it was away (joining real time waits on a channel, which
+/// parks the thread too) does not park once the pool is stopping: nothing would wake it again, and
+/// the pool's drop would wait on it for good. `an_offline_pools_workers_never_join_real_time_priority`
+/// hung so on Linux, now and then.
+#[test]
+fn a_worker_does_not_park_once_its_pool_is_stopping() {
+    let shared = Shared {
+        stop: AtomicBool::new(true),
+        real_time_pool: true,
+        real_time: AtomicUsize::new(0),
+        real_time_rate: AtomicUsize::new(0),
+        lane_real_time: std::array::from_fn(|_| AtomicBool::new(false)),
+    };
+    // No wake-up waits for this thread: a park here would never return.
+    assert!(!park_unless_stopping(&shared));
+}
+
 #[test]
 fn an_offline_renderer_renders_on_an_offline_pool() {
     let mut renderer = Renderer::new(&project(), SR, suhina_device_registry::factory()).unwrap();
@@ -246,18 +263,32 @@ fn an_offline_renderer_renders_on_an_offline_pool() {
 struct Bend {
     drive: f32,
     result: Vec<f32>,
+    key: [f32; BLOCK * 2],
+    heard_key: Arc<AtomicBool>,
 }
 
 impl crate::PluginProcessor for Bend {
     fn process(&mut self, buffer: &mut [f32], _: &[(usize, suhina_device_api::NoteEvent)], _: Duration) -> bool {
-        buffer.iter_mut().for_each(|s| *s = (*s * self.drive).tanh());
+        for (sample, key) in buffer.iter_mut().zip(&self.key) {
+            *sample = (*sample * self.drive / (1.0 + key.abs())).tanh();
+        }
         true
     }
 
     fn send(&mut self, buffer: &[f32], _: &[(usize, suhina_device_api::NoteEvent)], _: Duration) -> crate::Sent {
         self.result.clear();
-        self.result.extend(buffer.iter().map(|s| (s * self.drive).tanh()));
+        self.result.extend(buffer.iter().zip(&self.key).map(|(s, key)| (s * self.drive / (1.0 + key.abs())).tanh()));
         crate::Sent::Out
+    }
+
+    fn set_key(&mut self, key: &[f32]) {
+        self.key.fill(0.0);
+        for (to, from) in self.key.iter_mut().zip(key) {
+            *to = *from;
+        }
+        if key.iter().any(|sample| *sample != 0.0) {
+            self.heard_key.store(true, Ordering::Relaxed);
+        }
     }
 
     fn wait(&mut self, buffer: &mut [f32], _: Duration) -> bool {
@@ -269,7 +300,9 @@ impl crate::PluginProcessor for Bend {
 
 /// [`project`] with a plug-in after every track's instrument, and a device group with a plug-in
 /// in each of its two branches on the group track, including a nested group followed by an
-/// effect. This exercises suspension and resumption through the worker's chain scheduler.
+/// effect. Track 2 keys track 1's plug-in after its devices, and track 4 keys track 3's
+/// compressor after its fader. This covers the workers' key taps and reader dependencies as
+/// well as suspension and resumption, without adding render blocks to the test.
 fn plug_in_project() -> suhina_model::Project {
     let plug =
         |n: u32| Device { name: format!("P{n}"), ..Device::new("plug", DeviceKind::Vst3 { id: format!("{n:032}") }) };
@@ -292,6 +325,12 @@ fn plug_in_project() -> suhina_model::Project {
             channel.devices.push(Device::group("G", suhina_model::DeviceGroup::with_branches(branches)));
         }
     }
+    p.channel_mut(ChannelId(1)).unwrap().devices[1].inputs =
+        vec![suhina_model::DeviceInput::key(ChannelId(2), suhina_model::TapPoint::PostFx)];
+    p.channel_mut(ChannelId(3)).unwrap().devices[2].inputs =
+        vec![suhina_model::DeviceInput::key(ChannelId(4), suhina_model::TapPoint::PostFader)];
+    p.assign_ids().unwrap();
+    p.validate().unwrap();
     p
 }
 
@@ -300,8 +339,14 @@ fn plug_in_project() -> suhina_model::Project {
 fn render_plug_ins(threads: usize, blocks: usize) -> (Vec<f32>, u64) {
     let p = plug_in_project();
     let mut plugins = crate::Plugins::new();
+    let heard_key = Arc::new(AtomicBool::new(false));
     for (n, found) in crate::plugin_devices(&p).into_iter().enumerate() {
-        let processor = Bend { drive: 1.0 + n as f32 * 0.25, result: Vec::with_capacity(BLOCK * 2) };
+        let processor = Bend {
+            drive: 1.0 + n as f32 * 0.25,
+            result: Vec::with_capacity(BLOCK * 2),
+            key: [0.0; BLOCK * 2],
+            heard_key: Arc::clone(&heard_key),
+        };
         plugins.insert(found.key, crate::PluginSlotInfo { instrument: false, latency: 0 }, Box::new(processor));
     }
     let mut renderer = Renderer::build(
@@ -320,6 +365,7 @@ fn render_plug_ins(threads: usize, blocks: usize) -> (Vec<f32>, u64) {
         renderer.process(&mut block);
         out.extend_from_slice(&block);
     }
+    assert!(heard_key.load(Ordering::Relaxed), "the hosted effect received its source's key");
     (out, renderer.chains_sent_to_workers())
 }
 

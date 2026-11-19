@@ -165,6 +165,13 @@ fn count_with(h: &mut Harness<'static, App>, css: &str, color: egui::Color32) ->
 #[test]
 fn a_clip_picked_in_its_body_takes_its_own_selected_rule() {
     let mut h = arrangement_app();
+    // The outline is how a clip picked in its body shows with Selection colour › Clip's own
+    // colour; with a selection colour it is filled with it instead.
+    let ctx = h.ctx.clone();
+    let mut settings = h.state().settings().clone();
+    settings.view.selection.mode = suhina_ui::kit::selection::SelectionColour::Own;
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
     let body = h.get_by_label("Clip Beat B on Drums at bar 17").rect().left_center() + egui::vec2(64.0, 0.0);
     h.hover_at(body);
     h.run();
@@ -474,8 +481,9 @@ fn fills_at(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
     fn walk(shape: &egui::Shape, rect: egui::Rect, found: &mut Vec<egui::Color32>) {
         match shape {
             egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, rect, found)),
+            // Within a pixel: a box is painted on whole pixels, half a pixel each way at most.
             egui::Shape::Rect(shape)
-                if (shape.rect.min - rect.min).length() < 0.5 && (shape.rect.max - rect.max).length() < 0.5 =>
+                if (shape.rect.min - rect.min).length() <= 1.0 && (shape.rect.max - rect.max).length() <= 1.0 =>
             {
                 found.push(shape.fill)
             }

@@ -159,3 +159,54 @@ fn a_held_note_ends_at_its_key_when_pitch_moves_under_it() {
     let tail = out.len() - SR as usize / 2;
     assert!(peak(&out[tail..]) < 1e-4, "{}", peak(&out[tail..]));
 }
+
+/// With the implicit tones off (the app's default, #1384), a track with no instrument of its own,
+/// with no devices or with only a MIDI effect, is silent, offline and while playing; an
+/// instrument still plays, and turning the tones on while playing brings them back.
+#[test]
+fn without_the_implicit_tones_a_track_with_no_instrument_is_silent() {
+    let render_with = |p: &Project, on: bool| {
+        let mut renderer = crate::Renderer::build(
+            p,
+            crate::RenderInputs::new(suhina_device_registry::factory()),
+            SR,
+            crate::RenderOptions::PLAYING,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        renderer.set_offline(true);
+        renderer.set_implicit_tones(on);
+        let mut out = vec![0.0f32; SR as usize * 2];
+        for block in out.chunks_mut(1024) {
+            renderer.process(block);
+        }
+        out
+    };
+    let notes = vec![note(0.0, 1.0, 60), note(0.5, 1.0, 64)];
+    let bare = project(notes.clone(), 2.0, vec![]);
+    let midi_only = project(notes.clone(), 2.0, vec![device("pitch", &[("pitch", 12.0)])]);
+    let synth = project(notes, 2.0, vec![device("pitch", &[("pitch", 12.0)]), device(SYNTH, &[])]);
+    for p in [&bare, &midi_only] {
+        assert!(peak(&render_with(p, true)) > 0.05, "the tones play while on");
+        assert_eq!(peak(&render_with(p, false)), 0.0, "and are silent while off");
+    }
+    assert!(peak(&render_with(&synth, false)) > 0.05, "an instrument plays either way");
+    // Turned on while playing: the notes after it sound.
+    let mut renderer = crate::Renderer::build(
+        &midi_only,
+        crate::RenderInputs::new(suhina_device_registry::factory()),
+        SR,
+        crate::RenderOptions::PLAYING,
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    renderer.set_offline(true);
+    renderer.set_implicit_tones(false);
+    let mut first = vec![0.0f32; 2048];
+    renderer.process(&mut first);
+    assert_eq!(peak(&first), 0.0);
+    renderer.controller().send(LaunchCommand::SetImplicitTones(true)).ok();
+    let mut later = vec![0.0f32; SR as usize * 2];
+    for block in later.chunks_mut(1024) {
+        renderer.process(block);
+    }
+    assert!(peak(&later) > 0.05, "the note at half a beat sounds once the tones are on");
+}

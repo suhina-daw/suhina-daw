@@ -47,6 +47,8 @@ fn project(clip: bool) -> Project {
     };
     let mut channel = Channel::new(ChannelId(1), "C");
     channel.devices.push(Device {
+        instrument: false,
+        inputs: Vec::new(),
         id: Default::default(),
         name: "Test vst3".into(),
         // The catalog lists the built-in test plug-ins as CLAP (their file is not a `.vst3`).
@@ -67,6 +69,7 @@ fn project(clip: bool) -> Project {
         tracks: vec![track],
         channels: vec![channel],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "take".into(),
             length: 2.0,

@@ -224,7 +224,8 @@ pub(crate) fn placements(p: &Project, content: ContentId) -> usize {
 /// content (a duplicate) and the edit changes it, the clip gets its own copy of the content
 /// with the edit, and the other clips keep the content as it was (copy on write, ADR 0001). A
 /// shared pattern, a content with lanes for named tracks, stays shared: its placements are one
-/// pattern on purpose. The copy is part of the same command, so one undo takes back both.
+/// pattern on purpose; so do linked copies (`ClipContent::linked`), whose edit reaches them all.
+/// The copy is part of the same command, so one undo takes back both.
 pub(crate) fn edit_notes(
     p: &mut Project,
     params: &Value,
@@ -242,8 +243,10 @@ pub(crate) fn copy_on_write(
     edit: impl FnOnce(&mut Project) -> Result<Value, CommandError>,
 ) -> Result<Value, CommandError> {
     let (at, id, _) = locate(p, params)?;
-    let original =
-        p.content(id).filter(|c| c.lanes.iter().all(|l| l.target.is_none()) && placements(p, id) > 1).cloned();
+    let original = p
+        .content(id)
+        .filter(|c| !c.linked && c.lanes.iter().all(|l| l.target.is_none()) && placements(p, id) > 1)
+        .cloned();
     let value = edit(p)?;
     let Some(original) = original else { return Ok(value) };
     let new_id = p

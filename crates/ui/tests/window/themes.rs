@@ -340,6 +340,7 @@ fn a_variant_swatch_in_settings_uses_that_variant_and_new_variant_makes_one() {
     let (ink, warnings) = theme::from_folder(theme::ThemeMeta::new("Ink", theme::DEFAULT_SWATCH), sheet);
     assert!(warnings.is_empty(), "{warnings:?}");
     let dim = suhina_ui::kit::theme_vars::Variant {
+        light: None,
         id: "dim".into(),
         name: "Dim".into(),
         values: [("--accent".to_string(), "#ABCDEF".to_string())].into(),
@@ -560,6 +561,42 @@ fn ara_note_overlays_use_the_same_content_colour_as_midi_and_waveforms() {
             }
         }
         assert!(h.output().shapes.iter().any(|s| note(&s.shape, area, colour)), "ARA notes follow {mode:?}");
+    }
+}
+
+#[test]
+fn notes_lost_on_a_dark_clip_are_redrawn_readable_unless_the_user_chose_their_colour() {
+    use suhina_ui::settings::view_settings::WaveformColour;
+    let (project, waveforms) = project_with_audio();
+    let mut timeline = Timeline::build(&project, None);
+    timeline.waveforms = std::sync::Arc::new(waveforms);
+    // An imported clip's own colour can be as dark as the Dark notes drawn on it.
+    for clip in timeline.lanes.iter_mut().flat_map(|lane| lane.clips.iter_mut()).filter(|c| !c.audio) {
+        clip.color = suhina_engine::model::Rgb(14, 14, 14);
+    }
+    let mut h = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
+        |ui, state: &mut (Timeline, ArrangementViewState, Vec<Action>)| {
+            arrangement_view::show(ui, &state.0, &mut state.1, &mut state.2)
+        },
+        (timeline, ArrangementViewState::default(), Vec::new()),
+    );
+    theme::install(&h.ctx);
+    let dark = egui::Color32::from_rgb(32, 31, 29);
+    fn has_ink(shape: &egui::Shape, area: egui::Rect, ink: egui::Color32) -> bool {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().any(|s| has_ink(s, area, ink)),
+            egui::Shape::Mesh(mesh) => mesh.vertices.iter().any(|v| area.contains(v.pos) && v.color == ink),
+            egui::Shape::Rect(r) => r.fill == ink && area.contains(r.rect.center()),
+            _ => false,
+        }
+    }
+    // Theme draws notes Dark where the sheet gives no `clip-notes` colour, as the built-in one does.
+    for (mode, kept) in [(WaveformColour::Dark, true), (WaveformColour::Theme, false)] {
+        h.state_mut().1.waveform_appearance.mode = mode;
+        h.run();
+        let area = h.get_by_label("Clip Beat A on Drums at bar 1").rect();
+        let drawn = h.output().shapes.iter().any(|s| has_ink(&s.shape, area, dark));
+        assert_eq!(drawn, kept, "{mode:?}: Dark notes on a dark clip are kept only when chosen in Settings");
     }
 }
 

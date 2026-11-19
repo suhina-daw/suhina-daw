@@ -638,13 +638,7 @@ pub struct ManagerOut {
 
 /// "Show in Explorer" on Windows, "Show in Finder" on macOS.
 fn show_in_folder_label() -> &'static str {
-    if cfg!(target_os = "windows") {
-        "Show in Explorer"
-    } else if cfg!(target_os = "macos") {
-        "Show in Finder"
-    } else {
-        "Show in folder"
-    }
+    crate::kit::platform::current().show_in_folder_label()
 }
 
 /// A warning mark: a triangle in `color` around `center`.
@@ -1089,6 +1083,7 @@ struct Asked {
     toggled: Option<(String, bool)>,
     toggled_many: Option<(Vec<String>, bool)>,
     owned_many: Option<(Vec<String>, bool)>,
+    hosting: Option<(Vec<String>, String)>,
     pick: Option<(String, bool, bool)>,
     again: Option<Vec<String>>,
     show: Option<String>,
@@ -1234,6 +1229,8 @@ fn table(
         out.request = Some(PluginRequest::SetEnabledMany(specs, enabled));
     } else if let Some((specs, owned)) = asked.owned_many {
         out.request = Some(PluginRequest::SetOwnedMany(specs, owned));
+    } else if let Some((specs, hosting)) = asked.hosting {
+        out.request = Some(PluginRequest::SetHostingMany(specs, hosting));
     } else if let Some((spec, enabled)) = asked.toggled {
         out.request = Some(PluginRequest::SetEnabled(spec, enabled));
     } else if let Some(files) = asked.again {
@@ -1448,6 +1445,9 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
                     ui.close();
                 }
             }
+            // How their instances share host processes: a heavy plug-in in a process of its own
+            // no longer waits on the others of its file (`plugin.setHosting`).
+            hosting_menu(ui, &these, plugins, scanning, asked);
             if let Some(vendor) = plugin.map(|p| p.vendor.clone()) {
                 let rest = rest_of_vendor(&vendor, plugins);
                 if !rest.is_empty() {
@@ -1534,6 +1534,49 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
 }
 
 /// An on/off switch, in the accent while on. `label` names it for readers and tests.
+/// What a hosting choice reads as in the plug-in manager.
+pub fn hosting_label(hosting: &str) -> &'static str {
+    match hosting {
+        "vendor" => "One process per vendor",
+        "instance" => "A process of its own for each",
+        _ => "One process per plug-in file",
+    }
+}
+
+/// The row menu's *Process* choice for the plug-ins `keys` act on: ticked where every one of
+/// them has it; an ARA plug-in cannot have a process of its own.
+/// The *Process* choices for the plug-ins `keys` act on, with whether every one of them has it
+/// and whether it can be chosen (an ARA plug-in cannot have a process of its own), and their specs.
+fn hosting_choices(keys: &[String], plugins: &PluginsView) -> (Vec<String>, [(&'static str, bool, bool); 3]) {
+    let rows: Vec<&crate::settings::settings_view::PluginRow> =
+        plugins.found.iter().filter(|p| keys.contains(&p.spec)).collect();
+    let ara = rows.iter().any(|p| p.ara);
+    let choice = |hosting: &'static str| {
+        (hosting, !rows.is_empty() && rows.iter().all(|p| p.hosting == hosting), !(hosting == "instance" && ara))
+    };
+    (rows.iter().map(|p| p.spec.clone()).collect(), [choice("binary"), choice("vendor"), choice("instance")])
+}
+
+fn hosting_menu(ui: &mut Ui, keys: &[String], plugins: &PluginsView, scanning: bool, asked: &mut Asked) {
+    let (specs, choices) = hosting_choices(keys, plugins);
+    if specs.is_empty() {
+        return;
+    }
+    ui.menu_button("Process", |ui| {
+        for (hosting, on, allowed) in choices {
+            let allowed = allowed && !scanning;
+            let response = ui
+                .add_enabled(allowed, egui::Button::selectable(on, hosting_label(hosting)))
+                .on_hover_text("From the plug-in's next start: open the project again");
+            if response.clicked() && !on {
+                asked.hosting = Some((specs.clone(), hosting.to_string()));
+                ui.close();
+            }
+        }
+    });
+    ui.separator();
+}
+
 fn switch(
     ui: &Ui,
     painter: &egui::Painter,

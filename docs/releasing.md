@@ -1,11 +1,13 @@
 ---
-description: How versions are numbered, how release builds, the nightly and test builds of pull requests are made, and how many pull requests are merged through the merge queue
-read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, merge group, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy
+description: How versions are numbered, how release builds, the nightly and test builds of pull requests are made, and how pull requests are merged (squash, no merge queue)
+read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, squash merge, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy, slow CI tests, nextest, test partitions
 type: howto
 status: current
-last_verified: 2026-11-15
+last_verified: 2026-11-18
 covers:
   - .github/workflows/ci.yml
+  - .config/nextest.toml
+  - scripts/install_nextest.sh
   - .github/workflows/release.yml
   - .github/workflows/nightly-notes.yml
   - .github/workflows/discord.yml
@@ -53,7 +55,7 @@ candidates as `MAJOR.MINOR.PATCH-rc.N`. A release goes out as one or more releas
 the final release is the last candidate unchanged, under the plain version:
 
 ```text
-0.1.0-rc.1  →  testers find a bug, fixed on main  →  0.1.0-rc.2  →  no new bugs  →  0.1.0
+0.1.0-rc.1  →  testers find a bug, fixed on next  →  0.1.0-rc.2  →  no new bugs  →  0.1.0
 ```
 
 The workflow accepts only these two forms. Release candidates are published as GitHub
@@ -63,11 +65,17 @@ becomes the latest.
 ## Making a release
 
 1. Set the version in the root `Cargo.toml` (`[workspace.package] version`), for example
-   `0.1.0-rc.1`, run `cargo check` so `Cargo.lock` follows, and merge that through a pull request.
-2. Tag the merge commit on `main` with the same version and push the tag:
+   `0.1.0-rc.1`, run `cargo check` so `Cargo.lock` follows, and merge that through a pull request
+   into `next`. Record its squashed commit's full SHA.
+2. Wait for a successful nightly to promote that commit (or a descendant) to `main`. Fetch
+   `main` and check that it contains the recorded commit, then tag that exact commit with the
+   same version and push the tag. Replace `<version-commit>` below with the recorded SHA;
+   stop if the ancestry check fails:
 
    ```sh
-   git tag v0.1.0-rc.1
+   git fetch origin main
+   git merge-base --is-ancestor <version-commit> origin/main
+   git tag v0.1.0-rc.1 <version-commit>
    git push origin v0.1.0-rc.1
    ```
 
@@ -94,13 +102,22 @@ binaries are not signed yet.
 
 ## Nightly
 
-The nightly is how people try the current state between releases: a build of `main`, not a
-release. Running the workflow from `main` with **nightly** checked builds `main` and publishes it
-as the release **`nightly`**, replacing the previous one: its release and tag are deleted and made
+The nightly is how people try the current state between releases: a build of `next`, where pull
+requests merge, not a release. Running the workflow from `next` with **nightly** checked builds
+`next` and publishes it as the release **`nightly`**, replacing the previous one: its release and tag are deleted and made
 again on the new commit, published at once without a draft. The workflow has no schedule of its
 own: a scheduled agent starts it twice a day (`gh workflow run release.yml -f nightly=true`) when
-`main` has moved since the last nightly, or a maintainer does by hand. A second agent then rewrites
+`next` has moved since the last nightly, or a maintainer does by hand; once every package is
+published, `main` follows ([The next branch](#the-next-branch)). A second agent then rewrites
 its notes and posts it to Discord (see [Nightly notes](#nightly-notes)).
+
+If the rolling `nightly` release is published but the dated release fails, `promote` does not
+run and `main` stays behind. The scheduled agent's commit comparison can then see `next` as
+already published and skip another build. After fixing the failure, re-run all jobs of the
+failed Release run, so all three platforms' packages are available, and check that the dated
+release is published and `promote` succeeds. The dated-tag lookup reuses a tag only when both
+its version date and commit match; a new run on a later day can create a new dated release
+for the same commit.
 
 The nightly's version is the workspace version without a pre-release suffix, the date and the
 commit: `0.0.1-nightly.20261013+a15ad35`. The workflow writes it into `Cargo.toml` and
@@ -117,8 +134,8 @@ Each night is also kept as a pre-release of its own under the tag **`nightly-YYY
 the latest. A tester can go back to an earlier night to check when something broke, or return
 to a build that opens their project. A second nightly on the same day is kept as
 **`nightly-YYYYMMDD-2`** beside the first, and so on; the name is chosen when the nightly is
-published, so a rerun of a failed run replaces only a dated release of its own commit and never
-another build's. The nightly job deletes the dated nightlies older than `NIGHTLY_KEEP_DAYS` (30) with
+published, so a rerun replaces only a dated release matching its version date and commit, never
+another build's. Without a match, it creates a new dated release. The nightly job deletes the dated nightlies older than `NIGHTLY_KEEP_DAYS` (30) with
 their tags; it touches no other release, and a failure there leaves the new nightly published.
 
 ### Nightly notes
@@ -137,7 +154,9 @@ script's list, and it is published either way.
 
 The agent runs in a Claude cloud session, which may start workflows but may not edit releases, so
 it hands the notes to **Actions › Nightly notes** ([`nightly-notes.yml`](../.github/workflows/nightly-notes.yml))
-as its `tag` and `notes` inputs. [`scripts/nightly_notes.py`](../scripts/nightly_notes.py) checks
+as its `tag` and `notes` inputs, selecting **main** in **Run workflow** (or passing `--ref main`
+to `gh workflow run nightly-notes.yml`). The publish job runs only from `main`; selecting the
+default branch, `next`, skips it. [`scripts/nightly_notes.py`](../scripts/nightly_notes.py) checks
 them before anything changes: the tag is `nightly-YYYYMMDD` or `nightly-YYYYMMDD-N`, the notes
 start with `### New since the previous nightly`, carry no HTML, images, `@`, character references
 (`&#58;`) or `]:` (which starts a reference-style link definition, `[label]: …`), and link only
@@ -151,7 +170,79 @@ never posted twice. A maintainer can run the workflow by hand with the same inpu
 Until Suhina has a release of its own (published, not a release candidate), the nightly is the
 repository's **latest** release, so the Releases box on the repository page offers its downloads.
 From the first release on, the nightly is published as a pre-release that never becomes the
-latest. Nothing is promoted from it: a release is made from a version tag as above.
+latest. A release is never made from it: it is made from a version tag as above.
+
+## The next branch
+
+In use since 2026-11-18. Pull requests merge into an integration branch, `next`, and `main` holds
+only code that built and packaged on Linux, Windows and macOS, so that every nightly is green and a
+pull request need not wait for a test build of its own.
+
+1. Pull requests target `next`, the repository's default branch, and are squashed into it once
+   `ci` is green. New branches start from `next`. A maintainer's own pull request is built for
+   Windows on every push, since the nightly builds every system before `main` moves;
+   `/test-build` builds all three, for anyone's pull request.
+2. The scheduled agent starts the nightly from `next` (`--ref next`) when `next` has moved since the
+   last nightly.
+3. When every system's package is published, the release workflow's job `promote` moves `main`
+   to the commit the nightly was built from. It is a fast-forward only: if `main` is not an
+   ancestor of that commit, GitHub refuses and `main` stays. A failed build or publish never
+   reaches the job, and `main` waits for the next night; the fix merges into `next` like any other.
+   Nothing is cherry-picked and no commit is made: `main` gets the very commits of `next`, one
+   squashed commit per pull request, with the same hashes, and only lags behind it.
+
+The rulesets `main` and `main merge queue` keep their names but target `~DEFAULT_BRANCH`, so they
+apply to `next`; `main follows the nightly` keeps everyone but the app `suhina-docs-bot` from
+moving `main`.
+
+The workflows follow the repository's default branch, `next`: `ci.yml`, `test-build.yml`
+(`cache`) and `docs-generated.yml` run on a push to the default branch and save its caches, and do
+nothing on a push to `main` (the nightly moving it); a pull request's test build compares it with
+its own base branch (`scripts/build_reuse.py`, `branch_update.py`), and `ready to merge` queues a pull
+request into `next` without waiting for a test build of it (`ready-to-merge.yml`), since the
+nightly builds `next` on every system before `main` moves. `docs-generated.yml` keeps one run at
+a time per branch, so a push to `main` never drops a waiting run of `next`. `nightly-notes.yml`
+still runs from `main`.
+
+How it was turned on, in this order, kept for setting it up again. `main` must gain nothing that
+`next` lacks: a single commit on `main` that is not on `next` keeps
+`promote` from ever moving `main` again (it is a fast-forward only), until someone moves `next` or
+`main` by hand.
+
+1. Stop everything that writes to `main`: let nothing into the merge queue (take `ready to merge`
+   off the queued pull requests), and wait until no run of `docs-generated.yml` (it commits to
+   `main` after a merge), `ci.yml` or the merge queue is queued or in progress on `main`.
+2. Create `next` from `main` as it is then.
+3. Settings › Rules: the rulesets `main` (an approval, the code owner's review, the required `ci`
+   check, no force push or deletion) and `main merge queue` target `~DEFAULT_BRANCH`, not the name
+   `main`, so they move to `next` with the default branch in step 5 by themselves, and leave `main`
+   with no rule at all: anyone who can write could push it and break `promote`'s fast-forward. So
+   first add a ruleset for `refs/heads/main` with the rules *Restrict updates*, *Restrict
+   deletions* and *Block force pushes*, and only the app `suhina-docs-bot` (id 5307338) on its
+   bypass list (Always): `promote` pushes with that app's token, and nothing else moves `main`.
+4. Settings › Environments: add `next` to the deployment branches of every environment that
+   allows `main` today, keeping `main` (and `discord`'s `v*` tags): `docs-bot`, `discord`,
+   `project-board` and `suhina-bot`. GitHub runs `issue_comment`, `issues` and `workflow_run` on
+   the default branch, and `pull_request_target` on the pull request's base branch, so once `next`
+   is the default their jobs run on `next`: without it, linking test builds and posting to
+   Discord (`test-build-links.yml`, `discord.yml`), `/claim` and the board (`claim.yml`,
+   `project-sync.yml`), `/test-build` and the bot's issues and comments (`trusted-requests.yml`,
+   `open-issue.yml`, `comment-pr.yml`), the generated docs, `ready to merge` and `promote` stop
+   at the environment. `next` is as protected as `main` (step 3), so allowing it lets no other
+   branch read their secrets.
+5. Check that `next` and `main` are still the same commit
+   (`gh api repos/suhina-daw/suhina-daw/compare/main...next --jq .behind_by` prints 0); if `main`
+   moved, move `next` to it first. Then Settings › General: make `next` the default branch.
+   From then on a run of `docs-generated.yml` writes only to `next`, a run by hand on `main`
+   included. Dependabot and `ready to merge` follow the default branch.
+6. Point the open pull requests at `next` (`gh pr edit N --base next`), and let the merge queue
+   take pull requests again.
+7. The scheduled agents: the nightly's starts it with `--ref next` and compares `next` with the
+   tag `nightly`; the notes' fetches `next` as well as `main`.
+8. Check the automation on the new default branch: a finished test build is linked on its pull
+   request, `/claim` answers on an issue, and `ready to merge` queues a pull request into `next`.
+9. CONTRIBUTING.md, docs/workflow.md and AGENTS.md: pull requests target `next`; docs/claim-bot.md
+   and this document's Discord section: the environments allow `next` as well as `main`.
 
 ## Test builds
 
@@ -175,13 +266,14 @@ request there, and is grouped by its head repository and branch instead.
 
 | Pull request | Built |
 |---|---|
-| opened and pushed by a maintainer | on every push; a newer push cancels a build still running |
+| opened and pushed by a maintainer | for Windows on every push, a newer push cancelling a build still running; for every system on `/test-build` |
 | anyone else's, from a branch in this repository | when a maintainer adds `test-build`, or a trusted contributor comments `/test-build`, for the authorized commit |
 | from a fork | when a maintainer or trusted contributor comments `/test-build`, for that commit; the label alone, a maintainer's too, is refused |
 
-A pull request with the `test-build-windows` label is built for Windows only, which keeps the
-shared runners free while only that platform is being tried; its comment lists the other two as
-not built.
+A maintainer's push, and any build of a pull request with the `test-build-windows` label, is
+built for Windows only, which keeps the shared runners free; its comment lists the other two as
+not built and, without the label, says that `/test-build` builds them. `/test-build` never takes a
+Windows-only build for one of every system (`scripts/build_reuse.py`), so it starts a new build.
 
 Only a pull request that changes what goes into the binaries is built: `apps/`, `crates/`,
 `devices/`, `presets/`, `third_party/`, `Cargo.toml`, `Cargo.lock`, `.cargo/` or `test-build.yml`
@@ -220,7 +312,7 @@ pull request's own, makes it a new patch). It also checks that the previous head
 so a failed or cancelled build is never kept as the last one. When all hold, the platforms are
 skipped, and `test-build-links.yml`, finding nothing built, leaves the comment linking the last
 real build. Anything else, a new commit, a rewritten history or an unknown previous head, is built
-as before. The merge queue's branches (below) are never built.
+as before.
 
 **Several pull requests together:** Actions › Test build › Run workflow with their numbers
 (`302 303 304`) merges them onto `main` in that order and builds the result, named
@@ -265,20 +357,17 @@ Each linked build is also posted to the pull request's thread in the Discord tes
 
 ## Merging many pull requests
 
-With many pull requests waiting, merging them one by one through *Update branch* costs a CI run per
-pull request per merge, and every merge makes the rest out of date again. Two things help.
+Pull requests are squashed into `next` as soon as their own `ci` is green: one commit per pull
+request, and no merge queue (since 2026-11-18). A queue ran the whole of CI once more for every
+merge, about 20 minutes, to test the pull requests together on top of the branch; with `next`
+that protection is there already, since a conflict in meaning between two merged pull requests
+turns `next`'s own CI red, and the nightly builds `next` on every system before `main` moves
+([The next branch](#the-next-branch)). *Require branches to be up to date before merging* is off,
+so no one presses *Update branch* either. The rule for `next` (the ruleset **main**) allows squash
+merges only, and Settings › General allows no merge commits; the queue merged with merge commits
+(`Merge pull request #N from …`).
 
-**The merge queue.** [`ci.yml`](../.github/workflows/ci.yml) runs on `merge_group`, so the queue's
-temporary branch (`gh-readonly-queue/main/...`: `main` with the queued pull requests merged onto it
-in order) gets the same jobs as a pull request, and the `ci` check that `main` requires reports
-there. Code checks compare the group with the `main` it is built on; the steps that need a pull
-request (the sign-off check for forks, the list of documents to update, the guard on generated
-files) were run on each pull request before it was queued and skip in the queue. With the queue on,
-a maintainer presses *Merge when ready* on each green pull request: the queue tests several of them
-in one CI run, merges them in order, and takes out a pull request that fails, with no *Update
-branch* by hand. The test build never runs on the queue.
-
-**Which changes build Rust.** In a pull request, the merge queue and on `main`, `ci.yml`'s
+**Which changes build Rust.** In a pull request and on the default branch, `ci.yml`'s
 `changes` job skips fmt, clippy and the tests when every changed file is documentation (`docs/`,
 any `.md`, `LICENSE`, `NOTICE`), a script under `scripts/` or a file under `.github/`: no Rust
 build or test reads them. A change to `ci.yml` itself still runs every job. The `docs` job runs on
@@ -287,14 +376,26 @@ and so do the Depends on check itself and the settings guide export; `cargo deny
 build jobs, since only a Rust change can change a dependency. In the Actions tab the skipped jobs
 show as skipped and `ci` passes.
 
-**The build cache.** Only `main` saves `ci.yml`'s Rust cache; pull requests and the merge queue
-restore `main`'s. The repository's caches share GitHub's 10 GB, and when every pull request push
+**The build cache.** Only the default branch saves `ci.yml`'s Rust cache; pull requests restore
+it. The repository's caches share GitHub's 10 GB, and when every pull request push
 saved its own (about 0.8 GB per system), `main`'s were evicted and about half the runs compiled
-every dependency again: 11 to 12 minutes of compiling on Linux instead of 3½ to 4½. Each push to
-`main` runs CI to the end in a concurrency group of its own: the generated-docs commit that
-follows every merge used to cancel it, and as a cancelled run saves no cache, Windows (the slowest)
-never saved one and every pull request compiled every dependency there, 23 to 29 minutes instead of
-about 10.
+every dependency again: 11 to 12 minutes of compiling on Linux instead of 3½ to 4½. A run on
+`main` is never cancelled, since a cancelled run saves no cache: when the generated-docs commit
+that follows every merge cancelled it, Windows (the slowest) never saved one and every pull
+request compiled every dependency there, 23 to 29 minutes instead of about 10. The pushes to
+`main` share one concurrency group without cancelling: the running run goes to the end, only the
+newest push waits, and the ones in between get no run (GitHub keeps one waiting run a group).
+When every push had a group of its own, five merges in twenty minutes filled the organisation's
+runners (about 20 jobs at once, 5 on macOS) for half an hour with the runs of superseded commits,
+nine jobs each, and the pull requests' runs queued behind them. The generated-docs commit says
+`[skip ci]` and starts no workflow.
+
+rust-cache saves only when the cache's key changes (`Cargo.lock`, the toolchain), and what a job
+builds is not part of the key. When a job comes to build less, a new `prefix-key` is what makes
+`main` save a smaller cache: `check` has `v1-rust` since the tests moved to `test` and its old
+cache, which still held the test build, took 1.1 to 1.3 GB a system of the 10 GB. A cache nothing
+restores any more is the first GitHub evicts. `gh cache list --sort last_accessed_at` shows what
+the 10 GB holds.
 
 The test build follows the same rule: its `cache` job builds the test build's binaries on every
 push to `main` that changes them, only to save the cache, and pull requests' test builds restore it
@@ -311,47 +412,94 @@ the window tests (`crates/ui/tests/main.rs`). The crates that process sound stay
 at 0, `suhina-engine`'s tests take 93 seconds instead of 7. A new crate starts at 1, and joins the
 list if it processes no sound and takes long to compile.
 
-The queue is a setting, not code: Settings › Rules › the ruleset **main merge queue** › *Require
-merge queue*, with the merge method used today, a group size of about 5 and *Only merge
-non-failing pull requests*. It is a ruleset of its own so that the queue can be bypassed without
-the rest: the Admin and Write roles may merge a pull request around the queue (a squash merge
-too), while the `main` ruleset (an approval, the code owner's review, the required `ci` check and
-resolved threads) still applies to them. Keep the two apart: a role added to the bypass list of
-`main` skips its reviews and checks as well. With a queue, *Require branches to be up to date
-before merging* is not needed. Every check `main` requires must come from a workflow that runs on
-`merge_group`; today
-that is `ci` alone, and a check required from another workflow would keep the queue waiting. The
-checks that have workflows of their own (`cargo deny`, the Depends on check,
+The style engine, `suhina-style`, stays at 1 although it processes no sound: the window tests and
+theme-render's drawings run it thousands of times, and it compiles quickly. At 0, theme-render's
+`painted::every_built_in_theme_paints_each_scene_as_recorded` took 510 seconds on a Linux runner
+and held one test partition for most of its run; with it at 1, that partition's tests took 133
+seconds instead of 535 on Linux and 111 instead of 393 on Windows, and the compile did not grow
+(2026-11-18, #1553). `suhina-ui`, `suhina-ui-gpu` and `suhina-theme-package` at 1 as well made the
+tests a little faster still, but `suhina-ui` took 3½ to 6 minutes more to compile on Windows, and
+the slowest Windows partition went from 13½ to 19½ minutes.
+
+**How CI runs the tests.** `ci.yml`'s `test` job runs the workspace's tests with
+[cargo-nextest](https://nexte.st), split into three partitions on Linux and three on Windows, six
+runners at once; `check` runs clippy, the documentation and the vendored code's tests beside them,
+and macOS runs everything on one runner. `cargo test` ran the test binaries one after another
+(about 140 of them, 5,000 tests): the run took 11 minutes on Windows and 19 on Linux of a 16 and
+22 minute step, much of it waiting for three binaries, the window tests
+(`crates/ui/tests/main.rs`), the theme renders (`apps/theme-render/tests/main.rs`) and the packs
+(`crates/device-registry/tests/pack.rs`), while the runner's other cores had nothing to do.
+nextest runs every test in a process of its own and the tests of every binary side by side, and
+`--partition slice:N/3` gives each runner every third test in order, so each runner gets a third of
+each binary. Each partition compiles the tests itself from `main`'s cache, which the first
+partition saves; the doc tests, which nextest does not run, run in the first partition with
+`cargo test --doc`, and the engine's tests again on four render threads
+(`SUHINA_RENDER_THREADS=4`, ADR 0038 › 16) are split between the partitions the same way. They are
+picked from the workspace build with `-E "package(suhina-engine)"`, not built with `-p`: cargo
+resolves the dependencies' features for the one package then, and compiled a share of them again.
+
+nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
+is reported rather than the run stopping at the first (locally, `cargo test --workspace
+--no-fail-fast` does the same), a test that runs a minute or more is named while it runs, and one
+that runs ten minutes is stopped and fails: it has hung, and would otherwise hold its runner until
+the job's six-hour limit, as `crates/engine`'s `an_offline_pools_workers_never_join_real_time_priority`
+did once on Linux (it takes milliseconds).
+nextest spreads tests, not the work inside one: a test that loops over many independent cases
+holds one core for all of them, and sets how short a partition can get. A test binary whose tests
+take turns through a lock inside the binary (a `static Mutex`) needs a test group of one thread
+there, since in processes of their own they no
+longer wait for each other; `crates/ipc/tests/leftovers.rs` is one. A test that fails only under
+nextest has a race of that kind, not a timing problem: there are no retries. The version is pinned
+with its archives' checksums in [`scripts/install_nextest.sh`](../scripts/install_nextest.sh);
+locally `cargo test --workspace` runs the same tests, and so does `cargo nextest run --workspace`
+once nextest is installed (`cargo install cargo-nextest --locked`).
+
+**The pack's tests.** The shipped pack's tests (`crates/device-registry/tests/pack.rs`) render NAM
+models, and NAM ran at two to four times real time in a test build until `nam-rs` was built at
+`opt-level = 3` without debug assertions or overflow checks there (`[profile.test.package]` in
+`Cargo.toml`; its own tests still run with them in the `check` job): five to six times faster,
+the pack's tests from 207 s on one core to 26 s (measured 2026-11-18). The own models' compares run
+over the first 20 s of their phrases, every amp model over two 1 s passages; the comments there
+give the measurements. Two of them audit the pack's data, every amp model and every stock preset
+that names a file: a pull request that changes none of what they read (`ci.yml`'s `changes` job
+lists it: the pack, the presets, the NAM devices and the crates they are built from, the vendored
+`nam-rs`, the workspace manifest and lock file) leaves them out through nextest's `ci-pr` profile,
+and the default branch always runs them. In the 300 merges to `main` before 2026-11-18, 61
+changed what they read.
+
+The ruleset **main** (it targets the default branch, so `next`) asks for an approval, the code
+owner's review, the required `ci` check and resolved threads; a role added to its bypass list skips
+all of them. The checks that have workflows of their own (`cargo deny`, the Depends on check,
 [`claim-bot.md`](claim-bot.md) › The Depends on check, and the settings guide export) are called
 from `ci.yml` as its jobs, so `ci` goes red with them: a check main does not require can fail
-without stopping a merge, and the `ready to merge` label queues a pull request on `ci` alone.
-
-Without a queue, turn off *Require branches to be up to date before merging* and merge each green
-pull request without updating it; CI on `main`, which runs on every push, catches the rare
-conflict in meaning between two of them.
+without stopping a merge, and the `ready to merge` label merges a pull request on `ci` alone.
+`ci.yml` still runs on `merge_group`, so a queue could be turned on again (Settings › Rules, a
+ruleset with *Require merge queue* and the merge method *Squash*) without changing a workflow.
 
 **The `ready to merge` label.** A maintainer who has read a pull request adds the label instead of
-coming back to press *Merge when ready* once CI is green. That label is their approval of the
-current head, given with a finished test build of it: nothing merges without one, but a build that
-already exists is reused, so a stale review never forces a new packaging run.
+coming back to press *Squash and merge* once CI is green. That label is their approval of the
+current head. Pull requests into `next` need no test build: the nightly builds and packages it
+on every system before `main` moves. For other base branches, a finished test build is required
+unless the change builds nothing or only user interface code, as below. An existing build is
+reused when eligible.
 [`ready-to-merge.yml`](../.github/workflows/ready-to-merge.yml) (`pull_request_target`, checking out
 only `main`'s automation for the build lookup, never running the pull request's code) then:
 
 | Event | What happens |
 |---|---|
-| a maintainer adds the label and a finished test build of the head exists | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge with that commit as the expected head; the queue takes the pull request once `ci` is green and every review thread is resolved |
-| a maintainer adds the label and no finished test build of the head exists | the label comes off with a comment asking for `/test-build`; nothing is approved or queued. A build counts when it is a successful, authorized `test build` run of the head, or of an earlier head the branch only merged `main` into, with every requested package still available (`scripts/build_reuse.py`); a build still running does not count yet. This applies to every author, maintainers and dependency updates included. A pull request that changes nothing `test-build.yml` builds (only documentation, scripts or other workflows) needs no build |
+| a maintainer adds the label and the base is `next`, a finished test build exists, or the change is exempt below | the app approves the head commit as the event saw it (the rule for `main` needs one approval, and a maintainer cannot approve their own pull request) and turns on auto-merge (squash) with that commit as the expected head; GitHub squashes the pull request into its base once `ci` is green and every review thread is resolved |
+| a maintainer adds the label, the base is not `next`, and a required test build is missing | the label comes off with a comment asking for `/test-build`; nothing is approved or queued. A build counts when it is a successful, authorized `test build` run of the head, or of an earlier head the branch only merged `main` into, with every requested package still available (`scripts/build_reuse.py`); a build still running does not count yet. For bases other than `next`, this applies to every author, maintainers and dependency updates included. A pull request that changes nothing `test-build.yml` builds (only documentation, scripts or other workflows) needs no build, and neither does one whose built files are all user interface code (`UI_PATHS` in `scripts/build_reuse.py`: `crates/ui`, `crates/ui-gpu`, `crates/style`, `crates/theme-package`, `apps/theme-render`), which its tests cover in CI; `/test-build` still builds one |
 | anyone else adds the label | it comes off |
-| a push by a maintainer | the label stays and the new head goes through the same check: with a finished test build of it (a push that only merged `main` reuses the earlier one) the app approves it and turns auto-merge on for it; without one the label comes off with the same comment |
+| a push by a maintainer | the label stays and the new head goes through the same check: when the base is `next`, the change is exempt, or a finished test build exists (an eligible base-branch update reuses the earlier one) the app approves it and turns auto-merge on for it; if a required build is missing, the label comes off with the same comment |
 | a push by anyone else | the label comes off, so the new commits wait to be read (the rule for `main` dismisses the older approval) |
-| the label comes off | auto-merge off, out of the queue, and the app's approvals dismissed; a call that fails fails the run. When the label was added again meanwhile, the run fails and asks for the label to be taken off and added again, so the pull request waits rather than merging |
+| the label comes off | auto-merge off, and the app's approvals dismissed; a call that fails fails the run. When the label was added again meanwhile, the run fails and asks for the label to be taken off and added again, so the pull request waits rather than merging |
 
-The merge method is the queue's (squash). Agents never add the label (`docs/workflow.md` › Tasks).
+The merge method is squash, the only one allowed. Agents never add the label (`docs/workflow.md` › Tasks).
 
 It acts with a short-lived token of the GitHub App that also pushes the generated docs
 (`docs-generated.yml`), not with `GITHUB_TOKEN`: GitHub starts no workflows for a merge made through
 `GITHUB_TOKEN`, and those on `main` must run after every merge. Setup, once: the app has Repository
-permissions › **Contents**, **Pull requests** and **Issues**: Read and write (the queue merges as the
+permissions › **Contents**, **Pull requests** and **Issues**: Read and write (auto-merge merges as the
 app, and GitHub closes the issues a description closes, `Closes #N`, as the one who merged: without
 Issues they stay open, and nothing reports it). A permission added to the app reaches its token only
 once the installation accepts it: Organization settings › GitHub Apps › suhina-docs-bot ›
@@ -408,9 +556,9 @@ else. No mention in a post pings anyone.
 
 The Discord secrets, `DISCORD_BOT_TOKEN` among them, are environment secrets rather than repository
 secrets, so a workflow pushed to another branch cannot read them. The environment's *Deployment
-branches and tags* allow `main` and tags matching `v*`: `discord.yml` runs on its tag for a release
-event, the other jobs run on `main`. Only maintainers may create `v*` tags (the `release tags`
-ruleset restricts their creation), so no one else can make a ref that reaches them. The jobs say
+branches and tags* allow `main`, `next` and tags matching `v*`: `discord.yml` runs on its tag for a
+release event, the other jobs run on `next`, the default branch. Only maintainers may create `v*`
+tags (the `release tags` ruleset restricts their creation), so no one else can make a ref that reaches them. The jobs say
 `deployment: false`, so the environment adds no deployment to a pull request's timeline.
 
 | Channel | Secret | Posts |

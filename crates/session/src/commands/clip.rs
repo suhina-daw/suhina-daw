@@ -201,7 +201,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.duplicate",
-        label: "Place copies of arrangement clips right after them as one block, moved by the span from the first start to the last end, replacing what the copies cover unless stacked",
+        label: "Place copies of arrangement clips right after them as one block, moved by the span from the first start to the last end, replacing what the copies cover unless stacked; linked copies keep playing one content, so an edit through any of them changes them all",
         params: &[
             CLIPS,
             optional(
@@ -209,9 +209,30 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Bool,
                 "true leaves clips under the copies as they are; false (default) shortens, splits or removes them",
             ),
+            optional(
+                "linked",
+                ParamType::Bool,
+                "true makes linked copies, the clips and their copies one content; false (default) independent copies",
+            ),
         ],
         kind: CommandKind::EDIT,
         run: duplicate_clips,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.unlink",
+        label: "Unlink linked copies: each of these arrangement clips gets a content of its own, as it is now, and the other linked copies stay linked",
+        params: &[CLIPS],
+        kind: CommandKind::EDIT,
+        run: unlink_clips,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.link",
+        label: "Link arrangement clips that play the same notes or audio: they play one content from now on, so editing one edits them all",
+        params: &[CLIPS],
+        kind: CommandKind::EDIT,
+        run: link_clips,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -1080,7 +1101,7 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
             .map_err(|copied: Vec<_>| format!("a clip slot holds one clip, and {} are copied", copied.len()))?;
         let p = &mut session.project;
         let id = new_content_id(p)?;
-        p.contents.push(suhina_model::ClipContent { id, ..content });
+        p.contents.push(suhina_model::ClipContent { id, linked: false, ..content });
         // Gain, warp and the loop travel with the content and the clip; fades are fitted, as when
         // a clip is shortened, so a clip with odd fades still makes a valid project.
         // The pasted clip is a new clip, with an id of its own.
@@ -1143,7 +1164,7 @@ fn paste_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErr
             clip.content
         } else {
             let id = new_content_id(p)?;
-            p.contents.push(suhina_model::ClipContent { id, ..content });
+            p.contents.push(suhina_model::ClipContent { id, linked: false, ..content });
             id
         };
         let at = clip.start + offset;
@@ -1363,6 +1384,10 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         None => false,
         Some(v) => v.as_bool().ok_or("stack must be true or false")?,
     };
+    let linked = match Args::new(params).value("linked") {
+        None => false,
+        Some(v) => v.as_bool().ok_or("linked must be true or false")?,
+    };
     let clips = clip_list(&session.project, params)?;
     // The clips go as one block, on every track at once: each copy keeps its place among the
     // others, moved by the span from the first start to the last end, so copies never land on the
@@ -1399,10 +1424,22 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
                 .collect(),
             None => continue,
         };
-        // Each copy is a new clip with an id of its own.
+        // Each copy is a new clip with an id of its own. A linked copy plays its clip's content and
+        // links it; an independent copy of a linked clip gets a content of its own, so it is not
+        // one of the linked copies (`docs/spec/arrangement-editing.md` › Linked copies).
         let mut copies = copies;
         for copy in &mut copies {
             copy.id = p.new_clip_id()?;
+            if linked {
+                if let Some(content) = p.contents.iter_mut().find(|c| c.id == copy.content) {
+                    content.linked = true;
+                }
+            } else if p.content(copy.content).is_some_and(|c| c.linked) {
+                let id = new_content_id(p)?;
+                let content = p.content(copy.content).cloned().ok_or("the clip's content is missing")?;
+                p.contents.push(suhina_model::ClipContent { id, linked: false, ..content });
+                copy.content = id;
+            }
         }
         // A part of a take takes what the takes hold under it along (#1078).
         let take_spans: Vec<_> = copies
@@ -1430,6 +1467,107 @@ fn duplicate_clips(session: &mut Session, params: &Value) -> Result<Value, Comma
         crate::automation_range::lay_under(session, *track, *at, lanes, true)?;
     }
     Ok(json!({ "clips": made }))
+}
+
+/// `clip.unlink {clips}` (#1414): each linked clip named gets its own copy of the content; a
+/// content left with one clip is no longer linked. A clip that is not linked is left as it is.
+fn unlink_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let clips = clip_list(&session.project, params)?;
+    let p = &mut session.project;
+    let mut unlinked = Vec::new();
+    let mut left = Vec::new();
+    for (track, indexes) in clips_by_track(&clips) {
+        for index in indexes {
+            let Some(content) = p
+                .arrangement
+                .lanes
+                .iter()
+                .find(|l| l.track == Some(track))
+                .and_then(|l| l.clips.get(index))
+                .map(|c| c.content)
+            else {
+                continue;
+            };
+            if !p.content(content).is_some_and(|c| c.linked) {
+                continue;
+            }
+            let id = new_content_id(p)?;
+            let copy = p.content(content).cloned().ok_or("the clip's content is missing")?;
+            p.contents.push(suhina_model::ClipContent { id, linked: false, ..copy });
+            let clip = p
+                .arrangement
+                .lanes
+                .iter_mut()
+                .find(|l| l.track == Some(track))
+                .and_then(|l| l.clips.get_mut(index))
+                .ok_or("the clip is missing")?;
+            clip.content = id;
+            unlinked.push(clip.id.0);
+            left.push(content);
+        }
+    }
+    // A content that one clip plays is no longer a linked copy of anything.
+    for content in left {
+        if crate::notes::placements(p, content) <= 1
+            && let Some(c) = p.contents.iter_mut().find(|c| c.id == content)
+        {
+            c.linked = false;
+        }
+    }
+    Ok(json!({ "unlinked": unlinked }))
+}
+
+/// `clip.link {clips}`: arrangement clips whose contents hold the same notes or audio (every
+/// lane, its length) play the first one's content from now on, a linked content; the contents
+/// no clip, slot or take plays any more go. Clips that play different things are refused: no
+/// edit is lost.
+fn link_clips(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let clips = clip_list(&session.project, params)?;
+    let p = &mut session.project;
+    let content_of = |p: &suhina_model::Project, (track, index): (suhina_model::TrackId, usize)| {
+        p.arrangement.lanes.iter().find(|l| l.track == Some(track)).and_then(|l| l.clips.get(index)).map(|c| c.content)
+    };
+    let contents: Vec<suhina_model::ContentId> =
+        clips.iter().map(|&at| content_of(p, at).ok_or("the clip is missing")).collect::<Result<_, _>>()?;
+    let Some(&first) = contents.first() else { return Err("clips must name at least two clips".into()) };
+    if contents.iter().all(|c| *c == first) {
+        return Err("the clips already play one content".into());
+    }
+    let kept = p.content(first).cloned().ok_or("the clip's content is missing")?;
+    for content in &contents {
+        let other = p.content(*content).ok_or("the clip's content is missing")?;
+        if !same_material(&kept, other) {
+            return Err("only clips that play the same notes or audio can be linked".into());
+        }
+    }
+    let mut linked = Vec::new();
+    for &(track, index) in &clips {
+        if let Some(clip) =
+            p.arrangement.lanes.iter_mut().find(|l| l.track == Some(track)).and_then(|l| l.clips.get_mut(index))
+        {
+            clip.content = first;
+            linked.push(clip.id.0);
+        }
+    }
+    if let Some(content) = p.contents.iter_mut().find(|c| c.id == first) {
+        content.linked = true;
+    }
+    // A content nothing plays any more is dropped, so it is not left in the file.
+    let gone: Vec<suhina_model::ContentId> = contents
+        .iter()
+        .copied()
+        .filter(|c| *c != first)
+        .filter(|c| crate::notes::placements(p, *c) == 0)
+        .filter(|c| !p.arrangement.takes.iter().flat_map(|t| &t.clips).any(|clip| clip.content == *c))
+        .collect();
+    p.contents.retain(|c| !gone.contains(&c.id));
+    Ok(json!({ "linked": linked, "content": first.0 }))
+}
+
+/// Whether two contents hold the same material: the same lanes (notes or audio, for the same
+/// targets) and the same length. Their names and ids may differ.
+pub(crate) fn same_material(a: &suhina_model::ClipContent, b: &suhina_model::ClipContent) -> bool {
+    a.length == b.length && a.lanes == b.lanes && a.scale == b.scale
 }
 
 fn set_clip_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

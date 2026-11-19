@@ -91,7 +91,8 @@ fn every_bundled_theme_renders_in_every_scene() {
     themes.push(super::see_through().unwrap());
     let scenes = scenes::scenes().len();
     for theme in &themes {
-        let done = render_all(theme, &backdrop, &out.join(&theme.id), 1.0, None).unwrap_or_else(|e| panic!("{e}"));
+        let done =
+            render_all(theme, &backdrop, &out.join(&theme.id), 1.0, None, None).unwrap_or_else(|e| panic!("{e}"));
         assert!(done.failed.is_empty(), "{}: {:?}", theme.id, done.failed);
         assert_eq!(done.written.len(), 2 * scenes, "{}: two images a scene", theme.id);
     }

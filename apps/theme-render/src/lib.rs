@@ -11,10 +11,12 @@
 //! the backdrop, blurred where the system blurs behind the window.
 //!
 //! [`budget`] counts the style engine's work in a scene, for the tests that hold it, and
-//! [`painted`] lists what a scene paints, for the test that holds every built-in theme's look.
+//! [`painted`] lists what a scene paints, for the test that holds every built-in theme's look, and
+//! [`cut`] the texts it cuts off, for the test that holds those (#1548).
 
 pub mod budget;
 pub mod composite;
+pub mod cut;
 pub mod painted;
 pub mod scenes;
 
@@ -254,8 +256,9 @@ pub struct Shot {
 
 /// Draws the scene the harness is in.
 pub fn shoot(harness: &mut Harness<'static, App>) -> Result<Shot, String> {
-    // A background picture is read on another thread: wait for it, and draw a frame with it.
-    harness.state_mut().wait_for_background();
+    // A background picture is read, and the sample map laid out, on other threads: wait for
+    // them, and draw a frame with them.
+    harness.state_mut().wait_for_workers();
     harness.run_steps(2);
     let pixels = harness.render()?;
     let see_through = theme::window_fill().a() < u8::MAX;
@@ -283,19 +286,20 @@ pub fn restless(harness: &Harness<'static, App>) -> bool {
     harness.output().viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.repaint_delay.is_zero())
 }
 
-/// Renders `subject` in every scene, or only the one called `only`, into `out` over `backdrop`:
-/// two PNGs a scene.
+/// Renders `subject` in every scene, or only the one called `only`, with `pointer` done in each,
+/// into `out` over `backdrop`: two PNGs a scene.
 pub fn render_all(
     subject: &Subject,
     backdrop: &image::RgbaImage,
     out: &Path,
     scale: f32,
     only: Option<&str>,
+    pointer: Option<&scenes::Pointer>,
 ) -> Result<Rendered, String> {
     std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     let gpu = Gpu::new()?;
     let mut done = Rendered::default();
-    for scene in scenes::select(only) {
+    for scene in scenes::select(only, pointer) {
         let app = match (scene.app)() {
             Ok(app) => app,
             Err(e) => {

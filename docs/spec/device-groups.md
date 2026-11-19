@@ -3,7 +3,7 @@ description: Device groups - several devices on a track as one unit, with parall
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-18
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/groups.rs
@@ -76,8 +76,10 @@ sounds exactly like its branches. The crossfade is linear in amplitude: dry and 
 correlated in a group, where an equal-power law would make the middle louder. Mix and output gain
 are smoothed over 20 ms, as the utility smooths its gains (ADR 0004 › 5).
 
-A group that is switched off (`enabled: false`) passes `x` through unchanged and its devices keep
-running at their state, as a switched-off device does today.
+A group that is switched off (`enabled: false`) passes `x` through unchanged if it contains
+only effects. An instrument group produces silence and still consumes the track's notes,
+so switching it off cannot start an implicit instrument. Stored device states are retained
+for switching the group back on.
 
 ### Mute and solo
 
@@ -131,8 +133,8 @@ and nothing else changes outside the group.
   device panel says the group is not fully compensated.
 - A muted or soloed-out branch still counts: muting must not change the group's latency, or the
   whole track would jump in time.
-- A switched-off device inside a branch does not count, as on a track today (the switch builds a
-  new graph).
+- A switched-off effect inside a branch does not count (the switch builds a new graph).
+  A switched-off instrument remains a silent instrument slot.
 - A plug-in's latency is known once it has started, which builds a new graph (ADR 0006); a group
   holding it is recompensated in that graph like a track.
 

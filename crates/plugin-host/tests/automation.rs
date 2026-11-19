@@ -68,6 +68,7 @@ fn project(length: f64, devices: Vec<Device>) -> Project {
         }],
         channels: vec![Channel { devices, ..Channel::new(ChannelId(1), "C") }],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length,
@@ -154,6 +155,8 @@ fn a_session_sets_and_automates_a_running_plug_ins_parameter() {
     let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     renderer.set_offline(true);
     let mut session = Session::new(p);
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
     session.execute("transport.play", &json!({})).unwrap();
@@ -216,6 +219,8 @@ fn a_shown_plug_ins_parameters_are_listed_in_the_background_for_its_panel() {
     let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_session::devices()).unwrap();
     renderer.set_offline(true);
     let mut session = Session::new(p);
+    // Its notes play as the track's sine tones (#1384).
+    session.set_implicit_tones(true);
     session.attach_player(Player::new(renderer.controller(), None));
     session.rack_mut().set_env(env());
     session.execute("transport.play", &json!({})).unwrap();

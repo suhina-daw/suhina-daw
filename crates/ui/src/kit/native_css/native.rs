@@ -204,7 +204,7 @@ fn base_property(within: Option<&str>, name: &str, attributes: &[(&str, &str)], 
         element.with_attribute(name, value)
     });
     let tree = Tree::new(parent.into_iter().chain(std::iter::once(element)).collect()).ok()?;
-    let viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false };
+    let viewport = Viewport { width: 1280.0, height: 800.0, reduced_motion: false, light: false };
     let sheets: Vec<AppliedSheet<'_>> =
         base_tier(true).into_iter().map(|sheet| AppliedSheet { sheet, layer: Layer::Base, root: None }).collect();
     let style = cascade::last_style(&tree, None, viewport, &sheets).ok()?;
@@ -213,7 +213,12 @@ fn base_property(within: Option<&str>, name: &str, attributes: &[(&str, &str)], 
 }
 
 fn viewport(engine: &Engine) -> Viewport {
-    Viewport { width: engine.size[0] as f32, height: engine.size[1] as f32, reduced_motion: !engine.motion }
+    Viewport {
+        width: engine.size[0] as f32,
+        height: engine.size[1] as f32,
+        reduced_motion: !engine.motion,
+        light: engine.light,
+    }
 }
 
 fn variant(engine: &Engine) -> Option<&Sheet> {
@@ -372,15 +377,16 @@ pub(super) fn scoped(engine: &Engine, stack: &[String]) -> Option<Computed> {
 }
 
 /// The style of the last of `path` (element names from `window` inward) under the theme's
-/// `sheet`, the variant's and the user's, at the window's usual size
-/// ([`crate::kit::theme_vars::element_styles`]).
+/// `sheet`, the variant's and the user's, at the window's usual size, in the colour scheme
+/// `light` or dark ([`crate::kit::theme_vars::element_styles`]).
 pub(super) fn settings_of(
     sheet: &Sheet,
     variant: Option<&Sheet>,
     user: Option<&Sheet>,
     path: &[&str],
+    light: bool,
 ) -> Option<Computed> {
-    crate::kit::theme_vars::element_styles(sheet, variant, user, &[path]).ok()?.first().map(computed)
+    crate::kit::theme_vars::element_styles(sheet, variant, user, &[path], light).ok()?.first().map(computed)
 }
 
 /// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it
@@ -498,7 +504,8 @@ pub(super) fn tree_layout(
     });
     themed.or_else(|| {
         let agent = user_agent()?;
-        let viewport = engine.map_or(Viewport { width: size[0], height: size[1], reduced_motion: false }, viewport);
+        let viewport =
+            engine.map_or(Viewport { width: size[0], height: size[1], reduced_motion: false, light: false }, viewport);
         let applied = [AppliedSheet { sheet: agent, layer: Layer::UserAgent, root: None }];
         lay(cascade::compute(&tree, viewport, &applied).ok()?)
     })

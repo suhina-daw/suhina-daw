@@ -144,7 +144,16 @@ fn chain_row(
         .iter()
         .map(|device| {
             if let Some(group) = &device.group {
-                return (GROUP_WIDTH, group_height(group), false, 0.0);
+                // Its border and padding round what it holds, in the state it is painted in, as
+                // a device's do (#1477).
+                let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+                let [top, right, bottom, left] = group_element(device, lit).enter().insets();
+                return (
+                    GROUP_WIDTH + left + right,
+                    group_height(group, [top, right, bottom, left]),
+                    false,
+                    top + bottom,
+                );
             }
             // An editor embedded in the panel is placed for devices on the track itself.
             let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
@@ -202,7 +211,8 @@ fn chain_row(
     // height the user set, as before the boxes had insets.
     let needs = boxes.iter().filter(|(_, _, own, _)| !own).map(|(.., insets)| *insets).fold(0.0, f32::max);
     ui.data_mut(|d| d.insert_temp(shown_device_extra_id(), needs));
-    let total = boxes.iter().map(|(w, ..)| w + 1.0).sum::<f32>();
+    // The panels, then the slot after the last one that takes a dropped effect (#1487 L11).
+    let total = boxes.iter().map(|(w, ..)| w + 1.0).sum::<f32>() + APPEND_SLOT;
     let scroll_id = Id::unique(("chain-scroll", chain.track.0));
     let most = (total - area.width()).max(0.0);
     let mut offset = ui.data(|d| d.get_temp::<f32>(scroll_id)).unwrap_or(0.0).clamp(0.0, most);
@@ -267,6 +277,13 @@ fn chain_row(
             places.push(editor_place(ui, area, content, editor, chain.track, device, origin));
         }
     }
+    // After the last panel, as tall as the panels, the slot a dropped effect goes in: a + in
+    // `drop-target[kind="append"]`, in the chain's row so it scrolls with it and never covers a
+    // panel (#1487 L11, B13: a hint centred in the room left ran over the last panel).
+    let append = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(APPEND_SLOT, tallest.min(area.height())));
+    if append.right() >= area.left() && append.left() <= area.right() {
+        append_slot(ui, &painter.with_clip_rect(area), append, chain.track);
+    }
     ui.set_clip_rect(outer_clip);
     // A device of this chain carried over it: a line where it would go (#688).
     let carrying = ui.data(|d| d.get_temp::<(TrackId, usize)>(Id::unique(crate::interaction::drop::DEVICE_CARRYING)));
@@ -298,14 +315,6 @@ fn chain_row(
         let thumb =
             Rect::from_min_size(Pos2::new(thumb_left, bar.top() + 1.0), Vec2::new(thumb_width, bar.height() - 2.0));
         painter.rect_filled(thumb, 0.0, look.color());
-    }
-    // Right of the last panel, what a drop does.
-    if x < area.right() - 80.0 {
-        let rest = Rect::from_min_max(
-            Pos2::new(x, area.top()),
-            Pos2::new(area.right(), (area.top() + tallest).min(area.bottom())),
-        );
-        hint(painter, rest, "Drop audio effects here");
     }
     picked.content_height = Some((tallest + if bar.is_some() { 8.0 } else { 0.0 }).ceil() as u32);
     picked
@@ -676,12 +685,14 @@ fn chain_stack_in(
     let entries: Vec<&DeviceBox> = entries.iter().zip(&limited).map(|(d, l)| l.as_ref().unwrap_or(d)).collect();
     for device in entries {
         if let Some(group) = &device.group {
-            let rect = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group)));
+            let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
+            let insets = group_element(device, lit).enter().insets();
+            let rect =
+                Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), group_height(group, insets)));
             y = rect.bottom() + 1.0;
             if rect.top() > visible.bottom() || rect.bottom() < visible.top() {
                 continue;
             }
-            let lit = selected.iter().any(|(t, at)| *t == chain.track && *at == device.at);
             let clicked =
                 group_panel(ui, &painter.with_clip_rect(area), rect, chain.track, device, group, lit, actions);
             inside_group_mark(&painter.with_clip_rect(area), rect, &device.at);
@@ -926,6 +937,32 @@ fn clip_for_readers(ui: &Ui, rect: Rect, info: &ClipInfo) {
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &label));
 }
 
+/// The width of the slot after a chain's last panel that takes a dropped effect.
+const APPEND_SLOT: f32 = 24.0;
+
+/// The slot after a chain's last panel, `drop-target[kind="append"]`: its box as the sheet styles
+/// it and a + in its `color`, named "Drop audio effects here" for a pointer over it and for
+/// screen readers. A drop anywhere after the last panel lands at the chain's end, so the slot
+/// only shows where that is.
+fn append_slot(ui: &Ui, painter: &egui::Painter, rect: Rect, track: TrackId) {
+    let response = ui.interact(rect, Id::unique(("chain-append", track.0)), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, APPEND_HINT));
+    let el =
+        crate::kit::element::DROP_TARGET.attribute("kind", "append").pointer(response.hovered(), false, false).enter();
+    let boxed = el.paint(painter, rect);
+    let ink = el.look().color();
+    let centre = boxed.content.center();
+    let arm = (boxed.content.width().min(boxed.content.height()) / 2.0 - 4.0).clamp(2.0, 6.0).round();
+    let stroke = egui::Stroke::new(1.5, ink);
+    painter.hline(egui::Rangef::new(centre.x - arm, centre.x + arm), centre.y, stroke);
+    painter.vline(centre.x, egui::Rangef::new(centre.y - arm, centre.y + arm), stroke);
+    drop(el);
+    response.on_hover_text(APPEND_HINT);
+}
+
+/// What the slot after a chain's last panel does.
+const APPEND_HINT: &str = "Drop audio effects here";
+
 fn hint(painter: &egui::Painter, area: Rect, text: &str) {
     painter.text(area.center(), Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT), hint_ink());
 }
@@ -989,6 +1026,7 @@ fn device_panel(
             device.group.as_ref().map(|g| g.branches.len()),
             device.is_builtin,
             &device.name,
+            device.sidechain.as_ref(),
             actions,
         )
     });
@@ -1116,6 +1154,38 @@ fn device_panel(
             painter.line_segment([corner, corner + Vec2::new(4.0 * x, 0.0)], egui::Stroke::new(1.2, ink));
             painter.line_segment([corner, corner + Vec2::new(0.0, 4.0 * y)], egui::Stroke::new(1.2, ink));
         }
+    }
+    // A device that reads a key (sidechain) has a button for it beside its X: lit while it reads
+    // one, it opens the same choices as Sidechain in its menu (`docs/spec/sidechain.md` ›
+    // Choosing a source).
+    if let Some(side) = &device.sidechain {
+        let font = theme::ui_font(theme::TEXT_TINY);
+        let width = widgets::text_width(ui, "SC", font.clone()) + 6.0;
+        let button =
+            Rect::from_center_size(Pos2::new(kind_right - width / 2.0, header.center().y), Vec2::new(width, 12.0));
+        kind_right = button.left() - 4.0;
+        let label = match &side.key {
+            Some(key) => format!(
+                "{} sidechain: {}, {}, {:+.1} dB",
+                device.name,
+                key.name,
+                menus::tap_label(key.tap).to_lowercase(),
+                key.gain_db
+            ),
+            None => format!("{} sidechain: none", device.name),
+        };
+        let response = widgets::button_area(ui, button, Id::unique(("device-sidechain", track.0, &device.at)), &label)
+            .on_hover_text(&label);
+        let ink = if side.key.is_some() {
+            header_el.accent()
+        } else if response.hovered() {
+            bright
+        } else {
+            dim
+        };
+        painter.text(button.center(), egui::Align2::CENTER_CENTER, "SC", font, ink);
+        let at = device.at.value();
+        egui::Popup::menu(&response).show(|ui| menus::sidechain_choices(ui, track, &at, side, actions));
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
     // What a canvas's device widgets read: the device's own state (its name, whether it

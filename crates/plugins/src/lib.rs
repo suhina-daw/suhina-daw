@@ -227,6 +227,12 @@ impl PluginAudio {
         outcome
     }
 
+    /// How many channels the link carries: 2 (the plug-in's main input and output), or 4 when
+    /// a key (sidechain) rides in the third and fourth (`docs/spec/sidechain.md` › Plug-in buses).
+    pub fn channels(&self) -> u32 {
+        self.link.channels()
+    }
+
     /// The first half of [`PluginAudio::process_with_events`]: sends the block (at most
     /// `room` samples, the output's size) without waiting for its answer, so several plug-ins'
     /// blocks can be out at once. When the host is still busy with an earlier block it waits
@@ -321,16 +327,21 @@ impl PluginAudio {
     /// The block it was late with, which [`PluginAudio::ready`] waits for, to wait for together
     /// with other plug-ins'. Real-time safe.
     pub fn watch_ready(&self) -> Option<suhina_ipc::Watch<'_>> {
+        if self.unanswered.load(Ordering::Relaxed) > 1 {
+            return None;
+        }
         self.link.watch_ready()
     }
 
-    /// Whether a block can go now ([`Link::ready`]), waiting at most until `until` (a time
+    /// Whether the chain should attempt its next block, waiting at most until `until` (a time
     /// already past only looks) for the host to finish the block it was late with, so the next
     /// one goes as soon as it can rather than being refused (#506). Only a host late with the
     /// last block alone is waited for: one that has not answered several (hung, or far behind)
-    /// is not, and its blocks are refused at once as before. Counts nothing. Real-time safe.
+    /// is not: return `true` so `send` can refuse immediately and the chain advances. Returning
+    /// `false` would ask the engine scheduler to wait again, starving downstream devices.
+    /// Acceptance is still decided by the link in `send`. Counts nothing. Real-time safe.
     pub fn ready(&self, until: Instant) -> bool {
-        self.link.ready() || (self.unanswered.load(Ordering::Relaxed) <= 1 && self.link.wait_ready(until))
+        self.unanswered.load(Ordering::Relaxed) > 1 || self.link.ready() || self.link.wait_ready(until)
     }
 
     /// The second half: waits at most `timeout` for the block sent with [`PluginAudio::send`]
@@ -1742,148 +1753,5 @@ pub fn connect(address: &str) -> Result<Stream, PluginError> {
 }
 
 #[cfg(test)]
-mod tests {
-    #![allow(clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
-    use super::*;
-    use std::sync::mpsc::Sender;
-
-    #[test]
-    fn a_lock_waited_for_until_a_deadline_gives_up_after_it() {
-        let mutex = Mutex::new(1);
-        // Free: taken whatever the deadline.
-        assert!(lock_until(&mutex, Instant::now()).is_some());
-        // Held: a deadline already passed gives up at once, a later one is waited for.
-        let held = lock(&mutex);
-        assert!(lock_until(&mutex, Instant::now()).is_none());
-        thread::scope(|scope| {
-            let waiting = scope.spawn(|| lock_until(&mutex, Instant::now() + Duration::from_secs(60)).is_some());
-            drop(held);
-            assert!(waiting.join().unwrap());
-        });
-    }
-
-    /// Space in a plug-in's window: the host's unasked `transport_key` line is counted and wakes
-    /// the window, in that order, so the frame it wakes plays at once (#714). It is not left in
-    /// the replies for a request to find.
-    #[test]
-    fn a_transport_key_from_a_host_is_counted_then_wakes_the_window() {
-        let (address, name) = control_name().unwrap();
-        let listener = ListenerOptions::new().name(name).create_sync().unwrap();
-        let mut remote = connect(&address).unwrap();
-        let control = listener.accept().unwrap();
-        let replies = read_lines(control);
-        // The waker says how many keys were counted when it was called.
-        let (woken, wakes) = mpsc::channel();
-        set_waker(move || {
-            let _ = woken.send(TRANSPORT_KEYS.load(Ordering::Relaxed));
-        });
-        let line = format!("{}\n", Message::TransportKey.encode());
-        remote.write_all(line.as_bytes()).unwrap();
-        remote.flush().unwrap();
-        // Another test's host may wake the window too; this key's wake is the one with it counted.
-        let counted = loop {
-            let keys = wakes.recv_timeout(Duration::from_secs(60)).expect("the window was not woken");
-            if keys > 0 {
-                break keys;
-            }
-        };
-        assert!(counted >= 1);
-        assert!(take_transport_keys() >= 1);
-        assert!(matches!(replies.try_recv(), Err(mpsc::TryRecvError::Empty)), "not queued as a reply");
-    }
-
-    /// A host process that is alive but runs nothing: a real child and a control socket, with
-    /// what the test `feed`s a group, so `host_memory` can be tried without the executable.
-    fn living_process() -> (HostProcess, Sender<Message>) {
-        let (address, name) = control_name().unwrap();
-        let listener = ListenerOptions::new().name(name).create_sync().unwrap();
-        // A listener takes a connection made before it is asked, so a connection that fails ends
-        // the test here and `accept` has no one to wait for. The remote half lives until then:
-        // one that is gone by `accept` leaves it nothing to take.
-        let remote = connect(&address).unwrap();
-        let control = listener.accept().unwrap();
-        drop(remote);
-        // A child that lives on and ends by itself. `timeout` waits for a key and errors when
-        // there is no console to take it from; a ping to no host waits without input.
-        let mut child = Command::new(if cfg!(windows) { "cmd" } else { "sleep" });
-        if cfg!(windows) {
-            child.args(["/c", "ping", "-n", "11", "127.0.0.1", ">nul"]);
-        } else {
-            child.arg("10");
-        }
-        let child = child.stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
-        let (feed, replies) = mpsc::channel();
-        (HostProcess { child, control: std::sync::Arc::new(Mutex::new(control)), replies, edits: Arc::default() }, feed)
-    }
-
-    /// An instance let go of takes its edits out of the inbox, the others' stay (#1205).
-    #[test]
-    fn an_instance_let_go_of_leaves_no_edits_in_the_inbox() {
-        let inbox = EditInbox::default();
-        take_in_edit(&inbox, 4, 1, 0.25);
-        take_in_edit(&inbox, 7, 1, 0.75);
-        drop(Forget { edits: Arc::clone(&inbox), instance: 4 });
-        assert_eq!(*lock(&inbox), vec![(7, 1, 0.75)]);
-    }
-
-    /// What the user moved in an editor is taken while the group is busy with a request (its
-    /// lock held), each parameter once at its latest value and only by its own instance, and is
-    /// kept to be set again after a restart (#1205).
-    #[test]
-    fn editor_edits_are_taken_while_a_request_holds_the_group() {
-        let (process, _feed) = living_process();
-        let inbox = Arc::clone(&process.edits);
-        let mut group = Group::new();
-        group.process = Some(process);
-        let group = Mutex::new(group);
-        let since = Arc::new(Mutex::new(vec![(9, 0.5)]));
-        let watch = EditWatch { inbox: lock(&group).edit_inbox(), instance: 4, since: Arc::clone(&since) };
-
-        let busy = lock(&group);
-        take_in_edit(&inbox, 4, 1, 0.25);
-        take_in_edit(&inbox, 7, 1, 0.75);
-        take_in_edit(&inbox, 4, 1, 0.5);
-        take_in_edit(&inbox, 4, 2, 1.0);
-        assert_eq!(watch.take_param_edits(), vec![(1, 0.5), (2, 1.0)]);
-        assert!(watch.take_param_edits().is_empty(), "each edit is taken once");
-        drop(busy);
-
-        assert_eq!(*lock(&inbox), vec![(7, 1, 0.75)], "another instance's edit waits for it");
-        assert_eq!(*lock(&since), vec![(9, 0.5), (1, 0.5), (2, 1.0)]);
-    }
-
-    #[test]
-    fn a_host_that_reports_memory_is_counted_and_one_that_died_is_not() {
-        let (process, feed) = living_process();
-        let mut group = Group::new();
-        group.process = Some(process);
-        let group = Arc::new(Mutex::new(group));
-        lock(&GROUPS).insert((PathBuf::from("the test host"), "memory-test".into()), Arc::downgrade(&group));
-
-        // What the host sent is taken in and counted.
-        feed.send(Message::Memory { bytes: 300 }).unwrap();
-        assert_eq!(host_memory(), vec![300]);
-        // Reading does not consume the report; it stands until the next one.
-        assert_eq!(host_memory(), vec![300]);
-
-        // A process that has stopped is not counted, even with its last report in hand.
-        {
-            let mut locked = lock(&group);
-            if let Some(process) = locked.process.as_mut() {
-                let _ = process.child.kill();
-            }
-        }
-        // An ended child stays "running" its own last moment: let it be gone. (`alive` reaps
-        // what has gone, so the loop is what reads it.)
-        let deadline = Instant::now() + Duration::from_secs(60);
-        while {
-            let mut locked = lock(&group);
-            locked.alive()
-        } {
-            assert!(Instant::now() < deadline, "the ended host still looks alive");
-            thread::sleep(Duration::from_millis(10));
-        }
-        assert!(host_memory().is_empty(), "a dead host's report must not be counted");
-        assert_eq!(lock(&group).ram, None, "the dead host's report is let go of");
-    }
-}
+#[path = "lib_tests.rs"]
+mod tests;

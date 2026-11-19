@@ -126,6 +126,7 @@ pub(super) fn shape_label(shape: FadeShape) -> &'static str {
         FadeShape::Fast => "Fast",
         FadeShape::Slow => "Slow",
         FadeShape::SCurve => "S-curve",
+        FadeShape::Cosine => "Cosine",
     }
 }
 
@@ -256,7 +257,7 @@ pub(super) fn clip_box<'a>(
     } else if response.hovered() {
         ui.ctx().set_cursor_icon(if copy_key { egui::CursorIcon::Copy } else { egui::CursorIcon::Grab });
     }
-    let label = format!("Clip {name} on {} at bar {bar}", lane.name);
+    let label = format!("Clip {name} on {} at bar {bar}{}", lane.name, if clip.linked { ", linked" } else { "" });
     // Selected or not, as it is drawn: a screen reader and the tests read it (#695).
     let picked = state.is_selected(key);
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, picked, &label));
@@ -279,7 +280,19 @@ pub(super) fn clip_box<'a>(
         ui.ctx().data_mut(|d| d.remove::<String>(Id::unique(("clip-rename", key.1.0))));
     }
     egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-        menus::clip_menu(ui, &menu_clips, stack, clip.enabled, &clip.name, actions);
+        // Link, when the clips play the same notes or audio but not yet one content.
+        let shown: Vec<&ClipBox> = menu_clips
+            .iter()
+            .filter_map(|(track, id)| {
+                timeline.lanes.iter().filter(|l| l.track == *track).flat_map(|l| &l.clips).find(|c| c.id == *id)
+            })
+            .collect();
+        let linkable = shown.len() > 1
+            && shown.len() == menu_clips.len()
+            && shown.iter().all(|c| c.material != 0 && c.material == shown[0].material)
+            && shown.iter().any(|c| c.stack_key.0 != shown[0].stack_key.0);
+        let links = menus::ClipLinks { linked: clip.linked, linkable };
+        menus::clip_menu(ui, &menu_clips, stack, clip.enabled, links, &clip.name, actions);
         let ara = state
             .ara_tracks
             .iter()
@@ -818,14 +831,24 @@ pub(super) fn clip_box<'a>(
     // A clip picked by a click in its body (the insert marker set there) looks as one not
     // picked, as the play start is what the click chose; picked whole, it is lit.
     let lit = selected && state.picked_whole;
+    // How the clip is drawn: with a selection colour (Settings › Appearance › Selection colour),
+    // every selected clip takes it, however it was picked; with Clip's own colour, only one picked
+    // whole is lit.
+    let drawn_selected =
+        if crate::kit::selection::look().mode == crate::kit::selection::SelectionColour::Own { lit } else { selected };
     let fading = state.gesture.fade().copied().is_some_and(|d| d.key == key)
         || state.gesture.fade_curve().copied().is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
     let fits = rect.width() >= 3.0 * FADE_HANDLE && rect.height() >= 2.0 * FADE_HANDLE;
+    // A handle's shape menu keeps the handles: the menu opens under the pointer, which then is
+    // over the menu and not the clip, and a handle gone takes its menu with it.
+    let menu_open = [FadeEdge::In, FadeEdge::Out]
+        .into_iter()
+        .any(|edge| egui::Popup::is_id_open(ui.ctx(), fade_handle_id(clip.id, edge).with("popup")));
     if clip.audio
         && fits
         && state.gesture.clip().copied().is_none_or(|d| !mine(&d))
-        && (pointer_in || selected || fading)
+        && (pointer_in || selected || fading || menu_open)
     {
         let grid = fade_grid;
         for edge in [FadeEdge::In, FadeEdge::Out] {
@@ -844,7 +867,7 @@ pub(super) fn clip_box<'a>(
             }
             let which = if edge == FadeEdge::In { "Fade-in" } else { "Fade-out" };
             let label = format!("{which} of {name} on {}", lane.name);
-            let id = Id::unique(("clip-fade", clip.id.0, edge == FadeEdge::In));
+            let id = fade_handle_id(clip.id, edge);
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             response.widget_info(|| {
@@ -1026,6 +1049,11 @@ pub(super) fn clip_box<'a>(
     if crossfades_at(timeline, clip.id, FadeEdge::Out) {
         shown.fade_out = 0.0;
     }
+    // Where the fade-in handle takes the pointer: the Edit gain envelope button gives it way.
+    let fade_in_hit = (!crossfades_at(timeline, clip.id, FadeEdge::In)).then(|| {
+        fade_handle(rect, FadeEdge::In, shown.fade_in as f32 * state.beat_width)
+            .expand((FADE_HANDLE_HIT - FADE_HANDLE) / 2.0)
+    });
 
     // Copying (Ctrl held): the clip stays where it is drawn, and its copy shows where it lands.
     let copying = state.gesture.clip().copied().is_some_and(|d| d.copy || copy_key) && (at - clip.start).abs() > 1e-9;
@@ -1040,8 +1068,8 @@ pub(super) fn clip_box<'a>(
             x_of,
             state.beat_width,
             timeline,
-            lit,
-            &state.clip_look(),
+            drawn_selected,
+            &state.clip_look_on(lane.track),
         );
     };
     let mut envelope_place = None;
@@ -1132,8 +1160,8 @@ pub(super) fn clip_box<'a>(
                         &stretched,
                         state.beat_width * factor as f32,
                         timeline,
-                        lit,
-                        &state.clip_look(),
+                        drawn_selected,
+                        &state.clip_look_on(lane.track),
                     );
                 }
                 None => paint_clip(
@@ -1146,16 +1174,17 @@ pub(super) fn clip_box<'a>(
                     x_of,
                     state.beat_width,
                     timeline,
-                    lit,
-                    &state.clip_look(),
+                    drawn_selected,
+                    &state.clip_look_on(lane.track),
                 ),
             }
             None
         }
     };
-    // Picked by a click in its body: not lit (the play start is what the click chose), but
-    // outlined, so the clip the editor and the keys work on is plain to see.
-    if selected && !lit && state.gesture.clip().is_none() {
+    // With Clip's own colour, a clip picked by a click in its body is not lit (the play start is
+    // what the click chose), but outlined, so the clip the editor and the keys work on is plain to
+    // see. With a selection colour it is filled with it like any selected clip (above).
+    if selected && !drawn_selected && state.gesture.clip().is_none() {
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
         let body = motion::mix(super::panel_surface(), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
@@ -1199,8 +1228,18 @@ pub(super) fn clip_box<'a>(
             let left = rect.left().max(row.clip.left()) + 4.0;
             let size = crate::arrangement::envelope::BUTTON;
             let button = Rect::from_min_size(Pos2::new(left, bar.center().y - size / 2.0), Vec2::splat(size));
-            if crate::arrangement::envelope::edit_button(ui, &envelope_painter, button, clip.id, name, envelope_edited)
-            {
+            // The button takes the pointer only off the fade-in handle, which lies over its left
+            // edge while the fade is short: a right-click there opens the fade's menu (#1527).
+            let hit = fade_in_hit.map_or(button, |handle| beside(button, handle));
+            if crate::arrangement::envelope::edit_button(
+                ui,
+                &envelope_painter,
+                button,
+                hit,
+                clip.id,
+                name,
+                envelope_edited,
+            ) {
                 crate::arrangement::envelope::toggle_editing(ui.ctx(), clip.id);
             }
             if envelope_edited && rect.height() >= bar.height() + size + 6.0 {
@@ -1392,7 +1431,8 @@ pub(super) fn clip_kind(lane: &Lane, clip: &ClipBox, timeline: &Timeline, select
 /// first clip of its kind this frame and kept in `look`, so the parts add no elements to the
 /// style tree for each clip.
 fn clip_parts(look: &super::state::ClipLook, track: TrackId, kind: super::state::ClipKind) -> super::state::ClipParts {
-    if let Some(parts) = look.parts.borrow().get(&(track, kind)) {
+    let key = (track, look.in_lane, kind);
+    if let Some(parts) = look.parts.borrow().get(&key) {
         return parts.clone();
     }
     use crate::kit::element::{CLIP_FADE, CLIP_NAME, CLIP_NOTES, CLIP_WAVEFORM};
@@ -1401,7 +1441,7 @@ fn clip_parts(look: &super::state::ClipLook, track: TrackId, kind: super::state:
         content: if kind.audio { CLIP_WAVEFORM.probe() } else { CLIP_NOTES.probe() },
         fade: CLIP_FADE.probe(),
     };
-    look.parts.borrow_mut().insert((track, kind), parts.clone());
+    look.parts.borrow_mut().insert(key, parts.clone());
     parts
 }
 
@@ -1453,9 +1493,20 @@ pub(super) fn paint_clip(
     // A muted clip's grey is the computed `arrangement clip[muted]` background: the base sheet's
     // rule reads `--clip-mutedBackground`, so a theme that sets only the variable reaches it, and
     // a theme's own rule for the clip still wins.
-    let fallback = clip_body(surface, rgb(clip.color), strength, off, selected);
+    // A selected clip that plays has its body filled with the one selection colour every selected
+    // clip and header shares (Settings › Appearance › Selection colour), while its name bar keeps
+    // the clip's own colour, as when it is not selected, and so does its leading edge. With Clip's
+    // own colour it keeps its colour, a little brighter.
+    let selection_fill = if selected && !off { crate::kit::selection::fill(&own) } else { None };
+    let fallback = selection_fill.unwrap_or_else(|| clip_body(surface, rgb(clip.color), strength, off, selected));
     let body = if off { own.computed_background_or(fallback) } else { own.background_or(fallback) };
-    let bar_fill = name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected);
+    let bar_fill = match selection_fill {
+        Some(_) => {
+            let own_body = clip_body(surface, rgb(clip.color), strength, false, false);
+            name_bar_fill(own_body, surface, rgb(clip.color), strength, false, false)
+        }
+        None => name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected),
+    };
     let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never
     // reaches the window and the desktop never shows through it.
@@ -1466,24 +1517,34 @@ pub(super) fn paint_clip(
     // the mute mark on that fill.
     let name_look = bar.map(|bar| {
         let look = name_bar_look(&parts.name, bar_fill);
-        // The bar keeps the clip's rounded top corners.
+        // The bar keeps the clip's rounded top corners and reaches both its edges: inset, the
+        // body showed in a strip at the right, lighter while selected (#1487 B11). The leading
+        // edge is drawn over its left end.
         let top = radius.min(bar.height()).clamp(0.0, 255.0) as u8;
-        painter.rect_filled(
-            bar.shrink2(Vec2::new(2.0, 0.0)),
-            egui::CornerRadius { nw: top, ne: top, sw: 0, se: 0 },
-            look.fill,
-        );
+        painter.rect_filled(bar, egui::CornerRadius { nw: top, ne: top, sw: 0, se: 0 }, look.fill);
         look
     });
     if bar.is_none() {
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, body);
+    }
+    // The stretch of the body under the time selection, in the selection colour, as a selected
+    // clip's body is, its name bar kept (Settings › Appearance › Selection colour; with Clip's own
+    // colour the time selection is lit over the clips instead).
+    let time_fill = if off { None } else { look.time_lit.and_then(|_| crate::kit::selection::fill(&own)) };
+    let time_lit = look.time_lit.zip(time_fill).and_then(|((from, to), fill)| {
+        let x = egui::Rangef::new(x_of(from), x_of(to)).intersection(rect.x_range());
+        let top = bar.map_or(rect.top(), |bar| bar.bottom());
+        (x.span() > 0.0).then(|| (Rect::from_x_y_ranges(x, egui::Rangef::new(top, rect.bottom())), fill))
+    });
+    if let Some((lit, fill)) = time_lit {
+        painter.rect_filled(lit, 0.0, fill);
     }
     crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
     let ink = ink_on(body);
     let edge_width = if selected { 4.0 } else { 3.0 };
     // A muted clip keeps its colour down its leading edge, so it is still known by it.
     let line_ink = motion::mix(body, ink, 0.5);
-    let edge_ink = if off { rgb(clip.color) } else { line_ink };
+    let edge_ink = if off || selection_fill.is_some() { rgb(clip.color) } else { line_ink };
     if let Some(bar) = bar {
         // A quiet divider ties the title to the stronger leading edge without framing the preview.
         painter.hline(
@@ -1511,8 +1572,16 @@ pub(super) fn paint_clip(
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
         let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.1), motion::mix(body, ink, 0.2));
+        let lit_x = time_lit.map(|(lit, _)| lit.x_range());
         for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 1.0 && *x < rect.right() - 1.0) {
+            // Under a time selection the line is drawn for the selection colour's fill.
+            if lit_x.is_some_and(|lit| lit.contains(x)) {
+                continue;
+            }
             painter.vline(x, span, theme::hairline(if on_bar { bar_ink } else { beat_ink }));
+        }
+        if let Some((lit, fill)) = time_lit {
+            super::grid_over(painter, Rect::from_x_y_ranges(lit.x_range(), span), lines, fill);
         }
     }
     // Notes an ARA plug-in found in an audio clip go over its waveform, which dims a little under
@@ -1524,6 +1593,24 @@ pub(super) fn paint_clip(
         parts.content.color_or(appearance.ink(ink))
     } else {
         appearance.ink(ink)
+    };
+    // Notes the theme or the clip's colour chose that are lost on the body (an imported clip's own
+    // colour can be as dark as its notes) take the body's readable ink instead; a colour the user
+    // chose in Settings (Light, Dark, Custom) is kept as chosen.
+    use crate::settings::view_settings::WaveformColour;
+    let chosen = matches!(appearance.mode, WaveformColour::Light | WaveformColour::Dark | WaveformColour::Custom);
+    let content_ink = if !clip.audio && !chosen && theme::text_contrast(content_ink, body) < 3.0 {
+        theme::text_on(body)
+    } else {
+        content_ink
+    };
+    // On the selection colour, which may be light or dark whatever the theme is, they take an ink
+    // that reads on it where theirs does not.
+    let content_ink =
+        if selection_fill.is_some() { crate::kit::selection::readable(content_ink, body) } else { content_ink };
+    let content_ink = match time_lit {
+        Some((_, fill)) => crate::kit::selection::readable(content_ink, fill),
+        None => content_ink,
     };
     // A muted clip's notes and waveform step back, so the grey reads first.
     let content_ink = if off { motion::mix(body, content_ink, 0.6) } else { content_ink };
@@ -1734,6 +1821,9 @@ pub(super) fn paint_clip(
     if clip.take.is_some() {
         paint_take_marker(painter, rect, ink);
     }
+    if clip.linked {
+        paint_link_marker(painter, rect, ink);
+    }
 }
 
 /// The piano roll's time selection on `clip`, in beats from the clip's start and within it:
@@ -1753,10 +1843,31 @@ fn paint_take_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
     if rect.height() < 16.0 || rect.width() < 14.0 {
         return;
     }
-    let (left, bottom) = (rect.left() + 4.0, rect.bottom() - 4.0);
+    let left = rect.left() + 4.0;
+    stacked_lines(painter, egui::Rangef::new(left, left + 7.0), rect.bottom() - 4.0, 3.0, Stroke::new(1.0, ink));
+}
+
+/// Three stacked lines across `x`, the lowest at `bottom` and `gap` apart: the take lanes' glyph.
+/// The lowest is snapped to a pixel once and the gap is whole, so the lines are evenly spaced
+/// wherever `bottom` falls (#1487 B14: each line rounded on its own gave gaps of 2 and 3).
+pub(super) fn stacked_lines(painter: &egui::Painter, x: egui::Rangef, bottom: f32, gap: f32, stroke: Stroke) {
+    let (bottom, gap) = (bottom.round() - 0.5, gap.round().max(2.0));
     for line in 0..3 {
-        let y = (bottom - line as f32 * 2.5).round() + 0.5;
-        painter.hline(egui::Rangef::new(left, left + 7.0), y, Stroke::new(1.0, ink));
+        painter.hline(x, bottom - line as f32 * gap, stroke);
+    }
+}
+
+/// The small mark in a clip's lower right corner that says it is a linked copy: two links of a
+/// chain (#1414).
+fn paint_link_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
+    if rect.height() < 16.0 || rect.width() < 24.0 {
+        return;
+    }
+    let centre = Pos2::new(rect.right() - 10.0, rect.bottom() - 6.0);
+    let stroke = Stroke::new(1.0, ink);
+    for dx in [-2.5, 2.5] {
+        let link = Rect::from_center_size(centre + egui::vec2(dx, 0.0), egui::vec2(6.0, 4.0));
+        painter.rect_stroke(link, 2.0, stroke, StrokeKind::Inside);
     }
 }
 
@@ -1772,6 +1883,27 @@ const ENVELOPE_BUTTON_LEAST: f32 = 48.0;
 /// Points a pitch row needs for a clip's notes to be drawn. A note is 2 points high, so rows under
 /// 2 overlap a little, and still read as the part's shape; only under a point do they merge.
 const LEAST_PITCH_ROW: f32 = 1.0;
+
+/// What of `button` is left to take the pointer beside `handle`, which wins where they overlap:
+/// the part on the side of the button where most of it is, or all of it when they do not meet.
+pub(super) fn beside(button: Rect, handle: Rect) -> Rect {
+    if !button.intersects(handle) {
+        return button;
+    }
+    let (left, right) = (handle.left() - button.left(), button.right() - handle.right());
+    let mut hit = button;
+    if right >= left {
+        hit.min.x = handle.right().min(button.right());
+    } else {
+        hit.max.x = handle.left().max(button.left());
+    }
+    hit
+}
+
+/// The id of `clip`'s fade handle at `edge`; its shape menu's popup is `.with("popup")` of it.
+fn fade_handle_id(clip: ClipId, edge: FadeEdge) -> Id {
+    Id::unique(("clip-fade", clip.0, edge == FadeEdge::In))
+}
 
 /// The pitches a clip's notes use, lowest first, each once: a row each in the clip.
 pub(super) fn used_keys(keys: impl Iterator<Item = u8>) -> Vec<u8> {
@@ -2765,6 +2897,8 @@ pub(super) fn paint_live_take(
         // It holds takes from its first pass on: the corner mark says so (#1078).
         take: Some(0),
         ara: false,
+        linked: false,
+        material: 0,
     };
     paint_clip(painter, rect, lane, &clip, Shown::of(&clip), take.start, x_of, beat_width, timeline, false, look);
     // An audio take's waveform so far: a line per peak, about the middle of the clip.

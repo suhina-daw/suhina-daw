@@ -1381,6 +1381,60 @@
       "docs/spec/automation.md"
     ]
   },
+  "Arrangement/Automation/automation_colour": {
+    "sourceFingerprint": "e70cb7e8e3c42733127a6be059c73210ef5aa3a1ccf63a6337f3cc116e2a197a",
+    "summary": "Choose whether automation lines and points take their track's colour or one colour on every track.",
+    "description": "An automation lane draws a line, the envelope, through the points that set a parameter over time. By default the line and its points are drawn in their track's colour, so a lane shows which track it belongs to. On tracks with dull colours, such as the grey tracks of many imported projects, those lines can be hard to see. Fixed draws every envelope in one line colour and every point in one point colour, whatever the track's colour. A picked point keeps its own highlight and a lane that is switched off stays greyed out in both modes. The curve handles and the faint line of a painted range follow the line's colour. The choice is saved with your settings, not in the project, and applies at once.",
+    "options": [
+      {
+        "name": "Track colour",
+        "description": "Each envelope's line and points take their track's colour. This is the default."
+      },
+      {
+        "name": "Fixed",
+        "description": "Every envelope's line takes Automation line colour and every point Automation point colour; selecting this reveals their pickers."
+      }
+    ],
+    "whenToChange": "Choose Fixed when envelopes are hard to read on your tracks' colours, for example on a project whose tracks are all grey.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/ui/src/arrangement/automation_lanes.rs",
+      "crates/theme-package/src/base.css",
+      "docs/spec/automation.md"
+    ]
+  },
+  "Arrangement/Automation/automation_line_colour": {
+    "sourceFingerprint": "e68ad5bb77b844e83898661f89e43328ec2a78641b6547df699a3a84e9d87076",
+    "summary": "Choose the colour of every automation line when Automation colour is Fixed.",
+    "description": "This colour picker appears when Automation colour is Fixed. Until you pick a colour, the line takes the colour the active theme gives fixed automation lines, which is the theme's accent unless the theme sets its own; the picker shows that colour. Once you pick one, every envelope line uses it in every theme, and the Theme button beside the picker gives the theme's colour back. A lane that is switched off keeps its grey line. The colour has no effect with Track colour.",
+    "options": [],
+    "whenToChange": "Pick a colour that stands out from the lanes' background and from your clips, if the theme's does not.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/ui/src/arrangement/automation_lanes.rs",
+      "crates/theme-package/src/base.css",
+      "docs/spec/automation.md"
+    ]
+  },
+  "Arrangement/Automation/automation_point_colour": {
+    "sourceFingerprint": "1ce3faae16a0b15f3a33a488bdf6b577e04ee17a5ab7d39b9d507bd2258d60f3",
+    "summary": "Choose the colour of every automation point when Automation colour is Fixed.",
+    "description": "This colour picker appears when Automation colour is Fixed. Until you pick a colour, points take the colour the active theme gives fixed automation points, which is the theme's accent unless the theme sets its own; the picker shows that colour. Once you pick one, every point that is not picked uses it in every theme, and the Theme button beside the picker gives the theme's colour back. Picked points keep their own highlight, so they still stand out, and the points of a lane that is switched off stay grey. The colour has no effect with Track colour.",
+    "options": [],
+    "whenToChange": "Pick a colour different from the line's when you want points to stand out on it.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/ui/src/arrangement/automation_lanes.rs",
+      "crates/theme-package/src/base.css",
+      "docs/spec/automation.md"
+    ]
+  },
   "Arrangement/Advanced/stretch_alt_drag": {
     "sourceFingerprint": "d307d0f36d87c685d466649069303bdddc108805201f2a31711875d69d88e8ae",
     "summary": "Enable pitch-preserving audio stretching with Ctrl+Alt at a clip edge.",
@@ -2060,9 +2114,56 @@
       "docs/spec/waveforms.md"
     ]
   },
+  "Appearance/Selection/selection_colour": {
+    "sourceFingerprint": "678e47ae5499c1ff4c3d64fd706feb1f5271df17efe7b9a3ea256499dd53616a",
+    "summary": "Choose the colour selected tracks and clips are filled with.",
+    "description": "When you select tracks or clips, in the Arrangement or the Launcher, their headers and clips are filled with one shared selection colour, so several selected items read as one selection even when their own colours differ. The track's or clip's own colour stays in a band at the header's edge and down the clip's leading edge, and an Arrangement clip's name bar keeps its own colour. A clip is filled however you picked it, by its name bar or by a click in its body. The selected tracks' lanes, and their columns in the Launcher, take a faint tint of the same colour. Names, waveforms and notes switch to an ink that reads on the selection colour. A track or clip that is switched off stays grey. The choice is saved with your settings, not in the project, and applies at once.",
+    "options": [
+      {
+        "name": "From theme",
+        "description": "Use the active theme's selection colour (its selection.background). This is the default."
+      },
+      {
+        "name": "Clip's own colour",
+        "description": "Keep each selected header and clip in its own colour, a little brighter and outlined, so the selection still shows which track each clip is on."
+      },
+      {
+        "name": "Custom",
+        "description": "Use one colour you choose for every selected header and clip, in every theme; selecting this reveals Custom selection colour."
+      }
+    ],
+    "whenToChange": "Choose Custom when the theme's selection colour is too close to your track colours or too bright, or Clip's own colour when you prefer selected clips to keep their colours.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/ui/src/kit/selection.rs",
+      "crates/ui/src/arrangement/arrangement_view/header.rs",
+      "crates/ui/src/arrangement/arrangement_view/clip.rs",
+      "crates/ui/src/session/session_view.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
+  },
+  "Appearance/Selection/selection_custom_colour": {
+    "sourceFingerprint": "ed71a5f714f37950b9440a0d29abb7327b7f2de4e2dfbb403ea13dc99670ff47",
+    "summary": "Choose the colour selected tracks and clips take when Selection colour is Custom.",
+    "description": "This colour picker appears when Selection colour is Custom. Choose an RGB colour and its opacity with the picker; the hexadecimal value is displayed beside it, with the opacity as its last two digits when the colour is see-through. A see-through colour lets the lanes, the grid and the clips' own colours show through what is selected. It fills selected track headers and clips in both views and tints the selected tracks' lanes and Launcher columns, in every theme, replacing the theme's selection colour. Text, waveforms and notes on it switch to an ink that reads on it, so a dark colour works too. The saved colour has no effect with From theme or Clip's own colour.",
+    "options": [],
+    "whenToChange": "Select Custom first, then choose a colour that stands apart from your track and clip colours.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/ui/src/kit/selection.rs",
+      "crates/ui/src/arrangement/arrangement_view/header.rs",
+      "crates/ui/src/arrangement/arrangement_view/clip.rs",
+      "crates/ui/src/session/session_view.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
+  },
   "Appearance/Background/background_image": {
-    "sourceFingerprint": "cb84cfb0b6841953122680abcc34e5bfdcaf253ed403faad61c6acf20f748718",
-    "description": "Choose a user-owned PNG or type its path. Clear the field to remove it and restore desktop transparency where the GPU host supports it.\n\nWhile displayed, surfaces blend over the image even on transparent hosts. The image is drawn over an opaque fill, so the desktop does not show through it, and nothing is captured from the screen.\n\nImages are decoded away from the UI thread, limited to 32 MiB and 8192 pixels per axis, and displayed at up to 1600 pixels per axis. High Contrast suppresses the image. If loading fails, repair the PNG and choose it again with Browse to retry; failures are not retried continuously.",
+    "sourceFingerprint": "e46c660e4f0fee56d819e8b04222eb9ae4b33b82d38e4f2cfb49c15634e97976",
+    "description": "Choose a user-owned PNG, JPEG or WebP picture or type its path. Clear the field to remove it and restore desktop transparency where the GPU host supports it.\n\nWhile displayed, surfaces blend over the image even on transparent hosts. The image is drawn over an opaque fill, so the desktop does not show through it, and nothing is captured from the screen.\n\nImages are decoded away from the UI thread, limited to 32 MiB and 8192 pixels per axis, and displayed at up to 1600 pixels per axis. High Contrast suppresses the image. If loading fails, repair the picture and choose it again with Browse to retry; failures are not retried continuously.",
     "whenToChange": "Choose an image when you want a private decorative backdrop behind neutral panels.",
     "options": [],
     "references": [
@@ -2733,5 +2834,26 @@
       "docs/spec/clip-panel.md"
     ],
     "sourceFingerprint": "30493d37606b9166b73cba5dd28eefe2f4c874971bc92ee7f4a0e87f9333f934"
+  },
+  "Devices/Instruments/implicit_tones": {
+    "sourceFingerprint": "fa89eadf8efc7a0431f8ab75ad3469fba2053171f89c4ba9c154e208c4c10662",
+    "summary": "Let a MIDI track with no instrument play its notes as a plain sine tone.",
+    "description": "When this is on, a MIDI track that has no instrument (no devices, or only MIDI effects and audio effects) plays its notes as a plain sine tone, so you can hear what the notes are before you choose a sound. When it is off, such a track is silent until you add an instrument.\n\nAn instrument that is switched off or not installed never falls back to the tone, whichever way this is set: the track stays silent and keeps the instrument, its settings and its notes. Previewing a MIDI file in the browser plays it with its own preview sound either way. The setting applies to playback, clip launching, notes from a MIDI keyboard and exports, at once, in every open project. It is off unless you turn it on.",
+    "options": [
+      {
+        "name": "On",
+        "description": "A MIDI track with no instrument plays its notes as a plain sine tone."
+      },
+      {
+        "name": "Off",
+        "description": "A MIDI track sounds only through an instrument; without one it is silent."
+      }
+    ],
+    "whenToChange": "Turn it on to hear the notes of tracks that have no instrument yet, for example while sketching or checking an imported MIDI part. Leave it off so a track never plays a sound you did not choose.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/session/src/projects.rs",
+      "crates/engine/src/lib.rs"
+    ]
   }
 }

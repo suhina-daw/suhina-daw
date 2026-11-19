@@ -21,6 +21,7 @@ fn region(file: &str) -> AudioRegion {
 
 fn content(id: u32, region: AudioRegion) -> ClipContent {
     ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("take {id}"),
         length: 8.0,

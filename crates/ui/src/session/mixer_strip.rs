@@ -221,8 +221,11 @@ pub fn layout_in(
     let name = !compact && height >= NAME_AT;
     let output = !compact && height >= OUTPUT_AT;
     let pan = !compact && height >= PAN_AT;
-    let top =
-        inner.top() + if name { NAME + UNDER_NAME } else { 0.0 } + if output { OUTPUT + UNDER_OUTPUT } else { 0.0 };
+    // The name is a bar along the strip's top, in the body's padding (the user-agent sheet's
+    // `margin: -6px -6px 2px`), so the parts under it have that much more room.
+    let top = inner.top()
+        + if name { NAME + UNDER_NAME - PAD } else { 0.0 }
+        + if output { OUTPUT + UNDER_OUTPUT } else { 0.0 };
     let fixed = READOUT + UNDER_READOUT + if pan { KNOB_ROW } else { 0.0 };
     let rest = (bottom - top - fixed).max(0.0);
     // Devices, pan and fader align across tracks, returns and Main, including the send footer.
@@ -416,6 +419,9 @@ pub fn show(
     id: Id,
     actions: &mut Vec<Action>,
 ) -> egui::Response {
+    if column.folder {
+        return ui.interact(rect.intersect(painter.clip_rect()), id.with("folder"), Sense::hover());
+    }
     let _work_trace = crate::kit::frame_trace::WorkSpan::new("mixer strip");
     let clipped_painter = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
     let painter = &clipped_painter;
@@ -600,7 +606,7 @@ fn output_row(
     id: Id,
     actions: &mut Vec<Action>,
 ) {
-    let current = column.output.and_then(|t| groups.iter().find(|(g, _)| *g == t)).map_or("Main", |(_, name)| name);
+    let current = column.output_name.as_deref().unwrap_or("Main");
     let arrow = Rect::from_min_size(rect.min, Vec2::new(ARROW, rect.height()));
     let hint = crate::kit::element::hint_ink();
     widgets::text_in(painter, arrow, Align2::LEFT_CENTER, "→", theme::ui_font(theme::TEXT_SMALL), hint);
@@ -615,7 +621,7 @@ fn output_row(
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
         let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
-        if ui.selectable_label(column.output.is_none(), text("Main")).clicked() && column.output.is_some() {
+        if ui.selectable_label(column.output_name.is_none(), text("Main")).clicked() && column.output_name.is_some() {
             picked = Some(serde_json::Value::from("main"));
         }
         for (group, name) in groups.iter().filter(|(g, _)| *g != column.track) {

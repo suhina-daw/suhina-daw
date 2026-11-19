@@ -549,6 +549,9 @@ pub struct Settings {
     /// Selecting a track arms it, so a MIDI controller plays what the user looks at (Settings ›
     /// MIDI, #834); off until the person turns it on.
     pub auto_arm: bool,
+    /// A MIDI track with no instrument plays its notes as a plain sine tone (Settings › Devices,
+    /// #1384); off until the person turns it on, so a track sounds only through an instrument.
+    pub implicit_tones: bool,
     /// How many threads render each block, the render thread included (Settings › Audio ›
     /// Advanced, `audio.setRenderThreads`, ADR 0038): 1, the render thread alone, until
     /// rendering on several threads is measured on every platform; 0 lets Suhina choose.
@@ -642,6 +645,7 @@ impl Default for Settings {
             mcp_project_folder: true,
             mcp_write_folders: Vec::new(),
             auto_arm: false,
+            implicit_tones: false,
             render_threads: 1,
         }
     }

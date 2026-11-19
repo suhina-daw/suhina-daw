@@ -35,6 +35,7 @@ pub(crate) fn project((region, audio): Source, length: f64, fade_in: f64, fade_o
         }],
         channels: vec![Channel::new(ChannelId(1), "Audio")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length,
@@ -491,4 +492,38 @@ fn a_launched_stretched_clip_fades_in() {
         let expected = f64::from(*p) * (frame as f64 / BEAT as f64).min(1.0);
         assert!((f64::from(*f) - expected).abs() < 1e-5, "frame {frame}: {f}, expected {expected}");
     }
+}
+
+/// A stopped stretched clip leaves for silence over the stop fade too, with no step: its voice is
+/// faded like a plain clip's, not cut.
+#[test]
+fn stopping_the_transport_joins_a_playing_stretched_clip_to_silence_without_a_step() {
+    let pool = sine();
+    let warped = region("sine.wav", true, StretchMode::Smooth, 2.0);
+    let mut renderer =
+        crate::Renderer::stopped(&project(warped, 4.0, 0.0, 0.0), &pool, SR, suhina_device_registry::factory())
+            .unwrap();
+    renderer.set_offline(true);
+    let play = |renderer: &mut crate::Renderer, blocks: usize| {
+        let mut out = Vec::new();
+        for _ in 0..blocks {
+            let mut block = vec![0.0f32; 64 * 2];
+            renderer.process(&mut block);
+            out.extend(left(&block));
+        }
+        out
+    };
+    renderer.handle(LaunchCommand::Play);
+    let before = play(&mut renderer, 40);
+    let peak = before.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    assert!(peak > 0.1, "it plays: {peak}");
+    renderer.handle(LaunchCommand::Stop);
+    let after = play(&mut renderer, 8);
+    let mut joined = vec![*before.last().unwrap()];
+    joined.extend(&after);
+    let step = joined.windows(2).map(|s| (s[1] - s[0]).abs()).fold(0.0, f32::max);
+    // A 220 Hz sine at 0.5 moves at most about 0.0173 a frame at this rate; a cut would step
+    // by up to its whole level.
+    assert!(step <= 0.03, "a step of {step} at the stop");
+    assert_eq!(*after.last().unwrap(), 0.0);
 }

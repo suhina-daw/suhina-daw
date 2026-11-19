@@ -64,6 +64,27 @@ pub struct DeviceBox {
     pub graph: Option<GraphBox>,
     /// For a plug-in: where it stands, while the project plays.
     pub plugin: Option<PluginBox>,
+    /// For a device on the track itself that reads a key (sidechain): its key and the tracks
+    /// it can read one from (`docs/spec/sidechain.md` › Choosing a source).
+    pub sidechain: Option<SidechainBox>,
+}
+
+/// A device's sidechain choices: the key it reads, and the tracks that can give one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SidechainBox {
+    pub key: Option<KeyBox>,
+    /// The tracks whose signal it can read, with their names: every track with a mixer
+    /// channel but its own and those its own plays into (a key from them would close a loop).
+    pub sources: Vec<(TrackId, String)>,
+}
+
+/// The key a device reads: from which track, where on it, and how loud.
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyBox {
+    pub track: TrackId,
+    pub name: String,
+    pub tap: suhina_engine::model::TapPoint,
+    pub gain_db: f64,
 }
 
 pub use crate::interaction::device_at::DeviceAt;
@@ -825,7 +846,42 @@ pub(super) fn chain(
     let host = channel.and_then(|c| {
         c.devices.iter().enumerate().find(|(_, d)| d.clip_host).map(|(index, d)| device_box(d, &[index], id, plugins))
     });
+    let mut devices: Vec<DeviceBox> = devices;
+    if let Some(channel) = channel {
+        let mut sources = None;
+        for shown in &mut devices {
+            let Some(device) = channel.devices.get(shown.index).filter(|d| suhina_session::reads_a_key(d)) else {
+                continue;
+            };
+            let sources = sources.get_or_insert_with(|| key_sources(project, channel.id)).clone();
+            shown.sidechain = Some(SidechainBox { key: key_box(project, device), sources });
+        }
+    }
     Chain { track: id, name: track_name, devices, host, nam }
+}
+
+/// The tracks a device on `reader` can read a key from, in project order: each track with a
+/// mixer channel but the reader's own, leaving out those a key from would close a loop.
+pub(crate) fn key_sources(project: &Project, reader: suhina_engine::model::ChannelId) -> Vec<(TrackId, String)> {
+    // One walk: the channels the reader plays into, whose key would close a loop.
+    let after = project.channels_after(reader);
+    project
+        .tracks
+        .iter()
+        .filter_map(|t| t.channel.map(|c| (t.id, c)))
+        .filter(|&(_, channel)| channel != reader && !after.contains(&channel))
+        .map(|(track, _)| (track, project.shown_track_name(track)))
+        .collect()
+}
+
+/// The key `device` reads, as the panel names it; `None` when it reads none, or its source has
+/// no track.
+fn key_box(project: &Project, device: &suhina_engine::model::Device) -> Option<KeyBox> {
+    let input = device.inputs.first()?;
+    let channel = input.source.channel();
+    let track = project.tracks.iter().find(|t| t.channel == Some(channel))?.id;
+    let gain_db = if input.gain > 0.0 { 20.0 * input.gain.log10() } else { -150.0 };
+    Some(KeyBox { track, name: project.shown_track_name(track), tap: input.source.tap(), gain_db })
 }
 
 /// One device as the detail area shows it, at `path` on track `id`; a group with its branches.
@@ -941,6 +997,7 @@ pub(super) fn device_box(
                 .map(|list| plugin_graph(d, list)),
         },
         plugin: report.map(PluginBox::from_report),
+        sidechain: None,
     }
 }
 

@@ -4,5 +4,6 @@
   "author": "The Suhina contributors",
   "description": "Black and white with strong lines and a yellow accent.",
   "swatch": "var(--window-background)",
+  "color-scheme": "dark",
   "default-variant": "Dark"
 }

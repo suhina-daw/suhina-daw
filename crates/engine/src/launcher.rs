@@ -158,6 +158,9 @@ pub enum LaunchCommand {
     },
     /// The metronome's click sound from the next click on.
     SetMetronomeSound(crate::ClickSound),
+    /// Whether a track with no instrument of its own plays its notes as sine tones (#1384): the
+    /// user's setting, off by default in the app. Notes sounding go on to their ends.
+    SetImplicitTones(bool),
     /// While the transport runs, playback jumps to `beat` at once, as [`LaunchCommand::SetPosition`]
     /// does, but the play start marker stays where it is. Ignored while stopped (the playhead is
     /// at the marker then) and for non-finite beats. A pending start waiting for read-ahead
@@ -1324,6 +1327,12 @@ impl Renderer {
                 self.graph.launcher.monitor.metronome.store(self.metronome.on(), Ordering::Relaxed);
             }
             LaunchCommand::SetMetronomeSound(sound) => self.metronome.set_sound(sound),
+            LaunchCommand::SetImplicitTones(on) => {
+                self.implicit_tones = on;
+                for chain in &mut self.graph.chains {
+                    chain.tones_off = !on;
+                }
+            }
             LaunchCommand::SetCue { gain, separate } => self.cue.set(gain, separate),
             LaunchCommand::FollowTempoMap => {
                 self.graph.launcher.follow_map();
@@ -1697,6 +1706,7 @@ impl Renderer {
             transport: crate::transport::Transport { position, .. },
             sample_rate,
             block_frame,
+            implicit_tones,
             ..
         } = self;
         let map = &graph.tempo;
@@ -1735,7 +1745,7 @@ impl Renderer {
                 scale: note.scale,
                 arranged: false,
             };
-            start_note(voices, chains, frame, *position, *sample_rate, end, start);
+            start_note(voices, chains, frame, *position, *sample_rate, end, start, *implicit_tones);
         };
         if let Some((loop_start, loop_end)) = plan.loop_range
             && beat < p.last_clip_beat

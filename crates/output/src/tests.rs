@@ -252,7 +252,9 @@ fn latency_is_the_ring_and_the_device() {
 }
 
 /// A choice that names nothing on this system falls back to the default with notices, or
-/// fails cleanly where there is no audio device at all (CI).
+/// fails cleanly where there is no audio device at all (CI). A sound server's device (PipeWire's
+/// ALSA `default` offers 1 to 384 000 Hz and 1 to 128 channels) converts what it is given, so it
+/// plays the odd rate and the far cue pair; any other device refuses them and says so.
 #[test]
 fn a_choice_of_missing_things_falls_back_to_the_default() {
     let choice = OutputChoice {
@@ -269,11 +271,18 @@ fn a_choice_of_missing_things_falls_back_to_the_default() {
         Ok(output) => {
             assert!(output.notices().iter().any(|n| n.contains("No Such Host")), "{:?}", output.notices());
             assert!(output.notices().iter().any(|n| n.contains("No Such Device")));
-            assert!(output.sample_rate() > 0 && output.sample_rate() != 12_345);
+            assert!(output.sample_rate() > 0);
+            if output.sample_rate() != 12_345 {
+                assert!(output.notices().iter().any(|n| n.contains("12345 Hz")), "{:?}", output.notices());
+            }
             assert!((64..=4096).contains(&output.block()));
-            // No default device has 64 channels: the cue plays with the main output, and says so.
-            assert_eq!(output.cue_pair(), None);
-            assert!(output.notices().iter().any(|n| n.contains("63/64")), "{:?}", output.notices());
+            // A device without 64 channels plays the cue with the main output, and says so.
+            match output.cue_pair() {
+                Some(pair) => assert_eq!(pair, 31),
+                None => {
+                    assert!(output.notices().iter().any(|n| n.contains("63/64")), "{:?}", output.notices());
+                }
+            }
         }
         Err(e) => assert!(!e.is_empty()),
     }

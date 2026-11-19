@@ -3,7 +3,7 @@ description: Guide for people and AI assistants writing or editing a Suhina them
 read_when: write a theme, edit a theme, theme author guide, theme.css, theme package, theme folder files, colour tokens, quick controls, variants, AI theme edits
 type: howto
 status: current
-last_verified: 2026-11-17
+last_verified: 2026-11-19
 covers:
   - crates/ui/src/kit/theme.rs
 ---
@@ -61,7 +61,8 @@ move its rules into `theme.css`.
   "author": "Your name",
   "description": "Dark slate with a mint accent",
   "default-variant": "Dark",
-  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)"
+  "swatch": "color-mix(in oklab, var(--panel-background), var(--accent) 35%)",
+  "color-scheme": "dark"
 }
 ```
 
@@ -77,6 +78,13 @@ move its rules into `theme.css`.
   each variant from your `@property` rules and `:root` values alone, without applying the rest
   of the sheet, so `currentColor`, `attr()` and units relative to an element do not work in it.
   A theme whose swatch does not give a colour for every variant is refused on import.
+- `color-scheme` (optional) is `"light"` or `"dark"`: whether your theme's own values are a light
+  look. Left out, the theme is dark. A variant file says its own the same way
+  (`"color-scheme": "light"`), or has the theme's; the variant editor's *Colour scheme* control
+  sets it. Suhina never guesses it from your colours: the window's title bar follows it, and any
+  sheet asks for it with `@media (prefers-color-scheme: light)` or
+  `color: light-dark(#222, #eee)` (the first value for light, the second for dark). Device panels
+  with light and dark artwork pick theirs by it, so say `light` for a light theme.
 - `toolbar` (optional) suggests a toolbar arrangement:
   `{ "items": ["browser", "tempo", "transport"], "hidden": ["agents"] }`.
 - `base` (optional): `"none"` leaves Suhina's base sheet out from under your theme (*Suhina's base
@@ -293,6 +301,19 @@ on `track-header` or `mixer` itself, as padding under one of those attributes mo
 does not make room for them. The selector reference below lists each strip's parts
 (*The strips' parts*). A device panel's controls keep Suhina's layout for now.
 
+Control placement properties are gone, and a sheet that still writes one of them gets a notice
+naming what to write instead. The notice comes from the property, not the selector: a
+`.control-NAME` rule that sets only other properties, such as `width`, matches nothing and gets no
+notice.
+
+| Removed | Write instead |
+|---|---|
+| `.control-NAME { … }` | a rule for the part's element id, listed in *The strips' parts* (`#mixer-volume` for a mixer's fader, `button#control-play` for a toolbar button); a `.control-*` rule matches nothing |
+| `left`, `top`, `right`, `bottom` | `margin-left`, `margin-top`, `margin-right`, `margin-bottom`, or `order` to move a part before or after the others |
+| `direction`, `--suhina-direction` | `flex-direction` on the group that holds the parts (`mixer-toggles { flex-direction: column; }`) |
+| `anchor-left`, `anchor-top`, `anchor-right`, `anchor-bottom` | `align-self` on the part, `justify-content` on its group, or `margin-left: auto` (and the other sides) to push it to an edge |
+| `compact-below` on `arrangement` | nothing to set: Suhina picks a header's lines by its size; style the one-line header with `track-header[layout="short"]` |
+
 Supply `track.name` and `track.body` SVGs or PNGs for name and strip backgrounds, with a
 variant for a state if you like. Artwork is not chosen by a track's colour; an SVG that draws in
 `currentColor` takes the track's colour as Suhina draws it (dimmed while muted, and grey in a
@@ -426,10 +447,13 @@ specific selector to win over Suhina's.
   `start-marker`, the `playhead`, the loop (`loop-region`, `[checked]`, and `loop-line`), a
   `marker` (`[checked]` while dragged), the tools (`arrangement-tool`, `[checked]`), the selected
   time (`time-selection` and its kinds), a clip being recorded (`arrangement clip[recording]`),
-  the lane the piano roll edits (`arrangement track-lane[checked]`), a track's header
+  a selected track's lane (`arrangement track-lane[selected]`) and Launcher column
+  (`track-column[selected]`), tinted from `selection.background`, the lane the piano roll edits
+  (`arrangement track-lane[checked]`), a track's header
   (`arrangement track-header`, `[selected]`; Main's `arrangement track-header[kind="main"]`), a
   clip's gain field (`clip-gain`) and fade handles (`clip-fade-handle`), the automation lanes
-  (`automation-lane[kind="group"]`, `automation-header`, `[selected]`, `automation-line[muted]`,
+  (`automation-lane[kind="group"]`, `automation-header`, `[selected]`,
+  `automation-line[kind="fixed"]`, `automation-line[muted]`, `automation-point[kind="fixed"]`,
   `automation-point[selected]`, `automation-pin`) and the switches `button[kind="envelope"]`,
   `"lanes"` and `"shape"`. **Your rule for an element overrides the base sheet's for each property
   it sets, its states' too**: a theme with a rule for every `scene` or `clip` states `scene[playing]`
@@ -690,15 +714,15 @@ Elements, by name:
 | `notice-bar` | the strip over the views that asks about an opened project or names missing files |
 | `toolbar-module` | one area of the toolbar, by its id (below) |
 | `browser`, `session`, `arrangement`, `mixer`, `detail`, `clip-editor`, `piano-roll`, `sample-map` | the views and panels |
-| `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]` |
+| `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]`; a selected track's column is `track-column[selected]`, whose translucent background the base sheet gives from `selection.background` and which is drawn over the whole column where it differs from `track-column`'s own (a background for every column stays under the slots) |
 | `waveform`, `envelope` | what a clip shows |
 | `device-panel`, `device-section`, `device-control`, `xy-control` | device panels; `#id` selects a device control |
-| `button`, `value`, `value-fill`, `dropdown`, `dropdown-arrow`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a drop-down's arrow keeps its own `color`, so a rule for the field's text names `dropdown-arrow` too; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` is its too, until `text-input[kind="typed"]` has its own) |
+| `button`, `value`, `value-fill`, `dropdown`, `dropdown-arrow`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a drop-down's arrow keeps its own `color` (every drop-down's, the lists' pickers such as the quantization and count-in ones too), so a rule for the field's text names `dropdown-arrow` too; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` is its too, until `text-input[kind="typed"]` has its own) |
 | `button[kind="toggle"]`, `#control-solo`, `#control-cue`, `#control-arm` | a track's solo, cue and arm buttons and the other switches Suhina draws as buttons (`[kind="solo"]`, `[kind="arm"]`, `[kind="toggle"]`), `[checked]` while on (the arm `[armed]` too): a rule for every `button` (its colour or its background image) is the lit button's too, so state its lit look (`button[kind="toggle"][checked] { background-color: … }`, and for solo and arm `button[kind="solo"][checked]`, `button[kind="arm"][checked]`); under the pointer they are ringed in their `border-color`, and in their `accent-color` while they have the keys |
 | `toggle` | a switch a view draws itself, not as a button (the detail panels' switches), `[checked]` while on: its `color` and `background-color`, a step brighter under the pointer; the base sheet gives it the colours of `button[kind="toggle"]` |
 | `slider`, `slider-rail`, `slider-fill`, `slider-handle` | a slider and its parts' `background-color`; a swing amount is `slider[checked]` while it is the clip's own, its fill then the accent: a rule for every `slider-fill` is the lit one's too, so state `slider[checked] slider-fill` |
 | `menu`, `popup` | an open menu of the menu bar; a control's popup (`#metronome-level`, the metronome's level) |
-| `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob[kind="dial"]` with its rim in its `border-color`, the disc between rim and face in `knob-ring`'s `background-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
+| `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob[kind="dial"]` with its rim in its `border-color` (as wide as its `border-width`, else a sixth of the dial's radius), the disc between rim and face in `knob-ring`'s `background-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
 | `meter`, `meter-level`, `meter-vertical`, `meter-horizontal` | level meters and their lit part |
 | `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs |
 | `app-fill` | the fills the bars, Settings, the dialogs and menus paint for themselves where the region behind gives none, by `kind` (`window`, `panel`, `panel-hover`, `control`, `control-hover`, `control-active`; `knob` the knob of a switch that is on over a see-through window) |
@@ -718,11 +742,11 @@ Elements, by name:
 | `ruler`, `loop-region`, `playhead` | the Arrangement view's ruler, its loop bar and the play position line (also the piano roll's and the browser preview strip's) |
 | `divider` | the line between a strip's device list and its controls (`#mixer-divider`), the Launcher mixer's top line (`#mixer-splitter`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) and the Arrangement's track header edge (`#arrangement-header-splitter`, painted only where a theme gives it a `background-color`) |
 | `separator[kind]` | the views' lines: the Launcher's between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's under its rows (`row`), between its bands (`band`) and under each lane (`lane`), in their `color` |
-| `slot-mark`, `slot-record`, `mapping-overlay`, `drop-target` | the mark in an empty slot with a stop button; an armed slot's record button (`[recording]`); the tint over a control while keys are mapped (`[selected]` on the picked one); where a drop lands (`kind="area"`, `kind="insert"`) |
+| `slot-mark`, `slot-record`, `mapping-overlay`, `drop-target` | the mark in an empty slot with a stop button; an armed slot's record button (`[recording]`); the tint over a control while keys are mapped (`[selected]` on the picked one); where a drop lands (`kind="area"`, `kind="insert"`, and `kind="append"`, the slot with a + after a chain's last device) |
 | `grid-line`, `tempo-mark`, `start-marker`, `marker` | the Arrangement's grid lines (`kind="bar"`, `kind="beat"`), a tempo or time-signature change, the play start marker, a marker's tag |
 | `time-selection`, `marquee` | selected time (`background-color` over the lanes, `color` at its edges; `kind="ruler"`, `"draw"`, `"editor"`, `"take"`, `"automation"`), and the rectangle that picks clips, notes (piano roll) or sample-map points |
 | `clip-fade`, `clip-envelope`, `take-header` | a fade's line (`kind="crossfade"` between takes), a clip's gain envelope while it is edited, a take lane's header |
-| `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin` | an automation lane's header (`kind="group"` for a group's), a group's time, the envelope (`[muted]` while off), its points (`[selected]`) and the pin |
+| `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin` | an automation lane's header (`kind="group"` for a group's), a group's time, the envelope (`[muted]` while off), its points (`[selected]`) and the pin; the line and points are `[kind="fixed"]` while Settings › Arrangement › Automation colour is Fixed, which the base sheet colours with `var(--accent)` |
 | `device-list`, `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends (or the device chain) are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
 | `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
 | `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail (the mixer's and the clip gain fader's) |
@@ -1135,10 +1159,13 @@ The transport (`toolbar-module#transport`) lays out `#control-play`, `#control-s
 - **Pan and send knobs of their own:** `pan.knob.body`, `pan.knob.pointer`, `send.knob.body` and
   `send.knob.pointer` artwork change only those knobs, in the Launcher and the Arrangement.
   `send { appearance: knob; }` makes the Arrangement's sends knobs too.
-- **Device knobs of your own:** `device.knob.body` and `device.knob.pointer` artwork replace the
-  faces and pointers of the knobs a device draws with its own artwork (the Amp Modeler's
-  knobs): `device.knob.body { image: url("assets/my-knob.png"); }`. The pointer turns with the
-  value; the arc around the knob keeps the knob's `accent-color`.
+- **Devices with knobs of their own:** a device that draws its knobs with its own artwork (the
+  Amp Modeler's) keeps them: no theme's `knob-body` or `knob-pointer` artwork replaces them,
+  since the theme styles only what a device leaves unstyled. A line pointer takes
+  `knob-pointer { color }`; the arc around the knob keeps the knob's `accent-color`.
+- **Devices with buttons of their own:** a device panel's own sheet can say `image: none` on its
+  buttons (the Amp Modeler's EQ, HQ and Mono do), and then no theme's `button` artwork replaces
+  their look. `image` cascades: a panel's sheet beats the theme's, and `user.css` beats both.
 - **The mixer's colour strip:** `mixer track-colour { display: none; }` hides it; `width`
   sizes it.
 
@@ -1311,6 +1338,7 @@ tokens.
 | `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
 | `automation.pin` | `#A6A3FF` | The pin of an automation lane pinned below its track's top lane (older theme files: their accent) |
 | `selection` | `#E3C86A` | The selected device's outline |
+| `selection.background` | `#DBDAFF` | Selected track headers, clips and, faintly, their lanes and columns |
 | `recording` | `#E5484D` | Recording and errors |
 | `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
 | `meter.normal` | `#8BC48A` | A level meter below the top |

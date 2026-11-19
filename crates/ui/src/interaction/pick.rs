@@ -66,7 +66,7 @@ impl PickField {
     /// The dialog's title.
     pub fn title(self) -> &'static str {
         match self {
-            Self::BackgroundImage => "Background image (PNG)",
+            Self::BackgroundImage => "Background image (PNG, JPEG or WebP)",
             Self::ProjectsFolder => "Projects folder",
             Self::TemplatesFolder => "Templates folder",
             Self::StartTemplate => "Template to start from",
@@ -91,11 +91,11 @@ impl PickField {
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
             Self::ExportFile => &["wav", "flac", "ogg", "mp3"],
-            Self::BackgroundImage => &["png"],
+            Self::BackgroundImage => &["png", "jpg", "jpeg", "webp"],
             Self::ThemePackage => &["suhina", "zip", "css", "json"],
             Self::MissingFile => &["wav", "aif", "aiff", "flac", "mp3", "ogg", "oga", "mp4", "m4a"],
             field if field.folder() => &[],
-            _ => &["suhina", "als"],
+            _ => &["suhina", "als", "zip"],
         }
     }
 

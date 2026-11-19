@@ -295,9 +295,10 @@ pub struct GroupClass {
 pub const MAX_GROUP_CLASSES: usize = 64;
 
 /// Properties the host application reads from a theme's rules itself; the engine leaves them
-/// alone without a notice. Read by the app, not the engine: artwork, the name and the background
-/// material.
-pub const HOST_PROPERTIES: &[&str] = &["image", "name", "background-opacity", "background-blur"];
+/// alone without a notice. Read by the app, not the engine: the name and the background material.
+/// Artwork (`image`) is an engine property too: the theme loader still reads a theme's `image`
+/// rules into its artwork roles, and the cascade gives each element its own (`none` removes it).
+pub const HOST_PROPERTIES: &[&str] = &["name", "background-opacity", "background-blur"];
 
 /// The elements whose children the CSS layout places: only there does a padding in percent, which
 /// CSS takes of the width of the box around the element, mean anything. Everywhere else the app
@@ -319,6 +320,7 @@ impl Sheet {
                             Property::from_name(&declaration.name),
                             Some(
                                 Property::BackgroundImage
+                                    | Property::Image
                                     | Property::Color
                                     | Property::BackgroundColor
                                     | Property::BorderColor
@@ -640,14 +642,14 @@ fn rules(parser: &mut Parser<'_>, source: &str, scope: &Scope, sheet: &mut Sheet
                             if declarations.iter().any(|d| d.name == "backdrop-filter")
                                 && !selectors.iter().all(|s| {
                                     s.bare_kind().is_some_and(|kind| crate::property::BARE_FILTERED.contains(&kind))
-                                        || s.subject_is(&["dialog"])
+                                        || s.subject_is(&["dialog", "settings"])
                                 })
                             {
                                 sheet.notice(
                                     location,
-                                    "backdrop-filter is read only on dialog and in a rule for popup, menu or \
-                                     tooltip alone: other elements sit in the window, which the system blurs \
-                                     behind"
+                                    "backdrop-filter is read only on dialog and settings and in a rule for \
+                                     popup, menu or tooltip alone: other elements sit in the window, which the \
+                                     system blurs behind"
                                         .into(),
                                 );
                             }
@@ -762,6 +764,39 @@ fn percent_padding(rule: RuleKind, property: Property, value: &crate::value::Val
     )
 }
 
+/// The notice for a placement property that went with control placements (ADR 0031 › Amendment:
+/// the strips lay their parts out in CSS): what a sheet writes in its place. `None` for any other
+/// name.
+fn removed_placement(name: &str) -> Option<String> {
+    let removed = "was a control placement and is no longer read";
+    let instead = match name {
+        "left" | "top" | "right" | "bottom" => format!(
+            "a part sits where its strip's CSS layout puts it: move it with margin-{name} or order in a rule \
+             for the part's element id, listed in the theme guide's strip parts (#mixer-volume, #control-play); \
+             a .control-NAME rule matches nothing"
+        ),
+        "direction" | "--suhina-direction" => {
+            "lay a strip's parts out with flex-direction on the group that holds them \
+                        (mixer-toggles { flex-direction: column; })"
+                .into()
+        }
+        "anchor-left" | "anchor-top" | "anchor-right" | "anchor-bottom" => {
+            "align a part with align-self, or justify-content on its group, and push it to an edge with \
+             margin: auto on the other side"
+                .into()
+        }
+        "compact-below" => {
+            return Some(
+                "compact-below is no longer read: Suhina picks a track header's lines by its size; style \
+                 the one-line header with track-header[layout=\"short\"]"
+                    .into(),
+            );
+        }
+        _ => return None,
+    };
+    Some(format!("{name} {removed}: {instead}"))
+}
+
 /// The declarations of one rule, of the kind its selectors say ([`RuleKind`]).
 fn declarations(
     parser: &mut Parser<'_>,
@@ -818,11 +853,16 @@ fn declarations(
                 && !crate::variables::mentions_attr(value)
                 && !matches!(value, "inherit" | "initial" | "unset")
             {
-                let failure = shorthand.longhands().iter().find_map(|property| {
-                    shorthand
-                        .part(*property, value)
-                        .and_then(|part| property.parse(&crate::value::viewport_units(&part, 1000.0, 1000.0)))
-                        .map_or_else(Some, |parsed| percent_padding(rule, *property, &parsed))
+                // A value with `light-dark()` is checked as both schemes see it.
+                let failure = scheme_branches(value).map_or_else(Some, |branches| {
+                    branches.iter().find_map(|value| {
+                        shorthand.longhands().iter().find_map(|property| {
+                            shorthand
+                                .part(*property, value)
+                                .and_then(|part| property.parse(&crate::value::viewport_units(&part, 1000.0, 1000.0)))
+                                .map_or_else(Some, |parsed| percent_padding(rule, *property, &parsed))
+                        })
+                    })
                 });
                 if let Some(message) = failure {
                     sheet.notice(at, format!("{name}: {message}"));
@@ -849,6 +889,10 @@ fn declarations(
         if HOST_PROPERTIES.contains(&name.as_str()) {
             continue;
         }
+        if let Some(notice) = removed_placement(&name) {
+            sheet.notice(at, notice);
+            continue;
+        }
         if !name.starts_with("--") && Property::from_name(&name).is_none() {
             sheet.notice(at, format!("Unknown native property {name}"));
             continue;
@@ -863,9 +907,13 @@ fn declarations(
             && !crate::variables::mentions_attr(value)
             && !matches!(value, "inherit" | "initial" | "unset")
             && let Some(property) = Property::from_name(&name)
-            && let Some(message) = property
-                .parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
-                .map_or_else(Some, |parsed| percent_padding(rule, property, &parsed))
+            && let Some(message) = scheme_branches(value).map_or_else(Some, |branches| {
+                branches.iter().find_map(|value| {
+                    property
+                        .parse(&crate::value::viewport_units(value, 1000.0, 1000.0))
+                        .map_or_else(Some, |parsed| percent_padding(rule, property, &parsed))
+                })
+            })
         {
             sheet.notice(at, format!("{name}: {message}"));
             continue;
@@ -875,127 +923,16 @@ fn declarations(
     Ok(declarations)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Padding in percent is taken only where the CSS layout places an element's children (the
-    /// window, the toolbar): elsewhere the app paints the content box without the box around
-    /// the element, so it is refused with a notice rather than read as no padding (#1336).
-    #[test]
-    fn padding_in_percent_is_read_only_on_a_layout_container() {
-        // `:is()` and `:where()` that hold only layout containers name them too; `:not()` does not.
-        let named = Sheet::parse(
-            ":is(toolbar, #window) { padding: 1%; } :where(toolbar) { padding-top: 2%; } \
-             :is(toolbar, device) { padding: 1%; } :not(device) { padding: 1%; }",
-        )
-        .unwrap();
-        assert_eq!(named.notices.len(), 2, "{:?}", named.notices);
-        let kept: Vec<_> = named.rules.iter().map(|r| r.declarations.len()).collect();
-        assert_eq!(kept, [4, 1, 0, 0]);
-        let sheet = Sheet::parse(
-            "window { padding: 2%; } #window, toolbar { padding-left: 5%; } \
-             device { padding: 5%; } browser { padding-top: 10%; } toolbar, device { padding: 1% 4px; } \
-             device { padding: 4px 1em; }",
-        )
-        .unwrap();
-        let messages: Vec<_> = sheet.notices.iter().map(|n| n.message.as_str()).collect();
-        assert_eq!(messages.len(), 3, "{messages:?}");
-        assert!(
-            messages.iter().all(|m| m.contains("percentage is read only on a CSS layout container")),
-            "{messages:?}"
-        );
-        // The refused declarations are dropped; the others stay.
-        let kept: Vec<_> = sheet.rules.iter().map(|r| r.declarations.len()).collect();
-        assert_eq!(kept, [4, 1, 0, 0, 0, 4]);
-    }
-
-    /// One declaration checked on its own, as a sheet checks it: a shorthand by its parts (#1336).
-    #[test]
-    fn a_declaration_is_accepted_as_a_sheet_accepts_it() {
-        assert!(accepts("border-width", "1px"));
-        assert!(accepts("border-width", "0 0 2px"));
-        assert!(accepts("border-top-width", "2px"));
-        assert!(accepts("padding", "4px 8px"));
-        assert!(accepts("gap", "6px"));
-        assert!(accepts("color", "#fff"));
-        // A math function is one side, whatever spaces it holds.
-        assert!(accepts("border-width", "calc(1px + 1px)"));
-        assert!(accepts("border-width", "0 calc(1px + 1px) min(2px, 4px)"));
-        assert!(accepts("padding", "calc(2px * 3) 4px"));
-        assert_eq!(top_level_words(" a  calc(1px + (2px)) b "), ["a", "calc(1px + (2px))", "b"]);
-        assert!(!accepts("border-width", "1px 2px 3px 4px 5px"));
-        assert!(!accepts("border-width", "red"));
-        assert!(!accepts("colour", "#fff"));
-        assert!(!accepts("image", "url(a.svg)"));
-    }
-
-    #[test]
-    fn group_classes_are_declared_with_a_label_and_checked_for_a_rule() {
-        let sheet = Sheet::parse(
-            "@group-class lcd { label: \"LCD display\"; } \
-             @group-class pill { /* no label */ } \
-             @group-class typo { label: 'Typo'; } \
-             @group-class lcd { label: \"LCD\"; } \
-             @group-class 9lives { label: \"Bad\"; } \
-             @group-class bad { colour: red; } \
-             toolbar group.lcd { background-color: #1a2a1a; } \
-             :is(group.pill, button) { radius: 9px; } \
-             group.helper { radius: 2px; }",
-        )
-        .unwrap();
-        assert_eq!(
-            sheet.group_classes,
-            [
-                GroupClass { name: "pill".into(), label: None },
-                GroupClass { name: "typo".into(), label: Some("Typo".into()) },
-                GroupClass { name: "lcd".into(), label: Some("LCD".into()) },
-            ]
-        );
-        assert_eq!(sheet.notices.len(), 2, "{:?}", sheet.notices);
-        assert_eq!(sheet.unstyled_group_classes(), ["typo"]);
-    }
-
-    #[test]
-    fn backdrop_filter_is_read_on_floating_elements_and_named_elsewhere() {
-        let sheet = Sheet::parse(
-            "popup, menu { backdrop-filter: blur(20px); } dialog[kind=\"x\"] { backdrop-filter: none; } \
-             tooltip { backdrop-filter: blur(0); } window dialog { backdrop-filter: blur(4.5px); }",
-        )
-        .unwrap();
-        assert!(sheet.notices.is_empty(), "{:?}", sheet.notices);
-        let sheet = Sheet::parse(
-            "workspace-panel { backdrop-filter: blur(8px); } popup, browser { backdrop-filter: none; } \
-             popup button { backdrop-filter: none; } :is(popup, tooltip) { backdrop-filter: none; } \
-             menu-bar menu { backdrop-filter: none; } popup#metronome-level { backdrop-filter: none; }",
-        )
-        .unwrap();
-        assert_eq!(sheet.notices.len(), 6, "{:?}", sheet.notices);
-        assert!(
-            sheet.notices.iter().all(|n| n.message.contains("backdrop-filter is read only")),
-            "{:?}",
-            sheet.notices
-        );
-        for bad in ["blur()", "blur(2em)", "sepia(1)", "blur(-1px)", "blur(NaNpx)"] {
-            let sheet = Sheet::parse(&format!("popup {{ backdrop-filter: {bad}; }}")).unwrap();
-            assert_eq!(sheet.notices.len(), 1, "{bad}: {:?}", sheet.notices);
-        }
-        use crate::property::blurs;
-        assert!(blurs("blur(20px)") && blurs(" blur( 0.5px ) "));
-        assert!(!blurs(" none ") && !blurs("blur(0)") && !blurs("blur(0px)") && !blurs("sepia(1)"));
-    }
-
-    #[test]
-    fn the_placements_properties_are_unknown_everywhere() {
-        // Control placements went with #1453: a `.control-*` rule is a rule like any other, and
-        // its offsets, direction and anchors are properties no element has.
-        let sheet = Sheet::parse(
-            ".control-play { direction: vertical; anchor-left: 4px; left: 2px; } \
-             button { top: 1px; }",
-        )
-        .unwrap();
-        assert_eq!(sheet.notices.len(), 4, "{:?}", sheet.notices);
-        assert!(sheet.notices.iter().all(|notice| notice.message.starts_with("Unknown native property")));
-        assert!(sheet.rules.iter().all(|rule| rule.declarations.is_empty()), "the engine keeps none of them");
+/// `value` as each colour scheme sees it: once with its `light-dark()` calls taken for a light
+/// theme and once for a dark one, or once as it is when it has none.
+fn scheme_branches(value: &str) -> Result<Vec<String>, String> {
+    if crate::variables::mentions_light_dark(value) {
+        Ok(vec![crate::variables::light_dark(value, true)?, crate::variables::light_dark(value, false)?])
+    } else {
+        Ok(vec![value.to_owned()])
     }
 }
+
+#[cfg(test)]
+#[path = "sheet_tests.rs"]
+mod tests;

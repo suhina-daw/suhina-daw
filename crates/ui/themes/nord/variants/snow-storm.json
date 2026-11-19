@@ -1,5 +1,6 @@
 {
   "name": "Snow Storm",
+  "color-scheme": "light",
   "values": {
     "--ground": "#ECEFF4",
     "--surface": "#E5E9F0",

@@ -52,6 +52,7 @@ fn clip(content: u32, start: f64) -> Clip {
 
 fn content(id: u32, lanes: Vec<ContentLane>) -> ClipContent {
     ClipContent {
+        linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
@@ -70,6 +71,7 @@ fn project() -> Project {
 
 fn project_built() -> Project {
     let track = |id: u32, name: &str| Track {
+        folder: false,
         id: TrackId(id),
         name: name.into(),
         color: None,

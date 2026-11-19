@@ -53,7 +53,10 @@ pub(crate) fn build(
     // A track whose mixer follows lanes applies its gains after a chain, one without devices
     // when it has none (#395); a group's chain makes it a bus.
     for track in &project.tracks {
-        if chains.iter().all(|c| c.track != track.id) && automation::mixer_automated(project, track.id) {
+        if chains.iter().all(|c| c.track != track.id)
+            && (automation::mixer_automated(project, track.id)
+                || project.channel_of_track(track.id).is_some_and(|c| c.pan != 0.0))
+        {
             chains.push(Chain::passthrough(track.id, column_of(track.id), sample_rate));
         }
     }
@@ -104,6 +107,17 @@ pub(crate) fn build(
         chains.push(Chain::passthrough(source, column_of(source), sample_rate));
     }
 
+    // Keys (sidechains, `docs/spec/sidechain.md` › Engine): the reading track, the device's place
+    // among its channel's devices, the track read, at which tap point and gain. The main
+    // channel reads as the main chain. A source gets a chain of its own, so there is a signal to
+    // read, as a send's source does.
+    let keys = key_edges(project);
+    for &(_, _, source, _, _) in &keys {
+        if source != TrackId::MAIN && chains.iter().all(|c| c.track != source) {
+            chains.push(Chain::passthrough(source, column_of(source), sample_rate));
+        }
+    }
+
     // A bus: a track with a chain that some other channel plays into.
     let channel_of = |track: TrackId| project.track(track).and_then(|t| t.channel);
     let feeds = |channel: ChannelId| project.channels.iter().any(|c| c.id != channel && c.output == Some(channel));
@@ -132,6 +146,8 @@ pub(crate) fn build(
             .map(|(bus, _)| *bus)
             .into_iter()
             .chain(planned.iter().filter(|p| p.source == c.track).map(|p| p.target))
+            // A key's source before the chain that reads it.
+            .chain(keys.iter().filter(|k| k.2 == c.track && k.0 != c.track).map(|k| k.0))
             .collect()
     });
     let mut chains = chains;
@@ -164,20 +180,20 @@ pub(crate) fn build(
         let is_bus = buses.iter().any(|(t, _)| *t == chain.track);
         let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
         chain.mix = automation::channel_of(project, chain.track)
-            .and_then(|channel| MixLanes::new(channel, frames_per_beat, !is_bus, f64::from(sample_rate)));
+            .and_then(|channel| MixLanes::new(channel, frames_per_beat, true, f64::from(sample_rate)));
         // A track's pan applies live (its gains centred, the pan as factors a knob's turn moves),
-        // unless a lane carries it, also beside a volume or mute lane (#763 › 4); a group's pan
-        // does not apply (as for a group without devices).
+        // unless a lane carries it, also beside a volume or mute lane (#763 › 4).
+        // A bus applies its own pan once, after summing its inputs.
         let live_pan = automation::channel_of(project, chain.track)
-            .filter(|_| !is_bus && !chain.mix.as_ref().is_some_and(MixLanes::has_pan))
+            .filter(|_| !chain.mix.as_ref().is_some_and(MixLanes::has_pan))
             .map(|c| if c.pan.is_finite() { c.pan.clamp(-1.0, 1.0) } else { 0.0 });
-        let post = gains_until(project, chain.track, target.map(|(_, ch)| ch), !is_bus && live_pan.is_none())
-            .unwrap_or((0.0, 0.0));
+        let post =
+            gains_until(project, chain.track, target.map(|(_, ch)| ch), live_pan.is_none()).unwrap_or((0.0, 0.0));
         chain.set_post(post);
         chain.target = target.map(|(index, _)| index);
         // A live pan reaches the cue as it does the main output: its gains are centred too.
         chain.set_cue(if cued(project, chain.track) {
-            cue_gains(project, chain.track, !is_bus && live_pan.is_none())
+            cue_gains(project, chain.track, live_pan.is_none())
         } else {
             None
         });
@@ -273,9 +289,64 @@ pub(crate) fn build(
         main.input_latency = latency;
         chains.push(main);
     }
+    // Each key: the reading slot takes the source's signal at its tap point, delayed so that it
+    // lines up with the reader's own input (as late as the latest path into the reader, less
+    // how late the tap point already is); a key that comes later than that is not held back.
+    for &(reader, position, source, tap, gain) in &keys {
+        let (Some(i), Some(j)) =
+            (chains.iter().position(|c| c.track == reader), chains.iter().position(|c| c.track == source))
+        else {
+            continue;
+        };
+        let Some(slot) = chains.get(i).and_then(|c| c.slot_of(position)) else { continue };
+        let reader_in = input.get(i).copied().unwrap_or(latency);
+        let tapped = match tap {
+            suhina_model::TapPoint::PreFx => input.get(j).copied().unwrap_or(0),
+            _ => arrive.get(j).copied().unwrap_or(0),
+        };
+        if let Some(chain) = chains.get_mut(j) {
+            chain.want_tap(tap);
+            if j != i && !chain.key_readers.contains(&i) {
+                chain.key_readers.push(i);
+            }
+        }
+        let delay = reader_in.saturating_sub(tapped) as usize;
+        if let Some(chain) = chains.get_mut(i) {
+            chain.key_reads.push(crate::chain::KeyRead::new(slot, j, tap, gain, delay));
+            chain.mark_keyed(slot);
+        }
+    }
     // When each chain runs in a block, and with how much of the deadline (#1261).
     sends::plan_turns(&mut chains);
     (chains, latency)
+}
+
+/// The keys (sidechains) the project's devices read: the reading track ([`TrackId::MAIN`] for
+/// the main channel), the device's place among its channel's top-level devices, the track read,
+/// its tap point and gain. A switched-off device reads none, and neither does one inside a
+/// device group (`docs/spec/sidechain.md` › Device groups); a key whose source has no track, or
+/// that would close a loop (a hand-edited file), is left out and the device reads its own input.
+pub(crate) fn key_edges(project: &Project) -> Vec<(TrackId, usize, TrackId, suhina_model::TapPoint, f32)> {
+    let track_of = |channel: ChannelId| {
+        project.tracks.iter().find(|t| t.channel == Some(channel)).map(|t| t.id).or_else(|| {
+            project.channel(channel).filter(|c| c.role == suhina_model::ChannelRole::Master).map(|_| TrackId::MAIN)
+        })
+    };
+    let mut keys = Vec::new();
+    for channel in &project.channels {
+        let Some(reader) = track_of(channel.id) else { continue };
+        for (position, device) in channel.devices.iter().enumerate() {
+            let Some(input) = device.inputs.first().filter(|_| device.enabled) else { continue };
+            let Some(source) = track_of(input.source.channel()) else { continue };
+            if source == TrackId::MAIN || project.key_closes_loop(input.source, channel.id) {
+                continue;
+            }
+            let gain =
+                if input.gain.is_finite() { input.gain.clamp(0.0, suhina_model::DeviceInput::MAX_GAIN) } else { 0.0 };
+            keys.push((reader, position, source, input.source.tap(), gain as f32));
+        }
+    }
+    keys
 }
 
 /// Whether the main channel runs a chain of its own (#687): it holds devices, or its volume,

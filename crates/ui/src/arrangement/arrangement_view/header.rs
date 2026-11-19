@@ -15,7 +15,7 @@ pub(super) fn routing(
     background: Color32,
     actions: &mut Vec<Action>,
 ) {
-    let current = lane.output.and_then(|t| groups.iter().find(|(g, _)| *g == t)).map_or("Main", |(_, name)| name);
+    let current = lane.output_name.as_deref().unwrap_or("Main");
     let label = Rect::from_min_size(rect.min, Vec2::new(18.0, rect.height()));
     widgets::text_in(
         painter,
@@ -36,7 +36,7 @@ pub(super) fn routing(
     widgets::subtle_dropdown(ui, painter, field, &response, current, background);
     egui::Popup::menu(&response).show(|ui| {
         let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
-        if ui.selectable_label(lane.output.is_none(), text("Main")).clicked() && lane.output.is_some() {
+        if ui.selectable_label(lane.output_name.is_none(), text("Main")).clicked() && lane.output_name.is_some() {
             picked = Some(serde_json::Value::from("main"));
         }
         for (group, name) in groups.iter().filter(|(g, _)| *g != lane.track) {
@@ -225,7 +225,7 @@ pub(super) fn track_header(
     }
     // Its parts, as the sheet lays them out for a header of its kind and size (#1453).
     let has_takes = timeline.takes.iter().any(|t| t.track == lane.track);
-    let parts = super::header_layout::layout(
+    let mut parts = super::header_layout::layout(
         Some(&own),
         rect,
         super::header_layout::Header {
@@ -237,6 +237,16 @@ pub(super) fn track_header(
             sends: lane.sends.len(),
         },
     );
+    // A presentation folder (an imported playlist group) has no mixer channel: no meter, track
+    // switch, solo, cue, volume, pan, sends or routing, only its name and its fold.
+    if lane.folder {
+        (parts.meter, parts.track_on, parts.solo, parts.cue) = (None, None, None, None);
+        (parts.volume, parts.pan, parts.output, parts.input) = (None, None, None, None);
+        (parts.previous, parts.next) = (None, None);
+        parts.sends.clear();
+        parts.shown_sends = 0;
+        parts.navigation = false;
+    }
     let selection = state.selected_tracks.clone();
     // Open until a click outside: its items close it themselves, and a colour dragged in its
     // picker does not (#712).
@@ -257,13 +267,19 @@ pub(super) fn track_header(
             midi: lane.plays_notes.then_some((&lane.midi_input, timeline.midi_ports.as_slice())),
             audio: lane.plays_audio.then_some((&lane.audio_input, timeline.input_channels)),
             tracks_copied: state.tracks_copied,
+            key_readers: &timeline.key_readers,
         };
         menus::track_menu(ui, &menu, actions);
     });
     work_trace.mark("interaction");
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
-    // Preserve track identity when selected: a small brightness lift and outline, without
-    // replacing the track colour with the global selection accent.
+    // A selected track's header is filled with the one selection colour every selected header
+    // and clip shares (Settings › Appearance › Selection colour); its own colour stays in its band.
+    // With Clip's own colour, and for the track the piano roll edits without its being selected,
+    // the header keeps its colour with a small brightness lift and an outline.
+    let selection_fill = (state.selected_tracks.contains(&lane.track) && !lane.mute)
+        .then(|| crate::kit::selection::fill(&own))
+        .flatten();
     // The theme's header colours (`--track-headerBackground`, `--track-headerSelectedBackground`),
     // which the track's colour is worked into; a rule for `track-header` paints over the result.
     let background = own
@@ -282,6 +298,8 @@ pub(super) fn track_header(
     // computed background, so `--track-headerMutedBackground` reaches it.
     let header_fill = if lane.mute {
         own.computed_background_or(muted_header_grey(selected))
+    } else if let Some(fill) = selection_fill {
+        fill
     } else {
         let surface = colour_surface(background, rgb(lane.color), strength);
         if selected { motion::mix(surface, crate::kit::element::name_ink(), 0.07) } else { surface }
@@ -437,10 +455,8 @@ pub(super) fn track_header(
         drop(lit);
         // Three stacked lines: the lanes under the track.
         let glyph = button.shrink2(Vec2::new(4.0, 4.0));
-        for i in 0..3 {
-            let y = glyph.top() + glyph.height() * i as f32 / 2.0;
-            painter.hline(glyph.x_range(), y, egui::Stroke::new(1.0, text));
-        }
+        let stroke = egui::Stroke::new(1.0, text);
+        super::clip::stacked_lines(painter, glyph.x_range(), glyph.bottom(), glyph.height() / 2.0, stroke);
     }
     let name_visible = parts.name.is_some();
     let mut name = parts.name.unwrap_or(Rect::NOTHING);
@@ -667,9 +683,15 @@ pub(super) fn track_header(
     }
 
     // Taller still: where the track's audio goes, and under it, on a track that plays notes,
-    // which controllers it hears when armed.
+    // which controllers it hears when armed. A presentation folder is no place to send audio.
     if let Some(line) = parts.output.filter(|line| line.intersects(clip)) {
-        routing(ui, painter, line, lane, nest.groups, header_fill, actions);
+        let outputs: Vec<_> = nest
+            .groups
+            .iter()
+            .filter(|(id, _)| timeline.lanes.iter().any(|l| l.track == *id && !l.folder))
+            .cloned()
+            .collect();
+        routing(ui, painter, line, lane, &outputs, header_fill, actions);
     }
     if let Some(input) = parts.input.filter(|input| input.intersects(clip)) {
         if lane.plays_notes {

@@ -3,5 +3,6 @@
   "name": "Suhina Blocks",
   "author": "The Suhina contributors",
   "description": "Original brown plank surfaces, colour-keyed pixel textures and stone controls. No landscape wallpaper.",
-  "swatch": "var(--window-background)"
+  "swatch": "var(--window-background)",
+  "color-scheme": "dark"
 }

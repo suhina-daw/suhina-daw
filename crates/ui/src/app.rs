@@ -425,12 +425,17 @@ pub struct App {
     stashes: HashMap<ProjectId, Stash>,
     /// A dropped file waiting for the user to choose a new tab or replace.
     open_prompt: Option<PathBuf>,
+    /// A zipped project waiting for the person to say where to unpack it.
+    zip_prompt: Option<tabs::ZipPrompt>,
     /// A project with unsaved changes waiting for Save, Don't save or Cancel before it is closed,
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
     /// Projects being left while their plug-ins are read for edits ([`LeaveCheck`]), one after
     /// another in the order asked: a second close while a read goes on waits its turn.
     leave_checks: std::collections::VecDeque<LeaveCheck>,
+    /// The leave checks waited this frame or an earlier one (a dialog, a question, a checked
+    /// close held them): the waiting check's read starts again once, when they go on.
+    leave_checks_paused: bool,
     /// A `project.close` whose plug-ins were read: run without reading them again once actions
     /// run (kept while a dialog holds them).
     checked_close: Option<(ProjectId, Action)>,
@@ -726,6 +731,9 @@ pub struct App {
     /// bar shows it and once a second is often enough for a number that moves that slowly.
     ram: Option<u64>,
     next_ram: Option<f64>,
+    /// The CPU load the control bar shows instead of the engine's, in per mille: a fixed figure
+    /// for renders (`hold_cpu`).
+    held_cpu: Option<u32>,
     /// Blur and glass even with animations off (`suhina-theme-render`, whose scenes are still).
     effects_when_still: bool,
     /// The audio's health counters last traced: device underruns, late stretched frames and late
@@ -776,8 +784,10 @@ impl App {
             shown_project: None,
             stashes: HashMap::new(),
             open_prompt: None,
+            zip_prompt: None,
             unsaved_prompt: None,
             leave_checks: std::collections::VecDeque::new(),
+            leave_checks_paused: false,
             checked_close: None,
             traced_output: None,
             ara_prompt: None,
@@ -910,6 +920,7 @@ impl App {
             recovery_open: None,
             reveal: None,
             ram: None,
+            held_cpu: None,
             next_ram: None,
             effects_when_still: false,
             audio_traced: (0, 0, 0, 0, 0, 0),
@@ -1107,6 +1118,17 @@ impl App {
             self.themes.import(path);
             return;
         }
+        // A zipped project opens once the person said where to unpack it.
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+            match suhina_session::zipped_project(&path) {
+                Ok(Some(found)) => self.zip_prompt = Some(tabs::ZipPrompt::new(path, found)),
+                Ok(None) => {
+                    self.status = Status::Error(format!("{} holds no project (.als or .suhina)", path.display()))
+                }
+                Err(e) => self.status = Status::Error(e),
+            }
+            return;
+        }
         if self.projects.is_empty() {
             self.open_request = Some((path, OpenAs::NewTab));
             return;
@@ -1134,16 +1156,31 @@ impl App {
     /// Advances the read of a project's plug-ins before it is left ([`LeaveCheck`]); once done,
     /// asks about unsaved changes or goes on.
     fn poll_leave_check(&mut self, ctx: &egui::Context) {
-        // A checked close not yet run keeps the next one waiting: it holds the one slot.
-        if self.checked_close.is_some() {
+        // A checked close not yet run keeps the next one waiting: it holds the one slot. So does a
+        // question about unsaved changes, or the save it led to: the next check's question would
+        // take its place, and the file it was asked for would be lost unanswered.
+        // A dialog that holds the actions holds the checks too: a close checked now would only
+        // wait for it, its plug-ins read before edits made while it is open.
+        if self.checked_close.is_some() || self.unsaved_prompt_open() || self.dialog_holds_actions() {
+            self.leave_checks_paused = true;
             return;
+        }
+        // The read under way starts again once, as the checks go on: its second may have passed
+        // while they waited, and it would then end on the states read before the pause. Not on
+        // every paused frame: quitting reads the same plug-ins meanwhile, and a check started
+        // again each frame would never end.
+        if std::mem::take(&mut self.leave_checks_paused)
+            && let Some(waiting) = self.leave_checks.front()
+            && let Some(session) = self.projects.get_mut(waiting.project)
+        {
+            session.rack_mut().restart_edit_check();
         }
         let Some(check) = self.leave_checks.pop_front() else { return };
         let Some(session) = self.projects.get_mut(check.project) else {
             // Closed meanwhile: a file to open goes where the active project is now, after its
-            // own check; a close has nothing left to do.
+            // own check, in this one's place in the queue; a close has nothing left to do.
             if let LeaveThen::Replace(path) = check.then {
-                self.open_as(path, OpenAs::Replace);
+                self.retarget(path);
             }
             ctx.request_repaint();
             return;
@@ -1158,9 +1195,11 @@ impl App {
         }
         match check.then {
             // Another project became the active one while this one was read: the file opens in
-            // its place only after the same check of that one, its unsaved changes asked about.
+            // its place only after the same check of that one, its unsaved changes asked about,
+            // still ahead of the requests made after it.
             LeaveThen::Replace(path) if self.projects.active() != Some(check.project) => {
-                self.open_as(path, OpenAs::Replace);
+                self.retarget(path);
+                ctx.request_repaint();
             }
             LeaveThen::Replace(path) if self.unsaved(check.project) => {
                 self.unsaved_prompt = Some(Leaving { project: check.project, then: AfterLeaving::Replace(path) });
@@ -1170,6 +1209,18 @@ impl App {
                 self.checked_close = Some((check.project, action));
                 ctx.request_repaint();
             }
+        }
+    }
+
+    /// A file to open in place of the project that was to be left, which is no longer the active
+    /// one: checked against the active project now, at the front of the queue, where the request
+    /// stood ([`App::open_as`] would put it behind the requests made since).
+    fn retarget(&mut self, path: PathBuf) {
+        match self.projects.active() {
+            Some(active) => {
+                self.leave_checks.push_front(LeaveCheck { project: active, then: LeaveThen::Replace(path) })
+            }
+            None => self.open_request = Some((path, OpenAs::Replace)),
         }
     }
 
@@ -1406,6 +1457,13 @@ impl App {
         self.next_ram = Some(f64::INFINITY);
     }
 
+    /// Shows `milli` per mille as the engine's CPU load from now on, whether or not an engine
+    /// plays, so that renders of the window show the CPU read-out the same each time
+    /// (`suhina-theme-render`). `None` shows the engine's own again.
+    pub fn hold_cpu(&mut self, milli: Option<u32>) {
+        self.held_cpu = milli;
+    }
+
     /// Keeps blur and glass on while animations are off, so that still renders of the window show
     /// them (`suhina-theme-render`). Off, the animations setting turns them off with motion.
     pub fn effects_when_still(&mut self, on: bool) {
@@ -1562,6 +1620,7 @@ impl App {
             self.render_threads_applied = Some(settings.render_threads);
         }
         self.projects.set_backup_settings(settings.backup, settings.backup_clean_up);
+        self.projects.set_implicit_tones(settings.implicit_tones);
         motion::set_enabled(ctx, settings.animations);
         crate::kit::widgets::set_drag_hides_pointer(ctx, settings.drag_hides_pointer);
         self.arrangement.headers_left = headers_left(settings.track_headers);
@@ -2668,6 +2727,14 @@ impl App {
         self.background.wait();
     }
 
+    /// For tests and renders: waits for the work the window has on other threads, the background
+    /// image being loaded ([`App::wait_for_background`]) and the sample map's layout, so the next
+    /// frame takes in their results. Returns at once when nothing is on the way.
+    pub fn wait_for_workers(&mut self) {
+        self.background.wait();
+        self.sample_map.wait_for_workers();
+    }
+
     /// A theme file read again after it changed on disk; the window redraws in it if it is the
     /// theme in use.
     pub fn put_theme(&mut self, ctx: &egui::Context, entry: ThemeEntry) {
@@ -3087,6 +3154,10 @@ impl App {
             crate::kit::skin::configure(&crate::kit::skin::Skin::default());
             crate::kit::native_css::set_colors(&theme::Colors::new());
         }
+        // The selection colour is the window's, as the theme's colours are: a chosen one goes over
+        // the theme's `selection.background` before the styles are worked out.
+        crate::kit::selection::set(self.settings.view.selection);
+        self.arrangement.automation.colours = self.settings.view.automation;
         // The backdrop's opacity before the styles: the frame an image first shows in is faded.
         let backdrop = self.background.prepare(ui, &self.settings);
         let _css_frame = crate::kit::native_css::frame_with_motion(
@@ -3148,6 +3219,15 @@ impl App {
         }
         let window = ui.max_rect();
         let mut actions = Vec::new();
+        // A close whose plug-ins were read, held by a dialog that opened since: it goes back to
+        // the front of the leave checks, so its plug-ins are read again once the dialog is gone (an
+        // edit made in a plug-in's editor meanwhile still asks whether to save), and it is not
+        // handed to the held actions every frame, which would keep asking for frames.
+        if self.dialog_holds_actions()
+            && let Some((project, action)) = self.checked_close.take()
+        {
+            self.leave_checks.push_front(LeaveCheck { project, then: LeaveThen::Close(action) });
+        }
         self.poll_leave_check(ui.ctx());
         // A close whose plug-ins were read goes on now.
         let checked_close = self.checked_close.take();
@@ -3268,7 +3348,8 @@ impl App {
         });
         let progress = grid.as_ref().map(|g| self.progress(g)).unwrap_or_default();
         // The CPU load the control bar shows, from the engine's monitor, in per mille.
-        let cpu = self.session().and_then(|s| s.player()).map(|p| p.cpu_monitor().load_milli());
+        let cpu =
+            self.held_cpu.or_else(|| self.session().and_then(|s| s.player()).map(|p| p.cpu_monitor().load_milli()));
         // The program's own RAM, the control bar shows it beside the CPU: measured once a
         // second, not every frame. The plug-in host processes report their own once a second,
         // and their share is added: the number is what Suhina and its hosts use together.
@@ -3367,7 +3448,7 @@ impl App {
             .unwrap_or_default();
         // The application bar is the window's title bar where Suhina draws its own (Windows); where
         // the system draws one, it would be a second.
-        if cfg!(target_os = "windows") {
+        if crate::kit::platform::current().draws_own_title_bar() {
             let bar = crate::kit::element::APPLICATION_BAR.enter();
             egui::Panel::top("application-bar")
                 .exact_size(bar_height(ui, &bar, 28.0))
@@ -3386,11 +3467,11 @@ impl App {
         // theme moves them). Each region draws in its rectangle and takes input only there; a
         // region the grid gives none is not drawn.
         self.missing.sync(&mut self.projects, self.revision);
-        let missing_bar = self.open_prompt.is_none() && self.missing.bar_shows();
+        let prompting = self.open_prompt.is_some() || self.zip_prompt.is_some();
+        let missing_bar = !prompting && self.missing.bar_shows();
         // A newer build is offered in a bar over an open project; the start panel has its own
         // line (`docs/spec/updates.md` › With a project open).
-        let update_bar =
-            self.open_prompt.is_none() && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
+        let update_bar = !prompting && !missing_bar && !self.start_panel_open() && self.updates.bar_shows();
         // The browser stays hidden on the start panel (nothing to drop into); its setting keeps
         // its value for when a project opens. It slides in and out from its side, with animations
         // on (#708).
@@ -3400,8 +3481,7 @@ impl App {
         // The grid takes the whole room, as the panels it replaced did: what the window holds
         // reaches its edges, for what is painted behind it.
         ui.advance_cursor_after_rect(room);
-        let input =
-            self.window_input(room.size(), grid.is_some(), self.open_prompt.is_some() || missing_bar || update_bar);
+        let input = self.window_input(room.size(), grid.is_some(), prompting || missing_bar || update_bar);
         let layout = crate::kit::native_css::window(&input)
             .map(|layout| layout.translated(room.min.to_vec2()))
             .unwrap_or_default();
@@ -3468,6 +3548,8 @@ impl App {
                 let inside = style.paint(ui.painter(), rect).content;
                 if self.open_prompt.is_some() {
                     in_region(ui, inside, |ui| self.open_prompt_bar(ui));
+                } else if self.zip_prompt.is_some() {
+                    in_region(ui, inside, |ui| self.zip_prompt_bar(ui));
                 } else if missing_bar {
                     in_region(ui, inside, |ui| self.missing.bar(ui, inside));
                 } else if update_bar && let Some(wanted) = in_region(ui, inside, |ui| self.updates.bar(ui, inside)) {
@@ -3955,7 +4037,14 @@ impl App {
                 }
                 continue;
             }
-            checked_ran |= closing.is_some() && closing == checked;
+            if closing.is_some() && closing == checked {
+                // A second close of it in the same frame (a click on its tab released as its read
+                // ended) has nothing left to close: it would only report the project as gone.
+                if checked_ran {
+                    continue;
+                }
+                checked_ran = true;
+            }
             if self.window_action(action) {
                 continue;
             }

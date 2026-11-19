@@ -143,6 +143,7 @@ mod tests {
             LaneData::Notes(vec![Note::new(0.0, 1.0, 60, 0.8)].into())
         };
         ClipContent {
+            linked: false,
             id: ContentId(id),
             name: format!("Clip {id}"),
             length: 4.0,

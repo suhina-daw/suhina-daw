@@ -207,24 +207,23 @@ group[kind="mixer-body"] > divider,
 group[kind="mixer-body"] > pan,
 group[kind="mixer-body"] > value,
 group[kind="mixer-body"] > meter { flex-shrink: 0; }
-track-name[kind="mixer-name"] { margin-bottom: 2px; }
+/* The name is a bar along the strip's top, out to its edges past the body's padding (#1487 L12). */
+track-name[kind="mixer-name"] { margin: -6px -6px 2px; }
 group[kind="mixer-output"] { margin-bottom: 4px; }
 /* The divider lies over the gap under the device list, a point into the list and the next part. */
 divider[kind="mixer-divider"] { margin: -1px 0; }
 pan[kind="mixer-pan"] { margin-bottom: 4px; }
-value[kind="mixer-volume-readout"] { margin-bottom: 2px; align-self: flex-start; }
-/* The fader, its scale and the meter: the scale after the fader, or before it, centred, on a
-   narrow strip. */
+value[kind="mixer-volume-readout"] { margin-bottom: 2px; align-self: center; }
+/* The fader, its scale and the meter, centred in the strip with the scale before the fader, on
+   every strip alike (#1487 B19: only a narrow strip, Main's, was centred). */
 /* It takes the room the other parts leave, or give up. */
 group[kind="mixer-level"] { display: flex; flex: 1 1 auto; min-height: 0; }
 group[kind="mixer-level"] > fader,
 group[kind="mixer-level"] > fader-scale,
 group[kind="mixer-level"] > meter { flex-shrink: 0; }
-fader-scale[kind="mixer-volume-scale"] { order: 1; }
 meter[kind="mixer-meter"] { order: 2; margin-left: 4px; }
-mixer[narrow] group[kind="mixer-level"] { justify-content: center; }
-mixer[narrow] value[kind="mixer-volume-readout"] { align-self: center; }
-mixer[narrow] fader-scale[kind="mixer-volume-scale"] { order: 0; margin: 0 2px; }
+group[kind="mixer-level"] { justify-content: center; }
+fader-scale[kind="mixer-volume-scale"] { order: 0; margin: 0 2px; }
 /* Main's meter at the top of a strip too low for its fader. */
 group[kind="mixer-body"] > meter[kind="mixer-meter"] { order: 0; margin: 0 0 auto; align-self: flex-start; }
 group[kind="mixer-input"] { display: flex; flex-direction: column; gap: 3px; }

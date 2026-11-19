@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-15
+last_verified: 2026-11-19
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -167,7 +167,9 @@ Shift-click and Ctrl-click add clips to the selection **(not built)**.
 
 **Suhina:** the launch control is the slot's mark and the padding around it (the first 18 px);
 the name selects. Selecting a clip selects its track too, and selecting a track by its header ends
-the clip's selection. The selected slot is drawn like a selected arrangement clip. The setting is
+the clip's selection. The selected slot is drawn like a selected arrangement clip: filled with the selection colour,
+its own colour down its leading edge ([arrangement editing](arrangement-editing.md#selection-colour)).
+A selected track's header takes the same colour, and its whole column a light tint of it. The setting is
 Settings › Launcher and mixer › **Select on launch** (On by default, saved as
 `select_on_launch`). Enter is the action `selection.launch`; the arrows are `selection.up`,
 `selection.down`, `selection.left` and `selection.right` (all rebindable,
@@ -365,7 +367,9 @@ vertical channel strip under its slots, and the strip shows more the taller the 
 - **The fader** is dragged up or down (Shift for finer), and the wheel over it moves it a dB at
   a time; every frame of a drag is heard, and the drag is one undo step (`track.setVolume` with
   `tracks` and a `gesture`). A double-click sets it back to 0 dB, as the Arrangement headers do.
-- **The output** reads "→ Main" or "→" and the group the track plays into. A click opens a menu
+- **The output** reads "→ Main" only for the main output; otherwise it names the actual
+  destination channel, including imported routes into regular or return tracks and channels
+  without a visible track. A muted destination is marked "(muted)". A click opens a menu
   of Main and the project's group tracks (a group does not list itself); picking one routes the
   track there (`track.setOutput`, one undo step). A route that would make a loop is refused with a
   message and changes nothing. The Arrangement view's track headers have the same dropdown.

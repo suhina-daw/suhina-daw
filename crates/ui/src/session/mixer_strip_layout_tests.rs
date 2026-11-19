@@ -86,9 +86,12 @@ fn native(rect: Rect, has_sends: bool, input: bool, shared: Shared, main: bool, 
         return parts;
     }
     let mut top = inner.top();
+    // Since #1487 L12 the name is a bar along the strip's top, out to its edges.
     if height >= NAME_AT {
-        parts.name = Some(row(top, NAME));
-        top += NAME + UNDER_NAME;
+        let strip_top = top - PAD;
+        parts.name =
+            Some(Rect::from_min_max(Pos2::new(rect.left(), strip_top), Pos2::new(rect.right(), strip_top + NAME)));
+        top = strip_top + NAME + UNDER_NAME;
     }
     if height >= OUTPUT_AT {
         parts.output = Some(row(top, OUTPUT));
@@ -122,7 +125,8 @@ fn native(rect: Rect, has_sends: bool, input: bool, shared: Shared, main: bool, 
         parts.pan = Some(row(top, theme::KNOB));
         top += KNOB_ROW;
     }
-    let centred = rect.width() <= theme::SCENE_COLUMN;
+    // Since #1487 B19 every strip centres its fader, as a narrow one did.
+    let centred = true;
     let group_left = if centred { inner.center().x - FADER_COLUMN / 2.0 } else { inner.left() };
     let column =
         |top: f32, height: f32| Rect::from_min_size(Pos2::new(group_left, top), Vec2::new(FADER_COLUMN, height));
@@ -200,34 +204,83 @@ fn same(a: &Native, b: &Native) -> bool {
         && all(&a.buttons, &b.buttons)
 }
 
+/// The oracle's parts as numbers, in a fixed order: each part's presence and its corners.
+fn coordinates(parts: &Native) -> Vec<f32> {
+    let mut out = Vec::new();
+    let mut push = |rect: Option<Rect>| match rect {
+        Some(r) => out.extend([1.0, r.min.x, r.min.y, r.max.x, r.max.y]),
+        None => out.extend([0.0; 5]),
+    };
+    for rect in [parts.band, parts.name, parts.output, parts.devices, parts.divider, parts.sends, parts.pan] {
+        push(rect);
+    }
+    for rect in [parts.readout, parts.fader, parts.scale, parts.meter, parts.compact, parts.toggles] {
+        push(rect);
+    }
+    for index in 0..3 {
+        push(parts.input.map(|input| input[index]));
+    }
+    for index in 0..4 {
+        push(parts.buttons.get(index).copied());
+    }
+    out
+}
+
+/// The heights from 40 to 459 points at which the oracle's layout of a strip `width` wide changes
+/// course: a part comes or goes, or a part stops following the strip's height (a fader reaching its
+/// least or tallest size, the device list filling). Each with the points either side of it, and a
+/// height every 30 points between, so the sheet's layout is compared where the two could part, at
+/// a fraction of the cost of every height: laying the sheet out is the slow half.
+fn turning_heights(width: f32, oracle: impl Fn(Rect) -> Native) -> Vec<f32> {
+    let at = |height: f32| coordinates(&oracle(Rect::from_min_size(Pos2::new(13.0, 7.0), Vec2::new(width, height))));
+    let mut heights: Vec<i32> = (40..460).step_by(30).collect();
+    heights.push(459);
+    let mut before = at(40.0);
+    let mut here = at(41.0);
+    for height in 41..459 {
+        let after = at(height as f32 + 1.0);
+        let turns = before.iter().zip(&here).zip(&after).any(|((b, h), a)| ((a - h) - (h - b)).abs() > 1e-3);
+        if turns {
+            heights.extend([height - 1, height, height + 1]);
+        }
+        (before, here) = (here, after);
+    }
+    heights.sort_unstable();
+    heights.dedup();
+    heights.into_iter().map(|h| h as f32).collect()
+}
+
 #[test]
 fn with_no_rule_the_strip_lays_out_as_suhina_s_own_layout_did() {
     let mut checked = 0;
     for width in [64.0, theme::RETURN_COLUMN, 88.0, theme::SCENE_COLUMN, 97.0, theme::TRACK_COLUMN, 160.0] {
-        for height in (40..460).step_by(3).map(|h| h as f32) {
-            for (sends, input, reserve, armable) in [
-                (true, false, false, true),
-                (false, true, false, true),
-                (false, false, true, false),
-                (true, true, true, true),
-            ] {
-                for fader in [0.0, 90.0] {
-                    let shared = Shared { reserve_input: reserve, fader };
+        for (sends, input, reserve, armable) in [
+            (true, false, false, true),
+            (false, true, false, true),
+            (false, false, true, false),
+            (true, true, true, true),
+        ] {
+            for fader in [0.0, 90.0] {
+                let shared = Shared { reserve_input: reserve, fader };
+                let kind = Strip::Track { armable };
+                for height in turning_heights(width, |rect| native(rect, sends, input, shared, false, armable)) {
                     let rect = Rect::from_min_size(Pos2::new(13.0, 7.0), Vec2::new(width, height));
-                    let kind = Strip::Track { armable };
                     let got = laid(&layout_in(Host::Alone, rect, sends, input, shared, kind), false);
                     let want = native(rect, sends, input, shared, false, armable);
                     assert!(
                         same(&got, &want),
                         "{width}×{height} {sends} {input} {reserve} {armable} {fader}:\n{got:#?}\n{want:#?}"
                     );
+                    checked += 1;
+                }
+                for height in turning_heights(width, |rect| native(rect, false, false, shared, true, false)) {
+                    let rect = Rect::from_min_size(Pos2::new(13.0, 7.0), Vec2::new(width, height));
                     let main = laid(&layout_in(Host::Alone, rect, false, false, shared, Strip::Main), true);
                     let want = native(rect, false, false, shared, true, false);
                     assert!(same(&main, &want), "Main {width}×{height}:\n{main:#?}\n{want:#?}");
-                    checked += 1;
                 }
             }
         }
     }
-    assert!(checked > 1000);
+    assert!(checked > 1000, "{checked} layouts compared");
 }

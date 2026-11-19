@@ -183,3 +183,24 @@ fn a_threshold_change_is_ramped() {
     c.process(&ProcessContext::default(), &mut s);
     assert!(c.gain_reduction_db() > 40.0, "{}", c.gain_reduction_db());
 }
+
+#[test]
+fn a_loud_key_ducks_a_quiet_signal_and_a_silent_key_leaves_it() {
+    let settings = [(param::THRESHOLD, -20.0), (param::RATIO, 8.0), (param::KNEE, 0.0)];
+    // A signal well under the threshold: compressed by its own level, it would pass unchanged.
+    let quiet = sines(&[(220.0, 0.01)], 9600);
+    let loud = sines(&[(60.0, 0.9)], 9600);
+    let peak = |s: &[f32]| s.iter().skip(4800 * 2).step_by(2).fold(0.0f32, |m, v| m.max(v.abs()));
+    let mut own = quiet.clone();
+    compressor(&settings).process(&ProcessContext::default(), &mut own);
+    let mut ducked = quiet.clone();
+    compressor(&settings).process_keyed(&ProcessContext::default(), &loud, &mut ducked);
+    let mut silent = quiet.clone();
+    compressor(&settings).process_keyed(&ProcessContext::default(), &vec![0.0; quiet.len()], &mut silent);
+    // The key's level sets the reduction; the device's own sound is what it reduces.
+    assert!(peak(&ducked) < peak(&own) * 0.25, "ducked {} vs own {}", peak(&ducked), peak(&own));
+    assert!((peak(&silent) - peak(&own)).abs() < 1e-4, "a silent key reduces nothing");
+    // A key shorter than the buffer reads silence past its end, never panics.
+    let mut short = quiet.clone();
+    compressor(&settings).process_keyed(&ProcessContext::default(), &loud[..100], &mut short);
+}

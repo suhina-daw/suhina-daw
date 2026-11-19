@@ -262,6 +262,14 @@ pub trait PluginProcessor: Send {
     /// then left as it was. Never allocates, locks or does I/O beyond the block's round trip.
     fn process(&mut self, buffer: &mut [f32], events: &[(usize, NoteEvent)], timeout: Duration) -> bool;
 
+    /// The key (sidechain) for the next block it is handed, as many frames as that block,
+    /// interleaved stereo: the plug-in's first auxiliary input hears it
+    /// (`docs/spec/sidechain.md` › Plug-in buses). A processor without one ignores it. Never
+    /// allocates.
+    fn set_key(&mut self, key: &[f32]) {
+        let _ = key;
+    }
+
     /// The first half of [`PluginProcessor::process`]: hands `buffer` and `events` to the
     /// plug-in without waiting, so the plug-ins of several chains run at the same time and a
     /// block's deadline is shared by the slowest rather than by all of them in turn. A
@@ -578,6 +586,9 @@ pub(crate) struct PluginSlot {
     /// their processing times yet. Boxed, as it is seldom used, and made with the slot, so the
     /// audio thread only reads and writes it in place.
     pub(crate) late_followers: Box<LateFollowers>,
+    /// It reads a key (sidechain): its blocks go on their own, never joined with another
+    /// plug-in's, since a joint block carries one plug-in's input.
+    pub(crate) keyed: bool,
     /// How late the sound it gets is, in frames, from the devices before it in its chain: the
     /// song position it is told is moved back by this and the chain's input delay, so a plug-in
     /// that follows the song (a tempo-synced shape, an arpeggio) lines up with what it hears.
@@ -617,10 +628,13 @@ impl PluginSlot {
     }
 
     /// Runs `span` through the plug-in with `events` (frames counted from the start of the
-    /// span) until `deadline`, or [`OFFLINE_TIMEOUT`] without one. A disabled slot passes the
-    /// sound through; one that misses passes it through too, or is silent for an instrument.
+    /// span) until `deadline`, or [`OFFLINE_TIMEOUT`] without one. A disabled effect passes the
+    /// sound through; a disabled instrument is silent, as when it misses a block.
     pub(crate) fn run(&mut self, span: &mut [f32], events: &[(usize, NoteEvent)], deadline: Option<Instant>) {
         if !self.enabled || span.is_empty() {
+            if !self.enabled && self.instrument {
+                span.fill(0.0);
+            }
             return;
         }
         let timeout = deadline.map_or(OFFLINE_TIMEOUT, |d| d.saturating_duration_since(crate::clock::now()));
@@ -725,9 +739,17 @@ impl PluginSlot {
         self.enabled && !self.params.span(from, to).is_empty()
     }
 
+    /// Hands the plug-in the key (sidechain) for the block it is handed next. Never allocates.
+    pub(crate) fn set_key(&mut self, key: &[f32]) {
+        self.keyed = true;
+        if let Some(processor) = self.processor.as_mut() {
+            processor.set_key(key);
+        }
+    }
+
     /// Where the plug-in runs, when it is enabled and can take part in a joint round trip now.
     pub(crate) fn joint(&self) -> Option<Joint> {
-        if !self.enabled {
+        if !self.enabled || self.keyed {
             return None;
         }
         self.processor.as_ref()?.joint()

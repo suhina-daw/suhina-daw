@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Every built-in theme and variant paints each scene as recorded in `painted/<system>.txt` (#1023): what
+//! Every built-in theme and variant paints each scene as recorded in `painted.txt` (#1023): what
 //! moves the views onto elements, or the colours into the sheet, changes no theme's look unless
 //! it means to. Headless: the digest of [`painted::scene`]'s listing, no GPU.
 //!
@@ -10,27 +10,23 @@
 //! request. To see what changed, write the listings before and after the change with
 //! `SUHINA_PAINTED_DUMP=<folder>` and compare the two folders.
 //!
-//! Each system has its own file (`macos.txt`, `linux.txt`): some text differs between them (shortcuts
-//! say Cmd or Ctrl, Settings names the plug-in formats each system has). A change records the file
-//! of the system it runs on; when another system's file must change, its CI run fails and prints
-//! that whole file, ready to replace it. Not on Windows, where the window draws its own title bar
-//! (the application bar): its scenes differ in that bar alone, and the other systems check the rest.
+//! One file for every system: the scenes are drawn with the window looking like Linux
+//! ([`suhina_ui::kit::platform`]), so shortcuts say Ctrl and Settings names Linux's plug-in formats
+//! on a Mac and on Windows too, and no system draws the title bar Suhina draws on Windows. A
+//! recording made on any system holds on the others.
 
 use std::collections::BTreeMap;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::{Path, PathBuf};
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+use suhina_theme_render::painted::Drawing;
 use suhina_theme_render::scenes::Scene;
 use suhina_theme_render::{Subject, painted, scenes};
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 /// The scenes left out: the About dialog shows the build's commit.
 const LEFT_OUT: [&str; 1] = ["about-dialog"];
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 /// A theme to draw, by the name its digests are recorded under. Every theme runs the style engine,
 /// Suhina Studio too (#1448).
 struct Drawn {
@@ -38,7 +34,6 @@ struct Drawn {
     subject: Subject,
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn drawn() -> Vec<Drawn> {
     let mut drawn: Vec<Drawn> =
         Subject::built_ins().into_iter().map(|subject| Drawn { name: subject.id.clone(), subject }).collect();
@@ -50,9 +45,8 @@ fn drawn() -> Vec<Drawn> {
     drawn
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn file() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/painted/{}.txt", std::env::consts::OS))
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/painted.txt")
 }
 
 /// The recorded digests: `scene theme digest` a line.
@@ -66,10 +60,9 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
         .collect()
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-/// Every (scene, theme) listing, drawn by as many workers as the machine has cores; each drawing
+/// Every (scene, theme) drawing, drawn by as many workers as the machine has cores; each drawing
 /// is on a thread of its own ([`painted::scene`]).
-fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<String, String>> {
+fn drawings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<Drawing, String>> {
     let jobs: Vec<(&Scene, &Drawn)> = scenes.iter().flat_map(|scene| drawn.iter().map(move |d| (scene, d))).collect();
     let next = AtomicUsize::new(0);
     let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
@@ -85,21 +78,50 @@ fn listings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Res
                 })
             })
             .collect();
-        handles.into_iter().flat_map(|handle| handle.join().unwrap_or_default()).collect()
+        // A worker that panicked fails the test: its drawings are missing, and a recording
+        // written without them would be partial.
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
+            .collect()
     })
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+/// Every scene but [`LEFT_OUT`] drawn in every built-in theme and variant, `(scene, theme)` to its
+/// drawing: drawn once for the test binary, and shared by the tests of what is painted and what is
+/// cut off (`cut.rs`).
+pub fn all() -> &'static BTreeMap<(String, String), Result<Drawing, String>> {
+    static ALL: OnceLock<BTreeMap<(String, String), Result<Drawing, String>>> = OnceLock::new();
+    ALL.get_or_init(|| {
+        let scenes: Vec<Scene> =
+            scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
+        drawings(&scenes, &drawn())
+    })
+}
+
+/// One test for both recordings: nextest runs each test in a process of its own, and two tests
+/// would each draw every scene in every theme (the slowest thing in the workspace's tests). Both
+/// are checked even when the first differs, so one run shows both files.
 #[test]
-fn every_built_in_theme_paints_each_scene_as_recorded() {
-    let scenes: Vec<Scene> = scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
-    let drawn = drawn();
-    let listings = listings(&scenes, &drawn);
+fn every_built_in_theme_paints_and_cuts_as_recorded() {
+    let painted = std::panic::catch_unwind(paints_each_scene_as_recorded);
+    super::cut::cuts_off_only_the_texts_recorded();
+    if let Err(panic) = painted {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[allow(clippy::unwrap_used)] // called by the test above, outside a #[test] function
+fn paints_each_scene_as_recorded() {
+    let listings: BTreeMap<&(String, String), Result<&str, &str>> = all()
+        .iter()
+        .map(|(key, drawing)| (key, drawing.as_ref().map(|d| d.listing.as_str()).map_err(String::as_str)))
+        .collect();
     if let Some(folder) = std::env::var_os("SUHINA_PAINTED_DUMP") {
         let folder = PathBuf::from(folder);
         std::fs::create_dir_all(&folder).unwrap();
         for ((scene, theme), listing) in &listings {
-            let text = listing.clone().unwrap_or_else(|e| format!("error: {e}\n"));
+            let text = listing.map(str::to_owned).unwrap_or_else(|e| format!("error: {e}\n"));
             std::fs::write(folder.join(format!("{scene}.{theme}.txt")), text).unwrap();
         }
     }
@@ -110,13 +132,13 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
                 Ok(text) => format!("{:016x}", painted::digest(text)),
                 Err(e) => format!("error:{}", e.replace(char::is_whitespace, "_")),
             };
-            (key.clone(), digest)
+            ((*key).clone(), digest)
         })
         .collect();
-    let mut text = format!(
-        "# What each built-in theme paints in each scene on {}: `scene theme digest`, written by\n\
-         # `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/painted.rs).\n",
-        std::env::consts::OS
+    let mut text = String::from(
+        "# What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme\n\
+         # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`\n\
+         # (tests/painted.rs).\n",
     );
     for ((scene, theme), digest) in &now {
         text.push_str(&format!("{scene} {theme} {digest}\n"));
@@ -176,8 +198,8 @@ fn every_built_in_theme_paints_each_scene_as_recorded() {
 fn a_listing_is_the_same_each_time() {
     let scene = scenes::find("launcher").unwrap();
     let subject = Subject::built_in("nord").unwrap();
-    let first = painted::scene(&subject, &scene).unwrap();
-    let second = painted::scene(&subject, &scene).unwrap();
+    let first = painted::scene(&subject, &scene).unwrap().listing;
+    let second = painted::scene(&subject, &scene).unwrap().listing;
     assert!(first.lines().count() > 100, "the launcher paints: {first}");
     let differ: Vec<(usize, (&str, &str))> =
         first.lines().zip(second.lines()).enumerate().filter(|(_, (a, b))| a != b).take(5).collect();

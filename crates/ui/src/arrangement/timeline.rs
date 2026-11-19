@@ -127,10 +127,17 @@ pub struct ClipBox {
     pub take: Option<usize>,
     /// It plays through its channel's ARA plug-in (#990).
     pub ara: bool,
+    /// A linked copy: its content is linked and another arrangement clip plays it too (#1414).
+    pub linked: bool,
+    /// What its content holds (its lanes and length), so clips that play the same notes or
+    /// audio can be offered Link; 0 for a content that is missing.
+    pub material: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Lane {
+    /// Presentation-only parent: no audio controls or routing of its own.
+    pub folder: bool,
     pub track: TrackId,
     pub name: String,
     pub color: Rgb,
@@ -163,6 +170,8 @@ pub struct Lane {
     pub sends: Vec<crate::interaction::grid::SendKnob>,
     /// The group track this track plays into; `None` is the main output.
     pub output: Option<TrackId>,
+    /// The actual non-main output, including routes outside the group picker.
+    pub output_name: Option<String>,
     /// The track's column in the launcher, for the engine's per-track state.
     pub column: Option<usize>,
     /// The track plays launched clips instead of its arrangement clips.
@@ -204,6 +213,8 @@ pub struct Timeline {
     pub stack_rows: StackRows,
     /// The MIDI input ports there are, for the tracks' MIDI inputs; set by the app.
     pub midi_ports: Vec<String>,
+    /// The devices that read a key (sidechain), for the tracks' Sidechain to menus.
+    pub key_readers: Vec<crate::interaction::menus::KeyReader>,
     /// The channels of the audio input device open now (0 when none is); set by the app.
     pub input_channels: u16,
     /// The main channel's volume, if the project has one.
@@ -396,7 +407,14 @@ impl Timeline {
             .iter()
             .filter(|t| {
                 let channel = t.channel.and_then(|id| project.channel(id));
-                channel.is_some_and(|c| c.role == ChannelRole::Effect)
+                channel.is_some_and(|c| {
+                    c.role == ChannelRole::Effect
+                        || (c.role == ChannelRole::Submix
+                            && project
+                                .channels
+                                .iter()
+                                .any(|source| source.sends.iter().any(|send| send.target == c.id)))
+                })
             })
             .collect();
         let mut number = 0;
@@ -406,6 +424,7 @@ impl Timeline {
                 Some(ChannelRole::Master) => continue,
                 Some(ChannelRole::Effect) => ColumnKind::Return,
                 Some(ChannelRole::Submix) => ColumnKind::Group,
+                None if track.is_folder() => ColumnKind::Group,
                 _ => ColumnKind::Track,
             };
             if kind != ColumnKind::Return {
@@ -438,6 +457,7 @@ impl Timeline {
                 .unwrap_or_default();
             let clips = sub_rows(clips, track.id, rows_before, &mut stack_rows);
             let lane = Lane {
+                folder: track.is_folder(),
                 track: track.id,
                 // Its `#` read as its number (#946).
                 name: if kind == ColumnKind::Return {
@@ -481,6 +501,7 @@ impl Timeline {
                     .and_then(|c| c.output)
                     .and_then(|id| project.tracks.iter().find(|t| t.channel == Some(id)))
                     .map(|t| t.id),
+                output_name: crate::interaction::grid::output_name(project, channel),
                 column: project.launcher.columns.iter().position(|c| c.track == track.id),
                 overrides: false,
                 clips,
@@ -488,6 +509,18 @@ impl Timeline {
             if kind == ColumnKind::Return { returns.push(lane) } else { lanes.push(lane) }
         }
         lanes.extend(returns);
+        // Linked copies (#1414): a content marked linked that two or more arrangement clips play.
+        if project.contents.iter().any(|c| c.linked) {
+            let mut plays: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+            for clip in project.arrangement.lanes.iter().flat_map(|l| &l.clips) {
+                *plays.entry(clip.content.0).or_default() += 1;
+            }
+            for clip in lanes.iter_mut().flat_map(|l: &mut Lane| &mut l.clips) {
+                let content = clip.stack_key.0;
+                clip.linked = project.content(suhina_engine::model::ContentId(content)).is_some_and(|c| c.linked)
+                    && plays.get(&content).is_some_and(|n| *n > 1);
+            }
+        }
         let markers: Vec<MarkerFlag> = project
             .arrangement
             .markers
@@ -521,6 +554,7 @@ impl Timeline {
             ara_activity: std::collections::HashMap::new(),
             tempo: Some(project.transport.tempo_map(1.0)),
             midi_ports: Vec::new(),
+            key_readers: crate::interaction::menus::key_readers(project),
             input_channels: 0,
             lanes,
             main_volume_db,
@@ -795,6 +829,16 @@ fn take_rows(project: &Project) -> Vec<TakeRow> {
     rows
 }
 
+/// A key for what `content` holds (its lanes, its length, its scale), equal for contents that
+/// hold the same material ([`ClipBox::material`]).
+fn material_key(content: &ClipContent) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::hash::DefaultHasher::new();
+    format!("{:?}{:?}", content.lanes, content.scale).hash(&mut hasher);
+    content.length.to_bits().hash(&mut hasher);
+    hasher.finish()
+}
+
 /// How the view draws `clip`, the `index`th of its lane, on a track coloured `track_color`.
 fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> ClipBox {
     let content = project.content(clip.content);
@@ -804,6 +848,7 @@ fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> C
         id: clip.id,
         color: clip.color.unwrap_or(track_color),
         stack_key: (clip.content.0, clip.start.to_bits(), clip.id.0),
+        material: content.map_or(0, material_key),
         // A MIDI clip goes on before its notes (#832); an audio clip's audio starts where it does.
         earliest_start: if looped || !audio { 0.0 } else { (clip.start - clip.offset).max(0.0) },
         latest_end: content.filter(|_| audio && !looped).map(|c| clip.start - clip.offset + c.length),
@@ -826,6 +871,7 @@ fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> C
         rows: 1,
         take: None,
         ara: clip.ara,
+        linked: false,
     }
 }
 

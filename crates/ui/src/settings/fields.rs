@@ -330,8 +330,11 @@ pub(super) const LATER: &[Field] = &[
 ];
 
 /// The settings written after the MCP write folders.
-pub(super) const LAST: &[Field] =
-    &[switch!("auto_arm", auto_arm), named!("setting_descriptions", setting_descriptions, Descriptions)];
+pub(super) const LAST: &[Field] = &[
+    switch!("auto_arm", auto_arm),
+    named!("setting_descriptions", setting_descriptions, Descriptions),
+    switch!("implicit_tones", implicit_tones),
+];
 
 /// The setting `key` names, among all of them.
 pub(super) fn field(key: &str) -> Option<&'static Field> {

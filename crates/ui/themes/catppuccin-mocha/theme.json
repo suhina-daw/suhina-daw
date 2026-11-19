@@ -4,5 +4,6 @@
   "author": "The Suhina contributors",
   "description": "The Catppuccin Mocha palette (MIT, catppuccin.com), mapped onto Suhina's tokens.",
   "swatch": "var(--window-background)",
+  "color-scheme": "dark",
   "default-variant": "Mocha"
 }

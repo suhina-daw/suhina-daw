@@ -99,7 +99,7 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
                 continue;
             }
             let Some(target_channel) = project.channel(send.target) else { continue };
-            if target_channel.role != ChannelRole::Effect {
+            if !matches!(target_channel.role, ChannelRole::Effect | ChannelRole::Submix) {
                 continue;
             }
             let Some(target) = track_of(send.target) else { continue };
@@ -115,12 +115,7 @@ pub(crate) fn plan(project: &Project) -> Vec<Planned> {
                 target,
                 gains: gains(channel, send.level, send.pre_fader),
                 level: send.level,
-                // A group's pan does not apply to its own output yet (see `buses`), so not to its sends.
-                pan: if channel.pan.is_finite() && channel.role != ChannelRole::Submix {
-                    channel.pan.clamp(-1.0, 1.0)
-                } else {
-                    0.0
-                },
+                pan: if channel.pan.is_finite() { channel.pan.clamp(-1.0, 1.0) } else { 0.0 },
                 post_fader: !send.pre_fader,
             });
         }
@@ -268,7 +263,9 @@ impl Staged {
 pub(crate) fn plan_turns(chains: &mut [Chain]) {
     let main = chains.iter().position(|c| c.track == suhina_model::TrackId::MAIN);
     let targets = |c: &Chain| -> Vec<usize> {
-        let mut t: Vec<usize> = c.sends.iter().map(|s| s.target).chain(c.target).collect();
+        // A chain that reads a key from this one waits for it as for a feeder.
+        let mut t: Vec<usize> =
+            c.sends.iter().map(|s| s.target).chain(c.target).chain(c.key_readers.iter().copied()).collect();
         if c.target.is_none()
             && let Some(main) = main
             && c.track != suhina_model::TrackId::MAIN
@@ -513,10 +510,44 @@ fn start(
         }
     }
     chain.turn.started = true;
+    // Its signal before its devices, for a key that reads it, and the keys it reads.
+    chain.keep_pre_fx(frames);
+    feed_keys(chains, i, frames);
+    let Some(chain) = chains.get_mut(i) else { return };
     if parallel && chain.turn.parallel {
         chain.turn.queued = true;
     } else {
         chain.advance(frames, context);
+    }
+}
+
+/// Hands chain `i`'s keys their block: each from its source chain's tap point (its own, for a
+/// key before its devices), which has run its part of the block by now. Never allocates.
+fn feed_keys(chains: &mut [Chain], i: usize, frames: usize) {
+    let reads = chains.get(i).map_or(0, |c| c.key_reads.len());
+    for k in 0..reads {
+        let Some((j, tap)) = chains.get(i).and_then(|c| c.key_reads.get(k)).map(|r| (r.source, r.tap)) else {
+            continue;
+        };
+        if j == i {
+            let Some(chain) = chains.get_mut(i) else { continue };
+            let index = crate::chain::tap_index(tap);
+            let source = std::mem::take(chain.taps.get_mut(index).unwrap_or(&mut Vec::new()));
+            if let Some(read) = chain.key_reads.get_mut(k) {
+                read.take(&source, frames);
+            }
+            if let Some(slot) = chain.taps.get_mut(index) {
+                *slot = source;
+            }
+            continue;
+        }
+        let (low, high) = chains.split_at_mut(i.max(j));
+        let (reader, source) = if j < i { (high.first_mut(), low.get(j)) } else { (low.get_mut(i), high.first()) };
+        if let (Some(reader), Some(source)) = (reader, source)
+            && let Some(read) = reader.key_reads.get_mut(k)
+        {
+            read.take(source.tap(tap, frames), frames);
+        }
     }
 }
 
@@ -531,8 +562,7 @@ fn done(
     parallel: bool,
 ) {
     let Some(chain) = chains.get_mut(i) else { return };
-    chain.complete(frames, context);
-    chain.stage(frames);
+    chain.finish(frames, context);
     release(chains, i, frames, context, capture, parallel);
 }
 
@@ -554,6 +584,20 @@ fn release(
         // A send and the output into the same chain count once, as `plan_turns` counts them.
         let repeated = (0..k).any(|e| chains.get(i).and_then(|c| c.sends.get(e)).map(|s| s.target) == to);
         let Some(t) = to.filter(|_| !repeated) else { continue };
+        let Some(next) = chains.get_mut(t) else { continue };
+        next.turn.left = next.turn.left.saturating_sub(1);
+        if next.turn.left == 0 && !next.turn.started && next.track != suhina_model::TrackId::MAIN {
+            start(chains, t, frames, context, capture, parallel);
+        }
+    }
+    // The chains that read a key from it, each counted once, as `plan_turns` counts them.
+    let readers = chains.get(i).map_or(0, |c| c.key_readers.len());
+    for k in 0..readers {
+        let Some(t) = chains.get(i).and_then(|c| c.key_readers.get(k)).copied() else { continue };
+        let counted = chains.get(i).is_some_and(|c| c.target == Some(t) || c.sends.iter().any(|s| s.target == t));
+        if counted {
+            continue;
+        }
         let Some(next) = chains.get_mut(t) else { continue };
         next.turn.left = next.turn.left.saturating_sub(1);
         if next.turn.left == 0 && !next.turn.started && next.track != suhina_model::TrackId::MAIN {
@@ -596,6 +640,16 @@ fn add(to: &mut [f32], from: &[f32]) {
 }
 
 impl Chain {
+    /// The rest of the block once its devices have run, on the render thread or a worker alike:
+    /// its fader and meters, its signal after its devices and after its fader kept for the keys
+    /// that read it (before staging delays the buffer), and what it adds where it plays staged.
+    /// Never allocates.
+    pub(crate) fn finish(&mut self, frames: usize, context: &ProcessContext) {
+        self.complete(frames, context);
+        self.keep_post(frames);
+        self.stage(frames);
+    }
+
     /// Stages what the chain adds where it plays, once its devices have run the block: each
     /// send's share for its return, then its output for its bus or the output and its cue, as
     /// [`Chain::send`] and [`Chain::mix`] would add them. Each starts at -0.0, which adding

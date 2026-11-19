@@ -126,7 +126,6 @@ pub const GROUP_IDS: &[&str] = &[
     "app-bar-start",
     "app-bar-centre",
     "app-bar-end",
-    "piano-roll-rows",
     "mixer-body",
     "mixer-output",
     "mixer-input",
@@ -311,7 +310,7 @@ pub const ELEMENTS: &[Element] = &[
     element("session", Region, "The Launcher view: tracks as columns of clip slots.")
         .parts(&["track-column", "scene-column"])
         .settings(&["track-width", "return-width", "scene-width", "slot-height", "header-height"]),
-    element("track-column", Container, "A track's column in the Launcher view.")
+    element("track-column", Container, "A track's column in the Launcher view; its background is drawn under its slots. While `[selected]`, what that state changes in its background is drawn over the whole column, header, slots and mixer strip, so give `track-column[selected]` a translucent one.")
         .attributes(&["color", "selected", "muted"])
         .settings(&["track-artwork"]),
     element("scene-column", Part, "The column of scenes at the Launcher view's side."),
@@ -327,7 +326,7 @@ pub const ELEMENTS: &[Element] = &[
     element("slot-record", Control, "The record button in an armed track's empty slot, `[recording]` while that slot records: its `color` for the dot and the word, its `background-color` over the slot while it records.")
         .attributes(&["recording"]),
     element("slot-mark", Drawn, "The mark in an empty slot that holds a stop button."),
-    element("drop-target", Drawn, "Where a drop lands: the outline of the area (`kind=\"area\"`) or the line a moved track goes to (`kind=\"insert\"`).")
+    element("drop-target", Drawn, "Where a drop lands: the outline of the area (`kind=\"area\"`), the line a moved track goes to (`kind=\"insert\"`), or the slot with a + after a chain's last device (`kind=\"append\"`).")
         .attributes(&["kind"]),
     element("arrangement", Region, "The Arrangement view: tracks as rows along a timeline. Its `background-color` is the colour under the grid and the empty lanes; `arrangement[kind=\"panel\"]`'s is the one under its ruler, rows, headers and toolbar, and both are what the view draws over a region around it that has a background of its own.")
         .parts(&[
@@ -372,7 +371,7 @@ pub const ELEMENTS: &[Element] = &[
     element(
         "track-lane",
         Container,
-        "A track's row of clips in the Arrangement view, its clips inside it, `[checked]` while the piano roll edits it alone. Its background is painted over the grid lines, so give it a translucent one.",
+        "A track's row of clips in the Arrangement view, its clips inside it, `[selected]` while its track is selected and `[checked]` while the piano roll edits it alone. Its background is painted over the grid lines, so give it a translucent one.",
     )
     .parts(&["clip"])
     .attributes(&["color", "selected", "muted", "checked"]),
@@ -412,9 +411,9 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["selected", "kind"]),
     element("automation-lane", Drawn, "The time of a group of automation lanes, `automation-lane[kind=\"group\"]`: its `background-color`.")
         .attributes(&["kind"]),
-    element("automation-line", Drawn, "An automation lane's envelope, the track's colour by default; `[muted]` while it is off.")
-        .attributes(&["muted"]),
-    element("automation-point", Drawn, "A point of an automation envelope, `[selected]` while it is picked.").attributes(&["selected"]),
+    element("automation-line", Drawn, "An automation lane's envelope, the track's colour by default; `[kind=\"fixed\"]` while Settings colours every envelope alike, `[muted]` while it is off.")
+        .attributes(&["muted", "kind"]),
+    element("automation-point", Drawn, "A point of an automation envelope, the line's colour by default; `[kind=\"fixed\"]` while Settings colours every envelope alike, `[selected]` while it is picked.").attributes(&["selected", "kind"]),
     element("automation-pin", Drawn, "The pin of an automation lane pinned below its track's top lane."),
     element("marker", Control, "A marker's tag in the row under the loop: its background, its line's `border-color` and its name's `color`; `[checked]` while it is dragged.")
         .attributes(&["checked"]),
@@ -586,7 +585,7 @@ pub const ELEMENTS: &[Element] = &[
     element(
         "knob",
         Control,
-        "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`, and `device.knob.*` replaces the face a device panel draws for its own knobs.",
+        "A knob; the dial of a device canvas (the reverb's and the delay's) is `knob[kind=\"dial\"]`; a device panel's own knob face is never replaced.",
     )
     .parts(&["knob-body", "knob-pointer", "knob-ring"])
     .attributes(&["kind"])
@@ -594,8 +593,6 @@ pub const ELEMENTS: &[Element] = &[
         .artwork(&[
             default_svg!("knob.body", "knob-body"),
             default_svg!("knob.pointer", "knob-pointer"),
-            own("device.knob.body"),
-            own("device.knob.pointer"),
         ]),
     element("knob-body", Part, "A knob's body; its artwork takes its `color`."),
     element("knob-pointer", Part, "A knob's pointer, turned to its value; its artwork takes its `color`."),
@@ -636,7 +633,7 @@ pub const ELEMENTS: &[Element] = &[
     element("progress", Drawn, "A progress bar: a dialog's, the sample map's busy card and the MIDI panel's range bar.").parts(&["progress-fill"]),
     element("progress-fill", Part, "A progress bar's done part, in each of those."),
     // Pages and dialogs.
-    element("settings", Region, "The Settings page.").parts(&["settings-nav"]),
+    element("settings", Region, "The Settings page; docked over the views, `backdrop-filter: blur(<length>)` blurs them behind it.").parts(&["settings-nav"]).settings(FLOATING),
     element("settings-nav", Control, "An entry of the Settings page's list, `[checked]` for the page shown.").attributes(&["checked"]),
     element("dialog", Region, "A dialog.").parts(&["dialog-title", "list-row"]).settings(FLOATING),
     element("dialog-title", Part, "A dialog's title row, with its Close button: its `background-color`, its words `label[kind=\"title\"]`."),

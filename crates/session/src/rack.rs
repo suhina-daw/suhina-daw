@@ -72,6 +72,12 @@ pub struct PluginEnv {
 }
 
 impl PluginEnv {
+    /// A guessed newer version may reject or crash on the original's state. Its trial
+    /// must not share the process of genuine instances of the replacement.
+    fn launch_group(&self, matched: &suhina_plugins::matching::Match<'_>) -> Option<String> {
+        if matched.how == suhina_plugins::matching::How::NewerVersion { None } else { (self.group)(matched.plugin) }
+    }
+
     /// `catalog` with plug-ins run by `host`, every instance of one plug-in file in one process
     /// (the default).
     pub fn new(catalog: Catalog, host: PathBuf) -> Self {
@@ -358,6 +364,7 @@ struct Instance {
     /// The plug-in it runs ([`PluginInfo::spec`](suhina_plugins::scan::PluginInfo::spec)), empty
     /// before one is found.
     spec: String,
+    parameter_identity_matches: bool,
     info: PluginSlotInfo,
     /// `None` while it starts, or while a thread of its own talks to it.
     control: Option<Plugin>,
@@ -547,6 +554,7 @@ impl Instance {
             status,
             plugin,
             spec: String::new(),
+            parameter_identity_matches: true,
             info: PluginSlotInfo::default(),
             ranges: None,
             steps: None,
@@ -856,6 +864,13 @@ impl Rack {
         while !self.poll_edits() {
             std::thread::sleep(Duration::from_millis(2));
         }
+    }
+
+    /// Drops a check [`Rack::poll_edits`] has begun, so the next poll starts a fresh one: both
+    /// reads and a new second. For a check the window paused (a dialog held it): its second may
+    /// have passed meanwhile, and going on would end it on states read before the pause.
+    pub fn restart_edit_check(&mut self) {
+        self.edit_check = None;
     }
 
     /// Advances a two-read check of all running plug-ins without waiting. Call each frame
@@ -1479,11 +1494,11 @@ impl Rack {
             let launch = Launch {
                 host: env.host.clone(),
                 plugin: matched.plugin.spec(),
-                channels: 2,
+                channels: 4,
                 max_frames: MAX_BLOCK_FRAMES as u32,
                 sample_rate: f64::from(sample_rate),
                 timeout: START_TIMEOUT,
-                group: (env.group)(matched.plugin),
+                group: env.launch_group(&matched),
                 ara,
             };
             self.next_generation += 1;
@@ -1491,6 +1506,13 @@ impl Rack {
             let plugin = Some((matched.plugin.name.clone(), matched.plugin.vendor.clone(), matched.how.name()));
             let mut instance = Instance::new(PluginStatus::Loading, plugin, generation);
             instance.spec = spec;
+            instance.parameter_identity_matches = parameter_identity_matches(device, matched.plugin);
+            if !instance.parameter_identity_matches && !device.automation.is_empty() {
+                notices.push(format!(
+                    "{}: imported automation is not played because the replacement has a different parameter identity.",
+                    device.name
+                ));
+            }
             instance.track = found.track.filter(|_| edits_clips);
             instance.info = PluginSlotInfo { instrument, latency: 0 };
             instance.ara_layout = layout;
@@ -1767,8 +1789,9 @@ impl Rack {
                     }
                     instance.state_refused = refused;
                     // A plug-in with an ARA document plays its regions at the song's position.
-                    let hosted =
-                        Hosted::new(audio).with_instrument_transport(instance.info.instrument, self.sample_rate);
+                    let hosted = Hosted::new(audio)
+                        .with_parameter_identity(instance.parameter_identity_matches)
+                        .with_instrument_transport(instance.info.instrument, self.sample_rate);
                     instance.counts = Some(hosted.counts());
                     match player.send_plugin(started.key, Box::new(hosted)) {
                         Ok(()) => instance.status = PluginStatus::Running,

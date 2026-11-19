@@ -841,6 +841,15 @@ pub trait Device: Send {
     /// output must not depend on how the host divides a stream into blocks.
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]);
 
+    /// [`Device::process`] with a key (sidechain, `docs/spec/sidechain.md`): `key` holds as many
+    /// frames as `buffer`, interleaved stereo, for the device's detector to read in place of its
+    /// own input; it is only read, never heard. A device that reads no key keeps this default and
+    /// processes as without one, so a key changes nothing for it.
+    fn process_keyed(&mut self, context: &ProcessContext, key: &[f32], buffer: &mut [f32]) {
+        let _ = key;
+        self.process(context, buffer);
+    }
+
     /// Takes a note or a performance control, at the frame where the next [`Device::process`]
     /// call starts: the host splits a block where an event falls, as it does
     /// for automation. Effects ignore events; [`reset`](Self::reset) silences every note.

@@ -364,6 +364,7 @@ fn launcher_project_built() -> Project {
     let mut p = project_built();
     let note = suhina_model::Note::new(0.0, 0.25, 60, 1.0);
     p.contents.push(suhina_model::ClipContent {
+        linked: false,
         id: suhina_model::ContentId(900),
         name: "loop".into(),
         length: 4.0,
@@ -563,6 +564,36 @@ fn the_watch_tells_when_the_devices_change_and_not_before() {
     assert!(watch.changed(names(&["Headphones", "Speakers"])), "connected");
     assert!(!watch.changed(names(&["Headphones", "Speakers"])), "said once");
     assert!(watch.changed(names(&["Speakers"])), "disconnected");
+}
+
+/// An output that says when it is closed.
+struct Closes(Arc<std::sync::atomic::AtomicBool>);
+
+impl suhina_session::OutputHandle for Closes {
+    fn close(self: Box<Self>) -> Option<(u32, suhina_engine::Plugins)> {
+        None
+    }
+}
+
+impl Drop for Closes {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Switching away from a project lets its output go before its plug-ins stop, so it goes quiet at
+/// once instead of one plug-in after another.
+#[test]
+fn letting_a_project_go_closes_its_output() {
+    let project = project();
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+    let closed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut session = Session::new(project);
+    session.attach_player(Player::new(renderer.controller(), Some(Box::new(Closes(closed.clone())))));
+    assert!(!closed.load(std::sync::atomic::Ordering::Relaxed));
+    session.release_player();
+    assert!(closed.load(std::sync::atomic::Ordering::Relaxed), "the output closed");
+    assert!(session.player().is_none());
 }
 
 #[test]

@@ -73,6 +73,7 @@ mod meters_tests;
 mod metronome;
 #[cfg(test)]
 mod midi_effect_tests;
+mod missing_instrument;
 #[cfg(test)]
 mod node_tests;
 mod plugin;
@@ -511,6 +512,9 @@ pub struct Renderer {
     /// Stretch underruns counted by graphs swapped out.
     underruns_before: u64,
     metronome: metronome::Metronome,
+    /// A track with no instrument plays its notes as sine tones (#1384). On for the engine's own
+    /// renders and tests; the session sets it from the user's setting, off by default.
+    implicit_tones: bool,
     /// The frame of the current block being rendered, for events sent to device chains.
     block_frame: usize,
     /// The song as each recent block started, read by plug-ins that hear their sound late.
@@ -753,6 +757,7 @@ impl Renderer {
             swap: swap::SwapState::default(),
             underruns_before: 0,
             metronome: metronome::Metronome::new(sample_rate),
+            implicit_tones: true,
             block_frame: 0,
             songs: plugin::SongHistory::new(sample_rate),
             offline: false,
@@ -811,6 +816,15 @@ impl Renderer {
 
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+
+    /// Whether a track with no instrument of its own plays its notes as sine tones (#1384), as
+    /// [`LaunchCommand::SetImplicitTones`] sets it while playing: on until set.
+    pub fn set_implicit_tones(&mut self, on: bool) {
+        self.implicit_tones = on;
+        for chain in &mut self.graph.chains {
+            chain.tones_off = !on;
+        }
     }
 
     /// Renders offline from now on: plug-ins are waited for as long as they take (up to
@@ -1033,8 +1047,15 @@ impl Renderer {
                 scale: event.scale,
                 arranged: true,
             };
-            let Self { voices, graph, transport: crate::transport::Transport { position, .. }, sample_rate, .. } = self;
-            start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start);
+            let Self {
+                voices,
+                graph,
+                transport: crate::transport::Transport { position, .. },
+                sample_rate,
+                implicit_tones,
+                ..
+            } = self;
+            start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start, *implicit_tones);
         }
     }
 
@@ -1363,9 +1384,10 @@ impl Renderer {
                         graph,
                         transport: crate::transport::Transport { position, .. },
                         sample_rate,
+                        implicit_tones,
                         ..
                     } = self;
-                    start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start);
+                    start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start, *implicit_tones);
                 }
             }
 
@@ -1707,7 +1729,9 @@ pub(crate) fn bus_chain(chains: &mut [Chain], bus: u32) -> Option<&mut Chain> {
 
 /// Starts a note at renderer frame `position` (`frame` of the block) that ends at frame `end`:
 /// on the track's instrument when its chain starts with one, otherwise as a sine voice, stealing
-/// the oldest voice when all are busy.
+/// the oldest voice when all are busy. A track with no instrument of its own is silent while the
+/// renderer does not play the implicit tones (`tones`, #1384).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start_note(
     voices: &mut [Voice; MAX_VOICES],
     chains: &mut [Chain],
@@ -1716,13 +1740,20 @@ pub(crate) fn start_note(
     sample_rate: u32,
     end: u64,
     note: NoteStart,
+    tones: bool,
 ) {
     if let Some(chain) = bus_chain(chains, note.bus).filter(|c| c.instrument) {
+        if chain.implicit_tones && !tones {
+            return;
+        }
         chain.set_scale(frame, note.scale);
         chain.note_on(frame, position, note.key, note.velocity, end);
         if note.arranged {
             chain.mark_arranged(note.key);
         }
+        return;
+    }
+    if !tones {
         return;
     }
     let slot = match voices.iter().position(|v| !v.active) {
@@ -1953,19 +1984,24 @@ fn heard_with_solo(project: &Project, channel: &suhina_model::Channel, chain: &[
         return true;
     }
     let on_chain = project.channels.iter().any(|c| soloed(c) && chain.contains(&c.id));
-    // A group sounds when something soloed plays into it.
-    let feeds_it = project.channels.iter().filter(|c| soloed(c)).any(|c| {
-        let mut next = c.output;
-        for _ in 0..64 {
-            match next {
-                Some(id) if id == channel.id => return true,
-                Some(id) => next = project.channel(id).and_then(|o| o.output),
-                None => return false,
-            }
-        }
-        false
-    });
-    on_chain || feeds_it
+    // Solo follows primary outputs and audible sends in either direction, keeping a
+    // shared destination alive without soloing unrelated sources feeding that destination.
+    let edges: Vec<_> = project
+        .channels
+        .iter()
+        .flat_map(|c| {
+            c.output
+                .into_iter()
+                .chain(c.sends.iter().filter(|s| s.level.is_finite() && s.level > 0.0).map(|s| s.target))
+                .map(move |target| (c.id, target))
+        })
+        .collect();
+    on_chain
+        || project
+            .channels
+            .iter()
+            .filter(|c| soloed(c))
+            .any(|c| sends::reaches(&edges, c.id, channel.id) || sends::reaches(&edges, channel.id, c.id))
 }
 
 /// Adds the notes of one content lane, as placed by `clip`, to `events`. Notes outside the clip's

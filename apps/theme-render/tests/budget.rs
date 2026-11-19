@@ -90,12 +90,17 @@ use suhina_theme_render::{Subject, scenes};
 /// out after a theme or a colour change 4 more (459 and 460, 709 and 710). On Windows each count is
 /// one more again (478 nodes and 472 identities, 472 and 473, 722 and 723), as CI measured it; which
 /// element that extra one is has not been traced.
+///
+/// The Launcher's add-track buttons (a "+" and its words painted apart) and the piano roll's
+/// Fold, Scale and Highlight buttons (ordinary tool buttons) raised the node counts by 4 in the
+/// Launcher and 1 in the FM synth (469 and 716; 481 and 728 on Windows, where the FM synth did not move), while the identities
+/// went down (452 and 698).
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 465,
+            nodes: 469,
             identities: 459,
             unstyled: 0,
             fresh: 0,
@@ -113,7 +118,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 715,
+            nodes: 716,
             identities: 709,
             unstyled: 0,
             fresh: 0,
@@ -137,7 +142,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 478,
+            nodes: 481,
             identities: 472,
             unstyled: 0,
             fresh: 0,

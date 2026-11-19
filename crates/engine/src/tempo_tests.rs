@@ -39,6 +39,7 @@ fn project(lane: LaneData, length: f64) -> Project {
         }],
         channels: vec![Channel::new(ChannelId(1), "C")],
         contents: vec![ClipContent {
+            linked: false,
             id: ContentId(1),
             name: "c".into(),
             length,

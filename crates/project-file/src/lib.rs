@@ -24,13 +24,14 @@ use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, CLIP_GAIN_MAX_DB,
     Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ClipSwing, ContentId, ContentKinds,
-    ContentLane, ControllerMapping, Device, DeviceGroup, DeviceId, DeviceKind, DeviceParam, Extension, Extensions,
-    FadeCurve, FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData, LaneId,
-    LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT,
+    ContentLane, ControllerMapping, Device, DeviceGroup, DeviceId, DeviceInput, DeviceKind, DeviceParam, Extension,
+    Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData,
+    LaneId, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT,
     MAX_GAIN_POINTS, MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro,
     MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb,
-    SWING_RANGE, Scale, ScaleMode, Scene, SceneId, Send, Slot, StretchMode, TakeLane, TempoPoint, TempoSource,
-    TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
+    SWING_RANGE, Scale, ScaleMode, Scene, SceneId, Send, SignalPoint, Slot, StretchMode, TakeLane, TapPoint,
+    TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation,
+    max_clip_gain, valid_bpm,
 };
 use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
@@ -42,7 +43,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 13;
+pub const VERSION: u64 = 15;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -366,6 +367,10 @@ fn track_value(t: &Track) -> Value {
         "parent": t.parent.map(|p| p.0),
     });
     if let Some(map) = out.as_object_mut() {
+        // Only a presentation folder says so (#1416).
+        if t.folder {
+            map.insert("folder".into(), json!(true));
+        }
         // Left out while it is the default: every port, every channel.
         if t.midi_input != MidiInput::default() {
             let port = match &t.midi_input.port {
@@ -506,6 +511,25 @@ fn device_value(d: &Device) -> Value {
         if d.clip_host {
             map.insert("clip_host".into(), json!(true));
         }
+        // Only an instrument whatever its plug-in is now says so (#1416).
+        if d.instrument {
+            map.insert("instrument".into(), json!(true));
+        }
+        // Only a device with a key (sidechain) says so, so other devices keep their shape.
+        if !d.inputs.is_empty() {
+            let inputs: Vec<Value> = d
+                .inputs
+                .iter()
+                .map(|i| {
+                    json!({
+                        "port": i.port,
+                        "source": { "channel": i.source.channel().0, "tap": i.source.tap().name() },
+                        "gain": number(i.gain),
+                    })
+                })
+                .collect();
+            map.insert("inputs".into(), Value::Array(inputs));
+        }
         with_extensions(map, &d.extensions);
     }
     out
@@ -580,6 +604,10 @@ fn content_value(c: &ClipContent) -> Value {
         // Left out when the content has none, so a project without scales is written as before.
         if let Some(scale) = c.scale {
             map.insert("scale".into(), scale_value(scale));
+        }
+        // Left out unless its clips are linked copies, so other projects are written as before.
+        if c.linked {
+            map.insert("linked".into(), Value::Bool(true));
         }
         with_extensions(map, &c.extensions);
     }
@@ -1245,6 +1273,10 @@ fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
         }
         Some(_) => return Err(format!("{at}.color: expected #RRGGBB").into()),
     };
+    // A presentation folder, from version 15 (#1416); before it the `suhina/folder` extension
+    // (data `[1]`) said so, and it is read into the field and dropped.
+    let mut extensions = extensions(t, at)?;
+    let was_folder = take_extension(&mut extensions, "folder", |data| data == [1]);
     Ok(Track {
         id: TrackId(whole(t, "id", at)?),
         name: text(t, "name", at)?,
@@ -1254,8 +1286,17 @@ fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
         parent: optional_whole(t, "parent", at)?.map(TrackId),
         midi_input: read_midi_input(t.get("midi_input"), at)?,
         audio_input: read_audio_input(t.get("audio_input"), at)?,
-        extensions: extensions(t, at)?,
+        folder: flag(t, "folder", false, at)? || was_folder,
+        extensions,
     })
+}
+
+/// Takes the `suhina/<key>` extension out of `extensions` when there is one whose data `fits`:
+/// a Suhina state a version before 15 kept as an extension (#1416), now a field of its own.
+fn take_extension(extensions: &mut Extensions, key: &str, fits: impl Fn(&[u8]) -> bool) -> bool {
+    let before = extensions.0.len();
+    extensions.0.retain(|e| !(e.format == "suhina" && e.key == key && fits(&e.data)));
+    extensions.0.len() != before
 }
 
 /// A track's `audio_input`: `{ "channels": [] | [n] | [n, n + 1], "monitor": "auto" | "in" |
@@ -1460,7 +1501,35 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         params.push(DeviceParam { id: required_text(p, "id", &at)?, value: float(p, "value", &at)? });
     }
     let automation = read_lanes(d, at)?;
+    // A key (sidechain), from version 14 (`docs/spec/sidechain.md` › Project file).
+    let mut inputs = Vec::new();
+    for (i, v) in list(d, "inputs", at)?.iter().enumerate() {
+        let at = format!("{at}.inputs[{i}]");
+        let input = object(v, &at)?;
+        let source_at = format!("{at}.source");
+        let source = object(input.get("source").unwrap_or(&Value::Null), &source_at)?;
+        let tap = match source.get("tap") {
+            None | Some(Value::Null) => TapPoint::default(),
+            Some(Value::String(name)) => TapPoint::from_name(name)
+                .ok_or_else(|| ProjectFileError(format!("{source_at}.tap: unknown tap point {name:?}")))?,
+            Some(_) => return Err(format!("{source_at}.tap: expected preFx, postFx or postFader").into()),
+        };
+        inputs.push(DeviceInput {
+            port: text(input, "port", &at)?,
+            source: SignalPoint::Channel { channel: ChannelId(whole(source, "channel", &source_at)?), tap },
+            gain: float_or(input, "gain", 1.0, &at)?,
+        });
+    }
+    // An instrument whatever its plug-in is now, from version 15 (#1416); before it the
+    // `suhina/instrument` and `suhina/missing-instrument` extensions said so.
+    let mut extensions = extensions(d, at)?;
+    let hosted = matches!(kind, DeviceKind::Clap { .. } | DeviceKind::Vst2 { .. } | DeviceKind::Vst3 { .. });
+    let placeholder = matches!(kind, DeviceKind::Foreign { .. });
+    let was_instrument = (hosted && take_extension(&mut extensions, "instrument", <[u8]>::is_empty))
+        | (placeholder && take_extension(&mut extensions, "missing-instrument", <[u8]>::is_empty));
     Ok(Device {
+        inputs,
+        instrument: flag(d, "instrument", false, at)? || was_instrument,
         // From version 6 (#763 › 1); earlier files' devices get theirs when the project is opened.
         id: DeviceId(read_id(d, at)?),
         name: text(d, "name", at)?,
@@ -1470,7 +1539,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         params,
         automation,
         clip_host: flag(d, "clip_host", false, at)?,
-        extensions: extensions(d, at)?,
+        extensions,
     })
 }
 
@@ -1593,6 +1662,7 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
         lanes.push(ContentLane { target, data });
     }
     let content = ClipContent {
+        linked: flag(c, "linked", false, at)?,
         id: ContentId(whole(c, "id", at)?),
         name: text(c, "name", at)?,
         length: float(c, "length", at)?,

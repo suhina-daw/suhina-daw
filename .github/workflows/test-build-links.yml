@@ -204,7 +204,7 @@ jobs:
               MARKER,
               '### Test build',
               '',
-              `Commit \`${commit}\` merged with main${expires ? `, kept until ${expires}` : ''}. [The run](${run.html_url}).`,
+              `Commit \`${commit}\` merged with ${pr.base?.ref || 'its base branch'}${expires ? `, kept until ${expires}` : ''}. [The run](${run.html_url}).`,
               '',
               '| Platform | Download | Then |',
               '|---|---|---|',
@@ -212,6 +212,11 @@ jobs:
               '',
               'Downloading needs a GitHub sign-in. The builds are unsigned: SmartScreen (More info › Run anyway) and Gatekeeper (right-click › Open) warn about them.',
             ];
+            // A push builds Windows only; the other systems come with a /test-build request.
+            if (rows.some((row) => row.includes('| not built |'))
+                && !(pr.labels || []).some((l) => l.name === 'test-build-windows')) {
+              body.push('', 'A push is built for Windows only; comment `/test-build` to build every system.');
+            }
             if (!MAINTAINERS.includes(pr.user.login.toLowerCase())) {
               body.push(
                 '',

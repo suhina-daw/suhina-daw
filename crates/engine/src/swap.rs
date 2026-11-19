@@ -388,6 +388,10 @@ impl Renderer {
         let param_seq = swap.param_seq;
         let envelope_seq = swap.envelope_seq;
         let mut old = std::mem::replace(&mut self.graph, swap.graph);
+        // The new chains hear the implicit tones as the old did (#1384).
+        for chain in &mut self.graph.chains {
+            chain.tones_off = !self.implicit_tones;
+        }
         // The playhead stays on the same beat when the tempo map changed.
         if self.transport.running && *old.tempo != *self.graph.tempo {
             self.transport.time_at_origin = crate::tempo::rescale(old_time, &old.tempo, &self.graph.tempo);
