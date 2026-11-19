@@ -173,20 +173,25 @@ Track colours: the track's own colour if it has one, else Suhina's fixed colour 
 
 ### Colour palette
 
-One palette for every colour choice: Suhina's eight track colours, the same in every theme, as
-14 px swatches 3 px apart, the track's current colour with a 1.5 px `text.primary` inset outline,
-a hovered one with 1 px. It is offered in the track's right-click menu (both views), in a popup
-under a track's colour area, and in a colour tag's right-click menu (before the free colour
-button there). A swatch is a button named "Colour #rrggbb"; picking one runs `track.setColor`
-(one undo step; the colour the track already has runs nothing) and closes the menu or popup.
+Suhina offers 24 fixed suggestions in three rows of eight, shared by colour controls and
+independent of the theme. The track menu uses 14 px swatches with 3 px gaps and a clearly
+outlined current colour. A swatch applies the colour to the selected tracks as one undo step
+and closes the menu. A choice matching every target's current colour makes no edit.
 
-After the swatches, a 14 px **+** button named "Any colour" (`control.background`, its "+" in
-`text.primary`, lit while open) opens a colour picker under the row: a saturation and value
-field, a hue strip and the colour's values, starting from the track's colour. A drag in it keeps
-the menu or popup open, and the colour is taken once, when the button comes up, so a whole drag
-is one `track.setColor` and one undo step (#712). The menu or popup stays open after the button
-comes up too, for the next drag; only a swatch closes it. A click on + again closes it. The palette is
-Suhina's own for now; #1025 decides the user's own palette.
+The **+ More colours** row shows the configured shortcut (F2 by default) and opens a separate
+non-modal colour window. It is 340 points wide, initially centred, movable and kept open while
+the DAW is used. The surface, text, field border and focus indicators use the `colour-picker`,
+`colour-field` and `colour-swatch` elements. Its default layout has compact 30 × 18 swatches:
+Palette, Related shades, Recent colours, current swatch/hex/copy, collapsed Fine adjustment,
+then Random and Default. There is no per-track list; Recent colours is bounded to eight.
+Fine adjustment reveals Field/Wheel, hue/value selection, RGB/HSL and Steps/Soft colours.
+A short screen scrolls the contents. Exact values and keyboard behaviour are specified in
+[Track colours](../spec/colour-picker.md). Every pointer adjustment appears live, with one
+Undo step per complete drag; closing the window keeps completed edits.
+
+Clip and browser colour controls share the 24 suggestions and retain their inline custom
+field. Track and clip colours are exact project data. Themes never provide a palette, and a
+user palette editor remains deferred by #1025.
 
 The colour areas, each a button named "<track> colour" that opens the popup on a click:
 

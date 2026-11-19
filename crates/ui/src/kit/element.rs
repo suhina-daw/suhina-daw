@@ -1165,6 +1165,8 @@ names! {
     DIALOG = "dialog";
     DIALOG_TITLE = "dialog-title";
     COLOUR_SWATCH = "colour-swatch";
+    COLOUR_PICKER = "colour-picker";
+    COLOUR_FIELD = "colour-field";
     LIST_ROW = "list-row";
     START_PAGE = "start-page";
     PLUGIN_MANAGER = "plugin-manager";

@@ -32,6 +32,7 @@ fn live(variable: &str) -> egui::Color32 {
 
 mod arrangement;
 mod bars;
+mod colours;
 mod control_bar;
 mod detail;
 mod elements;

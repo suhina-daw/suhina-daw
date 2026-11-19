@@ -137,6 +137,7 @@ of clip is on.
 
 | Key | Action | Where | What it does |
 |---|---|---|---|
+| F2 | `selection.colour` | Selected track headers | Opens or focuses the floating colour window. Pick a colour to apply it immediately; the DAW stays usable while the window is open. |
 | Ctrl+G | `selection.group` | Selection | Puts the selected tracks in a group track. A group track holds other tracks so you can fold them away and set their volume together. With devices picked (clicked in a mixer strip's device list or in the device chain), it puts those devices into a device group instead: one box that holds them, with branches that run side by side. |
 | Ctrl+Shift+G | `selection.ungroup` | A picked device group | Takes a device group of one branch apart, putting its devices back in its place. |
 | None: give it one | `selection.arm` | Selection | Arms the selected tracks for recording (the round button on a track's header), or disarms them when all of them are armed. Arming disarms the other tracks, as a click on an arm button does, so to record a MIDI and an audio track together, select both and press the key once. A return, group or main track is left as it is. |

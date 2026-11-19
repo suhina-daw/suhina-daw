@@ -523,6 +523,8 @@ list-row[kind="missing-file"][selected] { background-color: var(--control-active
 list-row[kind="missing-file"]:hover { background-color: var(--panel-hoverBackground); }
 list-row[kind="picker"] { background-color: var(--panel-hoverBackground); color: var(--text-secondary); }
 colour-swatch { border-color: var(--text-primary); }
+colour-picker { background-color: var(--panel-background); color: var(--text-primary); border-color: var(--border-strong); }
+colour-field { border-color: var(--border-strong); outline-color: var(--accent); }
 colour-swatch[kind="square"] { border-color: var(--border); }
 theme-card { border-color: var(--border); }
 theme-card:hover { border-color: var(--border-strong); }

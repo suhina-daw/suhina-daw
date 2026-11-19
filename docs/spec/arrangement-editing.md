@@ -934,7 +934,9 @@ A header's left edge is a 6 px band of the track's colour, the header's full hei
 have one too. While the track is off its header is grey, the user-agent sheet's
 `arrangement track-header[muted]` background (`#A9A6A0`, `#B5B2AC` while selected), as its clips are, and the
 band keeps the track's colour at full strength (#1393). A click on the band opens the colour palette under
-it, the same swatches as the menu's; a swatch sets the colour (`track.setColor`, one undo step).
+it, the same three rows of eight swatches as the menu's. A swatch sets the colour of the
+selected tracks atomically (`track.setColor`, one undo step). **+ More colours** and **F2**
+open the persistent, non-modal [colour window](colour-picker.md), whose changes appear live.
 A press on the band that drags still resizes the header column where the band meets its inner
 edge ([Launcher view](ui-session-view.md) › Track colour).
 

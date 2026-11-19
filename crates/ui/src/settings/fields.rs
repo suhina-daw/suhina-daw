@@ -220,6 +220,45 @@ pub(super) const FIELDS: &[Field] = &[
     number!("map_label_size", map_label_size, u32, only |s: &u32| MAP_LABEL_SIZES.contains(s)),
     switch!("map_window", map_window),
     Field {
+        key: "recent_colours",
+        write: |s| {
+            s.recent_colours
+                .iter()
+                .take(8)
+                .map(|c| format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2))
+                .collect::<Vec<_>>()
+                .join(",")
+        },
+        read: |s, v| {
+            if v.len() > 71 {
+                return false;
+            }
+            let values: Option<Vec<_>> =
+                v.split(',').map(str::trim).filter(|v| !v.is_empty()).map(suhina_session::colours::parse_hex).collect();
+            let Some(values) = values.filter(|v| v.len() <= 8) else { return false };
+            s.recent_colours.clear();
+            for value in values {
+                if !s.recent_colours.contains(&value) {
+                    s.recent_colours.push(value);
+                }
+            }
+            true
+        },
+    },
+    Field {
+        key: "colour_window_rect",
+        write: |s| {
+            s.colour_window_rect.map_or_else(|| "none".to_string(), |[x, y, w, h]| format!("{x}, {y}, {w}, {h}"))
+        },
+        read: |s, v| {
+            if v == "none" {
+                s.colour_window_rect = None;
+                return true;
+            }
+            parse_window_rect(v).map(|rect| s.colour_window_rect = Some(rect)).is_some()
+        },
+    },
+    Field {
         key: "map_window_rect",
         write: |s| s.map_window_rect.map_or_else(|| "none".to_string(), |[x, y, w, h]| format!("{x}, {y}, {w}, {h}")),
         read: |s, v| {
