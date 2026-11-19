@@ -34,7 +34,7 @@ menu suhina-meadow 1c8bae433b4d0193
 missing-files suhina-meadow 10d943258756d3b3
 new-theme-dialog suhina-meadow 89c58dc3b4dd2681
 piano-roll suhina-meadow 6b6f6398cfd687c2
-project-dialog suhina-meadow 7dcd85df68e7f6ee
+project-dialog suhina-meadow fa39561fa53b0174
 quantize-menu suhina-meadow 274c0854b46f87af
 quick-add suhina-meadow ea339bdcebddfaf2
 sample-map suhina-meadow 590800b0dfea1117
@@ -51,7 +51,7 @@ settings-menu suhina-meadow c187889d649ac286
 settings-midi suhina-meadow 10ff251a4b1d326c
 settings-plug-ins suhina-meadow 5e16fc1d2fa67a33
 settings-themes suhina-meadow 8eab88f0a1c54058
-start-panel suhina-meadow 51ea17d695741f29
+start-panel suhina-meadow 48b727d1fd246f0c
 time-signature-menu suhina-meadow a995637b7fe0c628
 tooltip suhina-meadow ee5f7b348a4c6290
 unsaved-dialog suhina-meadow a666f46940f7c536

@@ -34,7 +34,7 @@ menu suhina-studio@darkest a3b17a410baa842e
 missing-files suhina-studio@darkest 7b6fa4bf54af5784
 new-theme-dialog suhina-studio@darkest 5b18652eabdcd46d
 piano-roll suhina-studio@darkest b2f3b4eb74ac50ec
-project-dialog suhina-studio@darkest 9841bc0bc5476ccb
+project-dialog suhina-studio@darkest cc71674fbd930045
 quantize-menu suhina-studio@darkest dc6776d0d4467568
 quick-add suhina-studio@darkest 486e03c385b278cf
 sample-map suhina-studio@darkest 72b8636c9bc3d675
@@ -51,7 +51,7 @@ settings-menu suhina-studio@darkest f1b58136b4c8b98e
 settings-midi suhina-studio@darkest 33c938e0c4da9989
 settings-plug-ins suhina-studio@darkest 8979b51f8157287b
 settings-themes suhina-studio@darkest e77fbe849cb2d10e
-start-panel suhina-studio@darkest 76f69e1fd87f439f
+start-panel suhina-studio@darkest c023474ca357c894
 time-signature-menu suhina-studio@darkest c761e8d96d2d675b
 tooltip suhina-studio@darkest d982fa7889996d49
 unsaved-dialog suhina-studio@darkest cccb0af101522be9

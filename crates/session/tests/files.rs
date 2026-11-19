@@ -20,6 +20,198 @@ use suhina_test_support::{ProjectBuilder, WavFormat, write_wav};
 
 const SR: u32 = 48_000;
 
+#[test]
+fn imported_shared_mixer_bus_renders_once_and_disconnected_bus_stays_silent() {
+    fn event(out: &mut Vec<u8>, id: u8, data: &[u8]) {
+        out.push(id);
+        if id >= 192 {
+            let mut n = data.len();
+            loop {
+                let b = (n & 127) as u8;
+                n >>= 7;
+                out.push(b | if n > 0 { 128 } else { 0 });
+                if n == 0 {
+                    break;
+                }
+            }
+        }
+        out.extend_from_slice(data);
+    }
+    fn text(out: &mut Vec<u8>, id: u8, name: &str) {
+        event(out, id, &name.encode_utf16().chain([0]).flat_map(u16::to_le_bytes).collect::<Vec<_>>());
+    }
+    let mut events = Vec::new();
+    event(&mut events, 199, b"20.7.0\0");
+    event(&mut events, 65, &1u16.to_le_bytes());
+    let mut notes = Vec::new();
+    for source in 0..2u16 {
+        let mut note = [0u8; 24];
+        note[6..8].copy_from_slice(&source.to_le_bytes());
+        note[8..12].copy_from_slice(&96u32.to_le_bytes());
+        note[12] = 60;
+        note[16] = 120;
+        note[20] = 64;
+        note[21] = 128;
+        notes.extend(note);
+    }
+    event(&mut events, 224, &notes);
+    for source in 0..2u16 {
+        event(&mut events, 64, &source.to_le_bytes());
+        event(&mut events, 21, &[0]);
+        event(&mut events, 104, &1u16.to_le_bytes());
+        text(&mut events, 196, "source.wav");
+        event(&mut events, 51, &[0]);
+    }
+    event(&mut events, 99, &0u16.to_le_bytes());
+    let mut clip = [0u8; 32];
+    clip[4..6].copy_from_slice(&0x5000u16.to_le_bytes());
+    clip[6..8].copy_from_slice(&0x5001u16.to_le_bytes());
+    clip[8..12].copy_from_slice(&96u32.to_le_bytes());
+    clip[12..14].copy_from_slice(&499u16.to_le_bytes());
+    event(&mut events, 233, &clip);
+    for bus in 0..3 {
+        event(&mut events, 236, &[0, 0, 0, 0, 12, 0, 0, 0]);
+        if bus == 1 {
+            event(&mut events, 235, &[1, 0, 0]);
+        }
+    }
+    let mut bytes = b"FLhd".to_vec();
+    bytes.extend(6u32.to_le_bytes());
+    bytes.extend(0u16.to_le_bytes());
+    bytes.extend(2u16.to_le_bytes());
+    bytes.extend(96u16.to_le_bytes());
+    bytes.extend(b"FLdt");
+    bytes.extend((events.len() as u32).to_le_bytes());
+    bytes.extend(events);
+    let import_dir = temp_dir("import-library-project");
+    let sample_dir = temp_dir("import-library-samples");
+    let source_file = wav(&sample_dir, "source.wav", 1.0, 0.1);
+    let import_file = import_dir.join("authored.flp");
+    std::fs::write(&import_file, &bytes).unwrap();
+    let mut projects = suhina_session::Projects::new();
+    projects.file_library_mut().add_folder(&sample_dir).unwrap();
+    let (opened, warnings) = projects.open_path(&import_file, suhina_session::OpenOptions { audio: true }).unwrap();
+    assert!(opened.missing_files().is_empty());
+    assert!(!warnings.iter().any(|w| w.contains("Sample not found")));
+    assert_eq!(
+        opened.project().channels[0].devices[0].sample_file(),
+        Some(source_file.to_string_lossy().replace('\\', "/").as_str())
+    );
+    assert_eq!(std::fs::read(&import_file).unwrap(), bytes);
+    let mut project = suhina_flp::import_bytes(&bytes).unwrap().project;
+    let placement_track = project.arrangement.lanes[0].track.unwrap();
+    let mut session = Session::new(project.clone());
+    session.execute("track.setSolo", &json!({ "tracks": [placement_track.0], "solo": true })).unwrap();
+
+    let mut pool = AudioPool::new();
+    pool.files.insert(
+        "source.wav".into(),
+        std::sync::Arc::new(suhina_engine::AudioData { sample_rate: SR, channels: 1, samples: vec![0.1; 48_000] }),
+    );
+    let render = |project: &Project| {
+        suhina_engine::render_offline_from(
+            project,
+            RenderInputs::from_audio(&pool, suhina_session::devices()),
+            SR,
+            256,
+            None,
+        )
+        .unwrap()
+    };
+    let plain = render(&project);
+    assert!(plain.iter().any(|s| s.abs() > 0.01), "insert route must be audible");
+    let mut switched = Session::new(project.clone());
+    let source_tracks: Vec<_> =
+        project.tracks.iter().filter(|t| t.channel.is_some_and(|id| id.0 < 131_072)).map(|t| t.id.0).collect();
+    for &track in &source_tracks {
+        switched.execute("device.setEnabled", &json!({"track": track, "device": 0, "enabled": false})).unwrap();
+    }
+    assert!(
+        render(switched.project()).iter().all(|s| *s == 0.),
+        "off samplers stay silent without muting their tracks"
+    );
+    for &track in &source_tracks {
+        switched.execute("device.setEnabled", &json!({"track": track, "device": 0, "enabled": true})).unwrap();
+    }
+    assert_eq!(render(switched.project()), plain, "re-enabled samplers keep their samples and notes");
+    let mixer_track = project.tracks.iter().find(|t| t.channel == project.channels[0].output).unwrap().id.0;
+    switched.execute("track.setOutput", &json!({"track": source_tracks[0], "to": mixer_track})).unwrap();
+    switched.execute("track.setMute", &json!({"tracks": [mixer_track], "mute": true})).unwrap();
+    assert!(render(switched.project()).iter().all(|s| *s == 0.), "muting the bus silences both sources");
+    assert!(switched.project().channels.iter().filter(|c| c.id.0 < 131_072).all(|c| !c.mute && c.devices[0].enabled));
+    switched.execute("track.setMute", &json!({"tracks": [mixer_track], "mute": false})).unwrap();
+    assert_eq!(render(switched.project()), plain);
+    let soloed = render(session.project());
+    assert!(soloed.iter().any(|s| s.abs() > 0.001), "soloed imported source stays audible");
+    for (&a, &b) in plain.iter().zip(&soloed).skip(4096).take(4096) {
+        assert!((a * 0.5 - b).abs() < 0.00001, "solo must remove the other equal source");
+    }
+    let bus_id = project.channels[0].output.unwrap();
+    let mut bus_solo = project.clone();
+    bus_solo.channel_mut(bus_id).unwrap().solo = true;
+    assert_eq!(render(&bus_solo), plain, "solo of the shared bus must keep its input sources");
+    let mut gain = Device::new("Utility", DeviceKind::Builtin("utility".into()));
+    gain.params.push(DeviceParam::new("gain", -6.020599913279624));
+    let mut nested = project.clone();
+    let shared = suhina_model::ChannelId(131_074);
+    let mut shared_channel = suhina_model::Channel::new(shared, "Shared bus");
+    shared_channel.output = project.channel(bus_id).unwrap().output;
+    shared_channel.devices.push(gain.clone());
+    shared_channel.solo = true;
+    let mut shared_track = suhina_model::Track::new(suhina_model::TrackId(shared.0), "Shared bus");
+    shared_track.channel = Some(shared);
+    nested.channels.push(shared_channel);
+    nested.tracks.push(shared_track);
+    nested.channel_mut(bus_id).unwrap().output = Some(shared);
+    nested.assign_ids().unwrap();
+    nested.validate().unwrap();
+    let nested_audio = render(&nested);
+    for (&a, &b) in plain.iter().zip(&nested_audio).skip(4096).take(4096) {
+        assert!((a * 0.5 - b).abs() < 0.00001, "soloed downstream bus processes all upstream voices once");
+    }
+    project.channel_mut(bus_id).unwrap().devices.push(gain);
+    let processed = render(&project);
+    assert_eq!(plain.len(), processed.len());
+    for (&a, &b) in plain.iter().zip(&processed).skip(4096).take(4096) {
+        assert!((a * 0.5 - b).abs() < 0.00001, "shared chain must process the sum once: {a}, {b}");
+    }
+    project.channel_mut(bus_id).unwrap().sends.clear();
+    let mut sink = suhina_model::Channel::new(suhina_model::ChannelId(132_000), "Unrouted output");
+    sink.volume = 0.;
+    sink.role = suhina_model::ChannelRole::Submix;
+    project.channels.push(sink);
+    project.channel_mut(bus_id).unwrap().output = Some(suhina_model::ChannelId(132_000));
+    assert!(render(&project).iter().all(|s| s.abs() < 0.000001), "no implicit route to Main");
+    let mut unknown_bytes = bytes.clone();
+    for e in suhina_flp::read_bytes(&bytes).unwrap().events.iter().filter(|e| e.id == 21) {
+        unknown_bytes[e.offset + 1] = 2;
+    }
+    let mut missing = suhina_flp::import_bytes(&unknown_bytes).unwrap().project;
+    missing.channels[0].solo = true;
+    assert!(
+        render(&missing).iter().all(|s| s.abs() < 0.000001),
+        "solo of a missing instrument must never produce fallback tones"
+    );
+    missing.channels[0].mute = false;
+    missing.channels[0].devices[0].enabled = false;
+    assert!(
+        render(&missing).iter().all(|s| s.abs() < 0.000001),
+        "bypassed missing instrument must still consume notes"
+    );
+    for kind in
+        [DeviceKind::Vst2 { id: 0x12345678 }, DeviceKind::Vst3 { id: "112233445566778899AABBCCDDEEFF00".into() }]
+    {
+        missing.channels[0].devices[0].kind = kind;
+        missing.channels[0].devices[0].mark_external_instrument();
+        assert!(
+            render(&missing).iter().all(|s| s.abs() < 0.000001),
+            "uninstalled hosted instruments remain silent when soloed and bypassed"
+        );
+    }
+    let restored = suhina_project_file::from_json(&suhina_project_file::to_json(&missing)).unwrap();
+    assert!(render(&restored).iter().all(|s| s.abs() < 0.000001), "missing-instrument semantics survive project files");
+}
+
 /// The shipped model's bytes, under a test name in the library: the machine's copy of a file
 /// the pack also carries.
 const SHIPPED_OVERDRIVE: &[u8] = include_bytes!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam");
@@ -1487,4 +1679,72 @@ fn the_same_base_again_keeps_the_assets() {
     session.set_library_base(dir.clone());
     assert!(session.device_asset(relative).is_some(), "the same base again keeps the assets");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn imported_audio_stretch_places_the_recorded_pulse_on_the_project_grid() {
+    fn event(out: &mut Vec<u8>, id: u8, data: &[u8]) {
+        out.push(id);
+        if id >= 192 {
+            assert!(data.len() < 128);
+            out.push(data.len() as u8);
+        }
+        out.extend_from_slice(data);
+    }
+    let folder = std::env::temp_dir().join(format!("suhina-authored-stretch-render-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let mut samples = vec![0.; SR as usize];
+    for (i, sample) in samples.iter_mut().enumerate().take(SR as usize * 55 / 100).skip(SR as usize * 45 / 100) {
+        *sample = (std::f32::consts::TAU * 440. * i as f32 / SR as f32).sin() * 0.5;
+    }
+    write_wav(&folder.join("pulse.wav"), SR, 1, WavFormat::Float32, &samples);
+    let mut e = Vec::new();
+    event(&mut e, 199, b"26.1.0\0");
+    event(&mut e, 156, &120000u32.to_le_bytes());
+    event(&mut e, 64, &0u16.to_le_bytes());
+    event(&mut e, 21, &[4]);
+    event(&mut e, 196, &"pulse.wav".encode_utf16().chain([0]).flat_map(u16::to_le_bytes).collect::<Vec<_>>());
+    let mut settings = [0u8; 112];
+    settings[96..100].copy_from_slice(&(4f32 * 192.).to_le_bytes());
+    settings[108..112].copy_from_slice(&5u32.to_le_bytes());
+    event(&mut e, 215, &settings);
+    event(&mut e, 51, &[0]);
+    let mut clip = [0u8; 32];
+    clip[4..6].copy_from_slice(&0x5000u16.to_le_bytes());
+    clip[8..12].copy_from_slice(&384u32.to_le_bytes());
+    clip[12..14].copy_from_slice(&499u16.to_le_bytes());
+    event(&mut e, 233, &clip);
+    let mut file = b"FLhd".to_vec();
+    file.extend(6u32.to_le_bytes());
+    file.extend(0u16.to_le_bytes());
+    file.extend(1u16.to_le_bytes());
+    file.extend(96u16.to_le_bytes());
+    file.extend(b"FLdt");
+    file.extend((e.len() as u32).to_le_bytes());
+    file.extend(e);
+    let path = folder.join("pulse.flp");
+    std::fs::write(&path, &file).unwrap();
+    let project = suhina_flp::import_file(&path).unwrap().project;
+    let mut pool = AudioPool::new();
+    pool.files.insert(
+        "pulse.wav".into(),
+        std::sync::Arc::new(suhina_engine::AudioData { sample_rate: SR, channels: 1, samples }),
+    );
+    let out = suhina_engine::render_offline_from(
+        &project,
+        RenderInputs::from_audio(&pool, suhina_session::devices()),
+        SR,
+        256,
+        None,
+    )
+    .unwrap();
+    let peak = |from: f64, to: f64| {
+        out[(from * f64::from(SR) * 2.) as usize..(to * f64::from(SR) * 2.) as usize]
+            .iter()
+            .map(|x| x.abs())
+            .fold(0f32, f32::max)
+    };
+    assert!(peak(0.8, 1.2) > 0.01, "the middle pulse must land around beat 2 (one second)");
+    assert!(peak(0.3, 0.65) < 0.0001, "it must not play at the unstretched half second");
+    assert_eq!(std::fs::read(path).unwrap(), file);
 }

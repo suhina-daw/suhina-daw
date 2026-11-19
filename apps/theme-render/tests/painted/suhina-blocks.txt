@@ -34,7 +34,7 @@ menu suhina-blocks a1892d01a33518d6
 missing-files suhina-blocks 3a968f934c8a996f
 new-theme-dialog suhina-blocks 8afc4dad691ccd47
 piano-roll suhina-blocks 20bc34bbb6cc8833
-project-dialog suhina-blocks f4a4cda2e0a8259c
+project-dialog suhina-blocks b772a142f791293a
 quantize-menu suhina-blocks 8a3e6c0a430cfeeb
 quick-add suhina-blocks 84f955ce833ddfed
 sample-map suhina-blocks 1b320ea828862811
@@ -51,7 +51,7 @@ settings-menu suhina-blocks fdbe7a28099da186
 settings-midi suhina-blocks fe9b99d7c89645b8
 settings-plug-ins suhina-blocks d294ff98aadd0481
 settings-themes suhina-blocks 5380cde0683044f4
-start-panel suhina-blocks 2a3871dc6cddb135
+start-panel suhina-blocks c2b691ce4f78abb2
 time-signature-menu suhina-blocks 31c45120aa4c3af7
 tooltip suhina-blocks aea823d143ae3dfe
 unsaved-dialog suhina-blocks 3afb112be7c9c1c0

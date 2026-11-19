@@ -25,6 +25,7 @@ mod devices;
 mod editing;
 mod export;
 mod files;
+mod flp_import;
 mod follow;
 mod ids;
 mod launch_mappings;

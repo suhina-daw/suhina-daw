@@ -34,7 +34,7 @@ menu catppuccin-mocha 225a334a3e261722
 missing-files catppuccin-mocha a75bae392f2e68cb
 new-theme-dialog catppuccin-mocha f28a9dada759476b
 piano-roll catppuccin-mocha 04d8598565a5f963
-project-dialog catppuccin-mocha 3e51efd1ab2c025e
+project-dialog catppuccin-mocha 8d9ddba85e23bdac
 quantize-menu catppuccin-mocha ea4f1af20f30a77f
 quick-add catppuccin-mocha e7631983ca267d80
 sample-map catppuccin-mocha e08654d5c8c91140
@@ -51,7 +51,7 @@ settings-menu catppuccin-mocha be4914736757473c
 settings-midi catppuccin-mocha 3d4cdb563cd33cb2
 settings-plug-ins catppuccin-mocha a892ae4ccbf75e35
 settings-themes catppuccin-mocha 94ad680ba2b14250
-start-panel catppuccin-mocha 305c5247d90a3eb5
+start-panel catppuccin-mocha 36940abb3f8d781a
 time-signature-menu catppuccin-mocha abde40f219bec281
 tooltip catppuccin-mocha 755be4406975808f
 unsaved-dialog catppuccin-mocha 05481b124ab7bb23

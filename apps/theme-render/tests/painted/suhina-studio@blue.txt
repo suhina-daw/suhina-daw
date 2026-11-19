@@ -34,7 +34,7 @@ menu suhina-studio@blue 56cf2edae01c2498
 missing-files suhina-studio@blue a5d12f7d4fbc7eda
 new-theme-dialog suhina-studio@blue fc504bd9ad1d0938
 piano-roll suhina-studio@blue 506e571a12779a1e
-project-dialog suhina-studio@blue 15672871adfdb0c6
+project-dialog suhina-studio@blue 845f1904e6e64634
 quantize-menu suhina-studio@blue 5d5bd5876c77abe2
 quick-add suhina-studio@blue a6a1a1123d3d4aeb
 sample-map suhina-studio@blue 8572919485d92a5a
@@ -51,7 +51,7 @@ settings-menu suhina-studio@blue 699a158fc2f37e9b
 settings-midi suhina-studio@blue e586a8ca00ae0fe2
 settings-plug-ins suhina-studio@blue 564275e41c65bdd4
 settings-themes suhina-studio@blue dc67e1369cf6072b
-start-panel suhina-studio@blue f8a7bb6dbee706d1
+start-panel suhina-studio@blue e2a78619057325de
 time-signature-menu suhina-studio@blue 1f806d6b87fe0dca
 tooltip suhina-studio@blue 02973b9199f2f352
 unsaved-dialog suhina-studio@blue e1f601e123494dce

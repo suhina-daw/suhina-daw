@@ -34,7 +34,7 @@ menu high-contrast@light d754fca3dda92995
 missing-files high-contrast@light 11f55ef0dc431d03
 new-theme-dialog high-contrast@light 6650178bf56a3bd6
 piano-roll high-contrast@light 4d03868719e2df58
-project-dialog high-contrast@light 16cbdbf0312bb133
+project-dialog high-contrast@light 3c9b182a41d5f24d
 quantize-menu high-contrast@light b99b92a870381d4b
 quick-add high-contrast@light d2b0f57d6fe8f8ac
 sample-map high-contrast@light 3f35311b2cd1b47b
@@ -51,7 +51,7 @@ settings-menu high-contrast@light 5ad775dee2164df3
 settings-midi high-contrast@light 841ea07946585f24
 settings-plug-ins high-contrast@light 4127f5866d7edd91
 settings-themes high-contrast@light 2248ecfcaa0643cd
-start-panel high-contrast@light 814bacdc9c19ba7a
+start-panel high-contrast@light af01c5999c495811
 time-signature-menu high-contrast@light 5c28a5320b477391
 tooltip high-contrast@light b991fb610c99b54b
 unsaved-dialog high-contrast@light 564f7bde4b9626aa

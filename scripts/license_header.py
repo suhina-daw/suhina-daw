@@ -54,6 +54,13 @@ EXTENSIONS = {".rs": "//", ".py": "#", ".sh": "#", ".ps1": "#"}
 
 # Ported files and the licence of the code they were ported from.
 PORTED = {
+    "crates/flp/src/patcher.rs": "GPL-3.0-or-later",
+    "crates/flp/src/wrapper.rs": "GPL-3.0-or-later",
+    "crates/flp/src/stretch.rs": "GPL-3.0-or-later",
+    "crates/flp/src/automation.rs": "GPL-3.0-or-later",
+    "crates/flp/src/effects.rs": "GPL-3.0-or-later",
+    "crates/flp/src/records.rs": "GPL-3.0-or-later",
+    "crates/flp/src/import.rs": "GPL-3.0-or-later",
     "devices/fm-synth/src/core.rs": "Apache-2.0",
     "devices/fm-synth/src/env.rs": "Apache-2.0",
     "devices/fm-synth/src/lfo.rs": "Apache-2.0",

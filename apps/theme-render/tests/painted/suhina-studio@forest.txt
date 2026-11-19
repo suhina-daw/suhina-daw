@@ -34,7 +34,7 @@ menu suhina-studio@forest 17fd94334e7ceede
 missing-files suhina-studio@forest a9a3f101ff2294a9
 new-theme-dialog suhina-studio@forest 2672fcedb9da093e
 piano-roll suhina-studio@forest 8ace50cf5fa96909
-project-dialog suhina-studio@forest 870a664c418876a2
+project-dialog suhina-studio@forest 0c26cbf5e3652688
 quantize-menu suhina-studio@forest 57ac2d6b76b99ada
 quick-add suhina-studio@forest 6bfc716dd3006b4a
 sample-map suhina-studio@forest 45514abc693573b8
@@ -51,7 +51,7 @@ settings-menu suhina-studio@forest 2873cddf37ffb7a1
 settings-midi suhina-studio@forest e818392548c79d13
 settings-plug-ins suhina-studio@forest d204833b42779579
 settings-themes suhina-studio@forest 02313a5c32880189
-start-panel suhina-studio@forest 31465de03972d856
+start-panel suhina-studio@forest 4df0a9ac383ba107
 time-signature-menu suhina-studio@forest 6333b0fd09b581d6
 tooltip suhina-studio@forest 1be666aa9519d9c1
 unsaved-dialog suhina-studio@forest a52033e53cf3db5d

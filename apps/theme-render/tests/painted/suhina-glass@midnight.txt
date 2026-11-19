@@ -34,7 +34,7 @@ menu suhina-glass@midnight 408a16daaa655ef8
 missing-files suhina-glass@midnight a8d714bc54a1a423
 new-theme-dialog suhina-glass@midnight 143e279ddf0e8f71
 piano-roll suhina-glass@midnight f1f261c9e28fa7b8
-project-dialog suhina-glass@midnight 0547ca072635c772
+project-dialog suhina-glass@midnight 9b50b156fe7cd398
 quantize-menu suhina-glass@midnight d868cf8be0c49002
 quick-add suhina-glass@midnight 5eb8b9fad9002108
 sample-map suhina-glass@midnight 53eba8de19e63db5
@@ -51,7 +51,7 @@ settings-menu suhina-glass@midnight f7db5474d1a33adb
 settings-midi suhina-glass@midnight 26ac575a33dc6e2a
 settings-plug-ins suhina-glass@midnight cae40548d3a93b03
 settings-themes suhina-glass@midnight 293090f336dab5fb
-start-panel suhina-glass@midnight dae59287175b82b9
+start-panel suhina-glass@midnight 19b6cc00e61a053c
 time-signature-menu suhina-glass@midnight 16c9e7ccc956459d
 tooltip suhina-glass@midnight bc8724b67abf2cd8
 unsaved-dialog suhina-glass@midnight 5dd2d9dbf705e6a1

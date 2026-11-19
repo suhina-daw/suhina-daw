@@ -34,7 +34,7 @@ menu catppuccin-mocha@macchiato 59c61ec0de1dc416
 missing-files catppuccin-mocha@macchiato 8d16a5ffa27d49ad
 new-theme-dialog catppuccin-mocha@macchiato a1c7664f5c11819c
 piano-roll catppuccin-mocha@macchiato abfa416b75a05202
-project-dialog catppuccin-mocha@macchiato 27db59cfbd0c4910
+project-dialog catppuccin-mocha@macchiato a1efbc9e6d4c21ea
 quantize-menu catppuccin-mocha@macchiato ad2b491d5528d270
 quick-add catppuccin-mocha@macchiato e9f934f5c33e0e54
 sample-map catppuccin-mocha@macchiato 45a8d2c9dc6b468a
@@ -51,7 +51,7 @@ settings-menu catppuccin-mocha@macchiato 96d0aecc16e8fe9a
 settings-midi catppuccin-mocha@macchiato 4f71b70ed568a65c
 settings-plug-ins catppuccin-mocha@macchiato 786bc6faa0011673
 settings-themes catppuccin-mocha@macchiato ba9ad71631b8c3e2
-start-panel catppuccin-mocha@macchiato b342eba435dbe643
+start-panel catppuccin-mocha@macchiato 938de2752bfde478
 time-signature-menu catppuccin-mocha@macchiato 8e38273a74b8399c
 tooltip catppuccin-mocha@macchiato e0a69ab568005a89
 unsaved-dialog catppuccin-mocha@macchiato ebf84f161e3dc841

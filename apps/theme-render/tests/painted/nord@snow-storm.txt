@@ -34,7 +34,7 @@ menu nord@snow-storm fdd3c8e92b9251be
 missing-files nord@snow-storm 70bcaf7f770736ff
 new-theme-dialog nord@snow-storm 45929dda28529e73
 piano-roll nord@snow-storm 0b1333e01063c002
-project-dialog nord@snow-storm 912c2af3c85b8bb8
+project-dialog nord@snow-storm 5152a214669680c2
 quantize-menu nord@snow-storm eafe8a049d9e6cdc
 quick-add nord@snow-storm 69e005e97c98c5ff
 sample-map nord@snow-storm 891ebb110e9104d6
@@ -51,7 +51,7 @@ settings-menu nord@snow-storm 11ef4f920dd3340c
 settings-midi nord@snow-storm 98c99aa0453ff371
 settings-plug-ins nord@snow-storm 78a64aea1298fbbe
 settings-themes nord@snow-storm a804897e476644d0
-start-panel nord@snow-storm 390639a0039f1d52
+start-panel nord@snow-storm d614a2365d743805
 time-signature-menu nord@snow-storm b1dfb387a42b9cfc
 tooltip nord@snow-storm 39ddadc5ca54b765
 unsaved-dialog nord@snow-storm 1cbc51fbd09f54aa

@@ -34,7 +34,7 @@ menu suhina-glass@frost bb3e57100141111f
 missing-files suhina-glass@frost 600d8da374ee08ec
 new-theme-dialog suhina-glass@frost 6733aad4859e720b
 piano-roll suhina-glass@frost 92966cbf79332f4f
-project-dialog suhina-glass@frost 5724086e82ceb0f3
+project-dialog suhina-glass@frost d16394ad47d7c1e5
 quantize-menu suhina-glass@frost 69dc575defec457c
 quick-add suhina-glass@frost c83c78d964ba8bbb
 sample-map suhina-glass@frost 16c93c4f0f3c8a67
@@ -51,7 +51,7 @@ settings-menu suhina-glass@frost 339434da2d6f94c6
 settings-midi suhina-glass@frost 2125d211dc45c74c
 settings-plug-ins suhina-glass@frost 8027ac77f0145de4
 settings-themes suhina-glass@frost 116ee085e1134477
-start-panel suhina-glass@frost 62415f28c28a8ddc
+start-panel suhina-glass@frost f26f49189e19c429
 time-signature-menu suhina-glass@frost 1bbb0793d018fe07
 tooltip suhina-glass@frost 140dd8169b6b8fc1
 unsaved-dialog suhina-glass@frost 9f18edbc627442b3

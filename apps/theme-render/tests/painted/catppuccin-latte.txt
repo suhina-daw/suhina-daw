@@ -34,7 +34,7 @@ menu catppuccin-latte d2e5a2c8093a924e
 missing-files catppuccin-latte c3536080c677415b
 new-theme-dialog catppuccin-latte 33dd948d818ca553
 piano-roll catppuccin-latte 89b6ebdf1ca960c4
-project-dialog catppuccin-latte 1c6b8d43a88200fb
+project-dialog catppuccin-latte d8c3d30179d99399
 quantize-menu catppuccin-latte 41f2316229fea76b
 quick-add catppuccin-latte 4a3ccf7acc0fda43
 sample-map catppuccin-latte 4449e64beaf289a2
@@ -51,7 +51,7 @@ settings-menu catppuccin-latte 783ca58497e76e4f
 settings-midi catppuccin-latte b3032f66d472a2e1
 settings-plug-ins catppuccin-latte 91805148f841f6d2
 settings-themes catppuccin-latte e319fcadbb56d462
-start-panel catppuccin-latte 7033ca0328307584
+start-panel catppuccin-latte 588307d3a070c325
 time-signature-menu catppuccin-latte 8ac926895179d2cf
 tooltip catppuccin-latte c9600507ba41823a
 unsaved-dialog catppuccin-latte d2bd4dd42d9304b1
