@@ -3,7 +3,7 @@ description: The timing contract for plug-in delay compensation, device automati
 read_when: PDC, delay compensation, delayed automation, device input time, render ahead timing, automation after latency
 type: spec
 status: planned
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/engine/src/plugin.rs
   - crates/engine/src/plugin_params.rs
