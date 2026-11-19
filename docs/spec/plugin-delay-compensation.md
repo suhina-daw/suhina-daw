@@ -3,13 +3,16 @@ description: The timing contract for plug-in delay compensation, device automati
 read_when: PDC, delay compensation, delayed automation, device input time, render ahead timing, automation after latency
 type: spec
 status: planned
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/engine/src/plugin.rs
   - crates/engine/src/plugin_params.rs
   - crates/engine/src/automation.rs
   - crates/engine/src/chain.rs
   - crates/engine/src/group.rs
+  - crates/engine/src/buses.rs
+  - crates/engine/src/graph.rs
+  - crates/engine/src/lib.rs
 ---
 
 # Plug-in delay compensation
@@ -85,13 +88,34 @@ All history reads and event planning are bounded and allocate nothing in the aud
 callback. Preparation occurs before worker dispatch. Offline rendering uses the same
 history and planning path as playback.
 
-## Limits and later work
+## History and compensation limits
 
-The existing history retains 8192 block records, not a guaranteed number of seconds at
-every block size and sample rate. Beyond retained history, hosted song positions currently
-extrapolate from the oldest record. Full coverage of the compensation horizon, and explicit
-handling of an exceeded limit, remain part of #1566; an extrapolated result is not evidence
-of correct timing across a discarded transport change.
+The supported compensation horizon is two seconds at the renderer's sample rate. Every
+cumulative path, including serial devices, nested parallel groups, buses, returns and Main,
+must fit within it. The exact limit is accepted. Preparing a graph beyond it returns a
+latency-compensation error naming the path's final track (or Main), its required frames and
+the supported limit. Reduce a device's latency or bypass it before retrying. A larger latency
+is never silently treated as two seconds. Group delay allocations remain bounded even while
+preparing a graph that will be rejected.
+
+History storage is allocated when the renderer is prepared, with one record per frame of
+the horizon plus the current block's record: `2 * sample_rate + 1` records. This covers even
+one-frame callbacks, irregular blocks and transport changes at every boundary. Storage is
+bounded by the supported maximum sample rate of 384 kHz (768001 records per renderer).
+Larger blocks need fewer records but use the same reserved storage. Zero-frame calls do not
+record a transport position. Recording, clearing and reading history allocate nothing.
+History survives graph swaps; suspending the renderer clears its contents but keeps storage.
+Only priming before the first processed frame extrapolates the initial song backwards;
+supported delays never extrapolate through an evicted transport change. Automation before
+arrangement zero holds its initial value as described above.
+
+A failed initial build or offline render returns the error. During an edit, graph preparation
+fails before queuing the replacement: the existing engine graph remains active. The session
+keeps the project edit and reports that the playing engine could not follow it; the user can
+undo or reduce latency and retry. This does not establish seamless transitions for a running
+plug-in that changes its physical latency before a replacement graph is ready.
+
+## Later work
 
 The first slice does not establish the complete PDC guarantee. Native device process
 contexts, MIDI/note timing, tempo-map envelope conversion, mixer automation across transport

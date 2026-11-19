@@ -271,10 +271,11 @@ fn a_nested_group_reports_its_latency_to_the_outer_one() {
 }
 
 #[test]
-fn compensation_is_cut_at_two_seconds() {
+fn compensation_preserves_reported_latency_but_bounds_delay_storage() {
     use crate::group::compensation;
     assert_eq!(compensation([31, 0, 10].into_iter(), 96_000), (31, vec![0, 31, 21]));
-    assert_eq!(compensation([200_000, 0].into_iter(), 96_000), (96_000, vec![0, 96_000]));
+    assert_eq!(compensation([200_000, 0].into_iter(), 96_000), (200_000, vec![0, 96_000]));
+    assert_eq!(compensation([u32::MAX, u32::MAX - 1, 0].into_iter(), 96_000), (u32::MAX, vec![0, 1, 96_000]));
     assert_eq!(compensation(std::iter::empty(), 96_000), (0, vec![]));
 }
 

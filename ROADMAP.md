@@ -697,6 +697,10 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   latency in nested branches, buses, returns and Main. Loop and seek boundaries keep their sample
   offsets; manual controls still respond from the next block.
 
+- Delay compensation keeps transport and device automation history for the full two-second
+  horizon, including one-frame processing blocks. Paths beyond that limit report an error
+  instead of silently losing alignment, including nested groups, buses, returns and Main.
+
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
   stopped on the output chosen in Settings › Audio and shows the **Launcher view**: tracks as
