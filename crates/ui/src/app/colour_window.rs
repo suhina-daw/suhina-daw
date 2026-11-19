@@ -263,6 +263,14 @@ impl App {
         }
         self.colour_window.focused = focused;
         self.colour_window.embedded_layer = embedded_layer;
+        if self.colour_window_owns_keyboard(ctx) || (!ctx.embed_viewports() && focused) {
+            // Key-up may go to this window instead of the DAW. End held notes and
+            // Gate/Repeat launches at the ownership change, even before a key-up arrives.
+            self.release_typing_keys();
+            if let Some(project) = self.projects.active().and_then(|id| self.projects.get(id)).map(Session::project) {
+                self.view.launch_keys.release_all(project, actions);
+            }
+        }
         if let Some(rect) = placement
             && self.settings.colour_window_rect != Some(rect)
         {

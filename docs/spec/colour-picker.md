@@ -93,6 +93,8 @@ An invalid submitted draft keeps its text focus until corrected or cancelled; De
 discards drafts. Focused controls own Tab, arrows and activation keys. Outside a text field,
 the tool permits transport and Undo/Redo shortcuts, while unrelated DAW shortcuts resume when
 focus returns to the main view.
+Taking keyboard focus into the tool releases held Gate/Repeat launch keys and computer
+keyboard notes, so their eventual key-up cannot be lost in the other window.
 
 Colour commands are unheard edits: they do not rebuild the playing audio graph. The colour
 field's bounded geometry is reused until its hue/mode/size changes. The picker does no

@@ -10,7 +10,9 @@
 use egui::{Key, Modifiers};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use suhina_engine::model::{MappingSource, MappingTarget, TrackId};
+use suhina_engine::model::{
+    ControllerMapping, LaunchMode, LaunchQuantization, MappingSource, MappingTarget, Project, TrackId,
+};
 use suhina_engine::{AudioPool, Renderer};
 use suhina_session::{Player, Session};
 use suhina_ui::demo::demo_project;
@@ -19,7 +21,10 @@ use suhina_ui::{App, Status, View, kit::theme};
 /// The demo project in the window with an engine that is attached but not playing, so a
 /// launch is taken and says so. The renderer is kept so the engine's queue stays open.
 fn window() -> (Harness<'static, App>, Renderer) {
-    let project = demo_project();
+    window_with_project(demo_project())
+}
+
+fn window_with_project(project: Project) -> (Harness<'static, App>, Renderer) {
     let mut renderer = Renderer::stopped(&project, &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
     let mut session = Session::new(project);
     session.attach_player(Player::new(renderer.controller(), None));
@@ -36,6 +41,49 @@ fn window() -> (Harness<'static, App>, Renderer) {
     theme::install(&harness.ctx);
     harness.run();
     (harness, renderer)
+}
+
+#[test]
+fn focusing_the_colour_picker_releases_a_held_gate_launch() {
+    use serde_json::json;
+    use suhina_ui::kit::widgets::Action;
+
+    let mut project = demo_project();
+    let clip = project.launcher.columns[0].slots[0].clip.as_mut().unwrap();
+    clip.launch.mode = LaunchMode::Gate;
+    clip.launch.quantization = LaunchQuantization::None;
+    project.controller_mappings.push(ControllerMapping {
+        source: MappingSource::key("Q").unwrap(),
+        target: MappingTarget::Slot { track: TrackId(1), scene: 0 },
+    });
+    let (mut h, mut renderer) = window_with_project(project);
+    h.state_mut().run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+    h.run();
+    h.get_by_label("Track Drums").click();
+    h.run();
+    h.key_down(Key::Q);
+    h.run();
+    let mut samples = [0.0; 256];
+    renderer.process(&mut samples);
+    assert_eq!(renderer.monitor().column(0).unwrap().playing, Some(0));
+
+    // A non-text control takes the keys while Q is still physically held.
+    h.get_by_label("Palette #2fd9c4").click();
+    h.run();
+    renderer.process(&mut samples);
+    assert_eq!(renderer.monitor().column(0).unwrap().playing, None);
+    h.key_up(Key::Q);
+    h.run();
+    h.get_by_label("Track Drums").click();
+    h.run();
+    h.key_down(Key::Q);
+    h.run();
+    renderer.process(&mut samples);
+    assert_eq!(renderer.monitor().column(0).unwrap().playing, Some(0));
+    h.key_up(Key::Q);
+    h.run();
+    renderer.process(&mut samples);
+    assert_eq!(renderer.monitor().column(0).unwrap().playing, None);
 }
 
 fn mappings(harness: &Harness<'static, App>) -> Vec<(MappingSource, MappingTarget)> {
