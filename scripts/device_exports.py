@@ -35,7 +35,8 @@ def package_library(source: Path, output: Path, system: str, machine: str) -> tu
         apple_bundle(bundle, "org.suhina.devices.vst3")
     else:
         shutil.copy2(source, clap)
-        folder = f"{architecture}-{'win' if system == 'win32' else 'linux'}"
+        platform_architecture = "arm64" if system == "win32" and architecture == "aarch64" else architecture
+        folder = f"{platform_architecture}-{'win' if system == 'win32' else 'linux'}"
         binary = "SuhinaDevices.vst3" if system == "win32" else "SuhinaDevices.so"
         destination = bundle / "Contents" / folder
         destination.mkdir(parents=True, exist_ok=True)

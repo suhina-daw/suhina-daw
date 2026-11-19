@@ -14,7 +14,7 @@ class PackageTests(unittest.TestCase):
     def test_native_bundle_layouts_preserve_the_library_bytes(self):
         for system, machine, folder, binary in [
             ("win32", "AMD64", "x86_64-win", "SuhinaDevices.vst3"),
-            ("win32", "ARM64", "aarch64-win", "SuhinaDevices.vst3"),
+            ("win32", "ARM64", "arm64-win", "SuhinaDevices.vst3"),
             ("linux", "x86_64", "x86_64-linux", "SuhinaDevices.so"),
             ("linux", "aarch64", "aarch64-linux", "SuhinaDevices.so"),
             ("darwin", "arm64", "MacOS", "SuhinaDevices"),
