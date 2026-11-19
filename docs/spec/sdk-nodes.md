@@ -293,8 +293,12 @@ ADSR and AD use linear stages with times in seconds, clamped to 0..60, and a min
 sample per stage. ADSR retriggers from zero on a rising gate, holds sustain, and releases
 from the level present at the falling gate. AD triggers on a rising signal and completes
 its attack/decay without requiring gate hold. Each exposes `finished`, one while idle or
-complete and zero while active. Stereo gates have private state. The ADSR step is shared
-with the existing sample instrument; this does not change its parameters or render behavior.
+complete and zero while active. Stereo gates have private state. The DSP `LinearEnvelope` is
+shared with the sample instrument; this does not change its parameters or render behavior.
+Sustain holds its reached level when the setting changes. Repeated release requests capture
+the current amplitude again; the sampler also recaptures its separate filter envelope.
+Its filter and pitch algorithms remain unchanged. See the
+[shared envelope contract](instrument-synthesis.md#shared-envelope-contracts).
 
 ## Instrument event routing and voice controls
 
