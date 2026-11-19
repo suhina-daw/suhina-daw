@@ -84,6 +84,7 @@ struct Control {
     release: bool,
     bend: f32,
     pressure: f32,
+    note_pressure: f32,
     pitch: f32,
     timbre: f32,
     controller: f32,
@@ -109,6 +110,7 @@ pub(crate) fn prepare_control(kind: &NodeKind, _: f64) -> Option<Box<dyn NativeN
             release: false,
             bend: 0.,
             pressure: 0.,
+            note_pressure: 0.,
             pitch: 0.,
             timbre: 0.5,
             controller: 0.,
@@ -128,7 +130,7 @@ impl NativeNode for Control {
                 f32::from(self.trigger),
                 f32::from(self.release),
                 self.bend,
-                self.pressure,
+                self.pressure.max(self.note_pressure),
                 self.controller,
                 self.pitch,
                 self.timbre,
@@ -150,7 +152,7 @@ impl NativeNode for Control {
                 NodeKind::VoiceInput { .. } => [f32::from(self.key); 2],
                 NodeKind::MidiController { .. } => [self.controller; 2],
                 NodeKind::PitchBend => [self.bend; 2],
-                NodeKind::Pressure => [self.pressure; 2],
+                NodeKind::Pressure => [self.pressure.max(self.note_pressure); 2],
                 _ => [0.; 2],
             };
             self.trigger = false;
@@ -176,7 +178,7 @@ impl NativeNode for Control {
             NoteEvent::Instance { event: NoteInstanceEvent::Expression { kind, value }, .. } if value.is_finite() => {
                 match kind {
                     NoteExpressionKind::Pitch => self.pitch = value.clamp(-256., 256.) as f32,
-                    NoteExpressionKind::Pressure => self.pressure = value.clamp(0., 1.) as f32,
+                    NoteExpressionKind::Pressure => self.note_pressure = value.clamp(0., 1.) as f32,
                     NoteExpressionKind::Timbre => self.timbre = value.clamp(0., 1.) as f32,
                 }
             }
@@ -220,6 +222,7 @@ impl NativeNode for Control {
         self.release = false;
         self.bend = 0.;
         self.pressure = 0.;
+        self.note_pressure = 0.;
         self.pitch = 0.;
         self.timbre = 0.5;
         self.controller = 0.;
@@ -512,6 +515,13 @@ impl NoteInstanceDevice for Group {
             voice.fade = 0;
             self.age = self.age.saturating_add(1);
             voice.age = self.age;
+            for (number, &value) in self.controllers.iter().enumerate() {
+                if value != 0. {
+                    voice.graph.apply_event(NoteEvent::Controller { number: number as u8, value });
+                }
+            }
+            voice.graph.apply_event(NoteEvent::PitchBend(self.bend));
+            voice.graph.apply_event(NoteEvent::Pressure(self.pressure));
             voice.graph.apply_event(NoteEvent::On { key, velocity: velocity.max(f32::MIN_POSITIVE) });
             voice.graph.apply_event(NoteEvent::Instance { id, event });
             for kind in [NoteExpressionKind::Pitch, NoteExpressionKind::Pressure, NoteExpressionKind::Timbre] {
