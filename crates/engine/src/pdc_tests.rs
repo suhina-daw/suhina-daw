@@ -634,3 +634,213 @@ fn pdc_automation_adopts_new_upstream_latency_with_running_instances() {
         }
     }
 }
+
+/// Every frame deliberately has a different source position, tempo or transport state.
+/// An implementation that extrapolates an evicted record cannot reproduce this sequence.
+fn history_song(frame: u32) -> crate::SongPosition {
+    crate::SongPosition {
+        playing: frame % 17 != 0,
+        position: u64::from((frame * 7) % 4096 + 1000),
+        tempo: if frame % 3 == 0 { 90.0 } else { 150.0 },
+        beat: f64::from(frame % 32),
+        bar: frame % 8,
+        bar_start: f64::from(frame % 8) * 4.0,
+        numerator: if frame % 5 == 0 { 3 } else { 4 },
+        denominator: 4,
+        cycle: Some((0.0, 32.0)),
+        cycle_seconds: Some((0.0, 16.0)),
+    }
+}
+
+#[test]
+fn pdc_history_covers_the_horizon_after_one_frame_callbacks_and_ring_wraps() {
+    for rate in [8_000, 44_100, 48_000, 96_000, 192_000, crate::MAX_SAMPLE_RATE] {
+        let horizon = rate * crate::MAX_LATENCY_SECONDS;
+        let mut history = crate::plugin::SongHistory::new(rate);
+        // Cross the full ring twice. The exact horizon must still address its real record.
+        for now in 0..=horizon * 2 + 3 {
+            history.record(history_song(now), 1);
+            if now >= horizon && (now % 8192 == 0 || now == horizon * 2 + 3 || now == horizon) {
+                let allocations = allocation_counter::measure(|| {
+                    for delay in [0, 1, 8192, horizon - 1, horizon] {
+                        let expected = history_song(now - delay);
+                        assert_eq!(history.heard(delay), expected, "rate {rate}, now {now}, delay {delay}");
+                        let span = history.spans(delay, 1).next().unwrap();
+                        assert_eq!(span.parked, expected.position);
+                        assert_eq!(span.time, expected.playing.then_some(expected.position));
+                    }
+                });
+                assert_eq!(allocations.count_total, 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn pdc_empty_callbacks_cannot_evict_history_and_clear_restarts_priming() {
+    let horizon = RATE * crate::MAX_LATENCY_SECONDS;
+    let mut history = crate::plugin::SongHistory::new(RATE);
+    let allocations = allocation_counter::measure(|| {
+        for frame in 0..=horizon {
+            history.record(history_song(frame), 1);
+        }
+        for _ in 0..=horizon {
+            history.record(crate::SongPosition::default(), 0);
+        }
+        assert_eq!(history.heard(horizon), history_song(0));
+        assert_eq!(history.heard(0), history_song(horizon));
+        history.clear();
+        assert_eq!(history.heard(horizon), crate::SongPosition::default());
+        let initial = crate::SongPosition { playing: true, position: 100, ..Default::default() };
+        history.record(initial, 1);
+        assert_eq!(history.heard(horizon), initial.earlier(horizon, f64::from(RATE)));
+        let span = history.spans(horizon, 1).next().unwrap();
+        assert_eq!(span.time, Some(0));
+        assert!(!span.advancing);
+    });
+    assert_eq!(allocations.count_total, 0);
+}
+
+fn render_at_horizon(hosted: bool, automated: bool, layout: Layout, blocks: &[usize]) -> Vec<f32> {
+    let total = (RATE * crate::MAX_LATENCY_SECONDS) as usize;
+    let latency = if matches!(layout, Layout::Nested) { total / 2 } else { total };
+    let (mut project, audio, plugins) = fixture(hosted, automated, latency, layout);
+    project.transport.loop_enabled = true;
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&audio, Arc::new(Devices)).with_plugins(plugins),
+        RATE,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_offline(true);
+    let mut out = vec![0.0; (total * 2 + LOOP) * 2];
+    let mut at = 0;
+    let mut block = 0;
+    let allocations = allocation_counter::measure(|| {
+        while at < out.len() {
+            let end = (at + blocks[block % blocks.len()] * 2).min(out.len());
+            renderer.process(&mut out[at..end]);
+            at = end;
+            block += 1;
+        }
+    });
+    assert_eq!(allocations.count_total, 0);
+    assert!(block > 8192, "exercise the former history limit");
+    out
+}
+
+#[test]
+fn pdc_long_delay_automation_matches_reference_after_history_wraps() {
+    let horizon = (RATE * crate::MAX_LATENCY_SECONDS) as usize;
+    for hosted in [false, true] {
+        for (layout, blocks) in [(Layout::Serial, &[1][..]), (Layout::Nested, &[1, 2, 1, 3][..])] {
+            let plain = render_at_horizon(hosted, false, layout, blocks);
+            let actual = render_at_horizon(hosted, true, layout, blocks);
+            assert!(plain[horizon * 2..].iter().any(|sample| *sample > 0.01));
+            for (frame, (got, input)) in actual.chunks_exact(2).zip(plain.chunks_exact(2)).enumerate() {
+                let source = frame.saturating_sub(horizon) % LOOP;
+                let gain = if (1000..1500).contains(&source) { 0.0 } else { 1.0 };
+                for channel in 0..2 {
+                    assert!(
+                        (got[channel] - input[channel] * gain).abs() < 1e-6,
+                        "{layout:?}, hosted {hosted}, frame {frame}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn latency_inputs(project: &Project, audio: &AudioPool, latencies: &[u32]) -> RenderInputs {
+    let devices = crate::plugin_devices(project);
+    assert_eq!(devices.len(), latencies.len());
+    let mut plugins = Plugins::new();
+    for (found, &latency) in devices.iter().zip(latencies) {
+        plugins.set_info(found.key, PluginSlotInfo { instrument: false, latency });
+    }
+    RenderInputs::from_audio(audio, Arc::new(Devices)).with_plugins(plugins)
+}
+
+#[test]
+fn pdc_limit_checks_the_complete_path_without_clamping() {
+    let limit = RATE * crate::MAX_LATENCY_SECONDS;
+    for layout in [Layout::Serial, Layout::Parallel, Layout::Nested, Layout::Bus, Layout::Return, Layout::Main] {
+        let (mut project, audio, _) = fixture(false, false, 0, layout);
+        if !matches!(layout, Layout::Nested) {
+            project.channels.last_mut().unwrap().devices.push(delay());
+        }
+        for latencies in
+            [[0, limit], [limit, 0], [limit / 2, limit / 2], [1, limit], [0, limit + 1], [u32::MAX, 1], [1, u32::MAX]]
+        {
+            let total = latencies[0].saturating_add(latencies[1]);
+            let result =
+                Renderer::build(&project, latency_inputs(&project, &audio, &latencies), RATE, RenderOptions::PLAYING);
+            if total <= limit {
+                assert!(result.is_ok(), "{layout:?}, {latencies:?}");
+            } else {
+                let error = result.err().unwrap();
+                assert!(
+                    matches!(error, crate::RenderError::LatencyLimit { frames, limit: cap, .. } if frames > cap && cap == limit),
+                    "{layout:?}, {latencies:?}: {error}"
+                );
+                let message = error.to_string();
+                assert!(message.contains("16000 frames (2 seconds)"));
+                assert!(message.contains("reduce device latency or bypass a device"));
+                if matches!(layout, Layout::Main) && latencies[0] <= limit {
+                    assert!(message.contains("ending at Main"));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn pdc_parallel_branches_use_the_maximum_and_disabled_latency_does_not_count() {
+    let limit = RATE * crate::MAX_LATENCY_SECONDS;
+    let (mut project, audio, _) = fixture(false, false, 0, Layout::Serial);
+    project.channels[0].devices = vec![group(vec![vec![delay()], vec![group(vec![vec![delay()]])]])];
+    let renderer =
+        Renderer::build(&project, latency_inputs(&project, &audio, &[limit, limit]), RATE, RenderOptions::PLAYING)
+            .unwrap();
+    assert_eq!(renderer.latency(), limit);
+    let mut disabled = delay();
+    disabled.enabled = false;
+    project.channels[0].devices = vec![disabled];
+    let renderer =
+        Renderer::build(&project, latency_inputs(&project, &audio, &[u32::MAX]), RATE, RenderOptions::PLAYING).unwrap();
+    assert_eq!(renderer.latency(), 0);
+}
+
+#[test]
+fn pdc_rejected_update_keeps_the_running_graph_and_allows_a_corrected_retry() {
+    let (project, audio, plugins) = fixture(false, false, 257, Layout::Serial);
+    let valid_info = plugins.info.clone();
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&audio, Arc::new(Devices)).with_plugins(plugins),
+        RATE,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_offline(true);
+    let mut controller = renderer.controller();
+    let mut out = vec![0.0; 6144 * 2];
+    renderer.process(&mut out[..1024 * 2]);
+    let mut invalid_info = valid_info.clone();
+    for info in invalid_info.values_mut() {
+        info.latency = RATE * crate::MAX_LATENCY_SECONDS + 1;
+    }
+    controller.set_plugin_info(invalid_info);
+    assert!(matches!(
+        controller.update(&project),
+        Err(crate::ControlError::Build(crate::RenderError::LatencyLimit { .. }))
+    ));
+    renderer.process(&mut out[1024 * 2..2048 * 2]);
+    assert_eq!(renderer.latency(), 257);
+    controller.set_plugin_info(valid_info);
+    controller.update(&project).unwrap();
+    renderer.process(&mut out[2048 * 2..]);
+    let reference = render(false, false, 257, 1024, false, Layout::Serial);
+    assert_eq!(out, reference);
+}

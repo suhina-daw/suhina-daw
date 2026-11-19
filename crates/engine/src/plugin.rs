@@ -141,10 +141,6 @@ impl SongPosition {
     }
 }
 
-/// How many blocks' songs a [`SongHistory`] keeps. Its duration depends on block sizes and
-/// sample rate; smaller blocks can exhaust it before [`crate::MAX_LATENCY_SECONDS`].
-pub(crate) const SONG_HISTORY: usize = 8192;
-
 /// The song as each recent block started, in the order the blocks played, so a plug-in that
 /// hears its sound late is told the song of what it hears as the transport moved then: across a
 /// loop's wrap, a jump, a tempo or a time signature change, where the current song stepped back
@@ -169,10 +165,14 @@ impl SongHistory {
         self.played = 0;
     }
 
-    /// An empty history. Allocates.
+    /// An empty history covering the entire compensation horizon, even when every block is
+    /// one frame. The extra record is the current block. The graph validates the rate before
+    /// construction; cap it here too so this allocation can never follow an unbounded input.
+    /// Allocates off the audio thread, once per renderer, not once per graph swap.
     pub(crate) fn new(sample_rate: u32) -> Self {
+        let capacity = sample_rate.min(crate::MAX_SAMPLE_RATE) * crate::MAX_LATENCY_SECONDS + 1;
         Self {
-            blocks: vec![(0, SongPosition::default()); SONG_HISTORY].into_boxed_slice(),
+            blocks: vec![(0, SongPosition::default()); capacity as usize].into_boxed_slice(),
             next: 0,
             len: 0,
             played: 0,
@@ -183,6 +183,10 @@ impl SongHistory {
     /// Records the song as a block of `frames` frames starts: it is the current block until the
     /// next is recorded. Never allocates.
     pub(crate) fn record(&mut self, song: SongPosition, frames: usize) {
+        // No audio elapsed: an empty callback cannot displace a frame of useful history.
+        if frames == 0 {
+            return;
+        }
         let size = self.blocks.len();
         if let Some(slot) = self.blocks.get_mut(self.next) {
             *slot = (self.played, song);
@@ -213,7 +217,9 @@ impl SongHistory {
 
     /// The song `frames` frames before the current block's start: the block that was playing
     /// then, moved on to that frame ([`SongPosition`]'s tempo, signature and loop of that block).
-    /// Before the oldest block kept, that block stepped back ([`SongPosition::earlier`]).
+    /// Before playback began, the initial song stepped back ([`SongPosition::earlier`]).
+    /// The graph rejects delays beyond the horizon: retained history always covers a
+    /// nonnegative target, including across wraparound of the record ring.
     /// Never allocates.
     pub(crate) fn heard(&self, frames: u32) -> SongPosition {
         let Some(&(now, current)) = self.len.checked_sub(1).and_then(|last| self.block(last)) else {
@@ -240,7 +246,8 @@ impl SongHistory {
         if let Some(&(at, song)) = low.checked_sub(1).and_then(|i| self.block(i)) {
             return song.later(target - at, self.sample_rate);
         }
-        // Older than anything kept (or than the first block played): the oldest stepped back.
+        // Defensive fallback for a caller outside the graph's supported horizon. A valid
+        // graph never reaches this: the ring retains at least one record per delayed frame.
         let (at, oldest) = self.block(0).copied().unwrap_or((now, current));
         let back = u64::from(frames).saturating_sub(now - at);
         oldest.earlier(u32::try_from(back).unwrap_or(u32::MAX), self.sample_rate)

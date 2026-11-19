@@ -260,7 +260,7 @@ impl SlotFactory<'_> {
             values: values.clone(),
             instrument,
             dry: vec![0.0; MAX_BLOCK * 2],
-            dry_delay: Delay::new(if instrument { 0 } else { latency as usize }),
+            dry_delay: Delay::new(if instrument { 0 } else { latency.min(cap) as usize }),
             midi_scratch: Vec::with_capacity(MAX_EVENTS),
         };
         Some(Built {
@@ -274,13 +274,13 @@ impl SlotFactory<'_> {
     }
 }
 
-/// The latency of a group whose branches have `latencies`, at most `cap` frames, and the delay
-/// each branch needs to line up with it: the slowest branch gets none. A branch slower than the
-/// cap is cut to it and is not fully compensated.
+/// The actual latency of the slowest branch and each branch's alignment delay. Delay storage
+/// stays bounded during preparation, but the reported latency does not: graph construction
+/// must reject an oversized path, including one hidden inside a nested group.
 pub(crate) fn compensation(latencies: impl Iterator<Item = u32>, cap: u32) -> (u32, Vec<u32>) {
-    let latencies: Vec<u32> = latencies.map(|l| l.min(cap)).collect();
+    let latencies: Vec<u32> = latencies.collect();
     let most = latencies.iter().copied().max().unwrap_or(0);
-    (most, latencies.iter().map(|&l| most - l).collect())
+    (most, latencies.iter().map(|&l| (most - l).min(cap)).collect())
 }
 
 /// Hands `visit` the live values of each device among `slots` and inside their groups, with the

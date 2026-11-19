@@ -106,10 +106,12 @@ group adds the devices before it in its branch to the delay before the group; a 
 it does not. The engine keeps the song as each recent block started (`SongHistory`), and the
 song that late is read from the block that played then: a loop's wrap, a jump, a tempo or time
 signature change reach a delayed plug-in when its sound does, with the bar, tempo and signature
-of that moment. The history keeps 8192 block records: its duration depends on the actual block
-sizes and sample rate. Further back, the oldest is stepped back at its tempo, so transport
-changes discarded from history cannot be recovered. While the transport is stopped the position
-is not moved.
+of that moment. The history covers the full two-second compensation horizon even with
+one-frame blocks. Only priming before the first processed frame steps the initial song back;
+supported delays do not lose transport changes. Graphs exceeding the cumulative limit are
+rejected with an error; see the [PDC timing contract](plugin-delay-compensation.md) for the
+storage bound and failed-update behaviour. While the transport is stopped the position is not
+moved.
 A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
 pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
 through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins

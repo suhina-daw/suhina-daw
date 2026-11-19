@@ -298,12 +298,21 @@ pub const MAX_RENDER_SECONDS: f64 = 60.0 * 60.0;
 const CHAIN_TAIL_SECONDS: f64 = 2.0;
 /// Most delay latency compensation makes up for, in seconds.
 pub(crate) const MAX_LATENCY_SECONDS: u32 = 2;
+/// Highest supported rate; also bounds frame-indexed preparation allocations.
+pub(crate) const MAX_SAMPLE_RATE: u32 = 384_000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RenderError {
     InvalidProject(Vec<suhina_model::ValidationError>),
     InvalidSampleRate(u32),
     InvalidTempo(f64),
+    /// The cumulative path ending at `track` exceeds the supported compensation horizon.
+    /// `frames` is a lower bound when reported latencies saturate a frame count.
+    LatencyLimit {
+        track: TrackId,
+        frames: u32,
+        limit: u32,
+    },
     TooLong {
         seconds: f64,
     },
@@ -324,6 +333,18 @@ impl fmt::Display for RenderError {
             }
             Self::InvalidSampleRate(sr) => write!(f, "sample rate {sr} is not supported"),
             Self::InvalidTempo(bpm) => write!(f, "tempo {bpm} bpm is not supported"),
+            Self::LatencyLimit { track, frames, limit } => {
+                write!(f, "latency compensation path ending at ")?;
+                if *track == TrackId::MAIN {
+                    write!(f, "Main")?;
+                } else {
+                    write!(f, "track {}", track.0)?;
+                }
+                write!(
+                    f,
+                    " needs at least {frames} frames; the limit is {limit} frames ({MAX_LATENCY_SECONDS} seconds); reduce device latency or bypass a device"
+                )
+            }
             Self::TooLong { seconds } => {
                 write!(f, "render would be {seconds:.0} s long; the limit is {MAX_RENDER_SECONDS:.0} s")
             }
