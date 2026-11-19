@@ -19,7 +19,13 @@
 //! as plug-ins without the engine.
 
 pub mod conformance;
+pub mod note_expression;
 pub mod sample_edits;
+
+pub use note_expression::{
+    NoteExpressionKind, NoteExpressionState, NoteIdAllocator, NoteInstanceDevice, NoteInstanceDispatchError,
+    NoteInstanceEvent, NoteInstanceId, dispatch_note_instance,
+};
 
 use std::borrow::Cow;
 use std::fmt;
@@ -808,6 +814,13 @@ pub trait Device: Send {
 
     /// The device as a sample player to read from, when it is one; `None` by default.
     fn samples_ref(&self) -> Option<&dyn SampleSource> {
+        None
+    }
+
+    /// Identified note input and final lifetime feedback, when the instrument supports them
+    /// (ADR 0039). `None` explicitly means unsupported, so a host selects ordinary-note
+    /// compatibility before dispatch. This capability never allocates.
+    fn note_instances(&mut self) -> Option<&mut dyn NoteInstanceDevice> {
         None
     }
 
