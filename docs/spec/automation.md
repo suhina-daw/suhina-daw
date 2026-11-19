@@ -234,7 +234,9 @@ priming, stopped playback, nested branches and the remaining limits.
   device starts at the lane's value at beat 0. While stopped, a parameter keeps its last value.
 - **Plug-in parameters**: as #109 built them (ADR 0006 › 3): a value at the block's start, at
   each point and every 64 frames while it moves, as parameter events at their frames; the curve
-  and the enabled flag apply too. While stopped, a lane sends its value where the transport
+  and the enabled flag apply too. Before another historical span in the same block, a lane
+  sends the preceding span's final value too, so an interpolating processor holds the old
+  value up to a delayed loop or seek boundary. While stopped, a lane sends its value where the transport
   stands when the play start marker moves or the lane changes, so the plug-in's editor and its
   parameter list show what plays there (#1205). A plug-in that starts (the project opened, a
   restart) keeps the state it was given until then, so opening a project changes nothing in it

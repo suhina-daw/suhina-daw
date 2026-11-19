@@ -236,13 +236,17 @@ impl SlotParams {
         for (id, value) in queued.drain(..) {
             push(ParamEvent { frame: 0, id, value });
         }
-        for span in spans {
+        let mut spans = spans.into_iter().peekable();
+        while let Some(span) = spans.next() {
+            // VST3 joins parameter points with straight lines. Close a historical span
+            // before the next one starts, even if its last value has not changed.
+            let boundary_end = span.frames.checked_sub(1).filter(|&frame| frame > 0 && spans.peek().is_some());
             let (time, parked) = (span.time, span.parked);
             let frames = if span.advancing { span.frames } else { span.frames.min(1) };
             match time {
                 Some(time) => {
                     for lane in lanes.iter() {
-                        lane_events(&lane.envelope, time, frames, |frame, value| {
+                        lane_events(&lane.envelope, time, frames, boundary_end, |frame, value| {
                             push(ParamEvent { frame: span.offset + frame, id: lane.id, value })
                         });
                     }
@@ -256,7 +260,11 @@ impl SlotParams {
                     Parked::Sent(at) if at == parked => {}
                     Parked::Sent(_) | Parked::Due => {
                         for lane in lanes.iter() {
-                            push(ParamEvent { frame: span.offset, id: lane.id, value: lane.envelope.value_at(parked) });
+                            let value = lane.envelope.value_at(parked);
+                            push(ParamEvent { frame: span.offset, id: lane.id, value });
+                            if let Some(frame) = boundary_end {
+                                push(ParamEvent { frame: span.offset + frame, id: lane.id, value });
+                            }
                         }
                         *parked_state = Parked::Sent(parked);
                     }
@@ -310,15 +318,24 @@ pub(crate) fn value_at(points: &[(u64, f64)], time: u64) -> Option<f64> {
 
 /// The values a lane sends in a block of `frames` frames from arrangement frame `time`: its
 /// value at the first frame, then at each point inside the block and every [`RAMP_STEP`]
-/// frames, where it changed.
-fn lane_events(envelope: &Envelope, time: u64, frames: usize, mut emit: impl FnMut(usize, f64)) {
+/// frames, where it changed. Reserve a point at `boundary_end` before another historical
+/// span; a priming span has one source frame but holds it through that boundary.
+fn lane_events(
+    envelope: &Envelope,
+    time: u64,
+    frames: usize,
+    boundary_end: Option<usize>,
+    mut emit: impl FnMut(usize, f64),
+) {
     let first = envelope.value_at(time);
     emit(0, first);
     let mut last = first;
     let mut sent = 1;
+    let mut last_frame = 0;
     let mut grid = RAMP_STEP;
     let mut next_point = envelope.first_after(time);
-    while sent < MAX_LANE_EVENTS {
+    let limit = MAX_LANE_EVENTS - usize::from(boundary_end.is_some());
+    while sent < limit {
         let point = envelope.frame(next_point).map_or(usize::MAX, |f| usize::try_from(f - time).unwrap_or(usize::MAX));
         let frame = grid.min(point);
         if frame >= frames {
@@ -333,9 +350,14 @@ fn lane_events(envelope: &Envelope, time: u64, frames: usize, mut emit: impl FnM
         let value = envelope.value_at(time.saturating_add(frame as u64));
         if value != last {
             emit(frame, value);
+            last_frame = frame;
             last = value;
             sent += 1;
         }
+    }
+    if let Some(frame) = boundary_end.filter(|&frame| frame > last_frame) {
+        let at = time.saturating_add(frame.min(frames.saturating_sub(1)) as u64);
+        emit(frame, envelope.value_at(at));
     }
 }
 

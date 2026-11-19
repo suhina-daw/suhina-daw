@@ -40,6 +40,13 @@ pass. History is read in processed-frame order and can return several spans for 
 each retaining its offset in that block. A loop, seek or play/stop boundary inside the
 delayed block separates spans. A sub-block receives events relative to its own start.
 
+When another historical span follows inside the block, a hosted lane also sends its value
+at the preceding span's final sample, even when that value has been constant. Together
+with the next span's first value this preserves a discontinuity for processors that
+interpolate parameter points, rather than starting the change before the delayed audio
+arrives. A priming span holds the value at zero through its final sample. These boundary
+points use the existing bounded event storage and keep their offsets in sub-blocks.
+
 For example, an effect delays audio by 257 frames. A gain step at source frame 1000 on the
 next device must reach that device at processed frame 1257. Both the audio and the step
 then travel through any remaining devices and output compensation together. The result
@@ -93,3 +100,5 @@ the played path.
   implementation of #1525 and #1564; no proprietary implementation was consulted.
 - [ADR 0006](../decisions/0006-plug-in-hosting.md): sandboxed plug-in processing and events.
 - [ADR 0038](../decisions/0038-rendering-on-several-cores.md): parallel and ahead rendering.
+- [Steinberg VST3 parameter queues](https://steinbergmedia.github.io/vst3_doc/vstinterfaces/classSteinberg_1_1Vst_1_1IParamValueQueue.html):
+  points describe linear segments; a jump needs the old and new values on adjacent samples.

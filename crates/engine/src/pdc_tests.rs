@@ -114,6 +114,40 @@ impl PluginProcessor for HostedGain {
     }
 }
 
+/// A self-authored processor using VST3's piecewise-linear parameter-queue semantics.
+struct InterpolatingGain(HostedGain);
+
+impl PluginProcessor for InterpolatingGain {
+    fn automate(&mut self, events: &[ParamEvent]) {
+        self.0.automate(events);
+    }
+
+    fn process(&mut self, buffer: &mut [f32], _: &[(usize, NoteEvent)], _: Duration) -> bool {
+        // These fixtures must fit the real host's per-parameter queue without compaction.
+        assert!(self.0.len <= 16);
+        let mut events = self.0.events[..self.0.len].iter().peekable();
+        let (mut at, mut value) = (-1.0, f64::from(self.0.value));
+        for (frame, pair) in buffer.chunks_mut(2).enumerate() {
+            while let Some(event) = events.next_if(|event| event.frame <= frame) {
+                assert_eq!(event.id, 0);
+                (at, value) = (event.frame as f64, event.value);
+            }
+            let gain = events
+                .peek()
+                .map_or(value, |next| value + (next.value - value) * (frame as f64 - at) / (next.frame as f64 - at));
+            for sample in pair {
+                *sample *= gain as f32;
+            }
+            self.0.value = gain as f32;
+        }
+        true
+    }
+}
+
+fn interpolating_gain() -> InterpolatingGain {
+    InterpolatingGain(HostedGain { value: 1.0, events: [ParamEvent { frame: 0, id: 0, value: 0.0 }; 512], len: 0 })
+}
+
 fn delay() -> Device {
     Device::new("Delay", DeviceKind::Clap { id: "test:pdc-delay".into() })
 }
@@ -256,6 +290,119 @@ fn pdc_hosted_automation_follows_delayed_audio() {
     check(true, Layout::Serial);
 }
 
+fn render_interpolated_gain(automated: bool, latency: usize, block: usize, seek: bool) -> Vec<f32> {
+    let (mut project, audio, mut plugins) = fixture(true, false, latency, Layout::Serial);
+    project.transport.loop_enabled = !seek;
+    if automated {
+        // A continuous ramp over the first sample, then a plateau. At a loop/seek to zero
+        // the old plateau must last until the delayed source actually reaches zero.
+        project.channels[0].devices[1].automation.push(AutomationLane {
+            param: "0".into(),
+            enabled: true,
+            points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(1.0 / 4000.0, 1.0)],
+        });
+    }
+    let key = crate::plugin_devices(&project).into_iter().find(|device| device.path == [1]).unwrap().key;
+    plugins.insert(key, PluginSlotInfo::default(), Box::new(interpolating_gain()));
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&audio, Arc::new(Devices)).with_plugins(plugins),
+        RATE,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_offline(true);
+    let mut out = vec![0.0; 6144 * 2];
+    for (part, samples) in out.chunks_mut(1536 * 2).enumerate() {
+        if seek && part == 1 {
+            renderer.handle(crate::LaunchCommand::SetPosition { beat: 0.0 });
+        }
+        for chunk in samples.chunks_mut(block * 2) {
+            renderer.process(chunk);
+        }
+    }
+    out
+}
+
+fn check_interpolated_gain(seek: bool) {
+    for latency in [0, 1, 257, 1500] {
+        for block in [1, 31, 257, 512, 1024] {
+            let plain = render_interpolated_gain(false, latency, block, seek);
+            let actual = render_interpolated_gain(true, latency, block, seek);
+            assert!(plain.iter().any(|sample| *sample > 0.01));
+            for (frame, (got, input)) in actual.chunks_exact(2).zip(plain.chunks_exact(2)).enumerate() {
+                let source = frame.saturating_sub(latency);
+                let source = if seek { if source >= 1536 { source - 1536 } else { source } } else { source % LOOP };
+                let gain = if source == 0 { 0.0 } else { 1.0 };
+                for channel in 0..2 {
+                    let want = input[channel] * gain;
+                    assert!(
+                        (got[channel] - want).abs() < 1e-6,
+                        "seek {seek}, latency {latency}, block {block}, frame {frame}: {} != {want}",
+                        got[channel]
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn pdc_interpolated_gain_preserves_delayed_loop_boundaries() {
+    check_interpolated_gain(false);
+}
+
+#[test]
+fn pdc_interpolated_gain_preserves_delayed_seek_boundaries() {
+    check_interpolated_gain(true);
+}
+
+#[test]
+fn pdc_interpolated_gain_keeps_boundary_values_in_subblocks() {
+    let mut songs = crate::plugin::SongHistory::new(RATE);
+    let playing = |position| crate::SongPosition { position, playing: true, ..Default::default() };
+    songs.record(playing(512), 512);
+    songs.record(playing(0), 512);
+    let mut device = gain(true, false);
+    device.automation.push(AutomationLane {
+        param: "0".into(),
+        enabled: true,
+        points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(100.0 / 4000.0, 1.0)],
+    });
+    let mut params = crate::plugin_params::SlotParams::new(&device, 4000.0, &[]);
+    params.plan_delayed(&songs, 257, 512);
+    for split in [0, 128, 256, 257, 258, 512] {
+        let mut processor = interpolating_gain();
+        let mut output = [1.0; 512 * 2];
+        for (from, to) in [(0, split), (split, 512)] {
+            processor.automate(params.span(from, to));
+            processor.process(&mut output[from * 2..to * 2], &[], Duration::ZERO);
+        }
+        // The independent reference is the end of the old plateau followed by the ramp.
+        // Check the plateau and the exact jump; ordinary ramp subdivision is separate.
+        assert!(output[..257 * 2].iter().all(|sample| *sample == 1.0), "split {split}: early ramp");
+        assert_eq!(&output[257 * 2..258 * 2], &[0.0, 0.0], "split {split}: late jump");
+    }
+}
+
+#[test]
+fn pdc_historical_span_endpoint_stays_within_the_lane_event_budget() {
+    let mut songs = crate::plugin::SongHistory::new(RATE);
+    songs.record(crate::SongPosition { playing: true, ..Default::default() }, 128);
+    songs.record(crate::SongPosition { position: 1000, playing: true, ..Default::default() }, 128);
+    let mut device = gain(true, false);
+    device.automation.push(AutomationLane {
+        param: "0".into(),
+        enabled: true,
+        points: (0..200).map(|frame| AutomationPoint::new(f64::from(frame), f64::from(frame) / 256.0)).collect(),
+    });
+    let mut params = crate::plugin_params::SlotParams::new(&device, 1.0, &[]);
+    params.plan_delayed(&songs, 65, 128);
+    let before: Vec<_> = params.block().iter().filter(|event| event.frame < 65).collect();
+    assert!(before.len() <= 32, "the boundary uses the existing per-lane event budget");
+    assert_eq!(before.last().copied(), Some(&ParamEvent { frame: 64, id: 0, value: 127.0 / 256.0 }));
+}
+
 #[test]
 fn pdc_native_automation_follows_delayed_audio() {
     check(false, Layout::Serial);
@@ -362,7 +509,7 @@ fn pdc_parameter_events_keep_discontinuity_and_subblock_offsets() {
     params.set(17, 0.5);
     params.plan_delayed(&songs, 97, 128);
     assert_eq!(params.block().iter().filter(|event| event.id == 17).count(), 1, "manual value sent once");
-    for (frame, value) in [(0, 1.0), (10, 0.0), (49, 1.0), (97, 0.0)] {
+    for (frame, value) in [(0, 1.0), (10, 0.0), (48, 0.0), (49, 1.0), (80, 1.0), (96, 1.0), (97, 0.0)] {
         assert!(
             params.block().iter().any(|event| event.id == 0 && event.frame == frame && event.value == value),
             "missing {frame}: {value} in {:?}",

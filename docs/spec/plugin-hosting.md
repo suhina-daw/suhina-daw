@@ -131,7 +131,9 @@ every 64 frames while it moves (a VST3 plug-in ramps between them, a CLAP plug-i
 The lanes follow the same delayed input timeline as the song position. A historical loop,
 seek or play/stop boundary can split their block into several spans; each parameter event
 keeps its offset in the block and then in the sub-block handed to the plug-in. Set and manual
-values still go once, at the next block's start. Before arrangement zero, lanes hold the
+values still go once, at the next block's start. Before another historical span, each lane
+also sends the preceding span's final value, preserving a jump between adjacent samples
+for VST3 interpolation. Before arrangement zero, lanes hold the
 value at zero. See [PDC](plugin-delay-compensation.md) for the common contract and limits.
 Only a switch (one step) or a list of choices holds each point's value until the next
 point; any other parameter, one the plug-in lists with steps too (a cutoff knob in 1024
