@@ -175,6 +175,21 @@ jobs:
                 }
                 return;
               }
+              // No run would start, so the label and a "Requested" reply would promise a build that
+              // never comes: test-build.yml does not run for a pull request that changes nothing in
+              // the binaries (its paths filter), and GitHub starts no pull_request workflow for one
+              // that has merge conflicts with its base (no merge commit to build). A mergeable
+              // still being worked out (null) goes on as before.
+              const base = pr.base?.ref || 'the base branch';
+              const notBuilt = reuse.head === request.sha && reuse.state === 'no-binary'
+                ? 'No test build is needed: this pull request changes nothing that goes into the binaries.'
+                : pr.mergeable === false
+                  ? `Not built: ${request.sha} has merge conflicts with \`${base}\`, and GitHub starts no workflow for a pull request that cannot be merged. Merge \`${base}\` into the branch (or rebase on it), resolve the conflicts, then comment \`/test-build\` again.`
+                  : null;
+              if (notBuilt) {
+                if (!done) await github.rest.issues.createComment({ ...scope, body: `${notBuilt}\n\n${attribution}\n\n${marker}` });
+                return;
+              }
               // The proof precedes the label. Both build and link jobs require this exact head.
               const proof = `<!-- trusted-build ${request.sha} ${actor} ${comment} -->`;
               if (comments.some(c => bot(c) && c.body?.endsWith(` ${actor} ${comment} -->`) &&
@@ -182,12 +197,13 @@ jobs:
                 throw new Error('This request already authorized another commit; post a new comment.');
               }
               // One reply is both the answer and the proof; the proof stays last for the build's match.
-              if (!comments.some(c => bot(c) && c.body?.endsWith(proof))) {
+              const hadProof = comments.some(c => bot(c) && c.body?.endsWith(proof));
+              if (!hadProof) {
                 await github.rest.issues.createComment({ ...scope,
                   body: `Requested a test build of ${request.sha}.\n\n${attribution}\n\n${marker}\n${proof}` });
               }
-              // A rerun after the label went on repeats nothing; one that failed before it adds it.
-              if (done && (pr.labels || []).some(l => l.name === 'test-build')) return;
+              // Only an earlier build proof can suppress redispatch; a conflict/reuse reply cannot.
+              if (hadProof && (pr.labels || []).some(l => l.name === 'test-build')) return;
               // Remove/re-add also lets a new request retry a failed build of the same commit.
               try { await github.rest.issues.removeLabel({ ...scope, name: 'test-build' }); }
               catch (error) { if (error.status !== 404) throw error; }

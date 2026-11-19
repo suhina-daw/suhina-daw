@@ -862,6 +862,13 @@ impl Rack {
         }
     }
 
+    /// Drops a check [`Rack::poll_edits`] has begun, so the next poll starts a fresh one: both
+    /// reads and a new second. For a check the window paused (a dialog held it): its second may
+    /// have passed meanwhile, and going on would end it on states read before the pause.
+    pub fn restart_edit_check(&mut self) {
+        self.edit_check = None;
+    }
+
     /// Advances a two-read check of all running plug-ins without waiting. Call each frame
     /// until true before deciding whether to offer saving; processing and MIDI count too.
     /// All rounds share one second, after which the last known states are used.

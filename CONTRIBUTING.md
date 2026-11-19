@@ -33,13 +33,18 @@
 - **CodeRabbit:** reviews every pull request that is not a draft against AGENTS.md
   (`.coderabbit.yaml`) and shows a **CodeRabbit** check beside CI. Its comments are suggestions, not requirements: answer or resolve
   them, and leave DSP and real-time behaviour to the tests and renders. The check is never red and
-  never required. Comment `@coderabbitai review` to run it again.
+  never required. It reviews the push that opens the pull request (or turns a draft ready), not
+  the pushes after it: each review is one of the author's few free reviews an hour. Comment
+  `@coderabbitai review` to review the latest push. Push nothing while that first review runs:
+  a push supersedes it, its result never reaches the pull request, and no review follows by
+  itself. A review skipped at the limit is not run later either, and asking again at once is
+  refused too: `@coderabbitai rate limit` says when the next review is available.
 - **Codex:** the maintainer requests a review with `@codex review` once the `ci` check has
   finished on the pull request's latest push; contributors ask the maintainer for one. The
   reviewer runs no tests or builds and reads the CI results of the push it reviews. Codex follows
   [AGENTS.md](AGENTS.md#code-review-rules) and
   [`docs/code-review.md`](docs/code-review.md). Actionable inline threads must be answered or
-  resolved before the merge queue takes the pull request; optional suggestions stay in the
+  resolved before the pull request can merge; optional suggestions stay in the
   summary. Hosted review reporting limits are described in the guide.
 - **Asking for a review:** ask a maintainer (**Reviewers** on the pull request). Comments by
   `suhina-bot[bot]` are a maintainer's agent's feedback, posted for them; the bot takes no
@@ -55,7 +60,7 @@ Every crate in `Cargo.lock`, with all features on and for every platform, must h
 that [`deny.toml`](deny.toml) allows: the list in AGENTS.md rule 10, plus a few exceptions, each
 named for one crate with the reason. Dependencies come from crates.io only, and a crate with an
 open RustSec advisory fails unless `deny.toml` ignores it with a reason. The `ci` check runs this
-on every pull request and in the merge queue (`.github/workflows/deny.yml`, called from `ci.yml`),
+on every pull request and on the default branch (`.github/workflows/deny.yml`, called from `ci.yml`),
 and `deny.toml` needs the owner's review like the workflows. Run it locally with the version pinned
 in that workflow:
 
@@ -69,7 +74,7 @@ names a crate Suhina uses, and on Mondays the week's version updates
 ([`.github/dependabot.yml`](.github/dependabot.yml)): minor and patch updates of the Cargo
 workspace grouped in one pull request, the major updates (for a 0.x crate, 0.14 to 0.15) in a
 second one, and the GitHub Actions the workflows use. Every update rewrites `Cargo.lock`, so two
-of them in the merge queue at once conflict; queue one, and after it merges ask the other to rebase
+of them conflict once one merges; merge one, and then ask the other to rebase
 (`@dependabot rebase`). They go through CI and review like any other pull request; a major
 update that changes an API needs the code changed in the same pull request. One that cannot be
 fixed there goes in the `cargo-major` group's `exclude-patterns` in `.github/dependabot.yml`, so it
@@ -114,34 +119,37 @@ needs no issue and no claim; one pull request per issue, at most three open at a
 A pull request can be tried without building it: GitHub Actions builds packages of it for
 Windows, macOS and Linux ([`docs/releasing.md` › Test builds](docs/releasing.md#test-builds)) and
 links the downloads from the pull request in a comment, updated with every new build. A maintainer's own pull requests are
-built on every push. A contributor's pull request is built once a maintainer has read the diff and
+built for Windows on every push, and for all three systems on `/test-build`. A contributor's pull request is built once a maintainer has read the diff and
 commented `/test-build`, or a trusted contributor requests it with `/test-build`; a later push
 takes the label off, and the new commits need a new request. On a pull request from a branch in
 this repository, a maintainer may add the `test-build` label instead; on one from a fork the label
 alone is refused, since the fork's own workflow files decide what its run builds. `/test-build` first reuses a
 running build of that commit or a successful build whose requested packages are still available.
-A verified main-only update can reuse the previous build. It starts another build only when no
-suitable build is available.
+A verified update that only merges `next` in can reuse the previous build. It starts another
+build only when no suitable build is available. A pull request with merge conflicts against its
+base gets no build at all (GitHub starts no workflow for it): the bot says so, and `/test-build`
+works again once the conflicts are resolved.
 
 ## Merging many pull requests
 
-For maintainers. Merge through the merge queue: on each green pull request press **Merge when
-ready**, and the queue tests the queued pull requests together on top of `main`, in groups, and
-merges them in order, so no one presses *Update branch* by hand. To try several pull requests in
+For maintainers. Pull requests are squashed into `next`, one commit each, as soon as their own
+`ci` is green; there is no merge queue, and no one presses *Update branch* (`next`'s CI and the
+nightly catch two pull requests that break each other before `main` moves). To try several pull requests in
 one build before they merge, run Actions › Test build › Run workflow with their numbers
-(`302 303 304`). A push that only merges `main` into a pull request is not built again; its last
+(`302 303 304`). A push that only merges `next` into a pull request is not built again; its last
 test build stays linked. [`docs/releasing.md` › Merging many pull requests](docs/releasing.md#merging-many-pull-requests)
-says how the queue is set up and what runs in it.
+says how merging is set up and what runs.
 
 **The `ready to merge` label** does the waiting for you. A maintainer who has read a pull request
 adds it, and [`ready-to-merge.yml`](.github/workflows/ready-to-merge.yml) approves the commit it was
-added on and turns on *Merge when ready* for that commit: the queue takes the pull request once
+added on and turns on auto-merge (squash) for that commit: GitHub merges the pull request once
 `ci` is green and every review thread is resolved (CodeRabbit's too), and a red check stops it.
 Adding the label is the maintainer's approval of that exact commit, regardless of the author, and
-it needs a finished test build of that commit: a successful `/test-build` run whose packages are
-still available, or one of an earlier head the branch has only merged `main` into since. Without
+pull requests into `next` need no test build: the nightly builds and packages `next` on every
+system before `main` moves. For other base branches, it needs a finished test build of that
+commit: a successful `/test-build` run whose packages are still available, or one of an earlier head the branch has only merged `next` into since. Without
 one the label comes off with a comment asking for `/test-build`; an existing build is reused, so
-asking again starts no second packaging run. A pull request that changes nothing in the binaries (only documentation, scripts or workflows) needs no build. Code-owner approval is still required for
+asking again starts no second packaging run. A pull request that changes nothing in the binaries (only documentation, scripts or workflows) needs no build, and neither does one that changes only the user interface (`crates/ui`, `crates/ui-gpu`, `crates/style`, `crates/theme-package`, `apps/theme-render`; `/test-build` still builds it). Code-owner approval is still required for
 protected paths. A push by anyone
 but a maintainer takes the label off, so new commits are never merged unread; taking the label off
 by hand stops the merge. Only a maintainer adds it: an agent never adds `ready to merge`, also not
@@ -153,7 +161,7 @@ repository's secrets, [`.github/CODEOWNERS`](.github/CODEOWNERS) names the repos
 approval for the protected paths: `ready to merge` alone does not merge such a change, also
 not one from another maintainer. Checked on 2026-11-13 (#1087): #1366, which changed a file that
 then had a code owner, got `ready to merge` from a maintainer who is not the owner, the app's
-approval and *Merge when ready*, and stayed blocked until the owner approved, although the app is
+approval and auto-merge, and stayed blocked until the owner approved, although the app is
 a bypass actor of the main ruleset.
 
 **The updater needs the owner's review too.** Suhina installs and runs what its updater downloads,
@@ -356,11 +364,11 @@ any other work.
 
 - **A new built-in effect or instrument** follows [ADR 0004](docs/decisions/0004-built-in-devices.md):
   propose it with the *New effect or instrument* issue form, then open the pull request with the
-  [device template](https://github.com/suhina-daw/suhina-daw/compare/main...main?template=device.md)
+  [device template](https://github.com/suhina-daw/suhina-daw/compare/next...next?template=device.md)
   (choose your branch on that page).
 - **Presets** for them go in `presets/<device id>/` under CC0 1.0
   ([ADR 0014](docs/decisions/0014-stock-presets.md)); open the pull request with the
-  [preset template](https://github.com/suhina-daw/suhina-daw/compare/main...main?template=preset.md).
+  [preset template](https://github.com/suhina-daw/suhina-daw/compare/next...next?template=preset.md).
   Presets need no clean-room review; their names don't name commercial products, and banks or
   files from commercial products are not accepted.
 

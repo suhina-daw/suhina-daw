@@ -763,8 +763,11 @@ keys do.
 - **Built ([#344](https://github.com/suhina-daw/suhina-daw/issues/344),
   [#1115](https://github.com/suhina-daw/suhina-daw/issues/1115)):** **Shift+Right** takes each selected
   note's end to the next grid line, over the next note of its key too while **Allow stacked notes**
-  is on; with it off (the default) the end stops at the start of the next note of its key, so the
-  key never runs one note over another (a note already touching the next one stays as it is).
+  is on; with it off (the default) the end stops at the start of the next selected note of its key,
+  so the selected notes never run over each other (a note already touching the next selected one
+  stays as it is). A note that is not selected does not stop it: the end goes on to the grid line
+  over it, and the note under it makes room once the selection is let go (**Covered notes**), as
+  after a drag.
   **Shift+Left** takes each end to the previous grid line, and no note gets shorter than one
   step. One `note.resize` with `lengths`, one undo step; with snapping off, a whole step either way.
   With **Alt** held too, the end goes a 1/128 note either way, off the grid, under the same limits.
@@ -1343,7 +1346,7 @@ Built (the first version, and keyboard editing from [#344](https://github.com/su
 | Ctrl+A, Escape | Selects every note, clears the selection |
 | Left, Right | Moves the selection one grid step earlier, later |
 | Up, Down; Shift+Up, Shift+Down | Moves the selection a semitone (folded, each note to the next row shown, so it stays in the scale: `note.move` with `keys`); an octave |
-| Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line; with stacked notes off, never past the next note of the key (› Resizing) |
+| Shift+Left, Shift+Right | Takes the selection's ends to the previous, the next grid line; with stacked notes off, never past the next selected note of the key (› Resizing) |
 | Alt+Left, Alt+Right; Alt+Shift+Left, Alt+Shift+Right | Moves the selection, or changes its length, by a 1/128 note, off the grid (› Moving, › Resizing) |
 | Ctrl+Right, Ctrl+Left | Each selected key's selection goes to its next, previous note; the notes stay (› Selecting from the keyboard) |
 | Ctrl+Up, Ctrl+Down | Selects the clip's next, previous note, in time and then by key; from a chord its lowest, highest note |

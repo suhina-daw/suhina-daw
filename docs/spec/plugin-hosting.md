@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-19
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
@@ -81,7 +81,11 @@ block's releases wait in each. A hang anywhere in the block so makes every plug-
 *hung*, as the engine cannot tell which one is stuck; the process is restarted either way.
 A plug-in with parameter events in the block (#109) runs on its own, and ends the run: a
 joint block carries one event list, which every plug-in in it is given, so one plug-in's
-values would reach the others. An instance restarted for a latency change (#110) serves
+values would reach the others. For the same reason a plug-in told another song than the
+first one ends the run: the song travels in that event list, so a follower after a plug-in
+with latency would hear the first one's song, not the song of the sound it gets (*Events in
+a block* below); plug-ins with no latency between them hear the same song and still share
+one round trip. An instance restarted for a latency change (#110) serves
 under the same number again, so blocks go on naming it.
 The output is the same, sample for sample, as one round trip each.
 
@@ -93,12 +97,18 @@ bend, channel pressure, parameter value) as fixed 16-byte records with their fra
 Two more kinds carry the song: `Transport` (playing, position in samples) and `Tempo`, sent
 with every block to a plug-in that follows the song (one loaded with an ARA document,
 [ADR 0033](../decisions/0033-ara-hosting.md)), which a VST3 host puts in the block's process context.
-The song a plug-in is told is the song of the sound it gets: moved back by the latency of the
-devices before it in its chain and by its chain's input delay (a bus or a return hears its
-sources as late as the latest of them), so a plug-in that follows the song (a tempo-synced
-volume shape, an arpeggiator) lines up with what it hears after a linear-phase EQ or a
-look-ahead device; the bar steps back with the beat. A plug-in inside a device group is told the
-delay before the group. While the transport is stopped the position is not moved.
+The song a plug-in is told is the song of the sound it gets: as late as the latency of the
+devices before it in its chain and its chain's input delay (a bus or a return hears its
+sources as late as the latest of them, the main channel the whole mix as late as its latest
+path), so a plug-in that follows the song (a tempo-synced volume shape, an arpeggiator) lines up
+with what it hears after a linear-phase EQ or a look-ahead device. A plug-in inside a device
+group adds the devices before it in its branch to the delay before the group; a branch beside
+it does not. The engine keeps the song as each recent block started (`SongHistory`), and the
+song that late is read from the block that played then: a loop's wrap, a jump, a tempo or time
+signature change reach a delayed plug-in when its sound does, with the bar, tempo and signature
+of that moment. Further back than the blocks kept (more than five seconds of the smallest
+blocks), the oldest is stepped back at its tempo. While the transport is stopped the position
+is not moved.
 A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
 pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
 through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins

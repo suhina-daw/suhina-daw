@@ -96,6 +96,19 @@ pub const FIXED: &[(&str, Step)] = &[
         click(h, "Show the samples laid out by how they sound")
     }),
     ("clip-midi", |h| click(h, "Select Walk on Bass (scene 2)")),
+    // The toolbar's menus open (#1549); the grid's is `grid-menu`.
+    ("quantize-menu", |h| click(h, "Launch quantisation")),
+    ("count-in-menu", |h| click(h, "Count-in")),
+    ("time-signature-menu", |h| click(h, "Time signatures")),
+    // A dialog over Settings. Delete variant… would be another, but it is refused for every
+    // built-in theme, so no scene can open it.
+    ("new-theme-dialog", |h| {
+        settings_page(h, "Themes")?;
+        click(h, "More")?;
+        click(h, "New theme…")?;
+        h.remove_cursor();
+        settle(h)
+    }),
 ];
 
 /// The scenes on a project of their own: `(name, the app, what is done)`.
@@ -104,6 +117,8 @@ pub const OWN: &[(&str, Build, Step)] = &[
     ("device-group", with_device_group, |h| click(h, "Track Keys")),
     ("missing-files", with_audio, |h| menu_item(h, "View", "Missing files (1)…")),
     ("start-panel", empty_app, settle),
+    ("cpu", with_cpu, settle),
+    ("detail-beside", || on_keys(&["compressor", "utility"]), detail_beside),
 ];
 
 /// The scenes with the views scrolled down and along, on a project with more tracks and scenes
@@ -165,14 +180,71 @@ pub fn scenes() -> Vec<Scene> {
     scenes
 }
 
-/// The scenes to draw: all of them, or only the one called `only`.
-pub fn select(only: Option<&str>) -> Vec<Scene> {
-    scenes().into_iter().filter(|s| only.is_none_or(|name| s.name == name)).collect()
+/// The scenes to draw: all of them, or only the one called `only`, each with `pointer` done after
+/// it is driven.
+pub fn select(only: Option<&str>, pointer: Option<&Pointer>) -> Vec<Scene> {
+    scenes()
+        .into_iter()
+        .filter(|s| only.is_none_or(|name| s.name == name))
+        .map(|s| match pointer {
+            Some(pointer) => with_pointer(s, pointer.clone()),
+            None => s,
+        })
+        .collect()
 }
 
 /// The scene called `name`.
 pub fn find(name: &str) -> Option<Scene> {
     scenes().into_iter().find(|s| s.name == name)
+}
+
+/// What the pointer does in a scene once it is driven, on the first control with a label: `--hover`
+/// and `--press` of `suhina-theme-render`, to show a control's `:hover` or `:active` without a
+/// scene for each (#1549).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pointer {
+    /// The pointer rests over the control.
+    Hover(String),
+    /// The pointer is over the control with its button held down.
+    Press(String),
+}
+
+/// `scene` with `pointer` done after it is driven: the same name and window.
+pub fn with_pointer(scene: Scene, pointer: Pointer) -> Scene {
+    let drive = scene.drive.clone();
+    Scene {
+        drive: Arc::new(move |h| {
+            drive(h)?;
+            let (label, press) = match &pointer {
+                Pointer::Hover(label) => (label, false),
+                Pointer::Press(label) => (label, true),
+            };
+            settle(h)?;
+            let at = h
+                .query_all_by_label(label)
+                .next()
+                .ok_or_else(|| format!("no control labelled {label:?} to point at"))?
+                .rect()
+                .center();
+            // A control scrolled or laid out of the window has nothing to point at. One under a
+            // dialog is pointed at all the same, and shows no hover.
+            if !h.ctx.content_rect().contains(at) {
+                return Err(format!("the control labelled {label:?} is outside the window"));
+            }
+            h.hover_at(at);
+            if press {
+                h.step();
+                h.input_mut().events.push(egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                });
+            }
+            settle(h)
+        }),
+        ..scene
+    }
 }
 
 /// Runs until nothing repaints, or for the most frames a scene may take.
@@ -480,6 +552,27 @@ fn empty_space_menu(h: &mut Window) -> Result<(), String> {
     settle(h)?;
     h.query_by_label("Empty space").ok_or("no control labelled \"Empty space\"")?.click_secondary();
     settle(h)
+}
+
+/// A track's devices beside the view: the device layout set to Stack, Keys and its devices chosen
+/// (#1549).
+fn detail_beside(h: &mut Window) -> Result<(), String> {
+    settle(h)?;
+    let ctx = h.ctx.clone();
+    let mut settings = h.state().settings().clone();
+    settings.device_layout = suhina_ui::settings::DeviceLayout::Stack;
+    h.state_mut().set_settings(&ctx, settings);
+    click(h, "Track Keys")?;
+    h.remove_cursor();
+    settle(h)
+}
+
+/// The demo project with the CPU read-out held at a quarter (#1549): with no audio engine the
+/// toolbar would show the RAM alone.
+fn with_cpu() -> Result<App, String> {
+    let mut app = crate::demo_app();
+    app.hold_cpu(Some(250));
+    Ok(app)
 }
 
 /// The app with no project open: the start panel.

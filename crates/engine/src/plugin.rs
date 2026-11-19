@@ -109,6 +109,122 @@ impl SongPosition {
         }
         song
     }
+
+    /// The song `frames` frames later, at this block's tempo and time signature: within the
+    /// block this position starts. A loop that ends within it starts again from its start.
+    fn later(&self, frames: u64, sample_rate: f64) -> Self {
+        if !self.playing || frames == 0 || sample_rate <= 0.0 || self.tempo <= 0.0 {
+            return *self;
+        }
+        let mut song = *self;
+        song.position = song.position.saturating_add(frames);
+        song.beat += frames as f64 * song.tempo / (60.0 * sample_rate);
+        if let (Some((start, end)), Some((start_s, end_s))) = (song.cycle, song.cycle_seconds)
+            && end > start
+            && self.beat < end
+            && song.beat >= end
+        {
+            song.beat = start + (song.beat - end);
+            let frame_of = |seconds: f64| (seconds.max(0.0) * sample_rate).round() as u64;
+            song.position = frame_of(start_s).saturating_add(song.position.saturating_sub(frame_of(end_s)));
+        }
+        let bar_beats = f64::from(song.numerator.max(1)) * 4.0 / f64::from(song.denominator.max(1));
+        while song.beat >= song.bar_start + bar_beats {
+            song.bar = song.bar.saturating_add(1);
+            song.bar_start += bar_beats;
+        }
+        while song.beat < song.bar_start && song.bar > 0 {
+            song.bar -= 1;
+            song.bar_start -= bar_beats;
+        }
+        song
+    }
+}
+
+/// How many blocks' songs a [`SongHistory`] keeps: at 32 frames a block and 48 kHz, more than
+/// five seconds, past the latency a graph compensates ([`crate::MAX_LATENCY_SECONDS`]).
+pub(crate) const SONG_HISTORY: usize = 8192;
+
+/// The song as each recent block started, in the order the blocks played, so a plug-in that
+/// hears its sound late is told the song of what it hears as the transport moved then: across a
+/// loop's wrap, a jump, a tempo or a time signature change, where the current song stepped back
+/// at the current tempo would be wrong. Allocated once; recording and reading never allocate.
+pub(crate) struct SongHistory {
+    /// `(frames played before the block, the song as it started)`, a ring.
+    blocks: Box<[(u64, SongPosition)]>,
+    /// Where the next block goes.
+    next: usize,
+    /// How many blocks it holds.
+    len: usize,
+    /// Frames played so far, the transport stopped or not.
+    played: u64,
+    sample_rate: f64,
+}
+
+impl SongHistory {
+    /// An empty history. Allocates.
+    pub(crate) fn new(sample_rate: u32) -> Self {
+        Self {
+            blocks: vec![(0, SongPosition::default()); SONG_HISTORY].into_boxed_slice(),
+            next: 0,
+            len: 0,
+            played: 0,
+            sample_rate: f64::from(sample_rate),
+        }
+    }
+
+    /// Records the song as a block of `frames` frames starts: it is the current block until the
+    /// next is recorded. Never allocates.
+    pub(crate) fn record(&mut self, song: SongPosition, frames: usize) {
+        let size = self.blocks.len();
+        if let Some(slot) = self.blocks.get_mut(self.next) {
+            *slot = (self.played, song);
+        }
+        self.next = (self.next + 1) % size.max(1);
+        self.len = (self.len + 1).min(size);
+        self.played = self.played.saturating_add(frames as u64);
+    }
+
+    /// The `i`th block kept, oldest first.
+    fn block(&self, i: usize) -> Option<&(u64, SongPosition)> {
+        let size = self.blocks.len().max(1);
+        self.blocks.get((self.next + size - self.len + i) % size)
+    }
+
+    /// The song `frames` frames before the current block's start: the block that was playing
+    /// then, moved on to that frame ([`SongPosition`]'s tempo, signature and loop of that block).
+    /// Before the oldest block kept, that block stepped back ([`SongPosition::earlier`]).
+    /// Never allocates.
+    pub(crate) fn heard(&self, frames: u32) -> SongPosition {
+        let Some(&(now, current)) = self.len.checked_sub(1).and_then(|last| self.block(last)) else {
+            return SongPosition::default();
+        };
+        if frames == 0 {
+            return current;
+        }
+        let Some(target) = now.checked_sub(u64::from(frames)) else {
+            // Before anything was played: the first block stepped back.
+            let (at, first) = self.block(0).copied().unwrap_or((now, current));
+            let back = u64::from(frames).saturating_sub(now - at);
+            return first.earlier(u32::try_from(back).unwrap_or(u32::MAX), self.sample_rate);
+        };
+        // The first block kept that started after the target; the one before it played it.
+        let (mut low, mut high) = (0, self.len);
+        while low < high {
+            let mid = low + (high - low) / 2;
+            match self.block(mid) {
+                Some(&(at, _)) if at <= target => low = mid + 1,
+                _ => high = mid,
+            }
+        }
+        if let Some(&(at, song)) = low.checked_sub(1).and_then(|i| self.block(i)) {
+            return song.later(target - at, self.sample_rate);
+        }
+        // Older than anything kept (or than the first block played): the oldest stepped back.
+        let (at, oldest) = self.block(0).copied().unwrap_or((now, current));
+        let back = u64::from(frames).saturating_sub(now - at);
+        oldest.earlier(u32::try_from(back).unwrap_or(u32::MAX), self.sample_rate)
+    }
 }
 
 impl Default for SongPosition {

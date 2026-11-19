@@ -209,7 +209,16 @@ pub fn digest(text: &str) -> u64 {
     text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3))
 }
 
-/// The listing of `scene` drawn in `subject`: driven, settled, then one more frame.
+/// A scene drawn: what its last frame paints, and the texts it cuts off.
+#[derive(Clone, Debug)]
+pub struct Drawing {
+    /// The frame's listing ([`listing`]), with `restless` first if the window never settled.
+    pub listing: String,
+    /// The texts the frame cuts off ([`crate::cut::texts`]).
+    pub cut: Vec<crate::cut::Cut>,
+}
+
+/// `scene` drawn in `subject`: driven, settled, then one more frame.
 ///
 /// Drawn on a thread of its own, whose window state (the colour map, the style engine, the user
 /// sheet) starts afresh and goes with it: one drawing never depends on the one before, and the
@@ -219,7 +228,7 @@ pub fn digest(text: &str) -> u64 {
 /// listing is the same on every system. A scene that still repaints after the most frames a scene
 /// may take says so in its first line: with the fixed step that is the same each run, as long as
 /// no scene plays the transport (which repaints by the clock).
-pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene) -> Result<String, String> {
+pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene) -> Result<Drawing, String> {
     std::thread::scope(|scope| {
         scope
             .spawn(|| {
@@ -233,7 +242,8 @@ pub fn scene(subject: &crate::Subject, scene: &crate::scenes::Scene) -> Result<S
                 let settled = h.try_run().is_ok();
                 h.step();
                 let listing = last_frame(&h);
-                Ok(if settled { listing } else { format!("restless\n{listing}") })
+                let cut = crate::cut::texts(&h.output().shapes);
+                Ok(Drawing { listing: if settled { listing } else { format!("restless\n{listing}") }, cut })
             })
             .join()
             .unwrap_or_else(|_| Err(format!("{} panicked", scene.name)))

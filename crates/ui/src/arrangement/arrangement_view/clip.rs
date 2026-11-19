@@ -831,6 +831,11 @@ pub(super) fn clip_box<'a>(
     // A clip picked by a click in its body (the insert marker set there) looks as one not
     // picked, as the play start is what the click chose; picked whole, it is lit.
     let lit = selected && state.picked_whole;
+    // How the clip is drawn: with a selection colour (Settings › Appearance › Selection colour),
+    // every selected clip takes it, however it was picked; with Clip's own colour, only one picked
+    // whole is lit.
+    let drawn_selected =
+        if crate::kit::selection::look().mode == crate::kit::selection::SelectionColour::Own { lit } else { selected };
     let fading = state.gesture.fade().copied().is_some_and(|d| d.key == key)
         || state.gesture.fade_curve().copied().is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
@@ -1063,8 +1068,8 @@ pub(super) fn clip_box<'a>(
             x_of,
             state.beat_width,
             timeline,
-            lit,
-            &state.clip_look(),
+            drawn_selected,
+            &state.clip_look_on(lane.track),
         );
     };
     let mut envelope_place = None;
@@ -1155,8 +1160,8 @@ pub(super) fn clip_box<'a>(
                         &stretched,
                         state.beat_width * factor as f32,
                         timeline,
-                        lit,
-                        &state.clip_look(),
+                        drawn_selected,
+                        &state.clip_look_on(lane.track),
                     );
                 }
                 None => paint_clip(
@@ -1169,16 +1174,17 @@ pub(super) fn clip_box<'a>(
                     x_of,
                     state.beat_width,
                     timeline,
-                    lit,
-                    &state.clip_look(),
+                    drawn_selected,
+                    &state.clip_look_on(lane.track),
                 ),
             }
             None
         }
     };
-    // Picked by a click in its body: not lit (the play start is what the click chose), but
-    // outlined, so the clip the editor and the keys work on is plain to see.
-    if selected && !lit && state.gesture.clip().is_none() {
+    // With Clip's own colour, a clip picked by a click in its body is not lit (the play start is
+    // what the click chose), but outlined, so the clip the editor and the keys work on is plain to
+    // see. With a selection colour it is filled with it like any selected clip (above).
+    if selected && !drawn_selected && state.gesture.clip().is_none() {
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
         let body = motion::mix(super::panel_surface(), rgb(clip.color), 0.82);
         painter.with_clip_rect(row.clip).rect_filled(edge, 0.0, motion::mix(body, ink_on(body), 0.5));
@@ -1424,8 +1430,9 @@ pub(super) fn clip_kind(lane: &Lane, clip: &ClipBox, timeline: &Timeline, select
 /// The looks of the parts of a clip of `kind`, inside its entered `clip` element: read for the
 /// first clip of its kind this frame and kept in `look`, so the parts add no elements to the
 /// style tree for each clip.
-fn clip_parts(look: &super::state::ClipLook, kind: super::state::ClipKind) -> super::state::ClipParts {
-    if let Some(parts) = look.parts.borrow().get(&kind) {
+fn clip_parts(look: &super::state::ClipLook, track: TrackId, kind: super::state::ClipKind) -> super::state::ClipParts {
+    let key = (track, look.in_lane, kind);
+    if let Some(parts) = look.parts.borrow().get(&key) {
         return parts.clone();
     }
     use crate::kit::element::{CLIP_FADE, CLIP_NAME, CLIP_NOTES, CLIP_WAVEFORM};
@@ -1434,7 +1441,7 @@ fn clip_parts(look: &super::state::ClipLook, kind: super::state::ClipKind) -> su
         content: if kind.audio { CLIP_WAVEFORM.probe() } else { CLIP_NOTES.probe() },
         fade: CLIP_FADE.probe(),
     };
-    look.parts.borrow_mut().insert(kind, parts.clone());
+    look.parts.borrow_mut().insert(key, parts.clone());
     parts
 }
 
@@ -1461,7 +1468,7 @@ pub(super) fn paint_clip(
         return;
     }
     let own = clip_element(&id, lane, clip, timeline, selected).enter();
-    let parts = clip_parts(look, clip_kind(lane, clip, timeline, selected));
+    let parts = clip_parts(look, lane.track, clip_kind(lane, clip, timeline, selected));
     // The sheet's opacity fades the whole clip, its waveform, notes and name too.
     let faded;
     let painter = match own.style().map(|style| style.opacity).filter(|o| *o < 1.0) {
@@ -1486,9 +1493,20 @@ pub(super) fn paint_clip(
     // A muted clip's grey is the computed `arrangement clip[muted]` background: the base sheet's
     // rule reads `--clip-mutedBackground`, so a theme that sets only the variable reaches it, and
     // a theme's own rule for the clip still wins.
-    let fallback = clip_body(surface, rgb(clip.color), strength, off, selected);
+    // A selected clip that plays has its body filled with the one selection colour every selected
+    // clip and header shares (Settings › Appearance › Selection colour), while its name bar keeps
+    // the clip's own colour, as when it is not selected, and so does its leading edge. With Clip's
+    // own colour it keeps its colour, a little brighter.
+    let selection_fill = if selected && !off { crate::kit::selection::fill(&own) } else { None };
+    let fallback = selection_fill.unwrap_or_else(|| clip_body(surface, rgb(clip.color), strength, off, selected));
     let body = if off { own.computed_background_or(fallback) } else { own.background_or(fallback) };
-    let bar_fill = name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected);
+    let bar_fill = match selection_fill {
+        Some(_) => {
+            let own_body = clip_body(surface, rgb(clip.color), strength, false, false);
+            name_bar_fill(own_body, surface, rgb(clip.color), strength, false, false)
+        }
+        None => name_bar_fill(body, surface, rgb(clip.color), strength, lane.mute && clip.enabled, selected),
+    };
     let radius = own.radius_or(2.0);
     // A clip is content, not a background: it blends with the lane under it, so its alpha never
     // reaches the window and the desktop never shows through it.
@@ -1509,12 +1527,24 @@ pub(super) fn paint_clip(
     if bar.is_none() {
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, body);
     }
+    // The stretch of the body under the time selection, in the selection colour, as a selected
+    // clip's body is, its name bar kept (Settings › Appearance › Selection colour; with Clip's own
+    // colour the time selection is lit over the clips instead).
+    let time_fill = if off { None } else { look.time_lit.and_then(|_| crate::kit::selection::fill(&own)) };
+    let time_lit = look.time_lit.zip(time_fill).and_then(|((from, to), fill)| {
+        let x = egui::Rangef::new(x_of(from), x_of(to)).intersection(rect.x_range());
+        let top = bar.map_or(rect.top(), |bar| bar.bottom());
+        (x.span() > 0.0).then(|| (Rect::from_x_y_ranges(x, egui::Rangef::new(top, rect.bottom())), fill))
+    });
+    if let Some((lit, fill)) = time_lit {
+        painter.rect_filled(lit, 0.0, fill);
+    }
     crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
     let ink = ink_on(body);
     let edge_width = if selected { 4.0 } else { 3.0 };
     // A muted clip keeps its colour down its leading edge, so it is still known by it.
     let line_ink = motion::mix(body, ink, 0.5);
-    let edge_ink = if off { rgb(clip.color) } else { line_ink };
+    let edge_ink = if off || selection_fill.is_some() { rgb(clip.color) } else { line_ink };
     if let Some(bar) = bar {
         // A quiet divider ties the title to the stronger leading edge without framing the preview.
         painter.hline(
@@ -1542,8 +1572,16 @@ pub(super) fn paint_clip(
         let below = bar.map_or(rect.top() + 2.0, |bar| bar.bottom());
         let span = egui::Rangef::new(below, rect.bottom());
         let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.1), motion::mix(body, ink, 0.2));
+        let lit_x = time_lit.map(|(lit, _)| lit.x_range());
         for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 1.0 && *x < rect.right() - 1.0) {
+            // Under a time selection the line is drawn for the selection colour's fill.
+            if lit_x.is_some_and(|lit| lit.contains(x)) {
+                continue;
+            }
             painter.vline(x, span, theme::hairline(if on_bar { bar_ink } else { beat_ink }));
+        }
+        if let Some((lit, fill)) = time_lit {
+            super::grid_over(painter, Rect::from_x_y_ranges(lit.x_range(), span), lines, fill);
         }
     }
     // Notes an ARA plug-in found in an audio clip go over its waveform, which dims a little under
@@ -1565,6 +1603,14 @@ pub(super) fn paint_clip(
         theme::text_on(body)
     } else {
         content_ink
+    };
+    // On the selection colour, which may be light or dark whatever the theme is, they take an ink
+    // that reads on it where theirs does not.
+    let content_ink =
+        if selection_fill.is_some() { crate::kit::selection::readable(content_ink, body) } else { content_ink };
+    let content_ink = match time_lit {
+        Some((_, fill)) => crate::kit::selection::readable(content_ink, fill),
+        None => content_ink,
     };
     // A muted clip's notes and waveform step back, so the grey reads first.
     let content_ink = if off { motion::mix(body, content_ink, 0.6) } else { content_ink };
