@@ -11,6 +11,12 @@ rust-version.workspace = true
 corpus = []
 
 [dependencies]
+suhina-model.workspace = true
+suhina-media.workspace = true
+suhina-plugins.workspace = true
+
+[dev-dependencies]
+suhina-project-file.workspace = true
 
 [lints]
 workspace = true

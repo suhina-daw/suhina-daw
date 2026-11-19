@@ -1146,11 +1146,23 @@ fn the_mute_mark_takes_the_ink_of_the_name_bar_as_drawn() {
 /// The shapes `paint_clip` draws for `clip` in `rect` under `css`, `selected` or not, as the
 /// style engine gives them after a few frames.
 fn painted_clip(css: &str, rect: Rect, selected: bool) -> Vec<egui::epaint::ClippedShape> {
-    let timeline = Timeline::build(&crate::demo::demo_project(), None);
-    let lane = timeline.lanes.iter().find(|l| !l.clips.is_empty()).unwrap();
-    let mut clip = lane.clips[0].clone();
+    let mut timeline = Timeline::build(&crate::demo::demo_project(), None);
+    let clip = &mut timeline.lanes.iter_mut().find(|l| !l.clips.is_empty()).unwrap().clips[0];
     clip.take = Some(Default::default());
-    let beat_width = rect.width() / clip.length.max(1e-3) as f32;
+    let length = clip.length;
+    painted_clip_span(&timeline, css, rect, length, selected)
+}
+
+fn painted_clip_span(
+    timeline: &Timeline,
+    css: &str,
+    rect: Rect,
+    length: f64,
+    selected: bool,
+) -> Vec<egui::epaint::ClippedShape> {
+    let lane = timeline.lanes.iter().find(|l| !l.clips.is_empty()).unwrap();
+    let clip = &lane.clips[0];
+    let beat_width = rect.width() / length.max(1e-3) as f32;
     crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
     let ctx = egui::Context::default();
     let mut shown = Vec::new();
@@ -1159,7 +1171,6 @@ fn painted_clip(css: &str, rect: Rect, selected: bool) -> Vec<egui::epaint::Clip
             let _frame = crate::kit::native_css::frame_with_motion(ui, false);
             let x_of = |beat: f64| rect.left() + (beat - clip.start) as f32 * beat_width;
             let look = ArrangementViewState::default().clip_look();
-            let clip = &clip;
             paint_clip(
                 ui.painter(),
                 rect,
@@ -1169,7 +1180,7 @@ fn painted_clip(css: &str, rect: Rect, selected: bool) -> Vec<egui::epaint::Clip
                 clip.start,
                 &x_of,
                 beat_width,
-                &timeline,
+                timeline,
                 selected,
                 &look,
             );
@@ -1179,6 +1190,47 @@ fn painted_clip(css: &str, rect: Rect, selected: bool) -> Vec<egui::epaint::Clip
     }
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
     shown
+}
+
+#[test]
+fn a_right_edge_preview_reveals_notes_and_their_tails_before_release() {
+    use suhina_engine::model::{LaneData, Note};
+
+    let mut project = crate::demo::demo_project();
+    let placed = &mut project.arrangement.lanes[0].clips[0];
+    placed.loop_range = None;
+    placed.offset = 0.;
+    placed.length = 1.;
+    let content_id = placed.content;
+    let content = project.contents.iter_mut().find(|c| c.id == content_id).unwrap();
+    content.lanes[0].data =
+        LaneData::Notes(vec![Note::new(0., 2., 60, 1.), Note::new(1., 0.5, 64, 1.), Note::new(2., 1., 67, 1.)].into());
+    let before = Timeline::build(&project, None);
+    let draw = |timeline: &Timeline, length: f64| {
+        let rect = Rect::from_min_size(Pos2::new(100., 40.), Vec2::new(length as f32 * 80., 60.));
+        painted_clip_span(timeline, "", rect, length, false)
+            .into_iter()
+            .filter_map(|s| match s.shape {
+                egui::Shape::Rect(r) if r.rect.height() == 2. => Some(r.rect),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let short = draw(&before, 1.);
+    assert_eq!(short.len(), 1, "notes beyond the edge stay hidden");
+    let held = draw(&before, 3.);
+    assert_eq!(held.len(), 3, "the same cached timeline shows notes while the right edge is held");
+    assert!(held[0].width() > short[0].width(), "a note crossing the old edge shows its tail");
+    assert_eq!(project.arrangement.lanes[0].clips[0].length, 1., "the drag has not committed");
+
+    project.arrangement.lanes[0].clips[0].length = 3.;
+    assert_eq!(draw(&Timeline::build(&project, None), 3.), held, "release leaves the notes in place");
+
+    // Hidden source pitches do not squeeze the single visible pitch into a smaller row.
+    project.arrangement.lanes[0].clips[0].length = 1.;
+    let content = project.contents.iter_mut().find(|c| c.id == content_id).unwrap();
+    content.lanes[0].data = LaneData::Notes(vec![Note::new(0., 2., 60, 1.)].into());
+    assert_eq!(draw(&Timeline::build(&project, None), 1.), short);
 }
 
 /// A clip's name bar reaches its right edge, selected or not (#1487 B11): it stopped 2 points

@@ -50,7 +50,13 @@ Third-party material
 
 Other bundled material is listed per file (author, source, license) in ATTRIBUTION.md.
 
+- crates/flp/src/records.rs, import.rs, effects.rs, automation.rs, stretch.rs, patcher.rs and wrapper.rs adapt os-flp records,
+  os-dsp mixer/level laws and os-engine effect state layouts from
+  https://github.com/ItsAlphaNeon/Lemon-Studio at commit
+  011a03f23d9db7f10f07cd7d165cc978a9dda263, Copyright (C) 2026 ItsAlphaNeon
+  and thacer13, GPL-3.0-or-later (LICENSE). The files keep the original notices
+  and describe the changes for Suhina.
+
 - The cosine tension branch in crates/model/src/lib.rs adapts os-model's
-  fade_curve from https://github.com/ItsAlphaNeon/Lemon-Studio at commit
-  011a03f23d9db7f10f07cd7d165cc978a9dda263, Copyright (C) 2026 ItsAlphaNeon,
+  fade_curve from the same pinned source, Copyright (C) 2026 ItsAlphaNeon,
   GPL-3.0-or-later, with Suhina's normalized curve mapping.
