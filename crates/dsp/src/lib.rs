@@ -37,6 +37,7 @@ pub mod follower;
 pub mod gain;
 pub mod iir_oversample;
 pub mod lfo;
+pub mod modal;
 pub mod multimode;
 pub mod oversample;
 pub mod pan;

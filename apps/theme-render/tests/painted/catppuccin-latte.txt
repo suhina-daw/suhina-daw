@@ -27,6 +27,7 @@ expanded-reverb catppuccin-latte f096bc7fe451ae4f
 expanded-vinyl-distortion catppuccin-latte e1c8cd58c26ec986
 export-dialog catppuccin-latte 8feee32b81c0b297
 grid-menu catppuccin-latte d5b9d9ad91f2c8cf
+instrument-instrument catppuccin-latte 6d43afe6620f0310
 instrument-sampler catppuccin-latte b5050746a600a809
 launcher catppuccin-latte 3361a962fb759e72
 launcher-hover catppuccin-latte 1eb06a6a3b331edd
@@ -39,7 +40,7 @@ new-theme-dialog catppuccin-latte eab52c9cba162822
 piano-roll catppuccin-latte 1f9b7a7a3cd9c0ed
 project-dialog catppuccin-latte 2a317b042242d3da
 quantize-menu catppuccin-latte 136b127796774de8
-quick-add catppuccin-latte c9aa900141865e20
+quick-add catppuccin-latte 257a4d21a2bd6617
 sample-map catppuccin-latte 7a4f3310b7deca7f
 save-dialog catppuccin-latte 69373b9d0c4fbb66
 settings catppuccin-latte 62c466163774c16b

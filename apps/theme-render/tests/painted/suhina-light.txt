@@ -27,6 +27,7 @@ expanded-reverb suhina-light 30ee600b2ec02df5
 expanded-vinyl-distortion suhina-light 4feb696e942665fa
 export-dialog suhina-light b7c5540bad610b9a
 grid-menu suhina-light 69755f8ceecf5a95
+instrument-instrument suhina-light 126df49e30aaae16
 instrument-sampler suhina-light 12c150d1725e5ee8
 launcher suhina-light 25bb3467cc9c44af
 launcher-hover suhina-light 9fbdf44dc27ce76c
@@ -39,7 +40,7 @@ new-theme-dialog suhina-light 2d452c6829750ce6
 piano-roll suhina-light 69e8e3afa0c8c96d
 project-dialog suhina-light 04d5e30e88eade54
 quantize-menu suhina-light ed9cb9ff45f878de
-quick-add suhina-light 39a3859e8eb35817
+quick-add suhina-light c3be4538968ac1c4
 sample-map suhina-light ba542d17e1745290
 save-dialog suhina-light ac0e1d5e58848476
 settings suhina-light ac58034437916ccf

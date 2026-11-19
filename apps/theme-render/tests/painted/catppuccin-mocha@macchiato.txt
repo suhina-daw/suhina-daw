@@ -27,6 +27,7 @@ expanded-reverb catppuccin-mocha@macchiato a6eb4500bc8266f5
 expanded-vinyl-distortion catppuccin-mocha@macchiato 16135031570b84b2
 export-dialog catppuccin-mocha@macchiato 201be7b7c670d189
 grid-menu catppuccin-mocha@macchiato f66fffc5c3a8f0fc
+instrument-instrument catppuccin-mocha@macchiato 3e861577076543cc
 instrument-sampler catppuccin-mocha@macchiato d273e77691ff6372
 launcher catppuccin-mocha@macchiato 3ed8ebc277f9d5d8
 launcher-hover catppuccin-mocha@macchiato 5c6af94fefbc1393
@@ -39,7 +40,7 @@ new-theme-dialog catppuccin-mocha@macchiato a1c7664f5c11819c
 piano-roll catppuccin-mocha@macchiato 1c8dd219bb3198d2
 project-dialog catppuccin-mocha@macchiato a1efbc9e6d4c21ea
 quantize-menu catppuccin-mocha@macchiato ad2b491d5528d270
-quick-add catppuccin-mocha@macchiato e9f934f5c33e0e54
+quick-add catppuccin-mocha@macchiato e791b55584297f73
 sample-map catppuccin-mocha@macchiato 45a8d2c9dc6b468a
 save-dialog catppuccin-mocha@macchiato 259d1bd9e6051076
 settings catppuccin-mocha@macchiato 5432d7c5633b4cda

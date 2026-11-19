@@ -27,6 +27,7 @@ expanded-reverb suhina-studio b0abb1a3b761c7fd
 expanded-vinyl-distortion suhina-studio 999f9b6bbb632d19
 export-dialog suhina-studio 7830528de2d24aae
 grid-menu suhina-studio c0d565586419ebb7
+instrument-instrument suhina-studio ac60b653fdb8fe3b
 instrument-sampler suhina-studio 0b32729a4f120067
 launcher suhina-studio 7d4a79696ad9aaae
 launcher-hover suhina-studio 19508950a5a3b4a8
@@ -39,7 +40,7 @@ new-theme-dialog suhina-studio 5e402b22cfd866ec
 piano-roll suhina-studio 224e798a4503f39a
 project-dialog suhina-studio 3180f2c5249af8c3
 quantize-menu suhina-studio 4f4bd2cfbc847201
-quick-add suhina-studio e75589968b006b77
+quick-add suhina-studio eef5eb6742ac7440
 sample-map suhina-studio 64fb66c8f0342920
 save-dialog suhina-studio 2ea94da782171104
 settings suhina-studio fb4a697aa525e853

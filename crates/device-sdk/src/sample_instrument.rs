@@ -159,6 +159,7 @@ struct Grain {
 #[derive(Clone, Copy)]
 struct Voice {
     active: bool,
+    deferred_release: bool,
     age: f64,
     key: u8,
     velocity: f64,
@@ -183,6 +184,7 @@ impl Default for Voice {
     fn default() -> Self {
         Self {
             active: false,
+            deferred_release: false,
             age: 0.,
             key: 60,
             velocity: 1.,
@@ -205,6 +207,13 @@ impl Default for Voice {
         }
     }
 }
+impl Voice {
+    fn release(&mut self) {
+        self.deferred_release = false;
+        self.envelope.release();
+        self.filter_released = self.filter_env;
+    }
+}
 pub struct Sampler {
     window: [f64; 2049],
     values: [f64; PARAMS.len()],
@@ -223,6 +232,7 @@ pub struct Sampler {
     phase: f64,
     lfo_cycle: u32,
     bend: f64,
+    pedal: bool,
     gain: f64,
     grain_gain: f64,
     block_grain_limit: usize,
@@ -267,6 +277,7 @@ impl Sampler {
             phase: 0.,
             lfo_cycle: 0,
             bend: 0.,
+            pedal: false,
             gain: 1.,
             grain_gain: 1.,
             block_grain_limit: 32,
@@ -393,6 +404,7 @@ impl Device for Sampler {
         self.phase = 0.;
         self.lfo_cycle = 0;
         self.bend = 0.;
+        self.pedal = false;
         self.gain = gain_factor(self.values[18]);
         self.grain_gain = 1. / (self.values[23] * self.values[22] / 1000. * 0.5).clamp(1., 16.);
         self.pan = self.values[19];
@@ -503,6 +515,7 @@ impl Device for Sampler {
                     if v.active && p[47] == 0. && !slices {
                         v.key = key;
                         v.velocity = f64::from(velocity.clamp(0., 1.));
+                        v.deferred_release = false;
                         return;
                     }
                     let fade_from = v.last;
@@ -532,16 +545,33 @@ impl Device for Sampler {
                 if slicing && self.values[84] > 0. || !slicing && self.values[8] != 1. && self.values[8] != 3. {
                     for v in &mut self.voices {
                         if v.key == key && v.active {
-                            v.envelope.release();
-                            v.filter_released = v.filter_env;
+                            if self.pedal {
+                                // A released tail keeps advancing; pedal-up must not recapture it.
+                                if !v.envelope.is_releasing() && !v.envelope.is_done() {
+                                    v.deferred_release = true;
+                                }
+                            } else {
+                                v.release();
+                            }
                         }
                     }
                 }
             }
             NoteEvent::AllNotesOff => {
+                self.pedal = false;
                 for v in &mut self.voices {
-                    v.envelope.release();
-                    v.filter_released = v.filter_env;
+                    v.release();
+                }
+            }
+            NoteEvent::Controller { number: 64, value } if value.is_finite() => {
+                let was_down = self.pedal;
+                self.pedal = value >= 0.5;
+                if was_down && !self.pedal {
+                    for voice in &mut self.voices {
+                        if voice.deferred_release {
+                            voice.release();
+                        }
+                    }
                 }
             }
             NoteEvent::PitchBend(value) if value.is_finite() => {

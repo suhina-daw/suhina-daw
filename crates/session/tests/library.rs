@@ -116,7 +116,7 @@ fn search_finds_built_in_devices_by_category() {
     let settings = temp("devices");
     let mut p = projects(&settings);
     let instruments = run(&mut p, "library.search", json!({ "category": "instruments" })).unwrap();
-    assert_eq!(names(&instruments), ["Sampler", "FM Synth"]);
+    assert_eq!(names(&instruments), ["Sampler", "FM Synth", "Instrument (experimental)"]);
     assert_eq!(instruments["items"][0]["item"], "device:sampler");
     let effects = run(&mut p, "library.search", json!({ "category": "effects", "text": "drive" })).unwrap();
     assert_eq!(names(&effects), ["Overdrive"]);
