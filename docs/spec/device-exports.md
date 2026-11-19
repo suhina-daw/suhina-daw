@@ -6,6 +6,9 @@ status: draft
 last_verified: 2026-11-19
 covers:
   - crates/plugin-host/src/exports/
+  - crates/plugin-host/tests/device_exports.rs
+  - scripts/device_exports.py
+  - scripts/test_device_exports.py
 ---
 
 # Native device exports
@@ -22,6 +25,10 @@ The adapter has stock render parity, sample-offset automation/key-input and
 malformed-state tests. Windows tests load the actual CLAP file and VST3 bundle
 through the sandbox host, compare all supported devices with stock rendering,
 restore non-default state, send instrument notes and check reported latency.
+State is saved back through each format before rendering and must match the
+loaded parameter envelope exactly. Synced DSP is compared at a non-default
+tempo and musical position. Bundle layout tests check both CPU architectures
+on Windows, Linux and macOS without loading foreign code.
 No release is yet advertised as covering every native device, resource state,
 MPE, editor or supported desktop platform.
 

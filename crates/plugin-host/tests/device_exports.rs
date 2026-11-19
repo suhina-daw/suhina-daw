@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use suhina_device_api::{NoteEvent, ProcessContext, Role};
 use suhina_device_exports::exports::{Parameters, exportable, state};
-use suhina_plugins::{Event, Launch, offline, scan};
+use suhina_plugins::{Event, Launch, Plugin, offline, scan};
 
 fn artifact(format: &str) -> PathBuf {
     let variable = if format == "clap" { "SUHINA_TEST_EXPORT_CLAP" } else { "SUHINA_TEST_EXPORT_VST3" };
@@ -132,8 +132,10 @@ fn verify_render(format: &str) {
         } else {
             stock.process(&context, &mut expected);
         }
-        let rendered =
-            offline::render_with_events(launch(plugin.spec()), Some(state.into()), &input, &events, 0).unwrap();
+        let (mut host, mut audio) = Plugin::start(launch(plugin.spec())).unwrap();
+        host.load_state(state.clone()).unwrap();
+        assert_eq!(host.save_state().unwrap().data, state, "{format} {} state round trip before processing", info.id);
+        let rendered = offline::render_started(&mut host, &mut audio, &input, &events, 0).unwrap();
         assert_eq!(rendered.state_refused, None, "{} state", info.id);
         assert_eq!(rendered.latency, stock.latency(), "{} latency", info.id);
         assert_eq!(rendered.samples, expected[stock.latency() as usize * 2..], "{} render", info.id);
