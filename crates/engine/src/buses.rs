@@ -16,7 +16,7 @@ use crate::automation::{self, MixLanes};
 use crate::chain::Chain;
 use crate::plugin::{Delay, Plugins};
 use crate::sends::{self, SendOut};
-use crate::{MAX_LATENCY_SECONDS, track_gains};
+use crate::{MAX_LATENCY_SECONDS, RenderError, track_gains};
 
 /// A send of a chain: the return chain's index, the return track, the send's gains with the
 /// level they are for, and whether it is after the fader.
@@ -38,7 +38,7 @@ pub(crate) fn build(
     column_of: impl Fn(TrackId) -> u32,
     assets: (&crate::DeviceAssets, &dyn suhina_device_sdk::DeviceFactory),
     source: Option<TrackId>,
-) -> (Vec<Chain>, u32) {
+) -> Result<(Vec<Chain>, u32), RenderError> {
     // Every track with devices has a chain, a silent one too (muted, or not soloed): its
     // devices keep running at a gain of zero, so a plug-in keeps its state and its process,
     // and sounds again as soon as the track does. A chain that was left out of a graph would
@@ -221,13 +221,21 @@ pub(crate) fn build(
 
     // Latency compensation. A chain's sources start without delay; a bus's or a return's input
     // is the latest of the chains that feed it, each delayed to it; everything reaching the output is delayed
-    // to the latest path, bounded so a plug-in that reports nonsense cannot take all memory.
+    // to the latest path. Reject an oversized cumulative path before allocating its delays;
+    // clamping would conceal misaligned audio and queries outside the transport history.
     let max_latency = sample_rate.saturating_mul(MAX_LATENCY_SECONDS);
     let mut arrive = vec![0u32; chains.len()];
     let mut input = vec![0u32; chains.len()];
     for i in 0..chains.len() {
-        let own = chains.get(i).map_or(0, |c| c.latency.min(max_latency));
-        let at = input.get(i).copied().unwrap_or(0).saturating_add(own).min(max_latency);
+        let own = chains.get(i).map_or(0, |c| c.latency);
+        let at = input.get(i).copied().unwrap_or(0).saturating_add(own);
+        if at > max_latency {
+            return Err(RenderError::LatencyLimit {
+                track: chains.get(i).map_or(TrackId::MAIN, |c| c.track),
+                frames: at,
+                limit: max_latency,
+            });
+        }
         if let Some(slot) = arrive.get_mut(i) {
             *slot = at;
         }
@@ -289,6 +297,10 @@ pub(crate) fn build(
         && let Some(mut main) = main_chain(project, audio, sample_rate, plugins, assets)
     {
         // It hears the whole mix, which reaches it as late as the latest path.
+        let total = latency.saturating_add(main.latency);
+        if total > max_latency {
+            return Err(RenderError::LatencyLimit { track: TrackId::MAIN, frames: total, limit: max_latency });
+        }
         main.input_latency = latency;
         chains.push(main);
     }
@@ -321,7 +333,7 @@ pub(crate) fn build(
     }
     // When each chain runs in a block, and with how much of the deadline (#1261).
     sends::plan_turns(&mut chains);
-    (chains, latency)
+    Ok((chains, latency))
 }
 
 /// The keys (sidechains) the project's devices read: the reading track ([`TrackId::MAIN`] for
