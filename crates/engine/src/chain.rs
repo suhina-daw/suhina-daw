@@ -386,6 +386,7 @@ impl Chain {
             let mut slot = built.slot;
             // What the devices before it delay: its plug-ins are told the song that late.
             set_song_delay(&mut slot, latency);
+            device_lanes.delay_slot(slots.len(), latency);
             latency = latency.saturating_add(built.latency);
             slots.push(slot);
             positions.push(position);
@@ -719,19 +720,18 @@ impl Chain {
         }
     }
 
-    /// Plans the parameter events of its plug-ins for a block of `frames` frames starting at
-    /// arrangement frame `time` (`None` while the transport is stopped, standing at `parked`,
-    /// where the plug-ins' lanes send their values once): call it after
-    /// [`Chain::begin`], before any of the block runs. Never allocates.
-    pub(crate) fn automate(&mut self, time: Option<u64>, parked: u64, frames: usize) {
+    /// Plans device automation at the time represented by each device's input audio. Call
+    /// after [`Chain::begin`], before any of the block runs or goes to a worker. Never allocates.
+    pub(crate) fn automate(&mut self, songs: &crate::plugin::SongHistory, frames: usize) {
         let frames = frames.min(MAX_BLOCK);
+        let input = self.input_latency;
         for slot in self.plugin_slots() {
-            slot.params.plan(time, parked, frames);
+            slot.params.plan_delayed(songs, input.saturating_add(slot.song_delay), frames);
         }
-        self.device_lanes.plan(time, frames);
+        self.device_lanes.plan_delayed(songs, input, frames);
         for slot in &mut self.slots {
             if let DeviceSlot::Group(group) = slot {
-                group.plan(time, frames);
+                group.plan(songs, input, frames);
             }
         }
     }
@@ -1915,18 +1915,14 @@ fn midi_span(
     }
 }
 
-/// Tells the plug-ins of `slot` (itself, or every one inside a group) that the devices before it
-/// delay their sound by `before` more frames. Added to what each already has: a plug-in inside a
-/// group was told the devices before it in its branch as the group was built
+/// Adds `before` frames to hosted timing and to native automation inside a group. Added to
+/// what each already has: a device inside a group was told the devices before it in its branch
+/// as the group was built
 /// (`SlotFactory::group`), and the group's own place adds the devices before the group.
 pub(crate) fn set_song_delay(slot: &mut DeviceSlot, before: u32) {
     match slot {
         DeviceSlot::Plugin(plugin) => plugin.song_delay = plugin.song_delay.saturating_add(before),
-        DeviceSlot::Group(_) => {
-            for plugin in crate::group::PluginSlots::new(std::slice::from_mut(slot)) {
-                plugin.song_delay = plugin.song_delay.saturating_add(before);
-            }
-        }
+        DeviceSlot::Group(group) => group.add_song_delay(before),
         DeviceSlot::Device(_) | DeviceSlot::MidiDevice(_) => {}
     }
 }

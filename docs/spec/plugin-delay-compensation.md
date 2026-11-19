@@ -55,7 +55,9 @@ delays even when the running device instance is retained.
 Automation before arrangement frame zero holds its value at frame zero. It must not run
 forward repeatedly while the input is still being primed. At a historical stopped span,
 native lanes retain their last value and hosted lanes follow the stopped-playhead rules
-in [automation](automation.md). A transport transition reaches a delayed lane with its
+in [automation](automation.md). Once the input represents stopped playback, moving the
+stopped playhead updates the hosted lane immediately, without waiting through silent
+history. A transport transition reaches a delayed lane with its
 audio. An output suspended when changing projects discards the old history, as it discards
 the old buffered audio.
 

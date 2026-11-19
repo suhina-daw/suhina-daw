@@ -128,6 +128,12 @@ signal by `L`, so all of them line up. The group reports `L` to the chain it sit
 track's latency (and with it the compensation across tracks and buses, ADR 0004 › 10) includes it
 and nothing else changes outside the group.
 
+Device automation inside a branch follows its input audio: the outer chain's input latency,
+devices before the group and devices before that device in its branch. The alignment delay
+at the branch's output is not added to devices before it. Nested groups accumulate these
+prefixes; the [PDC timing contract](plugin-delay-compensation.md) covers their history across
+loop and seek boundaries.
+
 - Delay lines are made with the graph, off the audio thread, at most 2 s
   (`MAX_LATENCY_SECONDS`), like the track compensation. A latency above that is cut to 2 s and the
   device panel says the group is not fully compensated.

@@ -141,8 +141,8 @@ impl SongPosition {
     }
 }
 
-/// How many blocks' songs a [`SongHistory`] keeps: at 32 frames a block and 48 kHz, more than
-/// five seconds, past the latency a graph compensates ([`crate::MAX_LATENCY_SECONDS`]).
+/// How many blocks' songs a [`SongHistory`] keeps. Its duration depends on block sizes and
+/// sample rate; smaller blocks can exhaust it before [`crate::MAX_LATENCY_SECONDS`].
 pub(crate) const SONG_HISTORY: usize = 8192;
 
 /// The song as each recent block started, in the order the blocks played, so a plug-in that
@@ -198,6 +198,19 @@ impl SongHistory {
         self.blocks.get((self.next + size - self.len + i) % size)
     }
 
+    /// The arrangement spans represented by a device's input audio in this block. History is
+    /// addressed in processed frames, so a delayed loop or seek keeps its offset in the block.
+    /// This borrows the history only while planning, before chains move to render workers.
+    pub(crate) fn spans(&self, delay: u32, frames: usize) -> AutomationSpans<'_> {
+        let now = self.len.checked_sub(1).and_then(|i| self.block(i)).map_or(0, |(at, _)| *at);
+        AutomationSpans {
+            history: self,
+            target: i128::from(now) - i128::from(delay),
+            offset: 0,
+            remaining: frames.min(crate::chain::MAX_BLOCK),
+        }
+    }
+
     /// The song `frames` frames before the current block's start: the block that was playing
     /// then, moved on to that frame ([`SongPosition`]'s tempo, signature and loop of that block).
     /// Before the oldest block kept, that block stepped back ([`SongPosition::earlier`]).
@@ -231,6 +244,95 @@ impl SongHistory {
         let (at, oldest) = self.block(0).copied().unwrap_or((now, current));
         let back = u64::from(frames).saturating_sub(now - at);
         oldest.earlier(u32::try_from(back).unwrap_or(u32::MAX), self.sample_rate)
+    }
+}
+
+/// One continuous portion of the arrangement heard by a device, with its offset in this block.
+#[derive(Clone, Copy)]
+pub(crate) struct AutomationSpan {
+    pub(crate) offset: usize,
+    pub(crate) frames: usize,
+    pub(crate) time: Option<u64>,
+    pub(crate) parked: u64,
+    /// False before arrangement zero: hold its value rather than replaying its first frames.
+    pub(crate) advancing: bool,
+}
+
+/// Allocation-free view of a delayed block. Adjacent history records with continuous
+/// arrangement positions are joined so old callback boundaries do not create extra events.
+#[derive(Clone)]
+pub(crate) struct AutomationSpans<'a> {
+    history: &'a SongHistory,
+    target: i128,
+    offset: usize,
+    remaining: usize,
+}
+
+impl AutomationSpans<'_> {
+    fn next_record(&mut self) -> Option<AutomationSpan> {
+        if self.remaining == 0 {
+            return None;
+        }
+        let (mut low, mut high) = (0, self.history.len);
+        while low < high {
+            let mid = low + (high - low) / 2;
+            match self.history.block(mid) {
+                Some(&(at, _)) if i128::from(at) <= self.target => low = mid + 1,
+                _ => high = mid,
+            }
+        }
+        let (at, song) = low
+            .checked_sub(1)
+            .and_then(|i| self.history.block(i))
+            .or_else(|| (self.history.len > 0).then(|| self.history.block(0)).flatten())
+            .copied()
+            .unwrap_or((0, SongPosition::default()));
+        let mut frames = self.remaining;
+        if low < self.history.len
+            && let Some(&(end, _)) = self.history.block(low)
+        {
+            frames = frames.min(usize::try_from(i128::from(end) - self.target).unwrap_or(usize::MAX));
+        }
+        let position = i128::from(song.position) + if song.playing { self.target - i128::from(at) } else { 0 };
+        // The pre-roll before frame zero holds the first value. Split exactly where zero
+        // arrives; saturating the start and then advancing would automate the silent pre-roll.
+        if song.playing && position < 0 {
+            frames = frames.min(usize::try_from(-position).unwrap_or(usize::MAX));
+        }
+        let position_frame = u64::try_from(position.max(0)).unwrap_or(u64::MAX);
+        let span = AutomationSpan {
+            offset: self.offset,
+            frames,
+            time: song.playing.then_some(position_frame),
+            parked: position_frame,
+            advancing: song.playing && position >= 0,
+        };
+        self.target += frames as i128;
+        self.offset += frames;
+        self.remaining -= frames;
+        Some(span)
+    }
+}
+
+impl Iterator for AutomationSpans<'_> {
+    type Item = AutomationSpan;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut span = self.next_record()?;
+        loop {
+            let mut next = self.clone();
+            let Some(after) = next.next_record() else { break };
+            let end = span.time.map(|at| at.saturating_add(if span.advancing { span.frames as u64 } else { 0 }));
+            if span.advancing != after.advancing
+                || end != after.time
+                || (span.time.is_none() && span.parked != after.parked)
+            {
+                break;
+            }
+            span.frames += after.frames;
+            *self = next;
+        }
+        Some(span)
     }
 }
 

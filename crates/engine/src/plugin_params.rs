@@ -188,7 +188,38 @@ impl SlotParams {
     /// Plans the events of a block of `frames` frames that starts at arrangement frame `time`
     /// (`None` while the transport is stopped, standing at arrangement frame `parked`). Never
     /// allocates.
+    #[cfg(test)]
     pub(crate) fn plan(&mut self, time: Option<u64>, parked: u64, frames: usize) {
+        self.plan_spans(std::iter::once(crate::plugin::AutomationSpan {
+            offset: 0,
+            frames,
+            time,
+            parked,
+            advancing: time.is_some(),
+        }));
+    }
+
+    /// Plans lanes at the time of the input audio, while set/manual values still go at the
+    /// current block's start. History can split a block at a delayed transport transition.
+    pub(crate) fn plan_delayed(&mut self, songs: &crate::plugin::SongHistory, delay: u32, frames: usize) {
+        if self.lanes.is_empty() {
+            // Most slots have no lanes. Send their set/manual values without walking history.
+            self.plan_spans(std::iter::empty());
+            return;
+        }
+        let current = songs.heard(0);
+        self.plan_spans(songs.spans(delay, frames).map(|mut span| {
+            // Once stopped audio reaches the device, scrubbing the stopped playhead is an
+            // immediate editor update. It must not wait through silent history. Playing
+            // spans still follow the delayed input, including the tail of a transport stop.
+            if !current.playing && span.time.is_none() {
+                span.parked = current.position;
+            }
+            span
+        }));
+    }
+
+    fn plan_spans(&mut self, spans: impl IntoIterator<Item = crate::plugin::AutomationSpan>) {
         let Self { base, base_sent, lanes, queued, block, parked: parked_state, .. } = self;
         block.clear();
         let room = block.capacity().min(MAX_BLOCK_PARAMS);
@@ -205,28 +236,32 @@ impl SlotParams {
         for (id, value) in queued.drain(..) {
             push(ParamEvent { frame: 0, id, value });
         }
-        match time {
-            Some(time) => {
-                for lane in lanes.iter() {
-                    lane_events(&lane.envelope, time, frames, |frame, value| {
-                        push(ParamEvent { frame, id: lane.id, value })
-                    });
-                }
-                *parked_state = Parked::Due;
-            }
-            // Stopped: each lane's value where the transport stands, once, so the plug-in and
-            // its editor show what plays there (#1205); a processor that just started keeps its
-            // state until the transport moves.
-            None => match *parked_state {
-                Parked::Fresh => *parked_state = Parked::Sent(parked),
-                Parked::Sent(at) if at == parked => {}
-                Parked::Sent(_) | Parked::Due => {
+        for span in spans {
+            let (time, parked) = (span.time, span.parked);
+            let frames = if span.advancing { span.frames } else { span.frames.min(1) };
+            match time {
+                Some(time) => {
                     for lane in lanes.iter() {
-                        push(ParamEvent { frame: 0, id: lane.id, value: lane.envelope.value_at(parked) });
+                        lane_events(&lane.envelope, time, frames, |frame, value| {
+                            push(ParamEvent { frame: span.offset + frame, id: lane.id, value })
+                        });
                     }
-                    *parked_state = Parked::Sent(parked);
+                    *parked_state = Parked::Due;
                 }
-            },
+                // Stopped: each lane's value where the transport stands, once, so the plug-in and
+                // its editor show what plays there (#1205); a processor that just started keeps its
+                // state until the transport moves.
+                None => match *parked_state {
+                    Parked::Fresh => *parked_state = Parked::Sent(parked),
+                    Parked::Sent(at) if at == parked => {}
+                    Parked::Sent(_) | Parked::Due => {
+                        for lane in lanes.iter() {
+                            push(ParamEvent { frame: span.offset, id: lane.id, value: lane.envelope.value_at(parked) });
+                        }
+                        *parked_state = Parked::Sent(parked);
+                    }
+                },
+            }
         }
         // In frame order, keeping the order of events at one frame (a lane after a set value).
         // An insertion sort: no allocation, and nearly sorted already.

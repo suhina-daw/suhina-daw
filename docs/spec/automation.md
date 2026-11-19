@@ -215,6 +215,13 @@ The engine runs one render path (offline renders and playback alike), turns lane
 arrangement frames when the graph is built (at the project's tempo), and allocates nothing on the
 audio thread.
 
+Device lanes are evaluated at the arrangement time represented by the audio reaching that
+device, including upstream device latency and a bus, return or Main chain's input latency.
+The recorded transport history preserves loop and seek boundaries inside a delayed block;
+the device's own latency is not subtracted from its input time. Manual parameter changes
+still apply from the next block. The [PDC contract](plugin-delay-compensation.md) describes
+priming, stopped playback, nested branches and the remaining limits.
+
 - **Device parameters** (built-in and `.sd`): while the transport runs, the parameter is set at every point
   that falls inside a block and at every 64th frame of the arrangement (1.3 ms at 48 kHz) where its
   value changed, and at a block's first frame when the transport has just started or moved. The
