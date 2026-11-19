@@ -108,7 +108,7 @@ reads the program's RAM for the control bar and the plug-in hosts' reports their
 | `suhina` | The desktop app: opens and makes projects, runs `ui` in an eframe window with `output` playing, starts the browser's library, shows the system's file dialogs (`rfd`), keeps the settings, keymap and theme files, opens the MIDI inputs, builds the macOS menu bar (`mac_menu.rs`), draws see-through backgrounds where the GPU allows (with `ui-gpu`), and lets agents work on the open projects ([ADR 0028](decisions/0028-mcp-in-the-running-app.md)). | engine, session, media, library, plugins, output, midi, ui, ui-gpu, update |
 | `dsp` | Signal-processing blocks for devices: conversions and smoothing, followers, filters (biquads, state-variable, first-order, crossovers), LFOs with tempo sync, waveshapers, oversamplers, delay lines and allpasses, a band spectrum for panels (`Analyser`), a resampler, IR convolution, and fixed-point FM sine operators and lookup tables. Real-time safe, panic-free on any input ([ADR 0004](decisions/0004-built-in-devices.md) › 1). | nothing |
 | `device-registry` | Every built-in effect, instrument or MIDI effect by its stable id: makes the device a project's `DeviceKind::Builtin` names, lists them, and gives its panel (`panel`: its parameters from `DeviceInfo` and its layout, or the generated list; ADR 0021 › Amendment: device panels). A device that runs a file declares it in its row (`FileKind`): the extension, how it is read off the audio thread (`load_file`, giving an opaque `DeviceAsset`), what a panel calls it and the device that runs it, so the session and the engine never name a device to load its file. | device-api, device-sdk, devices/* |
-| `device-api` | The `Device` trait, `DeviceInfo` (an effect, an instrument or a MIDI effect; a built-in's a `static`, a `.sd` graph's read with it) and `ParamInfo` (plain values in their unit, conversion to knob travel through `ParamShape`), `NoteEvent` for instruments and MIDI effects (with the clip's `MusicalScale`), and the contract tests every device runs (`conformance::check`, with note checks for instruments and event checks for MIDI effects). | nothing |
+| `device-api` | The `Device` trait, `DeviceInfo` (an effect, an instrument or a MIDI effect; a built-in's a `static`, a `.sd` graph's read with it) and `ParamInfo` (plain values in their unit, conversion to knob travel through `ParamShape`), `NoteEvent` for instruments and MIDI effects (with the clip's `MusicalScale`), the opt-in identified-note contract (`NoteInstanceDevice`, [ADR 0039](decisions/0039-per-note-expression.md)), and the contract tests every device runs (`conformance::check`, with note checks for instruments and event checks for MIDI effects). | nothing |
 | `device-sdk` | Builds, validates, serializes and prepares data-only `.sd` effect, MIDI-effect and instrument graphs ([ADR 0021](decisions/0021-device-graph-files.md), [format](spec/sd-device-format.md), [nodes](spec/sdk-nodes.md)): the node catalog, polyphonic voice and grain graphs, generated parameter UI and custom panels ([spec](spec/sdk-custom-ui.md)). `GraphDevice` runs a graph as a `Device` (#763 › 6). The sample instrument runtime that the `sample` node and the built-in Sampler share (`sample_instrument`). Graphs run over bounded buffers allocated when prepared, sample-accurate for parameters and MIDI. No executable code in `.sd` files. | dsp, stretch, device-api, serde, serde_json, base64, image (PNG/JPEG), fs |
 | `ipc` | Audio blocks between the engine and a plug-in host process: a shared-memory region per instance with the block's events and followers, a doorbell per direction and a deadline; `AudioSource`, a decoded file mapped read only for an ARA plug-in; memory the system frees when the last holder ends (`shm`, `sweep`). One of the two crates allowed `unsafe` ([ADR 0006](decisions/0006-plug-in-hosting.md) › 3, 4, 6; [protocol](spec/plugin-protocol.md)). | nothing |
 | `fs` | Saving a file whole or not at all (`write_atomic`: beside it, flushed, renamed over it; `write_atomic_with` for one written piece by piece), for every crate that saves a file it reads again, and `keep_newest`, which a folder of backups, crash files or caches keeps its newest files with. | nothing |
@@ -329,6 +329,17 @@ gesture id grouping both XY axes into one undo step. See [ADR 0021](decisions/00
    `render_track` for one track's clips without the mix) calls the
    same `process` in a loop, so an offline render is the test oracle for playback, and the output
    does not depend on the block size.
+
+### Per-note expression (planned)
+
+Live MIDI, clip playback and plug-in input adapters resolve their source addressing to the
+same runtime note identity and expression events in `device-api`. A source/channel router
+owns MPE configuration and controller state; device voices retain identity through sustain
+and release, independently of channel reuse. The engine dispatches events between processing
+spans at their exact frames. Native instruments and exported forms share this contract.
+Saved expression curves belong to model notes, never to runtime voice IDs.
+[ADR 0039](decisions/0039-per-note-expression.md) owns the identity and compatibility decisions;
+[the MPE specification](spec/mpe.md) defines routing, editing and the staged acceptance checks.
 
 ## Devices from the SDK
 
