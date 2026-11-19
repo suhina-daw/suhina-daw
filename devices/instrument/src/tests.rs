@@ -241,3 +241,62 @@ fn hostile_sample_levels_remain_finite_after_the_final_gain() {
         }
     }
 }
+
+#[test]
+fn pedal_up_retires_old_same_key_samples_but_preserves_the_held_retrigger() {
+    for source in [1.0, 2.0] {
+        let mut instrument = Instrument::new();
+        let mut reference = Instrument::new();
+        for core in [&mut instrument, &mut reference] {
+            core.samples().unwrap().load_sample(48000, 1, std::sync::Arc::from(vec![0.2; 4800]));
+            core.set_param(param::SOURCE, source);
+            core.set_param(param::PLAYBACK, 2.0);
+            core.set_param(param::RELEASE, 0.005);
+            core.reset();
+        }
+        instrument.event(NoteEvent::Controller { number: 64, value: 1.0 });
+        for _ in 0..3 {
+            instrument.event(NoteEvent::On { key: 60, velocity: 0.8 });
+            instrument.process(&ProcessContext::default(), &mut [0.0; 256]);
+            reference.process(&ProcessContext::default(), &mut [0.0; 256]);
+            instrument.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+        }
+        for core in [&mut instrument, &mut reference] {
+            core.event(NoteEvent::On { key: 60, velocity: 0.8 });
+            core.process(&ProcessContext::default(), &mut [0.0; 256]);
+            core.event(NoteEvent::Controller { number: 64, value: 0.0 });
+        }
+        let mut actual = [0.0; 2048];
+        let mut expected = [0.0; 2048];
+        instrument.process(&ProcessContext::default(), &mut actual);
+        reference.process(&ProcessContext::default(), &mut expected);
+        assert!(expected[1024..].iter().any(|value| value.abs() > 0.001));
+        assert!(actual[1024..] == expected[1024..], "source {source}: only the held retrigger may remain");
+        instrument.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+        instrument.process(&ProcessContext::default(), &mut actual);
+        assert!(actual[1024..].iter().all(|value| *value == 0.0));
+    }
+}
+
+#[test]
+fn retiring_a_hidden_sample_source_preserves_the_pedal_for_the_next_note() {
+    let mut instrument = Instrument::new();
+    instrument.samples().unwrap().load_sample(48000, 1, std::sync::Arc::from(vec![0.2; 4800]));
+    instrument.set_param(param::SOURCE, 1.0);
+    instrument.set_param(param::PLAYBACK, 2.0);
+    instrument.set_param(param::RELEASE, 0.005);
+    instrument.reset();
+    instrument.event(NoteEvent::Controller { number: 64, value: 1.0 });
+    let mut block = [0.0; 2048];
+    for source in [1.0, 0.0, 1.0] {
+        instrument.set_param(param::SOURCE, source);
+        instrument.process(&ProcessContext::default(), &mut block);
+    }
+    instrument.event(NoteEvent::On { key: 60, velocity: 1.0 });
+    instrument.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+    instrument.process(&ProcessContext::default(), &mut block);
+    assert!(block[1024..].iter().any(|value| value.abs() > 0.01));
+    instrument.event(NoteEvent::Controller { number: 64, value: 0.0 });
+    instrument.process(&ProcessContext::default(), &mut block);
+    assert!(block[1024..].iter().all(|value| *value == 0.0));
+}

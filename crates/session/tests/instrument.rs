@@ -22,6 +22,10 @@ fn project() -> Project {
 }
 
 fn render(project: &Project, audio: &AudioPool) -> Vec<f32> {
+    render_with_transport(project, audio, false)
+}
+
+fn render_with_transport(project: &Project, audio: &AudioPool, playing: bool) -> Vec<f32> {
     let mut renderer = Renderer::stopped(project, audio, 48000, suhina_session::devices()).unwrap();
     let mut controller = renderer.controller();
     let mut live = controller.take_live_input().unwrap();
@@ -29,12 +33,49 @@ fn render(project: &Project, audio: &AudioPool) -> Vec<f32> {
     session.set_audio(audio.clone());
     session.attach_player(Player::new(controller, None));
     session.execute("track.setArm", &json!({"track":1,"armed":true})).unwrap();
+    if playing {
+        session.execute("transport.play", &json!({})).unwrap();
+    }
     live.send(suhina_engine::LiveEvent::NoteOn { key: 60, velocity: 0.8 });
     let mut out = vec![0.0; 8192];
     for block in out.chunks_mut(256) {
         renderer.process(block);
     }
     out
+}
+
+#[test]
+fn importing_a_sample_overrides_source_automation_as_one_undoable_edit() {
+    let path = std::env::temp_dir().join(format!("suhina-instrument-automation-{}.wav", std::process::id()));
+    suhina_test_support::write_wav(&path, 48000, 1, suhina_test_support::WavFormat::Int16, &[0.2; 9600]);
+    let mut session = Session::new(project());
+    session.execute("device.add", &json!({"track":1,"id":"instrument"})).unwrap();
+    for beat in [0.0, 0.01] {
+        session
+            .execute("automation.addPoint", &json!({"track":1,"device":0,"param":"source","beat":beat,"value":0}))
+            .unwrap();
+    }
+    let before = session.project().clone();
+    let answer = session.execute("device.loadSample", &json!({"track":1,"device":0,"path":path})).unwrap();
+    let imported = session.project().clone();
+    let mut reference = imported.clone();
+    reference.channels[0].devices[0].automation.clear();
+    for playing in [false, true] {
+        assert!(
+            render_with_transport(&imported, session.audio(), playing)
+                == render_with_transport(&reference, session.audio(), playing),
+            "import must select audible Sample at graph initialization and during playback"
+        );
+    }
+    assert_eq!(answer["automation"], "off");
+    let lane = &imported.channels[0].devices[0].automation[0];
+    assert!(!lane.enabled);
+    assert_eq!(lane.points, before.channels[0].devices[0].automation[0].points);
+    session.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(session.project(), &before, "one undo restores source, reference and automation");
+    session.execute("edit.redo", &json!({})).unwrap();
+    assert_eq!(session.project(), &imported);
+    std::fs::remove_file(path).unwrap();
 }
 
 #[test]

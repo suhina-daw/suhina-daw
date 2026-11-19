@@ -35,6 +35,10 @@ layer after its fade; switching back requires another note.
 The ordinary pitch wheel bends both sources by two semitones in either direction. Retuning a
 modal voice retains phase; a mode pushed past the anti-alias margin is stopped. Sustain delays
 the sample gate's note-off as well as the modal release. One-shot samples still run to their end.
+The shared sample runtime keeps pending pedal releases per voice. Repeating a key while the
+pedal is down leaves the old released voices sustained; lifting the pedal releases those voices
+while the newest held note continues. Retiring an inaudible sample source preserves the current
+pedal and pitch-wheel state for the next note.
 
 Sample uses the SDK's existing sample runtime. Root, key range, source trim, loop bounds and
 Gate / One shot / Loop playback describe a single-source key map. Hybrid mixes this source
@@ -61,6 +65,9 @@ Acoustic quality is not established by matching this mathematical reference.
 
 `device.loadSample` accepts Instrument and loads an ordinary local audio file. The command is
 one undoable project edit and selects Sample, so the next note plays the imported source.
+Like manually selecting Source, import overrides an enabled Source automation lane while keeping
+its points. Undo restores the previous source reference, Source value and lane state together;
+redo restores the complete import.
 Root defaults to MIDI 60; the user sets it when the file was recorded at another pitch. Pitch
 detection, automatic segmentation and fitting are not silently guessed. Source bytes use the
 existing decoded-audio and sample-reference lifecycle: project save rebases the path, keeps

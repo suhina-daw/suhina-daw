@@ -76,7 +76,11 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
         } else {
             device.params.push(DeviceParam::new("source", 1.0));
         }
-        return Ok(json!({"device":index,"path":path.display().to_string(),"frames":audio.frames(),"source":"sample"}));
+        let off = crate::automation::override_lane(&mut device.automation, |lane| lane.param == "source");
+        return Ok(with_override(
+            json!({"device":index,"path":path.display().to_string(),"frames":audio.frames(),"source":"sample"}),
+            off,
+        ));
     }
     if sdk {
         let asset =

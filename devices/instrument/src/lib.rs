@@ -118,7 +118,6 @@ pub struct Instrument {
     serial: u64,
     pedal: bool,
     bend_semitones: f64,
-    deferred_sample_off: [bool; 128],
     gain: Smoother,
     sample_mix: Smoother,
     modal_mix: Smoother,
@@ -151,7 +150,6 @@ impl Instrument {
             serial: 0,
             pedal: false,
             bend_semitones: 0.0,
-            deferred_sample_off: [false; 128],
             gain: Smoother::new(0.0, ramp),
             sample_mix: Smoother::new(0.0, ramp),
             modal_mix: Smoother::new(1.0, ramp),
@@ -270,7 +268,6 @@ impl Device for Instrument {
         self.serial = 0;
         self.pedal = false;
         self.bend_semitones = 0.0;
-        self.deferred_sample_off.fill(false);
         self.sampler.reset();
         self.sample_silent = true;
         let (sample, modal) = self.mix_targets();
@@ -353,8 +350,8 @@ impl Device for Instrument {
         if !hybrid && !self.sample_silent && self.sample_mix.current() == 0.0 && self.sample_mix.is_settled() {
             self.sampler.reset();
             self.sampler.event(NoteEvent::PitchBend((self.bend_semitones / 2.0) as f32));
+            self.sampler.event(NoteEvent::Controller { number: 64, value: if self.pedal { 1.0 } else { 0.0 } });
             self.sample_silent = true;
-            self.deferred_sample_off.fill(false);
         }
     }
 
@@ -369,26 +366,9 @@ impl Device for Instrument {
             NoteEvent::Off { velocity, .. } if !velocity.is_finite() => return,
             _ => event,
         };
-        // The shared sample runtime has no pedal policy. Keep key releases here so Hybrid
-        // releases both sources on the same musical gesture, including velocity-zero notes.
-        let defer_sample_off = match event {
-            NoteEvent::Off { key, .. } if self.pedal => {
-                if let Some(pending) = self.deferred_sample_off.get_mut(usize::from(key)) {
-                    *pending = true;
-                }
-                true
-            }
-            NoteEvent::On { key, velocity } if velocity.is_finite() => {
-                if let Some(pending) = self.deferred_sample_off.get_mut(usize::from(key)) {
-                    *pending = false;
-                }
-                false
-            }
-            _ => false,
-        };
         // A mode change applies to the next played note. Off/pedal messages still release
         // existing voices during the crossfade, even if their source is now inaudible.
-        if !defer_sample_off && (self.params.get(param::SOURCE) != 0.0 || !matches!(event, NoteEvent::On { .. })) {
+        if self.params.get(param::SOURCE) != 0.0 || !matches!(event, NoteEvent::On { .. }) {
             self.sampler.event(event);
         }
         match event {
@@ -409,12 +389,6 @@ impl Device for Instrument {
                 let old = self.pedal;
                 self.pedal = value >= 0.5;
                 if old && !self.pedal {
-                    for (key, pending) in self.deferred_sample_off.iter_mut().enumerate() {
-                        if *pending {
-                            self.sampler.event(NoteEvent::Off { key: key as u8, velocity: 0.0 });
-                            *pending = false;
-                        }
-                    }
                     let frames = Smoother::ramp_frames(self.params.get(param::RELEASE), self.sample_rate);
                     for voice in &mut self.voices {
                         if !voice.held {
@@ -426,7 +400,6 @@ impl Device for Instrument {
             }
             NoteEvent::AllNotesOff => {
                 self.pedal = false;
-                self.deferred_sample_off.fill(false);
                 self.release(None);
             }
             NoteEvent::PitchBend(value) if value.is_finite() => {

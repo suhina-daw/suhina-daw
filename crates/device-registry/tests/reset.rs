@@ -88,7 +88,10 @@ fn instrument_render_events_and_reset_allocate_and_free_nothing() {
                 instrument.event(NoteEvent::PitchBend(f32::from(key) / 127.0));
                 instrument.process(&ProcessContext::default(), &mut buffer);
                 instrument.event(NoteEvent::Off { key, velocity: 0.0 });
+                instrument.event(NoteEvent::On { key, velocity: 0.8 });
                 instrument.event(NoteEvent::Controller { number: 64, value: 0.0 });
+                instrument.process(&ProcessContext::default(), &mut buffer);
+                instrument.event(NoteEvent::Off { key, velocity: 0.0 });
             }
             instrument.event(NoteEvent::AllNotesOff);
             instrument.reset();
