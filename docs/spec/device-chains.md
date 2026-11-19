@@ -153,9 +153,11 @@ devices when the identity it compares, its branches' device ids in order, is the
 takes the new branch gains and parameter values, so an edit to one value never restarts a
 sound. A switched-off group is not in the chain, like a switched-off device. Latency is
 compensated inside the group as across tracks (*Group buses*): a branch's latency is the sum of its
-devices', the group's the largest of its branches' (cut at 2 s), every branch is delayed by
+devices', the group's the largest of its branches', every branch is delayed by
 what it lacks of that and the dry signal by all of it, with delay lines made with the graph,
-and the group reports its latency to its chain like any device.
+and the group reports its latency to its chain like any device. A cumulative path beyond
+two seconds is rejected during graph preparation instead of clamping its reported latency;
+see the [PDC timing contract](plugin-delay-compensation.md).
 
 ## MIDI effects
 

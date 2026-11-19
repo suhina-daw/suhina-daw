@@ -10,6 +10,9 @@ covers:
   - crates/engine/src/automation.rs
   - crates/engine/src/chain.rs
   - crates/engine/src/group.rs
+  - crates/engine/src/buses.rs
+  - crates/engine/src/graph.rs
+  - crates/engine/src/lib.rs
 ---
 
 # Plug-in delay compensation

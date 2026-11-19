@@ -738,7 +738,7 @@ fn pdc_long_delay_automation_matches_reference_after_history_wraps() {
             let plain = render_at_horizon(hosted, false, layout, blocks);
             let actual = render_at_horizon(hosted, true, layout, blocks);
             assert!(plain[horizon * 2..].iter().any(|sample| *sample > 0.01));
-            for (frame, (got, input)) in actual.chunks_exact(2).zip(plain.chunks_exact(2)).enumerate() {
+            for (frame, (got, input)) in actual.as_chunks::<2>().0.iter().zip(plain.as_chunks::<2>().0).enumerate() {
                 let source = frame.saturating_sub(horizon) % LOOP;
                 let gain = if (1000..1500).contains(&source) { 0.0 } else { 1.0 };
                 for channel in 0..2 {

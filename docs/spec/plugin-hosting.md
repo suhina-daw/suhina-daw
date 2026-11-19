@@ -709,7 +709,9 @@ gets no song position, tempo or transport, and none of the project's automation.
 
 Latency is compensated: every track is heard as late as the one whose devices (built-in
 and plug-ins, as each reports) delay it most, up to 2 s, through delay lines made with the
-graph. A plug-in's latency is known once it has started, which builds a new graph. The
+graph. A cumulative path beyond that limit fails graph preparation with an explicit error
+instead of partial compensation ([PDC limits](plugin-delay-compensation.md)). A plug-in's
+latency is known once it has started, which builds a new graph. The
 playhead shows what the engine renders, so it runs ahead of what is heard by that delay.
 
 Latency that changes while a plug-in runs (a lookahead the user sets; #110) is followed.
