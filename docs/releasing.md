@@ -454,6 +454,14 @@ with its archives' checksums in [`scripts/install_nextest.sh`](../scripts/instal
 locally `cargo test --workspace` runs the same tests, and so does `cargo nextest run --workspace`
 once nextest is installed (`cargo install cargo-nextest --locked`).
 
+**The theme layouts.** Each layout-changing built-in theme and the see-through test theme has
+its own test under `scenes::layouts` in `apps/theme-render/tests/scenes.rs`. Each test drives every
+scene, on its own test thread; nextest can distribute the four themes over the three partitions
+instead of assigning their combined test to one runner. The built-in theme list and those tests
+come from the same table. The colour-only guard still rejects an unlisted theme with layout
+properties or artwork, and the other bundled themes still drive the launcher. This changes
+scheduling, not the scenes, assertions or drawing recordings.
+
 **The pack's tests.** The shipped pack's tests (`crates/device-registry/tests/pack.rs`) render NAM
 models, and NAM ran at two to four times real time in a test build until `nam-rs` was built at
 `opt-level = 3` without debug assertions or overflow checks there (`[profile.test.package]` in
