@@ -5,6 +5,52 @@ use super::*;
 use suhina_engine::model::Rgb;
 
 #[test]
+fn colour_tool_previews_selected_headers_and_restores_the_selection_appearance_on_close() {
+    use suhina_ui::kit::selection::{SelectionColour, SelectionLook};
+    for arrangement in [false, true] {
+        let mut app = demo_app();
+        let mut settings = app.settings().clone();
+        let selection = SelectionLook { mode: SelectionColour::Custom, custom: egui::Color32::from_rgb(139, 107, 231) };
+        settings.view.selection = selection;
+        app.set_settings(&egui::Context::default(), settings);
+        let mut h = window(app);
+        if arrangement {
+            h.get_by_label("Arrangement view").click();
+            h.run();
+        }
+        h.get_by_label("Track Drums").click();
+        h.run();
+        h.key_press(Key::F2);
+        h.run();
+        let colour = suhina_ui::interaction::colour_picker::swatches()[7];
+        let label = format!("Palette {}", suhina_ui::interaction::colour_picker::hex(colour));
+        h.get_by_label(&label).click();
+        h.run();
+        let header = h.get_by_label("Track Drums").rect();
+        let expected = suhina_ui::interaction::colour_picker::color32(colour);
+        let covers = |shape: &egui::epaint::ClippedShape, fill| {
+            matches!(&shape.shape,
+                egui::Shape::Rect(rect) if rect.fill == fill && rect.rect.expand(0.5).contains_rect(header)
+            )
+        };
+        assert!(h.output().shapes.iter().any(|shape| covers(shape, expected)), "header previews its own colour");
+        assert!(
+            h.output().shapes.iter().any(|shape| matches!(&shape.shape,
+                egui::Shape::Rect(rect) if rect.stroke.width > 0.0 && rect.rect.intersects(header)
+                    && suhina_ui::kit::theme::text_contrast(rect.stroke.color, expected) >= 3.0
+            )),
+            "selection remains visible as an outline"
+        );
+        let project = h.state().session().unwrap().project().clone();
+        h.get_by_label("Close window").click();
+        h.run();
+        assert!(h.output().shapes.iter().any(|shape| covers(shape, selection.custom)), "selection fill returns");
+        assert_eq!(h.state().settings().view.selection, selection);
+        assert_eq!(h.state().session().unwrap().project(), &project);
+    }
+}
+
+#[test]
 fn f2_opens_a_nonmodal_picker_that_follows_tracks_and_reuses_recent_colours() {
     let mut h = window(demo_app());
     h.get_by_label("Track Drums").click();

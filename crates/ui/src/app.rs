@@ -3335,6 +3335,7 @@ impl App {
         }
         // The floating colour tool owns Escape while a text draft or drag is active.
         self.show_colour_window(ui.ctx(), &mut actions);
+        self.preview_colour_targets(ui.ctx());
         self.shortcuts(ui, &mut actions);
         self.apply_zoom(ui.ctx());
         self.frame_trace.mark("keys");

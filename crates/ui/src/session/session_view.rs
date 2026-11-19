@@ -952,28 +952,45 @@ fn column_header(
     // track's header is the selection colour every selected header and clip shares (Settings ›
     // Appearance › Selection colour; its own colour with Clip's own colour), with its own colour
     // in a band along its top; its column is outlined as a whole (below), not its header again.
-    let selection_fill = (selected && !column.mute).then(|| crate::kit::selection::fill(&own)).flatten();
-    let fill = selection_fill.unwrap_or_else(|| colour_picker::fill(column.color, column.mute));
-    if !crate::kit::skin::paint_in_view(
-        painter,
-        rect,
-        "track.name",
-        crate::kit::skin::State::response(&response, selected),
-        // Artwork's `currentColor`: the header's own `color` where the sheet gives one.
-        own.own_color_or(fill),
-    ) {
+    let preview = crate::kit::selection::previews_track(ui.ctx(), column.track);
+    let selection_fill = (selected && !column.mute && !preview).then(|| crate::kit::selection::fill(&own)).flatten();
+    let fill = selection_fill.unwrap_or_else(|| colour_picker::fill(column.color, column.mute && !preview));
+    if preview
+        || !crate::kit::skin::paint_in_view(
+            painter,
+            rect,
+            "track.name",
+            crate::kit::skin::State::response(&response, selected),
+            // Artwork's `currentColor`: the header's own `color` where the sheet gives one.
+            own.own_color_or(fill),
+        )
+    {
         painter.rect_filled(rect, 0.0, fill);
     }
     if selection_fill.is_some() {
         let band = Rect::from_min_size(rect.min, Vec2::new(rect.width(), SELECTED_BAND.min(rect.height())));
         painter.rect_filled(band, 0.0, colour_picker::fill(column.color, false));
     }
-    crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
+    if !preview {
+        crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
+    }
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
     // the name's ink reads on whichever is shown.
-    let shown = own.background_or(fill);
+    let shown = if preview { fill } else { own.background_or(fill) };
     // What the header holds goes in its content box, inside its border and padding (#1336).
-    let rect = own.paint(painter, rect).content;
+    let rect = if preview {
+        own.paint_over(painter, rect, crate::kit::element::Native { fill, ..Default::default() }, 0.0).content
+    } else {
+        own.paint(painter, rect).content
+    };
+    if preview && selected {
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.0, crate::kit::selection::readable(own.border(), fill)),
+            StrokeKind::Inside,
+        );
+    }
     let name_style = crate::kit::element::TRACK_NAME.id(&track_id).response(&response).enter();
     name_style.paint_background(painter, rect, 0.0);
     // Ink that reads on the fill, unless the sheet gives the name a colour.

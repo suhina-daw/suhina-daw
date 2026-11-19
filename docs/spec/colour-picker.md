@@ -30,6 +30,13 @@ its target. Switching projects closes it; removing its last target disables edit
 Closing it preserves applied edits. It follows the main window when minimised and does
 not stay above unrelated applications. Remembered placement is kept on the current screen.
 
+While the tool is open, its target track headers preview their own exact colour instead of
+the selection fill, tint or muted grey. Selection outlines and all selection/track state stay
+intact; clips and lane selection shading keep their ordinary look. Closing the tool restores
+the configured header appearance without changing the selection or saved appearance setting.
+The native client area must paint the active theme's background, and idle rendering must
+settle without alternating content, geometry or scale.
+
 The compact order is **Palette**, **Related shades**, **Recent colours**, the current
 colour and editable/copyable hex value, collapsed **Fine adjustment**, and **Random** /
 **Default**. There is no per-track list and no Apply/Cancel transaction for the window.

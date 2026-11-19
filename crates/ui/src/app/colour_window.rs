@@ -30,6 +30,15 @@ pub(super) struct ColourWindow {
 }
 
 impl App {
+    pub(super) fn preview_colour_targets(&self, ctx: &egui::Context) {
+        let tracks = if self.colour_window.open && self.projects.active() == self.colour_window.project {
+            self.colour_window.tracks.as_slice()
+        } else {
+            &[]
+        };
+        crate::kit::selection::preview_tracks(ctx, tracks);
+    }
+
     /// Only the embedded tool's own controls keep normal widget keyboard navigation.
     /// The rest of the DAW continues to use its existing shortcut and launch-key rules.
     pub(super) fn colour_window_owns_keyboard(&self, ctx: &egui::Context) -> bool {
