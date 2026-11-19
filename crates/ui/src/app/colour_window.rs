@@ -204,6 +204,18 @@ impl App {
             }
             {
                 let style = crate::kit::element::COLOUR_PICKER.enter();
+                if !embedded && suhina_plugins::trace::on() {
+                    suhina_plugins::trace::state(
+                        "colour window surface",
+                        format!(
+                            "rect {:?}, scale {}, fill {:?}, geometry {:?}",
+                            ui.max_rect(),
+                            ui.ctx().pixels_per_point(),
+                            style.background(),
+                            ui.input(|i| (i.viewport().outer_rect, i.viewport().inner_rect)),
+                        ),
+                    );
+                }
                 let inside = style.paint(ui.painter(), ui.max_rect()).content;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
                     let mut styled = style.ui(ui);
