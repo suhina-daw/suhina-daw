@@ -67,12 +67,22 @@ fn native_colour_window_paints_its_dark_background_and_settles_without_input() {
     let frames = frames.borrow();
     assert!(frames.len() >= 24);
     for (rect, frame) in frames.iter().rev().take(8) {
+        let mut fills: Vec<_> = frame
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Rect(fill) => Some((fill.rect, fill.fill, shape.clip_rect)),
+                _ => None,
+            })
+            .collect();
+        fills.sort_by(|a, b| b.0.area().total_cmp(&a.0.area()));
+        fills.truncate(8);
         assert!(
             frame.shapes.iter().any(|shape| matches!(&shape.shape,
                 egui::Shape::Rect(fill) if fill.fill == expected && fill.rect.contains_rect(*rect)
                     && shape.clip_rect.contains_rect(*rect)
             )),
-            "native client area must paint the theme background {expected:?}"
+            "native client area {rect:?} must paint the theme background {expected:?}; largest fills: {fills:?}"
         );
     }
     let last = &frames.last().unwrap().1.shapes;

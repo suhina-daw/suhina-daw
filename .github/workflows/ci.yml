@@ -309,6 +309,35 @@ jobs:
         if: matrix.partition == 1
         run: cargo test --workspace --doc
 
+      # Actual picker controls in dark/light/high-contrast themes, from the same renderer
+      # as the paint and clipped-text tests. Keep previews available when a golden differs.
+      - name: Colour picker previews
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.partition == 1 }}
+        env:
+          XDG_RUNTIME_DIR: ${{ runner.temp }}
+          WGPU_BACKEND: vulkan
+        run: |
+          sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+          # Hosted runners have no hardware GPU. Use Mesa's software Vulkan driver.
+          for driver in /usr/share/vulkan/icd.d/lvp_icd*.json; do
+            if [ -f "$driver" ]; then
+              export VK_DRIVER_FILES="$driver"
+              break
+            fi
+          done
+          for theme in suhina-studio suhina-studio@light high-contrast; do
+            for scene in colour-picker colour-picker-field colour-picker-wheel; do
+              cargo run --locked -p suhina-theme-render -- "$theme" --scene "$scene" --out "colour-picker-previews/$theme"
+            done
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && runner.os == 'Linux' && matrix.partition == 1 }}
+        with:
+          name: colour-picker-previews
+          path: colour-picker-previews/
+          if-no-files-found: error
+          retention-days: 14
+
   # Not part of `ci`: a macOS failure is reported but does not block merging. One runner: the
   # tests are not split here.
   check-macos:
