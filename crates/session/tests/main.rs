@@ -59,6 +59,7 @@ mod support;
 mod swing;
 mod temp_dir;
 mod tempo;
+mod track_colours;
 mod track_copy;
 mod track_input;
 mod track_names;

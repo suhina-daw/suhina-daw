@@ -12,8 +12,30 @@
 //! and columns' tint, which the base sheet works out from that variable, follows it too.
 
 use std::cell::Cell;
+use std::sync::Arc;
 
 use egui::Color32;
+use suhina_engine::model::TrackId;
+
+const PREVIEW: &str = "track-colour-preview";
+
+/// The colour tool's targets for this frame. This presentation state changes neither the
+/// selection nor its saved appearance setting. Only headers consult it; clips keep their look.
+pub(crate) fn preview_tracks(ctx: &egui::Context, tracks: &[TrackId]) {
+    ctx.data_mut(|data| {
+        let key = egui::Id::unique(PREVIEW);
+        let old = data.get_temp::<Arc<[TrackId]>>(key);
+        if old.as_deref().unwrap_or_default() != tracks {
+            data.insert_temp(key, Arc::<[TrackId]>::from(tracks));
+        }
+    });
+}
+
+/// Whether a header should show its own colour while the colour tool edits it.
+pub(crate) fn previews_track(ctx: &egui::Context, track: TrackId) -> bool {
+    ctx.data(|data| data.get_temp::<Arc<[TrackId]>>(egui::Id::unique(PREVIEW)))
+        .is_some_and(|tracks| tracks.contains(&track))
+}
 
 /// The custom property of the `selection.background` token.
 pub const VARIABLE: &str = "--selection-background";

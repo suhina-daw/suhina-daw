@@ -7,9 +7,12 @@ arrangement-scrolled suhina-sheet 7c8c0724710a9ae0
 browser suhina-sheet 7f976cef9193193e
 browser-plug-ins suhina-sheet 56fabc51b77397d4
 browser-search suhina-sheet 1837a120e0c3c6cc
-clip-audio suhina-sheet 51042fcc8b9f3472
+clip-audio suhina-sheet 1f0ba15aff788ba6
 clip-midi suhina-sheet 6ea8468b271e5c63
-context-menu suhina-sheet 96c4e8f51062199f
+colour-picker suhina-sheet a89f2e2a4272fc77
+colour-picker-field suhina-sheet fef77ccdcfadf0e2
+colour-picker-wheel suhina-sheet 61800e09fb17f951
+context-menu suhina-sheet 31fe3b46e46b3100
 control-bar-toggles suhina-sheet 5941a1b0b791c10c
 count-in-menu suhina-sheet 3f97723704e896fc
 cpu suhina-sheet fc6b363fefbaccbb
@@ -23,7 +26,7 @@ expanded-multiband suhina-sheet d63172276ab9963e
 expanded-reverb suhina-sheet ce7a13dba0a152ea
 expanded-vinyl-distortion suhina-sheet 4df48e927e48ad2a
 export-dialog suhina-sheet d438d94339551ea0
-grid-menu suhina-sheet eb090de78e2da8bb
+grid-menu suhina-sheet 2a58cbb9ef9fb6b2
 instrument-sampler suhina-sheet 7620716f392642ff
 launcher suhina-sheet 2439e728321d48f9
 launcher-hover suhina-sheet cc9d8d5cf686cee0
@@ -33,7 +36,7 @@ launcher-toggles suhina-sheet 0145c08fe1d4efa4
 menu suhina-sheet d35d3fec2f7a42f0
 missing-files suhina-sheet f4a5002b528ae292
 new-theme-dialog suhina-sheet 6b223047f2d39e16
-piano-roll suhina-sheet 7a3eea9cdf21f04e
+piano-roll suhina-sheet f3d0f8ed7158a5d3
 project-dialog suhina-sheet 84ebb0f4c967831e
 quantize-menu suhina-sheet 49a5ae33bc5fe985
 quick-add suhina-sheet 5bd161a8bb8fbf85
@@ -45,7 +48,7 @@ settings-appearance suhina-sheet e3fe2571b2b37c73
 settings-audio suhina-sheet ffba46b413b527a5
 settings-browser suhina-sheet 6d803f25b168efde
 settings-devices suhina-sheet 79c3e455fba1592f
-settings-keys suhina-sheet 0bead23e372275be
+settings-keys suhina-sheet 677dfc1ad38d242b
 settings-launcher suhina-sheet 7912f2cad03f6237
 settings-menu suhina-sheet e56f6770b5da089e
 settings-midi suhina-sheet 017745c99686126a

@@ -475,6 +475,46 @@ fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
 }
 
 #[test]
+fn palette_and_shades_keep_readable_inks_on_composited_track_fills() {
+    let ctx = egui::Context::default();
+    let variants = built_in_themes().into_iter().map(|(id, theme)| (id.to_owned(), theme)).chain(built_in_variants());
+    for (id, theme) in variants {
+        use_colors(&ctx, &theme.colors);
+        in_style_frame(&ctx, |_| {
+            for colour in crate::interaction::colour_picker::swatches() {
+                for shade in crate::interaction::colour_picker::panel::related_shades(colour) {
+                    let solid = crate::interaction::colour_picker::color32(shade);
+                    for fill in [
+                        solid,
+                        crate::kit::motion::mix(theme.color("control-background"), solid, 0.55),
+                        theme.color("selection-background"),
+                        theme.color("track-headerMutedBackground"),
+                        theme.color("track-headerMutedSelectedBackground"),
+                    ] {
+                        assert!(text_contrast(text_on(fill), fill) >= 4.5, "{id}: {fill:?}");
+                    }
+                }
+            }
+        });
+    }
+    // Even a custom theme with translucent mid-grey inks has a readable fallback.
+    use_colors(
+        &ctx,
+        &[
+            ("text-onColorLight".into(), Color32::from_gray(125)),
+            ("text-onColorDark".into(), Color32::from_rgba_unmultiplied(120, 120, 120, 50)),
+        ]
+        .into(),
+    );
+    in_style_frame(&ctx, |_| {
+        for level in 0..=255 {
+            let fill = Color32::from_gray(level);
+            assert!(text_contrast(text_on(fill), fill) >= 4.5);
+        }
+    });
+}
+
+#[test]
 fn the_automation_pin_is_a_themes_own_colour_and_older_files_get_their_accent() {
     let (theme, warnings) = Theme::from_json(r##"{"colors":{"accent":"#123456"}}"##);
     assert!(warnings.is_empty(), "{warnings:?}");

@@ -9,7 +9,10 @@ browser-plug-ins suhina-studio 5041d3c0233dbcaa
 browser-search suhina-studio 5b372c4dede0ef33
 clip-audio suhina-studio a36640652a82c416
 clip-midi suhina-studio d98470851f7c78e2
-context-menu suhina-studio 06b8c93baa98aaaa
+colour-picker suhina-studio 036a47dffc17df5e
+colour-picker-field suhina-studio f8e5a9a668f37050
+colour-picker-wheel suhina-studio adc136ee46d21ce7
+context-menu suhina-studio b6d221476ff19d9b
 control-bar-toggles suhina-studio aa8b4eaed8436169
 count-in-menu suhina-studio c615bb4ed6d3fc70
 cpu suhina-studio 53c1b941c84e88e3
@@ -45,7 +48,7 @@ settings-appearance suhina-studio b17cda140982b867
 settings-audio suhina-studio 580ca07f103c8ffa
 settings-browser suhina-studio 350ee0bc49481b3d
 settings-devices suhina-studio ed253356e406aa33
-settings-keys suhina-studio e229351ec0a5d150
+settings-keys suhina-studio 0ad07fcbf4031f45
 settings-launcher suhina-studio e0279225466aee33
 settings-menu suhina-studio a4e714c1600e031d
 settings-midi suhina-studio b8a1fdb4ed620878

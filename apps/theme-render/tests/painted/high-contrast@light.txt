@@ -9,7 +9,10 @@ browser-plug-ins high-contrast@light a5a9ebb6fdedc44d
 browser-search high-contrast@light ce42a88330290bd7
 clip-audio high-contrast@light ea8e09f0d48047f0
 clip-midi high-contrast@light 5644c8f916cead8e
-context-menu high-contrast@light 789a991b7942bcd1
+colour-picker high-contrast@light 35824703c60b5365
+colour-picker-field high-contrast@light 2712a2c53bad8596
+colour-picker-wheel high-contrast@light 1231cfa3a459b3d0
+context-menu high-contrast@light 919b780d927b09bd
 control-bar-toggles high-contrast@light bff6475f58750c91
 count-in-menu high-contrast@light bb83aabd405ca3ce
 cpu high-contrast@light c3b518eb07a0ee8f
@@ -45,7 +48,7 @@ settings-appearance high-contrast@light 0e4b0204bdfb5d46
 settings-audio high-contrast@light d823f9766caadc8d
 settings-browser high-contrast@light 54b35d244f8bb0b2
 settings-devices high-contrast@light 378acae2dfbec657
-settings-keys high-contrast@light 3318ddbfe402b599
+settings-keys high-contrast@light 2b3db97177b333cc
 settings-launcher high-contrast@light 4fd0e2ea463c59ff
 settings-menu high-contrast@light 5ad775dee2164df3
 settings-midi high-contrast@light 841ea07946585f24

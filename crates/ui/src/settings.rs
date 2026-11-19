@@ -511,6 +511,9 @@ pub struct Settings {
     /// whole desktop, so a second screen counts.
     pub map_window: bool,
     pub map_window_rect: Option<[i32; 4]>,
+    /// Last eight distinct track colours applied, newest first, and the floating picker's placement.
+    pub recent_colours: Vec<suhina_engine::model::Rgb>,
+    pub colour_window_rect: Option<[i32; 4]>,
     /// The plug-in manager's column widths in points, as dragged (`docs/spec/plugin-manager.md`
     /// › The table); empty for the widths it starts with.
     pub plugin_manager_columns: Vec<u32>,
@@ -623,6 +626,8 @@ impl Default for Settings {
             map_label_size: MAP_LABEL_SIZE,
             map_window: false,
             map_window_rect: None,
+            recent_colours: Vec::new(),
+            colour_window_rect: None,
             plugin_manager_columns: Vec::new(),
             plugin_manager_hidden: Vec::new(),
             plugin_manager_owned_first: false,

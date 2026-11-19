@@ -48,6 +48,16 @@ pub const FIXED: &[(&str, Step)] = &[
     ("piano-roll", piano_roll),
     ("menu", |h| click(h, "File")),
     ("context-menu", context_menu),
+    ("colour-picker", colour_picker),
+    ("colour-picker-field", |h| {
+        colour_picker(h)?;
+        click(h, "› Fine adjustment")
+    }),
+    ("colour-picker-wheel", |h| {
+        colour_picker(h)?;
+        click(h, "› Fine adjustment")?;
+        click(h, "Wheel")
+    }),
     ("settings", settings),
     ("settings-menu", settings_menu),
     ("settings-audio", |h| settings_page(h, "Audio")),
@@ -280,6 +290,17 @@ fn menu_item(h: &mut Window, menu: &str, item: &str) -> Result<(), String> {
 fn context_menu(h: &mut Window) -> Result<(), String> {
     settle(h)?;
     h.query_by_label("Track Drums").ok_or("no control labelled \"Track Drums\"")?.click_secondary();
+    settle(h)
+}
+
+fn colour_picker(h: &mut Window) -> Result<(), String> {
+    click(h, "Track Drums")?;
+    h.key_press(Key::F2);
+    settle(h)?;
+    // Populate history through successful choices, as in the real window.
+    click(h, "Palette #2fd9c4")?;
+    click(h, "Palette #ff9a3c")?;
+    h.remove_cursor();
     settle(h)
 }
 
