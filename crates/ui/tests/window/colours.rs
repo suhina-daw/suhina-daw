@@ -5,6 +5,61 @@ use super::*;
 use suhina_engine::model::Rgb;
 
 #[test]
+fn embedded_colour_background_stays_inside_its_fitted_window_in_every_mode() {
+    fn fills(shape: &egui::Shape, clip: egui::Rect, found: &mut Vec<(egui::Rect, egui::Color32)>) {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| fills(shape, clip, found)),
+            egui::Shape::Rect(rect) => found.push((rect.rect.intersect(clip), rect.fill)),
+            _ => {}
+        }
+    }
+    type Background = (egui::Rect, Vec<(egui::Rect, egui::Color32)>);
+    for custom in [false, true] {
+        let mut app = demo_app();
+        app.run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+        let mut h = window(app);
+        let captured = egui::Id::unique("test-colour-window-background");
+        h.ctx.on_end_pass(
+            "capture colour window background",
+            std::sync::Arc::new(move |ui| {
+                let ctx = ui.ctx();
+                let layer = egui::LayerId::new(egui::Order::Middle, egui::Id::unique("track-colour-window"));
+                let Some(bounds) = ctx.memory(|m| m.area_rect(layer.id)) else { return };
+                let painted = ctx.graphics(|layers| {
+                    let mut painted = Vec::new();
+                    if let Some(list) = layers.get(layer) {
+                        for shape in list.all_entries() {
+                            fills(&shape.shape, shape.clip_rect, &mut painted);
+                        }
+                    }
+                    painted
+                });
+                ctx.data_mut(|data| data.insert_temp(captured, (bounds, painted)));
+            }),
+        );
+        if custom {
+            suhina_ui::kit::native_css::set_user_sheet(Some("colour-picker { background-color: #ff00ff; }".into()));
+        }
+        for control in [None, Some("Fine adjustment"), Some("Wheel")] {
+            if let Some(control) = control {
+                h.get_by_label(control).click();
+            }
+            h.step();
+            h.run();
+            let expected = if custom { egui::Color32::from_rgb(255, 0, 255) } else { live("panel-background") };
+            let (bounds, painted) = h.ctx.data(|data| data.get_temp::<Background>(captured)).unwrap();
+            let backgrounds: Vec<_> =
+                painted.iter().filter(|(rect, fill)| *fill == expected && rect.is_positive()).collect();
+            assert!(!backgrounds.is_empty(), "the theme background is painted");
+            for (rect, _) in backgrounds {
+                assert!(bounds.expand(0.5).contains_rect(*rect), "background {rect:?} escapes {bounds:?}");
+            }
+        }
+        suhina_ui::kit::native_css::set_user_sheet(None);
+    }
+}
+
+#[test]
 fn colour_tool_previews_selected_headers_and_restores_the_selection_appearance_on_close() {
     use suhina_ui::kit::selection::{SelectionColour, SelectionLook};
     for arrangement in [false, true] {

@@ -198,6 +198,7 @@ impl App {
         let mut focused = false;
         let mut placement = None;
         let mut embedded_layer = None;
+        let mut embedded_background = None;
         let mut render = |ui: &mut Ui, embedded: bool| {
             if embedded {
                 embedded_layer = Some(ui.layer_id());
@@ -218,16 +219,25 @@ impl App {
                         ),
                     );
                 }
-                // A base-sheet background is not an authored theme override. Give it to
-                // paint as the native fill too: a detached viewport has no Window frame
-                // beneath this panel, and its renderer clears to transparent.
-                let inside = style
-                    .paint_with(
+                // A base-sheet background is not an authored theme override. Only a
+                // detached viewport needs that explicit fill: its renderer clears to
+                // transparent. An embedded Window owns its background and final bounds;
+                // its content's available max_rect can extend beyond the fitted frame.
+                let inside = if embedded {
+                    let layer = ui.layer_id();
+                    let start = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx());
+                    let boxed = style.paint(ui.painter(), ui.max_rect());
+                    let end = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx());
+                    embedded_background = Some((layer, start, end));
+                    boxed
+                } else {
+                    style.paint_with(
                         ui.painter(),
                         ui.max_rect(),
                         crate::kit::element::Native { fill: style.background(), ..Default::default() },
                     )
-                    .content;
+                }
+                .content;
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
                     let mut styled = style.ui(ui);
                     egui::ScrollArea::vertical().show(&mut styled, |ui| {
@@ -279,7 +289,7 @@ impl App {
             // fallback here instead, to provide closing and changing compact/fine size
             // without nesting one floating Window inside another.
             let mut open = true;
-            egui::Window::new(&title)
+            let shown = egui::Window::new(&title)
                 .id(Id::unique("track-colour-window"))
                 .open(&mut open)
                 .collapsible(false)
@@ -287,6 +297,20 @@ impl App {
                 .fixed_size([WIDTH, height])
                 .default_pos(ctx.content_rect().center() - Vec2::new(WIDTH, height) * 0.5)
                 .show(ctx, |ui| render(ui, true));
+            // An authored panel background must obey the fitted Window too. Its final
+            // rectangle is known only after show; leave the Window's own shadow and
+            // other layers (menus/tooltips) alone.
+            if let (Some(shown), Some((layer, start, end))) = (shown, embedded_background) {
+                ctx.graphics_mut(|layers| {
+                    if let Some(list) = layers.get_mut(layer) {
+                        for index in start.0..end.0 {
+                            list.mutate_shape(egui::layers::ShapeIdx(index), |shape| {
+                                shape.clip_rect = shape.clip_rect.intersect(shown.response.rect);
+                            });
+                        }
+                    }
+                });
+            }
             close = !open;
         } else {
             ctx.show_viewport_immediate(id, builder, |ui, class| {

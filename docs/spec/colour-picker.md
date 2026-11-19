@@ -12,6 +12,7 @@ covers:
   - crates/ui/src/interaction/colour_picker/panel/canvas.rs
   - crates/session/tests/track_colours.rs
   - crates/ui/tests/window/colours.rs
+  - crates/ui/tests/window/colours_native.rs
 ---
 
 # Track colours
