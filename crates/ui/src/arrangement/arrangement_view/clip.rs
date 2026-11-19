@@ -1540,7 +1540,9 @@ pub(super) fn paint_clip(
         painter.rect_filled(lit, 0.0, fill);
     }
     crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
-    let ink = ink_on(body);
+    // The body as it shows over the lane: a see-through selection colour is read with it.
+    let body_shown = if selection_fill.is_some() { crate::kit::selection::shown(body, surface) } else { body };
+    let ink = ink_on(body_shown);
     let edge_width = if selected { 4.0 } else { 3.0 };
     // A muted clip keeps its colour down its leading edge, so it is still known by it.
     let line_ink = motion::mix(body, ink, 0.5);
@@ -1607,9 +1609,9 @@ pub(super) fn paint_clip(
     // On the selection colour, which may be light or dark whatever the theme is, they take an ink
     // that reads on it where theirs does not.
     let content_ink =
-        if selection_fill.is_some() { crate::kit::selection::readable(content_ink, body) } else { content_ink };
+        if selection_fill.is_some() { crate::kit::selection::readable(content_ink, body_shown) } else { content_ink };
     let content_ink = match time_lit {
-        Some((_, fill)) => crate::kit::selection::readable(content_ink, fill),
+        Some((_, fill)) => crate::kit::selection::readable(content_ink, crate::kit::selection::shown(fill, body_shown)),
         None => content_ink,
     };
     // A muted clip's notes and waveform step back, so the grey reads first.

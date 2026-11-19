@@ -1622,6 +1622,7 @@ impl App {
         self.arrangement.waveform_appearance = settings.view.waveform;
         self.arrangement.audio_colour_strength = settings.view.audio_colour_strength;
         self.arrangement.header_colour_strength = settings.view.header_colour_strength;
+        self.arrangement.automation.colours = settings.view.automation;
         if settings.map_window {
             self.sample_map.set_window(true, &mut self.browser);
         }
@@ -3150,7 +3151,6 @@ impl App {
         // The selection colour is the window's, as the theme's colours are: a chosen one goes over
         // the theme's `selection.background` before the styles are worked out.
         crate::kit::selection::set(self.settings.view.selection);
-        self.arrangement.automation.colours = self.settings.view.automation;
         // The backdrop's opacity before the styles: the frame an image first shows in is faded.
         let backdrop = self.background.prepare(ui, &self.settings);
         let _css_frame = crate::kit::native_css::frame_with_motion(

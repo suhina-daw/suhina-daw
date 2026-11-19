@@ -1862,3 +1862,36 @@ fn fixed_automation_colours_keep_a_lane_off_and_a_picked_point_apart() {
     harness.run();
     assert_eq!(circles_filled(&harness, point), 1, "the picked point is drawn apart");
 }
+
+/// With Automation colour Fixed, a point colour picked in Settings that is the picked point's own
+/// colour does not hide which points are picked: the picked one takes another (#1518).
+#[test]
+fn a_fixed_point_colour_like_the_picked_ones_keeps_the_picked_point_apart() {
+    use suhina_ui::settings::view_settings::AutomationColour;
+    let mut harness = with_two_envelopes(false);
+    let picked = egui::Color32::from_rgb(0x13, 0x57, 0x52);
+    suhina_ui::kit::native_css::set_user_sheet(Some("automation-point[selected] { color: #135752; }".into()));
+    automation_colour(&mut harness, AutomationColour::Fixed, None, Some(picked));
+    let one = harness.get_by_label("Volume point 1 on Drums").rect().center();
+    click_at(&mut harness, one);
+    // Away from the lanes, so no dot marks where a click would add a point.
+    harness.hover_at(Pos2::new(4.0, 4.0));
+    harness.run();
+    let drawn = circles_filled(&harness, picked);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(drawn, 1, "only the point that is not picked is drawn in the colour");
+}
+
+/// With Automation colour Fixed, a theme's colour for Fixed's points does not reach a lane that is
+/// off: its points keep the line's `[muted]` colour, as in Track colour (#1518).
+#[test]
+fn a_themes_fixed_point_colour_does_not_reach_a_lane_that_is_off() {
+    use suhina_ui::settings::view_settings::AutomationColour;
+    let mut harness = with_two_envelopes(false);
+    let fixed = egui::Color32::from_rgb(0x24, 0x68, 0xAC);
+    suhina_ui::kit::native_css::set_user_sheet(Some("automation-point[kind=\"fixed\"] { color: #2468AC; }".into()));
+    automation_colour(&mut harness, AutomationColour::Fixed, None, None);
+    let drawn = circles_filled(&harness, fixed);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(drawn, 2, "Drums' two points, not those of Bass' lane that is off");
+}

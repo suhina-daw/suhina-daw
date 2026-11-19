@@ -2109,8 +2109,9 @@ fn line_ink(colours: &crate::settings::view_settings::AutomationAppearance, trac
 /// An envelope's point colours: a point's own (`None`: the line's), and a picked point's. With
 /// Automation colour Fixed, a point takes the colour chosen in Settings, else
 /// `automation-point[kind="fixed"]`'s, which the base sheet gives every theme; a picked point keeps
-/// `automation-point[selected]`'s in either mode. On a lane that is off (not `enabled`) the points
-/// take the line's `[muted]` colour, as in Track colour.
+/// `automation-point[selected]`'s in either mode, unless that is the colour the other points are
+/// drawn in. On a lane that is off (not `enabled`) the points take the line's `[muted]` colour, as
+/// in Track colour: a rule for Fixed's points does not reach them.
 fn point_inks(
     colours: &crate::settings::view_settings::AutomationAppearance,
     enabled: bool,
@@ -2118,19 +2119,27 @@ fn point_inks(
     let plain = envelope_part(crate::kit::element::AUTOMATION_POINT, colours).probe();
     let picked =
         envelope_part(crate::kit::element::AUTOMATION_POINT, colours).attr(crate::kit::element::Selected, true).look();
-    // A rule for every point does not hide which are picked: only a `[selected]` rule
-    // recolours them.
-    // A rule's colour beats every base rule, so a rule for every point reaches the picked
-    // ones too: where it does, they take the words' colour, the base sheet's own.
-    let declared =
-        plain.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
-    let selected = Some(picked.color()).filter(|c| declared != Some(*c)).unwrap_or_else(crate::kit::element::name_ink);
+    // A rule's own colour for the points, where the sheet declares one (a base rule does not count).
+    let declared = |look: &crate::kit::element::Look| {
+        look.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color)
+    };
     let own = if colours.mode == crate::settings::view_settings::AutomationColour::Fixed && enabled {
         // The computed colour: the base sheet's rule for `[kind="fixed"]` counts.
         Some(colours.point.unwrap_or_else(|| plain.color()))
+    } else if enabled {
+        declared(&plain)
     } else {
-        declared
+        // As in Track colour: the points of a lane that is off are not Fixed's.
+        declared(&crate::kit::element::AUTOMATION_POINT.probe())
     };
+    // A picked point never looks like the others. A rule's colour beats every base rule, so a
+    // rule for every point reaches the picked ones too, and Fixed's colour can be the picked
+    // one's: where the picked colour is the one the others are drawn in, they take the words'
+    // colour, the base sheet's own, or the ink that reads on the others where that is it too.
+    let selected = [picked.color(), crate::kit::element::name_ink()]
+        .into_iter()
+        .find(|c| own != Some(*c))
+        .unwrap_or_else(|| theme::text_on(own.unwrap_or(Color32::BLACK)));
     (own, selected)
 }
 

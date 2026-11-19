@@ -439,6 +439,7 @@ impl App {
             self.arrangement.waveform_appearance = self.settings.view.waveform;
             self.arrangement.audio_colour_strength = self.settings.view.audio_colour_strength;
             self.arrangement.header_colour_strength = self.settings.view.header_colour_strength;
+            self.arrangement.automation.colours = self.settings.view.automation;
             self.settings_changed = true;
         }
         if outcome.close {

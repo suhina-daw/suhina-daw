@@ -320,8 +320,13 @@ pub(super) fn track_header(
     // The lane's whole height: what folding saves and restores, and where its resize edge is.
     let lane_rect = rect;
     let rect = inside;
-    // The name and the controls' ink read on whichever background is shown.
+    // The name and the controls' ink read on whichever background is shown, a see-through
+    // selection colour as it shows over the panel.
     let header_fill = own.background_or(header_fill);
+    let header_fill = match selection_fill {
+        Some(_) => crate::kit::selection::shown(header_fill, super::panel_surface()),
+        None => header_fill,
+    };
     if selected {
         // `track-header[selected]`'s border colour, else a shade of the track's own.
         let outline = own.border_or(motion::mix(own.border(), saturated(rgb(lane.color)), 0.5));

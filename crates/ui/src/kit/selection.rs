@@ -108,3 +108,26 @@ pub fn fill(el: &super::element::Entered) -> Option<Color32> {
 pub fn readable(ink: Color32, fill: Color32) -> Color32 {
     if super::theme::text_contrast(ink, fill) >= 3.0 { ink } else { super::theme::text_on(fill) }
 }
+
+/// `fill` as it shows over `under`: a see-through selection colour (Custom with less opacity)
+/// lets what it is laid on show through, so the ink on it is chosen for the two together, never
+/// for its colour alone. An opaque fill is itself.
+pub fn shown(fill: Color32, under: Color32) -> Color32 {
+    if fill.a() == u8::MAX { fill } else { under.to_opaque().blend(fill) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_see_through_fill_is_read_with_what_shows_through_it() {
+        let dark = Color32::from_rgb(0x18, 0x18, 0x1C);
+        let faint_white = Color32::from_white_alpha(16);
+        let ink = super::super::theme::text_on(shown(faint_white, dark));
+        assert!(super::super::theme::text_contrast(ink, shown(faint_white, dark)) >= 3.0, "{ink:?} reads");
+        assert_eq!(ink, super::super::theme::text_on(dark), "a faint white over a dark clip is still dark");
+        let opaque = Color32::from_rgb(0xD9, 0x3A, 0x3A);
+        assert_eq!(shown(opaque, dark), opaque, "an opaque fill is itself");
+    }
+}

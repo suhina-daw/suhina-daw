@@ -831,6 +831,12 @@ fn draw_column(
 /// points.
 const SELECTED_BAND: f32 = 3.0;
 
+/// What the view's headers and slots are laid on: the region's background where it has one, else
+/// the window's. A see-through selection colour is read with it ([`crate::kit::selection::shown`]).
+fn view_surface() -> Color32 {
+    crate::kit::style_class::surface_or(theme::window_fill())
+}
+
 /// What a selected column is tinted with over its header, slots and strip: the background of
 /// `track-column[selected]` where it differs from the column's own (the base sheet's light tint of
 /// the selection colour, or a theme's rule for the state). `None` where the state changes nothing,
@@ -970,8 +976,13 @@ fn column_header(
     }
     crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
-    // the name's ink reads on whichever is shown.
+    // the name's ink reads on whichever is shown, a see-through selection colour as it shows over
+    // the view.
     let shown = own.background_or(fill);
+    let shown = match selection_fill {
+        Some(_) => crate::kit::selection::shown(shown, view_surface()),
+        None => shown,
+    };
     // What the header holds goes in its content box, inside its border and padding (#1336).
     let rect = own.paint(painter, rect).content;
     let name_style = crate::kit::element::TRACK_NAME.id(&track_id).response(&response).enter();
@@ -1042,8 +1053,12 @@ fn column_body(
         column_style.paint_background(painter, body_rect, 0.0);
     } else {
         let plain = crate::kit::element::TRACK_COLUMN.id(&track_id).color(rgb(column.color)).probe();
-        if plain.style().is_some_and(|style| style.authored.background) {
-            painter.rect_filled(body_rect, 0.0, plain.background());
+        if let Some(style) = plain.style() {
+            if style.authored.background {
+                painter.rect_filled(body_rect, 0.0, plain.background());
+            }
+            // Its gradients and shadows too, as `paint_background` draws them unselected.
+            crate::kit::native_css::background_with(painter, body_rect, style);
         }
     }
     if crate::kit::style_class::track_artwork(&column_style) {
@@ -1566,8 +1581,11 @@ fn slot_cell(
             let fill = if column.mute { motion::mix(muted, fill, 0.45) } else { fill };
             painter.rect_filled(rect, 0.0, fill);
             crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
-            // The clip's own `color`, not the text colour a view's rule gives everything in it.
-            let ink = el.own_color_or(if slot.enabled { theme::text_on(fill) } else { el.color() });
+            // The clip's own `color`, not the text colour a view's rule gives everything in it,
+            // on a see-through selection colour as it shows over the view.
+            let shown =
+                if selection_fill.is_some() { crate::kit::selection::shown(fill, view_surface()) } else { fill };
+            let ink = el.own_color_or(if slot.enabled { theme::text_on(shown) } else { el.color() });
             let (mark, text) = (ink, ink);
             if slot.state == SlotState::Queued {
                 painter.rect_filled(mark_rect(CLIP_MARK), 0.0, mark.gamma_multiply(0.5));
@@ -1598,7 +1616,9 @@ fn slot_cell(
             let fill = if column.mute { motion::mix(muted, fill, 0.45) } else { fill };
             painter.rect_filled(rect, 0.0, fill);
             crate::kit::liquid::paint(painter, rect, el, fill, crate::kit::liquid::Surface::Clip);
-            let ink = el.own_color_or(theme::text_on(fill));
+            let shown =
+                if selection_fill.is_some() { crate::kit::selection::shown(fill, view_surface()) } else { fill };
+            let ink = el.own_color_or(theme::text_on(shown));
             // The mark is the shape its click does: a stop square while playing. A stopped
             // clip's mark is the play triangle the same way, for its click's launch.
             painter.rect_filled(

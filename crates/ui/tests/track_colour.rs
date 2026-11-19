@@ -847,3 +847,36 @@ fn only_the_selected_tracks_lanes_are_tinted_and_the_tint_follows_the_selection(
     assert_eq!(first, (true, false), "Drums' lane alone is tinted");
     assert_eq!(then, (false, true), "the tint follows the selection to Bass");
 }
+
+/// A theme's gradient for every column stays under a selected column's slots, as it is drawn
+/// unselected: selecting the track draws the tint over it, not a plain fill in its place.
+#[test]
+fn a_themes_column_gradient_stays_under_a_selected_column() {
+    let mut harness = window();
+    let (top, bottom) = (Color32::from_rgb(0x12, 0x34, 0x56), Color32::from_rgb(0x65, 0x43, 0x21));
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        "track-column { background-image: linear-gradient(#123456, #654321); }".into(),
+    ));
+    harness.run();
+    // Whether a gradient of the rule's colours is drawn in Drums' column, under its header.
+    let gradient = |harness: &Harness<'static, App>| {
+        let header = harness.get_by_label("Track Drums").rect();
+        fn walk(shape: &Shape, inside: &dyn Fn(egui::Pos2, Color32) -> bool) -> bool {
+            match shape {
+                Shape::Vec(shapes) => shapes.iter().any(|shape| walk(shape, inside)),
+                Shape::Mesh(mesh) => mesh.vertices.iter().any(|v| inside(v.pos, v.color)),
+                _ => false,
+            }
+        }
+        let inside = |pos: egui::Pos2, colour: Color32| {
+            header.x_range().contains(pos.x) && pos.y > header.bottom() + 2.0 && (colour == top || colour == bottom)
+        };
+        harness.output().shapes.iter().any(|shape| walk(&shape.shape, &inside))
+    };
+    let unselected = gradient(&harness);
+    pick(&mut harness, "Track Drums", false, Modifiers::NONE);
+    let selected = gradient(&harness);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(unselected, "the gradient is drawn under the column's slots");
+    assert!(selected, "and stays when the column is selected");
+}

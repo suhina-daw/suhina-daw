@@ -462,9 +462,11 @@ envelope's line in one colour and every point in one colour whatever the track's
 `automation-line[kind="fixed"]` and `automation-point[kind="fixed"]` (the base sheet gives both
 the theme's accent), or the **Automation line colour** and **Automation point colour** picked
 under the setting (**Theme** beside a picker gives the theme's back). In both modes a picked point
-keeps `automation-point[selected]`'s colour and a lane that is off keeps
-`automation-line[muted]`'s, its points too; the curve handles, the dot that marks where a click
-adds a point and the faint line of a painted range follow the line's colour. The setting is
+keeps `automation-point[selected]`'s colour, unless that is the colour the other points are drawn
+in (then the text colour, so a picked point always stands apart), and a lane that is off keeps
+`automation-line[muted]`'s, its points too (a rule for Fixed's points does not reach them); the
+curve handles and the faint line of a painted range follow the line's colour, the dot that marks
+where a click adds a point the points'. The setting is
 saved with the other settings, not in the project. The envelope holds before the first point and
 after the last, along each segment's curve; steps for mute, on/off and choices. Values are placed
 as the parameter's control places them, and a segment is drawn evenly in that placement, as it
