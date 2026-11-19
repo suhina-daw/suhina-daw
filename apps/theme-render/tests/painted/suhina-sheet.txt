@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-sheet 59ed588114e32d45
-arrangement suhina-sheet 93b5d96cf008576f
-arrangement-scrolled suhina-sheet 53de05146485dbc5
+arrangement suhina-sheet 7a4315e8460ad7a1
+arrangement-scrolled suhina-sheet 81615f532853c8a3
 browser suhina-sheet 7f976cef9193193e
 browser-plug-ins suhina-sheet 56fabc51b77397d4
 browser-search suhina-sheet 1837a120e0c3c6cc
-clip-audio suhina-sheet 6441f8a5b0b2873e
+clip-audio suhina-sheet d5d23a20f108496d
 clip-midi suhina-sheet 6ea8468b271e5c63
 context-menu suhina-sheet 96c4e8f51062199f
 control-bar-toggles suhina-sheet 5941a1b0b791c10c
@@ -23,7 +23,7 @@ expanded-multiband suhina-sheet d63172276ab9963e
 expanded-reverb suhina-sheet ce7a13dba0a152ea
 expanded-vinyl-distortion suhina-sheet 4df48e927e48ad2a
 export-dialog suhina-sheet d438d94339551ea0
-grid-menu suhina-sheet d24b2d40ee184e4c
+grid-menu suhina-sheet 1ce2d7d6d6ac0d34
 instrument-sampler suhina-sheet 7620716f392642ff
 launcher suhina-sheet 2439e728321d48f9
 launcher-hover suhina-sheet cc9d8d5cf686cee0
@@ -33,7 +33,7 @@ launcher-toggles suhina-sheet 0145c08fe1d4efa4
 menu suhina-sheet d35d3fec2f7a42f0
 missing-files suhina-sheet f4a5002b528ae292
 new-theme-dialog suhina-sheet 6b223047f2d39e16
-piano-roll suhina-sheet 47c7b2d826950195
+piano-roll suhina-sheet 889549abb2b1a993
 project-dialog suhina-sheet 84ebb0f4c967831e
 quantize-menu suhina-sheet 49a5ae33bc5fe985
 quick-add suhina-sheet 5bd161a8bb8fbf85

@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-studio@blue 2e3a48b25f67ae75
-arrangement suhina-studio@blue 4ae58d0a698c6b49
-arrangement-scrolled suhina-studio@blue 60a4c82b4b6bca1c
+arrangement suhina-studio@blue 68d3131463007aa7
+arrangement-scrolled suhina-studio@blue 3a83088263f58696
 browser suhina-studio@blue 234e62f42a5d84c4
 browser-plug-ins suhina-studio@blue 1ffbb4d6fcff7213
 browser-search suhina-studio@blue 5328defcd1d6c010
-clip-audio suhina-studio@blue 433b6793d7b1cb97
+clip-audio suhina-studio@blue c9635e52f2964bc7
 clip-midi suhina-studio@blue af27da14a880a3eb
 context-menu suhina-studio@blue 85aa5d13719d3c67
 control-bar-toggles suhina-studio@blue 1b8a31f7b7a284d8
@@ -23,7 +23,7 @@ expanded-multiband suhina-studio@blue 0784e9d23e1fe4c1
 expanded-reverb suhina-studio@blue c1ddb4c9023452f2
 expanded-vinyl-distortion suhina-studio@blue 197f157d2e843028
 export-dialog suhina-studio@blue dc81fbc35bc158bb
-grid-menu suhina-studio@blue c991e2b770750970
+grid-menu suhina-studio@blue 53d4071a10da61ce
 instrument-sampler suhina-studio@blue 1c9830e41fff853b
 launcher suhina-studio@blue cdd37d875af07e7d
 launcher-hover suhina-studio@blue a925eb2f07027d22
@@ -33,7 +33,7 @@ launcher-toggles suhina-studio@blue fb1915812de64487
 menu suhina-studio@blue 56cf2edae01c2498
 missing-files suhina-studio@blue a5d12f7d4fbc7eda
 new-theme-dialog suhina-studio@blue fc504bd9ad1d0938
-piano-roll suhina-studio@blue 6ba531d47f9eaaea
+piano-roll suhina-studio@blue 15efecbed3644d12
 project-dialog suhina-studio@blue 845f1904e6e64634
 quantize-menu suhina-studio@blue 5d5bd5876c77abe2
 quick-add suhina-studio@blue a6a1a1123d3d4aeb

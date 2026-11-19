@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-studio 92f5870478367576
-arrangement suhina-studio 6188fce8089865dc
-arrangement-scrolled suhina-studio d8c1b4d816064ea9
+arrangement suhina-studio f28120988782de06
+arrangement-scrolled suhina-studio e3736c59aa507851
 browser suhina-studio d15ecff1bc851388
 browser-plug-ins suhina-studio 5041d3c0233dbcaa
 browser-search suhina-studio 5b372c4dede0ef33
-clip-audio suhina-studio 10cb69d1d0723e68
+clip-audio suhina-studio f6be880c6860cd18
 clip-midi suhina-studio d98470851f7c78e2
 context-menu suhina-studio 06b8c93baa98aaaa
 control-bar-toggles suhina-studio aa8b4eaed8436169
@@ -23,7 +23,7 @@ expanded-multiband suhina-studio 1f690562faaf2ebd
 expanded-reverb suhina-studio b0abb1a3b761c7fd
 expanded-vinyl-distortion suhina-studio 999f9b6bbb632d19
 export-dialog suhina-studio 7830528de2d24aae
-grid-menu suhina-studio c81b936e78dca3e1
+grid-menu suhina-studio c0d565586419ebb7
 instrument-sampler suhina-studio 0b32729a4f120067
 launcher suhina-studio 7d4a79696ad9aaae
 launcher-hover suhina-studio 19508950a5a3b4a8
@@ -33,7 +33,7 @@ launcher-toggles suhina-studio a04dfffd86f438d7
 menu suhina-studio 2de66d6f2d3b7ea3
 missing-files suhina-studio 4ad1f9124f9d5b5d
 new-theme-dialog suhina-studio 5e402b22cfd866ec
-piano-roll suhina-studio 27de93304045b4e0
+piano-roll suhina-studio 224e798a4503f39a
 project-dialog suhina-studio 3180f2c5249af8c3
 quantize-menu suhina-studio 4f4bd2cfbc847201
 quick-add suhina-studio e75589968b006b77

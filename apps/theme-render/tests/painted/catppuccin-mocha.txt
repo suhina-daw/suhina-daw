@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog catppuccin-mocha 32a899153b1a64c4
-arrangement catppuccin-mocha 969dcc39f7dde53d
-arrangement-scrolled catppuccin-mocha 233a1906e89eeb48
+arrangement catppuccin-mocha 2dbe94fcd1a185a5
+arrangement-scrolled catppuccin-mocha 90ccf5c906cbcfc4
 browser catppuccin-mocha 56d7ca553019b991
 browser-plug-ins catppuccin-mocha 83c9cf07ac7ddcef
 browser-search catppuccin-mocha 53e60c5447c6164c
-clip-audio catppuccin-mocha 183fcdae6efb7495
+clip-audio catppuccin-mocha 56a1f40a3a804967
 clip-midi catppuccin-mocha fa7f189506a5c45b
 context-menu catppuccin-mocha b8174acd85b59107
 control-bar-toggles catppuccin-mocha 6b729534523eb76b
@@ -23,7 +23,7 @@ expanded-multiband catppuccin-mocha ebc543e86668b4d2
 expanded-reverb catppuccin-mocha 8cb4273f2656d797
 expanded-vinyl-distortion catppuccin-mocha 295b0199e959a1fe
 export-dialog catppuccin-mocha c25236570d2476d1
-grid-menu catppuccin-mocha 5f2180c98be61716
+grid-menu catppuccin-mocha eddb6fc65576e714
 instrument-sampler catppuccin-mocha 14650c0510b5678d
 launcher catppuccin-mocha 77002c157fb028f0
 launcher-hover catppuccin-mocha 4b4383e13df94ba8
@@ -33,7 +33,7 @@ launcher-toggles catppuccin-mocha b6c7fc47ffeec162
 menu catppuccin-mocha 225a334a3e261722
 missing-files catppuccin-mocha a75bae392f2e68cb
 new-theme-dialog catppuccin-mocha f28a9dada759476b
-piano-roll catppuccin-mocha 08750d63ca3fe3eb
+piano-roll catppuccin-mocha f187314475f99e97
 project-dialog catppuccin-mocha 8d9ddba85e23bdac
 quantize-menu catppuccin-mocha ea4f1af20f30a77f
 quick-add catppuccin-mocha e7631983ca267d80

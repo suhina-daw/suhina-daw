@@ -85,10 +85,12 @@ fn double_click_at(harness: &mut Harness<'static, App>, at: Pos2) {
     harness.run();
 }
 
-/// A spot of a header's own background, clear of its controls and of the
-/// splitter at its left edge: 10 px in, halfway down.
+/// A spot below the ordinary track's compact-height button, clear of the meter,
+/// colour strip and splitter on either side of the header.
 fn header_spot(harness: &Harness<'static, App>, track: &str) -> Pos2 {
-    harness.get_by_label(&format!("Track {track}")).rect().left_center() + vec2(10.0, 0.0)
+    let header = harness.get_by_label(&format!("Track {track}")).rect();
+    let fold = harness.get_by_label(&format!("Collapse {track}")).rect();
+    Pos2::new(fold.center().x, header.center().y)
 }
 
 /// What the detail area shows: the piano roll (its toolbar's ×), a named device, the Clip / Devices

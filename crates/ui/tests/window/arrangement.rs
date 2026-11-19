@@ -751,8 +751,11 @@ fn groups_nest_fold_and_take_tracks_from_the_menu_and_by_dragging() {
     let drums = harness.get_by_label("Drums colour").rect();
     assert_eq!(groups.len(), 2);
     assert_eq!((groups[0].width(), groups[1].width(), drums.width()), (6.0, 4.0, 3.0));
-    assert_eq!(groups[1].left() - groups[0].left(), 8.0);
-    assert_eq!(drums.left() - groups[1].left(), 6.0);
+    let inward = |rect: egui::Rect| {
+        if harness.state().arrangement().headers_left { -rect.right() } else { rect.left() }
+    };
+    assert_eq!(inward(groups[1]) - inward(groups[0]), 8.0);
+    assert_eq!(inward(drums) - inward(groups[1]), 6.0);
 
     // Keys into the outer group from its menu.
     harness.get_by_label("Track Keys").click_secondary();

@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-glass@frost 827258a79c746ba6
-arrangement suhina-glass@frost d169b2896de087f2
-arrangement-scrolled suhina-glass@frost f8bf7e68586a7e56
+arrangement suhina-glass@frost 669df387d4314520
+arrangement-scrolled suhina-glass@frost 9b0e006d00e43626
 browser suhina-glass@frost 23287ac5168451c2
 browser-plug-ins suhina-glass@frost 6ec0e1c859fbd634
 browser-search suhina-glass@frost b9a8648783d31450
-clip-audio suhina-glass@frost 3540d055d95bdb60
+clip-audio suhina-glass@frost 5b0e6f509e6a63ec
 clip-midi suhina-glass@frost 71aefd61addfb217
 context-menu suhina-glass@frost a6e76591fa8d4335
 control-bar-toggles suhina-glass@frost 69d907f2b9cf5642
@@ -23,7 +23,7 @@ expanded-multiband suhina-glass@frost 18b9a76ee1422b5f
 expanded-reverb suhina-glass@frost 66fee121f802eb18
 expanded-vinyl-distortion suhina-glass@frost 8651088a0c0e35d8
 export-dialog suhina-glass@frost ab4da6e90a179089
-grid-menu suhina-glass@frost 092592c75090864f
+grid-menu suhina-glass@frost 0fb946de9c327d0b
 instrument-sampler suhina-glass@frost 5cfe2b3c6b199972
 launcher suhina-glass@frost 344537efe81212f3
 launcher-hover suhina-glass@frost 3d99911cf0a5d204
@@ -33,7 +33,7 @@ launcher-toggles suhina-glass@frost 88437e3ff7d24c73
 menu suhina-glass@frost bb3e57100141111f
 missing-files suhina-glass@frost 600d8da374ee08ec
 new-theme-dialog suhina-glass@frost 6733aad4859e720b
-piano-roll suhina-glass@frost 679f3d347b529649
+piano-roll suhina-glass@frost 74aeee0dc8af9b21
 project-dialog suhina-glass@frost d16394ad47d7c1e5
 quantize-menu suhina-glass@frost 69dc575defec457c
 quick-add suhina-glass@frost c83c78d964ba8bbb

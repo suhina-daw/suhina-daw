@@ -182,21 +182,24 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     let indent_room = (inside.width() - COLOUR_BAND - 3.0 * PAD - meter::WIDTH - 114.0).max(0.0);
     let indent_scale = if indent > 0.0 { (indent_room / indent).min(1.0) } else { 1.0 };
     let band = nesting_band_width(header.depth);
-    let x0 = inside.left() + indent * indent_scale + band + PAD;
+    let gutter = if header.container { FOLD + 2.0 } else { 0.0 };
+    let fold_in_row = if header.container { 0.0 } else { FOLD };
+    let x0 = inside.left() + indent * indent_scale + band + PAD + gutter;
     let x1 = inside.right() - PAD - meter::WIDTH - PAD;
     let width = x1 - x0;
     let tall = inside.height() >= SHOWS_MIXER;
-    let narrow = tall && width < FOLD + 2.0 + SOLO + PAD + ON_TOGGLE + 3.0 * (SOLO + 2.0) + PAD + LEAST_NAME;
+    let narrow = tall && width < fold_in_row + 2.0 + SOLO + PAD + ON_TOGGLE + 3.0 * (SOLO + 2.0) + PAD + LEAST_NAME;
     let solo = if narrow || !tall { 18.0 } else { SOLO };
     let on = if narrow || !tall { 24.0 } else { ON_TOGGLE };
-    let name_first = tall && width - FOLD - 2.0 - on - 3.0 * (solo + 2.0) - PAD - PAN_FIELD - 4.0 >= LEAST_VOLUME;
+    let name_first =
+        tall && width - fold_in_row - 2.0 - on - 3.0 * (solo + 2.0) - PAD - PAN_FIELD - 4.0 >= LEAST_VOLUME;
     // Where the buttons' row starts and ends, as the shapes below lay it out.
     let first = if narrow {
         x0
     } else if name_first {
-        x0 + FOLD + 2.0
+        x0 + fold_in_row + 2.0
     } else {
-        x0 + FOLD + 2.0 + solo + PAD
+        x0 + fold_in_row + 2.0 + solo + PAD
     };
     let monitor_width = if tall { 32.0 } else { 24.0 };
     let buttons_end = first + on + 2.0 * (solo + 2.0) + if header.armable { solo + 2.0 } else { 0.0 };
@@ -218,7 +221,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     };
     // The sends: as many as leave the name, or the volume, its room.
     let step = SEND_WIDTH + SEND_GAP;
-    let below_left = if shape == Shape::Stacked { x0 + FOLD + 2.0 } else { first };
+    let below_left = if shape == Shape::Stacked { x0 + fold_in_row + 2.0 } else { first };
     let lanes_right = below_left + (on - solo) / 2.0 + solo + if header.takes { SOLO + 2.0 } else { 0.0 };
     let send_room = match shape {
         Shape::Side => x1 - lanes_right - PAD - LEAST_NAME,

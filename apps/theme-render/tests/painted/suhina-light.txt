@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-light d53f1ed0d142be3e
-arrangement suhina-light 06a952d5a43a6192
-arrangement-scrolled suhina-light 902b0b097b4f84c7
+arrangement suhina-light a5c6a6f6ab3310b8
+arrangement-scrolled suhina-light 5ec9681992218135
 browser suhina-light cd80226a5bbeb485
 browser-plug-ins suhina-light 3656a9d7c9548af2
 browser-search suhina-light 8d71283dfdc39832
-clip-audio suhina-light 680bb67f9aeee6fc
+clip-audio suhina-light 973f5f2a359882de
 clip-midi suhina-light 6c31911a183b2ada
 context-menu suhina-light 26ad95029f59b1e6
 control-bar-toggles suhina-light 79c1fb64c45bd710
@@ -23,7 +23,7 @@ expanded-multiband suhina-light 013ba16f6e37e864
 expanded-reverb suhina-light 30ee600b2ec02df5
 expanded-vinyl-distortion suhina-light 4feb696e942665fa
 export-dialog suhina-light b7c5540bad610b9a
-grid-menu suhina-light 11a17acd68a7fe6d
+grid-menu suhina-light de64ab25a6250e8b
 instrument-sampler suhina-light 12c150d1725e5ee8
 launcher suhina-light 25bb3467cc9c44af
 launcher-hover suhina-light 9fbdf44dc27ce76c
@@ -33,7 +33,7 @@ launcher-toggles suhina-light 3af485758e150113
 menu suhina-light 5d38934facf173cf
 missing-files suhina-light 5725ee28c2140aa1
 new-theme-dialog suhina-light 2d452c6829750ce6
-piano-roll suhina-light f2f0baa518f8ee47
+piano-roll suhina-light 3b67763dfa6be57f
 project-dialog suhina-light 04d5e30e88eade54
 quantize-menu suhina-light ed9cb9ff45f878de
 quick-add suhina-light 39a3859e8eb35817

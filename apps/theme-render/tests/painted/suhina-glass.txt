@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-glass 11fde04d415e3caf
-arrangement suhina-glass 4811217ac8dd7cca
-arrangement-scrolled suhina-glass c1bfacf39bb32b13
+arrangement suhina-glass e53717d4b96c7ff6
+arrangement-scrolled suhina-glass 53363d02d45e0db5
 browser suhina-glass 85f0a2c85fab25af
 browser-plug-ins suhina-glass 9837d120b8912230
 browser-search suhina-glass cd584b847fb71f72
-clip-audio suhina-glass 1bd6d99499139cc4
+clip-audio suhina-glass ded8ae5addeb5e2c
 clip-midi suhina-glass 101b6af199981845
 context-menu suhina-glass 9aed5a5c3b87cd6a
 control-bar-toggles suhina-glass 68d2d6fc0c3e6ee5
@@ -23,7 +23,7 @@ expanded-multiband suhina-glass df827cc869ed7ce4
 expanded-reverb suhina-glass 56b7c4c8e760a25c
 expanded-vinyl-distortion suhina-glass f23b28f2c7c0bb69
 export-dialog suhina-glass 46e6403a7f7dd37e
-grid-menu suhina-glass 81a96b9785bb1eae
+grid-menu suhina-glass c8dcf179c0a745da
 instrument-sampler suhina-glass 7896452a9e1e2188
 launcher suhina-glass cc85052e179f5138
 launcher-hover suhina-glass 20e315392672b6d4
@@ -33,7 +33,7 @@ launcher-toggles suhina-glass 49d2dc22f13173a6
 menu suhina-glass 241c5f284eea4597
 missing-files suhina-glass 05fff21ef5b17292
 new-theme-dialog suhina-glass f9dad92b41a7c6eb
-piano-roll suhina-glass eb538d17d5c52dec
+piano-roll suhina-glass bae08caa6fafa24c
 project-dialog suhina-glass e078dd8e3bcac854
 quantize-menu suhina-glass 0406edb20b286f2e
 quick-add suhina-glass 30a990d8d98b4b83
