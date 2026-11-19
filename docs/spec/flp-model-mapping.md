@@ -389,7 +389,10 @@ entry's port counts, from 1, over the tracks routed into the plug-in's own track
 any level, a sidechain route included), in track order, Main and the track itself left
 out; 0 picks none (pinned Lemon os-flp/src/wrapper.rs `input_ports`, os-app/src/mixer.rs
 `inputs`). The plug-in gets a key (`docs/spec/sidechain.md`) read from that track after
-its fader, as the source plays it, at unity gain. A port past the routed tracks gives no
+its fader, as the source plays it, at unity gain. A plug-in on Main picks the same way, over
+the tracks routed into Main. A track whose only route is at level 0 plays nothing: it is
+muted, and its key is read after its devices at its fader's gain, so the plug-in still hears
+it (its pan is left out). A port past the routed tracks gives no
 key and a warning. When the source track folds into the generator playing it, the key
 reads the generator's channel; a key whose track is pruned, or that would close a loop,
 is dropped.

@@ -1038,6 +1038,12 @@ fn an_empty_sampler_is_a_sampler_without_an_invented_sound() {
 /// 0); Pad plays into Bus; Bus holds a wrapped plug-in whose sidechain hears Bus's input `port`
 /// (1: Kick, 2: Pad, the tracks routed into Bus in track order).
 fn sidechain_fixture(port: i32) -> Option<Vec<u8>> {
+    sidechain_fixture_with(port, &[0, 3], 3, 3)
+}
+
+/// [`sidechain_fixture`] with Kick routed to `kick` (its route to `silent` at level 0) and the
+/// wrapped plug-in on mixer track `on` (0 is Main).
+fn sidechain_fixture_with(port: i32, kick: &[usize], silent: u8, on: usize) -> Option<Vec<u8>> {
     let file = wrapper_fixture(false, false);
     let parsed = suhina_flp::read_bytes(&file).ok()?;
     let wrapper = parsed.events.iter().find(|e| e.id == 213)?;
@@ -1059,21 +1065,21 @@ fn sidechain_fixture(port: i32) -> Option<Vec<u8>> {
     for (index, name) in ["Main", "Kick", "Pad", "Bus", "Current"].into_iter().enumerate() {
         text(&mut events, 204, name);
         event(&mut events, 236, &flags);
+        if index == on {
+            text(&mut events, 201, "Fruity Wrapper");
+            event(&mut events, 213, &wrapper);
+            event(&mut events, 98, &0u16.to_le_bytes());
+        }
         match index {
-            1 => event(&mut events, 235, &routes(&[0, 3])),
+            1 => event(&mut events, 235, &routes(kick)),
             2 => event(&mut events, 235, &routes(&[3])),
-            3 => {
-                text(&mut events, 201, "Fruity Wrapper");
-                event(&mut events, 213, &wrapper);
-                event(&mut events, 98, &0u16.to_le_bytes());
-                event(&mut events, 235, &routes(&[0]));
-            }
+            3 => event(&mut events, 235, &routes(&[0])),
             _ => {}
         }
     }
-    // Kick's route to Bus at level 0: a sidechain, no sound.
+    // Kick's route to `silent` at level 0: a sidechain, no sound.
     let mut level = [0u8; 12];
-    level[4] = 3;
+    level[4] = silent;
     level[5] = 0x20;
     level[6..8].copy_from_slice(&(0x7000u16 + 64).to_le_bytes());
     event(&mut events, 225, &level);
@@ -1115,6 +1121,40 @@ fn a_sidechain_route_keys_the_plugin_that_picks_it_after_the_source_fader() {
     // None picked: nothing.
     let imported = import_bytes(&sidechain_fixture(0).unwrap()).unwrap();
     assert!(imported.project.channel(bus).unwrap().devices.iter().all(|d| d.inputs.is_empty()));
+}
+
+#[test]
+fn a_track_routed_only_at_level_0_is_muted_and_still_keys_the_plugin() {
+    // Kick's only route is to Bus at level 0: it plays nothing, and the plug-in on Bus hears it
+    // before its mute, at its fader's gain (unity here).
+    let imported = import_bytes(&sidechain_fixture_with(1, &[3], 3, 3).unwrap()).unwrap();
+    let p = &imported.project;
+    let kick = suhina_model::ChannelId(0);
+    let channel = p.channel(kick).unwrap();
+    assert!(channel.mute, "{channel:?}");
+    let bus = p.channel(suhina_model::ChannelId(131_075)).unwrap();
+    let device = bus.devices.iter().find(|d| matches!(d.kind, DeviceKind::Vst2 { .. })).unwrap();
+    let key = device.inputs.first().unwrap_or_else(|| panic!("{:?}", bus.devices));
+    assert_eq!(key.source, suhina_model::SignalPoint::Channel { channel: kick, tap: suhina_model::TapPoint::PostFx });
+    assert_eq!(key.gain, 1.0);
+    assert_eq!(p.validate(), Ok(()));
+}
+
+#[test]
+fn a_plugin_on_main_keys_from_a_track_routed_into_main() {
+    // Main's inputs, in track order: Kick (1) and Bus (3); Pad plays into Bus.
+    let main = suhina_model::ChannelId(131_072);
+    let imported = import_bytes(&sidechain_fixture_with(1, &[0], 0, 0).unwrap()).unwrap();
+    let p = &imported.project;
+    let channel = p.channel(main).unwrap();
+    let device = channel.devices.iter().find(|d| matches!(d.kind, DeviceKind::Vst2 { .. })).unwrap();
+    let key = device.inputs.first().unwrap_or_else(|| panic!("{:?}", channel.devices));
+    assert_eq!(key.source.channel(), suhina_model::ChannelId(0), "Kick, folded into Voice 0");
+    assert_eq!(p.validate(), Ok(()));
+    let imported = import_bytes(&sidechain_fixture_with(2, &[0], 0, 0).unwrap()).unwrap();
+    let channel = imported.project.channel(main).unwrap();
+    let device = channel.devices.iter().find(|d| matches!(d.kind, DeviceKind::Vst2 { .. })).unwrap();
+    assert_eq!(device.inputs.first().map(|k| k.source.channel()), Some(suhina_model::ChannelId(131_075)));
 }
 
 /// A plug-in generator's channel plays its plug-in 3 dB above the level curve, as FL renders a

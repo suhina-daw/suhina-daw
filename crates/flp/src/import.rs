@@ -852,6 +852,8 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
     // Per mixer track, the tracks routed into it (a sidechain route included), for the
     // plug-ins that pick one of them as their key.
     let mut routes: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+    // Mixer tracks whose only route is at level 0: they play nothing but may still key a plug-in.
+    let mut silent: BTreeSet<u32> = BTreeSet::new();
     for (i, e) in flp.events.iter().enumerate() {
         if e.id != 236 {
             continue;
@@ -1048,7 +1050,12 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
             let level = route.level;
             bus.output = Some(if target == main_send { ChannelId(131_072) } else { target });
             bus.sends.clear();
-            if level != 1. {
+            if level == 0. {
+                // Silent, though a plug-in may still read it as its key: the track is muted rather
+                // than turned down after its devices, so a key read before the mute hears it.
+                bus.mute = true;
+                silent.insert(index as u32);
+            } else if level != 1. {
                 let mut gain = source_utility(level, 0.);
                 gain.name = "Output level".into();
                 bus.devices.push(gain);
@@ -1073,23 +1080,29 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
     // Sidechains: a route at level 0 ("sidechain to this track") carries no sound; a plug-in on
     // the track it reaches hears it as its key, picking it by its place among the tracks routed
     // into its own, in track order (`docs/spec/flp-model-mapping.md` › Sidechains). Heard after
-    // the source's fader, as the source plays it.
+    // the source's fader, as the source plays it; a source muted because its only route is at
+    // level 0 is read before its mute, at its fader's gain. Main reads keys as any track does.
+    let faders: BTreeMap<u32, f64> =
+        project.channels.iter().filter_map(|c| Some((c.id.0.checked_sub(131_072)?, c.volume))).collect();
     let mut unresolved = 0usize;
     for channel in &mut project.channels {
-        let Some(own) = channel.id.0.checked_sub(131_072).filter(|&i| (1..501).contains(&i)) else { continue };
+        let Some(own) = channel.id.0.checked_sub(131_072).filter(|&i| i < 501) else { continue };
         let inputs: Vec<u32> =
             routes.get(&own).map(|r| r.iter().copied().filter(|&m| m != 0 && m != own).collect()).unwrap_or_default();
         suhina_model::visit_devices_mut(&mut channel.devices, &mut |device| {
             let Some(port) = crate::wrapper::sidechain_input(device) else { return };
             match port.checked_sub(1).and_then(|i| inputs.get(i)) {
                 Some(&source) => {
+                    let (tap, gain) = if silent.contains(&source) {
+                        let fader = faders.get(&source).copied().filter(|g| g.is_finite()).unwrap_or(1.);
+                        (suhina_model::TapPoint::PostFx, fader.clamp(0., suhina_model::DeviceInput::MAX_GAIN))
+                    } else {
+                        (suhina_model::TapPoint::PostFader, 1.0)
+                    };
                     device.inputs = vec![suhina_model::DeviceInput {
                         port: suhina_model::DeviceInput::KEY.into(),
-                        source: suhina_model::SignalPoint::Channel {
-                            channel: ChannelId(131_072 + source),
-                            tap: suhina_model::TapPoint::PostFader,
-                        },
-                        gain: 1.0,
+                        source: suhina_model::SignalPoint::Channel { channel: ChannelId(131_072 + source), tap },
+                        gain,
                     }];
                 }
                 None => unresolved += 1,
