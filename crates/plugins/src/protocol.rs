@@ -24,8 +24,8 @@
 
 use serde_json::{Value, json};
 
-/// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 18;
+/// Bumped whenever a message or the audio-link layout changes; both sides refuse a different version.
+pub const VERSION: u64 = 19;
 /// Longest line either side accepts; state blobs are hex, so this bounds them at 32 MiB.
 pub const MAX_LINE: usize = 64 * 1024 * 1024;
 

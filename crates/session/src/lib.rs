@@ -1279,10 +1279,21 @@ impl Session {
         self.sync.player.as_ref()
     }
 
+    /// The retained project is still preparing to return to the audio device.
+    /// It stays stopped until preparation finishes; this is not a missing device.
+    pub fn audio_preparing(&self) -> bool {
+        self.sync.suspended.as_ref().is_some_and(Player::reset_pending)
+    }
+
     pub(crate) fn player_mut(&mut self) -> Result<&mut Player, CommandError> {
+        let preparing = self.audio_preparing();
         self.sync.player.as_mut().ok_or_else(|| {
             CommandError(
-                "no audio engine is playing this project: choose an available device in Audio settings; headless sessions need audio enabled"
+                if preparing {
+                    "Preparing audio for playback. Please wait, then press Play again."
+                } else {
+                    "no audio engine is playing this project: choose an available device in Audio settings; headless sessions need audio enabled"
+                }
                     .into(),
             )
         })

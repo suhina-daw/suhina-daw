@@ -62,7 +62,11 @@ impl App {
             session.set_new_clips_take_track_colour(self.settings.view.new_clip_track_colour);
         }
         let changes = self.session().map(suhina_session::Session::change_count);
+        let was_preparing = self.session().is_some_and(Session::audio_preparing);
         let notices = self.projects.poll_plugins();
+        if was_preparing && self.session().is_some_and(|s| s.player().is_some()) && notices.is_empty() {
+            self.status = Status::Hint("Audio ready. Press Play to start playback.".into());
+        }
         // A take kept while polling changed the project: the views are built again now, so its
         // clip and take lanes show at once, not at the next command (#909).
         if self.session().map(suhina_session::Session::change_count) != changes {
@@ -94,10 +98,20 @@ impl App {
     /// While the active project's plug-ins start, a dialog over the window says how far they
     /// have got, until it is sent to the background or nothing is loading any more.
     pub(super) fn plugin_dialog(&mut self, ui: &Ui, window: Rect) {
-        if self.plugin_dialog_hidden || self.settings_open {
+        if self.settings_open {
             return;
         }
         let Some(id) = self.projects.active() else { return };
+        if self.session().is_some_and(Session::audio_preparing) {
+            let name = self.projects.name(id).unwrap_or("the project").to_string();
+            if !self.audio_preparation_hidden && loading_dialog::show_preparing(ui, window, &name) {
+                self.audio_preparation_hidden = true;
+            }
+            return;
+        }
+        if self.plugin_dialog_hidden {
+            return;
+        }
         let Some(progress) = self.projects.get(id).map(|s| s.rack().progress()) else { return };
         if progress.loading.is_empty() {
             return;
@@ -112,6 +126,7 @@ impl App {
     /// plug-in editor is a native window egui cannot draw over, so it is hidden meanwhile (#723).
     pub(super) fn over_the_window(&self) -> bool {
         (self.settings_open && !self.page.window)
+            || (!self.audio_preparation_hidden && self.session().is_some_and(Session::audio_preparing))
             || self.about_open
             || self.theme_import.is_some()
             || self.updates.open

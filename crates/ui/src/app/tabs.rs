@@ -55,6 +55,7 @@ impl App {
         if active == self.shown_project {
             return;
         }
+        self.audio_preparation_hidden = false;
         // The carry and its hover name a slot or clip in the project being left: with another
         // project active, their release would copy in the new project's coordinates. They let
         // go as the switch does, and so does a device drag that started on the last frame and

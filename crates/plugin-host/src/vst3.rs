@@ -670,6 +670,7 @@ pub(crate) struct Vst3Plugin {
     /// The audio thread; it hands the link back when it stops.
     audio: Option<thread::JoinHandle<Served>>,
     stop: Arc<AtomicBool>,
+    wake_audio: Option<suhina_ipc::ServeWaker>,
     /// The audio thread is stopping for a restart: it hands the processor the parameter values
     /// still waiting first.
     flush: Arc<AtomicBool>,
@@ -789,6 +790,7 @@ impl Vst3Plugin {
         let mut plugin = Self {
             audio: None,
             stop: Arc::new(AtomicBool::new(false)),
+            wake_audio: None,
             flush: Arc::new(AtomicBool::new(false)),
             latency: 0,
             restart,
@@ -860,6 +862,7 @@ impl Vst3Plugin {
     /// Starts an audio thread that serves blocks from `served` through the active `processor`.
     fn start_audio(&mut self, processor: ComPtr<IAudioProcessor>, served: Served) -> Result<(), String> {
         self.stop = Arc::new(AtomicBool::new(false));
+        self.wake_audio = Some(served.waker().map_err(|e| e.to_string())?);
         self.flush = Arc::new(AtomicBool::new(false));
         let (stop, flush) = (self.stop.clone(), self.flush.clone());
         let (pending, applied, engine) = (self.pending.clone(), self.applied.clone(), self.engine.clone());
@@ -1061,6 +1064,9 @@ impl Vst3Plugin {
             return;
         }
         self.stop.store(true, Ordering::Release);
+        if let Some(wake) = &self.wake_audio {
+            wake.wake();
+        }
         if let Some(audio) = self.audio.take() {
             let _ = audio.join();
         }
@@ -1076,7 +1082,7 @@ impl Vst3Plugin {
 
     /// Asks the audio thread to stop and waits up to `wait` for it; whether it stopped.
     pub(crate) fn stop_audio(&mut self, wait: std::time::Duration) -> bool {
-        crate::audio_stopped(&self.stop, self.audio.as_ref(), wait)
+        crate::audio_stopped(&self.stop, self.wake_audio.as_ref(), self.audio.as_ref(), wait)
     }
 
     pub(crate) fn latency(&self) -> u32 {
@@ -1492,6 +1498,9 @@ impl Drop for Vst3Plugin {
     fn drop(&mut self) {
         self.close_editor();
         self.stop.store(true, Ordering::Release);
+        if let Some(wake) = &self.wake_audio {
+            wake.wake();
+        }
         suhina_plugins::trace!("vst3 drop: joining the audio thread");
         if let Some(audio) = self.audio.take() {
             let _ = audio.join();

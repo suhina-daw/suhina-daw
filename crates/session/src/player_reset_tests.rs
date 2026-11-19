@@ -55,10 +55,15 @@ fn returning_to_a_resetting_project_keeps_it_silent_until_the_reply() {
     assert!(projects.get(first).unwrap().player().is_none());
     projects.poll_plugins();
     assert!(projects.get(first).unwrap().player().is_none());
+    assert!(projects.get(first).unwrap().audio_preparing());
+    let error = projects.get_mut(first).unwrap().player_mut().err().unwrap().to_string();
+    assert!(error.contains("Preparing audio for playback"), "{error}");
+    assert!(!error.contains("choose an available device"));
     send.send(Ok(prepared().parked.take().unwrap())).unwrap();
     projects.poll_plugins();
     assert!(projects.get(first).unwrap().player().is_some());
     assert!(projects.get(first).unwrap().sync.suspended.is_none());
+    assert!(!projects.get(first).unwrap().audio_preparing());
     assert_eq!(projects.outputs_opened(), 0, "the retained device was not reopened");
 }
 
@@ -69,6 +74,7 @@ fn a_failed_reset_is_reported_once_and_never_resumed() {
     send.send(Err("reset failed".into())).unwrap();
     assert!(projects.poll_plugins().iter().any(|s| s.contains("reset failed")));
     assert!(projects.get(first).unwrap().player().is_none());
+    assert!(!projects.get(first).unwrap().audio_preparing());
     assert!(projects.poll_plugins().is_empty());
 }
 

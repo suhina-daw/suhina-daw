@@ -158,10 +158,16 @@ impl Player {
             std::thread::Builder::new()
                 .name("suhina-project-audio-reset".into())
                 .spawn(move || {
+                    let started = std::time::Instant::now();
                     let result = previous
                         .reset_suspended_plugins(std::time::Duration::from_secs(10))
                         .map(|()| previous)
                         .map_err(|e| e.to_string());
+                    suhina_plugins::trace!(
+                        "project audio preparation: {} in {:.1} ms",
+                        if result.is_ok() { "ready" } else { "failed" },
+                        started.elapsed().as_secs_f64() * 1000.0
+                    );
                     if send.send(result).is_ok() {
                         suhina_plugins::wake();
                     }
@@ -182,8 +188,12 @@ impl Player {
         })
     }
 
-    /// Takes a finished reset without waiting for a sandbox. An unfinished project
-    /// stays detached from the output, including when its tab is selected again.
+    /// Whether the sandbox preparation worker has a reply still to collect.
+    pub(crate) fn reset_pending(&self) -> bool {
+        self.resetting.is_some()
+    }
+
+    /// Takes the worker's reply without waiting.
     pub(crate) fn reset_ready(&mut self) -> Result<bool, String> {
         let Some(receive) = &self.resetting else { return Ok(true) };
         let result = match receive.try_recv() {

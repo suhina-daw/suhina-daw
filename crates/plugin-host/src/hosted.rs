@@ -392,6 +392,7 @@ impl AraHost for vst3::Vst3Plugin {
 pub(crate) struct TestPlugin {
     pub(crate) processor: Arc<dyn Processor>,
     pub(crate) stop: Arc<AtomicBool>,
+    pub(crate) wake_audio: suhina_ipc::ServeWaker,
     pub(crate) audio: thread::JoinHandle<()>,
     pub(crate) reported: u32,
 }
@@ -414,8 +415,8 @@ impl HostedPlugin for TestPlugin {
         self.processor.set_state(data)
     }
     fn unload(self: Box<Self>) {
-        let Self { stop, audio, .. } = *self;
-        if audio_stopped(&stop, Some(&audio), UNLOAD_WAIT) {
+        let Self { stop, wake_audio, audio, .. } = *self;
+        if audio_stopped(&stop, Some(&wake_audio), Some(&audio), UNLOAD_WAIT) {
             let _ = audio.join();
         }
     }

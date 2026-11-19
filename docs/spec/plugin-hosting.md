@@ -732,7 +732,9 @@ rate shared with the control half.
 
 Project suspension is a hard audio boundary after the output has switched to its
 silent renderer. A background control worker sends `reset_audio` to retained processors
-with a shared bounded wait. Their existing instances and editors stay loaded,
+with a shared bounded wait. Stopping an idle audio worker sets its stop flag and wakes
+its IPC wait immediately; it does not wait for the periodic idle timeout. A request
+already being processed still finishes before the worker joins. Their existing instances and editors stay loaded,
 but processing is reactivated so old voices and effect buffers cannot replay on
 return. The instrument's host-side stop envelope is set directly to silence;
 the output already supplied the departure fade. A new Play or live note opens
@@ -743,7 +745,11 @@ and activation. A request made by the new activation or processing run remains p
 Servicing latency changes after reset must not discard audio buffered since the reset.
 The tab switch does not wait for this worker. Returning before its reply keeps the
 project silent on the retained device; the existing control poll resumes it only
-after successful completion. Completion wakes the existing control window once,
+after successful completion. While waiting, the window shows **Preparing audio** with a
+**Continue in the background** button, and the status bar keeps the preparation message
+visible. Play during preparation asks the user to wait and try again; it does not
+report a missing audio device or queue unexpected playback. Completion closes the
+notice and changes the status to **Audio ready**. Completion wakes the existing control window once,
 without a polling timer or continuous repaint requests. Failure reports an error instead of resuming an
 instance with uncertain audio state. Closing a resetting project never joins the
 busy worker on the UI thread. See [the protocol](plugin-protocol.md).

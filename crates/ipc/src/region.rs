@@ -15,7 +15,7 @@ use crate::shm::{Access, Shared};
 use crate::{IpcError, MAX_CHANNELS, MAX_FOLLOWERS, MAX_FRAMES};
 
 const MAGIC: u32 = 0x4C57_4950;
-const VERSION: u32 = 3;
+const VERSION: u32 = 4;
 /// The header's size; the buffers start after it.
 const HEADER_BYTES: usize = 256;
 // Byte offsets of the header fields. The words the two sides write sit on cache lines of their
@@ -25,6 +25,9 @@ const AT_VERSION: usize = 4;
 const AT_CHANNELS: usize = 8;
 const AT_MAX_FRAMES: usize = 12;
 const AT_REQUEST: usize = 64;
+// Changes for both a new block and a host-side interruption. A futex wait must
+// observe this word so an interruption between checking and sleeping is not lost.
+const AT_WAKE: usize = 68;
 const AT_RESPONSE: usize = 128;
 const AT_FRAMES: usize = 192;
 const AT_EVENTS: usize = 196;
@@ -131,6 +134,14 @@ impl Region {
 
     pub(crate) fn request_word(&self) -> &AtomicU32 {
         self.word(AT_REQUEST)
+    }
+
+    pub(crate) fn wake_word(&self) -> &AtomicU32 {
+        self.word(AT_WAKE)
+    }
+
+    pub(crate) fn wake(&self) {
+        self.wake_word().fetch_add(1, Ordering::Release);
     }
 
     pub(crate) fn response_word(&self) -> &AtomicU32 {

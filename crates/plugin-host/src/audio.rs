@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 
 use suhina_ipc::{Event, Served};
 
-/// How long an audio thread waits for a block before checking whether it should stop.
+/// A fallback wait limit; control-thread stops wake the link immediately.
 const POLL: Duration = Duration::from_millis(100);
 
 /// One instance's audio processing, which any audio thread of the process may run, one at a
@@ -175,7 +175,7 @@ pub(crate) fn serve<B: Block + 'static>(instance: u32, block: B, served: &mut Se
     let flush = crate::denormals::Flush::detect();
     flush.apply();
     while !stop.load(Ordering::Acquire) {
-        served.serve_joint(POLL, |input, events, followers, output| {
+        served.serve_joint_until(POLL, stop, |input, events, followers, output| {
             flush.apply();
             shared.run(input, events, output);
             for &follower in followers {

@@ -41,9 +41,14 @@ raises its version and adds a row here.
 | 16 | `get_param_texts` asks for the plug-in's own text of up to 256 values of one parameter; `param_texts` answers (#1205) |
 | 17 | `get_params` marks a parameter whose values are a list of choices (`list`: VST3 `kIsList`, CLAP `CLAP_PARAM_IS_ENUM`), so automation holds only switches and lists (#1482) |
 | 18 | `reset_audio` clears a suspended instance's processing state without unloading its preset or editor; answered `audio_reset` |
+| 19 | Requires block region 4 so an idle host audio wait can be interrupted without sending a block |
 
 **Block region** (`ipc::region`): 2, events as fixed 16-byte records with their frame; 3, the
-block's followers ([plug-in hosting](plugin-hosting.md) › One round trip). **ARA audio source**
+block's followers ([plug-in hosting](plugin-hosting.md) › One round trip); 4, a wake counter
+separate from the request sequence. Sending a block or cancelling a host wait advances it
+before ringing the doorbell. The waiter observes that counter before checking the request
+and stop flag, so a cancellation between checking and sleeping cannot be lost. Cancellation
+never changes a request or acknowledges a block. **ARA audio source**
 (`ipc::source`): 1. **Plug-in catalog** (`plugin-catalog.json`): 3 keeps when each file was last
 read; a catalog in format 2 is read as it is.
 

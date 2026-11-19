@@ -643,10 +643,14 @@ impl App {
         let ui = &mut *styled_ui;
         let bar = ui.max_rect();
         let painter = ui.painter_at(bar);
-        let (text, color) = match &self.status {
-            Status::Hint(t) => (t.as_str(), caption_ink()),
-            Status::Done(t) => (t.as_str(), caption_ink()),
-            Status::Error(t) => (t.as_str(), error_ink()),
+        let (text, color) = if self.session().is_some_and(Session::audio_preparing) {
+            ("Preparing audio for playback…", caption_ink())
+        } else {
+            match &self.status {
+                Status::Hint(t) => (t.as_str(), caption_ink()),
+                Status::Done(t) => (t.as_str(), caption_ink()),
+                Status::Error(t) => (t.as_str(), error_ink()),
+            }
         };
         let backed_up = self
             .session()

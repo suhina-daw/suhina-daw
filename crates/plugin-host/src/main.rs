@@ -146,8 +146,16 @@ pub(crate) fn real_time_thread() -> suhina_realtime::RealTime {
 
 /// Asks an audio thread to stop and waits up to `wait` for it to end; whether it did (or there
 /// was none).
-pub(crate) fn audio_stopped<T>(stop: &AtomicBool, audio: Option<&thread::JoinHandle<T>>, wait: Duration) -> bool {
+pub(crate) fn audio_stopped<T>(
+    stop: &AtomicBool,
+    wake: Option<&suhina_ipc::ServeWaker>,
+    audio: Option<&thread::JoinHandle<T>>,
+    wait: Duration,
+) -> bool {
     stop.store(true, Ordering::Release);
+    if let Some(wake) = wake {
+        wake.wake();
+    }
     let deadline = Instant::now() + wait;
     loop {
         if audio.is_none_or(thread::JoinHandle::is_finished) {
@@ -346,6 +354,7 @@ fn start(
         return Err("only a VST3 plug-in can be bound to an ARA document".into());
     }
     let processor = processors::create(plugin, served.channels())?;
+    let wake_audio = served.waker().map_err(|e| e.to_string())?;
     let stop = Arc::new(AtomicBool::new(false));
     let (block, audio_stop, mut served) = (processors::TestBlock(processor.clone()), stop.clone(), served);
     let audio = thread::Builder::new()
@@ -356,7 +365,7 @@ fn start(
         })
         .map_err(|e| e.to_string())?;
     let reported = processor.latency();
-    Ok(Box::new(TestPlugin { processor, stop, audio, reported }))
+    Ok(Box::new(TestPlugin { processor, stop, wake_audio, audio, reported }))
 }
 
 /// Writes one message to the engine.
