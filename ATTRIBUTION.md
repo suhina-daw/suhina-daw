@@ -24,6 +24,7 @@ Apache-2.0, OFL, CC0, CC BY) and keep their license file next to them.
 
 | Path | Title | Author | Source | License |
 |---|---|---|---|---|
+| `docs/spec/colour-picker-palette.svg` | Track palette, luminance and colour-vision simulation chart | Suhina contributors | Original chart; scientific sources in the colour-picker spec | GPL-3.0-or-later |
 | `docs/design/reference/session-minimal-v3.png`, `arrangement-minimal-v3.png` | Suhina Session and Arrangement design mockups (minimal v3) | Suhina contributors | Original work, exported from the project's design canvas | GPL-3.0-or-later |
 
 ## Ported code

@@ -132,11 +132,13 @@ fn picker_arrows_and_tab_stay_in_the_tool_and_main_shortcuts_resume_outside_it()
     h.run();
     h.get_by_label("Colour field").click();
     h.run();
-    let before = h.state().session().unwrap().project().track(TrackId(1)).unwrap().color;
     let view = h.state().view();
-    h.key_press(Key::ArrowRight);
-    h.run();
-    assert_ne!(h.state().session().unwrap().project().track(TrackId(1)).unwrap().color, before);
+    for _ in 0..3 {
+        let before = h.state().session().unwrap().project().track(TrackId(1)).unwrap().color;
+        h.key_press(Key::ArrowRight);
+        h.run();
+        assert_ne!(h.state().session().unwrap().project().track(TrackId(1)).unwrap().color, before);
+    }
     h.key_press(Key::Tab);
     h.run();
     assert_eq!(h.state().view(), view);

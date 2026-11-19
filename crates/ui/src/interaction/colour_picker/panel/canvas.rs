@@ -48,6 +48,10 @@ impl Cache {
             response.mark_changed();
         }
         if response.has_focus() {
+            ui.memory_mut(|m| {
+                let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
+                m.set_focus_lock_filter(response.id, arrows);
+            });
             let (horizontal, vertical) = ui.input_mut(|i| {
                 let left = i.consume_key(Modifiers::NONE, Key::ArrowLeft);
                 let right = i.consume_key(Modifiers::NONE, Key::ArrowRight);
