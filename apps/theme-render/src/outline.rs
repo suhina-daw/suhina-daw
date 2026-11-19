@@ -4,10 +4,12 @@
 //! `--outline` (#1582): every element of a scene's last frame drawn over the render as a
 //! rectangle round its padding box, with its name (`button#play`) in its top left corner, so a
 //! theme author sees which element is which. Drawn into the picture after the frame, never by the
-//! window, so the frame inspected is the one rendered. Elements are coloured by depth, and a name
-//! is cut to its box's width.
+//! window, so the frame inspected is the one rendered. Elements are coloured by depth, drawn layer
+//! by layer as the window paints them (a menu's over the view's), and a name is cut to its box's
+//! width.
 
 use ab_glyph::{Font, FontRef, PxScale, ScaleFont, point};
+use egui::LayerId;
 use image::{Rgba, RgbaImage};
 use suhina_ui::kit::native_css::inspector::FrameElement;
 
@@ -18,12 +20,23 @@ const COLOURS: [[u8; 3]; 6] =
 /// The names' size in points.
 const TEXT: f32 = 9.0;
 
-/// `image` (the window at `scale` pixels a point) with `elements`' boxes and names drawn on it.
-pub fn draw(image: &RgbaImage, elements: &[FrameElement], scale: f32) -> Result<RgbaImage, String> {
+/// `image` (the window at `scale` pixels a point) with `elements`' boxes and names drawn on it,
+/// layer by layer in `layers`' order (back to front).
+pub fn draw(image: &RgbaImage, elements: &[FrameElement], layers: &[LayerId], scale: f32) -> Result<RgbaImage, String> {
     let font = FontRef::try_from_slice(epaint_default_fonts::HACK_REGULAR).map_err(|e| e.to_string())?;
     let mut out = image.clone();
     let depths = depths(elements);
-    for (element, depth) in elements.iter().zip(depths) {
+    let mut order: Vec<(Option<usize>, usize)> = elements
+        .iter()
+        .enumerate()
+        .filter_map(|(index, element)| {
+            let (_, layer) = element.painted?;
+            Some((layers.iter().position(|l| *l == layer), index))
+        })
+        .collect();
+    order.sort_unstable();
+    for (_, index) in order {
+        let (Some(element), Some(&depth)) = (elements.get(index), depths.get(index)) else { continue };
         let Some((rect, _)) = element.painted else { continue };
         if !rect.is_positive() {
             continue;

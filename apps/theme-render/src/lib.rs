@@ -339,7 +339,8 @@ pub fn render_all(
         // The elements of the frame just drawn: rendering runs no frame of its own.
         let outlined = if outline {
             let elements = suhina_ui::kit::native_css::inspector::frame_elements();
-            Some((format!("{}.outline.png", scene.name), outline::draw(&over, &elements, scale)?))
+            let layers: Vec<egui::LayerId> = harness.ctx.memory(|m| m.layer_ids().collect());
+            Some((format!("{}.outline.png", scene.name), outline::draw(&over, &elements, &layers, scale)?))
         } else {
             None
         };

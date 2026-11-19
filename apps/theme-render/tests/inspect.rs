@@ -107,8 +107,15 @@ fn the_outline_draws_boxes_and_names_and_skips_elements_without_one() {
     let blank = image::RgbaImage::from_pixel(200, 100, image::Rgba([20, 20, 20, 255]));
     let layer = LayerId::background();
     let boxed = Rect::from_min_size(pos2(10.0, 10.0), egui::vec2(80.0, 30.0));
-    assert!(!outline::differs(&outline::draw(&blank, &[element("clip", None, None)], 1.0).unwrap(), &blank));
-    let drawn = outline::draw(&blank, &[element("clip", None, Some((boxed, layer)))], 2.0).unwrap();
+    assert!(!outline::differs(&outline::draw(&blank, &[element("clip", None, None)], &[layer], 1.0).unwrap(), &blank));
+    let drawn = outline::draw(&blank, &[element("clip", None, Some((boxed, layer)))], &[layer], 2.0).unwrap();
+    assert!(outline::differs(&drawn, &blank));
+    // A menu's box is drawn over the view's, whichever was entered first.
+    let menu = LayerId::new(Order::Foreground, Id::NULL.with("menu"));
+    let both = [element("popup", None, Some((boxed, menu))), element("clip", None, Some((boxed, layer)))];
+    let over = outline::draw(&blank, &both, &[layer, menu], 2.0).unwrap();
+    let popup_only = outline::draw(&blank, &both[..1], &[layer, menu], 2.0).unwrap();
+    assert_eq!(over.get_pixel(20, 20), popup_only.get_pixel(20, 20));
     assert!(outline::differs(&drawn, &blank));
     // At scale 2 the box's corner is at (20, 20) and its name's plate inside it.
     assert_ne!(drawn.get_pixel(20, 20), blank.get_pixel(20, 20));
