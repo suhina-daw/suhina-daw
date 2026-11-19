@@ -22,9 +22,11 @@ voice describe a struck resonant body. Sixteen voices bound its work and memory.
 fundamental in equal temperament; velocity sets excitation amplitude. Brightness shapes the
 mode amplitudes, Structure stretches their frequency ratios, Strike position changes the
 excitation pattern and Decay sets the fundamental's time to lose 60 dB. High modes decay faster.
-Modes at or above 0.45 times the sample rate are omitted, not folded into the audible band.
+Quality selects 8 or 16 modes. Modes at or above 0.45 times the sample rate are omitted, not
+folded into the audible band.
 Release damps a released key; the sustain pedal holds it. Gain and the Hybrid sample blend are
-smoothed. Changing the body controls affects the next strike, so a held body does not jump.
+smoothed. Changing the body controls or Source affects the next strike, so a held body does
+not jump to another body's state. Inaudible sources do not start new voices.
 
 Sample uses the SDK's existing sample runtime. Root, key range, source trim, loop bounds and
 Gate / One shot / Loop playback describe a single-source key map. Hybrid mixes this source
@@ -40,15 +42,21 @@ detection, automatic segmentation and fitting are not silently guessed. Source b
 existing decoded-audio and sample-reference lifecycle: project save rebases the path, keeps
 an absolute fallback, and the existing collect/missing-file/relink workflow applies.
 
-All sound controls are stored as stable native parameter IDs. The model selector explicitly
-names revision 1; future revisions must preserve its rendering contract or provide a migration
-and retained renderer. The sample reference is `suhina-sample-v1`, independent of the model
-revision. Opening a project decodes its local source and restores controls; it never refits.
+All sound controls are stored as stable native parameter IDs. `model_revision` persists 1 as
+metadata using the existing native parameter state, hidden from the stock panel. Unknown
+revisions retain their value and silence the modal body rather than running another revision.
+This temporary metadata parameter is not a sound control; export adapters must preserve it in
+state without exposing it as an automatable control. Future revisions must preserve its rendering
+contract or provide a migration and retained renderer. The sample reference is `suhina-sample-v1`,
+independent of the model revision. Opening a project decodes its local source and restores
+controls; it never refits. Portable plug-in assets are not implemented by this source-reference
+contract, which currently belongs to the stock project's model layer.
 
 ## Bounds and quality gates
 
-The modal core has at most 256 active modes and no dynamic storage. Sample rendering reuses
-the shared runtime and its documented voice/source limits. Preparation, decoding and graph
+The modal core has at most 256 active modes and no dynamic storage. The sampler is configured
+for at most 16 voices; Hybrid can therefore run 16 modal and 16 sample voices together. Sample
+rendering reuses the shared runtime and its documented source limits. Preparation, decoding and graph
 replacement happen away from the audio callback. Rendering, note events, parameter changes
 and reset perform no allocation, deallocation, locking, logging or I/O.
 

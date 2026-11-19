@@ -69,7 +69,13 @@ enum LayoutSource {
 }
 
 /// The built-in effects, instruments and MIDI effects, in the order a device browser lists them.
-pub const ENTRIES: [Entry; 17] = [
+pub const ENTRIES: [Entry; 18] = [
+    Entry {
+        info: &suhina_device_instrument::INFO,
+        make: |rate| boxed(suhina_device_instrument::Instrument::with_rate(rate)),
+        layout: LayoutSource::Rust(suhina_device_instrument::panel::layout),
+        file: None,
+    },
     Entry {
         info: &suhina_device_fm_synth::INFO,
         make: |rate| boxed(suhina_device_fm_synth::FmSynth::with_rate(rate)),

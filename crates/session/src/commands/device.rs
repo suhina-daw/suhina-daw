@@ -286,7 +286,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "device.loadSample",
-        label: "Load an audio file into a Sampler instrument, or into the sample binding of an SDK graph",
+        label: "Load a local audio file into Sampler, Instrument, or the sample binding of an SDK graph",
         params: &[DEVICE_TRACK, DEVICE, param("path", ParamType::Path(PathKind::File), "sample audio file")],
         kind: CommandKind::EDIT,
         run: devices::load_sample,

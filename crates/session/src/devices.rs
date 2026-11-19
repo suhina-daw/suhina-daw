@@ -56,13 +56,27 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
     let index = device_index(channel.devices.len(), params)?;
     let sdk = channel.devices.get(index).is_some_and(|d| d.kind == DeviceKind::Sd && d.sample_file().is_some());
     if !sdk
-        && !channel.devices.get(index).is_some_and(|d| matches!(&d.kind, DeviceKind::Builtin(id) if id == "sampler"))
+        && !channel.devices.get(index).is_some_and(
+            |d| matches!(&d.kind, DeviceKind::Builtin(id) if matches!(id.as_str(), "sampler" | "instrument")),
+        )
     {
-        return Err("loadSample needs a Sampler instrument or an SDK graph with a sample binding".into());
+        return Err("loadSample needs a Sampler, Instrument or an SDK graph with a sample binding".into());
     }
     let audio = session.decoded_audio(&path)?;
     if audio.frames() < 2 || !(1..=32).contains(&audio.channels) || !(1000..=384000).contains(&audio.sample_rate) {
         return Err("sample needs at least two frames, 1..32 channels and a sample rate of 1000..384000 Hz".into());
+    }
+    if let Some(device) = device_channel(session, params)?.devices.get_mut(index)
+        && matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument")
+    {
+        device.set_sample_file(&path.display().to_string());
+        device.clear_sample_edits();
+        if let Some(source) = device.params.iter_mut().find(|param| param.id == "source") {
+            source.value = 1.0;
+        } else {
+            device.params.push(DeviceParam::new("source", 1.0));
+        }
+        return Ok(json!({"device":index,"path":path.display().to_string(),"frames":audio.frames(),"source":"sample"}));
     }
     if sdk {
         let asset =

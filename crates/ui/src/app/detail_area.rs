@@ -665,7 +665,7 @@ impl App {
                 };
                 for (index, device) in channel.devices.iter().enumerate() {
                     if device.sample_file().is_none()
-                        && device.kind != suhina_engine::model::DeviceKind::Builtin("sampler".into())
+                        && !matches!(&device.kind, suhina_engine::model::DeviceKind::Builtin(id) if matches!(id.as_str(), "sampler" | "instrument"))
                     {
                         continue;
                     }
