@@ -163,13 +163,10 @@ fn a_worker_thread_builds_the_voices_and_launches_sound_as_offline() {
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
     assert!(!renderer.graph.launcher.voices.inline(), "the thread took the preparer");
-    // Stopped, the renderer takes the voices in as they arrive.
-    let began = std::time::Instant::now();
-    while prepared(&renderer) != [true, true] {
-        assert!(began.elapsed() < std::time::Duration::from_secs(60), "the worker never built the voices");
-        renderer.process(&mut [0.0; 2 * 256]);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+    // Stopped, the renderer takes in the voices the real worker has finished building.
+    controller.sync_stretch_worker();
+    renderer.process(&mut [0.0; 2 * 256]);
+    assert_eq!(prepared(&renderer), [true, true]);
     let out = left(&play(&mut renderer, &LAUNCHES, SECONDS));
     let offline = left(&render_launches(&p, &pool, SR, &LAUNCHES, SECONDS, suhina_device_registry::factory()).unwrap());
     assert_eq!(max_diff(&out, &offline), 0.0, "the same launches, sample for sample");
