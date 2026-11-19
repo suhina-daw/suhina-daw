@@ -135,8 +135,10 @@ prefixes; the [PDC timing contract](plugin-delay-compensation.md) covers their h
 loop and seek boundaries.
 
 - Delay lines are made with the graph, off the audio thread, at most 2 s
-  (`MAX_LATENCY_SECONDS`), like the track compensation. A latency above that is cut to 2 s and the
-  device panel says the group is not fully compensated.
+  (`MAX_LATENCY_SECONDS`), like the track compensation. The group's reported latency is never
+  cut to that limit: an oversized branch or cumulative path makes graph preparation fail
+  with a latency-compensation error, as the [PDC timing contract](plugin-delay-compensation.md)
+  describes. Temporary delay allocations during preparation remain bounded by the limit.
 - A muted or soloed-out branch still counts: muting must not change the group's latency, or the
   whole track would jump in time.
 - A switched-off effect inside a branch does not count (the switch builds a new graph).
