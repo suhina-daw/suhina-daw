@@ -15,7 +15,12 @@ This work belongs to issues 931 and 1579.
 
 ## Status
 
-The export adapter and loadable format entry points are under implementation.
+The shared adapter and CLAP entry point are implemented. The CLAP factory lists
+parameter-only native audio devices; sample sources, external-file devices and
+MIDI effects are excluded until their complete state and output contracts exist.
+The adapter has stock render parity, sample-offset automation/key-input and
+malformed-state tests. Real CLAP factory scanning is verified on Windows; the
+host render/state test is being completed. VST3 is the next format adapter.
 No release is yet advertised as covering every native device, resource state,
 MPE, editor or supported desktop platform.
 
@@ -46,11 +51,18 @@ The whole envelope is limited to 1 MiB, parameter count to 4,096 and each id to
 values, unknown versions and trailing bytes are rejected before any live value
 changes. Unknown parameter ids are ignored for forward compatibility; absent
 parameters retain their current values. DSP delay lines and sounding voices
-are transient and are reset when state is applied to a deactivated processor.
+are transient and are reset when the audio processor accepts a state at a block
+boundary. The control thread publishes a validated transaction to its own fixed
+atomic bank. The audio thread reads one bounded snapshot, checks its generation
+once and defers if publication intervenes. It never waits or allocates. The pending
+bank has one writer; audio-thread automation writes a separate current-value bank.
+Accepted state is immediately visible to host value/save queries, including while
+stopped. State is applied before the next block's ordered automation events.
 
 ## Not yet
 
 - The shared SDK editor with portable themes and assets.
+- The VST3 format adapter and package.
 - Asset-backed sample/model/impulse response state and missing-resource handling.
 - Canonical per-note expression (ADR 0039), MIDI-effect output and full bus parity.
 - Cross-platform packaged releases and all-device host round-trip CI gates.
