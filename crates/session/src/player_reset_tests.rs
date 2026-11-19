@@ -41,7 +41,9 @@ fn pending_project() -> (Projects, crate::ProjectId, mpsc::Sender<Result<Box<suh
     projects.add(Session::new(Project::default()), None).unwrap();
     let (send, receive) = mpsc::channel();
     // Model a sandbox whose reset has not answered. No clocks or scheduling assumptions.
-    projects.get_mut(first).unwrap().sync.suspended.as_mut().unwrap().resetting = Some(receive);
+    let player = projects.get_mut(first).unwrap().sync.suspended.as_mut().unwrap();
+    player.parked = None;
+    player.resetting = Some(receive);
     (projects, first, send)
 }
 

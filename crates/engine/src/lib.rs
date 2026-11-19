@@ -958,6 +958,11 @@ impl Renderer {
         }
     }
 
+    /// Whether a detached renderer has hosted processors that need an audio reset.
+    pub fn has_retained_plugins(&mut self) -> bool {
+        self.graph.chains.iter_mut().any(|chain| chain.plugin_slots().any(|slot| slot.processor.is_some()))
+    }
+
     /// Clears retained plug-in voices and tails after the renderer has been removed
     /// from the output. Control-thread only; the timeout covers all processors together.
     pub fn reset_suspended_plugins(&mut self, timeout: Duration) -> Result<(), ControlError> {

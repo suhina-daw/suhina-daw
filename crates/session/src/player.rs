@@ -153,20 +153,24 @@ impl Player {
         let owner = self.keep_alive.as_mut().ok_or("the player has no device owner")?;
         let mut previous = owner.exchange_renderer(silent)?;
         previous.settle_suspended(&mut self.controller);
-        let (send, receive) = std::sync::mpsc::channel();
-        std::thread::Builder::new()
-            .name("suhina-project-audio-reset".into())
-            .spawn(move || {
-                let result = previous
-                    .reset_suspended_plugins(std::time::Duration::from_secs(10))
-                    .map(|()| previous)
-                    .map_err(|e| e.to_string());
-                if send.send(result).is_ok() {
-                    suhina_plugins::wake();
-                }
-            })
-            .map_err(|e| e.to_string())?;
-        self.resetting = Some(receive);
+        if previous.has_retained_plugins() {
+            let (send, receive) = std::sync::mpsc::channel();
+            std::thread::Builder::new()
+                .name("suhina-project-audio-reset".into())
+                .spawn(move || {
+                    let result = previous
+                        .reset_suspended_plugins(std::time::Duration::from_secs(10))
+                        .map(|()| previous)
+                        .map_err(|e| e.to_string());
+                    if send.send(result).is_ok() {
+                        suhina_plugins::wake();
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+            self.resetting = Some(receive);
+        } else {
+            self.parked = Some(previous);
+        }
         Ok(Self {
             controller,
             keep_alive: self.keep_alive.take(),
