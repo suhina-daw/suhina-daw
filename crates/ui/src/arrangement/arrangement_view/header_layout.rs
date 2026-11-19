@@ -66,6 +66,50 @@ pub(super) struct Parts {
     pub(super) words: (&'static str, &'static str, bool),
 }
 
+impl Parts {
+    /// A container's disclosure uses its free vertical gutter. Theme layouts may place any
+    /// neighbour below or above the glyph, so stop at the nearest occupied rectangle.
+    pub(super) fn fold_target(&self, bounds: Rect) -> Option<Rect> {
+        let fold = self.fold?;
+        let mut target =
+            Rect::from_min_max(Pos2::new(fold.left(), bounds.top()), Pos2::new(fold.right(), bounds.bottom()));
+        for control in [
+            self.indent,
+            self.band,
+            self.meter,
+            self.automation,
+            self.takes,
+            self.track_on,
+            self.solo,
+            self.cue,
+            self.arm,
+            self.monitor,
+            self.name,
+            self.volume,
+            self.pan,
+            self.previous,
+            self.next,
+            self.output,
+            self.input,
+        ]
+        .into_iter()
+        .chain(self.sends.iter().copied())
+        .flatten()
+        {
+            if control.left() < target.right() && control.right() > target.left() {
+                if control.bottom() <= fold.top() {
+                    target.min.y = target.top().max(control.bottom() + 1.0);
+                } else if control.top() >= fold.bottom() {
+                    target.max.y = target.bottom().min(control.top() - 1.0);
+                } else {
+                    return Some(fold.intersect(bounds));
+                }
+            }
+        }
+        Some(target.intersect(bounds))
+    }
+}
+
 /// The header's arrangement: which line holds what (`track-header[layout]`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Shape {

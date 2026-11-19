@@ -219,7 +219,7 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
         None => None,
         Some(Value::String(name)) => Some(
             suhina_engine::ClickSound::from_name(name)
-                .ok_or_else(|| CommandError(format!("sound must be beep, wood or soft, got {name}")))?,
+                .ok_or_else(|| CommandError::new(format!("sound must be beep, wood or soft, got {name}")))?,
         ),
         Some(other) => return Err(format!("sound must be beep, wood or soft, got {other}").into()),
     };

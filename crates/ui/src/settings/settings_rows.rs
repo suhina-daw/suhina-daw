@@ -551,6 +551,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Groups",
+        "Empty group processing",
+        "Ask before removing a dissolving group's effects, mixer automation or routing; Remove remembers consent for desktop edits only",
+        &["empty_group_processing"],
+        |cx, r| cx.choose(r, &[("Ask", false), ("Remove", true)], |s| &mut s.view.remove_group_processing),
+    ),
+    row(
+        Page::Arrangement,
         "Track sizes",
         "Default track size",
         "The named height ordinary tracks are drawn at",

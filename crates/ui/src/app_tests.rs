@@ -4,6 +4,49 @@
 use super::*;
 
 #[test]
+fn group_processing_consent_cancels_remembers_and_never_applies_to_command_clients() {
+    use egui_kittest::kittest::Queryable;
+    let mut session = Session::new(crate::demo::demo_project());
+    let group = session.execute("track.group", &json!({"tracks": ["Drums"], "name": "Percussion"})).unwrap()["track"]
+        .as_u64()
+        .unwrap();
+    session.execute("device.add", &json!({"track": group, "id": "utility"})).unwrap();
+    let before = session.project().clone();
+    let action = Action::new("track.setGroup", json!({"track": "Drums", "group": "none"}));
+    let mut app = App::new();
+    app.set_session(session, &[]);
+    app.run(&action);
+    assert!(app.group_removal.is_some());
+    assert_eq!(app.session().unwrap().project(), &before);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    harness.get_by_label("Keep the project unchanged").click();
+    harness.run();
+    assert!(harness.state().group_removal.is_none());
+    assert_eq!(harness.state().session().unwrap().project(), &before);
+    assert!(!harness.state().settings.view.remove_group_processing);
+    harness.state_mut().run(&action);
+    harness.run();
+    harness.get_by_label("Remember my choice").click();
+    harness.run();
+    harness.get_by_label("Remove the groups and their processing").click();
+    harness.run();
+    assert!(harness.state().settings.view.remove_group_processing);
+    assert!(harness.state().session().unwrap().project().track(TrackId(group as u32)).is_none());
+    harness.state_mut().run(&Action::new("edit.undo", json!({})));
+    assert_eq!(harness.state().session().unwrap().project(), &before);
+    // The preference belongs to desktop dispatch. A command client still needs consent.
+    let error = harness.state_mut().projects.session_mut(None).unwrap().execute(action.id, &action.params).unwrap_err();
+    assert!(!error.group_processing().is_empty());
+    harness.state_mut().run(&action);
+    assert!(harness.state().group_removal.is_none(), "remembered desktop choice skips the question");
+    assert!(harness.state().session().unwrap().project().track(TrackId(group as u32)).is_none());
+}
+
+#[test]
 fn the_map_window_stays_above_suhina_and_minimises_with_it() {
     use egui::WindowLevel::{AlwaysOnTop, Normal};
     assert_eq!(map_window_level(true, false), AlwaysOnTop, "a click in the main window keeps it above");

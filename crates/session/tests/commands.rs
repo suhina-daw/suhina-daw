@@ -37,7 +37,9 @@ fn presentation_folder_moves_and_ungrouping_never_change_audio_routes() {
     assert_eq!(session.project().channels, channels);
     run(&mut session, "track.setGroup", json!({"track":"Bass", "group":"none"})).unwrap();
     assert_eq!(session.project().channels, channels);
-    run(&mut session, "track.setGroup", json!({"track":"Bass", "group":"Folder"})).unwrap();
+    assert!(session.project().track(TrackId(100)).is_none(), "the emptied source folder disappears");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(session.project().track(TrackId(100)).is_some(), "one undo restores the folder and its member");
     run(&mut session, "track.ungroup", json!({"track":"Folder"})).unwrap();
     assert_eq!(session.project().channels, channels);
     session.project().validate().unwrap();
@@ -620,22 +622,23 @@ fn groups_nest_and_tracks_move_between_them() {
     run(&mut session, "track.setGroup", json!({ "track": "Lead", "group": "Low", "index": 0 })).unwrap();
     assert_eq!(order(&session), ["Band", "Low", "Lead", "Bass"]);
 
-    // A group moves with everything inside it: "Low" out to the top level, after "Band".
+    // A group moves with everything inside it; its now-empty parent disappears atomically.
     run(&mut session, "track.setGroup", json!({ "track": "Low", "group": "none" })).unwrap();
-    assert_eq!(order(&session), ["Band", "Low", "Lead", "Bass"]);
+    assert_eq!(order(&session), ["Low", "Lead", "Bass"]);
     assert_eq!(parent_of(&session, "Low"), None);
     assert_eq!(output_of(&session, "Low"), None);
     assert_eq!(output_of(&session, "Bass").as_deref(), Some("Low"));
-    // And back in, first at the top level, then into "Band" (empty now) by its id.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(order(&session), ["Band", "Low", "Lead", "Bass"]);
+    // Moving to the first top-level position also removes Band, and undo restores it.
     run(&mut session, "track.setGroup", json!({ "track": "Low", "group": "none", "index": 0 })).unwrap();
-    assert_eq!(order(&session), ["Low", "Lead", "Bass", "Band"]);
-    let band = session.project().tracks[3].id.0;
-    run(&mut session, "track.setGroup", json!({ "track": "Low", "group": band })).unwrap();
+    assert_eq!(order(&session), ["Low", "Lead", "Bass"]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(order(&session), ["Band", "Low", "Lead", "Bass"]);
     assert_eq!(session.project().validate(), Ok(()));
 
     // Every step undoes, back to the project it began with.
-    for _ in 0..7 {
+    for _ in 0..4 {
         run(&mut session, "edit.undo", json!({})).unwrap();
     }
     assert_eq!(session.project(), &project());
@@ -690,6 +693,59 @@ fn moving_selected_tracks_keeps_project_order_before_inside_and_after() {
 }
 
 #[test]
+fn moving_all_members_removes_only_emptied_source_folders_with_one_undo() {
+    for placement in ["before", "inside", "after"] {
+        let mut p = ProjectBuilder::new().midi_track(1, "A").midi_track(2, "B").midi_track(3, "C").build();
+        let mut empty = Track::new(TrackId(100), "Empty");
+        empty.folder = true;
+        p.tracks.push(empty);
+        let mut session = Session::new(p);
+        run(&mut session, "track.folder", json!({"tracks": ["A", "B"], "name": "Inner"})).unwrap();
+        run(&mut session, "track.folder", json!({"tracks": ["Inner"], "name": "Outer"})).unwrap();
+        run(&mut session, "track.folder", json!({"tracks": ["C"], "name": "Destination"})).unwrap();
+        let before = session.project().clone();
+        // Before/after use the source ancestor as the anchor; it must survive until all roots
+        // have landed. Inside exercises a different destination, which must stay populated.
+        let target = if placement == "inside" { "Destination" } else { "Outer" };
+        run(&mut session, "track.moveTo", json!({"tracks": ["B", "A"], "target": target, "placement": placement}))
+            .unwrap();
+        let expected = if placement == "inside" {
+            ["Destination", "A", "B", "C", "Empty"]
+        } else {
+            ["A", "B", "Destination", "C", "Empty"]
+        };
+        assert_eq!(order(&session), expected, "{placement}");
+        assert_eq!(session.project().channels, before.channels, "folder cleanup leaves audio alone");
+        assert_eq!(parent_of(&session, "A").as_deref(), (placement == "inside").then_some("Destination"));
+        let moved = session.project().clone();
+        moved.validate().unwrap();
+        assert_eq!(suhina_project_file::from_json(&suhina_project_file::to_json(&moved)).unwrap(), moved);
+        run(&mut session, "edit.undo", json!({})).unwrap();
+        assert_eq!(session.project(), &before);
+        run(&mut session, "edit.redo", json!({})).unwrap();
+        assert_eq!(session.project(), &moved);
+    }
+}
+
+#[test]
+fn moving_a_folder_keeps_its_subtree_and_cleans_its_previous_parent() {
+    let mut session = Session::new(project());
+    run(&mut session, "track.folder", json!({"tracks": ["Bass"], "name": "Inner"})).unwrap();
+    run(&mut session, "track.folder", json!({"tracks": ["Inner"], "name": "Outer"})).unwrap();
+    let before = session.project().clone();
+    let moved = run(&mut session, "track.setGroup", json!({"track": "Inner", "group": "none", "index": 0})).unwrap();
+    assert_eq!(order(&session), ["Inner", "Bass", "Lead"]);
+    assert_eq!(moved["position"], 0, "position excludes the removed source folder");
+    assert_eq!(parent_of(&session, "Bass").as_deref(), Some("Inner"));
+    assert_eq!(session.project().channels, before.channels);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+    // Reordering inside a folder must not remove it or its containing folders.
+    run(&mut session, "track.moveTo", json!({"tracks": ["Bass"], "target": "Inner", "placement": "inside"})).unwrap();
+    assert_eq!(session.project(), &before);
+}
+
+#[test]
 fn moving_within_a_parent_keeps_custom_outputs_and_between_groups_changes_them() {
     let mut session = Session::new(project());
     run(&mut session, "track.group", json!({"tracks": ["Bass", "Lead"], "name": "Band"})).unwrap();
@@ -702,10 +758,111 @@ fn moving_within_a_parent_keeps_custom_outputs_and_between_groups_changes_them()
     assert_eq!(output_of(&session, "Bass").as_deref(), Some("Inner"));
     run(&mut session, "track.moveTo", json!({"tracks": ["Bass", "Lead"], "target": "Band", "placement": "after"}))
         .unwrap();
-    assert_eq!(order(&session), ["Band", "Inner", "Bass", "Lead"]);
+    assert_eq!(order(&session), ["Bass", "Lead"]);
     assert_eq!(parent_of(&session, "Bass"), None);
     assert_eq!(output_of(&session, "Bass"), None);
     assert_eq!(output_of(&session, "Lead"), None);
+}
+
+#[test]
+fn last_member_edits_require_explicit_group_processing_consent_and_undo_together() {
+    for (command, mut params) in [
+        ("track.moveTo", json!({"tracks": ["Bass"], "target": "Lead", "placement": "before"})),
+        ("track.setGroup", json!({"track": "Bass", "group": "none"})),
+        ("track.delete", json!({"track": "Bass"})),
+        ("track.cut", json!({"tracks": ["Bass"]})),
+        ("track.ungroup", json!({"track": "Band"})),
+        ("track.delete", json!({"track": "Band"})),
+    ] {
+        let mut session = Session::new(project());
+        let group = run(&mut session, "track.group", json!({"tracks": ["Bass"], "name": "Band"})).unwrap()["track"]
+            .as_u64()
+            .unwrap() as u32;
+        run(&mut session, "device.add", json!({"track": group, "id": "utility"})).unwrap();
+        run(&mut session, "automation.addPoint", json!({"track": group, "param": "volume", "beat": 0, "value": -6}))
+            .unwrap();
+        let before = session.project().clone();
+        let undo = session.undo_steps();
+        let error = session.execute(command, &params).unwrap_err();
+        assert_eq!(error.group_processing(), [TrackId(group)], "{command}");
+        assert_eq!(session.project(), &before);
+        assert_eq!(session.undo_steps(), undo);
+        params["removeGroupProcessing"] = json!([1]);
+        assert!(session.execute(command, &params).is_err(), "consent names the group, not its child");
+        params["removeGroupProcessing"] = json!([group]);
+        session.execute(command, &params).unwrap();
+        assert!(session.project().track(TrackId(group)).is_none());
+        assert_eq!(session.undo_steps(), undo + 1);
+        run(&mut session, "edit.undo", json!({})).unwrap();
+        assert_eq!(session.project(), &before, "devices, stable ids and automation all come back");
+    }
+}
+
+#[test]
+fn group_removal_checks_mixer_routes_sidechains_and_all_emptied_ancestors() {
+    let mut setup = Session::new(project());
+    let inner = run(&mut setup, "track.group", json!({"tracks": ["Bass"], "name": "Inner"})).unwrap()["track"]
+        .as_u64()
+        .unwrap() as u32;
+    let outer = run(&mut setup, "track.group", json!({"tracks": [inner], "name": "Outer"})).unwrap()["track"]
+        .as_u64()
+        .unwrap() as u32;
+    run(&mut setup, "device.add", json!({"track": "Lead", "id": "compressor"})).unwrap();
+    let original = setup.project().clone();
+    let channel = original.track(TrackId(inner)).unwrap().channel.unwrap();
+    for case in ["gain", "pan", "mute", "solo", "cue", "output", "input", "key"] {
+        let mut p = original.clone();
+        match case {
+            "gain" => p.channel_mut(channel).unwrap().volume = 0.5,
+            "pan" => p.channel_mut(channel).unwrap().pan = 0.5,
+            "mute" => p.channel_mut(channel).unwrap().mute = true,
+            "solo" => p.channel_mut(channel).unwrap().solo = true,
+            "cue" => p.channel_mut(channel).unwrap().cue = true,
+            "output" => p.channel_mut(channel).unwrap().output = None,
+            "input" => p.channels.iter_mut().find(|c| c.name == "Lead").unwrap().output = Some(channel),
+            "key" => p.channels.iter_mut().find(|c| c.name == "Lead").unwrap().devices[0]
+                .inputs
+                .push(DeviceInput::key(channel, TapPoint::PostFader)),
+            _ => unreachable!(),
+        }
+        let mut session = Session::new(p.clone());
+        let mut params = json!({"tracks": ["Bass"], "target": "Lead", "placement": "before"});
+        let error = session.execute("track.moveTo", &params).unwrap_err();
+        assert!(error.group_processing().contains(&TrackId(inner)), "{case}");
+        assert_eq!(session.project(), &p, "{case}");
+        params["removeGroupProcessing"] = json!([inner, outer]);
+        session.execute("track.moveTo", &params).unwrap();
+        assert_eq!(order(&session), ["Bass", "Lead"]);
+        run(&mut session, "edit.undo", json!({})).unwrap();
+        assert_eq!(session.project(), &p, "{case}");
+    }
+    let mut session = setup;
+    for group in [inner, outer] {
+        run(&mut session, "track.setVolume", json!({"tracks": [group], "db": -3})).unwrap();
+    }
+    let error = session.execute("track.delete", &json!({"track": "Bass"})).unwrap_err();
+    assert_eq!(error.group_processing(), [TrackId(inner), TrackId(outer)], "one question covers all affected groups");
+}
+
+#[test]
+fn refused_cut_keeps_the_clipboard_and_bad_consent_does_not_change_the_project() {
+    let mut session = Session::new(project());
+    run(&mut session, "track.group", json!({"tracks": ["Bass"], "name": "Band"})).unwrap();
+    run(&mut session, "device.add", json!({"track": "Band", "id": "utility"})).unwrap();
+    run(&mut session, "track.copy", json!({"tracks": ["Lead"]})).unwrap();
+    let before = session.project().clone();
+    for consent in [json!(true), json!([-1]), json!([u64::MAX]), json!(["Band"])] {
+        assert!(session.execute("track.cut", &json!({"tracks": ["Bass"], "removeGroupProcessing": consent})).is_err());
+        assert_eq!(session.project(), &before);
+    }
+    assert!(session.execute("track.cut", &json!({"tracks": ["Bass"]})).is_err());
+    assert_eq!(session.project(), &before);
+    let pasted = run(&mut session, "track.paste", json!({"after": "Lead"})).unwrap();
+    let copied = TrackId(pasted["tracks"][0].as_u64().unwrap() as u32);
+    assert!(
+        session.project().track(copied).unwrap().name.starts_with("Lead"),
+        "failed cut must not replace the previous copy"
+    );
 }
 
 #[test]

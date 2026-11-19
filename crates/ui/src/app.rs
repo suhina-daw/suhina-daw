@@ -20,6 +20,7 @@ pub use drops::is_theme_package;
 pub mod export_dialog;
 mod exports;
 pub mod folder_drop_dialog;
+mod group_removal_dialog;
 mod keys;
 pub mod loading_dialog;
 mod menu_bar;
@@ -446,6 +447,9 @@ pub struct App {
     /// Remember my choice box.
     folder_drop: Option<(Vec<PathBuf>, PathBuf)>,
     folder_drop_remember: bool,
+    /// A failed edit waiting for consent to remove group processing. Bound to its project.
+    group_removal: Option<(ProjectId, Action, Vec<String>)>,
+    group_removal_remember: bool,
     /// Samples going into a browser folder that has files of the same names, waiting for Keep
     /// both, Skip or Cancel: the files, the folder, whether they are copied, and the taken names.
     name_clash: Option<(Vec<PathBuf>, PathBuf, bool, Vec<String>)>,
@@ -794,6 +798,8 @@ impl App {
             folder_drop: None,
             name_clash: None,
             folder_drop_remember: false,
+            group_removal: None,
+            group_removal_remember: false,
             save_then: None,
             quit_confirmed: false,
             quit_now: false,
@@ -2365,6 +2371,7 @@ impl App {
             || self.project_dialog.is_some()
             || self.ara_prompt.is_some()
             || self.folder_drop.is_some()
+            || self.group_removal.is_some()
             || self.name_clash.is_some();
         if !other_dialog && let Some(offer) = self.recovery.first().cloned() {
             let written = suhina_session::backup::date_time(offer.written);
@@ -2613,6 +2620,24 @@ impl App {
             }
             if choice.is_some() {
                 self.folder_drop_remember = false;
+            }
+        }
+        if let Some((project, action, names)) = self.group_removal.take() {
+            if self.projects.active() == Some(project) {
+                match group_removal_dialog::show(ui, window, &names, &mut self.group_removal_remember) {
+                    Some(group_removal_dialog::Choice::Remove) => {
+                        if self.group_removal_remember {
+                            self.settings.view.remove_group_processing = true;
+                            self.settings_changed = true;
+                        }
+                        self.group_removal_remember = false;
+                        self.run(&action);
+                    }
+                    Some(group_removal_dialog::Choice::Cancel) => self.group_removal_remember = false,
+                    None => self.group_removal = Some((project, action, names)),
+                }
+            } else {
+                self.group_removal_remember = false;
             }
         }
         if let Some(leaving) = self.unsaved_prompt.take() {
@@ -2922,6 +2947,7 @@ impl App {
         };
         // A critical operation is backed up first, when the settings say so.
         self.projects.back_up_before(action.id);
+        let active_project = self.projects.active();
         let Ok(session) = self.projects.session_mut(None) else { return };
         // An audio track armed while it hears no input gets the default track input, or the
         // device's first input: the session gives it and says which (`track.setArm`, #682, #1191).
@@ -3023,8 +3049,13 @@ impl App {
                     self.select_tracks(tracks);
                 }
                 // After a delete or a cut the next track is selected, so the keys go on (#918).
-                if let Some(next) = next_track {
-                    self.select_tracks(vec![next]);
+                if matches!(action.id, "track.delete" | "track.cut") {
+                    let next = self.session().and_then(|s| {
+                        next_track.filter(|&id| s.project().track(id).is_some()).or_else(|| {
+                            s.project().tracks.iter().find(|t| s.project().track_number(t.id).is_some()).map(|t| t.id)
+                        })
+                    });
+                    self.select_tracks(next.into_iter().collect());
                 }
                 // A clip made by a double-click is selected, ready to edit: in the Arrangement
                 // the clip, in the Launcher its slot, so the detail area shows it.
@@ -3102,6 +3133,27 @@ impl App {
                 self.fold_new_groups(&result);
                 if let Some(done) = describe(action) {
                     self.status = Status::Done(done);
+                }
+            }
+            Err(e) if !e.group_processing().is_empty() => {
+                let names = e
+                    .group_processing()
+                    .iter()
+                    .filter_map(|&id| session.project().track(id).map(|t| t.name.clone()))
+                    .collect();
+                let mut confirmed = action.clone();
+                let mut ids = confirmed.params["removeGroupProcessing"].as_array().cloned().unwrap_or_default();
+                for id in e.group_processing() {
+                    if !ids.contains(&json!(id.0)) {
+                        ids.push(json!(id.0));
+                    }
+                }
+                confirmed.params["removeGroupProcessing"] = json!(ids);
+                if self.settings.view.remove_group_processing && action.params.get("removeGroupProcessing").is_none() {
+                    self.run(&confirmed);
+                } else if let Some(project) = active_project {
+                    self.group_removal = Some((project, confirmed, names));
+                    self.group_removal_remember = false;
                 }
             }
             // Recording and consolidating audio write files next to the project: an unsaved one

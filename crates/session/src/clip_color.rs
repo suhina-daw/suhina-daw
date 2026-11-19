@@ -15,7 +15,7 @@ use crate::{CommandError, Session};
 
 /// `"#rrggbb"`, or `None` for `"none"`.
 pub(crate) fn parse_color(params: &Value, key: &str) -> Result<Option<Rgb>, CommandError> {
-    let bad = || CommandError(format!("{key} must be \"#rrggbb\" or \"none\""));
+    let bad = || CommandError::new(format!("{key} must be \"#rrggbb\" or \"none\""));
     let text = Args::new(params).raw_str(key).ok_or_else(bad)?;
     if text.eq_ignore_ascii_case("none") {
         return Ok(None);

@@ -363,13 +363,27 @@ fn compact_headers_keep_the_fold_target_wide_and_clear_of_other_controls() {
             let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height));
             let parts = layout(None, rect, Header::default());
             let fold = parts.fold.unwrap();
+            let target = parts.fold_target(rect).unwrap();
             assert!(fold.width() >= 20.0, "{width}×{height}: {fold:?}");
+            assert!(target.contains_rect(fold), "the target keeps the glyph's reserved area");
             for control in [parts.automation, parts.track_on, parts.solo, parts.cue, parts.name, parts.volume]
                 .into_iter()
                 .flatten()
             {
                 assert!(!fold.intersects(control), "{width}×{height}: {fold:?} overlaps {control:?}");
+                assert!(!target.intersects(control), "{width}×{height}: {target:?} overlaps {control:?}");
             }
         }
     }
+}
+
+#[test]
+fn disclosure_uses_the_free_gutter_and_stops_at_other_controls() {
+    let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(240.0, 60.0));
+    let fold = Rect::from_min_size(Pos2::new(10.0, 4.0), Vec2::new(20.0, 14.0));
+    let mut parts = Parts { fold: Some(fold), ..Parts::default() };
+    assert_eq!(parts.fold_target(bounds).unwrap().height(), 60.0);
+    parts.automation = Some(Rect::from_min_size(Pos2::new(10.0, 30.0), Vec2::splat(14.0)));
+    assert_eq!(parts.fold_target(bounds).unwrap().bottom(), 29.0);
+    assert_eq!(parts.fold_target(bounds).unwrap().width(), fold.width());
 }

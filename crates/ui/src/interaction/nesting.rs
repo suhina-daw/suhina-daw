@@ -162,11 +162,14 @@ pub fn fold_arrow(
 ) {
     let is_folded = folded.contains(&track);
     let label = if is_folded { format!("Unfold {name}") } else { format!("Fold {name}") };
-    let response = widgets::button_area(ui, rect, id, label);
+    let response = widgets::button_area(ui, rect, id, &label)
+        .on_hover_text(format!("{label}. You can also double-click the track header."));
+    let el = crate::kit::element::FOLD.response(&response).attr(crate::kit::element::Checked, is_folded).enter();
+    disclosure_face(ui, painter, rect, &response, &el, color);
     if response.clicked() && !folded.remove(&track) {
         folded.insert(track);
     }
-    let size = if widgets::hover(ui, &response) > 0.5 { 4.0 } else { 3.5 };
+    let size = 3.5;
     let c = rect.center();
     let points = if is_folded {
         vec![c + Vec2::new(-size * 0.6, -size), c + Vec2::new(size * 0.9, 0.0), c + Vec2::new(-size * 0.6, size)]
@@ -174,6 +177,22 @@ pub fn fold_arrow(
         vec![c + Vec2::new(-size, -size * 0.6), c + Vec2::new(size, -size * 0.6), c + Vec2::new(0.0, size * 0.9)]
     };
     painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
+}
+
+/// Reveal the button's complete hit area, keeping the small disclosure glyph stable.
+pub(crate) fn disclosure_face(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    response: &egui::Response,
+    el: &crate::kit::element::Entered,
+    ink: Color32,
+) {
+    let hover = widgets::hover(ui, response);
+    if hover > 0.0 || response.has_focus() {
+        let fill = ink.gamma_multiply(0.12 * if response.has_focus() { 1.0 } else { hover });
+        widgets::track_button_face(painter, rect.shrink(0.5), el, response, fill);
+    }
 }
 
 /// How many groups a track is nested in; a broken chain stops counting.

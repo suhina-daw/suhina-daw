@@ -309,7 +309,7 @@ pub fn search(
     let source_folders = source.map(|s| projects.file_library_mut().project_folders(&s)).unwrap_or_default();
     let (mut found, note) = match folder {
         Some(folder) => {
-            let walked = walk_for_names(folder, names, stop, walked).map_err(CommandError)?;
+            let walked = walk_for_names(folder, names, stop, walked).map_err(CommandError::new)?;
             (walked.found, walked.note)
         }
         None => {

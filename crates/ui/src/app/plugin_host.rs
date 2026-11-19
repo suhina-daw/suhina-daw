@@ -120,6 +120,7 @@ impl App {
             || self.export_dialog.is_some()
             || self.unsaved_prompt.is_some()
             || self.ara_prompt.is_some()
+            || self.group_removal.is_some()
             || self.missing.open
             || self.recovery_open.is_some()
             || !self.recovery.is_empty()

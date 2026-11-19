@@ -380,12 +380,20 @@ pub(super) fn track_header(
         } else {
             format!("Collapse {}", lane.name)
         };
-        let response = widgets::button_area(ui, fold.intersect(clip), id.with("fold"), label);
+        let target = if group_fold { parts.fold_target(inside).unwrap_or(fold) } else { fold }.intersect(clip);
+        let response = widgets::button_area(ui, target, id.with("fold"), &label).on_hover_text(if group_fold {
+            format!("{label}. You can also double-click the track header.")
+        } else {
+            label
+        });
         // `fold`, `[checked]` while folded, and `fold` artwork (`.on` while folded).
         let el =
             crate::kit::element::FOLD.id("fold").response(&response).attr(crate::kit::element::Checked, folded).enter();
         let color = motion::mix(header_fill, theme::text_on(header_fill), 0.75 + 0.25 * widgets::hover(ui, &response));
         let color = el.color_or(color);
+        if group_fold {
+            nesting::disclosure_face(ui, painter, target, &response, &el, color);
+        }
         let fold_state = crate::kit::skin::State::response(&response, folded);
         let drawn = crate::kit::skin::paint_as(&el, painter, fold, "fold", fold_state, color);
         let center = fold.center();

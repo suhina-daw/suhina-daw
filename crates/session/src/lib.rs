@@ -156,24 +156,48 @@ const MAX_UNDO: usize = 256;
 /// Why a command did not run. The session is unchanged when this is returned. Its text is read
 /// with [`CommandError::message`] or taken with `String::from` (#764 › 12).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommandError(String);
+pub struct CommandError {
+    message: String,
+    group_processing: Vec<TrackId>,
+}
 
 impl CommandError {
+    fn new(message: String) -> Self {
+        Self { message, group_processing: Vec::new() }
+    }
+
+    /// Groups whose processing this failed edit would remove. The project is unchanged;
+    /// a desktop can ask the person, then retry with these ids in `removeGroupProcessing`.
+    /// A client must make its own decision, independent of the desktop's preference.
+    pub fn group_processing(&self) -> &[TrackId] {
+        &self.group_processing
+    }
+
+    fn removing_group_processing(groups: Vec<TrackId>) -> Self {
+        let ids: Vec<u32> = groups.iter().map(|id| id.0).collect();
+        Self {
+            message: format!(
+                "removing these groups would remove their processing or routing: {ids:?}; confirm with removeGroupProcessing: {ids:?}, or cancel"
+            ),
+            group_processing: groups,
+        }
+    }
+
     /// What went wrong, as a person reads it.
     pub fn message(&self) -> &str {
-        &self.0
+        &self.message
     }
 }
 
 impl From<CommandError> for String {
     fn from(error: CommandError) -> Self {
-        error.0
+        error.message
     }
 }
 
 impl fmt::Display for CommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.message)
     }
 }
 
@@ -188,31 +212,31 @@ struct PlayerLag {
 
 impl From<String> for CommandError {
     fn from(message: String) -> Self {
-        Self(message)
+        Self::new(message)
     }
 }
 
 impl From<&str> for CommandError {
     fn from(message: &str) -> Self {
-        Self(message.to_string())
+        Self::new(message.to_string())
     }
 }
 
 impl From<suhina_media::MediaError> for CommandError {
     fn from(e: suhina_media::MediaError) -> Self {
-        Self(e.0)
+        Self::new(e.0)
     }
 }
 
 impl From<suhina_engine::ControlError> for CommandError {
     fn from(e: suhina_engine::ControlError) -> Self {
-        Self(e.to_string())
+        Self::new(e.to_string())
     }
 }
 
 impl From<suhina_model::IdsExhausted> for CommandError {
     fn from(e: suhina_model::IdsExhausted) -> Self {
-        Self(e.to_string())
+        Self::new(e.to_string())
     }
 }
 
@@ -1183,7 +1207,7 @@ impl Session {
 
     pub(crate) fn player_mut(&mut self) -> Result<&mut Player, CommandError> {
         self.sync.player.as_mut().ok_or_else(|| {
-            CommandError(
+            CommandError::new(
                 "no audio engine is playing this project: choose an available device in Audio settings; headless sessions need audio enabled"
                     .into(),
             )
@@ -1301,7 +1325,7 @@ impl Session {
         let to = path.parent().map_or_else(PathBuf::new, Path::to_path_buf);
         let (mut project, states) = self.heard();
         suhina_project_file::rebase_audio(&mut project, &self.audio_from(), &to, &|f, a| self.loaded_path(f, a));
-        suhina_project_file::write_file(&path, &project).map_err(|e| CommandError(e.0))?;
+        suhina_project_file::write_file(&path, &project).map_err(|e| CommandError::new(e.0))?;
         if !copy {
             self.source = Some(path.clone());
             self.history.saved_at = self.history.changes;
@@ -1805,7 +1829,7 @@ impl Session {
         let Some(player) = self.sync.player.as_mut() else { return Ok(()) };
         player.update_with_scenes(heard.as_ref().unwrap_or(&self.project), scenes).map_err(|e| PlayerLag {
             transient: matches!(e, suhina_engine::ControlError::Full(_) | suhina_engine::ControlError::StretchBusy),
-            error: CommandError(format!("the edit was made, but the playing engine could not follow it: {e}")),
+            error: CommandError::new(format!("the edit was made, but the playing engine could not follow it: {e}")),
         })
     }
 
@@ -1871,9 +1895,9 @@ fn unknown_command(id: &str) -> CommandError {
     let area = id.split('.').next().unwrap_or_default();
     let similar: Vec<&str> = commands().iter().map(|c| c.id).filter(|c| c.starts_with(area)).collect();
     if similar.is_empty() {
-        CommandError(format!("unknown command {id}; command.list shows them all"))
+        CommandError::new(format!("unknown command {id}; command.list shows them all"))
     } else {
-        CommandError(format!("unknown command {id}; did you mean one of: {}", similar.join(", ")))
+        CommandError::new(format!("unknown command {id}; did you mean one of: {}", similar.join(", ")))
     }
 }
 

@@ -5,6 +5,14 @@
 
 use super::*;
 
+mod lifecycle;
+
+const REMOVE_GROUP_PROCESSING: Param = optional(
+    "removeGroupProcessing",
+    ParamType::Integers,
+    "group track ids whose processing and routing removal the caller explicitly confirms; omitted means ask/refuse",
+);
+
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "track.setVolume",
@@ -83,6 +91,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Integer,
                 "its place among the tracks directly in that group (or at the top level), from 0; the end if left out",
             ),
+            REMOVE_GROUP_PROCESSING,
         ],
         kind: CommandKind::EDIT,
         run: set_group,
@@ -91,7 +100,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "track.ungroup",
         label: "Dissolve a group track: its tracks stay, playing into where the group played",
-        params: &[TRACK],
+        params: &[TRACK, REMOVE_GROUP_PROCESSING],
         kind: CommandKind::EDIT,
         run: ungroup_track,
         policy: Policy::DEFAULT,
@@ -111,6 +120,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             TRACKS,
             param("target", ParamType::Track, "the destination track, group or folder (id or name)"),
             param("placement", ParamType::Text, "before, inside or after the target"),
+            REMOVE_GROUP_PROCESSING,
         ],
         kind: CommandKind::EDIT,
         run: move_to,
@@ -162,6 +172,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Tracks,
                 "the tracks to delete (ids or names) as one undo step, instead of track",
             ),
+            REMOVE_GROUP_PROCESSING,
         ],
         kind: CommandKind::EDIT,
         run: delete_tracks,
@@ -178,7 +189,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "track.cut",
         label: "Copy whole tracks for track.paste and delete them, as one undo step",
-        params: &[param("tracks", ParamType::Tracks, "the tracks to cut (ids or names)")],
+        params: &[param("tracks", ParamType::Tracks, "the tracks to cut (ids or names)"), REMOVE_GROUP_PROCESSING],
         kind: CommandKind::EDIT,
         run: cut_tracks,
         policy: Policy { after: After::Copies, ..Policy::CRITICAL },
@@ -602,6 +613,17 @@ fn track_ids(channels: &[(TrackId, ChannelId)]) -> Vec<u32> {
 }
 
 fn ungroup_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let group = track_id(&session.project, params)?;
+    let sources = source_ancestors(&session.project, &[group]);
+    let mut removal = lifecycle::Removal::new(params)?;
+    removal.check(&session.project, group);
+    let result = ungroup(session, params)?;
+    removal.cleanup(session, &sources)?;
+    removal.finish()?;
+    Ok(result)
+}
+
+fn ungroup(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
     let group = track_id(p, params)?;
     if p.track(group).is_some_and(|t| t.is_folder()) {
@@ -631,7 +653,29 @@ fn ungroup_track(session: &mut Session, params: &Value) -> Result<Value, Command
 /// Moves a track, with everything inside it, into a group or to the top level: it becomes the
 /// group's track at `index` among the group's own tracks, and its channel plays into the group.
 fn set_group(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    set_group_with_routing(session, params, true)
+    let track = track_id(&session.project, params)?;
+    let sources = source_ancestors(&session.project, &[track]);
+    let mut removal = lifecycle::Removal::new(params)?;
+    let mut result = set_group_with_routing(session, params, true)?;
+    removal.cleanup(session, &sources)?;
+    removal.finish()?;
+    result["position"] = json!(session.project.tracks.iter().position(|t| t.id == track));
+    Ok(result)
+}
+
+/// Only containers that held a moving root before this edit, deepest first. An unrelated
+/// empty folder is not a cleanup candidate, and a moved container keeps its own subtree.
+fn source_ancestors(project: &Project, roots: &[TrackId]) -> Vec<TrackId> {
+    let mut sources = Vec::new();
+    for &root in roots {
+        for ancestor in project.ancestors(root) {
+            if !sources.contains(&ancestor) {
+                sources.push(ancestor);
+            }
+        }
+    }
+    sources.sort_by_key(|&id| std::cmp::Reverse(project.group_depth(id).unwrap_or(0)));
+    sources
 }
 
 fn set_group_with_routing(session: &mut Session, params: &Value, route: bool) -> Result<Value, CommandError> {
@@ -712,6 +756,7 @@ fn set_group_with_routing(session: &mut Session, params: &Value, route: bool) ->
 /// One edit and one graph update for the whole drag. The command executor restores the
 /// pre-edit project if any root fails validation, including failures after earlier roots moved.
 fn move_to(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let mut removal = lifecycle::Removal::new(params)?;
     let p = &session.project;
     let selected = track_list(p, params)?;
     let target = track_at(p, params, "target")?;
@@ -739,6 +784,7 @@ fn move_to(session: &mut Session, params: &Value) -> Result<Value, CommandError>
         return Err("the destination cannot be Main or a return track".into());
     }
     let parent = if placement == "inside" { Some(target) } else { destination.parent };
+    let sources = source_ancestors(p, &roots);
     // Keep the target as the anchor while each source block is removed. Reversing the roots
     // for after/inside prevents previously inserted roots from reversing their project order.
     let mut moving = roots.clone();
@@ -765,6 +811,8 @@ fn move_to(session: &mut Session, params: &Value) -> Result<Value, CommandError>
         let group = parent.map_or_else(|| json!("none"), |id| json!(id.0));
         set_group_with_routing(session, &json!({ "track": track.0, "group": group, "index": index }), route)?;
     }
+    removal.cleanup(session, &sources)?;
+    removal.finish()?;
     Ok(json!({ "tracks": roots.iter().map(|id| id.0).collect::<Vec<_>>(), "target": target.0, "placement": placement }))
 }
 
@@ -883,6 +931,8 @@ fn copy_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandEr
 
 fn cut_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let tracks = track_list(&session.project, params)?;
+    let sources = source_ancestors(&session.project, &tracks);
+    let mut removal = lifecycle::Removal::new(params)?;
     let copied = crate::track_copy::copy(&session.project_as_heard_on(&tracks), &tracks)?;
     let names = copied.first_names();
     let count = copied.len();
@@ -892,6 +942,8 @@ fn cut_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandErr
     for track in gone {
         delete_track(session, &json!({ "track": track.0 }))?;
     }
+    removal.cleanup(session, &sources)?;
+    removal.finish()?;
     session.clipboards.whole_tracks = copied;
     Ok(json!({ "cut": count, "tracks": names }))
 }
@@ -937,18 +989,23 @@ fn suffix(params: &Value) -> Result<crate::track_copy::Suffix, CommandError> {
 /// all back (#1188).
 fn delete_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let args = Args::new(params);
-    match (args.has("track"), args.has("tracks")) {
-        (true, true) => Err("give track or tracks, not both".into()),
-        (false, false) => Err("give track (one track) or tracks (a list)".into()),
-        (true, false) => delete_track(session, params),
-        (false, true) => {
-            let tracks = track_list(&session.project, params)?;
-            for track in &tracks {
-                delete_track(session, &json!({ "track": track.0 }))?;
-            }
-            Ok(json!({ "deleted": tracks.iter().map(|t| t.0).collect::<Vec<_>>() }))
-        }
+    let tracks = match (args.has("track"), args.has("tracks")) {
+        (true, true) => return Err("give track or tracks, not both".into()),
+        (false, false) => return Err("give track (one track) or tracks (a list)".into()),
+        (true, false) => vec![track_id(&session.project, params)?],
+        (false, true) => track_list(&session.project, params)?,
+    };
+    let sources = source_ancestors(&session.project, &tracks);
+    let mut removal = lifecycle::Removal::new(params)?;
+    for &track in &tracks {
+        removal.check(&session.project, track);
+        delete_track(session, &json!({ "track": track.0 }))?;
     }
+    removal.cleanup(session, &sources)?;
+    removal.finish()?;
+    Ok(
+        json!({ "deleted": if args.has("track") { json!(tracks.first().map(|t| t.0)) } else { json!(tracks.iter().map(|t| t.0).collect::<Vec<_>>()) } }),
+    )
 }
 
 fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -956,7 +1013,7 @@ fn delete_track(session: &mut Session, params: &Value) -> Result<Value, CommandE
     let p = &session.project;
     let is_group = channel_id_of(p, track).and_then(|id| p.channel(id)).is_some_and(|c| c.role == ChannelRole::Submix);
     if is_group || p.track(track).is_some_and(|t| t.is_folder()) {
-        ungroup_track(session, params)?;
+        ungroup(session, params)?;
         return Ok(json!({ "deleted": track.0 }));
     }
     let channel = channel_id_of(&session.project, track);
@@ -1084,7 +1141,9 @@ fn set_midi_input(session: &mut Session, params: &Value) -> Result<Value, Comman
 pub(crate) fn parse_input_channels(value: &Value) -> Result<suhina_model::InputChannels, CommandError> {
     use suhina_model::{InputChannels, MAX_INPUT_CHANNEL};
     let bad = || {
-        CommandError(format!("input must be \"none\", a channel from 1 to {MAX_INPUT_CHANNEL} or a pair like \"1/2\""))
+        CommandError::new(format!(
+            "input must be \"none\", a channel from 1 to {MAX_INPUT_CHANNEL} or a pair like \"1/2\""
+        ))
     };
     let channel = |text: &str| text.trim().parse::<u16>().ok().filter(|c| (1..=MAX_INPUT_CHANNEL).contains(c));
     let text = value.as_str().ok_or_else(bad)?;

@@ -131,7 +131,12 @@ of group, **Insert audio track** and **Insert MIDI track** after it, **Insert re
 delete). The track's channel strip and a return's column, which has no slots, open the same menu
 on a right-click and select the track on a click. A track inside groups has its name stepped in 4 px per level; a group's name
 follows a fold arrow, and a folded group hides the columns of the tracks inside it.
-Double-clicking a group or folder header toggles its fold state. An ordinary track header
+The disclosure button uses the title strip's full height; hover reveals its surface and
+keyboard focus outlines it. Its small glyph stays fixed, and the tooltip also describes
+double-clicking the header. Double-clicking a group or folder header toggles its fold state.
+Empty source containers disappear after a move, with the conditional group-processing
+confirmation described in [Audio group nesting](arrangement-editing.md#audio-group-nesting).
+An ordinary track header
 double-click selects the track and shows its devices in the detail area, opening the detail
 area if it was hidden ([clip editor](ui-clip-editor.md) › Where it opens); renaming stays in the
 menu.

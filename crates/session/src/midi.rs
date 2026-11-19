@@ -147,7 +147,8 @@ impl MidiInputs {
     /// Every port there is, with whether it is on, open, and why it could not be opened.
     fn describe(&self) -> Result<Value, CommandError> {
         let system = self.system.as_ref().ok_or_else(no_midi)?;
-        let ports = system.ports().map_err(|e| CommandError(format!("the MIDI inputs could not be listed: {e}")))?;
+        let ports =
+            system.ports().map_err(|e| CommandError::new(format!("the MIDI inputs could not be listed: {e}")))?;
         Ok(Value::Array(
             ports
                 .iter()
@@ -165,7 +166,7 @@ impl MidiInputs {
 }
 
 fn no_midi() -> CommandError {
-    CommandError("no MIDI inputs here; the desktop app has them, and suhina-cli mcp with --audio".into())
+    CommandError::new("no MIDI inputs here; the desktop app has them, and suhina-cli mcp with --audio".into())
 }
 
 static MIDI_COMMANDS: &[CommandSpec<Projects>] = &[
@@ -210,7 +211,7 @@ fn set_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandEr
     let enabled = Args::new(params).bool("enabled")?;
     let midi = projects.midi_mut();
     let system = midi.system.clone().ok_or_else(no_midi)?;
-    let ports = system.ports().map_err(|e| CommandError(format!("the MIDI inputs could not be listed: {e}")))?;
+    let ports = system.ports().map_err(|e| CommandError::new(format!("the MIDI inputs could not be listed: {e}")))?;
     // A port may be turned off while it is unplugged, so it stays off when it comes back.
     if enabled && !ports.iter().any(|p| p == port) && !midi.off.contains(port) {
         return Err(format!("no MIDI input is called {port:?}; midi.inputs lists them").into());

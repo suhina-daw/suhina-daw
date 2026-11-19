@@ -2855,5 +2855,29 @@
       "crates/session/src/projects.rs",
       "crates/engine/src/lib.rs"
     ]
+  },
+  "Arrangement/Groups/empty_group_processing": {
+    "sourceFingerprint": "b19df5d2ca2052449b1f41329350351d39586749312a4a21e2391c8243f91fa7",
+    "summary": "Choose whether dissolving a group asks before removing its processing.",
+    "description": "A group disappears when its last member is moved out, cut or deleted. An unused neutral group disappears immediately. If it has effects, mixer automation, non-default mixer settings, sends, its own contents or routing references, Ask offers Remove processing or Cancel before applying the whole edit. Explicit Ungroup uses the same protection.\n\nRemember my choice on Remove sets this preference to Remove. It removes that processing with the group; effects are not inherited by a remaining track. One Undo restores the complete operation. Empty presentation folders disappear without a question because they have no audio processing.\n\nThis preference applies only to desktop actions in both Arrangement and Launcher. Command-line and connected-agent calls must explicitly confirm the affected group IDs themselves.",
+    "options": [
+      {
+        "name": "Ask",
+        "description": "Ask only when dissolving a group would remove processing, contents or routing. This is the default."
+      },
+      {
+        "name": "Remove",
+        "description": "Apply desktop edits without asking again, including removal of the affected group processing. Undo remains available."
+      }
+    ],
+    "whenToChange": "Keep Ask to review potentially audible changes. Choose Remove only if you want these desktop edits to remove group processing automatically; switch back to Ask at any time.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/app.rs",
+      "crates/ui/src/app/group_removal_dialog.rs",
+      "crates/session/src/commands/track/lifecycle.rs",
+      "docs/spec/arrangement-editing.md"
+    ]
   }
 }

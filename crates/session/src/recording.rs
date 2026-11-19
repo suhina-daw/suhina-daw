@@ -627,7 +627,8 @@ impl Session {
             }
             // The take's clip, and the second part of a clip it split, get their ids (ADR 0025).
             p.assign_ids()?;
-            p.validate().map_err(|errors| CommandError(format!("the take would leave an invalid project: {errors:?}")))
+            p.validate()
+                .map_err(|errors| CommandError::new(format!("the take would leave an invalid project: {errors:?}")))
         })();
         if let Err(e) = result {
             self.project = before;
@@ -864,7 +865,8 @@ impl Session {
             }
             // The takes' clips, and the second parts of clips they split, get their ids (ADR 0025).
             p.assign_ids()?;
-            p.validate().map_err(|errors| CommandError(format!("the take would leave an invalid project: {errors:?}")))
+            p.validate()
+                .map_err(|errors| CommandError::new(format!("the take would leave an invalid project: {errors:?}")))
         })();
         if let Err(e) = result {
             self.project = before;

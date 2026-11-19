@@ -429,7 +429,7 @@ impl Projects {
             })
             .map_err(|e| {
                 suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
-                CommandError(format!("no audio output: {e}"))
+                CommandError::new(format!("no audio output: {e}"))
             })?;
         if kept {
             session.retain_plugins_at_player_rate();
@@ -475,7 +475,7 @@ impl Projects {
             })
             .map_err(|e| {
                 suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
-                CommandError(format!("no audio output: {e}"))
+                CommandError::new(format!("no audio output: {e}"))
             })?;
         if kept {
             session.retain_plugins_at_player_rate();
@@ -560,7 +560,7 @@ impl Projects {
                 })
                 .map_err(|e| {
                     suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
-                    CommandError(format!("no audio output: {e}"))
+                    CommandError::new(format!("no audio output: {e}"))
                 })?;
             self.preview = Some(session);
         }
@@ -588,7 +588,7 @@ impl Projects {
         let panel_open =
             self.tabs.open.iter().any(|o| o.session.player().is_some_and(crate::Player::control_panel_open))
                 || self.preview.as_ref().and_then(Session::player).is_some_and(crate::Player::control_panel_open);
-        if panel_open { Err(CommandError("close the ASIO control panel first".into())) } else { Ok(()) }
+        if panel_open { Err(CommandError::new("close the ASIO control panel first".into())) } else { Ok(()) }
     }
 
     pub fn active(&self) -> Option<ProjectId> {
@@ -1112,11 +1112,11 @@ pub fn commands_markdown() -> String {
 }
 
 fn no_project() -> CommandError {
-    CommandError("no project is open".into())
+    CommandError::new("no project is open".into())
 }
 
 fn unknown_project(id: ProjectId) -> CommandError {
-    CommandError(format!("no open project has id {}; project.list shows them", id.0))
+    CommandError::new(format!("no open project has id {}; project.list shows them", id.0))
 }
 
 pub(crate) fn project_param(params: &Value) -> Result<ProjectId, CommandError> {
