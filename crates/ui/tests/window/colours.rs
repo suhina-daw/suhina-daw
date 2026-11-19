@@ -118,6 +118,10 @@ fn invalid_numeric_entries_remain_cancellable_and_default_clears_the_error() {
     h.get_by_label("Default").click();
     h.run();
     assert!(h.query_by_label("Enter a valid colour value").is_none());
+    assert_eq!(h.state().session().unwrap().project().track(TrackId(1)).unwrap().color, None);
+    assert!(h.state().settings().recent_colours.is_empty());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    h.run();
     assert_eq!(h.state().session().unwrap().project(), &before);
 }
 
