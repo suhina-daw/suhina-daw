@@ -114,6 +114,7 @@ impl App {
         // A prompt waiting on a stored edit (the ARA one) included: a key that changed the
         // project meanwhile would leave that edit naming what is gone.
         if ui.ctx().egui_wants_keyboard_input()
+            || self.colour_window_owns_keyboard(ui.ctx())
             || self.dialog_holds_actions()
             || (self.settings_open && self.page.capture.is_some())
             || widgets::value_active(ui.ctx())

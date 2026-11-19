@@ -3318,8 +3318,10 @@ impl App {
         suhina_plugins::trace::timed("sample map analysis poll", || self.projects.poll_sound_map());
         self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
-        keys_for_shortcuts(ui.ctx());
-        self.launch_keys(ui, &mut actions);
+        if !self.colour_window_owns_keyboard(ui.ctx()) {
+            keys_for_shortcuts(ui.ctx());
+            self.launch_keys(ui, &mut actions);
+        }
         // A menu bar item chosen while a dialog asks something is passed over, as its key is.
         let queued = std::mem::take(&mut self.queued);
         let menu_items = std::mem::take(&mut self.queued_menu_items);

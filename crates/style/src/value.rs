@@ -237,17 +237,21 @@ pub fn srgb_to_oklch(rgb: [u8; 3]) -> [f32; 3] {
     if h.is_finite() { [l.clamp(0.0, 1.0), c, h] } else { [l.clamp(0.0, 1.0), 0.0, 0.0] }
 }
 
-/// The nearest standard CSS name in Oklab, and whether its RGB matches exactly.
+const COLOUR_NAMES: &str = include_str!("../data/colour-names.tsv");
+
+/// The nearest curated survey name in Oklab, and whether its RGB matches exactly.
 /// Names describe the input; callers must never replace the input with the named colour.
 pub fn nearest_named_colour(rgb: [u8; 3]) -> (&'static str, bool) {
     type Named = (&'static str, [u8; 3], [f32; 3]);
     static NAMED: std::sync::OnceLock<Vec<Named>> = std::sync::OnceLock::new();
     let names = NAMED.get_or_init(|| {
-        cssparser::color::all_named_colors()
-            .filter(|(name, _)| !name.contains("gray") && !matches!(*name, "aqua" | "fuchsia"))
-            .map(|(name, (r, g, b))| {
+        COLOUR_NAMES
+            .lines()
+            .filter_map(|line| {
+                let (name, hex) = line.split_once('\t')?;
+                let (r, g, b, _) = cssparser::color::parse_hash_color(hex.strip_prefix('#')?.as_bytes()).ok()?;
                 let rgb = [r, g, b];
-                (name, rgb, Space::Oklab.to(rgb.map(|v| f32::from(v) / 255.0)))
+                Some((name, rgb, Space::Oklab.to(rgb.map(|v| f32::from(v) / 255.0))))
             })
             .collect()
     });
@@ -767,22 +771,27 @@ mod picker_colour_tests {
     #[test]
     fn familiar_names_are_exact_or_approximate_without_changing_the_input() {
         for (name, rgb) in [
-            ("gold", [255, 215, 0]),
-            ("khaki", [240, 230, 140]),
-            ("goldenrod", [218, 165, 32]),
-            ("lemonchiffon", [255, 250, 205]),
-            ("grey", [128, 128, 128]),
-            ("cyan", [0, 255, 255]),
-            ("magenta", [255, 0, 255]),
+            ("Gold", [219, 180, 12]),
+            ("Khaki", [170, 166, 98]),
+            ("Mustard", [206, 179, 1]),
+            ("Ochre", [191, 144, 5]),
+            ("Amber", [254, 179, 8]),
+            ("Saffron", [254, 178, 9]),
         ] {
             assert_eq!(nearest_named_colour(rgb), (name, true));
         }
-        assert_eq!(nearest_named_colour([254, 214, 1]), ("gold", false));
-        for (name, (r, g, b)) in cssparser::color::all_named_colors() {
-            let (nearest, exact) = nearest_named_colour([r, g, b]);
-            assert!(exact, "{name} => {nearest}");
-            assert_eq!(cssparser::color::parse_named_color(nearest), Ok((r, g, b)));
+        assert_eq!(nearest_named_colour([219, 180, 13]), ("Gold", false));
+        let mut names = std::collections::BTreeSet::new();
+        let mut values = std::collections::BTreeSet::new();
+        for line in COLOUR_NAMES.lines().filter(|line| !line.starts_with('#')) {
+            let (name, hex) = line.split_once('\t').unwrap();
+            let Color::Rgba([r, g, b, 255]) = Color::parse(hex).unwrap() else { panic!("opaque RGB: {line}") };
+            assert!(names.insert(name), "duplicate name: {name}");
+            assert!(values.insert([r, g, b]), "duplicate value: {hex}");
+            assert!(!name.is_empty() && name.chars().count() <= 32);
+            assert_eq!(nearest_named_colour([r, g, b]), (name, true));
         }
+        assert_eq!(names.len(), 877);
     }
 
     #[test]

@@ -183,7 +183,7 @@ impl Panel {
         }
         ui.separator();
         ui.label(format!("Current colour · {}", self.name))
-            .on_hover_text("CSS colour name; ≈ means the nearest named shade. The hex value remains exact.");
+            .on_hover_text("≈ means the nearest named shade. The hex value remains exact.");
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(Vec2::new(62.0, 20.0), Sense::hover());
             ui.painter().rect_filled(rect, 0.0, color32(self.colour));
@@ -202,12 +202,16 @@ impl Panel {
                 if let Some(colour) = suhina_session::colours::parse_hex(self.text.trim()) {
                     if colour != self.colour {
                         self.choose(colour, true, &mut edits);
+                    } else {
+                        self.fields();
                     }
                 } else {
                     self.invalid = true;
                     // Enter normally surrenders text focus. An invalid draft stays editable
                     // so Escape can discard it and the error does not strand the controls.
-                    response.request_focus();
+                    if ui.input(|i| i.key_pressed(Key::Enter)) {
+                        response.request_focus();
+                    }
                 }
             }
             if ui.button("Copy").on_hover_text("Copy exact #RRGGBB colour").clicked() {
@@ -221,9 +225,6 @@ impl Panel {
         if self.expanded {
             self.fine(ui, &mut edits);
         }
-        if self.invalid {
-            ui.colored_label(element::LABEL.attribute("kind", "error").look().color(), "Enter a valid colour value");
-        }
         ui.separator();
         ui.horizontal(|ui| {
             if ui.button("Random").clicked() {
@@ -234,9 +235,15 @@ impl Panel {
                 self.choose(colour, false, &mut edits);
             }
             if ui.button("Default").on_hover_text("Restore each selected track's default colour").clicked() {
+                self.discard_drafts();
                 edits.push(Edit::Default);
             }
-            ui.label(egui::RichText::new("Changes apply immediately").small().color(element::caption_ink()));
+            let (caption, ink) = if self.invalid {
+                ("Enter a valid colour value", element::LABEL.attribute("kind", "error").look().color())
+            } else {
+                ("Changes apply immediately", element::caption_ink())
+            };
+            ui.label(egui::RichText::new(caption).small().color(ink));
         });
         if self.dragging && ui.input(|i| i.key_pressed(Key::Escape)) {
             ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
@@ -299,6 +306,7 @@ impl Panel {
         let labels = if hsl { ["H", "S", "L"] } else { ["R", "G", "B"] };
         let names = if hsl { ["HSL hue", "HSL saturation", "HSL lightness"] } else { ["Red", "Green", "Blue"] };
         let mut commit = false;
+        let mut entered = None;
         let mut cancel = false;
         ui.horizontal(|ui| {
             for (offset, (label, name)) in labels.into_iter().zip(names).enumerate() {
@@ -311,6 +319,9 @@ impl Panel {
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, ui.is_enabled(), name));
                 cancel |= (focused || response.has_focus()) && ui.input(|i| i.key_pressed(Key::Escape));
                 commit |= response.lost_focus() || (response.has_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
+                if (focused || response.has_focus()) && ui.input(|i| i.key_pressed(Key::Enter)) {
+                    entered = Some(id);
+                }
                 if cancel {
                     response.surrender_focus();
                 }
@@ -347,9 +358,14 @@ impl Panel {
             };
             if self.numbers.get(start..start + 3) != Some(current.as_slice()) {
                 self.choose(colour, true, edits);
+            } else {
+                self.fields();
             }
         } else {
             self.invalid = true;
+            if let Some(id) = entered {
+                ui.memory_mut(|m| m.request_focus(id));
+            }
         }
     }
 }

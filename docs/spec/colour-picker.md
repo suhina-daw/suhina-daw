@@ -36,13 +36,15 @@ colour and editable/copyable hex value, collapsed **Fine adjustment**, and **Ran
 Clicking a swatch applies it immediately. Copying a sibling's exact hex value and pasting
 it on another track reuses it without transcribing its components.
 
-The current colour and swatch tooltips also show a familiar CSS colour name (for example
-Gold, Khaki or Goldenrod). For an arbitrary RGB value, choose the nearest named colour by
+The current colour and swatch tooltips also show a familiar colour name (for example
+Gold, Khaki, Mustard or Ochre). Names use a curated copy of the public-domain xkcd colour
+survey's downloadable table, with crude names omitted and spelling/spacing normalised.
+For an arbitrary RGB value, choose the nearest named colour by
 Euclidean distance in Oklab and mark the name with `≈`; an exact match has no approximation
-mark. Resolve synonymous CSS names consistently to Cyan, Magenta and the Grey spellings.
+mark. The survey describes common usage; its values are not the CSS named-colour standard.
 This is a descriptive aid, not quantisation: displaying a name never changes the selected
-RGB or the value copied to the clipboard. Names come from the existing CSS parser's standard
-table, not a proprietary application's palette.
+RGB or the value copied to the clipboard. The bounded table ships with the app and requires
+no network access; its provenance and curation are recorded beside the data.
 
 The palette's first row retains the eight bright defaults. The second adds red and deeper
 warm/cool hues; the third offers four pale colours and four neutrals. These are suggestions,
@@ -87,6 +89,10 @@ All drag updates use the same gesture until release, so they display live and un
 Escape during an active colour drag cancels only that gesture if it is still the open
 history gesture. It never undoes an intervening edit. Escape in a numeric/hex draft discards
 the draft. Invalid or unfinished text cannot change the project. No-op choices add no undo.
+An invalid submitted draft keeps its text focus until corrected or cancelled; Default also
+discards drafts. Focused controls own Tab, arrows and activation keys. Outside a text field,
+the tool permits transport and Undo/Redo shortcuts, while unrelated DAW shortcuts resume when
+focus returns to the main view.
 
 Colour commands are unheard edits: they do not rebuild the playing audio graph. The colour
 field's bounded geometry is reused until its hue/mode/size changes. The picker does no
@@ -122,6 +128,8 @@ these show the actual controls in an embedded window, not the operating system's
 - Maintainer's project-arranging observations and approved original Suhina sketches, issue #1570.
 - [W3C CSS Color 4: Oklab and OKLCH](https://www.w3.org/TR/css-color-4/#ok-lab).
 - [W3C CSS Color 4: named colours](https://www.w3.org/TR/css-color-4/#named-colors).
+- [xkcd colour survey](https://blog.xkcd.com/2010/05/03/color-survey-results/)
+  and its [CC0 name/RGB table](https://xkcd.com/color/rgb.txt).
 - [Carbon: categorical and sequential palettes](https://www.carbondesignsystem.com/building-blocks/data-visualization/color-palettes).
 - [W3C: text contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html),
   [non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html),

@@ -54,6 +54,7 @@ fn hex_entry_is_exact_and_invalid_input_cannot_recolour_the_track() {
     h.key_press(Key::Escape);
     h.run();
     assert!(h.query_by_label("Hex colour").is_some());
+    assert!(h.query_by_label("Enter a valid colour value").is_none());
     h.get_by_label("Default").click();
     h.run();
     assert!(h.state().session().unwrap().project().track(TrackId(1)).unwrap().color.is_none());
@@ -83,6 +84,68 @@ fn escape_discards_a_valid_text_draft_instead_of_committing_on_focus_loss() {
     h.key_press(Key::Escape);
     h.run();
     assert_eq!(h.state().session().unwrap().project(), &before);
+}
+
+#[test]
+fn invalid_numeric_entries_remain_cancellable_and_default_clears_the_error() {
+    let mut app = demo_app();
+    app.run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+    let mut h = window(app);
+    h.get_by_label("› Fine adjustment").click();
+    h.run();
+    let before = h.state().session().unwrap().project().clone();
+    for (label, invalid) in [("Red", "999"), ("HSL saturation", "no")] {
+        h.get_by_label(label).click();
+        h.key_press_modifiers(Modifiers::COMMAND, Key::A);
+        h.event(egui::Event::Text(invalid.into()));
+        h.key_press(Key::Enter);
+        h.run();
+        // Focus must survive beyond the frame which submitted the invalid draft.
+        for _ in 0..3 {
+            h.step();
+        }
+        assert!(h.query_by_label("Enter a valid colour value").is_some());
+        h.key_press(Key::Escape);
+        h.run();
+        assert!(h.query_by_label("Enter a valid colour value").is_none());
+        assert_eq!(h.state().session().unwrap().project(), &before);
+    }
+    h.get_by_label("Red").click();
+    h.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    h.event(egui::Event::Text("999".into()));
+    h.key_press(Key::Enter);
+    h.run();
+    h.get_by_label("Default").click();
+    h.run();
+    assert!(h.query_by_label("Enter a valid colour value").is_none());
+    assert_eq!(h.state().session().unwrap().project(), &before);
+}
+
+#[test]
+fn picker_arrows_and_tab_stay_in_the_tool_and_main_shortcuts_resume_outside_it() {
+    let mut h = window(demo_app());
+    h.get_by_label("Track Drums").click();
+    h.run();
+    h.key_press(Key::F2);
+    h.run();
+    h.get_by_label("› Fine adjustment").click();
+    h.run();
+    h.get_by_label("Colour field").click();
+    h.run();
+    let before = h.state().session().unwrap().project().track(TrackId(1)).unwrap().color;
+    let view = h.state().view();
+    h.key_press(Key::ArrowRight);
+    h.run();
+    assert_ne!(h.state().session().unwrap().project().track(TrackId(1)).unwrap().color, before);
+    h.key_press(Key::Tab);
+    h.run();
+    assert_eq!(h.state().view(), view);
+    h.get_by_label("Track Bass").click();
+    h.run();
+    h.key_press(Key::Tab);
+    h.run();
+    assert_ne!(h.state().view(), view);
+    assert!(h.query_by_label("Hex colour").is_some());
 }
 
 #[test]

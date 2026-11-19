@@ -25,10 +25,17 @@ pub(super) struct ColourWindow {
     focus_requested: bool,
     focused: bool,
     minimised: bool,
+    embedded_layer: Option<egui::LayerId>,
     pub pending_recent: Option<Rgb>,
 }
 
 impl App {
+    /// Only the embedded tool's own controls keep normal widget keyboard navigation.
+    /// The rest of the DAW continues to use its existing shortcut and launch-key rules.
+    pub(super) fn colour_window_owns_keyboard(&self, ctx: &egui::Context) -> bool {
+        self.colour_window.open && self.colour_window.embedded_layer.is_some_and(|layer| focused_in_layer(ctx, layer))
+    }
+
     pub(super) fn colour_history_changed(&mut self) {
         if self.colour_window.pending_recent.take().is_some() {
             self.colour_window.panel.cancel_pointer();
@@ -150,7 +157,7 @@ impl App {
             )
         });
         let bounds = main_rect.unwrap_or_else(|| Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0)));
-        let height = (if self.colour_window.panel.expanded { 650.0_f32 } else { 350.0 })
+        let height = (if self.colour_window.panel.expanded { 720.0_f32 } else { 400.0 })
             .min((bounds.height() - 48.0).max(180.0));
         if self.colour_window.height != height {
             // Expanding near the bottom must keep the new controls on screen. Ordinary
@@ -181,7 +188,11 @@ impl App {
         let mut close = false;
         let mut focused = false;
         let mut placement = None;
+        let mut embedded_layer = None;
         let mut render = |ui: &mut Ui, embedded: bool| {
+            if embedded {
+                embedded_layer = Some(ui.layer_id());
+            }
             {
                 let style = crate::kit::element::COLOUR_PICKER.enter();
                 let inside = style.paint(ui.painter(), ui.max_rect()).content;
@@ -197,11 +208,25 @@ impl App {
             if !embedded {
                 close = ui.input(|i| i.viewport().close_requested());
             }
-            // A focused colour control still permits transport and Undo. Text drafts own
-            // their keyboard. Embedded test windows use the same path; consumed keys do not
-            // run twice in the root's shortcuts.
-            if enabled && !ui.ctx().text_edit_focused() {
-                keys = ui.input_mut(|i| keymap.pressed(i, |id| !crate::settings::keymap::piano_roll_only(id)));
+            // Widget navigation and activation belong to the tool. Only transport, Undo,
+            // Redo and reopening the picker are global here; text drafts own every key.
+            let owns_keyboard = focused_in_layer(ui.ctx(), ui.layer_id());
+            if enabled && (!embedded || owns_keyboard) && !ui.ctx().text_edit_focused() {
+                keys = ui.input_mut(|i| {
+                    if owns_keyboard {
+                        i.events.retain(|event| !matches!(event,
+                            egui::Event::Key { key, modifiers, .. }
+                                if (modifiers.is_none() || (*key == egui::Key::Tab && *modifiers == egui::Modifiers::SHIFT))
+                                    && matches!(key, egui::Key::Tab | egui::Key::Enter | egui::Key::Space
+                                        | egui::Key::Escape | egui::Key::ArrowLeft | egui::Key::ArrowRight
+                                        | egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::Home
+                                        | egui::Key::End | egui::Key::PageUp | egui::Key::PageDown)
+                        ));
+                    }
+                    keymap.pressed(i, |id| {
+                        id.starts_with("transport.") || matches!(id, "edit.undo" | "edit.redo" | "selection.colour")
+                    })
+                });
             }
             ui.input(|i| {
                 focused = i.viewport().focused.unwrap_or(false);
@@ -237,6 +262,7 @@ impl App {
             });
         }
         self.colour_window.focused = focused;
+        self.colour_window.embedded_layer = embedded_layer;
         if let Some(rect) = placement
             && self.settings.colour_window_rect != Some(rect)
         {
@@ -291,6 +317,10 @@ impl App {
     }
 }
 
+fn focused_in_layer(ctx: &egui::Context, layer: egui::LayerId) -> bool {
+    ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|r| r.layer_id == layer)
+}
+
 /// A new or remembered window stays on the current screen even after a monitor is removed.
 fn place(bounds: Rect, size: Vec2, remembered: Option<Pos2>) -> Pos2 {
     let proposed = remembered.filter(|p| p.x.is_finite() && p.y.is_finite()).unwrap_or(bounds.center() - size * 0.5);
@@ -307,10 +337,10 @@ mod tests {
     #[test]
     fn initial_placement_centres_and_expansion_or_stale_positions_stay_inside_bounds() {
         let bounds = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(1280.0, 900.0));
-        let compact = Vec2::new(WIDTH, 382.0);
+        let compact = Vec2::new(WIDTH, 432.0);
         let centre = place(bounds, compact, None);
         assert_eq!(centre + compact * 0.5, bounds.center());
-        let expanded = Vec2::new(WIDTH, 682.0);
+        let expanded = Vec2::new(WIDTH, 752.0);
         for remembered in [centre, Pos2::new(-3000.0, 2000.0), Pos2::new(f32::NAN, 0.0)] {
             let rect = Rect::from_min_size(place(bounds, expanded, Some(remembered)), expanded);
             assert!(bounds.contains_rect(rect));
