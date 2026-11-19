@@ -106,8 +106,9 @@ group adds the devices before it in its branch to the delay before the group; a 
 it does not. The engine keeps the song as each recent block started (`SongHistory`), and the
 song that late is read from the block that played then: a loop's wrap, a jump, a tempo or time
 signature change reach a delayed plug-in when its sound does, with the bar, tempo and signature
-of that moment. Further back than the blocks kept (more than five seconds of the smallest
-blocks), the oldest is stepped back at its tempo. While the transport is stopped the position
+of that moment. The history keeps 8192 block records: its duration depends on the actual block
+sizes and sample rate. Further back, the oldest is stepped back at its tempo, so transport
+changes discarded from history cannot be recovered. While the transport is stopped the position
 is not moved.
 A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
 pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
@@ -127,6 +128,13 @@ loaded; a value `device.setParam` sets while it plays, at the start of the next 
 (the same parameter message as a built-in device's, ADR 0005); and, while the transport
 runs, each automation lane's value at the block's first frame, at each point inside it and
 every 64 frames while it moves (a VST3 plug-in ramps between them, a CLAP plug-in steps).
+The lanes follow the same delayed input timeline as the song position. A historical loop,
+seek or play/stop boundary can split their block into several spans; each parameter event
+keeps its offset in the block and then in the sub-block handed to the plug-in. Set and manual
+values still go once, at the next block's start. Before another historical span, each lane
+also sends the preceding span's final value, preserving a jump between adjacent samples
+for VST3 interpolation. Before arrangement zero, lanes hold the
+value at zero. See [PDC](plugin-delay-compensation.md) for the common contract and limits.
 Only a switch (one step) or a list of choices holds each point's value until the next
 point; any other parameter, one the plug-in lists with steps too (a cutoff knob in 1024
 steps), moves along the line and the plug-in plays the step it is on (#1482,
@@ -135,7 +143,9 @@ The slot hands each span it runs its share through `PluginProcessor::automate`, 
 session's processor merges them with the notes in frame order, a value before a note at
 the same frame; a block the host could not take carries the latest value of each
 parameter to the next. Nothing allocates on the audio thread: each slot has room for 512
-events a block. A parameter value that reaches the processor from the engine (a panel
+events a block. After set and manual values, required starts of historical spans take
+priority over intermediate lane points and boundary holds; overload retains the limits
+described in [PDC](plugin-delay-compensation.md). A parameter value that reaches the processor from the engine (a panel
 set, an automation lane) also goes to the edit controller on the main thread
 (`setParamNormalized`: the same call a MIDI controller's mapped parameter gets, #812),
 so the plug-in's editor follows the sound; and the host reports what was changed in its

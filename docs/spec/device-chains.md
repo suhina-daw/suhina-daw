@@ -98,6 +98,12 @@ as ADR 0004 › 5 asks, and the device smooths each step. A track whose mixer ha
 chain, one without devices when it has none, whose gains move frame by frame after its devices.
 [The automation spec](automation.md) has the details.
 
+Each device's lanes follow the time of its input audio: the chain's incoming latency plus
+the devices before it on its own branch. Hosted parameter lanes use the same history as
+hosted song positions. Historical loop and seek boundaries retain their offsets inside the
+block, and graph adoption takes the new upstream delays. See the
+[PDC timing contract](plugin-delay-compensation.md).
+
 ## Group buses
 
 When a group track's channel holds devices, the tracks routed into it (at any depth) no longer reach the output on their own:

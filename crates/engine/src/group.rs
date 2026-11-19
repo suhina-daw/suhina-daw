@@ -225,6 +225,7 @@ impl SlotFactory<'_> {
                     // The devices before it in its branch delay its sound; the chain adds the
                     // delay before the group.
                     crate::chain::set_song_delay(&mut built.slot, run.latency);
+                    run.lanes.delay_slot(slot, run.latency);
                     run.latency = run.latency.saturating_add(built.latency);
                     run.slots.push(built.slot);
                     run.positions.push(i);
@@ -446,14 +447,23 @@ impl GroupSlot {
         }
     }
 
-    /// Plans the changes of its devices' lanes, in every branch and group inside it, for a block
-    /// of `frames` frames from arrangement frame `time` (`None` while stopped). Never allocates.
-    pub(crate) fn plan(&mut self, time: Option<u64>, frames: usize) {
+    /// Adds the delay before this group to its hosted contexts and native automation lanes.
+    pub(crate) fn add_song_delay(&mut self, before: u32) {
         for branch in &mut self.branches {
-            branch.lanes.plan(time, frames);
+            branch.lanes.add_delay(before);
+            for slot in &mut branch.slots {
+                crate::chain::set_song_delay(slot, before);
+            }
+        }
+    }
+
+    /// Plans device lanes at the time of their input, including the outer chain's input delay.
+    pub(crate) fn plan(&mut self, songs: &crate::plugin::SongHistory, input: u32, frames: usize) {
+        for branch in &mut self.branches {
+            branch.lanes.plan_delayed(songs, input, frames);
             for slot in &mut branch.slots {
                 if let DeviceSlot::Group(group) = slot {
-                    group.plan(time, frames);
+                    group.plan(songs, input, frames);
                 }
             }
         }

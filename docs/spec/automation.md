@@ -215,6 +215,13 @@ The engine runs one render path (offline renders and playback alike), turns lane
 arrangement frames when the graph is built (at the project's tempo), and allocates nothing on the
 audio thread.
 
+Device lanes are evaluated at the arrangement time represented by the audio reaching that
+device, including upstream device latency and a bus, return or Main chain's input latency.
+The recorded transport history preserves loop and seek boundaries inside a delayed block;
+the device's own latency is not subtracted from its input time. Manual parameter changes
+still apply from the next block. The [PDC contract](plugin-delay-compensation.md) describes
+priming, stopped playback, nested branches and the remaining limits.
+
 - **Device parameters** (built-in and `.sd`): while the transport runs, the parameter is set at every point
   that falls inside a block and at every 64th frame of the arrangement (1.3 ms at 48 kHz) where its
   value changed, and at a block's first frame when the transport has just started or moved. The
@@ -227,7 +234,9 @@ audio thread.
   device starts at the lane's value at beat 0. While stopped, a parameter keeps its last value.
 - **Plug-in parameters**: as #109 built them (ADR 0006 › 3): a value at the block's start, at
   each point and every 64 frames while it moves, as parameter events at their frames; the curve
-  and the enabled flag apply too. While stopped, a lane sends its value where the transport
+  and the enabled flag apply too. Before another historical span in the same block, a lane
+  sends the preceding span's final value too, so an interpolating processor holds the old
+  value up to a delayed loop or seek boundary. While stopped, a lane sends its value where the transport
   stands when the play start marker moves or the lane changes, so the plug-in's editor and its
   parameter list show what plays there (#1205). A plug-in that starts (the project opened, a
   restart) keeps the state it was given until then, so opening a project changes nothing in it
