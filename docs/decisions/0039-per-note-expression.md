@@ -4,7 +4,7 @@ read_when: MPE, note identity, per-note expression, note curves, MIDI 2.0, expre
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/device-api/src/lib.rs
   - crates/device-api/src/note_expression.rs
