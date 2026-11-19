@@ -195,8 +195,8 @@ A token the file leaves out keeps Suhina Studio's colour, so a file needs only t
 changes; an unknown token or a value that is not `#RRGGBB` or `#RRGGBBAA` is skipped with a warning. Transparent RGB is preserved under canonical token names, including inherited text roles. Files with
 the first token names (`surface.0`, `line`, `text.tertiary` …) still read. Only colours belong to
 a theme: sizes, spacing and type stay the design's. Track and clip colours are
-not the theme's: a track's or clip's colour comes from the project, and the colour picker's eight
-colours (`#FF9A3C` `#F2D541` `#4FC3F7` `#B38BFF` `#7FDB5A` `#FF6FA8` `#5C8DFF` `#2FD9C4`) and
+not the theme's: a track's or clip's colour comes from the project, and the colour picker's 24
+curated suggestions ([Colour palette](components.md#colour-palette)) and
 the colours new tracks and clips get (MIDI `#4FC3F7`, audio `#FF9A3C`) are Suhina's own, the same
 in every theme. A theme draws them from the element's `color` attribute.
 

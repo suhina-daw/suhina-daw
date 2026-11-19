@@ -537,6 +537,9 @@ impl App {
                 }
                 actions.push(Action::new(id, params));
             }
+            "selection.colour" => {
+                self.open_colour_window(None);
+            }
             "selection.rename" => {
                 // A track header clicked last: the track's name, in its header (#696).
                 let focused_track = match self.shown {
@@ -1213,6 +1216,10 @@ impl App {
     /// stands then. A range tool's gesture ([`crate::arrangement::automation_lanes::RANGE_GESTURE`])
     /// stays open: its next click joins it, and any other edit ends it.
     pub(super) fn end_gesture_on_release(&mut self, ctx: &egui::Context) {
+        // A native colour window has its own pointer state and ends its gesture itself.
+        if self.open_gesture.as_deref() == Some(crate::interaction::colour_picker::panel::GESTURE) {
+            return;
+        }
         if ctx.input(|i| i.pointer.any_down()) {
             return;
         }

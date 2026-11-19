@@ -1160,6 +1160,8 @@ names! {
     TOOLTIP = "tooltip";
     PROGRESS = "progress";
     PROGRESS_FILL = "progress-fill";
+    COLOUR_PICKER = "colour-picker";
+    COLOUR_FIELD = "colour-field";
     SETTINGS = "settings";
     SETTINGS_NAV = "settings-nav";
     DIALOG = "dialog";

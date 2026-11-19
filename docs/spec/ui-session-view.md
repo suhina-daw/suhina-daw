@@ -405,7 +405,7 @@ and an Arrangement header a band down its left edge, the header's full height. A
 colour is dimmed. Text drawn on the colour is the light or the dark text colour of the theme,
 whichever stands out more from it.
 
-The colour is picked from one palette, Suhina's eight track colours (the same in every theme,
+The colour is picked from one palette, Suhina's 24 track colours (the same in every theme,
 which draws a track's colour but never chooses it), wherever a colour is
 offered: a click on a track's colour band (the strip's in the Launcher view, the header's in the
 Arrangement) opens it as a popup, the track's right-click menu has it as before, and a colour
@@ -413,6 +413,11 @@ tag's right-click menu in the browser has it before the free colour choice. Pick
 `track.setColor` with that colour, one undo step, and closes the popup; picking the colour the
 track already has runs nothing. A colour of any value (from an imported project, or set with
 `track.setColor` from the CLI or MCP) shows as it is; the palette marks none of its swatches then.
+
+The palette's **+ More colours** entry and **F2** open the same non-modal colour window,
+with related shades, recent track colours and precise controls. It stays open while the DAW
+is used and edits the selected tracks live, one Undo step per drag or choice
+([Track colours](colour-picker.md)).
 
 ## Detail area: a selected clip
 

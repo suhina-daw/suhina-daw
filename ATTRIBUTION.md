@@ -10,6 +10,7 @@ Apache-2.0, OFL, CC0, CC BY) and keep their license file next to them.
 
 | Path | Title | Author | Source | License |
 |---|---|---|---|---|
+| `crates/style/data/colour-names.tsv` | Curated colour names (877 entries; changes and source hash in adjacent README) | Randall Munroe and xkcd colour survey contributors | [xkcd name/RGB table](https://xkcd.com/color/rgb.txt) | CC0-1.0 (`crates/style/data/LICENSE-CC0.txt`) |
 | `crates/ui/fonts/manrope/Manrope-Variable.ttf` | Manrope (default UI typeface) | The Manrope Project Authors | [google/fonts](https://github.com/google/fonts/tree/main/ofl/manrope) | OFL-1.1 (`crates/ui/fonts/manrope/OFL.txt`) |
 | `crates/ui/fonts/encode-sans/EncodeSansSemiExpanded-Regular.ttf` | Encode Sans Semi Expanded Regular (the UI typeface) | The Encode Project Authors (Pablo Impallari, Andres Torresi, Jacques Le Bailly) | [google/fonts](https://github.com/google/fonts/tree/main/ofl/encodesanssemiexpanded) | OFL-1.1 (`crates/ui/fonts/encode-sans/OFL.txt`) |
 | `crates/ui/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf` | IBM Plex Mono Regular (numbers, times, positions) | IBM Corp. | [google/fonts](https://github.com/google/fonts/tree/main/ofl/ibmplexmono) | OFL-1.1 (`crates/ui/fonts/ibm-plex-mono/OFL.txt`) |
@@ -23,6 +24,8 @@ Apache-2.0, OFL, CC0, CC BY) and keep their license file next to them.
 
 | Path | Title | Author | Source | License |
 |---|---|---|---|---|
+| `docs/spec/colour-picker-palette.svg` | Track palette, luminance and colour-vision simulation chart | Suhina contributors | Original chart; scientific sources in the colour-picker spec | GPL-3.0-or-later |
+| `docs/design/reference/colour-picker-*.png` | Colour tool in compact, field and wheel states, in dark, light and high-contrast themes | Suhina contributors | Suhina's own theme renderer, [CI run 44599410716](https://github.com/suhina-daw/suhina-daw/actions/runs/44599410716), commit `83f0ee40797f3767bc7204420ee2181575a2ed9e` | GPL-3.0-or-later |
 | `docs/design/reference/session-minimal-v3.png`, `arrangement-minimal-v3.png` | Suhina Session and Arrangement design mockups (minimal v3) | Suhina contributors | Original work, exported from the project's design canvas | GPL-3.0-or-later |
 
 ## Ported code

@@ -466,21 +466,23 @@ fn the_midi_monitor_chip_keeps_clear_of_the_automation_button() {
     assert!(h.query_by_label("Hide automation of Drums").is_some(), "the button takes its click");
 }
 
-/// The "+" in a track's menu opens a colour field: dragging in it keeps the menu open, and the
-/// colour is set once, as one undo step, when the button comes up (#712).
-#[test]
-fn a_colour_dragged_in_the_menus_picker_keeps_the_menu_open_and_is_one_step() {
+/// Both menu entry points open the persistent picker; a drag is visible live but one undo.
+fn live_colour_drag(from_menu: bool) {
     let mut harness = arrangement();
     let before = drums_colour(&harness);
-    harness.get_by_label("Track Drums").click_secondary();
+    if from_menu {
+        harness.get_by_label("Track Drums").click_secondary();
+    } else {
+        harness.get_by_label("Drums colour").click();
+    }
     harness.run();
-    harness.get_by_label("Any colour").click();
+    harness.get_by_label("+ More colours").click();
     harness.run();
-    // The saturation and value field, under the row of swatches and the colour's own row, from
-    // the swatches' left edge.
-    let first = harness.get_by_label(&format!("Colour {}", colour_picker::hex(colour_picker::swatches()[0]))).rect();
-    let from = egui::pos2(first.left() + 30.0, first.bottom() + 80.0);
-    let to = from + egui::vec2(40.0, 20.0);
+    harness.get_by_label("› Fine adjustment").click();
+    harness.run();
+    let field = harness.get_by_label("Colour field").rect();
+    let from = field.left_top() + field.size() * 0.3;
+    let to = field.left_top() + field.size() * 0.7;
     harness.hover_at(from);
     harness.run();
     harness.drag_at(from);
@@ -489,52 +491,29 @@ fn a_colour_dragged_in_the_menus_picker_keeps_the_menu_open_and_is_one_step() {
         harness.hover_at(from + (to - from) * (step as f32 / 4.0));
         harness.step();
     }
-    assert!(harness.query_by_label("Any colour").is_some(), "the menu stays open while the colour is dragged");
-    assert_eq!(drums_colour(&harness), before, "nothing is set before the button comes up");
+    assert!(harness.query_by_label("Hex colour").is_some(), "the window stays open");
+    assert_ne!(drums_colour(&harness), before, "the track follows the drag live");
+    assert!(harness.state().settings().recent_colours.is_empty(), "intermediate colours are not history");
     harness.drop_at(to);
     harness.step();
     harness.run();
-    let picked = drums_colour(&harness);
-    assert_ne!(picked, before, "the colour dragged to is set");
-    assert!(harness.query_by_label("Any colour").is_some(), "the menu stays open when the button comes up");
+    let picked = drums_colour(&harness).unwrap();
+    assert_eq!(harness.state().settings().recent_colours, [picked]);
+    assert_eq!(harness.state().session().unwrap().undo_steps().0, 1);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert_eq!(drums_colour(&harness), before, "one undo takes the whole drag back");
+    assert!(harness.query_by_label("Hex colour").is_some());
 }
 
-/// The same in the palette the colour area opens: the palette stays open when the button comes up.
 #[test]
-fn a_colour_dragged_in_the_colour_areas_picker_keeps_the_palette_open_and_is_one_step() {
-    let mut harness = arrangement();
-    let before = drums_colour(&harness);
-    harness.get_by_label("Drums colour").click();
-    harness.run();
-    harness.get_by_label("Any colour").click();
-    harness.run();
-    // The saturation and value field, under the row of swatches and the colour's own row, from
-    // the swatches' left edge.
-    let first = harness.get_by_label(&format!("Colour {}", colour_picker::hex(colour_picker::swatches()[0]))).rect();
-    let from = egui::pos2(first.left() + 30.0, first.bottom() + 80.0);
-    let to = from + egui::vec2(40.0, 20.0);
-    harness.hover_at(from);
-    harness.run();
-    harness.drag_at(from);
-    harness.step();
-    for step in 1..=4 {
-        harness.hover_at(from + (to - from) * (step as f32 / 4.0));
-        harness.step();
-    }
-    assert!(harness.query_by_label("Any colour").is_some(), "the menu stays open while the colour is dragged");
-    assert_eq!(drums_colour(&harness), before, "nothing is set before the button comes up");
-    harness.drop_at(to);
-    harness.step();
-    harness.run();
-    let picked = drums_colour(&harness);
-    assert_ne!(picked, before, "the colour dragged to is set");
-    assert!(harness.query_by_label("Any colour").is_some(), "the menu stays open when the button comes up");
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
-    harness.run();
-    assert_eq!(drums_colour(&harness), before, "one undo takes the whole drag back");
+fn a_colour_dragged_from_the_track_menu_is_live_and_one_step() {
+    live_colour_drag(true);
+}
+
+#[test]
+fn a_colour_dragged_from_the_colour_area_is_live_and_one_step() {
+    live_colour_drag(false);
 }
 
 /// A padded track header still folds and resizes by the whole lane: collapsing and expanding

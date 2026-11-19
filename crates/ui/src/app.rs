@@ -12,6 +12,7 @@ mod audio_settings;
 mod background;
 mod browser_panel;
 pub mod closing_dialog;
+mod colour_window;
 mod control_bar;
 mod detail_area;
 use detail_area::DetailInsets;
@@ -416,6 +417,7 @@ struct AutoArm {
 }
 
 pub struct App {
+    colour_window: colour_window::ColourWindow,
     background: background::Background,
     /// When the level meters last showed something new (`ui.input` time).
     meters_moved_at: f64,
@@ -781,6 +783,7 @@ impl App {
         projects.read_local_audio(true);
         Self {
             projects,
+            colour_window: Default::default(),
             background: background::Background::default(),
             shown_project: None,
             stashes: HashMap::new(),
@@ -2868,6 +2871,9 @@ impl App {
 
     /// Runs one command and shows its outcome in the status bar.
     pub fn run(&mut self, action: &Action) {
+        if self.run_colour_window_action(action) {
+            return;
+        }
         if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
             self.open_gesture = Some(gesture.to_owned());
         }
@@ -2886,6 +2892,7 @@ impl App {
         // of what was there before, so it lets go.
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
+            self.colour_history_changed();
         }
         // Which copy came last decides what Ctrl+V pastes (› `CopiedLast`).
         match action.id {
@@ -2973,6 +2980,17 @@ impl App {
                 self.status = Status::Hint(format!("Armed, hearing In {input}: change it under Audio From"));
             }
             Ok(result) => {
+                if action.id == "track.setColor"
+                    && result["changed"].as_bool() == Some(true)
+                    && let Some(colour) = action.params["color"].as_str().and_then(suhina_session::colours::parse_hex)
+                {
+                    if action.params["gesture"].as_str() == Some(crate::interaction::colour_picker::panel::GESTURE) {
+                        self.colour_window.pending_recent = Some(colour);
+                    } else {
+                        crate::interaction::colour_picker::panel::remember(&mut self.settings.recent_colours, colour);
+                        self.settings_changed = true;
+                    }
+                }
                 if action.id == "edit.undo" {
                     self.piano_roll.undo_ran();
                 }
@@ -3309,7 +3327,9 @@ impl App {
         suhina_plugins::trace::timed("sample map analysis poll", || self.projects.poll_sound_map());
         self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
-        keys_for_shortcuts(ui.ctx());
+        if !self.colour_window_owns_keyboard(ui.ctx()) {
+            keys_for_shortcuts(ui.ctx());
+        }
         self.launch_keys(ui, &mut actions);
         // A menu bar item chosen while a dialog asks something is passed over, as its key is.
         let queued = std::mem::take(&mut self.queued);
@@ -3322,6 +3342,9 @@ impl App {
                 self.run_menu_item(&id, ui.ctx(), &mut actions);
             }
         }
+        // The floating colour tool owns Escape while a text draft or drag is active.
+        self.show_colour_window(ui.ctx(), &mut actions);
+        self.preview_colour_targets(ui.ctx());
         self.shortcuts(ui, &mut actions);
         self.apply_zoom(ui.ctx());
         self.frame_trace.mark("keys");

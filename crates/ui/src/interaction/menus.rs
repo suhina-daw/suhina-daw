@@ -413,18 +413,9 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
 
     // Colour: the palette every colour choice offers.
     // A colour picked with several tracks selected colours them all.
-    if let Some(pick) = colour_picker::swatch_row(ui, Some(menu.colour)) {
-        let colour = pick.colour;
-        let several = menu.selection.contains(&menu.track) && menu.selection.len() > 1;
-        if several {
-            for track in menu.selection {
-                actions.push(colour_picker::set_colour(*track, colour));
-            }
-        } else if colour != menu.colour {
-            actions.push(colour_picker::set_colour(menu.track, colour));
-        }
-        pick.close_menu(ui);
-    }
+    let single = [menu.track];
+    let selected = if menu.selection.contains(&menu.track) { menu.selection } else { &single };
+    colour_picker::track_row(ui, menu.colour, selected, actions);
     // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
     // every view.
     if menu.is_group && ui.button("Recolor group").clicked() {
