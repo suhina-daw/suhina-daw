@@ -94,15 +94,14 @@ impl App {
         if self.projects.active() != self.colour_window.project {
             self.finish_colour_gesture(false);
             self.colour_window.open = false;
+            self.settings_changed = true;
             return;
         }
         let selection = self.focused_tracks();
         if !selection.is_empty() && selection != self.colour_window.selection_seen {
             self.finish_colour_gesture(false);
             self.colour_window.selection_seen = selection.clone();
-            if !selection.is_empty() {
-                self.colour_window.tracks = selection;
-            }
+            self.colour_window.tracks = selection;
         }
         let Some(session) = self.projects.active().and_then(|id| self.projects.get(id)) else { return };
         let project = session.project();
@@ -208,7 +207,8 @@ impl App {
             && self.settings.colour_window_rect != Some(rect)
         {
             self.settings.colour_window_rect = Some(rect);
-            self.settings_changed = true;
+            // Keep live placement in memory; persist once on close, not on every move frame.
+            self.colour_window.position = Some(Pos2::new(rect[0] as f32, rect[1] as f32));
         }
         if self.colour_window.focus_requested {
             ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
@@ -252,6 +252,7 @@ impl App {
         if close {
             actions.push(Action::new("ui.finishColour", json!({})));
             self.colour_window.open = false;
+            self.settings_changed = true;
         }
     }
 }

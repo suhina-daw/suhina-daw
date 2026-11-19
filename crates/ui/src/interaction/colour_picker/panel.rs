@@ -26,6 +26,7 @@ pub(crate) enum Edit {
 pub(crate) struct Panel {
     pub expanded: bool,
     pub dragging: bool,
+    cancelled_drag: bool,
     pub colour: Rgb,
     hsv: Hsva,
     text: String,
@@ -44,6 +45,7 @@ impl Default for Panel {
         let mut panel = Self {
             expanded: false,
             dragging: false,
+            cancelled_drag: false,
             colour,
             hsv: Hsva::from_srgb([colour.0, colour.1, colour.2]),
             text: String::new(),
@@ -109,6 +111,9 @@ impl Panel {
     }
 
     fn pointer_colour(&mut self, hsv: Hsva, dragging: bool, edits: &mut Vec<Edit>) {
+        if self.cancelled_drag {
+            return;
+        }
         let hsv = constrain(hsv, self.steps, self.soft);
         let [r, g, b] = hsv.to_srgb();
         let colour = Rgb(r, g, b);
@@ -149,15 +154,14 @@ impl Panel {
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(Vec2::new(62.0, 20.0), Sense::hover());
             ui.painter().rect_filled(rect, 0.0, color32(self.colour));
+            let id = Id::unique("track-colour-hex");
+            let focused = ui.memory(|m| m.has_focus(id));
             let response = widgets::text_input(
                 ui,
-                egui::TextEdit::singleline(&mut self.text)
-                    .id(Id::unique("track-colour-hex"))
-                    .desired_width(100.0)
-                    .char_limit(16),
+                egui::TextEdit::singleline(&mut self.text).id(id).desired_width(100.0).char_limit(16),
             );
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Hex colour"));
-            if response.has_focus() && ui.input(|i| i.key_pressed(Key::Escape)) {
+            if (focused || response.has_focus()) && ui.input(|i| i.key_pressed(Key::Escape)) {
                 self.fields();
                 response.surrender_focus();
             } else if response.lost_focus() || (response.has_focus() && ui.input(|i| i.key_pressed(Key::Enter))) {
@@ -199,11 +203,15 @@ impl Panel {
         });
         if self.dragging && ui.input(|i| i.key_pressed(Key::Escape)) {
             self.dragging = false;
+            self.cancelled_drag = true;
             edits.clear();
             edits.push(Edit::Cancel);
         } else if self.dragging && !ui.input(|i| i.pointer.any_down()) {
             self.dragging = false;
             edits.push(Edit::Finish);
+        }
+        if !ui.input(|i| i.pointer.any_down()) {
+            self.cancelled_drag = false;
         }
         edits
     }
@@ -259,15 +267,12 @@ impl Panel {
             for (offset, (label, name)) in labels.into_iter().zip(names).enumerate() {
                 ui.label(label);
                 let Some(text) = self.numbers.get_mut(start + offset) else { continue };
-                let response = widgets::text_input(
-                    ui,
-                    egui::TextEdit::singleline(text)
-                        .id(Id::unique(("track-colour-number", name)))
-                        .desired_width(45.0)
-                        .char_limit(12),
-                );
+                let id = Id::unique(("track-colour-number", name));
+                let focused = ui.memory(|m| m.has_focus(id));
+                let response =
+                    widgets::text_input(ui, egui::TextEdit::singleline(text).id(id).desired_width(45.0).char_limit(12));
                 response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, name));
-                cancel |= response.has_focus() && ui.input(|i| i.key_pressed(Key::Escape));
+                cancel |= (focused || response.has_focus()) && ui.input(|i| i.key_pressed(Key::Escape));
                 commit |= response.lost_focus() || (response.has_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
                 if cancel {
                     response.surrender_focus();
