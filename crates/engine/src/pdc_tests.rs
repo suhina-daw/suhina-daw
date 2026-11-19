@@ -330,7 +330,7 @@ fn check_interpolated_gain(seek: bool) {
             let plain = render_interpolated_gain(false, latency, block, seek);
             let actual = render_interpolated_gain(true, latency, block, seek);
             assert!(plain.iter().any(|sample| *sample > 0.01));
-            for (frame, (got, input)) in actual.chunks_exact(2).zip(plain.chunks_exact(2)).enumerate() {
+            for (frame, (got, input)) in actual.as_chunks::<2>().0.iter().zip(plain.as_chunks::<2>().0).enumerate() {
                 let source = frame.saturating_sub(latency);
                 let source = if seek { if source >= 1536 { source - 1536 } else { source } } else { source % LOOP };
                 let gain = if source == 0 { 0.0 } else { 1.0 };
