@@ -19,10 +19,11 @@ Third-party material
 - crates/stretch is a Rust port of Signalsmith Stretch and of the STFT in Signalsmith Linear,
   Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. and (c) 2025 Signalsmith Audio,
   MIT License; the full notice is in crates/stretch/LICENSE-signalsmith.txt.
-- devices/fm-synth ports the MSFA synthesizer engine (music-synthesizer-for-android) as found in
+- devices/fm-synth and crates/dsp/src/fm port the MSFA synthesizer engine
+  (music-synthesizer-for-android) as found in
   Dexed: Copyright 2012-2013 Google Inc., Copyright 2016-2025 Pascal Gauthier, Copyright 2019
-  Jean Pierre Cimalando, Apache License 2.0 (devices/fm-synth/LICENSE-APACHE); each ported file
-  names its source and what was changed.
+  Jean Pierre Cimalando, Apache License 2.0 (devices/fm-synth/LICENSE-APACHE and
+  crates/dsp/LICENSE-APACHE); each ported file names its source and what was changed.
 - crates/plugin-host/src/vst2/vestige.rs ports the VeSTige header, written for LMMS, as Ardour
   distributes it (libs/ardour/ardour/vestige/vestige.h at commit
   365cc92cba0e016c30fea34aed168a0957aeeca0): Copyright (c) 2006 Javier Serrano Polo, GNU General

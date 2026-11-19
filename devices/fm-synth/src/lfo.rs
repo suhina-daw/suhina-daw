@@ -7,7 +7,7 @@
 
 //! The LFO: one per synth, shared by every voice, advanced once per engine block.
 
-use crate::tables::Tables;
+use suhina_dsp::fm::Tables;
 
 /// LFO frequency in hertz for each speed 0..=99, measured on hardware.
 const SPEED_HZ: [f64; 100] = [

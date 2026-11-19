@@ -10,7 +10,7 @@
 //! four controllers (wheel, foot, breath, pressure) shape the sound. Voices are the DX7 voice
 //! format, so DX7 voice and bank system-exclusive files load ([`patch::read`]).
 //!
-//! The engine works in blocks of 64 frames ([`tables::N`]) on a grid that runs from the last
+//! The engine works in blocks of 64 frames ([`suhina_dsp::fm::N`]) on a grid that runs from the last
 //! reset: a note, a controller or a parameter change takes effect at the next block boundary,
 //! so the output never depends on how the host divides a stream, and timing is exact to 64
 //! frames (1.3 ms at 48 kHz). Notes sum to a stereo pair: each has its pan, and spread plays a
@@ -28,7 +28,6 @@ mod lfo;
 pub mod params;
 pub mod patch;
 pub mod random;
-pub mod tables;
 mod time_env;
 mod voice;
 mod wave;
@@ -47,10 +46,10 @@ use crate::ext::{Ext, FilterGlide, Frame, GLIDE_SECONDS, glide};
 use crate::lfo::Lfo;
 use crate::params::{COUNT, EXTENDED, GLOBAL, OP_PARAMS, PARAMS, PERFORMANCE, op};
 pub use crate::patch::Patch;
-use crate::tables::{N, Tables};
 use crate::time_env::Clock;
 use crate::voice::{Controllers, ModRoute, Note};
 use crate::wave::DrawnWave;
+use suhina_dsp::fm::{N, Tables};
 
 pub static INFO: DeviceInfo = DeviceInfo::new("fm-synth", "FM Synth", Role::Instrument, &PARAMS);
 
