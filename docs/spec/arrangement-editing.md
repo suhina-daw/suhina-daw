@@ -427,7 +427,8 @@ An ordinary duplicate, a paste and a drag copy of a linked clip are independent 
 a content of their own, so they never join the link unasked. A split's parts keep playing the
 content from where it was cut, so they stay linked copies. Placement properties (start,
 length, offset, loop, fades, gain envelope, colour) stay each clip's own, as for any clip. The
-project file keeps `linked` on the content ([format](suhina-format.md) › Parts).
+project file keeps `linked` on the content ([format](suhina-format.md) › Parts). An imported
+`.flp` pattern placed several times comes in linked ([FLP mapping](flp-model-mapping.md)).
 
 ## Automation lanes
 
@@ -1228,6 +1229,12 @@ clips gain no repeat marks. Top notches are suppressed below 64 px per loop pass
 their radius scales with pass width, up to 2.5 px and 10 percent of the row height. Only the
 lowest half of the lower semicircle cuts into the clip, making a shallow curved dip at most
 1.25 px deep. This avoids a sawtooth edge when zoomed out.
+
+While a non-looping MIDI clip's right edge is dragged, newly exposed source notes and
+the exposed portions of long notes appear immediately. The cached preview retains notes
+beyond the committed edge (within its existing note-count limit); drawing clips them to
+the live edge. Pitches outside that span do not squeeze the visible pitch rows. Releasing
+the edge commits the trim without changing the preview's notes.
 
 Searching for a track-size setting keeps the entire Track sizes section visible, including
 Advanced and the height controls. Changing a default applies immediately to all rows of that

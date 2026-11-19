@@ -3,7 +3,7 @@ description: How to find out what the running app does around a bug: the trace l
 read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet, tester, hang, freeze, working a bug through
 type: howto
 status: current
-last_verified: 2026-11-17
+last_verified: 2026-11-19
 covers:
   - crates/ui-gpu/src/liquid.rs
   - apps/suhina/src/main.rs
@@ -86,7 +86,7 @@ host process have their own id, so `grep "\[12345\]"` shows one process. To foll
 | `ara musical context changed` | host | the tempo map or time signatures sent to the plug-in again |
 | `slow frame N ms: part ms, …; what was shown` | app (`kit/frame_trace.rs`) | a frame whose drawing took 25 ms or more, part by part (› UI time) |
 | `frames: N in 1.0 s …` | app | once a second while the window draws: frames, drawing time on average and the longest, the longest wait between frames |
-| `audio: device underruns N (+n), input underruns N (+n), stretched frames late N (+n), … plug-in blocks late N (+n, most <plug-in on track>: n), not sent N (+n), longest trip N µs, engine load …` | app | once a second while playing (including clean intervals); while stopped, when sound went missing since the last look or the engine's load is 70 % or more (› Audio dropouts) |
+| `audio: device underruns N (+n), input underruns N (+n), stretched frames late N (+n), … plug-in blocks late N (+n, most <plug-in on track>: n), not sent N (+n), longest trip N µs, longest plug-in time N µs, engine load …` | app | once a second while playing (including clean intervals); while stopped, when sound went missing since the last look or the engine's load is 70 % or more (› Audio dropouts) |
 | `slow engine update: N ms (graph …)` | app (`session/src/lib.rs`) | a project change whose new engine graph took 25 ms or more to make, part by part |
 | `slow <work>: N ms` | app | library listings, browser rows, the sample map and its cache, a drop, adding to a track: anything that took 5 ms or more |
 
@@ -181,6 +181,16 @@ happens. The counters tell the causes apart:
 - **longest trip:** the longest round trip a plug-in answered in, in microseconds: what any
   answered block took at worst. With this and *not sent*, a miss's cause says itself — long
   trips (the host's serve or the machine's scheduling), or a budget the deadline never left.
+- **longest plug-in time:** the longest the plug-in named as late most often took to process a
+  block itself, in microseconds, as its host process measured it (#1262). The device panel's late
+  line shows the same plug-in's own time (`49% of blocks late · plug-in up to 31 ms`), and
+  `device.plugin` gives `longest_process_us` and `average_process_us`. Read it beside the round
+  trip and the deadline (the block's playing time):
+  - A plug-in time close to the round trip and over the deadline: the plug-in is slow. Look at
+    its patch, its quality settings, subnormal numbers in its processing (#1258) or a bigger
+    buffer.
+  - A round trip much longer than the plug-in time: the host woke late. Look at scheduling,
+    other programs, the host's priority or a second Suhina playing (#1163).
 
 The `input diagnostics` suffix keeps the latest 32 short reads as
 `[sequence, available frames, wanted frames]`, together with cumulative `backlog_drops`

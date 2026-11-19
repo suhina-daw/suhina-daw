@@ -11,6 +11,12 @@
 //! and adds nothing. Every buffer is made when the graph is built, so running a group never
 //! allocates, locks or waits beyond what its plug-ins do.
 //!
+//! The branches' plug-ins run at the same time (ADR 0038 › 4): each branch runs as far as it can
+//! without waiting, hands its next plug-in its block and goes on as soon as that plug-in answers,
+//! while the other branches' plug-ins are out too, so a group waits for its slowest branch, not
+//! the sum of them. Each branch keeps its own events, so the order the answers come in never
+//! changes what a branch makes, and the sum is the same, bit for bit.
+//!
 //! Latency: a branch's is the sum of its devices', the group's the largest of its branches' (at
 //! most 2 s). Each branch is delayed by what it lacks of the group's, the dry signal by the
 //! group's, so all of them line up, and the group reports its latency to the chain it is in.
@@ -21,8 +27,9 @@ use suhina_device_api::{NoteEvent, ProcessContext, Role};
 use suhina_model::DeviceParam;
 
 use crate::automation::DeviceLanes;
+use crate::chain::ANSWER_SLICE;
 use crate::chain::{DeviceSlot, MAX_BLOCK};
-use crate::plugin::{Delay, PluginSlot};
+use crate::plugin::{Delay, OFFLINE_TIMEOUT, PluginSlot, Sent};
 use crate::slot_factory::{Built, SlotFactory};
 
 /// The parameters of a device group, by their stable ids, in index order: `(id, min, max,
@@ -124,6 +131,30 @@ pub(crate) struct BranchRun {
     pub(crate) latency: u32,
     /// Delays its output by what it lacks of the group's latency, so every branch lines up.
     delay: Delay,
+    /// The span's events as they reach its next slot, and those of the plug-in being sent;
+    /// room for [`MAX_EVENTS`], so running never allocates.
+    events: Vec<(usize, NoteEvent)>,
+    span_events: Vec<(usize, NoteEvent)>,
+    /// This span: the next slot to run, the plug-in it waits for, and the plug-in that has just
+    /// finished a block it was late with, so it is sent this one rather than waited for again.
+    at: usize,
+    out: Option<BranchOut>,
+    caught_up: Option<usize>,
+}
+
+/// The plug-in or nested group a branch waits for in this span.
+#[derive(Clone, Copy)]
+enum BranchOut {
+    Plugin {
+        slot: usize,
+        /// It is still at a block it was late with (#506): nothing went out yet.
+        behind: bool,
+        /// When its block went, for an offline render's time limit.
+        sent_at: Instant,
+    },
+    Group {
+        slot: usize,
+    },
 }
 
 /// A device group in a chain.
@@ -141,8 +172,6 @@ pub(crate) struct GroupSlot {
     /// The dry signal of the current span, delayed by the group's latency.
     dry: Vec<f32>,
     dry_delay: Delay,
-    events: Vec<(usize, NoteEvent)>,
-    span_events: Vec<(usize, NoteEvent)>,
     midi_scratch: Vec<(usize, NoteEvent)>,
 }
 
@@ -178,6 +207,11 @@ impl SlotFactory<'_> {
                 mix: BranchMix { volume: branch.volume, pan: branch.pan, mute: branch.mute, solo: branch.solo },
                 latency: 0,
                 delay: Delay::new(0),
+                events: Vec::with_capacity(MAX_EVENTS),
+                span_events: Vec::with_capacity(MAX_EVENTS),
+                at: 0,
+                out: None,
+                caught_up: None,
             };
             // What the branch runs, each device with its id: a group whose devices traded
             // places, even two of the same kind, starts again instead of each running device
@@ -226,8 +260,6 @@ impl SlotFactory<'_> {
             instrument,
             dry: vec![0.0; MAX_BLOCK * 2],
             dry_delay: Delay::new(if instrument { 0 } else { latency as usize }),
-            events: Vec::with_capacity(MAX_EVENTS),
-            span_events: Vec::with_capacity(MAX_EVENTS),
             midi_scratch: Vec::with_capacity(MAX_EVENTS),
         };
         Some(Built {
@@ -477,8 +509,9 @@ impl GroupSlot {
     }
 
     /// Runs the group over `buffer`'s frames `from..to` (interleaved stereo, frames counted from
-    /// the block's start), with `pending`, the notes at their frames in the block. Never
-    /// allocates.
+    /// the block's start), with `pending`, the notes at their frames in the block. The branches'
+    /// plug-ins are out at the same time, each waited for until `deadline` (offline, until
+    /// [`OFFLINE_TIMEOUT`] after it went). Never allocates.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn run(
         &mut self,
@@ -493,7 +526,25 @@ impl GroupSlot {
         if to <= from {
             return;
         }
-        let Self { branches, events, span_events, midi_scratch, mix, gain, dry, dry_delay, .. } = self;
+        let run = Span { from, to, context, sample_rate, deadline };
+        self.begin(buffer, pending, &run);
+        while self.is_waiting() {
+            let until = self.limit(deadline).unwrap_or_else(crate::clock::now);
+            if self.answered(until, deadline) {
+                self.resume(&run);
+            }
+        }
+        self.finish(buffer, from, to);
+    }
+
+    /// Starts every branch without waiting, including those inside nested groups. Their
+    /// answers are collected by the chain's scheduler through `answered` and `resume`.
+    pub(crate) fn begin(&mut self, buffer: &[f32], pending: &[(usize, NoteEvent)], run: &Span<'_>) {
+        let (from, to) = (run.from, run.to);
+        if to <= from {
+            return;
+        }
+        let Self { branches, midi_scratch, dry, dry_delay, .. } = self;
         let Some(input) = buffer.get(from * 2..to * 2) else { return };
         let Some(dry) = dry.get_mut(from * 2..to * 2) else { return };
         dry.copy_from_slice(input);
@@ -501,10 +552,67 @@ impl GroupSlot {
         for branch in branches.iter_mut() {
             let Some(span) = branch.buffer.get_mut(from * 2..to * 2) else { continue };
             span.copy_from_slice(input);
-            events.clear();
-            events.extend_from_slice(pending.get(..pending.len().min(MAX_EVENTS)).unwrap_or_default());
-            let run = Span { from, to, context, sample_rate, deadline };
-            run_slots(&mut branch.slots, &mut branch.buffer, events, span_events, midi_scratch, &branch.lanes, run);
+            branch.events.clear();
+            branch.events.extend_from_slice(pending.get(..pending.len().min(MAX_EVENTS)).unwrap_or_default());
+            branch.at = 0;
+            branch.out = None;
+            branch.caught_up = None;
+            branch.advance(midi_scratch, run);
+        }
+    }
+
+    /// Takes ready answers and advances their branches, without waiting for the others.
+    pub(crate) fn resume(&mut self, run: &Span<'_>) {
+        for branch in self.branches.iter_mut().filter(|b| b.out.is_some()) {
+            if branch.answered(crate::clock::now(), run.deadline) {
+                branch.collect(run);
+                if branch.out.is_none() {
+                    branch.advance(&mut self.midi_scratch, run);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn is_waiting(&self) -> bool {
+        self.branches.iter().any(|b| b.out.is_some())
+    }
+
+    /// Whether any branch can advance. A wait is bounded by `until`, even through nested
+    /// groups, so a worker can return to its other chains and newly queued jobs.
+    pub(crate) fn answered(&mut self, until: Instant, deadline: Option<Instant>) -> bool {
+        let now = crate::clock::now();
+        if !self.is_waiting() || self.branches.iter_mut().filter(|b| b.out.is_some()).any(|b| b.answered(now, deadline))
+        {
+            return true;
+        }
+        if until > now {
+            wait_for_branches(&mut self.branches, now, deadline, until);
+            let now = crate::clock::now();
+            return self.branches.iter_mut().filter(|b| b.out.is_some()).any(|b| b.answered(now, deadline));
+        }
+        false
+    }
+
+    /// The earliest outstanding leaf's limit; offline, each send has its own timeout.
+    pub(crate) fn limit(&self, deadline: Option<Instant>) -> Option<Instant> {
+        self.branches.iter().filter_map(|b| b.limit(deadline)).min()
+    }
+
+    /// Appends every outstanding leaf's watch, or returns `None` when any cannot be watched
+    /// or the fixed buffer is full. Callers then use a bounded wait and poll every branch.
+    pub(crate) fn watches<'a>(&'a self, watches: &mut [Option<suhina_ipc::Watch<'a>>]) -> Option<usize> {
+        let mut written = 0;
+        for branch in self.branches.iter().filter(|b| b.out.is_some()) {
+            written += branch.watches(watches.get_mut(written..)?)?;
+        }
+        Some(written)
+    }
+
+    /// Delays and sums finished branches in their stored order, just once per span.
+    pub(crate) fn finish(&mut self, buffer: &mut [f32], from: usize, to: usize) {
+        let Self { branches, mix, gain, dry, .. } = self;
+        let Some(dry) = dry.get(from * 2..to * 2) else { return };
+        for branch in branches.iter_mut() {
             if let Some(span) = branch.buffer.get_mut(from * 2..to * 2) {
                 branch.delay.run(span);
             }
@@ -601,52 +709,188 @@ pub(crate) struct Span<'a> {
     pub(crate) deadline: Option<Instant>,
 }
 
-/// Runs `slots` one after another over `buffer`'s frames `from..to`, each split at the events
-/// in `pending` (frames counted from the block's start). A plug-in runs its round trip and waits
-/// for it within the deadline. Never allocates.
-pub(crate) fn run_slots(
-    slots: &mut [DeviceSlot],
-    buffer: &mut [f32],
-    pending: &mut Vec<(usize, NoteEvent)>,
-    span_events: &mut Vec<(usize, NoteEvent)>,
-    midi_scratch: &mut Vec<(usize, NoteEvent)>,
-    lanes: &DeviceLanes,
-    run: Span<'_>,
-) {
-    let Span { from, to, context, sample_rate, deadline } = run;
-    for index in 0..slots.len() {
-        // The branch's notes end at its instrument, as a chain's do.
-        let notes_ended = crate::chain::notes_ended(slots, index);
-        let Some(slot) = slots.get_mut(index) else { break };
-        match slot {
-            DeviceSlot::Device(device) => {
-                crate::chain::run_device(device, index, buffer, from, to, pending, lanes, context, sample_rate);
-            }
-            // A built-in MIDI effect (#678) changes the branch's events as in a chain.
-            DeviceSlot::MidiDevice(device) => {
-                crate::chain::run_midi_device(
-                    device,
-                    index,
-                    pending,
-                    span_events,
-                    midi_scratch,
-                    lanes,
-                    crate::chain::EventSpan { from, to, context },
-                );
-                std::mem::swap(pending, midi_scratch);
-            }
-            DeviceSlot::Plugin(plugin) => {
-                let last = (to - from).saturating_sub(1);
-                span_events.clear();
-                if !notes_ended {
-                    span_events.extend(pending.iter().map(|&(at, event)| (at.saturating_sub(from).min(last), event)));
+/// The most branches' plug-ins one wait watches; past them a branch is looked at in turn.
+const MAX_WATCHED: usize = 64;
+
+impl BranchRun {
+    /// Runs the branch's slots over the span from its next slot, as far as it can without
+    /// waiting: built-in devices, MIDI effects and groups run here; at a plug-in that takes the
+    /// block without waiting, the block goes out and this returns, for [`BranchRun::answered`]
+    /// and [`BranchRun::collect`]. A plug-in still at a block it was late with is waited for
+    /// like an answer (#506). Never allocates.
+    fn advance(&mut self, midi_scratch: &mut Vec<(usize, NoteEvent)>, run: &Span<'_>) {
+        let &Span { from, to, context, sample_rate, deadline } = run;
+        let Self { slots, buffer, lanes, events, span_events, at, out, caught_up, .. } = self;
+        while *at < slots.len() {
+            // As in a top-level chain, notes stop at the branch's instrument.
+            let notes_ended = crate::chain::notes_ended(slots, *at);
+            let Some(slot) = slots.get_mut(*at) else { break };
+            match slot {
+                DeviceSlot::Device(device) => {
+                    crate::chain::run_device(device, *at, buffer, from, to, events, lanes, context, sample_rate);
                 }
-                plugin.automate(from, to);
-                if let Some(span) = buffer.get_mut(from * 2..to * 2) {
-                    plugin.run(span, span_events, deadline);
+                // A built-in MIDI effect (#678) changes the branch's events as in a chain.
+                DeviceSlot::MidiDevice(device) => {
+                    crate::chain::run_midi_device(
+                        device,
+                        *at,
+                        events,
+                        span_events,
+                        midi_scratch,
+                        lanes,
+                        crate::chain::EventSpan { from, to, context },
+                    );
+                    std::mem::swap(events, midi_scratch);
+                }
+                DeviceSlot::Group(group) => {
+                    group.begin(buffer, events, run);
+                    if group.is_waiting() {
+                        *out = Some(BranchOut::Group { slot: *at });
+                        return;
+                    }
+                    group.finish(buffer, from, to);
+                }
+                DeviceSlot::Plugin(plugin) => {
+                    let now = crate::clock::now();
+                    if deadline.is_some() && *caught_up != Some(*at) && !plugin.ready(now) {
+                        *out = Some(BranchOut::Plugin { slot: *at, behind: true, sent_at: now });
+                        return;
+                    }
+                    *caught_up = None;
+                    let last = (to - from).saturating_sub(1);
+                    span_events.clear();
+                    if !notes_ended {
+                        span_events
+                            .extend(events.iter().map(|&(frame, event)| (frame.saturating_sub(from).min(last), event)));
+                    }
+                    plugin.automate(from, to);
+                    if let Some(span) = buffer.get_mut(from * 2..to * 2) {
+                        match plugin.send(span, span_events, deadline) {
+                            Sent::Out => {
+                                *out = Some(BranchOut::Plugin { slot: *at, behind: false, sent_at: now });
+                                return;
+                            }
+                            // A miss already counted: running it again would count it twice.
+                            Sent::Refused => {}
+                            Sent::Unsupported => plugin.run(span, span_events, deadline),
+                        }
+                    }
                 }
             }
-            DeviceSlot::Group(group) => group.run(buffer, from, to, pending, context, sample_rate, deadline),
+            *at += 1;
         }
+    }
+
+    /// Until when the plug-in it waits for may take: the block's deadline, or offline
+    /// [`OFFLINE_TIMEOUT`] after its block went.
+    fn limit(&self, deadline: Option<Instant>) -> Option<Instant> {
+        match self.out? {
+            BranchOut::Plugin { sent_at, .. } => {
+                Some(deadline.unwrap_or_else(|| sent_at.checked_add(OFFLINE_TIMEOUT).unwrap_or(sent_at)))
+            }
+            BranchOut::Group { slot } => match self.slots.get(slot) {
+                Some(DeviceSlot::Group(group)) => group.limit(deadline),
+                _ => None,
+            },
+        }
+    }
+
+    /// Whether [`BranchRun::collect`] can go on now: the plug-in it waits for has answered (or
+    /// finished the block it was late with), or its time is over. Waits for it at most until
+    /// `until` (a time already past only looks). Never allocates.
+    fn answered(&mut self, until: Instant, deadline: Option<Instant>) -> bool {
+        let Some(out) = self.out else { return true };
+        if let BranchOut::Group { slot } = out {
+            return match self.slots.get_mut(slot) {
+                Some(DeviceSlot::Group(group)) => group.answered(until, deadline),
+                _ => true,
+            };
+        }
+        let Some(limit) = self.limit(deadline) else { return true };
+        if crate::clock::now() >= limit {
+            return true;
+        }
+        let BranchOut::Plugin { slot, behind, .. } = out else { return true };
+        match self.slots.get_mut(slot) {
+            Some(DeviceSlot::Plugin(plugin)) if behind => {
+                plugin.ready(until.min(limit)) || crate::clock::now() >= limit
+            }
+            Some(DeviceSlot::Plugin(plugin)) => plugin.poll(until.min(limit)) || crate::clock::now() >= limit,
+            _ => true,
+        }
+    }
+
+    /// Takes the answer of the plug-in it waits for into its buffer (a miss when it is not in by
+    /// its time), and goes on after it; for one that has finished a block it was late with, sends
+    /// it this one next. Never allocates.
+    fn collect(&mut self, run: &Span<'_>) {
+        let limit = self.limit(run.deadline);
+        let Some(out) = self.out.take() else { return };
+        let (from, to) = (run.from, run.to);
+        if let BranchOut::Group { slot } = out {
+            if let Some(DeviceSlot::Group(group)) = self.slots.get_mut(slot) {
+                group.resume(run);
+                if group.is_waiting() {
+                    self.out = Some(out);
+                    return;
+                }
+                group.finish(&mut self.buffer, from, to);
+            }
+            self.at = slot + 1;
+            return;
+        }
+        let BranchOut::Plugin { slot, behind, .. } = out else { return };
+        if behind {
+            self.caught_up = Some(slot);
+            return;
+        }
+        if let (Some(DeviceSlot::Plugin(plugin)), Some(span)) =
+            (self.slots.get_mut(slot), self.buffer.get_mut(from * 2..to * 2))
+        {
+            plugin.finish(span, limit);
+        }
+        self.at = slot + 1;
+    }
+
+    /// What it waits for, to wait for together with the other branches'.
+    fn watches<'a>(&'a self, watches: &mut [Option<suhina_ipc::Watch<'a>>]) -> Option<usize> {
+        match self.out? {
+            BranchOut::Plugin { slot, behind, .. } => match self.slots.get(slot) {
+                Some(DeviceSlot::Plugin(plugin)) => {
+                    *watches.first_mut()? = Some(plugin.watch(behind)?);
+                    Some(1)
+                }
+                _ => None,
+            },
+            BranchOut::Group { slot } => match self.slots.get(slot) {
+                Some(DeviceSlot::Group(group)) => group.watches(watches),
+                _ => None,
+            },
+        }
+    }
+}
+
+/// While no branch's plug-in has answered: sleeps until one of them does or the earliest of
+/// their limits passes ([`suhina_ipc::wait_any`]); when one cannot be watched, waits on the first
+/// branch still out for at most [`ANSWER_SLICE`] and looks at all of them again. Never allocates.
+fn wait_for_branches(branches: &mut [BranchRun], now: Instant, deadline: Option<Instant>, mut until: Instant) {
+    let mut watches: [Option<suhina_ipc::Watch>; MAX_WATCHED] = [None; MAX_WATCHED];
+    let mut watched = 0;
+    let mut all_watched = true;
+    for branch in branches.iter().filter(|b| b.out.is_some()) {
+        match watches.get_mut(watched..).and_then(|room| branch.watches(room)) {
+            Some(count) => watched += count,
+            None => all_watched = false,
+        }
+        if let Some(limit) = branch.limit(deadline) {
+            until = until.min(limit);
+        }
+    }
+    if watched > 0 && all_watched {
+        suhina_ipc::wait_any(watches.get(..watched).unwrap_or_default(), until);
+        return;
+    }
+    if let Some(branch) = branches.iter_mut().find(|b| b.out.is_some()) {
+        branch.answered(until.min(now + ANSWER_SLICE), deadline);
     }
 }

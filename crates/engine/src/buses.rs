@@ -190,6 +190,9 @@ pub(crate) fn build(
         let post =
             gains_until(project, chain.track, target.map(|(_, ch)| ch), live_pan.is_none()).unwrap_or((0.0, 0.0));
         chain.set_post(post);
+        // A key hears this channel's fader, not the gains of later buses that happen to be
+        // folded into its audible output. In particular a zero-level output is not a mute.
+        chain.set_key_post(cue_gains(project, chain.track, live_pan.is_none()).unwrap_or((0.0, 0.0)));
         chain.target = target.map(|(index, _)| index);
         // A live pan reaches the cue as it does the main output: its gains are centred too.
         chain.set_cue(if cued(project, chain.track) {

@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, squash merge, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy, slow CI tests, nextest, test partitions
 type: howto
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-19
 covers:
   - .github/workflows/ci.yml
   - .config/nextest.toml
@@ -438,6 +438,16 @@ partition saves; the doc tests, which nextest does not run, run in the first par
 picked from the workspace build with `-E "package(suhina-engine)"`, not built with `-p`: cargo
 resolves the dependencies' features for the one package then, and compiled a share of them again.
 
+**The theme drawings.** Each built-in theme or variant has its own test under
+`painted::themes` in `apps/theme-render/tests/painted.rs`, so nextest spreads them across the
+partitions. Each test draws every scene except the build-dependent About dialog, on a fresh
+thread per scene, and checks both the painted digest and cut texts from those same drawings.
+There is no extra worker pool inside the tests; nextest controls their concurrency. A registry
+check fails if a theme or variant has no test or is listed twice. The recordings are one file per
+theme or variant in `apps/theme-render/tests/painted/` and `apps/theme-render/tests/cut/`, so
+`SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` can update them in parallel
+without tests writing the same file.
+
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
 --no-fail-fast` does the same), a test that runs a minute or more is named while it runs, and one
@@ -453,6 +463,14 @@ nextest has a race of that kind, not a timing problem: there are no retries. The
 with its archives' checksums in [`scripts/install_nextest.sh`](../scripts/install_nextest.sh);
 locally `cargo test --workspace` runs the same tests, and so does `cargo nextest run --workspace`
 once nextest is installed (`cargo install cargo-nextest --locked`).
+
+**The theme layouts.** Each layout-changing built-in theme and the see-through test theme has
+its own test under `scenes::layouts` in `apps/theme-render/tests/scenes.rs`. Each test drives every
+scene, on its own test thread; nextest can distribute the four themes over the three partitions
+instead of assigning their combined test to one runner. The built-in theme list and those tests
+come from the same table. The colour-only guard still rejects an unlisted theme with layout
+properties or artwork, and the other bundled themes still drive the launcher. This changes
+scheduling, not the scenes, assertions or drawing recordings.
 
 **The pack's tests.** The shipped pack's tests (`crates/device-registry/tests/pack.rs`) render NAM
 models, and NAM ran at two to four times real time in a test build until `nam-rs` was built at

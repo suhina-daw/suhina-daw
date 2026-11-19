@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
@@ -164,6 +164,10 @@ pub struct PluginReport {
     pub longest_us: u32,
     /// Blocks that came with no time left before the deadline (an earlier plug-in used it).
     pub no_time: u32,
+    /// The longest and the average time the plug-in itself took to process a block, in
+    /// microseconds, as its host measured it (#1262).
+    pub longest_process_us: u32,
+    pub average_process_us: u32,
     /// Why it runs with its own defaults, when it did not take the saved state.
     pub state_refused: Option<String>,
     /// It is bound to an ARA document of its track's audio clips (ADR 0033), so its editor
@@ -1355,6 +1359,8 @@ impl Rack {
             late_blocks: instance.counts.as_ref().map_or(0, |c| c.read().1),
             longest_us: instance.counts.as_ref().map_or(0, |c| c.longest_us()),
             no_time: instance.counts.as_ref().map_or(0, |c| c.no_time()),
+            longest_process_us: instance.counts.as_ref().map_or(0, |c| c.longest_process_us()),
+            average_process_us: instance.counts.as_ref().map_or(0, |c| c.average_process_us()),
             state_refused: instance.state_refused.clone(),
             ara: !instance.ara_sources.is_empty(),
             params: instance

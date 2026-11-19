@@ -35,8 +35,8 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   variable or its own rule reaches what it paints.
 - **A change to what the views paint is checked in every built-in theme.** `suhina-theme-render`'s
   `painted` test digests what each scene paints in each built-in theme and variant
-  (`apps/theme-render/tests/painted.txt`, one file for every system: the scenes are drawn as on
-  Linux wherever they run). Moving a view onto elements must leave every
+  (`apps/theme-render/tests/painted/`, one file per theme or variant, shared by every system:
+  the scenes are drawn as on Linux wherever they run). Moving a view onto elements must leave every
   digest as it is; a change meant to alter a look records them with
   `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` and says why. Compare
   listings with `SUHINA_PAINTED_DUMP=<folder>` before and after. Text that differs between

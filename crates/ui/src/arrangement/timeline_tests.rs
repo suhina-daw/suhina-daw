@@ -297,15 +297,18 @@ fn a_looping_clip_marks_where_each_pass_starts() {
 }
 
 #[test]
-fn a_clip_without_a_loop_shows_its_window_of_the_content() {
+fn a_clip_without_a_loop_keeps_source_notes_for_a_live_right_edge_preview() {
     let project = demo_project();
     let mut clip = project.arrangement.lanes[0].clips[0].clone();
     clip.loop_range = None;
     clip.offset = 1.0;
     clip.length = 2.0;
     let content = project.content(clip.content).unwrap();
-    let starts: Vec<f64> = note_marks(content, &clip).iter().map(|m| m.start).collect();
-    assert_eq!(starts, [0.0, 1.0]);
+    let marks = note_marks(content, &clip);
+    let visible: Vec<f64> = marks.iter().filter(|m| m.start < clip.length).map(|m| m.start).collect();
+    assert_eq!(visible, [0.0, 1.0]);
+    let starts: Vec<f64> = marks.iter().map(|m| m.start).collect();
+    assert_eq!(starts, [0.0, 1.0, 2.0], "the next source note is ready before the trim commits");
 }
 
 /// The demo project with Drums and Bass inside a group, "Group", in front of them, as

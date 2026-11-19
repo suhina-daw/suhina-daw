@@ -1062,6 +1062,12 @@ impl Controller {
         Ok(())
     }
 
+    /// A test barrier for the real stretch thread's queued work, outside audio processing.
+    #[cfg(test)]
+    pub(crate) fn sync_stretch_worker(&self) {
+        self.updater.stretch.as_ref().expect("stretch thread was started").sync();
+    }
+
     /// Frames of stretched clips that were not ready in time and played as silence.
     pub fn stretch_underruns(&self) -> u64 {
         self.monitor.stretch_underruns.load(Ordering::Relaxed)
