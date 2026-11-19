@@ -26,7 +26,7 @@ expanded-multiband suhina-studio@light 4703437aa709141f
 expanded-reverb suhina-studio@light 6ba8a0dd83669618
 expanded-vinyl-distortion suhina-studio@light 7b86a5a276cadea3
 export-dialog suhina-studio@light 3d4794961f83fb38
-grid-menu suhina-studio@light e3067a524f1ed65e
+grid-menu suhina-studio@light 2c5c9fde3fc5079e
 instrument-sampler suhina-studio@light 98ee4233ef95b1ff
 launcher suhina-studio@light 6b3e23a7bf015c79
 launcher-hover suhina-studio@light 2c01e10979e92254
@@ -36,7 +36,7 @@ launcher-toggles suhina-studio@light 510616ae0dd1b6e7
 menu suhina-studio@light 5b23963c0d9f28c6
 missing-files suhina-studio@light 7e856186bea4f4ff
 new-theme-dialog suhina-studio@light 89f35ad0f9fbb31c
-piano-roll suhina-studio@light 03bc580beda56db2
+piano-roll suhina-studio@light 33ce5e815dc64efc
 project-dialog suhina-studio@light 011080d820ffda00
 quantize-menu suhina-studio@light 6d741b3f19df74dd
 quick-add suhina-studio@light 9a610463def92f6c
