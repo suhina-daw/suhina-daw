@@ -1,5 +1,5 @@
 ---
-description: The planned comprehensive instrument, its shared Rust synthesis boundary, and the fixed-point FM blocks that establish the reusable DSP contract
+description: The planned comprehensive instrument, its shared Rust synthesis boundary, fixed-point FM blocks and reusable time and linear envelopes
 read_when: comprehensive instrument, sample to instrument, shared synthesis, FM operator, fixed point, instrument modelling, MPE instrument
 type: spec
 status: planned
@@ -7,6 +7,7 @@ last_verified: 2026-11-19
 covers:
   - crates/dsp/**
   - devices/fm-synth/**
+  - crates/device-sdk/src/sample_envelope_tests.rs
 ---
 
 # Instrument synthesis

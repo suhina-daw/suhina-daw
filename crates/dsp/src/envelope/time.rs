@@ -1,10 +1,9 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! An envelope in seconds beside the DX7 model (ADR 0034): initial, attack, peak, decay, sustain,
-//! release, an end level, slopes and a loop mode. An operator's runs in decibels, so with its slopes
-//! at 0 its attack is linear and its decay and release exponential; the filter's, the pitch's and
-//! the LFO's run in their own units.
+//! Block-stepped time envelopes, extracted from the FM instrument (ADR 0034).
+//! Amplitude envelopes use dB, with attack interpolated in linear gain; other envelopes
+//! interpolate their own units. Calls advance at most one stage, discarding excess stage time.
 
 /// What happens while a key stays down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -35,9 +34,12 @@ impl LoopMode {
     }
 }
 
-/// An envelope's settings, as its parameters hold them.
+/// Seconds, levels and repeat policy. Public values are bounded on each start/step:
+/// times 0.0005..60, repeat beats 0.001..1024, slopes and velocity scaling -1..1,
+/// key scaling 0..1. Non-finite values use defaults. Linear levels are +/-1e6 (fallback 0),
+/// amplitude levels -160..120 dB (fallback -80 dB).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct EnvSettings {
+pub struct TimeEnvelopeSettings {
     pub attack: f32,
     pub decay: f32,
     pub release: f32,
@@ -55,7 +57,7 @@ pub struct EnvSettings {
     pub release_slope: f32,
 }
 
-impl Default for EnvSettings {
+impl Default for TimeEnvelopeSettings {
     fn default() -> Self {
         Self {
             attack: 0.001,
@@ -77,17 +79,58 @@ impl Default for EnvSettings {
     }
 }
 
-/// The transport as a block starts.
+fn bounded(value: f32, min: f32, max: f32, fallback: f32) -> f32 {
+    if value.is_finite() { value.clamp(min, max) } else { fallback }
+}
+
+impl TimeEnvelopeSettings {
+    fn bounded(&self, amp: bool) -> Self {
+        let defaults = Self::default();
+        let level = |value| {
+            if amp { bounded(value, -160.0, 120.0, -80.0) } else { bounded(value, -1e6, 1e6, 0.0) }
+        };
+        Self {
+            attack: bounded(self.attack, 0.0005, 60.0, defaults.attack),
+            decay: bounded(self.decay, 0.0005, 60.0, defaults.decay),
+            release: bounded(self.release, 0.0005, 60.0, defaults.release),
+            initial: level(self.initial),
+            peak: level(self.peak),
+            sustain: level(self.sustain),
+            end: level(self.end),
+            mode: self.mode,
+            loop_time: bounded(self.loop_time, 0.0005, 60.0, defaults.loop_time),
+            repeat_beats: bounded(self.repeat_beats, 0.001, 1024.0, defaults.repeat_beats),
+            time_by_velocity: bounded(self.time_by_velocity, -1.0, 1.0, 0.0),
+            time_by_key: bounded(self.time_by_key, 0.0, 1.0, 0.0),
+            attack_slope: bounded(self.attack_slope, -1.0, 1.0, 0.0),
+            decay_slope: bounded(self.decay_slope, -1.0, 1.0, 0.0),
+            release_slope: bounded(self.release_slope, -1.0, 1.0, 0.0),
+        }
+    }
+}
+
+/// The transport as a block starts. Tempo is limited to 1..1000 BPM (invalid/non-positive
+/// uses 120), beat to +/-1e12 (non-finite uses zero). Negative beats are valid.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Clock {
+pub struct EnvelopeClock {
     pub tempo: f64,
     pub beat: f64,
     pub playing: bool,
 }
 
-impl Default for Clock {
+impl Default for EnvelopeClock {
     fn default() -> Self {
         Self { tempo: 120.0, beat: 0.0, playing: false }
+    }
+}
+
+impl EnvelopeClock {
+    fn bounded(&self) -> Self {
+        Self {
+            tempo: if self.tempo.is_finite() && self.tempo > 0.0 { self.tempo.clamp(1.0, 1000.0) } else { 120.0 },
+            beat: if self.beat.is_finite() { self.beat.clamp(-1e12, 1e12) } else { 0.0 },
+            playing: self.playing,
+        }
     }
 }
 
@@ -105,6 +148,8 @@ enum Stage {
 const SIXTEENTH: f64 = 0.25;
 /// Shortest Sync repeat, in beats, so a zero cannot stall it.
 const SHORTEST_REPEAT: f64 = 1e-3;
+/// More than thirty years; bounds accumulators without affecting supported stage durations.
+const MAX_SECONDS: f32 = 1e9;
 
 /// Decibels at or below which an operator's envelope is silence.
 pub const SILENCE_DB: f32 = -69.9;
@@ -131,7 +176,7 @@ fn bend(p: f32, slope: f32) -> f32 {
 
 /// See the module.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct TimeEnv {
+pub struct TimeEnvelope {
     stage: Stage,
     value: f32,
     from: f32,
@@ -146,9 +191,14 @@ pub struct TimeEnv {
     amp: bool,
 }
 
-impl TimeEnv {
-    /// Starts for a key going down. `velocity` 0 to 1, `key` the MIDI key; `amp` runs in decibels.
-    pub fn start(&mut self, s: &EnvSettings, velocity: f32, key: f32, amp: bool, clock: &Clock) {
+impl TimeEnvelope {
+    /// Starts at the initial level. Velocity is limited to 0..1 (non-finite uses zero),
+    /// key to 0..127 (non-finite uses 60); `amp` selects decibels.
+    pub fn start(&mut self, s: &TimeEnvelopeSettings, velocity: f32, key: f32, amp: bool, clock: &EnvelopeClock) {
+        let s = &s.bounded(amp);
+        let clock = &clock.bounded();
+        let velocity = bounded(velocity, 0.0, 1.0, 0.0);
+        let key = bounded(key, 0.0, 127.0, 60.0);
         let by_velocity = 2f32.powf(s.time_by_velocity * (velocity - 0.5) * 4.0);
         let by_key = 2f32.powf(s.time_by_key * (key - 60.0) / 12.0);
         *self = Self {
@@ -181,8 +231,20 @@ impl TimeEnv {
     }
 
     /// Advances by `seconds` of real time, `time_scale` faster than set, and gives the value.
-    /// `down` is whether the key is held.
-    pub fn next(&mut self, s: &EnvSettings, seconds: f32, time_scale: f32, down: bool, clock: &Clock) -> f32 {
+    /// `down` is whether the key is held. Seconds are limited to 0..60 (non-finite uses zero),
+    /// time scale to 0..1000 (non-finite uses one). Excess stage time is discarded.
+    pub fn next(
+        &mut self,
+        s: &TimeEnvelopeSettings,
+        seconds: f32,
+        time_scale: f32,
+        down: bool,
+        clock: &EnvelopeClock,
+    ) -> f32 {
+        let s = &s.bounded(self.amp);
+        let clock = &clock.bounded();
+        let seconds = bounded(seconds, 0.0, 60.0, 0.0);
+        let time_scale = bounded(time_scale, 0.0, 1000.0, 1.0);
         let down = down || s.mode == LoopMode::Trigger;
         if !down && !matches!(self.stage, Stage::Release | Stage::Done) {
             self.enter(Stage::Release);
@@ -191,7 +253,7 @@ impl TimeEnv {
         if down {
             match s.mode {
                 LoopMode::Loop if self.stage == Stage::Sustain => {
-                    self.timer += scaled;
+                    self.timer = (self.timer + scaled).min(MAX_SECONDS);
                     if self.timer >= s.loop_time.max(0.0005) {
                         self.restart();
                     }
@@ -199,7 +261,7 @@ impl TimeEnv {
                 LoopMode::Beat => self.repeat_by_beat(s, seconds, clock),
                 LoopMode::Sync if clock.playing => {
                     if clock.beat >= self.next_beat {
-                        self.next_beat += f64::from(s.repeat_beats).max(SHORTEST_REPEAT);
+                        self.next_beat = (self.next_beat + f64::from(s.repeat_beats)).min(1e12 + 1024.0);
                         self.restart();
                     }
                 }
@@ -207,7 +269,7 @@ impl TimeEnv {
                 _ => {}
             }
         }
-        self.position += scaled;
+        self.position = (self.position + scaled).min(MAX_SECONDS);
         match self.stage {
             Stage::Attack => {
                 let p = self.position / s.attack.max(0.0005);
@@ -240,7 +302,7 @@ impl TimeEnv {
             }
             // Set while the note holds, it glides there rather than stepping.
             Stage::Sustain => {
-                self.value = crate::ext::glide(self.value, s.sustain, seconds / crate::ext::GLIDE_SECONDS as f32);
+                self.value = crate::smooth::glide_step(self.value, s.sustain, seconds / 0.015);
             }
             Stage::Release => {
                 let p = self.position / s.release.max(0.0005);
@@ -256,9 +318,9 @@ impl TimeEnv {
         self.value
     }
 
-    fn repeat_by_beat(&mut self, s: &EnvSettings, seconds: f32, clock: &Clock) {
+    fn repeat_by_beat(&mut self, s: &TimeEnvelopeSettings, seconds: f32, clock: &EnvelopeClock) {
         // Beats are song time: the device's Time does not move them.
-        self.timer += seconds;
+        self.timer = (self.timer + seconds).min(MAX_SECONDS);
         let length = f64::from(s.repeat_beats) * 60.0 / clock.tempo.max(1.0);
         if f64::from(self.timer) >= length {
             self.restart();
@@ -267,7 +329,7 @@ impl TimeEnv {
 }
 
 /// Where a Sync loop first repeats: one repeat on, at the nearest sixteenth of the song.
-fn first_repeat(s: &EnvSettings, clock: &Clock) -> f64 {
+fn first_repeat(s: &TimeEnvelopeSettings, clock: &EnvelopeClock) -> f64 {
     let at = clock.beat + f64::from(s.repeat_beats).max(SHORTEST_REPEAT);
     (at / SIXTEENTH).round() * SIXTEENTH
 }
@@ -278,13 +340,13 @@ mod tests {
 
     const BLOCK: f32 = 64.0 / 48_000.0;
 
-    fn run(env: &mut TimeEnv, s: &EnvSettings, seconds: f32, down: bool) -> Vec<f32> {
+    fn run(env: &mut TimeEnvelope, s: &TimeEnvelopeSettings, seconds: f32, down: bool) -> Vec<f32> {
         let blocks = (seconds / BLOCK) as usize;
-        (0..blocks).map(|_| env.next(s, BLOCK, 1.0, down, &Clock::default())).collect()
+        (0..blocks).map(|_| env.next(s, BLOCK, 1.0, down, &EnvelopeClock::default())).collect()
     }
 
-    fn settings() -> EnvSettings {
-        EnvSettings {
+    fn settings() -> TimeEnvelopeSettings {
+        TimeEnvelopeSettings {
             attack: 0.01,
             decay: 0.1,
             release: 0.1,
@@ -292,15 +354,15 @@ mod tests {
             peak: 1.0,
             sustain: 0.5,
             end: 0.25,
-            ..EnvSettings::default()
+            ..TimeEnvelopeSettings::default()
         }
     }
 
     #[test]
     fn it_goes_through_its_stages_and_ends_at_the_end_level() {
         let s = settings();
-        let mut env = TimeEnv::default();
-        env.start(&s, 0.5, 60.0, false, &Clock::default());
+        let mut env = TimeEnvelope::default();
+        env.start(&s, 0.5, 60.0, false, &EnvelopeClock::default());
         let up = run(&mut env, &s, 0.5, true);
         assert!(up.iter().any(|v| (*v - 1.0).abs() < 0.2));
         assert_eq!(up.last().copied(), Some(0.5));
@@ -312,10 +374,10 @@ mod tests {
     #[test]
     fn release_starts_from_where_it_is() {
         let s = settings();
-        let mut env = TimeEnv::default();
-        env.start(&s, 0.5, 60.0, false, &Clock::default());
+        let mut env = TimeEnvelope::default();
+        env.start(&s, 0.5, 60.0, false, &EnvelopeClock::default());
         let before = run(&mut env, &s, 0.03, true).last().copied().unwrap_or(0.0);
-        let after = env.next(&s, BLOCK, 1.0, false, &Clock::default());
+        let after = env.next(&s, BLOCK, 1.0, false, &EnvelopeClock::default());
         assert!((before - after).abs() < 0.1, "{before} {after}");
     }
 
@@ -324,13 +386,13 @@ mod tests {
         let mut s = settings();
         s.mode = LoopMode::Loop;
         s.loop_time = 0.05;
-        let mut env = TimeEnv::default();
-        env.start(&s, 0.5, 60.0, false, &Clock::default());
+        let mut env = TimeEnvelope::default();
+        env.start(&s, 0.5, 60.0, false, &EnvelopeClock::default());
         let out = run(&mut env, &s, 0.6, true);
         assert!(out[200..].iter().any(|v| *v > 0.9));
 
         s.mode = LoopMode::Trigger;
-        env.start(&s, 0.5, 60.0, false, &Clock::default());
+        env.start(&s, 0.5, 60.0, false, &EnvelopeClock::default());
         let early = run(&mut env, &s, 0.05, false);
         assert!(early.iter().any(|v| *v > 0.5));
         run(&mut env, &s, 0.3, false);
@@ -343,12 +405,12 @@ mod tests {
         s.mode = LoopMode::Beat;
         s.repeat_beats = 1.0;
         let count = |scale: f32| {
-            let mut env = TimeEnv::default();
-            env.start(&s, 0.5, 60.0, false, &Clock::default());
+            let mut env = TimeEnvelope::default();
+            env.start(&s, 0.5, 60.0, false, &EnvelopeClock::default());
             let mut last = 0.0;
             let mut rises = 0;
             for _ in 0..(2.0 / BLOCK) as usize {
-                let v = env.next(&s, BLOCK, scale, true, &Clock::default());
+                let v = env.next(&s, BLOCK, scale, true, &EnvelopeClock::default());
                 if v > 0.9 && last <= 0.9 {
                     rises += 1;
                 }
@@ -365,8 +427,8 @@ mod tests {
         let mut s = settings();
         s.mode = LoopMode::Sync;
         s.repeat_beats = 1.0;
-        let at = |beat: f64| Clock { tempo: 120.0, beat, playing: true };
-        let mut env = TimeEnv::default();
+        let at = |beat: f64| EnvelopeClock { tempo: 120.0, beat, playing: true };
+        let mut env = TimeEnvelope::default();
         env.start(&s, 0.5, 60.0, false, &at(0.1));
         assert_eq!(env.next_beat, 1.0);
         for beat in [0.2, 0.5, 0.9] {
@@ -379,9 +441,10 @@ mod tests {
 
     #[test]
     fn an_operator_envelope_runs_in_decibels_and_falls_to_silence() {
-        let s = EnvSettings { initial: -70.0, peak: 0.0, sustain: -6.0, release: 0.05, end: -70.0, ..settings() };
-        let mut env = TimeEnv::default();
-        env.start(&s, 0.5, 60.0, true, &Clock::default());
+        let s =
+            TimeEnvelopeSettings { initial: -70.0, peak: 0.0, sustain: -6.0, release: 0.05, end: -70.0, ..settings() };
+        let mut env = TimeEnvelope::default();
+        env.start(&s, 0.5, 60.0, true, &EnvelopeClock::default());
         assert_eq!(run(&mut env, &s, 0.5, true).last().copied(), Some(-6.0));
         assert!(run(&mut env, &s, 0.1, false).last().copied().unwrap_or(0.0) <= SILENCE_DB);
         assert!(env.is_done());
@@ -396,213 +459,5 @@ mod tests {
 }
 
 #[cfg(test)]
-mod reference_tests {
-    use super::*;
-    // Frozen from the pre-extraction implementation at f2e2fc1af, before moving it to DSP.
-    #[allow(clippy::excessive_precision)]
-    const EXPECTED: [[f32; 14]; 10] = [
-        [
-            -1.457202673,
-            -0.198230028,
-            1.999734402,
-            1.955803156,
-            1.416375875,
-            0.500000000,
-            0.500000000,
-            0.500000000,
-            -0.449150950,
-            -0.497414351,
-            -0.500000000,
-            -0.500000000,
-            -0.250000000,
-            -0.250000000,
-        ],
-        [
-            -1.457202673,
-            -0.198230028,
-            1.999734402,
-            1.955803156,
-            1.416375875,
-            1.999734402,
-            0.694881678,
-            1.966794252,
-            -0.500000000,
-            1.677240372,
-            -0.175196409,
-            -0.500000000,
-            -0.250000000,
-            -0.250000000,
-        ],
-        [
-            -1.457202673,
-            -0.198230028,
-            1.999734402,
-            1.955803156,
-            1.416375875,
-            1.942620516,
-            1.633075476,
-            1.190145373,
-            1.848139167,
-            1.937870026,
-            -0.500000000,
-            -0.500000000,
-            -0.250000000,
-            -0.250000000,
-        ],
-        [
-            -1.457202673,
-            -0.198230028,
-            1.999734402,
-            1.955803156,
-            1.416375875,
-            1.999966741,
-            0.806685448,
-            1.806344271,
-            1.998505712,
-            -0.372826576,
-            1.677240610,
-            0.505742550,
-            -0.250000000,
-            -0.250000000,
-        ],
-        [
-            -1.457202673,
-            -0.198230028,
-            1.999734402,
-            1.955803156,
-            1.416375875,
-            -0.249978244,
-            -0.250000000,
-            -0.250000000,
-            -0.250000000,
-            -0.250000000,
-            -0.250000000,
-            -0.250000000,
-            -0.250000000,
-            -0.250000000,
-        ],
-        [
-            -10.213222504,
-            -5.030750751,
-            -0.002125165,
-            -0.353574425,
-            -4.668992519,
-            -12.000000000,
-            -12.000000000,
-            -12.000000000,
-            -8.203396797,
-            -8.010342598,
-            -8.000000000,
-            -8.000000000,
-            -80.000000000,
-            -80.000000000,
-        ],
-        [
-            -10.213222504,
-            -5.030750751,
-            -0.002125165,
-            -0.353574425,
-            -4.668992519,
-            -0.002125165,
-            -10.440946579,
-            -0.265645623,
-            -8.000000000,
-            -1.032830834,
-            -6.960628510,
-            -8.000000000,
-            -80.000000000,
-            -80.000000000,
-        ],
-        [
-            -10.213222504,
-            -5.030750751,
-            -0.002125165,
-            -0.353574425,
-            -4.668992519,
-            -0.459035754,
-            -1.757382393,
-            -6.478837013,
-            -0.485954642,
-            -0.130906820,
-            -8.000000000,
-            -8.000000000,
-            -80.000000000,
-            -80.000000000,
-        ],
-        [
-            -10.213222504,
-            -5.030750751,
-            -0.002125165,
-            -0.353574425,
-            -4.668992519,
-            -0.000265646,
-            -9.546516418,
-            -1.549246311,
-            -0.004781622,
-            -7.593045235,
-            -1.032830119,
-            -4.781623840,
-            -80.000000000,
-            -80.000000000,
-        ],
-        [
-            -10.213222504,
-            -5.030750751,
-            -0.002125165,
-            -0.353574425,
-            -4.668992519,
-            -79.998023987,
-            -80.000000000,
-            -80.000000000,
-            -80.000000000,
-            -80.000000000,
-            -80.000000000,
-            -80.000000000,
-            -80.000000000,
-            -80.000000000,
-        ],
-    ];
-    #[test]
-    fn frozen_time_envelope_trajectories() {
-        let probes = [0, 1, 7, 16, 31, 63, 95, 127, 159, 191, 255, 319, 383, 511];
-        let block = 64.0f32 / 48_000.0;
-        let mut row = 0;
-        for amp in [false, true] {
-            for mode in [LoopMode::Off, LoopMode::Loop, LoopMode::Beat, LoopMode::Sync, LoopMode::Trigger] {
-                let mut s = EnvSettings {
-                    attack: 0.01,
-                    decay: 0.06,
-                    release: 0.04,
-                    initial: if amp { -70.0 } else { -3.0 },
-                    peak: if amp { 0.0 } else { 2.0 },
-                    sustain: if amp { -12.0 } else { 0.5 },
-                    end: if amp { -70.0 } else { -0.25 },
-                    mode,
-                    loop_time: 0.025,
-                    repeat_beats: 0.125,
-                    time_by_velocity: 0.25,
-                    time_by_key: 0.33,
-                    attack_slope: 0.25,
-                    decay_slope: -0.5,
-                    release_slope: 0.75,
-                };
-                let mut e = TimeEnv::default();
-                e.start(&s, 0.73, 79.0, amp, &Clock { tempo: 120.0, beat: 0.1, playing: true });
-                let mut column = 0;
-                for i in 0..512 {
-                    if i == 128 {
-                        s.sustain = if amp { -8.0 } else { -0.5 };
-                    }
-                    let clock = Clock { tempo: 120.0, beat: 0.1 + f64::from(block) * i as f64 * 2.0, playing: i < 256 };
-                    let v = e.next(&s, block, if i < 192 { 0.75 } else { 1.5 }, i < 320, &clock);
-                    if probes.contains(&i) {
-                        let expected = EXPECTED[row][column];
-                        assert!((v - expected).abs() < 2e-5, "row {row}, probe {i}: {v} != {expected}");
-                        column += 1;
-                    }
-                }
-                row += 1;
-            }
-        }
-    }
-}
+#[path = "time_reference_tests.rs"]
+mod reference_tests;

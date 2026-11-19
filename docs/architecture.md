@@ -405,8 +405,12 @@ through PreparedSamples; the SDK does no file decoding. Missing keys fail prepar
 binding prepares a new graph; existing voices retain their old Arc until graph retirement off-thread.
 VoiceGroup, GrainPool and versioned Component definitions contain private precompiled graphs, bounded
 by nesting and aggregate state budgets. Their states are never constructed or freed during rendering.
-Shared envelope stages, RNG, grain windows/scheduling, source analysis and stretch processing serve
-both the existing sampler and graph nodes. Existing Delay and Reverb implementations are unchanged.
+The sampler and graph AD/ADSR nodes use `dsp::envelope::LinearEnvelope`; the FM time envelope is
+the separate `TimeEnvelope` in that module. The [shared envelope contracts](spec/instrument-synthesis.md#shared-envelope-contracts)
+preserve each model's timing and release policy. Graph gates and sampler voice/filter coupling
+remain in the SDK; legacy FM rates-and-levels envelopes remain with the instrument. RNG,
+grain windows/scheduling, source analysis and stretch processing serve both the sampler and graph
+nodes. Existing Delay and Reverb implementations are unchanged.
 
 SDK sampler graphs receive decoded immutable `SampleAsset` resources from the host while
 track chains are prepared. The engine maps an SDK device's model sample reference to binding

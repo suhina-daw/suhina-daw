@@ -185,6 +185,24 @@ impl Glide {
     }
 }
 
+/// Advances an f32 control value by a fraction of its remaining distance, snapping within
+/// 1e-4 of the target. Unlike [`Glide`], this is one caller-timed step with no private state.
+/// Share is limited to 0..1 (non-finite becomes zero); invalid current values become zero,
+/// invalid targets retain the current value. Finite extremes cannot overflow interpolation.
+#[inline]
+pub fn glide_step(now: f32, target: f32, share: f32) -> f32 {
+    let now = if now.is_finite() { now } else { 0.0 };
+    let target = if target.is_finite() { target } else { now };
+    let share = if share.is_finite() { share.clamp(0.0, 1.0) } else { 0.0 };
+    let difference = target - now;
+    let next = if difference.is_finite() {
+        now + difference * share
+    } else {
+        (f64::from(now) + (f64::from(target) - f64::from(now)) * f64::from(share)) as f32
+    };
+    if (target - next).abs() < 1e-4 { target } else { next }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

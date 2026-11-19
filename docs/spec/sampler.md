@@ -204,6 +204,12 @@ from their last output to the new voice over 5 ms, without extra audible voices.
 
 The filter menu offers Off, low-pass, high-pass, band-pass and notch.
 The slope menu selects one or two cascaded biquad sections (12/24 dB/oct for low/high-pass).
+AMP uses the shared DSP linear envelope described in the
+[envelope contract](instrument-synthesis.md#shared-envelope-contracts). Note-off and All Notes Off
+recapture its current level on every request, including while already releasing. The filter
+release captures its own current level at the same event. AMP completion stops the voice before
+filter/pitch processing for that frame; note reuse with Retrigger off preserves envelope state.
+
 A dedicated filter ADSR drives Env amount in octaves independently of AMP.
 Cutoff < Vel adds octaves proportional to note velocity. Cutoff < Key adds the
 signed amount in octaves per octave above the root key. All modulation amounts

@@ -4,7 +4,8 @@
 //! Signal-processing building blocks for Suhina's built-in effects and instruments (ADR 0004): gain
 //! conversions, the pan law, parameter smoothing, attack/release followers, filters, crossovers,
 //! LFO waveforms and tempo sync, waveshapers, oversampling, delay lines and allpasses, and a
-//! band spectrum for panels, plus fixed-point FM sine operators and lookup tables.
+//! band spectrum for panels, fixed-point FM sine operators and lookup tables, and distinct
+//! linear ADSR and block-stepped time envelopes.
 //!
 //! Nothing here depends on the engine, the model or a device: every block is plain state plus a
 //! per-sample or per-block `process`, so it can be tested on its own and reused by any device.
@@ -29,6 +30,7 @@ pub mod crossover;
 pub mod dc;
 pub mod delay;
 pub mod emphasis;
+pub mod envelope;
 pub mod first_order;
 pub mod fm;
 pub mod follower;

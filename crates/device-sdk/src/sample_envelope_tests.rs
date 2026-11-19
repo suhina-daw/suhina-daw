@@ -32,7 +32,7 @@ fn advance(s: &mut Sampler, frames: usize) {
 fn repeated_releases_recapture_amplitude_and_filter_together() {
     let mut s = sampler();
     advance(&mut s, 4);
-    assert_eq!(s.voices[0].env, 1.0);
+    assert_eq!(s.voices[0].envelope.value(), 1.0);
     assert_eq!(s.voices[0].filter_env, 0.5);
     for (event, amplitude, filter) in [
         (NoteEvent::Off { key: 60, velocity: 0.0 }, 0.75, 0.4375),
@@ -41,7 +41,7 @@ fn repeated_releases_recapture_amplitude_and_filter_together() {
     ] {
         s.event(event);
         advance(&mut s, 2);
-        assert!((s.voices[0].env - amplitude).abs() < 1e-12);
+        assert!((s.voices[0].envelope.value() - amplitude).abs() < 1e-12);
         assert!((s.voices[0].filter_env - filter).abs() < 1e-12);
     }
     let filter = s.voices[0].filter_env;
@@ -67,5 +67,5 @@ fn note_reuse_preserves_envelope_and_rendering_does_not_allocate() {
     assert_eq!(allocations.count_total, 0);
     assert_eq!(allocations.bytes_total, 0);
     assert_eq!(s.voices[0].key, 62);
-    assert!((s.voices[0].env - 0.65625).abs() < 1e-12, "reuse must not start a new attack");
+    assert!((s.voices[0].envelope.value() - 0.65625).abs() < 1e-12, "reuse must not start a new attack");
 }
