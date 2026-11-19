@@ -10,7 +10,7 @@
 
 //! Six sine operators connected by one of 32 algorithms, rendered one engine block at a time.
 
-use crate::tables::{LG_N, N, Tables};
+use suhina_dsp::fm::{LG_N, N, Tables, render_feedback, render_modulated, render_sine};
 
 /// One operator's state between blocks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -137,12 +137,12 @@ pub fn render(
             };
             let (phase, freq) = (param.phase, param.freq);
             match input {
-                Input::Bus(input) => compute(out, Some(input), phase, freq, gain1, gain2, add, t),
-                Input::Itself => compute(out, None, phase, freq, gain1, gain2, add, t),
+                Input::Bus(input) => render_modulated(out, Some(input), phase, freq, gain1, gain2, add, t),
+                Input::Itself => render_modulated(out, None, phase, freq, gain1, gain2, add, t),
                 Input::None if flags & (FB_IN | FB_OUT) == FB_IN | FB_OUT && fb_shift < 16 => {
-                    compute_fb(out, phase, freq, gain1, gain2, fb, fb_shift, add, t);
+                    render_feedback(out, phase, freq, gain1, gain2, fb, fb_shift, add, t);
                 }
-                Input::None => compute_pure(out, phase, freq, gain1, gain2, add, t),
+                Input::None => render_sine(out, phase, freq, gain1, gain2, add, t),
             }
             if let Some(slot) = has_contents.get_mut(out_bus) {
                 *slot = true;
@@ -173,80 +173,4 @@ pub fn pick<'a>(
         1 => bus1,
         _ => bus2,
     }
-}
-
-/// Gain step per sample, so a block ramps from `gain1` to `gain2`.
-pub fn gain_step(gain1: i32, gain2: i32) -> i32 {
-    gain2.wrapping_sub(gain1).wrapping_add(N as i32 >> 1) >> LG_N
-}
-
-pub fn scale(y: i32, gain: i32) -> i32 {
-    ((i64::from(y) * i64::from(gain)) >> 24) as i32
-}
-
-pub fn write(slot: &mut i32, y: i32, add: bool) {
-    *slot = if add { slot.wrapping_add(y) } else { y };
-}
-
-/// An operator modulated by `input`, or by what `output` holds when `input` is `None`.
-#[allow(clippy::too_many_arguments)]
-fn compute(
-    output: &mut [i32; N],
-    input: Option<&[i32; N]>,
-    phase: i32,
-    freq: i32,
-    gain1: i32,
-    gain2: i32,
-    add: bool,
-    t: &Tables,
-) {
-    let dgain = gain_step(gain1, gain2);
-    let (mut gain, mut phase) = (gain1, phase);
-    for (i, slot) in output.iter_mut().enumerate() {
-        gain = gain.wrapping_add(dgain);
-        let modulation = input.map_or(*slot, |input| input.get(i).copied().unwrap_or(0));
-        let y = t.sin(phase.wrapping_add(modulation));
-        write(slot, scale(y, gain), add);
-        phase = phase.wrapping_add(freq);
-    }
-}
-
-/// An unmodulated sine.
-#[allow(clippy::too_many_arguments)]
-fn compute_pure(output: &mut [i32; N], phase: i32, freq: i32, gain1: i32, gain2: i32, add: bool, t: &Tables) {
-    let dgain = gain_step(gain1, gain2);
-    let (mut gain, mut phase) = (gain1, phase);
-    for slot in output.iter_mut() {
-        gain = gain.wrapping_add(dgain);
-        write(slot, scale(t.sin(phase), gain), add);
-        phase = phase.wrapping_add(freq);
-    }
-}
-
-/// An operator modulated by its own last two outputs.
-#[allow(clippy::too_many_arguments)]
-fn compute_fb(
-    output: &mut [i32; N],
-    phase: i32,
-    freq: i32,
-    gain1: i32,
-    gain2: i32,
-    fb: &mut [i32; 2],
-    fb_shift: i32,
-    add: bool,
-    t: &Tables,
-) {
-    let dgain = gain_step(gain1, gain2);
-    let (mut gain, mut phase) = (gain1, phase);
-    let [mut y0, mut y] = *fb;
-    let shift = (fb_shift + 1).clamp(0, 31);
-    for slot in output.iter_mut() {
-        gain = gain.wrapping_add(dgain);
-        let scaled = y0.wrapping_add(y) >> shift;
-        y0 = y;
-        y = scale(t.sin(phase.wrapping_add(scaled)), gain);
-        write(slot, y, add);
-        phase = phase.wrapping_add(freq);
-    }
-    *fb = [y0, y];
 }

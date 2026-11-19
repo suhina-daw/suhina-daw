@@ -48,7 +48,7 @@ settings-appearance suhina-studio@darkest 56c79fa7679003c4
 settings-audio suhina-studio@darkest 513659447e0e0990
 settings-browser suhina-studio@darkest 5d28074571ecdc3e
 settings-devices suhina-studio@darkest 19c22c365cf4a3f8
-settings-keys suhina-studio@darkest c2eff3f07fe82915
+settings-keys suhina-studio@darkest 3b3cd15f1e9a5335
 settings-launcher suhina-studio@darkest 00adf62a1cd85115
 settings-menu suhina-studio@darkest f1b58136b4c8b98e
 settings-midi suhina-studio@darkest 33c938e0c4da9989

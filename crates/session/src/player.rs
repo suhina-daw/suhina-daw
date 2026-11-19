@@ -279,6 +279,11 @@ impl Player {
         Ok(())
     }
 
+    /// The clicks its metronome and count-in play ([`suhina_engine::Controller::set_clicks`]).
+    pub fn set_clicks(&mut self, clicks: std::sync::Arc<suhina_engine::ClickSet>) -> Result<(), CommandError> {
+        self.controller.set_clicks(clicks).map_err(CommandError::from)
+    }
+
     /// The launch quantisation last sent to this player, if any.
     pub fn quantization(&self) -> Option<suhina_engine::Quantization> {
         self.quantization

@@ -17,7 +17,7 @@ use crate::env::{Env, PitchEnv, scale_out_level};
 use crate::ext::{Frame, Mods, NoteExt, is_silent};
 use crate::kernel;
 use crate::patch::{self, Patch};
-use crate::tables::{N, Tables};
+use suhina_dsp::fm::{N, Tables};
 
 /// Of how far a time envelope's level has to go, the share a block goes: about 15 ms for all of it.
 const LEVEL_GLIDE: i32 = 12;

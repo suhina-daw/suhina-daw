@@ -457,6 +457,8 @@ impl Renderer {
             }
         }
         self.graph.direct_delay.adopt(&mut old.direct_delay);
+        self.graph.click_delay.adopt(&mut old.click_delay);
+        self.graph.click_cue_delay.adopt(&mut old.click_cue_delay);
         self.meters.assign(self.graph.levels.tracks());
         // The new graph's chains capture their watched devices' output into the meter
         // monitor's spectrum rings, on every path that runs them
@@ -966,10 +968,11 @@ impl Controller {
     }
 
     /// Drops processors the audio thread has given back (replaced, or of removed devices), and
-    /// what the preview voice let go of.
+    /// what the preview voice and metronome let go of.
     pub fn collect(&mut self) {
         self.updater.collect();
         self.preview.collect();
+        self.clicks.collect();
     }
 
     /// Builds the graphs from now on with `audio` (ADR 0011): the session's pool after files

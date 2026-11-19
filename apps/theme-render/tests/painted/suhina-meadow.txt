@@ -48,7 +48,7 @@ settings-appearance suhina-meadow c1f67b617248180a
 settings-audio suhina-meadow 27036c4e2d2ef9b6
 settings-browser suhina-meadow d884a1cdca9da245
 settings-devices suhina-meadow 6f25d7c3a53e06ef
-settings-keys suhina-meadow c681ff6c8c5534e3
+settings-keys suhina-meadow 48ed3181d642edcb
 settings-launcher suhina-meadow 8f10f5bb86682618
 settings-menu suhina-meadow c187889d649ac286
 settings-midi suhina-meadow 10ff251a4b1d326c

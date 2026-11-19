@@ -10,6 +10,7 @@ use suhina_theme_render::Subject;
 
 mod budget;
 mod cut;
+mod inspect;
 mod painted;
 mod render;
 mod scenes;

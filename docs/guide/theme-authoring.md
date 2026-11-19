@@ -1271,7 +1271,37 @@ Track/clip colours belong to the project: a theme draws them from the `color` at
 never chooses them, so the colour picker and new tracks and clips take Suhina's own colours.
 Use `text.primary` contrast of at least 7:1 and hints of at least 3:1 where possible.
 
+## Finding out why a rule does nothing
+
+`suhina-cli theme render` (see the specification's *Seeing a theme without the app*) draws your
+theme without opening Suhina, and answers the usual questions about a rule that seems to do
+nothing:
+
+```sh
+suhina-cli theme render my-theme --scene launcher --probe 640,60   # what is at that point, and why
+suhina-cli theme render my-theme --outline                         # every element's box and name
+suhina-cli theme render my-theme --coverage                        # rules that matched nothing
+```
+
+- **Which element is this?** Draw with `--outline` and open `<scene>.outline.png`: each box is
+  labelled with its element and id. Then write the selector it shows.
+- **Why is it this colour?** `--probe x,y` (points from the window's top left corner, in a scene)
+  lists every rule that matches the element at that point, strongest first, with each
+  declaration's fate: *applies*, *overridden* by a stronger rule, or *dropped* with the reason. A
+  dropped declaration (a misspelt variable, a value the property does not take) does not fall
+  back to the next rule: the property keeps its inherited or initial value. The probe also shows
+  the elements around the element, which is what a selector with a space tests.
+- **Does my selector match anything?** `--coverage` lists your rules that matched no element in
+  any scene. Check each one: a misspelt element, an id the element does not have, or a state no
+  scene shows (use `--scene` with `--hover` or `--press` to show one).
+
+A part of the window that is painted with an element's colour without being that element has no
+box of its own; the probe then names the element around it.
+
 ## For AI-assisted edits
+
+When a rule does nothing, use the probe and coverage above rather than guessing, and quote what
+they printed in the report.
 
 Before editing, read the three authoring rules above: check each background's intended
 alpha (every background blends over what is under it, see "Backgrounds on the see-through

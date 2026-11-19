@@ -348,6 +348,12 @@ refused or suspended, never by losing its edits.
 - **Plug-in instruments at FL's level:** an imported plug-in generator's channel plays 3 dB louder
   than before, as FL plays it; audio clip channels were already right.
 
+- Theme diagnostics: `suhina-cli theme render <theme> --scene <scene> --probe x,y` names the
+  element at a point of the window and every rule that matches it, with what became of each
+  declaration (applies, overridden, or dropped and why); `--outline` draws every element's box
+  and name over the pictures; `--coverage` lists the theme's rules that matched no element in any
+  scene.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
@@ -1287,4 +1293,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   keeps each clip's own colour or uses one picked colour. Settings › Arrangement › Automation ›
   Automation colour can draw every automation line and point in one colour of the theme's or
   picked ones, instead of the track's colour.
+
+- Track colour menus offer 36 colours; + or F2 opens a persistent floating colour window
+  with perceptual related shades, eight recent colours, exact hex/RGB/HSL, field and wheel,
+  optional stepped/soft selection, random colours and default restoration. Live adjustments
+  and multi-track choices form one Undo step each; the DAW stays usable while it is open.
 

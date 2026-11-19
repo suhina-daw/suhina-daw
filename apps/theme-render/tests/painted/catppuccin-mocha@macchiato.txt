@@ -48,7 +48,7 @@ settings-appearance catppuccin-mocha@macchiato 0ed14dda46e550bf
 settings-audio catppuccin-mocha@macchiato 9c4e53c88b632625
 settings-browser catppuccin-mocha@macchiato 1445a58d75068fe6
 settings-devices catppuccin-mocha@macchiato ec773ba0d20f87f7
-settings-keys catppuccin-mocha@macchiato ab8cc02a9ddd3133
+settings-keys catppuccin-mocha@macchiato 65dbad226a68ab87
 settings-launcher catppuccin-mocha@macchiato bf5e439bdd8f5d5f
 settings-menu catppuccin-mocha@macchiato 96d0aecc16e8fe9a
 settings-midi catppuccin-mocha@macchiato 4f71b70ed568a65c

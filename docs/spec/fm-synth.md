@@ -3,9 +3,10 @@ description: The built-in FM Synth - operators, waveforms and drawn harmonics, D
 read_when: FM synth, fm-synth, operators, algorithms, FM waveforms, harmonics, time envelope, envelope loop, FM filter, spread, modulation matrix, FM panel, randomize, device.randomize, instrument randomizer
 type: spec
 status: current
-last_verified: 2026-11-07
+last_verified: 2026-11-19
 covers:
   - devices/fm-synth/**
+  - crates/dsp/src/fm/**
 ---
 
 # FM Synth
@@ -19,6 +20,11 @@ Suhina's `fm-synth` (`devices/fm-synth`). Why it grew in place:
 Each note runs its operators through the algorithm, then its own filter and shaper, then its pan.
 Notes sum to a stereo pair, followed by tone and volume. The engine works in blocks of 64 frames on
 a grid from the last reset, so the output does not depend on how the host divides a stream.
+
+The fixed-point sine operators, gain arithmetic and lookup tables live in `suhina-dsp::fm`.
+The device retains algorithm routing, envelopes, voices and patch interpretation. The shared
+[operator contract](instrument-synthesis.md#fixed-point-fm-contract) keeps the existing block
+schedule and integer rounding, so this extraction does not change its sound or parameters.
 
 ## Operators
 

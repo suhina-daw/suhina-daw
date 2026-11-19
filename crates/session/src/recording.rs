@@ -168,9 +168,9 @@ impl Session {
             .any(|t| t.track == track && t.target == Target::Sampler { device } && t.end.is_none())
     }
     /// The count-in recording waits for when it starts the transport, in bars (0 for none).
-    /// The metronome as `transport.setMetronome` left it: on, its level in dB and its sound.
-    pub fn metronome(&self) -> (bool, f64, suhina_engine::ClickSound) {
-        (self.live.metronome.0, self.live.metronome.1, self.live.metronome.2)
+    /// Where the metronome's click joins the output, as `transport.setMetronome` left it.
+    pub fn click_route(&self) -> suhina_engine::ClickRoute {
+        self.live.click_route
     }
 
     pub fn count_in_bars(&self) -> u8 {

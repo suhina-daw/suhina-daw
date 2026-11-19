@@ -48,7 +48,7 @@ settings-appearance suhina-studio@blue 67898bba0a3519d9
 settings-audio suhina-studio@blue 99bdb69f7e1ae6ce
 settings-browser suhina-studio@blue 51d64c68b1169d39
 settings-devices suhina-studio@blue 9159ae25e096905f
-settings-keys suhina-studio@blue c9ce053066a1db7d
+settings-keys suhina-studio@blue ff7764e0ea26b0c9
 settings-launcher suhina-studio@blue ac9b351b36332e8a
 settings-menu suhina-studio@blue 699a158fc2f37e9b
 settings-midi suhina-studio@blue e586a8ca00ae0fe2

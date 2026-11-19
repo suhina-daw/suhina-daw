@@ -11,7 +11,7 @@
 //! The operator envelope and the pitch envelope: four rates and four levels (0 to 99) each,
 //! advanced once per engine block.
 
-use crate::tables::{LG_N, N, Tables};
+use suhina_dsp::fm::{LG_N, N, Tables};
 
 /// How long a released envelope holds a level 4 above zero, in samples at 44.1 kHz.
 const TAIL_HOLD: i32 = 44_100;

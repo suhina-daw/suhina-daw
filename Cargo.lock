@@ -5926,9 +5926,11 @@ dependencies = [
 name = "suhina-theme-render"
 version = "0.0.1"
 dependencies = [
+ "ab_glyph",
  "egui",
  "egui-wgpu",
  "egui_kittest",
+ "epaint_default_fonts",
  "image",
  "serde_json",
  "suhina-device-api",

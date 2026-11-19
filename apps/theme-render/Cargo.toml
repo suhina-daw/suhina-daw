@@ -29,6 +29,9 @@ egui-wgpu = "0.37"  # MIT OR Apache-2.0
 # Drives the window as its tests do, and renders it offscreen on wgpu.
 egui_kittest = { version = "0.37", features = ["wgpu"] }  # MIT OR Apache-2.0
 image = { version = "0.25.10", default-features = false, features = ["png"] }  # MIT OR Apache-2.0
+# The names --outline writes over a render, in the monospace font egui ships.
+ab_glyph = "0.2.32"  # Apache-2.0
+epaint_default_fonts = "0.37"  # (MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0
 
 [[test]]
 name = "main"

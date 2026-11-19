@@ -48,7 +48,7 @@ settings-appearance suhina-glass@frost c22326333d691bdb
 settings-audio suhina-glass@frost 9faadedfda71bb33
 settings-browser suhina-glass@frost 40a81955c7cad719
 settings-devices suhina-glass@frost 0137dfe40af30a26
-settings-keys suhina-glass@frost c944c820842deb03
+settings-keys suhina-glass@frost 17829bffc2b80cf7
 settings-launcher suhina-glass@frost e1631bcb9bffe0be
 settings-menu suhina-glass@frost 339434da2d6f94c6
 settings-midi suhina-glass@frost 2125d211dc45c74c

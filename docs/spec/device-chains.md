@@ -209,7 +209,8 @@ volume, mute and lanes apply after them, so a limiter on Main is fed the same le
 main fader says. The main volume then no longer scales each track's gains. Its plug-ins are hosted,
 carried over at a swap and taken back like any chain's. Its latency delays the whole output
 equally, so it needs no compensation of its own; a node render (Stems) stops below it. The
-metronome's click is mixed in before it, as it is into the main output. Without devices or lanes
+metronome's click joins after it unless its route says otherwise
+([metronome](metronome.md) › Where the click plays). Without devices or lanes
 nothing changes: the main volume scales every source as before.
 
 ## Devices added by command

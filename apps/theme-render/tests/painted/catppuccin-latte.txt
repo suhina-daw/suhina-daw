@@ -48,7 +48,7 @@ settings-appearance catppuccin-latte b36d1cc10a401046
 settings-audio catppuccin-latte ac89d1665246570d
 settings-browser catppuccin-latte 2ec6493b467c8acb
 settings-devices catppuccin-latte 8f16ea088c80991e
-settings-keys catppuccin-latte 3c12f9a49baa8d71
+settings-keys catppuccin-latte c3ed5aba6e4e2aed
 settings-launcher catppuccin-latte c6c16ede7ceab770
 settings-menu catppuccin-latte 1df3b677341ecde6
 settings-midi catppuccin-latte f1e95473b635b33c

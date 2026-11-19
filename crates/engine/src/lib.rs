@@ -129,7 +129,7 @@ pub use live::{
     port_id,
 };
 pub use meters::{Level, MAX_METERED_TRACKS, MAX_READOUT_DEVICES, MeterMonitor, PEAK_FALL_DB_PER_SECOND, RMS_SECONDS};
-pub use metronome::ClickSound;
+pub use metronome::{Click, ClickFamily, ClickRoute, ClickSet, MAX_CLICK_SECONDS, built_in_click_families};
 use plugin::{DEADLINE_SHARE, Delay};
 pub use plugin::{
     Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, PluginSteps, Plugins,
@@ -473,6 +473,18 @@ struct GraphCapture {
     buffer: Vec<f32>,
 }
 
+/// Which of the graph's click delays the click goes through ([`ClickRoute`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ClickPath {
+    /// The delay to the main output past the main channel.
+    #[default]
+    Main,
+    /// The delay to a cue output of its own.
+    Cue,
+    /// Neither: into the main channel's input.
+    IntoMain,
+}
+
 /// Plays a project: its arrangement from the start, and launcher clips as they are launched
 /// (see [`Renderer::handle`]). Build it once, then call [`Renderer::process`] block by block.
 pub struct Renderer {
@@ -501,9 +513,13 @@ pub struct Renderer {
     path_fades: Vec<PathFade>,
     path_fade_at: u64,
     path_fade_left: u64,
-    /// The block's metronome click, interleaved, while the main fader moves: it is added after
-    /// the fader scales the mix ([`graph::Graph::main_fader`]).
+    /// The block's metronome click, interleaved, where it joins the output past the main
+    /// channel's devices: added after them, at its route ([`ClickRoute`]).
     click: Vec<f32>,
+    /// Where the click joins the output.
+    click_route: ClickRoute,
+    /// Which way the click went in the last block, so a delay it comes back to is cleared first.
+    click_path: ClickPath,
     /// What the graph was built from, so a controller can build the next one (ADR 0005).
     audio: Arc<AudioPool>,
     /// The file-backed devices' files, for the next graph (docs/spec/nam-amp-and-cab.md).
@@ -514,6 +530,8 @@ pub struct Renderer {
     /// Stretch underruns counted by graphs swapped out.
     underruns_before: u64,
     metronome: metronome::Metronome,
+    /// The clicks the metronome and the count-in play, and the queue a new set comes by.
+    clicks: metronome::Clicks,
     /// A track with no instrument plays its notes as sine tones (#1384). On for the engine's own
     /// renders and tests; the session sets it from the user's setting, off by default.
     implicit_tones: bool,
@@ -753,12 +771,15 @@ impl Renderer {
             path_fade_at: 0,
             path_fade_left: 0,
             click: vec![0.0; MAX_BLOCK * 2],
+            click_route: ClickRoute::default(),
+            click_path: ClickPath::default(),
             audio: Arc::new(audio),
             assets: Arc::new(assets),
             devices,
             swap: swap::SwapState::default(),
             underruns_before: 0,
             metronome: metronome::Metronome::new(sample_rate),
+            clicks: metronome::Clicks::new(),
             implicit_tones: true,
             block_frame: 0,
             songs: plugin::SongHistory::new(sample_rate),
@@ -969,6 +990,7 @@ impl Renderer {
         self.songs.clear();
         self.graph.direct_delay.clear();
         self.graph.click_delay.clear();
+        self.graph.click_cue_delay.clear();
         for chain in &mut self.graph.chains {
             chain.clear_suspended_delays();
         }
@@ -1310,6 +1332,7 @@ impl Renderer {
         // and a new one after.
         self.preview.begin(&self.graph.chains);
         self.preview.receive(&mut self.graph.chains);
+        self.clicks.receive();
         self.preview.begin(&self.graph.chains);
         // This block's audio input, and which tracks hear it: In always, Auto while armed.
         self.input.read(frames);
@@ -1390,7 +1413,6 @@ impl Renderer {
         let block_start = self.transport.position;
         // The transport changes only through commands, which are applied above.
         let running = self.transport.running;
-        // While the main fader moves, the click stays out of the mix it scales.
         let main_moving = match self.graph.main_fader.as_mut() {
             Some((_, fader)) => {
                 fader.plan(frames, f64::from(self.sample_rate));
@@ -1398,6 +1420,10 @@ impl Renderer {
             }
             None => false,
         };
+        // The click goes into the main channel's input only through its chain; every other
+        // route, and a main channel without a chain, keeps it apart until the mix is done.
+        let main_chain = self.graph.chains.iter().position(|c| c.track == TrackId::MAIN);
+        let click_into_main = self.click_route == ClickRoute::ThroughMain && main_chain.is_some();
         if let Some(click) = self.click.get_mut(..frames * 2) {
             click.fill(0.0);
         }
@@ -1410,15 +1436,17 @@ impl Renderer {
             self.live.frame(&mut self.graph.chains, &mut self.recorder, frame, self.transport.position);
             // The click for this frame's beat, read before the launcher moves the beat on.
             let launcher = &self.graph.launcher;
+            let click = self
+                .metronome
+                .frame(&self.clicks.set, self.transport.running, launcher.beat(), |index| launcher.starts_bar(index))
+                + self.count_in_frame();
             let click =
-                self.metronome.frame(self.transport.running, launcher.beat(), |index| launcher.starts_bar(index))
-                    + self.count_in_frame();
-            let click = if main_moving && let Some([left, right]) = self.click.as_chunks_mut::<2>().0.get_mut(frame) {
-                (*left, *right) = (click, click);
-                0.0
-            } else {
-                click
-            };
+                if !click_into_main && let Some([left, right]) = self.click.as_chunks_mut::<2>().0.get_mut(frame) {
+                    (*left, *right) = (click, click);
+                    0.0
+                } else {
+                    click
+                };
             let (launched_left, launched_right) = self.launcher_frame();
             let time = self.time();
             if self.transport.running && self.transport.chase {
@@ -1511,11 +1539,6 @@ impl Renderer {
         }
         // What went straight to the output waits for the slowest chain (latency compensation).
         self.graph.direct_delay.run(out);
-        if self.graph.main_fader.is_some()
-            && let Some(click) = self.click.get_mut(..frames * 2)
-        {
-            self.graph.click_delay.run(click);
-        }
         // Every chain runs as soon as the chains that play into it are done, its plug-ins' blocks
         // out together with the others', and goes on as soon as its own plug-in answers (#151,
         // #1261). With a source render's capture, the source chain's output is mixed into the
@@ -1526,20 +1549,56 @@ impl Renderer {
             buffer: &mut capture.buffer,
         });
         sends::run(&mut self.graph.chains, out, &mut self.cue.bus, frames, &context, capture, self.pool.as_mut());
-        // The main fader's move since the graph was built, then the click it leaves alone. With
-        // the fader still, the click is in the mix already and this changes nothing.
-        if let Some((_, fader)) = self.graph.main_fader.as_ref()
-            && let Some(click) = self.click.get(..frames * 2)
-        {
-            let pairs = out.as_chunks_mut::<2>().0.iter_mut().zip(click.as_chunks::<2>().0);
-            for (frame, ([left, right], [click_left, click_right])) in pairs.enumerate() {
-                if main_moving {
-                    let factor = fader.at(frame);
-                    *left *= factor;
-                    *right *= factor;
+        // The main fader's move since the graph was built.
+        if main_moving && let Some((_, fader)) = self.graph.main_fader.as_ref() {
+            for (frame, [left, right]) in out.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+                let factor = fader.at(frame);
+                *left *= factor;
+                *right *= factor;
+            }
+        }
+        // The click past the main channel's devices, at its route.
+        let click_to_cue = self.click_route == ClickRoute::Cue && self.cue.separate;
+        let path = match (click_into_main, click_to_cue) {
+            (true, _) => ClickPath::IntoMain,
+            (false, true) => ClickPath::Cue,
+            (false, false) => ClickPath::Main,
+        };
+        // Only the delay on the click's way runs, so one it left still holds the click it had
+        // then: cleared as the click comes back, it never plays an old click again.
+        if path != self.click_path {
+            match path {
+                ClickPath::Main => self.graph.click_delay.clear(),
+                ClickPath::Cue => self.graph.click_cue_delay.clear(),
+                ClickPath::IntoMain => {}
+            }
+            self.click_path = path;
+        }
+        if !click_into_main && let Some(click) = self.click.get_mut(..frames * 2) {
+            if click_to_cue {
+                self.graph.click_cue_delay.run(click);
+            } else {
+                self.graph.click_delay.run(click);
+                let follows_fader = matches!(self.click_route, ClickRoute::PostFader | ClickRoute::ThroughMain);
+                let main = main_chain.and_then(|m| self.graph.chains.get(m));
+                let pairs = out.as_chunks_mut::<2>().0.iter_mut().zip(click.as_chunks::<2>().0);
+                for (frame, ([left, right], [click_left, click_right])) in pairs.enumerate() {
+                    let (gain_left, gain_right) = match (follows_fader, main, self.graph.main_fader.as_ref()) {
+                        (false, _, _) => (1.0, 1.0),
+                        (true, Some(main), _) => main.fader_gains(frame),
+                        // Without a chain the main volume is in every track's gains; the click
+                        // takes it, and its move since, here.
+                        (true, None, Some((volume, fader))) => {
+                            let gain = *volume as f32 * fader.at(frame);
+                            (gain, gain)
+                        }
+                        // A muted (or silent) main channel without a chain, or none at all.
+                        (true, None, None) if self.graph.main_silent => (0.0, 0.0),
+                        (true, None, None) => (1.0, 1.0),
+                    };
+                    *left += click_left * gain_left;
+                    *right += click_right * gain_right;
                 }
-                *left += click_left;
-                *right += click_right;
             }
         }
         self.graph.levels.finish(&self.graph.chains, frames, &mut self.meters);
@@ -1547,6 +1606,14 @@ impl Renderer {
         // cue bus, and into the main output too while the cue plays with it.
         if let Some(preview) = self.cue.preview.get_mut(..frames * 2) {
             self.preview.finish(preview, frames, &mut self.graph.chains);
+        }
+        // A click routed to a cue output of its own is heard only there, at the cue volume.
+        if click_to_cue
+            && let (Some(bus), Some(click)) = (self.cue.bus.get_mut(..frames * 2), self.click.get(..frames * 2))
+        {
+            for (to, from) in bus.iter_mut().zip(click) {
+                *to += *from;
+            }
         }
         self.cue.finish(out, frames);
         if let Some(bus) = self.cue.bus.get_mut(..frames * 2) {
