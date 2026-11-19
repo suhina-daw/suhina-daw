@@ -743,24 +743,46 @@ impl Cx<'_> {
 
     /// The custom waveform and note ink, with the picker's RGB/hex controls.
     pub fn waveform_colour(&mut self, row: Rect) {
-        let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
-        let mut colour = self.settings.view.waveform.custom;
-        let mut held = false;
-        self.ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-            ui.horizontal(|ui| {
-                let popup = ui.auto_id_with("popup");
-                let response =
-                    egui::color_picker::color_edit_button_srgba(ui, &mut colour, egui::color_picker::Alpha::Opaque);
-                response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, self.name));
-                held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
-                ui.label(
-                    egui::RichText::new(theme::hex(colour)).font(theme::mono_font(theme::TEXT_SMALL)).color(ink().name),
-                );
-            });
-        });
+        self.colour_well(row, false, |s| &mut s.view.waveform.custom);
+    }
+
+    /// A colour the setting `field` holds: the picker's button with its RGB/hex controls, an
+    /// opacity slider too when `see_through`, and the colour's hex beside it (`#RRGGBBAA` while it
+    /// is see-through).
+    pub fn colour_well(
+        &mut self,
+        row: Rect,
+        see_through: bool,
+        field: impl FnOnce(&mut Settings) -> &mut egui::Color32,
+    ) {
+        let value = field(self.settings);
+        let mut colour = *value;
+        let (held, _) = colour_picker(self.ui, self.name, row, &mut colour, false, see_through);
         self.outcome.adjusting |= held;
-        if colour != self.settings.view.waveform.custom {
-            self.settings.view.waveform.custom = colour;
+        if colour != *value {
+            *value = colour;
+            self.outcome.changed = true;
+        }
+    }
+
+    /// A colour the theme gives, `themed`, which the setting `field` overrides once one is picked
+    /// (`Some`): the picker shows the colour in use, and **Theme** beside it, while one is picked,
+    /// gives the theme's back.
+    pub fn themed_colour(
+        &mut self,
+        row: Rect,
+        themed: egui::Color32,
+        field: impl FnOnce(&mut Settings) -> &mut Option<egui::Color32>,
+    ) {
+        let value = field(self.settings);
+        let mut colour = value.unwrap_or(themed);
+        let (held, reset) = colour_picker(self.ui, self.name, row, &mut colour, value.is_some(), false);
+        self.outcome.adjusting |= held;
+        if reset {
+            *value = None;
+            self.outcome.changed = true;
+        } else if colour != value.unwrap_or(themed) {
+            *value = Some(colour);
             self.outcome.changed = true;
         }
     }
@@ -3575,6 +3597,43 @@ fn option_face(
     let (fill, color) = lit.colors();
     lit.el.paint_over(painter, rect, crate::kit::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
     (fill, color)
+}
+
+/// The colour picker's button for `colour` at the control's place in `row`, labelled `name`, its
+/// hex beside it, and a **Theme** button after them when `resettable`; with an opacity slider
+/// when `see_through`: whether the picker is held open with the button down (a drag in it), and
+/// whether **Theme** was clicked.
+fn colour_picker(
+    ui: &mut Ui,
+    name: &str,
+    row: Rect,
+    colour: &mut egui::Color32,
+    resettable: bool,
+    see_through: bool,
+) -> (bool, bool) {
+    let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
+    let (mut held, mut reset) = (false, false);
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+        ui.horizontal(|ui| {
+            let popup = ui.auto_id_with("popup");
+            let alpha =
+                if see_through { egui::color_picker::Alpha::OnlyBlend } else { egui::color_picker::Alpha::Opaque };
+            let response = egui::color_picker::color_edit_button_srgba(ui, colour, alpha);
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, name));
+            held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
+            ui.label(
+                egui::RichText::new(theme::hex(*colour)).font(theme::mono_font(theme::TEXT_SMALL)).color(ink().name),
+            );
+            if resettable {
+                let button = ui.small_button("Theme");
+                button.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{name}: the theme's"))
+                });
+                reset = button.clicked();
+            }
+        });
+    });
+    (held, reset)
 }
 
 #[cfg(test)]

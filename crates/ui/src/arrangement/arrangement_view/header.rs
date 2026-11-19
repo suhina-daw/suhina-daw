@@ -273,8 +273,13 @@ pub(super) fn track_header(
     });
     work_trace.mark("interaction");
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
-    // Preserve track identity when selected: a small brightness lift and outline, without
-    // replacing the track colour with the global selection accent.
+    // A selected track's header is filled with the one selection colour every selected header
+    // and clip shares (Settings › Appearance › Selection colour); its own colour stays in its band.
+    // With Clip's own colour, and for the track the piano roll edits without its being selected,
+    // the header keeps its colour with a small brightness lift and an outline.
+    let selection_fill = (state.selected_tracks.contains(&lane.track) && !lane.mute)
+        .then(|| crate::kit::selection::fill(&own))
+        .flatten();
     // The theme's header colours (`--track-headerBackground`, `--track-headerSelectedBackground`),
     // which the track's colour is worked into; a rule for `track-header` paints over the result.
     let background = own
@@ -293,6 +298,8 @@ pub(super) fn track_header(
     // computed background, so `--track-headerMutedBackground` reaches it.
     let header_fill = if lane.mute {
         own.computed_background_or(muted_header_grey(selected))
+    } else if let Some(fill) = selection_fill {
+        fill
     } else {
         let surface = colour_surface(background, rgb(lane.color), strength);
         if selected { motion::mix(surface, crate::kit::element::name_ink(), 0.07) } else { surface }

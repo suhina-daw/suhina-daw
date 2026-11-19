@@ -3,7 +3,7 @@ description: Suhina's visual language: principles, what stays familiar and what 
 read_when: UI design, colours, tokens, typography, theme, accent, track colours, browser design, squint test, reference mockups
 type: spec
 status: draft
-last_verified: 2026-11-16
+last_verified: 2026-11-19
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/settings/themes.rs
@@ -135,6 +135,7 @@ a theme file can change any of them (see Themes). Current values:
 | `browser.text.primary`, `browser.text.secondary`, `browser.text.hint`, `browser.text.value` | `#ECE8E1`, `#B5B2AC`, `#85837E`, `#DAD6D0` | Independent browser names, labels, hints and values; older themes inherit the corresponding text tokens |
 | `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
 | `automation.pin` | `#A6A3FF` | The pin of an automation lane pinned below its track's top lane; the built-in themes set it to their `accent`, and an older theme file without it gets its `accent` |
+| `selection.background` | `#DBDAFF` | Selected track headers and clips in both views, and a light tint of the selected tracks' lanes and Launcher columns; the built-in themes mix it from their `accent` and white; Settings › Appearance › Selection colour can replace it |
 | `recording` | `#E5484D` | Recording and errors |
 | `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
 | `meter.normal` | `#8BC48A` | A level meter below the top |

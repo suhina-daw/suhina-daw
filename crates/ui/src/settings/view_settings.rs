@@ -56,6 +56,46 @@ impl WaveformAppearance {
     }
 }
 
+/// How the Arrangement's automation envelopes are coloured (Settings › Arrangement › Automation ›
+/// Automation colour).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AutomationColour {
+    /// Each envelope in its track's colour.
+    #[default]
+    Track,
+    /// Every envelope's line in one colour and every point in one colour: the theme's
+    /// `automation-line[fixed]` and `automation-point[fixed]`, or the colours chosen here.
+    Fixed,
+}
+
+impl AutomationColour {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Track => "track",
+            Self::Fixed => "fixed",
+        }
+    }
+}
+
+/// The automation colour setting: the choice, and the line and point colours **Fixed** uses where
+/// they are chosen here rather than taken from the theme (`None`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AutomationAppearance {
+    pub mode: AutomationColour,
+    pub line: Option<egui::Color32>,
+    pub point: Option<egui::Color32>,
+}
+
+/// A colour the settings file keeps as `theme` or `#RRGGBB`.
+fn themed_colour(colour: Option<egui::Color32>) -> String {
+    colour.map_or_else(|| "theme".to_owned(), crate::kit::theme::hex)
+}
+
+/// What [`themed_colour`] wrote: `Some(None)` for `theme`, `None` when it is neither.
+fn parse_themed_colour(value: &str) -> Option<Option<egui::Color32>> {
+    if value == "theme" { Some(None) } else { crate::kit::theme::parse_hex(value).map(Some) }
+}
+
 /// Where the detail area goes: beside the browser, or under it across the window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DetailLayout {
@@ -127,6 +167,11 @@ pub struct ViewSettings {
     pub liquid: crate::kit::liquid::Options,
     pub track_sizes: super::track_sizes::TrackSizes,
     pub waveform: WaveformAppearance,
+    /// How automation envelopes are coloured: in their track's colour, or in one line and one
+    /// point colour (#1518).
+    pub automation: AutomationAppearance,
+    /// The colour selected track headers and clips are filled with (#1217, #1218).
+    pub selection: crate::kit::selection::SelectionLook,
     /// Audio clip colour strength, as a percentage of its source RGB colour.
     pub audio_colour_strength: u8,
     /// Track header colour strength, as a percentage of its source RGB colour.
@@ -270,6 +315,8 @@ impl Default for ViewSettings {
             liquid: crate::kit::liquid::Options::default(),
             track_sizes: super::track_sizes::TrackSizes::default(),
             waveform: WaveformAppearance::default(),
+            automation: AutomationAppearance::default(),
+            selection: crate::kit::selection::SelectionLook::default(),
             audio_colour_strength: 82,
             header_colour_strength: 82,
             mixer_height: MIXER_HEIGHTS.1,
@@ -374,6 +421,18 @@ impl ViewSettings {
             self.audio_colour_strength,
             self.header_colour_strength,
         ) + &format!(
+            "automation_colour = {}
+automation_line_colour = {}
+automation_point_colour = {}
+selection_colour = {}
+selection_custom_colour = {}
+",
+            self.automation.mode.name(),
+            themed_colour(self.automation.line),
+            themed_colour(self.automation.point),
+            self.selection.mode.name(),
+            crate::kit::theme::hex(self.selection.custom),
+        ) + &format!(
             "liquid_panel_strength = {}\nliquid_track_strength = {}\nliquid_clip_strength = {}\n",
             self.liquid.panels, self.liquid.tracks, self.liquid.clips,
         ) + &format!("replace_clip = {}\n", if self.replace_clip { "on" } else { "off" })
@@ -469,6 +528,24 @@ impl ViewSettings {
                 let Some(colour) = crate::kit::theme::parse_hex(colour) else { return false };
                 self.waveform.custom = colour;
             }
+            ("automation_colour", "track") => self.automation.mode = AutomationColour::Track,
+            ("automation_colour", "fixed") => self.automation.mode = AutomationColour::Fixed,
+            ("automation_line_colour" | "automation_point_colour", colour) => {
+                let Some(colour) = parse_themed_colour(colour) else { return false };
+                if key == "automation_line_colour" {
+                    self.automation.line = colour;
+                } else {
+                    self.automation.point = colour;
+                }
+            }
+            ("selection_colour", mode) => {
+                let Some(mode) = crate::kit::selection::SelectionColour::parse(mode) else { return false };
+                self.selection.mode = mode;
+            }
+            ("selection_custom_colour", colour) => {
+                let Some(colour) = crate::kit::theme::parse_hex(colour) else { return false };
+                self.selection.custom = colour;
+            }
             ("session_mixer_height", height) => match height.parse::<u32>() {
                 Ok(height) => self.mixer_height = height.clamp(MIXER_HEIGHTS.0, MIXER_HEIGHTS.2),
                 Err(_) => return false,
@@ -537,130 +614,5 @@ impl ViewSettings {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::settings::Settings;
-
-    #[test]
-    fn retired_mica_preference_is_ignored_and_not_written_back() {
-        let (settings, warnings) = Settings::from_text("windows_mica = on\n");
-        assert!(warnings.is_empty());
-        assert!(!settings.to_text().contains("windows_mica"));
-    }
-
-    #[test]
-    fn view_settings_survive_a_round_trip_through_the_settings_file() {
-        let view = ViewSettings {
-            liquid: crate::kit::liquid::Options { panels: 40, tracks: 60, clips: 80 },
-            track_sizes: super::super::track_sizes::TrackSizes::default(),
-            waveform: WaveformAppearance {
-                mode: WaveformColour::Custom,
-                custom: egui::Color32::from_rgb(120, 210, 80),
-            },
-            audio_colour_strength: 64,
-            header_colour_strength: 75,
-            mixer_height: 300,
-            strip_fader: 90,
-            detail_layout: DetailLayout::FullWidth,
-            double_click_clip: false,
-            automation_click_anywhere: true,
-            automation_group_plugins: false,
-            automation_top_lane: crate::arrangement::automation_lanes::TopLane::Pan,
-            envelope_show: false,
-            envelope_ceiling: 24,
-            envelope_step: 5,
-            envelope_free: true,
-            envelope_all: false,
-            menu_name_field: true,
-            notes_replace: false,
-            covered_whole: false,
-            time_select_ctrl: true,
-            clip_halves: true,
-            grid_in_clips: false,
-            waveform_zoom: 400,
-            stretch_alt: false,
-            rename_selected: false,
-            play_from_clip: false,
-            device_list_vertical: false,
-            stack_in_piano_roll: false,
-            fixed_track_colour: true,
-            new_clip_track_colour: false,
-            recent_chips: true,
-            returns_hidden: true,
-            new_returns: false,
-            copy_wrapped: false,
-            alt_wheel_one: true,
-            folder_drop: FolderDrop::Copy,
-            arrangement_toolbar: true,
-            default_grid: "adaptive narrow",
-            replace_clip: true,
-            take_crossfade: 40,
-            take_crossfade_custom: 80,
-            menu_bar: false,
-            app_name_centered: true,
-            bar_project_name: false,
-            bar_project_timing: true,
-            bar_project_centered: false,
-            background_tint: 45,
-            background_blur: 20,
-        };
-        let settings = Settings { view, ..Settings::default() };
-        let (read, warnings) = Settings::from_text(&settings.to_text());
-        assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(read.view, view);
-        let (read, _) = Settings::from_text(&Settings::default().to_text());
-        assert_eq!(read.view, ViewSettings::default());
-    }
-
-    #[test]
-    fn a_mixer_height_out_of_range_is_clamped_and_a_bad_value_warned_about() {
-        let (read, warnings) = Settings::from_text("session_mixer_height = 3\n");
-        assert!(warnings.is_empty());
-        assert_eq!(read.view.mixer_height, MIXER_HEIGHTS.0);
-        let (read, _) = Settings::from_text("session_mixer_height = 99999999\n");
-        assert_eq!(read.view.mixer_height, MIXER_HEIGHTS.2);
-        let (read, warnings) =
-            Settings::from_text("session_mixer_height = tall\ndetail_layout = up\ndouble_click_clip = maybe\n");
-        assert_eq!(warnings.len(), 3, "{warnings:?}");
-        assert_eq!(read.view, ViewSettings::default());
-    }
-
-    #[test]
-    fn waveform_choices_round_trip_and_invalid_colours_preserve_defaults() {
-        assert_eq!(Settings::from_text("").0.view.waveform.mode, WaveformColour::Theme);
-        for mode in [
-            WaveformColour::Theme,
-            WaveformColour::Auto,
-            WaveformColour::Light,
-            WaveformColour::Dark,
-            WaveformColour::Custom,
-        ] {
-            let mut settings = Settings::default();
-            settings.view.waveform = WaveformAppearance { mode, custom: egui::Color32::from_rgb(23, 140, 212) };
-            let (read, warnings) = Settings::from_text(&settings.to_text());
-            assert!(warnings.is_empty());
-            assert_eq!(read.view.waveform, settings.view.waveform);
-        }
-        let (read, warnings) = Settings::from_text("waveform_colour = rainbow\nwaveform_custom_colour = #xyz123\n");
-        assert_eq!(warnings.len(), 2);
-        assert_eq!(read.view.waveform, WaveformAppearance::default());
-    }
-
-    #[test]
-    fn colour_strengths_are_bounded_and_invalid_input_does_not_change_defaults() {
-        let (read, warnings) =
-            Settings::from_text("audio_clip_colour_strength = 9999\ntrack_header_colour_strength = -1\n");
-        assert_eq!(warnings.len(), 1);
-        assert_eq!(read.view.audio_colour_strength, 100);
-        assert_eq!(read.view.header_colour_strength, 82);
-    }
-
-    #[test]
-    fn liquid_strengths_default_off_and_parse_independently_with_bounds() {
-        assert_eq!(Settings::from_text("").0.view.liquid, crate::kit::liquid::Options::default());
-        let (read, warnings) =
-            Settings::from_text("liquid_panel_strength = 999\nliquid_track_strength = -1\nliquid_clip_strength = 37\n");
-        assert_eq!(warnings.len(), 1);
-        assert_eq!(read.view.liquid, crate::kit::liquid::Options { panels: 100, tracks: 0, clips: 37 });
-    }
-}
+#[path = "view_settings_tests.rs"]
+mod tests;

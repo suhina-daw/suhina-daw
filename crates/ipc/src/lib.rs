@@ -15,6 +15,10 @@
 //! answers ([`Link::send_joint`], [`Served::serve_joint`]): consecutive plug-ins of a chain in
 //! one process then cost one round trip a block instead of one each (ADR 0006, decision 2).
 //!
+//! The host times each instance's part of a block and hands the times back with the answer
+//! ([`Laps`], [`Link::process_us`], [`Link::follower_process_us`]), so a block that comes back
+//! late tells whether the plug-in took long or its host process woke late (#1262).
+//!
 //! One block is in flight at a time. If the host misses the deadline the engine gets
 //! [`Outcome::Missed`], and until the host answers that block, [`Outcome::Busy`] at once,
 //! without sending or waiting, so neither side touches the buffers while the other one owns
@@ -54,7 +58,6 @@ pub use source::{AudioSource, MAX_SOURCE_FRAMES};
 pub use sweep::sweep_leftovers;
 
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -108,6 +111,64 @@ pub enum Outcome {
     /// The host has not answered an earlier block yet, so this one was not sent. The output is
     /// untouched.
     Busy,
+}
+
+/// A monotonic clock in microseconds, which the host's audio thread reads around each
+/// instance's part of a block ([`Laps`]). Reading it must neither allocate nor lock.
+pub trait Clock: Send {
+    /// Microseconds since some fixed point.
+    fn now_us(&mut self) -> u64;
+}
+
+/// The system's monotonic clock ([`Instant`]: `QueryPerformanceCounter`, the vDSO
+/// `clock_gettime`, `mach_absolute_time`), which neither allocates nor locks.
+pub struct SystemClock(Instant);
+
+impl Default for SystemClock {
+    fn default() -> Self {
+        Self(Instant::now())
+    }
+}
+
+impl Clock for SystemClock {
+    fn now_us(&mut self) -> u64 {
+        u64::try_from(self.0.elapsed().as_micros()).unwrap_or(u64::MAX)
+    }
+}
+
+/// Times the instances of one block as the host runs them ([`Served::serve_joint`]): the link's
+/// own with [`Laps::own`], each follower with [`Laps::follower`]. The times go back to the
+/// engine with the answer; an instance not timed reads as 0.
+pub struct Laps<'a> {
+    clock: &'a mut dyn Clock,
+    own: u32,
+    followers: [u32; MAX_FOLLOWERS],
+}
+
+impl Laps<'_> {
+    /// Runs `part`, the link's own instance's processing, and keeps how long it took.
+    pub fn own<R>(&mut self, part: impl FnOnce() -> R) -> R {
+        let (took, result) = self.time(part);
+        self.own = took;
+        result
+    }
+
+    /// Runs `part`, the processing of the follower at `index` (in the block's order), and keeps
+    /// how long it took; one past [`MAX_FOLLOWERS`] runs untimed.
+    pub fn follower<R>(&mut self, index: usize, part: impl FnOnce() -> R) -> R {
+        let (took, result) = self.time(part);
+        if let Some(time) = self.followers.get_mut(index) {
+            *time = took;
+        }
+        result
+    }
+
+    fn time<R>(&mut self, part: impl FnOnce() -> R) -> (u32, R) {
+        let start = self.clock.now_us();
+        let result = part();
+        let took = self.clock.now_us().saturating_sub(start);
+        (u32::try_from(took).unwrap_or(u32::MAX), result)
+    }
 }
 
 /// The engine's end of a link.
@@ -261,6 +322,29 @@ impl Link {
         Instant::now() < until && self.to_engine.wait(self.region.response_word(), |v| v == sequence, until)
     }
 
+    /// How long the host's own instance took to process the last block sent, in microseconds,
+    /// once the host has answered it: after [`Link::wait`] said `Done`, and for a block given up
+    /// on once [`Link::ready`] or [`Link::wait_ready`] finds it answered. `None` while it is not
+    /// answered (or nothing was sent yet). Real-time safe.
+    pub fn process_us(&self) -> Option<u32> {
+        self.answered().then(|| self.region.process_us())
+    }
+
+    /// [`Link::process_us`] for the follower at `index` of the last block sent
+    /// ([`Link::send_joint`], in the order given). `None` while the block is not answered, or
+    /// past [`MAX_FOLLOWERS`]. Real-time safe.
+    pub fn follower_process_us(&self, index: usize) -> Option<u32> {
+        if !self.answered() {
+            return None;
+        }
+        self.region.follower_process_us(index)
+    }
+
+    /// Whether the host has answered the last block sent (and one was).
+    fn answered(&self) -> bool {
+        self.sequence != 0 && self.region.response() == self.sequence
+    }
+
     /// The second half: waits until `deadline` for the block sent with
     /// [`Link::send_with_events`] and reads its result into `output`. `Busy` when no block is
     /// out. Real-time safe.
@@ -278,7 +362,7 @@ impl Link {
 
 /// The host's end of a link.
 pub struct Served {
-    region: Arc<Region>,
+    region: Region,
     to_host: Doorbell,
     to_engine: Doorbell,
     /// The last block answered.
@@ -287,6 +371,8 @@ pub struct Served {
     events: Vec<Event>,
     /// The current block's followers; room for [`MAX_FOLLOWERS`].
     followers: Vec<u32>,
+    /// What [`Laps`] reads the time from.
+    clock: Box<dyn Clock>,
 }
 
 impl Served {
@@ -297,13 +383,20 @@ impl Served {
         let to_engine = Doorbell::open(region.name(), "engine")?;
         let seen = region.response();
         Ok(Self {
-            region: Arc::new(region),
+            region,
             to_host,
             to_engine,
             seen,
             events: Vec::with_capacity(MAX_EVENTS),
             followers: Vec::with_capacity(MAX_FOLLOWERS),
+            clock: Box::new(SystemClock::default()),
         })
+    }
+
+    /// Times the blocks' instances with `clock` instead of the system's (a test's clock that
+    /// steps a fixed amount per reading).
+    pub fn set_clock(&mut self, clock: Box<dyn Clock>) {
+        self.clock = clock;
     }
 
     pub fn channels(&self) -> u32 {
@@ -317,7 +410,7 @@ impl Served {
     /// A control-thread handle for waking a cancelled wait, without sending or
     /// acknowledging an audio block. Keeps the mapping alive after the link closes.
     pub fn waker(&self) -> Result<ServeWaker, IpcError> {
-        Ok(ServeWaker { region: Arc::clone(&self.region), doorbell: Doorbell::open(self.region.name(), "host")? })
+        Ok(ServeWaker { region: self.region.share_for_wake(), doorbell: Doorbell::open(self.region.name(), "host")? })
     }
 
     /// Waits until `timeout` has passed for a block, runs `process(input, output)` on it
@@ -328,18 +421,19 @@ impl Served {
     }
 
     /// [`Served::serve`] that also hands over the block's events, in the order sent, each at a
-    /// frame within the block.
+    /// frame within the block. The whole of `process` counts as the link's own instance's time.
     pub fn serve_with_events(&mut self, timeout: Duration, process: impl FnOnce(&[f32], &[Event], &mut [f32])) -> bool {
-        self.serve_joint(timeout, |input, events, _, output| process(input, events, output))
+        self.serve_joint(timeout, |input, events, _, output, laps| laps.own(|| process(input, events, output)))
     }
 
     /// [`Served::serve_with_events`] that also hands over the instances the engine asked to
     /// run the block after this link's own ([`Link::send_joint`]), in order; empty for most
-    /// blocks. `process` runs them all and leaves the last one's result in the output.
+    /// blocks. `process` runs them all and leaves the last one's result in the output, timing
+    /// each instance's part with the [`Laps`] it is given; the times go back with the answer.
     pub fn serve_joint(
         &mut self,
         timeout: Duration,
-        process: impl FnOnce(&[f32], &[Event], &[u32], &mut [f32]),
+        process: impl FnOnce(&[f32], &[Event], &[u32], &mut [f32], &mut Laps<'_>),
     ) -> bool {
         self.serve_joint_until(timeout, &AtomicBool::new(false), process)
     }
@@ -350,7 +444,7 @@ impl Served {
         &mut self,
         timeout: Duration,
         stop: &AtomicBool,
-        process: impl FnOnce(&[f32], &[Event], &[u32], &mut [f32]),
+        process: impl FnOnce(&[f32], &[Event], &[u32], &mut [f32], &mut Laps<'_>),
     ) -> bool {
         let deadline = Instant::now() + timeout;
         let seen = self.seen;
@@ -371,7 +465,10 @@ impl Served {
         events.iter_mut().for_each(|e| e.frame = e.frame.min(last));
         let mut followers = std::mem::take(&mut self.followers);
         self.region.read_followers(&mut followers);
-        self.region.with_block(samples, |input, output| process(input, &events, &followers, output));
+        let mut laps = Laps { clock: self.clock.as_mut(), own: 0, followers: [0; MAX_FOLLOWERS] };
+        self.region.with_block(samples, |input, output| process(input, &events, &followers, output, &mut laps));
+        let (own, times) = (laps.own, laps.followers);
+        self.region.write_times(own, times.get(..followers.len()).unwrap_or_default());
         self.events = events;
         self.followers = followers;
         self.seen = request;
@@ -384,7 +481,7 @@ impl Served {
 /// Wakes a host audio wait after its stop flag was set. It never touches audio
 /// buffers or their request/response sequence, so the same link can resume later.
 pub struct ServeWaker {
-    region: Arc<Region>,
+    region: Region,
     doorbell: Doorbell,
 }
 

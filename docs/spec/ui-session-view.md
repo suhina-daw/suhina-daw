@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-18
+last_verified: 2026-11-19
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -167,7 +167,9 @@ Shift-click and Ctrl-click add clips to the selection **(not built)**.
 
 **Suhina:** the launch control is the slot's mark and the padding around it (the first 18 px);
 the name selects. Selecting a clip selects its track too, and selecting a track by its header ends
-the clip's selection. The selected slot is drawn like a selected arrangement clip. The setting is
+the clip's selection. The selected slot is drawn like a selected arrangement clip: filled with the selection colour,
+its own colour down its leading edge ([arrangement editing](arrangement-editing.md#selection-colour)).
+A selected track's header takes the same colour, and its whole column a light tint of it. The setting is
 Settings › Launcher and mixer › **Select on launch** (On by default, saved as
 `select_on_launch`). Enter is the action `selection.launch`; the arrows are `selection.up`,
 `selection.down`, `selection.left` and `selection.right` (all rebindable,

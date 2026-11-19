@@ -400,6 +400,17 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 
 /// Draws the Arrangement view in the space left in `ui` and adds what the user asked for to
 /// `actions`.
+/// The grid's `lines` (x, on a bar) inside `rect`, drawn over a `fill` laid over the grid (the
+/// selection colour of a time selection or a selected clip): faint lines of the ink that reads on
+/// it, stronger on the bars, so the grid stays in sight whatever the fill.
+pub(crate) fn grid_over(painter: &egui::Painter, rect: Rect, lines: &[(f32, bool)], fill: Color32) {
+    let ink = theme::text_on(fill.to_opaque());
+    let (beat, bar) = (ink.gamma_multiply(0.14), ink.gamma_multiply(0.3));
+    for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 0.5 && *x < rect.right() - 0.5) {
+        painter.vline(x, rect.y_range(), theme::hairline(if on_bar { bar } else { beat }));
+    }
+}
+
 pub fn show(ui: &mut Ui, timeline: &Timeline, state: &mut ArrangementViewState, actions: &mut Vec<Action>) {
     let arrangement = crate::kit::element::ARRANGEMENT.enter();
     read_surfaces();
@@ -775,6 +786,8 @@ fn show_lanes(
             }
         }
     }
+    // The lines again, for what is drawn over the grid in the lanes (a time selection's fill).
+    let lane_grid = grid_xs.clone();
     if !state.grid_in_clips {
         grid_xs.clear();
     }
@@ -1333,6 +1346,33 @@ fn show_lanes(
             .attr(crate::kit::element::Muted, lane.mute)
             .enter_against_plain(crate::kit::element::Checked, focus == Some(lane.track));
         lane_el.paint(&lanes_painter, row.clip.intersect(lanes_area));
+        // A selected track's lane, tinted with `track-lane[selected]`'s background. A theme's own
+        // rule for it is painted above with the lane; the base sheet's light tint of the selection
+        // colour is not (a base rule's background is the element's computed value, which the
+        // view paints itself), so it is painted here. Not on the lane the piano roll edits, which
+        // keeps its own highlight.
+        if state.selected_tracks.contains(&lane.track)
+            && focus != Some(lane.track)
+            && let Some(style) = lane_el.style()
+            && !style.authored.background
+            && style.background.a() > 0
+        {
+            lanes_painter.rect_filled(row.clip.intersect(lanes_area), 0.0, style.background);
+        }
+        // The time selection over this track's whole row, in the selection colour under its clips
+        // (the clips light the stretch of their bodies under it), so the grid shows through it.
+        if let Some(selection) =
+            state.time_selection.as_ref().filter(|s| s.row.is_none() && s.tracks.contains(&clips_lane.track))
+            && let Some(fill) = crate::kit::selection::fill(&lane_el)
+        {
+            let span = egui::Rangef::new(x_of(selection.start), x_of(selection.end)).intersection(time.x_range());
+            if span.span() > 0.0 {
+                let lit = Rect::from_x_y_ranges(span, row.clip.y_range()).intersect(lanes_area);
+                lanes_painter.rect_filled(lit, 0.0, fill.gamma_multiply(0.85));
+                // The grid stays in sight over the fill, in lines that read on it.
+                grid_over(&lanes_painter, lit, &lane_grid, fill);
+            }
+        }
         state.in_lane = true;
         // A click on an empty spot of a lane clears the clip selection (arrangement-editing ›
         // Selecting clips). A double-click on an empty spot of a lane that holds clips makes a
@@ -1631,7 +1671,18 @@ fn show_lanes(
                 None => egui::Rangef::new(row.top(), row.bottom() + under + if joined { 1.0 } else { 0.0 }),
             };
             let lit = Rect::from_x_y_ranges(span, band);
-            lanes_painter.rect_filled(lit, 0.0, lit_fill);
+            // With a selection colour, the track's row is lit under its clips (above); only the
+            // take and automation lanes under it are lit here.
+            if selection.row.is_none()
+                && crate::kit::selection::look().mode != crate::kit::selection::SelectionColour::Own
+            {
+                let below = Rect::from_x_y_ranges(span, egui::Rangef::new(row.bottom(), band.max));
+                if below.height() > 0.0 {
+                    lanes_painter.rect_filled(below, 0.0, lit_fill);
+                }
+            } else {
+                lanes_painter.rect_filled(lit, 0.0, lit_fill);
+            }
             let edge = egui::Stroke::new(1.5, edge_ink);
             lanes_painter.vline(lit.left(), lit.y_range(), edge);
             lanes_painter.vline(lit.right(), lit.y_range(), edge);

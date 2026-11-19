@@ -3,11 +3,12 @@
 
 //! The shared-memory region: a header of atomics, then the input and the output buffer, then
 //! the block's events, then the instances that run the block after this link's own (its
-//! followers).
+//! followers), then how long each follower took.
 //!
 //! The region is shared memory mapped by both processes ([`crate::shm`]): the operating system
 //! frees it when both have let go of it, however they end.
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::events::{EVENT_BYTES, Event, MAX_EVENTS};
@@ -15,7 +16,7 @@ use crate::shm::{Access, Shared};
 use crate::{IpcError, MAX_CHANNELS, MAX_FOLLOWERS, MAX_FRAMES};
 
 const MAGIC: u32 = 0x4C57_4950;
-const VERSION: u32 = 4;
+const VERSION: u32 = 5;
 /// The header's size; the buffers start after it.
 const HEADER_BYTES: usize = 256;
 // Byte offsets of the header fields. The words the two sides write sit on cache lines of their
@@ -29,6 +30,9 @@ const AT_REQUEST: usize = 64;
 // observe this word so an interruption between checking and sleeping is not lost.
 const AT_WAKE: usize = 68;
 const AT_RESPONSE: usize = 128;
+/// How long the link's own instance took to process the block the response answers, in
+/// microseconds: on the host's cache line, written before the response.
+const AT_PROCESS_US: usize = 132;
 const AT_FRAMES: usize = 192;
 const AT_EVENTS: usize = 196;
 /// Whether the app's computer keyboard plays notes ([`crate::keys_to_engine`]): written with
@@ -36,8 +40,9 @@ const AT_EVENTS: usize = 196;
 const AT_KEYS: usize = 200;
 /// Bytes of the events area.
 const EVENTS_BYTES: usize = MAX_EVENTS * EVENT_BYTES;
-/// Bytes of the followers area: their count, then each one's instance number.
-const FOLLOWERS_BYTES: usize = 4 * (1 + MAX_FOLLOWERS);
+/// Bytes of the followers area: their count, then each one's instance number, then the
+/// microseconds each one took to process the block, in the same order (written by the host).
+const FOLLOWERS_BYTES: usize = 4 * (1 + 2 * MAX_FOLLOWERS);
 
 /// Bytes a region for `channels` × `max_frames` needs: the header, two buffers, the events and
 /// the followers.
@@ -54,7 +59,7 @@ fn size(channels: u32, max_frames: u32) -> Option<usize> {
 const KIND: &str = "ipc";
 
 pub(crate) struct Region {
-    map: Shared,
+    map: Arc<Shared>,
     channels: u32,
     max_frames: u32,
 }
@@ -63,7 +68,7 @@ impl Region {
     pub(crate) fn create(channels: u32, max_frames: u32) -> Result<Self, IpcError> {
         let len = size(channels, max_frames).ok_or(IpcError::BadSize { channels, max_frames })?;
         // New shared memory is zeroed.
-        let region = Self { map: Shared::create(KIND, len)?, channels, max_frames };
+        let region = Self { map: Arc::new(Shared::create(KIND, len)?), channels, max_frames };
         region.word(AT_MAGIC).store(MAGIC, Ordering::Relaxed);
         region.word(AT_VERSION).store(VERSION, Ordering::Relaxed);
         region.word(AT_CHANNELS).store(channels, Ordering::Relaxed);
@@ -76,7 +81,7 @@ impl Region {
         if map.len() < HEADER_BYTES {
             return Err(IpcError::BadLink("too short"));
         }
-        let mut region = Self { map, channels: 0, max_frames: 0 };
+        let mut region = Self { map: Arc::new(map), channels: 0, max_frames: 0 };
         if region.word(AT_MAGIC).load(Ordering::Acquire) != MAGIC {
             return Err(IpcError::BadLink("wrong magic number"));
         }
@@ -96,6 +101,12 @@ impl Region {
         Ok(region)
     }
 
+    /// Shares the mapping with a wake handle, which only accesses header atomics.
+    /// The serving side alone retains mutable access to the audio buffers.
+    pub(crate) fn share_for_wake(&self) -> Self {
+        Self { map: Arc::clone(&self.map), channels: self.channels, max_frames: self.max_frames }
+    }
+
     pub(crate) fn address(&self) -> &str {
         self.map.address()
     }
@@ -106,7 +117,9 @@ impl Region {
 
     /// The host has opened the region: its name can go ([`Shared::unlink`]).
     pub(crate) fn unlink(&mut self) {
-        self.map.unlink();
+        if let Some(map) = Arc::get_mut(&mut self.map) {
+            map.unlink();
+        }
     }
 
     pub(crate) fn channels(&self) -> u32 {
@@ -244,7 +257,7 @@ impl Region {
     }
 
     /// Start of the followers area, after the events.
-    fn followers_area(&mut self) -> *mut u8 {
+    fn followers_area(&self) -> *mut u8 {
         let offset = HEADER_BYTES + 2 * self.samples() * size_of::<f32>() + EVENTS_BYTES;
         self.map.as_ptr().wrapping_add(offset)
     }
@@ -284,6 +297,47 @@ impl Region {
             unsafe { std::ptr::copy_nonoverlapping(from, bytes.as_mut_ptr(), 4) };
             out.push(u32::from_le_bytes(bytes));
         }
+    }
+
+    /// The microseconds the link's own instance took for the last block answered.
+    pub(crate) fn process_us(&self) -> u32 {
+        self.word(AT_PROCESS_US).load(Ordering::Relaxed)
+    }
+
+    /// Stores how long the block's instances took: `own` for the link's instance, `followers`
+    /// for its followers in order (the first [`MAX_FOLLOWERS`]). The host writes them before it
+    /// publishes the response, whose Release store makes them visible with it.
+    pub(crate) fn write_times(&mut self, own: u32, followers: &[u32]) {
+        self.word(AT_PROCESS_US).store(own, Ordering::Relaxed);
+        let area = self.followers_area().wrapping_add(4 * (1 + MAX_FOLLOWERS));
+        for (index, time) in followers.iter().take(MAX_FOLLOWERS).enumerate() {
+            let bytes = time.to_le_bytes();
+            // SAFETY: the times follow the followers' numbers in the followers area, which holds
+            // `MAX_FOLLOWERS` of each (the region's size includes it, checked on create and
+            // open), and `index` is below that; the source is a local array. The engine reads
+            // them only after the response that follows this copy.
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), area.wrapping_add(4 * index), 4) };
+        }
+    }
+
+    /// The microseconds the follower at `index` (in the block's order) took for the last block
+    /// answered; `None` past [`MAX_FOLLOWERS`].
+    pub(crate) fn follower_process_us(&self, index: usize) -> Option<u32> {
+        if index >= MAX_FOLLOWERS {
+            return None;
+        }
+        let from = self.followers_area().wrapping_add(4 * (1 + MAX_FOLLOWERS + index));
+        let mut bytes = [0u8; 4];
+        // SAFETY: as in `write_times`, the other way: `index` is below `MAX_FOLLOWERS`, inside
+        // the area, and the host wrote it before the response the caller has read.
+        unsafe { std::ptr::copy_nonoverlapping(from, bytes.as_mut_ptr(), 4) };
+        Some(u32::from_le_bytes(bytes))
+    }
+
+    /// Makes the region look as if another version made it, for a test of the version check.
+    #[cfg(test)]
+    pub(crate) fn set_version(&self, version: u32) {
+        self.word(AT_VERSION).store(version, Ordering::Release);
     }
 
     /// Runs `process` on the first `samples` values of both buffers, the output zeroed first.

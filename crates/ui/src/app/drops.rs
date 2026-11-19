@@ -73,11 +73,11 @@ impl App {
                 // Before projects: a package's name ends in `.suhina` too.
                 self.status = Status::Hint(format!("Bringing in the theme {}", path.display()));
                 self.themes.import(path);
-            } else if (is(&path, "als") || suhina_session::is_project_file(&path)) && !opened {
+            } else if (is(&path, "als") || is(&path, "flp") || suhina_session::is_project_file(&path)) && !opened {
                 opened = true;
                 self.request_open(path);
             } else {
-                let what = "is not a sample, a MIDI file, a project (.suhina or .als, or a zip holding one), a theme package (.theme.suhina), a theme (.css or .json), a zip of themes or a folder for the browser";
+                let what = "is not a sample, a MIDI file, a project (.suhina, .als or .flp, or a zip holding one), a theme package (.theme.suhina), a theme (.css or .json), a zip of themes or a folder for the browser";
                 self.status = Status::Error(format!("{} {what}", path.display()));
             }
         }
@@ -1112,6 +1112,7 @@ pub(super) fn drop_overlay(ui: &Ui, area: Rect) {
         (
             files.iter().any(|f| {
                 is(f, "als")
+                    || is(f, "flp")
                     || f.path.as_deref().is_some_and(|p| suhina_session::is_project_file(p) && !is_theme_package(p))
             }),
             files.iter().any(|f| {

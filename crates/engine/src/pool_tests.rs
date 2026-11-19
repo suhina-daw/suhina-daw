@@ -57,6 +57,7 @@ fn a_worker_takes_the_lanes_that_play_to_a_device_first() {
         frames: 64,
         context: ProcessContext::default(),
         reply_to: std::thread::current(),
+        clock: crate::clock::handle(),
     };
     // Lane 0 renders offline, lane 2 plays: lane 2's chain goes first though lane 0 queued first.
     for (lane, index) in [(0usize, 10usize), (2, 20)] {
@@ -245,6 +246,66 @@ fn a_worker_does_not_park_once_its_pool_is_stopping() {
     assert!(!park_unless_stopping(&shared));
 }
 
+/// The next job observes the reply ring synchronously: no thread, sleep or deadline is
+/// needed to prove that an unrelated job cannot hold a completed feeder's reply back.
+#[test]
+fn a_completed_chain_is_returned_before_the_next_job_runs() {
+    struct CheckReply {
+        replies: Option<rtrb::Consumer<Reply>>,
+        shared: Arc<Shared>,
+    }
+    impl crate::PluginProcessor for CheckReply {
+        fn process(&mut self, _: &mut [f32], _: &[(usize, suhina_device_api::NoteEvent)], _: Duration) -> bool {
+            let mut replies = self.replies.take().unwrap();
+            assert_eq!(replies.pop().map(|reply| reply.index), Ok(0), "the feeder is already back");
+            self.shared.stop.store(true, Ordering::Release);
+            true
+        }
+    }
+    let shared = Arc::new(Shared {
+        stop: AtomicBool::new(false),
+        real_time_pool: false,
+        real_time: AtomicUsize::new(0),
+        real_time_rate: AtomicUsize::new(0),
+        lane_real_time: std::array::from_fn(|_| AtomicBool::new(false)),
+    });
+    let (mut jobs, jobs_rx) = rtrb::RingBuffer::new(DEPTH);
+    let (replies, replies_rx) = rtrb::RingBuffer::new(DEPTH);
+    let first = Chain::passthrough(TrackId(2), crate::NO_COLUMN, 8_000);
+    let stored = Device::new("Observer", DeviceKind::Vst3 { id: "1".into() });
+    let project = crate::chain_tests::project(Vec::new(), 1.0, vec![stored]);
+    let mut plugins = crate::Plugins::new();
+    plugins.insert(
+        crate::plugin_devices(&project)[0].key,
+        crate::PluginSlotInfo { instrument: false, latency: 0 },
+        Box::new(CheckReply { replies: Some(replies_rx), shared: Arc::clone(&shared) }),
+    );
+    let next = Chain::build(
+        &project,
+        &crate::AudioPool::new(),
+        TrackId(1),
+        crate::NO_COLUMN,
+        (1.0, 1.0),
+        8_000,
+        &mut plugins,
+        (&crate::DeviceAssets::new(), suhina_device_registry::factory().as_ref()),
+    )
+    .unwrap();
+    for (index, chain) in [first, next].into_iter().enumerate() {
+        let job = Job {
+            index,
+            chain,
+            frames: 1,
+            context: ProcessContext::default(),
+            reply_to: std::thread::current(),
+            clock: crate::clock::handle(),
+        };
+        assert!(jobs.push(job).is_ok());
+    }
+    work(&shared, vec![WorkerEnd { jobs: jobs_rx, replies }]);
+    assert!(shared.stop.load(Ordering::Acquire), "the next job ran");
+}
+
 #[test]
 fn an_offline_renderer_renders_on_an_offline_pool() {
     let mut renderer = Renderer::new(&project(), SR, suhina_device_registry::factory()).unwrap();
@@ -255,4 +316,130 @@ fn an_offline_renderer_renders_on_an_offline_pool() {
     assert_eq!(renderer.render_threads(), 3, "turning it offline keeps its threads");
     renderer.set_offline(false);
     assert_eq!(renderer.pool.as_ref().map(Lane::kind), Some(PoolKind::RealTime));
+}
+
+/// A stand-in for a hosted plug-in: hands its block out ([`PluginProcessor::send`]) and gives back
+/// the sound bent through a curve of its own, as a host process would after a round trip.
+struct Bend {
+    drive: f32,
+    result: Vec<f32>,
+    key: [f32; BLOCK * 2],
+    heard_key: Arc<AtomicBool>,
+}
+
+impl crate::PluginProcessor for Bend {
+    fn process(&mut self, buffer: &mut [f32], _: &[(usize, suhina_device_api::NoteEvent)], _: Duration) -> bool {
+        for (sample, key) in buffer.iter_mut().zip(&self.key) {
+            *sample = (*sample * self.drive / (1.0 + key.abs())).tanh();
+        }
+        true
+    }
+
+    fn send(&mut self, buffer: &[f32], _: &[(usize, suhina_device_api::NoteEvent)], _: Duration) -> crate::Sent {
+        self.result.clear();
+        self.result.extend(buffer.iter().zip(&self.key).map(|(s, key)| (s * self.drive / (1.0 + key.abs())).tanh()));
+        crate::Sent::Out
+    }
+
+    fn set_key(&mut self, key: &[f32]) {
+        self.key.fill(0.0);
+        for (to, from) in self.key.iter_mut().zip(key) {
+            *to = *from;
+        }
+        if key.iter().any(|sample| *sample != 0.0) {
+            self.heard_key.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn wait(&mut self, buffer: &mut [f32], _: Duration) -> bool {
+        let len = buffer.len().min(self.result.len());
+        buffer[..len].copy_from_slice(&self.result[..len]);
+        true
+    }
+}
+
+/// [`project`] with a plug-in after every track's instrument, and a device group with a plug-in
+/// in each of its two branches on the group track, including a nested group followed by an
+/// effect. Track 2 keys track 1's plug-in after its devices, and track 4 keys track 3's
+/// compressor after its fader. This covers the workers' key taps and reader dependencies as
+/// well as suspension and resumption, without adding render blocks to the test.
+fn plug_in_project() -> suhina_model::Project {
+    let plug =
+        |n: u32| Device { name: format!("P{n}"), ..Device::new("plug", DeviceKind::Vst3 { id: format!("{n:032}") }) };
+    let mut p = project();
+    for (n, channel) in (1u32..).zip(p.channels.iter_mut()) {
+        let at = channel.devices.len().min(1);
+        channel.devices.insert(at, plug(n));
+        if channel.id == ChannelId(5) {
+            let nested = Device::group(
+                "Nested",
+                suhina_model::DeviceGroup::with_branches(vec![
+                    suhina_model::Branch { devices: vec![plug(102)], ..suhina_model::Branch::new("C") },
+                    suhina_model::Branch { devices: vec![plug(103)], ..suhina_model::Branch::new("D") },
+                ]),
+            );
+            let branches = vec![
+                suhina_model::Branch { devices: vec![nested, plug(100)], ..suhina_model::Branch::new("A") },
+                suhina_model::Branch { devices: vec![plug(101), device("eq", &[])], ..suhina_model::Branch::new("B") },
+            ];
+            channel.devices.push(Device::group("G", suhina_model::DeviceGroup::with_branches(branches)));
+        }
+    }
+    p.channel_mut(ChannelId(1)).unwrap().devices[1].inputs =
+        vec![suhina_model::DeviceInput::key(ChannelId(2), suhina_model::TapPoint::PostFx)];
+    p.channel_mut(ChannelId(3)).unwrap().devices[2].inputs =
+        vec![suhina_model::DeviceInput::key(ChannelId(4), suhina_model::TapPoint::PostFader)];
+    p.assign_ids().unwrap();
+    p.validate().unwrap();
+    p
+}
+
+/// [`plug_in_project`]'s first `blocks` blocks rendered offline on `threads` threads, and the
+/// chains sent to workers.
+fn render_plug_ins(threads: usize, blocks: usize) -> (Vec<f32>, u64) {
+    let p = plug_in_project();
+    let mut plugins = crate::Plugins::new();
+    let heard_key = Arc::new(AtomicBool::new(false));
+    for (n, found) in crate::plugin_devices(&p).into_iter().enumerate() {
+        let processor = Bend {
+            drive: 1.0 + n as f32 * 0.25,
+            result: Vec::with_capacity(BLOCK * 2),
+            key: [0.0; BLOCK * 2],
+            heard_key: Arc::clone(&heard_key),
+        };
+        plugins.insert(found.key, crate::PluginSlotInfo { instrument: false, latency: 0 }, Box::new(processor));
+    }
+    let mut renderer = Renderer::build(
+        &p,
+        crate::RenderInputs::from_audio(&crate::AudioPool::new(), suhina_device_registry::factory())
+            .with_plugins(plugins),
+        SR,
+        crate::RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_offline(true);
+    renderer.set_render_threads(threads);
+    let mut out = Vec::with_capacity(blocks * BLOCK * 2);
+    let mut block = vec![0.0f32; BLOCK * 2];
+    for _ in 0..blocks {
+        renderer.process(&mut block);
+        out.extend_from_slice(&block);
+    }
+    assert!(heard_key.load(Ordering::Relaxed), "the hosted effect received its source's key");
+    (out, renderer.chains_sent_to_workers())
+}
+
+/// ADR 0038 › 4: chains with plug-ins go to the workers too, and a render on any number of threads
+/// is still the render on one, bit for bit, plug-ins in groups included.
+#[test]
+fn plug_in_chains_render_on_several_threads_as_on_one_bit_for_bit() {
+    let blocks = SR as usize / BLOCK;
+    let (alone, sent) = render_plug_ins(1, blocks);
+    assert_eq!(sent, 0);
+    assert!(suhina_test_support::peak(&alone) > 0.01, "the project plays");
+    for threads in [2, 4, 8] {
+        let (parallel, sent) = render_plug_ins(threads, blocks);
+        assert!(sent >= blocks as u64, "{threads} threads sent {sent} chains to workers");
+        assert!(bits(&parallel) == bits(&alone), "{threads} threads render other samples than one");
+    }
 }

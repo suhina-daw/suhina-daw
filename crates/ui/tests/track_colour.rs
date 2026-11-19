@@ -15,6 +15,7 @@ use egui_kittest::kittest::Queryable;
 use suhina_engine::model::Rgb;
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
+use suhina_ui::kit::selection::{SelectionColour, SelectionLook};
 use suhina_ui::{App, interaction::colour_picker, kit::theme};
 
 /// The colour variable `variable` (a name without `--`) as the window's root resolved it in the
@@ -106,9 +107,12 @@ fn arrangement_header_surfaces_follow_custom_theme_tokens() {
     assert!(neutral_volumes, "volume fills share the neutral theme colour regardless of track colour");
 }
 
+/// With Settings › Appearance › Selection colour › Clip's own colour, a selected header keeps its
+/// track's colour on the theme's selected surface, as before there was one selection colour.
 #[test]
-fn selected_header_uses_its_theme_surface_without_recolouring_the_track() {
+fn with_clips_own_colour_a_selected_header_keeps_its_theme_surface_and_track_colour() {
     let mut harness = arrangement();
+    selection_colour(&mut harness, SelectionColour::Own, Color32::BLACK);
     let before = harness.state().session().unwrap().project().clone();
     harness.get_by_label("Track Drums").click();
     harness.run();
@@ -653,4 +657,193 @@ fn a_lane_that_hides_its_overflow_leaves_the_header_and_the_automation_lanes_alo
         .iter()
         .any(|c| c.shape.visual_bounding_rect().intersects(lane) && !c.clip_rect.expand(0.5).contains_rect(lane));
     assert!(!cut, "the automation lane's header is not cut either");
+}
+
+/// Sets Settings › Appearance › Selection colour to `mode`, with `custom` for Custom.
+fn selection_colour(harness: &mut Harness<'static, App>, mode: SelectionColour, custom: Color32) {
+    let ctx = harness.ctx.clone();
+    let mut settings = harness.state().settings().clone();
+    settings.view.selection = SelectionLook { mode, custom };
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+}
+
+/// A click on what is labelled `label`, with `modifiers` held (Ctrl adds to the selection): at its
+/// centre, or 6 points under its top for a clip's name bar, which picks the clip whole.
+fn pick(harness: &mut Harness<'static, App>, label: &str, name_bar: bool, modifiers: Modifiers) {
+    let rect = harness.get_by_label(label).rect();
+    let at = if name_bar { rect.center_top() + egui::vec2(0.0, 6.0) } else { rect.center() };
+    harness.event(egui::Event::ModifiersChanged(modifiers));
+    harness.hover_at(at);
+    harness.run();
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers });
+        harness.run();
+    }
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.run();
+}
+
+/// The opaque fill of the smallest rectangle the last frame drew over all of `area`: a clip's
+/// body, which may reach past the view where the clip's widget does not.
+fn fill_of(harness: &Harness<'static, App>, area: Rect) -> Option<Color32> {
+    filled_rects(harness)
+        .into_iter()
+        .filter(|r| r.fill.a() == 255 && r.rect.expand(0.6).contains_rect(area))
+        .min_by(|a, b| a.rect.area().total_cmp(&b.rect.area()))
+        .map(|r| r.fill)
+}
+
+/// A colour no theme uses, for the selection.
+const PICKED: Color32 = Color32::from_rgb(0xC8, 0x28, 0x3C);
+
+/// Two selected headers of different colours and two selected clips of different colours are all
+/// filled with the theme's `selection.background`, a clip with the very colour of a header (#1217).
+#[test]
+fn selected_headers_and_clips_share_the_themes_selection_colour() {
+    let mut harness = arrangement();
+    use_colours(&[("selection-background", PICKED)]);
+    harness.run();
+    pick(&mut harness, "Track Drums", false, Modifiers::NONE);
+    pick(&mut harness, "Track Bass", false, Modifiers::COMMAND);
+    let headers = ["Track Drums", "Track Bass"].map(|label| harness.get_by_label(label).rect());
+    let headers_filled = headers.iter().all(|header| filled_with(&harness, *header, PICKED));
+    let (beat, walk) = ("Clip Beat B on Drums at bar 17", "Clip Walk on Bass at bar 17");
+    pick(&mut harness, beat, true, Modifiers::NONE);
+    pick(&mut harness, walk, true, Modifiers::COMMAND);
+    let clips = [beat, walk].map(|label| fill_of(&harness, harness.get_by_label(label).rect()));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(headers_filled, "both selected headers take selection.background");
+    assert_eq!(clips, [Some(PICKED), Some(PICKED)], "both selected clips take a header's fill");
+}
+
+/// A clip picked by a click in its body, which sets the play start there, is filled with the
+/// selection colour as one picked by its name bar is, while its name bar keeps the clip's own
+/// colour.
+#[test]
+fn a_clip_picked_in_its_body_takes_the_selection_colour_and_its_name_bar_keeps_its_own() {
+    let mut harness = arrangement();
+    use_colours(&[("selection-background", PICKED)]);
+    harness.run();
+    let beat = "Clip Beat B on Drums at bar 17";
+    let before = fill_of(&harness, harness.get_by_label(beat).rect());
+    pick(&mut harness, beat, false, Modifiers::NONE);
+    let rect = harness.get_by_label(beat).rect();
+    let body = fill_of(&harness, rect);
+    // The name bar along the clip's top: a fill over the clip's width, not the selection colour.
+    let bar = filled_rects(&harness).into_iter().any(|r| {
+        r.fill.a() > 0
+            && r.fill != PICKED
+            && (r.rect.top() - rect.top()).abs() < 1.0
+            && r.rect.height() < rect.height() / 2.0
+            && r.rect.width() > rect.width() * 0.8
+    });
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_ne!(before, Some(PICKED), "not selected before the click");
+    assert_eq!(body, Some(PICKED), "a click in the body selects the clip and fills it");
+    assert!(bar, "the name bar keeps the clip's own colour");
+}
+
+/// With Clip's own colour, two selected clips of different colours keep different fills (#1218).
+#[test]
+fn with_clips_own_colour_two_selected_clips_keep_their_own_colours() {
+    let mut harness = arrangement();
+    selection_colour(&mut harness, SelectionColour::Own, PICKED);
+    let (beat, walk) = ("Clip Beat B on Drums at bar 17", "Clip Walk on Bass at bar 17");
+    pick(&mut harness, beat, true, Modifiers::NONE);
+    pick(&mut harness, walk, true, Modifiers::COMMAND);
+    let [a, b] = [beat, walk].map(|label| fill_of(&harness, harness.get_by_label(label).rect()));
+    assert!(a.is_some() && b.is_some(), "{a:?} {b:?}");
+    assert_ne!(a, b, "each keeps its own colour");
+    let theirs = live("selection-background");
+    assert!(a != Some(theirs) && b != Some(theirs), "neither takes the selection colour");
+}
+
+/// A custom selection colour fills selected headers and clips in both views at once, and From
+/// theme gives the theme's back (#1218).
+#[test]
+fn a_custom_selection_colour_fills_headers_and_clips_and_from_theme_gives_the_themes_back() {
+    let mut harness = arrangement();
+    selection_colour(&mut harness, SelectionColour::Custom, PICKED);
+    pick(&mut harness, "Track Drums", false, Modifiers::NONE);
+    let header = harness.get_by_label("Track Drums").rect();
+    assert!(filled_with(&harness, header, PICKED), "the header takes the chosen colour");
+    let beat = "Clip Beat B on Drums at bar 17";
+    pick(&mut harness, beat, true, Modifiers::NONE);
+    assert_eq!(fill_of(&harness, harness.get_by_label(beat).rect()), Some(PICKED), "the clip too");
+    selection_colour(&mut harness, SelectionColour::Theme, PICKED);
+    assert_eq!(fill_of(&harness, harness.get_by_label(beat).rect()), Some(live("selection-background")));
+
+    let mut launcher = window();
+    selection_colour(&mut launcher, SelectionColour::Custom, PICKED);
+    pick(&mut launcher, "Track Drums", false, Modifiers::NONE);
+    pick(&mut launcher, "Track Bass", false, Modifiers::COMMAND);
+    for label in ["Track Drums", "Track Bass"] {
+        let header = launcher.get_by_label(label).rect();
+        assert!(filled_with(&launcher, header, PICKED), "{label} in the Launcher takes the chosen colour");
+    }
+}
+
+/// The rectangles the last frame filled with a light tint of `colour`: its own hue, mostly see-through.
+fn tinted_with(harness: &Harness<'static, App>, colour: Color32) -> Vec<Rect> {
+    let [r, g, b, _] = colour.to_srgba_unmultiplied();
+    filled_rects(harness)
+        .into_iter()
+        .filter(|shape| {
+            let [fr, fg, fb, fa] = shape.fill.to_srgba_unmultiplied();
+            let near = |a: u8, b: u8| a.abs_diff(b) <= 8;
+            (1..=96).contains(&fa) && near(fr, r) && near(fg, g) && near(fb, b)
+        })
+        .map(|shape| shape.rect)
+        .collect()
+}
+
+/// A theme's background for every Launcher column stays under the slots when a column is
+/// selected: it is not drawn over the header, which keeps the selection colour (#1524 review).
+#[test]
+fn a_themes_column_background_does_not_cover_a_selected_column() {
+    let mut harness = window();
+    let column = Color32::from_rgb(0x20, 0x20, 0x20);
+    suhina_ui::kit::native_css::set_user_sheet(Some(
+        format!(
+            ":root {{ --selection-background: {}; }} track-column {{ background-color: #202020; }}",
+            theme::hex(PICKED)
+        )
+        .into(),
+    ));
+    harness.run();
+    pick(&mut harness, "Track Drums", false, Modifiers::NONE);
+    let header = harness.get_by_label("Track Drums").rect();
+    let covered = filled_rects(&harness).iter().any(|r| {
+        let over = r.rect.intersect(header);
+        r.fill == column && over.width() > 1.0 && over.height() > 1.0
+    });
+    let filled = filled_with(&harness, header, PICKED);
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(!covered, "the column's background is not drawn over the selected header");
+    assert!(filled, "the selected header keeps the selection colour");
+}
+
+/// Only the selected tracks' lanes are tinted with the selection colour, and the tint follows a
+/// change of selection (#1217).
+#[test]
+fn only_the_selected_tracks_lanes_are_tinted_and_the_tint_follows_the_selection() {
+    let mut harness = arrangement();
+    use_colours(&[("selection-background", PICKED)]);
+    harness.run();
+    let rows = |harness: &Harness<'static, App>| {
+        ["Track Drums", "Track Bass"].map(|label| harness.get_by_label(label).rect().y_range())
+    };
+    let on = |harness: &Harness<'static, App>, row: egui::Rangef| {
+        tinted_with(harness, PICKED).iter().any(|r| r.y_range().intersection(row).span() > 4.0)
+    };
+    pick(&mut harness, "Track Drums", false, Modifiers::NONE);
+    let [drums, bass] = rows(&harness);
+    let first = (on(&harness, drums), on(&harness, bass));
+    pick(&mut harness, "Track Bass", false, Modifiers::NONE);
+    let [drums, bass] = rows(&harness);
+    let then = (on(&harness, drums), on(&harness, bass));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert_eq!(first, (true, false), "Drums' lane alone is tinted");
+    assert_eq!(then, (false, true), "the tint follows the selection to Bass");
 }

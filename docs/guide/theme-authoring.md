@@ -3,7 +3,7 @@ description: Guide for people and AI assistants writing or editing a Suhina them
 read_when: write a theme, edit a theme, theme author guide, theme.css, theme package, theme folder files, colour tokens, quick controls, variants, AI theme edits
 type: howto
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-19
 covers:
   - crates/ui/src/kit/theme.rs
 ---
@@ -447,10 +447,13 @@ specific selector to win over Suhina's.
   `start-marker`, the `playhead`, the loop (`loop-region`, `[checked]`, and `loop-line`), a
   `marker` (`[checked]` while dragged), the tools (`arrangement-tool`, `[checked]`), the selected
   time (`time-selection` and its kinds), a clip being recorded (`arrangement clip[recording]`),
-  the lane the piano roll edits (`arrangement track-lane[checked]`), a track's header
+  a selected track's lane (`arrangement track-lane[selected]`) and Launcher column
+  (`track-column[selected]`), tinted from `selection.background`, the lane the piano roll edits
+  (`arrangement track-lane[checked]`), a track's header
   (`arrangement track-header`, `[selected]`; Main's `arrangement track-header[kind="main"]`), a
   clip's gain field (`clip-gain`) and fade handles (`clip-fade-handle`), the automation lanes
-  (`automation-lane[kind="group"]`, `automation-header`, `[selected]`, `automation-line[muted]`,
+  (`automation-lane[kind="group"]`, `automation-header`, `[selected]`,
+  `automation-line[kind="fixed"]`, `automation-line[muted]`, `automation-point[kind="fixed"]`,
   `automation-point[selected]`, `automation-pin`) and the switches `button[kind="envelope"]`,
   `"lanes"` and `"shape"`. **Your rule for an element overrides the base sheet's for each property
   it sets, its states' too**: a theme with a rule for every `scene` or `clip` states `scene[playing]`
@@ -711,7 +714,7 @@ Elements, by name:
 | `notice-bar` | the strip over the views that asks about an opened project or names missing files |
 | `toolbar-module` | one area of the toolbar, by its id (below) |
 | `browser`, `session`, `arrangement`, `mixer`, `detail`, `clip-editor`, `piano-roll`, `sample-map` | the views and panels |
-| `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]` |
+| `track-header`, `track-name`, `track-column`, `scene-column`, `scene`, `slot`, `clip` | tracks, scenes, slots and clips; Main's header is `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all** `scene[kind="stop-all"]`; a clip is `[playing]`, `[queued]`, `[selected]`, `[recording]` and, deactivated, `[muted]`; a selected track's column is `track-column[selected]`, whose translucent background the base sheet gives from `selection.background` and which is drawn over the whole column where it differs from `track-column`'s own (a background for every column stays under the slots) |
 | `waveform`, `envelope` | what a clip shows |
 | `device-panel`, `device-section`, `device-control`, `xy-control` | device panels; `#id` selects a device control |
 | `button`, `value`, `value-fill`, `dropdown`, `dropdown-arrow`, `text-input` | buttons, value fields, the lit part of a level field, menus and text fields; a field's underline is its `border-color`, and its `accent-color` while it is edited; a drop-down's arrow keeps its own `color` (every drop-down's, the lists' pickers such as the quantization and count-in ones too), so a rule for the field's text names `dropdown-arrow` too; a track header's routing fields, which take the header's colours, are `dropdown[kind="subtle"]` (a rule for every `dropdown` leaves them alone); a number typed into a value control is `text-input[kind="typed"]` (its ring's `border-color`, its `background-color`, its `color`; a rule for every `text-input` is its too, until `text-input[kind="typed"]` has its own) |
@@ -743,7 +746,7 @@ Elements, by name:
 | `grid-line`, `tempo-mark`, `start-marker`, `marker` | the Arrangement's grid lines (`kind="bar"`, `kind="beat"`), a tempo or time-signature change, the play start marker, a marker's tag |
 | `time-selection`, `marquee` | selected time (`background-color` over the lanes, `color` at its edges; `kind="ruler"`, `"draw"`, `"editor"`, `"take"`, `"automation"`), and the rectangle that picks clips, notes (piano roll) or sample-map points |
 | `clip-fade`, `clip-envelope`, `take-header` | a fade's line (`kind="crossfade"` between takes), a clip's gain envelope while it is edited, a take lane's header |
-| `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin` | an automation lane's header (`kind="group"` for a group's), a group's time, the envelope (`[muted]` while off), its points (`[selected]`) and the pin |
+| `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin` | an automation lane's header (`kind="group"` for a group's), a group's time, the envelope (`[muted]` while off), its points (`[selected]`) and the pin; the line and points are `[kind="fixed"]` while Settings › Arrangement › Automation colour is Fixed, which the base sheet colours with `var(--accent)` |
 | `device-list`, `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends (or the device chain) are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
 | `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
 | `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail (the mixer's and the clip gain fader's) |
@@ -1335,6 +1338,7 @@ tokens.
 | `accent` | `#A6A3FF` | The playhead, queued clips, a key being set |
 | `automation.pin` | `#A6A3FF` | The pin of an automation lane pinned below its track's top lane (older theme files: their accent) |
 | `selection` | `#E3C86A` | The selected device's outline |
+| `selection.background` | `#DBDAFF` | Selected track headers, clips and, faintly, their lanes and columns |
 | `recording` | `#E5484D` | Recording and errors |
 | `recording.background` | `#4D2F2B` | Behind an armed track's arm button and a recording clip |
 | `meter.normal` | `#8BC48A` | A level meter below the top |

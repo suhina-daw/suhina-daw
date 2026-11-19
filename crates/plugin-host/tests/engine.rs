@@ -899,3 +899,71 @@ fn plug_ins_sharing_a_process_render_the_same_as_each_in_its_own() {
     assert!(alone.iter().zip(&together).all(|(a, b)| a.to_bits() == b.to_bits()), "{}", max_diff(&alone, &together));
     assert!(together.iter().any(|s| *s != 0.0));
 }
+
+/// Four tracks, as few as the render pool takes (`PARALLEL_MIN`), each the base project's track
+/// with `devices(n)` (notes on every track).
+fn tracks(devices: impl Fn(u32) -> Vec<Device>) -> Project {
+    let mut p = project(2.0, true, Vec::new());
+    let (track, channel, lane) = (p.tracks[0].clone(), p.channels[0].clone(), p.arrangement.lanes[0].clone());
+    p.tracks.clear();
+    p.channels.clear();
+    p.arrangement.lanes.clear();
+    for id in 1..=4u32 {
+        p.tracks.push(Track { id: TrackId(id), channel: Some(ChannelId(id)), ..track.clone() });
+        p.channels.push(Channel { id: ChannelId(id), devices: devices(id), ..channel.clone() });
+        p.arrangement.lanes.push(ArrangementLane { track: Some(TrackId(id)), ..lane.clone() });
+    }
+    p
+}
+
+/// `p` rendered offline on `threads` threads with its plug-ins in host processes of their own,
+/// and the chains the render sent to workers.
+fn render_on(p: &Project, threads: usize) -> (Vec<f32>, u64) {
+    let started = suhina_session::start_offline(p, &AudioPool::new(), &env(), SR);
+    assert!(started.running() > 0, "{:?}", started.notices);
+    let mut renderer = Renderer::build(
+        p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_session::devices()).with_plugins(started.plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_offline(true);
+    renderer.set_render_threads(threads);
+    let mut out = Vec::new();
+    let mut block = vec![0.0f32; 512 * 2];
+    // Half a second: both notes' starts and the plug-ins' blocks around them.
+    for _ in 0..(SR as usize / 2 / 512) {
+        renderer.process(&mut block);
+        out.extend_from_slice(&block);
+    }
+    (out, renderer.chains_sent_to_workers())
+}
+
+/// ADR 0038 › 4: chains with plug-ins run on the render workers too, every plug-in waited for
+/// offline, so a render on several threads is the render on one, bit for bit: the test
+/// instrument and effect in host processes of their own, a built-in effect between them, and a
+/// device group whose branches' plug-ins are out at the same time.
+#[test]
+fn plug_in_chains_render_the_same_on_several_threads_as_on_one() {
+    let p = tracks(|n| {
+        let mut devices = vec![plugin_device("vst3"), plugin_device("clap")];
+        devices.push(Device::new("saturator", DeviceKind::Builtin("saturator".into())));
+        if n == 2 {
+            let branches = vec![
+                Branch { devices: vec![plugin_device("gain")], ..Branch::new("A") },
+                Branch { devices: vec![plugin_device("clap")], ..Branch::new("B") },
+            ];
+            devices.push(Device::group("G", DeviceGroup::with_branches(branches)));
+        }
+        devices
+    });
+    let (alone, sent) = render_on(&p, 1);
+    assert_eq!(sent, 0);
+    assert!(alone.iter().any(|s| s.abs() > 0.01), "the project plays");
+    let (parallel, sent) = render_on(&p, 4);
+    assert!(sent > 0, "plug-in chains went to the workers");
+    assert_eq!(alone.len(), parallel.len());
+    let differ = alone.iter().zip(&parallel).filter(|(a, b)| a.to_bits() != b.to_bits()).count();
+    assert_eq!(differ, 0, "4 threads render {differ} samples other than one");
+}

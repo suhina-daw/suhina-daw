@@ -239,6 +239,10 @@ arrangement-tool:hover { background-color: var(--control-hoverBackground); }
 time-selection { color: var(--accent); }
 time-selection[kind="draw"], time-selection[kind="take"] { color: var(--selection); }
 arrangement marquee { color: var(--accent); }
+/* A selected track's lane, and its whole column in the Launcher, in a light tint of the selection
+   colour; the lane the piano roll edits keeps its own highlight. */
+arrangement track-lane[selected] { background-color: color-mix(in srgb, var(--selection-background) 12%, transparent); }
+track-column[selected] { background-color: color-mix(in srgb, var(--selection-background) 12%, transparent); }
 arrangement track-lane[checked] { background-color: var(--panel-hoverBackground); border-color: var(--accent); }
 arrangement track-header[selected] { border-color: var(--border-strong); }
 arrangement track-header[kind="main"] { background-color: var(--panel-background); color: var(--text-primary); }
@@ -258,11 +262,13 @@ clip-fade-handle { background-color: var(--text-secondary); }
 clip-fade-handle:hover { background-color: var(--text-primary); }
 clip-fade[kind="crossfade"] { color: var(--text-primary); }
 
-/* The automation lanes: a group's lane and header, a lane's header picked, its line while it is
-   off, its points picked and its pin. */
+/* The automation lanes: a group's lane and header, a lane's header picked, the line and points in
+   one colour (Automation colour: Fixed), the line while it is off, its points picked and its pin.
+   The fixed colours come before `[muted]` and `[selected]`, so those still win. */
 automation-lane[kind="group"] { color: var(--accent); }
 automation-header { accent-color: var(--accent); }
 automation-header[kind="group"], automation-header[kind="group"][selected] { background-color: var(--control-background); }
+automation-line[kind="fixed"], automation-point[kind="fixed"] { color: var(--accent); }
 automation-line[muted] { color: var(--text-hint); }
 automation-point[selected] { color: var(--text-primary); }
 automation-pin { color: var(--automation-pin); }
