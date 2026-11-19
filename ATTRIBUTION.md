@@ -25,7 +25,7 @@ Apache-2.0, OFL, CC0, CC BY) and keep their license file next to them.
 | Path | Title | Author | Source | License |
 |---|---|---|---|---|
 | `docs/spec/colour-picker-palette.svg` | Track palette, luminance and colour-vision simulation chart | Suhina contributors | Original chart; scientific sources in the colour-picker spec | GPL-3.0-or-later |
-| `docs/design/reference/colour-picker-*.png` | Colour tool in compact, field and wheel states, in dark, light and high-contrast themes | Suhina contributors | Suhina's own theme renderer, [CI run 44521819965](https://github.com/suhina-daw/suhina-daw/actions/runs/44521819965), commit `dd5eb512f7056d62b7267a7c45d7cb532aef22f6` | GPL-3.0-or-later |
+| `docs/design/reference/colour-picker-*.png` | Colour tool in compact, field and wheel states, in dark, light and high-contrast themes | Suhina contributors | Suhina's own theme renderer, [CI run 44582155095](https://github.com/suhina-daw/suhina-daw/actions/runs/44582155095), commit `230ea0a3763f2ebcf75717d7179ecdc333d13185` | GPL-3.0-or-later |
 | `docs/design/reference/session-minimal-v3.png`, `arrangement-minimal-v3.png` | Suhina Session and Arrangement design mockups (minimal v3) | Suhina contributors | Original work, exported from the project's design canvas | GPL-3.0-or-later |
 
 ## Ported code
