@@ -294,7 +294,7 @@ pub struct ArrangementViewState {
     /// The track the user last worked on: the header they clicked, or the track of the clip they
     /// selected. A folded group shows that track while it is one of its own.
     pub(super) targeted: Option<TrackId>,
-    pub(super) track_drop: Option<(TrackId, f32)>,
+    pub(super) track_drop: Option<(nesting::TrackDrag, f32)>,
     /// The middle button is held after being pressed over the timeline: the view follows it.
     pub(super) panning: bool,
     /// A track to scroll into view on the next frame: one just added or selected from the

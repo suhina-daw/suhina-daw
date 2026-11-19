@@ -581,7 +581,7 @@ impl Projects {
 
     fn back_up_noting(&mut self, id: ProjectId) {
         if let Err(e) = self.back_up(id) {
-            self.backups.note(e.0);
+            self.backups.note(e.message);
         }
     }
 
@@ -704,13 +704,13 @@ fn autosave(projects: &mut Projects, params: &Value) -> Result<Value, CommandErr
     let flag = |name: &str| match Args::new(params).value(name) {
         None => Ok(None),
         Some(Value::Bool(b)) => Ok(Some(*b)),
-        Some(_) => Err(CommandError(format!("{name} must be true or false"))),
+        Some(_) => Err(CommandError::new(format!("{name} must be true or false"))),
     };
     let interval = match Args::new(params).value("interval") {
         None => None,
         Some(Value::String(text)) => Some(Interval::parse(text).ok_or_else(|| {
             let names: Vec<String> = Interval::ALL.iter().map(|i| i.name()).collect();
-            CommandError(format!("interval must be one of {}", names.join(", ")))
+            CommandError::new(format!("interval must be one of {}", names.join(", ")))
         })?),
         Some(_) => return Err("interval must be text".into()),
     };
@@ -730,7 +730,7 @@ fn autosave(projects: &mut Projects, params: &Value) -> Result<Value, CommandErr
             }
             projects.take_finished();
             if let Some(failed) = projects.backups.notices.pop() {
-                return Err(CommandError(failed));
+                return Err(CommandError::new(failed));
             }
             written = projects
                 .get(id)

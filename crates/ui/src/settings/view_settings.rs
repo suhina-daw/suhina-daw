@@ -283,6 +283,9 @@ pub struct ViewSettings {
     pub alt_wheel_one: bool,
     /// What samples dropped on a folder in the browser do: ask, move or copy (#943).
     pub folder_drop: FolderDrop,
+    /// Desktop-only consent to remove processing when dissolving an emptied audio group.
+    /// Off asks first; CLI and MCP always supply their own explicit group ids.
+    pub remove_group_processing: bool,
     /// The Arrangement's toolbar of tools shows, and the tool keys choose them while it has the
     /// focus (off by default, #991).
     pub arrangement_toolbar: bool,
@@ -361,6 +364,7 @@ impl Default for ViewSettings {
             copy_wrapped: true,
             alt_wheel_one: false,
             folder_drop: FolderDrop::Ask,
+            remove_group_processing: false,
             arrangement_toolbar: false,
             default_grid: "1/4",
         }
@@ -414,28 +418,32 @@ impl ViewSettings {
                 crate::arrangement::automation_lanes::TopLane::Volume => "volume",
                 crate::arrangement::automation_lanes::TopLane::Pan => "pan",
             },
-        ) + &format!(
-            "waveform_colour = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
-            self.waveform.mode.name(),
-            crate::kit::theme::hex(self.waveform.custom),
-            self.audio_colour_strength,
-            self.header_colour_strength,
-        ) + &format!(
-            "automation_colour = {}
+        ) + &format!("empty_group_processing = {}\n", if self.remove_group_processing { "remove" } else { "ask" })
+            + &format!(
+                "waveform_colour = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
+                self.waveform.mode.name(),
+                crate::kit::theme::hex(self.waveform.custom),
+                self.audio_colour_strength,
+                self.header_colour_strength,
+            )
+            + &format!(
+                "automation_colour = {}
 automation_line_colour = {}
 automation_point_colour = {}
 selection_colour = {}
 selection_custom_colour = {}
 ",
-            self.automation.mode.name(),
-            themed_colour(self.automation.line),
-            themed_colour(self.automation.point),
-            self.selection.mode.name(),
-            crate::kit::theme::hex(self.selection.custom),
-        ) + &format!(
-            "liquid_panel_strength = {}\nliquid_track_strength = {}\nliquid_clip_strength = {}\n",
-            self.liquid.panels, self.liquid.tracks, self.liquid.clips,
-        ) + &format!("replace_clip = {}\n", if self.replace_clip { "on" } else { "off" })
+                self.automation.mode.name(),
+                themed_colour(self.automation.line),
+                themed_colour(self.automation.point),
+                self.selection.mode.name(),
+                crate::kit::theme::hex(self.selection.custom),
+            )
+            + &format!(
+                "liquid_panel_strength = {}\nliquid_track_strength = {}\nliquid_clip_strength = {}\n",
+                self.liquid.panels, self.liquid.tracks, self.liquid.clips,
+            )
+            + &format!("replace_clip = {}\n", if self.replace_clip { "on" } else { "off" })
             + &format!("stack_in_piano_roll = {}\n", if self.stack_in_piano_roll { "on" } else { "off" })
             + &format!(
                 "take_crossfade = {}\ntake_crossfade_custom = {}\n",
@@ -593,6 +601,7 @@ selection_custom_colour = {}
             ("arrangement_returns", "hidden" | "shown") => self.returns_hidden = value == "hidden",
             ("new_project_returns", "two" | "none") => self.new_returns = value == "two",
             ("copy_names", "wrapped" | "hash") => self.copy_wrapped = value == "wrapped",
+            ("empty_group_processing", "ask" | "remove") => self.remove_group_processing = value == "remove",
             ("alt_wheel", "pointer" | "all") => self.alt_wheel_one = value == "pointer",
             ("browser_folder_drop", drop) if FolderDrop::parse(drop).is_some() => {
                 self.folder_drop = FolderDrop::parse(drop).unwrap_or_default();

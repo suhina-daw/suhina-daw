@@ -811,7 +811,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
                 if newly_chosen {
                     session.device_files.chosen.remove(&state_text);
                 }
-                return Err(CommandError(e));
+                return Err(CommandError::new(e));
             }
             Some(state_text)
         }
@@ -1366,7 +1366,7 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
         if packed_id != kind {
             return Err(format!("{kind:?} runs a shipped file of its own kind, not {packed_id:?}").into());
         }
-        let asset = session.load_device_file(&kind, path).map_err(CommandError)?;
+        let asset = session.load_device_file(&kind, path).map_err(CommandError::new)?;
         // The shown name reads the key's file stem, like the lists' rows do ([ADR 0036] › it).
         let name = suhina_device_registry::asset_name(&asset, std::path::Path::new(path)).unwrap_or_default();
         let channel = device_channel(session, params)?;
@@ -1388,7 +1388,7 @@ pub(crate) fn set_file(session: &mut Session, params: &Value) -> Result<Value, C
             if newly_chosen {
                 session.device_files.chosen.remove(&state_text);
             }
-            return Err(CommandError(e));
+            return Err(CommandError::new(e));
         }
     };
     let name = suhina_device_registry::asset_name(&asset, std::path::Path::new(&state_text)).unwrap_or_default();
@@ -1507,8 +1507,8 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
     // › Amendment): a state the library's move carried reads its new place, so the save works
     // where the state's own text would be refused.
     let file = state.map(|state| preset_file_state(session, info.id.as_ref(), &state));
-    let bytes =
-        suhina_device_registry::write_preset_file(&info.id, name, file.as_deref(), &values).map_err(CommandError)?;
+    let bytes = suhina_device_registry::write_preset_file(&info.id, name, file.as_deref(), &values)
+        .map_err(CommandError::new)?;
     let base = session.library_base().ok_or("the library's folder is not set")?;
     let folder = base.join("Presets").join(info.id.as_ref());
     if std::fs::create_dir_all(&folder).is_err() {
@@ -1522,7 +1522,7 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
     let target = folder.join(&file_name);
     let staging = folder.join(format!("{file_name}.suhina-new"));
     crate::files::stage_and_rename(&staging, &target, &bytes)
-        .map_err(|e| CommandError(format!("{}: {e}", target.display())))?;
+        .map_err(|e| CommandError::new(format!("{}: {e}", target.display())))?;
     Ok(
         json!({ "preset": base.join("Presets").join(info.id.as_ref()).join(&file_name).display().to_string(), "name": name }),
     )

@@ -1090,7 +1090,7 @@ impl Rack {
             let done = work(&mut control);
             let _gone = sender.send(Returned { key, generation, control: Some(control), done });
         });
-        spawned.map(|_| ()).map_err(|e| CommandError(format!("no thread to talk to the plug-in on: {e}")))
+        spawned.map(|_| ()).map_err(|e| CommandError::new(format!("no thread to talk to the plug-in on: {e}")))
     }
 
     /// Takes back control halves lent out, and the states of stopped plug-ins.
@@ -1176,7 +1176,7 @@ impl Rack {
             if (reopen || fall_back)
                 && let Err(e) = self.open_editor(key)
             {
-                notices.push(format!("the editor did not open again: {}", e.0));
+                notices.push(format!("the editor did not open again: {}", e.message));
             }
             // An open or close asked meanwhile, now that the control half is back.
             let wanted = self.instances.get_mut(&key).and_then(|i| i.editor_wanted.take());
@@ -1188,7 +1188,7 @@ impl Rack {
                 _ => Ok(()),
             };
             if let Err(e) = result {
-                notices.push(e.0);
+                notices.push(e.message);
             }
         }
         self.pump_texts();
@@ -1540,7 +1540,7 @@ impl Rack {
         if changed {
             player.set_plugin_info(self.slot_info());
             if let Err(e) = player.update(project) {
-                notices.push(format!("plug-ins: {}", e.0));
+                notices.push(format!("plug-ins: {}", e.message));
             }
         }
         notices
@@ -1795,7 +1795,7 @@ impl Rack {
                     instance.counts = Some(hosted.counts());
                     match player.send_plugin(started.key, Box::new(hosted)) {
                         Ok(()) => instance.status = PluginStatus::Running,
-                        Err(e) => instance.status = PluginStatus::Failed(e.0),
+                        Err(e) => instance.status = PluginStatus::Failed(e.message),
                     }
                     // The host found it supports ARA where the catalog did not say so: it is
                     // loaded again with its track's clips ([`Rack::follow_clips`]).
@@ -1828,7 +1828,7 @@ impl Rack {
         }
         for key in reopen {
             if let Err(e) = self.open_editor(key) {
-                notices.push(format!("the editor did not open again: {}", e.0));
+                notices.push(format!("the editor did not open again: {}", e.message));
             }
         }
         changed
@@ -2029,7 +2029,7 @@ impl Rack {
             let listed = listed_after_start(&mut result);
             let _gone = sender.send(Started { key, generation, result, first_state: None, listed });
         });
-        spawned.map(|_| ()).map_err(|e| CommandError(format!("could not restart the plug-in: {e}")))
+        spawned.map(|_| ()).map_err(|e| CommandError::new(format!("could not restart the plug-in: {e}")))
     }
 
     /// How often the state of each running plug-in is read for backups and the unsaved-changes
@@ -2100,7 +2100,7 @@ impl Rack {
         {
             return Ok(list.to_vec());
         }
-        let list = self.running(key)?.params().map_err(|e| CommandError(e.to_string()))?;
+        let list = self.running(key)?.params().map_err(|e| CommandError::new(e.to_string()))?;
         if let Some(instance) = self.instances.get_mut(&key) {
             instance.ranges = Some(ranges(&list));
             instance.steps = Some(steps(&list));
@@ -2127,7 +2127,7 @@ impl Rack {
     /// answer. Unlike the states read for saving a project, never one read earlier: an error
     /// when the plug-in is not running or does not answer.
     pub fn state_now(&mut self, key: u64) -> Result<SavedState, CommandError> {
-        self.running(key)?.save_state().map_err(|e| CommandError(e.to_string()))
+        self.running(key)?.save_state().map_err(|e| CommandError::new(e.to_string()))
     }
 
     /// The range of parameter `id` of the plug-in device `key`: `None` when its parameters
@@ -2177,7 +2177,7 @@ impl Rack {
                 }
                 Ok(None)
             }
-            None => self.running(key)?.open_editor().map(Some).map_err(|e| CommandError(e.to_string())),
+            None => self.running(key)?.open_editor().map(Some).map_err(|e| CommandError::new(e.to_string())),
         }
     }
 
@@ -2242,7 +2242,7 @@ impl Rack {
         if self.owner.is_some() {
             return self.lend(key, |control| Done::Closed(control.close_editor().map_err(|e| e.to_string())));
         }
-        self.running(key)?.close_editor().map_err(|e| CommandError(e.to_string()))
+        self.running(key)?.close_editor().map_err(|e| CommandError::new(e.to_string()))
     }
 
     /// Whether plug-in `key` cannot take the editor's opening or closing now: its control half

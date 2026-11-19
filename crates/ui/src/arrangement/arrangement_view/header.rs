@@ -190,15 +190,20 @@ pub(super) fn track_header(
         state.devices_clicked = true;
         state.automation.let_go();
     }
-    // A double-click shows the track's devices in the detail area.
+    // A container header double-click folds it; an ordinary track opens its devices.
     if body.double_clicked() {
-        state.open_devices = Some(lane.track);
+        if lane.kind == ColumnKind::Group {
+            state.folds.toggle(lane.track);
+            ui.ctx().request_repaint();
+        } else {
+            state.open_devices = Some(lane.track);
+        }
     }
     if body.drag_started_by(egui::PointerButton::Primary) {
-        state.gesture.begin(Gesture::Track(lane.track));
+        state.gesture.begin(Gesture::Track(nesting::TrackDrag::new(nest.places, lane.track, &state.selected_tracks)));
     }
     if body.drag_stopped_by(egui::PointerButton::Primary)
-        && let Some(dragged) = state.gesture.end_track(|t| *t == lane.track)
+        && let Some(dragged) = state.gesture.end_track(|t| t.source == lane.track)
         && let Some(pointer) = body.interact_pointer_pos().or_else(|| ui.ctx().pointer_latest_pos())
     {
         state.track_drop = Some((dragged, pointer.y));
@@ -229,6 +234,8 @@ pub(super) fn track_header(
         Some(&own),
         rect,
         super::header_layout::Header {
+            container: lane.kind == ColumnKind::Group,
+            headers_left: state.headers_left,
             depth: lane.depth,
             ancestors: ancestors.len(),
             armable: lane.armable,
@@ -347,14 +354,16 @@ pub(super) fn track_header(
     work_trace.mark("background");
     // The groups' bands down the indent, at the scale the layout gave them.
     if let Some(indent) = parts.indent {
-        let mut band_left = indent.left();
+        let mut edge = if state.headers_left { indent.right() } else { indent.left() };
         for (level, color) in ancestors.iter().rev().enumerate() {
             let width = super::header_layout::nesting_band_width(level) * parts.indent_scale;
+            let band_left = if state.headers_left { edge - width } else { edge };
             let strip = Rect::from_min_size(Pos2::new(band_left, indent.top()), Vec2::new(width, indent.height()));
             if strip.intersects(clip) {
                 painter.rect_filled(strip.intersect(clip), 0.0, rgb(*color));
             }
-            band_left += width + 2.0 * parts.indent_scale;
+            let step = width + 2.0 * parts.indent_scale;
+            edge += if state.headers_left { -step } else { step };
         }
     }
     // The track's own band follows its ancestors and opens its colour palette.
@@ -392,22 +401,31 @@ pub(super) fn track_header(
         } else {
             format!("Collapse {}", lane.name)
         };
-        let response = widgets::button_area(ui, fold.intersect(clip), id.with("fold"), label);
+        let target = if group_fold { parts.fold_target(inside).unwrap_or(fold) } else { fold }.intersect(clip);
+        let response = widgets::button_area(ui, target, id.with("fold"), &label).on_hover_text(if group_fold {
+            format!("{label}. You can also double-click the track header.")
+        } else {
+            label
+        });
         // `fold`, `[checked]` while folded, and `fold` artwork (`.on` while folded).
         let el =
             crate::kit::element::FOLD.id("fold").response(&response).attr(crate::kit::element::Checked, folded).enter();
         let color = motion::mix(header_fill, theme::text_on(header_fill), 0.75 + 0.25 * widgets::hover(ui, &response));
         let color = el.color_or(color);
+        if group_fold {
+            nesting::disclosure_face(ui, painter, target, &response, &el, color);
+        }
         let fold_state = crate::kit::skin::State::response(&response, folded);
         let drawn = crate::kit::skin::paint_as(&el, painter, fold, "fold", fold_state, color);
         let center = fold.center();
         let (wide, tall) = (7.0, 4.0);
-        // Pointing right while the group is folded, down while it is open.
+        // A closed container points into its header; an open one points down.
+        let direction = if group_fold && state.headers_left { -1.0 } else { 1.0 };
         let points = if folded {
             vec![
-                Pos2::new(center.x - tall / 2.0, center.y - wide / 2.0),
-                Pos2::new(center.x - tall / 2.0, center.y + wide / 2.0),
-                Pos2::new(center.x + tall / 2.0, center.y),
+                Pos2::new(center.x - direction * tall / 2.0, center.y - wide / 2.0),
+                Pos2::new(center.x - direction * tall / 2.0, center.y + wide / 2.0),
+                Pos2::new(center.x + direction * tall / 2.0, center.y),
             ]
         } else {
             vec![

@@ -34,7 +34,7 @@ fn header_height() -> f32 {
     crate::kit::skin::current().session.header_height.map_or(ROW, f32::from)
 }
 /// Width of a group header's fold arrow.
-const FOLD_ARROW: f32 = 12.0;
+const FOLD_ARROW: f32 = 20.0;
 /// Mark sizes inside a slot.
 const CLIP_MARK: f32 = 10.0;
 /// The part of a clip's slot that launches it: the mark and the padding around it.
@@ -95,8 +95,8 @@ pub struct SessionViewState {
     /// keyboard (#918).
     pub reveal: Option<TrackId>,
     /// A column header being dragged to move its track, and where it was let go.
-    track_drag: Option<TrackId>,
-    track_drop: Option<(TrackId, f32)>,
+    track_drag: Option<nesting::TrackDrag>,
+    track_drop: Option<(nesting::TrackDrag, f32)>,
     pub(crate) drag: Option<(TrackId, Control, f64)>,
     /// Group tracks folded shut: their tracks' columns are hidden. The arrangement view's,
     /// copied in while this view shows.
@@ -481,23 +481,33 @@ pub fn show(
             );
         }
     }
-    // A header let go over a column moves its track there, into the column's group: before the
-    // column under the pointer, or after it from its right half; after an open group's header
-    // is into that group. A group moves with its tracks.
-    let target_of = |x: f32| spans.iter().find(|(_, span)| span.contains(x)).map(|(c, span)| (*c, x > span.center()));
-    if let Some(dragged) = state.track_drag
+    // Container centres mean inside; edges mean before/after, even when folded.
+    let target_of = |x: f32| {
+        spans.iter().find(|(_, span)| span.contains(x)).map(|(c, span)| {
+            let fraction = (x - span.min) / span.span().max(1.0);
+            (*c, nesting::Placement::at(fraction, c.kind == ColumnKind::Group))
+        })
+    };
+    if let Some(dragged) = &state.track_drag
         && let Some(pointer) = ui.ctx().pointer_interact_pos()
-        && let Some((column, after)) = target_of(pointer.x)
-        && column.track != dragged
+        && let Some((column, placement)) = target_of(pointer.x)
+        && nesting::drop_action(&bands.places, &dragged.tracks, column.track, placement).is_some()
         && let Some((_, span)) = spans.iter().find(|(c, _)| c.track == column.track)
     {
-        let x = if after { span.max + 0.5 } else { span.min - 0.5 };
-        let color = DROP_TARGET.attribute("kind", "insert").look().color();
-        painter.with_clip_rect(tracks_clip).vline(x, area.y_range(), egui::Stroke::new(2.0, color));
+        let painter = painter.with_clip_rect(tracks_clip);
+        if placement == nesting::Placement::Inside {
+            let color = DROP_TARGET.attribute("kind", "area").look().color();
+            let target = Rect::from_x_y_ranges(*span, area.y_range());
+            painter.rect_stroke(target.shrink(1.0), 0.0, egui::Stroke::new(2.0, color), StrokeKind::Inside);
+        } else {
+            let x = if placement == nesting::Placement::After { span.max + 0.5 } else { span.min - 0.5 };
+            let color = DROP_TARGET.attribute("kind", "insert").look().color();
+            painter.vline(x, area.y_range(), egui::Stroke::new(2.0, color));
+        }
     }
     if let Some((dragged, x)) = state.track_drop.take()
-        && let Some((target, after)) = target_of(x)
-        && let Some(action) = nesting::drop_action(&bands.places, dragged, target.track, after, &state.folded)
+        && let Some((target, placement)) = target_of(x)
+        && let Some(action) = nesting::drop_action(&bands.places, &dragged.tracks, target.track, placement)
     {
         actions.push(action);
     }
@@ -936,7 +946,7 @@ fn column_header(
     // A click selects the track, a drag moves it, a right-click opens its menu.
     let response = ui.interact(rect, Id::unique(("session-header", column.track.0)), Sense::click_and_drag());
     if response.drag_started_by(egui::PointerButton::Primary) {
-        state.track_drag = Some(column.track);
+        state.track_drag = Some(nesting::TrackDrag::new(&bands.places, column.track, &state.header_tracks()));
     }
     if response.drag_stopped_by(egui::PointerButton::Primary)
         && let Some(dragged) = state.track_drag.take()
@@ -951,7 +961,14 @@ fn column_header(
         select_header(state, &bands.order, column.track, command, shift);
     }
     if response.double_clicked() {
-        state.open_devices = Some(column.track);
+        if column.kind == ColumnKind::Group {
+            if !state.folded.remove(&column.track) {
+                state.folded.insert(column.track);
+            }
+            ui.ctx().request_repaint();
+        } else {
+            state.open_devices = Some(column.track);
+        }
     }
     // The header is the track's colour, its name in the text colour that reads on it; a selected
     // track's header is the selection colour every selected header and clip shares (Settings ›

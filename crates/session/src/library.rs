@@ -344,25 +344,25 @@ fn folders(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 
 fn add_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let folder = Args::new(params).text("folder")?;
-    let added = projects.file_library_mut().add_folder(Path::new(folder)).map_err(CommandError)?;
+    let added = projects.file_library_mut().add_folder(Path::new(folder)).map_err(CommandError::new)?;
     Ok(json!({ "folder": added.display().to_string() }))
 }
 
 fn remove_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let folder = Args::new(params).text("folder")?;
-    projects.file_library_mut().remove_folder(Path::new(folder)).map_err(CommandError)?;
+    projects.file_library_mut().remove_folder(Path::new(folder)).map_err(CommandError::new)?;
     Ok(json!({ "removed": folder }))
 }
 
 fn refresh(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let folder = optional_text(params, "folder")?;
-    projects.file_library_mut().refresh(folder.map(Path::new)).map_err(CommandError)?;
+    projects.file_library_mut().refresh(folder.map(Path::new)).map_err(CommandError::new)?;
     Ok(json!({ "refreshing": folder.unwrap_or("every folder") }))
 }
 
 fn list(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let folder = Args::new(params).text("folder")?;
-    let entries = projects.file_library_mut().list(Path::new(folder)).map_err(CommandError)?;
+    let entries = projects.file_library_mut().list(Path::new(folder)).map_err(CommandError::new)?;
     let items: Vec<Value> = entries
         .into_iter()
         .map(|e| {
@@ -1010,7 +1010,7 @@ fn pinned(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 fn pin(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let key = Args::new(params).text("item")?;
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
-    let pinned = projects.file_library_mut().pin(&item.key()).map_err(CommandError)?;
+    let pinned = projects.file_library_mut().pin(&item.key()).map_err(CommandError::new)?;
     Ok(json!({ "item": item.key(), "pinned": true, "changed": pinned }))
 }
 
@@ -1076,7 +1076,7 @@ fn move_to(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
         }
         match move_into(&from, &folder) {
             Ok(to) => {
-                projects.file_library_mut().relocate(&from, &to).map_err(CommandError)?;
+                projects.file_library_mut().relocate(&from, &to).map_err(CommandError::new)?;
                 moved.push(json!({ "from": from.display().to_string(), "to": to.display().to_string() }));
             }
             Err(e) => failed.push(json!({ "file": from.display().to_string(), "error": e })),
@@ -1147,15 +1147,15 @@ fn copy_into(from: &Path, folder: &Path) -> Result<PathBuf, String> {
 fn set_plugins_view(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let name = Args::new(params).text("view")?;
     let view = suhina_library::store::PluginsView::parse(name)
-        .ok_or_else(|| CommandError("view must be instruments or effects".into()))?;
-    projects.file_library_mut().set_plugins_view(view).map_err(CommandError)?;
+        .ok_or_else(|| CommandError::new("view must be instruments or effects".into()))?;
+    projects.file_library_mut().set_plugins_view(view).map_err(CommandError::new)?;
     Ok(json!({ "view": view.name() }))
 }
 
 fn unpin(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let key = Args::new(params).text("item")?;
     let item = Item::parse(key).ok_or("item must be a path or an item key")?;
-    let changed = projects.file_library_mut().unpin(&item.key()).map_err(CommandError)?;
+    let changed = projects.file_library_mut().unpin(&item.key()).map_err(CommandError::new)?;
     Ok(json!({ "item": item.key(), "pinned": false, "changed": changed }))
 }
 
@@ -1231,14 +1231,14 @@ fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
         None => None,
     };
     let folder = match optional_text(params, "folder")? {
-        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError)?),
+        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError::new)?),
         None => None,
     };
     let mut raised = None;
     if let Some(max) = parsed_limit {
         let old = projects.file_library_mut().tag_limit();
         if old != max {
-            projects.file_library_mut().set_tag_limit(max).map_err(CommandError)?;
+            projects.file_library_mut().set_tag_limit(max).map_err(CommandError::new)?;
             raised = Some(old);
         }
     }
@@ -1256,10 +1256,10 @@ fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
                     return Err("a tag the library has takes no folder; give its moves to library.moveTag".into());
                 }
                 if let Some(renamed) = rename {
-                    projects.file_library_mut().rename_tag(id, &renamed).map_err(CommandError)?;
+                    projects.file_library_mut().rename_tag(id, &renamed).map_err(CommandError::new)?;
                 }
                 if let Some(color) = optional_text(params, "color")? {
-                    projects.file_library_mut().set_tag_color(id, Some(color)).map_err(CommandError)?;
+                    projects.file_library_mut().set_tag_color(id, Some(color)).map_err(CommandError::new)?;
                 }
                 done = true;
             }
@@ -1270,7 +1270,7 @@ fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
                 projects
                     .file_library_mut()
                     .set_tag(&name, optional_text(params, "color")?, optional_text(params, "rename")?, folder)
-                    .map_err(CommandError)?;
+                    .map_err(CommandError::new)?;
                 done = true;
             }
             // The `name` param is the id-keep's own: read as soon as no id gave, so a limit and
@@ -1281,7 +1281,7 @@ fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
                     projects
                         .file_library_mut()
                         .set_tag(name, optional_text(params, "color")?, optional_text(params, "rename")?, folder)
-                        .map_err(CommandError)?;
+                        .map_err(CommandError::new)?;
                     done = true;
                 }
             }
@@ -1343,7 +1343,7 @@ fn remove_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandE
     };
     let id = resolve_tag_param(projects, &given)
         .ok_or_else(|| format!("there is no tag {given:?}; library.tags lists them"))?;
-    projects.file_library_mut().remove_tag(id).map_err(CommandError)?;
+    projects.file_library_mut().remove_tag(id).map_err(CommandError::new)?;
     Ok(json!({ "removed": given }))
 }
 
@@ -1355,7 +1355,7 @@ fn tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let id = resolve_tag_param(projects, given)
         .ok_or_else(|| format!("there is no tag {given:?}; library.tags lists them"))?;
     let library = projects.file_library_mut();
-    library.tag(&item.key(), id, on).map_err(CommandError)?;
+    library.tag(&item.key(), id, on).map_err(CommandError::new)?;
     let tags = library.item_tags(&item.key());
     Ok(json!({ "item": item.key(), "tags": tags }))
 }
@@ -1475,37 +1475,39 @@ pub(crate) fn resolve_folder_param(projects: &mut Projects, given: &str) -> Resu
 /// a folder of tags, unique among its own level's names, named when not asked.
 pub(crate) fn add_tag_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let parent = match optional_text(params, "parent")? {
-        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError)?),
+        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError::new)?),
         None => None,
     };
-    let id =
-        projects.file_library_mut().add_tag_folder(optional_text(params, "name")?, parent).map_err(CommandError)?;
+    let id = projects
+        .file_library_mut()
+        .add_tag_folder(optional_text(params, "name")?, parent)
+        .map_err(CommandError::new)?;
     Ok(json!({ "folder": id }))
 }
 
 /// `library.renameTagFolder` ([#1254]: the name is unique among its own level).
 pub(crate) fn rename_tag_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let given = Args::new(params).text("folder")?;
-    let id = resolve_folder_param(projects, given).map_err(CommandError)?;
+    let id = resolve_folder_param(projects, given).map_err(CommandError::new)?;
     let renamed = Args::new(params).text("rename")?;
-    projects.file_library_mut().rename_tag_folder(id, renamed).map_err(CommandError)?;
+    projects.file_library_mut().rename_tag_folder(id, renamed).map_err(CommandError::new)?;
     Ok(json!({ "folder": id, "renamed": renamed }))
 }
 
 /// `library.removeTagFolder` ([#1254]: its tags and folders move up to its parent).
 pub(crate) fn remove_tag_folder(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let given = Args::new(params).text("folder")?;
-    let id = resolve_folder_param(projects, given).map_err(CommandError)?;
-    let up = projects.file_library_mut().remove_tag_folder(id).map_err(CommandError)?;
+    let id = resolve_folder_param(projects, given).map_err(CommandError::new)?;
+    let up = projects.file_library_mut().remove_tag_folder(id).map_err(CommandError::new)?;
     Ok(json!({ "removed": given, "up": up }))
 }
 
 /// `library.setFolderOpen` ([#1254]: each folder remembers whether it shows open).
 pub(crate) fn set_folder_open(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let given = Args::new(params).text("folder")?;
-    let id = resolve_folder_param(projects, given).map_err(CommandError)?;
+    let id = resolve_folder_param(projects, given).map_err(CommandError::new)?;
     let open = Args::new(params).bool("open")?;
-    projects.file_library_mut().set_tag_folder_open(id, open).map_err(CommandError)?;
+    projects.file_library_mut().set_tag_folder_open(id, open).map_err(CommandError::new)?;
     Ok(json!({ "folder": id, "open": open }))
 }
 
@@ -1517,17 +1519,17 @@ pub(crate) fn move_tag(projects: &mut Projects, params: &Value) -> Result<Value,
     // still refuses ([#1254] review).
     let id = match resolve_tag_param(projects, given) {
         Some(id) => id,
-        None => resolve_folder_param(projects, given).map_err(CommandError)?,
+        None => resolve_folder_param(projects, given).map_err(CommandError::new)?,
     };
     let parent = match optional_text(params, "folder")? {
-        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError)?),
+        Some(given) => Some(resolve_folder_param(projects, given).map_err(CommandError::new)?),
         None => None,
     };
     let position = match Args::new(params).value("position") {
         None => usize::MAX,
         Some(v) => v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("position must be a whole number")?,
     };
-    projects.file_library_mut().move_tag_node(id, parent, position).map_err(CommandError)?;
+    projects.file_library_mut().move_tag_node(id, parent, position).map_err(CommandError::new)?;
     Ok(json!({ "moved": given, "folder": parent }))
 }
 
@@ -1561,7 +1563,7 @@ pub(crate) fn set_sections(projects: &mut Projects, params: &Value) -> Result<Va
             order.push(*was);
         }
     }
-    projects.file_library_mut().set_sections(order).map_err(CommandError)?;
+    projects.file_library_mut().set_sections(order).map_err(CommandError::new)?;
     tags(projects, &Value::Null)
 }
 
@@ -1571,6 +1573,6 @@ pub(crate) fn set_section_open(projects: &mut Projects, params: &Value) -> Resul
         .and_then(suhina_library::SectionKind::parse)
         .ok_or("section is pinned, tags or library")?;
     let open = Args::new(params).bool("open")?;
-    projects.file_library_mut().set_section_open(kind, open).map_err(CommandError)?;
+    projects.file_library_mut().set_section_open(kind, open).map_err(CommandError::new)?;
     Ok(json!({ "section": kind.name(), "open": open }))
 }

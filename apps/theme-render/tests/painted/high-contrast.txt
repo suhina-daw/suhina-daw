@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog high-contrast 7a7156c0ffc8d338
-arrangement high-contrast e9f926a9a269ee0b
-arrangement-scrolled high-contrast c0c0d4525ed5d61d
+arrangement high-contrast f4918b9f6470d817
+arrangement-scrolled high-contrast 61176c4e1469e169
 browser high-contrast f9c908b9345c4603
 browser-plug-ins high-contrast da1fd90912ef1719
 browser-search high-contrast adc2c6802f39b620
-clip-audio high-contrast f1887ca5c296a645
+clip-audio high-contrast 912de111dc8716e1
 clip-midi high-contrast f8cc48792fe10b87
 colour-picker high-contrast 6e8d820dda8e3b10
 colour-picker-field high-contrast 11d392343056413a
@@ -26,7 +26,7 @@ expanded-multiband high-contrast e8195f125a68e7a0
 expanded-reverb high-contrast 25e8b83926825a61
 expanded-vinyl-distortion high-contrast 5572d2994c84fa37
 export-dialog high-contrast fa8ca15cefcbaa2f
-grid-menu high-contrast a3e7a33c270fe851
+grid-menu high-contrast f02cd92a37feb4ad
 instrument-instrument high-contrast 66b8b33e5e9c6ae3
 instrument-sampler high-contrast 9f0bf31272cd4a51
 launcher high-contrast 9b1fe97a1d721ea6
@@ -37,7 +37,7 @@ launcher-toggles high-contrast bca0d1f166bc674b
 menu high-contrast 32a410bcf371f953
 missing-files high-contrast 012cecbf28502d50
 new-theme-dialog high-contrast d71766914747b8d7
-piano-roll high-contrast 8ee5fc0872464deb
+piano-roll high-contrast 72526e14053816f7
 project-dialog high-contrast cb1abee8cdc8d285
 quantize-menu high-contrast d9ea7e60cb1ea19d
 quick-add high-contrast a67d1d9dfc9b9b7d

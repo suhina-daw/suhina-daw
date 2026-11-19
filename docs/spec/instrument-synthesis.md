@@ -3,7 +3,7 @@ description: The planned comprehensive instrument, its shared Rust synthesis bou
 read_when: comprehensive instrument, sample to instrument, shared synthesis, FM operator, fixed point, instrument modelling, MPE instrument
 type: spec
 status: planned
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/dsp/**
   - devices/fm-synth/**

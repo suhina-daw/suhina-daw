@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog nord@snow-storm f6036e7605e4d4fb
-arrangement nord@snow-storm f9cf722717aba146
-arrangement-scrolled nord@snow-storm d00829d5758cfec3
+arrangement nord@snow-storm 9f9011cad8ce997e
+arrangement-scrolled nord@snow-storm 5b94f993acdc2217
 browser nord@snow-storm 098cce6b4b82c785
 browser-plug-ins nord@snow-storm 77eaa3e3ae0c4c5d
 browser-search nord@snow-storm 861b5ce932464046
-clip-audio nord@snow-storm bec84b89fd9bd59a
+clip-audio nord@snow-storm 2e8892d732801d5a
 clip-midi nord@snow-storm b204f3050c3a2bdc
 colour-picker nord@snow-storm 5f9afec4ee71f3a6
 colour-picker-field nord@snow-storm 0c6dad82214e1a74
@@ -26,7 +26,7 @@ expanded-multiband nord@snow-storm dda818a5ab2e6efa
 expanded-reverb nord@snow-storm e723c7a2f1418a66
 expanded-vinyl-distortion nord@snow-storm 3f6275e15d4149ea
 export-dialog nord@snow-storm 52124b8a6ade971d
-grid-menu nord@snow-storm b4a9c2211ad48f48
+grid-menu nord@snow-storm 12fdfaeb7b48bc02
 instrument-instrument nord@snow-storm ab20ef52db82f708
 instrument-sampler nord@snow-storm 4b45c85b8899d080
 launcher nord@snow-storm bc6b47868a96019e
@@ -37,7 +37,7 @@ launcher-toggles nord@snow-storm 0c899e6a1d7ac9d8
 menu nord@snow-storm fdd3c8e92b9251be
 missing-files nord@snow-storm 70bcaf7f770736ff
 new-theme-dialog nord@snow-storm 45929dda28529e73
-piano-roll nord@snow-storm 195a4ed62092bd62
+piano-roll nord@snow-storm 0335db5a0f7be23a
 project-dialog nord@snow-storm 5152a214669680c2
 quantize-menu nord@snow-storm eafe8a049d9e6cdc
 quick-add nord@snow-storm e9d4f60e3475bb2c

@@ -296,7 +296,7 @@ fn with_no_rule_the_header_lays_out_as_suhina_s_own_layout_did() {
                 for (armable, notes, takes, sends) in
                     [(true, true, false, 2), (false, false, true, 0), (true, false, true, 5), (true, true, true, 1)]
                 {
-                    let header = Header { depth, ancestors, armable, notes, takes, sends };
+                    let header = Header { depth, ancestors, armable, notes, takes, sends, ..Header::default() };
                     let rect = Rect::from_min_size(Pos2::new(11.0, 5.0), Vec2::new(width, height));
                     let got = layout(None, rect, header);
                     let want = native(rect, header);
@@ -336,7 +336,7 @@ fn a_header_s_words_change_only_where_it_crosses_its_sizes() {
     // #1489: a drag of the header column changes the header's width every frame; its attributes,
     // which are in the style tree, change only at a few widths, never back and forth.
     for height in [22.0, 40.0, 60.0, 90.0] {
-        let header = Header { depth: 0, ancestors: 0, armable: true, notes: true, takes: false, sends: 2 };
+        let header = Header { armable: true, notes: true, sends: 2, ..Header::default() };
         let mut seen: Vec<(&str, &str, bool)> = Vec::new();
         let mut changes = 0;
         let mut width = 120.0;
@@ -353,5 +353,99 @@ fn a_header_s_words_change_only_where_it_crosses_its_sizes() {
         assert!(changes <= 4, "{height}: the words changed {changes} times: {seen:?}");
         // The size word follows the height alone.
         assert!(seen.iter().all(|(_, size, _)| *size == seen[0].1), "{height}: {seen:?}");
+    }
+}
+
+#[test]
+fn compact_headers_keep_the_fold_target_wide_and_clear_of_other_controls() {
+    for height in [20.0, 22.0, 26.0, 40.0] {
+        for width in [220.0, 300.0, 460.0] {
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height));
+            let parts = layout(None, rect, Header::default());
+            let fold = parts.fold.unwrap();
+            let target = parts.fold_target(rect).unwrap();
+            assert!(fold.width() >= 20.0, "{width}×{height}: {fold:?}");
+            assert!(target.contains_rect(fold), "the target keeps the glyph's reserved area");
+            for control in [parts.automation, parts.track_on, parts.solo, parts.cue, parts.name, parts.volume]
+                .into_iter()
+                .flatten()
+            {
+                assert!(!fold.intersects(control), "{width}×{height}: {fold:?} overlaps {control:?}");
+                assert!(!target.intersects(control), "{width}×{height}: {target:?} overlaps {control:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn disclosure_uses_the_free_gutter_and_stops_at_other_controls() {
+    let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(240.0, 60.0));
+    let fold = Rect::from_min_size(Pos2::new(10.0, 4.0), Vec2::new(20.0, 14.0));
+    let mut parts = Parts { fold: Some(fold), ..Parts::default() };
+    assert_eq!(parts.fold_target(bounds).unwrap().height(), 60.0);
+    parts.automation = Some(Rect::from_min_size(Pos2::new(10.0, 30.0), Vec2::splat(14.0)));
+    assert_eq!(parts.fold_target(bounds).unwrap().bottom(), 29.0);
+    assert_eq!(parts.fold_target(bounds).unwrap().width(), fold.width());
+}
+
+#[test]
+fn containers_reserve_the_whole_inner_edge_on_either_header_side() {
+    for headers_left in [false, true] {
+        for height in [22.0, 60.0, 95.0, 160.0] {
+            for width in [220.0, 300.0, 460.0] {
+                for depth in [0, 2] {
+                    let bounds = Rect::from_min_size(Pos2::new(11.0, 5.0), Vec2::new(width, height));
+                    let parts = layout(
+                        None,
+                        bounds,
+                        Header {
+                            container: true,
+                            headers_left,
+                            depth,
+                            ancestors: depth,
+                            armable: true,
+                            notes: true,
+                            takes: true,
+                            sends: 2,
+                        },
+                    );
+                    let target = parts.fold_target(bounds).unwrap();
+                    let fold = parts.fold.unwrap();
+                    assert_eq!(target.top(), bounds.top());
+                    assert_eq!(target.bottom(), bounds.bottom());
+                    assert!(target.contains_rect(fold), "{parts:?}");
+                    assert_eq!(target.width(), FOLD);
+                    assert_eq!(target.center().x > bounds.center().x, headers_left);
+                    for control in [
+                        parts.band,
+                        parts.indent,
+                        parts.meter,
+                        parts.name,
+                        parts.automation,
+                        parts.takes,
+                        parts.track_on,
+                        parts.solo,
+                        parts.cue,
+                        parts.arm,
+                        parts.monitor,
+                        parts.volume,
+                        parts.pan,
+                        parts.previous,
+                        parts.next,
+                        parts.output,
+                        parts.input,
+                    ]
+                    .into_iter()
+                    .chain(parts.sends.iter().copied())
+                    .flatten()
+                    {
+                        assert!(
+                            !target.intersects(control),
+                            "{width}×{height}, left={headers_left}: {target:?} overlaps {control:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog nord 42ffd245de9fb6fe
-arrangement nord 74bf452e1da7fc8a
-arrangement-scrolled nord 560fefb51a76ed8c
+arrangement nord 4d0e7ee7e55ce16e
+arrangement-scrolled nord 3ea9518238f3dafe
 browser nord b3a49f7b607ef1df
 browser-plug-ins nord 404bdc09897649a3
 browser-search nord f71c1b2b702580b4
-clip-audio nord 1f20632412b9de4b
+clip-audio nord d60e60f3ec437491
 clip-midi nord 40db53eb797606c7
 colour-picker nord d84587feb636dfa4
 colour-picker-field nord e67e0b5ef6c3e482
@@ -26,7 +26,7 @@ expanded-multiband nord 38c69ceb6bb43895
 expanded-reverb nord 5599b1813dfe4b74
 expanded-vinyl-distortion nord 1932c0fdf7f20365
 export-dialog nord 95a9af335ff90085
-grid-menu nord 84fb61be61e8798f
+grid-menu nord c7758ac8b737a623
 instrument-instrument nord 511be10e0f5352c3
 instrument-sampler nord 24f595f1cd4ae3fc
 launcher nord ab7c96ba45c9b6ed
@@ -37,7 +37,7 @@ launcher-toggles nord 51a363dea3b274b3
 menu nord 77da84c5bc0402b2
 missing-files nord f83438ef94d1b5a8
 new-theme-dialog nord a582c4af1a2ec3e3
-piano-roll nord 87a2bd57035f9b6b
+piano-roll nord 647137a40c94b3a1
 project-dialog nord 48f5157dfe9d010b
 quantize-menu nord 3bcc040ec2f59bcd
 quick-add nord 4c829f03035bbd84

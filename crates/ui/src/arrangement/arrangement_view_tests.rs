@@ -4,6 +4,29 @@
 use super::*;
 
 #[test]
+fn dropping_after_an_open_group_uses_its_last_visible_descendants_full_span() {
+    let project = crate::demo::grouped_project();
+    let timeline = Timeline::build(&project, None);
+    let lane = |name: &str| timeline.lanes.iter().find(|l| l.name == name).unwrap();
+    let row = |name: &str, top: f32, under: f32| {
+        let time = Rect::from_min_size(Pos2::new(0.0, top), Vec2::new(600.0, 60.0));
+        Row {
+            track: lane(name).track,
+            clips: lane(name).track,
+            time,
+            clip: time,
+            span: egui::Rangef::new(top, top + 61.0 + under),
+            folded: None,
+        }
+    };
+    let rows = [row("Group", 0.0, 0.0), row("Drums", 61.0, 0.0), row("Bass", 122.0, 80.0), row("Keys", 263.0, 0.0)];
+    assert_eq!(track_drop_after(&rows[0], &rows, &timeline.lanes), 262.5, "after Bass and its subordinate lanes");
+    let folded = Row { folded: Some((0, 2)), ..rows[0] };
+    assert_eq!(track_drop_after(&folded, &[folded, rows[3]], &timeline.lanes), 60.5);
+    assert_eq!(track_drop_after(&rows[2], &rows, &timeline.lanes), 182.5, "an ordinary track keeps its row boundary");
+}
+
+#[test]
 fn picked_clips_follow_their_move_to_another_track() {
     let mut state = ArrangementViewState::default();
     let (a, b, c) = (ClipId(1), ClipId(2), ClipId(3));
@@ -284,7 +307,10 @@ fn losing_the_window_focus_ends_the_drag_and_holds_no_press_back() {
 fn escape_ends_the_drag_and_its_held_press() {
     let mut state = ArrangementViewState::default();
     assert!(!state.gesture_under_way());
-    assert!(state.gesture.begin(Gesture::Track(TrackId(3))));
+    assert!(state.gesture.begin(Gesture::Track(crate::interaction::nesting::TrackDrag {
+        source: TrackId(3),
+        tracks: vec![TrackId(3)]
+    })));
     state.pressed_clip = Some((TrackId(1), ClipId(1)));
     assert!(state.gesture_under_way());
     assert!(state.cancel_gesture());

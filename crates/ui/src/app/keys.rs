@@ -16,6 +16,7 @@ impl App {
             || self.export_dialog.is_some()
             || self.unsaved_prompt.is_some()
             || self.ara_prompt.is_some()
+            || self.group_removal.is_some()
             || self.missing.open
             || !self.agent_asks.is_empty();
         let session_view = self.shown == View::Session && !self.sample_map.view.large;
@@ -82,6 +83,7 @@ impl App {
             || self.export_dialog.is_some()
             || self.unsaved_prompt.is_some()
             || self.ara_prompt.is_some()
+            || self.group_removal.is_some()
             || self.missing.open
             || self.about_open
             || self.theme_import.is_some()

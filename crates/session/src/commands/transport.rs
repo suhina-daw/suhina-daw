@@ -253,7 +253,7 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
         let beat = if sound == session.live.metronome.2 {
             session.live.clicks.click(false).clone()
         } else {
-            crate::metronome_sounds::click(session.library_base(), &sound).map_err(CommandError)?
+            crate::metronome_sounds::click(session.library_base(), &sound).map_err(CommandError::new)?
         };
         let bar = accent
             .as_deref()
@@ -261,7 +261,7 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
                 if accent == session.live.accent {
                     Ok(session.live.clicks.click(true).clone())
                 } else {
-                    crate::metronome_sounds::click(session.library_base(), id).map_err(CommandError)
+                    crate::metronome_sounds::click(session.library_base(), id).map_err(CommandError::new)
                 }
             })
             .transpose()?;
@@ -275,7 +275,7 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
         None => None,
         Some(Value::String(name)) => Some(
             suhina_engine::ClickRoute::from_name(name)
-                .ok_or_else(|| CommandError(format!("route must be one of {}, got {name}", routes())))?,
+                .ok_or_else(|| CommandError::new(format!("route must be one of {}, got {name}", routes())))?,
         ),
         Some(other) => return Err(format!("route must be one of {}, got {other}", routes()).into()),
     };

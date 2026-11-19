@@ -411,5 +411,5 @@ fn write_wav(path: &Path, rate: u32, samples: &[f32]) -> Result<(), CommandError
         &suhina_media::write::AudioFileSpec::float_wav(rate),
         WriteMode::Replace,
     )
-    .map_err(|e| CommandError(format!("could not write {e}")))
+    .map_err(|e| CommandError::new(format!("could not write {e}")))
 }

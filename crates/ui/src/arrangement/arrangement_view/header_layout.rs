@@ -14,6 +14,9 @@ type Tree = row::Tree<Slot>;
 /// What a header's layout depends on besides its size.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(super) struct Header {
+    /// Groups and folders reserve a full-height disclosure gutter facing the timeline.
+    pub(super) container: bool,
+    pub(super) headers_left: bool,
     /// How deep in groups the track is: the band of its own colour gets narrower.
     pub(super) depth: usize,
     /// How many groups it is in, whose bands run down its indent.
@@ -37,6 +40,7 @@ pub(super) struct Parts {
     pub(super) band: Option<Rect>,
     pub(super) meter: Option<Rect>,
     pub(super) fold: Option<Rect>,
+    pub(super) disclosure: Option<Rect>,
     pub(super) automation: Option<Rect>,
     pub(super) takes: Option<Rect>,
     pub(super) track_on: Option<Rect>,
@@ -64,6 +68,53 @@ pub(super) struct Parts {
     /// They change only where the header crosses one of its sizes, so a drag of the header column
     /// changes the style tree only there (#1489).
     pub(super) words: (&'static str, &'static str, bool),
+}
+
+impl Parts {
+    /// A container owns a full-height layout column. A theme that omits that column keeps
+    /// the old free-gutter fallback, stopping before any neighbouring control.
+    pub(super) fn fold_target(&self, bounds: Rect) -> Option<Rect> {
+        if let Some(disclosure) = self.disclosure {
+            return Some(disclosure.intersect(bounds));
+        }
+        let fold = self.fold?;
+        let mut target =
+            Rect::from_min_max(Pos2::new(fold.left(), bounds.top()), Pos2::new(fold.right(), bounds.bottom()));
+        for control in [
+            self.indent,
+            self.band,
+            self.meter,
+            self.automation,
+            self.takes,
+            self.track_on,
+            self.solo,
+            self.cue,
+            self.arm,
+            self.monitor,
+            self.name,
+            self.volume,
+            self.pan,
+            self.previous,
+            self.next,
+            self.output,
+            self.input,
+        ]
+        .into_iter()
+        .chain(self.sends.iter().copied())
+        .flatten()
+        {
+            if control.left() < target.right() && control.right() > target.left() {
+                if control.bottom() <= fold.top() {
+                    target.min.y = target.top().max(control.bottom() + 1.0);
+                } else if control.top() >= fold.bottom() {
+                    target.max.y = target.bottom().min(control.top() - 1.0);
+                } else {
+                    return Some(fold.intersect(bounds));
+                }
+            }
+        }
+        Some(target.intersect(bounds))
+    }
 }
 
 /// The header's arrangement: which line holds what (`track-header[layout]`).
@@ -131,21 +182,24 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     let indent_room = (inside.width() - COLOUR_BAND - 3.0 * PAD - meter::WIDTH - 114.0).max(0.0);
     let indent_scale = if indent > 0.0 { (indent_room / indent).min(1.0) } else { 1.0 };
     let band = nesting_band_width(header.depth);
-    let x0 = inside.left() + indent * indent_scale + band + PAD;
+    let gutter = if header.container { FOLD + 2.0 } else { 0.0 };
+    let fold_in_row = if header.container { 0.0 } else { FOLD };
+    let x0 = inside.left() + indent * indent_scale + band + PAD + gutter;
     let x1 = inside.right() - PAD - meter::WIDTH - PAD;
     let width = x1 - x0;
     let tall = inside.height() >= SHOWS_MIXER;
-    let narrow = tall && width < FOLD + 2.0 + SOLO + PAD + ON_TOGGLE + 3.0 * (SOLO + 2.0) + PAD + LEAST_NAME;
+    let narrow = tall && width < fold_in_row + 2.0 + SOLO + PAD + ON_TOGGLE + 3.0 * (SOLO + 2.0) + PAD + LEAST_NAME;
     let solo = if narrow || !tall { 18.0 } else { SOLO };
     let on = if narrow || !tall { 24.0 } else { ON_TOGGLE };
-    let name_first = tall && width - FOLD - 2.0 - on - 3.0 * (solo + 2.0) - PAD - PAN_FIELD - 4.0 >= LEAST_VOLUME;
+    let name_first =
+        tall && width - fold_in_row - 2.0 - on - 3.0 * (solo + 2.0) - PAD - PAN_FIELD - 4.0 >= LEAST_VOLUME;
     // Where the buttons' row starts and ends, as the shapes below lay it out.
     let first = if narrow {
         x0
     } else if name_first {
-        x0 + FOLD + 2.0
+        x0 + fold_in_row + 2.0
     } else {
-        x0 + FOLD + 2.0 + solo + PAD
+        x0 + fold_in_row + 2.0 + solo + PAD
     };
     let monitor_width = if tall { 32.0 } else { 24.0 };
     let buttons_end = first + on + 2.0 * (solo + 2.0) + if header.armable { solo + 2.0 } else { 0.0 };
@@ -167,7 +221,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     };
     // The sends: as many as leave the name, or the volume, its room.
     let step = SEND_WIDTH + SEND_GAP;
-    let below_left = if shape == Shape::Stacked { x0 + FOLD + 2.0 } else { first };
+    let below_left = if shape == Shape::Stacked { x0 + fold_in_row + 2.0 } else { first };
     let lanes_right = below_left + (on - solo) / 2.0 + solo + if header.takes { SOLO + 2.0 } else { 0.0 };
     let send_room = match shape {
         Shape::Side => x1 - lanes_right - PAD - LEAST_NAME,
@@ -192,12 +246,21 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     let meter_height =
         if tall { header_row + gap + field } else { header_row }.min(inside.height() - 2.0 * pad).max(0.0);
 
-    bar = bar.attribute("layout", shape.word()).attribute("size", size).flag("name-first", name_first);
+    bar = bar
+        .attribute("layout", shape.word())
+        .attribute("size", size)
+        .flag("name-first", name_first)
+        .attribute("header-side", if header.headers_left { "left" } else { "right" });
+    if header.container {
+        bar = bar.attribute("disclosure", if header.headers_left { "right" } else { "left" });
+    }
     let mut tree = Tree::default();
     if header.ancestors > 0 {
         tree.add(Item::part("group", "header-indent").width(indent * indent_scale), Slot::Indent);
     }
     tree.add(Item::part("track-colour", "arrangement-color").width(band), Slot::Band);
+    let disclosure =
+        header.container.then(|| tree.add(Item::part("group", "header-disclosure").width(FOLD), Slot::Disclosure));
     let body = tree.add(Item::part("group", "header-body"), Slot::None);
     tree.add(Item::part("meter", "arrangement-meter").width(meter::WIDTH).height(meter_height), Slot::Meter);
     let first_line = tree.add(Item::part("group", "header-first").in_group(body), Slot::None);
@@ -224,7 +287,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
         }
     };
     let name = [None, Some(header_row)];
-    tree.put("fold", "arrangement-fold", [Some(FOLD), Some(header_row)], first_line, Slot::Fold);
+    tree.put("fold", "arrangement-fold", [Some(FOLD), Some(header_row)], disclosure.unwrap_or(first_line), Slot::Fold);
     match (shape, second_line) {
         (Shape::Short, _) | (_, None) => {
             tree.put("button", "automation", button, first_line, Slot::Automation);
@@ -300,6 +363,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
             Slot::Band => parts.band = at,
             Slot::Meter => parts.meter = at,
             Slot::Fold => parts.fold = at,
+            Slot::Disclosure => parts.disclosure = at,
             Slot::Automation => parts.automation = at,
             Slot::Takes => parts.takes = at,
             Slot::TrackOn => parts.track_on = at,
@@ -341,6 +405,7 @@ enum Slot {
     Band,
     Meter,
     Fold,
+    Disclosure,
     Automation,
     Takes,
     TrackOn,

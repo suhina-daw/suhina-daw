@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog catppuccin-latte 855f4162724442a1
-arrangement catppuccin-latte 1e50dba87cb2ba8e
-arrangement-scrolled catppuccin-latte cb5caff3193f8696
+arrangement catppuccin-latte 4993daf5ed14f986
+arrangement-scrolled catppuccin-latte 25642a1a974af11c
 browser catppuccin-latte 22e4cb75e7651c56
 browser-plug-ins catppuccin-latte f37e5e81a3afe8e2
 browser-search catppuccin-latte 594cd8430ff544f5
-clip-audio catppuccin-latte 5861a67eb13f2f0f
+clip-audio catppuccin-latte 4537d5fe42ec4059
 clip-midi catppuccin-latte 5b42fdca6dbfbd62
 colour-picker catppuccin-latte 3ad1857bf34f9369
 colour-picker-field catppuccin-latte 95e48c49d9116d32
@@ -26,7 +26,7 @@ expanded-multiband catppuccin-latte 58f2b33d0eb84ff4
 expanded-reverb catppuccin-latte f096bc7fe451ae4f
 expanded-vinyl-distortion catppuccin-latte e1c8cd58c26ec986
 export-dialog catppuccin-latte 8feee32b81c0b297
-grid-menu catppuccin-latte d3971fdfb46fbc87
+grid-menu catppuccin-latte d5b9d9ad91f2c8cf
 instrument-instrument catppuccin-latte 6d43afe6620f0310
 instrument-sampler catppuccin-latte b5050746a600a809
 launcher catppuccin-latte 3361a962fb759e72
@@ -37,7 +37,7 @@ launcher-toggles catppuccin-latte 1f734f3540f43181
 menu catppuccin-latte 1e8fd9e923882c23
 missing-files catppuccin-latte 50fb4ebb35872e74
 new-theme-dialog catppuccin-latte eab52c9cba162822
-piano-roll catppuccin-latte 2f541c4b57d2732f
+piano-roll catppuccin-latte 1f9b7a7a3cd9c0ed
 project-dialog catppuccin-latte 2a317b042242d3da
 quantize-menu catppuccin-latte 136b127796774de8
 quick-add catppuccin-latte 257a4d21a2bd6617
