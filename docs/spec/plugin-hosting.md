@@ -731,14 +731,17 @@ rate shared with the control half.
 ## Stopping a hosted instrument
 
 Project suspension is a hard audio boundary after the output has switched to its
-silent renderer. The control thread sends `reset_audio` to retained processors
+silent renderer. A background control worker sends `reset_audio` to retained processors
 with a shared bounded wait. Their existing instances and editors stay loaded,
 but processing is reactivated so old voices and effect buffers cannot replay on
 return. The instrument's host-side stop envelope is set directly to silence;
 the output already supplied the departure fade. A new Play or live note opens
 the envelope again. Pending parameter edits survive; old note events do not.
-Failure aborts the project switch and reports an error instead of resuming an
-instance with uncertain audio state. See [the protocol](plugin-protocol.md).
+The tab switch does not wait for this worker. Returning before its reply keeps the
+project silent on the retained device; the existing control poll resumes it only
+after successful completion. Failure reports an error instead of resuming an
+instance with uncertain audio state. Closing a resetting project never joins the
+busy worker on the UI thread. See [the protocol](plugin-protocol.md).
 
 Some instruments reset their output immediately when the transport's playing flag
 becomes false, even when ordinary note-off messages alone allow a smooth release.

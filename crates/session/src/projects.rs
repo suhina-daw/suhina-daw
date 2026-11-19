@@ -423,6 +423,16 @@ impl Projects {
         if self.session_mut(id)?.player().is_some() {
             return Ok(None);
         }
+        if let Some(player) = self.session_mut(id)?.sync.suspended.as_mut() {
+            match player.reset_ready() {
+                Ok(false) => return Ok(None),
+                Ok(true) => {}
+                Err(error) => {
+                    self.session_mut(id)?.release_player();
+                    return Err(CommandError(error));
+                }
+            }
+        }
         if let Some(mut idle) = self.devices.idle.take() {
             let session = self.session_mut(id)?;
             let result = session.resume_output(&mut idle);
@@ -929,6 +939,14 @@ impl Projects {
         if let Some(session) = self.tabs.active.and_then(|id| self.get_mut(id)) {
             session.catch_up_player();
             notices.extend(session.poll_recording());
+        }
+        // A tab can return before its retained plug-ins finish clearing their tails.
+        // Keep the device silent until the worker completes; never join a busy worker.
+        if self.devices.idle.is_some()
+            && self.tabs.active.and_then(|id| self.get(id)).is_some_and(|s| s.sync.suspended.is_some())
+            && let Err(error) = self.open_output(None)
+        {
+            notices.push(error.to_string());
         }
         notices.extend(self.check_output());
         notices.extend(self.sync_active_plugins());

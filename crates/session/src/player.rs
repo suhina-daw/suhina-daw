@@ -43,6 +43,7 @@ pub struct Player {
     /// The launch quantisation last sent, which a new output is given again.
     quantization: Option<suhina_engine::Quantization>,
     parked: Option<Box<suhina_engine::Renderer>>,
+    resetting: Option<std::sync::mpsc::Receiver<Result<Box<suhina_engine::Renderer>, String>>>,
     live_input: Option<suhina_engine::LiveSender>,
 }
 
@@ -63,6 +64,7 @@ impl Player {
             output: None,
             quantization: None,
             parked: None,
+            resetting: None,
             live_input: None,
         }
     }
@@ -79,6 +81,7 @@ impl Player {
             output: Some(output),
             quantization: None,
             parked: None,
+            resetting: None,
             live_input: None,
         }
     }
@@ -150,18 +153,41 @@ impl Player {
         let owner = self.keep_alive.as_mut().ok_or("the player has no device owner")?;
         let mut previous = owner.exchange_renderer(silent)?;
         previous.settle_suspended(&mut self.controller);
-        self.parked = Some(previous);
-        if let Some(renderer) = self.parked.as_mut() {
-            renderer.reset_suspended_plugins(std::time::Duration::from_secs(10)).map_err(|e| e.to_string())?;
-        }
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("suhina-project-audio-reset".into())
+            .spawn(move || {
+                let result = previous
+                    .reset_suspended_plugins(std::time::Duration::from_secs(10))
+                    .map(|()| previous)
+                    .map_err(|e| e.to_string());
+                let _ = send.send(result);
+            })
+            .map_err(|e| e.to_string())?;
+        self.resetting = Some(receive);
         Ok(Self {
             controller,
             keep_alive: self.keep_alive.take(),
             output: self.output.take(),
             quantization: None,
             parked: None,
+            resetting: None,
             live_input: None,
         })
+    }
+
+    /// Takes a finished reset without waiting for a sandbox. An unfinished project
+    /// stays detached from the output, including when its tab is selected again.
+    pub(crate) fn reset_ready(&mut self) -> Result<bool, String> {
+        let Some(receive) = &self.resetting else { return Ok(true) };
+        let result = match receive.try_recv() {
+            Ok(result) => result,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return Ok(false),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err("the project audio reset worker failed".into()),
+        };
+        self.resetting = None;
+        self.parked = Some(result?);
+        Ok(true)
     }
 
     /// Returns this project's retained engine to the continuously open device.
@@ -400,3 +426,7 @@ fn trace_update(began: std::time::Instant) {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "player_reset_tests.rs"]
+mod reset_tests;
