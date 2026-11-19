@@ -37,7 +37,7 @@ and no canvas keeps one column that follows that width and scrolls.
 A built-in layout may use `#page` for host-local navigation (0..15, initially zero). Only a
 button with a linear X binding and a `Set` or `Expand` gesture may write it; drawing and
 visibility expressions may read it. The compact and expanded canvases share the selection for
-their track and complete device address. It is temporary view state: no DSP parameter,
+their project, track and complete device address. It is temporary view state: no DSP parameter,
 automation, project edit or undo entry. `.sd` version 6 does not accept this writable host binding.
 The [Instrument editor](instrument-editor.md) uses it for Play, Model and Sample.
 

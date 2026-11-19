@@ -140,6 +140,43 @@ pub(crate) fn sample_source_id(track: TrackId, device: usize) -> egui::Id {
     egui::Id::unique(("sampler-source", track.0, device))
 }
 
+fn keyboard_owner_id() -> egui::Id {
+    egui::Id::unique("device-editor-keyboard-controls")
+}
+
+/// Register only controls drawn in the expanded canvas, including the next Tab destination.
+pub(super) fn collect_editor_keyboard(ctx: &egui::Context, collecting: bool) {
+    ctx.data_mut(|data| {
+        data.insert_temp(keyboard_owner_id().with("collecting"), collecting);
+        if collecting {
+            data.get_temp_mut_or_default::<Vec<egui::Id>>(keyboard_owner_id()).clear();
+        }
+    });
+}
+
+/// Focused native editor controls retain keys across frames, instead of launching the grid
+/// behind them. Closing the editor or focusing another part of the app restores its shortcuts.
+pub(crate) fn owns_keyboard(ctx: &egui::Context) -> bool {
+    crate::detail::detail_view::expanded(ctx).is_some()
+        && ctx.memory(|memory| memory.focused()).is_some_and(|focused| {
+            ctx.data(|data| data.get_temp::<Vec<egui::Id>>(keyboard_owner_id()))
+                .is_some_and(|ids| ids.contains(&focused))
+        })
+}
+
+fn remember_keyboard_owner(response: &egui::Response) {
+    let in_editor = response.ctx.data_mut(|data| {
+        let collecting = data.get_temp::<bool>(keyboard_owner_id().with("collecting")).unwrap_or(false);
+        if collecting {
+            data.get_temp_mut_or_default::<Vec<egui::Id>>(keyboard_owner_id()).push(response.id);
+        }
+        collecting
+    });
+    if in_editor && response.has_focus() {
+        response.scroll_to_me(None);
+    }
+}
+
 pub(crate) fn finish_sample_audition(
     ctx: &egui::Context,
     project: Option<suhina_session::ProjectId>,
@@ -432,7 +469,9 @@ fn sample_waveform(
     let snap = |point: f64| {
         if snap_enabled { axis.and_then(|axis| axis.snap(point, division)).unwrap_or(point) } else { point }
     };
-    let response = ui.interact(field, source_id.with("wave-navigation"), egui::Sense::click_and_drag());
+    let response =
+        ui.interact(field, ui.scope_id().with(source_id.with("wave-navigation")), egui::Sense::click_and_drag());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "Sample waveform"));
     let selected_id = source_id.with("selected-slice");
     let mut selected = ui.ctx().data(|d| d.get_temp::<f64>(selected_id)).unwrap_or(active_start);
     if slicing
@@ -474,7 +513,7 @@ fn sample_waveform(
             }
         }
     }
-    let pan_id = source_id.with("middle-pan");
+    let pan_id = ui.scope_id().with(source_id.with("middle-pan"));
     let (middle_pressed, middle_down, delta) = ui.input(|i| {
         (
             i.pointer.button_pressed(egui::PointerButton::Middle),
@@ -536,47 +575,56 @@ fn sample_waveform(
             edit_boundary(actions, "regenerate", None, None);
             ui.close();
         }
-        ui.menu_button("Grid", |ui| {
-            for (index, label) in
-                ["Off", "1/4", "1/8", "1/16", "1/32", "1/8 triplet", "1/16 triplet"].iter().enumerate()
-            {
-                if ui.selectable_label(value("grid_division") as usize == index, *label).clicked() {
-                    actions.push(Action::new(
-                        "device.setParam",
-                        json!({"track":track.0,"device":address,"param":"grid_division","value":index}),
-                    ));
-                    ui.close();
+        // Shared waveform clients expose only commands their parameter contract supports.
+        if parameters.iter().any(|p| p.id == "grid_division") {
+            ui.menu_button("Grid", |ui| {
+                for (index, label) in
+                    ["Off", "1/4", "1/8", "1/16", "1/32", "1/8 triplet", "1/16 triplet"].iter().enumerate()
+                {
+                    if ui.selectable_label(value("grid_division") as usize == index, *label).clicked() {
+                        actions.push(Action::new(
+                            "device.setParam",
+                            json!({"track":track.0,"device":address,"param":"grid_division","value":index}),
+                        ));
+                        ui.close();
+                    }
                 }
-            }
-        });
-        ui.menu_button("Source time signature", |ui| {
-            let meter_id = source_id.with("meter-edit");
-            let mut meter = ui
-                .ctx()
-                .data(|d| d.get_temp::<(f64, usize)>(meter_id))
-                .unwrap_or((f64::from(value("source_numerator")).max(1.), value("source_denominator") as usize));
-            ui.add(egui::DragValue::new(&mut meter.0).range(1. ..=16.).speed(1.));
-            for (index, label) in ["2", "4", "8", "16"].iter().enumerate() {
-                ui.radio_value(&mut meter.1, index, *label);
-            }
-            ui.ctx().data_mut(|d| d.insert_temp(meter_id, meter));
-            if ui.button("Apply time signature").clicked() {
-                // One undo step: both values in one gesture.
-                for (param, value) in [("source_numerator", meter.0.round()), ("source_denominator", meter.1 as f64)] {
-                    actions.push(Action::new(
+            });
+        }
+        if ["source_numerator", "source_denominator"].iter().all(|id| parameters.iter().any(|p| p.id == *id)) {
+            ui.menu_button("Source time signature", |ui| {
+                let meter_id = source_id.with("meter-edit");
+                let mut meter = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<(f64, usize)>(meter_id))
+                    .unwrap_or((f64::from(value("source_numerator")).max(1.), value("source_denominator") as usize));
+                ui.add(egui::DragValue::new(&mut meter.0).range(1. ..=16.).speed(1.));
+                for (index, label) in ["2", "4", "8", "16"].iter().enumerate() {
+                    ui.radio_value(&mut meter.1, index, *label);
+                }
+                ui.ctx().data_mut(|d| d.insert_temp(meter_id, meter));
+                if ui.button("Apply time signature").clicked() {
+                    // One undo step: both values in one gesture.
+                    for (param, value) in
+                        [("source_numerator", meter.0.round()), ("source_denominator", meter.1 as f64)]
+                    {
+                        actions.push(Action::new(
                         "device.setParam",
                         json!({"track":track.0,"device":address,"param":param,"value":value,"gesture":"source_meter"}),
                     ));
+                    }
+                    ui.close();
                 }
-                ui.close();
+            });
+        }
+        if parameters.iter().any(|p| p.id == "grid_snap") {
+            let mut snapping = value("grid_snap") > 0.;
+            if ui.checkbox(&mut snapping, "Snap to grid (Alt bypasses)").changed() {
+                actions.push(Action::new(
+                    "device.setParam",
+                    json!({"track":track.0,"device":address,"param":"grid_snap","value":u8::from(snapping)}),
+                ));
             }
-        });
-        let mut snapping = value("grid_snap") > 0.;
-        if ui.checkbox(&mut snapping, "Snap to grid (Alt bypasses)").changed() {
-            actions.push(Action::new(
-                "device.setParam",
-                json!({"track":track.0,"device":address,"param":"grid_snap","value":u8::from(snapping)}),
-            ));
         }
         if ui.button("Show whole sample").clicked() {
             view = SampleView::default();
@@ -596,7 +644,7 @@ fn sample_waveform(
     } else {
         None
     };
-    let drag_id = source_id.with("wave-drag");
+    let drag_id = ui.scope_id().with(source_id.with("wave-drag"));
     if response.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
         ui.ctx().data_mut(|d| {
             if d.get_temp::<SampleDrag>(drag_id).is_none() {
@@ -609,7 +657,7 @@ fn sample_waveform(
         });
     }
     let mut drag = ui.ctx().data(|d| d.get_temp::<SampleDrag>(drag_id));
-    let click_id = source_id.with("manual-click");
+    let click_id = ui.scope_id().with(source_id.with("manual-click"));
     let double_click = if (correction_mode || manual)
         && response.clicked()
         && let Some(pointer) = response.interact_pointer_pos()
@@ -693,9 +741,11 @@ fn sample_waveform(
     } else {
         egui::CursorIcon::Default
     };
-    response.on_hover_cursor(cursor).on_hover_text(
-        "Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Click a slice to play it. Right-click: fit or edit. Slice: double-click to add/remove a boundary; drag a line to move it. Alt bypasses snap.",
-    );
+    response.on_hover_cursor(cursor).on_hover_text(if slicing {
+        "Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Click a slice to play it. Right-click: fit or edit. Slice: double-click to add/remove a boundary; drag a line to move it. Alt bypasses snap."
+    } else {
+        "Drop a local sample. Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Right-click: fit the view. Drag S/E to set source or loop boundaries."
+    });
     let pointer_down = ui.input(|i| i.pointer.primary_down());
     ui.ctx().data_mut(|d| {
         d.insert_temp(view_id, (source.clone(), view));
@@ -2334,7 +2384,12 @@ pub(crate) fn show(
     let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
     let stretch = if canvas.strip { stretch } else { stretch.max(Vec2::splat(1.0)) };
     let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
-    let values = Values { time: ui.input(|i| i.time), ..Values::new(parameters) };
+    // Shared by a device's compact and expanded canvases, but never part of its sound state.
+    let page_id = crate::detail::detail_view::list_fold_id(ui, track, at).with("device-local-page");
+    let page = ui.ctx().data(|data| data.get_temp::<u16>(page_id)).unwrap_or(0).min(suhina_device_sdk::ui::MAX_PAGE);
+    let page_value = GraphParameter::host_value(suhina_device_sdk::ui::PAGE_ID, f32::from(page));
+    let mut values = Values { time: ui.input(|i| i.time), ..Values::new(parameters) };
+    values.by_id.insert(suhina_device_sdk::ui::PAGE_ID, &page_value);
     if canvas.animate_when.as_ref().is_some_and(|v| v.evaluate(&|id, norm, log| values.read(id, norm, log)) > 0.0) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
     }
@@ -2538,6 +2593,51 @@ pub(crate) fn show(
             });
             continue;
         }
+        if let Some(binding) = &control.x
+            && binding.parameter == suhina_device_sdk::ui::PAGE_ID
+            && let UiGesture::Set(page) | UiGesture::Expand(page) = control.gesture
+        {
+            let response = ui
+                .interact(bounds, ui.scope_id().with(("sd-custom", track.0, &at.0, &control.id)), egui::Sense::click())
+                .on_hover_text(&control.tooltip);
+            paint_control(
+                &painter.with_clip_rect(bounds.intersect(painter.clip_rect())),
+                &painter,
+                control,
+                drawings,
+                bounds,
+                &values,
+                &loaded,
+                &tokens,
+                Some(&response),
+                canvas.accent_on,
+            );
+            if response.clicked() {
+                response.request_focus();
+            }
+            remember_keyboard_owner(&response);
+            let keyboard = response.has_focus()
+                && ui.input_mut(|input| {
+                    input.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
+                        || input.consume_key(egui::Modifiers::NONE, egui::Key::Space)
+                });
+            if response.has_focus() {
+                response.scroll_to_me(None);
+            }
+            if response.clicked() || keyboard {
+                ui.ctx().data_mut(|data| data.insert_temp(page_id, page.min(suhina_device_sdk::ui::MAX_PAGE)));
+                if matches!(control.gesture, UiGesture::Expand(_)) {
+                    crate::detail::detail_view::open_expanded(ui.ctx(), track, at.clone());
+                }
+                ui.ctx().request_repaint();
+            }
+            response.widget_info(|| {
+                let mut info = egui::WidgetInfo::labeled(egui::Role::Button, true, &control.name);
+                info.selected = Some(control_selected(control, &values));
+                info
+            });
+            continue;
+        }
         if let UiGesture::Expand(page) = control.gesture {
             let response = ui
                 .interact(bounds, ui.scope_id().with(("sd-custom", track.0, device, &control.id)), egui::Sense::click())
@@ -2729,6 +2829,7 @@ pub(crate) fn show(
             response.request_focus();
         }
         let focused = response.has_focus();
+        remember_keyboard_owner(&response);
         let (dx, dy, button, fine) = ui.input(|i| {
             (
                 i32::from(focused && i.key_pressed(egui::Key::ArrowRight))

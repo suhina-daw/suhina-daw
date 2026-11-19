@@ -14,6 +14,8 @@ covers:
 Instrument is an experimental native instrument. Its public Rust runtime is shared by stock
 and future export adapters. The stock panel uses the device SDK. It has no network operation,
 training service, proprietary library dependency or background fitting requirement.
+The [compact and expanded editor](instrument-editor.md) presents the same parameters on
+Play, Model and Sample pages; navigation is local view state, not an audio control.
 
 ## Sound and controls
 

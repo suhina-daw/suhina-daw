@@ -3384,10 +3384,13 @@ impl App {
         suhina_plugins::trace::timed("sample map analysis poll", || self.projects.poll_sound_map());
         self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
-        if !self.colour_window_owns_keyboard(ui.ctx()) {
+        let device_keyboard = crate::detail::device_canvas::owns_keyboard(ui.ctx());
+        if !self.colour_window_owns_keyboard(ui.ctx()) && !device_keyboard {
             keys_for_shortcuts(ui.ctx());
         }
-        self.launch_keys(ui, &mut actions);
+        if !device_keyboard {
+            self.launch_keys(ui, &mut actions);
+        }
         // A menu bar item chosen while a dialog asks something is passed over, as its key is.
         let queued = std::mem::take(&mut self.queued);
         let menu_items = std::mem::take(&mut self.queued_menu_items);
@@ -4067,6 +4070,15 @@ impl App {
             {
                 detail_view::show_expanded(ui, inner, track, &device, &mut actions);
             }
+            // Collect after the expanded canvas too: its waveform is a first-class drop target.
+            self.sample_drops = ui
+                .ctx()
+                .data(|d| {
+                    d.get_temp::<Vec<crate::detail::device_canvas::SampleTarget>>(
+                        crate::detail::device_canvas::sample_targets_id(),
+                    )
+                })
+                .unwrap_or_default();
             drop_overlay(ui, view_area);
         }
         self.browser_drag(ui);
@@ -4529,3 +4541,7 @@ enum CopiedLast {
     /// Anything else: Ctrl+V goes where the last click put the keys.
     Other,
 }
+
+#[cfg(test)]
+#[path = "app/instrument_editor_tests.rs"]
+mod instrument_editor_tests;

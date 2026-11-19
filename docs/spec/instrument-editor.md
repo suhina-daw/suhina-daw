@@ -51,9 +51,13 @@ The built-in SDK reserves `#page` as a bounded UI-only selector, initially zero 
 in expressions such as `visible_when`. Other gestures/bindings are rejected. It is not a
 DeviceInfo parameter, is never sent to the engine, is never automated, and does not create
 an undo entry or dirty the project. The host keeps it in temporary view memory keyed by
-track and complete device address, shared by that device's compact and expanded canvases.
+project, track and complete device address, shared by that device's compact and expanded canvases.
 `Expand` selects the requested page and opens the existing editor. A repeated selection
 keeps that page. Project reload starts with the host's ordinary fresh view state.
+Enter and Space activate a focused page button. Focused SDK controls in an expanded editor
+retain their keyboard focus across frames, so page keys and parameter arrows do not reach the
+Launcher behind it. Escape closes the editor unless a text field is being edited. Closing it
+or focusing another part of the application restores ordinary shortcut handling.
 
 This host binding is initially available to built-in layouts only; `.sd` version 6's
 parameter-binding contract is unchanged. A future standalone SDK editor can implement
@@ -76,3 +80,5 @@ quality gate for the sound engine and is not implied by UI tests.
 Analysis/job controls are a coordinated later integration through the same host commands;
 this layout does not display nonfunctional analysis buttons. Family, library, MPE and effects
 pages remain explicit future work in #1579.
+The shared sample UI currently prepares waveform sources and drop addresses for top-level
+devices only; nested sample panels remain a separate host-lifecycle limitation.
