@@ -27,6 +27,7 @@ expanded-reverb suhina-studio@darker 5ef1021758440c95
 expanded-vinyl-distortion suhina-studio@darker 6cc2ee401914feb6
 export-dialog suhina-studio@darker 3f4ef5c319f0d0b9
 grid-menu suhina-studio@darker 0dae2278793da3bd
+instrument-instrument suhina-studio@darker 959b17ec940ba43b
 instrument-sampler suhina-studio@darker 6c50d9c5422b048d
 launcher suhina-studio@darker 63c1438897c2d38a
 launcher-hover suhina-studio@darker 05f4a65e0648a8b2
@@ -39,7 +40,7 @@ new-theme-dialog suhina-studio@darker ea17caf470ded3a1
 piano-roll suhina-studio@darker ea5b1c02db8d3ad3
 project-dialog suhina-studio@darker 1ae2b177311d26e0
 quantize-menu suhina-studio@darker b4bc3195fd28ecf6
-quick-add suhina-studio@darker c1c63e78532179b3
+quick-add suhina-studio@darker 98c9b84d90415218
 sample-map suhina-studio@darker 9f5231cde96fd98d
 save-dialog suhina-studio@darker 9a32b719888438e9
 settings suhina-studio@darker 80e3923f6b107ab5

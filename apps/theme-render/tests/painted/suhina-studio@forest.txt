@@ -27,6 +27,7 @@ expanded-reverb suhina-studio@forest 510efd3fcbd815ac
 expanded-vinyl-distortion suhina-studio@forest a8d87c144c12ac9f
 export-dialog suhina-studio@forest 3970e66cb92775aa
 grid-menu suhina-studio@forest f9c844a9a77f270c
+instrument-instrument suhina-studio@forest d15cff6ed17bb049
 instrument-sampler suhina-studio@forest 5e8a1a93207c6951
 launcher suhina-studio@forest b7ee7f41d3788764
 launcher-hover suhina-studio@forest a8672c2a3d3183bc
@@ -39,7 +40,7 @@ new-theme-dialog suhina-studio@forest 2672fcedb9da093e
 piano-roll suhina-studio@forest 8ace50cf5fa96909
 project-dialog suhina-studio@forest 0c26cbf5e3652688
 quantize-menu suhina-studio@forest 57ac2d6b76b99ada
-quick-add suhina-studio@forest 6bfc716dd3006b4a
+quick-add suhina-studio@forest 3739145803b68eed
 sample-map suhina-studio@forest 45514abc693573b8
 save-dialog suhina-studio@forest 8b4b2fa174bed659
 settings suhina-studio@forest 5c9b869f94c2bdec

@@ -27,6 +27,7 @@ expanded-reverb high-contrast@light 44cc605548413bd8
 expanded-vinyl-distortion high-contrast@light fab6d60be100d1a0
 export-dialog high-contrast@light cc9b5c9a7d9e4c4a
 grid-menu high-contrast@light b151ec84985570d8
+instrument-instrument high-contrast@light db5b71a2c1cbb0e2
 instrument-sampler high-contrast@light 8de2cdc7861a5894
 launcher high-contrast@light 13447356790e2ac1
 launcher-hover high-contrast@light f0a88fd013d2c46d
@@ -39,7 +40,7 @@ new-theme-dialog high-contrast@light 6650178bf56a3bd6
 piano-roll high-contrast@light 4d03868719e2df58
 project-dialog high-contrast@light 3c9b182a41d5f24d
 quantize-menu high-contrast@light b99b92a870381d4b
-quick-add high-contrast@light d2b0f57d6fe8f8ac
+quick-add high-contrast@light b2207b3fcdb60437
 sample-map high-contrast@light 3f35311b2cd1b47b
 save-dialog high-contrast@light 888fcd328c284f1d
 settings high-contrast@light 4a10e27c61bb15c0

@@ -41,6 +41,22 @@ Gate / One shot / Loop playback describe a single-source key map. Hybrid mixes t
 with the modal body; it does not infer a physical model from the source. Missing sample files
 produce silence in Sample mode, and leave the modal body audible in Hybrid mode.
 
+### Revision 1 reference
+
+For mode number `n` starting at one, Structure `s`, Brightness `b` and Strike position `p`:
+
+- Frequency is `fundamental * n * sqrt((1 + s*n*n)/(1 + s))`.
+- Initial signed amplitude is `sin(pi*n*p) / n^(2 - 1.5*b)`.
+- Decay time is `body_decay / (1 + 0.12*(n - 1))`.
+- Usable amplitudes are divided by `max(1, sum(abs(amplitude)))`. The voice starts with a
+  2 ms linear fade and a `0.25 * velocity` level. A stolen voice's last output fades for 2 ms
+  while the new strike fades in; there is no unbounded extra tail voice.
+
+The independent analytical render anchors in
+`devices/instrument/tests/data/modal-v1-reference.txt` pin revision 1 at its default controls,
+48 kHz, key 60 and velocity 0.8. They are self-authored CC0 data, not recorded reference audio.
+Acoustic quality is not established by matching this mathematical reference.
+
 ## Import and project state
 
 `device.loadSample` accepts Instrument and loads an ordinary local audio file. The command is

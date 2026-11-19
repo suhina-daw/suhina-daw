@@ -6,6 +6,27 @@ use super::*;
 suhina_device_api::conformance_test!(Instrument::with_rate);
 
 #[test]
+fn revision_one_matches_the_independent_analytical_reference_render() {
+    let mut instrument = Instrument::new();
+    instrument.event(NoteEvent::On { key: 60, velocity: 0.8 });
+    let mut buffer = vec![0.0; 16384];
+    instrument.process(&ProcessContext::default(), &mut buffer);
+    for line in include_str!("../tests/data/modal-v1-reference.txt").lines().filter(|line| !line.starts_with('#')) {
+        let (frame, expected) = line.split_once(' ').unwrap();
+        let frame: usize = frame.parse().unwrap();
+        let expected: f32 = expected.parse().unwrap();
+        assert!(
+            (buffer[frame * 2] - expected).abs() < 3e-7,
+            "revision 1 changed at frame {frame}: {} vs {expected}",
+            buffer[frame * 2]
+        );
+        assert_eq!(buffer[frame * 2], buffer[frame * 2 + 1]);
+    }
+    assert!(std::mem::size_of::<Voice>() <= 2048);
+    assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
+}
+
+#[test]
 fn modal_notes_are_audible_and_release_and_reset_are_exactly_silent() {
     let mut instrument = Instrument::new();
     instrument.event(NoteEvent::On { key: 60, velocity: 0.8 });
@@ -192,5 +213,10 @@ fn finite_velocities_are_normalized_before_both_source_layers_receive_them() {
         normal.process(&ProcessContext::default(), &mut expected);
         hostile.process(&ProcessContext::default(), &mut actual);
         assert_eq!(actual, expected, "source {source}");
+        normal.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+        hostile.event(NoteEvent::On { key: 60, velocity: -2.0 });
+        normal.process(&ProcessContext::default(), &mut expected);
+        hostile.process(&ProcessContext::default(), &mut actual);
+        assert_eq!(actual, expected, "nonpositive velocity releases source {source}");
     }
 }

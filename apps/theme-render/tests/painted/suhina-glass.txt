@@ -27,6 +27,7 @@ expanded-reverb suhina-glass 56b7c4c8e760a25c
 expanded-vinyl-distortion suhina-glass f23b28f2c7c0bb69
 export-dialog suhina-glass 46e6403a7f7dd37e
 grid-menu suhina-glass 47fc8c33bdf17476
+instrument-instrument suhina-glass 7537ea20a27478af
 instrument-sampler suhina-glass 7896452a9e1e2188
 launcher suhina-glass cc85052e179f5138
 launcher-hover suhina-glass 20e315392672b6d4
@@ -39,7 +40,7 @@ new-theme-dialog suhina-glass f9dad92b41a7c6eb
 piano-roll suhina-glass a6ce699ed3379740
 project-dialog suhina-glass e078dd8e3bcac854
 quantize-menu suhina-glass 0406edb20b286f2e
-quick-add suhina-glass 30a990d8d98b4b83
+quick-add suhina-glass 5baf13bcf86471ee
 sample-map suhina-glass 675164077c8f1f56
 save-dialog suhina-glass 79e799be0b57c982
 settings suhina-glass d1f5508ea38803d4

@@ -27,6 +27,7 @@ expanded-reverb suhina-meadow fbea5f6cdadc0745
 expanded-vinyl-distortion suhina-meadow 95cd7c9a8b0bac56
 export-dialog suhina-meadow 0801e7a72e926eea
 grid-menu suhina-meadow 9741defa38a22d42
+instrument-instrument suhina-meadow bbca15a3715e83b1
 instrument-sampler suhina-meadow 6f762b3e5ca0aafb
 launcher suhina-meadow 3a4f5e0823b937b5
 launcher-hover suhina-meadow a50305e596f5a74c
@@ -39,7 +40,7 @@ new-theme-dialog suhina-meadow 89c58dc3b4dd2681
 piano-roll suhina-meadow 56520535633f7ee6
 project-dialog suhina-meadow fa39561fa53b0174
 quantize-menu suhina-meadow 274c0854b46f87af
-quick-add suhina-meadow ea339bdcebddfaf2
+quick-add suhina-meadow 1732641a8e5c8b39
 sample-map suhina-meadow 590800b0dfea1117
 save-dialog suhina-meadow 860da85149328539
 settings suhina-meadow ecdd1f0182480ee0
