@@ -918,13 +918,16 @@ fn cutting_a_group_confirms_surviving_references_but_preserves_its_own_processin
         let copy = TrackId(pasted["tracks"][0].as_u64().unwrap() as u32);
         assert!(session.project().track(copy).unwrap().name.starts_with("Lead"), "refusal preserves the clipboard");
         run(&mut session, "edit.undo", json!({})).unwrap();
+        // Pasting to inspect the clipboard advances the monotonic ID allocator even after
+        // Undo. Compare the accepted cut's Undo with the state immediately before that cut.
+        let before_cut = session.project().clone();
         session.execute("track.cut", &json!({"tracks": [group], "removeGroupProcessing": [group]})).unwrap();
         assert_eq!(order(&session), ["Lead"]);
         let remaining = session.project().channel(lead).unwrap();
         assert!(remaining.devices[0].inputs.is_empty());
         assert_eq!(remaining.output, None);
         run(&mut session, "edit.undo", json!({})).unwrap();
-        assert_eq!(session.project(), &p, "one Undo restores every external reference");
+        assert_eq!(session.project(), &before_cut, "one Undo restores every external reference");
     }
     // Both the group's processing and references in another cut track survive in the copy.
     let mut p = original.clone();
