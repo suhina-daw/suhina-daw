@@ -6,6 +6,8 @@ status: planned
 last_verified: 2026-11-19
 covers:
   - crates/device-api/src/lib.rs
+  - crates/device-api/src/note_expression.rs
+  - crates/device-api/src/note_expression/
   - crates/engine/src/live.rs
   - crates/midi/src/lib.rs
 ---
@@ -17,9 +19,20 @@ covers:
 This is the implementation contract for [#921](https://github.com/suhina-daw/suhina-daw/issues/921)
 and the shared instrument in [#1579](https://github.com/suhina-daw/suhina-daw/issues/1579).
 [ADR 0039](../decisions/0039-per-note-expression.md) records the decisions.
-The current live path has ordinary notes, channel bend, pressure and controllers. End-to-end
-identified events, live MPE, recording, editable curves and plug-in adapters are not yet built.
+The shared API provides runtime identity allocation, validated musical expression values,
+atomic initial note state, explicit event-admission results, and an opt-in instrument capability
+with bounded retirement feedback. These are contract primitives; no built-in opts in on this
+branch. The current live path has ordinary notes, channel bend, pressure and controllers.
+End-to-end identified events, live MPE, recording, editable curves and plug-in adapters are not yet built.
 The rules below are planned behavior, not a claim that a controller already exercises them.
+
+`Device::note_instances` returns `None` for an ordinary device. The validated
+`dispatch_note_instance` helper returns `Unsupported` instead of dropping a note. Accepted
+identified notes use `NoteInstanceDevice::event`; its result distinguishes capacity rejection,
+duplicate IDs and unknown occurrences. Hosts commit new mappings only after successful
+admission and drain final IDs into caller-owned storage. This endpoint will receive the same
+payload from the planned `NoteEvent::Instance` queue wrapper after the chain migrates; no
+second identity or expression representation is introduced for exported instruments.
 
 ## Runtime notes
 
@@ -59,7 +72,9 @@ Suhina's routing policies are:
 
 - Changing zone membership chokes occurrences on affected channels and resets their controller
   state. No note from another port or unaffected zone is changed. New configuration and its
-  reset are processed in one ordered operation.
+  reset are processed in one ordered operation. Configuring all 15 members disables the
+  opposite zone, including its manager; configuring two zones leaves both managers outside
+  their member sets. Tests cover both orders of conflicting full-zone configuration.
 - Bend is member bend plus manager bend in semitones. Pressure is the greater of member and
   manager pressure. Timbre is `clamp(member + manager - 0.5, 0, 1)`. MIDI CC74 maps its center
   value 64 to 0.5, endpoints 0 and 127 to 0 and 1, linearly on either side. These combinations
@@ -107,7 +122,7 @@ Curve values and note data participate in the same command validation and undo o
 | Resize left edge | Crop/rebase offsets by the start change and insert the boundary value; extending holds the old initial value. |
 | Stretch, including duration quantize | Scale offsets by new duration / old duration; reject zero or nonfinite divisors. |
 | Split at an interior time | Evaluate each curve at the split; both parts get that boundary value, the right offsets are rebased. The first note keeps its editing ID, the second gets a new one. |
-| Join adjacent notes | Require matching key/channel and touching endpoints; retain the first editing ID and concatenate rebased points. At the join, the later note's value wins, represented by one boundary point. Nonadjacent joins are rejected rather than inventing a gap gesture. |
+| Join adjacent notes | Require matching key/channel, touching endpoints, and equal evaluated boundary values for every curve; retain the first editing ID and concatenate rebased points. Reject a discontinuous or nonadjacent join rather than inserting a ramp into the earlier note. |
 | Duplicate / copy content | Copy values with the normal editing identity rules; playback allocates independent runtime occurrences. |
 | Delete / mute | Delete curves with their note, or suppress the whole muted occurrence. |
 

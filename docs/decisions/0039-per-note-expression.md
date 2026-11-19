@@ -3,10 +3,12 @@ description: Runtime note identity, allocation-free expression events, MPE routi
 read_when: MPE, note identity, per-note expression, note curves, MIDI 2.0, expressive instruments
 type: decision
 status: proposed
-built: no
+built: partly
 last_verified: 2026-11-19
 covers:
   - crates/device-api/src/lib.rs
+  - crates/device-api/src/note_expression.rs
+  - crates/device-api/src/note_expression/
   - crates/engine/src/live.rs
   - crates/midi/src/lib.rs
 ---
@@ -56,6 +58,16 @@ What is built: [MPE specification](../spec/mpe.md#status).
    future extensions, not aliases for these dimensions. All payloads are fixed-size `Copy`
    data. The initial state is atomic with note-on so queue exhaustion cannot partly initialize
    a new voice.
+
+   The same payload first enters opted-in devices through `Device::note_instances`, a
+   `NoteInstanceDevice` capability with event input and bounded finished-note output. This
+   capability also supports exported cores before the engine queue migrates. The eventual
+   `NoteEvent::Instance` wrapper dispatches to that endpoint; it does not add another payload
+   definition or another renderer. An absent capability is an explicit unsupported result.
+   The legacy queue continues unchanged until its effects and consumers are migrated together.
+   Event admission returns a result: capacity failure starts no occurrence and owes no
+   retirement notification. Adapters commit a newly reserved ID mapping only after admission;
+   a duplicate-ID rejection never removes the already sounding occurrence's mapping.
 
 3. **Frame timing remains the host's responsibility.** `Device::event` still acts at the
    start of the next processing span. Hosts split spans at event and automation offsets,
