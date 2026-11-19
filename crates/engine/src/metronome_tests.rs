@@ -106,7 +106,8 @@ fn playing(clicks: ClickSet) -> Renderer {
 fn a_bar_plays_its_own_click_when_it_has_one_and_the_beat_higher_when_not() {
     let mut renderer = playing(ClickSet::new(steady(0.5, 300), Some(steady(-0.25, 300))));
     renderer.handle(LaunchCommand::Play);
-    let (out, _) = play(&mut renderer, 60, 480);
+    // Past the second beat and half a beat on, which `length` reads.
+    let (out, _) = play(&mut renderer, 80, 480);
     // Past the transport's start guard (2 ms).
     assert!((out[300] + 0.25).abs() < 1e-6, "the bar's own click: {}", out[300]);
     assert!((out[(BEAT + 150) * 2] - 0.5).abs() < 1e-6, "the beat's: {}", out[(BEAT + 150) * 2]);
@@ -114,7 +115,7 @@ fn a_bar_plays_its_own_click_when_it_has_one_and_the_beat_higher_when_not() {
 
     let mut renderer = playing(ClickSet::new(steady(0.5, 300), None));
     renderer.handle(LaunchCommand::Play);
-    let (out, _) = play(&mut renderer, 60, 480);
+    let (out, _) = play(&mut renderer, 80, 480);
     assert!((out[300] - 0.5).abs() < 1e-6, "{}", out[300]);
     assert_eq!(length(&out, 0), 199, "the beat's click a fifth higher, so shorter");
     assert_eq!(length(&out, BEAT), 299);
