@@ -1042,6 +1042,9 @@ ids in the optional `removeGroupProcessing` list. This applies to explicit Ungro
 group deletion too; cutting a selected group keeps its own processing in the clipboard,
 but removing its last sibling still checks the source ancestors.
 
+A group's own non-default audio or MIDI input settings also require consent: removing its
+last member must not silently disconnect a live input that still plays through the group.
+
 The desktop asks **Remove group processing?**, identifies the affected groups, explains that
 their effects, mixer settings, routing and any clips or takes owned by those group tracks
 will be removed, and offers

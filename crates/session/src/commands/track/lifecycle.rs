@@ -80,6 +80,8 @@ fn has_processing(p: &Project, group: TrackId) -> bool {
         || channel.cue
         || !channel.sends.is_empty()
         || channel.output != expected_output
+        || track.audio_input != AudioInput::default()
+        || track.midi_input != MidiInput::default()
         || !channel.extensions.0.is_empty()
         || !track.extensions.0.is_empty()
         || owns_content

@@ -811,7 +811,7 @@ fn group_removal_checks_mixer_routes_sidechains_and_all_emptied_ancestors() {
     let original = setup.project().clone();
     let channel = original.track(TrackId(inner)).unwrap().channel.unwrap();
     let lead = original.track(TrackId(2)).unwrap().channel.unwrap();
-    for case in ["gain", "pan", "mute", "solo", "cue", "output", "input", "key", "clips"] {
+    for case in ["gain", "pan", "mute", "solo", "cue", "output", "input", "key", "clips", "audio input", "midi input"] {
         let mut p = original.clone();
         match case {
             "gain" => p.channel_mut(channel).unwrap().volume = 0.5,
@@ -825,6 +825,11 @@ fn group_removal_checks_mixer_routes_sidechains_and_all_emptied_ancestors() {
                 p.channel_mut(lead).unwrap().devices[0].inputs.push(DeviceInput::key(channel, TapPoint::PostFader))
             }
             "clips" => p.arrangement.lanes[0].track = Some(TrackId(inner)),
+            "audio input" => {
+                p.track_mut(TrackId(inner)).unwrap().audio_input =
+                    AudioInput { channels: InputChannels::Stereo(1), monitor: Monitor::In };
+            }
+            "midi input" => p.track_mut(TrackId(inner)).unwrap().midi_input.channel = Some(2),
             _ => panic!("unknown group processing test case: {case}"),
         }
         let mut session = Session::new(p.clone());
