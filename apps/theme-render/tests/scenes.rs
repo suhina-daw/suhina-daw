@@ -13,8 +13,37 @@ use suhina_theme_render::{Subject, headless, scenes};
 /// The bundled themes whose sheets size or place what they style, or draw it with artwork of their
 /// own: their rules can move or hide a control a scene drives. The others set colours alone, which
 /// cannot, and driving them through all 50 scenes too took 550 windows and two minutes of a test
-/// run (2026-11-18). `the_other_bundled_themes_set_only_colours` keeps the list true.
-const LAYOUT_THEMES: [&str; 3] = ["suhina-sheet", "suhina-meadow", "suhina-blocks"];
+/// run (2026-11-18). `the_other_bundled_themes_set_only_colours` keeps the list true. The list
+/// and its tests come from one table, so adding a layout theme also adds its full scene check.
+macro_rules! layout_themes {
+    ($($name:ident => $id:literal),+ $(,)?) => {
+        const LAYOUT_THEMES: &[&str] = &[$($id),+];
+
+        mod layouts {
+            use super::*;
+
+            $(
+                #[test]
+                fn $name() {
+                    let theme = Subject::built_in($id)
+                        .unwrap_or_else(|| panic!("{} is a built-in theme", $id));
+                    drive_every_scene(&theme);
+                }
+            )+
+
+            #[test]
+            fn see_through() {
+                drive_every_scene(&super::see_through().unwrap());
+            }
+        }
+    };
+}
+
+layout_themes! {
+    suhina_sheet => "suhina-sheet",
+    suhina_meadow => "suhina-meadow",
+    suhina_blocks => "suhina-blocks",
+}
 
 /// The CSS properties that size or place what a sheet styles.
 const LAYOUT_PROPERTIES: [&str; 12] = [
@@ -31,21 +60,6 @@ const LAYOUT_PROPERTIES: [&str; 12] = [
     "flex",
     "grid",
 ];
-
-#[test]
-fn every_theme_that_lays_out_is_driven_through_every_scene() {
-    let mut themes: Vec<Subject> = LAYOUT_THEMES
-        .iter()
-        .map(|id| Subject::built_in(id).unwrap_or_else(|| panic!("{id} is a built-in theme")))
-        .collect();
-    themes.push(see_through().unwrap());
-    // A theme to a thread: each window and the style engine it uses are the thread's own.
-    let failed: Vec<String> = std::thread::scope(|scope| {
-        let runs: Vec<_> = themes.iter().map(|theme| scope.spawn(move || drive_every_scene(theme))).collect();
-        runs.into_iter().flat_map(|run| run.join().unwrap_or_else(|_| vec!["a thread panicked".into()])).collect()
-    });
-    assert!(failed.is_empty(), "{failed:#?}");
-}
 
 /// A theme that sets only colours is chosen and drives the launcher.
 #[test]
@@ -68,7 +82,7 @@ fn every_theme_that_sets_only_colours_is_driven_through_the_launcher() {
 fn the_other_bundled_themes_set_only_colours() {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/ui/themes");
     let ids: Vec<String> = Subject::built_ins().into_iter().map(|theme| theme.id).collect();
-    for id in LAYOUT_THEMES {
+    for &id in LAYOUT_THEMES {
         assert!(ids.iter().any(|built_in| built_in == id), "{id} is a built-in theme");
     }
     for id in ids.iter().filter(|id| !LAYOUT_THEMES.contains(&id.as_str())) {
@@ -83,9 +97,11 @@ fn the_other_bundled_themes_set_only_colours() {
     }
 }
 
-/// Each scene opened with `theme` and driven; what could not be done in each.
-fn drive_every_scene(theme: &Subject) -> Vec<String> {
-    drive_scenes(theme, &scenes::scenes())
+/// Each scene opened with `theme` and driven. Each test has its own thread, so its windows and
+/// style engine stay isolated; nextest can schedule the themes on different partitions.
+fn drive_every_scene(theme: &Subject) {
+    let failed = drive_scenes(theme, &scenes::scenes());
+    assert!(failed.is_empty(), "{failed:#?}");
 }
 
 /// `scenes`, each opened with `theme` and driven; what could not be done in each.
