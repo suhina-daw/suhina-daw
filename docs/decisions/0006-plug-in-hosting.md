@@ -101,6 +101,7 @@ workspace forbids.
    (#151), so the budget is set by the slowest chain, not the sum. Offline renders wait without
    a deadline. How the deadline is set, the priorities each system gives and the measurements
    behind them: [plug-in hosting](../spec/plugin-hosting.md) › Block sync and the deadline.
+   *Amended 2026-11-18, see Amendment: plug-in chains on the render workers.*
 5. **State survives crashes.** The host reads each plug-in's state on save and every 30 s; the
    project keeps it in `Device::state`, and a restart loads the last state with the latency the
    chain was compensated for. A state changed in the editor makes the project unsaved without an
@@ -162,6 +163,24 @@ follows the SDK's id convention promises no state conversion: one answered a pro
 VST2 chunk bank with yes, kept its own empty state and played nothing. So the installed VST2
 plug-in itself now comes before such a VST3; a VST3 that declares it replaces the plug-in
 still comes first, since its vendor promises to read the state. Decision 8 is amended in place.
+
+## Amendment: plug-in chains on the render workers (2026-11-18)
+
+[ADR 0038](0038-rendering-on-several-cores.md) › 4, built in
+[#1507](https://github.com/suhina-daw/suhina-daw/issues/1507). A chain with plug-in slots runs on a
+render worker like any other chain, so the engine waits for a plug-in's answer on the worker's
+thread as well as on the render thread: "the one block allowed on the audio thread" in (4) is the
+block's deadline on whichever engine thread runs the chain. Each worker waits for the plug-ins of
+all the chains it holds together and goes on with each as it answers, so chains' round trips
+overlap one another and the built-in work of every thread, not only the chains that nothing plays
+into (#151). The branches of a device group hand their plug-ins the block at the same time too.
+Unchanged: a live chain's plug-in has until the block's deadline, counted from the block's start;
+on a miss its block is its input or silence and the miss is counted. Offline, each outstanding
+block is waited for up to `OFFLINE_TIMEOUT` (10 seconds), as before. A timeout uses the same
+input-or-silence fallback and counts a miss; rendering continues. `project.export` returns those
+misses in its result rather than failing the export. With all plug-ins answering within that
+limit, a deterministic render is the same on any number of threads, bit for bit; timeout
+fallbacks are not covered by that guarantee ([render threads](../spec/render-threads.md)).
 
 ## Not decided yet
 

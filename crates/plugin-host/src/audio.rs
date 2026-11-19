@@ -17,6 +17,10 @@
 //! while another runs it: the engine sends a plug-in's block either on its own link or as a
 //! follower on another's, never both at once.
 //!
+//! The thread times each instance's part of a block, its own and each follower's, and the times
+//! go back to the engine with the answer ([`suhina_ipc::Laps`], #1262), so a late block shows
+//! whether the plug-in took long or the thread woke late.
+//!
 //! Every audio thread runs its blocks with subnormal numbers flushed to zero, set again before each
 //! instance's part, since a plug-in may change the mode while it runs ([`crate::denormals`]).
 
@@ -175,10 +179,10 @@ pub(crate) fn serve<B: Block + 'static>(instance: u32, block: B, served: &mut Se
     let flush = crate::denormals::Flush::detect();
     flush.apply();
     while !stop.load(Ordering::Acquire) {
-        served.serve_joint(POLL, |input, events, followers, output| {
+        served.serve_joint(POLL, |input, events, followers, output, laps| {
             flush.apply();
-            shared.run(input, events, output);
-            for &follower in followers {
+            laps.own(|| shared.run(input, events, output));
+            for (index, &follower) in followers.iter().enumerate() {
                 // An instance that is gone passes the sound through.
                 let (Some(next), Some(between)) = (member(follower), between.get_mut(..output.len())) else {
                     continue;
@@ -186,7 +190,7 @@ pub(crate) fn serve<B: Block + 'static>(instance: u32, block: B, served: &mut Se
                 between.copy_from_slice(output);
                 // The plug-in before it may have changed the mode.
                 flush.apply();
-                next.run(between, events, output);
+                laps.follower(index, || next.run(between, events, output));
             }
         });
     }

@@ -1547,6 +1547,13 @@ impl App {
             }
             suhina_plugins::trace::state("audio output", output);
         }
+        // How long the plug-in that missed most blocks took itself, as its host measured it
+        // (#1262): beside the round trip, it tells a slow plug-in from a host that woke late.
+        let worst_key = self.session().and_then(Session::player).map(|p| p.plugin_misses().1);
+        let worst_process = worst_key
+            .filter(|key| *key != 0)
+            .and_then(|key| self.projects.session_mut(None).ok()?.plugin_report_by_key(key))
+            .map_or(0, |report| report.longest_process_us);
         let Some(player) = self.session().and_then(Session::player) else { return };
         let device = info.as_ref().map_or(0, |i| i.underruns);
         // Blocks that found too little input from the input device; counted from when the
@@ -1579,7 +1586,7 @@ impl App {
             || cpu >= 700
         {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, render blocks late {late} (+{}, most {late_name}: {late_most}) on {} threads, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
+                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, longest plug-in time {worst_process} µs, render blocks late {late} (+{}, most {late_name}: {late_most}) on {} threads, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
                 device.saturating_sub(was_device),
                 input.saturating_sub(was_input),
                 stretched.saturating_sub(was_stretched),
