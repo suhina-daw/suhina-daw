@@ -76,7 +76,13 @@ The main output's meter reads the click wherever it reaches the main output.
 The click lines up with what it plays against. Past the main channel it is delayed by as much
 as a sound that goes straight to the output is when it leaves Main: the graph's latency
 compensation, Main's devices' latency and Main's own compensation. On the cue output it is
-delayed as much as the tracks cued there. Through Main it simply goes with the mix.
+delayed as much as the latest track cued there is where the cue takes it: where the track plays
+into its group or the output, so a group's devices after it do not delay the click either. With
+no track cued, the click on the cue is as late as the mix past the tracks. Through Main it
+simply goes with the mix.
+
+A change of route, or of whether the cue has outputs of its own, starts the click's new way
+empty: a click still on its way along the old one is dropped there, never heard later.
 
 ## Commands
 

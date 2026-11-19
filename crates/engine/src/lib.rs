@@ -471,6 +471,18 @@ struct GraphCapture {
     buffer: Vec<f32>,
 }
 
+/// Which of the graph's click delays the click goes through ([`ClickRoute`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ClickPath {
+    /// The delay to the main output past the main channel.
+    #[default]
+    Main,
+    /// The delay to a cue output of its own.
+    Cue,
+    /// Neither: into the main channel's input.
+    IntoMain,
+}
+
 /// Plays a project: its arrangement from the start, and launcher clips as they are launched
 /// (see [`Renderer::handle`]). Build it once, then call [`Renderer::process`] block by block.
 pub struct Renderer {
@@ -504,6 +516,8 @@ pub struct Renderer {
     click: Vec<f32>,
     /// Where the click joins the output.
     click_route: ClickRoute,
+    /// Which way the click went in the last block, so a delay it comes back to is cleared first.
+    click_path: ClickPath,
     /// What the graph was built from, so a controller can build the next one (ADR 0005).
     audio: Arc<AudioPool>,
     /// The file-backed devices' files, for the next graph (docs/spec/nam-amp-and-cab.md).
@@ -752,6 +766,7 @@ impl Renderer {
             path_fade_left: 0,
             click: vec![0.0; MAX_BLOCK * 2],
             click_route: ClickRoute::default(),
+            click_path: ClickPath::default(),
             audio: Arc::new(audio),
             assets: Arc::new(assets),
             devices,
@@ -1460,6 +1475,21 @@ impl Renderer {
         }
         // The click past the main channel's devices, at its route.
         let click_to_cue = self.click_route == ClickRoute::Cue && self.cue.separate;
+        let path = match (click_into_main, click_to_cue) {
+            (true, _) => ClickPath::IntoMain,
+            (false, true) => ClickPath::Cue,
+            (false, false) => ClickPath::Main,
+        };
+        // Only the delay on the click's way runs, so one it left still holds the click it had
+        // then: cleared as the click comes back, it never plays an old click again.
+        if path != self.click_path {
+            match path {
+                ClickPath::Main => self.graph.click_delay.clear(),
+                ClickPath::Cue => self.graph.click_cue_delay.clear(),
+                ClickPath::IntoMain => {}
+            }
+            self.click_path = path;
+        }
         if !click_into_main && let Some(click) = self.click.get_mut(..frames * 2) {
             if click_to_cue {
                 self.graph.click_cue_delay.run(click);

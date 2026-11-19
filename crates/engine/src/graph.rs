@@ -51,7 +51,7 @@ pub(crate) struct Graph {
     /// leaves the main channel, through `direct_delay` and the main channel's chain.
     pub(crate) click_delay: Delay,
     /// The click's latency compensation where it joins the cue output: as late as the tracks
-    /// cued there.
+    /// cued there are where the cue takes them ([`click_cue_latency`]).
     pub(crate) click_cue_delay: Delay,
     /// The main channel is there, runs no chain and is silent (muted, or its volume at nothing):
     /// a click that follows its fader is silent too. A project without one plays at unity.
@@ -334,6 +334,7 @@ impl Graph {
             .map_or(0, |main| u64::from(main.latency) + main.delay.frames() as u64)
             .saturating_add(u64::from(latency))
             .min(u64::from(sample_rate.saturating_mul(crate::MAX_LATENCY_SECONDS)));
+        let click_cue_latency = click_cue_latency(&chains, latency, sample_rate);
         Ok(Box::new(Graph {
             envelope_messages: Vec::with_capacity(ENVELOPE_MESSAGES),
             inputs_heard: vec![false; inputs.len()],
@@ -362,10 +363,29 @@ impl Graph {
             direct_delay: Delay::new(latency as usize),
             main_fader: main_fader(project, source),
             click_delay: Delay::new(click_latency as usize),
-            click_cue_delay: Delay::new(latency as usize),
+            click_cue_delay: Delay::new(click_cue_latency as usize),
             main_silent: project.main_channel().is_some() && main_fader(project, source).is_none(),
         }))
     }
+}
+
+/// How late the click on the cue output is: as late as the latest cued track is where the cue
+/// takes it, which is where the track plays into its group or the output, past its own delay
+/// (`Chain::mix`), so a group's devices after it do not count. With no track cued, as late as
+/// the mix reaching the output past the tracks (`latency`).
+fn click_cue_latency(chains: &[Chain], latency: u32, sample_rate: u32) -> u32 {
+    let max = sample_rate.saturating_mul(crate::MAX_LATENCY_SECONDS);
+    chains
+        .iter()
+        .filter(|c| c.cue.is_some())
+        .map(|c| {
+            // As `buses::build` set the chain's delay: from where its sound arrives to its target.
+            let arrived = c.input_latency.saturating_add(c.latency.min(max)).min(max);
+            arrived.saturating_add(u32::try_from(c.delay.frames()).unwrap_or(max))
+        })
+        .max()
+        .unwrap_or(latency)
+        .min(max)
 }
 
 /// The main volume a live fader move is taken relative to, when the main channel runs no chain

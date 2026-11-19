@@ -685,6 +685,12 @@ impl Delay {
         }
     }
 
+    /// Silences what it holds, so nothing that went in before comes out. Never allocates.
+    pub(crate) fn clear(&mut self) {
+        self.buffer.fill(0.0);
+        self.at = 0;
+    }
+
     /// How many frames it delays by.
     pub(crate) fn frames(&self) -> usize {
         self.buffer.len() / 2

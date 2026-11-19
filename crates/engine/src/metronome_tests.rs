@@ -231,3 +231,54 @@ fn the_click_is_as_late_as_the_main_channel_makes_the_mix() {
         assert!(at.abs_diff(through) <= 2, "{route:?}: {at} against {through}");
     }
 }
+
+/// The first onset on the cue output, its cue a pair of outputs of its own and the click routed
+/// there when `metronome`.
+fn first_on_the_cue(project: &Project, metronome: bool) -> Option<usize> {
+    let mut renderer = Renderer::stopped(project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    renderer.handle(LaunchCommand::SetCue { gain: Some(1.0), separate: Some(true) });
+    renderer.handle(LaunchCommand::SetMetronome { on: metronome, gain: Some(0.5) });
+    renderer.handle(LaunchCommand::SetClickRoute(ClickRoute::Cue));
+    renderer.handle(LaunchCommand::Play);
+    let (_, cue) = play(&mut renderer, 20, 480);
+    onsets(&cue).first().copied()
+}
+
+#[test]
+fn on_the_cue_the_click_lines_up_with_a_cued_track_whatever_its_group_does() {
+    // Track 1 plays into a group with two limiters (lookahead) on it, its cue on. The cue takes
+    // the track where it enters the group, so the group's latency is not in it, nor in the click.
+    let limiter = crate::chain_tests::device("limiter", &[]);
+    let mut project = crate::buses_tests::grouped(vec![limiter.clone(), limiter], false);
+    project.channels[0].cue = true;
+    let latency = Renderer::new(&project, SR, suhina_device_registry::factory()).unwrap().latency();
+    assert!(latency > 10, "the group delays the mix: {latency}");
+    let track = first_on_the_cue(&project, false).expect("the cued track on the cue");
+    let mut silent = project.clone();
+    silent.arrangement.lanes.clear();
+    let at = first_on_the_cue(&silent, true).expect("the click on the cue");
+    assert!(at.abs_diff(track) <= 4, "click at {at}, the cued track at {track}");
+}
+
+#[test]
+fn a_click_left_in_a_delay_never_plays_when_the_route_comes_back() {
+    // A limiter on Main: the click past it waits in a delay as long as its lookahead.
+    let project = with_main(1.0, false, &["limiter"]);
+    for (away, separate) in [(ClickRoute::ThroughMain, false), (ClickRoute::Cue, true)] {
+        let mut renderer =
+            Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+        renderer.handle(LaunchCommand::SetCue { gain: Some(1.0), separate: Some(separate) });
+        renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(0.5) });
+        renderer.handle(LaunchCommand::Play);
+        let (out, _) = play(&mut renderer, 1, 8);
+        assert_eq!(peak(&out, 0, 8), 0.0, "{away:?}: the click is still in the delay");
+        // Away and off: the delay it was in does not run.
+        renderer.handle(LaunchCommand::SetClickRoute(away));
+        renderer.handle(LaunchCommand::SetMetronome { on: false, gain: None });
+        play(&mut renderer, 1, 512);
+        renderer.handle(LaunchCommand::SetClickRoute(ClickRoute::PreFader));
+        let (out, cue) = play(&mut renderer, 4, 512);
+        assert_eq!(peak(&out, 0, 2_048), 0.0, "{away:?}: no old click on the main output");
+        assert_eq!(peak(&cue, 0, 2_048), 0.0, "{away:?}: none on the cue");
+    }
+}
