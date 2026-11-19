@@ -64,6 +64,8 @@ mod input_tests;
 mod launcher;
 mod live;
 #[cfg(test)]
+mod live_mpe_tests;
+#[cfg(test)]
 mod live_tests;
 #[cfg(test)]
 mod loop_tests;

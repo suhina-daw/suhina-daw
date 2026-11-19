@@ -8,6 +8,50 @@ use crate::nodes::Waveform;
 use crate::{Connection as C, Node as N, NodeKind as K};
 use suhina_device_api::{ShapeKind, conformance};
 
+#[test]
+fn mpe_voice_groups_receive_independent_pitch_pressure_and_timbre_signals() {
+    use suhina_device_api::{NoteExpressionKind as Kind, NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    for (output, kind, a, b) in
+        [("pitch", Kind::Pitch, 12., -4.), ("pressure", Kind::Pressure, 0.2, 0.7), ("timbre", Kind::Timbre, 0.3, 0.8)]
+    {
+        let mut voice = DeviceGraph::new("org.test.mpe-voice", "Voice", DeviceRole::Instrument);
+        voice.nodes = vec![
+            N::new("voice", K::VoiceInput { controller: 1 }),
+            N::new("done", K::Constant { value: 0. }),
+            N::new("result", K::VoiceOutput),
+            N::audio_output("out"),
+        ];
+        voice.connections = vec![
+            C::ports("voice", output, "result", "in"),
+            C::ports("done", "out", "result", "finished"),
+            C::new("result", "out"),
+        ];
+        let mut graph = DeviceGraph::new("org.test.mpe-group", "Group", DeviceRole::Instrument);
+        graph.nodes =
+            vec![N::new("group", K::VoiceGroup { graph: voice.to_sd().unwrap(), voices: 2 }), N::audio_output("out")];
+        graph.connections = vec![C::new("group", "out")];
+        let mut device = audio(&graph);
+        let ids = [NoteInstanceId::from_parts(1, 1).unwrap(), NoteInstanceId::from_parts(1, 2).unwrap()];
+        for (id, value) in ids.into_iter().zip([a, b]) {
+            let mut expression = NoteExpressionState::NEUTRAL;
+            expression.set(kind, value);
+            device.note_instances().unwrap().event(id, E::On { key: 60, velocity: 1., expression }).unwrap();
+        }
+        let mut buffer = [0.; 34];
+        device.process(&ProcessContext::default(), &mut buffer);
+        assert!(buffer.iter().all(|sample| (*sample - (a + b) as f32).abs() < 1e-6), "{output}: {buffer:?}");
+        device.note_instances().unwrap().event(ids[0], E::Choke { key: 60 }).unwrap();
+        device.process(&ProcessContext::default(), &mut buffer);
+        assert!(buffer.iter().all(|sample| (*sample - b as f32).abs() < 1e-6));
+        let mut finished = [None; 2];
+        assert_eq!(device.note_instances().unwrap().drain_finished(&mut finished), 1);
+        assert_eq!(finished[0], Some(ids[0]));
+        device.reset();
+        assert_eq!(device.note_instances().unwrap().drain_finished(&mut finished), 1);
+        assert_eq!(finished[0], Some(ids[1]));
+    }
+}
+
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
 
 fn fixture(name: &str) -> DeviceGraph {

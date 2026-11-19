@@ -10,6 +10,11 @@ covers:
   - crates/device-api/src/note_expression/
   - crates/engine/src/live.rs
   - crates/midi/src/lib.rs
+  - crates/midi/src/mpe.rs
+  - crates/midi/src/mpe/
+  - crates/session/src/mpe_config.rs
+  - crates/session/src/midi.rs
+  - crates/engine/src/live_mpe_tests.rs
 ---
 
 # Per-note expression and MPE
@@ -21,17 +26,18 @@ and the shared instrument in [#1579](https://github.com/suhina-daw/suhina-daw/is
 [ADR 0039](../decisions/0039-per-note-expression.md) records the decisions.
 The shared API provides runtime identity allocation, validated musical expression values,
 atomic initial note state, explicit event-admission results, and an opt-in instrument capability
-with bounded retirement feedback. These are contract primitives; no built-in opts in on this
-branch. The current live path has ordinary notes, channel bend, pressure and controllers.
-End-to-end identified events, live MPE, recording, editable curves and plug-in adapters are not yet built.
-The rules below are planned behavior, not a claim that a controller already exercises them.
+with bounded retirement feedback. The live implementation carries identified notes through the
+engine to FM Synth and Sampler; a direct SDK voice-group instrument also exposes per-voice
+pitch (semitones), pressure and timbre signals. The native MIDI settings select off, automatic
+or manual expression mode per input. Recording expression, editable curves and plug-in-host
+adapters remain separate work; ordinary note recording does not capture these gestures yet.
 
 `Device::note_instances` returns `None` for an ordinary device. The validated
 `dispatch_note_instance` helper returns `Unsupported` instead of dropping a note. Accepted
 identified notes use `NoteInstanceDevice::event`; its result distinguishes capacity rejection,
 duplicate IDs and unknown occurrences. Hosts commit new mappings only after successful
 admission and drain final IDs into caller-owned storage. This endpoint will receive the same
-payload from the planned `NoteEvent::Instance` queue wrapper after the chain migrates; no
+payload from the `NoteEvent::Instance` queue wrapper; no
 second identity or expression representation is introduced for exported instruments.
 
 ## Runtime notes
@@ -62,7 +68,10 @@ chains use a visible ordinary-note compatibility path; they do not claim indepen
 ## Input and zones
 
 Input mode is per physical port: ordinary MIDI, automatic MPE, or manual MPE configuration.
-Ordinary mode does not activate a zone implicitly; automatic mode consumes valid RPN 6
+Off preserves the existing ordinary channel/key path, including mono, legato and retrigger
+allocation. Automatic and Manual enable identified occurrences and poly key pressure on
+channels outside an MPE zone (and on its manager). Off does not consume poly key pressure
+or activate a zone implicitly; automatic mode consumes valid RPN 6
 configuration. Manual mode shows both zone sizes and bend ranges and ignores automatic zone
 reconfiguration until the user selects automatic mode. Settings and changes are commands.
 Protocol channel numbers in code are 0..15; the UI displays 1..16.
@@ -90,11 +99,15 @@ Suhina's routing policies are:
   member bend, pressure and timbre are captured; subsequent member changes cannot move the
   sustained/releasing old note. Manager bend still changes sounding tails. Manager pressure
   and timbre are captured for released notes; active keys continue following them.
+  Releasing a key detaches its occurrence but does not erase the channel latch. Fresh neutral
+  messages before channel reuse initialize the new note neutrally without changing the old
+  tail. With no fresh controls, MPE 1.1 requires the last received values to initialize it.
 - More than one active key on a member channel is supported: member expression affects each
   active occurrence there. Repeated note-ons for the same port/channel/key are paired with
   note-offs oldest-first. A bounded per-source occurrence table, not a boolean key array,
   preserves the other occurrences and their tails.
-- Polyphonic key pressure in ordinary mode affects active occurrences of that channel/key.
+- Polyphonic key pressure on ordinary channels in Automatic/Manual mode affects active
+  occurrences of that channel/key.
   In MPE mode it is supported on the manager channel for that manager's own keys, and ignored
   on member channels as required by MPE 1.1. It never becomes channel pressure for other keys.
 - Manager sustain applies to its zone; member sustain is ignored in MPE mode. Physical key-up
@@ -110,6 +123,47 @@ Suhina's routing policies are:
 The router retains source provenance and timestamp for recording. It emits resolved musical
 events without allocating in the callback. It rejects an entire new note when there is no
 bounded lifetime slot. Overflow recovery must still terminate already accepted notes.
+
+The input worker conservatively retains up to 256 protocol occurrences per physical port;
+it has no per-track completion feedback. At capacity it chokes the oldest released occurrence
+before accepting a new one, never a held or pedal-held occurrence. Thus very long release
+tails can be cut when the protocol budget fills. Runtime IDs never wrap or get reused.
+The engine also bounds input occurrence and per-chain recipient tables; released entries
+are reclaimed with an explicit choke, and all-held exhaustion rejects a new occurrence.
+Device admission reserves final completion storage; the engine drains device completions at
+render-span boundaries. Those completions free device capacity, not the input worker's
+conservative protocol history. A live queue overflow sets an out-of-band atomic panic flag:
+the renderer discards the incomplete queue batch and terminates its existing notes.
+Per-chain recipient entries record delivery intent, not a promise of device admission. A
+device-capacity rejection starts no voice and owes no completion; the bounded recipient
+entry remains until the matching release/reclamation. There is no reverse admission channel
+to the physical input in this slice. Timestamped expression floods coalesce only the same
+ID/dimension; a new expression with no reserved control slot is dropped rather than being
+played before its note-on. Exhausting the note timeline invokes the same panic recovery.
+
+FM Synth retains its existing 64-frame internal control quantum and fixed-point numerical
+behavior. Event dispatch is sample-offset accurate, but audible FM changes take effect at
+the next internal quantum (at most 63 frames later). Sampler applies pitch at the exact next
+processing sample. Both keep the same result when the host changes its block partition.
+Neutral pressure preserves the old patch level; per-note pressure adds up to 6 dB and also
+feeds the FM pressure routing. Timbre shifts each enabled voice filter by up to two octaves
+in either direction; with the patch filter off that mapping has no effect.
+
+Pitch preserves runtime identity and the transposed key through release/choke, including
+equal-pitch occurrences and later parameter changes. Unmigrated MIDI effects, hosted plug-ins,
+layered SDK graphs and instruments without the capability use ordinary-note compatibility
+for the entire chain. Direct SDK voice-group graphs expose `VoiceInput.pitch` in semitones
+and `VoiceInput.timbre` in 0..1 without changing the legacy normalized `bend` output. Graphs
+with additional native consumers or transformed event routing do not advertise independent
+expression until their admission and final retirement can be aggregated safely.
+
+`midi.setMpe` takes a port name, `mode` (`off`, `automatic`, `manual`) and optional lower/upper
+member counts and member/manager bend ranges. It validates the whole configuration before
+closing/reopening only that port, so old occurrences are choked first. Unchanged values do
+not interrupt notes. `midi.inputs` reports saved configuration; automatic runtime zone changes
+follow the controller and are not persisted as manual choices. At most 256 saved inputs are
+retained. The MIDI settings' manual zone control shortens the other zone when required to
+make room; command clients must supply a nonoverlapping configuration explicitly.
 
 ## Note curves and editing
 

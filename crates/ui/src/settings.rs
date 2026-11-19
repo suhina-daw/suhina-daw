@@ -549,6 +549,8 @@ pub struct Settings {
     /// The MIDI input ports turned off, by name (Settings › MIDI, `midi.setInput`); every
     /// other port is on. One `midi_input_off` line each, since a port's name may hold commas.
     pub midi_inputs_off: Vec<String>,
+    /// Expression configuration retained by physical MIDI input name.
+    pub midi_mpe: std::collections::BTreeMap<String, suhina_session::MpeConfig>,
     /// Selecting a track arms it, so a MIDI controller plays what the user looks at (Settings ›
     /// MIDI, #834); off until the person turns it on.
     pub auto_arm: bool,
@@ -643,6 +645,7 @@ impl Default for Settings {
             audio_input: "off".into(),
             audio_device_inputs: Default::default(),
             midi_inputs_off: Vec::new(),
+            midi_mpe: std::collections::BTreeMap::new(),
             zoom: ZOOM,
             backup: suhina_session::backup::Interval::default(),
             backup_clean_up: true,
@@ -830,6 +833,13 @@ impl Settings {
             + &format!("audio_devices = {}\n", serde_json::json!(self.audio_devices))
             + &format!("audio_device_inputs = {}\n", serde_json::json!(self.audio_device_inputs))
             + &self.midi_inputs_off.iter().map(|port| format!("midi_input_off = {port}\n")).collect::<String>()
+            + &self
+                .midi_mpe
+                .iter()
+                .map(|(port, config)| {
+                    format!("midi_mpe = {}\n", serde_json::json!({"port":port,"config":config.to_json()}))
+                })
+                .collect::<String>()
     }
 
     /// Reads a settings file. Unknown keys and values are skipped with a warning and leave the
@@ -915,6 +925,17 @@ impl Settings {
                 ("midi_input_off", port) if !port.is_empty() => {
                     if !settings.midi_inputs_off.iter().any(|p| p == port) {
                         settings.midi_inputs_off.push(port.to_string());
+                    }
+                }
+                ("midi_mpe", value) if value.len() <= 4096 => {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(value)
+                        && let Some(port) = value.get("port").and_then(serde_json::Value::as_str)
+                        && !port.is_empty()
+                        && port.len() <= 1024
+                        && let Some(config) = value.get("config").and_then(suhina_session::MpeConfig::from_json)
+                        && (settings.midi_mpe.len() < 256 || settings.midi_mpe.contains_key(port))
+                    {
+                        settings.midi_mpe.insert(port.to_owned(), config);
                     }
                 }
                 _ => {

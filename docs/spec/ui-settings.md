@@ -75,6 +75,7 @@ what is inside it).
 | Audio | Cue | Headphone output: Cue output, Cue volume |
 | Audio | Advanced | Render threads (Off, Automatic, 2, 4, 8; [render threads](render-threads.md)) |
 | MIDI | MIDI inputs | Each MIDI input port, on or off |
+| MIDI | Expression | MPE mode per input (Off, Automatic, Manual); manual lower/upper member counts and member/manager bend ranges. Independent expression works in FM Synth, Sampler and direct SDK voice groups; other chains use ordinary-note compatibility. |
 | MIDI | Arming | Arm selected track |
 | Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |
 | Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |

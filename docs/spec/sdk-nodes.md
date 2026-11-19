@@ -281,7 +281,7 @@ at 256 MiB and manual slice boundaries at 4096 per map. These limits are checked
 
 ## Named signal outputs
 
-In addition to out/left/right aliases, native kernels may expose up to eight named stereo
+In addition to out/left/right aliases, native kernels may expose up to ten named stereo
 signal outputs. The interpreter snapshots them at every rendered frame, so trigger/release
 pulses, envelope completion and per-voice controls keep exact timing across block boundaries.
 `NativeNode::output` reads one auxiliary output from the most recent process call, whose length
@@ -306,7 +306,9 @@ Instrument graphs may route MIDI Input through KeyRange, VelocityRange, Transpos
 into instruments or VoiceInput via midi-typed ports. Events retain input order at the same
 frame; event edges are acyclic. Unconnected native event inputs retain the legacy global
 stream. MIDI value nodes remain legacy global controls. VoiceInput emits key, velocity, gate,
-trigger/release one-frame pulses, bend, pressure and selected controller values. Explicit
+trigger/release one-frame pulses, bend, pressure and selected controller values. Its appended
+`pitch` output is native per-note pitch in semitones and `timbre` is 0..1 with neutral 0.5;
+the existing `bend` output remains normalized channel bend. Explicit
 MidiController, PitchBend and Pressure nodes provide the same channel controls. Sustain defers
 note-offs until controller 64 falls below 0.5; note-on zero means note-off. VelocityRange remembers
 accepted keys so rejected notes cannot lose their corresponding releases. Fixed transpose reuses
@@ -318,7 +320,7 @@ reports completion to its owner. Event outputs cannot connect to signal/resource
 ## Private voice graphs and components
 
 VoiceGroup contains an embedded instrument graph and 1..32 private instances, sums their
-outputs, and requires one VoiceOutput in that graph. Note identity is MIDI key: a repeated
+outputs, and requires one VoiceOutput in that graph. Ordinary note identity is MIDI key: a repeated
 note-on retriggers that key's voice; otherwise allocation uses a free voice, then the oldest
 voice (ties use slot order). A stolen voice fades from its last output over 64 samples.
 Controller 64 defers releases; retrigger cancels a deferred release. Controllers, pitch bend
@@ -326,6 +328,15 @@ and pressure are inherited by newly allocated voices. Completion frees a slot; n
 created or retired on the audio thread. Nested preparation caps depth at four, expanded nodes
 at 4096, expanded voice capacity at 128 and total delay storage at the existing delay budget.
 A coarse Sampler consumes 32 of that capacity; a TimeStretchPlayer consumes one. Private graphs cannot contain another VoiceGroup.
+
+A direct single VoiceGroup instrument can opt into the shared identified-note endpoint
+([MPE](mpe.md)). Equal-key occurrences use separate voices, initial expression reaches the
+private graph before its first sample, and targeted off/choke never changes another ID.
+Native admission rejects a new occurrence at its voice or retirement limit; the ordinary
+stealing policy remains unchanged. Final completion is reported after VoiceOutput ends or
+the occurrence is choked. Graphs with other native consumers or transformed outer event
+routing stay in ordinary compatibility until their layered admission and retirement are
+implemented; they do not advertise the endpoint.
 
 Component embeds a named, positive-version graph snapshot including its parameters and optional
 panel. Its stable public ports are in/control1/control2/control3 signals, optional MIDI events and stereo out;

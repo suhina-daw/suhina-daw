@@ -4,7 +4,10 @@
 //! Voice controls and explicit completion, independent of instrument DSP.
 use super::{NodeInfo, PortInfo};
 use crate::{NodeKind, ProcessContext, native_node::NativeNode};
-use suhina_device_api::NoteEvent;
+use suhina_device_api::{
+    NoteEvent, NoteExpressionKind, NoteInstanceDevice, NoteInstanceDispatchError, NoteInstanceEvent, NoteInstanceId,
+    NoteLifetimes,
+};
 pub(crate) const VOICE_INPUT: NodeInfo = NodeInfo {
     kind: "voice_input",
     name: "VoiceInput",
@@ -22,6 +25,8 @@ pub(crate) const VOICE_INPUT: NodeInfo = NodeInfo {
         "bend",
         "pressure",
         "controller",
+        "pitch",
+        "timbre",
     ],
     description: "Per-voice key, gate, event pulses and channel controls.",
     configuration: "see voice contracts",
@@ -79,9 +84,11 @@ struct Control {
     release: bool,
     bend: f32,
     pressure: f32,
+    pitch: f32,
+    timbre: f32,
     controller: f32,
     finished: bool,
-    signals: [[[f32; 2]; 64]; 8],
+    signals: [[[f32; 2]; 64]; 10],
 }
 pub(crate) fn prepare_control(kind: &NodeKind, _: f64) -> Option<Box<dyn NativeNode>> {
     matches!(
@@ -102,9 +109,11 @@ pub(crate) fn prepare_control(kind: &NodeKind, _: f64) -> Option<Box<dyn NativeN
             release: false,
             bend: 0.,
             pressure: 0.,
+            pitch: 0.,
+            timbre: 0.5,
             controller: 0.,
             finished: false,
-            signals: [[[0.; 2]; 64]; 8],
+            signals: [[[0.; 2]; 64]; 10],
         }) as Box<dyn NativeNode>
     })
 }
@@ -121,6 +130,8 @@ impl NativeNode for Control {
                 self.bend,
                 self.pressure,
                 self.controller,
+                self.pitch,
+                self.timbre,
             ];
             for (port, value) in values.iter().enumerate() {
                 if let Some(row) = self.signals[port].get_mut(frame) {
@@ -154,6 +165,21 @@ impl NativeNode for Control {
             return;
         };
         match event {
+            NoteEvent::Instance { event: NoteInstanceEvent::On { key, velocity, .. }, .. }
+                if key <= 127 && velocity.is_finite() =>
+            {
+                self.key = key;
+                self.velocity = velocity.clamp(0., 1.);
+                self.gate = true;
+                self.trigger = true;
+            }
+            NoteEvent::Instance { event: NoteInstanceEvent::Expression { kind, value }, .. } if value.is_finite() => {
+                match kind {
+                    NoteExpressionKind::Pitch => self.pitch = value.clamp(-256., 256.) as f32,
+                    NoteExpressionKind::Pressure => self.pressure = value.clamp(0., 1.) as f32,
+                    NoteExpressionKind::Timbre => self.timbre = value.clamp(0., 1.) as f32,
+                }
+            }
             NoteEvent::On { key, velocity } => {
                 self.key = key;
                 self.velocity = velocity;
@@ -194,6 +220,8 @@ impl NativeNode for Control {
         self.release = false;
         self.bend = 0.;
         self.pressure = 0.;
+        self.pitch = 0.;
+        self.timbre = 0.5;
         self.controller = 0.;
         self.finished = false;
         self.signals.fill([[0.; 2]; 64]);
@@ -221,6 +249,8 @@ pub(crate) const VOICE_GROUP: NodeInfo = NodeInfo {
 };
 
 struct Voice {
+    instance: Option<NoteInstanceId>,
+    retiring_instance: Option<NoteInstanceId>,
     graph: crate::PreparedEffect,
     active: bool,
     held: bool,
@@ -233,6 +263,7 @@ struct Voice {
     fade: usize,
 }
 struct Group {
+    lifetimes: NoteLifetimes<64>,
     voices: Vec<Voice>,
     controllers: [f32; 128],
     bend: f32,
@@ -244,9 +275,12 @@ struct Group {
 }
 pub(crate) fn group(graphs: Vec<crate::PreparedEffect>, rate: f64) -> Box<dyn NativeNode> {
     Box::new(Group {
+        lifetimes: NoteLifetimes::default(),
         voices: graphs
             .into_iter()
             .map(|graph| Voice {
+                instance: None,
+                retiring_instance: None,
                 graph,
                 active: false,
                 held: false,
@@ -269,6 +303,9 @@ pub(crate) fn group(graphs: Vec<crate::PreparedEffect>, rate: f64) -> Box<dyn Na
     })
 }
 impl NativeNode for Group {
+    fn note_instances(&mut self) -> Option<&mut dyn NoteInstanceDevice> {
+        Some(self)
+    }
     fn prepare_block(&mut self, value: &ProcessContext) {
         self.context = super::component::context(value);
         for voice in &mut self.voices {
@@ -299,10 +336,21 @@ impl NativeNode for Group {
                 }
             }
             if voice.graph.voice_finished() == Some(true) {
+                if let Some(id) = voice.instance.take() {
+                    self.lifetimes.finish(id);
+                }
+                if let Some(id) = voice.retiring_instance.take() {
+                    self.lifetimes.finish(id);
+                }
                 voice.active = false;
                 voice.held = false;
                 voice.pending = false;
                 voice.last = [0.; 2];
+            }
+            if voice.fade == 0
+                && let Some(id) = voice.retiring_instance.take()
+            {
+                self.lifetimes.finish(id);
             }
         }
         for (sample, value) in output.iter_mut().zip(sum) {
@@ -327,7 +375,7 @@ impl NativeNode for Group {
                 let index = self
                     .voices
                     .iter()
-                    .position(|v| v.active && v.key == key)
+                    .position(|v| v.active && v.key == key && v.instance.is_none())
                     .or_else(|| self.voices.iter().position(|v| !v.active))
                     .or_else(|| self.voices.iter().enumerate().min_by_key(|(_, v)| v.age).map(|(i, _)| i));
                 let Some(index) = index else {
@@ -335,6 +383,7 @@ impl NativeNode for Group {
                 };
                 self.age = self.age.saturating_add(1);
                 let voice = &mut self.voices[index];
+                voice.retiring_instance = voice.instance.take().or(voice.retiring_instance);
                 voice.fade_from = if voice.active { voice.last } else { [0.; 2] };
                 voice.fade = if voice.active { 64 } else { 0 };
                 voice.graph.reset();
@@ -354,7 +403,7 @@ impl NativeNode for Group {
             }
             NoteEvent::Off { key, velocity } => {
                 for voice in &mut self.voices {
-                    if voice.active && voice.key == key {
+                    if voice.active && voice.key == key && voice.instance.is_none() {
                         voice.held = false;
                         if self.pedal {
                             voice.pending = true;
@@ -420,12 +469,15 @@ impl NativeNode for Group {
         Some(!self.voices.iter().any(|v| v.active))
     }
     fn reset(&mut self) {
+        self.lifetimes.finish_all();
         self.controllers.fill(0.);
         self.bend = 0.;
         self.pressure = 0.;
         self.pedal = false;
         self.age = 0;
         for voice in &mut self.voices {
+            voice.instance = None;
+            voice.retiring_instance = None;
             voice.graph.reset();
             voice.active = false;
             voice.held = false;
@@ -436,5 +488,64 @@ impl NativeNode for Group {
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+impl NoteInstanceDevice for Group {
+    fn event(&mut self, id: NoteInstanceId, event: NoteInstanceEvent) -> Result<(), NoteInstanceDispatchError> {
+        let event = event.validated().ok_or(NoteInstanceDispatchError::InvalidEvent)?;
+        if let NoteInstanceEvent::On { key, velocity, expression } = event {
+            if self.lifetimes.contains(id) {
+                return Err(NoteInstanceDispatchError::AlreadyActive);
+            }
+            let index = self.voices.iter().position(|v| !v.active).ok_or(NoteInstanceDispatchError::Capacity)?;
+            self.lifetimes.admit(id)?;
+            let voice = &mut self.voices[index];
+            voice.graph.reset();
+            voice.instance = Some(id);
+            voice.retiring_instance = None;
+            voice.key = key;
+            voice.active = true;
+            voice.held = true;
+            voice.pending = false;
+            voice.last = [0.; 2];
+            voice.fade = 0;
+            self.age = self.age.saturating_add(1);
+            voice.age = self.age;
+            voice.graph.apply_event(NoteEvent::On { key, velocity: velocity.max(f32::MIN_POSITIVE) });
+            voice.graph.apply_event(NoteEvent::Instance { id, event });
+            for kind in [NoteExpressionKind::Pitch, NoteExpressionKind::Pressure, NoteExpressionKind::Timbre] {
+                voice.graph.apply_event(NoteEvent::Instance {
+                    id,
+                    event: NoteInstanceEvent::Expression { kind, value: expression.value(kind) },
+                });
+            }
+            return Ok(());
+        }
+        let voice = self
+            .voices
+            .iter_mut()
+            .find(|v| v.active && v.instance == Some(id))
+            .ok_or(NoteInstanceDispatchError::UnknownInstance)?;
+        match event {
+            NoteInstanceEvent::Expression { .. } => voice.graph.apply_event(NoteEvent::Instance { id, event }),
+            NoteInstanceEvent::Off { velocity, .. } => {
+                voice.held = false;
+                voice.graph.apply_event(NoteEvent::Off { key: voice.key, velocity });
+            }
+            NoteInstanceEvent::Choke { .. } => {
+                voice.graph.reset();
+                voice.active = false;
+                voice.held = false;
+                voice.instance = None;
+                self.lifetimes.finish(id);
+            }
+            NoteInstanceEvent::On { .. } => {}
+        }
+        Ok(())
+    }
+
+    fn drain_finished(&mut self, output: &mut [Option<NoteInstanceId>]) -> usize {
+        self.lifetimes.drain(output)
     }
 }

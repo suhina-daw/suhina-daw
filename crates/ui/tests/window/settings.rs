@@ -226,6 +226,37 @@ fn settings_audio_lists_the_midi_inputs_and_one_turned_off_is_saved() {
 }
 
 #[test]
+fn settings_mpe_configures_one_port_through_the_command_and_saves_it() {
+    let mut app = demo_app();
+    app.projects_mut().set_midi_system(std::sync::Arc::new(StandMidi(vec!["Keys In".into(), "Pads In".into()])));
+    let mut harness = window(app);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    harness.get_by_label("Settings page: MIDI").click();
+    harness.run_steps(3);
+    harness.get_by_label("MPE mode Keys In: Off").click();
+    harness.run_steps(2);
+    harness.get_by_label("Automatic").click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().projects().midi_mpe()["Keys In"].mode, suhina_session::MpeMode::Automatic);
+    assert!(!harness.state().projects().midi_mpe().contains_key("Pads In"));
+    let saved = harness.state_mut().take_changed_settings().unwrap();
+    assert_eq!(saved.midi_mpe["Keys In"].mode, suhina_session::MpeMode::Automatic);
+    harness.get_by_label("MPE mode Keys In: Automatic").click();
+    harness.run_steps(2);
+    harness.get_by_label("Manual").click();
+    harness.run_steps(3);
+    harness.get_by_label("Lower MPE members Keys In: 15").click();
+    harness.run_steps(2);
+    harness.get_by_label("4").click();
+    harness.run_steps(3);
+    let config = harness.state().projects().midi_mpe()["Keys In"];
+    assert_eq!(config.mode, suhina_session::MpeMode::Manual);
+    assert_eq!(config.lower_members, 4);
+    assert_eq!(harness.state_mut().take_changed_settings().unwrap().midi_mpe["Keys In"], config);
+}
+
+#[test]
 fn the_waveform_zoom_draws_every_audio_clip_larger_and_is_kept_as_a_setting() {
     let mut harness = arrangement_app();
     assert_eq!(harness.state().arrangement().waveform_zoom, 1.0);

@@ -21,11 +21,14 @@
 //! pedal are kept per source, so one controller's pedal does not hold another's notes. Nothing
 //! here allocates, locks or frees on the render thread.
 
-use std::sync::OnceLock;
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::Instant;
 
 use rtrb::{Consumer, Producer, RingBuffer};
-use suhina_device_api::NoteEvent;
+use suhina_device_api::{NoteEvent, NoteInstanceEvent, NoteInstanceId};
 use suhina_model::TrackId;
 
 use crate::chain::Chain;
@@ -93,6 +96,11 @@ impl StampClock {
 /// What a MIDI controller played.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LiveEvent {
+    /// A protocol adapter has resolved an occurrence and its musical expression.
+    Instance {
+        id: NoteInstanceId,
+        event: NoteInstanceEvent,
+    },
     /// A key went down; `velocity` is from 0 to 1 (a note on of velocity 0 is a [`LiveEvent::NoteOff`]).
     NoteOn {
         key: u8,
@@ -170,6 +178,7 @@ impl LiveFilter {
 /// The sending end of the live-note queue, for the thread a MIDI driver calls back on.
 pub struct LiveSender {
     producer: Producer<(LiveSource, LiveEvent, u64)>,
+    overflow: Arc<AtomicBool>,
 }
 
 impl LiveSender {
@@ -190,7 +199,15 @@ impl LiveSender {
     /// no time): it sounds a fixed delay after that time (#269). Returns false when it was
     /// dropped, as [`LiveSender::send_from`] does.
     pub fn send_at(&mut self, source: LiveSource, event: LiveEvent, time: u64) -> bool {
-        !self.producer.is_abandoned() && self.producer.push((source, event, time)).is_ok()
+        if self.producer.is_abandoned() {
+            return false;
+        }
+        if self.producer.push((source, event, time)).is_ok() {
+            true
+        } else {
+            self.overflow.store(true, Ordering::Release);
+            false
+        }
     }
 
     /// The renderer still takes notes from this sender.
@@ -220,6 +237,16 @@ struct Keys {
     bent: bool,
     pressed: bool,
 }
+
+#[derive(Clone, Copy)]
+struct Instance {
+    source: LiveSource,
+    id: NoteInstanceId,
+    key: u8,
+    released: bool,
+}
+
+const MAX_LIVE_INSTANCES: usize = 1024;
 
 impl Keys {
     const EMPTY: Self = Self {
@@ -262,6 +289,8 @@ enum Place {
     Own,
     /// Nowhere: it plays at once.
     Now,
+    /// An expression cannot overtake its own note-on. Under overload it is discarded.
+    Discard,
 }
 
 /// `a` and `b` move the same control (one controller, the pitch bend or the pressure), so a
@@ -270,13 +299,23 @@ fn same_control(a: &LiveEvent, b: &LiveEvent) -> bool {
     match (a, b) {
         (LiveEvent::Controller { number: x, .. }, LiveEvent::Controller { number: y, .. }) => x == y,
         (LiveEvent::PitchBend(_), LiveEvent::PitchBend(_)) | (LiveEvent::Pressure(_), LiveEvent::Pressure(_)) => true,
+        (
+            LiveEvent::Instance { id: a, event: NoteInstanceEvent::Expression { kind: x, .. } },
+            LiveEvent::Instance { id: b, event: NoteInstanceEvent::Expression { kind: y, .. } },
+        ) => a == b && x == y,
         _ => false,
     }
 }
 
 /// `event` moves a control rather than a key or the pedal.
 fn is_control(event: &LiveEvent) -> bool {
-    matches!(event, LiveEvent::Controller { .. } | LiveEvent::PitchBend(_) | LiveEvent::Pressure(_))
+    matches!(
+        event,
+        LiveEvent::Controller { .. }
+            | LiveEvent::PitchBend(_)
+            | LiveEvent::Pressure(_)
+            | LiveEvent::Instance { event: NoteInstanceEvent::Expression { .. }, .. }
+    )
 }
 
 /// A note taken from the queue, waiting for its frame.
@@ -299,6 +338,7 @@ struct Cadence {
 /// The render thread's end: the queue, the armed tracks with their inputs, and each source's
 /// keys.
 pub(crate) struct Live {
+    overflow: Arc<AtomicBool>,
     consumer: Option<Consumer<(LiveSource, LiveEvent, u64)>>,
     armed: [(TrackId, LiveFilter); MAX_ARMED],
     armed_count: usize,
@@ -306,6 +346,7 @@ pub(crate) struct Live {
     monitored_count: usize,
     keys: [Keys; MAX_SOURCES],
     keys_count: usize,
+    instances: [Option<Instance>; MAX_LIVE_INSTANCES],
     /// Stamped notes whose frame is in a later block, in the order they came.
     waiting: [Waiting; MAX_WAITING],
     waiting_count: usize,
@@ -333,6 +374,7 @@ impl Live {
         }
         self.keys.fill(Keys::EMPTY);
         self.keys_count = 0;
+        self.instances.fill(None);
         self.waiting_count = 0;
         self.next_due = u64::MAX;
         self.cadence = None;
@@ -340,6 +382,7 @@ impl Live {
 
     pub(crate) fn new(sample_rate: u32) -> Self {
         Self {
+            overflow: Arc::new(AtomicBool::new(false)),
             consumer: None,
             armed: [(TrackId(0), LiveFilter::default()); MAX_ARMED],
             armed_count: 0,
@@ -347,6 +390,7 @@ impl Live {
             monitored_count: 0,
             keys: [Keys::EMPTY; MAX_SOURCES],
             keys_count: 0,
+            instances: [None; MAX_LIVE_INSTANCES],
             waiting: [Waiting { at: 0, source: LiveSource::default(), event: LiveEvent::AllNotesOff }; MAX_WAITING],
             waiting_count: 0,
             next_due: u64::MAX,
@@ -362,7 +406,7 @@ impl Live {
     pub(crate) fn sender(&mut self) -> LiveSender {
         let (producer, consumer) = RingBuffer::new(LIVE_QUEUE);
         self.consumer = Some(consumer);
-        LiveSender { producer }
+        LiveSender { producer, overflow: Arc::clone(&self.overflow) }
     }
 
     /// The render thread is about to render renderer frame `position` at `now` on the live
@@ -476,6 +520,14 @@ impl Live {
         let Some(before) = before else { return };
         let keys = self.keys.get(..self.keys_count).unwrap_or_default();
         for chain in chains.iter_mut().filter(|c| c.instrument && c.track == track) {
+            for note in self
+                .instances
+                .iter()
+                .flatten()
+                .filter(|n| before.takes(n.source) && !(monitoring && input.takes(n.source)))
+            {
+                chain.live_instance(frame, note.id, NoteInstanceEvent::Choke { key: note.key });
+            }
             for source in keys.iter().filter(|k| before.takes(k.source) && !(monitoring && input.takes(k.source))) {
                 for key in 0..=127u8 {
                     if source.sounding(key) {
@@ -510,6 +562,23 @@ impl Live {
     /// block's first frame; a stamped one waits for its frame ([`Live::frame`]). Call it once
     /// the chains have begun the block.
     pub(crate) fn receive(&mut self, chains: &mut [Chain], recorder: &mut Recorder, position: u64) {
+        if self.overflow.swap(false, Ordering::AcqRel) {
+            // A dropped off must never leave a voice held. This flag cannot itself be lost
+            // behind a full queue. Discard the incomplete ordered batch and end its voices.
+            for _ in 0..LIVE_QUEUE {
+                if self.consumer.as_mut().is_none_or(|queue| queue.pop().is_err()) {
+                    break;
+                }
+            }
+            for chain in chains.iter_mut().filter(|chain| chain.instrument) {
+                chain.release_all(0);
+            }
+            self.instances.fill(None);
+            self.keys.fill(Keys::EMPTY);
+            self.keys_count = 0;
+            self.waiting_count = 0;
+            self.next_due = u64::MAX;
+        }
         // Bounded: what arrives while this runs waits for the next block.
         for _ in 0..LIVE_QUEUE {
             let Some(Ok((source, event, time))) = self.consumer.as_mut().map(Consumer::pop) else { break };
@@ -527,7 +596,7 @@ impl Live {
             let at = at.max(after);
             let place =
                 if at > position && is_control(&event) { self.place_control(source, event) } else { Place::Own };
-            if place == Place::Merged {
+            if matches!(place, Place::Merged | Place::Discard) {
                 continue;
             }
             if at > position
@@ -538,6 +607,12 @@ impl Live {
                 self.waiting_count += 1;
                 self.next_due = self.next_due.min(at);
                 continue;
+            }
+            if at > position && matches!(event, LiveEvent::Instance { .. }) {
+                // A full note timeline cannot dispatch an off before its waiting on.
+                // End this incomplete batch through the non-droppable panic path.
+                self.overflow.store(true, Ordering::Release);
+                break;
             }
             self.play(chains, recorder, source, event, 0, position);
         }
@@ -556,7 +631,9 @@ impl Live {
             return Place::Own;
         }
         let same = waiting.iter().rposition(|w| w.source == source && same_control(&w.event, &event));
-        let Some(slot) = same.and_then(|index| self.waiting.get_mut(index)) else { return Place::Now };
+        let Some(slot) = same.and_then(|index| self.waiting.get_mut(index)) else {
+            return if matches!(event, LiveEvent::Instance { .. }) { Place::Discard } else { Place::Now };
+        };
         slot.event = event;
         Place::Merged
     }
@@ -599,6 +676,10 @@ impl Live {
     ) {
         #[cfg(test)]
         self.played.push((position, event));
+        if let LiveEvent::Instance { id, event } = event {
+            self.play_instance(chains, recorder, source, id, event, frame, position);
+            return;
+        }
         let Some(slot) = self.keys_of(source) else { return };
         let Self { armed, armed_count, monitored, monitored_count, keys, .. } = self;
         let armed = armed.get(..*armed_count).unwrap_or_default();
@@ -614,6 +695,7 @@ impl Live {
                     && monitored.iter().any(|(t, f)| *t == c.track && f.takes(source))
             });
         match event {
+            LiveEvent::Instance { .. } => {}
             LiveEvent::NoteOn { key, velocity } => {
                 let Some(held) = keys.held.get_mut(usize::from(key)) else { return };
                 *held = true;
@@ -707,6 +789,80 @@ impl Live {
                 }
                 *keys = Keys { source, ..Keys::EMPTY };
             }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn play_instance(
+        &mut self,
+        chains: &mut [Chain],
+        recorder: &mut Recorder,
+        source: LiveSource,
+        id: NoteInstanceId,
+        event: NoteInstanceEvent,
+        frame: usize,
+        position: u64,
+    ) {
+        let Some(event) = event.validated() else {
+            return;
+        };
+        let existing = self.instances.iter().position(|n| n.is_some_and(|n| n.id == id && n.source == source));
+        let index = match event {
+            NoteInstanceEvent::On { key, .. } => {
+                if existing.is_some() {
+                    return;
+                }
+                let Some(index) = self
+                    .instances
+                    .iter()
+                    .position(Option::is_none)
+                    .or_else(|| self.instances.iter().position(|n| n.is_some_and(|n| n.released)))
+                else {
+                    return;
+                };
+                if let Some(old) = self.instances[index] {
+                    for chain in chains.iter_mut().filter(|c| c.instrument) {
+                        chain.live_instance(frame, old.id, NoteInstanceEvent::Choke { key: old.key });
+                    }
+                }
+                self.instances[index] = Some(Instance { source, id, key, released: false });
+                index
+            }
+            _ => match existing {
+                Some(index) => index,
+                None => return,
+            },
+        };
+        for chain in chains.iter_mut().filter(|c| {
+            c.instrument
+                && !(c.implicit_tones && c.tones_off)
+                && self
+                    .monitored
+                    .get(..self.monitored_count)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|(t, f)| *t == c.track && f.takes(source))
+        }) {
+            chain.live_instance(frame, id, event);
+        }
+        let recorded = match event {
+            NoteInstanceEvent::On { key, velocity, .. } => Some((key, Some(velocity))),
+            NoteInstanceEvent::Off { key, .. } | NoteInstanceEvent::Choke { key } => Some((key, None)),
+            _ => None,
+        };
+        if let Some((key, velocity)) = recorded {
+            for (track, _) in self.armed().iter().filter(|(_, f)| f.takes(source)) {
+                recorder.note(*track, position, key, velocity);
+            }
+        }
+        match event {
+            NoteInstanceEvent::Off { .. } => {
+                if let Some(note) = &mut self.instances[index] {
+                    note.released = true;
+                }
+            }
+            NoteInstanceEvent::Choke { .. } => self.instances[index] = None,
+            _ => {}
         }
     }
 }

@@ -128,6 +128,20 @@ impl Device for SineTones {
     /// every tone on all-notes-off.
     fn event(&mut self, event: NoteEvent) {
         match event {
+            // This legacy instrument has no native capability; the engine selects ordinary
+            // compatibility before it. Keep direct calls playable without claiming expression.
+            NoteEvent::Instance { event: suhina_device_api::NoteInstanceEvent::On { key, velocity, .. }, .. }
+                if key <= 127 && velocity.is_finite() =>
+            {
+                self.start(key, velocity)
+            }
+            NoteEvent::Instance {
+                event:
+                    suhina_device_api::NoteInstanceEvent::Off { key, .. }
+                    | suhina_device_api::NoteInstanceEvent::Choke { key },
+                ..
+            } => self.release(key),
+            NoteEvent::Instance { .. } => {}
             NoteEvent::On { key, velocity } if key <= 127 && velocity > 0.0 => self.start(key, velocity),
             NoteEvent::On { key, .. } | NoteEvent::Off { key, .. } => self.release(key),
             NoteEvent::AllNotesOff => {

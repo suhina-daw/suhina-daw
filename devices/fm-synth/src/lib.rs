@@ -22,6 +22,7 @@
 
 mod core;
 mod env;
+mod expression;
 mod ext;
 mod kernel;
 mod lfo;
@@ -32,11 +33,14 @@ mod voice;
 mod wave;
 
 #[cfg(test)]
+mod expression_tests;
+#[cfg(test)]
 mod tests;
 
 use suhina_device_api::{
-    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ProcessContext, Role,
-    check_sample_rate, controller,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, NoteExpressionKind, NoteExpressionState,
+    NoteInstanceDevice, NoteInstanceDispatchError, NoteInstanceEvent, NoteInstanceId, NoteLifetimes, ParamBank,
+    ProcessContext, Role, check_sample_rate, controller,
 };
 use suhina_dsp::OnePole;
 
@@ -63,6 +67,10 @@ const RANDOM_SEED: u32 = 0x9e37_79b9;
 /// A voice and the key it plays.
 #[derive(Debug, Clone, Copy)]
 struct Slot {
+    instance: Option<NoteInstanceId>,
+    retiring_instance: Option<NoteInstanceId>,
+    expression: NoteExpressionState,
+    detune: i32,
     note: Note,
     /// The key as played, before transposition: what a release is matched against.
     key: u8,
@@ -115,6 +123,10 @@ fn mix(sum: &mut [[f32; 2]; N], out: &[f32; N], gains: [f32; 2], gain: f32, pan:
 impl Default for Slot {
     fn default() -> Self {
         Self {
+            instance: None,
+            retiring_instance: None,
+            expression: NoteExpressionState::NEUTRAL,
+            detune: 0,
             note: Note::default(),
             key: 0,
             sounding: -1,
@@ -132,6 +144,7 @@ impl Default for Slot {
 }
 
 pub struct FmSynth {
+    lifetimes: NoteLifetimes<64>,
     params: ParamBank<COUNT>,
     patch: Patch,
     controllers: Controllers,
@@ -184,6 +197,10 @@ impl Default for FmSynth {
 }
 
 impl FmSynth {
+    /// Ordinary device event entry point; identified callers use `NoteInstanceDevice`.
+    pub fn event(&mut self, event: NoteEvent) {
+        Device::event(self, event);
+    }
     pub fn new() -> Self {
         Self::at(DEFAULT_SAMPLE_RATE)
     }
@@ -198,6 +215,7 @@ impl FmSynth {
     fn at(sample_rate: f64) -> Self {
         wave::prepare_bank();
         let mut synth = Self {
+            lifetimes: NoteLifetimes::default(),
             params: ParamBank::new(&PARAMS),
             patch: Patch::default(),
             controllers: Controllers::default(),
@@ -413,6 +431,15 @@ impl FmSynth {
     }
 
     fn key_down(&mut self, key: u8, velocity: i32) {
+        self.key_down_at(key, velocity, None);
+    }
+
+    fn key_down_at(
+        &mut self,
+        key: u8,
+        velocity: i32,
+        identified: Option<(usize, NoteInstanceId, NoteExpressionState)>,
+    ) {
         let sounding = (i32::from(key) + self.patch.transpose()).clamp(0, 127);
         // The LFO starts over with the first key of a phrase.
         if !self.slots.iter().any(|s| s.down) {
@@ -421,9 +448,11 @@ impl FmSynth {
         // One voice plays legato: a key pressed over a held one moves the pitch, the envelopes
         // run on.
         if self.voices == 1
+            && identified.is_none()
             && let Some(slot) = self.slots.first_mut()
             && slot.live
             && slot.down
+            && slot.instance.is_none()
             && slot.note.is_playing()
         {
             slot.key = key;
@@ -434,7 +463,7 @@ impl FmSynth {
             }
             return;
         }
-        let index = self.pick_voice(sounding);
+        let index = identified.map_or_else(|| self.pick_voice(sounding), |(index, _, _)| index);
         let glide = self.controllers.portamento && self.controllers.portamento_time > 0;
         // A glide starts from wherever the previous note's pitch is now.
         let glide_from = self
@@ -466,6 +495,10 @@ impl FmSynth {
         // A voice taken over while it sounds keeps its phases, so the change does not click.
         let was_sounding = slot.live && slot.note.is_playing();
         *slot = Slot {
+            instance: identified.map(|(_, id, _)| id),
+            retiring_instance: slot.instance.or(slot.retiring_instance),
+            expression: identified.map_or(NoteExpressionState::NEUTRAL, |(_, _, expression)| expression),
+            detune: (spread * SPREAD_DETUNE) as i32,
             key,
             sounding,
             velocity,
@@ -503,7 +536,7 @@ impl FmSynth {
     fn key_up(&mut self, key: u8) {
         let sustain = self.sustain;
         let tables = &self.tables;
-        if let Some(slot) = self.slots.iter_mut().find(|s| s.down && s.key == key) {
+        if let Some(slot) = self.slots.iter_mut().find(|s| s.down && s.key == key && s.instance.is_none()) {
             slot.down = false;
             if sustain {
                 slot.sustained = true;
@@ -537,6 +570,7 @@ impl FmSynth {
     }
 
     fn render_block(&mut self) {
+        self.finish_instances();
         // Knobs glide while something sounds; with nothing sounding a change is simply there.
         let share = if self.slots.iter().any(|s| s.live) {
             (1.0 - (-(N as f64) / (self.sample_rate * GLIDE_SECONDS)).exp()) as f32
@@ -586,16 +620,32 @@ impl FmSynth {
         let lfo = self.lfo.next(&self.tables);
         let delay = self.lfo.delay();
         let mut sum = [[0.0f32; 2]; N];
-        for slot in self.slots.iter_mut().filter(|s| s.live && s.note.is_playing()) {
+        for slot in self
+            .slots
+            .iter_mut()
+            .filter(|s| s.live && (s.note.is_playing() || s.instance.is_some() && s.spread && s.twin.is_playing()))
+        {
+            let mut frame = frame;
+            let mut controllers = self.controllers;
+            let pressure = slot.expression.value(NoteExpressionKind::Pressure) as f32;
+            frame.pressure = frame.pressure.max(pressure);
+            controllers.pressure = controllers.pressure.max(seven_bit(pressure));
+            controllers.refresh();
+            frame.filter.frequency *= 2f32.powf((slot.expression.value(NoteExpressionKind::Timbre) as f32 - 0.5) * 4.);
+            let pitch = (slot.expression.value(NoteExpressionKind::Pitch) * f64::from(1u32 << 24) / 12.) as i32;
+            if slot.instance.is_some() {
+                slot.note.set_pitch_offset(pitch.saturating_add(slot.detune));
+                slot.twin.set_pitch_offset(pitch.saturating_sub(slot.detune));
+            }
             let mut out = [0i32; N];
-            slot.note.compute(&mut out, lfo, delay, &self.controllers, &mut self.buses, &self.tables, &frame);
+            slot.note.compute(&mut out, lfo, delay, &controllers, &mut self.buses, &self.tables, &frame);
             let (samples, gain, pan) = slot.note.finish(&out, &frame);
-            mix(&mut sum, &samples, slot.gains, gain, pan);
+            mix(&mut sum, &samples, slot.gains, gain * (1. + pressure), pan);
             if slot.spread {
                 let mut out = [0i32; N];
-                slot.twin.compute(&mut out, lfo, delay, &self.controllers, &mut self.buses, &self.tables, &frame);
+                slot.twin.compute(&mut out, lfo, delay, &controllers, &mut self.buses, &self.tables, &frame);
                 let (samples, gain, pan) = slot.twin.finish(&out, &frame);
-                mix(&mut sum, &samples, slot.twin_gains, gain, pan);
+                mix(&mut sum, &samples, slot.twin_gains, gain * (1. + pressure), pan);
             }
         }
         // The filter always runs, so it knows the signal when Tone leaves 1, and comes in over the
@@ -670,6 +720,7 @@ impl Device for FmSynth {
     }
 
     fn reset(&mut self) {
+        self.lifetimes.finish_all();
         self.slots = [Slot::default(); VOICES];
         self.next_seq = 0;
         self.last_slot = None;
@@ -727,6 +778,9 @@ impl Device for FmSynth {
 
     fn event(&mut self, event: NoteEvent) {
         match event {
+            NoteEvent::Instance { id, event } => {
+                let _ = NoteInstanceDevice::event(self, id, event);
+            }
             NoteEvent::On { key, velocity } if key <= 127 && velocity.is_finite() => match seven_bit(velocity) {
                 0 => self.key_up(key),
                 v => self.key_down(key, v),
@@ -757,5 +811,9 @@ impl Device for FmSynth {
             NoteEvent::AllNotesOff => self.all_notes_off(),
             _ => {}
         }
+    }
+
+    fn note_instances(&mut self) -> Option<&mut dyn NoteInstanceDevice> {
+        Some(self)
     }
 }
