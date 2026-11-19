@@ -35,7 +35,9 @@ fn native_colour_window_paints_its_dark_background_and_settles_without_input() {
             },
         );
         // The same nested run as eframe::render_immediate_viewport, including multipass.
-        let output = ctx.run_ui(input, |ui| (viewport.viewport_ui_cb)(ui));
+        let mut output = ctx.run_ui(input, |ui| (viewport.viewport_ui_cb)(ui));
+        // This harness inspects shapes without a GPU; acknowledge texture uploads explicitly.
+        output.textures_delta.clear();
         captured.borrow_mut().push((rect, output));
     });
     let mut app = demo_app();
@@ -59,7 +61,7 @@ fn native_colour_window_paints_its_dark_background_and_settles_without_input() {
                 ..Default::default()
             },
         );
-        let _ = ctx.run_ui(input, |ui| app.ui(ui));
+        ctx.run_ui(input, |ui| app.ui(ui)).textures_delta.clear();
     }
     let expected = live("panel-background");
     let frames = frames.borrow();
