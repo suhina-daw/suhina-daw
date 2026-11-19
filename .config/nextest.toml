@@ -42,10 +42,3 @@ ipc-leftovers = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = "package(suhina-ipc) & binary(=leftovers)"
 test-group = "ipc-leftovers"
-
-# The theme renderer's painted-and-cut test draws every scene in every theme and variant: 350 to
-# 540 s on a CI runner before the cut-off texts joined it (the runner's cores are shared with the
-# other tests), so it gets three times the usual ten minutes rather than a flaky timeout.
-[[profile.default.overrides]]
-filter = "package(suhina-theme-render) & binary(=main) & test(=painted::every_built_in_theme_paints_and_cuts_as_recorded)"
-slow-timeout = { period = "60s", terminate-after = 30 }

@@ -17,6 +17,13 @@ pub struct BlockCounts {
     longest_us: AtomicU32,
     /// Blocks that came with no time left before the deadline (an earlier plug-in used it).
     no_time: AtomicU32,
+    /// The longest the plug-in itself took to process a block, in microseconds, as its host
+    /// measured it (#1262): beside `longest_us`, it tells a slow plug-in from a host that woke
+    /// late.
+    longest_process_us: AtomicU32,
+    /// The plug-in's processing times added up, and how many blocks they are, for the average.
+    process_sum_us: AtomicU64,
+    timed: AtomicU32,
 }
 
 impl BlockCounts {
@@ -33,6 +40,25 @@ impl BlockCounts {
     /// Blocks that came with no time left before the deadline.
     pub fn no_time(&self) -> u32 {
         self.no_time.load(Ordering::Relaxed)
+    }
+
+    /// The longest the plug-in itself took to process a block, in microseconds.
+    pub fn longest_process_us(&self) -> u32 {
+        self.longest_process_us.load(Ordering::Relaxed)
+    }
+
+    /// The plug-in's average processing time a block, in microseconds; 0 before any was timed.
+    pub fn average_process_us(&self) -> u32 {
+        let timed = u64::from(self.timed.load(Ordering::Relaxed));
+        let sum = self.process_sum_us.load(Ordering::Relaxed);
+        sum.checked_div(timed).map_or(0, |average| u32::try_from(average).unwrap_or(u32::MAX))
+    }
+
+    /// Counts one block's processing time, as the host measured it. Never allocates.
+    pub(crate) fn processed(&self, process_us: u32) {
+        self.longest_process_us.fetch_max(process_us, Ordering::Relaxed);
+        self.process_sum_us.fetch_add(u64::from(process_us), Ordering::Relaxed);
+        self.timed.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -74,6 +100,9 @@ pub struct Hosted {
     /// Where the song is, as the plug-in is told with the next block: its tempo-synced parts
     /// and an ARA renderer (ADR 0033) follow it.
     song: suhina_engine::SongPosition,
+    /// Its own last block was not answered in time: its processing time comes with the late
+    /// answer, read before the next block goes (#1262).
+    late_time: bool,
 }
 
 impl Hosted {
@@ -105,6 +134,7 @@ impl Hosted {
             counts: Arc::new(BlockCounts::default()),
             sent_at: None,
             song: suhina_engine::SongPosition::default(),
+            late_time: false,
         }
     }
 
@@ -365,7 +395,28 @@ impl Hosted {
         };
         let took = u32::try_from(started.elapsed().as_micros()).unwrap_or(u32::MAX);
         self.counts.longest_us.fetch_max(took, Ordering::Relaxed);
+        match outcome {
+            suhina_plugins::Outcome::Done => {
+                if let Some(process_us) = self.audio.process_us() {
+                    self.counts.processed(process_us);
+                }
+            }
+            suhina_plugins::Outcome::Missed => self.late_time = true,
+            suhina_plugins::Outcome::Busy => {}
+        }
         self.outcome(outcome, buffer)
+    }
+
+    /// The processing time of its last block when that block was late and its answer has come
+    /// since; called before a new block goes, which takes the old answer's place. Never
+    /// allocates.
+    fn late_answer(&mut self) {
+        if self.late_time
+            && let Some(process_us) = self.audio.process_us()
+        {
+            self.counts.processed(process_us);
+            self.late_time = false;
+        }
     }
 }
 
@@ -382,6 +433,7 @@ impl PluginProcessor for Hosted {
         self.stop_notes.clear();
         self.stop_notes_overflow = false;
         self.sent_at = None;
+        self.late_time = false;
         self.rate = sample_rate.max(1);
         if self.gate.is_some() {
             self.gate = Some(super::transport_gate::TransportGate::new(sample_rate));
@@ -450,6 +502,7 @@ impl PluginProcessor for Hosted {
         followers: &[u32],
         patience: Duration,
     ) -> Sent {
+        self.late_answer();
         // A block longer than the link holds (none is, today) cannot be taken in at all.
         let len = self.link_len(buffer);
         let Some(input) = self.take(buffer, events).then(|| self.input.get(..len)).flatten() else {
@@ -458,6 +511,8 @@ impl PluginProcessor for Hosted {
         };
         if self.audio.send_joint(input, &self.events, followers, len, patience) {
             self.sent_at = Some(std::time::Instant::now());
+            // A late answer that came after the look above is gone with the new block.
+            self.late_time = false;
             return Sent::Out;
         }
         // The host is still busy with an earlier block: this one is lost to it, as a miss; its
@@ -488,6 +543,14 @@ impl PluginProcessor for Hosted {
             }
             carry_releases(&self.events, &mut self.carried);
         }
+    }
+
+    fn follower_process_us(&self, index: usize) -> Option<u32> {
+        self.audio.follower_process_us(index)
+    }
+
+    fn followed_process_us(&mut self, process_us: u32) {
+        self.counts.processed(process_us);
     }
 
     fn transport(&mut self, song: &suhina_engine::SongPosition) {

@@ -1085,6 +1085,11 @@ struct Member {
     answering: bool,
     /// The parameter events it was given ([`PluginProcessor::automate`]), by id.
     automated: Arc<std::sync::Mutex<Vec<u32>>>,
+    /// The followers of its last joint block, whose processing times its host "measured" as
+    /// 100 µs for each step of their number (#1262).
+    last_followers: Vec<u32>,
+    /// The processing times it was given as a follower ([`PluginProcessor::followed_process_us`]).
+    times: Arc<std::sync::Mutex<Vec<u32>>>,
 }
 
 impl Member {
@@ -1105,6 +1110,8 @@ impl Member {
             followed: Arc::default(),
             answering: true,
             automated: Arc::default(),
+            last_followers: Vec::new(),
+            times: Arc::default(),
         }
     }
 }
@@ -1133,6 +1140,7 @@ impl PluginProcessor for Member {
     ) -> Sent {
         self.trips.fetch_add(1, Ordering::SeqCst);
         let gains = self.process.lock().unwrap();
+        self.last_followers = followers.to_vec();
         // One plug-in after the other, as the host runs them.
         self.output = buffer.iter().map(|s| s * self.gain).collect();
         for follower in followers {
@@ -1151,6 +1159,15 @@ impl PluginProcessor for Member {
 
     fn followed(&mut self, _events: &[(usize, NoteEvent)], how: crate::Followed) {
         self.followed.lock().unwrap().push(how);
+    }
+
+    /// The answer, late or not, is in by the time the engine asks.
+    fn follower_process_us(&self, index: usize) -> Option<u32> {
+        self.last_followers.get(index).map(|member| member * 100)
+    }
+
+    fn followed_process_us(&mut self, process_us: u32) {
+        self.times.lock().unwrap().push(process_us);
     }
 
     fn automate(&mut self, params: &[crate::ParamEvent]) {
@@ -1172,9 +1189,11 @@ fn consecutive_plug_ins_of_one_process_share_a_round_trip_and_sound_the_same() {
         let trips = Arc::new(AtomicUsize::new(0));
         let mut plugins = Plugins::new();
         let mut followed = Vec::new();
+        let mut times = Vec::new();
         for (n, found) in plugin_devices(&p).into_iter().enumerate() {
             let member = Member::new(processes[n], n as u32 + 1, gains[n], &table, &trips);
             followed.push(Arc::clone(&member.followed));
+            times.push(Arc::clone(&member.times));
             plugins.insert(found.key, EFFECT, Box::new(member));
         }
         let out = render_offline_from(
@@ -1186,12 +1205,13 @@ fn consecutive_plug_ins_of_one_process_share_a_round_trip_and_sound_the_same() {
         )
         .unwrap();
         let hows: Vec<Vec<crate::Followed>> = followed.iter().map(|f| f.lock().unwrap().clone()).collect();
-        (out, trips.load(Ordering::SeqCst), hows)
+        let times: Vec<Vec<u32>> = times.iter().map(|t| t.lock().unwrap().clone()).collect();
+        (out, trips.load(Ordering::SeqCst), (hows, times))
     };
     // Each in a process of its own: five round trips a block (the disabled one makes none).
-    let (alone, alone_trips, alone_followed) = render([1, 2, 3, 4, 5, 6]);
+    let (alone, alone_trips, (alone_followed, _)) = render([1, 2, 3, 4, 5, 6]);
     // a, b and d in one round trip; e alone (after a built-in device); f in its own process.
-    let (joint, joint_trips, followed) = render([1, 1, 1, 1, 1, 2]);
+    let (joint, joint_trips, (followed, times)) = render([1, 1, 1, 1, 1, 2]);
     let blocks = alone_trips / 5;
     assert!(blocks > 0);
     assert_eq!(alone_trips, blocks * 5);
@@ -1202,6 +1222,9 @@ fn consecutive_plug_ins_of_one_process_share_a_round_trip_and_sound_the_same() {
         let expected = if n == 1 || n == 3 { blocks } else { 0 };
         assert_eq!(hows.len(), expected, "plug-in {n}");
         assert!(hows.iter().all(|h| *h == crate::Followed::Answered));
+        // #1262: each follower got its own processing time from a's answer, in every block.
+        let member = n as u32 + 1;
+        assert_eq!(times[n], vec![member * 100; expected], "plug-in {n}'s times");
     }
     // Sample for sample the same sound.
     assert_eq!(alone.len(), joint.len());
@@ -1217,7 +1240,7 @@ fn a_joint_block_that_misses_is_a_miss_for_every_plug_in_in_it() {
     let mut first = Member::new(1, 1, 0.5, &table, &trips);
     first.answering = false;
     let second = Member::new(1, 2, 0.5, &table, &trips);
-    let followed = Arc::clone(&second.followed);
+    let (followed, times) = (Arc::clone(&second.followed), Arc::clone(&second.times));
     let found = plugin_devices(&p);
     let mut plugins = Plugins::new();
     plugins.insert(found[0].key, EFFECT, Box::new(first));
@@ -1236,6 +1259,17 @@ fn a_joint_block_that_misses_is_a_miss_for_every_plug_in_in_it() {
     assert!(!hows.is_empty());
     assert!(hows.iter().all(|h| *h == crate::Followed::Late));
     assert_eq!(trips.load(Ordering::SeqCst), hows.len(), "one round trip a block, for both");
+    // #1262: each late block's time reached the follower once its answer was in, before the
+    // first plug-in sent anything again (the last block's, only if the render asks the first
+    // plug-in to send once more).
+    let times = times.lock().unwrap();
+    assert!(times.iter().all(|t| *t == 200));
+    assert!(
+        times.len() + 1 >= hows.len() && times.len() <= hows.len(),
+        "{} times for {} blocks",
+        times.len(),
+        hows.len()
+    );
 }
 
 #[test]
@@ -1689,6 +1723,7 @@ fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::Plugin
         busy: 0,
         longest_us: 0,
         sent_at: None,
+        late_followers: Box::default(),
         params: crate::plugin_params::SlotParams::new(&plug(vst3()), BEAT as f64, &[]),
     }
 }

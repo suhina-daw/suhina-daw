@@ -181,6 +181,55 @@ fn a_block_runs_its_followers_on_the_same_thread_in_order() {
     }
 }
 
+/// Moves a clock shared with the test by `by` µs a block, as if processing took that long.
+struct Takes {
+    by: u64,
+    now: Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl Block for Takes {
+    fn process(&mut self, _input: &[f32], _events: &[Event], _output: &mut [f32]) {
+        self.now.fetch_add(self.by, Ordering::Relaxed);
+    }
+}
+
+/// A clock that stands still unless a block moves it.
+struct Shared(Arc<std::sync::atomic::AtomicU64>);
+
+impl suhina_ipc::Clock for Shared {
+    fn now_us(&mut self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+/// #1262: the thread that runs a joint block times its own instance and each follower apart,
+/// and the engine reads each one's time back with the answer; a follower that is gone is not
+/// timed.
+#[test]
+fn a_joint_block_reports_each_instances_own_processing_time() {
+    let now = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let instance = |number: u32, by: u64| {
+        let link = Link::create(2, 64).unwrap_or_else(|e| panic!("{e}"));
+        let mut served = Served::open(&link.address()).unwrap_or_else(|e| panic!("{e}"));
+        served.set_clock(Box::new(Shared(Arc::clone(&now))));
+        let stop = Arc::new(AtomicBool::new(false));
+        let (thread_stop, block) = (stop.clone(), Takes { by, now: Arc::clone(&now) });
+        let thread = std::thread::spawn(move || serve(number, block, &mut served, &thread_stop).is_some());
+        assert!(wait_serving(number, Duration::from_secs(5)));
+        (link, stop, thread)
+    };
+    let (mut first, stop_first, first_thread) = instance(9_021, 300);
+    let (_second, stop_second, second_thread) = instance(9_022, 5_000);
+    round_trip(&mut first, &[9_022, 78]);
+    assert_eq!(first.process_us(), Some(300));
+    assert_eq!(first.follower_process_us(0), Some(5_000));
+    assert_eq!(first.follower_process_us(1), Some(0), "a follower that is gone is not timed");
+    for (stop, thread) in [(stop_first, first_thread), (stop_second, second_thread)] {
+        stop.store(true, Ordering::Release);
+        assert_eq!(thread.join().ok(), Some(true));
+    }
+}
+
 #[test]
 fn a_wide_link_carries_the_key_to_a_vst2_plugins_third_and_fourth_inputs_and_to_an_auxiliary_bus() {
     // Two frames of four link channels: the sound (1, -1 then 2, -2) and the key (7, -7 then 8, -8).

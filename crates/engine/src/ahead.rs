@@ -373,6 +373,8 @@ pub(crate) struct StretchThread {
     handle: Option<JoinHandle<()>>,
     inbox: Producer<StretchWorker>,
     preparers: Producer<Preparer>,
+    #[cfg(test)]
+    sync: std::sync::mpsc::Sender<std::sync::mpsc::Sender<()>>,
 }
 
 impl StretchThread {
@@ -381,10 +383,20 @@ impl StretchThread {
         let stop_flag = Arc::clone(&stop);
         let (inbox, mut incoming) = RingBuffer::<StretchWorker>::new(INBOX);
         let (preparers, mut incoming_preparers) = RingBuffer::<Preparer>::new(INBOX);
+        #[cfg(test)]
+        let (sync, requests) = std::sync::mpsc::channel::<std::sync::mpsc::Sender<()>>();
         let handle = std::thread::Builder::new().name("suhina-stretch".into()).spawn(move || {
             let mut workers: Vec<StretchWorker> = Vec::new();
             let mut preparing: Vec<Preparer> = Vec::new();
+            #[cfg(test)]
+            let mut pending = None;
             while !stop_flag.load(Ordering::Relaxed) {
+                // Observe the request before draining the inboxes: a test's acknowledgement
+                // must include the workers it queued before asking to synchronize.
+                #[cfg(test)]
+                if pending.is_none() {
+                    pending = requests.try_recv().ok();
+                }
                 while let Ok(mut worker) = incoming.pop() {
                     // The graph it replaces is the newest one here: its voices carry over.
                     if let Some(before) = workers.last_mut() {
@@ -411,11 +423,38 @@ impl StretchThread {
                 let asked = preparing.iter_mut().rev().any(|p| p.work(true));
                 did |= asked || preparing.iter_mut().rev().any(|p| p.work(false));
                 if !did {
+                    #[cfg(test)]
+                    {
+                        if let Some(done) = pending.take() {
+                            let _ = done.send(());
+                        }
+                        // A sync request wakes the idle thread without waiting for a timer.
+                        // Tests that do not synchronize still get the normal idle cadence.
+                        std::thread::park_timeout(IDLE);
+                    }
+                    #[cfg(not(test))]
                     std::thread::sleep(IDLE);
                 }
             }
         })?;
-        Ok(Self { stop, handle: Some(handle), inbox, preparers })
+        Ok(Self {
+            stop,
+            handle: Some(handle),
+            inbox,
+            preparers,
+            #[cfg(test)]
+            sync,
+        })
+    }
+
+    /// Waits until all work queued before this call can make no more progress without the
+    /// renderer. Only the test driver calls this, between audio blocks, never `process`.
+    #[cfg(test)]
+    pub(crate) fn sync(&self) {
+        let (done, finished) = std::sync::mpsc::channel();
+        self.sync.send(done).expect("stretch thread accepts the sync request");
+        self.handle.as_ref().expect("stretch thread is running").thread().unpark();
+        finished.recv().expect("stretch thread finishes the queued work");
     }
 
     /// Hands a graph's worker to the thread.
@@ -433,6 +472,8 @@ impl Drop for StretchThread {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
         if let Some(handle) = self.handle.take() {
+            #[cfg(test)]
+            handle.thread().unpark();
             // A worker that panicked has nothing left to clean up.
             let _ = handle.join();
         }

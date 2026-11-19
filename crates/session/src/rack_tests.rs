@@ -399,3 +399,18 @@ fn instruments_are_told_by_their_features() {
     assert!(!is_instrument(&plugin(&[])));
     assert_eq!(device_kind(&plugin(&[])), DeviceKind::Vst3 { id: "x".into() });
 }
+
+/// #1262: the plug-in's processing times, as its host measured them, give its longest and its
+/// average; nothing timed reads as 0.
+#[test]
+fn block_counts_keep_the_longest_and_the_average_processing_time() {
+    let counts = BlockCounts::default();
+    assert_eq!((counts.longest_process_us(), counts.average_process_us()), (0, 0));
+    for us in [400, 1_000, 31_000, 600] {
+        counts.processed(us);
+    }
+    assert_eq!(counts.longest_process_us(), 31_000);
+    assert_eq!(counts.average_process_us(), 8_250);
+    // The round trip is kept apart.
+    assert_eq!(counts.longest_us(), 0);
+}
