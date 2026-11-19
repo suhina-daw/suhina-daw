@@ -280,11 +280,12 @@ pub(super) fn track_header(
     });
     work_trace.mark("interaction");
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
+    let preview = crate::kit::selection::previews_track(ui.ctx(), lane.track);
     // A selected track's header is filled with the one selection colour every selected header
     // and clip shares (Settings › Appearance › Selection colour); its own colour stays in its band.
     // With Clip's own colour, and for the track the piano roll edits without its being selected,
     // the header keeps its colour with a small brightness lift and an outline.
-    let selection_fill = (state.selected_tracks.contains(&lane.track) && !lane.mute)
+    let selection_fill = (state.selected_tracks.contains(&lane.track) && !lane.mute && !preview)
         .then(|| crate::kit::selection::fill(&own))
         .flatten();
     // The theme's header colours (`--track-headerBackground`, `--track-headerSelectedBackground`),
@@ -303,7 +304,9 @@ pub(super) fn track_header(
     // A muted track's header is the `track-header[muted]` grey, as its clips are, not a dimmer
     // shade of its colour (#1393); its colour stays in the band down its edge. The grey is the
     // computed background, so `--track-headerMutedBackground` reaches it.
-    let header_fill = if lane.mute {
+    let header_fill = if preview {
+        rgb(lane.color)
+    } else if lane.mute {
         own.computed_background_or(muted_header_grey(selected))
     } else if let Some(fill) = selection_fill {
         fill
@@ -311,27 +314,41 @@ pub(super) fn track_header(
         let surface = colour_surface(background, rgb(lane.color), strength);
         if selected { motion::mix(surface, crate::kit::element::name_ink(), 0.07) } else { surface }
     };
-    if !crate::kit::skin::paint_in_view(
-        painter,
-        rect,
-        "track.body",
-        crate::kit::skin::State::response(&body, selected),
-        // Artwork's `currentColor`: the header's own `color` where the sheet gives one.
-        own.own_color_or(header_fill),
-    ) {
+    if preview
+        || !crate::kit::skin::paint_in_view(
+            painter,
+            rect,
+            "track.body",
+            crate::kit::skin::State::response(&body, selected),
+            // Artwork's `currentColor`: the header's own `color` where the sheet gives one.
+            own.own_color_or(header_fill),
+        )
+    {
         painter.rect_filled(rect, 0.0, header_fill);
     }
-    crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
+    if !preview {
+        crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
+    }
     // The sheet's own background for the header (`arrangement track-header`) over the native one.
-    own.paint(painter, rect.intersect(clip));
+    if preview {
+        own.paint_over(
+            painter,
+            rect.intersect(clip),
+            crate::kit::element::Native { fill: header_fill, ..Default::default() },
+            0.0,
+        );
+    } else {
+        own.paint(painter, rect.intersect(clip));
+    }
     // The lane's whole height: what folding saves and restores, and where its resize edge is.
     let lane_rect = rect;
     let rect = inside;
     // The name and the controls' ink read on whichever background is shown.
-    let header_fill = own.background_or(header_fill);
+    let header_fill = if preview { header_fill } else { own.background_or(header_fill) };
     if selected {
         // `track-header[selected]`'s border colour, else a shade of the track's own.
         let outline = own.border_or(motion::mix(own.border(), saturated(rgb(lane.color)), 0.5));
+        let outline = if preview { crate::kit::selection::readable(outline, header_fill) } else { outline };
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, outline), StrokeKind::Inside);
     }
     work_trace.mark("background");

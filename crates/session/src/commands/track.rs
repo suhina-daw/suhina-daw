@@ -136,8 +136,13 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "track.setColor",
-        label: "Set a track's colour",
-        params: &[TRACK, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the default")],
+        label: "Set the colour of one or several tracks as one undo step",
+        params: &[
+            optional("track", ParamType::Track, "the track, by id or name"),
+            optional("tracks", ParamType::Tracks, "the tracks to colour together, instead of track"),
+            param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's default"),
+            GESTURE,
+        ],
         kind: CommandKind::EDIT,
         run: set_color,
         policy: Policy::UNHEARD,
@@ -905,18 +910,25 @@ fn set_color(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     let color = if text.eq_ignore_ascii_case("none") {
         None
     } else {
-        let hex = text.strip_prefix('#').filter(|h| h.len() == 6).ok_or("color must be \"#rrggbb\" or \"none\"")?;
-        let part = |i: usize| hex.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok());
-        match (part(0), part(2), part(4)) {
-            (Some(r), Some(g), Some(b)) => Some(suhina_model::Rgb(r, g, b)),
-            _ => return Err("color must be \"#rrggbb\" or \"none\"".into()),
-        }
+        Some(crate::colours::parse_hex(text).ok_or("color must be \"#rrggbb\" or \"none\"")?)
     };
-    let track = track_id(&session.project, params)?;
-    if let Some(t) = session.project.track_mut(track) {
-        t.color = color;
+    let args = Args::new(params);
+    if args.has("track") && args.has("tracks") {
+        return Err("give track or tracks, not both".into());
     }
-    Ok(json!({ "color": text }))
+    let tracks = if args.has("tracks") {
+        track_list(&session.project, params)?
+    } else {
+        vec![track_id(&session.project, params)?]
+    };
+    let mut changed = false;
+    for track in &tracks {
+        if let Some(t) = session.project.track_mut(*track) {
+            changed |= t.color != color;
+            t.color = color;
+        }
+    }
+    Ok(json!({ "color": text, "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>(), "changed": changed }))
 }
 
 fn copy_tracks(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

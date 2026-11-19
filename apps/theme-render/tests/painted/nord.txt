@@ -2,14 +2,17 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog nord 42ffd245de9fb6fe
-arrangement nord a9ea2ba8db8e76d5
-arrangement-scrolled nord 1c9d2eaba2a7f6e7
+arrangement nord 74bf452e1da7fc8a
+arrangement-scrolled nord 560fefb51a76ed8c
 browser nord b3a49f7b607ef1df
 browser-plug-ins nord 404bdc09897649a3
 browser-search nord f71c1b2b702580b4
-clip-audio nord b7fc0a08b9f7baf0
+clip-audio nord 1f20632412b9de4b
 clip-midi nord 40db53eb797606c7
-context-menu nord da236b13b74c9a9b
+colour-picker nord d84587feb636dfa4
+colour-picker-field nord e67e0b5ef6c3e482
+colour-picker-wheel nord 760f76a023c2b48b
+context-menu nord dfb140c1b46d37d9
 control-bar-toggles nord 321aacb132287ce0
 count-in-menu nord 1e9f508f262ea4da
 cpu nord c8c2fb4ec0672f1c
@@ -23,7 +26,7 @@ expanded-multiband nord 38c69ceb6bb43895
 expanded-reverb nord 5599b1813dfe4b74
 expanded-vinyl-distortion nord 1932c0fdf7f20365
 export-dialog nord 95a9af335ff90085
-grid-menu nord 9d88ed70d2832cb8
+grid-menu nord 84fb61be61e8798f
 instrument-sampler nord 24f595f1cd4ae3fc
 launcher nord ab7c96ba45c9b6ed
 launcher-hover nord 2a05de8d42670d89
@@ -33,7 +36,7 @@ launcher-toggles nord 51a363dea3b274b3
 menu nord 77da84c5bc0402b2
 missing-files nord f83438ef94d1b5a8
 new-theme-dialog nord a582c4af1a2ec3e3
-piano-roll nord 26e5a0ce221f1e3a
+piano-roll nord 87a2bd57035f9b6b
 project-dialog nord 48f5157dfe9d010b
 quantize-menu nord 3bcc040ec2f59bcd
 quick-add nord 3da0880fb546dc57
@@ -45,7 +48,7 @@ settings-appearance nord cc74f69fec11169d
 settings-audio nord 01fc6bd4676e1f99
 settings-browser nord 697ccf2a6102973a
 settings-devices nord 0e9968d264efd4fc
-settings-keys nord 063256b3f05684dc
+settings-keys nord 92821b4a925f872b
 settings-launcher nord 7dbaad2a9c008d42
 settings-menu nord bcc0e8fa8222055f
 settings-midi nord 8d8883559ee7883e

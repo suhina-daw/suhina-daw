@@ -9,7 +9,10 @@ browser-plug-ins suhina-glass@frost 6ec0e1c859fbd634
 browser-search suhina-glass@frost b9a8648783d31450
 clip-audio suhina-glass@frost 5b0e6f509e6a63ec
 clip-midi suhina-glass@frost 71aefd61addfb217
-context-menu suhina-glass@frost a6e76591fa8d4335
+colour-picker suhina-glass@frost 4092fcd2f17e453c
+colour-picker-field suhina-glass@frost d580158874ef476e
+colour-picker-wheel suhina-glass@frost f28b8b20bcfd799e
+context-menu suhina-glass@frost a51fbec323fee1fb
 control-bar-toggles suhina-glass@frost 69d907f2b9cf5642
 count-in-menu suhina-glass@frost 1299951663ea4edf
 cpu suhina-glass@frost e5bb34ff098d8e50
@@ -23,7 +26,7 @@ expanded-multiband suhina-glass@frost 18b9a76ee1422b5f
 expanded-reverb suhina-glass@frost 66fee121f802eb18
 expanded-vinyl-distortion suhina-glass@frost 8651088a0c0e35d8
 export-dialog suhina-glass@frost ab4da6e90a179089
-grid-menu suhina-glass@frost 0fb946de9c327d0b
+grid-menu suhina-glass@frost 30433c86861742b5
 instrument-sampler suhina-glass@frost 5cfe2b3c6b199972
 launcher suhina-glass@frost 344537efe81212f3
 launcher-hover suhina-glass@frost 3d99911cf0a5d204
@@ -33,7 +36,7 @@ launcher-toggles suhina-glass@frost 88437e3ff7d24c73
 menu suhina-glass@frost bb3e57100141111f
 missing-files suhina-glass@frost 600d8da374ee08ec
 new-theme-dialog suhina-glass@frost 6733aad4859e720b
-piano-roll suhina-glass@frost 74aeee0dc8af9b21
+piano-roll suhina-glass@frost b6dc7f55ee46e7ef
 project-dialog suhina-glass@frost d16394ad47d7c1e5
 quantize-menu suhina-glass@frost 69dc575defec457c
 quick-add suhina-glass@frost c83c78d964ba8bbb
@@ -45,7 +48,7 @@ settings-appearance suhina-glass@frost c22326333d691bdb
 settings-audio suhina-glass@frost 9faadedfda71bb33
 settings-browser suhina-glass@frost 40a81955c7cad719
 settings-devices suhina-glass@frost 0137dfe40af30a26
-settings-keys suhina-glass@frost 3dee13b9292a2c5c
+settings-keys suhina-glass@frost c944c820842deb03
 settings-launcher suhina-glass@frost e1631bcb9bffe0be
 settings-menu suhina-glass@frost 339434da2d6f94c6
 settings-midi suhina-glass@frost 2125d211dc45c74c

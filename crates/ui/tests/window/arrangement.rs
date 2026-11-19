@@ -976,7 +976,7 @@ fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_sepa
             assert!(harness.state().actions.is_empty(), "folding is view state");
             harness.get_by_label("Container colour").click();
             harness.run();
-            assert!(harness.query_by_label("Any colour").is_some(), "the strip opens the colour menu");
+            assert!(harness.query_by_label("+ More colours").is_some(), "the strip opens the colour menu");
             assert!(harness.query_by_label("Track Drums").is_some(), "colour selection does not fold");
         }
     }

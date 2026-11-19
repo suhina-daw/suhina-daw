@@ -8,8 +8,11 @@ browser suhina-light cd80226a5bbeb485
 browser-plug-ins suhina-light 3656a9d7c9548af2
 browser-search suhina-light 8d71283dfdc39832
 clip-audio suhina-light 973f5f2a359882de
-clip-midi suhina-light 6c31911a183b2ada
-context-menu suhina-light 26ad95029f59b1e6
+clip-midi suhina-light b579079ec09a1e0a
+colour-picker suhina-light 514af859d8534792
+colour-picker-field suhina-light aef1d8eef0484d6e
+colour-picker-wheel suhina-light f6f97daa819dbdac
+context-menu suhina-light e6f11109cb9eb878
 control-bar-toggles suhina-light 79c1fb64c45bd710
 count-in-menu suhina-light 0b3728e66e013cbf
 cpu suhina-light d585391e1ab3c3f7
@@ -23,7 +26,7 @@ expanded-multiband suhina-light 013ba16f6e37e864
 expanded-reverb suhina-light 30ee600b2ec02df5
 expanded-vinyl-distortion suhina-light 4feb696e942665fa
 export-dialog suhina-light b7c5540bad610b9a
-grid-menu suhina-light de64ab25a6250e8b
+grid-menu suhina-light 4e30b42a38d0d355
 instrument-sampler suhina-light 12c150d1725e5ee8
 launcher suhina-light 25bb3467cc9c44af
 launcher-hover suhina-light 9fbdf44dc27ce76c
@@ -33,7 +36,7 @@ launcher-toggles suhina-light 3af485758e150113
 menu suhina-light 5d38934facf173cf
 missing-files suhina-light 5725ee28c2140aa1
 new-theme-dialog suhina-light 2d452c6829750ce6
-piano-roll suhina-light 3b67763dfa6be57f
+piano-roll suhina-light de70dc97c5ee89eb
 project-dialog suhina-light 04d5e30e88eade54
 quantize-menu suhina-light ed9cb9ff45f878de
 quick-add suhina-light 39a3859e8eb35817
@@ -45,7 +48,7 @@ settings-appearance suhina-light 2344706b498e7410
 settings-audio suhina-light c0c4ff99399b240e
 settings-browser suhina-light 3d981c1bc375cde5
 settings-devices suhina-light 73ab4e4cf084b62c
-settings-keys suhina-light 1676acb522a54ce4
+settings-keys suhina-light 99068a30d0c4f1fd
 settings-launcher suhina-light 35ffa2e3feff77ea
 settings-menu suhina-light 162306002a119c36
 settings-midi suhina-light 1eb7944944740894

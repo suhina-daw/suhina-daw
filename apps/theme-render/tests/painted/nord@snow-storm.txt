@@ -8,8 +8,11 @@ browser nord@snow-storm 098cce6b4b82c785
 browser-plug-ins nord@snow-storm 77eaa3e3ae0c4c5d
 browser-search nord@snow-storm 861b5ce932464046
 clip-audio nord@snow-storm 2e8892d732801d5a
-clip-midi nord@snow-storm 068faff43cac3004
-context-menu nord@snow-storm 3f400c16b42df0c3
+clip-midi nord@snow-storm b204f3050c3a2bdc
+colour-picker nord@snow-storm 5f9afec4ee71f3a6
+colour-picker-field nord@snow-storm 0c6dad82214e1a74
+colour-picker-wheel nord@snow-storm 602fb80e3645f7b5
+context-menu nord@snow-storm 228c40c9c8a2838d
 control-bar-toggles nord@snow-storm 4ce355e2571a506e
 count-in-menu nord@snow-storm 0e2844aae4b0c14d
 cpu nord@snow-storm 0f58387689033be5
@@ -23,7 +26,7 @@ expanded-multiband nord@snow-storm dda818a5ab2e6efa
 expanded-reverb nord@snow-storm e723c7a2f1418a66
 expanded-vinyl-distortion nord@snow-storm 3f6275e15d4149ea
 export-dialog nord@snow-storm 52124b8a6ade971d
-grid-menu nord@snow-storm efdc26377d56623a
+grid-menu nord@snow-storm b4a9c2211ad48f48
 instrument-sampler nord@snow-storm 4b45c85b8899d080
 launcher nord@snow-storm bc6b47868a96019e
 launcher-hover nord@snow-storm 8bc5e41086d0e23a
@@ -33,7 +36,7 @@ launcher-toggles nord@snow-storm 0c899e6a1d7ac9d8
 menu nord@snow-storm fdd3c8e92b9251be
 missing-files nord@snow-storm 70bcaf7f770736ff
 new-theme-dialog nord@snow-storm 45929dda28529e73
-piano-roll nord@snow-storm 21b3bac661b544da
+piano-roll nord@snow-storm 195a4ed62092bd62
 project-dialog nord@snow-storm 5152a214669680c2
 quantize-menu nord@snow-storm eafe8a049d9e6cdc
 quick-add nord@snow-storm 69e005e97c98c5ff
@@ -45,7 +48,7 @@ settings-appearance nord@snow-storm 781d24d9b61d3c4e
 settings-audio nord@snow-storm 89f1b1f0b8e481d4
 settings-browser nord@snow-storm f3bbdd2b65ef2852
 settings-devices nord@snow-storm c201f148718b6ae9
-settings-keys nord@snow-storm 0eb898be381002c7
+settings-keys nord@snow-storm ba5c50fb6b388566
 settings-launcher nord@snow-storm 6f24dc813d317900
 settings-menu nord@snow-storm 11ef4f920dd3340c
 settings-midi nord@snow-storm 98c99aa0453ff371

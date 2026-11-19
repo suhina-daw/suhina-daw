@@ -15,15 +15,18 @@ use crate::kit::motion;
 use crate::kit::theme;
 use crate::kit::widgets::{self, Action};
 
+mod names;
+pub(crate) mod panel;
+
 /// A swatch's side, and the space between swatches.
 pub const SWATCH: f32 = 14.0;
 const SWATCH_GAP: f32 = 3.0;
 /// How much of its colour a muted track's colour area keeps over `control.background`.
 const MUTED: f32 = 0.55;
 
-/// The palette: Suhina's eight track colours, the same in every theme (a theme draws a track's
+/// The palette: Suhina's 36 track colours, the same in every theme (a theme draws a track's
 /// colour but never chooses it, #1020).
-pub fn swatches() -> [Rgb; 8] {
+pub fn swatches() -> [Rgb; 36] {
     suhina_session::colours::PALETTE
 }
 
@@ -65,30 +68,67 @@ impl Pick {
     }
 }
 
-/// The palette's swatches in one row, `current` outlined: the swatch clicked, if any. Each
+/// The palette's swatches in three rows, `current` outlined: the swatch clicked, if any. Each
 /// swatch is a button named "Colour #rrggbb".
-fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
+pub(crate) fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     let mut picked = None;
     // A `colour-swatch`'s `border-color` outlines the chosen swatch and the one under the pointer.
     let ring = crate::kit::element::COLOUR_SWATCH.look().border();
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::splat(SWATCH_GAP);
-        for colour in swatches() {
-            let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
-            let name = format!("Colour {}", hex(colour));
-            let chosen = current == Some(colour);
-            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, &name));
-            ui.painter().rect_filled(rect, 0.0, color32(colour));
-            if chosen || response.hovered() {
-                let width = if chosen { 1.5 } else { 1.0 };
-                ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, ring), StrokeKind::Inside);
+    for colours in swatches().chunks(suhina_session::colours::PALETTE_COLUMNS) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::splat(SWATCH_GAP);
+            for &colour in colours {
+                let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
+                let name = format!("Colour {}", hex(colour));
+                let chosen = current == Some(colour);
+                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), chosen, &name));
+                ui.painter().rect_filled(rect, 0.0, color32(colour));
+                if chosen || response.hovered() || response.has_focus() {
+                    let width = if chosen { 1.5 } else { 1.0 };
+                    let ring = if theme::text_contrast(ring, color32(colour)) >= 3.0 {
+                        ring
+                    } else {
+                        theme::text_on(color32(colour))
+                    };
+                    ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, ring), StrokeKind::Inside);
+                }
+                if response.clicked() {
+                    picked = Some(colour);
+                }
+                response.on_hover_ui(|ui| {
+                    ui.label(format!("{} · {}", names::describe(colour), hex(colour)));
+                });
             }
-            if response.clicked() {
-                picked = Some(colour);
-            }
-        }
-    });
+        });
+    }
     picked
+}
+
+/// A track menu's compact palette; + opens the persistent window through the app.
+pub fn track_row(ui: &mut Ui, current: Rgb, tracks: &[TrackId], actions: &mut Vec<Action>) {
+    if let Some(colour) = swatch_strip(ui, Some(current)) {
+        if colour != current || tracks.len() > 1 {
+            actions.push(Action::new(
+                "track.setColor",
+                json!({
+                    "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>(), "color": hex(colour)
+                }),
+            ));
+        }
+        ui.close();
+    }
+    let shortcut = ui.data(|d| d.get_temp::<String>(Id::unique("colour-picker-shortcut"))).unwrap_or_default();
+    let more = ui.add(egui::Button::new("+ More colours").shortcut_text(shortcut));
+    more.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "+ More colours"));
+    if more.clicked() {
+        actions.push(Action::new(
+            "ui.colourPicker",
+            json!({
+                "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>()
+            }),
+        ));
+        ui.close();
+    }
 }
 
 /// The palette as a row of swatches, `current` outlined, and after it "+" for any colour: a
@@ -293,12 +333,7 @@ pub fn area(
         .id(id.with("palette"))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            if let Some(pick) = swatch_row(ui, Some(current)) {
-                if pick.colour != current {
-                    actions.push(set_colour(track, pick.colour));
-                }
-                pick.close_menu(ui);
-            }
+            track_row(ui, current, &[track], actions);
         });
     response
 }

@@ -196,6 +196,8 @@ fn settings_survive_a_round_trip() {
         zoom: 130,
         map_window: true,
         map_window_rect: Some([-1600, 40, 900, 700]),
+        colour_window_rect: Some([-1200, 90, 340, 315]),
+        recent_colours: vec![suhina_engine::model::Rgb(37, 119, 231), suhina_engine::model::Rgb(230, 12, 90)],
         backup: suhina_session::backup::Interval::Minutes(240),
         backup_clean_up: false,
         agents: true,

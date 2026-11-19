@@ -2,14 +2,17 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-meadow a62a2cec27865359
-arrangement suhina-meadow dba9b39b0b57ff4c
-arrangement-scrolled suhina-meadow a94c47c31405e060
+arrangement suhina-meadow 2aaccbc488a1a872
+arrangement-scrolled suhina-meadow b051a506060071e2
 browser suhina-meadow 6be723462f05516f
 browser-plug-ins suhina-meadow c08e590777c61ca6
 browser-search suhina-meadow d06850a5e2ea68f1
-clip-audio suhina-meadow 4843d10b13b48f77
+clip-audio suhina-meadow bbb35a8a6ed7a76a
 clip-midi suhina-meadow 9fa54a33b1a27a80
-context-menu suhina-meadow 8cb7267f3fa15a88
+colour-picker suhina-meadow 25310c6bdba6fc7b
+colour-picker-field suhina-meadow fd4de12468603f44
+colour-picker-wheel suhina-meadow 4aecc748c3da9925
+context-menu suhina-meadow 3903dd9359d9aa75
 control-bar-toggles suhina-meadow fea5e456d49e96f0
 count-in-menu suhina-meadow 0b2fe1bcd0b18932
 cpu suhina-meadow bca5087e1ae79094
@@ -23,7 +26,7 @@ expanded-multiband suhina-meadow 97e183229da5c2e7
 expanded-reverb suhina-meadow fbea5f6cdadc0745
 expanded-vinyl-distortion suhina-meadow 95cd7c9a8b0bac56
 export-dialog suhina-meadow 0801e7a72e926eea
-grid-menu suhina-meadow f8595bf47de3b244
+grid-menu suhina-meadow 9741defa38a22d42
 instrument-sampler suhina-meadow 6f762b3e5ca0aafb
 launcher suhina-meadow 3a4f5e0823b937b5
 launcher-hover suhina-meadow a50305e596f5a74c
@@ -33,7 +36,7 @@ launcher-toggles suhina-meadow ad33206de4e17469
 menu suhina-meadow 1c8bae433b4d0193
 missing-files suhina-meadow 10d943258756d3b3
 new-theme-dialog suhina-meadow 89c58dc3b4dd2681
-piano-roll suhina-meadow 3b286b38af6a2950
+piano-roll suhina-meadow 56520535633f7ee6
 project-dialog suhina-meadow fa39561fa53b0174
 quantize-menu suhina-meadow 274c0854b46f87af
 quick-add suhina-meadow ea339bdcebddfaf2
@@ -45,7 +48,7 @@ settings-appearance suhina-meadow c1f67b617248180a
 settings-audio suhina-meadow 27036c4e2d2ef9b6
 settings-browser suhina-meadow d884a1cdca9da245
 settings-devices suhina-meadow 6f25d7c3a53e06ef
-settings-keys suhina-meadow cefd72e7cfba969e
+settings-keys suhina-meadow c681ff6c8c5534e3
 settings-launcher suhina-meadow 8f10f5bb86682618
 settings-menu suhina-meadow c187889d649ac286
 settings-midi suhina-meadow 10ff251a4b1d326c

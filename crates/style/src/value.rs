@@ -211,6 +211,85 @@ impl Space {
     }
 }
 
+/// Encoded sRGB bytes as HSL: hue in degrees, saturation and lightness in 0..=1.
+/// Achromatic colours have hue zero; a picker can keep its last meaningful hue separately.
+pub fn srgb_to_hsl(rgb: [u8; 3]) -> [f32; 3] {
+    let [h, s, l] = Space::Hsl.to(rgb.map(|v| f32::from(v) / 255.0));
+    [if h.is_finite() { h } else { 0.0 }, s, l]
+}
+
+/// Finite HSL within its displayed ranges as exact rounded sRGB bytes.
+pub fn hsl_to_srgb(hsl: [f32; 3]) -> Option<[u8; 3]> {
+    let [h, s, l] = hsl;
+    if !hsl.iter().all(|v| v.is_finite())
+        || !(0.0..=360.0).contains(&h)
+        || !(0.0..=1.0).contains(&s)
+        || !(0.0..=1.0).contains(&l)
+    {
+        return None;
+    }
+    Some(Space::Hsl.from(hsl).map(|v| (v * 255.0).round().clamp(0.0, 255.0) as u8))
+}
+
+/// Encoded sRGB bytes as OKLCH: perceptual lightness, chroma and hue in degrees.
+pub fn srgb_to_oklch(rgb: [u8; 3]) -> [f32; 3] {
+    let [l, c, h] = Space::Oklch.to(rgb.map(|v| f32::from(v) / 255.0));
+    if h.is_finite() { [l.clamp(0.0, 1.0), c, h] } else { [l.clamp(0.0, 1.0), 0.0, 0.0] }
+}
+
+const COLOUR_NAMES: &str = include_str!("../data/colour-names.tsv");
+
+/// The nearest curated survey name in Oklab, and whether its RGB matches exactly.
+/// Names describe the input; callers must never replace the input with the named colour.
+pub fn nearest_named_colour(rgb: [u8; 3]) -> (&'static str, bool) {
+    type Named = (&'static str, [u8; 3], [f32; 3]);
+    static NAMED: std::sync::OnceLock<Vec<Named>> = std::sync::OnceLock::new();
+    let names = NAMED.get_or_init(|| {
+        COLOUR_NAMES
+            .lines()
+            .filter_map(|line| {
+                let (name, hex) = line.split_once('\t')?;
+                let (r, g, b, _) = cssparser::color::parse_hash_color(hex.strip_prefix('#')?.as_bytes()).ok()?;
+                let rgb = [r, g, b];
+                Some((name, rgb, Space::Oklab.to(rgb.map(|v| f32::from(v) / 255.0))))
+            })
+            .collect()
+    });
+    let lab = Space::Oklab.to(rgb.map(|v| f32::from(v) / 255.0));
+    let distance = |other: [f32; 3]| lab.into_iter().zip(other).map(|(a, b)| (a - b).powi(2)).sum::<f32>();
+    names
+        .iter()
+        .min_by(|a, b| distance(a.2).total_cmp(&distance(b.2)).then_with(|| a.0.cmp(b.0)))
+        .map_or(("", false), |(name, value, _)| (*name, *value == rgb))
+}
+
+/// Maps finite OKLCH to sRGB by reducing chroma at fixed lightness and hue. Bounded
+/// bisection finds an in-gamut colour; only floating-point boundary error is clipped.
+pub fn oklch_to_srgb(oklch: [f32; 3]) -> Option<[u8; 3]> {
+    let [l, c, h] = oklch;
+    if !oklch.iter().all(|v| v.is_finite()) || !(0.0..=1.0).contains(&l) || !(0.0..=1.0).contains(&c) {
+        return None;
+    }
+    // Polar f32 round trips can put a primary about 0.000002 outside encoded sRGB.
+    // This tolerance is under 0.003 of one byte; mapping that numerical noise instead
+    // would unnecessarily desaturate a boundary colour (especially pure blue).
+    let inside = |rgb: [f32; 3]| rgb.iter().all(|v| (-0.000_01..=1.000_01).contains(v));
+    let mut rgb = Space::Oklch.from(oklch);
+    if !inside(rgb) {
+        let (mut low, mut high) = (0.0, c);
+        for _ in 0..24 {
+            let middle = (low + high) * 0.5;
+            if inside(Space::Oklch.from([l, middle, h])) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        rgb = Space::Oklch.from([l, low, h]);
+    }
+    Some(rgb.map(|v| (v * 255.0).round().clamp(0.0, 255.0) as u8))
+}
+
 /// `contrast-color(<colour>)`: white or black, whichever has the higher WCAG 2 contrast with the
 /// colour; white on a tie. Alpha is ignored, as a colour behind the text is not known here.
 fn contrast(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
@@ -682,5 +761,67 @@ mod tests {
         ] {
             assert!(Color::parse(bad).is_err(), "{bad}");
         }
+    }
+}
+
+#[cfg(test)]
+mod picker_colour_tests {
+    use super::*;
+
+    #[test]
+    fn familiar_names_are_exact_or_approximate_without_changing_the_input() {
+        for (name, rgb) in [
+            ("Gold", [219, 180, 12]),
+            ("Khaki", [170, 166, 98]),
+            ("Mustard", [206, 179, 1]),
+            ("Ochre", [191, 144, 5]),
+            ("Amber", [254, 179, 8]),
+            ("Saffron", [254, 178, 9]),
+        ] {
+            assert_eq!(nearest_named_colour(rgb), (name, true));
+        }
+        assert_eq!(nearest_named_colour([219, 180, 13]), ("Gold", false));
+        let mut names = std::collections::BTreeSet::new();
+        let mut values = std::collections::BTreeSet::new();
+        for line in COLOUR_NAMES.lines().filter(|line| !line.starts_with('#')) {
+            let (name, hex) = line.split_once('\t').unwrap();
+            let Color::Rgba([r, g, b, 255]) = Color::parse(hex).unwrap() else { panic!("opaque RGB: {line}") };
+            assert!(names.insert(name), "duplicate name: {name}");
+            assert!(values.insert([r, g, b]), "duplicate value: {hex}");
+            assert!(!name.is_empty() && name.chars().count() <= 32);
+            assert_eq!(nearest_named_colour([r, g, b]), (name, true));
+        }
+        assert_eq!(names.len(), 877);
+    }
+
+    #[test]
+    fn colour_conversions_round_trip_boundaries_and_reject_nonfinite_values() {
+        for rgb in [[0, 0, 0], [255, 255, 255], [128, 128, 128], [255, 0, 0], [0, 255, 0], [0, 0, 255], [37, 119, 231]]
+        {
+            assert_eq!(hsl_to_srgb(srgb_to_hsl(rgb)), Some(rgb));
+            let got = oklch_to_srgb(srgb_to_oklch(rgb)).unwrap();
+            assert!(rgb.into_iter().zip(got).all(|(a, b)| a.abs_diff(b) <= 1), "{rgb:?} → {got:?}");
+        }
+        for invalid in [[f32::NAN, 0.5, 0.5], [0.5, f32::INFINITY, 0.5], [0.5, 0.5, f32::NAN]] {
+            assert!(hsl_to_srgb(invalid).is_none());
+            assert!(oklch_to_srgb(invalid).is_none());
+        }
+        // All six RGB faces, including nearly saturated primary colours.
+        for a in (0..=255).step_by(17) {
+            for b in (0..=255).step_by(17) {
+                for edge in [0, 255] {
+                    for rgb in [[edge, a, b], [a, edge, b], [a, b, edge]] {
+                        let got = oklch_to_srgb(srgb_to_oklch(rgb)).unwrap();
+                        assert!(rgb.into_iter().zip(got).all(|(a, b)| a.abs_diff(b) <= 1), "{rgb:?} → {got:?}");
+                    }
+                }
+            }
+        }
+        assert!(oklch_to_srgb([1.5, 0.2, 40.0]).is_none());
+        let gamut = oklch_to_srgb([0.7, 0.9, 145.0]).unwrap();
+        let mapped = srgb_to_oklch(gamut);
+        assert!((mapped[0] - 0.7).abs() < 0.005);
+        assert!((mapped[2] - 145.0).abs() < 2.0);
+        assert!(mapped[1] < 0.9);
     }
 }

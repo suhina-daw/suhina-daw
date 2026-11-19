@@ -76,6 +76,8 @@ mod midi_effect_tests;
 mod missing_instrument;
 #[cfg(test)]
 mod node_tests;
+#[cfg(test)]
+mod pdc_tests;
 mod plugin;
 mod plugin_params;
 #[cfg(test)]
@@ -1357,7 +1359,6 @@ impl Renderer {
         };
         // Plug-in parameter events (set values, automation) are planned before any of the
         // block runs: a chain may run part of it early, when notes crowd it.
-        let at = self.transport.running.then(|| self.time());
         let time = self.time();
         let (bar, bar_start, signature) = self.graph.launcher.bar();
         // The loop is an active cycle only while playback repeats it: a render that plays
@@ -1381,7 +1382,7 @@ impl Renderer {
         self.songs.record(song, frames);
         for chain in &mut self.graph.chains {
             chain.transport(&self.songs);
-            chain.automate(at, time, frames);
+            chain.automate(&self.songs, frames);
             chain.automate_mix(time, frames, self.transport.running);
         }
         let attack = (ATTACK_SECONDS * f64::from(self.sample_rate)).max(1.0);

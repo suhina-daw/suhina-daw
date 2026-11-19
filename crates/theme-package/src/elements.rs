@@ -635,6 +635,8 @@ pub const ELEMENTS: &[Element] = &[
     element("tooltip", Region, "A tooltip, and the pill that follows the pointer while something is dragged: its `background-color`, its `color`, its `border-color` and, when what is under the pointer takes the drop, its `accent-color` for its edge.").settings(FLOATING),
     element("progress", Drawn, "A progress bar: a dialog's, the sample map's busy card and the MIDI panel's range bar.").parts(&["progress-fill"]),
     element("progress-fill", Part, "A progress bar's done part, in each of those."),
+    element("colour-picker", Region, "The non-modal track colour window: compact palettes and expandable precise controls."),
+    element("colour-field", Control, "The colour field or wheel, with its border and keyboard focus outline.").attributes(&["kind"]),
     // Pages and dialogs.
     element("settings", Region, "The Settings page; docked over the views, `backdrop-filter: blur(<length>)` blurs them behind it.").parts(&["settings-nav"]).settings(FLOATING),
     element("settings-nav", Control, "An entry of the Settings page's list, `[checked]` for the page shown.").attributes(&["checked"]),

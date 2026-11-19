@@ -928,9 +928,18 @@ pub fn parse_rgba(text: &str) -> Option<[u8; 4]> {
 /// Text drawn on `fill`: the light or the dark ink for text on a colour, whichever stands out more
 /// from it, so a name stays readable on any track colour of any theme. The two inks are the
 /// `color`s of `label[kind="on-light"]` and `label[kind="on-dark"]` where the text is drawn.
+/// If neither reaches 4.5:1 on the composited fill, use black or white. Mid-lightness custom
+/// colours must stay readable too; the track's stored RGB is never changed for contrast.
 pub fn text_on(fill: Color32) -> Color32 {
     let (light, dark) = on_colour_inks();
-    if contrast(fill, light) >= contrast(fill, dark) { light } else { dark }
+    let chosen = if text_contrast(light, fill) >= text_contrast(dark, fill) { light } else { dark };
+    if text_contrast(chosen, fill) >= 4.5 {
+        chosen
+    } else if contrast(Color32::WHITE, fill) >= contrast(Color32::BLACK, fill) {
+        Color32::WHITE
+    } else {
+        Color32::BLACK
+    }
 }
 
 thread_local! {
