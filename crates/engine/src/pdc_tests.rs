@@ -299,7 +299,7 @@ fn render_interpolated_gain(automated: bool, latency: usize, block: usize, seek:
         project.channels[0].devices[1].automation.push(AutomationLane {
             param: "0".into(),
             enabled: true,
-            points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(1.0 / 4000.0, 1.0)],
+            points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(1.0 / 4000.0, 1.0)].into(),
         });
     }
     let key = crate::plugin_devices(&project).into_iter().find(|device| device.path == [1]).unwrap().key;
@@ -367,7 +367,7 @@ fn pdc_interpolated_gain_keeps_boundary_values_in_subblocks() {
     device.automation.push(AutomationLane {
         param: "0".into(),
         enabled: true,
-        points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(100.0 / 4000.0, 1.0)],
+        points: vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(100.0 / 4000.0, 1.0)].into(),
     });
     let mut params = crate::plugin_params::SlotParams::new(&device, 4000.0, &[]);
     params.plan_delayed(&songs, 257, 512);
