@@ -172,6 +172,26 @@ impl Drop for Updater {
 }
 
 impl Renderer {
+    /// Finishes queued graph edits while this renderer is exclusively owned by
+    /// its control thread. No audio or plug-in processing runs here. Collecting
+    /// retired graphs between swaps prevents a paused renderer's queues filling.
+    pub fn settle_suspended(&mut self, controller: &mut Controller) {
+        self.suspend_project();
+        for _ in 0..=QUEUE {
+            controller.collect();
+            self.path_fade_left = 0;
+            self.receive_swap();
+            if self.swap_at().is_none() {
+                break;
+            }
+            self.apply_swap();
+        }
+        self.receive_plugins();
+        self.receive_params();
+        self.suspend_project();
+        controller.collect();
+    }
+
     /// Connects a new pair of swap queues; the controller gets the other ends.
     pub(crate) fn updater(&mut self) -> Updater {
         let (swaps, incoming) = RingBuffer::new(QUEUE);
@@ -1062,6 +1082,12 @@ impl Controller {
         }
         self.updater.stretch = Some(thread);
         Ok(())
+    }
+
+    /// A test barrier for the real stretch thread's queued work, outside audio processing.
+    #[cfg(test)]
+    pub(crate) fn sync_stretch_worker(&self) {
+        self.updater.stretch.as_ref().expect("stretch thread was started").sync();
     }
 
     /// Frames of stretched clips that were not ready in time and played as silence.

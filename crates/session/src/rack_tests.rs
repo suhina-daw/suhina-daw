@@ -86,6 +86,19 @@ fn polling_a_busy_host_returns_without_waiting_and_finishes_at_the_deadline() {
     assert!(!rack.poll_edits(), "the next quit starts a fresh check");
 }
 
+/// A check paused past its deadline and then restarted is dropped: the next poll begins a fresh
+/// one, both reads and a new deadline, rather than ending at once on the states read before the
+/// pause.
+#[test]
+fn a_restarted_check_is_dropped_for_a_fresh_one() {
+    let mut rack = Rack::default();
+    rack.instances.insert(1, Instance::new(PluginStatus::Running, None, 0));
+    // Begun, one read done, then paused until its deadline passed: polled now, it would end.
+    rack.edit_check = Some((Instant::now(), 1));
+    rack.restart_edit_check();
+    assert!(rack.edit_check.is_none(), "the next poll starts a check of its own");
+}
+
 #[test]
 fn checking_a_busy_host_has_one_shared_deadline() {
     let mut rack = Rack::default();
@@ -385,4 +398,19 @@ fn instruments_are_told_by_their_features() {
     assert!(!is_instrument(&plugin(&["Fx|Reverb"])));
     assert!(!is_instrument(&plugin(&[])));
     assert_eq!(device_kind(&plugin(&[])), DeviceKind::Vst3 { id: "x".into() });
+}
+
+/// #1262: the plug-in's processing times, as its host measured them, give its longest and its
+/// average; nothing timed reads as 0.
+#[test]
+fn block_counts_keep_the_longest_and_the_average_processing_time() {
+    let counts = BlockCounts::default();
+    assert_eq!((counts.longest_process_us(), counts.average_process_us()), (0, 0));
+    for us in [400, 1_000, 31_000, 600] {
+        counts.processed(us);
+    }
+    assert_eq!(counts.longest_process_us(), 31_000);
+    assert_eq!(counts.average_process_us(), 8_250);
+    // The round trip is kept apart.
+    assert_eq!(counts.longest_us(), 0);
 }

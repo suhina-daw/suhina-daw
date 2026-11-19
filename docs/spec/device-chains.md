@@ -3,7 +3,7 @@ description: How the engine runs devices on tracks - chains, instruments and the
 read_when: device chain, chain, instrument notes, note events, MIDI effect, process_events, group bus, bus, sends into returns, device group in the engine, main channel chain, latency compensation, graph swap keeps devices, chain order, Slot::Group
 type: spec
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-19
 covers:
   - crates/engine/src/chain.rs
   - crates/engine/src/slot_factory.rs
@@ -97,6 +97,12 @@ a parameter change before a note at one frame. So the sound does not depend on t
 as ADR 0004 › 5 asks, and the device smooths each step. A track whose mixer has lanes runs through a
 chain, one without devices when it has none, whose gains move frame by frame after its devices.
 [The automation spec](automation.md) has the details.
+
+Each device's lanes follow the time of its input audio: the chain's incoming latency plus
+the devices before it on its own branch. Hosted parameter lanes use the same history as
+hosted song positions. Historical loop and seek boundaries retain their offsets inside the
+block, and graph adoption takes the new upstream delays. See the
+[PDC timing contract](plugin-delay-compensation.md).
 
 ## Group buses
 

@@ -9,6 +9,75 @@ use std::time::Duration;
 use suhina_plugins::{Launch, Plugin};
 
 #[test]
+fn audio_reset_discards_a_plugins_buffered_sound_without_reloading_it() {
+    let timeout = Duration::from_secs(10);
+    let (mut plugin, mut audio) = Plugin::start(Launch {
+        host: PathBuf::from(env!("CARGO_BIN_EXE_suhina-plugin-host")),
+        plugin: "test:clap-delay".into(),
+        channels: 2,
+        max_frames: 512,
+        sample_rate: 48_000.0,
+        timeout,
+        group: None,
+        ara: None,
+    })
+    .unwrap();
+    let pid = plugin.process_id();
+    let seat = audio.seat();
+    plugin.set_param(0, 128.0).unwrap();
+    let mut output = [0.0; 256];
+    assert_eq!(audio.process(&[0.0; 256], &mut output, timeout), suhina_plugins::Outcome::Done);
+    audio.reset_audio(timeout).unwrap();
+    assert_eq!(plugin.follow_latency(), 128);
+    assert_eq!(audio.process(&[0.5; 256], &mut output, timeout), suhina_plugins::Outcome::Done);
+    assert_eq!(audio.process(&[0.0; 256], &mut output, timeout), suhina_plugins::Outcome::Done);
+    assert_eq!(output, [0.5; 256], "the fixture really retains one block of sound");
+    assert_eq!(audio.process(&[0.5; 256], &mut output, timeout), suhina_plugins::Outcome::Done);
+    audio.reset_audio(timeout).unwrap();
+    assert_eq!(plugin.process_id(), pid);
+    assert_eq!(audio.seat(), seat);
+    assert_eq!(plugin.params().unwrap()[0].value, 128.0);
+    assert_eq!(audio.process(&[0.0; 256], &mut output, timeout), suhina_plugins::Outcome::Done);
+    assert_eq!(output, [0.0; 256], "the cached instance must not replay its old sound");
+}
+
+#[test]
+fn audio_reset_keeps_instance_state_and_link() {
+    for spec in ["test:clap", "test:vst3"].into_iter().chain(cfg!(feature = "vst2").then_some("test:vst2")) {
+        let timeout = Duration::from_secs(10);
+        let (mut plugin, mut audio) = Plugin::start(Launch {
+            host: PathBuf::from(env!("CARGO_BIN_EXE_suhina-plugin-host")),
+            plugin: spec.into(),
+            channels: 2,
+            max_frames: 512,
+            sample_rate: 44_100.0,
+            timeout,
+            group: None,
+            ara: None,
+        })
+        .unwrap();
+        plugin.load_state(0.25f32.to_le_bytes().to_vec()).unwrap();
+        let state = plugin.save_state().unwrap();
+        let pid = plugin.process_id();
+        let seat = audio.seat();
+        let input = [0.5; 256];
+        let mut baseline = [0.0; 256];
+        assert_eq!(audio.process(&input, &mut baseline, timeout), suhina_plugins::Outcome::Done);
+        for _ in 0..3 {
+            audio.reset_audio(timeout).unwrap();
+            assert_eq!(plugin.process_id(), pid, "{spec}");
+            assert_eq!(audio.seat(), seat, "{spec}: the instance changed");
+            assert_eq!(plugin.save_state().unwrap(), state, "{spec}");
+            let mut output = [f32::NAN; 256];
+            assert_eq!(audio.process(&[0.0; 256], &mut output, timeout), suhina_plugins::Outcome::Done);
+            assert_eq!(output, [0.0; 256], "{spec}: old audio on return");
+            assert_eq!(audio.process(&input, &mut output, timeout), suhina_plugins::Outcome::Done);
+            assert_eq!(output, baseline, "{spec}: new audio changed");
+        }
+    }
+}
+
+#[test]
 fn rate_changes_keep_clap_and_vst3_state_and_the_audio_link() {
     for spec in ["test:clap", "test:vst3"] {
         let timeout = Duration::from_secs(10);

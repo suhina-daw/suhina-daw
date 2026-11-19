@@ -76,6 +76,8 @@ mod midi_effect_tests;
 mod missing_instrument;
 #[cfg(test)]
 mod node_tests;
+#[cfg(test)]
+mod pdc_tests;
 mod plugin;
 mod plugin_params;
 #[cfg(test)]
@@ -535,6 +537,8 @@ pub struct Renderer {
     implicit_tones: bool,
     /// The frame of the current block being rendered, for events sent to device chains.
     block_frame: usize,
+    /// The song as each recent block started, read by plug-ins that hear their sound late.
+    songs: plugin::SongHistory,
     /// Rendering offline: plug-ins are waited for without a real-time deadline (ADR 0006).
     offline: bool,
     /// The last frame written, and the step a new graph made from it, eased away over
@@ -778,6 +782,7 @@ impl Renderer {
             clicks: metronome::Clicks::new(),
             implicit_tones: true,
             block_frame: 0,
+            songs: plugin::SongHistory::new(sample_rate),
             offline: false,
             declick: Declick::default(),
             render_lead: None,
@@ -812,9 +817,23 @@ impl Renderer {
         self.pool = pool::RenderPool::new(threads - 1, self.pool_kind()).and_then(|pool| pool.lane(self.sample_rate));
     }
 
+    /// The chains this renderer has sent to render workers so far, for tests that check a render
+    /// used them.
+    pub fn chains_sent_to_workers(&self) -> u64 {
+        self.pool.as_ref().map_or(0, |lane| lane.sent)
+    }
+
     /// The threads that render each block, the render thread included.
     pub fn render_threads(&self) -> usize {
         self.pool.as_ref().map_or(1, pool::Lane::threads)
+    }
+
+    /// Takes a lane of the currently configured process pool without rebuilding the graph
+    /// or its devices. Call before resuming a retained renderer, on the control thread only:
+    /// returning the old lane and acquiring the new one can lock, allocate and stop workers.
+    pub fn use_process_render_pool(&mut self) {
+        self.pool = None;
+        self.pool = pool::process_lane(self.sample_rate, self.pool_kind());
     }
 
     /// Asks the render workers to join real-time priority for blocks of `frames` frames, as the
@@ -938,6 +957,65 @@ impl Renderer {
     /// Shared input diagnostics; obtain before moving the renderer to the audio thread.
     pub fn input_diagnostics(&self) -> Arc<InputDiagnostics> {
         Arc::clone(&self.input.diagnostics)
+    }
+
+    /// Transfers the persistent device input when exchanging project renderers.
+    /// Both renderers must be exclusively owned at a block boundary. Swapping
+    /// retains all allocations and input diagnostics; it does not free or lock.
+    pub fn exchange_audio_input(&mut self, other: &mut Self) {
+        std::mem::swap(&mut self.input, &mut other.input);
+    }
+
+    /// Stops an exclusively owned project renderer before retaining it off the
+    /// render thread. Commands queued just before switching cannot restart it
+    /// when the project is activated later.
+    pub fn suspend_project(&mut self) {
+        self.drain_commands();
+        self.block_frame = 0;
+        if self.transport.running || self.transport.count_in.is_some() || self.transport.start_waiting.is_some() {
+            self.handle(LaunchCommand::Stop);
+        } else {
+            self.release_sounding(true);
+        }
+        self.live.suspend();
+        self.preview.suspend();
+        // The output fades the departing project while its renderer is detached.
+        // A retained transport must not replay that old transition on reactivation.
+        self.start_guard = declick::StartGuard::new(self.sample_rate);
+        self.declick = Declick::default();
+        self.voices.fill(Voice::default());
+        for column in &mut self.graph.launcher.columns {
+            column.fading = None;
+        }
+        self.songs.clear();
+        self.graph.direct_delay.clear();
+        self.graph.click_delay.clear();
+        for chain in &mut self.graph.chains {
+            chain.clear_suspended_delays();
+        }
+    }
+
+    /// Whether a detached renderer has hosted processors that need an audio reset.
+    pub fn has_retained_plugins(&mut self) -> bool {
+        self.graph.chains.iter_mut().any(|chain| chain.plugin_slots().any(|slot| slot.processor.is_some()))
+    }
+
+    /// Clears retained plug-in voices and tails after the renderer has been removed
+    /// from the output. Control-thread only; the timeout covers all processors together.
+    pub fn reset_suspended_plugins(&mut self, timeout: Duration) -> Result<(), ControlError> {
+        let started = Instant::now();
+        for chain in &mut self.graph.chains {
+            for slot in chain.plugin_slots() {
+                if let Some(processor) = slot.processor.as_mut() {
+                    let left = timeout.saturating_sub(started.elapsed());
+                    if left.is_zero() {
+                        return Err(ControlError::Plugin("the project plug-ins did not finish stopping".into()));
+                    }
+                    processor.reset_audio(left).map_err(ControlError::Plugin)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Whether a track is armed to play the live input (ADR 0017): someone may be playing, so
@@ -1303,7 +1381,6 @@ impl Renderer {
         };
         // Plug-in parameter events (set values, automation) are planned before any of the
         // block runs: a chain may run part of it early, when notes crowd it.
-        let at = self.transport.running.then(|| self.time());
         let time = self.time();
         let (bar, bar_start, signature) = self.graph.launcher.bar();
         // The loop is an active cycle only while playback repeats it: a render that plays
@@ -1324,9 +1401,10 @@ impl Renderer {
                 (seconds(start), seconds(end))
             }),
         };
+        self.songs.record(song, frames);
         for chain in &mut self.graph.chains {
-            chain.transport(&song);
-            chain.automate(at, time, frames);
+            chain.transport(&self.songs);
+            chain.automate(&self.songs, frames);
             chain.automate_mix(time, frames, self.transport.running);
         }
         let attack = (ATTACK_SECONDS * f64::from(self.sample_rate)).max(1.0);

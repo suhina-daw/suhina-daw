@@ -598,6 +598,8 @@ fn report(status: PluginStatus, editor_open: bool) -> PluginReport {
         late_blocks: 0,
         longest_us: 0,
         no_time: 0,
+        longest_process_us: 0,
+        average_process_us: 0,
         state_refused: None,
         ara: false,
         params: None,
@@ -2155,6 +2157,35 @@ fn the_height_a_padded_panel_asks_for_does_not_outlive_its_frame() {
     ctx.data_mut(|d| d.insert_temp(shown_device_extra_id(), 40.0_f32));
     assert_eq!(shown_device_insets(&ctx, 6.0), 40.0, "the frame after the panel was shown");
     assert_eq!(shown_device_insets(&ctx, 6.0), 6.0, "gone when nothing leaves it again");
+}
+
+/// #1262: a plug-in that is late with blocks shows, beside how many, the longest time it took
+/// itself, as its host measured it.
+#[test]
+fn a_late_plug_in_shows_its_own_longest_time() {
+    let late = |longest_process_us| PluginReport {
+        blocks: 200,
+        late_blocks: 98,
+        longest_process_us,
+        ..report(PluginStatus::Running, false)
+    };
+    assert_eq!(
+        PluginBox::from_report(Some(late(31_200))).line,
+        "Verb by Vendor · 49% of blocks late · plug-in up to 31 ms"
+    );
+    assert_eq!(
+        PluginBox::from_report(Some(late(2_450))).line,
+        "Verb by Vendor · 49% of blocks late · plug-in up to 2.5 ms"
+    );
+    assert_eq!(
+        PluginBox::from_report(Some(late(640))).line,
+        "Verb by Vendor · 49% of blocks late · plug-in up to 640 µs"
+    );
+    // Not timed yet (an older host, or no block answered): no time is shown.
+    assert_eq!(PluginBox::from_report(Some(late(0))).line, "Verb by Vendor · 49% of blocks late");
+    // A plug-in that is never late shows no time either.
+    let on_time = PluginReport { blocks: 200, longest_process_us: 900, ..report(PluginStatus::Running, false) };
+    assert_eq!(PluginBox::from_report(Some(on_time)).line, "Verb by Vendor");
 }
 
 /// After a chain's last panel, the slot a dropped effect goes in: as tall as the panels, right of

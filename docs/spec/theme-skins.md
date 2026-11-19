@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-18
+last_verified: 2026-11-19
 covers:
   - crates/ui/src/kit/platform.rs
   - crates/ui/src/kit/session_geometry.rs
@@ -1312,11 +1312,11 @@ a project with more tracks and scenes than fit, so whatever shows through a head
 shows there. A scene wider than the GPU's textures allow is drawn at a smaller `--scale`, with a warning. A built-in theme's id works in place of a folder. It warns when the window would keep
 repainting every frame in a scene. `--budget` prints the style engine's counts instead.
 
-**Every built-in theme keeps its look unless a change means to change it.** A test of
-`suhina-theme-render` draws each scene in every built-in theme and variant without a GPU, and Suhina
-Studio once more with the style engine on, and lists what the last frame paints: each shape's
-place and size to a quarter point, its colours, its text and its texture by name. Each listing's
-digest is held in `apps/theme-render/tests/painted.txt`, one file for every system: the scenes
+**Every built-in theme keeps its look unless a change means to change it.** The painted tests of
+`suhina-theme-render` draw each scene in every built-in theme and variant without a GPU, and list
+what the last frame paints: each shape's place and size to a quarter point, its colours, its text
+and its texture by name. Each listing's digest is held in `apps/theme-render/tests/painted/`,
+one file per theme or variant, shared by every system: the scenes
 are drawn with the window looking like Linux wherever they run (`crate::kit::platform`), so the
 text that differs between systems (shortcuts as `Ctrl+C` or `⌘C`, the plug-in formats Settings
 names, the title bar Suhina draws on Windows) is the same in every run. Each drawing runs on a thread of its own, so none
@@ -1330,8 +1330,8 @@ shortened with "…" to fit, wrapped onto another line where it has no line brea
 outside its clip; a text painted twice at one place, each copy clipped to one side (a value over
 a fill, in two colours), counts as one with its clips joined where they touch, and the scrolled scenes' clipped
 texts are left out, since a view scrolled along cuts at its edge on purpose. Some cuts are meant
-and some are bugs not yet fixed, so `apps/theme-render/tests/cut.txt` holds each theme's cut
-texts, each once under the first scene by name that shows it: a change that cuts a new text, or
+and some are bugs not yet fixed, so `apps/theme-render/tests/cut/` holds one file per theme or
+variant with its cut texts, each once under the first scene by name that shows it: a change that cuts a new text, or
 stops cutting one, fails until the list is recorded with `SUHINA_BLESS=1`, and the pull request
 says why. A text wholly outside its clip shows nothing and is not listed, so a label pushed out
 of sight entirely is not found this way. A paragraph that wraps on purpose (help text in Settings or

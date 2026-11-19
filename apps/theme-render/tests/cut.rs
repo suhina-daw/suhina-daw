@@ -1,10 +1,10 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The texts each built-in theme and variant cuts off are those recorded in `cut.txt` (#1548): a
+//! The texts each built-in theme and variant cuts off are those recorded in `cut/<theme>.txt` (#1548): a
 //! label shortened with "…", wrapped onto another line, or painted partly outside its clip
 //! ([`suhina_theme_render::cut`]). Headless, on the drawings the painted test makes
-//! ([`super::painted::all`]).
+//! ([`super::painted::Drawings`]), once per theme for both checks.
 //!
 //! Some cuts are meant (a long path in a dialog, a name in a narrow column) and some are bugs not
 //! yet fixed, so the test holds the list rather than an empty one: a change that cuts a new text,
@@ -22,8 +22,8 @@ use std::path::{Path, PathBuf};
 use suhina_theme_render::cut::{Cut, How};
 use suhina_theme_render::scenes;
 
-fn file() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cut.txt")
+fn file(theme: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cut").join(format!("{theme}.txt"))
 }
 
 /// Whether `cut` in `scene` is one the test holds.
@@ -48,8 +48,8 @@ fn lines<'a>(drawings: impl Iterator<Item = (&'a (String, String), &'a [Cut])>) 
 
 /// Checked by the painted test (`painted.rs`), which draws the scenes once for both.
 #[allow(clippy::unwrap_used)] // called by the painted test, outside a #[test] function
-pub fn cuts_off_only_the_texts_recorded() {
-    let all = super::painted::all();
+pub fn cuts_off_only_the_texts_recorded(theme: &str, all: &super::painted::Drawings) {
+    let file = file(theme);
     let failed: Vec<String> = all
         .iter()
         .filter_map(|((scene, theme), drawing)| drawing.as_ref().err().map(|e| format!("{scene} in {theme}: {e}")))
@@ -66,10 +66,10 @@ pub fn cuts_off_only_the_texts_recorded() {
         text.push('\n');
     }
     if suhina_test_support::blessing() {
-        std::fs::write(file(), text).unwrap();
+        std::fs::write(&file, text).unwrap();
         return;
     }
-    let recorded = std::fs::read_to_string(file()).unwrap_or_default();
+    let recorded = std::fs::read_to_string(&file).unwrap();
     let recorded: Vec<&str> = recorded.lines().filter(|l| !l.starts_with('#') && !l.trim().is_empty()).collect();
     let added: Vec<&String> = now.iter().filter(|line| !recorded.contains(&line.as_str())).collect();
     let gone: Vec<&&str> = recorded.iter().filter(|line| !now.iter().any(|n| n == **line)).collect();
@@ -77,10 +77,11 @@ pub fn cuts_off_only_the_texts_recorded() {
         added.is_empty() && gone.is_empty(),
         "the texts cut off differ from {} (see tests/cut.rs for how to record them).\n\
          Cut now, not recorded:\n{}\nRecorded, not cut now:\n{}\n\n\
-         The file as this run draws it, between the lines:\n----- cut.txt -----\n{text}----- end -----",
-        file().display(),
+         The file as this run draws it, between the lines:\n----- {} -----\n{text}----- end -----",
+        file.display(),
         added.iter().map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n"),
         gone.iter().map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n"),
+        file.display(),
     );
 }
 

@@ -3,15 +3,27 @@ description: ASIO host initialization and native panels, plus audio output start
 read_when: ASIO, audio driver initialization, native control panel, output startup and shutdown, ASIOInit, sysRef
 type: spec
 status: current
-last_verified: 2026-11-10
+last_verified: 2026-11-19
 covers:
   - third_party/asio-sys/
   - third_party/cpal/
   - Cargo.toml
   - crates/output/
+  - crates/engine/src/lib.rs
+  - crates/engine/src/live.rs
+  - crates/engine/src/preview.rs
+  - crates/engine/src/swap.rs
+  - crates/engine/src/chain.rs
+  - crates/engine/src/group.rs
+  - crates/engine/src/plugin.rs
   - crates/session/src/projects.rs
   - crates/session/src/player.rs
   - crates/session/src/audio.rs
+  - crates/session/src/player_sync.rs
+  - crates/session/src/lib.rs
+  - crates/session/src/midi.rs
+  - crates/session/src/recording.rs
+  - apps/suhina/src/main.rs
 ---
 
 # ASIO host and output lifecycle
@@ -238,6 +250,81 @@ dialog runs on the owner thread, independently of render and device callbacks.
 A superseded plug-in start is released on a worker thread, since unloading its host
 may wait for a sibling loading after a sample-rate change.
 
+## One output across project changes
+
+Project activation, opening a new project, replacing a project and closing the
+active project retain the device stream when the output settings are unchanged.
+With no project open, the same output supplies silence and browser previews.
+Only the active project's renderer receives transport and live-input commands.
+
+The control side prepares a fresh stopped renderer with the destination project's
+audio and device assets. A bounded lock-free exchange installs it between render
+blocks and returns the old renderer to the control side for disposal. Project
+track and plug-in ids never carry state across this boundary. Each open session
+retains its own suspended renderer, controller and sandboxed plug-in instances;
+returning to it resumes those instances instead of loading them again. Background
+renderers do not process audio. Closing a session releases its retained renderer
+and plug-in hosts outside the real-time threads. A changed device sample rate
+requires reconfiguration before that session can resume. File-backed device assets
+keep the suspended renderer's rate during background edits and are refreshed at the
+destination device's rate before its graph is built. Resumed renderers take the
+current cue volume and a lane of the currently configured process render pool;
+changing these settings in another project must not restore their old values.
+The input stream, its consumer and device diagnostics survive the exchange. Neither the device
+callback nor the render thread allocates, frees, locks or writes diagnostics
+during the exchange. Recording is finalized before the old session detaches.
+Main and cue transition from the last queued frame into the next renderer over
+5 ms; the device ring is not flushed or restarted.
+
+Leaving a project stops its transport. Returning to that project stays silent
+until a new playback, live-input or preview action: the old stop fade, latency
+compensation audio and delayed transport history are discarded while suspended.
+They must not replay on return or temporarily report the old running transport
+to a plug-in. The output's project transition supplies the departure fade.
+
+A failed renderer build leaves the device available and reports the failure
+without losing either project. A stalled exchange must not permit another device
+owner to start. Device selection, sample-rate or buffer changes and driver reset
+requests use the explicit close/reopen path below. Application shutdown closes
+the retained output even when no project is open.
+
+Tests exercise owner reuse across project and preview transitions, retained
+renderer identity, input diagnostics, MIDI reconnection and independent plug-in
+processors even with equal device ids. Hardware testing remains necessary to
+validate a particular driver's behavior under the original project workload.
+
+## Releasing an output before opening another
+
+Dropping a player and explicitly closing one both request audio-owner shutdown.
+A background joiner waits for the entire audio thread to end, including stream,
+input and driver destruction, before releasing the process-wide output slot.
+The caller waits at most five seconds. A timeout leaves the slot occupied and
+subsequent output opens report an error; they never start another driver over an
+unfinished shutdown. Once shutdown finishes, an explicit output selection can
+retry. A panicked audio thread keeps the slot unavailable until app restart.
+Project data and the requested output settings remain intact.
+
+This applies to device changes, failed startup, automatic output recovery and
+application shutdown. Project changes use the retained stream described above.
+Closing a project transfers the device to the idle engine before returning the
+session for background cleanup. Ordinary disposal
+also drops its audio plug-in processors in the background; explicit reopening
+can hand them to the next owner after the old audio thread has ended.
+The desktop activates a newly opened project before opening its audio output,
+so adding or replacing a tab detaches the old project renderer first. A failed new output
+leaves the project open and reports its error.
+
+The ASIO wrapper separately keeps its driver slot occupied until final teardown
+succeeds. An expired weak reference alone does not allow a new load: the final
+strong reference reaches zero before its destructor finishes. A load during that
+interval returns DriverAlreadyExists, without waiting for the old driver. A
+failed teardown leaves the slot unavailable rather than initializing over a
+partially stopped driver. This also covers explicit Driver::destroy.
+
+These ordering guarantees are tested with channels and a simulated driver
+lifetime, without hardware. They do not establish that any particular driver
+survives the original large-project reproduction; that requires a hardware test.
+
 ## Audio output startup and diagnostics
 
 Before starting a device stream, the output owner primes its ring with silence to the normal
@@ -271,3 +358,5 @@ the real-time thread never writes the log.
 
 - [Steinberg ASIO SDK 2.3 specification, section 5](https://dspace.tul.cz/bitstream/handle/15240/49466/ASIO_SDK_2.3.pdf?sequence=1).
 - [CPAL single-buffer compatibility report](https://github.com/RustAudio/cpal/pull/1077).
+- [CPAL upstream teardown/load fix](https://github.com/RustAudio/cpal/commit/bfb4f70214366ae59c6dfc107faf4864c3c0659a): identifies the expired-weak-reference window during ASIO destruction. Suhina keeps an occupied flag through teardown instead of adding a blocking destructor lock.
+- [CPAL follow-up on dropping a driver under the load lock](https://github.com/RustAudio/cpal/commit/09aca1eac90518d53424fef1e19ce0ea56959057).

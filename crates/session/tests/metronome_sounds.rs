@@ -128,6 +128,35 @@ fn a_library_sound_clicks_on_every_beat_and_the_bar_plays_its_own_sound() {
 }
 
 #[test]
+fn replacing_the_player_restores_the_click_sounds_and_cue_route() {
+    let base = library();
+    let (mut session, _previous) = playing(&base);
+    run(
+        &mut session,
+        "transport.setMetronome",
+        json!({
+            "on": true, "db": 0, "sound": "library/Claps/A.wav",
+            "accent": "library/Claps/b.wav", "route": "cue"
+        }),
+    )
+    .unwrap();
+
+    let mut renderer =
+        Renderer::stopped(&Project::default(), &AudioPool::new(), SR, suhina_session::devices()).unwrap();
+    renderer.handle(suhina_engine::LaunchCommand::SetCue { gain: Some(1.0), separate: Some(true) });
+    session.attach_player(Player::new(renderer.controller(), None));
+    run(&mut session, "transport.play", json!({})).unwrap();
+    let mut main = vec![0.0; 2 * BEAT];
+    let mut cue = vec![0.0; 2 * BEAT];
+    for expected in [0.25, 0.5] {
+        renderer.process_with_cue(&mut main, &mut cue);
+        assert!(main.iter().all(|sample| *sample == 0.0), "the click stays off Main after replacing the output");
+        let peak = cue.iter().fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+        assert!((peak - expected).abs() < 0.01, "the bar and beat keep their library sounds: {peak} != {expected}");
+    }
+}
+
+#[test]
 fn a_sound_outside_the_library_folder_or_not_a_sound_is_refused_and_changes_nothing() {
     let base = library();
     std::fs::write(base.join("secret.wav"), "x").unwrap();

@@ -4,7 +4,7 @@ read_when: tabs, several projects, open projects, switch project, Ctrl+Tab, proj
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-19
 covers:
   - crates/session/src/projects.rs
   - crates/automation/src/server.rs
@@ -40,9 +40,23 @@ the layer that owns sessions.
    the tab to its right, or to its left when it was the last. Opening stays outside the
    registry for now, since it needs file access that each front end grants differently (the
    MCP server's read root).
-4. **Only the active project plays.** Switching closes the previous project's `Player`; the
-   front end starts one for the new active project on the output chosen (`Projects` keeps the
-   choice, `audio.setOutput`). Two projects never mix into one output.
+4. **Only the active project plays through one retained output.** Switching parks the
+   previous project's renderer and plug-in instances and attaches the destination's
+   renderer to the same device. Background projects do not render. Device setting
+   changes and shutdown explicitly close the output. Two projects never mix into it.
+   *Amended 2026-11-18, see Amendment: Retained output and project engines.*
+
+## Amendment: Retained output and project engines (2026-11-18)
+
+[#1563](https://github.com/suhina-daw/suhina-daw/issues/1563) extends decision 4:
+project changes must not repeatedly unload the driver or reload plug-ins. An open
+session retains its renderer, controller and sandboxed plug-in instances while
+inactive. The device runs the active renderer or a silent engine between projects.
+A lock-free exchange at a block boundary returns the previous renderer to the
+control side. Input capture stays attached to the device. Closing a project
+releases its retained engine and plug-ins outside the real-time threads.
+A changed sample rate may require recreating a suspended engine and its plug-ins.
+Behavior is specified in [the output lifecycle](../spec/asio-host.md#one-output-across-project-changes).
 
 ## Consequences
 
@@ -51,15 +65,12 @@ the layer that owns sessions.
 
 - The MCP server holds `Projects`: `project_open` adds a project and makes it active, and with
   `--audio` a switch starts the new project playing.
-- A switch with audio opens a new output stream (the project's audio was decoded when it was
-  opened and stays with its session), so it is not instant. Keeping one output open and swapping
-  the engine graph ([ADR 0005](0005-edits-while-playing.md)) would make it so; that is a
-  follow-up.
+- A switch with audio keeps the device stream open and exchanges project engines.
 - Background projects stay in memory with their undo history and their decoded audio, in the
-  desktop app (as tabs) and over MCP alike, so a switch opens only a new output stream.
-- Only the active project's plug-ins run: `Projects::poll_plugins` starts them while it plays,
-  and a project that stops playing (another tab made active) stops them, each keeping its last
-  state for when the project plays again ([ADR 0006](0006-plug-in-hosting.md)).
+  desktop app (as tabs) and over MCP alike, together with their suspended engines.
+- Only the active project's plug-ins process audio. Background sessions retain their
+  instances and state until activated again or closed. This uses more memory than
+  unloading them on every switch ([ADR 0006](0006-plug-in-hosting.md)).
 - `Projects` is where Suhina-wide state lives too: it also holds the plug-in library that the
   `plugin.*` commands run on ([ADR 0006](0006-plug-in-hosting.md)) and the browser's library that
   the `library.*` commands run on ([ADR 0012](0012-file-library.md)), shared by every open

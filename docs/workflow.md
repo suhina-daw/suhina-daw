@@ -3,7 +3,7 @@ description: The one copy of how work is done on Suhina - issues and their types
 read_when: opening an issue, claiming, /claim, opening a pull request, branch name, issue type, labels, overlapping work, Depends on, post as the bot, agent_post, how to check it, settings help, which documents to update, generated files, front matter, last_verified, merging
 type: howto
 status: current
-last_verified: 2026-11-08
+last_verified: 2026-11-18
 covers:
   - scripts/agent_post.py
   - scripts/branch_name.py
@@ -247,7 +247,7 @@ blocking issue is closed.
 ### Merging
 
 Merging is a maintainer's decision. An agent never adds the `ready to merge` label, which approves
-a pull request and sends it to the merge queue
+a pull request and turns on its auto-merge
 ([CONTRIBUTING.md › Merging many pull requests](../CONTRIBUTING.md#merging-many-pull-requests)), and
 never merges or queues a pull request itself unless the person asks for that one. It gets a pull
 request green and mergeable and says it is ready; the maintainer adds the label.
@@ -264,8 +264,8 @@ A pull request closes every issue it settles by name: one `Closes #N` line per i
 description. GitHub closes an issue only from a closing keyword in the description (or a link
 made by hand in the pull request's Development box), never from the title, so an issue named in
 the title, in prose or in a list ("#681 to #725") is not closed by the merge. A stacked pull
-request's `Closes` line takes effect when it reaches `main`: GitHub retargets it there once the
-pull request below it merges. Before writing `Closes #N`, go through the issue's points one by
+request's `Closes` line takes effect when it reaches `next`, the default branch: GitHub retargets
+it there once the pull request below it merges. Before writing `Closes #N`, go through the issue's points one by
 one against the change.
 
 When the main work is done but a point or a few are left, the pull request still closes the issue:
@@ -362,7 +362,7 @@ enforces it, and `python scripts/docs.py impact` lists the documents that cover 
 | What is read from a format, or behaviour described in a spec | the spec in `docs/spec/` |
 | What a `.suhina` or `.sd` file holds | its `VERSION`, a file for the new version and a row in the spec's *Versions* ([ADR 0010](decisions/0010-project-files.md) › Amendment: format versions) |
 | MCP tools, or how agents use commands | [`mcp.md`](mcp.md) (the command list, [`commands.md`](commands.md), is generated) |
-| What works for users | a new bullet as a file of its own in [`works-now/`](works-now/README.md), folded into [`ROADMAP.md`](../ROADMAP.md) › What works now on `main`; a bullet already there is changed in `ROADMAP.md`; [`README.md`](../README.md) if it shows it |
+| What works for users | a new bullet as a file of its own in [`works-now/`](works-now/README.md), folded into [`ROADMAP.md`](../ROADMAP.md) › What works now on `next`; a bullet already there is changed in `ROADMAP.md`; [`README.md`](../README.md) if it shows it |
 | A setting in the Settings window (`settings_rows.rs`) | the table and rules in [`spec/ui-settings.md`](spec/ui-settings.md), and `docs/guide-data/settings-help.json` |
 | A rule in `AGENTS.md` or this file | that file only: each rule is written once |
 | A checklist a skill in `.claude/skills/` gives | that skill (`docs.py check` checks the paths and symbols it names) |
@@ -374,11 +374,11 @@ to (the crate table), add a row of your own rather than extending someone else's
 *What works now* bullet is a file of its own in `docs/works-now/`.
 
 **Generated files stay out of the change.** [`INDEX.md`](INDEX.md) (from the documents' front
-matter) and [`commands.md`](commands.md) (from the command registry) are regenerated on `main`
+matter) and [`commands.md`](commands.md) (from the command registry) are regenerated on `next`
 after every merge by [`docs-generated.yml`](../.github/workflows/docs-generated.yml), and a pull
 request that edits one of them fails CI rather than losing the edit silently. The same workflow
 writes one more thing a pull request leaves alone: `last_verified` in a document's front matter,
-which `python scripts/docs.py stamp` moves up to the day of the document's last change on `main`
+which `python scripts/docs.py stamp` moves up to the day of the document's last change on `next`
 after the merge.
 
 ```sh
@@ -391,7 +391,7 @@ python scripts/docs.py index    # prints the index with your documents in it; wr
 **Front matter.** Every file under `docs/` starts with front matter (format in `scripts/docs.py`):
 `description`, `read_when`, `type` (system, decision, spec, howto, plan), `status`,
 `last_verified` and `covers`, the code paths it describes. A pull request that changes a document
-has checked it, and `main` stamps `last_verified` with the day of the merge, so leave the line as
+has checked it, and `next` stamps `last_verified` with the day of the merge, so leave the line as
 it is. Set it by hand only when you checked a document against the code without changing anything
 else in it, or for a new document. A commit that changes documents without checking them (a rename
 across all of them) carries a `Last-verified: keep` line in its message. CI warns when the date is

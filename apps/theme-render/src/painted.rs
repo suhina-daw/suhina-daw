@@ -3,7 +3,7 @@
 
 //! What a scene paints, as text: one line per shape of its last frame, in paint order, with its
 //! place, size and colours. A change that should leave a theme's look alone leaves this listing
-//! alone, so its digest, held in `tests/painted.txt`, checks "looks the same" without a GPU (#1023).
+//! alone, so its digest, held by theme in `tests/painted/`, checks "looks the same" without a GPU (#1023).
 //!
 //! Places and sizes are rounded to a quarter of a point, so a last-bit difference in a system's
 //! `sin` or `cos` between machines does not change a listing; colours are exact.

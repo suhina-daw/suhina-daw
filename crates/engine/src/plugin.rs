@@ -109,6 +109,231 @@ impl SongPosition {
         }
         song
     }
+
+    /// The song `frames` frames later, at this block's tempo and time signature: within the
+    /// block this position starts. A loop that ends within it starts again from its start.
+    fn later(&self, frames: u64, sample_rate: f64) -> Self {
+        if !self.playing || frames == 0 || sample_rate <= 0.0 || self.tempo <= 0.0 {
+            return *self;
+        }
+        let mut song = *self;
+        song.position = song.position.saturating_add(frames);
+        song.beat += frames as f64 * song.tempo / (60.0 * sample_rate);
+        if let (Some((start, end)), Some((start_s, end_s))) = (song.cycle, song.cycle_seconds)
+            && end > start
+            && self.beat < end
+            && song.beat >= end
+        {
+            song.beat = start + (song.beat - end);
+            let frame_of = |seconds: f64| (seconds.max(0.0) * sample_rate).round() as u64;
+            song.position = frame_of(start_s).saturating_add(song.position.saturating_sub(frame_of(end_s)));
+        }
+        let bar_beats = f64::from(song.numerator.max(1)) * 4.0 / f64::from(song.denominator.max(1));
+        while song.beat >= song.bar_start + bar_beats {
+            song.bar = song.bar.saturating_add(1);
+            song.bar_start += bar_beats;
+        }
+        while song.beat < song.bar_start && song.bar > 0 {
+            song.bar -= 1;
+            song.bar_start -= bar_beats;
+        }
+        song
+    }
+}
+
+/// How many blocks' songs a [`SongHistory`] keeps. Its duration depends on block sizes and
+/// sample rate; smaller blocks can exhaust it before [`crate::MAX_LATENCY_SECONDS`].
+pub(crate) const SONG_HISTORY: usize = 8192;
+
+/// The song as each recent block started, in the order the blocks played, so a plug-in that
+/// hears its sound late is told the song of what it hears as the transport moved then: across a
+/// loop's wrap, a jump, a tempo or a time signature change, where the current song stepped back
+/// at the current tempo would be wrong. Allocated once; recording and reading never allocate.
+pub(crate) struct SongHistory {
+    /// `(frames played before the block, the song as it started)`, a ring.
+    blocks: Box<[(u64, SongPosition)]>,
+    /// Where the next block goes.
+    next: usize,
+    /// How many blocks it holds.
+    len: usize,
+    /// Frames played so far, the transport stopped or not.
+    played: u64,
+    sample_rate: f64,
+}
+
+impl SongHistory {
+    /// Discards transport from before a project was suspended, keeping its storage.
+    pub(crate) fn clear(&mut self) {
+        self.next = 0;
+        self.len = 0;
+        self.played = 0;
+    }
+
+    /// An empty history. Allocates.
+    pub(crate) fn new(sample_rate: u32) -> Self {
+        Self {
+            blocks: vec![(0, SongPosition::default()); SONG_HISTORY].into_boxed_slice(),
+            next: 0,
+            len: 0,
+            played: 0,
+            sample_rate: f64::from(sample_rate),
+        }
+    }
+
+    /// Records the song as a block of `frames` frames starts: it is the current block until the
+    /// next is recorded. Never allocates.
+    pub(crate) fn record(&mut self, song: SongPosition, frames: usize) {
+        let size = self.blocks.len();
+        if let Some(slot) = self.blocks.get_mut(self.next) {
+            *slot = (self.played, song);
+        }
+        self.next = (self.next + 1) % size.max(1);
+        self.len = (self.len + 1).min(size);
+        self.played = self.played.saturating_add(frames as u64);
+    }
+
+    /// The `i`th block kept, oldest first.
+    fn block(&self, i: usize) -> Option<&(u64, SongPosition)> {
+        let size = self.blocks.len().max(1);
+        self.blocks.get((self.next + size - self.len + i) % size)
+    }
+
+    /// The arrangement spans represented by a device's input audio in this block. History is
+    /// addressed in processed frames, so a delayed loop or seek keeps its offset in the block.
+    /// This borrows the history only while planning, before chains move to render workers.
+    pub(crate) fn spans(&self, delay: u32, frames: usize) -> AutomationSpans<'_> {
+        let now = self.len.checked_sub(1).and_then(|i| self.block(i)).map_or(0, |(at, _)| *at);
+        AutomationSpans {
+            history: self,
+            target: i128::from(now) - i128::from(delay),
+            offset: 0,
+            remaining: frames.min(crate::chain::MAX_BLOCK),
+        }
+    }
+
+    /// The song `frames` frames before the current block's start: the block that was playing
+    /// then, moved on to that frame ([`SongPosition`]'s tempo, signature and loop of that block).
+    /// Before the oldest block kept, that block stepped back ([`SongPosition::earlier`]).
+    /// Never allocates.
+    pub(crate) fn heard(&self, frames: u32) -> SongPosition {
+        let Some(&(now, current)) = self.len.checked_sub(1).and_then(|last| self.block(last)) else {
+            return SongPosition::default();
+        };
+        if frames == 0 {
+            return current;
+        }
+        let Some(target) = now.checked_sub(u64::from(frames)) else {
+            // Before anything was played: the first block stepped back.
+            let (at, first) = self.block(0).copied().unwrap_or((now, current));
+            let back = u64::from(frames).saturating_sub(now - at);
+            return first.earlier(u32::try_from(back).unwrap_or(u32::MAX), self.sample_rate);
+        };
+        // The first block kept that started after the target; the one before it played it.
+        let (mut low, mut high) = (0, self.len);
+        while low < high {
+            let mid = low + (high - low) / 2;
+            match self.block(mid) {
+                Some(&(at, _)) if at <= target => low = mid + 1,
+                _ => high = mid,
+            }
+        }
+        if let Some(&(at, song)) = low.checked_sub(1).and_then(|i| self.block(i)) {
+            return song.later(target - at, self.sample_rate);
+        }
+        // Older than anything kept (or than the first block played): the oldest stepped back.
+        let (at, oldest) = self.block(0).copied().unwrap_or((now, current));
+        let back = u64::from(frames).saturating_sub(now - at);
+        oldest.earlier(u32::try_from(back).unwrap_or(u32::MAX), self.sample_rate)
+    }
+}
+
+/// One continuous portion of the arrangement heard by a device, with its offset in this block.
+#[derive(Clone, Copy)]
+pub(crate) struct AutomationSpan {
+    pub(crate) offset: usize,
+    pub(crate) frames: usize,
+    pub(crate) time: Option<u64>,
+    pub(crate) parked: u64,
+    /// False before arrangement zero: hold its value rather than replaying its first frames.
+    pub(crate) advancing: bool,
+}
+
+/// Allocation-free view of a delayed block. Adjacent history records with continuous
+/// arrangement positions are joined so old callback boundaries do not create extra events.
+#[derive(Clone)]
+pub(crate) struct AutomationSpans<'a> {
+    history: &'a SongHistory,
+    target: i128,
+    offset: usize,
+    remaining: usize,
+}
+
+impl AutomationSpans<'_> {
+    fn next_record(&mut self) -> Option<AutomationSpan> {
+        if self.remaining == 0 {
+            return None;
+        }
+        let (mut low, mut high) = (0, self.history.len);
+        while low < high {
+            let mid = low + (high - low) / 2;
+            match self.history.block(mid) {
+                Some(&(at, _)) if i128::from(at) <= self.target => low = mid + 1,
+                _ => high = mid,
+            }
+        }
+        let (at, song) = low
+            .checked_sub(1)
+            .and_then(|i| self.history.block(i))
+            .or_else(|| (self.history.len > 0).then(|| self.history.block(0)).flatten())
+            .copied()
+            .unwrap_or((0, SongPosition::default()));
+        let mut frames = self.remaining;
+        if low < self.history.len
+            && let Some(&(end, _)) = self.history.block(low)
+        {
+            frames = frames.min(usize::try_from(i128::from(end) - self.target).unwrap_or(usize::MAX));
+        }
+        let position = i128::from(song.position) + if song.playing { self.target - i128::from(at) } else { 0 };
+        // The pre-roll before frame zero holds the first value. Split exactly where zero
+        // arrives; saturating the start and then advancing would automate the silent pre-roll.
+        if song.playing && position < 0 {
+            frames = frames.min(usize::try_from(-position).unwrap_or(usize::MAX));
+        }
+        let position_frame = u64::try_from(position.max(0)).unwrap_or(u64::MAX);
+        let span = AutomationSpan {
+            offset: self.offset,
+            frames,
+            time: song.playing.then_some(position_frame),
+            parked: position_frame,
+            advancing: song.playing && position >= 0,
+        };
+        self.target += frames as i128;
+        self.offset += frames;
+        self.remaining -= frames;
+        Some(span)
+    }
+}
+
+impl Iterator for AutomationSpans<'_> {
+    type Item = AutomationSpan;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut span = self.next_record()?;
+        loop {
+            let mut next = self.clone();
+            let Some(after) = next.next_record() else { break };
+            let end = span.time.map(|at| at.saturating_add(if span.advancing { span.frames as u64 } else { 0 }));
+            if span.advancing != after.advancing
+                || end != after.time
+                || (span.time.is_none() && span.parked != after.parked)
+            {
+                break;
+            }
+            span.frames += after.frames;
+            *self = next;
+        }
+        Some(span)
+    }
 }
 
 impl Default for SongPosition {
@@ -131,6 +356,11 @@ impl Default for SongPosition {
 /// The audio half of a running plug-in, as the engine sees it. Implemented outside the engine
 /// (the session, over `suhina-plugins`); test doubles implement it too.
 pub trait PluginProcessor: Send {
+    /// Clears voices and buffered audio while retaining the instance and its parameters.
+    /// Called only on the control thread after its renderer has left the output.
+    fn reset_audio(&mut self, _timeout: Duration) -> Result<(), String> {
+        Err("this processor does not support audio reset".into())
+    }
     /// The instrument softens its own transport stop before handing audio to effects.
     fn smooth_transport_stop(&self) -> bool {
         false
@@ -255,6 +485,37 @@ pub trait PluginProcessor: Send {
     /// `events` (which a refused block did not deliver). Never allocates.
     fn followed(&mut self, events: &[(usize, NoteEvent)], how: Followed) {
         let _ = (events, how);
+    }
+
+    /// How long the plug-in at `index` among the followers of the last joint block this one
+    /// sent ([`PluginProcessor::send_joint`]) took to process it, in microseconds, as its host
+    /// measured it, once that block is answered; `None` (the default) before that or when the
+    /// processor cannot tell (#1262). Never allocates.
+    fn follower_process_us(&self, index: usize) -> Option<u32> {
+        let _ = index;
+        None
+    }
+
+    /// The time a plug-in that followed in a joint block took to process it, in microseconds
+    /// ([`PluginProcessor::follower_process_us`] of the first), so it is counted with the
+    /// plug-in's own. Never allocates.
+    fn followed_process_us(&mut self, process_us: u32) {
+        let _ = process_us;
+    }
+}
+
+/// The slots of the plug-ins that followed in a joint block this plug-in sent and that was not
+/// answered in time: their processing times come with the late answer, which this plug-in's link
+/// holds until its next block goes (#1262).
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct LateFollowers {
+    pub(crate) slots: [usize; MAX_JOINED],
+    pub(crate) len: usize,
+}
+
+impl LateFollowers {
+    pub(crate) fn slots(&self) -> &[usize] {
+        self.slots.get(..self.len).unwrap_or_default()
     }
 }
 
@@ -435,6 +696,10 @@ pub(crate) struct PluginSlot {
     pub(crate) sent_at: Option<Instant>,
     /// The parameter values it sends: set ones and automation.
     pub(crate) params: SlotParams,
+    /// The followers of its last joint block, while that block's late answer has not given
+    /// their processing times yet. Boxed, as it is seldom used, and made with the slot, so the
+    /// audio thread only reads and writes it in place.
+    pub(crate) late_followers: Box<LateFollowers>,
     /// It reads a key (sidechain): its blocks go on their own, never joined with another
     /// plug-in's, since a joint block carries one plug-in's input.
     pub(crate) keyed: bool,
@@ -456,6 +721,8 @@ impl PluginSlot {
         // has loaded): it hears the song as late as the new graph says.
         self.song_delay = fresh.song_delay;
         self.params.adopt(&mut fresh.params);
+        // The slots it remembered may have moved with the edit.
+        self.late_followers.len = 0;
         if fresh.processor.is_some() {
             std::mem::swap(&mut self.processor, &mut fresh.processor);
             self.params.restart();
@@ -663,6 +930,12 @@ pub(crate) struct Delay {
 }
 
 impl Delay {
+    /// Silences what it holds, so nothing that went in before comes out. Never allocates.
+    pub(crate) fn clear(&mut self) {
+        self.buffer.fill(0.0);
+        self.at = 0;
+    }
+
     pub(crate) fn new(frames: usize) -> Self {
         Self { buffer: vec![0.0; frames * 2], at: 0 }
     }
@@ -683,12 +956,6 @@ impl Delay {
                 self.at = 0;
             }
         }
-    }
-
-    /// Silences what it holds, so nothing that went in before comes out. Never allocates.
-    pub(crate) fn clear(&mut self) {
-        self.buffer.fill(0.0);
-        self.at = 0;
     }
 
     /// How many frames it delays by.

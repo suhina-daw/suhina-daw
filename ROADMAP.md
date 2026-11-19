@@ -333,6 +333,21 @@ refused or suspended, never by losing its edits.
   folds, names and colours its tracks like a group, has no mixer controls and is kept in the
   project file.
 
+- **Importing `.flp` projects (partial):** the window, `suhina-cli` and the MCP server open an FL
+  Studio project file. Patterns become clips on the instrument or sample tracks they play, shared
+  across placements; samplers, audio clips (fades, gain, stretch timing as warp markers), wrapped
+  VST2 and VST3 instruments and effects with their saved state and sidechains, parallel instrument
+  patches as device groups and neutral layers come in, with known effects as approximate built-in
+  substitutes. Mixer routing becomes groups and sends, a mixer insert fed by one source folds into
+  its track, an instrument's own mute switches its device off and a mixer mute stays on its track
+  or group. Volume automation of audio clips becomes gain envelopes and supported device and mixer
+  automation becomes lanes on its owner; playlist colours and groups become track colours and
+  folders. Samples are found beside the project or in the browser's library. Everything else
+  (step-sequencer notes, note expression, unsupported plug-ins and curves) is kept in the project
+  and named in the import's warnings (`docs/spec/flp-model-mapping.md`).
+- **Plug-in instruments at FL's level:** an imported plug-in generator's channel plays 3 dB louder
+  than before, as FL plays it; audio clip channels were already right.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.
@@ -351,6 +366,12 @@ refused or suspended, never by losing its edits.
 - DAW-neutral project model: tracks and mixer channels apart, a pool of clip contents placed by
   clips, so per-track clips and shared patterns both fit
   ([ADR 0001](docs/decisions/0001-daw-neutral-model.md)).
+
+- Project switches keep the audio device open and retain each open project's
+  plug-in instances without rendering background projects. Returning to a project
+  keeps it stopped without replaying its previous notes or buffered audio. Browser previews reuse
+  the same output. Device changes wait for the old audio owner to finish; a stuck
+  shutdown prevents overlapping driver instances and preserves the project.
 
 ### M1 Reading Live Sets
 From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-format.md),
@@ -647,6 +668,21 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   product, every format of it, for the user's own among a vendor's bundle that installs them all;
   the plug-in manager lists the owned ones first on request, and **Turn off the rest** of a vendor
   switches off its unmarked ones ([spec](https://github.com/suhina-daw/suhina-daw/blob/main/docs/spec/plugin-manager.md)).
+
+- With render threads on (Settings › Audio › Advanced › Render threads), chains with plug-ins run
+  on the render workers too: each worker waits for the plug-ins of the chains it holds together,
+  so their round trips overlap, every live plug-in keeps its one-block deadline, and an offline
+  render is the same on any number of threads, bit for bit. The branches of a device group send
+  their plug-ins the block at the same time, so a group takes as long as its slowest branch.
+- Each plug-in's own processing time comes back with its block's answer: the device panel's late
+  line shows it ("49% of blocks late · plug-in up to 31 ms"), the trace's `audio:` line gives the
+  longest plug-in time beside the longest round trip, and `device.plugin` gives
+  `longest_process_us` and `average_process_us`, so a slow plug-in and a host that woke late can
+  be told apart.
+
+- Device automation follows the audio reaching each native or hosted device, including upstream
+  latency in nested branches, buses, returns and Main. Loop and seek boundaries keep their sample
+  offsets; manual controls still respond from the next block.
 
 ### M8 UI (in progress)
 - `suhina` opens a Live Set (as an argument, or dropped on the window) or `--demo`, plays it
@@ -1243,4 +1279,12 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   an offline render repeats and matches playback (ADR 0037). The velocity lane shows the range as
   a fainter bar, Ctrl+drag on a stem sets it, Alt+Shift+Up and Down step it, the clip panel shows
   it beside the velocities, and `note.setVelocityRange` sets it; project files are version 13.
+
+- Selected tracks and clips share one selection colour, the theme's `selection.background`, in
+  the Arrangement and the Launcher: a selected header and clip are filled with it, their own
+  colour kept in a band or down the clip's edge, and the selected tracks' lanes and Launcher
+  columns take a light tint of it. Settings › Appearance › Selection colour keeps the theme's,
+  keeps each clip's own colour or uses one picked colour. Settings › Arrangement › Automation ›
+  Automation colour can draw every automation line and point in one colour of the theme's or
+  picked ones, instead of the track's colour.
 

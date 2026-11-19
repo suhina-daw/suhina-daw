@@ -23,6 +23,15 @@ const BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 /// Draws the dialog over `area` for `project`, above everything else, and returns whether the
 /// user sent it to the background (its button, or Escape).
 pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bool {
+    show_status(ui, area, project, Some(progress))
+}
+
+/// A retained project's audio is being prepared; no plug-ins are being loaded.
+pub fn show_preparing(ui: &Ui, area: Rect, project: &str) -> bool {
+    show_status(ui, area, project, None)
+}
+
+fn show_status(ui: &Ui, area: Rect, project: &str, progress: Option<&PluginProgress>) -> bool {
     let style_class = crate::kit::element::DIALOG.enter();
     crate::kit::floating::area(ui.ctx(), Id::unique("plugin-loading"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
@@ -37,7 +46,13 @@ pub fn show(ui: &Ui, area: Rect, project: &str, progress: &PluginProgress) -> bo
         .inner
 }
 
-fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &str, progress: &PluginProgress) -> bool {
+fn draw(
+    ui: &Ui,
+    dialog: &crate::kit::element::Entered,
+    area: Rect,
+    project: &str,
+    progress: Option<&PluginProgress>,
+) -> bool {
     // Dimmed behind, and the clicks there go nowhere while the dialog is up.
     let behind = ui.interact(area, Id::unique("plugin-loading-behind"), Sense::click_and_drag());
     let _swallowed = behind.clicked();
@@ -48,8 +63,9 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
         crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
     );
 
-    let loading = progress.loading.len().min(LISTED) + usize::from(progress.loading.len() > LISTED);
-    let lines = 1 + loading + progress.failed.len().min(LISTED);
+    let lines = progress.map_or(2, |p| {
+        1 + p.loading.len().min(LISTED) + usize::from(p.loading.len() > LISTED) + p.failed.len().min(LISTED)
+    });
     let height = ROW + PAD * 3.0 + BAR + lines as f32 * LINE + BUTTON.y + PAD;
     let size = crate::kit::floating::dialog_size(dialog, area, Vec2::new(WIDTH, height));
     let rect = Rect::from_center_size(area.center(), size);
@@ -61,7 +77,8 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     );
 
     let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    drop(super::project_dialog::title_bar(&painter, title, &format!("Loading plug-ins · {project}")));
+    let what = if progress.is_some() { "Loading plug-ins" } else { "Preparing audio" };
+    drop(super::project_dialog::title_bar(&painter, title, &format!("{what} · {project}")));
 
     let inner = Rect::from_min_max(
         Pos2::new(rect.left() + PAD, title.bottom() + PAD),
@@ -69,17 +86,19 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
     );
     let bar = Rect::from_min_size(inner.min, Vec2::new(inner.width(), BAR));
     // `progress` (its background and radius) and `progress-fill` (its background) style the bar.
-    let progress_style = crate::kit::element::PROGRESS.enter();
-    let radius = progress_style.radius_or(0.0);
-    painter.rect_filled(bar, radius, progress_style.background());
-    let share = if progress.total == 0 { 1.0 } else { progress.ready as f32 / progress.total as f32 };
-    let fill = crate::kit::element::PROGRESS_FILL.enter().background();
-    painter.rect_filled(
-        Rect::from_min_size(bar.min, Vec2::new(bar.width() * share.clamp(0.0, 1.0), BAR)),
-        radius,
-        fill,
-    );
-    drop(progress_style);
+    if let Some(progress) = progress {
+        let progress_style = crate::kit::element::PROGRESS.enter();
+        let radius = progress_style.radius_or(0.0);
+        painter.rect_filled(bar, radius, progress_style.background());
+        let share = if progress.total == 0 { 1.0 } else { progress.ready as f32 / progress.total as f32 };
+        let fill = crate::kit::element::PROGRESS_FILL.enter().background();
+        painter.rect_filled(
+            Rect::from_min_size(bar.min, Vec2::new(bar.width() * share.clamp(0.0, 1.0), BAR)),
+            radius,
+            fill,
+        );
+        drop(progress_style);
+    }
 
     let mut y = bar.bottom() + PAD;
     let mut line = |label: &str, color: Color32| {
@@ -88,21 +107,26 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, project: &st
         name_for_readers(ui, row, label);
         y += LINE;
     };
-    let mut summary = format!("{} of {} ready", progress.ready, progress.total);
-    if progress.missing > 0 {
-        summary.push_str(&format!(", {} not installed", progress.missing));
-    }
-    line(&summary, crate::kit::element::caption_ink());
-    let hint = crate::kit::element::hint_ink();
-    for name in progress.loading.iter().take(LISTED) {
-        line(&format!("Loading {name}"), hint);
-    }
-    if progress.loading.len() > LISTED {
-        line(&format!("and {} more", progress.loading.len() - LISTED), hint);
-    }
-    let error = crate::kit::element::error_ink();
-    for name in progress.failed.iter().take(LISTED) {
-        line(&format!("Could not start {name}"), error);
+    if let Some(progress) = progress {
+        let mut summary = format!("{} of {} ready", progress.ready, progress.total);
+        if progress.missing > 0 {
+            summary.push_str(&format!(", {} not installed", progress.missing));
+        }
+        line(&summary, crate::kit::element::caption_ink());
+        let hint = crate::kit::element::hint_ink();
+        for name in progress.loading.iter().take(LISTED) {
+            line(&format!("Loading {name}"), hint);
+        }
+        if progress.loading.len() > LISTED {
+            line(&format!("and {} more", progress.loading.len() - LISTED), hint);
+        }
+        let error = crate::kit::element::error_ink();
+        for name in progress.failed.iter().take(LISTED) {
+            line(&format!("Could not start {name}"), error);
+        }
+    } else {
+        line("Preparing audio for playback…", crate::kit::element::caption_ink());
+        line("Please wait. Your plug-ins stay loaded.", crate::kit::element::hint_ink());
     }
 
     let button = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.bottom() - BUTTON.y), BUTTON);
@@ -126,6 +150,24 @@ mod tests {
     use super::*;
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
+
+    #[test]
+    fn retained_audio_preparation_is_visible_and_can_continue_in_the_background() {
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(800.0, 500.0)).build_ui_state(
+            |ui, hidden: &mut bool| {
+                if !*hidden && show_preparing(ui, ui.max_rect(), "Song") {
+                    *hidden = true;
+                }
+            },
+            false,
+        );
+        harness.get_by_label("Preparing audio for playback…");
+        harness.get_by_label("Please wait. Your plug-ins stay loaded.");
+        harness.get_by_label("Continue in the background").click();
+        harness.run();
+        assert!(*harness.state());
+        assert!(harness.query_by_label("Preparing audio for playback…").is_none());
+    }
 
     #[test]
     fn it_shows_what_is_ready_and_loading_and_goes_to_the_background() {

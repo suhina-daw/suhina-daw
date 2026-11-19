@@ -8,11 +8,12 @@
 //! Adding a setting is one entry under its section, most often a `row` whose control is one call:
 //! `cx.on_off(r, |s| &mut s.field)` or `cx.choose(r, &[("Text", value), …], |s| &mut s.field)`.
 
+use crate::kit::selection::SelectionColour;
 #[cfg(test)]
 use crate::settings::settings_view::{ADVANCED, Role};
 use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
-use crate::settings::view_settings::{DetailLayout, FolderDrop, WaveformColour};
+use crate::settings::view_settings::{AutomationColour, DetailLayout, FolderDrop, WaveformColour};
 use crate::settings::{
     AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, NoteSpelling, OnOpen, PianoKeyNames,
     PianoKeyStyle, PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
@@ -689,6 +690,42 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::Arrangement,
+        "Automation",
+        "Automation colour",
+        "Whether automation lines and points take their track's colour or the same colours on every track",
+        &["automation_colour"],
+        |cx, r| {
+            cx.choose(r, &[("Track colour", AutomationColour::Track), ("Fixed", AutomationColour::Fixed)], |s| {
+                &mut s.view.automation.mode
+            })
+        },
+    ),
+    row(
+        Page::Arrangement,
+        "Automation",
+        "Automation line colour",
+        "The colour every automation line takes when Automation colour is Fixed",
+        &["automation_line_colour"],
+        |cx, r| {
+            let theme = crate::kit::element::AUTOMATION_LINE.attribute("kind", "fixed").look().color();
+            cx.themed_colour(r, theme, |s| &mut s.view.automation.line)
+        },
+    )
+    .when(|s| s.view.automation.mode == AutomationColour::Fixed),
+    row(
+        Page::Arrangement,
+        "Automation",
+        "Automation point colour",
+        "The colour every automation point takes when Automation colour is Fixed",
+        &["automation_point_colour"],
+        |cx, r| {
+            let theme = crate::kit::element::AUTOMATION_POINT.attribute("kind", "fixed").look().color();
+            cx.themed_colour(r, theme, |s| &mut s.view.automation.point)
+        },
+    )
+    .when(|s| s.view.automation.mode == AutomationColour::Fixed),
+    row(
+        Page::Arrangement,
         "Gain envelope",
         "Show gain envelope",
         "Audio clips with gain envelope points show the line on their waveform when you are not editing it",
@@ -1010,6 +1047,33 @@ pub(crate) static ROWS: &[Entry] = &[
         &["waveform_scale"],
         |cx, r| cx.choose(r, &[("Linear", false), ("dB", true)], |s| &mut s.waveform_db),
     ),
+    row(
+        Page::Appearance,
+        "Selection",
+        "Selection colour",
+        "The colour selected tracks and clips are filled with, in the Arrangement and the Launcher",
+        &["selection_colour"],
+        |cx, r| {
+            cx.choose(
+                r,
+                &[
+                    ("From theme", SelectionColour::Theme),
+                    ("Clip's own colour", SelectionColour::Own),
+                    ("Custom", SelectionColour::Custom),
+                ],
+                |s| &mut s.view.selection.mode,
+            )
+        },
+    ),
+    row(
+        Page::Appearance,
+        "Selection",
+        "Custom selection colour",
+        "The colour selected tracks and clips take when Selection colour is Custom",
+        &["selection_custom_colour"],
+        |cx, r| cx.colour_well(r, true, |s| &mut s.view.selection.custom),
+    )
+    .when(|s| s.view.selection.mode == SelectionColour::Custom),
     row(
         Page::Appearance,
         "Background",

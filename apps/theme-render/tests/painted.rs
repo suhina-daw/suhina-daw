@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Every built-in theme and variant paints each scene as recorded in `painted.txt` (#1023): what
+//! Every built-in theme and variant paints each scene as recorded in `painted/<theme>.txt` (#1023): what
 //! moves the views onto elements, or the colours into the sheet, changes no theme's look unless
 //! it means to. Headless: the digest of [`painted::scene`]'s listing, no GPU.
 //!
@@ -10,43 +10,24 @@
 //! request. To see what changed, write the listings before and after the change with
 //! `SUHINA_PAINTED_DUMP=<folder>` and compare the two folders.
 //!
-//! One file for every system: the scenes are drawn with the window looking like Linux
+//! The same recordings on every system: the scenes are drawn with the window looking like Linux
 //! ([`suhina_ui::kit::platform`]), so shortcuts say Ctrl and Settings names Linux's plug-in formats
 //! on a Mac and on Windows too, and no system draws the title bar Suhina draws on Windows. A
 //! recording made on any system holds on the others.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use suhina_theme_render::painted::Drawing;
-use suhina_theme_render::scenes::Scene;
 use suhina_theme_render::{Subject, painted, scenes};
 
 /// The scenes left out: the About dialog shows the build's commit.
 const LEFT_OUT: [&str; 1] = ["about-dialog"];
 
-/// A theme to draw, by the name its digests are recorded under. Every theme runs the style engine,
-/// Suhina Studio too (#1448).
-struct Drawn {
-    name: String,
-    subject: Subject,
-}
+pub type Drawings = BTreeMap<(String, String), Result<Drawing, String>>;
 
-fn drawn() -> Vec<Drawn> {
-    let mut drawn: Vec<Drawn> =
-        Subject::built_ins().into_iter().map(|subject| Drawn { name: subject.id.clone(), subject }).collect();
-    drawn.extend(
-        suhina_ui::kit::theme::built_in_variants()
-            .into_iter()
-            .filter_map(|(id, _)| Subject::built_in(&id).map(|subject| Drawn { name: subject.id.clone(), subject })),
-    );
-    drawn
-}
-
-fn file() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/painted.txt")
+fn file(theme: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/painted").join(format!("{theme}.txt"))
 }
 
 /// The recorded digests: `scene theme digest` a line.
@@ -60,60 +41,81 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
         .collect()
 }
 
-/// Every (scene, theme) drawing, drawn by as many workers as the machine has cores; each drawing
-/// is on a thread of its own ([`painted::scene`]).
-fn drawings(scenes: &[Scene], drawn: &[Drawn]) -> BTreeMap<(String, String), Result<Drawing, String>> {
-    let jobs: Vec<(&Scene, &Drawn)> = scenes.iter().flat_map(|scene| drawn.iter().map(move |d| (scene, d))).collect();
-    let next = AtomicUsize::new(0);
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..workers)
-            .map(|_| {
-                scope.spawn(|| {
-                    let mut done = Vec::new();
-                    while let Some((scene, d)) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
-                        done.push(((scene.name.clone(), d.name.clone()), painted::scene(&d.subject, scene)));
-                    }
-                    done
-                })
-            })
-            .collect();
-        // A worker that panicked fails the test: its drawings are missing, and a recording
-        // written without them would be partial.
-        handles
-            .into_iter()
-            .flat_map(|handle| handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)))
-            .collect()
-    })
-}
-
-/// Every scene but [`LEFT_OUT`] drawn in every built-in theme and variant, `(scene, theme)` to its
-/// drawing: drawn once for the test binary, and shared by the tests of what is painted and what is
-/// cut off (`cut.rs`).
-pub fn all() -> &'static BTreeMap<(String, String), Result<Drawing, String>> {
-    static ALL: OnceLock<BTreeMap<(String, String), Result<Drawing, String>>> = OnceLock::new();
-    ALL.get_or_init(|| {
-        let scenes: Vec<Scene> =
-            scenes::scenes().into_iter().filter(|s| !LEFT_OUT.contains(&s.name.as_str())).collect();
-        drawings(&scenes, &drawn())
-    })
-}
-
-/// One test for both recordings: nextest runs each test in a process of its own, and two tests
-/// would each draw every scene in every theme (the slowest thing in the workspace's tests). Both
-/// are checked even when the first differs, so one run shows both files.
-#[test]
-fn every_built_in_theme_paints_and_cuts_as_recorded() {
-    let painted = std::panic::catch_unwind(paints_each_scene_as_recorded);
-    super::cut::cuts_off_only_the_texts_recorded();
+/// One theme per test lets nextest spread the drawings across CI partitions. Each scene still
+/// gets a fresh thread for its window state in `painted::scene`; there is no worker pool here
+/// competing with the test runner. The same drawings check both recordings, even if one differs.
+#[allow(clippy::unwrap_used)] // test helper
+fn paint_and_check(theme: &str) {
+    let subject = Subject::built_in(theme).unwrap();
+    let all: Drawings = scenes::scenes()
+        .into_iter()
+        .filter(|scene| !LEFT_OUT.contains(&scene.name.as_str()))
+        .map(|scene| ((scene.name.clone(), theme.to_owned()), painted::scene(&subject, &scene)))
+        .collect();
+    let painted = std::panic::catch_unwind(|| paints_each_scene_as_recorded(theme, &all));
+    super::cut::cuts_off_only_the_texts_recorded(theme, &all);
     if let Err(panic) = painted {
         std::panic::resume_unwind(panic);
     }
 }
 
-#[allow(clippy::unwrap_used)] // called by the test above, outside a #[test] function
-fn paints_each_scene_as_recorded() {
-    let listings: BTreeMap<&(String, String), Result<&str, &str>> = all()
+// The table declares both the tests and the IDs the coverage test checks, so a theme cannot be
+// listed as covered without having a runnable test. Variants are independent cases too.
+macro_rules! theme_tests {
+    ($($name:ident => $id:literal),+ $(,)?) => {
+        const TESTED_THEMES: &[&str] = &[$($id),+];
+
+        mod themes {
+            $(
+                #[test]
+                fn $name() {
+                    super::paint_and_check($id);
+                }
+            )+
+        }
+    };
+}
+
+theme_tests! {
+    catppuccin_latte => "catppuccin-latte",
+    catppuccin_mocha => "catppuccin-mocha",
+    catppuccin_macchiato => "catppuccin-mocha@macchiato",
+    high_contrast => "high-contrast",
+    high_contrast_light => "high-contrast@light",
+    nord => "nord",
+    nord_snow_storm => "nord@snow-storm",
+    suhina_blocks => "suhina-blocks",
+    suhina_glass => "suhina-glass",
+    suhina_glass_frost => "suhina-glass@frost",
+    suhina_glass_midnight => "suhina-glass@midnight",
+    suhina_light => "suhina-light",
+    suhina_meadow => "suhina-meadow",
+    suhina_sheet => "suhina-sheet",
+    suhina_studio => "suhina-studio",
+    suhina_studio_blue => "suhina-studio@blue",
+    suhina_studio_darker => "suhina-studio@darker",
+    suhina_studio_darkest => "suhina-studio@darkest",
+    suhina_studio_forest => "suhina-studio@forest",
+    suhina_studio_light => "suhina-studio@light",
+}
+
+#[test]
+fn every_built_in_theme_and_variant_has_one_painted_test() {
+    let mut available: Vec<String> = Subject::built_ins()
+        .into_iter()
+        .map(|subject| subject.id)
+        .chain(suhina_ui::kit::theme::built_in_variants().into_iter().map(|(id, _)| id))
+        .collect();
+    let mut tested: Vec<String> = TESTED_THEMES.iter().map(|id| (*id).to_owned()).collect();
+    available.sort();
+    tested.sort();
+    assert_eq!(tested, available, "every built-in theme and variant has exactly one test in theme_tests!");
+}
+
+#[allow(clippy::unwrap_used)] // test helper
+fn paints_each_scene_as_recorded(theme: &str, all: &Drawings) {
+    let file = file(theme);
+    let listings: BTreeMap<&(String, String), Result<&str, &str>> = all
         .iter()
         .map(|(key, drawing)| (key, drawing.as_ref().map(|d| d.listing.as_str()).map_err(String::as_str)))
         .collect();
@@ -150,10 +152,10 @@ fn paints_each_scene_as_recorded() {
     if suhina_test_support::blessing() {
         // A drawing that failed is never recorded as what it should draw.
         assert!(failed.is_empty(), "not recorded, these drawings failed:\n{}", failed.join("\n"));
-        std::fs::write(file(), text).unwrap();
+        std::fs::write(&file, text).unwrap();
         return;
     }
-    let recorded = recorded(&std::fs::read_to_string(file()).unwrap_or_default());
+    let recorded = recorded(&std::fs::read_to_string(&file).unwrap());
     let differ: Vec<String> = now
         .iter()
         .filter(|(key, digest)| recorded.get(*key) != Some(digest))
@@ -186,9 +188,9 @@ fn paints_each_scene_as_recorded() {
          The file as this run draws it, between the lines:\n----- {} -----\n{text}----- end -----",
         differ.len(),
         now.len(),
-        file().display(),
+        file.display(),
         differ.join("\n"),
-        file().display()
+        file.display()
     );
 }
 

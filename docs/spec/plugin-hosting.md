@@ -3,7 +3,7 @@ description: How Suhina hosts plug-ins in detail - host processes and instances,
 read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
 type: spec
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-19
 covers:
   - crates/plugins/**
   - crates/plugin-host/**
@@ -81,7 +81,11 @@ block's releases wait in each. A hang anywhere in the block so makes every plug-
 *hung*, as the engine cannot tell which one is stuck; the process is restarted either way.
 A plug-in with parameter events in the block (#109) runs on its own, and ends the run: a
 joint block carries one event list, which every plug-in in it is given, so one plug-in's
-values would reach the others. An instance restarted for a latency change (#110) serves
+values would reach the others. For the same reason a plug-in told another song than the
+first one ends the run: the song travels in that event list, so a follower after a plug-in
+with latency would hear the first one's song, not the song of the sound it gets (*Events in
+a block* below); plug-ins with no latency between them hear the same song and still share
+one round trip. An instance restarted for a latency change (#110) serves
 under the same number again, so blocks go on naming it.
 The output is the same, sample for sample, as one round trip each.
 
@@ -93,12 +97,19 @@ bend, channel pressure, parameter value) as fixed 16-byte records with their fra
 Two more kinds carry the song: `Transport` (playing, position in samples) and `Tempo`, sent
 with every block to a plug-in that follows the song (one loaded with an ARA document,
 [ADR 0033](../decisions/0033-ara-hosting.md)), which a VST3 host puts in the block's process context.
-The song a plug-in is told is the song of the sound it gets: moved back by the latency of the
-devices before it in its chain and by its chain's input delay (a bus or a return hears its
-sources as late as the latest of them), so a plug-in that follows the song (a tempo-synced
-volume shape, an arpeggiator) lines up with what it hears after a linear-phase EQ or a
-look-ahead device; the bar steps back with the beat. A plug-in inside a device group is told the
-delay before the group. While the transport is stopped the position is not moved.
+The song a plug-in is told is the song of the sound it gets: as late as the latency of the
+devices before it in its chain and its chain's input delay (a bus or a return hears its
+sources as late as the latest of them, the main channel the whole mix as late as its latest
+path), so a plug-in that follows the song (a tempo-synced volume shape, an arpeggiator) lines up
+with what it hears after a linear-phase EQ or a look-ahead device. A plug-in inside a device
+group adds the devices before it in its branch to the delay before the group; a branch beside
+it does not. The engine keeps the song as each recent block started (`SongHistory`), and the
+song that late is read from the block that played then: a loop's wrap, a jump, a tempo or time
+signature change reach a delayed plug-in when its sound does, with the bar, tempo and signature
+of that moment. The history keeps 8192 block records: its duration depends on the actual block
+sizes and sample rate. Further back, the oldest is stepped back at its tempo, so transport
+changes discarded from history cannot be recovered. While the transport is stopped the position
+is not moved.
 A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
 pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
 through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins
@@ -117,6 +128,13 @@ loaded; a value `device.setParam` sets while it plays, at the start of the next 
 (the same parameter message as a built-in device's, ADR 0005); and, while the transport
 runs, each automation lane's value at the block's first frame, at each point inside it and
 every 64 frames while it moves (a VST3 plug-in ramps between them, a CLAP plug-in steps).
+The lanes follow the same delayed input timeline as the song position. A historical loop,
+seek or play/stop boundary can split their block into several spans; each parameter event
+keeps its offset in the block and then in the sub-block handed to the plug-in. Set and manual
+values still go once, at the next block's start. Before another historical span, each lane
+also sends the preceding span's final value, preserving a jump between adjacent samples
+for VST3 interpolation. Before arrangement zero, lanes hold the
+value at zero. See [PDC](plugin-delay-compensation.md) for the common contract and limits.
 Only a switch (one step) or a list of choices holds each point's value until the next
 point; any other parameter, one the plug-in lists with steps too (a cutoff knob in 1024
 steps), moves along the line and the plug-in plays the step it is on (#1482,
@@ -125,7 +143,9 @@ The slot hands each span it runs its share through `PluginProcessor::automate`, 
 session's processor merges them with the notes in frame order, a value before a note at
 the same frame; a block the host could not take carries the latest value of each
 parameter to the next. Nothing allocates on the audio thread: each slot has room for 512
-events a block. A parameter value that reaches the processor from the engine (a panel
+events a block. After set and manual values, required starts of historical spans take
+priority over intermediate lane points and boundary holds; overload retains the limits
+described in [PDC](plugin-delay-compensation.md). A parameter value that reaches the processor from the engine (a panel
 set, an automation lane) also goes to the edit controller on the main thread
 (`setParamNormalized`: the same call a MIDI controller's mapped parameter gets, #812),
 so the plug-in's editor follows the sound; and the host reports what was changed in its
@@ -244,8 +264,8 @@ device takes more than a block at once. WASAPI offers sizes up to 2048 frames: p
 shared stream only gains latency, and interfaces refuse such an exclusive period (N48). Where the device's buffer is not Suhina's to set, the
 Settings row says *Engine block*, since the number is the engine's block and not the device's
 buffer. The session counts each plug-in's blocks and late blocks
-(`device.plugin`: `blocks`, `late_blocks`, `longest_us`, `no_time`), and the device panel
-shows the share. Even so the sum of 25 plug-ins' times (a heavy synth up to 9 ms a block)
+(`device.plugin`: `blocks`, `late_blocks`, `longest_us`, `no_time`, `longest_process_us`,
+`average_process_us`), and the device panel shows the share. Even so the sum of 25 plug-ins' times (a heavy synth up to 9 ms a block)
 passed the budget on half the blocks, so the chains no chain plays into now run their
 plug-ins *at the same time*: every chain hands its block to its first plug-in
 (`Link::send_with_events`, `PluginProcessor::send`); then the engine looks at the chains
@@ -284,7 +304,16 @@ event, a millisecond at a time, so the others are still looked at), and
 `suhina_ipc::a_wait_failed` says it happened. A chain whose plug-in has not answered by the deadline misses that block, as before;
 the others are not held up by it. An offline render gives each block out `OFFLINE_TIMEOUT`
 from when it went. `longest_us` is each plug-in's longest round trip, timed from the block's
-hand-over, since the engine may look at other chains before it takes an answer. A plug-in still at a block it was late with (one whose answer
+hand-over, since the engine may look at other chains before it takes an answer.
+`longest_process_us` and `average_process_us` are the plug-in's own processing time: the host's
+audio thread reads the clock around each instance's part of a block (its own and each follower's
+in a joint block) and hands the times back with the answer (`suhina_ipc::Laps`,
+`Link::process_us`, `Link::follower_process_us`; region version 4,
+[plug-in protocol](plugin-protocol.md)). A follower's time reaches it through the engine
+(`PluginProcessor::follower_process_us`, `followed_process_us`); a block given up on gives its
+times once its late answer is in, before the plug-in's next block goes. Beside the round trip
+it tells a slow plug-in from a host that woke late (#1262, [debugging](../debugging.md) ›
+Audio dropouts). A plug-in still at a block it was late with (one whose answer
 came after its deadline, as when a synthesizer takes longer over the notes of a start or a
 stop's all-notes-off) is waited for like an answer: its chain hands it the next block as
 soon as it is done (`PluginProcessor::ready`, `PluginAudio::ready`, `Link::wait_ready`),
@@ -294,7 +323,17 @@ late with the block before alone is waited for; one that has not answered severa
 send immediately, and no recovery watch is offered to the scheduler. The link refuses
 the send until the old answer arrives; downstream devices and buses keep their block
 budget. A later answer still permits the next send and resets the miss count.
-Measured with `measure_quick_play_and_stop` (see
+With render threads ([render threads](render-threads.md)), every
+chain but Main's may run on a render worker, plug-in chains too (#1507, ADR 0038 › 4): a worker
+runs the chains it holds the same way, each on to its next plug-in as soon as the one before
+answers, waiting for all their plug-ins together, until each block's deadline. Inside a chain,
+the branches of a device group send their plug-ins the block at the same time, and the group goes
+on with each branch as its plug-in answers, so it takes as long as its slowest branch. Each
+nesting level yields the outstanding leaf plug-ins to the chain scheduler, so a nested group
+does not hold up its sibling branches or another chain. A device after the group runs only
+once all the group's branches have finished; their delays and sum are applied once, in branch
+order. Each plug-in's time counts from the block's start: a plug-in whose input is ready is sent at once, and
+its deadline is the block's, not a share left over by the plug-in before it. Measured with `measure_quick_play_and_stop` (see
 *Measurements*): an instrument that took longer than a whole block over each press of play or
 stop lost two blocks a press, the late one and the next, refused, with the notes it
 brought; it now loses the late one only. A host still busy when the deadline comes refuses
@@ -598,9 +637,10 @@ editor's view creation otherwise kept and dereferenced as null, #1223); Wayland 
 A plug-in inside a group still runs out of
 process; a group is not a process boundary. Its key is made from its device id (#763 › 1), so
 moving it into or out of a group keeps its process and state.
-Inside a branch it runs its round trip and is waited for within the block's deadline, one
-after another with the branch's other devices; it does not take part in the joint blocks or
-the staged runs of 4, which a later change can extend to a group's branches. A missed block
+Inside a branch it runs its round trip within the block's deadline, one after another with
+the branch's other devices. Independent branches, including nested groups, overlap their
+round trips through the chain scheduler; plug-ins inside a branch do not share joint blocks.
+A missed block
 does what it does on a track: an effect passes its input, an instrument is silent, and the
 rest of the group goes on. Its state is read and saved, and it restarts, by its key like any
 other plug-in.
@@ -634,9 +674,10 @@ be dropped off the audio thread.
 
 While a project plays, the session finds each plug-in device in the catalog
 (`plugin.check`'s matching), starts it with the saved state (and VST3 controller state) on a
-thread of its own, and hands it over; a project's plug-ins stop when it stops playing (a
-tab switch) and each keeps its last state for when it starts again, as one whose device is
-removed does for an undo. A plug-in that is not installed is *missing*: no slot, the sound
+thread of its own, and hands it over. A tab switch retains the project's renderer and
+plug-in instances without processing background audio; returning resumes the same
+instances. Closing the project releases them. Removing a plug-in device stops its
+instance and keeps its last state for undo. A plug-in that is not installed is *missing*: no slot, the sound
 passes, its state stays in the project untouched and is saved back as it was; the status bar
 names it. Every 30 s the session reads each running plug-in's state, so a restart after a
 crash gets back what was set in its editor (ADR 0006 › 5); saving the project
@@ -718,6 +759,30 @@ containing mixed processing rates. A later crash restart reads the acknowledged
 rate shared with the control half.
 
 ## Stopping a hosted instrument
+
+Project suspension is a hard audio boundary after the output has switched to its
+silent renderer. A background control worker sends `reset_audio` to retained processors
+with a shared bounded wait. Stopping an idle audio worker sets its stop flag and wakes
+its IPC wait immediately; it does not wait for the periodic idle timeout. A request
+already being processed still finishes before the worker joins. Their existing instances and editors stay loaded,
+but processing is reactivated so old voices and effect buffers cannot replay on
+return. The instrument's host-side stop envelope is set directly to silence;
+the output already supplied the departure fade. A new Play or live note opens
+the envelope again. Pending parameter edits survive; old note events do not.
+Reactivation satisfies CLAP restart requests made by the previous processing run.
+After joining its audio thread, the host consumes those requests before deactivation
+and activation. A request made by the new activation or processing run remains pending.
+Servicing latency changes after reset must not discard audio buffered since the reset.
+The tab switch does not wait for this worker. Returning before its reply keeps the
+project silent on the retained device; the existing control poll resumes it only
+after successful completion. While waiting, the window shows **Preparing audio** with a
+**Continue in the background** button, and the status bar keeps the preparation message
+visible. Play during preparation asks the user to wait and try again; it does not
+report a missing audio device or queue unexpected playback. Completion closes the
+notice and changes the status to **Audio ready**. Completion wakes the existing control window once,
+without a polling timer or continuous repaint requests. Failure reports an error instead of resuming an
+instance with uncertain audio state. Closing a resetting project never joins the
+busy worker on the UI thread. See [the protocol](plugin-protocol.md).
 
 Some instruments reset their output immediately when the transport's playing flag
 becomes false, even when ordinary note-off messages alone allow a smooth release.

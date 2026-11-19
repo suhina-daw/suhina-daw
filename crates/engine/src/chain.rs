@@ -53,7 +53,10 @@ const NOT_HELD: u64 = u64::MAX;
 /// (see `track_gains`); the track's real gains apply after the chain, divided by this.
 pub(crate) const CHAIN_INPUT_GAIN: f32 = 0.25;
 
-/// One device of a chain: built in, or a plug-in in a host process.
+/// One device of a chain: built in, or a plug-in in a host process. A plug-in's slot is kept
+/// inline, larger than the others: chains hold a few slots each, built off the audio thread, and
+/// the audio thread reaches a plug-in's state without another pointer.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum DeviceSlot {
     Device(Box<dyn Device>),
     /// A built-in MIDI effect: it changes the chain's events, not its sound.
@@ -100,6 +103,8 @@ pub(crate) struct Chain {
     pub(crate) delay: Delay,
     /// The track's gains after the chain.
     post: (f32, f32),
+    /// The source channel's own post-fader gain, before downstream output gains.
+    key_post: (f32, f32),
     /// The channel's volume `post` was built with, when a live volume may scale it: `None` for
     /// a bus or an automated volume (those take a new graph).
     pub(crate) built_volume: Option<f64>,
@@ -303,6 +308,24 @@ pub(crate) fn device_identity(
 }
 
 impl Chain {
+    /// Drops compensation audio left by the previous active period.
+    pub(crate) fn clear_suspended_delays(&mut self) {
+        self.delay.clear();
+        for send in &mut self.sends {
+            send.delay.clear();
+        }
+        for key in &mut self.key_reads {
+            key.delay.clear();
+        }
+        for slot in &mut self.slots {
+            match slot {
+                DeviceSlot::Device(device) | DeviceSlot::MidiDevice(device) => device.reset(),
+                DeviceSlot::Group(group) => group.clear_suspended_delays(),
+                DeviceSlot::Plugin(_) => {}
+            }
+        }
+    }
+
     /// The first device in the chain that has live values for its panel, with its position.
     pub(crate) fn readouts(&self, visit: &mut dyn FnMut(u64, [f32; suhina_device_api::MAX_READOUTS])) {
         crate::group::visit_readouts(&self.slots, &self.positions, crate::meters::READOUT_PATH, visit);
@@ -363,6 +386,7 @@ impl Chain {
             let mut slot = built.slot;
             // What the devices before it delay: its plug-ins are told the song that late.
             set_song_delay(&mut slot, latency);
+            device_lanes.delay_slot(slots.len(), latency);
             latency = latency.saturating_add(built.latency);
             slots.push(slot);
             positions.push(position);
@@ -419,6 +443,7 @@ impl Chain {
             input_latency: 0,
             delay: Delay::new(0),
             post: (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN),
+            key_post: (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN),
             device_lanes,
             mix: None,
             target: None,
@@ -480,6 +505,7 @@ impl Chain {
             input_latency: 0,
             delay: Delay::new(0),
             post: (1.0, 1.0),
+            key_post: (1.0, 1.0),
             device_lanes: DeviceLanes::none(),
             mix: None,
             target: None,
@@ -557,11 +583,17 @@ impl Chain {
         self.post = (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN);
     }
 
+    /// Sets the source's own fader gain for keys, excluding downstream output gains.
+    pub(crate) fn set_key_post(&mut self, post: (f32, f32)) {
+        self.key_post = (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN);
+    }
+
     /// Sets the gains the chain's output is added to the cue bus at, or `None` for no cue.
     /// The main chain's gain after its devices: the main volume itself, as its input is the mix
     /// at the level it plays at, not a track's sources at [`CHAIN_INPUT_GAIN`] (#687).
     pub(crate) fn set_main_post(&mut self, gain: f32) {
         self.post = (gain, gain);
+        self.key_post = (gain, gain);
     }
 
     pub(crate) fn set_cue(&mut self, gains: Option<(f32, f32)>) {
@@ -634,7 +666,7 @@ impl Chain {
         if let Some(tap) = self.taps.get_mut(tap_index(suhina_model::TapPoint::PostFx)).and_then(|t| t.get_mut(..end)) {
             tap.copy_from_slice(buffer);
         }
-        let (gain_left, gain_right) = self.post;
+        let (gain_left, gain_right) = self.key_post;
         let (live, pan) = (self.live, self.pan);
         let mix = &self.mix;
         if let Some(tap) =
@@ -675,32 +707,31 @@ impl Chain {
         self.deadline = deadline;
     }
 
-    /// Plans the parameter events of its plug-ins for a block of `frames` frames starting at
-    /// arrangement frame `time` (`None` while the transport is stopped, standing at `parked`,
-    /// where the plug-ins' lanes send their values once): call it after
-    /// [`Chain::begin`], before any of the block runs. Never allocates.
     /// Tells the chain's plug-ins where the song is as the block starts
-    /// ([`PluginProcessor::transport`]). Never allocates.
-    pub(crate) fn transport(&mut self, song: &crate::plugin::SongPosition) {
-        let (input, sample_rate) = (self.input_latency, self.sample_rate);
+    /// ([`PluginProcessor::transport`]): each the song of the sound it hears, as late as the
+    /// chain's input and the devices before it, read from the blocks played
+    /// ([`crate::plugin::SongHistory`]). Never allocates.
+    pub(crate) fn transport(&mut self, songs: &crate::plugin::SongHistory) {
+        let input = self.input_latency;
         for slot in self.plugin_slots() {
             if let Some(processor) = slot.processor.as_mut() {
-                // The song of the sound it hears: as late as the chain's input and the devices
-                // before it.
-                processor.transport(&song.earlier(input.saturating_add(slot.song_delay), sample_rate));
+                processor.transport(&songs.heard(input.saturating_add(slot.song_delay)));
             }
         }
     }
 
-    pub(crate) fn automate(&mut self, time: Option<u64>, parked: u64, frames: usize) {
+    /// Plans device automation at the time represented by each device's input audio. Call
+    /// after [`Chain::begin`], before any of the block runs or goes to a worker. Never allocates.
+    pub(crate) fn automate(&mut self, songs: &crate::plugin::SongHistory, frames: usize) {
         let frames = frames.min(MAX_BLOCK);
+        let input = self.input_latency;
         for slot in self.plugin_slots() {
-            slot.params.plan(time, parked, frames);
+            slot.params.plan_delayed(songs, input.saturating_add(slot.song_delay), frames);
         }
-        self.device_lanes.plan(time, frames);
+        self.device_lanes.plan_delayed(songs, input, frames);
         for slot in &mut self.slots {
             if let DeviceSlot::Group(group) = slot {
-                group.plan(time, frames);
+                group.plan(songs, input, frames);
             }
         }
     }
@@ -777,7 +808,16 @@ impl Chain {
                     *stage += 1;
                 }
                 DeviceSlot::Group(group) => {
-                    group.run(buffer, from, to, pending, context, *sample_rate, *deadline);
+                    group.begin(
+                        buffer,
+                        pending,
+                        &crate::group::Span { from, to, context, sample_rate: *sample_rate, deadline: *deadline },
+                    );
+                    if group.is_waiting() {
+                        *waiting = Some(*stage);
+                        return true;
+                    }
+                    group.finish(buffer, from, to);
                     *stage += 1;
                 }
                 DeviceSlot::MidiDevice(device) => {
@@ -856,6 +896,9 @@ impl Chain {
     /// (or the deadline is over), so [`Chain::advance`] sends it this block. Never allocates.
     pub(crate) fn answered(&mut self, until: Instant) -> bool {
         let Some(index) = self.waiting else { return true };
+        if let Some(DeviceSlot::Group(group)) = self.slots.get_mut(index) {
+            return group.answered(until, self.deadline);
+        }
         let Some(limit) = self.limit() else { return true };
         if crate::clock::now() >= limit {
             return true;
@@ -870,13 +913,16 @@ impl Chain {
         }
     }
 
-    /// The plug-in it waits for, to wait for together with other chains' (#1256): its block
-    /// out, or the block it was late with. `None` when it waits for nothing, or for a plug-in
-    /// that cannot be watched. Never allocates.
-    pub(crate) fn watch(&self) -> Option<suhina_ipc::Watch<'_>> {
+    /// All plug-ins it waits for, including nested groups' leaves, to watch with the other
+    /// chains'. `None` if a plug-in cannot be watched or the fixed buffer is too small.
+    pub(crate) fn watches<'a>(&'a self, watches: &mut [Option<suhina_ipc::Watch<'a>>]) -> Option<usize> {
         let index = self.waiting?;
         match self.slots.get(index) {
-            Some(DeviceSlot::Plugin(plugin)) => plugin.watch(self.behind == Some(index)),
+            Some(DeviceSlot::Plugin(plugin)) => {
+                *watches.first_mut()? = Some(plugin.watch(self.behind == Some(index))?);
+                Some(1)
+            }
+            Some(DeviceSlot::Group(group)) => group.watches(watches),
             _ => None,
         }
     }
@@ -889,6 +935,9 @@ impl Chain {
     /// Until when the block out may take: the block's deadline, or offline, where there is
     /// none, [`OFFLINE_TIMEOUT`] after it went out.
     pub(crate) fn limit(&self) -> Option<Instant> {
+        if let Some(DeviceSlot::Group(group)) = self.waiting.and_then(|index| self.slots.get(index)) {
+            return group.limit(self.deadline);
+        }
         self.deadline.or_else(|| self.sent_at.and_then(|at| at.checked_add(OFFLINE_TIMEOUT)))
     }
 
@@ -896,6 +945,24 @@ impl Chain {
     /// (a miss when it is not answered in its time, [`Chain::answered`]).
     pub(crate) fn collect(&mut self, frames: usize) {
         let Some(index) = self.waiting.take() else { return };
+        if let Some(DeviceSlot::Group(group)) = self.slots.get_mut(index) {
+            let to = frames.min(MAX_BLOCK);
+            let from = self.done.min(to);
+            group.resume(&crate::group::Span {
+                from,
+                to,
+                context: &self.context,
+                sample_rate: self.sample_rate,
+                deadline: self.deadline,
+            });
+            if group.is_waiting() {
+                self.waiting = Some(index);
+            } else {
+                group.finish(&mut self.buffer, from, to);
+                self.stage = index + 1;
+            }
+            return;
+        }
         // Nothing went out: the plug-in has finished its late block (or the deadline is over),
         // and `advance` hands it this block now (or counts it refused).
         if self.behind == Some(index) {
@@ -1463,10 +1530,15 @@ impl Chain {
         }
     }
 
+    /// Blocks its plug-ins did not answer in time, so far. Never allocates.
+    pub(crate) fn plugin_misses(&mut self) -> u64 {
+        self.plugin_slots().map(|slot| slot.missed).sum()
+    }
+
     /// Blocks its plug-ins did not answer in time, for tests.
     #[cfg(test)]
     pub(crate) fn missed(&mut self) -> u64 {
-        self.plugin_slots().map(|slot| slot.missed).sum()
+        self.plugin_misses()
     }
 }
 
@@ -1533,6 +1605,11 @@ impl Joined {
 /// its own and ends the run (a follower gets them at its own turn): a joint block carries one
 /// event list, the first plug-in's, which every plug-in in it is given, so parameter values of
 /// one plug-in would reach the others too, or not reach a follower at all.
+///
+/// For the same reason a plug-in told another song than the first one ends the run: the song
+/// travels in that event list, so a follower after a plug-in with latency would hear the first
+/// one's song, not the song of the sound it gets ([`PluginSlot::song_delay`]). Plug-ins with no
+/// latency between them hear the same song and still share the round trip.
 fn find_joined(
     slots: &mut [DeviceSlot],
     at: usize,
@@ -1541,10 +1618,10 @@ fn find_joined(
     members: &mut [u32; MAX_JOINED],
 ) {
     joined.len = 0;
-    let Some(lead) = (match slots.get_mut(at) {
+    let Some((lead, song_delay)) = (match slots.get_mut(at) {
         Some(DeviceSlot::Plugin(first)) => {
             let automated = first.automate(from, to);
-            first.joint().filter(|_| !automated)
+            first.joint().filter(|_| !automated).map(|joint| (joint, first.song_delay))
         }
         _ => None,
     }) else {
@@ -1555,7 +1632,7 @@ fn find_joined(
         if !plugin.enabled {
             continue;
         }
-        if plugin.has_params(from, to) {
+        if plugin.has_params(from, to) || plugin.song_delay != song_delay {
             break;
         }
         let Some(joint) = plugin.joint().filter(|j| j.process == lead.process) else { break };
@@ -1597,6 +1674,7 @@ fn send_plugins(
     alone: bool,
 ) -> (Sent, usize) {
     let mut members = [0u32; MAX_JOINED];
+    late_follower_times(slots, at);
     // A clip host runs on its own: its output is scaled and mixed before the next plug-in (#990).
     if alone {
         joined.len = 0;
@@ -1608,7 +1686,11 @@ fn send_plugins(
     {
         let followers = members.get(..joined.len).unwrap_or_default();
         match first.send_joint(span, events, followers, deadline) {
-            Sent::Out => return (Sent::Out, at + 1),
+            Sent::Out => {
+                // A late answer that came after `late_follower_times` looked is gone now.
+                first.late_followers.len = 0;
+                return (Sent::Out, at + 1);
+            }
             Sent::Refused => {
                 let next = joined.indices().last().map_or(at + 1, |last| last + 1);
                 for &index in joined.indices() {
@@ -1624,7 +1706,13 @@ fn send_plugins(
     }
     joined.len = 0;
     match slots.get_mut(at) {
-        Some(DeviceSlot::Plugin(plugin)) => (plugin.send(span, events, deadline), at + 1),
+        Some(DeviceSlot::Plugin(plugin)) => {
+            let sent = plugin.send(span, events, deadline);
+            if sent == Sent::Out {
+                plugin.late_followers.len = 0;
+            }
+            (sent, at + 1)
+        }
         _ => (Sent::Unsupported, at + 1),
     }
 }
@@ -1646,6 +1734,15 @@ fn collect_plugins(
     };
     let how = if answered { Followed::Answered } else { Followed::Late };
     let next = joined.indices().last().map_or(at + 1, |last| last + 1);
+    if answered {
+        follower_times(slots, at, joined.indices());
+    } else if let Some(DeviceSlot::Plugin(first)) = slots.get_mut(at) {
+        // Their times come with the late answer ([`late_follower_times`]).
+        for (to, from) in first.late_followers.slots.iter_mut().zip(joined.indices()) {
+            *to = *from;
+        }
+        first.late_followers.len = joined.len.min(MAX_JOINED);
+    }
     for &index in joined.indices() {
         if let Some(DeviceSlot::Plugin(plugin)) = slots.get_mut(index) {
             plugin.followed(span, events, how);
@@ -1653,6 +1750,41 @@ fn collect_plugins(
     }
     joined.len = 0;
     next
+}
+
+/// Hands each plug-in at `followers` (slot indices, in the joint block's order) the time it took
+/// to process the answered joint block the plug-in at `at` sent, as the host measured it
+/// (#1262). Never allocates.
+fn follower_times(slots: &mut [DeviceSlot], at: usize, followers: &[usize]) {
+    for (position, &index) in followers.iter().enumerate() {
+        let time = match slots.get(at) {
+            Some(DeviceSlot::Plugin(first)) => first.processor.as_ref().and_then(|p| p.follower_process_us(position)),
+            _ => None,
+        };
+        if let (Some(time), Some(DeviceSlot::Plugin(plugin))) = (time, slots.get_mut(index))
+            && let Some(processor) = plugin.processor.as_mut()
+        {
+            processor.followed_process_us(time);
+        }
+    }
+}
+
+/// Before the plug-in at `at` sends its next block: when its last joint block was late and its
+/// answer has come since, the plug-ins that followed in it get their processing times from it.
+/// Once a new block goes they are gone with the old answer, so they are let go of then too.
+/// Never allocates.
+fn late_follower_times(slots: &mut [DeviceSlot], at: usize) {
+    let Some(DeviceSlot::Plugin(first)) = slots.get_mut(at) else { return };
+    if first.late_followers.len == 0 {
+        return;
+    }
+    let answered = first.processor.as_ref().is_some_and(|p| p.follower_process_us(0).is_some());
+    if answered {
+        // Copied out, in place: nothing is allocated.
+        let late = *first.late_followers;
+        first.late_followers.len = 0;
+        follower_times(slots, at, late.slots());
+    }
 }
 
 /// What [`Chain::place`] did with a processor.
@@ -1795,17 +1927,14 @@ fn midi_span(
     }
 }
 
-/// Tells the plug-ins of `slot` (itself, or every one inside a group) that the devices before it
-/// delay their sound by `before` frames. A plug-in inside a group is told the delay before the
-/// group.
-fn set_song_delay(slot: &mut DeviceSlot, before: u32) {
+/// Adds `before` frames to hosted timing and to native automation inside a group. Added to
+/// what each already has: a device inside a group was told the devices before it in its branch
+/// as the group was built
+/// (`SlotFactory::group`), and the group's own place adds the devices before the group.
+pub(crate) fn set_song_delay(slot: &mut DeviceSlot, before: u32) {
     match slot {
-        DeviceSlot::Plugin(plugin) => plugin.song_delay = before,
-        DeviceSlot::Group(_) => {
-            for plugin in crate::group::PluginSlots::new(std::slice::from_mut(slot)) {
-                plugin.song_delay = before;
-            }
-        }
+        DeviceSlot::Plugin(plugin) => plugin.song_delay = plugin.song_delay.saturating_add(before),
+        DeviceSlot::Group(group) => group.add_song_delay(before),
         DeviceSlot::Device(_) | DeviceSlot::MidiDevice(_) => {}
     }
 }

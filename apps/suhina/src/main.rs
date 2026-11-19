@@ -4,7 +4,7 @@
 //! Suhina, the desktop app: opens a project, plays it on the default audio output and shows it
 //! in the main window (`suhina-ui`).
 //!
-//! In detail: The desktop app: opens a project (argument, a dropped `.suhina` or `.als`, or the
+//! In detail: The desktop app: opens a project (argument, a dropped `.suhina`, `.als` or `.flp`, or the
 //! project dialog), makes new ones (blank or from a template), keeps the recent projects, decodes
 //! its audio into the session, plays it stopped through `output` and runs `ui` in an eframe window;
 //! starts the browser's library (`browser.json` and its indexes in the app-data folder) and records
@@ -59,7 +59,7 @@ const USAGE: &str = "\
 usage: suhina [<project.suhina> | <project.als> | --demo] [--renderer wgpu|glow] [--no-animations]
               [--new-instance] [--trace <file>] [--data-dir <folder>]
 
-  <project.suhina>   a Suhina project to open, or a Live Set (.als) to import
+  <project.suhina>   a Suhina project to open, or an .als or .flp project to import
   --demo             open a small built-in project
   --renderer         how the window is drawn this time: wgpu or glow (OpenGL); the
                      default is the one chosen in Options > Settings
@@ -75,7 +75,7 @@ window as a tab instead. Agents reach the running window with suhina-cli mcp --a
 Options > Settings > Agents and updates > AI agents edit projects is on.
 Without a project the window opens what Options > Settings > Projects and backups > Startup project says (the
 New or open dialog unless changed); Ctrl+T makes a new one or opens one, and a .suhina
-or .als file dropped on it opens.
+or .als or .flp file dropped on it opens.
 Settings are kept in settings.txt, the keys in keymap.json and themes in themes/<name>/,
 in Suhina's folder of the user's app data (or --data-dir). Themes can be kept elsewhere:
 Options > Settings > Theme > Themes folder, or SUHINA_THEMES=<folder>, which wins over it.";
@@ -602,19 +602,13 @@ impl Window {
         let _closed = self.app.take_closed();
         // Only the active project plays; one made active again gets an output.
         if let Some(id) = self.app.take_player_request() {
-            let choice = self.app.projects().output_choice().clone();
-            let opened = self.app.projects().get(id).map(|session| {
-                suhina_output::open_chosen(session.project(), session.audio(), session.device_assets(), &choice, None)
-            });
-            match opened {
-                Some(Ok(opened)) => {
-                    self.app.attach_player(id, opened.player);
-                    if let Some(notice) = opened.notice {
+            match self.app.projects_mut().open_output(Some(id)) {
+                Ok(notice) => {
+                    if let Some(notice) = notice {
                         self.app.set_status(Status::Hint(notice));
                     }
                 }
-                Some(Err(e)) => self.app.set_status(Status::Error(format!("no audio output: {e}"))),
-                None => {}
+                Err(e) => self.app.set_status(Status::Error(e.to_string())),
             }
             self.share_about();
         }
@@ -786,12 +780,7 @@ impl Window {
         // are read (`docs/spec/missing-files.md` › Project file boundaries), as the CLI and MCP do.
         warnings.extend(self.app.projects_mut().load_audio(&mut session));
         let waveforms = suhina_ui::kit::waveform::from_pool(session.audio());
-        let choice = self.app.projects().output_choice().clone();
-        // A device may only be open once: the previews' own output closes first (ADR 0011).
-        self.app.projects_mut().close_preview_output();
-        let (session, output_warnings) = with_audio(session, &choice);
-        warnings.extend(output_warnings);
-        let opened = self.app.open_project(session, &warnings, how).is_some();
+        let opened = open_project_with_audio(&mut self.app, session, warnings, how);
         if opened {
             self.app.set_waveforms(waveforms);
         }
@@ -1099,6 +1088,30 @@ fn with_audio(mut session: Session, choice: &OutputChoice) -> (Session, Vec<Stri
     }
 }
 
+/// Activate first: adding/replacing the tab closes the previous player and preview.
+/// Opening the device before that would overlap two owners of the same driver.
+fn open_project_with_audio(app: &mut App, session: Session, mut warnings: Vec<String>, how: OpenAs) -> bool {
+    let name =
+        session.source().and_then(|p| p.file_name()).map_or("the project".into(), |n| n.to_string_lossy().to_string());
+    let Some(id) = app.open_project(session, &warnings, how) else { return false };
+    match app.projects_mut().open_output(Some(id)) {
+        Ok(notice) => {
+            warnings.extend(notice);
+            let status = match warnings.len() {
+                0 => Status::Done(format!("Opened {name}")),
+                1 => Status::Hint(format!("Opened {name}: {}", warnings.first().map_or("", String::as_str))),
+                n => Status::Hint(format!(
+                    "Opened {name} with {n} warnings; the first: {}",
+                    warnings.first().map_or("", String::as_str)
+                )),
+            };
+            app.set_status(status);
+        }
+        Err(error) => app.set_status(Status::Error(error.to_string())),
+    }
+    true
+}
+
 /// The main window's native handle, for plug-in editors to float above it (ADR 0006): a Win32
 /// `HWND` or an X11 window id; `None` elsewhere (Wayland, macOS), where the plug-in host cannot
 /// open editors yet.
@@ -1216,6 +1229,84 @@ fn write_whole(path: &Path, text: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    struct ExclusiveTestOutput(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+    struct TestOutputOwner(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+    impl Drop for TestOutputOwner {
+        fn drop(&mut self) {
+            self.0.store(false, std::sync::atomic::Ordering::Release);
+        }
+    }
+
+    impl suhina_session::OutputHandle for TestOutputOwner {
+        fn close(self: Box<Self>) -> Option<(u32, suhina_engine::Plugins)> {
+            None
+        }
+    }
+
+    impl suhina_session::AudioSystem for ExclusiveTestOutput {
+        fn hosts(&self) -> Vec<suhina_session::audio::HostInfo> {
+            Vec::new()
+        }
+
+        fn open(
+            &self,
+            project: &suhina_engine::model::Project,
+            _audio: &suhina_engine::AudioPool,
+            _assets: &suhina_engine::DeviceAssets,
+            _choice: &OutputChoice,
+            previous: Option<suhina_session::Player>,
+        ) -> Result<suhina_session::audio::Opened, String> {
+            drop(previous);
+            self.0
+                .compare_exchange(
+                    false,
+                    true,
+                    std::sync::atomic::Ordering::AcqRel,
+                    std::sync::atomic::Ordering::Acquire,
+                )
+                .map_err(|_| "previous output is still open".to_string())?;
+            let owner = TestOutputOwner(std::sync::Arc::clone(&self.0));
+            let mut renderer = suhina_engine::Renderer::new(project, 48_000, suhina_session::devices())
+                .map_err(|error| error.to_string())?;
+            Ok(suhina_session::audio::Opened {
+                player: suhina_session::Player::new(renderer.controller(), Some(Box::new(owner))),
+                notice: None,
+                plugins_kept: false,
+            })
+        }
+    }
+
+    #[test]
+    fn desktop_new_and_replace_release_the_old_output_before_opening_the_new_one() {
+        let mut app = App::new();
+        app.projects_mut().set_audio_system(std::sync::Arc::new(ExclusiveTestOutput(Default::default())));
+        for how in [OpenAs::NewTab, OpenAs::NewTab, OpenAs::Replace] {
+            assert!(open_project_with_audio(&mut app, Session::new(Default::default()), Vec::new(), how));
+            let id = app.projects().active().unwrap();
+            assert!(app.projects().get(id).unwrap().player().is_some());
+            assert!(matches!(app.status(), Status::Done(_)));
+        }
+        assert_eq!(app.projects().len(), 2);
+        assert_eq!(app.projects().outputs_opened(), 3);
+    }
+
+    #[test]
+    fn desktop_output_failure_keeps_the_new_project_and_reports_the_error() {
+        let mut app = App::new();
+        let busy = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        app.projects_mut().set_audio_system(std::sync::Arc::new(ExclusiveTestOutput(busy)));
+        let mut project = suhina_engine::model::Project::default();
+        project.transport.tempo_bpm = 137.0;
+        assert!(open_project_with_audio(&mut app, Session::new(project), Vec::new(), OpenAs::NewTab));
+        let id = app.projects().active().unwrap();
+        let kept = app.projects().get(id).unwrap();
+        assert_eq!(kept.project().transport.tempo_bpm, 137.0);
+        assert!(kept.player().is_none());
+        assert!(matches!(app.status(), Status::Error(error) if error.contains("previous output is still open")));
+    }
+
     /// The end of the process is called for once its limit has passed (#823).
     #[test]
     fn quitting_ends_the_process_after_its_limit() {

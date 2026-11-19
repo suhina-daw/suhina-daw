@@ -173,6 +173,32 @@ pub struct Seat {
 }
 
 impl PluginAudio {
+    /// Clears a quiescent instance's audio state while retaining its preset and editor.
+    /// Control thread only: the host joins and restarts its existing audio worker.
+    pub fn reset_audio(&mut self, timeout: Duration) -> Result<(), PluginError> {
+        let shared = self.group.upgrade().ok_or_else(|| PluginError::Protocol("the plug-in was unloaded".into()))?;
+        let deadline = Instant::now() + timeout;
+        let mut group = lock_until(&shared, deadline).ok_or(PluginError::Timeout("reset_audio"))?;
+        if group.generation != self.process {
+            return Err(PluginError::Protocol("the host process was replaced".into()));
+        }
+        let instance = self.instance;
+        let reply = group.request(
+            Some(instance),
+            &Message::ResetAudio { instance },
+            "reset_audio",
+            deadline.saturating_duration_since(Instant::now()),
+            |m| matches!(m, Message::AudioReset { instance: i, .. } if *i == instance),
+        )?;
+        match reply {
+            Message::AudioReset { latency, .. } => {
+                group.note(&Message::LatencyChanged { instance, latency });
+                Ok(())
+            }
+            _ => Err(PluginError::Protocol("expected audio reset acknowledgement".into())),
+        }
+    }
+
     /// Reconfigures a quiescent audio link. Not real-time safe: call only after the old
     /// renderer has stopped and before the new one starts. The control half may stay on
     /// its session thread, including while an editor is open.
@@ -296,6 +322,19 @@ impl PluginAudio {
             self.unanswered.store(0, Ordering::Relaxed);
         }
         self.note(outcome);
+    }
+
+    /// How long the plug-in itself took to process the last block sent, in microseconds, as its
+    /// host measured it (#1262); `None` until the host has answered that block, so a block given
+    /// up on reads its time once its late answer has come. Real-time safe.
+    pub fn process_us(&self) -> Option<u32> {
+        self.link.process_us()
+    }
+
+    /// [`PluginAudio::process_us`] for the plug-in at `index` among the followers of the last
+    /// joint block sent ([`PluginAudio::send_joint`]), in the order given. Real-time safe.
+    pub fn follower_process_us(&self, index: usize) -> Option<u32> {
+        self.link.follower_process_us(index)
     }
 
     /// Whether the block sent with [`PluginAudio::send`] has been answered, waiting for it at
@@ -1669,7 +1708,9 @@ fn take_in_edit(edits: &EditInbox, instance: u32, id: u32, value: f64) {
     }
 }
 
-fn wake() {
+/// Wakes the control window after asynchronous host or retained-engine work completes.
+/// Control threads only: this reads the registered callback under a lock.
+pub fn wake() {
     if let Some(waker) = lock(&WAKER).clone() {
         waker();
     }

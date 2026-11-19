@@ -3,7 +3,7 @@ description: The FL Studio project (.flp) container and event stream as read by 
 read_when: reading .flp, FL Studio project, FLhd, FLdt, event stream, event id, varint, LEB128, UTF-16 strings, version event 199, flp reader errors
 type: spec
 status: draft
-last_verified: 2026-10-15
+last_verified: 2026-11-19
 covers:
   - crates/flp/src/lib.rs
   - crates/flp/src/event.rs
@@ -14,8 +14,8 @@ covers:
 # FL Studio project (`.flp`) format
 
 What Suhina reads of an FL Studio project file: the two chunks that hold it and the stream of
-events inside the second one. Mapping those events onto the project model is a later piece of
-[epic #271](https://github.com/suhina-daw/suhina-daw/issues/271) and is not described here.
+events inside the second one. [Model mapping](flp-model-mapping.md) describes the partial
+project importer of [epic #271](https://github.com/suhina-daw/suhina-daw/issues/271).
 
 Written in our own words. **Sources:**
 

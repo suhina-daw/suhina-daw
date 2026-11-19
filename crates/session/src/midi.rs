@@ -63,6 +63,11 @@ impl LiveInput {
         *self.lock() = Some(sender);
     }
 
+    /// Disconnects the active project without discarding its sending endpoint.
+    pub(crate) fn disconnect(&self) -> Option<LiveSender> {
+        self.lock().take()
+    }
+
     /// Whether an engine takes the notes now.
     pub fn is_connected(&self) -> bool {
         self.lock().as_ref().is_some_and(LiveSender::is_connected)

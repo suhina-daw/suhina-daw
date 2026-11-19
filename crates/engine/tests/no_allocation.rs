@@ -9,8 +9,8 @@
 
 #![allow(clippy::unwrap_used)] // a test's helper outside `#[test]` functions
 
-use suhina_engine::Renderer;
-use suhina_model::{ChannelId, ChannelRole, Clip, ContentId, Device, DeviceKind, Note, Send};
+use suhina_engine::{PluginProcessor, PluginSlotInfo, Plugins, RenderInputs, RenderOptions, Renderer, Sent};
+use suhina_model::{Branch, ChannelId, ChannelRole, Clip, ContentId, Device, DeviceGroup, DeviceKind, Note, Send};
 use suhina_test_support::ProjectBuilder;
 
 const SR: u32 = 48_000;
@@ -18,6 +18,26 @@ const BLOCK: usize = 512;
 
 fn device(id: &str) -> Device {
     Device::new(id, DeviceKind::Builtin(id.into()))
+}
+
+/// A split send/answer with fixed storage, so measuring the scheduler also covers suspended
+/// groups without attributing allocations in a test processor to the engine.
+struct Pass([f32; BLOCK * 2]);
+
+impl PluginProcessor for Pass {
+    fn process(&mut self, _: &mut [f32], _: &[(usize, suhina_device_api::NoteEvent)], _: std::time::Duration) -> bool {
+        true
+    }
+
+    fn send(&mut self, buffer: &[f32], _: &[(usize, suhina_device_api::NoteEvent)], _: std::time::Duration) -> Sent {
+        self.0[..buffer.len()].copy_from_slice(buffer);
+        Sent::Out
+    }
+
+    fn wait(&mut self, buffer: &mut [f32], _: std::time::Duration) -> bool {
+        buffer.copy_from_slice(&self.0[..buffer.len()]);
+        true
+    }
 }
 
 /// Six instrument tracks with effects, two into a group and two sending to a return: enough
@@ -62,7 +82,21 @@ fn project() -> suhina_model::Project {
 /// What the render thread allocates over two seconds of the project on `threads` threads,
 /// after the first blocks, which start the voices.
 fn allocations(threads: usize) -> u64 {
-    let mut renderer = Renderer::new(&project(), SR, suhina_device_registry::factory()).unwrap();
+    let mut project = project();
+    let plug = || Device::new("P", DeviceKind::Vst3 { id: "565354416263646566".into() });
+    let group = |devices| Device::group("G", DeviceGroup::with_branches(vec![Branch { devices, ..Branch::new("B") }]));
+    project.channel_mut(ChannelId(1)).unwrap().devices.push(group(vec![group(vec![plug()]), plug()]));
+    let mut plugins = Plugins::new();
+    for found in suhina_engine::plugin_devices(&project) {
+        plugins.insert(found.key, PluginSlotInfo { instrument: false, latency: 0 }, Box::new(Pass([0.0; BLOCK * 2])));
+    }
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::new(suhina_device_registry::factory()).with_plugins(plugins),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
     renderer.set_offline(true);
     renderer.set_render_threads(threads);
     assert_eq!(renderer.render_threads(), threads);

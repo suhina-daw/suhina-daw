@@ -3,7 +3,7 @@ description: What each kind of document under docs/ holds and does not hold, the
 read_when: writing or editing a document, ADR, amendment, spec, decision status, built field, superseding an ADR, where text goes, docs check, Built so far, version history
 type: howto
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-18
 covers:
   - scripts/docs.py
   - scripts/test_docs_structure.py
@@ -53,7 +53,7 @@ After `## Sources` come only further sources.
 - Decisions are numbered items `N. **The decision.** Why.` under `## Decision`, in order from 1.
   A reference names the decision: `ADR 0010 › 6`.
 - ADR numbers are unique: a new ADR takes the next number after the highest in `decisions/`,
-  after fetching `main`.
+  after fetching `next` and checking its `decisions/` directory.
 
 ## Status
 
@@ -73,7 +73,7 @@ The front matter is the only status; an ADR has no `- **Status:**` line in its t
 A decision also has `built: no | partly | yes`, how far the work has got. The detail is in the spec
 the ADR points at, not in the ADR.
 
-`last_verified` is stamped on `main` after a merge (`python scripts/docs.py stamp`); a pull
+`last_verified` is stamped on `next` after a merge (`python scripts/docs.py stamp`); a pull
 request leaves the line alone.
 
 ## Checks

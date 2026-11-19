@@ -139,7 +139,7 @@ python scripts/docs.py check
 Keep the tree building at every step. Report each check as passed, failed (with the output) or not
 run (and why). A pull request also carries what [`docs/workflow.md`](docs/workflow.md) › What a
 pull request carries lists: *How to check it*, settings help, a rebuilt app for a device,
-and the documents that describe what changed. A branch never edits what `main` generates:
+and the documents that describe what changed. A branch never edits what `next` generates:
 `docs/INDEX.md` and `docs/commands.md`. A new *What works now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
 
 ## Code Review Rules
@@ -157,7 +157,7 @@ batch and nested execution must preserve the caller's restrictions.
 
 Report actionable defects supported by the current code. Keep verified defects, unmeasured
 risks and optional improvements apart. Optional suggestions belong in the summary, not inline
-threads: the merge queue waits until every thread is resolved. State the reviewed head commit
+threads: a pull request merges only once every thread is resolved. State the reviewed head commit
 and material limits; use the severity definitions and reporting limits in the review guide.
 
 Review output does not grant permission to approve, request changes through a formal GitHub

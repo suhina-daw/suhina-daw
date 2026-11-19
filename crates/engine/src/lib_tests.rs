@@ -118,6 +118,27 @@ fn empty_project_renders_nothing() {
 }
 
 #[test]
+fn a_suspended_project_has_no_held_note_release_on_return() {
+    let project = project_with(untargeted(vec![note(0.0, 4.0, 60)]), vec![clip(0.0, 4.0)], 1);
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    renderer.handle(LaunchCommand::Play);
+    let mut block = [0.0; 128];
+    for _ in 0..16 {
+        renderer.process(&mut block);
+    }
+    assert!(block.iter().any(|sample| sample.abs() > 0.01));
+    renderer.settle_suspended(&mut controller);
+    renderer.process(&mut block);
+    assert!(block.iter().all(|sample| *sample == 0.0), "an old note release resumed after suspension");
+    renderer.handle(LaunchCommand::Play);
+    for _ in 0..16 {
+        renderer.process(&mut block);
+    }
+    assert!(block.iter().any(|sample| sample.abs() > 0.01), "new playback remains audible");
+}
+
+#[test]
 fn note_on_beat_two_starts_half_a_second_in_at_120_bpm() {
     let project = project_with(untargeted(vec![note(1.0, 1.0, 69)]), vec![clip(0.0, 4.0)], 1);
     let out = render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap();
@@ -506,6 +527,12 @@ fn blocks(renderer: &mut Renderer, blocks: usize, frames: usize, mut between: im
     out
 }
 
+/// Renders fixed blocks through the real background worker, waiting for its acknowledgement
+/// before each block instead of guessing how long it needs to fill the rings.
+fn blocks_with_worker(renderer: &mut Renderer, controller: &Controller, count: usize, frames: usize) -> Vec<f32> {
+    blocks(renderer, count, frames, |_| controller.sync_stretch_worker())
+}
+
 fn max_diff(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).fold(0.0f32, |m, (x, y)| m.max((x - y).abs()))
 }
@@ -622,7 +649,7 @@ fn a_transport_jump_is_not_counted_as_underruns() {
 }
 
 #[test]
-fn a_stretch_worker_thread_keeps_up() {
+fn a_stretch_worker_thread_renders_the_same_audio_as_offline() {
     let (project, pool) = stretched_project(440.0, 2.0, 4.0, 110.0, StretchMode::Smooth);
     let mut offline = Renderer::build(
         &project,
@@ -641,8 +668,7 @@ fn a_stretch_worker_thread_keeps_up() {
     .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
-    // Paced like a device: one 10 ms block every 10 ms.
-    let out = blocks(&mut renderer, 100, 441, |_| std::thread::sleep(std::time::Duration::from_millis(10)));
+    let out = blocks_with_worker(&mut renderer, &controller, 100, 441);
     assert_eq!(controller.stretch_underruns(), 0);
     assert_eq!(max_diff(&reference, &out), 0.0);
 }
@@ -800,11 +826,9 @@ fn stretched_clips_carry_on_through_a_tempo_edit() {
     .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
-    // Paced like a device, with the worker on its own thread.
-    let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
-    let mut out = blocks(&mut renderer, 50, 480, pace);
+    let mut out = blocks_with_worker(&mut renderer, &controller, 50, 480);
     controller.update(&slower).unwrap();
-    out.extend(blocks(&mut renderer, 100, 480, pace));
+    out.extend(blocks_with_worker(&mut renderer, &controller, 100, 480));
     // The new graph's stretch voices were ready where the playhead went: no gap.
     assert_eq!(renderer.stretch_underruns(), 0);
     let at = swap_frame(50);
@@ -833,10 +857,9 @@ fn a_stretched_clip_keeps_its_voice_through_an_edit_that_leaves_it_alone() {
     .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
-    let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
-    let mut out = blocks(&mut renderer, 50, 480, pace);
+    let mut out = blocks_with_worker(&mut renderer, &controller, 50, 480);
     controller.update(&project).unwrap();
-    out.extend(blocks(&mut renderer, 100, 480, pace));
+    out.extend(blocks_with_worker(&mut renderer, &controller, 100, 480));
     assert_eq!(renderer.stretch_underruns(), 0);
     assert_eq!(controller.stretch_moves(), 0);
     assert_eq!(max_diff(&reference, &out), 0.0, "the voice went on as it was");
@@ -864,21 +887,24 @@ fn an_edit_refused_by_a_full_queue_leaves_the_playing_voices_alone() {
     .unwrap();
     let mut controller = renderer.controller();
     controller.run_stretch_worker(&mut renderer).unwrap();
-    let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
-    let mut out = blocks(&mut renderer, 50, 480, pace);
+    let mut out = blocks_with_worker(&mut renderer, &controller, 50, 480);
     let mut refused = false;
     for _ in 0..64 {
-        // A frame apart, as a drag sends them: the stretch thread takes each worker in.
-        std::thread::sleep(std::time::Duration::from_millis(16));
-        if controller.update(&project).is_err() {
-            refused = true;
-            // Time for the stretch thread to act on anything it was handed.
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            break;
+        // Each worker is accepted before the next edit: only the swap queue fills up.
+        controller.sync_stretch_worker();
+        match controller.update(&project) {
+            Ok(()) => {}
+            Err(ControlError::Full("edits")) => {
+                refused = true;
+                // Finish anything the refused edit might incorrectly have handed over.
+                controller.sync_stretch_worker();
+                break;
+            }
+            other => panic!("expected a queued edit or a full swap queue, got {other:?}"),
         }
     }
     assert!(refused, "the queue filled up");
-    out.extend(blocks(&mut renderer, 100, 480, pace));
+    out.extend(blocks_with_worker(&mut renderer, &controller, 100, 480));
     assert_eq!(renderer.stretch_underruns(), 0);
     assert_eq!(max_diff(&reference, &out), 0.0, "the voice went on as it was");
 }
@@ -1593,10 +1619,9 @@ fn a_clip_deleted_or_moved_while_playing_stops_where_it_was() {
             .unwrap();
             let mut controller = renderer.controller();
             controller.run_stretch_worker(&mut renderer).unwrap();
-            let pace = |_| std::thread::sleep(std::time::Duration::from_millis(5));
-            let mut out = blocks(&mut renderer, 50, 480, pace);
+            let mut out = blocks_with_worker(&mut renderer, &controller, 50, 480);
             controller.update(&edited).unwrap();
-            out.extend(blocks(&mut renderer, 100, 480, pace));
+            out.extend(blocks_with_worker(&mut renderer, &controller, 100, 480));
             let at = swap_frame(50) + crate::DECLICK_FRAMES;
             let after = rms(&out, at, at + 9_600);
             assert!(after < 1e-4, "{mode:?}, moved {moved}: still playing at {after}");
@@ -1812,8 +1837,7 @@ fn a_stretched_clip_changes_its_tempo_while_playing_without_a_click() {
         .unwrap();
         let mut controller = renderer.controller();
         controller.run_stretch_worker(&mut renderer).unwrap();
-        let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
-        let mut out = blocks(&mut renderer, 50, 480, pace);
+        let mut out = blocks_with_worker(&mut renderer, &controller, 50, 480);
         let clean = largest_bend(&out, 12_000, 24_000);
         // Six steps of a drag, a tenth of a second apart: the clip's tempo up by 3 % each.
         let mut edited = project.clone();
@@ -1822,9 +1846,9 @@ fn a_stretched_clip_changes_its_tempo_while_playing_without_a_click() {
                 marker.time *= 1.03;
             }
             controller.update(&edited).unwrap();
-            out.extend(blocks(&mut renderer, 10, 480, pace));
+            out.extend(blocks_with_worker(&mut renderer, &controller, 10, 480));
         }
-        out.extend(blocks(&mut renderer, 30, 480, pace));
+        out.extend(blocks_with_worker(&mut renderer, &controller, 30, 480));
         let step = largest_bend(&out, 24_000, out.len() / 2);
         assert!(step <= clean * 3.0, "{mode:?}: a bend of {step}, before the drag {clean}");
         assert_eq!(renderer.stretch_underruns(), 0, "{mode:?}");
@@ -1875,11 +1899,10 @@ fn a_clip_goes_between_direct_and_stretched_while_playing_without_a_click() {
         .unwrap();
         let mut controller = renderer.controller();
         controller.run_stretch_worker(&mut renderer).unwrap();
-        let pace = |_| std::thread::sleep(std::time::Duration::from_millis(10));
-        let mut out = blocks(&mut renderer, 50, 480, pace);
+        let mut out = blocks_with_worker(&mut renderer, &controller, 50, 480);
         let clean = largest_bend(&out, 12_000, 24_000);
         controller.update(to).unwrap();
-        out.extend(blocks(&mut renderer, 60, 480, pace));
+        out.extend(blocks_with_worker(&mut renderer, &controller, 60, 480));
         let step = largest_bend(&out, 24_000, out.len() / 2);
         assert!(step <= clean * 3.0, "a bend of {step}, before {clean}");
         assert_eq!(renderer.stretch_underruns(), 0);

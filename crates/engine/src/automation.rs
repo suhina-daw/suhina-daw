@@ -287,6 +287,9 @@ struct DeviceLane {
     param: usize,
     envelope: Envelope,
     last: f64,
+    /// Cumulative device latency before this lane's device, excluding the chain input.
+    delay: u32,
+    next: Option<u64>,
 }
 
 /// The lanes of a chain's built-in and `.sd` devices and the changes they make in the current block.
@@ -294,13 +297,11 @@ pub(crate) struct DeviceLanes {
     lanes: Vec<DeviceLane>,
     /// This block's changes, in frame order.
     block: Vec<DeviceChange>,
-    /// The arrangement frame the last block planned while playing ended at.
-    next: Option<u64>,
 }
 
 impl DeviceLanes {
     pub(crate) fn none() -> Self {
-        Self { lanes: Vec::new(), block: Vec::new(), next: None }
+        Self { lanes: Vec::new(), block: Vec::new() }
     }
 
     /// Adds the lanes of the device in slot `slot`, matched to its parameters by id (a lane of
@@ -316,7 +317,7 @@ impl DeviceLanes {
                 info.params.get(param).is_some_and(|p| matches!(p.kind, ParamKind::Toggle | ParamKind::Choice(_)));
             let Some(info) = info.params.get(param) else { continue };
             if let Some(envelope) = Envelope::new(lane, frames_per_beat, stepped, Position::Param(info.shape())) {
-                self.lanes.push(DeviceLane { slot, param, envelope, last: f64::NAN });
+                self.lanes.push(DeviceLane { slot, param, envelope, last: f64::NAN, delay: 0, next: None });
             }
         }
         if self.block.capacity() < MAX_EVENTS && !self.lanes.is_empty() {
@@ -329,6 +330,20 @@ impl DeviceLanes {
     pub(crate) fn insert_slot(&mut self, slot: usize) {
         for lane in self.lanes.iter_mut().filter(|l| l.slot >= slot) {
             lane.slot += 1;
+        }
+    }
+
+    /// Set the latency before this device while building its chain or branch.
+    pub(crate) fn delay_slot(&mut self, slot: usize, delay: u32) {
+        for lane in self.lanes.iter_mut().filter(|lane| lane.slot == slot) {
+            lane.delay = delay;
+        }
+    }
+
+    /// A group's outer chain contributes this much latency to every lane inside it.
+    pub(crate) fn add_delay(&mut self, delay: u32) {
+        for lane in &mut self.lanes {
+            lane.delay = lane.delay.saturating_add(delay);
         }
     }
 
@@ -345,24 +360,45 @@ impl DeviceLanes {
 
     /// Plans the changes of a block of `frames` frames from arrangement frame `time` (`None`
     /// while the transport is stopped: none). Never allocates.
+    #[cfg(test)]
     pub(crate) fn plan(&mut self, time: Option<u64>, frames: usize) {
-        let Self { lanes, block, next } = self;
+        self.plan_spans(|_| {
+            std::iter::once(crate::plugin::AutomationSpan {
+                offset: 0,
+                frames,
+                time,
+                parked: 0,
+                advancing: time.is_some(),
+            })
+        });
+    }
+
+    /// Plans each lane at its own device's input time, including the chain's incoming sum.
+    pub(crate) fn plan_delayed(&mut self, songs: &crate::plugin::SongHistory, input: u32, frames: usize) {
+        self.plan_spans(|delay| songs.spans(input.saturating_add(delay), frames));
+    }
+
+    fn plan_spans<I: Iterator<Item = crate::plugin::AutomationSpan>>(&mut self, spans: impl Fn(u32) -> I) {
+        let Self { lanes, block } = self;
         block.clear();
-        let Some(time) = time else {
-            *next = None;
-            return;
-        };
-        let jumped = *next != Some(time);
-        *next = Some(time.saturating_add(frames as u64));
         let room = block.capacity();
         for lane in lanes.iter_mut() {
-            let DeviceLane { slot, param, envelope, last } = lane;
-            let most = 1 + frames / STEP + MAX_LANE_POINTS;
-            changes(envelope, time, frames, most, jumped, last, |frame, value| {
-                if block.len() < room {
-                    block.push(DeviceChange { frame, slot: *slot, param: *param, value });
-                }
-            });
+            let DeviceLane { slot, param, envelope, last, delay, next } = lane;
+            for span in spans(*delay) {
+                let Some(time) = span.time else {
+                    *next = None;
+                    continue;
+                };
+                let jumped = *next != Some(time);
+                *next = Some(time.saturating_add(if span.advancing { span.frames as u64 } else { 0 }));
+                let frames = if span.advancing { span.frames } else { span.frames.min(1) };
+                let most = 1 + frames / STEP + MAX_LANE_POINTS;
+                changes(envelope, time, frames, most, jumped, last, |frame, value| {
+                    if block.len() < room {
+                        block.push(DeviceChange { frame: span.offset + frame, slot: *slot, param: *param, value });
+                    }
+                });
+            }
         }
         // In frame order, keeping the order at one frame. An insertion sort: no allocation.
         for i in 1..block.len() {

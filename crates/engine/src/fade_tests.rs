@@ -466,6 +466,76 @@ fn stopping_the_transport_joins_a_playing_audio_clip_to_silence_without_a_step()
     }
 }
 
+#[test]
+fn returning_to_a_suspended_project_does_not_replay_its_stop_fade() {
+    let (region, pool) = constant();
+    let mut renderer =
+        crate::Renderer::stopped(&project(region, 4.0, 0.0, 0.0), &pool, SR, suhina_device_registry::factory())
+            .unwrap();
+    let mut controller = renderer.controller();
+    renderer.handle(LaunchCommand::Play);
+    let mut block = [0.0; 128];
+    for _ in 0..16 {
+        renderer.process(&mut block);
+    }
+    assert!(block.iter().any(|sample| sample.abs() > 0.1));
+    renderer.settle_suspended(&mut controller);
+    assert!(!controller.monitor().running());
+    renderer.process(&mut block);
+    assert!(block.iter().all(|sample| *sample == 0.0), "a returned project must be silent until Play");
+}
+
+#[test]
+fn returning_to_a_suspended_project_does_not_replay_its_delayed_audio() {
+    let (region, pool) = constant();
+    let mut renderer =
+        crate::Renderer::stopped(&project(region, 4.0, 0.0, 0.0), &pool, SR, suhina_device_registry::factory())
+            .unwrap();
+    // A chain is held back when another chain has a delaying device.
+    renderer.graph.chains[0].delay = crate::plugin::Delay::new(128);
+    let mut controller = renderer.controller();
+    renderer.handle(LaunchCommand::Play);
+    let mut block = [0.0; 128];
+    for _ in 0..16 {
+        renderer.process(&mut block);
+    }
+    assert!(block.iter().any(|sample| sample.abs() > 0.1));
+    renderer.settle_suspended(&mut controller);
+    renderer.process(&mut block);
+    assert!(block.iter().all(|sample| *sample == 0.0), "latency compensation retained old audio");
+}
+
+#[test]
+fn a_suspended_project_does_not_report_old_playback_to_delayed_plugins() {
+    let mut renderer =
+        crate::Renderer::stopped(&Project::default(), &AudioPool::new(), SR, suhina_device_registry::factory())
+            .unwrap();
+    renderer.handle(LaunchCommand::Play);
+    renderer.process(&mut [0.0; 128]);
+    assert!(renderer.songs.heard(32).playing);
+    renderer.suspend_project();
+    renderer.process(&mut [0.0; 128]);
+    assert!(!renderer.songs.heard(32).playing, "a delayed plugin must not resume old playback");
+}
+
+#[test]
+fn a_suspended_project_does_not_resume_a_launched_clips_fade() {
+    let (region, pool) = constant();
+    let mut renderer =
+        crate::Renderer::stopped(&project(region, 4.0, 0.0, 0.0), &pool, SR, suhina_device_registry::factory())
+            .unwrap();
+    let mut controller = renderer.controller();
+    renderer.handle(LaunchCommand::LaunchClip { column: 0, slot: 0 });
+    let mut block = [0.0; 128];
+    for _ in 0..16 {
+        renderer.process(&mut block);
+    }
+    assert!(block.iter().any(|sample| sample.abs() > 0.1));
+    renderer.settle_suspended(&mut controller);
+    renderer.process(&mut block);
+    assert!(block.iter().all(|sample| *sample == 0.0), "a launched clip resumed its old stop fade");
+}
+
 /// Stopping a looping launched clip uses the short stop fade, not the clip's fade-out, so the
 /// stop stays where it was quantised.
 #[test]

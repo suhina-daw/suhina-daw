@@ -3,7 +3,7 @@ description: Automation envelopes - lanes of points over the arrangement for a t
 read_when: automation, envelope, curve family, Bezier, volume fader, fader law, volume taper, volume smoothing, Taper, VolumeTaper, Curve, CurveDrag, curve split, curve drag, automation lane, automation lanes view, show automation, automation.movePoints, automation.deletePoints, select points, breakpoint, automation point, curve, automation.addPoint, automation.movePoint, automation.deletePoint, automation.clear, automation.setEnabled, automation.list, device.setAutomation, automation off, re-enable automation, volume automation, pan automation, mute automation, device parameter automation, AutomationLane, AutomationPoint, MixLanes, DeviceLanes, Envelope
 type: spec
 status: current
-last_verified: 2026-11-16
+last_verified: 2026-11-19
 covers:
   - crates/model/src/automation.rs
   - crates/engine/src/automation.rs
@@ -215,6 +215,13 @@ The engine runs one render path (offline renders and playback alike), turns lane
 arrangement frames when the graph is built (at the project's tempo), and allocates nothing on the
 audio thread.
 
+Device lanes are evaluated at the arrangement time represented by the audio reaching that
+device, including upstream device latency and a bus, return or Main chain's input latency.
+The recorded transport history preserves loop and seek boundaries inside a delayed block;
+the device's own latency is not subtracted from its input time. Manual parameter changes
+still apply from the next block. The [PDC contract](plugin-delay-compensation.md) describes
+priming, stopped playback, nested branches and the remaining limits.
+
 - **Device parameters** (built-in and `.sd`): while the transport runs, the parameter is set at every point
   that falls inside a block and at every 64th frame of the arrangement (1.3 ms at 48 kHz) where its
   value changed, and at a block's first frame when the transport has just started or moved. The
@@ -227,7 +234,9 @@ audio thread.
   device starts at the lane's value at beat 0. While stopped, a parameter keeps its last value.
 - **Plug-in parameters**: as #109 built them (ADR 0006 › 3): a value at the block's start, at
   each point and every 64 frames while it moves, as parameter events at their frames; the curve
-  and the enabled flag apply too. While stopped, a lane sends its value where the transport
+  and the enabled flag apply too. Before another historical span in the same block, a lane
+  sends the preceding span's final value too, so an interpolating processor holds the old
+  value up to a delayed loop or seek boundary. While stopped, a lane sends its value where the transport
   stands when the play start marker moves or the lane changes, so the plug-in's editor and its
   parameter list show what plays there (#1205). A plug-in that starts (the project opened, a
   restart) keeps the state it was given until then, so opening a project changes nothing in it
@@ -456,7 +465,16 @@ closed lanes stay closed. The header:
 - The top lane's pin outline pins its parameter as a lane of its own and its **×** clears it; a
   mounted lane's filled pin unpins it (above).
 
-The envelope is drawn in the track's colour through every point, holding before the first and
+The envelope is drawn in the track's colour through every point (Settings › Arrangement ›
+Automation › **Automation colour**: *Track colour*, the default), or, with *Fixed* (#1518), every
+envelope's line in one colour and every point in one colour whatever the track's: the theme's
+`automation-line[kind="fixed"]` and `automation-point[kind="fixed"]` (the base sheet gives both
+the theme's accent), or the **Automation line colour** and **Automation point colour** picked
+under the setting (**Theme** beside a picker gives the theme's back). In both modes a picked point
+keeps `automation-point[selected]`'s colour and a lane that is off keeps
+`automation-line[muted]`'s, its points too; the curve handles, the dot that marks where a click
+adds a point and the faint line of a painted range follow the line's colour. The setting is
+saved with the other settings, not in the project. The envelope holds before the first point and
 after the last, along each segment's curve; steps for mute, on/off and choices. Values are placed
 as the parameter's control places them, and a segment is drawn evenly in that placement, as it
 plays: the volume on the fader's law ([above](#the-volume-fader), 0 dB at 85 % of the height), a

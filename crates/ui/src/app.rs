@@ -430,10 +430,14 @@ pub struct App {
     /// A project with unsaved changes waiting for Save, Don't save or Cancel before it is closed,
     /// replaced or the app quits.
     unsaved_prompt: Option<Leaving>,
-    /// A project being left while its plug-ins are read for edits ([`LeaveCheck`]).
-    leave_check: Option<LeaveCheck>,
-    /// A `project.close` whose plug-ins were read: run in the next frame without reading them
-    /// again.
+    /// Projects being left while their plug-ins are read for edits ([`LeaveCheck`]), one after
+    /// another in the order asked: a second close while a read goes on waits its turn.
+    leave_checks: std::collections::VecDeque<LeaveCheck>,
+    /// The leave checks waited this frame or an earlier one (a dialog, a question, a checked
+    /// close held them): the waiting check's read starts again once, when they go on.
+    leave_checks_paused: bool,
+    /// A `project.close` whose plug-ins were read: run without reading them again once actions
+    /// run (kept while a dialog holds them).
     checked_close: Option<(ProjectId, Action)>,
     /// Clips a plug-in edits about to go to another track, waiting for Keep edits or Copy as
     /// new (ADR 0033 step 6): the move, and the plug-in's name.
@@ -616,6 +620,7 @@ pub struct App {
     settings_open: bool,
     /// The plug-in loading dialog was sent to the background for the project shown now.
     plugin_dialog_hidden: bool,
+    audio_preparation_hidden: bool,
     about: About,
     /// When Settings › Audio last listed the MIDI ports, so a controller plugged in shows up.
     midi_listed: Option<std::time::Instant>,
@@ -782,7 +787,8 @@ impl App {
             open_prompt: None,
             zip_prompt: None,
             unsaved_prompt: None,
-            leave_check: None,
+            leave_checks: std::collections::VecDeque::new(),
+            leave_checks_paused: false,
             checked_close: None,
             traced_output: None,
             ara_prompt: None,
@@ -866,6 +872,7 @@ impl App {
             settings_changed: false,
             settings_open: false,
             plugin_dialog_hidden: false,
+            audio_preparation_hidden: false,
             about: About::default(),
             midi_listed: None,
             audio_devices: suhina_session::audio::DeviceWatch::default(),
@@ -1118,7 +1125,7 @@ impl App {
             match suhina_session::zipped_project(&path) {
                 Ok(Some(found)) => self.zip_prompt = Some(tabs::ZipPrompt::new(path, found)),
                 Ok(None) => {
-                    self.status = Status::Error(format!("{} holds no project (.als or .suhina)", path.display()))
+                    self.status = Status::Error(format!("{} holds no project (.flp, .als or .suhina)", path.display()))
                 }
                 Err(e) => self.status = Status::Error(e),
             }
@@ -1142,7 +1149,7 @@ impl App {
             // Its plug-ins are read for edits first, a frame at a time ([`App::poll_leave_check`]):
             // reading them all at once here held the window for up to a second.
             Some(active) if how == OpenAs::Replace => {
-                self.leave_check = Some(LeaveCheck { project: active, then: LeaveThen::Replace(path) });
+                self.leave_checks.push_back(LeaveCheck { project: active, then: LeaveThen::Replace(path) });
             }
             _ => self.open_request = Some((path, how)),
         }
@@ -1151,14 +1158,51 @@ impl App {
     /// Advances the read of a project's plug-ins before it is left ([`LeaveCheck`]); once done,
     /// asks about unsaved changes or goes on.
     fn poll_leave_check(&mut self, ctx: &egui::Context) {
-        let Some(check) = self.leave_check.take() else { return };
-        let Some(session) = self.projects.get_mut(check.project) else { return };
+        // A checked close not yet run keeps the next one waiting: it holds the one slot. So does a
+        // question about unsaved changes, or the save it led to: the next check's question would
+        // take its place, and the file it was asked for would be lost unanswered.
+        // A dialog that holds the actions holds the checks too: a close checked now would only
+        // wait for it, its plug-ins read before edits made while it is open.
+        if self.checked_close.is_some() || self.unsaved_prompt_open() || self.dialog_holds_actions() {
+            self.leave_checks_paused = true;
+            return;
+        }
+        // The read under way starts again once, as the checks go on: its second may have passed
+        // while they waited, and it would then end on the states read before the pause. Not on
+        // every paused frame: quitting reads the same plug-ins meanwhile, and a check started
+        // again each frame would never end.
+        if std::mem::take(&mut self.leave_checks_paused)
+            && let Some(waiting) = self.leave_checks.front()
+            && let Some(session) = self.projects.get_mut(waiting.project)
+        {
+            session.rack_mut().restart_edit_check();
+        }
+        let Some(check) = self.leave_checks.pop_front() else { return };
+        let Some(session) = self.projects.get_mut(check.project) else {
+            // Closed meanwhile: a file to open goes where the active project is now, after its
+            // own check, in this one's place in the queue; a close has nothing left to do.
+            if let LeaveThen::Replace(path) = check.then {
+                self.retarget(path);
+            }
+            ctx.request_repaint();
+            return;
+        };
         if !session.rack_mut().poll_edits() {
-            self.leave_check = Some(check);
+            self.leave_checks.push_front(check);
             ctx.request_repaint_after(std::time::Duration::from_millis(10));
             return;
         }
+        if !self.leave_checks.is_empty() {
+            ctx.request_repaint();
+        }
         match check.then {
+            // Another project became the active one while this one was read: the file opens in
+            // its place only after the same check of that one, its unsaved changes asked about,
+            // still ahead of the requests made after it.
+            LeaveThen::Replace(path) if self.projects.active() != Some(check.project) => {
+                self.retarget(path);
+                ctx.request_repaint();
+            }
             LeaveThen::Replace(path) if self.unsaved(check.project) => {
                 self.unsaved_prompt = Some(Leaving { project: check.project, then: AfterLeaving::Replace(path) });
             }
@@ -1167,6 +1211,18 @@ impl App {
                 self.checked_close = Some((check.project, action));
                 ctx.request_repaint();
             }
+        }
+    }
+
+    /// A file to open in place of the project that was to be left, which is no longer the active
+    /// one: checked against the active project now, at the front of the queue, where the request
+    /// stood ([`App::open_as`] would put it behind the requests made since).
+    fn retarget(&mut self, path: PathBuf) {
+        match self.projects.active() {
+            Some(active) => {
+                self.leave_checks.push_front(LeaveCheck { project: active, then: LeaveThen::Replace(path) })
+            }
+            None => self.open_request = Some((path, OpenAs::Replace)),
         }
     }
 
@@ -1493,6 +1549,13 @@ impl App {
             }
             suhina_plugins::trace::state("audio output", output);
         }
+        // How long the plug-in that missed most blocks took itself, as its host measured it
+        // (#1262): beside the round trip, it tells a slow plug-in from a host that woke late.
+        let worst_key = self.session().and_then(Session::player).map(|p| p.plugin_misses().1);
+        let worst_process = worst_key
+            .filter(|key| *key != 0)
+            .and_then(|key| self.projects.session_mut(None).ok()?.plugin_report_by_key(key))
+            .map_or(0, |report| report.longest_process_us);
         let Some(player) = self.session().and_then(Session::player) else { return };
         let device = info.as_ref().map_or(0, |i| i.underruns);
         // Blocks that found too little input from the input device; counted from when the
@@ -1525,7 +1588,7 @@ impl App {
             || cpu >= 700
         {
             suhina_plugins::trace!(
-                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, render blocks late {late} (+{}, most {late_name}: {late_most}) on {} threads, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
+                "audio: device underruns {device} (+{}), input underruns {input} (+{}), stretched frames late {stretched} (+{}), edits that restarted stretched clips {moves}, plug-in blocks late {misses} (+{}, most {worst_name}: {worst_misses}), not sent {blocked} (+{}), longest trip {worst_trip} µs, longest plug-in time {worst_process} µs, render blocks late {late} (+{}, most {late_name}: {late_most}) on {} threads, engine load {:.1} %, {}, buffer {} frames, block {}, latency {:.1} ms{}, output {:?}, beat {:.6}, last late render (us, queued, period, frames) {:?}, input diagnostics {:?}, render diagnostics (output cycles, ASIO inputs, renders, max per cycle, extra, timeouts) {:?}",
                 device.saturating_sub(was_device),
                 input.saturating_sub(was_input),
                 stretched.saturating_sub(was_stretched),
@@ -3093,6 +3156,10 @@ impl App {
             crate::kit::skin::configure(&crate::kit::skin::Skin::default());
             crate::kit::native_css::set_colors(&theme::Colors::new());
         }
+        // The selection colour is the window's, as the theme's colours are: a chosen one goes over
+        // the theme's `selection.background` before the styles are worked out.
+        crate::kit::selection::set(self.settings.view.selection);
+        self.arrangement.automation.colours = self.settings.view.automation;
         // The backdrop's opacity before the styles: the frame an image first shows in is faded.
         let backdrop = self.background.prepare(ui, &self.settings);
         let _css_frame = crate::kit::native_css::frame_with_motion(
@@ -3154,13 +3221,24 @@ impl App {
         }
         let window = ui.max_rect();
         let mut actions = Vec::new();
+        // A close whose plug-ins were read, held by a dialog that opened since: it goes back to
+        // the front of the leave checks, so its plug-ins are read again once the dialog is gone (an
+        // edit made in a plug-in's editor meanwhile still asks whether to save), and it is not
+        // handed to the held actions every frame, which would keep asking for frames.
+        if self.dialog_holds_actions()
+            && let Some((project, action)) = self.checked_close.take()
+        {
+            self.leave_checks.push_front(LeaveCheck { project, then: LeaveThen::Close(action) });
+        }
         self.poll_leave_check(ui.ctx());
         // A close whose plug-ins were read goes on now.
-        let checked = self.checked_close.take();
-        if let Some((_, action)) = &checked {
+        let checked_close = self.checked_close.take();
+        if let Some((_, action)) = &checked_close {
             actions.push(action.clone());
         }
-        let checked = checked.map(|(project, _)| project);
+        let checked = checked_close.as_ref().map(|(project, _)| *project);
+        // Whether the checked close ran: a dialog that holds the actions keeps it for later.
+        let mut checked_ran = false;
         crate::detail::device_canvas::finish_sample_audition(ui.ctx(), self.projects.active(), &mut actions);
         let revision = self.revision;
         ui.ctx().data_mut(|d| {
@@ -3956,8 +4034,19 @@ impl App {
             if let Some(project) = closing
                 && checked != Some(project)
             {
-                self.leave_check = Some(LeaveCheck { project, then: LeaveThen::Close(action.clone()) });
+                let asked = |c: &LeaveCheck| c.project == project && matches!(c.then, LeaveThen::Close(_));
+                if !self.leave_checks.iter().any(asked) {
+                    self.leave_checks.push_back(LeaveCheck { project, then: LeaveThen::Close(action.clone()) });
+                }
                 continue;
+            }
+            if closing.is_some() && closing == checked {
+                // A second close of it in the same frame (a click on its tab released as its read
+                // ended) has nothing left to close: it would only report the project as gone.
+                if checked_ran {
+                    continue;
+                }
+                checked_ran = true;
             }
             if self.window_action(action) {
                 continue;
@@ -4025,6 +4114,9 @@ impl App {
             if !failed && let Some(line) = clipboard_line(action.id) {
                 ui.ctx().copy_text(line);
             }
+        }
+        if !checked_ran && let Some(close) = checked_close {
+            self.checked_close = Some(close);
         }
         // A selection this frame's commands or clicks made arms its track.
         self.follow_selection_with_arm();

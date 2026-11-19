@@ -28,6 +28,7 @@
 @property --accent { syntax: "<color>"; initial-value: #A6A3FF; }
 @property --automation-pin { syntax: "<color>"; initial-value: #A6A3FF; }
 @property --selection { syntax: "<color>"; initial-value: #E3C86A; }
+@property --selection-background { syntax: "<color>"; initial-value: #DBDAFF; }
 @property --recording { syntax: "<color>"; initial-value: #E5484D; }
 @property --recording-background { syntax: "<color>"; initial-value: #4D2F2B; }
 @property --meter-normal { syntax: "<color>"; initial-value: #8BC48A; }
