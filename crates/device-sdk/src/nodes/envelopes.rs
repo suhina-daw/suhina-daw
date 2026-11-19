@@ -146,3 +146,48 @@ impl NativeNode for Kernel {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stereo_gates_release_retrigger_and_report_completion_independently() {
+        let mut node = prepare(&NodeKind::Adsr, 8.0).unwrap();
+        let mut next = |gate: [f32; 2], sustain: f32| {
+            let mut out = [0.0; 2];
+            node.process([&gate, &[0.5; 2], &[0.5; 2], &[sustain; 2], &[0.5; 2]], &mut out);
+            (out, node.output(3, 0))
+        };
+        assert_eq!(next([0.0; 2], 0.5), ([0.0; 2], [1.0; 2]));
+        assert_eq!(next([1.0, 0.0], 0.5), ([0.25, 0.0], [0.0, 1.0]));
+        assert_eq!(next([1.0; 2], 0.5), ([0.5, 0.25], [0.0; 2]));
+        assert_eq!(next([0.0, 1.0], 0.5), ([0.375, 0.5], [0.0; 2]));
+        assert_eq!(next([0.0; 2], 0.5), ([0.25, 0.375], [0.0; 2]));
+        assert_eq!(next([1.0, 0.0], 0.5), ([0.25, 0.25], [0.0; 2]));
+        assert_eq!(next([1.0, 0.0], 0.5), ([0.5, 0.125], [0.0; 2]));
+        assert_eq!(next([1.0, 0.0], 0.5), ([0.75, 0.0], [0.0, 1.0]));
+        for _ in 0..5 {
+            next([1.0, 0.0], 0.5);
+        }
+        assert_eq!(next([1.0, 0.0], 0.9), ([0.5, 0.0], [0.0, 1.0]));
+        node.reset();
+        let mut out = [1.0; 2];
+        node.process([&[0.0; 2]; 5], &mut out);
+        assert_eq!(out, [0.0; 2]);
+        assert_eq!(node.output(3, 0), [1.0; 2]);
+    }
+
+    #[test]
+    fn ad_ignores_gate_release_and_finishes_at_sustain() {
+        let mut node = prepare(&NodeKind::Ad, 4.0).unwrap();
+        let mut actual = Vec::new();
+        for frame in 0..6 {
+            let mut out = [0.0; 2];
+            let gate = if frame == 0 { 1.0 } else { 0.0 };
+            node.process([&[gate; 2], &[0.5; 2], &[0.5; 2], &[], &[]], &mut out);
+            actual.push((out[0], node.output(3, 0)[0]));
+        }
+        assert_eq!(actual, [(0.5, 0.0), (1.0, 0.0), (0.5, 0.0), (0.0, 1.0), (0.0, 1.0), (0.0, 1.0)]);
+    }
+}

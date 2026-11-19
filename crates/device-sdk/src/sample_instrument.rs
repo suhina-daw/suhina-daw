@@ -12,6 +12,10 @@ use suhina_dsp::{Biquad, Coefficients};
 
 use crate::nodes::stretch as warp;
 
+#[cfg(test)]
+#[path = "sample_envelope_tests.rs"]
+mod envelope_tests;
+
 /// The most notes a sampler plays at once; each has a voice and a warp voice.
 const VOICES: usize = 32;
 
