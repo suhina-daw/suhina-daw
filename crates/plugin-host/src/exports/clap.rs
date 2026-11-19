@@ -14,8 +14,8 @@ use clack_extensions::note_ports::{
     NoteDialect, NoteDialects, NotePortInfo, NotePortInfoWriter, PluginNotePorts, PluginNotePortsImpl,
 };
 use clack_extensions::params::{
-    ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter, PluginAudioProcessorParams, PluginMainThreadParams,
-    PluginParams,
+    HostParams, ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter, ParamRescanFlags,
+    PluginAudioProcessorParams, PluginMainThreadParams, PluginParams,
 };
 use clack_extensions::state::{PluginState, PluginStateImpl};
 use clack_plugin::entry::prelude::*;
@@ -30,6 +30,8 @@ use suhina_device_api::{DeviceInfo, NoteEvent, ProcessContext, Role};
 use super::{Event as NativeEvent, EventKind, Parameters, Processor, state};
 
 const MAX_EVENTS: usize = 4096;
+#[cfg(test)]
+mod tests;
 
 // SAFETY: Clack generates CLAP ABI callbacks and owns their pointer/lifetime validation.
 // The entry and all raw ABI code remain inside the permitted plugin-host boundary.
@@ -89,7 +91,7 @@ impl PluginFactoryImpl for Factory {
                     latency: AtomicU32::new(0),
                 })
             },
-            |_, shared| Ok(MainThread { shared }),
+            |host, shared| Ok(MainThread { shared, host }),
         ))
     }
 }
@@ -101,6 +103,7 @@ struct Shared {
 }
 struct MainThread<'a> {
     shared: &'a Shared,
+    host: HostMainThreadHandle<'a>,
 }
 struct AudioProcessor<'a> {
     shared: &'a Shared,
@@ -256,7 +259,11 @@ impl PluginStateImpl for MainThread<'_> {
             .take((state::MAX_BYTES + 1) as u64)
             .read_to_end(&mut bytes)
             .map_err(|_| PluginError::Message("could not read state"))?;
-        state::load(&self.shared.parameters, &bytes).map_err(|_| PluginError::Message("invalid native state"))
+        state::load(&self.shared.parameters, &bytes).map_err(|_| PluginError::Message("invalid native state"))?;
+        if let Some(params) = self.host.get_extension::<HostParams>() {
+            params.rescan(&self.host, ParamRescanFlags::VALUES);
+        }
+        Ok(())
     }
 }
 

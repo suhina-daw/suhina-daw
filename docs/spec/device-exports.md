@@ -59,6 +59,19 @@ before changing parameters. VST3 parameter queues precede note events at equal
 offsets; a bounded ordinal makes this order explicit without an allocating sort.
 Zero-frame VST3 parameter flushes are validated before any value is applied.
 
+VST3 continuous parameter queues describe linear segments in normalized space.
+The implicit first point is the applied audio value at sample -1; an explicit
+point at sample zero changes it immediately. After the final point the value
+is held. Discrete parameters instead change only at their explicit points.
+Control-point storage is bounded to 4,096 points/events, and all queues, finite
+values and offsets are validated before applying state or changing DSP. State
+is synchronized once per host block before deriving ramp starts, never again
+inside that block. Rendering uses the shared native processor, without expanding
+ramps into an event per parameter per sample.
+
+The macOS VST3 module exports the case-sensitive `bundleEntry`, `bundleExit`
+and `GetPluginFactory` entry points required by the public SDK loader.
+
 The first CLAP note port advertises ordinary MIDI, not native per-note expression.
 VST3 accepts ordinary note-on/off events. Per-note identity, channel expression,
 pedal/controller mapping for VST3 and key buses in the format adapters remain
@@ -73,6 +86,13 @@ test` also runs the explicit artifact tests through that host. `cargo test -p
 suhina-plugin-host --lib --features device-exports` checks the safe runtime,
 state and native parity without a packaged artifact. Use a build directory
 belonging to the current checkout when building parallel worktrees.
+The macOS CI job also builds the MIT-licensed official VST3 SDK validator at
+commit `3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96`, including its pinned
+submodules, and runs it against the packaged bundle. This is an external test
+tool only, not a shipped dependency. The SDK loader requires the exact module
+entry symbols; the sandbox host's permissive optional-entry handling alone is
+not a test of that requirement. A validator build failure is reported separately
+from a plug-in validation failure.
 
 ## State
 
@@ -90,6 +110,8 @@ once and defers if publication intervenes. It never waits or allocates. The pend
 bank has one writer; audio-thread automation writes a separate current-value bank.
 Accepted state is immediately visible to host value/save queries, including while
 stopped. State is applied before the next block's ordered automation events.
+After a successful CLAP state load, the main thread requests a host parameter
+rescan with `CLAP_PARAM_RESCAN_VALUES`; a rejected load sends no notification.
 
 ## Not yet
 
@@ -103,3 +125,7 @@ stopped. State is applied before the next block's ordered automation events.
 
 The public format and binding sources are recorded in ADR 0040. No proprietary
 implementation, assets or binary analysis is used.
+
+- [VST3 normalized queue segments](https://github.com/steinbergmedia/vst3_pluginterfaces/blob/4f547e8e102b47de4a8b8aaf343c73b700786372/vst/ivstparameterchanges.h).
+- [VST3 macOS loader entry points](https://github.com/steinbergmedia/vst3_public_sdk/blob/586dc5e6c8012c3e4b01c79389375cbe96bdb1da/source/vst/hosting/module_mac.mm).
+- [CLAP state-loading parameter notification](https://github.com/free-audio/clap/blob/a47f6badb49d948fd009998f28309cdab78979c9/include/clap/ext/params.h).

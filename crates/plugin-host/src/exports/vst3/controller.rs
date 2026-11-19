@@ -51,7 +51,7 @@ impl IEditControllerTrait for Controller {
         };
         info.defaultNormalizedValue = parameter.to_normalized(parameter.default);
         info.unitId = 0;
-        info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate;
+        info.flags = ParameterInfo_::ParameterFlags_::kCanAutomate as int32;
         kResultOk
     }
     unsafe fn getParamStringByValue(&self, id: u32, value: f64, output: *mut String128) -> tresult {

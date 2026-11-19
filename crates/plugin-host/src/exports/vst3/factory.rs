@@ -18,7 +18,7 @@ impl IPluginFactoryTrait for Factory {
         text("Suhina", &mut info.vendor);
         text("", &mut info.url);
         text("", &mut info.email);
-        info.flags = PFactoryInfo_::FactoryFlags_::kUnicode;
+        info.flags = PFactoryInfo_::FactoryFlags_::kUnicode as int32;
         kResultOk
     }
     unsafe fn countClasses(&self) -> i32 {
@@ -29,7 +29,7 @@ impl IPluginFactoryTrait for Factory {
         // SAFETY: the host supplies a writable class description or null.
         let Some(output) = (unsafe { output.as_mut() }) else { return kInvalidArgument };
         output.cid = class_id(&info.id, controller);
-        output.cardinality = PClassInfo_::ClassCardinality_::kManyInstances;
+        output.cardinality = PClassInfo_::ClassCardinality_::kManyInstances as int32;
         text(if controller { "Component Controller Class" } else { "Audio Module Class" }, &mut output.category);
         text(&format!("Suhina {}", info.name), &mut output.name);
         kResultOk
@@ -77,7 +77,7 @@ impl IPluginFactory2Trait for Factory {
         // SAFETY: host supplies writable class metadata or null.
         let Some(output) = (unsafe { output.as_mut() }) else { return kInvalidArgument };
         output.cid = class_id(&info.id, controller);
-        output.cardinality = PClassInfo_::ClassCardinality_::kManyInstances;
+        output.cardinality = PClassInfo_::ClassCardinality_::kManyInstances as int32;
         output.classFlags = 0;
         text(if controller { "Component Controller Class" } else { "Audio Module Class" }, &mut output.category);
         text(&format!("Suhina {}", info.name), &mut output.name);
@@ -121,11 +121,11 @@ extern "system" fn ModuleExit() -> bool {
 }
 #[cfg(target_os = "macos")]
 #[unsafe(no_mangle)]
-extern "system" fn BundleEntry(_handle: *mut c_void) -> bool {
+extern "system" fn bundleEntry(_handle: *mut c_void) -> bool {
     true
 }
 #[cfg(target_os = "macos")]
 #[unsafe(no_mangle)]
-extern "system" fn BundleExit() -> bool {
+extern "system" fn bundleExit() -> bool {
     true
 }

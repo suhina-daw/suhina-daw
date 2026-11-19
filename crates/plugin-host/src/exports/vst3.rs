@@ -3,6 +3,7 @@
 
 //! VST3 ABI for the shared native adapter. Raw host pointers are confined to this module.
 
+use super::automation::Automation;
 use super::{Event as NativeEvent, EventKind, MAX_FRAMES, Parameters, Processor, state};
 use std::cell::RefCell;
 use std::ffi::{c_char, c_void};
@@ -14,6 +15,8 @@ use vst3::{Class, ComRef, ComWrapper, uid};
 
 mod controller;
 mod factory;
+#[cfg(test)]
+mod tests;
 
 const MAX_EVENTS: usize = 4096;
 
@@ -49,6 +52,8 @@ struct Runtime {
     buffer: Vec<f32>,
     ordered: Vec<(usize, NativeEvent)>,
     events: Vec<NativeEvent>,
+    automation: Automation,
+    seen_parameters: Vec<bool>,
 }
 impl Class for Component {
     type Interfaces = (IComponent, IAudioProcessor, IProcessContextRequirements);
@@ -67,13 +72,15 @@ impl Component {
         i32::from(self.parameters.info.role != Role::Instrument)
     }
     fn bus_count(&self, media: MediaType, direction: BusDirection) -> i32 {
-        if direction != BusDirections_::kInput && direction != BusDirections_::kOutput {
+        if direction != BusDirections_::kInput as BusDirection && direction != BusDirections_::kOutput as BusDirection {
             return 0;
         }
-        if media == MediaTypes_::kAudio {
-            if direction == BusDirections_::kOutput { 1 } else { self.input_count() }
-        } else if media == MediaTypes_::kEvent {
-            i32::from(direction == BusDirections_::kInput && self.parameters.info.role == Role::Instrument)
+        if media == MediaTypes_::kAudio as MediaType {
+            if direction == BusDirections_::kOutput as BusDirection { 1 } else { self.input_count() }
+        } else if media == MediaTypes_::kEvent as MediaType {
+            i32::from(
+                direction == BusDirections_::kInput as BusDirection && self.parameters.info.role == Role::Instrument,
+            )
         } else {
             0
         }
@@ -101,10 +108,10 @@ impl IComponentTrait for Component {
         let Some(bus) = (unsafe { bus.as_mut() }) else { return kInvalidArgument };
         bus.mediaType = media;
         bus.direction = direction;
-        bus.channelCount = if media == MediaTypes_::kAudio { 2 } else { 16 };
-        bus.busType = BusTypes_::kMain;
-        bus.flags = BusInfo_::BusFlags_::kDefaultActive as u32;
-        wide(if media == MediaTypes_::kEvent { "Notes" } else { "Main" }, &mut bus.name);
+        bus.channelCount = if media == MediaTypes_::kAudio as MediaType { 2 } else { 16 };
+        bus.busType = BusTypes_::kMain as BusType;
+        bus.flags = BusInfo_::BusFlags_::kDefaultActive as uint32;
+        wide(if media == MediaTypes_::kEvent as MediaType { "Notes" } else { "Main" }, &mut bus.name);
         kResultOk
     }
     unsafe fn getRoutingInfo(&self, _input: *mut RoutingInfo, _output: *mut RoutingInfo) -> tresult {
@@ -160,7 +167,7 @@ impl IAudioProcessorTrait for Component {
         index: i32,
         arrangement: *mut SpeakerArrangement,
     ) -> tresult {
-        if index != 0 || self.bus_count(MediaTypes_::kAudio, direction) == 0 {
+        if index != 0 || self.bus_count(MediaTypes_::kAudio as MediaType, direction) == 0 {
             return kInvalidArgument;
         }
         // SAFETY: the host supplies a writable arrangement or null.
@@ -169,7 +176,7 @@ impl IAudioProcessorTrait for Component {
         kResultOk
     }
     unsafe fn canProcessSampleSize(&self, size: i32) -> tresult {
-        if size == SymbolicSampleSizes_::kSample32 { kResultOk } else { kResultFalse }
+        if size == SymbolicSampleSizes_::kSample32 as int32 { kResultOk } else { kResultFalse }
     }
     unsafe fn getLatencySamples(&self) -> u32 {
         self.latency.load(Ordering::Relaxed)
@@ -177,7 +184,7 @@ impl IAudioProcessorTrait for Component {
     unsafe fn setupProcessing(&self, setup: *mut ProcessSetup) -> tresult {
         // SAFETY: the host supplies a live setup for this call or null.
         let Some(setup) = (unsafe { setup.as_ref() }) else { return kInvalidArgument };
-        if setup.symbolicSampleSize != SymbolicSampleSizes_::kSample32 || setup.maxSamplesPerBlock <= 0 {
+        if setup.symbolicSampleSize != SymbolicSampleSizes_::kSample32 as int32 || setup.maxSamplesPerBlock <= 0 {
             return kInvalidArgument;
         }
         let frames = setup.maxSamplesPerBlock as usize;
@@ -189,6 +196,8 @@ impl IAudioProcessorTrait for Component {
             buffer: vec![0.0; frames * 2],
             ordered: Vec::with_capacity(MAX_EVENTS),
             events: Vec::with_capacity(MAX_EVENTS),
+            automation: Automation::new(MAX_EVENTS),
+            seen_parameters: vec![false; self.parameters.info.params.len()],
         });
         kResultOk
     }
@@ -217,7 +226,7 @@ impl IProcessContextRequirementsTrait for Component {
     unsafe fn getProcessContextRequirements(&self) -> u32 {
         (IProcessContextRequirements_::Flags_::kNeedTempo
             | IProcessContextRequirements_::Flags_::kNeedProjectTimeMusic
-            | IProcessContextRequirements_::Flags_::kNeedTransportState) as u32
+            | IProcessContextRequirements_::Flags_::kNeedTransportState) as uint32
     }
 }
 
@@ -225,7 +234,7 @@ impl Runtime {
     unsafe fn process(&mut self, parameters: &Parameters, data: &mut ProcessData, inputs: i32) -> tresult {
         if data.numSamples < 0
             || data.numSamples as usize > MAX_FRAMES
-            || data.symbolicSampleSize != SymbolicSampleSizes_::kSample32
+            || data.symbolicSampleSize != SymbolicSampleSizes_::kSample32 as int32
         {
             return kInvalidArgument;
         }
@@ -233,6 +242,9 @@ impl Runtime {
         let Some(buffer) = self.buffer.get_mut(..frames * 2) else { return kInvalidArgument };
         self.ordered.clear();
         self.events.clear();
+        self.automation.clear();
+        self.seen_parameters.fill(false);
+        let mut point_count = 0;
         // SAFETY: the host's optional parameter-change interface lives for process.
         let changes = unsafe { ComRef::from_raw(data.inputParameterChanges) };
         if let Some(changes) = changes {
@@ -248,25 +260,54 @@ impl Runtime {
                 let Some(queue) = (unsafe { ComRef::from_raw(raw) }) else { continue };
                 // SAFETY: queue is a live host interface.
                 let id = unsafe { queue.getParameterId() };
-                let Some(parameter) = parameters.index(id).and_then(|index| parameters.info.params.get(index)) else {
-                    continue;
-                };
-                // SAFETY: queue is a live host interface.
-                let count = unsafe { queue.getPointCount() };
-                if count < 0 || count as usize > MAX_EVENTS - self.ordered.len() {
+                let parameter_index = parameters.index(id);
+                let parameter = parameter_index.and_then(|index| parameters.info.params.get(index));
+                if let Some(seen) = parameter_index.and_then(|index| self.seen_parameters.get_mut(index)) {
+                    if *seen {
+                        return kInvalidArgument;
+                    }
+                    *seen = true;
+                }
+                let continuous =
+                    frames > 0 && parameter.is_some_and(|parameter| matches!(parameter.kind, ParamKind::Continuous(_)));
+                if continuous
+                    && let Some(index) = parameter_index
+                    && self.automation.begin(index).is_err()
+                {
                     return kInvalidArgument;
                 }
+                // SAFETY: queue is a live host interface.
+                let count = unsafe { queue.getPointCount() };
+                if count < 0 || count as usize > MAX_EVENTS - point_count {
+                    return kInvalidArgument;
+                }
+                point_count += count as usize;
+                let mut previous = None;
                 for index in 0..count {
                     let (mut offset, mut value) = (0, 0.0);
                     // SAFETY: index is in the queue, output pointers are writable stack values.
-                    if unsafe { queue.getPoint(index, &raw mut offset, &raw mut value) } != kResultOk || offset < 0 {
+                    if unsafe { queue.getPoint(index, &raw mut offset, &raw mut value) } != kResultOk
+                        || offset < 0
+                        || (frames == 0 && offset != 0)
+                        || (frames > 0 && offset as usize >= frames)
+                        || !value.is_finite()
+                        || !(0.0..=1.0).contains(&value)
+                        || previous.is_some_and(|previous| offset <= previous)
+                    {
                         return kInvalidArgument;
                     }
-                    let event = NativeEvent {
-                        frame: offset as usize,
-                        kind: EventKind::Parameter { id, value: parameter.from_normalized(value) },
-                    };
-                    self.ordered.push((self.ordered.len(), event));
+                    previous = Some(offset);
+                    if continuous {
+                        if self.automation.push(offset as usize, value).is_err() {
+                            return kInvalidArgument;
+                        }
+                    } else if let Some(parameter) = parameter {
+                        let event = NativeEvent {
+                            frame: offset as usize,
+                            kind: EventKind::Parameter { id, value: parameter.from_normalized(value) },
+                        };
+                        self.ordered.push((self.ordered.len(), event));
+                    }
                 }
             }
         }
@@ -274,7 +315,7 @@ impl Runtime {
         if let Some(events) = unsafe { ComRef::from_raw(data.inputEvents) } {
             // SAFETY: events is a live host interface.
             let count = unsafe { events.getEventCount() };
-            if count < 0 || count as usize > MAX_EVENTS - self.ordered.len() {
+            if count < 0 || count as usize > MAX_EVENTS - point_count {
                 return kInvalidArgument;
             }
             for index in 0..count {
@@ -285,10 +326,13 @@ impl Runtime {
                 }
                 // SAFETY: a successful getEvent initialized the entire event.
                 let event = unsafe { event.assume_init() };
-                if event.sampleOffset < 0 {
+                if event.sampleOffset < 0
+                    || (frames == 0 && event.sampleOffset != 0)
+                    || (frames > 0 && event.sampleOffset as usize >= frames)
+                {
                     return kInvalidArgument;
                 }
-                let note = match i32::from(event.r#type) {
+                let note = match event.r#type as Event_::EventTypes {
                     Event_::EventTypes_::kNoteOnEvent => {
                         // SAFETY: the discriminant selects the noteOn union member.
                         let note = unsafe { event.__field0.noteOn };
@@ -347,20 +391,20 @@ impl Runtime {
         // SAFETY: optional transport data lives for this process call.
         let context = unsafe { data.processContext.as_ref() }
             .map(|context| NativeContext {
-                tempo: if context.state & ProcessContext_::StatesAndFlags_::kTempoValid as u32 != 0 {
+                tempo: if context.state & ProcessContext_::StatesAndFlags_::kTempoValid as uint32 != 0 {
                     context.tempo
                 } else {
                     120.0
                 },
-                beat: if context.state & ProcessContext_::StatesAndFlags_::kProjectTimeMusicValid as u32 != 0 {
+                beat: if context.state & ProcessContext_::StatesAndFlags_::kProjectTimeMusicValid as uint32 != 0 {
                     context.projectTimeMusic
                 } else {
                     0.0
                 },
-                playing: context.state & ProcessContext_::StatesAndFlags_::kPlaying as u32 != 0,
+                playing: context.state & ProcessContext_::StatesAndFlags_::kPlaying as uint32 != 0,
             })
             .unwrap_or_default();
-        if self.processor.process(parameters, context, buffer, None, &self.events).is_err() {
+        if self.processor.process_automated(parameters, context, buffer, &self.events, &mut self.automation).is_err() {
             return kInvalidArgument;
         }
         for (channel, pointer) in output_channels.into_iter().enumerate() {
@@ -399,7 +443,7 @@ unsafe fn silence(data: &mut ProcessData) {
     if data.numSamples <= 0
         || data.numSamples as usize > MAX_FRAMES
         || data.numOutputs != 1
-        || data.symbolicSampleSize != SymbolicSampleSizes_::kSample32
+        || data.symbolicSampleSize != SymbolicSampleSizes_::kSample32 as int32
     {
         return;
     }

@@ -3,6 +3,7 @@
 
 //! Format-independent native-device adapter. All synthesis remains in the registry devices.
 
+mod automation;
 mod clap;
 pub mod state;
 mod vst3;
@@ -236,14 +237,20 @@ impl Processor {
     pub fn apply(&mut self, parameters: &Parameters, kind: EventKind) {
         match kind {
             EventKind::Parameter { id, value } => {
-                parameters.set(id, value);
-                if let Some(index) = parameters.index(id)
-                    && let Some(parameter) = parameters.info.params.get(index)
-                {
-                    self.device.set_param(index, parameter.clamp(value));
+                if let Some(index) = parameters.index(id) {
+                    self.apply_parameter(parameters, index, value);
                 }
             }
             EventKind::Note(note) => self.device.event(note),
+        }
+    }
+
+    fn apply_parameter(&mut self, parameters: &Parameters, index: usize, value: f64) {
+        if let (Some(parameter), Some(destination)) = (parameters.info.params.get(index), parameters.values.get(index))
+        {
+            let value = parameter.clamp(value);
+            destination.store(value.to_bits(), Ordering::SeqCst);
+            self.device.set_param(index, value);
         }
     }
 
@@ -256,6 +263,22 @@ impl Processor {
         key: Option<&[f32]>,
         events: &[Event],
     ) -> Result<(), ExportError> {
+        self.validate_block(audio, key, events)?;
+        let frames = audio.len() / 2;
+        self.sync_parameters(parameters);
+        self.device.set_context(&self.context_at(context, 0));
+        let mut cursor = 0;
+        for event in events {
+            self.span(context, cursor, event.frame, audio, key);
+            self.device.set_context(&self.context_at(context, event.frame));
+            self.apply(parameters, event.kind);
+            cursor = event.frame;
+        }
+        self.span(context, cursor, frames, audio, key);
+        Ok(())
+    }
+
+    fn validate_block(&self, audio: &mut [f32], key: Option<&[f32]>, events: &[Event]) -> Result<(), ExportError> {
         let frames = audio.len() / 2;
         if !audio.len().is_multiple_of(2) || frames > self.max_frames || key.is_some_and(|key| key.len() != audio.len())
         {
@@ -270,16 +293,6 @@ impl Processor {
             }
             previous = event.frame;
         }
-        self.sync_parameters(parameters);
-        self.device.set_context(&self.context_at(context, 0));
-        let mut cursor = 0;
-        for event in events {
-            self.span(context, cursor, event.frame, audio, key);
-            self.device.set_context(&self.context_at(context, event.frame));
-            self.apply(parameters, event.kind);
-            cursor = event.frame;
-        }
-        self.span(context, cursor, frames, audio, key);
         Ok(())
     }
 
