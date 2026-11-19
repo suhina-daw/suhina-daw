@@ -271,24 +271,26 @@ fn a_completed_chain_is_returned_before_the_next_job_runs() {
     });
     let (mut jobs, jobs_rx) = rtrb::RingBuffer::new(DEPTH);
     let (replies, replies_rx) = rtrb::RingBuffer::new(DEPTH);
-    let first = Chain::passthrough(TrackId(1), crate::NO_COLUMN, 8_000);
-    let mut next = Chain::passthrough(TrackId(2), crate::NO_COLUMN, 8_000);
+    let first = Chain::passthrough(TrackId(2), crate::NO_COLUMN, 8_000);
     let stored = Device::new("Observer", DeviceKind::Vst3 { id: "1".into() });
-    next.slots.push(crate::chain::DeviceSlot::Plugin(crate::plugin::PluginSlot {
-        key: 1,
-        processor: Some(Box::new(CheckReply { replies: Some(replies_rx), shared: Arc::clone(&shared) })),
-        instrument: false,
-        latency: 0,
-        enabled: true,
-        missed: 0,
-        busy: 0,
-        longest_us: 0,
-        sent_at: None,
-        params: crate::plugin_params::SlotParams::new(&stored, 8_000.0, &[]),
-        late_followers: Box::default(),
-        keyed: false,
-        song_delay: 0,
-    }));
+    let project = crate::chain_tests::project(Vec::new(), 1.0, vec![stored]);
+    let mut plugins = crate::Plugins::new();
+    plugins.insert(
+        crate::plugin_devices(&project)[0].key,
+        crate::PluginSlotInfo { instrument: false, latency: 0 },
+        Box::new(CheckReply { replies: Some(replies_rx), shared: Arc::clone(&shared) }),
+    );
+    let next = Chain::build(
+        &project,
+        &crate::AudioPool::new(),
+        TrackId(1),
+        crate::NO_COLUMN,
+        (1.0, 1.0),
+        8_000,
+        &mut plugins,
+        (&crate::DeviceAssets::new(), &suhina_device_registry::factory()),
+    )
+    .unwrap();
     for (index, chain) in [first, next].into_iter().enumerate() {
         let job = Job {
             index,
