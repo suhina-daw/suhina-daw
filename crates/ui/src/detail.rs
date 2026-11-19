@@ -4,6 +4,7 @@
 //! The detail area under or beside a view: the selected track's device chain, the selected
 //! clip's properties and follow action, and the clip editor (the piano roll and its tools).
 
+pub(crate) mod compressor_display;
 pub mod detail_view;
 pub(crate) mod device_canvas;
 pub(crate) mod device_widgets;
