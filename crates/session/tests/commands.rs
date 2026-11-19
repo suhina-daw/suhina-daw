@@ -823,7 +823,7 @@ fn group_removal_checks_mixer_routes_sidechains_and_all_emptied_ancestors() {
             "key" => p.channels.iter_mut().find(|c| c.name == "Lead").unwrap().devices[0]
                 .inputs
                 .push(DeviceInput::key(channel, TapPoint::PostFader)),
-            _ => unreachable!(),
+            _ => panic!("unknown group processing test case: {case}"),
         }
         let mut session = Session::new(p.clone());
         let mut params = json!({"tracks": ["Bass"], "target": "Lead", "placement": "before"});
