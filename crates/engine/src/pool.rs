@@ -594,20 +594,21 @@ fn give_back(lanes: &mut [WorkerEnd], lane: usize, job: Job, misses: u64) {
 /// one for at most [`crate::chain::ANSWER_SLICE`]. Never allocates.
 fn wait_for_plugins(held: &mut [Option<Held>], now: Instant) {
     let waiting = |h: &&Option<Held>| h.as_ref().is_some_and(|h| h.job.chain.is_waiting());
-    let all = held.iter().filter(waiting).count();
-    let mut watches: [Option<suhina_ipc::Watch>; HOLD] = [None; HOLD];
+    // A chain can be waiting on several branches, including nested groups.
+    let mut watches: [Option<suhina_ipc::Watch>; 64] = [None; 64];
     let mut until = now.checked_add(JOB_LOOK).unwrap_or(now);
     let mut watched = 0;
+    let mut all_watched = true;
     for h in held.iter().filter(waiting).filter_map(Option::as_ref) {
-        if let (Some(watch), Some(slot)) = (h.job.chain.watch(), watches.get_mut(watched)) {
-            *slot = Some(watch);
-            watched += 1;
+        match watches.get_mut(watched..).and_then(|room| h.job.chain.watches(room)) {
+            Some(count) => watched += count,
+            None => all_watched = false,
         }
         if let Some(limit) = h.job.chain.limit() {
             until = until.min(limit);
         }
     }
-    if watched > 0 && watched == all {
+    if watched > 0 && all_watched {
         suhina_ipc::wait_any(watches.get(..watched).unwrap_or_default(), until);
         return;
     }

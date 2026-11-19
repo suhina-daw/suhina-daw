@@ -305,7 +305,10 @@ runs the chains it holds the same way, each on to its next plug-in as soon as th
 answers, waiting for all their plug-ins together, until each block's deadline. Inside a chain,
 the branches of a device group send their plug-ins the block at the same time, and the group goes
 on with each branch as its plug-in answers, so it takes as long as its slowest branch. Each
-plug-in's time counts from the block's start: a plug-in whose input is ready is sent at once, and
+nesting level yields the outstanding leaf plug-ins to the chain scheduler, so a nested group
+does not hold up its sibling branches or another chain. A device after the group runs only
+once all the group's branches have finished; their delays and sum are applied once, in branch
+order. Each plug-in's time counts from the block's start: a plug-in whose input is ready is sent at once, and
 its deadline is the block's, not a share left over by the plug-in before it. Measured with `measure_quick_play_and_stop` (see
 *Measurements*): an instrument that took longer than a whole block over each press of play or
 stop lost two blocks a press, the late one and the next, refused, with the notes it
@@ -592,9 +595,10 @@ editor's view creation otherwise kept and dereferenced as null, #1223); Wayland 
 A plug-in inside a group still runs out of
 process; a group is not a process boundary. Its key is made from its device id (#763 › 1), so
 moving it into or out of a group keeps its process and state.
-Inside a branch it runs its round trip and is waited for within the block's deadline, one
-after another with the branch's other devices; it does not take part in the joint blocks or
-the staged runs of 4, which a later change can extend to a group's branches. A missed block
+Inside a branch it runs its round trip within the block's deadline, one after another with
+the branch's other devices. Independent branches, including nested groups, overlap their
+round trips through the chain scheduler; plug-ins inside a branch do not share joint blocks.
+A missed block
 does what it does on a track: an effect passes its input, an instrument is silent, and the
 rest of the group goes on. Its state is read and saved, and it restarts, by its key like any
 other plug-in.

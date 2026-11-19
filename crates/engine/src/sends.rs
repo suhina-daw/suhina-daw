@@ -458,14 +458,14 @@ const MAX_WATCHED: usize = 64;
 /// allocates.
 fn wait_for_answers(chains: &mut [Chain], now: std::time::Instant) {
     let waiting = |c: &&Chain| c.turn.started && !c.turn.done && c.is_waiting();
-    let all = chains.iter().filter(waiting).count();
     let mut watches: [Option<suhina_ipc::Watch>; MAX_WATCHED] = [None; MAX_WATCHED];
     let mut until: Option<std::time::Instant> = None;
     let mut watched = 0;
-    for chain in chains.iter().filter(waiting).take(MAX_WATCHED) {
-        if let (Some(watch), Some(slot)) = (chain.watch(), watches.get_mut(watched)) {
-            *slot = Some(watch);
-            watched += 1;
+    let mut all_watched = true;
+    for chain in chains.iter().filter(waiting) {
+        match watches.get_mut(watched..).and_then(|room| chain.watches(room)) {
+            Some(count) => watched += count,
+            None => all_watched = false,
         }
         until = match (until, chain.limit()) {
             (Some(a), Some(b)) => Some(a.min(b)),
@@ -473,7 +473,7 @@ fn wait_for_answers(chains: &mut [Chain], now: std::time::Instant) {
         };
     }
     if watched > 0
-        && watched == all
+        && all_watched
         && let Some(until) = until
     {
         suhina_ipc::wait_any(watches.get(..watched).unwrap_or_default(), until);

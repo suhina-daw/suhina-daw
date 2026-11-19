@@ -730,3 +730,108 @@ fn a_branch_goes_on_while_another_branchs_plug_in_is_out() {
     assert!(find(&log, "q2").sent < find(&log, "slow").due, "q2 waited for the slow branch: {log:?}");
     assert_eq!(find(&log, "q2").sent, find(&log, "q1").due, "q2 went as soon as q1 answered: {log:?}");
 }
+
+fn group(branches: Vec<Vec<Device>>) -> Device {
+    Device::group(
+        "G",
+        DeviceGroup::with_branches(
+            branches.into_iter().map(|devices| Branch { devices, ..Branch::new("B") }).collect(),
+        ),
+    )
+}
+
+/// Every leaf can start before any answer is awaited, even when the first branch contains
+/// another group. A plug-in after the group still waits for all its inputs.
+#[test]
+fn nested_groups_send_all_independent_branches_before_waiting() {
+    let p = tracks(vec![vec![group(vec![vec![group(vec![vec![plug()], vec![plug()]])], vec![plug()]]), plug()]]);
+    let log = Arc::default();
+    let stands = vec![
+        Timed::new("a", 0.5, SLOW, &log),
+        Timed::new("b", 0.5, SLOW, &log),
+        Timed::new("c", 0.5, SLOW, &log),
+        Timed::new("after", 0.5, QUICK, &log),
+    ];
+    let mut renderer = playing(&p, stands);
+    let (_, longest) = play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    let first = find(&log, "a");
+    for name in ["b", "c"] {
+        assert_eq!(find(&log, name).sent, first.sent, "a nested branch serialized its sibling: {log:?}");
+    }
+    assert_eq!(find(&log, "after").sent, first.due);
+    assert_eq!(longest, SLOW + QUICK, "only the longest dependency path costs manual-clock time");
+    assert_eq!(missed_on(&mut renderer, 1), 0);
+}
+
+/// Completion inside a group is a scheduling opportunity, not a wait for every branch of
+/// that group. Check both sides of the nesting boundary, with two group levels below it.
+#[test]
+fn a_nested_branch_resumes_while_an_independent_branch_is_still_out() {
+    for nested_slow in [true, false] {
+        let slow = vec![plug()];
+        let quick = vec![plug(), plug()];
+        let nested = |devices| vec![group(vec![vec![group(vec![devices])]])];
+        let branches = if nested_slow { vec![nested(slow), quick] } else { vec![slow, nested(quick)] };
+        let p = tracks(vec![vec![group(branches)]]);
+        let log = Arc::default();
+        let stands = vec![
+            Timed::new("slow", 0.5, SLOW, &log),
+            Timed::new("q1", 0.5, QUICK, &log),
+            Timed::new("q2", 0.5, QUICK, &log),
+        ];
+        let mut renderer = playing(&p, stands);
+        play(&mut renderer, 1);
+        let log = log.lock().unwrap().clone();
+        assert_eq!(find(&log, "q1").sent, find(&log, "slow").sent);
+        assert_eq!(find(&log, "q2").sent, find(&log, "q1").due);
+        assert!(find(&log, "q2").sent < find(&log, "slow").due, "nested_slow={nested_slow}: {log:?}");
+    }
+}
+
+/// A hung leaf must yield all the way to the chain scheduler: the other track can finish
+/// before the shared deadline, and only the hung leaf is counted late.
+#[test]
+fn a_hung_nested_group_holds_up_no_independent_chain() {
+    let p = tracks(vec![vec![group(vec![vec![group(vec![vec![plug()]])]])], vec![plug(), plug()]]);
+    let log = Arc::default();
+    let stands = vec![
+        Timed::new("hung", 0.5, HUNG, &log),
+        Timed::new("q1", 0.5, QUICK, &log),
+        Timed::new("q2", 0.5, QUICK, &log),
+    ];
+    let mut renderer = playing(&p, stands);
+    play(&mut renderer, 1);
+    let log = log.lock().unwrap().clone();
+    assert_eq!(find(&log, "q1").sent, find(&log, "hung").sent);
+    assert_eq!(find(&log, "q2").sent, find(&log, "q1").due);
+    assert_eq!(missed_on(&mut renderer, 1), 1);
+    assert_eq!(missed_on(&mut renderer, 2), 0);
+}
+
+/// Resuming a group must not copy its input again, apply its dry delay twice or change the
+/// order of its sum. Compare full renders to the same processors answering immediately.
+#[test]
+fn nested_groups_render_the_same_when_their_answers_arrive_in_another_order() {
+    let nested = group(vec![vec![plug(), device("utility", &[("gain", -6.0)])], vec![plug()]]);
+    let mut p = tracks(vec![vec![group(vec![vec![nested, plug()], vec![plug()]]), plug()]]);
+    if let Some(channel) = p.channel_mut(ChannelId(1)) {
+        channel.devices[0].params.push(DeviceParam::new("mix", 0.5));
+    }
+    let render = |delays: [Duration; 5]| {
+        let log = Arc::default();
+        let stands = ["a", "b", "after-nested", "c", "after"]
+            .into_iter()
+            .zip(delays)
+            .enumerate()
+            .map(|(index, (name, delay))| Timed::new(name, 0.5 + index as f32 * 0.1, delay, &log))
+            .collect();
+        let mut renderer = playing(&p, stands);
+        renderer.set_offline(true);
+        play(&mut renderer, 4).0.into_iter().map(f32::to_bits).collect::<Vec<_>>()
+    };
+    let immediate = render([Duration::ZERO; 5]);
+    assert!(immediate.iter().any(|&sample| f32::from_bits(sample).abs() > 0.01));
+    assert_eq!(render([SLOW, QUICK, QUICK, QUICK, QUICK]), immediate);
+    assert_eq!(render([QUICK, SLOW, QUICK, SLOW, QUICK]), immediate);
+}

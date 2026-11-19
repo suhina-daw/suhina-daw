@@ -640,7 +640,16 @@ impl Chain {
                     *stage += 1;
                 }
                 DeviceSlot::Group(group) => {
-                    group.run(buffer, from, to, pending, context, *sample_rate, *deadline);
+                    group.begin(
+                        buffer,
+                        pending,
+                        &crate::group::Span { from, to, context, sample_rate: *sample_rate, deadline: *deadline },
+                    );
+                    if group.is_waiting() {
+                        *waiting = Some(*stage);
+                        return true;
+                    }
+                    group.finish(buffer, from, to);
                     *stage += 1;
                 }
                 DeviceSlot::MidiDevice(device) => {
@@ -713,6 +722,9 @@ impl Chain {
     /// (or the deadline is over), so [`Chain::advance`] sends it this block. Never allocates.
     pub(crate) fn answered(&mut self, until: Instant) -> bool {
         let Some(index) = self.waiting else { return true };
+        if let Some(DeviceSlot::Group(group)) = self.slots.get_mut(index) {
+            return group.answered(until, self.deadline);
+        }
         let Some(limit) = self.limit() else { return true };
         if crate::clock::now() >= limit {
             return true;
@@ -727,13 +739,16 @@ impl Chain {
         }
     }
 
-    /// The plug-in it waits for, to wait for together with other chains' (#1256): its block
-    /// out, or the block it was late with. `None` when it waits for nothing, or for a plug-in
-    /// that cannot be watched. Never allocates.
-    pub(crate) fn watch(&self) -> Option<suhina_ipc::Watch<'_>> {
+    /// All plug-ins it waits for, including nested groups' leaves, to watch with the other
+    /// chains'. `None` if a plug-in cannot be watched or the fixed buffer is too small.
+    pub(crate) fn watches<'a>(&'a self, watches: &mut [Option<suhina_ipc::Watch<'a>>]) -> Option<usize> {
         let index = self.waiting?;
         match self.slots.get(index) {
-            Some(DeviceSlot::Plugin(plugin)) => plugin.watch(self.behind == Some(index)),
+            Some(DeviceSlot::Plugin(plugin)) => {
+                *watches.first_mut()? = Some(plugin.watch(self.behind == Some(index))?);
+                Some(1)
+            }
+            Some(DeviceSlot::Group(group)) => group.watches(watches),
             _ => None,
         }
     }
@@ -746,6 +761,9 @@ impl Chain {
     /// Until when the block out may take: the block's deadline, or offline, where there is
     /// none, [`OFFLINE_TIMEOUT`] after it went out.
     pub(crate) fn limit(&self) -> Option<Instant> {
+        if let Some(DeviceSlot::Group(group)) = self.waiting.and_then(|index| self.slots.get(index)) {
+            return group.limit(self.deadline);
+        }
         self.deadline.or_else(|| self.sent_at.and_then(|at| at.checked_add(OFFLINE_TIMEOUT)))
     }
 
@@ -753,6 +771,24 @@ impl Chain {
     /// (a miss when it is not answered in its time, [`Chain::answered`]).
     pub(crate) fn collect(&mut self, frames: usize) {
         let Some(index) = self.waiting.take() else { return };
+        if let Some(DeviceSlot::Group(group)) = self.slots.get_mut(index) {
+            let to = frames.min(MAX_BLOCK);
+            let from = self.done.min(to);
+            group.resume(&crate::group::Span {
+                from,
+                to,
+                context: &self.context,
+                sample_rate: self.sample_rate,
+                deadline: self.deadline,
+            });
+            if group.is_waiting() {
+                self.waiting = Some(index);
+            } else {
+                group.finish(&mut self.buffer, from, to);
+                self.stage = index + 1;
+            }
+            return;
+        }
         // Nothing went out: the plug-in has finished its late block (or the deadline is over),
         // and `advance` hands it this block now (or counts it refused).
         if self.behind == Some(index) {

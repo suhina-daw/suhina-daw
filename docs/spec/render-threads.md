@@ -72,7 +72,12 @@ included ([#1507](https://github.com/suhina-daw/suhina-daw/issues/1507)).
   hand their plug-ins the block at the same time: each branch runs as far as it goes without
   waiting, then the group waits for any branch's plug-in and runs that branch on, so a group
   takes as long as its slowest branch, not the sum of them (`group.rs`). Each branch keeps its own
-  events, so the order the answers come in changes nothing it makes.
+  events, so the order the answers come in changes nothing it makes. A nested group yields its
+  outstanding plug-ins to the same scheduler, through every enclosing group and the chain:
+  neither its sibling branches nor the worker's other chains wait for it to finish. A branch
+  resumes when its own input is ready; a device after a group waits for all of that group's
+  branches. The scheduler watches the outstanding leaf plug-ins together, with the same bounded
+  polling fallback when a watch is unavailable or the fixed watch buffer is full.
 - **By value, without allocating.** A chain goes to its worker through the lane and comes back
   the same way, its devices run and its sound staged (`Chain::stage`); meanwhile one of the
   lane's spare chains, made when the lane was taken, holds its place. Nothing is allocated or

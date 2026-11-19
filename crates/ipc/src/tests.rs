@@ -480,10 +480,15 @@ fn a_joint_block_answers_with_each_instances_processing_time() {
 fn a_plain_block_is_timed_as_the_links_own() {
     let mut link = Link::create(2, BLOCK as u32).unwrap_or_else(|e| panic!("{e}"));
     let address = link.address();
+    let (answer, may_answer) = std::sync::mpsc::channel();
     let host = thread::spawn(move || {
         let mut served = Served::open(&address).unwrap_or_else(|e| panic!("{e}"));
         let now = Arc::new(std::sync::atomic::AtomicU64::new(0));
         served.set_clock(Box::new(Stepping(Arc::clone(&now))));
+        // The pending-time assertion must precede the response, regardless of scheduling.
+        if may_answer.recv().is_err() {
+            return;
+        }
         while !served.serve(LONG, |_, _| {
             now.fetch_add(500, Ordering::Relaxed);
         }) {}
@@ -492,6 +497,7 @@ fn a_plain_block_is_timed_as_the_links_own() {
     let mut output = vec![0.0; BLOCK * 2];
     assert!(link.send_with_events(&input, &[], output.len()));
     assert_eq!(link.process_us(), None, "not answered yet");
+    assert!(answer.send(()).is_ok());
     assert_eq!(link.wait(&mut output, Instant::now() + LONG), Outcome::Done);
     assert_eq!(link.process_us(), Some(500 + STEP as u32));
     assert!(host.join().is_ok());

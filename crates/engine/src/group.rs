@@ -142,14 +142,19 @@ pub(crate) struct BranchRun {
     caught_up: Option<usize>,
 }
 
-/// The plug-in a branch waits for in this span.
+/// The plug-in or nested group a branch waits for in this span.
 #[derive(Clone, Copy)]
-struct BranchOut {
-    slot: usize,
-    /// It is still at a block it was late with (#506): nothing went out yet.
-    behind: bool,
-    /// When its block went, for an offline render's time limit.
-    sent_at: Instant,
+enum BranchOut {
+    Plugin {
+        slot: usize,
+        /// It is still at a block it was late with (#506): nothing went out yet.
+        behind: bool,
+        /// When its block went, for an offline render's time limit.
+        sent_at: Instant,
+    },
+    Group {
+        slot: usize,
+    },
 }
 
 /// A device group in a chain.
@@ -521,12 +526,29 @@ impl GroupSlot {
         if to <= from {
             return;
         }
-        let Self { branches, midi_scratch, mix, gain, dry, dry_delay, .. } = self;
+        let run = Span { from, to, context, sample_rate, deadline };
+        self.begin(buffer, pending, &run);
+        while self.is_waiting() {
+            let until = self.limit(deadline).unwrap_or_else(crate::clock::now);
+            if self.answered(until, deadline) {
+                self.resume(&run);
+            }
+        }
+        self.finish(buffer, from, to);
+    }
+
+    /// Starts every branch without waiting, including those inside nested groups. Their
+    /// answers are collected by the chain's scheduler through `answered` and `resume`.
+    pub(crate) fn begin(&mut self, buffer: &[f32], pending: &[(usize, NoteEvent)], run: &Span<'_>) {
+        let (from, to) = (run.from, run.to);
+        if to <= from {
+            return;
+        }
+        let Self { branches, midi_scratch, dry, dry_delay, .. } = self;
         let Some(input) = buffer.get(from * 2..to * 2) else { return };
         let Some(dry) = dry.get_mut(from * 2..to * 2) else { return };
         dry.copy_from_slice(input);
         dry_delay.run(dry);
-        let run = Span { from, to, context, sample_rate, deadline };
         for branch in branches.iter_mut() {
             let Some(span) = branch.buffer.get_mut(from * 2..to * 2) else { continue };
             span.copy_from_slice(input);
@@ -535,27 +557,61 @@ impl GroupSlot {
             branch.at = 0;
             branch.out = None;
             branch.caught_up = None;
-            branch.advance(midi_scratch, &run);
+            branch.advance(midi_scratch, run);
         }
-        // Each branch goes on as soon as its plug-in answers, until every branch is through.
-        loop {
-            let now = crate::clock::now();
-            let (mut waiting, mut moved) = (false, false);
-            for branch in branches.iter_mut().filter(|b| b.out.is_some()) {
-                waiting = true;
-                if branch.answered(now, deadline) {
-                    branch.collect(&run);
-                    branch.advance(midi_scratch, &run);
-                    moved = true;
+    }
+
+    /// Takes ready answers and advances their branches, without waiting for the others.
+    pub(crate) fn resume(&mut self, run: &Span<'_>) {
+        for branch in self.branches.iter_mut().filter(|b| b.out.is_some()) {
+            if branch.answered(crate::clock::now(), run.deadline) {
+                branch.collect(run);
+                if branch.out.is_none() {
+                    branch.advance(&mut self.midi_scratch, run);
                 }
             }
-            if !waiting {
-                break;
-            }
-            if !moved {
-                wait_for_branches(branches, now, deadline);
-            }
         }
+    }
+
+    pub(crate) fn is_waiting(&self) -> bool {
+        self.branches.iter().any(|b| b.out.is_some())
+    }
+
+    /// Whether any branch can advance. A wait is bounded by `until`, even through nested
+    /// groups, so a worker can return to its other chains and newly queued jobs.
+    pub(crate) fn answered(&mut self, until: Instant, deadline: Option<Instant>) -> bool {
+        let now = crate::clock::now();
+        if !self.is_waiting() || self.branches.iter_mut().filter(|b| b.out.is_some()).any(|b| b.answered(now, deadline))
+        {
+            return true;
+        }
+        if until > now {
+            wait_for_branches(&mut self.branches, now, deadline, until);
+            let now = crate::clock::now();
+            return self.branches.iter_mut().filter(|b| b.out.is_some()).any(|b| b.answered(now, deadline));
+        }
+        false
+    }
+
+    /// The earliest outstanding leaf's limit; offline, each send has its own timeout.
+    pub(crate) fn limit(&self, deadline: Option<Instant>) -> Option<Instant> {
+        self.branches.iter().filter_map(|b| b.limit(deadline)).min()
+    }
+
+    /// Appends every outstanding leaf's watch, or returns `None` when any cannot be watched
+    /// or the fixed buffer is full. Callers then use a bounded wait and poll every branch.
+    pub(crate) fn watches<'a>(&'a self, watches: &mut [Option<suhina_ipc::Watch<'a>>]) -> Option<usize> {
+        let mut written = 0;
+        for branch in self.branches.iter().filter(|b| b.out.is_some()) {
+            written += branch.watches(watches.get_mut(written..)?)?;
+        }
+        Some(written)
+    }
+
+    /// Delays and sums finished branches in their stored order, just once per span.
+    pub(crate) fn finish(&mut self, buffer: &mut [f32], from: usize, to: usize) {
+        let Self { branches, mix, gain, dry, .. } = self;
+        let Some(dry) = dry.get(from * 2..to * 2) else { return };
         for branch in branches.iter_mut() {
             if let Some(span) = branch.buffer.get_mut(from * 2..to * 2) {
                 branch.delay.run(span);
@@ -683,11 +739,18 @@ impl BranchRun {
                     );
                     std::mem::swap(events, midi_scratch);
                 }
-                DeviceSlot::Group(group) => group.run(buffer, from, to, events, context, sample_rate, deadline),
+                DeviceSlot::Group(group) => {
+                    group.begin(buffer, events, run);
+                    if group.is_waiting() {
+                        *out = Some(BranchOut::Group { slot: *at });
+                        return;
+                    }
+                    group.finish(buffer, from, to);
+                }
                 DeviceSlot::Plugin(plugin) => {
                     let now = crate::clock::now();
                     if deadline.is_some() && *caught_up != Some(*at) && !plugin.ready(now) {
-                        *out = Some(BranchOut { slot: *at, behind: true, sent_at: now });
+                        *out = Some(BranchOut::Plugin { slot: *at, behind: true, sent_at: now });
                         return;
                     }
                     *caught_up = None;
@@ -699,7 +762,7 @@ impl BranchRun {
                     if let Some(span) = buffer.get_mut(from * 2..to * 2) {
                         match plugin.send(span, span_events, deadline) {
                             Sent::Out => {
-                                *out = Some(BranchOut { slot: *at, behind: false, sent_at: now });
+                                *out = Some(BranchOut::Plugin { slot: *at, behind: false, sent_at: now });
                                 return;
                             }
                             // A miss already counted: running it again would count it twice.
@@ -716,20 +779,35 @@ impl BranchRun {
     /// Until when the plug-in it waits for may take: the block's deadline, or offline
     /// [`OFFLINE_TIMEOUT`] after its block went.
     fn limit(&self, deadline: Option<Instant>) -> Option<Instant> {
-        let out = self.out?;
-        Some(deadline.unwrap_or_else(|| out.sent_at.checked_add(OFFLINE_TIMEOUT).unwrap_or(out.sent_at)))
+        match self.out? {
+            BranchOut::Plugin { sent_at, .. } => {
+                Some(deadline.unwrap_or_else(|| sent_at.checked_add(OFFLINE_TIMEOUT).unwrap_or(sent_at)))
+            }
+            BranchOut::Group { slot } => match self.slots.get(slot) {
+                Some(DeviceSlot::Group(group)) => group.limit(deadline),
+                _ => None,
+            },
+        }
     }
 
     /// Whether [`BranchRun::collect`] can go on now: the plug-in it waits for has answered (or
     /// finished the block it was late with), or its time is over. Waits for it at most until
     /// `until` (a time already past only looks). Never allocates.
     fn answered(&mut self, until: Instant, deadline: Option<Instant>) -> bool {
-        let (Some(out), Some(limit)) = (self.out, self.limit(deadline)) else { return true };
+        let Some(out) = self.out else { return true };
+        if let BranchOut::Group { slot } = out {
+            return match self.slots.get_mut(slot) {
+                Some(DeviceSlot::Group(group)) => group.answered(until, deadline),
+                _ => true,
+            };
+        }
+        let Some(limit) = self.limit(deadline) else { return true };
         if crate::clock::now() >= limit {
             return true;
         }
-        match self.slots.get_mut(out.slot) {
-            Some(DeviceSlot::Plugin(plugin)) if out.behind => {
+        let BranchOut::Plugin { slot, behind, .. } = out else { return true };
+        match self.slots.get_mut(slot) {
+            Some(DeviceSlot::Plugin(plugin)) if behind => {
                 plugin.ready(until.min(limit)) || crate::clock::now() >= limit
             }
             Some(DeviceSlot::Plugin(plugin)) => plugin.poll(until.min(limit)) || crate::clock::now() >= limit,
@@ -743,25 +821,46 @@ impl BranchRun {
     fn collect(&mut self, run: &Span<'_>) {
         let limit = self.limit(run.deadline);
         let Some(out) = self.out.take() else { return };
-        if out.behind {
-            self.caught_up = Some(out.slot);
+        let (from, to) = (run.from, run.to);
+        if let BranchOut::Group { slot } = out {
+            if let Some(DeviceSlot::Group(group)) = self.slots.get_mut(slot) {
+                group.resume(run);
+                if group.is_waiting() {
+                    self.out = Some(out);
+                    return;
+                }
+                group.finish(&mut self.buffer, from, to);
+            }
+            self.at = slot + 1;
             return;
         }
-        let (from, to) = (run.from, run.to);
+        let BranchOut::Plugin { slot, behind, .. } = out else { return };
+        if behind {
+            self.caught_up = Some(slot);
+            return;
+        }
         if let (Some(DeviceSlot::Plugin(plugin)), Some(span)) =
-            (self.slots.get_mut(out.slot), self.buffer.get_mut(from * 2..to * 2))
+            (self.slots.get_mut(slot), self.buffer.get_mut(from * 2..to * 2))
         {
             plugin.finish(span, limit);
         }
-        self.at = out.slot + 1;
+        self.at = slot + 1;
     }
 
     /// What it waits for, to wait for together with the other branches'.
-    fn watch(&self) -> Option<suhina_ipc::Watch<'_>> {
-        let out = self.out?;
-        match self.slots.get(out.slot) {
-            Some(DeviceSlot::Plugin(plugin)) => plugin.watch(out.behind),
-            _ => None,
+    fn watches<'a>(&'a self, watches: &mut [Option<suhina_ipc::Watch<'a>>]) -> Option<usize> {
+        match self.out? {
+            BranchOut::Plugin { slot, behind, .. } => match self.slots.get(slot) {
+                Some(DeviceSlot::Plugin(plugin)) => {
+                    *watches.first_mut()? = Some(plugin.watch(behind)?);
+                    Some(1)
+                }
+                _ => None,
+            },
+            BranchOut::Group { slot } => match self.slots.get(slot) {
+                Some(DeviceSlot::Group(group)) => group.watches(watches),
+                _ => None,
+            },
         }
     }
 }
@@ -769,29 +868,24 @@ impl BranchRun {
 /// While no branch's plug-in has answered: sleeps until one of them does or the earliest of
 /// their limits passes ([`suhina_ipc::wait_any`]); when one cannot be watched, waits on the first
 /// branch still out for at most [`ANSWER_SLICE`] and looks at all of them again. Never allocates.
-fn wait_for_branches(branches: &mut [BranchRun], now: Instant, deadline: Option<Instant>) {
-    let all = branches.iter().filter(|b| b.out.is_some()).count();
+fn wait_for_branches(branches: &mut [BranchRun], now: Instant, deadline: Option<Instant>, mut until: Instant) {
     let mut watches: [Option<suhina_ipc::Watch>; MAX_WATCHED] = [None; MAX_WATCHED];
-    let mut until: Option<Instant> = None;
     let mut watched = 0;
-    for branch in branches.iter().filter(|b| b.out.is_some()).take(MAX_WATCHED) {
-        if let (Some(watch), Some(slot)) = (branch.watch(), watches.get_mut(watched)) {
-            *slot = Some(watch);
-            watched += 1;
+    let mut all_watched = true;
+    for branch in branches.iter().filter(|b| b.out.is_some()) {
+        match watches.get_mut(watched..).and_then(|room| branch.watches(room)) {
+            Some(count) => watched += count,
+            None => all_watched = false,
         }
-        until = match (until, branch.limit(deadline)) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
+        if let Some(limit) = branch.limit(deadline) {
+            until = until.min(limit);
+        }
     }
-    if watched > 0
-        && watched == all
-        && let Some(until) = until
-    {
+    if watched > 0 && all_watched {
         suhina_ipc::wait_any(watches.get(..watched).unwrap_or_default(), until);
         return;
     }
     if let Some(branch) = branches.iter_mut().find(|b| b.out.is_some()) {
-        branch.answered(now + ANSWER_SLICE, deadline);
+        branch.answered(until.min(now + ANSWER_SLICE), deadline);
     }
 }

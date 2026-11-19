@@ -268,7 +268,8 @@ impl crate::PluginProcessor for Bend {
 }
 
 /// [`project`] with a plug-in after every track's instrument, and a device group with a plug-in
-/// in each of its two branches on the group track.
+/// in each of its two branches on the group track, including a nested group followed by an
+/// effect. This exercises suspension and resumption through the worker's chain scheduler.
 fn plug_in_project() -> suhina_model::Project {
     let plug =
         |n: u32| Device { name: format!("P{n}"), ..Device::new("plug", DeviceKind::Vst3 { id: format!("{n:032}") }) };
@@ -277,8 +278,15 @@ fn plug_in_project() -> suhina_model::Project {
         let at = channel.devices.len().min(1);
         channel.devices.insert(at, plug(n));
         if channel.id == ChannelId(5) {
+            let nested = Device::group(
+                "Nested",
+                suhina_model::DeviceGroup::with_branches(vec![
+                    suhina_model::Branch { devices: vec![plug(102)], ..suhina_model::Branch::new("C") },
+                    suhina_model::Branch { devices: vec![plug(103)], ..suhina_model::Branch::new("D") },
+                ]),
+            );
             let branches = vec![
-                suhina_model::Branch { devices: vec![plug(100)], ..suhina_model::Branch::new("A") },
+                suhina_model::Branch { devices: vec![nested, plug(100)], ..suhina_model::Branch::new("A") },
                 suhina_model::Branch { devices: vec![plug(101), device("eq", &[])], ..suhina_model::Branch::new("B") },
             ];
             channel.devices.push(Device::group("G", suhina_model::DeviceGroup::with_branches(branches)));
