@@ -35,7 +35,7 @@ pub(super) fn show(ui: &Ui, area: Rect, names: &[String], remember: &mut bool) -
                 ui,
                 &dialog,
                 area,
-                Vec2::new(480.0, ROW + 4.0 * LINE + BUTTON.y + 3.0 * PAD),
+                Vec2::new(480.0, ROW + 5.0 * LINE + BUTTON.y + 3.0 * PAD),
                 "Remove group processing?",
                 &mut closed,
             );
@@ -47,6 +47,7 @@ pub(super) fn show(ui: &Ui, area: Rect, names: &[String], remember: &mut bool) -
             for (index, message) in [
                 names.join(", "),
                 "Their effects, mixer settings and routing will be removed.".to_owned(),
+                "Clips or takes on the groups themselves will also be removed.".to_owned(),
                 "The whole edit can be undone in one step.".to_owned(),
             ]
             .iter()
@@ -62,7 +63,7 @@ pub(super) fn show(ui: &Ui, area: Rect, names: &[String], remember: &mut bool) -
                     crate::kit::element::name_ink(),
                 );
             }
-            let check = line.translate(Vec2::new(0.0, 3.0 * LINE));
+            let check = line.translate(Vec2::new(0.0, 4.0 * LINE));
             let response = widgets::button_area(ui, check, Id::unique("group-removal-remember"), "Remember my choice");
             let mark = Rect::from_center_size(Pos2::new(check.left() + 6.0, check.center().y), Vec2::splat(11.0));
             let el = crate::kit::element::BUTTON

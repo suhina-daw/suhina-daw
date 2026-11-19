@@ -1042,7 +1042,9 @@ ids in the optional `removeGroupProcessing` list. This applies to explicit Ungro
 group deletion too; cutting a selected group keeps its own processing in the clipboard,
 but removing its last sibling still checks the source ancestors.
 
-The desktop asks **Remove group processing?**, identifies the affected groups, and offers
+The desktop asks **Remove group processing?**, identifies the affected groups, explains that
+their effects, mixer settings, routing and any clips or takes owned by those group tracks
+will be removed, and offers
 **Remove processing** or **Cancel**. Cancel, Escape and the close button leave the original
 operation unapplied. **Remember my choice** on Remove sets **Settings › Arrangement ›
 Groups › Empty group processing** to **Remove**; its default is **Ask**. The setting applies

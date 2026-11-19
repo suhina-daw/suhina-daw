@@ -553,7 +553,7 @@ pub(crate) static ROWS: &[Entry] = &[
         Page::Arrangement,
         "Groups",
         "Empty group processing",
-        "Ask before removing a dissolving group's effects, mixer automation or routing; Remove remembers consent for desktop edits only",
+        "Whether to ask before removing a group's effects, mixer settings or routing",
         &["empty_group_processing"],
         |cx, r| cx.choose(r, &[("Ask", false), ("Remove", true)], |s| &mut s.view.remove_group_processing),
     ),

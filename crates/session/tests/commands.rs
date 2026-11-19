@@ -810,7 +810,8 @@ fn group_removal_checks_mixer_routes_sidechains_and_all_emptied_ancestors() {
     run(&mut setup, "device.add", json!({"track": "Lead", "id": "compressor"})).unwrap();
     let original = setup.project().clone();
     let channel = original.track(TrackId(inner)).unwrap().channel.unwrap();
-    for case in ["gain", "pan", "mute", "solo", "cue", "output", "input", "key"] {
+    let lead = original.track(TrackId(2)).unwrap().channel.unwrap();
+    for case in ["gain", "pan", "mute", "solo", "cue", "output", "input", "key", "clips"] {
         let mut p = original.clone();
         match case {
             "gain" => p.channel_mut(channel).unwrap().volume = 0.5,
@@ -819,10 +820,11 @@ fn group_removal_checks_mixer_routes_sidechains_and_all_emptied_ancestors() {
             "solo" => p.channel_mut(channel).unwrap().solo = true,
             "cue" => p.channel_mut(channel).unwrap().cue = true,
             "output" => p.channel_mut(channel).unwrap().output = None,
-            "input" => p.channels.iter_mut().find(|c| c.name == "Lead").unwrap().output = Some(channel),
-            "key" => p.channels.iter_mut().find(|c| c.name == "Lead").unwrap().devices[0]
-                .inputs
-                .push(DeviceInput::key(channel, TapPoint::PostFader)),
+            "input" => p.channel_mut(lead).unwrap().output = Some(channel),
+            "key" => {
+                p.channel_mut(lead).unwrap().devices[0].inputs.push(DeviceInput::key(channel, TapPoint::PostFader))
+            }
+            "clips" => p.arrangement.lanes[0].track = Some(TrackId(inner)),
             _ => panic!("unknown group processing test case: {case}"),
         }
         let mut session = Session::new(p.clone());
