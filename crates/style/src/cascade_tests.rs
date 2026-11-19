@@ -709,3 +709,82 @@ fn an_id_no_selector_tests_does_not_keep_elements_apart() {
     assert_eq!(computed, 4, "the row whose id a rule tests is apart");
     assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 0, 0, 255])));
 }
+
+/// The declarations [`explain`] lists for `name`, with each one's rule line and outcome.
+fn outcomes(rules: &[MatchedRule], name: &str) -> Vec<(u32, Outcome)> {
+    rules
+        .iter()
+        .flat_map(|rule| rule.declarations.iter().filter(|d| d.name == name).map(|d| (rule.line, d.outcome.clone())))
+        .collect()
+}
+
+#[test]
+fn explain_lists_the_matching_rules_in_cascade_order_and_marks_each_winner() {
+    let base = Sheet::parse("knob { color: #111111; radius: 2px; }").unwrap();
+    let theme = Sheet::parse(
+        "knob#cutoff {\n  color: #222222;\n}\nknob { color: #333333 !important; }\n@media (max-width: 10px) { knob { radius: 9px; } }\nslider { color: red; }",
+    )
+    .unwrap();
+    let sheets = [
+        AppliedSheet { sheet: &base, layer: Layer::Base, root: None },
+        AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None },
+    ];
+    let (style, rules) = explain(&tree(), 2, viewport(1138.0), &sheets).unwrap();
+    // The media rule for a narrow window and the slider's rule do not match.
+    let matched: Vec<_> =
+        rules.iter().map(|rule| (rule.sheet, rule.layer, rule.line, rule.selector.as_str())).collect();
+    assert_eq!(
+        matched,
+        [(0, Layer::Base, 1, "knob"), (1, Layer::Theme, 1, "knob#cutoff"), (1, Layer::Theme, 4, "knob")]
+    );
+    // `!important` beats the more specific rule of the same tier, and both beat the base.
+    assert_eq!(
+        outcomes(&rules, "color"),
+        [(1, Outcome::Overridden), (1, Outcome::Overridden), (4, Outcome::Applied("#333333".into()))]
+    );
+    assert_eq!(outcomes(&rules, "radius"), [(1, Outcome::Applied("2px".into()))]);
+    assert_eq!(style, compute(&tree(), viewport(1138.0), &sheets).unwrap()[2]);
+}
+
+#[test]
+fn explain_names_a_winning_declaration_whose_value_did_not_hold() {
+    // An undefined variable drops the winner: the element keeps its inherited colour, and the
+    // weaker rule is not used.
+    let sheet = Sheet::parse(
+        "window { color: #eeeeee; --ink: #123456; }\nknob { color: #010101; }\nknob#cutoff { color: var(--missing); padding: 3px var(--ink); }",
+    )
+    .unwrap();
+    let sheets = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    let (style, rules) = explain(&tree(), 2, viewport(1138.0), &sheets).unwrap();
+    assert_eq!(style.get(Property::Color), Value::Color(Color::Rgba([238, 238, 238, 255])));
+    let color = outcomes(&rules, "color");
+    assert_eq!(color.first(), Some(&(2, Outcome::Overridden)));
+    assert!(matches!(color.get(1), Some((3, Outcome::Dropped(_)))), "{color:?}");
+    // A shorthand's parts are named as longhands, with the shorthand they came from.
+    let padding: Vec<_> =
+        rules.iter().flat_map(|rule| &rule.declarations).filter(|d| d.shorthand == Some("padding")).collect();
+    // Each part holds or not on its own: the colour is no length, the vertical parts are fine.
+    let parts: Vec<_> = padding.iter().map(|d| (d.name.as_str(), matches!(d.outcome, Outcome::Applied(_)))).collect();
+    assert_eq!(
+        parts,
+        [("padding-top", true), ("padding-right", false), ("padding-bottom", true), ("padding-left", false)]
+    );
+    // A custom property set on an ancestor is the window's rule, not the knob's.
+    let (_, window) = explain(&tree(), 0, viewport(1138.0), &sheets).unwrap();
+    assert_eq!(outcomes(&window, "--ink"), [(1, Outcome::Applied("#123456".into()))]);
+}
+
+#[test]
+fn recorded_matches_hold_every_rule_that_matched_any_element_styled() {
+    let sheet = Sheet::parse("knob { color: red; }\nslider { color: blue; }\n#cutoff { radius: 1px; }").unwrap();
+    let sheets = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    assert!(matched_rules().is_empty());
+    record_matches(true);
+    compute(&tree(), viewport(1138.0), &sheets).unwrap();
+    let matched = matched_rules();
+    record_matches(false);
+    assert_eq!(matched, BTreeSet::from([(Layer::Theme, 0), (Layer::Theme, 2)]));
+    assert!(matched_rules().is_empty());
+    let sources: Vec<_> = sheet.rule_sources().collect();
+    assert_eq!(sources, [(1, "knob"), (2, "slider"), (3, "#cutoff")]);
+}
