@@ -70,20 +70,21 @@ fn focusing_the_colour_picker_releases_a_held_gate_launch() {
     assert_eq!(renderer.monitor().column(0).unwrap().playing, Some(0));
 
     // A non-text control takes the keys while Q is still physically held.
+    // Playback keeps requesting repaints: advance fixed UI frames, never wait for it to settle.
     h.get_by_label("Colour field").click();
-    h.run();
+    h.run_steps(2);
     renderer.process(&mut samples);
     assert_eq!(renderer.monitor().column(0).unwrap().playing, None);
     h.key_up(Key::Q);
-    h.run();
+    h.run_steps(2);
     h.get_by_label("Track Drums").click();
-    h.run();
+    h.run_steps(2);
     h.key_down(Key::Q);
-    h.run();
+    h.run_steps(2);
     renderer.process(&mut samples);
     assert_eq!(renderer.monitor().column(0).unwrap().playing, Some(0));
     h.key_up(Key::Q);
-    h.run();
+    h.run_steps(2);
     renderer.process(&mut samples);
     assert_eq!(renderer.monitor().column(0).unwrap().playing, None);
 }
