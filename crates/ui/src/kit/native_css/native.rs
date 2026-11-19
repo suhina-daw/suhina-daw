@@ -412,17 +412,17 @@ pub(super) fn scoped(engine: &Engine, stack: &[String]) -> Option<Computed> {
     engine.native.as_ref()?.styles(&tree, viewport(engine), variant(engine), &[], user)?.last().map(computed)
 }
 
-/// The style of the last of `path` (element names from `window` inward) under the theme's
-/// `sheet`, the variant's and the user's, at the window's usual size, in the colour scheme
-/// `light` or dark ([`crate::kit::theme_vars::element_styles`]).
-pub(super) fn settings_of(
-    sheet: &Sheet,
-    variant: Option<&Sheet>,
-    user: Option<&Sheet>,
-    path: &[&str],
-    light: bool,
-) -> Option<Computed> {
-    crate::kit::theme_vars::element_styles(sheet, variant, user, &[path], light).ok()?.first().map(computed)
+/// The style the window's sheets give the elements named by `path`, from `window` inward, under
+/// `html > body > window` as painting has them ([`super::settings_of`]).
+pub(super) fn settings_of(engine: &Engine, path: &[&str]) -> Option<Computed> {
+    let mut elements = roots(true);
+    for name in path.iter().filter(|name| **name != "window") {
+        let parent = elements.len() - 1;
+        elements.push(element(name, None, None, Some(parent)));
+    }
+    let tree = Tree::new(elements).ok()?;
+    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+    engine.native.as_ref()?.styles(&tree, viewport(engine), variant(engine), &[], user)?.last().map(computed)
 }
 
 /// A `theme-swatch` element whose `color` attribute is `color`, as the theme in use styles it

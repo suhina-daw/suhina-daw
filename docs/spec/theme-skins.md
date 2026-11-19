@@ -1335,10 +1335,10 @@ in a scene's last frame, the frame that is drawn:
   (`button#play`) in the box's top left corner, cut to the box's width.
 - `--coverage` drives every scene (or the one `--scene` names) without a GPU and lists the rules
   of the theme's own sheet that matched no element in any of them, by line and selector. Every
-  style the scenes work out counts, including those worked out outside the frame's tree (the
-  frames of menus, popups and tooltips, the Arrangement's track height, device panels' columns),
-  which read their own copy of the theme's sheet: copies are told apart by a fingerprint of their
-  text. Rules that name artwork (`icon[kind="play"]`, or the earlier `fader.cap` form) are listed
+  style the scenes work out counts, including those read before an element is drawn (the frames
+  of menus, popups and tooltips, the Arrangement's track height, device panels' columns) and the
+  theme editor's reading of the theme's settings, which parses the theme's text again: a sheet
+  is known by a fingerprint of its text, so every copy of the theme's sheet counts as the one. Rules that name artwork (`icon[kind="play"]`, or the earlier `fader.cap` form) are listed
   apart: Suhina reads their `image` when it loads the theme, whether an element matches them or
   not, so only their other properties did nothing. A rule for a state no scene shows, or inside an
   `@media` block for another window size or the other colour scheme, cannot match in the scenes
@@ -1553,6 +1553,14 @@ of bars, and a slider id per parameter.
 - **Sizes:** `send { width; height }` within the sends row; `track-height` (20–400
   points) on `arrangement` for tracks without a height of their own; `piano-tool { height }`
   grows the toolbar band to the height plus 6 points.
+- **Read before an element is drawn, in the window's cascade** (#1585): the frames and blur of
+  `menu`, `popup` and `tooltip`, `arrangement`'s `track-height`, `track-headers`,
+  `header-min-width` and `header-tint`, and a device panel's `grid-template-columns`,
+  `device-control` `height` and `param-label` are read for an element under
+  `html > body > window` with the same sheets, tiers, window size and colour scheme the window is
+  styled with: the base sheet, the theme's colour map, the window's faded colours over a backdrop
+  and `@media` for the window's size all apply, as to any element the window paints. Before the
+  first frame the window counts as 1280 by 800.
 - **Device panels:** a themed panel's generated list keeps one column that follows its width and scrolls; `device value
   { width }`; the columns of `device { grid-template-columns }` (1–8) and the `height` of
   `device device-control` (16–160 points) lay parameters a device places nowhere itself in

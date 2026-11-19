@@ -316,7 +316,7 @@ pub(crate) type KeyframeRule = Vec<(f32, Vec<Declaration>)>;
 
 impl Sheet {
     /// A fingerprint of the text the sheet was parsed from: the same for every sheet parsed from
-    /// that text, as when parts of the window each parse the theme's sheet, and almost surely
+    /// that text, as when the window and the theme editor each parse the theme's sheet, and almost surely
     /// different for any other. What [`crate::cascade::matched_rules`] tells sheets apart by.
     pub fn id(&self) -> u64 {
         self.id

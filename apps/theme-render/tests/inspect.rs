@@ -107,9 +107,8 @@ fn coverage_lists_the_theme_rules_no_element_matched() {
     assert_eq!(found.driven, 2);
     let listed: Vec<_> =
         found.unused.iter().map(|rule| (rule.line, rule.selector.as_str(), rule.artwork.as_deref())).collect();
-    // The tooltip's frame is styled outside the frame's tree, from a copy of the sheet of its
-    // own, which counts as the theme's sheet (in the tooltip scene: the launcher shows none); an
-    // artwork rule is told apart.
+    // The tooltip's frame is read before it is drawn, outside the frame's tree, and counts (in the
+    // tooltip scene: the launcher shows none); an artwork rule is told apart.
     // A rule for an artwork role's element that sets no `image` is no artwork rule.
     assert_eq!(
         listed,

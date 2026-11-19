@@ -399,6 +399,8 @@ struct Engine {
     size: [u32; 2],
     /// The theme's swatches by colour.
     swatches: HashMap<String, Computed>,
+    /// The styles [`settings_of`] worked out, by the path asked for, until the styles reset.
+    settings: HashMap<Vec<&'static str>, Option<Computed>>,
     /// Styles worked out in the frame that needs them, by the identity of an element and of every
     /// element it is in (its chain, [`chain_of`]), as `Resolver::leaf_style` keeps a leaf's.
     identities: HashMap<u64, Styled>,
@@ -1195,19 +1197,31 @@ fn snapshot(engine: &mut Engine, opacity: f32, own: &[(&'static str, Color32)]) 
 /// Refresh only when the sheets, the theme's colours or colour scheme, the window's opacity or the
 /// viewport change.
 pub fn begin_frame(ui: &egui::Ui) {
+    let size = ui.ctx().input(|i| i.content_rect().size());
+    let size = [size.x.clamp(1.0, 16384.0) as u32, size.y.clamp(1.0, 16384.0) as u32];
+    ENGINE.with(|engine| sync_sheets(&mut engine.borrow_mut(), Some(size)));
+}
+
+/// The window's size before a frame has given one: what a lookup made before the first frame
+/// ([`settings_of`]) styles for.
+const SIZE_BEFORE_A_FRAME: [u32; 2] = [1280, 800];
+
+/// Gives the engine the sheets as they are now (the theme's, its variant's, the user's, the
+/// theme's colours and the window's opacity and colours) and the window's `size`, its last one
+/// (or [`SIZE_BEFORE_A_FRAME`]) when `None`; forgets the styles worked out for anything that
+/// changed.
+fn sync_sheets(engine: &mut Engine, size: Option<[u32; 2]>) {
     let skin = skin::current();
     // A theme without a sheet of its own runs the engine on an empty one: the base tier and the
     // user's sheet still apply.
     let source = Some(skin.css.clone().unwrap_or_else(|| NO_SHEET.with(Arc::clone)));
-    let size = ui.ctx().input(|i| i.content_rect().size());
-    let size = [size.x.clamp(1.0, 16384.0) as u32, size.y.clamp(1.0, 16384.0) as u32];
+    let size = size.unwrap_or(if engine.size == [0, 0] { SIZE_BEFORE_A_FRAME } else { engine.size });
     let colors = COLORS.with(|colors| colors.borrow().1.clone());
     let opacity = WINDOW_OPACITY.with(std::cell::Cell::get);
     let own = WINDOW_COLORS.with(|colors| colors.borrow().clone());
     let user = USER_SHEET.with(|sheet| sheet.borrow().clone());
     let variant = skin.variant.clone();
-    ENGINE.with(|engine| {
-        let mut engine = engine.borrow_mut();
+    {
         if engine.light != skin.light {
             engine.light = skin.light;
             engine.styles_changed = true;
@@ -1293,8 +1307,8 @@ pub fn begin_frame(ui: &egui::Ui) {
             engine.styles_changed = true;
             engine.reset_styles();
         }
-        snapshot(&mut engine, opacity, &own);
-    });
+        snapshot(engine, opacity, &own);
+    }
 }
 
 /// Whether the engine's sheet is the active theme's (an empty one stands in for none).
@@ -1314,6 +1328,7 @@ impl Engine {
         bump_epoch();
         self.identities.clear();
         self.swatches.clear();
+        self.settings.clear();
         self.body = None;
         self.resolved.clear();
         self.rows.clear();
@@ -1516,73 +1531,28 @@ pub fn theme_swatch(color: Color32) -> Option<Computed> {
     })
 }
 
-/// The sheets settings are read from: the theme's, its variant's and the user's, as given (the
-/// key, compared by pointer, and held so that no other text can take its address) and parsed.
-struct SettingsSheets {
-    sources: (Arc<str>, Option<Arc<str>>, Option<Arc<str>>),
-    /// The variant's colour scheme they were read in.
-    light: bool,
-    parsed: Option<(Sheet, Option<Sheet>, Option<Sheet>)>,
-    /// The settings looked up by element path.
-    found: HashMap<Vec<&'static str>, Option<Computed>>,
-}
-
-/// Whether `a` and `b` are the same text, by pointer.
-fn same_arc(a: Option<&Arc<str>>, b: Option<&Arc<str>>) -> bool {
-    match (a, b) {
-        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
-        (None, None) => true,
-        _ => false,
-    }
-}
-
-/// The style the theme's sheets give the elements named by `path` (from `window` inward), for the
-/// settings Suhina reads outside a frame: the Arrangement view's track height, a device's
-/// parameter labels. Worked out once per set of sheets and path, which are known by their
-/// pointers: asked for by every track header in every frame, it hashes no sheet's text. `None`
-/// without a sheet (a theme's or the user's).
+/// The style the window's sheets give the elements named by `path` (from `window` inward), for the
+/// settings Suhina reads outside a frame's tree: a menu's, popup's or tooltip's frame and blur,
+/// the Arrangement view's track height, a device panel's columns. Worked out by the style engine
+/// with the sheets, tiers, window size and colour scheme it styles the window with, under
+/// `html > body > window`, so a rule gives these what it gives an element in the window (#1585).
+/// Kept per path until the styles reset. `None` when the engine is busy (asked while it works
+/// out a style), so the caller keeps its own default.
 pub fn settings_of(path: &[super::element::Name]) -> Option<Computed> {
-    thread_local! {
-        static CACHE: RefCell<Option<SettingsSheets>> = const { RefCell::new(None) };
-    }
-    thread_local! {
-        /// The sheet of a skin that has none, one allocation so that the cache can tell it again.
-        static NO_SHEET: Arc<str> = Arc::from("");
-    }
-    let skin = skin::current();
-    let user = USER_SHEET.with(|sheet| sheet.borrow().clone());
-    // Without a theme sheet the engine still runs for user.css (as in `frame`).
-    let css = skin.css.clone().or_else(|| user.is_some().then(|| NO_SHEET.with(Arc::clone)))?;
     let key: Vec<&'static str> = path.iter().map(|name| name.name()).collect();
-    CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let current = cache.as_ref().is_some_and(|cache| {
-            let (theme, variant, own) = &cache.sources;
-            Arc::ptr_eq(theme, &css)
-                && same_arc(variant.as_ref(), skin.variant.as_ref())
-                && same_arc(own.as_ref(), user.as_ref())
-                && cache.light == skin.light
-        });
-        if !current {
-            let parsed = Sheet::parse(&css).ok().map(|sheet| {
-                let parse = |text: &Option<Arc<str>>| text.as_deref().and_then(|text| Sheet::parse(text).ok());
-                (sheet, parse(&skin.variant), parse(&user))
-            });
-            *cache = Some(SettingsSheets {
-                sources: (Arc::clone(&css), skin.variant.clone(), user.clone()),
-                light: skin.light,
-                parsed,
-                found: HashMap::new(),
-            });
+    ENGINE.with(|engine| {
+        let mut engine = engine.try_borrow_mut().ok()?;
+        // Between frames, or before the first, the sheets may have changed since the engine last
+        // read them; during a frame it reads what the frame uses.
+        if !engine.collecting {
+            sync_sheets(&mut engine, None);
         }
-        let cache = cache.as_mut()?;
-        if let Some(found) = cache.found.get(&key) {
+        if let Some(found) = engine.settings.get(&key) {
             return found.clone();
         }
-        let (sheet, variant, user) = cache.parsed.as_ref()?;
-        let found = native::settings_of(sheet, variant.as_ref(), user.as_ref(), &key, skin.light);
-        if cache.found.len() < MAX_CONTEXTS {
-            cache.found.insert(key, found.clone());
+        let found = native::settings_of(&engine, &key);
+        if engine.settings.len() < MAX_CONTEXTS {
+            engine.settings.insert(key, found.clone());
         }
         found
     })
