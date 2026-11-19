@@ -48,7 +48,7 @@ settings-appearance suhina-sheet e3fe2571b2b37c73
 settings-audio suhina-sheet ffba46b413b527a5
 settings-browser suhina-sheet 6d803f25b168efde
 settings-devices suhina-sheet 79c3e455fba1592f
-settings-keys suhina-sheet fe00d9ea9869970b
+settings-keys suhina-sheet 677dfc1ad38d242b
 settings-launcher suhina-sheet 7912f2cad03f6237
 settings-menu suhina-sheet e56f6770b5da089e
 settings-midi suhina-sheet 017745c99686126a

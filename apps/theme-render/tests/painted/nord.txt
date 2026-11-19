@@ -48,7 +48,7 @@ settings-appearance nord cc74f69fec11169d
 settings-audio nord 01fc6bd4676e1f99
 settings-browser nord 697ccf2a6102973a
 settings-devices nord 0e9968d264efd4fc
-settings-keys nord 92821b4a925f872b
+settings-keys nord 213d4a2e20c2bfab
 settings-launcher nord 7dbaad2a9c008d42
 settings-menu nord bcc0e8fa8222055f
 settings-midi nord 8d8883559ee7883e

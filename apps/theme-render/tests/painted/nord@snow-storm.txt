@@ -48,7 +48,7 @@ settings-appearance nord@snow-storm 781d24d9b61d3c4e
 settings-audio nord@snow-storm 89f1b1f0b8e481d4
 settings-browser nord@snow-storm f3bbdd2b65ef2852
 settings-devices nord@snow-storm c201f148718b6ae9
-settings-keys nord@snow-storm ba5c50fb6b388566
+settings-keys nord@snow-storm c55be8e6f995f026
 settings-launcher nord@snow-storm 6f24dc813d317900
 settings-menu nord@snow-storm 11ef4f920dd3340c
 settings-midi nord@snow-storm 98c99aa0453ff371

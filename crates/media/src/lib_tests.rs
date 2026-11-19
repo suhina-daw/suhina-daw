@@ -105,6 +105,73 @@ fn decodes_wav_to_interleaved_f32() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Counts bytes read rather than measuring elapsed time: prefix decoding must leave the tail.
+struct CountedSource {
+    cursor: std::io::Cursor<Vec<u8>>,
+    read: Arc<AtomicUsize>,
+}
+
+impl std::io::Read for CountedSource {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let count = std::io::Read::read(&mut self.cursor, out)?;
+        self.read.fetch_add(count, Ordering::Relaxed);
+        Ok(count)
+    }
+}
+
+impl std::io::Seek for CountedSource {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        std::io::Seek::seek(&mut self.cursor, pos)
+    }
+}
+
+impl symphonia::core::io::MediaSource for CountedSource {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+    fn byte_len(&self) -> Option<u64> {
+        Some(self.cursor.get_ref().len() as u64)
+    }
+}
+
+#[test]
+fn prefix_decoding_stops_reading_after_the_requested_frames() {
+    let dir = temp_dir("prefix-reads");
+    let path = dir.join("long.wav");
+    write_wav(&path, 2, 10 * 44_100);
+    let bytes = std::fs::read(&path).unwrap();
+    let total = bytes.len();
+    let read = Arc::new(AtomicUsize::new(0));
+    let source = CountedSource { cursor: std::io::Cursor::new(bytes), read: Arc::clone(&read) };
+    let stream = MediaSourceStream::new(Box::new(source), Default::default());
+    let mut hint = Hint::new();
+    hint.with_extension("wav");
+    let data = decode_stream(stream, &hint, Some(2.0)).unwrap();
+    assert_eq!((data.channels, data.frames()), (2, 2 * 44_100));
+    assert_eq!(&data.samples[..2], &[0.5, -0.5]);
+    assert!(read.load(Ordering::Relaxed) < total / 2, "the rest of the file is not read");
+    for seconds in [0.0, -1.0, f64::NAN, f64::INFINITY, MAX_SECONDS + 1.0] {
+        assert!(decode_file_prefix(&path, seconds).is_err());
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_compressed_prefix_matches_the_full_decode_and_short_files_are_kept() {
+    use crate::write::{AudioFileSpec, AudioFormat, BitDepth, WriteMode, write_audio_file};
+    let dir = temp_dir("prefix-flac");
+    let path = dir.join("long.flac");
+    let samples: Vec<f32> = (0..3 * 8_000).flat_map(|i| [((i % 100) as f32 - 50.0) / 100.0; 2]).collect();
+    let spec = AudioFileSpec { format: AudioFormat::Flac, depth: BitDepth::Pcm16, ..AudioFileSpec::float_wav(8_000) };
+    write_audio_file(&path, &samples, &spec, WriteMode::Export { overwrite: false }).unwrap();
+    let whole = decode_file(&path).unwrap();
+    let prefix = decode_file_prefix(&path, 2.0).unwrap();
+    assert_eq!(prefix.frames(), 16_000);
+    assert_eq!(prefix.samples, whole.samples[..32_000]);
+    assert_eq!(decode_file_prefix(&path, 5.0).unwrap().samples, whole.samples);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn project_paths_stay_inside_the_project_folder() {
     let dir = temp_dir("resolve");

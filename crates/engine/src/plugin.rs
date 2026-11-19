@@ -930,7 +930,7 @@ pub(crate) struct Delay {
 }
 
 impl Delay {
-    /// Drops sound from before a project was suspended, keeping its allocation.
+    /// Silences what it holds, so nothing that went in before comes out. Never allocates.
     pub(crate) fn clear(&mut self) {
         self.buffer.fill(0.0);
         self.at = 0;
@@ -956,6 +956,11 @@ impl Delay {
                 self.at = 0;
             }
         }
+    }
+
+    /// How many frames it delays by.
+    pub(crate) fn frames(&self) -> usize {
+        self.buffer.len() / 2
     }
 
     /// Takes over what `old` holds when it is as long, so a graph swap that keeps the delay

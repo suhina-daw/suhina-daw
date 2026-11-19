@@ -48,7 +48,7 @@ settings-appearance suhina-blocks 02fa3c7c871a61c1
 settings-audio suhina-blocks 19a9a846df35e2db
 settings-browser suhina-blocks dfd91e0d23be3690
 settings-devices suhina-blocks d2fb82f4522d4a11
-settings-keys suhina-blocks 3b8777d18272001b
+settings-keys suhina-blocks 2bf00050d704e6ff
 settings-launcher suhina-blocks b646a51e51ea98bb
 settings-menu suhina-blocks fdbe7a28099da186
 settings-midi suhina-blocks fe9b99d7c89645b8

@@ -31,7 +31,7 @@ without changing the scale, ballistics or clip reset behaviour.
 - **A return track** is measured like a track, from what plays on it.
 - **A track that is not heard** (turned off, or not soloed while others are) reads silence.
 - **The main output** is what the engine hands the audio device: every track through the main
-  channel, the metronome and the browser's preview.
+  channel, the metronome (unless it plays on the cue output only) and the browser's preview.
 
 The meter monitor also carries the device-spectrum rings the EQ panel's analyser reads
 ([docs/spec/eq.md](eq.md) › The panel › The analyser).

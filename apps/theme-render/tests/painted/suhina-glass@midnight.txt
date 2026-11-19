@@ -48,7 +48,7 @@ settings-appearance suhina-glass@midnight 7e82a3d879d05424
 settings-audio suhina-glass@midnight ef1fc824739699b5
 settings-browser suhina-glass@midnight 41fabaf3cb25035a
 settings-devices suhina-glass@midnight 1d783ada3c129c23
-settings-keys suhina-glass@midnight d83e6378b402d390
+settings-keys suhina-glass@midnight 3e113502de44da98
 settings-launcher suhina-glass@midnight 19c8b18e0b94b05a
 settings-menu suhina-glass@midnight f7db5474d1a33adb
 settings-midi suhina-glass@midnight 26ac575a33dc6e2a

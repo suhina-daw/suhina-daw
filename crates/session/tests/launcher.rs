@@ -414,7 +414,10 @@ fn a_drag_that_the_engine_cannot_build_is_an_error() {
 fn the_metronome_is_a_transport_command() {
     let (mut session, mut renderer) = playing();
     let set = run(&mut session, "transport.setMetronome", json!({ "on": true, "db": -12 })).unwrap();
-    assert_eq!(set, json!({ "metronome": true, "db": -12.0, "sound": "beep" }));
+    assert_eq!(
+        set,
+        json!({ "metronome": true, "db": -12.0, "sound": "beep", "accent": "higher", "route": "pre-fader" })
+    );
     run(&mut session, "transport.play", json!({})).unwrap();
     let peaks = beat_peaks(&mut renderer, 2);
     // A click at -12 dB on each beat, and no undo step.
@@ -424,7 +427,7 @@ fn the_metronome_is_a_transport_command() {
     // Off and on again without a level keeps -12 dB.
     assert_eq!(
         run(&mut session, "transport.setMetronome", json!({ "on": false })).unwrap(),
-        json!({ "metronome": false, "db": -12.0, "sound": "beep" })
+        json!({ "metronome": false, "db": -12.0, "sound": "beep", "accent": "higher", "route": "pre-fader" })
     );
     run(&mut session, "transport.setMetronome", json!({ "on": true })).unwrap();
     let peaks = beat_peaks(&mut renderer, 2);
@@ -436,6 +439,17 @@ fn the_metronome_is_a_transport_command() {
     assert_eq!(run(&mut session, "transport.setMetronome", json!({ "on": true })).unwrap()["sound"], "wood");
     assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": "cowbell" })).is_err());
     assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": 5 })).is_err());
+    let soft = run(&mut session, "transport.setMetronome", json!({ "on": true, "sound": "knock" })).unwrap();
+    assert_eq!(soft["sound"], "knock");
+    // Where it plays is picked by name too, and kept; a cue output of its own takes it away
+    // from the main output.
+    let routed = run(&mut session, "transport.setMetronome", json!({ "on": true, "route": "post-fader" })).unwrap();
+    assert_eq!(routed["route"], "post-fader");
+    assert_eq!(session.click_route(), suhina_engine::ClickRoute::PostFader);
+    assert_eq!(run(&mut session, "transport.setMetronome", json!({ "on": true })).unwrap()["route"], "post-fader");
+    assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "route": "sideways" })).is_err());
+    assert!(run(&mut session, "transport.setMetronome", json!({ "on": true, "route": 1 })).is_err());
+    assert_eq!(session.click_route(), suhina_engine::ClickRoute::PostFader, "an error changes nothing");
 }
 
 #[test]

@@ -354,7 +354,14 @@ impl App {
             }
             "metronome" => {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));
-                crate::session::record_controls::metronome_button(ui, painter, rect, grid.metronome, actions);
+                crate::session::record_controls::metronome_button(
+                    ui,
+                    painter,
+                    rect,
+                    &grid.metronome,
+                    grid.click_route,
+                    actions,
+                );
             }
             "transport" => {
                 scope.paint_with(painter, outer, surface(egui::Color32::TRANSPARENT));

@@ -67,7 +67,7 @@ impl Renderer {
     pub(crate) fn count_in_frame(&mut self) -> f32 {
         let Some(count) = self.transport.count_in.as_mut().filter(|c| c.left > 0) else { return 0.0 };
         let bar = count.bar_beats;
-        let sample = count.click.frame(true, count.beat, |index| {
+        let sample = count.click.frame(&self.clicks.set, true, count.beat, |index| {
             let into = (index as f64).rem_euclid(bar);
             into < 1e-9 || bar - into < 1e-9
         });
