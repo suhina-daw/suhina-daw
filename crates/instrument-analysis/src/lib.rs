@@ -58,6 +58,9 @@ pub struct Proposal {
     pub spread_cents: f32,
 }
 
+/// Periodicity measurements under a single isolated pitched-source assumption. This report
+/// does not establish that the recording is monophonic: a harmonic mixture can have exactly
+/// the same waveform as a tone with a missing fundamental. Hosts must present that limitation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Report {
     pub version: u32,

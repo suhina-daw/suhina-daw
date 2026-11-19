@@ -66,6 +66,8 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     let status = run(&mut session, "instrument.analysis", json!({}));
     assert_eq!(status["status"], "ready");
     assert_eq!(status["report"]["proposal"]["root"], 57);
+    assert_eq!(status["report"]["sourceAssumption"], "singleIsolatedPitchedNote");
+    assert_eq!(status["report"]["polyphonyAssessed"], false);
     assert_eq!(session.project(), &before, "a completed proposal never changes the playable device");
     assert_eq!(session.undo_steps(), depth);
     assert_eq!(render(session.project(), session.audio()), before_sound);

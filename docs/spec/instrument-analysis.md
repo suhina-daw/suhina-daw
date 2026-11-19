@@ -53,6 +53,11 @@ material may have no useful single root. Stereo channels are assessed separately
 polarity cannot cancel a valid tone; inconsistent channel pitches prevent automatic proposal.
 Windows with a zero-crossing rate above the admitted band are conservatively rejected rather
 than assigning an out-of-band tone a lower octave; this can also reject bright mixtures.
+Periodicity does not establish that a recording is monophonic: harmonically related notes can
+have the same waveform as a single source with a missing fundamental. Version 1 does not screen
+polyphony. The command report names `sourceAssumption: singleIsolatedPitchedNote` and
+`polyphonyAssessed: false`; the ready UI always warns about ambiguous chords. Conservative
+mixture screening and its evaluation remain a separate follow-up, not a delivered capability.
 
 Accepting an integer root does not remove the displayed residual cents offset. The person may
 choose a different root, but that choice is explicit and is not presented as a measured result.

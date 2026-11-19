@@ -347,6 +347,7 @@ pub(crate) fn status(session: &mut Session, params: &Value) -> Result<Value, Com
 fn view_json(view: &AnalysisView) -> Value {
     let report = view.report.as_ref().map(|r| json!({
         "version":r.version, "firstFrame":r.range.start, "endFrame":r.range.end,
+        "sourceAssumption":"singleIsolatedPitchedNote", "polyphonyAssessed":false,
         "outcome":match r.outcome { Outcome::Stable=>"stable", Outcome::Silent=>"silent", Outcome::TooShort=>"tooShort", Outcome::NoStablePitch=>"noStablePitch" },
         "activeWindows":r.active_windows,"voicedWindows":r.voiced_windows,
         "proposal":r.proposal.map(|p| json!({"root":p.root,"midi":p.midi,"hz":p.hz,"cents":p.cents,"periodicity":p.periodicity,"spreadCents":p.spread_cents}))

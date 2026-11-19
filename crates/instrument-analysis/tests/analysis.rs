@@ -52,6 +52,18 @@ fn stereo_polarity_preserves_pitch_but_disagreement_refuses_proposal() {
 }
 
 #[test]
+fn harmonic_mixtures_document_the_unassessed_source_count() {
+    // The exact same samples can describe two notes or one tone's second/third harmonics.
+    // A stable periodicity is a candidate, never evidence that this source is monophonic.
+    let a = tone(RATE, 220.0, 0.4, 0.5, 0.0);
+    let b = tone(RATE, 330.0, 0.4, 0.5, 0.0);
+    let mixed: Vec<_> = a.iter().zip(b).map(|(a, b)| a + b).collect();
+    let report = analyze(&mixed, RATE, 1, 0..mixed.len(), |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Stable);
+    assert_eq!(report.proposal.unwrap().root, 45);
+}
+
+#[test]
 fn silence_short_audio_noise_and_glides_have_no_fabricated_root() {
     let silent = analyze(&[0.0; 5000], RATE, 1, 0..5000, |_, _| true).unwrap();
     assert_eq!(silent.outcome, Outcome::Silent);
