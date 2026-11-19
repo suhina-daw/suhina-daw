@@ -13,16 +13,19 @@
 use super::{LG_N, N, Tables};
 
 /// Gain step per sample, so a block ramps from `gain1` to `gain2`.
+#[inline]
 pub fn gain_step(gain1: i32, gain2: i32) -> i32 {
     gain2.wrapping_sub(gain1).wrapping_add(N as i32 >> 1) >> LG_N
 }
 
 /// Multiply a Q24 sample by a linear Q24 gain, retaining the low 32 output bits.
+#[inline]
 pub fn scale(y: i32, gain: i32) -> i32 {
     ((i64::from(y) * i64::from(gain)) >> 24) as i32
 }
 
 /// Replace a sample, or mix it with wrapping addition.
+#[inline]
 pub fn write(slot: &mut i32, y: i32, add: bool) {
     *slot = if add { slot.wrapping_add(y) } else { y };
 }
