@@ -777,13 +777,22 @@ fn explain_names_a_winning_declaration_whose_value_did_not_hold() {
 #[test]
 fn recorded_matches_hold_every_rule_that_matched_any_element_styled() {
     let sheet = Sheet::parse("knob { color: red; }\nslider { color: blue; }\n#cutoff { radius: 1px; }").unwrap();
-    let sheets = [AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None }];
+    // Another sheet in the same tier, whose rules are told apart from the first one's.
+    let other = Sheet::parse("window { color: red; }\nknob { color: blue; }").unwrap();
+    assert_ne!(sheet.id(), other.id());
+    // A sheet parsed again from the same text is the same sheet to the record.
+    let again = Sheet::parse("knob { color: red; }\nslider { color: blue; }\n#cutoff { radius: 1px; }").unwrap();
+    assert_eq!(again.id(), sheet.id());
+    let sheets = [
+        AppliedSheet { sheet: &sheet, layer: Layer::Theme, root: None },
+        AppliedSheet { sheet: &other, layer: Layer::Theme, root: None },
+    ];
     assert!(matched_rules().is_empty());
     record_matches(true);
     compute(&tree(), viewport(1138.0), &sheets).unwrap();
     let matched = matched_rules();
     record_matches(false);
-    assert_eq!(matched, BTreeSet::from([(Layer::Theme, 0), (Layer::Theme, 2)]));
+    assert_eq!(matched, BTreeSet::from([(sheet.id(), 0), (sheet.id(), 2), (other.id(), 0), (other.id(), 1)]));
     assert!(matched_rules().is_empty());
     let sources: Vec<_> = sheet.rule_sources().collect();
     assert_eq!(sources, [(1, "knob"), (2, "slider"), (3, "#cutoff")]);

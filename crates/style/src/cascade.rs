@@ -485,9 +485,9 @@ pub fn explain(
 }
 
 thread_local! {
-    /// The rules matched on this thread since [`record_matches`] was turned on, by tier and index
-    /// in their sheet; `None` while it is off.
-    static MATCHES: std::cell::RefCell<Option<BTreeSet<(Layer, usize)>>> = const { std::cell::RefCell::new(None) };
+    /// The rules matched on this thread since [`record_matches`] was turned on, by their sheet's
+    /// [`Sheet::id`] and their index in it; `None` while it is off.
+    static MATCHES: std::cell::RefCell<Option<BTreeSet<(u64, usize)>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Starts (`true`) or stops recording, on this thread, which rules match any element styled:
@@ -497,9 +497,9 @@ pub fn record_matches(on: bool) {
     MATCHES.with(|matches| *matches.borrow_mut() = on.then(BTreeSet::new));
 }
 
-/// The rules matched on this thread since [`record_matches`] was turned on, by tier and index in
-/// their sheet (a tier of several sheets mixes theirs); empty while it is off.
-pub fn matched_rules() -> BTreeSet<(Layer, usize)> {
+/// The rules matched on this thread since [`record_matches`] was turned on, by their sheet's
+/// [`Sheet::id`] and their index in it ([`Sheet::rule_sources`]); empty while it is off.
+pub fn matched_rules() -> BTreeSet<(u64, usize)> {
     MATCHES.with(|matches| matches.borrow().clone().unwrap_or_default())
 }
 
@@ -530,7 +530,7 @@ fn element_style_traced(
     mut trace: Option<&mut Vec<MatchedRule>>,
 ) -> Result<ComputedStyle, String> {
     let recording = MATCHES.with(|matches| matches.borrow().is_some());
-    let mut matched: Vec<(Layer, usize)> = Vec::new();
+    let mut matched: Vec<(u64, usize)> = Vec::new();
     let element = tree.elements().get(node).ok_or("Invalid style element")?;
     let Budget { work, variable_bytes } = budget;
     let mut computed = ComputedStyle::default();
@@ -580,7 +580,7 @@ fn element_style_traced(
                 continue;
             };
             if recording {
-                matched.push((applied.layer, rule_index));
+                matched.push((applied.sheet.id(), rule_index));
             }
             let traced = trace.as_deref_mut().map(|trace| {
                 trace.push(MatchedRule {
