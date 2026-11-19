@@ -246,6 +246,64 @@ fn a_worker_does_not_park_once_its_pool_is_stopping() {
     assert!(!park_unless_stopping(&shared));
 }
 
+/// The next job observes the reply ring synchronously: no thread, sleep or deadline is
+/// needed to prove that an unrelated job cannot hold a completed feeder's reply back.
+#[test]
+fn a_completed_chain_is_returned_before_the_next_job_runs() {
+    struct CheckReply {
+        replies: Option<rtrb::Consumer<Reply>>,
+        shared: Arc<Shared>,
+    }
+    impl crate::PluginProcessor for CheckReply {
+        fn process(&mut self, _: &mut [f32], _: &[(usize, suhina_device_api::NoteEvent)], _: Duration) -> bool {
+            let mut replies = self.replies.take().unwrap();
+            assert_eq!(replies.pop().map(|reply| reply.index), Ok(0), "the feeder is already back");
+            self.shared.stop.store(true, Ordering::Release);
+            true
+        }
+    }
+    let shared = Arc::new(Shared {
+        stop: AtomicBool::new(false),
+        real_time_pool: false,
+        real_time: AtomicUsize::new(0),
+        real_time_rate: AtomicUsize::new(0),
+        lane_real_time: std::array::from_fn(|_| AtomicBool::new(false)),
+    });
+    let (mut jobs, jobs_rx) = rtrb::RingBuffer::new(DEPTH);
+    let (replies, replies_rx) = rtrb::RingBuffer::new(DEPTH);
+    let first = Chain::passthrough(TrackId(1), crate::NO_COLUMN, 8_000);
+    let mut next = Chain::passthrough(TrackId(2), crate::NO_COLUMN, 8_000);
+    let stored = Device::new("Observer", DeviceKind::Vst3 { id: "1".into() });
+    next.slots.push(crate::chain::DeviceSlot::Plugin(crate::plugin::PluginSlot {
+        key: 1,
+        processor: Some(Box::new(CheckReply { replies: Some(replies_rx), shared: Arc::clone(&shared) })),
+        instrument: false,
+        latency: 0,
+        enabled: true,
+        missed: 0,
+        busy: 0,
+        longest_us: 0,
+        sent_at: None,
+        params: crate::plugin_params::SlotParams::new(&stored, 8_000.0, &[]),
+        late_followers: Box::default(),
+        keyed: false,
+        song_delay: 0,
+    }));
+    for (index, chain) in [first, next].into_iter().enumerate() {
+        let job = Job {
+            index,
+            chain,
+            frames: 1,
+            context: ProcessContext::default(),
+            reply_to: std::thread::current(),
+            clock: crate::clock::handle(),
+        };
+        assert!(jobs.push(job).is_ok());
+    }
+    work(&shared, vec![WorkerEnd { jobs: jobs_rx, replies }]);
+    assert!(shared.stop.load(Ordering::Acquire), "the next job ran");
+}
+
 #[test]
 fn an_offline_renderer_renders_on_an_offline_pool() {
     let mut renderer = Renderer::new(&project(), SR, suhina_device_registry::factory()).unwrap();

@@ -175,9 +175,12 @@ all the chains it holds together and goes on with each as it answers, so chains'
 overlap one another and the built-in work of every thread, not only the chains that nothing plays
 into (#151). The branches of a device group hand their plug-ins the block at the same time too.
 Unchanged: a live chain's plug-in has until the block's deadline, counted from the block's start;
-on a miss its block is its input or silence and the miss is counted; an offline render waits for
-every plug-in, so it is the same on any number of threads, bit for bit
-([render threads](../spec/render-threads.md)).
+on a miss its block is its input or silence and the miss is counted. Offline, each outstanding
+block is waited for up to `OFFLINE_TIMEOUT` (10 seconds), as before. A timeout uses the same
+input-or-silence fallback and counts a miss; rendering continues. `project.export` returns those
+misses in its result rather than failing the export. With all plug-ins answering within that
+limit, a deterministic render is the same on any number of threads, bit for bit; timeout
+fallbacks are not covered by that guarantee ([render threads](../spec/render-threads.md)).
 
 ## Not decided yet
 

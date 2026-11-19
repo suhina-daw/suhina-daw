@@ -64,10 +64,14 @@ included ([#1507](https://github.com/suhina-daw/suhina-daw/issues/1507)).
   together (`suhina_ipc::wait_any`), at most half a millisecond at a time (`JOB_LOOK`) so a chain
   sent to it meanwhile is taken soon. The chains' round trips so overlap one another and the
   built-in work of every thread, instead of the render thread taking each answer in turn between
-  its own devices. A live chain keeps [ADR 0006](../decisions/0006-plug-in-hosting.md) › 4's
+  its own devices. A completed chain is returned before another job starts, so its downstream
+  chains can start without waiting for unrelated work. At most eight new jobs start before
+  outstanding answers are checked again. A live chain keeps [ADR 0006](../decisions/0006-plug-in-hosting.md) › 4's
   one-block deadline: its worker waits for a plug-in only until the block's deadline (the chain's
   limit, from the block's start), and a late plug-in is replaced for its block by its input or by
-  silence, as on the render thread. Offline every plug-in is waited for.
+  silence, as on the render thread. Offline each outstanding block is waited for up to
+  `OFFLINE_TIMEOUT` (10 seconds). A timeout counts a miss and rendering continues with the same
+  input-or-silence fallback; `project.export` includes the misses in its result.
 - **A group's branches overlap.** Inside a chain, on any thread, the branches of a device group
   hand their plug-ins the block at the same time: each branch runs as far as it goes without
   waiting, then the group waits for any branch's plug-in and runs that branch on, so a group
@@ -83,8 +87,9 @@ included ([#1507](https://github.com/suhina-daw/suhina-daw/issues/1507)).
   lane's spare chains, made when the lane was taken, holds its place. Nothing is allocated or
   freed on the render thread (`crates/engine/tests/no_allocation.rs`).
 - **The same sum.** The render thread feeds every chain's input and adds what each staged in
-  chain order, whichever thread ran it and whenever it finished, so a render on any number of
-  threads is the same, bit for bit (`a_render_on_several_threads_is_the_render_on_one_bit_for_bit`,
+  chain order, whichever thread ran it and whenever it finished, so a deterministic render on
+  any number of threads is the same, bit for bit, when all plug-ins answer within the offline
+  timeout (`a_render_on_several_threads_is_the_render_on_one_bit_for_bit`,
   1, 2, 3, 4 and 8 threads). CI runs the engine's tests a second time with
   `SUHINA_RENDER_THREADS=4`.
 - **Waiting.** The render thread waits for every chain it sent: it spins a moment, then sleeps

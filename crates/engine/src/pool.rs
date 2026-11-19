@@ -523,15 +523,27 @@ fn work(shared: &Shared, mut lanes: Vec<WorkerEnd>) {
             realtime = Some(suhina_realtime::RealTime::join(frames, rate));
         }
         let started = Instant::now();
-        // New chains, while there is room: each runs as far as it goes at once.
-        while let Some(room) = held.iter_mut().find(|h| h.is_none()) {
+        // Start at most HOLD new chains before checking outstanding answers again. A chain
+        // that completes goes back before the next starts, so downstream chains can go on.
+        let mut took = false;
+        for room in held.iter_mut().filter(|h| h.is_none()) {
             let Some((lane, mut job)) = next_job(shared, &mut lanes) else { break };
+            took = true;
             crate::clock::enter(&job.clock);
             let misses = job.chain.plugin_misses();
-            job.chain.advance(job.frames, &job.context);
-            *room = Some(Held { lane, job, misses });
+            if job.chain.advance(job.frames, &job.context) {
+                *room = Some(Held { lane, job, misses });
+            } else {
+                give_back(&mut lanes, lane, job, misses);
+            }
         }
         if held.iter().all(Option::is_none) {
+            if took {
+                if let Some(rt) = realtime.as_mut() {
+                    rt.worked(started.elapsed());
+                }
+                continue;
+            }
             if !park_unless_stopping(shared) {
                 break;
             }
