@@ -59,6 +59,8 @@ fn focusing_the_colour_picker_releases_a_held_gate_launch() {
     let (mut h, mut renderer) = window_with_project(project);
     h.state_mut().run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
     h.run();
+    h.get_by_label("› Fine adjustment").click();
+    h.run();
     h.get_by_label("Track Drums").click();
     h.run();
     h.key_down(Key::Q);
@@ -68,7 +70,7 @@ fn focusing_the_colour_picker_releases_a_held_gate_launch() {
     assert_eq!(renderer.monitor().column(0).unwrap().playing, Some(0));
 
     // A non-text control takes the keys while Q is still physically held.
-    h.get_by_label("Palette #2fd9c4").click();
+    h.get_by_label("Colour field").click();
     h.run();
     renderer.process(&mut samples);
     assert_eq!(renderer.monitor().column(0).unwrap().playing, None);
