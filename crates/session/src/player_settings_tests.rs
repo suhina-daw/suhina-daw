@@ -134,7 +134,9 @@ fn cabinet_session(rate: u32) -> Session {
 }
 
 fn render_start(projects: &mut Projects, interface: &Interface) -> Vec<f32> {
-    projects.execute("transport.setPosition", &json!({ "beats": 0.0 })).unwrap();
+    // These fixtures already start at beat zero. A redundant locate asks the
+    // stretch worker to acknowledge a seek even without warped clips, making
+    // the first playing block depend on when that thread runs.
     projects.execute("transport.play", &json!({})).unwrap();
     let mut rendered = Vec::new();
     let mut block = [0.0; 1024];
@@ -187,7 +189,11 @@ fn retained_devices_prepare_cabinet_assets_before_a_new_rate_plays() {
         reference.open_output(None).unwrap();
         let expected = render_start(&mut reference, &reference_output);
         assert!(expected.iter().any(|sample| sample.abs() > 1e-4));
-        assert_eq!(actual, expected, "assets must have the device's rate from the first block, retained={retained}");
+        let first_mismatch = actual.iter().zip(&expected).position(|(a, b)| a != b);
+        assert_eq!(
+            first_mismatch, None,
+            "assets must have the device's rate from the first block, retained={retained}",
+        );
     }
 }
 
