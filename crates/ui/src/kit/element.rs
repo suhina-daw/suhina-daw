@@ -699,12 +699,12 @@ impl Entered {
         outer: Option<Rect>,
     ) -> Rect {
         let Some(style) = style else {
-            super::native_css::set_box(self.scope.node, rect, painter.clip_rect());
+            super::native_css::set_box(self.scope.node, rect, painter);
             return rect;
         };
         let [top, right, bottom, left] = style.border_sides;
         let padding_box = shrink(rect, [top, right, bottom, left]);
-        super::native_css::set_box(self.scope.node, padding_box, painter.clip_rect());
+        super::native_css::set_box(self.scope.node, padding_box, painter);
         let content = shrink(rect, style.insets_in(rect.width()));
         let clip = style.hides_overflow().then(|| {
             let from = painter.ctx().graphics_mut(|layers| layers.entry(painter.layer_id()).next_idx());
@@ -862,7 +862,7 @@ impl Entered {
     /// The element's shadows, gradients and inset shadows in `rect`, with `radius` where the sheet
     /// gives none: for a surface whose fill its caller paints. Whether it painted anything.
     pub fn paint_background(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
-        super::native_css::set_box(self.scope.node, rect, painter.clip_rect());
+        super::native_css::set_box(self.scope.node, rect, painter);
         self.style().is_some_and(|style| super::native_css::background_rounded(painter, rect, radius, style))
     }
 

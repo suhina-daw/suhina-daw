@@ -22,6 +22,7 @@ use suhina_style::{
 use super::{skin, theme};
 mod diagnostics;
 mod geometry;
+pub mod inspector;
 mod native;
 
 pub(super) use native::user_agent;
@@ -408,8 +409,9 @@ struct Engine {
     id_index: HashMap<Arc<str>, u32>,
     /// For each node of this frame: its chain, once its style was looked up (0 before).
     chains: Vec<u64>,
-    /// For each node of this frame: the box it takes on screen, once it painted or gave one.
-    boxes: Vec<Option<Rect>>,
+    /// For each node of this frame: the box it takes on screen, once it painted or gave one, and
+    /// the layer it was painted on.
+    boxes: Vec<Option<(Rect, egui::LayerId)>>,
     /// For each node of this frame: the style it was painted with, to compare with the full tree's
     /// at the frame's end.
     served: Vec<Option<Arc<suhina_style::cascade::ComputedStyle>>>,
@@ -769,13 +771,14 @@ pub(super) fn node_name(node: usize) -> Option<String> {
     })
 }
 
-/// The box the element at `node` takes on screen this frame (`rect`, as far as `clip` shows it),
-/// for the elements inside it that it clips (`overflow`).
-pub(super) fn set_box(node: Option<usize>, rect: Rect, clip: Rect) {
+/// The box the element at `node` takes on screen this frame (`rect`, as far as `painter`'s clip
+/// shows it), for the elements inside it that it clips (`overflow`), with the layer it is painted
+/// on.
+pub(super) fn set_box(node: Option<usize>, rect: Rect, painter: &egui::Painter) {
     let Some(node) = node else { return };
     ENGINE.with(|engine| {
         if let Some(slot) = engine.borrow_mut().boxes.get_mut(node) {
-            *slot = Some(rect.intersect(clip));
+            *slot = Some((rect.intersect(painter.clip_rect()), painter.layer_id()));
         }
     });
 }
@@ -794,7 +797,7 @@ pub(super) fn outer_clip(node: Option<usize>) -> Option<Rect> {
                 .cloned()
                 .flatten()
                 .is_some_and(|style| matches!(style.get(Property::Overflow), Value::Keyword("hidden" | "clip")));
-            if hides && let Some(Some(rect)) = engine.boxes.get(parent) {
+            if hides && let Some(Some((rect, _))) = engine.boxes.get(parent) {
                 return Some(*rect);
             }
             at = engine.nodes.get(parent)?.parent;

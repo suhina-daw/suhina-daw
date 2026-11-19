@@ -309,12 +309,57 @@ pub(super) fn body(engine: &mut Engine) -> Option<Arc<ComputedStyle>> {
 
 pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     let paint = engine.native.as_ref()?;
+    let (tree, devices, sheets_key) = frame_tree(engine)?;
+    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+    let values = paint.styles_shared(&tree, viewport(engine), variant(engine), &devices, user, sheets_key)?;
+    Some(
+        engine
+            .nodes
+            .iter()
+            .zip(values.into_iter().skip(2))
+            .map(|(node, (key, style))| (node.key, paint.paint_of(key, style)))
+            .collect(),
+    )
+}
+
+/// The rules behind `tree`'s element at `node` and its style, with the sheets the frame was
+/// styled with ([`frame_tree`]'s tree and device sheets).
+pub(super) fn explain(
+    engine: &Engine,
+    tree: &Tree,
+    devices: &[(&Sheet, usize)],
+    node: usize,
+) -> Result<(ComputedStyle, Vec<cascade::MatchedRule>), String> {
+    let paint = engine.native.as_ref().ok_or("no theme sheet styles the window")?;
+    let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
+    cascade::explain(tree, node, viewport(engine), &paint.applied(variant(engine), devices, user))
+}
+
+/// The theme's own sheet, which [`Paint`] styles the window with.
+pub(super) fn theme_sheet(engine: &Engine) -> Option<&Sheet> {
+    engine.native.as_ref().map(|paint| &paint.sheet)
+}
+
+/// The device panels' sheets with the elements they are the roots of.
+pub(super) type DeviceSheets<'a> = Vec<(&'a Sheet, usize)>;
+
+/// How many elements [`frame_tree`] puts before the frame's nodes (`html` and `body`): node `n`
+/// is the tree's element `n + FRAME_ROOTS`.
+pub(super) const FRAME_ROOTS: usize = 2;
+
+/// This frame's whole style tree, as the frame's styles are worked out from it, with the device
+/// panels' sheets and the elements they are the roots of, and the key of what the styles depend on
+/// beyond the theme and the base tier.
+pub(super) fn frame_tree(engine: &Engine) -> Option<(Tree, DeviceSheets<'_>, u64)> {
+    let paint = engine.native.as_ref()?;
     let devices: Vec<(&Sheet, usize)> = engine
         .nodes
         .iter()
         .enumerate()
         .filter(|(_, node)| node.sheet != 0)
-        .filter_map(|(index, node)| engine.device_sheets.get(&node.sheet).map(|sheet| (sheet.as_ref(), index + 2)))
+        .filter_map(|(index, node)| {
+            engine.device_sheets.get(&node.sheet).map(|sheet| (sheet.as_ref(), index + FRAME_ROOTS))
+        })
         .collect();
     let user = engine.user.as_ref().map(|(_, sheet)| sheet.as_ref());
     // What the cache's styles depend on beyond the theme and the base tier, which reset it
@@ -332,7 +377,7 @@ pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
     };
     let mut elements = roots(false);
     for node in &engine.nodes {
-        elements.push(element_of(engine, node, node.parent.map_or(1, |parent| parent + 2)));
+        elements.push(element_of(engine, node, node.parent.map_or(FRAME_ROOTS - 1, |parent| parent + FRAME_ROOTS)));
     }
     // CSS :hover applies to the ancestors of the pointer target as well; only those a rule tests
     // for it take it, so the pointer moving between elements leaves the window and the rest of
@@ -342,7 +387,7 @@ pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
         if node.state & 1 == 0 || node.state & super::ASKED != 0 {
             continue;
         }
-        let mut parent = elements.get(index + 2).and_then(|element| element.parent);
+        let mut parent = elements.get(index + FRAME_ROOTS).and_then(|element| element.parent);
         while let Some(index) = parent {
             let element = elements.get_mut(index)?;
             if hovered.tested(&element.kind, element.id.as_deref())
@@ -353,16 +398,7 @@ pub(super) fn retained(engine: &Engine) -> Option<Vec<(u64, Computed)>> {
             parent = element.parent;
         }
     }
-    let tree = Tree::new(elements).ok()?;
-    let values = paint.styles_shared(&tree, viewport(engine), variant(engine), &devices, user, sheets_key)?;
-    Some(
-        engine
-            .nodes
-            .iter()
-            .zip(values.into_iter().skip(2))
-            .map(|(node, (key, style))| (node.key, paint.paint_of(key, style)))
-            .collect(),
-    )
+    Some((Tree::new(elements).ok()?, devices, sheets_key))
 }
 
 #[cfg(test)]
