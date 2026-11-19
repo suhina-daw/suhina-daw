@@ -164,7 +164,7 @@ pub(crate) fn owns_keyboard(ctx: &egui::Context) -> bool {
         })
 }
 
-fn remember_keyboard_owner(response: &egui::Response) {
+pub(super) fn remember_keyboard_owner(response: &egui::Response) {
     let in_editor = response.ctx.data_mut(|data| {
         let collecting = data.get_temp::<bool>(keyboard_owner_id().with("collecting")).unwrap_or(false);
         if collecting {
@@ -2437,6 +2437,10 @@ pub(crate) fn show(
         }
         if matches!(control.widget, Some(Widget::SampleRecording)) {
             sample_recording(ui, bounds, track, device, actions);
+            continue;
+        }
+        if matches!(control.widget, Some(Widget::SampleAnalysis)) {
+            super::instrument_analysis::show(ui, bounds, track, at, actions);
             continue;
         }
         if matches!(control.widget, Some(Widget::DeviceSwitch)) {

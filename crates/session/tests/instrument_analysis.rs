@@ -69,6 +69,23 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     assert_eq!(session.project(), &before, "a completed proposal never changes the playable device");
     assert_eq!(session.undo_steps(), depth);
     assert_eq!(render(session.project(), session.audio()), before_sound);
+    // Regression: an unrelated invalid project makes acceptance fail even when its explicit
+    // corrected root equals the original root. Value equality is not transaction success.
+    let mut invalid = before.clone();
+    invalid.tempo_bpm = -1.0;
+    let mut rejected = Session::new(invalid.clone());
+    rejected.set_audio(session.audio().clone());
+    let proposal = run(&mut rejected, "instrument.analyzeSample", json!({}));
+    rejected.sync_instrument_analysis();
+    let rejected_depth = rejected.undo_steps();
+    assert!(
+        rejected
+            .execute("instrument.acceptAnalysis", &json!({"track":1,"device":0,"job":proposal["job"],"root":60}))
+            .is_err()
+    );
+    assert_eq!(rejected.project(), &invalid);
+    assert_eq!(rejected.undo_steps(), rejected_depth);
+    assert_eq!(rejected.instrument_analysis_view().unwrap().phase, AnalysisPhase::Ready);
     for params in [
         json!({"track":1,"device":0,"job":"outdated"}),
         json!({"track":1,"device":0,"job":first["job"],"root":128}),
@@ -133,6 +150,40 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(render(reopened.project(), reopened.audio()), expected);
     assert!(reopened.instrument_analysis_view().is_none(), "reopen never starts analysis");
+
+    // A group move preserves identity and the source. Both a full path and stable id reach it.
+    let stable = reopened.project().channels[0].devices[0].id;
+    let moved = run(&mut reopened, "instrument.analyzeSample", json!({}));
+    run(&mut reopened, "device.group", json!({}));
+    reopened.sync_instrument_analysis();
+    assert_eq!(run(&mut reopened, "instrument.analysis", json!({"device":"0/0/0"}))["status"], "ready");
+    run(&mut reopened, "instrument.acceptAnalysis", json!({"device":{"id":stable.0},"job":moved["job"]}));
+    run(&mut reopened, "device.ungroup", json!({}));
+    assert_eq!(reopened.project().channels[0].devices[0].id, stable);
+
+    // Replacing decoded PCM under the same file name invalidates the source snapshot too.
+    let replaced_pcm = run(&mut reopened, "instrument.analyzeSample", json!({}));
+    let mut audio = reopened.audio().clone();
+    let file = reopened.project().channels[0].devices[0].sample_file().unwrap();
+    let pcm = audio.files.get(file).unwrap();
+    audio.files.insert(file.to_owned(), std::sync::Arc::new((**pcm).clone()));
+    reopened.set_audio(audio);
+    reopened.sync_instrument_analysis();
+    assert_eq!(reopened.instrument_analysis_view().unwrap().phase, AnalysisPhase::Stale);
+    assert!(
+        reopened
+            .execute("instrument.acceptAnalysis", &json!({"track":1,"device":0,"job":replaced_pcm["job"]}))
+            .is_err()
+    );
+    let changed_root = run(&mut reopened, "instrument.analyzeSample", json!({}));
+    run(&mut reopened, "device.setParam", json!({"param":"root","value":59}));
+    reopened.sync_instrument_analysis();
+    assert_eq!(reopened.instrument_analysis_view().unwrap().phase, AnalysisPhase::Stale);
+    assert!(
+        reopened
+            .execute("instrument.acceptAnalysis", &json!({"track":1,"device":0,"job":changed_root["job"]}))
+            .is_err()
+    );
 
     // Device removal/replacement must not accept a late proposal even at the same list position.
     let old_id = reopened.project().channels[0].devices[0].id;

@@ -27,6 +27,8 @@ The host-independent Rust analysis library accepts decoded interleaved PCM and a
 range. It has no project, browser, file picker, network or window dependency. The session passes
 the immutable audio already loaded for the selected instrument, so analysis grants no new file
 access and never rereads a path behind the command's authorization checks.
+The dependency boundary and host responsibilities are proposed in
+[ADR 0041](../decisions/0041-instrument-sample-analysis.md).
 
 Analysis version 1 accepts mono/stereo audio at 1,000..384,000 Hz. It examines at most the first
 eight seconds of the selected trim and at most 32 evenly distributed analysis windows per
@@ -87,8 +89,10 @@ Cancel, the proposed root and cents, a manual root correction and Accept when a 
 exists. Silence, unstable pitch, unsupported input and stale results have distinct explanatory
 messages. An analysis action is a command control, never a fake automatable sound parameter.
 
-The compact/expanded editor uses the same session job and commands. Pages and window state are
-not instrument parameters. Sample and Hybrid playback remain available while analysis runs.
+The expanded editor's Sample page places these controls through the SDK `SampleAnalysis`
+widget. Compact controls and the expanded editor use the same instrument state. Pages and
+window state are not instrument parameters. Sample and Hybrid playback remain available while
+analysis runs. Exported editors still need their own host preparation integration.
 
 ## Verification
 

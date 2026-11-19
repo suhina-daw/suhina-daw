@@ -401,6 +401,11 @@ fractional percentages, dB and centre/L/R respectively. Existing Dial definition
 keep their previous readouts. The sampler uses these formats without changing
 the saved parameter units.
 
+`SampleAnalysis` places host-owned local sample analysis and explicit root-proposal adoption.
+It has no parameter bindings: the stock host dispatches the `instrument.*` preparation commands
+and presents the session job's progress, result, correction and acceptance controls. Exported
+hosts must implement their own preparation integration before exposing equivalent controls.
+
 `SampleWaveform` is a host-backed source view for the native sampler. It has no
 parameter axis bindings. The host supplies decoded audio; start/end and loop
 handles dispatch `device.setParam`. `SampleRecording` independently places the

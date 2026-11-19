@@ -9,6 +9,7 @@ use serde_json::json;
 use suhina_engine::model::TrackId;
 use suhina_session::{AnalysisPhase, AnalysisView, ProjectId, SampleAnalysisOutcome, Session};
 
+use super::device_canvas::remember_keyboard_owner;
 use crate::interaction::device_at::DeviceAt;
 use crate::kit::widgets::Action;
 
@@ -65,16 +66,22 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
         snapshot.view.as_ref().filter(|_| snapshot.target.as_ref().is_some_and(|(t, path)| *t == track && path == at));
     let track_value = if track == TrackId::MAIN { json!("main") } else { json!(track.0) };
     let device_value = view.map_or_else(|| at.value(), |v| json!({"id":v.device.0}));
-    ui.scope_builder(egui::UiBuilder::new().max_rect(bounds), |ui| {
+    ui.scope_builder(egui::UiBuilder::new().max_rect(bounds)
+        .id_salt(("instrument-analysis", track.0, &at.0))
+        .layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
         ui.set_clip_rect(ui.clip_rect().intersect(bounds));
         ui.horizontal(|ui| {
             ui.strong("Sample analysis");
             let running = view.is_some_and(|v| v.phase == AnalysisPhase::Running);
-            if ui.add_enabled(!running, egui::Button::new("Analyze sample")).clicked() {
+            let analyze = ui.add_enabled(!running, egui::Button::new("Analyze sample"));
+            remember_keyboard_owner(&analyze);
+            if analyze.clicked() {
                 actions.push(Action::new("instrument.analyzeSample",json!({"track":track_value,"device":device_value})));
             }
-            if let Some(view) = view.filter(|_| running) {
-                if ui.button("Cancel analysis").clicked() {
+            if let Some(view) = view.filter(|v| running || v.phase == AnalysisPhase::Ready) {
+                let cancel = ui.button(if running { "Cancel analysis" } else { "Discard proposal" });
+                remember_keyboard_owner(&cancel);
+                if cancel.clicked() {
                     actions.push(Action::new("instrument.cancelAnalysis",json!({"track":track_value,"device":device_value,"job":view.job})));
                 }
             }
@@ -98,13 +105,18 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     ui.horizontal(|ui| {
                         ui.label("Root key");
                         let response = ui.add(egui::DragValue::new(&mut correction.root).range(0..=127).speed(0.1));
-                        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::DragValue,true,"Proposed root key"));
-                        ui.label(format!("Measured {:.2} Hz, {:+.1} cents",proposal.hz,proposal.cents));
-                        if ui.button("Accept root").clicked() {
+                        remember_keyboard_owner(&response);
+                        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton,true,"Proposed root key"));
+                        ui.label(format!("Measured {:.2} Hz, {:+.1} cents",proposal.hz,proposal.cents))
+                            .on_hover_text(format!("Periodicity {:.3}; spread {:.1} cents; voiced {} / {} active windows. Analyzed frames {}..{}. These measurements are not a correctness probability.", proposal.periodicity, proposal.spread_cents, report.voiced_windows, report.active_windows, report.range.start, report.range.end));
+                        let accept = ui.button("Accept root");
+                        remember_keyboard_owner(&accept);
+                        if accept.clicked() {
                             actions.push(Action::new("instrument.acceptAnalysis",json!({"track":track_value,"device":device_value,"job":view.job,"root":correction.root})));
                         }
                     });
                     ui.label("Accept changes the root key in one undo step. The cents offset remains in the source.");
+                    ui.label("For isolated notes: chords can produce an ambiguous root. Listen before accepting.");
                     ui.ctx().data_mut(|data| data.insert_temp(correction_id(),correction));
                 } else {
                     ui.label(match report.outcome {

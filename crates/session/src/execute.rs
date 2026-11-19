@@ -38,6 +38,7 @@ impl Session {
             return self.arm(params);
         }
         let result = self.run(id, params);
+        self.finish_instrument_analysis_command(result.is_ok());
         self.refresh_instrument_analysis();
         result
     }

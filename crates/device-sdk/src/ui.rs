@@ -665,7 +665,8 @@ impl DeviceUi {
                     | Widget::Separator
                     | Widget::Graphic { .. }
                     | Widget::SampleWaveform
-                    | Widget::SampleRecording => c.x.is_none() && c.y.is_none(),
+                    | Widget::SampleRecording
+                    | Widget::SampleAnalysis => c.x.is_none() && c.y.is_none(),
                     // The device's body controls that read nothing but host state: the switch
                     // and the file rows and their steppers. The file rows' `what` names the
                     // panel's words ("model", "cab") the host checks as it draws.
@@ -864,6 +865,7 @@ impl DeviceUi {
                             | Widget::Graphic { .. }
                             | Widget::SampleWaveform
                             | Widget::SampleRecording
+                            | Widget::SampleAnalysis
                             | Widget::Envelope { .. }
                             // The host's device-state controls read no parameter.
                             | Widget::DeviceSwitch

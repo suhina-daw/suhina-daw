@@ -4548,5 +4548,7 @@ enum CopiedLast {
 }
 
 #[cfg(test)]
+mod instrument_analysis_tests;
+#[cfg(test)]
 #[path = "app/instrument_editor_tests.rs"]
 mod instrument_editor_tests;

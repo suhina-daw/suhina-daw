@@ -21,6 +21,10 @@ static NEXT_JOB: AtomicU64 = AtomicU64::new(1);
 static WORKERS: AtomicUsize = AtomicUsize::new(0);
 const MAX_WORKERS: usize = 2;
 
+#[cfg(test)]
+#[path = "instrument_analysis_tests.rs"]
+mod tests;
+
 struct Permit;
 impl Permit {
     fn acquire() -> Result<Self, CommandError> {
@@ -209,19 +213,24 @@ impl Session {
                 job.stop(AnalysisPhase::Stale, "the device, source or trim changed; analyze the current source again");
             } else if let Some(device) = device {
                 let root = parameter(device, "root", 60.0);
-                if let Some(pending) = job.pending_root.take() {
-                    if root == f64::from(pending) {
-                        job.source.root = root;
-                        job.phase = AnalysisPhase::Accepted;
-                    }
-                    // A failed project transaction restored the original root; retain the proposal.
-                }
                 if root != job.source.root {
                     job.stop(AnalysisPhase::Stale, "the sample root changed; analyze again before accepting");
                 }
             }
         }
         job.receive(false);
+    }
+
+    /// Publish adoption only after the editing transaction succeeds, even when the corrected
+    /// root equals its old value. A failed validation must not consume a ready proposal.
+    pub(crate) fn finish_instrument_analysis_command(&mut self, succeeded: bool) {
+        if let Some(job) = &mut self.analysis.current
+            && let Some(root) = job.pending_root.take()
+            && succeeded
+        {
+            job.source.root = f64::from(root);
+            job.phase = AnalysisPhase::Accepted;
+        }
     }
 
     /// The latest job for this session, after a nonblocking poll.
