@@ -220,3 +220,24 @@ fn finite_velocities_are_normalized_before_both_source_layers_receive_them() {
         assert_eq!(actual, expected, "nonpositive velocity releases source {source}");
     }
 }
+
+#[test]
+fn hostile_sample_levels_remain_finite_after_the_final_gain() {
+    for source in [1.0, 2.0] {
+        for level in [f32::MAX, -f32::MAX, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut instrument = Instrument::new();
+            instrument.samples().unwrap().load_sample(48000, 1, std::sync::Arc::from(vec![level; 4800]));
+            instrument.set_param(param::SOURCE, source);
+            instrument.set_param(param::GAIN, 12.0);
+            instrument.set_param(param::ATTACK, 0.0);
+            instrument.reset();
+            instrument.event(NoteEvent::On { key: 60, velocity: 1.0 });
+            let mut rendered = [0.0; 2048];
+            instrument.process(&ProcessContext::default(), &mut rendered);
+            assert!(rendered.iter().all(|value| value.is_finite()), "source {source}, level {level}");
+            if level.is_finite() {
+                assert!(rendered[1024..].iter().all(|value| *value == level.signum() * f32::MAX));
+            }
+        }
+    }
+}

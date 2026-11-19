@@ -83,6 +83,8 @@ for at most 16 voices; Hybrid can therefore run 16 modal and 16 sample voices to
 rendering reuses the shared runtime and its documented source limits. Preparation, decoding and graph
 replacement happen away from the audio callback. Rendering, note events, parameter changes
 and reset perform no allocation, deallocation, locking, logging or I/O.
+The final mix saturates only at the finite `f32` limits, including when positive output gain
+would otherwise overflow an extreme imported float sample. This is not an audio limiter.
 
 Deterministic tests cover tuning/decay, bounded invalid inputs, note release/pedal/reset,
 identical output across block partitions, sample rendering and project reopen. A release-mode

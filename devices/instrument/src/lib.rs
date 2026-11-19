@@ -336,7 +336,9 @@ impl Device for Instrument {
             let modal = modal * self.modal_mix.next_value();
             let gain = self.gain.next_value();
             for sample in frame {
-                *sample = (*sample * sample_mix + modal) * gain;
+                // Imported float audio may already reach the finite f32 limit. Preserve normal
+                // mixing exactly, but saturate an overflow from the final positive gain.
+                *sample = ((*sample * sample_mix + modal) * gain).clamp(-f32::MAX, f32::MAX);
             }
             if !hybrid && self.modal_mix.current() == 0.0 && self.modal_mix.is_settled() {
                 for voice in &mut self.voices {
