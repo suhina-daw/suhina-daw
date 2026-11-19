@@ -438,6 +438,16 @@ partition saves; the doc tests, which nextest does not run, run in the first par
 picked from the workspace build with `-E "package(suhina-engine)"`, not built with `-p`: cargo
 resolves the dependencies' features for the one package then, and compiled a share of them again.
 
+**The theme drawings.** Each built-in theme or variant has its own test under
+`painted::themes` in `apps/theme-render/tests/painted.rs`, so nextest spreads them across the
+partitions. Each test draws every scene except the build-dependent About dialog, on a fresh
+thread per scene, and checks both the painted digest and cut texts from those same drawings.
+There is no extra worker pool inside the tests; nextest controls their concurrency. A registry
+check fails if a theme or variant has no test or is listed twice. The recordings are one file per
+theme or variant in `apps/theme-render/tests/painted/` and `apps/theme-render/tests/cut/`, so
+`SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` can update them in parallel
+without tests writing the same file.
+
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
 --no-fail-fast` does the same), a test that runs a minute or more is named while it runs, and one
