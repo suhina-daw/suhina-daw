@@ -370,7 +370,7 @@ pub(crate) fn accept(session: &mut Session, params: &Value) -> Result<Value, Com
     let root = Args::new(params).opt_index("root", "MIDI root key")?.unwrap_or(usize::from(proposal.root));
     let root = u8::try_from(root).ok().filter(|v| *v <= 127).ok_or("root must be an integer from 0 to 127")?;
     // Reuse the actual manual-edit path, including parameter messages to the running graph.
-    // Merely assigning the model value would rebuild the graph and interrupt held voices.
+    // Merely assigning the model value would request an unnecessary graph rebuild.
     let mut edit = params.clone();
     edit["param"] = json!("root");
     edit["value"] = json!(root);

@@ -104,7 +104,7 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     // Regression: an unrelated invalid project makes acceptance fail even when its explicit
     // corrected root equals the original root. Value equality is not transaction success.
     let mut invalid = before.clone();
-    invalid.tempo_bpm = -1.0;
+    invalid.transport.tempo_bpm = -1.0;
     let mut rejected = Session::new(invalid.clone());
     rejected.set_audio(session.audio().clone());
     let proposal = run(&mut rejected, "instrument.analyzeSample", json!({}));
