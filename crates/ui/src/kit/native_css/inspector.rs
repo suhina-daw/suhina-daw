@@ -111,7 +111,10 @@ fn painted_box(engine: &Engine, at: usize) -> Option<(Rect, LayerId)> {
             .cloned()
             .flatten()
             .is_some_and(|style| matches!(style.get(Property::Overflow), Value::Keyword("hidden" | "clip")));
+        // Its clip cuts what was entered before its box closed, not what a `close_box` left out.
+        let open = engine.clip_ends.get(up).copied().flatten().is_none_or(|end| at < end);
         if hides
+            && open
             && let Some(Some((clip, clip_layer))) = engine.boxes.get(up).copied()
             && clip_layer == layer
         {

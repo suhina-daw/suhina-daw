@@ -556,12 +556,15 @@ struct Rest {
     /// The first shape of its contents in the painter's layer, and the padding box they are kept
     /// in, when it hides its overflow.
     clip: Option<(egui::layers::ShapeIdx, Rect)>,
+    /// The element's node in the frame's style tree, for telling the inspector where its clip ends.
+    node: Option<usize>,
 }
 
 impl Rest {
     fn paint(self) {
         if let Some((from, to)) = self.clip {
             clip_contents(&self.painter, from, to);
+            super::native_css::set_clip_end(self.node);
         }
         super::native_css::box_end(&self.painter, self.rect, self.radius, &self.style, self.outer);
     }
@@ -712,7 +715,8 @@ impl Entered {
             (from, padding_box)
         });
         if clip.is_some() || style.outline().is_some() {
-            *self.rest.borrow_mut() = Some(Rest { painter: painter.clone(), rect, radius, style, outer, clip });
+            *self.rest.borrow_mut() =
+                Some(Rest { painter: painter.clone(), rect, radius, style, outer, clip, node: self.scope.node });
         }
         content
     }

@@ -1104,3 +1104,38 @@ fn a_theme_sheet_that_does_not_parse_still_gets_the_base_design() {
     assert_eq!(name.a(), 255, "the name ink: {name:?}");
     assert_eq!(panel.a(), 255, "the panel fill: {panel:?}");
 }
+
+#[test]
+fn the_inspector_clips_a_child_by_an_overflow_box_only_while_it_is_open() {
+    let area = Rect::from_min_size(egui::pos2(40.0, 40.0), egui::vec2(100.0, 40.0));
+    let wide = area.expand(20.0);
+    super::super::skin::configure(&super::super::skin::Skin {
+        css: Some(Arc::from("browser { overflow: hidden; }")),
+        ..Default::default()
+    });
+    let ctx = egui::Context::default();
+    let mut boxes = Vec::new();
+    // The tree resolves over the first frames.
+    for _ in 0..3 {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let _frame = super::super::native_css::frame_with_motion(ui, false);
+            let browser = BROWSER.enter();
+            browser.paint(ui.painter(), area);
+            let before = VALUE.id("before").enter();
+            before.paint(ui.painter(), wide);
+            drop(before);
+            browser.close_box();
+            // Painted after the box closed, with its scope still open: nothing cuts it.
+            let after = VALUE.id("after").enter();
+            after.paint(ui.painter(), wide);
+            drop(after);
+            boxes = super::super::native_css::inspector::frame_elements();
+        });
+        output.textures_delta.clear();
+    }
+    super::super::skin::configure(&super::super::skin::Skin::default());
+    // The browser, then the child entered before the box closed, then the one after.
+    let painted = |at: usize| boxes.get(at).and_then(|e| e.painted).map(|(rect, _)| rect);
+    assert_eq!(painted(1), Some(area), "cut by the open box: {boxes:?}");
+    assert_eq!(painted(2), Some(wide), "past a closed box, whole");
+}

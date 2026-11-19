@@ -418,6 +418,10 @@ struct Engine {
     /// ([`inspector::frame_elements`]) only: `boxes` holds the padding box that clips and shadows
     /// use.
     borders: Vec<Option<Rect>>,
+    /// For each node of this frame that hides its overflow: how many nodes were entered when its
+    /// box closed (`None` while it is open). Only the nodes entered before are cut by it, as
+    /// `close_box` leaves what is painted after it alone.
+    clip_ends: Vec<Option<usize>>,
     /// For each node of this frame: the style it was painted with, to compare with the full tree's
     /// at the frame's end.
     served: Vec<Option<Arc<suhina_style::cascade::ComputedStyle>>>,
@@ -631,6 +635,7 @@ pub fn frame_with_motion(ui: &egui::Ui, motion: bool) -> Frame {
         engine.chains.clear();
         engine.boxes.clear();
         engine.borders.clear();
+        engine.clip_ends.clear();
         engine.served.clear();
         engine.held.clear();
         engine.unstyled = 0;
@@ -688,6 +693,7 @@ pub(super) fn enter(
         engine.chains.push(0);
         engine.boxes.push(None);
         engine.borders.push(None);
+        engine.clip_ends.push(None);
         engine.served.push(None);
         engine.held.push(false);
         engine.parents.push(index);
@@ -796,6 +802,19 @@ pub(super) fn set_box(node: Option<usize>, rect: Rect, painter: &egui::Painter) 
     });
 }
 
+/// Notes that the box of the element at `node`, which hides its overflow, closed now: the elements
+/// entered from here on are not cut by it.
+pub(super) fn set_clip_end(node: Option<usize>) {
+    let Some(node) = node else { return };
+    ENGINE.with(|engine| {
+        let mut engine = engine.borrow_mut();
+        let end = engine.nodes.len();
+        if let Some(slot) = engine.clip_ends.get_mut(node) {
+            *slot = Some(end);
+        }
+    });
+}
+
 /// The border box of the element at `node`, when it is bigger than the box [`set_box`] was given
 /// (its padding box): for the inspector, so a point on the border selects the element.
 pub(super) fn set_border_box(node: Option<usize>, rect: Rect, painter: &egui::Painter) {
@@ -885,6 +904,7 @@ pub(super) fn discard(node: Option<usize>) {
         engine.chains.truncate(at);
         engine.boxes.truncate(at);
         engine.borders.truncate(at);
+        engine.clip_ends.truncate(at);
         engine.served.truncate(at);
         engine.held.truncate(at);
         let parent_key = gone.parent.and_then(|p| engine.nodes.get(p)).map_or(0, |n| n.key);
