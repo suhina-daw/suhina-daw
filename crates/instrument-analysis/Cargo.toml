@@ -1,0 +1,13 @@
+[package]
+name = "suhina-instrument-analysis"
+description = "Bounded local PCM analysis for playable sample instruments"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+suhina-dsp.workspace = true
+
+[lints]
+workspace = true

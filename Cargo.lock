@@ -5720,6 +5720,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "suhina-instrument-analysis"
+version = "0.0.1"
+dependencies = [
+ "suhina-dsp",
+]
+
+[[package]]
 name = "suhina-ipc"
 version = "0.0.1"
 dependencies = [
@@ -5873,6 +5880,7 @@ dependencies = [
  "suhina-engine",
  "suhina-flp",
  "suhina-fs",
+ "suhina-instrument-analysis",
  "suhina-library",
  "suhina-media",
  "suhina-model",
@@ -5892,6 +5900,7 @@ dependencies = [
  "hound",
  "rayon",
  "realfft",
+ "suhina-dsp",
  "suhina-fs",
  "suhina-media",
 ]

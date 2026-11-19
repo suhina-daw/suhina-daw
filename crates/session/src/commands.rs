@@ -21,6 +21,7 @@ mod branch;
 mod clip;
 mod device;
 mod history;
+mod instrument;
 mod launcher;
 mod mapping;
 mod marker;
@@ -704,6 +705,7 @@ static NAMESPACES: &[&[CommandSpec]] = &[
     mapping::COMMANDS,
     scene::COMMANDS,
     device::COMMANDS,
+    instrument::COMMANDS,
     preview::COMMANDS,
     branch::COMMANDS,
     automation::COMMANDS,

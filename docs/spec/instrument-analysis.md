@@ -5,9 +5,11 @@ type: spec
 status: planned
 last_verified: 2026-11-20
 covers:
-  - crates/dsp/
+  - crates/dsp/src/pitch.rs
+  - crates/instrument-analysis/
   - crates/soundmap/src/features.rs
-  - crates/session/
+  - crates/session/src/instrument_analysis.rs
+  - crates/session/src/commands/instrument.rs
   - crates/ui/src/detail/
 ---
 
@@ -47,6 +49,8 @@ frequency. Results outside it are not clamped to a boundary note. A failed or un
 never fabricates a middle-C proposal. Polyphonic, strongly inharmonic, noisy and changing-pitch
 material may have no useful single root. Stereo channels are assessed separately, so reversed
 polarity cannot cancel a valid tone; inconsistent channel pitches prevent automatic proposal.
+Windows with a zero-crossing rate above the admitted band are conservatively rejected rather
+than assigning an out-of-band tone a lower octave; this can also reject bright mixtures.
 
 Accepting an integer root does not remove the displayed residual cents offset. The person may
 choose a different root, but that choice is explicit and is not presented as a measured result.
