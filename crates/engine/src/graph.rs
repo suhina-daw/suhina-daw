@@ -81,7 +81,7 @@ impl Graph {
         plugins: &mut Plugins,
         source: Option<TrackId>,
     ) -> Result<Box<Self>, RenderError> {
-        if !(8_000..=384_000).contains(&sample_rate) {
+        if !(8_000..=crate::MAX_SAMPLE_RATE).contains(&sample_rate) {
             return Err(RenderError::InvalidSampleRate(sample_rate));
         }
         let build_began = std::time::Instant::now();
@@ -137,7 +137,7 @@ impl Graph {
         };
         let chains_began = std::time::Instant::now();
         let (chains, latency) =
-            buses::build(project, audio, sample_rate, plugins, column_of, (assets, devices), source);
+            buses::build(project, audio, sample_rate, plugins, column_of, (assets, devices), source)?;
         let chains_took = chains_began.elapsed();
         let mut voices_took = std::time::Duration::ZERO;
         // The source render's capture: the node's chain, its subtree's chains and a block
@@ -332,9 +332,8 @@ impl Graph {
             .iter()
             .find(|c| c.track == TrackId::MAIN)
             .map_or(0, |main| u64::from(main.latency) + main.delay.frames() as u64)
-            .saturating_add(u64::from(latency))
-            .min(u64::from(sample_rate.saturating_mul(crate::MAX_LATENCY_SECONDS)));
-        let click_cue_latency = click_cue_latency(&chains, latency, sample_rate);
+            .saturating_add(u64::from(latency));
+        let click_cue_latency = click_cue_latency(&chains, latency);
         Ok(Box::new(Graph {
             envelope_messages: Vec::with_capacity(ENVELOPE_MESSAGES),
             inputs_heard: vec![false; inputs.len()],
@@ -373,19 +372,18 @@ impl Graph {
 /// takes it, which is where the track plays into its group or the output, past its own delay
 /// (`Chain::mix`), so a group's devices after it do not count. With no track cued, as late as
 /// the mix reaching the output past the tracks (`latency`).
-fn click_cue_latency(chains: &[Chain], latency: u32, sample_rate: u32) -> u32 {
-    let max = sample_rate.saturating_mul(crate::MAX_LATENCY_SECONDS);
+fn click_cue_latency(chains: &[Chain], latency: u32) -> u32 {
     chains
         .iter()
         .filter(|c| c.cue.is_some())
         .map(|c| {
             // As `buses::build` set the chain's delay: from where its sound arrives to its target.
-            let arrived = c.input_latency.saturating_add(c.latency.min(max)).min(max);
-            arrived.saturating_add(u32::try_from(c.delay.frames()).unwrap_or(max))
+            // The builder has validated the complete path before allocating these delays.
+            let arrived = c.input_latency.saturating_add(c.latency);
+            arrived.saturating_add(u32::try_from(c.delay.frames()).unwrap_or(u32::MAX))
         })
         .max()
         .unwrap_or(latency)
-        .min(max)
 }
 
 /// The main volume a live fader move is taken relative to, when the main channel runs no chain
