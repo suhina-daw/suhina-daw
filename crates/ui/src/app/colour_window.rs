@@ -104,7 +104,7 @@ impl App {
                 self.colour_window.tracks = selection;
             }
         }
-        let Some(session) = self.projects.session(None).ok() else { return };
+        let Some(session) = self.projects.active().and_then(|id| self.projects.get(id)) else { return };
         let project = session.project();
         self.colour_window.tracks.retain(|t| project.track(*t).is_some());
         let first = self

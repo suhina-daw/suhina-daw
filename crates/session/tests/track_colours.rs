@@ -14,7 +14,7 @@ fn several_tracks_change_atomically_and_round_trip_with_one_undo() {
     for id in [1, 2] {
         assert_eq!(session.project().track(TrackId(id)).unwrap().color, Some(Rgb(35, 171, 205)));
     }
-    assert_eq!(session.undo_steps(), 1);
+    assert_eq!(session.undo_steps().0, 1);
     let saved = suhina_project_file::to_json(session.project());
     assert_eq!(suhina_project_file::from_json(&saved).unwrap(), *session.project());
     run(&mut session, "edit.undo", json!({})).unwrap();
@@ -42,7 +42,7 @@ fn malformed_colour_or_target_never_partially_changes_the_selection() {
     ] {
         assert!(run(&mut session, "track.setColor", params.clone()).is_err(), "{params}");
         assert_eq!(session.project(), &before);
-        assert_eq!(session.undo_steps(), 0);
+        assert_eq!(session.undo_steps().0, 0);
     }
 }
 
@@ -52,13 +52,13 @@ fn live_colour_gestures_merge_until_release_and_noops_add_nothing() {
     let before = session.project().clone();
     for colour in ["#123456", "#654321", "#abcdef"] {
         run(&mut session, "track.setColor", json!({"tracks":[1,2],"color":colour,"gesture":"colour"})).unwrap();
-        assert_eq!(session.undo_steps(), 1);
+        assert_eq!(session.undo_steps().0, 1);
     }
     run(&mut session, "history.endGesture", json!({"gesture":"colour"})).unwrap();
     run(&mut session, "track.setColor", json!({"tracks":[1,2],"color":"#abcdef"})).unwrap();
-    assert_eq!(session.undo_steps(), 1);
+    assert_eq!(session.undo_steps().0, 1);
     run(&mut session, "track.setColor", json!({"track":1,"color":"#000000","gesture":"colour"})).unwrap();
-    assert_eq!(session.undo_steps(), 2);
+    assert_eq!(session.undo_steps().0, 2);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().track(TrackId(1)).unwrap().color, Some(Rgb(171, 205, 239)));
     run(&mut session, "edit.undo", json!({})).unwrap();

@@ -727,6 +727,20 @@ impl Keymap {
             }
             keymap.bindings.insert(id.clone(), parsed);
         }
+        // Older keymaps could already use F2. A newly introduced default must not take
+        // that key from an explicit binding; an explicit colour binding remains the user's.
+        if !map.contains_key("selection.colour") {
+            let colour_keys = keymap.keys("selection.colour").to_vec();
+            let reserved = keymap.bindings.iter().any(|(id, keys)| {
+                id != "selection.colour"
+                    && !piano_roll_only(id)
+                    && map.contains_key(id)
+                    && keys.iter().any(|key| colour_keys.contains(key))
+            });
+            if reserved {
+                keymap.bindings.insert("selection.colour".into(), Vec::new());
+            }
+        }
         keymap.workflow.read_json(&map, &mut warnings);
         // The duplicate key is the one bound, whatever the file's setting says; a file that binds
         // no key to it takes the setting's.

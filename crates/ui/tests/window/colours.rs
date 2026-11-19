@@ -25,7 +25,7 @@ fn f2_opens_a_nonmodal_picker_that_follows_tracks_and_reuses_recent_colours() {
     h.run();
     assert_eq!(h.state().session().unwrap().project().track(TrackId(2)).unwrap().color, Some(colour));
     assert_eq!(h.state().settings().recent_colours, [colour]);
-    assert_eq!(h.state().session().unwrap().undo_steps(), 2);
+    assert_eq!(h.state().session().unwrap().undo_steps().0, 2);
     h.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     h.run();
     assert_ne!(h.state().session().unwrap().project().track(TrackId(2)).unwrap().color, Some(colour));

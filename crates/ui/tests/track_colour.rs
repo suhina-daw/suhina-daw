@@ -499,7 +499,7 @@ fn live_colour_drag(from_menu: bool) {
     harness.run();
     let picked = drums_colour(&harness).unwrap();
     assert_eq!(harness.state().settings().recent_colours, [picked]);
-    assert_eq!(harness.state().session().unwrap().undo_steps(), 1);
+    assert_eq!(harness.state().session().unwrap().undo_steps().0, 1);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert_eq!(drums_colour(&harness), before, "one undo takes the whole drag back");

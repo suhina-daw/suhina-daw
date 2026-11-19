@@ -4,6 +4,27 @@
 use super::*;
 
 #[test]
+fn colour_shortcut_preserves_older_f2_bindings_and_explicit_overrides() {
+    let (default, warnings) = Keymap::from_json("{}");
+    assert!(warnings.is_empty());
+    assert_eq!(default.binding_text("selection.colour").as_deref(), Some("F2"));
+    let (older, warnings) = Keymap::from_json(r#"{"selection.rename":["F2"]}"#);
+    assert!(warnings.is_empty());
+    assert_eq!(older.binding_text("selection.rename").as_deref(), Some("F2"));
+    assert!(older.keys("selection.colour").is_empty());
+    assert!(older.conflicts().is_empty());
+    assert_eq!(Keymap::from_json(&older.to_json()).0, older);
+    for (input, expected) in
+        [(r#"{"selection.colour":[]}"#, None), (r#"{"selection.colour":["Alt+C"]}"#, Some("Alt+C"))]
+    {
+        let (keymap, warnings) = Keymap::from_json(input);
+        assert!(warnings.is_empty());
+        assert_eq!(keymap.binding_text("selection.colour").as_deref(), expected);
+        assert_eq!(Keymap::from_json(&keymap.to_json()).0, keymap);
+    }
+}
+
+#[test]
 fn shortcuts_read_and_write_the_same() {
     for text in [
         "Ctrl+Shift+Z",

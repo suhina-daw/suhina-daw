@@ -261,31 +261,6 @@ pub fn oklch_to_srgb(oklch: [f32; 3]) -> Option<[u8; 3]> {
     Some(rgb.map(|v| (v * 255.0).round().clamp(0.0, 255.0) as u8))
 }
 
-#[cfg(test)]
-mod picker_colour_tests {
-    use super::*;
-
-    #[test]
-    fn colour_conversions_round_trip_boundaries_and_reject_nonfinite_values() {
-        for rgb in [[0, 0, 0], [255, 255, 255], [128, 128, 128], [255, 0, 0], [0, 255, 0], [0, 0, 255], [37, 119, 231]]
-        {
-            assert_eq!(hsl_to_srgb(srgb_to_hsl(rgb)), Some(rgb));
-            let got = oklch_to_srgb(srgb_to_oklch(rgb)).unwrap();
-            assert!(rgb.into_iter().zip(got).all(|(a, b)| a.abs_diff(b) <= 1), "{rgb:?} → {got:?}");
-        }
-        for invalid in [[f32::NAN, 0.5, 0.5], [0.5, f32::INFINITY, 0.5], [0.5, 0.5, f32::NAN]] {
-            assert!(hsl_to_srgb(invalid).is_none());
-            assert!(oklch_to_srgb(invalid).is_none());
-        }
-        assert!(oklch_to_srgb([1.5, 0.2, 40.0]).is_none());
-        let gamut = oklch_to_srgb([0.7, 0.9, 145.0]).unwrap();
-        let mapped = srgb_to_oklch(gamut);
-        assert!((mapped[0] - 0.7).abs() < 0.005);
-        assert!((mapped[2] - 145.0).abs() < 2.0);
-        assert!(mapped[1] < 0.9);
-    }
-}
-
 /// `contrast-color(<colour>)`: white or black, whichever has the higher WCAG 2 contrast with the
 /// colour; white on a tie. Alpha is ignored, as a colour behind the text is not known here.
 fn contrast(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
@@ -757,5 +732,30 @@ mod tests {
         ] {
             assert!(Color::parse(bad).is_err(), "{bad}");
         }
+    }
+}
+
+#[cfg(test)]
+mod picker_colour_tests {
+    use super::*;
+
+    #[test]
+    fn colour_conversions_round_trip_boundaries_and_reject_nonfinite_values() {
+        for rgb in [[0, 0, 0], [255, 255, 255], [128, 128, 128], [255, 0, 0], [0, 255, 0], [0, 0, 255], [37, 119, 231]]
+        {
+            assert_eq!(hsl_to_srgb(srgb_to_hsl(rgb)), Some(rgb));
+            let got = oklch_to_srgb(srgb_to_oklch(rgb)).unwrap();
+            assert!(rgb.into_iter().zip(got).all(|(a, b)| a.abs_diff(b) <= 1), "{rgb:?} → {got:?}");
+        }
+        for invalid in [[f32::NAN, 0.5, 0.5], [0.5, f32::INFINITY, 0.5], [0.5, 0.5, f32::NAN]] {
+            assert!(hsl_to_srgb(invalid).is_none());
+            assert!(oklch_to_srgb(invalid).is_none());
+        }
+        assert!(oklch_to_srgb([1.5, 0.2, 40.0]).is_none());
+        let gamut = oklch_to_srgb([0.7, 0.9, 145.0]).unwrap();
+        let mapped = srgb_to_oklch(gamut);
+        assert!((mapped[0] - 0.7).abs() < 0.005);
+        assert!((mapped[2] - 145.0).abs() < 2.0);
+        assert!(mapped[1] < 0.9);
     }
 }
