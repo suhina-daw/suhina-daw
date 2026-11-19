@@ -59,6 +59,7 @@ mod library;
 mod live_input;
 mod mapping;
 mod meters;
+mod metronome_sounds;
 mod midi;
 mod named;
 mod note_tools;
@@ -110,6 +111,7 @@ pub use library::{
     Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets,
 };
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
+pub use metronome_sounds::{MetronomeState, library_folder as metronome_folder};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
 pub use player::{OutputHandle, Player};
@@ -335,6 +337,7 @@ impl Session {
             return;
         }
         self.library_base = Some(base);
+        self.find_metronome_sounds();
         // A load that missed the base left its marks keyed by the relative text; those entries
         // are built again with the base set (a shipped key and an absolute path stand either
         // way, so they keep what they have).
@@ -771,11 +774,11 @@ impl Session {
         // command queue is empty, so this send only fails if the engine is gone, and then every
         // later command says so.
         let _ = player.send(suhina_engine::LaunchCommand::SetQuantization(self.live.quantization));
-        // Its metronome too: on or off, level and sound, as this session has them.
-        let (on, db, sound) = self.live.metronome;
+        // Its metronome too: on or off, level and sounds, as this session has them.
+        let (on, db, _) = self.live.metronome;
         let gain = if db.is_finite() { 10f64.powf(db / 20.0) as f32 } else { 0.0 };
         let _ = player.send(suhina_engine::LaunchCommand::SetMetronome { on, gain: Some(gain) });
-        let _ = player.send(suhina_engine::LaunchCommand::SetMetronomeSound(sound));
+        let _ = player.set_clicks(std::sync::Arc::clone(&self.live.clicks));
         let _ = player.send(suhina_engine::LaunchCommand::SetClickRoute(self.live.click_route));
         // And whether a track with no instrument plays its notes as sine tones (#1384).
         let _ = player.send(suhina_engine::LaunchCommand::SetImplicitTones(self.live.implicit_tones));

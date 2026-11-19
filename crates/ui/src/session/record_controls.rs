@@ -59,10 +59,11 @@ pub fn metronome_button(
     ui: &Ui,
     painter: &Painter,
     rect: Rect,
-    (on, db, sound): (bool, f64, suhina_engine::ClickSound),
+    metronome: &suhina_session::MetronomeState,
     route: suhina_engine::ClickRoute,
     actions: &mut Vec<Action>,
 ) {
+    let (on, db) = (metronome.on, metronome.db);
     let label = if on { "Metronome off" } else { "Metronome on" };
     let response = ui.interact(rect, Id::unique("metronome"), egui::Sense::click_and_drag()).on_hover_text(
         "Metronome: a click on every beat while playing. Hold and drag up or down: its level. Right-click: its sound and where it plays",
@@ -71,7 +72,7 @@ pub fn metronome_button(
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
-    response.context_menu(|ui| metronome_menu(ui, on, sound, route, actions));
+    metronome_menu_on(&response, metronome, route, actions);
     // `button#metronome-toggle`, `[checked]` while it clicks: the sheet's `button[kind="metronome"]`.
     // The glyph keeps reading on a lit fill the sheet gives (`widgets::lit_toggle_kind`).
     let Lit { el, toggle, lit } =
@@ -84,32 +85,58 @@ pub fn metronome_button(
     metronome_level(ui, &response, rect, (on, db), actions);
 }
 
-/// The metronome's right-click menu: its sound, then where its click joins the output
-/// (`transport.setMetronome`), the current ones marked.
-pub fn metronome_menu(
-    ui: &mut Ui,
-    on: bool,
-    sound: suhina_engine::ClickSound,
+/// The metronome's right-click menu on a button's `response`. As it opens, the library's
+/// metronome sounds are looked for again (`transport.metronomeSounds`), so a folder added since
+/// is in it from the next frame.
+pub fn metronome_menu_on(
+    response: &egui::Response,
+    metronome: &suhina_session::MetronomeState,
     route: suhina_engine::ClickRoute,
     actions: &mut Vec<Action>,
 ) {
-    use suhina_engine::{ClickRoute, ClickSound};
-    ui.label("Sound");
-    for choice in ClickSound::ALL {
-        let name = match choice {
-            ClickSound::Beep => "Beep",
-            ClickSound::Wood => "Wood",
-            ClickSound::Soft => "Soft",
-            ClickSound::Muted => "Muted",
-            ClickSound::Deep => "Deep",
-            ClickSound::Tick => "Tick",
-            ClickSound::Knock => "Knock",
-        };
-        if ui.selectable_label(choice == sound, name).clicked() && choice != sound {
-            actions.push(Action::new("transport.setMetronome", json!({ "on": on, "sound": choice.name() })));
+    if response.secondary_clicked() {
+        actions.push(Action::new("transport.metronomeSounds", json!({})));
+    }
+    response.context_menu(|ui| metronome_menu(ui, metronome, route, actions));
+}
+
+/// The metronome's right-click menu: its sound and the bar's, each by family, then where its
+/// click joins the output (`transport.setMetronome`), the current ones marked.
+pub fn metronome_menu(
+    ui: &mut Ui,
+    metronome: &suhina_session::MetronomeState,
+    route: suhina_engine::ClickRoute,
+    actions: &mut Vec<Action>,
+) {
+    use suhina_engine::ClickRoute;
+    let on = metronome.on;
+    ui.menu_button("Sound", |ui| {
+        if let Some(id) = sound_choices(ui, metronome, Some(metronome.sound.as_str())) {
+            actions.push(Action::new("transport.setMetronome", json!({ "on": on, "sound": id })));
             ui.close();
         }
-    }
+    })
+    .response
+    .on_hover_text("The sound every beat plays");
+    ui.menu_button("Bar sound", |ui| {
+        let higher = metronome.accent.is_none();
+        if ui
+            .selectable_label(higher, "Beat sound, higher")
+            .on_hover_text("The first beat of a bar plays the beat's sound, higher")
+            .clicked()
+            && !higher
+        {
+            actions.push(Action::new("transport.setMetronome", json!({ "on": on, "accent": "higher" })));
+            ui.close();
+        }
+        ui.separator();
+        if let Some(id) = sound_choices(ui, metronome, metronome.accent.as_deref()) {
+            actions.push(Action::new("transport.setMetronome", json!({ "on": on, "accent": id })));
+            ui.close();
+        }
+    })
+    .response
+    .on_hover_text("The sound the first beat of a bar plays");
     ui.separator();
     ui.label("Plays");
     for choice in ClickRoute::ALL {
@@ -126,6 +153,33 @@ pub fn metronome_menu(
             ui.close();
         }
     }
+}
+
+/// A submenu for each family of the metronome's sounds, the one holding `current` in bold and
+/// `current` marked in it; the id of the sound clicked, when it is another.
+fn sound_choices(ui: &mut Ui, metronome: &suhina_session::MetronomeState, current: Option<&str>) -> Option<String> {
+    let mut picked = None;
+    for family in metronome.families.iter() {
+        let holds = family.sounds.iter().any(|(id, _)| Some(id.as_str()) == current);
+        let title = if holds { egui::RichText::new(&family.name).strong() } else { egui::RichText::new(&family.name) };
+        let hint = match &family.folder {
+            Some(folder) => format!("Sound files in the library's Sounds/Metronome/{folder}"),
+            None => "Built into Suhina".to_string(),
+        };
+        ui.menu_button(title, |ui| {
+            for (id, name) in &family.sounds {
+                let here = Some(id.as_str()) == current;
+                if ui.selectable_label(here, name.as_str()).clicked() && !here {
+                    picked = Some(id.clone());
+                }
+            }
+        })
+        .response
+        .on_hover_text(hint);
+    }
+    ui.separator();
+    ui.weak("Your own: a folder of sound files in the library's Sounds/Metronome");
+    picked
 }
 
 /// While the metronome's button (`response`, in `button`) is held: its level's slider beside it,

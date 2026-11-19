@@ -143,7 +143,12 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "sound",
                 ParamType::Text,
-                "the click's sound: beep (the first), wood, soft, muted, deep, tick or knock; keeps it if left out",
+                "the id of the sound every beat plays (transport.metronomeSounds lists them): beep (the first), wood, soft, muted, deep, tick, knock or a library sound, library/<folder>/<file>; keeps it if left out",
+            ),
+            optional(
+                "accent",
+                ParamType::Text,
+                "the id of the sound a bar's first beat plays, or higher (the first) for the beat's sound higher; keeps it if left out",
             ),
             optional(
                 "route",
@@ -153,6 +158,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::TRANSPORT,
         run: set_metronome,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "transport.metronomeSounds",
+        label: "List the metronome's sounds by family: the built-in ones, then each folder of the library's Sounds/Metronome, its sound files the family's sounds",
+        params: &[],
+        kind: CommandKind::READ,
+        run: metronome_sounds,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -220,14 +233,28 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
             Some(if db < -150.0 { 0.0 } else { 10f64.powf(db / 20.0) })
         }
     };
-    let sounds = || suhina_engine::ClickSound::ALL.map(|s| s.name()).join(", ");
     let sound = match Args::new(params).value("sound") {
         None => None,
-        Some(Value::String(name)) => Some(
-            suhina_engine::ClickSound::from_name(name)
-                .ok_or_else(|| CommandError(format!("sound must be one of {}, got {name}", sounds())))?,
-        ),
-        Some(other) => return Err(format!("sound must be one of {}, got {other}", sounds()).into()),
+        Some(Value::String(id)) => Some(id.clone()),
+        Some(other) => return Err(format!("sound must be a sound's id, got {other}").into()),
+    };
+    // `None` keeps the accent; `Some(None)` is the beat's sound, higher.
+    let accent = match Args::new(params).value("accent") {
+        None => None,
+        Some(Value::String(id)) if id == "higher" => Some(None),
+        Some(Value::String(id)) => Some(Some(id.clone())),
+        Some(other) => return Err(format!("accent must be higher or a sound's id, got {other}").into()),
+    };
+    // The new clicks are read before anything changes, so a sound that cannot be read leaves
+    // the metronome as it was.
+    let clicks = if sound.is_some() || accent.is_some() {
+        let sound = sound.clone().unwrap_or_else(|| session.live.metronome.2.clone());
+        let accent = accent.clone().unwrap_or_else(|| session.live.accent.clone());
+        let set = crate::metronome_sounds::click_set(session.library_base(), &sound, accent.as_deref())
+            .map_err(CommandError)?;
+        Some((sound, accent, std::sync::Arc::new(set)))
+    } else {
+        None
     };
     let routes = || suhina_engine::ClickRoute::ALL.map(|r| r.name()).join(", ");
     let route = match Args::new(params).value("route") {
@@ -239,8 +266,8 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
         Some(other) => return Err(format!("route must be one of {}, got {other}", routes()).into()),
     };
     send(session, LaunchCommand::SetMetronome { on, gain: gain.map(|g| g as f32) })?;
-    if let Some(sound) = sound {
-        send(session, LaunchCommand::SetMetronomeSound(sound))?;
+    if let Some((_, _, set)) = &clicks {
+        session.player_mut()?.set_clicks(std::sync::Arc::clone(set))?;
     }
     if let Some(route) = route {
         send(session, LaunchCommand::SetClickRoute(route))?;
@@ -250,16 +277,35 @@ fn set_metronome(session: &mut Session, params: &Value) -> Result<Value, Command
     if let Some(gain) = gain {
         session.live.metronome.1 = to_db(gain).unwrap_or(f64::NEG_INFINITY);
     }
-    if let Some(sound) = sound {
+    if let Some((sound, accent, set)) = clicks {
         session.live.metronome.2 = sound;
+        session.live.accent = accent;
+        session.live.clicks = set;
     }
-    let (_, db, sound) = session.live.metronome;
+    let (_, db, ref sound) = session.live.metronome;
     Ok(json!({
         "metronome": on,
         "db": if db.is_finite() { json!(db) } else { json!("-inf") },
-        "sound": sound.name(),
+        "sound": sound,
+        "accent": session.live.accent.as_deref().unwrap_or("higher"),
         "route": session.live.click_route.name(),
     }))
+}
+
+fn metronome_sounds(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
+    let folder = session.library_base().map(|base| crate::metronome_folder(base).display().to_string());
+    let families: Vec<Value> = session
+        .find_metronome_sounds()
+        .iter()
+        .map(|family| {
+            json!({
+                "name": family.name,
+                "folder": family.folder,
+                "sounds": family.sounds.iter().map(|(id, name)| json!({ "id": id, "name": name })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    Ok(json!({ "families": families, "library": folder }))
 }
 
 fn set_position(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

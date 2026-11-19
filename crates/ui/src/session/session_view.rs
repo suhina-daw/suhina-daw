@@ -604,7 +604,7 @@ pub fn show(
     }
     // The metronome in the main strip's toggle row, as the main channel's click control.
     if let Some(click) = parts.metronome {
-        main_metronome(ui, &painter.with_clip_rect(main_mixer), click, (grid.metronome, grid.click_route), actions);
+        main_metronome(ui, &painter.with_clip_rect(main_mixer), click, (&grid.metronome, grid.click_route), actions);
     }
     let bounds = mixer_bounds(area.height(), grid.scenes.len(), rows_top + rows_bottom);
     mixer_edge(ui, &painter, (area, mixer), mixer_height, bounds, state);
@@ -617,7 +617,7 @@ fn main_metronome(
     ui: &Ui,
     painter: &egui::Painter,
     rect: Rect,
-    ((on, db, sound), route): ((bool, f64, suhina_engine::ClickSound), suhina_engine::ClickRoute),
+    (metronome, route): (&suhina_session::MetronomeState, suhina_engine::ClickRoute),
     actions: &mut Vec<Action>,
 ) {
     let response = ui
@@ -625,11 +625,12 @@ fn main_metronome(
         .on_hover_text(
             "Metronome: click to turn it on or off; hold and drag up or down for its level; right-click for its sound and where it plays",
         );
+    let (on, db) = (metronome.on, metronome.db);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "Main metronome"));
     if response.clicked() {
         actions.push(Action::new("transport.setMetronome", json!({ "on": !on })));
     }
-    response.context_menu(|ui| crate::session::record_controls::metronome_menu(ui, on, sound, route, actions));
+    crate::session::record_controls::metronome_menu_on(&response, metronome, route, actions);
     // `button#main-metronome` as the control bar's: `button[kind="metronome"]`, `[checked]` while on.
     let crate::kit::widgets::Lit { el, toggle, lit } = crate::kit::widgets::lit_toggle_kind(
         ui,

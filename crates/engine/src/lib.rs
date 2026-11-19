@@ -127,7 +127,7 @@ pub use live::{
     port_id,
 };
 pub use meters::{Level, MAX_METERED_TRACKS, MAX_READOUT_DEVICES, MeterMonitor, PEAK_FALL_DB_PER_SECOND, RMS_SECONDS};
-pub use metronome::{ClickRoute, ClickSound};
+pub use metronome::{Click, ClickFamily, ClickRoute, ClickSet, MAX_CLICK_SECONDS, built_in_click_families};
 use plugin::{DEADLINE_SHARE, Delay};
 pub use plugin::{
     Followed, Joint, MAX_JOINED, OFFLINE_TIMEOUT, PluginDevice, PluginProcessor, PluginSlotInfo, PluginSteps, Plugins,
@@ -528,6 +528,8 @@ pub struct Renderer {
     /// Stretch underruns counted by graphs swapped out.
     underruns_before: u64,
     metronome: metronome::Metronome,
+    /// The clicks the metronome and the count-in play, and the queue a new set comes by.
+    clicks: metronome::Clicks,
     /// A track with no instrument plays its notes as sine tones (#1384). On for the engine's own
     /// renders and tests; the session sets it from the user's setting, off by default.
     implicit_tones: bool,
@@ -773,6 +775,7 @@ impl Renderer {
             swap: swap::SwapState::default(),
             underruns_before: 0,
             metronome: metronome::Metronome::new(sample_rate),
+            clicks: metronome::Clicks::new(),
             implicit_tones: true,
             block_frame: 0,
             offline: false,
@@ -1250,6 +1253,7 @@ impl Renderer {
         // and a new one after.
         self.preview.begin(&self.graph.chains);
         self.preview.receive(&mut self.graph.chains);
+        self.clicks.receive();
         self.preview.begin(&self.graph.chains);
         // This block's audio input, and which tracks hear it: In always, Auto while armed.
         self.input.read(frames);
@@ -1353,9 +1357,10 @@ impl Renderer {
             self.live.frame(&mut self.graph.chains, &mut self.recorder, frame, self.transport.position);
             // The click for this frame's beat, read before the launcher moves the beat on.
             let launcher = &self.graph.launcher;
-            let click =
-                self.metronome.frame(self.transport.running, launcher.beat(), |index| launcher.starts_bar(index))
-                    + self.count_in_frame();
+            let click = self
+                .metronome
+                .frame(&self.clicks.set, self.transport.running, launcher.beat(), |index| launcher.starts_bar(index))
+                + self.count_in_frame();
             let click =
                 if !click_into_main && let Some([left, right]) = self.click.as_chunks_mut::<2>().0.get_mut(frame) {
                     (*left, *right) = (click, click);

@@ -235,8 +235,8 @@ pub struct TrackGrid {
     pub main_volume_db: f64,
     /// The main channel's devices, for its strip's list.
     pub main_devices: Vec<StripDevice>,
-    /// The metronome: on, its level in dB, its sound; set by the app.
-    pub metronome: (bool, f64, suhina_engine::ClickSound),
+    /// The metronome: on, its level, its sounds and those it picks from; set by the app.
+    pub metronome: suhina_session::MetronomeState,
     /// Where the metronome's click joins the output; set by the app.
     pub click_route: suhina_engine::ClickRoute,
 }
@@ -441,7 +441,7 @@ impl TrackGrid {
                 .iter()
                 .find(|c| c.role == ChannelRole::Master)
                 .map_or_else(Vec::new, |c| strip_devices(&c.devices)),
-            metronome: (false, -6.0, suhina_engine::ClickSound::Beep),
+            metronome: suhina_session::MetronomeState::default(),
             click_route: suhina_engine::ClickRoute::PreFader,
         };
         grid.follow_automation(project);

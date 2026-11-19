@@ -153,17 +153,34 @@ fn the_metronome_menu_picks_its_sound_and_where_it_plays() {
     let mut renderer =
         Renderer::stopped(&demo_project(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
     let mut harness = app_with_engine(&mut renderer);
-    let metronome = |h: &Harness<'static, App>| h.state().session().map(|s| (s.metronome().2, s.click_route()));
+    let metronome = |h: &Harness<'static, App>| h.state().session().map(|s| (s.metronome().sound, s.click_route()));
+    // A submenu opens as the pointer rests on it.
+    let hover = |h: &mut Harness<'static, App>, label: &str| {
+        let at = h.get_by_label(label).rect().center();
+        h.hover_at(at);
+        h.run_steps(3);
+    };
     harness.get_by_label("Metronome on").click_secondary();
     harness.run_steps(3);
+    // The sounds by family: the recorded soft hit and what is made from it are one family.
+    hover(&mut harness, "Sound");
+    hover(&mut harness, "Soft");
     harness.get_by_label("Knock").click();
     harness.run_steps(3);
-    assert_eq!(metronome(&harness), Some((suhina_engine::ClickSound::Knock, suhina_engine::ClickRoute::PreFader)));
+    assert_eq!(metronome(&harness), Some(("knock".to_string(), suhina_engine::ClickRoute::PreFader)));
+    // The first beat of a bar can play a sound of its own.
+    harness.get_by_label("Metronome on").click_secondary();
+    harness.run_steps(3);
+    hover(&mut harness, "Bar sound");
+    hover(&mut harness, "Tones");
+    harness.get_by_label("Wood").click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().session().and_then(|s| s.metronome().accent), Some("wood".to_string()));
     harness.get_by_label("Metronome on").click_secondary();
     harness.run_steps(3);
     harness.get_by_label("Post-fader").click();
     harness.run_steps(3);
-    assert_eq!(metronome(&harness), Some((suhina_engine::ClickSound::Knock, suhina_engine::ClickRoute::PostFader)));
+    assert_eq!(metronome(&harness), Some(("knock".to_string(), suhina_engine::ClickRoute::PostFader)));
     // The main strip's metronome has the same menu.
     harness.get_by_label("Main metronome").click_secondary();
     harness.run_steps(3);

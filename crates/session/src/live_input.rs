@@ -3,7 +3,9 @@
 
 //! [`LiveInput`]: what a session plays and records live, kept beside the project, not in it.
 
-use suhina_engine::{ClickRoute, ClickSound, Quantization};
+use std::sync::Arc;
+
+use suhina_engine::{ClickFamily, ClickRoute, ClickSet, Quantization};
 use suhina_model::TrackId;
 
 use crate::recording::Recording;
@@ -16,8 +18,14 @@ pub(crate) struct LiveInput {
     pub(crate) targets: Vec<TrackId>,
     /// Takes being recorded and the count-in (`docs/spec/recording.md`).
     pub(crate) recording: Recording,
-    /// The metronome: on, its level in dB, its sound. A new output gets it again.
-    pub(crate) metronome: (bool, f64, ClickSound),
+    /// The metronome: on, its level in dB, the id of its sound. A new output gets it again.
+    pub(crate) metronome: (bool, f64, String),
+    /// The id of the sound a bar's first beat plays; `None` for the beat's, higher.
+    pub(crate) accent: Option<String>,
+    /// The clicks those two ids made, which a new output gets too.
+    pub(crate) clicks: Arc<ClickSet>,
+    /// The sounds the metronome picks from, as last looked for (`metronome_sounds.rs`).
+    pub(crate) click_families: Arc<Vec<ClickFamily>>,
     /// Where the metronome's click joins the output. A new output gets it again.
     pub(crate) click_route: ClickRoute,
     /// The grid launches wait for, which the Arrangement view's grid follows too. Kept here,
@@ -34,7 +42,10 @@ impl Default for LiveInput {
             armed: Vec::new(),
             targets: Vec::new(),
             recording: Recording::default(),
-            metronome: (false, -6.0, ClickSound::Beep),
+            metronome: (false, -6.0, "beep".to_string()),
+            accent: None,
+            clicks: Arc::new(ClickSet::default()),
+            click_families: Arc::new(suhina_engine::built_in_click_families()),
             click_route: ClickRoute::PreFader,
             quantization: Quantization::Bars(1),
             implicit_tones: false,

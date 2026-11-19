@@ -414,7 +414,10 @@ fn a_drag_that_the_engine_cannot_build_is_an_error() {
 fn the_metronome_is_a_transport_command() {
     let (mut session, mut renderer) = playing();
     let set = run(&mut session, "transport.setMetronome", json!({ "on": true, "db": -12 })).unwrap();
-    assert_eq!(set, json!({ "metronome": true, "db": -12.0, "sound": "beep", "route": "pre-fader" }));
+    assert_eq!(
+        set,
+        json!({ "metronome": true, "db": -12.0, "sound": "beep", "accent": "higher", "route": "pre-fader" })
+    );
     run(&mut session, "transport.play", json!({})).unwrap();
     let peaks = beat_peaks(&mut renderer, 2);
     // A click at -12 dB on each beat, and no undo step.
@@ -424,7 +427,7 @@ fn the_metronome_is_a_transport_command() {
     // Off and on again without a level keeps -12 dB.
     assert_eq!(
         run(&mut session, "transport.setMetronome", json!({ "on": false })).unwrap(),
-        json!({ "metronome": false, "db": -12.0, "sound": "beep", "route": "pre-fader" })
+        json!({ "metronome": false, "db": -12.0, "sound": "beep", "accent": "higher", "route": "pre-fader" })
     );
     run(&mut session, "transport.setMetronome", json!({ "on": true })).unwrap();
     let peaks = beat_peaks(&mut renderer, 2);

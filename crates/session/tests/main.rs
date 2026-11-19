@@ -33,6 +33,7 @@ mod launcher;
 mod library;
 mod main_channel;
 mod meters;
+mod metronome_sounds;
 mod midi;
 mod note_gestures;
 mod note_ids;

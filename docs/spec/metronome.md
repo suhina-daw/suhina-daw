@@ -1,12 +1,13 @@
 ---
-description: How the metronome sounds and where its click is heard - its sounds (synthesized and recorded), its level, the bar's accent, and where the click joins the output against the main channel (pre-fader, post-fader, the cue output only, through Main), with its latency
-read_when: metronome, click, click track, click sound, click route, pre-fader click, post-fader click, click on the cue, click through Main, transport.setMetronome, ClickSound, ClickRoute, metronome samples, assets/metronome
+description: How the metronome sounds and where its click is heard - its sounds (synthesized, recorded and the library's own) by family, its level, the bar's own sound, and where the click joins the output against the main channel (pre-fader, post-fader, the cue output only, through Main), with its latency
+read_when: metronome, click, click track, click sound, click route, pre-fader click, post-fader click, click on the cue, click through Main, transport.setMetronome, transport.metronomeSounds, ClickSet, ClickRoute, own click sounds, Sounds/Metronome, bar sound, assets/metronome
 type: spec
 status: current
 last_verified: 2026-11-19
 covers:
   - crates/engine/src/metronome.rs
   - crates/engine/src/metronome_tests.rs
+  - crates/session/src/metronome_sounds.rs
   - assets/metronome/**
 ---
 
@@ -20,24 +21,53 @@ so it keeps time through tempo edits, scene tempos and time-signature changes
 
 ## Sounds
 
-`transport.setMetronome {sound}` picks one; it is kept until another is picked.
+The sounds come in families of sounds that are alike. `transport.metronomeSounds` lists them:
+the built-in families, then the library's. `transport.setMetronome {sound}` picks the sound
+every beat plays by its id, and `{accent}` the one a bar's first beat plays: `higher` (the
+first) plays the beat's sound higher there, a sound's id plays that sound at its own pitch. Each
+is kept until another is picked. The metronome button's right-click menu, in the control bar and
+in the main strip, picks them under **Sound** and **Bar sound**, a submenu for each family; it
+ends with where the library's own sounds go.
 
-| Name | What it is |
-|---|---|
-| `beep` (the first) | a sine at 1 kHz, 1.6 kHz on the bar, cut after 50 ms |
-| `wood` | a sine at 1.8 kHz, 2.5 kHz on the bar, decaying much faster |
-| `soft` | a recorded soft hit |
-| `muted` | the soft hit low passed (two one-pole low passes at 1.4 kHz) |
-| `deep` | the soft hit seven semitones lower, low passed at 2.5 kHz |
-| `tick` | only the soft hit's top (high passed at 2.5 kHz), cut to 30 ms |
-| `knock` | the soft hit with itself an octave lower under it |
+| Family | Id | What it is |
+|---|---|---|
+| Tones | `beep` (the first) | a sine at 1 kHz, 1.6 kHz on the bar, cut after 50 ms |
+| Tones | `wood` | a sine at 1.8 kHz, 2.5 kHz on the bar, decaying much faster |
+| Soft | `soft` | a recorded soft hit |
+| Soft | `muted` | the soft hit low passed (two one-pole low passes at 1.4 kHz) |
+| Soft | `deep` | the soft hit seven semitones lower, low passed at 2.5 kHz |
+| Soft | `tick` | only the soft hit's top (high passed at 2.5 kHz), cut to 30 ms |
+| Soft | `knock` | the soft hit with itself an octave lower under it |
 
 The recorded clicks are the files in `assets/metronome/`, carried inside the executable and
-decoded once when a renderer is made, off the audio thread. They play a fifth higher (and so
-shorter) on a bar's first beat, read with linear interpolation at the output's sample rate. A
-file that does not decode is silence, never a crash. Their provenance is in
-`assets/metronome/README.md`; `make_variations.py` there makes the four variations from
-`soft.wav`.
+decoded the first time one is picked, off the audio thread. A file that does not decode is
+silence, never a crash. Their provenance is in `assets/metronome/README.md`;
+`make_variations.py` there makes the four variations from `soft.wav`.
+
+### The library's own sounds
+
+Each folder in the library's `Sounds/Metronome/` (`Documents/Suhina/Sounds/Metronome/<family>/`,
+[ADR 0036](../decisions/0036-library-and-shipped-content.md)) is a family named after the
+folder, and each sound file in it (WAV, AIFF, FLAC, MP3, Ogg) one of its sounds, named after the
+file without its extension. A sound's id is `library/<folder>/<file>`.
+
+- Families come after the built-in ones, folders and files in name order without regard to
+  case; a hidden folder or file (its name starting with a dot), a file that is no sound and a
+  folder without one are left out. At most 64 families and 64 sounds in each are listed.
+- The folder is looked at again whenever the metronome's menu opens and
+  `transport.metronomeSounds` runs, so a folder added while Suhina runs is there the next time.
+- A sound is read when it is picked: its channels mixed to one and cut to two seconds. A file
+  over 16 MB, one that does not decode, and an id that names anything outside its family's
+  folder (a separator, `..`, a hidden name) are refused, and the metronome keeps the sounds it
+  had.
+
+### Playing
+
+A recorded click is read with linear interpolation at the output's sample rate; on a bar's first
+beat with `accent` `higher` it plays a fifth higher, and so shorter. A synthesized one plays at
+its bar pitch there. The count-in clicks with the same sounds. A new pair of sounds reaches the
+audio thread by a queue of its own, and the pair it replaces goes back the same way to be freed,
+so the audio thread never allocates or frees one.
 
 ## Level
 
@@ -86,6 +116,10 @@ empty: a click still on its way along the old one is dropped there, never heard 
 
 ## Commands
 
-`transport.setMetronome {on, db?, sound?, route?}` answers with `metronome`, `db`, `sound` and
-`route`. It makes no undo step and is not saved in the project: the session keeps it while the
-app runs.
+`transport.setMetronome {on, db?, sound?, accent?, route?}` answers with `metronome`, `db`,
+`sound`, `accent` and `route`. It makes no undo step and is not saved in the project: the
+session keeps it while the app runs.
+
+`transport.metronomeSounds {}` answers with `families` (each with its `name`, its library
+`folder` or `null` for a built-in one, and its `sounds`, each an `id` and a `name`) and
+`library`, the folder the library's families are looked for in (`null` without a library).

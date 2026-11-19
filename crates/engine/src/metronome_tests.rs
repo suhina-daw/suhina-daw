@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
-use crate::{AudioPool, LaunchCommand, Renderer};
+use crate::{AudioData, AudioPool, LaunchCommand, Renderer};
+use std::sync::Arc;
 use suhina_model::*;
 
 const SR: u32 = 48_000;
@@ -47,14 +48,103 @@ fn a_malformed_wav_is_none_and_never_panics() {
 
 #[test]
 fn names_round_trip() {
-    for sound in ClickSound::ALL {
-        assert_eq!(ClickSound::from_name(sound.name()), Some(sound));
-    }
     for route in ClickRoute::ALL {
         assert_eq!(ClickRoute::from_name(route.name()), Some(route));
     }
-    assert_eq!(ClickSound::from_name("cowbell"), None);
     assert_eq!(ClickRoute::from_name("pre"), None);
+}
+
+#[test]
+fn every_built_in_family_sound_is_a_click() {
+    let families = built_in_click_families();
+    let names: Vec<&str> = families.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["Tones", "Soft"]);
+    for family in &families {
+        assert_eq!(family.folder, None);
+        for (id, _) in &family.sounds {
+            assert!(Click::built_in(id).is_some(), "{id}");
+        }
+    }
+    assert_eq!(Click::built_in("cowbell"), None);
+}
+
+#[test]
+fn a_click_from_a_sound_file_is_one_channel_and_at_most_two_seconds_long() {
+    // Three seconds of stereo, left 0.5 and right -0.1.
+    let frames = 3 * 1_000;
+    let data = AudioData { sample_rate: 1_000, channels: 2, samples: [0.5f32, -0.1].repeat(frames) };
+    let Some(Click::Samples { samples, sample_rate, rate }) = Click::from_audio(&data) else { panic!("a click") };
+    assert_eq!((sample_rate, rate), (1_000.0, 1.0));
+    assert_eq!(samples.len(), 2_000, "cut to two seconds");
+    assert!(samples.iter().all(|s| (s - 0.2).abs() < 1e-6), "the channels mixed");
+    // Nothing to play: none.
+    assert_eq!(Click::from_audio(&AudioData { sample_rate: 1_000, channels: 2, samples: vec![] }), None);
+    assert_eq!(Click::from_audio(&AudioData { sample_rate: 0, channels: 1, samples: vec![0.5; 10] }), None);
+    // Not a number is silence.
+    let odd = AudioData { sample_rate: 1_000, channels: 1, samples: vec![f32::NAN, 4.0] };
+    assert_eq!(
+        Click::from_audio(&odd),
+        Some(Click::Samples { samples: vec![0.0, 1.0], sample_rate: 1_000.0, rate: 1.0 })
+    );
+}
+
+/// A recorded click of `frames` frames at `level`, at the engine's rate.
+fn steady(level: f32, frames: usize) -> Click {
+    Click::Samples { samples: vec![level; frames], sample_rate: f64::from(SR), rate: 1.0 }
+}
+
+/// A renderer playing `clicks` at full level, sent through a controller as the session does.
+fn playing(clicks: ClickSet) -> Renderer {
+    let mut renderer =
+        Renderer::stopped(&Project::default(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    renderer.controller().set_clicks(Arc::new(clicks)).unwrap();
+    renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(1.0) });
+    renderer
+}
+
+#[test]
+fn a_bar_plays_its_own_click_when_it_has_one_and_the_beat_higher_when_not() {
+    let mut renderer = playing(ClickSet::new(steady(0.5, 300), Some(steady(-0.25, 300))));
+    renderer.handle(LaunchCommand::Play);
+    let (out, _) = play(&mut renderer, 60, 480);
+    // Past the transport's start guard (2 ms).
+    assert!((out[300] + 0.25).abs() < 1e-6, "the bar's own click: {}", out[300]);
+    assert!((out[(BEAT + 150) * 2] - 0.5).abs() < 1e-6, "the beat's: {}", out[(BEAT + 150) * 2]);
+    assert_eq!(length(&out, 0), 299, "the bar's click at its own pitch");
+
+    let mut renderer = playing(ClickSet::new(steady(0.5, 300), None));
+    renderer.handle(LaunchCommand::Play);
+    let (out, _) = play(&mut renderer, 60, 480);
+    assert!((out[300] - 0.5).abs() < 1e-6, "{}", out[300]);
+    assert_eq!(length(&out, 0), 199, "the beat's click a fifth higher, so shorter");
+    assert_eq!(length(&out, BEAT), 299);
+}
+
+#[test]
+fn the_count_in_clicks_with_the_metronome_s_sounds() {
+    let mut renderer = playing(ClickSet::new(steady(0.5, 300), Some(steady(-0.25, 300))));
+    renderer.handle(LaunchCommand::SetMetronome { on: false, gain: None });
+    // The set reaches the renderer with the first block.
+    play(&mut renderer, 1, 16);
+    renderer.start_count_in(4.0, 4.0);
+    let (out, _) = play(&mut renderer, 1, 480);
+    assert!((out[300] + 0.25).abs() < 1e-6, "the bar's click counts in: {}", out[300]);
+}
+
+#[test]
+fn a_replaced_click_set_comes_back_to_be_freed_by_the_controller() {
+    let mut renderer =
+        Renderer::stopped(&Project::default(), &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let first = Arc::new(ClickSet::new(steady(0.5, 10), None));
+    controller.set_clicks(Arc::clone(&first)).unwrap();
+    play(&mut renderer, 1, 16);
+    assert_eq!(Arc::strong_count(&first), 2, "the renderer plays it");
+    controller.set_clicks(Arc::new(ClickSet::default())).unwrap();
+    play(&mut renderer, 1, 16);
+    // The next send frees what came back.
+    controller.set_clicks(Arc::new(ClickSet::default())).unwrap();
+    assert_eq!(Arc::strong_count(&first), 1, "back and freed off the audio thread");
 }
 
 /// Frames where sound starts after more than 100 silent frames.
@@ -95,13 +185,13 @@ fn play(renderer: &mut Renderer, blocks: usize, frames: usize) -> (Vec<f32>, Vec
 
 #[test]
 fn a_recorded_click_sounds_on_every_beat_and_shorter_and_higher_on_the_bar() {
-    for sound in [ClickSound::Soft, ClickSound::Muted, ClickSound::Deep, ClickSound::Tick, ClickSound::Knock] {
+    for sound in ["soft", "muted", "deep", "tick", "knock"] {
         let mut project = Project::default();
         project.transport.time_signature = TimeSignature { numerator: 3, denominator: 4 };
         let mut renderer =
             Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
         renderer.handle(LaunchCommand::SetMetronome { on: true, gain: Some(1.0) });
-        renderer.handle(LaunchCommand::SetMetronomeSound(sound));
+        renderer.controller().set_clicks(Arc::new(ClickSet::new(Click::built_in(sound).unwrap(), None))).unwrap();
         renderer.handle(LaunchCommand::Play);
         let (out, _) = play(&mut renderer, 200, 480);
         let found = onsets(&out);

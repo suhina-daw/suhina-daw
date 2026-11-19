@@ -52,7 +52,9 @@ From top to bottom:
      metronome's button, here and in the main strip, is held and dragged for its level: a
      slider opens above it, or below where there is no room above, and the pointer's height on
      it is the level (−60 to +6 dB), so the whole range is one drag; its right-click menu, in both
-     places, picks the click's sound and where it plays ([metronome](metronome.md))
+     places, picks the click's sound under **Sound** and a bar's first beat's under **Bar sound**,
+     each in a submenu per family (the library's own folders among them), and where it plays
+     under **Plays** ([metronome](metronome.md))
    - key and scale
    - transport: arrangement position, play, stop, record, overdub, automation arm, loop region
      start, punch, loop, loop length. **Suhina:** play starts from the play start marker, or

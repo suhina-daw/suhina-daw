@@ -358,7 +358,7 @@ impl App {
                     ui,
                     painter,
                     rect,
-                    grid.metronome,
+                    &grid.metronome,
                     grid.click_route,
                     actions,
                 );

@@ -156,8 +156,6 @@ pub enum LaunchCommand {
         on: bool,
         gain: Option<f32>,
     },
-    /// The metronome's click sound from the next click on.
-    SetMetronomeSound(crate::ClickSound),
     /// Where the metronome's click joins the output, from the next block on.
     SetClickRoute(crate::ClickRoute),
     /// Whether a track with no instrument of its own plays its notes as sine tones (#1384): the
@@ -563,6 +561,8 @@ pub struct Controller {
     pub(crate) monitor: Arc<LauncherMonitor>,
     pub(crate) updater: crate::swap::Updater,
     pub(crate) preview: crate::preview::PreviewSender,
+    /// The metronome's click sets on their way to the renderer, and back to be freed.
+    clicks: crate::metronome::ClickSender,
     pub(crate) preview_monitor: Arc<crate::preview::PreviewMonitor>,
     pub(crate) cpu_monitor: Arc<crate::cpu::CpuMonitor>,
     pub(crate) meter_monitor: Arc<crate::meters::MeterMonitor>,
@@ -593,6 +593,12 @@ impl Controller {
 
     pub fn monitor(&self) -> &LauncherMonitor {
         &self.monitor
+    }
+
+    /// The clicks the metronome and the count-in play from the next block on. The set it
+    /// replaces comes back here to be freed. Fails while earlier sets have not been taken.
+    pub fn set_clicks(&mut self, clicks: Arc<crate::ClickSet>) -> Result<(), crate::ControlError> {
+        self.clicks.send(clicks)
     }
 
     /// The audio thread's CPU load: the smoothed share of wall time it spends rendering, in
@@ -1228,6 +1234,7 @@ impl Renderer {
             monitor: Arc::clone(&self.graph.launcher.monitor),
             updater: self.updater(),
             preview: self.preview.sender(),
+            clicks: self.clicks.sender(),
             preview_monitor: Arc::clone(&self.preview.monitor),
             cpu_monitor: Arc::clone(&self.cpu.monitor),
             meter_monitor: Arc::clone(&self.meters.monitor),
@@ -1328,7 +1335,6 @@ impl Renderer {
                 self.metronome.set(on, gain);
                 self.graph.launcher.monitor.metronome.store(self.metronome.on(), Ordering::Relaxed);
             }
-            LaunchCommand::SetMetronomeSound(sound) => self.metronome.set_sound(sound),
             LaunchCommand::SetClickRoute(route) => self.click_route = route,
             LaunchCommand::SetImplicitTones(on) => {
                 self.implicit_tones = on;
