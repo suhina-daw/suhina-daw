@@ -748,3 +748,6 @@ fn moving_a_control_on_a_held_note_does_not_click() {
         }
     }
 }
+
+#[path = "envelope_render_tests.rs"]
+mod envelope_render_tests;

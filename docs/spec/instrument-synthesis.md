@@ -1,5 +1,5 @@
 ---
-description: The planned comprehensive instrument, its shared Rust synthesis boundary, and the fixed-point FM blocks that establish the reusable DSP contract
+description: The planned comprehensive instrument, its shared Rust synthesis boundary, fixed-point FM blocks and reusable time and linear envelopes
 read_when: comprehensive instrument, sample to instrument, shared synthesis, FM operator, fixed point, instrument modelling, MPE instrument
 type: spec
 status: planned
@@ -7,6 +7,7 @@ last_verified: 2026-11-19
 covers:
   - crates/dsp/**
   - devices/fm-synth/**
+  - crates/device-sdk/src/sample_envelope_tests.rs
 ---
 
 # Instrument synthesis
@@ -26,7 +27,8 @@ This follows [ADR 0004](../decisions/0004-built-in-devices.md) and the shared sy
 
 The first shared blocks are the FM instrument's fixed-point sine operators and lookup tables.
 The existing FM instrument remains their first production consumer. Its algorithm routing, voice
-allocation, envelopes, patch interpretation, parameter IDs and defaults remain with that device.
+allocation, legacy rates/levels envelopes, patch interpretation, parameter IDs and defaults remain
+with that device. Reusable time and linear envelopes have the separate contracts below.
 The extraction preserves its reference renders and its 64-frame control grid; it introduces no
 new device, preset, parameter or claim of MPE support.
 
@@ -81,6 +83,54 @@ table values. Table interpolation accepts every integer argument without overflo
 Prepared lookup arrays are immutable; legacy envelope, LFO and portamento coefficients retain
 their existing representation for the FM instrument.
 
+## Shared envelope contracts
+
+`dsp::envelope` contains two distinct models. Both keep their state inline, accept bounded
+numeric input and perform no allocation, locking or I/O in their lifecycle or stepping methods.
+Device parameter IDs, graph node ports, project formats and preset defaults do not change.
+
+### Time envelope
+
+The FM time envelope moves into DSP with its initial/peak/sustain/end levels, slopes, time by
+velocity/key and Off/Loop/Beat/Sync/Trigger modes. It advances at most one stage per call and
+discards excess stage time. Starting uses the configured initial level; repeats and release use
+the current level. A Sync call advances its repeat position once, even after a large transport
+jump. Stopped transport uses Beat timing. Sustain changes glide using unscaled elapsed seconds
+and the existing 15 ms time constant. Amplitude attack interpolates linear gain and returns dB;
+decay/release interpolate dB. A silent amplitude end becomes -80 dB. Other uses interpolate
+their own units. Legacy rates-and-levels envelopes remain device-specific.
+
+At the public boundary, finite stage/loop times are clamped to 0.0005..60 seconds, repeats to
+0.001..1024 beats, slopes and time-by-velocity to -1..1, and time-by-key to 0..1; non-finite
+values use the corresponding setting defaults. Linear levels are limited to +/-1e6 (non-finite
+becomes zero), amplitude levels to -160..120 dB (non-finite becomes -80 dB). Velocity is 0..1
+(fallback zero), key 0..127 (fallback 60). Elapsed seconds are 0..60 (fallback zero), time scale
+0..1000 (fallback one), tempo 1..1000 BPM (invalid or non-positive becomes 120), and beat position
++/-1e12 (fallback zero, preserving negative beats). Accumulated stage and loop time is capped at
+1e9 seconds. These bounds include every existing supported FM parameter value.
+
+The single-step f32 control glide is shared with the FM filter controls in `dsp::smooth`.
+It keeps the original arithmetic and 1e-4 snap threshold for normal input. Its share is clamped
+to 0..1 (non-finite becomes zero); invalid current values become zero and invalid targets retain
+the current value. Interpolation between finite extremes stays finite. It is distinct from
+the existing two-stage `Glide` and attack/release follower.
+
+### Linear envelope
+
+The SDK AD/ADSR nodes and sampler amplitude envelope use the same per-sample f64
+`LinearEnvelope`, with private lifecycle state and named attack/decay/sustain/release settings.
+It starts idle; `start` resets to zero, and each `next` advances at most one stage. Attack and
+decay have a minimum duration of one sample. Sustain holds its reached level, including when
+the sustain setting subsequently changes. Each `release` captures the current level, including
+repeated release requests during release. Completion occurs when release reaches zero. AD's
+caller ends at sustain instead. Times are 0..60 seconds and sustain 0..1; non-finite settings
+become zero. Positive finite rates are retained, others use 48 kHz.
+
+The sampler retains its separate filter and pitch envelope algorithms and existing note reuse
+policy. A release request captures both amplitude and filter levels every time, and amplitude
+completion stops the voice before the rest of that frame is processed. Extraction must preserve
+this coupling, including repeated note-off and All Notes Off.
+
 ## Validation
 
 The existing FM golden scenarios continue to check pitch, feedback, envelopes, controllers, LFO,
@@ -89,13 +139,18 @@ Shared-block tests also cover pure/modulated/in-place/feedback operation, add/re
 phase wrapping, feedback continuation and extreme arguments. A test using only the DSP crate
 demonstrates that rendering no longer requires the FM device.
 
+Frozen pre-extraction time-envelope trajectories cover all five modes in linear and dB units,
+slopes, scaled timing, sustain automation, stopped transport and release. Consumer renders and
+linear-envelope tests pin gate/retrigger, repeated release and sampler filter coupling. Public
+DSP tests cover non-finite and extreme numeric input and recovery with ordinary settings.
+
 All tests advance fixed numbers of samples or blocks. CPU benchmarks, when needed, are separate
 from deterministic correctness gates.
 
 ## Not yet
 
-The comprehensive instrument itself, shared voice/modulation engines, reusable envelope families,
-SDK synthesis nodes, sample-to-instrument analysis, MPE event/persistence/editor changes, acoustic
+The comprehensive instrument itself, shared voice/modulation engines, additional envelope families,
+new SDK synthesis nodes, sample-to-instrument analysis, MPE event/persistence/editor changes, acoustic
 model families, factory data, portable instrument packages, expanded UI and export adapters remain
 planned. This first DSP boundary does not mark those milestones complete. In particular, a
 block-stepped FM envelope is not substituted for the SDK's per-sample ADSR: their semantics differ.
@@ -104,6 +159,7 @@ block-stepped FM envelope is not substituted for the SDK's per-sample ADSR: thei
 
 - Existing Rust FM implementation and its [behaviour specification](fm-synth.md), under
   [ADR 0034](../decisions/0034-fm-synth-grows-in-place.md).
+- Existing SDK [timed envelope nodes](sdk-nodes.md#timed-envelopes) and sampler implementation.
 - MSFA's `fm_op_kernel.cc`, `sin.cc`, `exp2.cc`, `freqlut.cc` and associated coefficient code,
   preserved in the existing Apache-2.0 Rust port. Original copyright and licence notices remain
   with extracted files; [ATTRIBUTION.md](../../ATTRIBUTION.md) identifies the upstream source.

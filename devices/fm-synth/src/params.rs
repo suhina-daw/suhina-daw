@@ -236,7 +236,7 @@ pub const DESTINATIONS: [&str; 25] = [
     "Time",
 ];
 const LOOPS: &[&str] = &["Off", "Loop", "Beat", "Sync", "Trigger"];
-/// Repeat lengths of the Beat and Sync loops, in beats; see `time_env.rs`.
+/// Repeat lengths of the Beat and Sync loops, in beats; see `suhina_dsp::envelope`.
 pub const REPEATS: &[&str] = &["1/32", "1/16", "1/8", "1/8 D", "1/4", "1/4 D", "1/2", "1 Bar", "2 Bars", "4 Bars"];
 pub const REPEAT_BEATS: [f64; 10] = [0.125, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0, 16.0];
 const SECONDS: Scale = Scale::Logarithmic;

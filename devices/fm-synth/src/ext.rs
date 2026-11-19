@@ -8,9 +8,10 @@
 use suhina_dsp::{Circuit, Multimode, MultimodeSettings, Response};
 
 use crate::params::{self, ENV_FIELDS, HARMONICS, MATRIX_SOURCES, OP_EXT_FIELDS, env, filter, lfo, opx, pitch};
-use crate::time_env::{Clock, EnvSettings, LoopMode, SILENCE_DB, TimeEnv};
 use crate::wave::{self, DrawnSettings, DrawnWave};
+use suhina_dsp::envelope::{EnvelopeClock, LoopMode, SILENCE_DB, TimeEnvelope, TimeEnvelopeSettings};
 use suhina_dsp::fm::N;
+use suhina_dsp::smooth::glide_step;
 
 /// Destinations in [`params::DESTINATIONS`] order.
 pub mod dest {
@@ -63,7 +64,7 @@ pub struct OpExt {
     pub quantize: bool,
     pub level_by_key: f32,
     pub time_env: bool,
-    pub env: EnvSettings,
+    pub env: TimeEnvelopeSettings,
     pub drawn: DrawnSettings,
     pub partials: [f32; HARMONICS],
 }
@@ -81,7 +82,7 @@ impl Default for OpExt {
             quantize: false,
             level_by_key: 0.0,
             time_env: false,
-            env: EnvSettings::default(),
+            env: TimeEnvelopeSettings::default(),
             drawn: DrawnSettings::default(),
             partials,
         }
@@ -104,18 +105,12 @@ pub struct FilterExt {
     pub shaper: usize,
     pub shaper_drive_db: f32,
     pub shaper_mix: f32,
-    pub env: EnvSettings,
+    pub env: TimeEnvelopeSettings,
 }
 
 /// How long a knob's move on a sounding note takes to arrive, in seconds: a drag sends a value every
 /// frame of the window, far apart in sound, and this makes of them a sweep rather than steps.
 pub const GLIDE_SECONDS: f64 = 0.015;
-
-/// `share` of the way from `now` to `target`, and there at last rather than ever nearer.
-pub fn glide(now: f32, target: f32, share: f32) -> f32 {
-    let next = now + (target - now) * share;
-    if (target - next).abs() < 1e-4 { target } else { next }
-}
 
 /// What the filter's and the shaper's knobs read while they glide to where they were set.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -134,11 +129,11 @@ impl FilterGlide {
         let ratio = f.frequency / self.frequency.max(1.0);
         self.frequency =
             if share >= 1.0 || (ratio - 1.0).abs() < 1e-3 { f.frequency } else { self.frequency * ratio.powf(share) };
-        self.resonance = glide(self.resonance, f.resonance, share);
-        self.morph = glide(self.morph, f.morph, share);
-        self.drive_db = glide(self.drive_db, f.drive_db, share);
-        self.shaper_drive_db = glide(self.shaper_drive_db, f.shaper_drive_db, share);
-        self.shaper_mix = glide(self.shaper_mix, f.shaper_mix, share);
+        self.resonance = glide_step(self.resonance, f.resonance, share);
+        self.morph = glide_step(self.morph, f.morph, share);
+        self.drive_db = glide_step(self.drive_db, f.drive_db, share);
+        self.shaper_drive_db = glide_step(self.shaper_drive_db, f.shaper_drive_db, share);
+        self.shaper_mix = glide_step(self.shaper_mix, f.shaper_mix, share);
     }
 }
 
@@ -157,7 +152,7 @@ pub struct LfoExt {
     pub to_filter: bool,
     pub dest_b: usize,
     pub amount_b: f32,
-    pub env: EnvSettings,
+    pub env: TimeEnvelopeSettings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -168,7 +163,7 @@ pub struct PitchExt {
     pub to_lfo: bool,
     pub dest_b: usize,
     pub amount_b: f32,
-    pub env: EnvSettings,
+    pub env: TimeEnvelopeSettings,
 }
 
 /// A matrix row: two destinations and their amounts.
@@ -212,7 +207,7 @@ impl Default for Ext {
                 shaper: 0,
                 shaper_drive_db: 0.0,
                 shaper_mix: 1.0,
-                env: EnvSettings::default(),
+                env: TimeEnvelopeSettings::default(),
             },
             lfo: LfoExt {
                 on: false,
@@ -228,7 +223,13 @@ impl Default for Ext {
                 to_filter: false,
                 dest_b: 0,
                 amount_b: 0.0,
-                env: EnvSettings { initial: 1.0, peak: 1.0, sustain: 1.0, end: 1.0, ..EnvSettings::default() },
+                env: TimeEnvelopeSettings {
+                    initial: 1.0,
+                    peak: 1.0,
+                    sustain: 1.0,
+                    end: 1.0,
+                    ..TimeEnvelopeSettings::default()
+                },
             },
             pitch: PitchExt {
                 on: false,
@@ -237,14 +238,14 @@ impl Default for Ext {
                 to_lfo: false,
                 dest_b: 0,
                 amount_b: 0.0,
-                env: EnvSettings::default(),
+                env: TimeEnvelopeSettings::default(),
             },
             matrix: [[(0, 0.0); 2]; MATRIX_SOURCES],
         }
     }
 }
 
-fn apply_env(e: &mut EnvSettings, field: usize, value: f64) {
+fn apply_env(e: &mut TimeEnvelopeSettings, field: usize, value: f64) {
     let v = value as f32;
     match field {
         env::ATTACK => e.attack = v,
@@ -453,7 +454,7 @@ pub struct Frame<'a> {
     /// The filter's knobs as they are heard now.
     pub filter: FilterGlide,
     pub sample_rate: f32,
-    pub clock: Clock,
+    pub clock: EnvelopeClock,
     /// Seconds since the last reset, for a free-running LFO.
     pub elapsed: f64,
     pub pressure: f32,
@@ -539,12 +540,12 @@ fn rate_hertz(range: usize, rate: f32) -> f32 {
 /// The state beyond the DX7 note.
 #[derive(Debug, Clone, Copy)]
 pub struct NoteExt {
-    envs: [TimeEnv; 6],
+    envs: [TimeEnvelope; 6],
     /// Per operator: its share of pitch from velocity, Q24 per octave.
     velocity_pitch: [i32; 6],
-    filter_env: TimeEnv,
-    lfo_env: TimeEnv,
-    pitch_env: TimeEnv,
+    filter_env: TimeEnvelope,
+    lfo_env: TimeEnvelope,
+    pitch_env: TimeEnvelope,
     velocity: f32,
     key: f32,
     random: f32,
@@ -575,11 +576,11 @@ pub struct NoteExt {
 impl Default for NoteExt {
     fn default() -> Self {
         Self {
-            envs: [TimeEnv::default(); 6],
+            envs: [TimeEnvelope::default(); 6],
             velocity_pitch: [0; 6],
-            filter_env: TimeEnv::default(),
-            lfo_env: TimeEnv::default(),
-            pitch_env: TimeEnv::default(),
+            filter_env: TimeEnvelope::default(),
+            lfo_env: TimeEnvelope::default(),
+            pitch_env: TimeEnvelope::default(),
             velocity: 1.0,
             key: CENTRE_KEY,
             random: 0.0,

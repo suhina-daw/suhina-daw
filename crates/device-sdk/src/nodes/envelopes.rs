@@ -1,10 +1,11 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Linear timed envelope stages shared by graph envelopes and the sample instrument.
+//! Gate and completion adapters for shared DSP linear envelopes.
 use super::{NodeInfo, PortInfo};
 use crate::{NodeKind, ProcessContext, native_node::NativeNode};
 use suhina_device_api::NoteEvent;
+use suhina_dsp::envelope::{LinearEnvelope, LinearEnvelopeSettings};
 pub(crate) const ADSR: NodeInfo = NodeInfo {
     kind: "adsr",
     name: "ADSR",
@@ -36,37 +37,10 @@ pub(crate) const AD: NodeInfo = NodeInfo {
     example: r#"{"kind":"ad"}"#,
 };
 
-/// Returns false only when release reaches zero. Stage numbers preserve the sampler contract.
-pub(crate) fn step(level: &mut f64, stage: &mut u8, released: f64, params: [f64; 4], rate: f64) -> bool {
-    match *stage {
-        0 => {
-            *level = (*level + 1. / (params[0] * rate).max(1.)).min(1.);
-            if *level >= 1. {
-                *stage = 1;
-            }
-        }
-        1 => {
-            *level = (*level - (1. - params[2]) / (params[1] * rate).max(1.)).max(params[2]);
-            if *level <= params[2] {
-                *stage = 2;
-            }
-        }
-        3 => {
-            *level = (*level - released.max(1e-12) / (params[3] * rate).max(1.)).max(0.);
-            if *level <= 0. {
-                return false;
-            }
-        }
-        _ => {}
-    }
-    true
-}
 struct Kernel {
     ad: bool,
     rate: f64,
-    level: [f64; 2],
-    stage: [u8; 2],
-    released: [f64; 2],
+    envelopes: [LinearEnvelope; 2],
     gate: [bool; 2],
     active: [bool; 2],
     finished: [[f32; 2]; 64],
@@ -76,9 +50,7 @@ pub(crate) fn prepare(kind: &NodeKind, rate: f64) -> Option<Box<dyn NativeNode>>
         Box::new(Kernel {
             ad: matches!(kind, NodeKind::Ad),
             rate,
-            level: [0.; 2],
-            stage: [2; 2],
-            released: [0.; 2],
+            envelopes: [LinearEnvelope::default(); 2],
             gate: [false; 2],
             active: [false; 2],
             finished: [[1.; 2]; 64],
@@ -96,34 +68,27 @@ impl NativeNode for Kernel {
                 });
                 let gate = x[0] > 0.;
                 if gate && !self.gate[channel] {
-                    self.level[channel] = 0.;
-                    self.stage[channel] = 0;
+                    self.envelopes[channel].start();
                     self.active[channel] = true;
                 }
                 if !self.ad && !gate && self.gate[channel] && self.active[channel] {
-                    self.released[channel] = self.level[channel];
-                    self.stage[channel] = 3;
+                    self.envelopes[channel].release();
                 }
                 self.gate[channel] = gate;
                 if self.active[channel] {
-                    let params = [
-                        x[1].clamp(0., 60.),
-                        x[2].clamp(0., 60.),
-                        if self.ad { 0. } else { x[3].clamp(0., 1.) },
-                        x[4].clamp(0., 60.),
-                    ];
-                    self.active[channel] = step(
-                        &mut self.level[channel],
-                        &mut self.stage[channel],
-                        self.released[channel],
-                        params,
-                        self.rate,
-                    );
-                    if self.ad && self.stage[channel] == 2 {
+                    let settings = LinearEnvelopeSettings {
+                        attack: x[1],
+                        decay: x[2],
+                        sustain: if self.ad { 0.0 } else { x[3] },
+                        release: x[4],
+                    };
+                    self.envelopes[channel].next(&settings, self.rate);
+                    self.active[channel] = !self.envelopes[channel].is_done();
+                    if self.ad && self.envelopes[channel].is_sustaining() {
                         self.active[channel] = false;
                     }
                 }
-                *sample = self.level[channel] as f32;
+                *sample = self.envelopes[channel].value() as f32;
                 if let Some(row) = self.finished.get_mut(frame) {
                     row[channel] = f32::from(!self.active[channel]);
                 }
@@ -135,14 +100,57 @@ impl NativeNode for Kernel {
     }
     fn event(&mut self, _: NoteEvent) {}
     fn reset(&mut self) {
-        self.level = [0.; 2];
-        self.stage = [2; 2];
-        self.released = [0.; 2];
+        self.envelopes = [LinearEnvelope::default(); 2];
         self.gate = [false; 2];
         self.active = [false; 2];
         self.finished.fill([1.; 2]);
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stereo_gates_release_retrigger_and_report_completion_independently() {
+        let mut node = prepare(&NodeKind::Adsr, 8.0).unwrap();
+        let mut next = |gate: [f32; 2], sustain: f32| {
+            let mut out = [0.0; 2];
+            node.process([&gate, &[0.5; 2], &[0.5; 2], &[sustain; 2], &[0.5; 2]], &mut out);
+            (out, node.output(3, 0))
+        };
+        assert_eq!(next([0.0; 2], 0.5), ([0.0; 2], [1.0; 2]));
+        assert_eq!(next([1.0, 0.0], 0.5), ([0.25, 0.0], [0.0, 1.0]));
+        assert_eq!(next([1.0; 2], 0.5), ([0.5, 0.25], [0.0; 2]));
+        assert_eq!(next([0.0, 1.0], 0.5), ([0.375, 0.5], [0.0; 2]));
+        assert_eq!(next([0.0; 2], 0.5), ([0.25, 0.375], [0.0; 2]));
+        assert_eq!(next([1.0, 0.0], 0.5), ([0.25, 0.25], [0.0; 2]));
+        assert_eq!(next([1.0, 0.0], 0.5), ([0.5, 0.125], [0.0; 2]));
+        assert_eq!(next([1.0, 0.0], 0.5), ([0.75, 0.0], [0.0, 1.0]));
+        for _ in 0..5 {
+            next([1.0, 0.0], 0.5);
+        }
+        assert_eq!(next([1.0, 0.0], 0.9), ([0.5, 0.0], [0.0, 1.0]));
+        node.reset();
+        let mut out = [1.0; 2];
+        node.process([&[0.0; 2]; 5], &mut out);
+        assert_eq!(out, [0.0; 2]);
+        assert_eq!(node.output(3, 0), [1.0; 2]);
+    }
+
+    #[test]
+    fn ad_ignores_gate_release_and_finishes_at_sustain() {
+        let mut node = prepare(&NodeKind::Ad, 4.0).unwrap();
+        let mut actual = Vec::new();
+        for frame in 0..6 {
+            let mut out = [0.0; 2];
+            let gate = if frame == 0 { 1.0 } else { 0.0 };
+            node.process([&[gate; 2], &[0.5; 2], &[0.5; 2], &[], &[]], &mut out);
+            actual.push((out[0], node.output(3, 0)[0]));
+        }
+        assert_eq!(actual, [(0.5, 0.0), (1.0, 0.0), (0.5, 0.0), (0.0, 1.0), (0.0, 1.0), (0.0, 1.0)]);
     }
 }

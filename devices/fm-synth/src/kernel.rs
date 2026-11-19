@@ -6,9 +6,10 @@
 //! whenever none of those is in use, so old sounds stay exact (ADR 0034).
 
 use crate::core::{self, Buses, FB_IN, FB_OUT, LEVEL_THRESHOLD, OUT_BUS_ADD, OpParams};
-use crate::ext::{Frame, Mods, NoteExt, glide};
+use crate::ext::{Frame, Mods, NoteExt};
 use crate::wave::{self, TABLE};
 use suhina_dsp::fm::{LG_N, N, Tables};
+use suhina_dsp::smooth::glide_step;
 
 /// What an operator plays this block.
 enum Source<'a> {
@@ -83,7 +84,7 @@ pub fn render(
             // It moves across the block, so turning it is heard as a move rather than in steps.
             let own_from = x.op_feedback.get(op).copied().unwrap_or(own);
             if let Some(slot) = x.op_feedback.get_mut(op) {
-                *slot = glide(own_from, own, FEEDBACK_GLIDE);
+                *slot = glide_step(own_from, own, FEEDBACK_GLIDE);
             }
             let own_to = x.op_feedback.get(op).copied().unwrap_or(own);
             let own_loop = !modulated && !voice_loop && (own_from > 0.0 || own_to > 0.0);

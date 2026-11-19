@@ -28,7 +28,6 @@ mod lfo;
 pub mod params;
 pub mod patch;
 pub mod random;
-mod time_env;
 mod voice;
 mod wave;
 
@@ -42,14 +41,15 @@ use suhina_device_api::{
 use suhina_dsp::OnePole;
 
 use crate::core::Buses;
-use crate::ext::{Ext, FilterGlide, Frame, GLIDE_SECONDS, glide};
+use crate::ext::{Ext, FilterGlide, Frame, GLIDE_SECONDS};
 use crate::lfo::Lfo;
 use crate::params::{COUNT, EXTENDED, GLOBAL, OP_PARAMS, PARAMS, PERFORMANCE, op};
 pub use crate::patch::Patch;
-use crate::time_env::Clock;
 use crate::voice::{Controllers, ModRoute, Note};
 use crate::wave::DrawnWave;
+use suhina_dsp::envelope::EnvelopeClock;
 use suhina_dsp::fm::{N, Tables};
+use suhina_dsp::smooth::glide_step;
 
 pub static INFO: DeviceInfo = DeviceInfo::new("fm-synth", "FM Synth", Role::Instrument, &PARAMS);
 
@@ -165,7 +165,7 @@ pub struct FmSynth {
     drawn: Vec<DrawnWave>,
     /// A key on an already sounding pitch restarts that voice rather than taking another.
     retrigger: bool,
-    clock: Clock,
+    clock: EnvelopeClock,
     /// Seconds since the last reset.
     elapsed: f64,
     /// Output peaks of the last block processed, in decibels, for the panel's meter.
@@ -224,7 +224,7 @@ impl FmSynth {
             ext: Box::default(),
             drawn: vec![DrawnWave::new(); 6],
             retrigger: true,
-            clock: Clock::default(),
+            clock: EnvelopeClock::default(),
             elapsed: 0.0,
             peaks: [-100.0; 2],
             position: N,
@@ -545,7 +545,7 @@ impl FmSynth {
         };
         self.filter_glide.follow(&self.ext.filter, share);
         if self.tone_now != self.tone {
-            let tone = f64::from(glide(self.tone_now as f32, self.tone as f32, share));
+            let tone = f64::from(glide_step(self.tone_now as f32, self.tone as f32, share));
             self.tone_now = if share >= 1.0 { self.tone } else { tone };
             self.set_tone_filter();
         }
@@ -611,10 +611,10 @@ impl FmSynth {
             }
         }
         let start = self.gain;
-        let end_gain = glide(start, self.target_gain, share);
+        let end_gain = glide_step(start, self.target_gain, share);
         let step = (end_gain - start) / N as f32;
         let pan = self.pan;
-        let end_pan = [glide(pan[0], self.target_pan[0], share), glide(pan[1], self.target_pan[1], share)];
+        let end_pan = [glide_step(pan[0], self.target_pan[0], share), glide_step(pan[1], self.target_pan[1], share)];
         let pan_step = [(end_pan[0] - pan[0]) / N as f32, (end_pan[1] - pan[1]) / N as f32];
         for (i, (out, s)) in self.block.iter_mut().zip(sum).enumerate() {
             let t = (i + 1) as f32;
@@ -710,7 +710,7 @@ impl Device for FmSynth {
     }
 
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
-        self.clock = Clock { tempo: context.tempo_or_default(), beat: context.beat, playing: context.playing };
+        self.clock = EnvelopeClock { tempo: context.tempo_or_default(), beat: context.beat, playing: context.playing };
         let mut peak = [0.0f32; 2];
         for frame in buffer.as_chunks_mut::<2>().0 {
             if self.position >= N {

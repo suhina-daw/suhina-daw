@@ -8,9 +8,16 @@ use std::sync::Arc;
 use suhina_device_api::{
     Device, DeviceError, DeviceInfo, NoteEvent, ParamInfo, ProcessContext, Role, SampleSource, Scale, Unit,
 };
-use suhina_dsp::{Biquad, Coefficients};
+use suhina_dsp::{
+    Biquad, Coefficients,
+    envelope::{LinearEnvelope, LinearEnvelopeSettings},
+};
 
 use crate::nodes::stretch as warp;
+
+#[cfg(test)]
+#[path = "sample_envelope_tests.rs"]
+mod envelope_tests;
 
 /// The most notes a sampler plays at once; each has a voice and a warp voice.
 const VOICES: usize = 32;
@@ -159,9 +166,7 @@ struct Voice {
     slice_start: f64,
     slice_end: f64,
     direction: f64,
-    env: f64,
-    stage: u8,
-    released: f64,
+    envelope: LinearEnvelope,
     step: f64,
     scan: f64,
     next_grain: f64,
@@ -185,9 +190,7 @@ impl Default for Voice {
             slice_start: 0.,
             slice_end: 1.,
             direction: 1.,
-            env: 0.,
-            stage: 0,
-            released: 0.,
+            envelope: LinearEnvelope::default(),
             step: 1.,
             scan: 0.,
             next_grain: 0.,
@@ -521,6 +524,7 @@ impl Device for Sampler {
                         step,
                         ..Voice::default()
                     };
+                    v.envelope.start();
                 }
             }
             NoteEvent::Off { key, .. } | NoteEvent::On { key, velocity: 0. } => {
@@ -528,8 +532,7 @@ impl Device for Sampler {
                 if slicing && self.values[84] > 0. || !slicing && self.values[8] != 1. && self.values[8] != 3. {
                     for v in &mut self.voices {
                         if v.key == key && v.active {
-                            v.stage = 3;
-                            v.released = v.env;
+                            v.envelope.release();
                             v.filter_released = v.filter_env;
                         }
                     }
@@ -537,8 +540,7 @@ impl Device for Sampler {
             }
             NoteEvent::AllNotesOff => {
                 for v in &mut self.voices {
-                    v.stage = 3;
-                    v.released = v.env;
+                    v.envelope.release();
                     v.filter_released = v.filter_env;
                 }
             }
@@ -835,13 +837,11 @@ impl Sampler {
                 }
                 let slices = p[0] == 2. || p[0] == 0. && p[8] == 3.;
                 let (start, end) = if slices { (v.slice_start * total, v.slice_end * total) } else { (start, end) };
-                if !crate::nodes::envelopes::step(
-                    &mut v.env,
-                    &mut v.stage,
-                    v.released,
-                    [p[11], p[12], p[13], p[14]],
+                v.envelope.next(
+                    &LinearEnvelopeSettings { attack: p[11], decay: p[12], sustain: p[13], release: p[14] },
                     self.rate,
-                ) {
+                );
+                if v.envelope.is_done() {
                     v.active = false;
                     continue;
                 }
@@ -959,7 +959,7 @@ impl Sampler {
                         g.position += g.step;
                     }
                 }
-                v.filter_env = if v.stage == 3 {
+                v.filter_env = if v.envelope.is_releasing() {
                     (v.filter_env - v.filter_released / (p[51] * self.rate).max(1.)).max(0.)
                 } else if v.age < p[48] {
                     v.age / p[48].max(1. / self.rate)
@@ -996,7 +996,7 @@ impl Sampler {
                     }
                 }
                 for ch in 0..2 {
-                    let next = signal[ch] * v.env * (1. - p[28] + p[28] * v.velocity);
+                    let next = signal[ch] * v.envelope.value() * (1. - p[28] + p[28] * v.velocity);
                     v.last[ch] = next * (1. - v.fade) + v.fade_from[ch] * v.fade;
                     out[ch] += v.last[ch];
                 }

@@ -22,7 +22,7 @@ Notes sum to a stereo pair, followed by tone and volume. The engine works in blo
 a grid from the last reset, so the output does not depend on how the host divides a stream.
 
 The fixed-point sine operators, gain arithmetic and lookup tables live in `suhina-dsp::fm`.
-The device retains algorithm routing, envelopes, voices and patch interpretation. The shared
+The device retains algorithm routing, legacy envelopes, voices and patch interpretation. The shared
 [operator contract](instrument-synthesis.md#fixed-point-fm-contract) keeps the existing block
 schedule and integer rounding, so this extraction does not change its sound or parameters.
 
@@ -51,6 +51,10 @@ sync (the first repeat at the song's nearest sixteenth, then by the repeat lengt
 stops) or trigger (ignoring the key going up). A repeat starts from the level the envelope has, and a
 release from wherever it is. Time does not move beat and sync repeats. The filter, pitch and LFO envelopes use the same model. Each has slopes and an
 end level; with an operator's slopes at 0 its attack is linear and its decay and release exponential. **Time** on the device scales every time envelope.
+
+Time envelopes use the shared [DSP envelope contract](instrument-synthesis.md#shared-envelope-contracts).
+They retain one stage transition per control block, discard excess stage time, and glide sustain
+changes using unscaled time. The legacy rates-and-levels model remains in this device.
 
 ## Filter and shaper
 
