@@ -5,6 +5,7 @@
 //! rolls the whole edit back on refusal; the desktop may ask, other callers must opt in.
 
 use super::*;
+use suhina_model::{AudioInput, MidiInput};
 
 pub(super) struct Removal {
     confirmed: Vec<TrackId>,
