@@ -18,7 +18,7 @@ pub use suhina_theme_package::meta::{FILE as META, THUMBNAIL, ThemeMeta};
 /// Every colour token of a theme: its name in a theme file and what it is used for. Its custom
 /// property is [`variable_name`] of the name, and Suhina Studio's value the one the core sheet
 /// (`suhina_theme_package::CORE_SHEET`) registers for it ([`default_color`]).
-pub const TOKENS: [(&str, &str); 37] = [
+pub const TOKENS: [(&str, &str); 38] = [
     ("grid.major", "Arrangement bar lines and lane separators"),
     ("grid.minor", "Arrangement subdivisions between bar lines"),
     ("track.headerBackground", "The neutral surface behind Arrangement track controls"),
@@ -57,6 +57,7 @@ pub const TOKENS: [(&str, &str); 37] = [
         "The pin of an automation lane pinned below its track's top lane (older theme files: their accent)",
     ),
     ("selection", "The selected device's outline"),
+    ("selection.background", "Selected track headers, clips and, faintly, their lanes and columns"),
     ("recording", "Recording and errors"),
     ("recording.background", "Behind an armed track's arm button and a recording clip"),
     ("meter.normal", "A level meter below the top"),

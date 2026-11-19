@@ -310,7 +310,7 @@ pub const ELEMENTS: &[Element] = &[
     element("session", Region, "The Launcher view: tracks as columns of clip slots.")
         .parts(&["track-column", "scene-column"])
         .settings(&["track-width", "return-width", "scene-width", "slot-height", "header-height"]),
-    element("track-column", Container, "A track's column in the Launcher view.")
+    element("track-column", Container, "A track's column in the Launcher view; its background is drawn under its slots. While `[selected]`, what that state changes in its background is drawn over the whole column, header, slots and mixer strip, so give `track-column[selected]` a translucent one.")
         .attributes(&["color", "selected", "muted"])
         .settings(&["track-artwork"]),
     element("scene-column", Part, "The column of scenes at the Launcher view's side."),
@@ -371,7 +371,7 @@ pub const ELEMENTS: &[Element] = &[
     element(
         "track-lane",
         Container,
-        "A track's row of clips in the Arrangement view, its clips inside it, `[checked]` while the piano roll edits it alone. Its background is painted over the grid lines, so give it a translucent one.",
+        "A track's row of clips in the Arrangement view, its clips inside it, `[selected]` while its track is selected and `[checked]` while the piano roll edits it alone. Its background is painted over the grid lines, so give it a translucent one.",
     )
     .parts(&["clip"])
     .attributes(&["color", "selected", "muted", "checked"]),
@@ -411,9 +411,9 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["selected", "kind"]),
     element("automation-lane", Drawn, "The time of a group of automation lanes, `automation-lane[kind=\"group\"]`: its `background-color`.")
         .attributes(&["kind"]),
-    element("automation-line", Drawn, "An automation lane's envelope, the track's colour by default; `[muted]` while it is off.")
-        .attributes(&["muted"]),
-    element("automation-point", Drawn, "A point of an automation envelope, `[selected]` while it is picked.").attributes(&["selected"]),
+    element("automation-line", Drawn, "An automation lane's envelope, the track's colour by default; `[kind=\"fixed\"]` while Settings colours every envelope alike, `[muted]` while it is off.")
+        .attributes(&["muted", "kind"]),
+    element("automation-point", Drawn, "A point of an automation envelope, the line's colour by default; `[kind=\"fixed\"]` while Settings colours every envelope alike, `[selected]` while it is picked.").attributes(&["selected", "kind"]),
     element("automation-pin", Drawn, "The pin of an automation lane pinned below its track's top lane."),
     element("marker", Control, "A marker's tag in the row under the loop: its background, its line's `border-color` and its name's `color`; `[checked]` while it is dragged.")
         .attributes(&["checked"]),

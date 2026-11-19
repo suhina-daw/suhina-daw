@@ -3147,6 +3147,10 @@ impl App {
             crate::kit::skin::configure(&crate::kit::skin::Skin::default());
             crate::kit::native_css::set_colors(&theme::Colors::new());
         }
+        // The selection colour is the window's, as the theme's colours are: a chosen one goes over
+        // the theme's `selection.background` before the styles are worked out.
+        crate::kit::selection::set(self.settings.view.selection);
+        self.arrangement.automation.colours = self.settings.view.automation;
         // The backdrop's opacity before the styles: the frame an image first shows in is faded.
         let backdrop = self.background.prepare(ui, &self.settings);
         let _css_frame = crate::kit::native_css::frame_with_motion(
