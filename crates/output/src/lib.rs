@@ -552,6 +552,13 @@ fn renderer_exchange() -> (ExchangeControl, ExchangeRender) {
     (ExchangeControl { next: send, retired: receive }, ExchangeRender { next, retired, pending: None })
 }
 
+/// The session supplies the current cue level; the retained device supplies its
+/// actual routing. Its opening cue level may have changed since it was opened.
+fn prepare_project_renderer(renderer: &mut Renderer, separate_cue: bool, frames: usize) {
+    renderer.handle(LaunchCommand::SetCue { gain: None, separate: Some(separate_cue) });
+    renderer.join_real_time(frames);
+}
+
 impl ExchangeRender {
     fn between_blocks(&mut self, current: &mut Box<Renderer>) -> bool {
         let mut changed = false;
@@ -1636,11 +1643,7 @@ pub fn open_chosen(
                         match request {
                             OwnerRequest::Exchange { mut renderer, reply } => {
                                 let next = std::ptr::from_ref(renderer.as_ref());
-                                renderer.handle(LaunchCommand::SetCue {
-                                    gain: Some(output.cue_gain),
-                                    separate: Some(output.cue.is_some()),
-                                });
-                                renderer.join_real_time(output.block);
+                                prepare_project_renderer(&mut renderer, output.cue.is_some(), output.block);
                                 let exchanged = stream.exchange_renderer(renderer);
                                 match &exchanged {
                                     Ok(previous) => suhina_plugins::trace!(

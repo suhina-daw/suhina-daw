@@ -7,6 +7,26 @@ use super::*;
 const RINGED: [f32; 8] = [0.5, -0.5, 0.25, -0.25, 1.0, 0.0, 0.1, 0.2];
 
 #[test]
+fn exchange_preparation_keeps_the_current_cue_gain_and_applies_device_routing() {
+    for separate in [false, true] {
+        for gain in [0.0, 0.25] {
+            let mut renderer =
+                Renderer::stopped(&Project::default(), &AudioPool::new(), 48_000, suhina_session::devices()).unwrap();
+            let mut controller = renderer.controller();
+            renderer.handle(LaunchCommand::SetCue { gain: Some(gain), separate: Some(!separate) });
+            prepare_project_renderer(&mut renderer, separate, 512);
+            let data =
+                Arc::new(suhina_engine::AudioData { sample_rate: 48_000, channels: 2, samples: vec![0.5; 4096] });
+            controller.preview_sample(data, 0.0, 1.0).unwrap();
+            let (mut main, mut cue) = ([0.0; 2048], [0.0; 2048]);
+            renderer.process_with_cue(&mut main, &mut cue);
+            assert_eq!(cue[1000], gain * 0.5);
+            assert_eq!(main[1000], if separate { 0.0 } else { gain * 0.5 });
+        }
+    }
+}
+
+#[test]
 fn project_exchange_fades_main_and_cue_across_render_blocks() {
     let mut fade = ProjectFade::new(1_000);
     let mut main = [1.0, -1.0];

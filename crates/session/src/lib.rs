@@ -974,8 +974,11 @@ impl Session {
     }
 
     /// Uses the already open device, preserving this session's plug-in instances.
-    pub(crate) fn resume_output(&mut self, idle: &mut Player) -> Result<(), CommandError> {
+    pub(crate) fn resume_output(&mut self, idle: &mut Player, cue_gain: f32) -> Result<(), CommandError> {
         self.sync.output_open_failed = false;
+        // Build every destination graph with assets at the device's rate, including
+        // projects edited while suspended and first opens on a retained device.
+        self.sync_device_files_at(idle.sample_rate());
         let changed_rate =
             self.sync.suspended.as_ref().is_some_and(|player| player.sample_rate() != idle.sample_rate());
         if changed_rate && let Some(player) = self.sync.suspended.take() {
@@ -994,7 +997,6 @@ impl Session {
         }
         let retained = self.sync.suspended.is_some();
         if !retained {
-            self.sync_device_files();
             self.sync.suspended = Some(
                 Player::prepare(&self.project, &self.audio.pool, &self.device_files.assets, idle.sample_rate())
                     .map_err(CommandError)?,
@@ -1007,7 +1009,7 @@ impl Session {
                 player.set_device_assets(std::sync::Arc::new(self.device_files.assets.clone()));
                 player.update(&self.project)?;
             }
-            if let Err(error) = player.resume(idle) {
+            if let Err(error) = player.resume(idle, cue_gain) {
                 self.release_player();
                 self.sync.output_open_failed = true;
                 return Err(CommandError(error));
@@ -1618,11 +1620,14 @@ impl Session {
     /// newer than what a load saw. A file that fails leaves its message in
     /// `device_asset_notes`, where a panel reads it. The reads run in the session's thread.
     pub fn sync_device_files(&mut self) {
+        self.sync_device_files_at(self.device_file_rate());
+    }
+
+    fn sync_device_files_at(&mut self, rate: u32) {
         let need = self.device_file_paths();
         // Every read was made at the rate before; a file read at another rate is read again
         // whenever a device next needs it, also one that is not in the project now (an undo
         // brings it back), so nothing retained keeps an IR of the wrong rate.
-        let rate = self.device_file_rate();
         let mut changed = false;
         if self.device_files.rate != rate {
             self.device_files.rate = rate;
@@ -1660,7 +1665,7 @@ impl Session {
             {
                 continue;
             }
-            let result = self.load_device_file(kind, path);
+            let result = self.load_device_file_at(kind, path, rate);
             self.device_files.loads = self.device_files.loads.wrapping_add(1);
             self.device_files.modified.insert(path.clone(), mtime);
             match result {
@@ -1713,9 +1718,9 @@ impl Session {
         need
     }
 
-    /// The rate files are read at: the player's, or 48 kHz until the first output opens.
+    /// The active or suspended player's rate, or 48 kHz until the first output opens.
     fn device_file_rate(&self) -> u32 {
-        self.sync.player.as_ref().map_or(48_000, Player::sample_rate)
+        self.sync.player.as_ref().or(self.sync.suspended.as_ref()).map_or(48_000, Player::sample_rate)
     }
 
     /// What a file-backed device of `kind` runs for the file at `path`, read by the device
@@ -1737,9 +1742,15 @@ impl Session {
         kind: &str,
         path: &str,
     ) -> Result<suhina_device_registry::DeviceAsset, String> {
-        // An IR joins the project at the engine's rate; the session's rate is the player's, or
-        // 48 kHz until the first output opens.
-        let rate = self.device_file_rate();
+        self.load_device_file_at(kind, path, self.device_file_rate())
+    }
+
+    fn load_device_file_at(
+        &self,
+        kind: &str,
+        path: &str,
+        rate: u32,
+    ) -> Result<suhina_device_registry::DeviceAsset, String> {
         // A shipped file's key rides the same state slot ([ADR 0036]): `builtin:<device
         // id>/<file name>`, run against the pack's bytes through the device's own loader. A
         // key of another device's pack is refused here, as a path of the wrong extension

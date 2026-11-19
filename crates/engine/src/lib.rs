@@ -799,6 +799,14 @@ impl Renderer {
         self.pool.as_ref().map_or(1, pool::Lane::threads)
     }
 
+    /// Takes a lane of the currently configured process pool without rebuilding the graph
+    /// or its devices. Call before resuming a retained renderer, on the control thread only:
+    /// returning the old lane and acquiring the new one can lock, allocate and stop workers.
+    pub fn use_process_render_pool(&mut self) {
+        self.pool = None;
+        self.pool = pool::process_lane(self.sample_rate, self.pool_kind());
+    }
+
     /// Asks the render workers to join real-time priority for blocks of `frames` frames, as the
     /// render thread does: call it when the renderer starts playing to a device. Never
     /// allocates.

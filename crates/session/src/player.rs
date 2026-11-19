@@ -197,13 +197,15 @@ impl Player {
     }
 
     /// Returns this project's retained engine to the continuously open device.
-    pub(crate) fn resume(&mut self, idle: &mut Self) -> Result<(), String> {
+    pub(crate) fn resume(&mut self, idle: &mut Self, cue_gain: f32) -> Result<(), String> {
         if self.sample_rate() != idle.sample_rate() {
             return Err("the retained project needs sample-rate reconfiguration".into());
         }
         let owner = idle.keep_alive.as_mut().ok_or("the idle player has no device owner")?;
         self.settle_suspended();
-        let renderer = self.parked.take().ok_or("the project has no retained renderer")?;
+        let mut renderer = self.parked.take().ok_or("the project has no retained renderer")?;
+        renderer.use_process_render_pool();
+        renderer.handle(suhina_engine::LaunchCommand::SetCue { gain: Some(cue_gain), separate: None });
         let retired = owner.exchange_renderer(renderer)?;
         drop(retired);
         self.keep_alive = idle.keep_alive.take();
@@ -436,3 +438,7 @@ fn trace_update(began: std::time::Instant) {
 #[cfg(test)]
 #[path = "player_reset_tests.rs"]
 mod reset_tests;
+
+#[cfg(test)]
+#[path = "player_settings_tests.rs"]
+mod settings_tests;

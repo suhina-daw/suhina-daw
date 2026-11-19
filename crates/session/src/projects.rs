@@ -434,8 +434,9 @@ impl Projects {
             }
         }
         if let Some(mut idle) = self.devices.idle.take() {
+            let cue_gain = self.devices.output_choice.cue_gain;
             let session = self.session_mut(id)?;
-            let result = session.resume_output(&mut idle);
+            let result = session.resume_output(&mut idle, cue_gain);
             if result.is_err() && !session.sync.output_open_failed {
                 self.devices.idle = Some(idle);
             }
@@ -594,7 +595,7 @@ impl Projects {
             let choice = self.devices.output_choice.clone();
             let mut session = Session::new(suhina_model::Project::default());
             if let Some(mut idle) = self.devices.idle.take() {
-                if let Err(error) = session.resume_output(&mut idle) {
+                if let Err(error) = session.resume_output(&mut idle, choice.cue_gain) {
                     if !session.sync.output_open_failed {
                         self.devices.idle = Some(idle);
                     }

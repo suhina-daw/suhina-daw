@@ -265,8 +265,12 @@ retains its own suspended renderer, controller and sandboxed plug-in instances;
 returning to it resumes those instances instead of loading them again. Background
 renderers do not process audio. Closing a session releases its retained renderer
 and plug-in hosts outside the real-time threads. A changed device sample rate
-requires reconfiguration before that session can resume. The input stream,
-its consumer and device diagnostics survive the exchange. Neither the device
+requires reconfiguration before that session can resume. File-backed device assets
+keep the suspended renderer's rate during background edits and are refreshed at the
+destination device's rate before its graph is built. Resumed renderers take the
+current cue volume and a lane of the currently configured process render pool;
+changing these settings in another project must not restore their old values.
+The input stream, its consumer and device diagnostics survive the exchange. Neither the device
 callback nor the render thread allocates, frees, locks or writes diagnostics
 during the exchange. Recording is finalized before the old session detaches.
 Main and cue transition from the last queued frame into the next renderer over
