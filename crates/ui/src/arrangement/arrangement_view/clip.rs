@@ -1707,16 +1707,17 @@ pub(super) fn paint_clip(
     } else if clip.audio {
         painter.hline(marks.x_range(), marks.center().y.round() + 0.5, theme::hairline(dim(color)));
     } else if !clip.notes.is_empty() && marks.height() >= 4.0 {
+        // Marks extend past the committed edge so a resize can reveal them before release.
+        let span_end = f64::from((rect.right() - x_of(start)) / beat_width);
         // A row per pitch the clip uses, lowest at the bottom: the keys between them would only
         // squeeze the rows, and the few pitches of a drum part each get a row that reads.
-        let keys = used_keys(clip.notes.iter().map(|n| n.key));
+        // Unplayed source notes outside a non-looping clip must not crowd its visible rows.
+        let keys =
+            used_keys(clip.notes.iter().filter(|n| clip.loop_range.is_some() || n.start < span_end).map(|n| n.key));
         let rows = keys.len().max(1) as f32;
         // Only the notes in view are drawn; a long looped clip has thousands.
         let first = f64::from((view.left() - x_of(start)) / beat_width) - 1.0;
         let last = f64::from((view.right() - x_of(start)) / beat_width) + 1.0;
-        // A looping clip's marks run past its end (for a drag of its edge): only those within
-        // the span drawn, the clip's or the one its dragged edge gives it.
-        let span_end = f64::from((rect.right() - x_of(start)) / beat_width);
         // Dark on the clip's colour, as notes read on a vivid body; light ink read as a
         // highlight and vanished on the light colours.
         let in_view = |n: &&crate::arrangement::timeline::NoteMark| {

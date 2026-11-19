@@ -1046,13 +1046,15 @@ pub fn note_marks(content: &ClipContent, clip: &Clip) -> Vec<NoteMark> {
     // Segments of content time, in the order the clip plays them.
     let (first_end, repeat) = match clip.loop_range {
         Some(r) if r.end > r.start => (r.end.max(clip.offset), Some((r.start, r.end))),
-        _ => (clip.offset + clip.length, None),
+        // Keep the full source extent for a right-edge drag, including note tails.
+        // paint_clip cuts these marks to the live edge without rebuilding the project.
+        _ => (notes.iter().map(|n| n.time + n.duration).fold(clip.offset, f64::max), None),
     };
     let mut segment = (clip.offset, first_end);
     let mut at = 0.0;
     // A looping clip's marks go on past its end, so the passes its right edge is dragged out to
     // show their notes while it is dragged; the view draws the clip's own span only.
-    let span = if repeat.is_some() { clip.length + LOOP_DRAG_ROOM } else { clip.length };
+    let span = if repeat.is_some() { clip.length + LOOP_DRAG_ROOM } else { first_end - clip.offset };
     while at < span && marks.len() < MAX_MARKS {
         let (from, to) = segment;
         for note in notes.iter().filter(|n| n.time >= from && n.time < to) {
