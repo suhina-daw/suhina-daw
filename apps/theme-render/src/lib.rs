@@ -17,6 +17,8 @@
 pub mod budget;
 pub mod composite;
 pub mod cut;
+pub mod inspect;
+pub mod outline;
 pub mod painted;
 pub mod scenes;
 
@@ -287,7 +289,8 @@ pub fn restless(harness: &Harness<'static, App>) -> bool {
 }
 
 /// Renders `subject` in every scene, or only the one called `only`, with `pointer` done in each,
-/// into `out` over `backdrop`: two PNGs a scene.
+/// into `out` over `backdrop`: two PNGs a scene, and a third with every element's box and name
+/// drawn over the window when `outline` ([`outline`]).
 pub fn render_all(
     subject: &Subject,
     backdrop: &image::RgbaImage,
@@ -295,6 +298,7 @@ pub fn render_all(
     scale: f32,
     only: Option<&str>,
     pointer: Option<&scenes::Pointer>,
+    outline: bool,
 ) -> Result<Rendered, String> {
     std::fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     let gpu = Gpu::new()?;
@@ -332,7 +336,15 @@ pub fn render_all(
         };
         let raw = composite::unpremultiply(&shot.pixels);
         let over = composite::over_backdrop(&shot, backdrop, scale);
-        for (name, image) in [(format!("{}.raw.png", scene.name), raw), (format!("{}.png", scene.name), over)] {
+        // The elements of the frame just drawn: rendering runs no frame of its own.
+        let outlined = if outline {
+            let elements = suhina_ui::kit::native_css::inspector::frame_elements();
+            Some((format!("{}.outline.png", scene.name), outline::draw(&over, &elements, scale)?))
+        } else {
+            None
+        };
+        let images = [(format!("{}.raw.png", scene.name), raw), (format!("{}.png", scene.name), over)];
+        for (name, image) in images.into_iter().chain(outlined) {
             let path = out.join(&name);
             image.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             done.written.push(name);
