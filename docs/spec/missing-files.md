@@ -42,10 +42,15 @@ project opens and helps find the files again.
 3. The browser's index is searched at once for candidates (instant: it is a list of names in
    memory), so the panel usually opens with most files found.
 
+During a format import, unresolved sample paths may be matched automatically against the
+browser index before audio is loaded. A unique best trailing-path match is accepted;
+equal-best matches, saturated candidate lists and missing files stay unresolved for the
+panel. The search does not add roots, scan the disk or move audio; media trust rules apply.
+
 ## Zipped projects
 
 A project can arrive as a zip that holds it and its samples, as another DAW packs a song to send
-it. Opening or dropping such a zip (`.als` or `.suhina` inside, exactly one) does not open
+it. Opening or dropping such a zip (`.flp`, `.als` or `.suhina` inside, exactly one) does not open
 it at once: a bar asks where to unpack it, with a folder named after the zip beside it filled in
 (a number added when that folder is taken), **Unpack and open** and **Cancel**. The project then
 opens from the unpacked folder, so its samples are found beside it by the rules above.
@@ -242,4 +247,5 @@ An importer follows the same boundary before anything is decoded: of the absolut
 foreign project file names it looks only at those on a local disk without parent steps
 (`suhina_media::on_local_disk`), and it opens a sample (to read its duration, for example) only
 once it has resolved it to a file inside the project folder, a local path that is there or a
-library match. Whether the audio is then read is decided by the rules above.
+library match permitted by the caller's media trust. Header reads use the same trust as
+audio decoding, including when a CLI or MCP import has audio decoding disabled.

@@ -14,8 +14,8 @@ covers:
 # FL Studio project (`.flp`) format
 
 What Suhina reads of an FL Studio project file: the two chunks that hold it and the stream of
-events inside the second one. Mapping those events onto the project model is a later piece of
-[epic #271](https://github.com/suhina-daw/suhina-daw/issues/271) and is not described here.
+events inside the second one. [Model mapping](flp-model-mapping.md) describes the partial
+project importer of [epic #271](https://github.com/suhina-daw/suhina-daw/issues/271).
 
 Written in our own words. **Sources:**
 

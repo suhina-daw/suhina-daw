@@ -335,7 +335,7 @@ impl ZipPrompt {
         Self { zip, found, into }
     }
 
-    /// "Unpack Song.zip (Song.als and 24 more files, 50 MB) into:"
+    /// "Unpack Song.zip (Song.flp and 24 more files, 50 MB) into:"
     pub fn summary(&self) -> String {
         let name =
             self.zip.file_name().map_or_else(|| self.zip.display().to_string(), |n| n.to_string_lossy().into_owned());

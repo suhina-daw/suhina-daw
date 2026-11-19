@@ -100,6 +100,8 @@ pub(crate) struct Chain {
     pub(crate) delay: Delay,
     /// The track's gains after the chain.
     post: (f32, f32),
+    /// The source channel's own post-fader gain, before downstream output gains.
+    key_post: (f32, f32),
     /// The channel's volume `post` was built with, when a live volume may scale it: `None` for
     /// a bus or an automated volume (those take a new graph).
     pub(crate) built_volume: Option<f64>,
@@ -419,6 +421,7 @@ impl Chain {
             input_latency: 0,
             delay: Delay::new(0),
             post: (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN),
+            key_post: (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN),
             device_lanes,
             mix: None,
             target: None,
@@ -480,6 +483,7 @@ impl Chain {
             input_latency: 0,
             delay: Delay::new(0),
             post: (1.0, 1.0),
+            key_post: (1.0, 1.0),
             device_lanes: DeviceLanes::none(),
             mix: None,
             target: None,
@@ -557,11 +561,17 @@ impl Chain {
         self.post = (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN);
     }
 
+    /// Sets the source's own fader gain for keys, excluding downstream output gains.
+    pub(crate) fn set_key_post(&mut self, post: (f32, f32)) {
+        self.key_post = (post.0 / CHAIN_INPUT_GAIN, post.1 / CHAIN_INPUT_GAIN);
+    }
+
     /// Sets the gains the chain's output is added to the cue bus at, or `None` for no cue.
     /// The main chain's gain after its devices: the main volume itself, as its input is the mix
     /// at the level it plays at, not a track's sources at [`CHAIN_INPUT_GAIN`] (#687).
     pub(crate) fn set_main_post(&mut self, gain: f32) {
         self.post = (gain, gain);
+        self.key_post = (gain, gain);
     }
 
     pub(crate) fn set_cue(&mut self, gains: Option<(f32, f32)>) {
@@ -634,7 +644,7 @@ impl Chain {
         if let Some(tap) = self.taps.get_mut(tap_index(suhina_model::TapPoint::PostFx)).and_then(|t| t.get_mut(..end)) {
             tap.copy_from_slice(buffer);
         }
-        let (gain_left, gain_right) = self.post;
+        let (gain_left, gain_right) = self.key_post;
         let (live, pan) = (self.live, self.pan);
         let mix = &self.mix;
         if let Some(tap) =

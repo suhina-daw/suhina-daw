@@ -95,7 +95,7 @@ impl PickField {
             Self::ThemePackage => &["suhina", "zip", "css", "json"],
             Self::MissingFile => &["wav", "aif", "aiff", "flac", "mp3", "ogg", "oga", "mp4", "m4a"],
             field if field.folder() => &[],
-            _ => &["suhina", "als", "zip"],
+            _ => &["suhina", "als", "flp", "zip"],
         }
     }
 
