@@ -637,7 +637,7 @@ pub fn audio_commands() -> &'static [CommandSpec<Projects>] {
 
 fn system(projects: &Projects) -> Result<Arc<dyn AudioSystem>, CommandError> {
     projects.audio_system().ok_or_else(|| {
-        CommandError("no audio output here; the desktop app has one, and suhina-cli mcp with --audio".into())
+        CommandError::new("no audio output here; the desktop app has one, and suhina-cli mcp with --audio".into())
     })
 }
 
@@ -777,8 +777,8 @@ fn info(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
 
 fn open_control_panel(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
     let session = projects.session_mut(None)?;
-    let player = session.player().ok_or_else(|| CommandError("no audio output is open".into()))?;
-    player.open_control_panel().map_err(CommandError)?;
+    let player = session.player().ok_or_else(|| CommandError::new("no audio output is open".into()))?;
+    player.open_control_panel().map_err(CommandError::new)?;
     Ok(json!({ "requested": true }))
 }
 
@@ -786,7 +786,7 @@ fn open_control_panel(projects: &mut Projects, _: &Value) -> Result<Value, Comma
 /// failure, and the output is opened again as after one ([`Projects::check_output`]).
 fn check_driver(projects: &mut Projects, _: &Value) -> Result<Value, CommandError> {
     let session = projects.session_mut(None)?;
-    let player = session.player().ok_or_else(|| CommandError("no audio output is open".into()))?;
+    let player = session.player().ok_or_else(|| CommandError::new("no audio output is open".into()))?;
     player.check_driver();
     Ok(json!({ "requested": true }))
 }

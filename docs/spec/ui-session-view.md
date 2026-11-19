@@ -126,14 +126,21 @@ clicked, launched or selected (#920).
 it, so tracks are told apart at a glance; the channel strip under the column carries the same
 colour (Mixer › the channel strip), and the Arrangement headers have it as a band down their edge
 (Track colour below). Clicking selects the
-track; dragging moves it (after the header of an open group is into that group, and over another
-group's column it joins that group, [arrangement editing](arrangement-editing.md) › Groups inside
-groups); right-clicking opens its menu (rename, colour, group, ungroup, move into group, move out
+track; dragging a selected header moves the selected roots together in project order. The
+middle half of a group or folder header accepts them inside, whether open or folded, with an
+outline; its outer quarters mean before/after and show an insertion line. Ordinary headers
+use two halves ([arrangement editing](arrangement-editing.md) › Audio group nesting); right-clicking opens its menu (rename, colour, group, ungroup, move into group, move out
 of group, **Insert audio track** and **Insert MIDI track** after it, **Insert return track**,
 delete). The track's channel strip and a return's column, which has no slots, open the same menu
 on a right-click and select the track on a click. A track inside groups has its name stepped in 4 px per level; a group's name
 follows a fold arrow, and a folded group hides the columns of the tracks inside it.
-Double-clicking selects the track and shows its devices in the detail area, opening the detail
+The disclosure button uses the title strip's full height; hover reveals its surface and
+keyboard focus outlines it. Its small glyph stays fixed, and the tooltip also describes
+double-clicking the header. Double-clicking a group or folder header toggles its fold state.
+Empty source containers disappear after a move, with the conditional group-processing
+confirmation described in [Audio group nesting](arrangement-editing.md#audio-group-nesting).
+An ordinary track header
+double-click selects the track and shows its devices in the detail area, opening the detail
 area if it was hidden ([clip editor](ui-clip-editor.md) › Where it opens); renaming stays in the
 menu.
 Dropping a device or file from the browser on the empty area right of the last track creates a

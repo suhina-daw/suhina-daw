@@ -121,9 +121,11 @@ not from velocity or opacity. Muted, erased and out-of-window notes remain dimme
   (there are no notes on screen), the splitter's least height is the device panels' compact height, 200 px, as with a clip (the height dragged freely is for a clip's view and the devices reached from it; a track's devices, reached by clicking the track, are open at a compact panel's height or closed, never between: a drag on the splitter past half that height closes or opens the area, and a double-click closes it; a plug-in's editor embedded in the chain gets its full height, taking the view's least room when it needs to), and nothing
   is pulled to the top.
 - **Built ([#505](https://github.com/suhina-daw/suhina-daw/issues/505)):** a **double-click on a
-  track** shows its devices: on an Arrangement track header ([arrangement
+  ordinary track** shows its devices: on an Arrangement track header ([arrangement
   editing](arrangement-editing.md) › Tracks), on a Launcher column's name, or on the
-  Launcher channel strip's own background ([Launcher view](ui-session-view.md) › Mixer). The track
+  Launcher channel strip's own background ([Launcher view](ui-session-view.md) › Mixer).
+  A group or folder header instead toggles its fold state; the group's channel-strip
+  background still opens its devices. The track
   is selected (the first click of the two already does that), the detail area opens if it was
   hidden (Shift+Tab, View › Hide detail area, or the splitter), and it shows that track's device
   chain. A device's panel answers a click with its selection (a 1 px `selection` outline in the

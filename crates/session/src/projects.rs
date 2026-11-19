@@ -429,7 +429,7 @@ impl Projects {
                 Ok(true) => {}
                 Err(error) => {
                     self.session_mut(id)?.release_player();
-                    return Err(CommandError(error));
+                    return Err(CommandError::new(error));
                 }
             }
         }
@@ -456,7 +456,7 @@ impl Projects {
             })
             .map_err(|e| {
                 suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
-                CommandError(format!("no audio output: {e}"))
+                CommandError::new(format!("no audio output: {e}"))
             })?;
         if kept {
             session.retain_plugins_at_player_rate();
@@ -509,7 +509,7 @@ impl Projects {
             })
             .map_err(|e| {
                 suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
-                CommandError(format!("no audio output: {e}"))
+                CommandError::new(format!("no audio output: {e}"))
             })?;
         if kept {
             session.retain_plugins_at_player_rate();
@@ -608,7 +608,7 @@ impl Projects {
                     })
                     .map_err(|e| {
                         suhina_plugins::trace!("audio output open failed: choice {choice:?}, error {e}");
-                        CommandError(format!("no audio output: {e}"))
+                        CommandError::new(format!("no audio output: {e}"))
                     })?;
             }
             self.preview = Some(session);
@@ -638,7 +638,7 @@ impl Projects {
             self.tabs.open.iter().any(|o| o.session.player().is_some_and(crate::Player::control_panel_open))
                 || self.preview.as_ref().and_then(Session::player).is_some_and(crate::Player::control_panel_open)
                 || self.devices.idle.as_ref().is_some_and(crate::Player::control_panel_open);
-        if panel_open { Err(CommandError("close the ASIO control panel first".into())) } else { Ok(()) }
+        if panel_open { Err(CommandError::new("close the ASIO control panel first".into())) } else { Ok(()) }
     }
 
     pub fn active(&self) -> Option<ProjectId> {
@@ -989,7 +989,7 @@ impl Projects {
                     said.extend(notice);
                     said
                 }
-                Err(e) => vec![e.0],
+                Err(e) => vec![e.message],
             };
         }
         if info.fallback { self.return_to_chosen() } else { Vec::new() }
@@ -1007,7 +1007,7 @@ impl Projects {
             return Vec::new();
         }
         if let Err(e) = self.reopen_output() {
-            return vec![e.0];
+            return vec![e.message];
         }
         // Gone again meanwhile: it plays in place of it again, and the next look tries again.
         let now = self.session_mut(None).ok().and_then(|s| s.player()).and_then(crate::Player::output_info);
@@ -1196,11 +1196,11 @@ pub fn commands_markdown() -> String {
 }
 
 fn no_project() -> CommandError {
-    CommandError("no project is open".into())
+    CommandError::new("no project is open".into())
 }
 
 fn unknown_project(id: ProjectId) -> CommandError {
-    CommandError(format!("no open project has id {}; project.list shows them", id.0))
+    CommandError::new(format!("no open project has id {}; project.list shows them", id.0))
 }
 
 pub(crate) fn project_param(params: &Value) -> Result<ProjectId, CommandError> {

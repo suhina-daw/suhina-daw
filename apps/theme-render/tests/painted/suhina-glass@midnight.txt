@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-glass@midnight 40d545f4cf402cd7
-arrangement suhina-glass@midnight a54e00647c755c50
-arrangement-scrolled suhina-glass@midnight 78e7f897fbdb6c38
+arrangement suhina-glass@midnight 0206335d4ab4bcf6
+arrangement-scrolled suhina-glass@midnight afefa21e7cc5d2da
 browser suhina-glass@midnight a1f2eb0ddebdead0
 browser-plug-ins suhina-glass@midnight d2968b0c4b63b941
 browser-search suhina-glass@midnight 9d1880f7629f77f0
-clip-audio suhina-glass@midnight 7c40800b7a18ebed
+clip-audio suhina-glass@midnight 94484af14248c22b
 clip-midi suhina-glass@midnight 666d75e0f6e21f63
 colour-picker suhina-glass@midnight dae975d20d27c535
 colour-picker-field suhina-glass@midnight 78733188f386d7c7
@@ -26,7 +26,7 @@ expanded-multiband suhina-glass@midnight 5979f07b8e477d5a
 expanded-reverb suhina-glass@midnight 82e2ce9c7679e963
 expanded-vinyl-distortion suhina-glass@midnight ff5fa579e09b4c55
 export-dialog suhina-glass@midnight 09beb5cf42285595
-grid-menu suhina-glass@midnight 59712042ec40ec06
+grid-menu suhina-glass@midnight c7f0f1c1ac2b83fc
 instrument-sampler suhina-glass@midnight 9ab142451c5bd72e
 launcher suhina-glass@midnight 509a7c8485e297c3
 launcher-hover suhina-glass@midnight 673fd296634b8024
@@ -36,7 +36,7 @@ launcher-toggles suhina-glass@midnight 9eedc9fc1cfcbf6f
 menu suhina-glass@midnight 408a16daaa655ef8
 missing-files suhina-glass@midnight a8d714bc54a1a423
 new-theme-dialog suhina-glass@midnight 143e279ddf0e8f71
-piano-roll suhina-glass@midnight f1f261c9e28fa7b8
+piano-roll suhina-glass@midnight b781021a6093d51e
 project-dialog suhina-glass@midnight 9b50b156fe7cd398
 quantize-menu suhina-glass@midnight d868cf8be0c49002
 quick-add suhina-glass@midnight 5eb8b9fad9002108

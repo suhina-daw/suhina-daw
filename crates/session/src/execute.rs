@@ -190,7 +190,7 @@ impl Session {
         match self.project.validate() {
             Ok(()) => Ok(value),
             Err(errors) => {
-                Err(CommandError(format!("{} would leave an invalid project: {errors:?}", prepared.spec.id)))
+                Err(CommandError::new(format!("{} would leave an invalid project: {errors:?}", prepared.spec.id)))
             }
         }
     }

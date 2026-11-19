@@ -911,6 +911,7 @@ to keep those controls usable, including at the 160 px minimum header width.
 | `track.ungroup {track}` | The group goes; its tracks stay where they were and play where the group played. |
 | `track.setGroup {track, group, index?}` | Moves a track, a group with everything inside it, into the group track `group` (an id or a name), or out of every group with `"none"`, and its channel plays into that group (the main output for `"none"`). It lands at `index` among the tracks directly in that group (or at the top level), from 0; at the end without `index`, or with one past the end. Refused for a return track, a target that is not a group, a group into itself or a group inside it, and a move that would nest deeper than the cap. |
 | `track.move {track, to}` | Moves a track, a group with everything inside it, to position `to` in the track order. |
+| `track.moveTo {tracks, target, placement}` | Moves the selected roots in project order before, inside or after `target` (`placement`: `before`, `inside`, `after`), as one undo step. A selected descendant of another selected track travels with its ancestor exactly once. Inside requires an audio group or presentation folder and inserts the roots as its first children. Before/after use the target's parent, after its entire subtree. Invalid targets, cycles and nesting beyond the limit reject the whole move. Reordering within a parent preserves routing; changing parents follows `track.setGroup`, including the presentation-folder routing contract below. |
 | `track.rename`, `track.setColor`, `track.delete` | Name (not empty), colour (`#rrggbb` or `none`), and deleting a track with its clips and slots; deleting a group ungroups it. `track.delete` takes one `track` or a `tracks` list, which goes as one undo step: Delete with several tracks selected and **Delete track** on a selected track's menu delete the selection so (#1188). |
 | `track.copy {tracks}`, `track.cut {tracks}` | Copy whole tracks for `track.paste`: each with its channel (volume, pan, mute, sends, output, inputs, monitoring; solo is not copied), devices with their parameters and plug-in states, automation, arrangement clips, take lanes and slots, and the clip contents they play; a group with every track in it. Cut deletes them after copying, as one undo step. Return tracks and Main are not copied. The copy reaches every open project, so it pastes in another tab too (#919). |
 | `track.paste {after?}` | Adds the copied tracks after `after` (in its group) or after the last regular track, with new ids and clip contents of their own (editing one copy's notes leaves the other alone), a number added to a name a track already has ("Bass 2"), slots fitted to the project's scenes, and sends only to returns the project has. A copied group's tracks play into the new group; the rest play into the group they land in, or Main. |
@@ -922,8 +923,8 @@ moved clip; they stack when either stacking setting is on (one `stack` flag for 
 not per kind) ([browser](browser.md) › Files).
 
 In the Arrangement view a header click selects a track (Ctrl adds or takes one out, Shift takes a run), and the Launcher view's column headers select the same tracks the same way (#208), Ctrl+G
-groups the selection, dragging a header moves the track above the lane under the pointer (below it
-from its lower half), and a right-click opens the track's menu: name, colour, group, ungroup,
+groups the selection, dragging a selected header moves the whole selection (an unselected
+header moves just itself), and a right-click opens the track's menu: name, colour, group, ungroup,
 **Move into group** (a submenu of every other group it can go into), **Move out of group** (one
 level up, right after the group it leaves), **Audio input** or **MIDI input** on a track that
 plays them (the source's channels and the monitoring; the commands the strip's block and the
@@ -941,7 +942,8 @@ open the persistent, non-modal [colour window](colour-picker.md), whose changes 
 A press on the band that drags still resizes the header column where the band meets its inner
 edge ([Launcher view](ui-session-view.md) › Track colour).
 
-A **double-click on a header** (on its name or its background, not on one of its controls) also
+A **double-click on a group or folder header** (its name or background, not its controls)
+folds or unfolds its children. A double-click on an ordinary track header also
 shows the track's devices in the detail area, opening the detail area if it was hidden; a clip
 selected on that track stays selected, with the detail area's switch on **Devices**, and a clip
 selected on another track is no longer selected ([clip editor](ui-clip-editor.md) › Where it
@@ -989,11 +991,92 @@ track's colour (`track.colorGroup` with `clips`, one undo step). A looping clip'
 shrink with the lane height. Its 1 px boundary line uses half the leading edge's contrast; the top notch cuts through to the canvas colour for a clearer silhouette. A group that holds tracks has
 the fold triangle at the start of its header (Folded groups): the lanes of every track inside it, at any
 depth, are hidden while it is folded, and the Launcher view hides their columns; both views fold
-the same groups, and folding is part of the view, not an edit, so it does not undo. A dragged
-header joins the group of the lane it is let go over: above that lane, or below it from its lower
-half, and below the header of an open group is into that group, first. Within the same group the
-drop is a `track.move`; into another group, or out to the top level, it is a `track.setGroup`.
-After a folded group is after everything inside it.
+the same groups, and folding is part of the view, not an edit, so it does not undo. The fold
+button reserves 20 px of width, with the small triangle kept at its established position.
+For a container, a dedicated disclosure gutter spans the full height of its header, including
+tall headers with routing controls. It faces the timeline: on the left when headers are on
+the right, and on the right when headers are on the left. The small glyph follows that gutter;
+the name and mixer controls stay outside it. The adjacent thin colour band remains a separate
+colour action. Hover reveals the whole clickable surface with a subtle rounded fill and border;
+keyboard focus uses the theme's accent outline. A tooltip names Fold/Unfold and explains
+the header double-click alternative. The Launcher uses the full height of the title strip.
+Single-click elsewhere still selects, Ctrl/Shift selection and dragging remain independent,
+and rename keeps its existing command. Enter/Space on the focused disclosure button work
+as with other buttons. Its glyph does not grow to communicate the target.
+
+This interaction applies the separation of disclosure and selection in the
+[Carbon tree-view guidelines](https://carbondesignsystem.com/components/tree-view/usage/)
+and [Fluent tree navigation guidance](https://fluent2.microsoft.design/components/web/react/core/tree/usage/).
+The [WAI tree-view pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/)
+also separates focus from multi-selection. Suhina keeps its track-header selection and
+dragging conventions rather than making a single click anywhere fold the container.
+
+A dragged selection uses `track.moveTo`. A group or folder header's middle half is an
+**inside** target whether open or folded, highlighted with an outline. Its outer quarters
+mean **before** and **after**, shown with an insertion line; an ordinary track splits into
+before/after halves. The Arrangement uses the vertical axis and the Launcher the horizontal
+axis. An Arrangement **after** line on an expanded container sits below its last visible
+descendant, including that descendant's displayed take and automation lanes, matching the
+resulting order. An inside drop does not change the destination's fold state. Selected roots keep their
+relative project order, their nested contents and the order of unselected tracks. No valid
+drop is offered on a moving track or anywhere inside its subtree. After a folded group is
+after everything inside it. Save/reload retains the resulting hierarchy and order; undo and
+redo apply to the whole selection together.
+
+When a move (`track.moveTo` or `track.setGroup`) takes the last direct member out of a
+presentation folder, that folder disappears. The same applies to source folders emptied by
+removing an inner folder, from the innermost outward. Cleanup runs after the whole selection
+has moved, so a destination or an insertion anchor remains available during the move. Only
+ancestors of the moved roots are candidates: unrelated empty folders and deliberately empty
+destinations remain. The move and removed folders are one undo step; redo and save/reload
+retain the resulting hierarchy. Folder cleanup does not change any audio channel, device,
+automation or route. This is Suhina's own organisation rule, specified from user feedback
+on #1569; audio groups have a separate processing lifecycle.
+
+An audio group also disappears when a move, deletion or cut removes its last direct member.
+Empty source ancestors are dissolved from the inside outward in the same edit, using the
+same routing cleanup as **Ungroup**: remaining channels playing into the removed group
+play into its former output, and sends and sidechain references to it are removed. Undo
+restores every removed group, its processing and all references as well as the moved tracks.
+This is not a global cleanup of older projects or unrelated empty groups.
+After deletion or cut, selection takes the next surviving track in the original order, or
+the nearest preceding survivor when none follows; ancestors removed by cleanup are skipped.
+
+A neutral group is removed without a question. A group has processing to confirm when it
+has devices (disabled ones included), mixer automation, non-default gain/pan/mute/solo/cue,
+sends, a non-default output, its own musical contents, or surviving incoming audio or
+sidechain references. Such a group is not removed implicitly. The command fails without
+changing the project or clipboard and identifies the group ids; retrying requires those
+ids in the optional `removeGroupProcessing` list. This applies to explicit Ungroup and
+group deletion too; cutting a selected group keeps its own processing in the clipboard,
+but still checks references from channels outside the cut and any source ancestors emptied
+by the edit. The consent list accepts omitted or null as no consent, accepts duplicate ids,
+and has the same 1024-entry bound as the project's track limit. A refused or cancelled cut
+preserves the internal clipboard, the system clipboard and which kind of copy will paste.
+
+A group's own non-default audio or MIDI input settings also require consent: removing its
+last member must not silently disconnect a live input that still plays through the group.
+
+The desktop asks **Remove group processing?**, lists every affected group in a wrapped,
+scrollable area, explains that
+their effects, mixer settings, routing and any clips or takes owned by those group tracks
+will be removed, and offers
+**Remove processing** or **Cancel**. Cancel, Escape and the close button leave the original
+operation unapplied. **Remember my choice** on Remove sets **Settings › Arrangement ›
+Groups › Empty group processing** to **Remove**; its default is **Ask**. The setting applies
+only when the desktop dispatches the edit, never to CLI or MCP calls. It is saved, exported
+and documented with the other settings. Confirmation applies to the identified group ids;
+new affected groups require a new decision. No automatic effect inheritance is offered.
+
+Public design references consulted on 2026-11-19: the
+[Ableton Live mixing manual](https://www.ableton.com/en/manual/mixing/#group-tracks)
+describes explicit grouping/ungrouping and group-level processing, but does not specify
+last-member processing inheritance or a confirmation preference. The
+[Ardour subgrouping manual](https://manual.ardour.org/signal-routing/subgrouping/)
+distinguishes subgroup removal from deleting a bus because their routing consequences
+differ. The lifecycle and conditional confirmation above are Suhina's own design. Appending
+a group's devices to its last member would put them before that member's mixer instead of
+after it, changing gain staging, sends and sidechain signals; it is not a preserving ungroup.
 
 While the piano roll is pulled to the top with **Edited track** (Settings › Clip editor › Piano roll),
 the view shows only its ruler, loop brace and marker rows and the edited track's lane, whole and

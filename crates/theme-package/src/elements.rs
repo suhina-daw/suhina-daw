@@ -99,6 +99,8 @@ pub const ATTRIBUTES: &[(&str, &str)] = &[
     ),
     ("layout", "which line of a track header holds what, by its width and height: short, narrow, side or stacked"),
     ("name-first", "a track header whose name's line comes first"),
+    ("header-side", "the Arrangement header column's side of the timeline: left or right"),
+    ("disclosure", "a container's reserved full-height disclosure gutter: left or right"),
     ("narrow", "a mixer strip 96 points wide or less"),
 ];
 
@@ -134,6 +136,7 @@ pub const GROUP_IDS: &[&str] = &[
     "mixer-buttons",
     "mixer-sends",
     "header-indent",
+    "header-disclosure",
     "header-body",
     "header-first",
     "header-second",
@@ -345,7 +348,7 @@ pub const ELEMENTS: &[Element] = &[
         .settings(&["track-headers", "track-height", "header-min-width", "header-tint"]),
     element("track-header", Container, "A track's header, in the Arrangement view and over a Launcher column; Main's over the Launcher's scenes is `track-header[kind=\"main\"]`.")
         .parts(&["track-name", "track-number", "track-colour", "fold", "group"])
-        .attributes(&["color", "selected", "armed", "muted", "kind", "layout", "size", "name-first"])
+        .attributes(&["color", "selected", "armed", "muted", "kind", "layout", "size", "name-first", "header-side", "disclosure"])
         .artwork(&[
             default_svg!("track.midi", "icon[kind=\"midi\"]"),
             default_svg!("track.audio", "icon[kind=\"audio\"]"),

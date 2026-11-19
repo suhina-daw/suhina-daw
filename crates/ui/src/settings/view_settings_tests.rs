@@ -60,6 +60,7 @@ fn view_settings_survive_a_round_trip_through_the_settings_file() {
         copy_wrapped: false,
         alt_wheel_one: true,
         folder_drop: FolderDrop::Copy,
+        remove_group_processing: true,
         arrangement_toolbar: true,
         default_grid: "adaptive narrow",
         replace_clip: true,

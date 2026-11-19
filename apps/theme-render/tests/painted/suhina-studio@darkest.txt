@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog suhina-studio@darkest 2b7876e5c8b8af11
-arrangement suhina-studio@darkest 286f104fa7ff2436
-arrangement-scrolled suhina-studio@darkest 2595bfbba76498be
+arrangement suhina-studio@darkest d704bceb4044eaa2
+arrangement-scrolled suhina-studio@darkest 8ef964fefbf74a64
 browser suhina-studio@darkest 2b28c8b77cdc1a4c
 browser-plug-ins suhina-studio@darkest ddc3c0849d5a691d
 browser-search suhina-studio@darkest 8b75864957585e73
-clip-audio suhina-studio@darkest b2a5eb7157f979ed
+clip-audio suhina-studio@darkest a0d06320da5415d3
 clip-midi suhina-studio@darkest 2b78abe994162a55
 colour-picker suhina-studio@darkest 26c135b761ac1e92
 colour-picker-field suhina-studio@darkest 9cd368454f25e01b
@@ -26,7 +26,7 @@ expanded-multiband suhina-studio@darkest c33eb779a6b1c56c
 expanded-reverb suhina-studio@darkest a64f69e95e6f7159
 expanded-vinyl-distortion suhina-studio@darkest 3adf91e3358d24bd
 export-dialog suhina-studio@darkest 8778b1dfd7f1123d
-grid-menu suhina-studio@darkest 725c1cee607d7eb3
+grid-menu suhina-studio@darkest 9f49d0a5d8267f3d
 instrument-sampler suhina-studio@darkest 8dc2d8c9b61de84a
 launcher suhina-studio@darkest 40a9d1f93f74883d
 launcher-hover suhina-studio@darkest a995ba954db27c7d
@@ -36,7 +36,7 @@ launcher-toggles suhina-studio@darkest 4b56933cf56ac3f5
 menu suhina-studio@darkest a3b17a410baa842e
 missing-files suhina-studio@darkest 7b6fa4bf54af5784
 new-theme-dialog suhina-studio@darkest 5b18652eabdcd46d
-piano-roll suhina-studio@darkest b2f3b4eb74ac50ec
+piano-roll suhina-studio@darkest 3f2d968d512fa148
 project-dialog suhina-studio@darkest cc71674fbd930045
 quantize-menu suhina-studio@darkest dc6776d0d4467568
 quick-add suhina-studio@darkest 486e03c385b278cf

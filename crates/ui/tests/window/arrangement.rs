@@ -751,8 +751,11 @@ fn groups_nest_fold_and_take_tracks_from_the_menu_and_by_dragging() {
     let drums = harness.get_by_label("Drums colour").rect();
     assert_eq!(groups.len(), 2);
     assert_eq!((groups[0].width(), groups[1].width(), drums.width()), (6.0, 4.0, 3.0));
-    assert_eq!(groups[1].left() - groups[0].left(), 8.0);
-    assert_eq!(drums.left() - groups[1].left(), 6.0);
+    let inward = |rect: egui::Rect| {
+        if harness.state().arrangement().headers_left { -rect.right() } else { rect.left() }
+    };
+    assert_eq!(inward(groups[1]) - inward(groups[0]), 8.0);
+    assert_eq!(inward(drums) - inward(groups[1]), 6.0);
 
     // Keys into the outer group from its menu.
     harness.get_by_label("Track Keys").click_secondary();
@@ -784,7 +787,7 @@ fn groups_nest_fold_and_take_tracks_from_the_menu_and_by_dragging() {
 }
 
 #[test]
-fn dragging_a_header_below_a_group_header_puts_the_track_in_the_group() {
+fn dragging_a_header_into_a_group_header_puts_the_track_in_the_group() {
     let mut harness = arrangement_app();
     harness.get_by_label("Track Drums").click();
     harness.run();
@@ -792,8 +795,8 @@ fn dragging_a_header_below_a_group_header_puts_the_track_in_the_group() {
     harness.run();
     let from = harness.get_by_label("Track Vox").rect().center();
     let group = harness.get_by_label("Track Group").rect();
-    // The lower half of the group's header.
-    let to = egui::pos2(from.x, group.bottom() - 6.0);
+    // The middle of the group's header is inside, even when it is folded.
+    let to = egui::pos2(from.x, group.center().y);
     harness.hover_at(from);
     harness.run();
     harness.drag_at(from);
@@ -806,6 +809,177 @@ fn dragging_a_header_below_a_group_header_puts_the_track_in_the_group() {
     harness.run();
     assert_eq!(names(&harness)[..3], ["Group", "Vox", "Drums"]);
     assert_eq!(parent_name(&harness, "Vox").as_deref(), Some("Group"));
+}
+
+/// The same gesture in both views, with every combination of group/folder, open/folded,
+/// and single/multiple selection.
+#[test]
+fn headers_move_selected_tracks_into_open_and_folded_containers_in_both_views() {
+    for arrangement in [false, true] {
+        for folder in [false, true] {
+            for folded in [false, true] {
+                for multiple in [false, true] {
+                    let mut session = Session::new(demo_project());
+                    session
+                        .execute(
+                            if folder { "track.folder" } else { "track.group" },
+                            &json!({"tracks": ["Drums"], "name": "Container"}),
+                        )
+                        .unwrap();
+                    let before = session.project().clone();
+                    let mut app = demo_app();
+                    app.set_session(session, &[]);
+                    let mut harness = window(app);
+                    if arrangement {
+                        harness.get_by_label("Arrangement view").click();
+                        harness.run();
+                    }
+                    if folded {
+                        harness.get_by_label("Fold Container").click();
+                        harness.run();
+                    }
+                    harness.get_by_label("Track Vox").click();
+                    harness.run();
+                    if multiple {
+                        harness.get_by_label("Track Bass").click_modifiers(Modifiers::COMMAND);
+                        harness.run();
+                    }
+                    let from = harness.get_by_label("Track Vox").rect().center();
+                    let to = harness.get_by_label("Track Container").rect().center();
+                    harness.hover_at(from);
+                    harness.run();
+                    harness.drag_at(from);
+                    harness.step();
+                    harness.hover_at(to);
+                    harness.step();
+                    harness.drop_at(to);
+                    harness.run();
+                    assert_eq!(
+                        parent_name(&harness, "Vox").as_deref(),
+                        Some("Container"),
+                        "arrangement={arrangement}, folder={folder}, folded={folded}, multiple={multiple}"
+                    );
+                    if multiple {
+                        assert_eq!(parent_name(&harness, "Bass").as_deref(), Some("Container"));
+                        assert_eq!(names(&harness)[..5], ["Container", "Bass", "Vox", "Drums", "Keys"]);
+                    } else {
+                        assert_eq!(parent_name(&harness, "Bass"), None);
+                        assert_eq!(names(&harness)[..5], ["Container", "Vox", "Drums", "Bass", "Keys"]);
+                    }
+                    assert_eq!(
+                        harness.query_by_label("Track Vox").is_none(),
+                        folded,
+                        "dropping inside preserves the container's fold state"
+                    );
+                    let moved = harness.state().session().unwrap().project().clone();
+                    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+                    harness.run();
+                    assert_eq!(harness.state().session().unwrap().project(), &before);
+                    harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
+                    harness.run();
+                    assert_eq!(harness.state().session().unwrap().project(), &moved);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn container_headers_have_wide_fold_targets_and_double_click_toggles_them() {
+    for arrangement in [false, true] {
+        for folder in [false, true] {
+            let mut session = Session::new(demo_project());
+            session
+                .execute(
+                    if folder { "track.folder" } else { "track.group" },
+                    &json!({"tracks": ["Drums"], "name": "Container"}),
+                )
+                .unwrap();
+            let before = session.project().clone();
+            let mut app = demo_app();
+            app.set_session(session, &[]);
+            let mut harness = window_with_step(app, 1.0 / 60.0);
+            if arrangement {
+                harness.get_by_label("Arrangement view").click();
+                harness.run();
+            }
+            let target = harness.get_by_label("Fold Container").rect();
+            assert!(target.width() >= 20.0, "{target:?}");
+            // The button's margin works, not just the tiny painted triangle in the centre.
+            let edge = egui::pos2(target.left() + 1.0, target.center().y);
+            harness.hover_at(edge);
+            harness.run();
+            harness.drag_at(edge);
+            harness.drop_at(edge);
+            harness.run();
+            assert!(harness.query_by_label("Track Drums").is_none());
+            let at = harness.get_by_label("Track Container").rect().center();
+            double_click_at(&mut harness, at);
+            assert!(harness.query_by_label("Track Drums").is_some());
+            double_click_at(&mut harness, at);
+            assert!(harness.query_by_label("Track Drums").is_none());
+            assert_eq!(
+                harness.state().session().unwrap().project(),
+                &before,
+                "folding is view state, not a project edit"
+            );
+        }
+    }
+}
+
+#[test]
+fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_separate() {
+    struct Arrangement {
+        timeline: Timeline,
+        state: ArrangementViewState,
+        actions: Vec<Action>,
+    }
+    for headers_left in [false, true] {
+        for folder in [false, true] {
+            let mut session = Session::new(demo_project());
+            session
+                .execute(
+                    if folder { "track.folder" } else { "track.group" },
+                    &json!({"tracks": ["Drums"], "name": "Container"}),
+                )
+                .unwrap();
+            let container = session.project().tracks.iter().find(|t| t.name == "Container").unwrap().id;
+            let mut state = ArrangementViewState::default();
+            state.headers_left = headers_left;
+            state.set_lane_height(container, 160.0);
+            let view = Arrangement { timeline: Timeline::build(session.project(), None), state, actions: Vec::new() };
+            let mut harness = Harness::builder().allow_missing_glyphs().with_size(SIZE).build_ui_state(
+                |ui, v: &mut Arrangement| arrangement_view::show(ui, &v.timeline, &mut v.state, &mut v.actions),
+                view,
+            );
+            theme::install(&harness.ctx);
+            harness.run();
+            let header = harness.get_by_label("Track Container").rect();
+            let target = harness.get_by_label("Fold Container").rect();
+            let colour = harness.get_by_label("Container colour").rect();
+            assert!((target.top() - header.top()).abs() <= 1.0, "{target:?} / {header:?}");
+            assert!((target.bottom() - header.bottom()).abs() <= 1.0, "{target:?} / {header:?}");
+            assert_eq!(target.center().x > header.center().x, headers_left);
+            assert!(!target.intersects(colour), "the colour strip keeps its own action");
+            // Exercise the entire gutter, well away from the small glyph at the top.
+            for fraction in [0.08, 0.5, 0.92] {
+                let at = egui::pos2(target.center().x, target.top() + target.height() * fraction);
+                for folded in [true, false] {
+                    harness.hover_at(at);
+                    harness.run();
+                    harness.drag_at(at);
+                    harness.drop_at(at);
+                    harness.run();
+                    assert_eq!(harness.query_by_label("Track Drums").is_none(), folded);
+                }
+            }
+            assert!(harness.state().actions.is_empty(), "folding is view state");
+            harness.get_by_label("Container colour").click();
+            harness.run();
+            assert!(harness.query_by_label("+ More colours").is_some(), "the strip opens the colour menu");
+            assert!(harness.query_by_label("Track Drums").is_some(), "colour selection does not fold");
+        }
+    }
 }
 
 #[test]

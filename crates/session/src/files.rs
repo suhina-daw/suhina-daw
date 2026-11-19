@@ -555,7 +555,7 @@ pub(crate) fn add_files(session: &mut Session, params: &Value) -> Result<Value, 
                 stem_groups.push(done.group.0);
                 placed.extend(done.clips);
             }
-            Err(reason) => skipped.push(json!({ "path": path, "reason": reason.0 })),
+            Err(reason) => skipped.push(json!({ "path": path, "reason": reason.message })),
         }
     }
     if placed.is_empty() {

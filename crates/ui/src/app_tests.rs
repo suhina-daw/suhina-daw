@@ -4,6 +4,161 @@
 use super::*;
 
 #[test]
+fn deleting_the_last_member_selects_the_nearest_surviving_neighbour() {
+    for command in ["track.delete", "track.cut"] {
+        for following in [false, true] {
+            let builder =
+                suhina_test_support::ProjectBuilder::new().midi_track(1, "A").midi_track(2, "B").midi_track(3, "C");
+            let builder = if following { builder.midi_track(4, "D") } else { builder };
+            let mut session = Session::new(builder.build_without_ids());
+            session.execute("track.group", &json!({"tracks": [3], "name": "G"})).unwrap();
+            let mut app = App::new();
+            app.set_session(session, &[]);
+            app.select_tracks(vec![TrackId(3)]);
+            app.run(&Action::new(command, json!({"tracks": [3]})));
+            let expected = TrackId(if following { 4 } else { 2 });
+            assert_eq!(app.view.selected_tracks, [expected], "{command}, following={following}");
+            assert_eq!(app.arrangement.selected_tracks, [expected]);
+        }
+    }
+}
+
+#[test]
+fn a_cut_waits_for_consent_before_changing_any_clipboard() {
+    use egui_kittest::kittest::Queryable;
+    let mut session = Session::new(crate::demo::demo_project());
+    let drums = session.project().tracks.iter().find(|t| t.name == "Drums").unwrap().id;
+    session.execute("track.group", &json!({"tracks": [drums.0], "name": "Percussion"})).unwrap();
+    session.execute("device.add", &json!({"track": "Percussion", "id": "utility"})).unwrap();
+    session.execute("track.copy", &json!({"tracks": ["Keys", "Vox"]})).unwrap();
+    let before = session.project().clone();
+    let mut app = App::new();
+    app.set_session(session, &[]);
+    app.select_tracks(vec![drums]);
+    app.copied_last = CopiedLast::Devices;
+    let state = (app, "existing external clipboard text".to_owned(), Vec::<String>::new());
+    let mut harness =
+        egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(1280.0, 800.0)).build_ui_state(
+            |ui, (app, clipboard, writes): &mut (App, String, Vec<String>)| {
+                app.ui(ui);
+                // The same platform commands a native backend would send to the OS clipboard.
+                ui.ctx().output(|o| {
+                    for command in &o.commands {
+                        if let egui::OutputCommand::CopyText(text) = command {
+                            clipboard.clone_from(text);
+                            writes.push(text.clone());
+                        }
+                    }
+                });
+            },
+            state,
+        );
+    harness.state_mut().0.queue_action("selection.cut");
+    harness.run();
+    assert!(harness.state().0.group_removal.is_some());
+    assert_eq!(harness.state().0.session().unwrap().project(), &before);
+    assert_eq!(harness.state().0.session().unwrap().copied_tracks(), 2);
+    assert_eq!(harness.state().0.copied_last, CopiedLast::Devices);
+    assert!(harness.state().2.is_empty());
+    harness.get_by_label("Keep the project unchanged").click();
+    harness.run();
+    assert!(harness.state().0.group_removal.is_none());
+    assert_eq!(harness.state().0.session().unwrap().project(), &before);
+    assert_eq!(harness.state().0.session().unwrap().copied_tracks(), 2);
+    assert_eq!(harness.state().0.copied_last, CopiedLast::Devices);
+    assert_eq!(harness.state().1, "existing external clipboard text");
+    assert!(harness.state().2.is_empty());
+    harness.state_mut().0.queue_action("selection.cut");
+    harness.run();
+    harness.get_by_label("Remove the groups and their processing").click();
+    harness.run();
+    assert_eq!(harness.state().0.session().unwrap().copied_tracks(), 1);
+    assert_eq!(harness.state().0.copied_last, CopiedLast::Other);
+    assert_eq!(harness.state().2, ["Suhina: tracks copied"]);
+    harness.state_mut().0.run(&Action::new("edit.undo", json!({})));
+    assert_eq!(harness.state().0.session().unwrap().project(), &before);
+}
+
+#[test]
+fn every_long_group_name_in_the_removal_dialog_can_be_read() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = App::new();
+    app.set_session(Session::new(crate::demo::demo_project()), &[]);
+    let names: Vec<String> = (0..12).map(|i| format!("Group {i}: layered percussion and long atmospheric textures recorded in the large room with additional parallel processing")).collect();
+    app.group_removal =
+        Some((app.projects.active().unwrap(), Action::new("track.cut", json!({"tracks": [1]})), names.clone()));
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    for name in &names {
+        harness.get_by_label(name).scroll_to_me();
+        harness.run();
+        let text = harness
+            .output()
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.job.text == *name => Some((text, shape.clip_rect)),
+                _ => None,
+            })
+            .unwrap();
+        assert!(text.0.galley.rows.len() > 1, "long names wrap rather than truncate");
+        let rect = text.0.galley.rect.translate(text.0.pos.to_vec2());
+        assert!(
+            text.1.expand(1.0).contains_rect(rect),
+            "the complete name is visible: {name}: {rect:?} in {:?}",
+            text.1
+        );
+    }
+    assert!(harness.state().group_removal.is_some(), "reading the list does not remove anything");
+}
+
+#[test]
+fn group_processing_consent_cancels_remembers_and_never_applies_to_command_clients() {
+    use egui_kittest::kittest::Queryable;
+    let mut session = Session::new(crate::demo::demo_project());
+    let group = session.execute("track.group", &json!({"tracks": ["Drums"], "name": "Percussion"})).unwrap()["track"]
+        .as_u64()
+        .unwrap();
+    session.execute("device.add", &json!({"track": group, "id": "utility"})).unwrap();
+    let before = session.project().clone();
+    let action = Action::new("track.setGroup", json!({"track": "Drums", "group": "none"}));
+    let mut app = App::new();
+    app.set_session(session, &[]);
+    app.run(&action);
+    assert!(app.group_removal.is_some());
+    assert_eq!(app.session().unwrap().project(), &before);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    harness.get_by_label("Keep the project unchanged").click();
+    harness.run();
+    assert!(harness.state().group_removal.is_none());
+    assert_eq!(harness.state().session().unwrap().project(), &before);
+    assert!(!harness.state().settings.view.remove_group_processing);
+    harness.state_mut().run(&action);
+    harness.run();
+    harness.get_by_label("Remember my choice").click();
+    harness.run();
+    harness.get_by_label("Remove the groups and their processing").click();
+    harness.run();
+    assert!(harness.state().settings.view.remove_group_processing);
+    assert!(harness.state().session().unwrap().project().track(TrackId(group as u32)).is_none());
+    harness.state_mut().run(&Action::new("edit.undo", json!({})));
+    assert_eq!(harness.state().session().unwrap().project(), &before);
+    // The preference belongs to desktop dispatch. A command client still needs consent.
+    let error = harness.state_mut().projects.session_mut(None).unwrap().execute(action.id, &action.params).unwrap_err();
+    assert!(!error.group_processing().is_empty());
+    harness.state_mut().run(&action);
+    assert!(harness.state().group_removal.is_none(), "remembered desktop choice skips the question");
+    assert!(harness.state().session().unwrap().project().track(TrackId(group as u32)).is_none());
+}
+
+#[test]
 fn the_map_window_stays_above_suhina_and_minimises_with_it() {
     use egui::WindowLevel::{AlwaysOnTop, Normal};
     assert_eq!(map_window_level(true, false), AlwaysOnTop, "a click in the main window keeps it above");

@@ -2,12 +2,12 @@
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
 agent-dialog high-contrast@light 8935c1aae2a6b2af
-arrangement high-contrast@light 7c4586915d82dbbc
-arrangement-scrolled high-contrast@light f40845513b96b8c8
+arrangement high-contrast@light ed03fae3dc56877c
+arrangement-scrolled high-contrast@light d5640788d0cd6bfe
 browser high-contrast@light a2428080eca32f55
 browser-plug-ins high-contrast@light a5a9ebb6fdedc44d
 browser-search high-contrast@light ce42a88330290bd7
-clip-audio high-contrast@light ea8e09f0d48047f0
+clip-audio high-contrast@light d89892fea2d79c94
 clip-midi high-contrast@light 5644c8f916cead8e
 colour-picker high-contrast@light 35824703c60b5365
 colour-picker-field high-contrast@light 2712a2c53bad8596
@@ -26,7 +26,7 @@ expanded-multiband high-contrast@light a85aca661ae57847
 expanded-reverb high-contrast@light 44cc605548413bd8
 expanded-vinyl-distortion high-contrast@light fab6d60be100d1a0
 export-dialog high-contrast@light cc9b5c9a7d9e4c4a
-grid-menu high-contrast@light b151ec84985570d8
+grid-menu high-contrast@light f7acfeda8ceca7a0
 instrument-sampler high-contrast@light 8de2cdc7861a5894
 launcher high-contrast@light 13447356790e2ac1
 launcher-hover high-contrast@light f0a88fd013d2c46d
@@ -36,7 +36,7 @@ launcher-toggles high-contrast@light b27ac265bc165098
 menu high-contrast@light d754fca3dda92995
 missing-files high-contrast@light 11f55ef0dc431d03
 new-theme-dialog high-contrast@light 6650178bf56a3bd6
-piano-roll high-contrast@light 4d03868719e2df58
+piano-roll high-contrast@light 3101859cdee15d08
 project-dialog high-contrast@light 3c9b182a41d5f24d
 quantize-menu high-contrast@light b99b92a870381d4b
 quick-add high-contrast@light d2b0f57d6fe8f8ac

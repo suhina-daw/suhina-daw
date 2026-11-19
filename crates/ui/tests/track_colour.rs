@@ -185,12 +185,26 @@ fn default_drums() -> Color32 {
 
 #[test]
 fn the_arrangement_header_has_a_band_of_the_track_colour_down_its_whole_height() {
-    let harness = arrangement();
-    let header = harness.get_by_label("Track Drums").rect();
-    let band = harness.get_by_label("Drums colour").rect();
-    assert!((band.height() - header.height()).abs() < 1.0, "the band runs the header's height: {band:?} {header:?}");
-    assert!((band.left() - header.left()).abs() < 1.0 && band.width() >= 5.0, "{band:?} {header:?}");
-    assert!(filled_with(&harness, band, default_drums()), "the band is drawn in Drums' colour");
+    for side in [suhina_ui::settings::Side::Left, suhina_ui::settings::Side::Right] {
+        let mut harness = arrangement();
+        let ctx = harness.ctx.clone();
+        let mut settings = harness.state().settings().clone();
+        settings.track_headers = Some(side);
+        harness.state_mut().set_settings(&ctx, settings);
+        harness.run();
+        let header = harness.get_by_label("Track Drums").rect();
+        let band = harness.get_by_label("Drums colour").rect();
+        assert!(
+            (band.height() - header.height()).abs() < 1.0,
+            "the band runs the header's height: {band:?} {header:?}"
+        );
+        let edge_gap = match side {
+            suhina_ui::settings::Side::Left => header.right() - band.right(),
+            suhina_ui::settings::Side::Right => band.left() - header.left(),
+        };
+        assert!(edge_gap.abs() < 1.0 && band.width() >= 5.0, "{band:?} {header:?}");
+        assert!(filled_with(&harness, band, default_drums()), "the band is drawn in Drums' colour");
+    }
 }
 
 #[test]
