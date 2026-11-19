@@ -792,7 +792,7 @@ fn last_member_edits_require_explicit_group_processing_consent_and_undo_together
         params["removeGroupProcessing"] = json!([group]);
         session.execute(command, &params).unwrap();
         assert!(session.project().track(TrackId(group)).is_none());
-        assert_eq!(session.undo_steps(), undo + 1);
+        assert_eq!(session.undo_steps().0, undo.0 + 1);
         run(&mut session, "edit.undo", json!({})).unwrap();
         assert_eq!(session.project(), &before, "devices, stable ids and automation all come back");
     }
