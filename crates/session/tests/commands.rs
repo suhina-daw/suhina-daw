@@ -756,7 +756,11 @@ fn invalid_multi_track_moves_roll_back_every_root_and_add_no_undo_step() {
     );
     assert_eq!(session.project(), &before);
     run(&mut session, "edit.undo", json!({})).unwrap();
-    assert_eq!(session.project(), &before_add, "failed moves add no undo step");
+    assert_eq!(
+        session.project(),
+        &Project { next_id: session.project().next_id, ..before_add },
+        "failed moves add no undo step; undo keeps the monotonic object-id counter"
+    );
 }
 
 #[test]

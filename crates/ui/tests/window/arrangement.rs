@@ -809,7 +809,7 @@ fn dragging_a_header_into_a_group_header_puts_the_track_in_the_group() {
 }
 
 /// The same gesture in both views, with every combination of group/folder, open/folded,
-/// and single/multiple selection. No app build or wall-clock timing is involved.
+/// and single/multiple selection.
 #[test]
 fn headers_move_selected_tracks_into_open_and_folded_containers_in_both_views() {
     for arrangement in [false, true] {

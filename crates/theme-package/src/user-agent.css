@@ -294,7 +294,7 @@ track-header button[kind="sends-previous"] { margin-left: 3px; }
 track-header button[kind="sends-next"] { margin: 0 -1px 0 2px; }
 /* One line: the fold triangle, the lanes' button, the buttons, the name, the volume and the take
    lanes' button. Stacked, the same, and under it the volume, the sends and the pan. */
-track-header[layout="stacked"] group[kind="header-second"] { padding-left: 14px; }
+track-header[layout="stacked"] group[kind="header-second"] { padding-left: 22px; }
 track-header[layout="stacked"] group[kind="header-second"] > button[kind="automation"] { margin-left: 0; }
 track-header[layout="stacked"] group[kind="header-second"] > value[kind="arrangement-volume"] { margin-left: 0; }
 track-header[layout="stacked"] group[kind="header-first"] > value[kind="arrangement-volume"] { margin-left: 2px; }
@@ -307,8 +307,8 @@ track-header[layout="narrow"] button[kind="track-on"] { margin-left: 0; }
 /* Beside: the buttons, the volume and the pan on one line, the lanes' button (centred under the
    track-on switch), the take lanes' button, the name and the sends on the other. */
 track-header[layout="side"] group[kind="header-first"] > button[kind="track-on"] { margin-left: 34px; }
-track-header[layout="side"] group[kind="header-second"] { padding-left: 46px; }
-track-header[layout="side"][name-first] group[kind="header-second"] { padding-left: 14px; }
+track-header[layout="side"] group[kind="header-second"] { padding-left: 54px; }
+track-header[layout="side"][name-first] group[kind="header-second"] { padding-left: 22px; }
 track-header[layout="side"] group[kind="header-second"] > button[kind="track-on"] { margin-left: 0; }
 track-header[layout="side"] group[kind="header-first"] > button[kind="automation"] { margin-left: 4px; }
 track-header[layout="side"] button[kind="takes"] { margin-left: 2px; }
