@@ -34,6 +34,13 @@ same columns to the canvas's right. In a row a device is as wide as its canvas a
 smaller detail area or column scrolls the panel. A panel a theme sizes with `.device { width }`
 and no canvas keeps one column that follows that width and scrolls.
 
+A built-in layout may use `#page` for host-local navigation (0..15, initially zero). Only a
+button with a linear X binding and a `Set` or `Expand` gesture may write it; drawing and
+visibility expressions may read it. The compact and expanded canvases share the selection for
+their project, track and complete device address. It is temporary view state: no DSP parameter,
+automation, project edit or undo entry. `.sd` version 6 does not accept this writable host binding.
+The [Instrument editor](instrument-editor.md) uses it for Play, Model and Sample.
+
 A device may also have an expanded panel: one larger fixed-size canvas (`device.expanded` in a
 `.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.
 A device with one has a button beside the X in its header, labelled **Expand** *name* (and

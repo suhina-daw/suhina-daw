@@ -363,6 +363,29 @@ fn the_reverbs_expanded_panel_has_every_parameter_and_the_compact_one_fits() {
 }
 
 #[test]
+fn the_instrument_editor_covers_sound_controls_without_exposing_metadata_or_navigation() {
+    let panel = panel("instrument").unwrap();
+    let compact = panel.ui.as_ref().unwrap();
+    let expanded = panel.expanded.as_ref().unwrap();
+    assert!(compact.size[0] <= 620.0);
+    assert_eq!(compact.size[1], builtin::COMPACT_HEIGHT);
+    assert_eq!(panel.parameters.len(), suhina_device_instrument::PARAMS.len());
+    let bound: std::collections::HashSet<_> =
+        expanded.controls.iter().flat_map(|c| c.x.iter().chain(c.y.iter())).map(|b| b.parameter.as_str()).collect();
+    for parameter in &suhina_device_instrument::PARAMS {
+        assert_eq!(bound.contains(parameter.id.as_ref()), parameter.id != "model_revision", "{}", parameter.id);
+        assert!(compact.hidden_parameters.contains(&parameter.id.to_string()));
+    }
+    assert!(bound.contains(suhina_device_sdk::ui::PAGE_ID));
+    assert!(panel.parameters.iter().all(|p| !p.id.starts_with('#')));
+    for (page, name) in ["Play", "Model", "Sample"].into_iter().enumerate() {
+        assert!(expanded.controls.iter().any(
+            |c| c.name == format!("{name} page") && c.gesture == suhina_device_sdk::ui::UiGesture::Set(page as u16)
+        ));
+    }
+}
+
+#[test]
 fn every_device_has_a_panel_with_its_parameters() {
     for info in DEVICES {
         let panel = panel(&info.id).unwrap_or_else(|| panic!("{} has no panel", info.id));

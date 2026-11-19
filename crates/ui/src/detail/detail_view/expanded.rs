@@ -172,12 +172,16 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             {
                 painter.line_segment([close.center() + from, close.center() + to], egui::Stroke::new(1.3, cross));
             }
-            let escape = !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+            let escape = (!ui.ctx().egui_wants_keyboard_input()
+                || crate::detail::device_canvas::owns_keyboard(ui.ctx()))
+                && !ui.ctx().text_edit_focused()
+                && ui.input(|i| i.key_pressed(egui::Key::Escape));
             if response.clicked() || escape {
                 close_expanded(ui.ctx());
             }
             let body =
                 Rect::from_min_max(Pos2::new(rect.left() + PAD, header.bottom() + PAD), rect.max - Vec2::splat(PAD));
+            crate::detail::device_canvas::collect_editor_keyboard(ui.ctx(), true);
             if !canvas.strip {
                 ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
                     egui::ScrollArea::both().auto_shrink([false, false]).id_salt("device-expanded-scroll").show(
@@ -202,10 +206,12 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                         },
                     );
                 });
+                crate::detail::device_canvas::collect_editor_keyboard(ui.ctx(), false);
                 return;
             }
             // The canvas stretched to the strip on each axis.
             crate::detail::device_canvas::show(ui, body, canvas, &state, &graph.parameters, track, &device.at, actions);
+            crate::detail::device_canvas::collect_editor_keyboard(ui.ctx(), false);
         });
 }
 

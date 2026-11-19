@@ -1,0 +1,113 @@
+// Copyright (C) 2026 The Suhina contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Expanded pages expose the existing engine honestly; page selection stays in the host.
+
+use super::Canvas;
+use suhina_device_sdk::ui::DeviceUi;
+
+pub(super) fn canvas() -> DeviceUi {
+    let mut ui = Canvas::new([880.0, 520.0]);
+    ui.title("Instrument", [24.0, 16.0, 400.0, 34.0], 28.0);
+    ui.label("Experimental struck modal · revision 1", [24.0, 54.0, 450.0, 20.0]);
+    ui.label("SOURCE", [632.0, 16.0, 220.0, 18.0]);
+    ui.menu(
+        "source",
+        "Editor source",
+        [632.0, 40.0, 220.0, 30.0],
+        "Choose the modal body, local sample, or their Hybrid mix",
+    );
+    for (i, name) in ["Play", "Model", "Sample"].into_iter().enumerate() {
+        ui.navigate(name, [24.0 + i as f32 * 144.0, 92.0, 132.0, 32.0], i as u16, false);
+    }
+
+    ui.page(0);
+    ui.group("PERFORMANCE", [24.0, 144.0, 832.0, 192.0]);
+    ui.dial("gain", "Output gain", [48.0, 180.0, 144.0, 136.0], "Gain for both sources");
+    ui.dial(
+        "release",
+        "Release time",
+        [214.0, 180.0, 144.0, 136.0],
+        "Release damping for modal voices and gated/looped samples",
+    );
+    ui.dial("blend", "Hybrid blend", [394.0, 192.0, 120.0, 116.0], "Hybrid only: move from modal body to local sample");
+    ui.dial("attack", "Sample attack", [548.0, 192.0, 120.0, 116.0], "Sample layer only: onset fade time");
+    ui.dial("sustain", "Sample sustain", [702.0, 192.0, 120.0, 116.0], "Sample layer only: held amplitude level");
+    ui.group("PLAYABLE RANGE", [24.0, 352.0, 832.0, 112.0]);
+    for (i, (id, label)) in [
+        ("key_low", "Lowest key"),
+        ("key_high", "Highest key"),
+        ("velocity_low", "Lowest velocity"),
+        ("velocity_high", "Highest velocity"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ui.number(id, label, 44.0 + i as f32 * 206.0, 390.0, 174.0);
+    }
+    ui.label(
+        "Key numbers: C4 = 60. Pitch wheel: ±2 semitones. Sustain pedal holds released keys.",
+        [24.0, 486.0, 832.0, 24.0],
+    );
+
+    ui.page(1);
+    ui.group("STRUCK BODY", [24.0, 144.0, 832.0, 244.0]);
+    ui.dial(
+        "body_decay",
+        "Body decay",
+        [54.0, 188.0, 170.0, 164.0],
+        "Time for the fundamental to decay by 60 dB; affects the next strike",
+    );
+    ui.dial(
+        "brightness",
+        "Brightness",
+        [248.0, 188.0, 170.0, 164.0],
+        "Energy in the higher resonances; affects the next strike",
+    );
+    ui.dial(
+        "structure",
+        "Structure",
+        [446.0, 208.0, 150.0, 138.0],
+        "Stretch resonance frequencies away from integer harmonics; affects the next strike",
+    );
+    ui.dial(
+        "strike",
+        "Strike position",
+        [646.0, 208.0, 150.0, 138.0],
+        "Excitation position along the resonant body; affects the next strike",
+    );
+    ui.label("Modes per voice", [40.0, 416.0, 196.0, 20.0]);
+    ui.menu("quality", "Modes per voice", [240.0, 412.0, 132.0, 30.0], "8 or 16 resonances per modal voice");
+    ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 416.0, 440.0, 20.0]);
+    ui.label(
+        "An original experimental resonator, not a calibrated acoustic instrument. Changes shape the next strike.",
+        [24.0, 486.0, 832.0, 24.0],
+    );
+
+    ui.page(2);
+    ui.waveform([24.0, 144.0, 832.0, 140.0]);
+    ui.number("root", "Root key", 24.0, 304.0, 130.0);
+    ui.label("Playback", [182.0, 304.0, 148.0, 18.0]);
+    ui.menu(
+        "playback",
+        "Sample playback",
+        [182.0, 326.0, 148.0, 28.0],
+        "Gate follows the key, One shot runs to the end, Loop repeats the loop region",
+    );
+    for (i, (id, label)) in
+        [("start", "Source start"), ("end", "Source end"), ("loop_start", "Loop start"), ("loop_end", "Loop end")]
+            .into_iter()
+            .enumerate()
+    {
+        ui.number(id, label, 354.0 + i as f32 * 128.0, 304.0, 116.0);
+    }
+    ui.dial("attack", "Sample fade in", [24.0, 386.0, 104.0, 104.0], "Sample layer attack time");
+    ui.dial("sustain", "Held sample level", [148.0, 386.0, 120.0, 104.0], "Sample layer held amplitude");
+    ui.label("Import selects Sample in one undo step. Set Root to the recorded note.", [300.0, 394.0, 548.0, 24.0]);
+    ui.label(
+        "Trim and loop positions are fractions of the source. No model is fitted here.",
+        [300.0, 426.0, 548.0, 24.0],
+    );
+    ui.label("Single-source map · key and velocity ranges are on Play", [300.0, 466.0, 548.0, 24.0]);
+    ui.finish()
+}

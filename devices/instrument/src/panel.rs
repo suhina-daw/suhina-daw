@@ -1,146 +1,216 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A compact stock panel composed exclusively of device-SDK controls.
+//! Native SDK presentation shared by the compact stock panel and expanded editor.
+
+#[path = "editor.rs"]
+mod editor;
 
 use suhina_device_sdk::{
     builtin::Layout,
-    ui::{CustomControl, DeviceUi, TextFormat, UiBinding, UiGesture, UiValue, Widget},
+    ui::{
+        CustomControl, DeviceUi, Draw, PAGE_ID, TextAlign, TextFormat, UiBinding, UiExpression, UiGesture, UiValue,
+        Widget,
+    },
 };
 
-fn control(ui: &mut DeviceUi, id: &str, widget: Widget, bounds: [f32; 4], gesture: UiGesture) {
-    ui.controls.push(CustomControl {
-        id: format!("{id}_{}", ui.controls.len()),
-        name: id.replace('_', " "),
-        tooltip: id.replace('_', " "),
-        bounds,
-        widget: Some(widget),
-        gesture,
-        x: Some(UiBinding::new(id)),
-        y: None,
-        drawing: vec![],
-        visible_when: None,
-    });
+pub(super) struct Canvas {
+    ui: DeviceUi,
+    page: Option<u16>,
 }
 
-fn label(ui: &mut DeviceUi, name: &str, bounds: [f32; 4]) {
-    control(ui, name, Widget::Label { label: name.into() }, bounds, UiGesture::Drag);
-    if let Some(control) = ui.controls.last_mut() {
-        control.x = None;
-    }
-}
-
-/// All sound controls remain native parameters; the panel only presents them.
-pub fn layout() -> Layout {
-    let mut ui = DeviceUi { size: [900.0, 168.0], viewport_size: Some([900.0, 168.0]), ..DeviceUi::default() };
-    label(&mut ui, "EXPERIMENTAL · struck modal v1", [8.0, 2.0, 260.0, 20.0]);
-    control(&mut ui, "source", Widget::Menu, [278.0, 2.0, 130.0, 20.0], UiGesture::Menu);
-    control(&mut ui, "quality", Widget::Menu, [418.0, 2.0, 70.0, 20.0], UiGesture::Menu);
-    label(&mut ui, "modes / voice", [496.0, 2.0, 105.0, 20.0]);
-    // The shared waveform handles local drag/drop and source boundaries. Recording is not
-    // offered by this prototype; this SDK marker disables its legacy inline recording strip.
-    control(&mut ui, "recording", Widget::SampleRecording, [8.0, 28.0, 200.0, 18.0], UiGesture::Drag);
-    if let Some(control) = ui.controls.last_mut() {
-        control.x = None;
-        control.visible_when = Some(UiValue::from(0.0));
-    }
-    control(&mut ui, "sample", Widget::SampleWaveform, [8.0, 28.0, 412.0, 76.0], UiGesture::Position);
-    if let Some(control) = ui.controls.last_mut() {
-        control.x = None;
-    }
-    for (i, (id, name, format)) in [
-        ("body_decay", "Decay", TextFormat::Seconds),
-        ("brightness", "Bright", TextFormat::Percent),
-        ("structure", "Structure", TextFormat::Number),
-        ("strike", "Strike", TextFormat::Percent),
-        ("blend", "Sample", TextFormat::Percent),
-        ("gain", "Gain", TextFormat::Decibels),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        control(
-            &mut ui,
-            id,
-            Widget::Dial { label: name.into(), decimals: if id == "structure" { 4 } else { 2 }, format, image: None },
-            [434.0 + i as f32 * 76.0, 30.0, 68.0, 72.0],
-            UiGesture::Drag,
-        );
-        if let Some(control) = ui.controls.last_mut() {
-            control.y = control.x.take();
-            control.tooltip = match id {
-                "body_decay" => "Modal: time for the fundamental to decay by 60 dB; affects the next strike",
-                "brightness" => "Modal: energy in the higher resonances; affects the next strike",
-                "structure" => "Modal: stretch the resonance frequencies away from integer harmonics",
-                "strike" => "Modal: excitation position along the resonant body",
-                "blend" => "Hybrid only: mix the local sample with the modal body",
-                _ => "Output gain for both sources",
-            }
-            .into();
+impl Canvas {
+    pub(super) fn new(size: [f32; 2]) -> Self {
+        Self {
+            ui: DeviceUi {
+                size,
+                viewport_size: Some(size),
+                accent_on: true,
+                // Everything is deliberately placed in the two canvases. Revision is metadata.
+                hidden_parameters: crate::PARAMS.iter().map(|p| p.id.to_string()).collect(),
+                ..DeviceUi::default()
+            },
+            page: None,
         }
     }
-    for (i, (id, name)) in [
-        ("root", "Root"),
-        ("key_low", "Low"),
-        ("key_high", "High"),
-        ("attack", "Attack"),
-        ("release", "Release"),
-        ("sustain", "Sustain"),
-        ("loop_start", "Loop start"),
-        ("loop_end", "Loop end"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        label(&mut ui, name, [8.0 + i as f32 * 110.0, 112.0, 100.0, 18.0]);
-        control(
-            &mut ui,
-            id,
+
+    pub(super) fn page(&mut self, page: u16) {
+        self.page = Some(page);
+    }
+
+    fn add(
+        &mut self,
+        name: &str,
+        widget: Widget,
+        bounds: [f32; 4],
+        binding: Option<&str>,
+        gesture: UiGesture,
+        tooltip: &str,
+    ) {
+        let binding = binding.map(UiBinding::new);
+        let vertical = gesture == UiGesture::Drag && binding.is_some();
+        self.ui.controls.push(CustomControl {
+            id: format!("control_{}", self.ui.controls.len()),
+            name: name.into(),
+            tooltip: tooltip.into(),
+            bounds,
+            widget: Some(widget),
+            gesture,
+            x: if vertical { None } else { binding.clone() },
+            y: if vertical { binding } else { None },
+            drawing: vec![],
+            visible_when: self.page.map(|page| {
+                UiValue::Expression(Box::new(UiExpression::Equal {
+                    a: UiValue::parameter(PAGE_ID, false),
+                    b: f32::from(page).into(),
+                }))
+            }),
+        });
+    }
+
+    pub(super) fn label(&mut self, text: &str, bounds: [f32; 4]) {
+        self.add(text, Widget::Label { label: text.into() }, bounds, None, UiGesture::Drag, "");
+    }
+
+    pub(super) fn title(&mut self, text: &str, bounds: [f32; 4], size: f32) {
+        self.add(
+            text,
+            Widget::Graphic {
+                drawing: vec![Draw::Text {
+                    position: [0.0.into(), 0.0.into()],
+                    text: text.into(),
+                    size,
+                    color: [3, 1, 1, 255],
+                    parameter: None,
+                    decimals: 0,
+                    align: TextAlign::Left,
+                    format: TextFormat::Number,
+                }],
+            },
+            bounds,
+            None,
+            UiGesture::Drag,
+            "",
+        );
+    }
+
+    pub(super) fn group(&mut self, title: &str, bounds: [f32; 4]) {
+        self.add(title, Widget::Panel { label: title.into() }, bounds, None, UiGesture::Drag, "");
+    }
+
+    pub(super) fn menu(&mut self, id: &str, name: &str, bounds: [f32; 4], tooltip: &str) {
+        self.add(name, Widget::Menu, bounds, Some(id), UiGesture::Menu, tooltip);
+    }
+
+    pub(super) fn dial(&mut self, id: &str, name: &str, bounds: [f32; 4], tooltip: &str) {
+        let format = match id {
+            "gain" => TextFormat::Decibels,
+            "body_decay" | "release" | "attack" => TextFormat::Seconds,
+            "structure" => TextFormat::Number,
+            _ => TextFormat::Percent,
+        };
+        self.add(
+            name,
+            Widget::Dial { label: name.into(), decimals: if id == "structure" { 4 } else { 2 }, format, image: None },
+            bounds,
+            Some(id),
+            UiGesture::Drag,
+            tooltip,
+        );
+        if let Some(control) = self.ui.controls.last_mut()
+            && let Some(binding) = control.y.as_mut()
+        {
+            binding.logarithmic = id == "body_decay";
+        }
+    }
+
+    pub(super) fn number(&mut self, id: &str, name: &str, x: f32, y: f32, w: f32) {
+        self.label(name, [x, y, w, 18.0]);
+        let integer = matches!(id, "root" | "key_low" | "key_high");
+        self.add(
+            name,
             Widget::Number {
-                decimals: if i < 3 { 0 } else { 2 },
-                format: if matches!(id, "attack" | "release") {
-                    TextFormat::Seconds
-                } else if i >= 5 {
-                    TextFormat::Percent
-                } else {
-                    TextFormat::Number
-                },
-                color: [166, 163, 255, 255],
+                decimals: if integer { 0 } else { 2 },
+                format: if integer { TextFormat::Number } else { TextFormat::Percent },
+                color: [3, 1, 5, 255],
                 center: false,
                 bordered: true,
                 prefix: String::new(),
                 suffix: String::new(),
             },
-            [8.0 + i as f32 * 110.0, 132.0, 100.0, 24.0],
+            [x, y + 22.0, w, 28.0],
+            Some(id),
             UiGesture::Drag,
+            "Drag vertically; Shift for precision; double click resets",
         );
-        if let Some(control) = ui.controls.last_mut() {
-            control.y = control.x.take();
+    }
+
+    pub(super) fn navigate(&mut self, name: &str, bounds: [f32; 4], page: u16, expand: bool) {
+        self.add(
+            name,
+            Widget::Button { label: name.into(), off_label: None, indicator: false },
+            bounds,
+            Some(PAGE_ID),
+            if expand { UiGesture::Expand(page) } else { UiGesture::Set(page) },
+            if expand {
+                "Open the expanded instrument editor"
+            } else {
+                "Show this editor page; sound and undo history stay unchanged"
+            },
+        );
+        if !expand && let Some(control) = self.ui.controls.last_mut() {
+            control.name = format!("{name} page");
         }
     }
-    control(&mut ui, "playback", Widget::Menu, [620.0, 2.0, 160.0, 20.0], UiGesture::Menu);
-    ui.hidden_parameters = [
-        "source",
-        "model_revision",
-        "quality",
-        "body_decay",
-        "brightness",
-        "structure",
-        "strike",
-        "blend",
-        "gain",
-        "root",
-        "key_low",
-        "key_high",
-        "attack",
-        "release",
-        "sustain",
-        "loop_start",
-        "loop_end",
-        "playback",
+
+    pub(super) fn waveform(&mut self, bounds: [f32; 4]) {
+        // Suppress the sampler's legacy recording strip; this device imports local files.
+        self.add(
+            "Sample recording unavailable",
+            Widget::SampleRecording,
+            [bounds[0], bounds[1], 8.0, 8.0],
+            None,
+            UiGesture::Drag,
+            "",
+        );
+        if let Some(control) = self.ui.controls.last_mut() {
+            control.visible_when = Some(0.0.into());
+        }
+        self.add(
+            "Local sample waveform",
+            Widget::SampleWaveform,
+            bounds,
+            None,
+            UiGesture::Position,
+            "Drop a local audio file here; drag the source or loop boundaries",
+        );
+    }
+
+    pub(super) fn finish(self) -> DeviceUi {
+        self.ui
+    }
+}
+
+/// Two presentations of the same native parameter set, without a second sound-state path.
+pub fn layout() -> Layout {
+    let mut panel = Canvas::new([620.0, 168.0]);
+    panel.label("STRUCK MODAL · experimental v1", [10.0, 4.0, 248.0, 20.0]);
+    panel.menu("source", "Source", [272.0, 4.0, 136.0, 24.0], "Modal, local Sample, or both in Hybrid");
+    panel.navigate("Open editor", [456.0, 4.0, 152.0, 24.0], 0, true);
+    panel.waveform([10.0, 36.0, 244.0, 88.0]);
+    panel.label("Drop a local sample to play it", [10.0, 132.0, 244.0, 20.0]);
+    for (i, (id, name, hint)) in [
+        ("body_decay", "Decay", "Modal: time to decay by 60 dB; next strike"),
+        ("brightness", "Brightness", "Modal: energy in higher resonances; next strike"),
+        ("release", "Release", "Release damping for the modal body and sample gate"),
+        ("blend", "Blend", "Hybrid only: amount of local sample in the mix"),
+        ("gain", "Gain", "Output gain for both sources"),
     ]
     .into_iter()
-    .map(str::to_owned)
-    .collect();
-    Layout { ui: Some(ui), ..Layout::default() }
+    .enumerate()
+    {
+        panel.dial(id, name, [270.0 + i as f32 * 68.0, 44.0, 64.0, 88.0], hint);
+    }
+    panel.label("Model and sample details in the editor", [270.0, 140.0, 336.0, 18.0]);
+    Layout { ui: Some(panel.finish()), expanded: Some(editor::canvas()), ..Layout::default() }
 }
