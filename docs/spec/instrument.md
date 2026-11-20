@@ -119,7 +119,7 @@ thresholds. The initial development reference machine is a Ryzen 5 5600X; this i
 context, not a claim of a measured real-time polyphony budget. The provisional acceptance target
 is at most 20% of one core on average at 48 kHz / 64 frames with all 16 voices, including the
 dense-retrigger workload, and a 99th-percentile block shorter than one block deadline. Modal
-voice state is bounded below 4 KiB per voice (a revision-4 voice carries 64 fitted resonators
+voice state is bounded below 8 KiB per voice (a revision-4 voice carries 128 fitted resonators
 beside the 16 of revisions 1 and 2); the whole inline runtime target is 256 KiB, excluding
 shared source PCM and the SDK's prepared stretch buffers. Report those exclusions with the
 measurement rather than calling them free. `cargo run --release -p suhina-device-instrument

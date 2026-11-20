@@ -226,6 +226,10 @@ fn the_soft_pedal_strikes_quieter_and_darker() {
     let soft = play(&mut pedal, 60, 1.0, 4800, 128);
     let energy = |x: &[f32]| x.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>();
     assert!(energy(&soft) < 0.6 * energy(&loud));
+    // The Play page's switch does the same without a pedal.
+    let mut switch = core(ModelSet::new(vec![recording(Vec::new())]).unwrap());
+    switch.set_param(param::SOFT_PEDAL, 1.0);
+    assert_eq!(play(&mut switch, 60, 1.0, 4800, 128), soft);
 }
 
 fn held_recording() -> ModelRecording {

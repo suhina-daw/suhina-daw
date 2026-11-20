@@ -187,13 +187,13 @@ fn a_resonance_only_one_recording_has_fades_in_proportion() {
 
 #[test]
 fn controls_transform_fused_modes_and_the_sine_budget_holds() {
-    let modes: Vec<_> = (1..=32)
+    let modes: Vec<_> = (1..=MAX_MODEL_MODES as u32)
         .map(|n| ModelMode {
             fast_decay_seconds: 0.1,
             fast_share: 0.5,
             beat_ratio: 1.001,
             beat_share: 0.2,
-            ..ModelMode::plain(f64::from(n), 1.0 / 32.0, 1.0)
+            ..ModelMode::plain(f64::from(n), 1.0 / MAX_MODEL_MODES as f64, 1.0)
         })
         .collect();
     let set = ModelSet::new(vec![ModelRecording {
@@ -209,7 +209,7 @@ fn controls_transform_fused_modes_and_the_sine_budget_holds() {
     .unwrap();
     let mut voice = Voice::default();
     set.voice(36, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
-    assert_eq!(voice.count, MAX_VOICE_SINES, "96 candidate sines are cut to the budget");
+    assert_eq!(voice.count, MAX_VOICE_SINES, "192 candidate sines are cut to the budget");
     assert!(voice.attack.is_none());
     let mut half = Controls::NEUTRAL;
     half.sines = 32;

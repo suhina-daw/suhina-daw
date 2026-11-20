@@ -61,7 +61,8 @@ pub mod param {
     pub const VELOCITY_BRIGHTNESS: usize = 24;
     pub const DAMPER_NOISE: usize = 25;
     pub const PEDAL_RESONANCE: usize = 26;
-    pub const COUNT: usize = 27;
+    pub const SOFT_PEDAL: usize = 27;
+    pub const COUNT: usize = 28;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -96,6 +97,7 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("velocity_brightness", "Velocity to brightness", (0.0, 1.0), 0.35, Unit::Percent),
     control("damper_noise", "Damper noise", (0.0, 1.0), 0.2, Unit::Percent),
     control("pedal_resonance", "Pedal resonance", (0.0, 1.0), 0.3, Unit::Percent),
+    ParamInfo::toggle("soft_pedal", "Soft pedal", false),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
@@ -347,7 +349,8 @@ impl Instrument {
                 morph: self.params.get(param::MORPH),
                 velocity_brightness: self.params.get(param::VELOCITY_BRIGHTNESS),
                 pedal_resonance: if self.pedal { self.params.get(param::PEDAL_RESONANCE) } else { 0.0 },
-                soft: self.soft_pedal,
+                // Controller 67 or the switch: either holds the soft pedal down.
+                soft: self.soft_pedal || self.params.get(param::SOFT_PEDAL) >= 0.5,
             };
             set.voice(key, velocity, &controls, self.sample_rate, &mut self.set_voice);
             true

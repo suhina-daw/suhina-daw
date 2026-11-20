@@ -156,9 +156,10 @@ A recording's held layer is a `suhina_dsp::modal::sustain::Sustain`:
 | `body_fixed` | how much of the spectral envelope stays in Hz | 0..1 |
 | `attack_seconds` | length of the recording's attack, for the noise hand-over | 0..0.25 s |
 | `noise_onset`, `noise_rise` | the noise layer's onset and rise | 0..1 s, 0..4 s |
+| `reserved` | kept for a later field | 0 |
 | `noise[11]` | amplitude density per 2/3-octave band | 0..1 per sqrt(Hz) |
-| `onset[32]`, `rise[32]` | per mode, as its index | 0..1 s, 0..4 s |
-| `am_slope[32]`, `am_curve[32]` | per mode | -0.5..0.5 dB/cent, -0.01..0.01 dB/cent^2 |
+| `onset[64]`, `rise[64]` | per mode, as its index | 0..1 s, 0..4 s |
+| `am_slope[64]`, `am_curve[64]` | per mode | -0.5..0.5 dB/cent, -0.01..0.01 dB/cent^2 |
 
 Every value is finite; per-mode entries beyond the recording's mode count are zero. A layer whose
 every value is zero is the same as none.
@@ -166,8 +167,9 @@ every value is zero is the same as none.
 **Schema 3.** `ModelRecording` gains `sustain: Option<Sustain>`. A set whose recordings have no
 held layer encodes exactly as schema 2, byte for byte. Otherwise its header carries schema 3
 (same magic and revision 4), the recordings follow exactly as in schema 2, and then, for every
-recording in order, a u8 flag (0 none, 1 present), three zero bytes and, when present, the 152
-fields above as little-endian f32 in table order (per-mode arrays complete, 32 entries each).
+recording in order, a u8 flag (0 none, 1 present), three zero bytes and, when present, the 281
+fields above as little-endian f32 in table order (per-mode arrays complete, 64 entries each, one
+per possible mode of a recording).
 Schema-2 bytes still decode, with no held layers; a schema-2 build rejects schema-3 bytes and
 the device stays silent rather than playing the set without its layer. Decoding accepts only
 canonical bytes, as for schema 2.
@@ -229,10 +231,10 @@ A voice without a held layer plays exactly as before. The pitch wheel offset is 
 with the vibrato. Rendering is identical for every block split, since control updates count
 samples from the note-on.
 
-**Budget.** A voice's held state (per-sine levels, ramps, onsets and couplings, eleven filters
-and the control state) adds under 3 KiB: a voice stays under 8 KiB, 16 voices under 128 KiB,
-within the runtime's 256 KiB inline target. The 32-sample control update retunes at most 64
-sines. A vibrato of 50 cents at 6 Hz moves less than one cent between updates.
+**Budget.** A voice's held state (per-sine levels, ramps, onsets and couplings for 128 sines,
+eleven filters and the control state) adds under 4.5 KiB: a voice stays under 12 KiB, 16 voices
+under 192 KiB, within the runtime's 256 KiB inline target. The 32-sample control update retunes
+at most 128 sines. A vibrato of 50 cents at 6 Hz moves less than one cent between updates.
 
 ## Validation
 

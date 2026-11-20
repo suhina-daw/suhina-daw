@@ -1,4 +1,4 @@
-- Instrument can fit an experimental model from an isolated decaying or held sample: up to 32
+- Instrument can fit an experimental model from an isolated decaying or held sample: up to 64
   resonances with their phases, fast-then-slow decays and beating partners, plus the attack the
   resonances do not explain, at the sample's own level. Accept it as one undoable edit, then
   **Add to model** recordings of other notes, velocities or instruments: notes in between fuse

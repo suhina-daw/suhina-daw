@@ -7,7 +7,9 @@ use super::Canvas;
 use suhina_device_sdk::ui::{DeviceUi, UiGesture, Widget};
 
 pub(super) fn canvas() -> DeviceUi {
-    let mut ui = Canvas::new([880.0, 520.0]);
+    // 40 points below the controls keep the artwork's logo clear of them.
+    let mut ui = Canvas::new([880.0, 560.0]);
+    ui.artwork(super::EDITOR_LIGHT);
     ui.title("Instrument", [24.0, 16.0, 400.0, 34.0], 28.0);
     ui.label("Experimental struck modal · revision 1", [24.0, 54.0, 450.0, 20.0]);
     ui.only_revision(1);
@@ -67,8 +69,14 @@ pub(super) fn canvas() -> DeviceUi {
         ui.number(id, label, 44.0 + i as f32 * 206.0, 390.0, 174.0);
     }
     ui.label(
-        "Keys: C3 = 60. Pitch wheel: ±2 semitones. Sustain pedal holds released keys; soft pedal (CC 67) on fitted models.",
-        [24.0, 486.0, 832.0, 24.0],
+        "Keys: C3 = 60. Pitch wheel ±2 semitones. Sustain pedal holds keys; CC 67 is the soft pedal.",
+        [24.0, 486.0, 640.0, 24.0],
+    );
+    ui.toggle(
+        "soft_pedal",
+        "Soft pedal",
+        [704.0, 92.0, 152.0, 32.0],
+        "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down",
     );
 
     ui.page(1);
@@ -136,7 +144,7 @@ pub(super) fn canvas() -> DeviceUi {
         "quality",
         "Modes per voice",
         [240.0, 452.0, 132.0, 30.0],
-        "8 or 16 resonances per modal voice; fitted models: 32 or 64 sines",
+        "8 or 16 resonances per modal voice; fitted models: 64 or 128 sines",
     );
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 456.0, 440.0, 20.0]);
     ui.label(

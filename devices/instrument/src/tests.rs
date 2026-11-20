@@ -22,8 +22,9 @@ fn revision_one_matches_the_independent_analytical_reference_render() {
         );
         assert_eq!(buffer[frame * 2], buffer[frame * 2 + 1]);
     }
-    // A revision-4 voice with its held layer: 64 resonators, levels, ramps and noise filters.
-    assert!(std::mem::size_of::<Voice>() <= 8192);
+    // A revision-4 voice: 128 fitted resonators beside the 16 of revisions 1 and 2, and its held
+    // layer (per-sine levels, ramps and couplings, eleven noise filters).
+    assert!(std::mem::size_of::<Voice>() <= 12 * 1024);
     assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
 }
 
@@ -94,6 +95,18 @@ fn key_parameters_are_shown_as_note_names() {
         for field in fields {
             assert!(matches!(field.widget, Some(Widget::Number { format: TextFormat::Key, .. })), "{id}");
         }
+    }
+}
+
+/// Both canvases draw the background artwork first, behind every control, and hide it with a
+/// dark theme.
+#[test]
+fn both_canvases_carry_the_light_artwork_behind_their_controls() {
+    let layout = crate::panel::layout();
+    for canvas in [layout.ui.as_ref().unwrap(), layout.expanded.as_ref().unwrap()] {
+        assert!(canvas.assets.iter().any(|a| a.id == "artwork-light"), "the artwork is embedded");
+        assert_eq!(canvas.controls.first().map(|c| c.id.as_str()), Some("artwork-light"));
+        assert!(canvas.style.as_deref().is_some_and(|s| s.contains("#artwork-light")));
     }
 }
 
