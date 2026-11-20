@@ -20,7 +20,8 @@ inspects the number of retained modes and temporal envelope error before accepti
 does not change the instrument. Acceptance installs the canonical modal profile, selects Modal,
 and resets Body decay, Brightness, Structure and Strike to the profile's neutral controls,
 enabling the full sixteen-mode quality budget, in one
-undo step. The sample remains available as the source. Existing model-profile adoption and
+undo step. The sample remains available as the source. **Fit folder…** fits a folder of such
+recordings in one job (§ Fitting a folder). Existing model-profile adoption and
 project persistence are reused; reopening never starts fitting.
 
 The reference key is locked to the sample's current root, with its equal-tempered reference Hz.
@@ -87,8 +88,10 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
 - **Two-part decay.** When a span of nine or more windows has a valid fit on its last two thirds
   (the slow part), the excess of the earlier windows over that line is fitted as a second,
   faster exponential. It is kept as `fast_decay_seconds` and `fast_share` when its T60 is under
-  half the slow one, it has at least two windows, and it lowers the RMS envelope error over the
-  whole span by at least 1 dB compared with one exponential, or one exponential failed.
+  half the slow one, it has at least two windows, and over the whole span it lowers the RMS
+  envelope error by at least 1 dB compared with one exponential, or leaves at most a third of an
+  error of at least 0.25 dB, or one exponential failed. (A fast part shorter than a window still
+  bends the first windows: one exponential then fits within half a decibel yet misses it.)
 - **Beating.** Each kept mode's amplitude is also measured on 1024-sample Hann windows every 256
   samples. After removing the fitted decay, the residual log envelope's normalized
   autocorrelation is searched over beat periods of 0.1 to 5 s (shorter than half the measured
@@ -116,6 +119,37 @@ optimum is claimed. Initial phases and the attack are measured from the one reco
 reconstructed as excitation or contact physics; room response, nonlinear dynamics and coupled
 modes are not separated, and the attack and modes may carry the room. Fitted resonances must
 not be presented as a uniquely recovered physical body.
+
+## Fitting a folder
+
+A sampled instrument usually comes as a folder with one note per file, often at several
+velocities. `instrument.fitFolder` takes an Instrument and a folder `path` and starts one job
+on the shared preparation worker (the same two-worker admission budget, cancellation and target
+checks as a single fit):
+
+1. It lists the folder's audio files (not its subfolders), sorted by name. A folder without
+   audio files, or with more than 128, is refused before any work starts.
+2. For each file, on the worker: decode it; if it has more than two channels or no frames it is
+   skipped with that reason. Root analysis over the first eight seconds proposes its key: a
+   stable single-note proposal, or else the file is skipped as having no stable pitch (a folder
+   of loops is not an instrument). The file is then fitted exactly as a single sample with that
+   key as its reference, keeping the fitted recording; a file without a fit is skipped with the
+   fit's reason.
+3. Files fitted at the same key are **velocity layers**: ordered by their level, quietest first,
+   they stand for velocities `(i + 1) / n`; a key with one file stands for 0.8.
+4. At most 32 recordings fit a set. With more, an evenly spaced selection of the recordings
+   ordered by key and velocity is kept (`round(i * (n - 1) / 31)` for `i` = 0..31) and the rest are
+   reported as left out for capacity.
+
+The job's report lists every file with its key, velocity and outcome (kept, left out, or the
+reason it was skipped), and the recordings kept. Nothing changes until the person accepts:
+`instrument.acceptFit` with a folder job adopts all its recordings as a new set (as for one
+recording, with the model controls reset); `instrument.addFit` adds them all to the device's
+existing set (all or none: duplicates of a key, velocity and source already there, or more than
+32 in all, refuse the whole addition), with an optional `source` for all of them. The folder job
+is stale once the device is removed or its fitted model changes; the device's own sample, trim
+and root do not concern it. The Sample page offers **Fit folder…**, which asks for the folder
+with the system's dialog.
 
 ## Audition and comparison
 
@@ -166,7 +200,7 @@ rollback, undo/redo, save/reopen and native render consistency. Builds and test 
 this change occur in CI only at the maintainer's request.
 
 This is the bounded first fitting slice tracked by #1646, extended in #1599 with attack
-residuals, two-part decays, beating partners and parameter-space fusion of up to 16 recordings
+residuals, two-part decays, beating partners and parameter-space fusion of up to 32 recordings
 by key and velocity. Full fitting #1624 retains feature locks beyond root/trim, morphing
 controls, room and microphone separation, independent held-out notes and gestures, level-matched
 candidate audition before acceptance and musician evidence.
