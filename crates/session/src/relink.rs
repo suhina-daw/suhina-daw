@@ -115,6 +115,7 @@ pub(crate) fn relink_files(session: &mut Session, params: &Value) -> Result<Valu
         if !named {
             return Err(format!("no audio clip names {file}").into());
         }
+        crate::instrument_presets::verify_relink(session, file, &target)?;
         // Decoded before anything changes, so a file that cannot be read changes nothing.
         match streams {
             Some(last) => {

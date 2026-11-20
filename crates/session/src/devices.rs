@@ -62,7 +62,14 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
     {
         return Err("loadSample needs a Sampler, Instrument or an SDK graph with a sample binding".into());
     }
-    let audio = session.decoded_audio(&path)?;
+    let instrument =
+        channel.devices.get(index).is_some_and(|d| matches!(&d.kind, DeviceKind::Builtin(id) if id == "instrument"));
+    let (audio, source_identity) = if instrument {
+        let (audio, identity) = crate::instrument_presets::chosen_source(session, &path)?;
+        (audio, Some(identity))
+    } else {
+        (session.decoded_audio(&path)?, None)
+    };
     if audio.frames() < 2 || !(1..=32).contains(&audio.channels) || !(1000..=384000).contains(&audio.sample_rate) {
         return Err("sample needs at least two frames, 1..32 channels and a sample rate of 1000..384000 Hz".into());
     }
@@ -70,6 +77,9 @@ pub(crate) fn load_sample(session: &mut Session, params: &Value) -> Result<Value
         && matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument")
     {
         device.set_sample_file(&path.display().to_string());
+        if let Some(identity) = source_identity {
+            device.set_instrument_source_identity(identity);
+        }
         device.clear_sample_edits();
         if let Some(source) = device.params.iter_mut().find(|param| param.id == "source") {
             source.value = 1.0;
@@ -816,11 +826,15 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
             Some(state_text)
         }
     };
-    let device = Device {
+    let mut device = Device {
         params: params_of_preset,
         state: state.as_deref().map(|state| state.as_bytes().into()),
         ..Device::new(&*info.name, DeviceKind::Builtin(info.id.to_string()))
     };
+    if let Some(instrument) = preset.as_ref().and_then(|p| p.instrument.as_ref()) {
+        let path = Args::new(params).raw_str("preset").map(std::path::Path::new);
+        file_missing = crate::instrument_presets::prepare(session, instrument, path, &mut device)?;
+    }
     let with_file_result = |mut out: Value| {
         if let Some(missing) = &file_missing {
             out["file_missing"] = json!(missing);
@@ -998,11 +1012,13 @@ pub(crate) fn read_preset(
     path: &std::path::Path,
     voice: usize,
 ) -> Result<suhina_device_registry::Preset, CommandError> {
-    let size = std::fs::metadata(path).map_err(|e| format!("{}: {e}", path.display()))?.len();
-    if size > suhina_device_registry::MAX_PRESET_BYTES as u64 {
-        return Err(format!("{}: a preset file is at most 64 KiB", path.display()).into());
-    }
-    let data = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let data = suhina_fs::read_plain(path, suhina_device_registry::MAX_PRESET_BYTES).map_err(|error| {
+        if matches!(error, suhina_fs::ReadError::TooLarge(_)) {
+            format!("{}: a preset file is at most 64 KiB", path.display())
+        } else {
+            error.message(path, suhina_device_registry::MAX_PRESET_BYTES)
+        }
+    })?;
     suhina_device_registry::preset(&data, voice).map_err(|e| format!("{}: {e}", path.display()).into())
 }
 
@@ -1477,6 +1493,7 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = device_at(&channel.devices, &path).ok_or("the device is missing")?;
+    let snapshot = device.clone();
     let (info, state, values) = match &device.kind {
         DeviceKind::Builtin(id) => {
             let info =
@@ -1503,6 +1520,13 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
         }
         _ => return Err("a preset is saved from a built-in effect, instrument or MIDI effect".into()),
     };
+    let collect = Args::new(params).flag("collect")?;
+    if info.id == "instrument" {
+        return crate::instrument_presets::save(session, &snapshot, name, &values, collect);
+    }
+    if collect {
+        return Err("source collection is available for Instrument presets".into());
+    }
     // The preset's file names the file the device runs by the form a preset carries ([ADR 0014]
     // › Amendment): a state the library's move carried reads its new place, so the save works
     // where the state's own text would be refused.

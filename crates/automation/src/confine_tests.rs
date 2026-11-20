@@ -3,6 +3,39 @@
 
 use super::*;
 
+#[test]
+fn instrument_presets_confine_nested_sources_without_authorizing_library_access() {
+    let (dir, workspace) = roots("instrument-presets");
+    let path = dir.join("inside/own.instrument.preset.suhina");
+    let mut preset = json!({"format":"suhina-preset","version":2,"device":"instrument","role":"instrument",
+        "name":"Own","params":{},"instrument":{"profile":null,"sample":null}});
+    for id in ["device.add", "track.add"] {
+        std::fs::write(&path, serde_json::to_vec(&preset).unwrap()).unwrap();
+        assert!(confine(&workspace, id, json!({"preset":path}), None).is_ok());
+    }
+    preset["instrument"]["sample"] =
+        json!({"scope":"preset","path":"pack/kick.wav","sha256":"00".repeat(32),"bytes":1});
+    for id in ["device.add", "track.add"] {
+        std::fs::write(&path, serde_json::to_vec(&preset).unwrap()).unwrap();
+        assert!(confine(&workspace, id, json!({"preset":path}), None).is_ok());
+    }
+    preset["instrument"]["sample"]["scope"] = json!("library");
+    std::fs::write(&path, serde_json::to_vec(&preset).unwrap()).unwrap();
+    assert!(confine(&workspace, "track.add", json!({"preset":path}), None).unwrap_err().contains("collected preset"));
+    // NAM's existing semantics remain unchanged by the new Instrument-only guard.
+    std::fs::write(&path, br#"{"format":"suhina-preset","version":1,"device":"nam-amp-modeler","role":"effect","name":"Own","params":{},"file":"Models/own.nam"}"#).unwrap();
+    assert!(confine(&workspace, "device.add", json!({"preset":path}), None).is_ok());
+    #[cfg(unix)]
+    {
+        preset["instrument"]["sample"]["scope"] = json!("preset");
+        preset["instrument"]["sample"]["path"] = json!("linked.wav");
+        std::os::unix::fs::symlink(dir.join("outside/secret.wav"), dir.join("inside/linked.wav")).unwrap();
+        std::fs::write(&path, serde_json::to_vec(&preset).unwrap()).unwrap();
+        assert!(confine(&workspace, "device.add", json!({"preset":path}), None).is_err());
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn roots(name: &str) -> (std::path::PathBuf, Workspace) {
     let dir = std::env::temp_dir().join(format!("suhina-confine-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

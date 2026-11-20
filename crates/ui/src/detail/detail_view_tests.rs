@@ -2299,7 +2299,7 @@ fn a_devices_menu_renames_it() {
     let at = crate::detail::detail_view::DeviceAt(vec![2]);
     let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 300.0)).build_ui_state(
         |ui, actions: &mut Vec<Action>| {
-            crate::interaction::menus::device_menu(ui, TrackId(3), &at, None, true, "Utility", None, actions);
+            crate::interaction::menus::device_menu(ui, TrackId(3), &at, None, true, false, "Utility", None, actions);
         },
         Vec::new(),
     );
@@ -2315,6 +2315,27 @@ fn a_devices_menu_renames_it() {
     let renamed: Vec<_> = harness.state().iter().filter(|a| a.id == "device.rename").collect();
     assert_eq!(renamed.len(), 1, "{:?}", harness.state());
     assert_eq!(renamed[0].params, json!({ "track": 3, "device": 2, "name": "Source level" }));
+}
+
+#[test]
+fn instrument_menu_saves_a_collected_preset_with_the_entered_name() {
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    let at = crate::detail::detail_view::DeviceAt(vec![0]);
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(360.0, 450.0)).build_ui_state(
+        |ui, actions: &mut Vec<Action>| {
+            crate::interaction::menus::device_menu(ui, TrackId(1), &at, None, true, true, "Instrument", None, actions);
+        },
+        Vec::new(),
+    );
+    harness.get_by_label("Preset name for Instrument").click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Preset name for Instrument").type_text("My bell");
+    harness.get_by_label("Save collected preset…").click();
+    harness.run();
+    let saves: Vec<_> = harness.state().iter().filter(|a| a.id == "device.savePreset").collect();
+    assert_eq!(saves.len(), 1, "{:?}", harness.state());
+    assert_eq!(saves[0].params, json!({"track":1,"device":0,"name":"My bell","collect":true}));
 }
 
 /// A track's Sidechain to has a search field over a list that scrolls: typed words keep the

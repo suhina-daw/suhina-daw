@@ -2,7 +2,7 @@
 description: Instrument preset version 2 preserves the accepted modal model and one verified referenced or collected source
 read_when: Instrument save preset, collected preset, preset v2, source hash, modal profile state
 type: spec
-status: planned
+status: draft
 last_verified: 2026-11-20
 covers:
   - crates/device-registry/
@@ -10,6 +10,10 @@ covers:
   - crates/session/src/files.rs
   - crates/session/src/relink.rs
   - crates/model/src/lib.rs
+  - crates/model/src/instrument_source.rs
+  - crates/media/src/verified_source.rs
+  - crates/session/src/instrument_presets.rs
+  - crates/automation/src/confine.rs
   - crates/ui/src/interaction/menus.rs
 ---
 
@@ -57,12 +61,28 @@ A genuinely missing source remains recorded, is reported in the command result a
 the ordinary missing-files workflow. It does not silently select another source. The accepted
 modal profile is independent of that reference. A located replacement for a hashed missing
 source must match its identity. An intentional new source uses `device.loadSample`, which
-clears the old source identity in the same undoable edit.
+replaces the old source identity in the same undoable edit. If the same filesystem path is
+already decoded as different audio, loading refuses it; choose a new filename or reopen the
+project before selecting its new bytes. Other devices never have their cached source replaced
+implicitly.
 
 Project save/reopen, collection and path rebasing preserve both the profile and source identity.
 Audio preparation, file reads, hashing and copying never happen on the audio callback.
 Existing caller file-access policies and the agent-origin restriction on `device.savePreset`
 remain in effect; recording a digest does not authorize a file read.
+
+For agent-originated preset loads, the existing automation read-root guard checks a collected
+source's canonical path in addition to the preset. A library-scoped Instrument source is refused
+with an instruction to use a collected preset inside the read root: the current guard cannot
+prove the session's library root is authorized. Profile-only presets remain usable. Desktop and
+CLI loads retain their library-relative semantics. Missing collected sources can be retained by
+desktop/CLI; an agent's read-root validation requires an existing source. This does not change
+NAM's existing policy. Preset saves remain forbidden to agent callers by the existing command
+policy, including batched execution.
+
+The Instrument device menu has **Save as preset…** for references and **Save collected preset…**
+for a portable folder. Both use the same entered name and dispatch `device.savePreset`; the
+second sets `collect: true`. Move the preset file together with its sibling `.assets` folder.
 
 ## Verification
 

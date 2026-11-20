@@ -42,6 +42,10 @@ while the canonical profile is a separate model extension and must survive path 
 5. **Reuse command and authorization boundaries.** `device.savePreset`, `device.add` and
    `track.add` share this codec. Existing agent-origin library-write restrictions remain.
    File decoding, hashing and collection happen outside audio processing.
+6. **Keep byte verification beside decoding.** `media::verified_source` uses the existing
+   `fs::read_plain` boundary and the already-used GPL-compatible `sha2` dependency. It verifies
+   a bounded owned byte buffer and decodes those same bytes. `model` stores the opaque source
+   identity independently of path rebasing; it does not depend on media, DSP or the registry.
 
 ## Consequences
 

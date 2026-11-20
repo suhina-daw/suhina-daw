@@ -191,6 +191,7 @@ pub(super) fn group_panel(
             &device.at,
             Some(group.branches.len()),
             device.is_builtin,
+            false,
             &device.name,
             None,
             actions,
