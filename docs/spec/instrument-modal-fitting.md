@@ -117,6 +117,27 @@ reconstructed as excitation or contact physics; room response, nonlinear dynamic
 modes are not separated, and the attack and modes may carry the room. Fitted resonances must
 not be presented as a uniquely recovered physical body.
 
+## Audition and comparison
+
+Before accepting, the person can listen to the fit against its source. `instrument.auditionFit`
+takes the ready (or just accepted) fit's job and `which` (`original` or `fitted`) and plays, through
+the existing preview player at the preview level:
+
+- **original**: the analyzed range of the measured channel, as recorded;
+- **fitted**: the fitted recording rendered by the native Instrument (revision 4, a one-recording
+  set, Attack 0, Sustain 1, Gain 0 dB) at the source's sample rate, its key and velocity held for
+  the same duration.
+
+Both are compared before playing, and the fitted render is played at the original's RMS level so
+the comparison is of timbre, not loudness (a level-matched A/B). The command reports, and the
+Sample page shows, the level difference before matching and a **spectral distance**: average power
+spectra (2048-sample Hann windows, hop 1024, at most eight seconds) summed into octave bands
+centred on 63 Hz..16 kHz below Nyquist; for each band within 60 dB of the original's loudest,
+the absolute difference in dB after level matching; and their mean. Smaller is closer. These are
+measurements of the same recording, not a realism or listening score. Without an audio output the
+command still reports the comparison and says it played nothing. Auditioning changes neither the
+project nor its undo history.
+
 ## Shared jobs and commands
 
 `instrument.fitSample` accepts the same track and full device identity as root analysis, but
