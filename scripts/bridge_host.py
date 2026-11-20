@@ -15,6 +15,7 @@ Studio C++ build tools install with the x64 ones.
 """
 
 import argparse
+import os
 import pathlib
 import shutil
 import subprocess
@@ -39,8 +40,11 @@ def main() -> int:
     if subprocess.run(command, cwd=root).returncode != 0:
         return 1
 
-    built = root / "target" / TARGET / profile / "suhina-plugin-host.exe"
-    folder = args.to or root / "target" / profile
+    target_dir = pathlib.Path(os.environ.get("CARGO_TARGET_DIR") or root / "target")
+    if not target_dir.is_absolute():
+        target_dir = root / target_dir
+    built = target_dir / TARGET / profile / "suhina-plugin-host.exe"
+    folder = args.to or target_dir / profile
     folder.mkdir(parents=True, exist_ok=True)
     shutil.copy2(built, folder / NAME)
     print(f"{folder / NAME}")

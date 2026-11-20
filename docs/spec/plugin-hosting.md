@@ -587,6 +587,11 @@ same protocol over the same shared memory, whose words are fixed-width (`u32` at
   runs natively, so installing the 32-bit host never moves a project to the 32-bit copy,
   and a VST2 id two copies share is not taken as two plug-ins (which would leave it
   unresolved).
+- **Shipped and checked.** The Windows packages carry `suhina-plugin-host-32.exe` (built with
+  the static C runtime, like the rest). CI checks the 32-bit host with clippy and runs
+  `crates/plugin-host/tests/bridge.rs` with `SUHINA_TEST_BRIDGE_HOST` naming it: the 64-bit
+  side drives the test plug-ins of every format in the 32-bit host, with audio, a note,
+  parameters and a state round trip; a package build scans `test:vst2` with it.
 - **Without it.** With no `suhina-plugin-host-32.exe` beside the host, a 32-bit file is
   listed as `incompatible`, as before; a project that uses one loads it as missing.
 - **What it leaves out.** ARA: its bindings are generated for 64-bit processors and check

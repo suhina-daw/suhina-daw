@@ -674,7 +674,7 @@ policy; without that it never runs. A workflow that needs no write token and no 
 | Package | Built on | Contents |
 |---|---|---|
 | `suhina-<version>-linux-x86_64.tar.gz` | Ubuntu 22.04 (glibc 2.35) | `suhina`, `suhina-cli`, `suhina-plugin-host`; needs `libasound2` |
-| `suhina-<version>-windows-x86_64.zip` | Windows, MSVC, static C runtime | `suhina.exe`, `suhina-cli.exe`, `suhina-plugin-host.exe`; no Visual C++ redistributable needed |
+| `suhina-<version>-windows-x86_64.zip` | Windows, MSVC, static C runtime | `suhina.exe`, `suhina-cli.exe`, `suhina-plugin-host.exe` and `suhina-plugin-host-32.exe` (the 32-bit host for 32-bit plug-ins); no Visual C++ redistributable needed |
 | `suhina-<version>-macos-universal.tar.gz` | macOS, arm64 + x86_64 joined with `lipo` | `Suhina.app` (with `suhina`, `suhina-cli` and `suhina-plugin-host` in `Contents/MacOS`) and a `suhina-cli` link into it; macOS 11 or later |
 
 The nightly's packages are named `suhina-nightly-<platform>` instead. `suhina` is the desktop app,
