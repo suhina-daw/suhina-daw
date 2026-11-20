@@ -212,6 +212,8 @@ pub fn layout() -> Layout {
     panel.only_revision(1);
     panel.label("MODAL PROFILE · experimental v2", [10.0, 4.0, 248.0, 20.0]);
     panel.only_revision(2);
+    panel.label("FITTED MODEL · experimental v4", [10.0, 4.0, 248.0, 20.0]);
+    panel.only_revision(4);
     panel.menu("source", "Source", [272.0, 4.0, 136.0, 24.0], "Modal, local Sample, or both in Hybrid");
     panel.navigate("Open editor", [456.0, 4.0, 152.0, 24.0], 0, true);
     panel.waveform([10.0, 36.0, 244.0, 88.0]);

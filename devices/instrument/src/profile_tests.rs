@@ -123,7 +123,7 @@ fn profile_extremes_remain_finite_at_supported_rates() {
 fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
     let layout = panel::layout();
     let ui = layout.expanded.as_ref().unwrap();
-    for revision in [1.0, 2.0] {
+    for revision in [1.0, 2.0, 4.0] {
         let visible = |name: &str| {
             ui.controls.iter().any(|control| {
                 control.name == name
@@ -139,7 +139,8 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
         assert_eq!(visible("Experimental struck modal · revision 1"), revision == 1.0);
         assert_eq!(visible("Experimental modal profile · revision 2"), revision == 2.0);
         assert_eq!(visible("Strike position"), revision == 1.0);
-        assert_eq!(visible("Strike colour"), revision == 2.0);
+        assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
+        assert_eq!(visible("Strike colour"), revision == 2.0 || revision == 4.0);
     }
     assert!(layout.panel(&INFO).is_ok());
 }

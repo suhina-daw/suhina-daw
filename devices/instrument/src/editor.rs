@@ -13,6 +13,8 @@ pub(super) fn canvas() -> DeviceUi {
     ui.only_revision(1);
     ui.label("Experimental modal profile · revision 2", [24.0, 54.0, 450.0, 20.0]);
     ui.only_revision(2);
+    ui.label("Experimental fitted model · revision 4", [24.0, 54.0, 450.0, 20.0]);
+    ui.only_revision(4);
     ui.label("SOURCE", [632.0, 16.0, 220.0, 18.0]);
     ui.menu(
         "source",
@@ -87,6 +89,13 @@ pub(super) fn canvas() -> DeviceUi {
         "Creative excitation weighting of accepted modes, not a measured impact position; next strike only",
     );
     ui.only_revision(2);
+    ui.dial(
+        "strike",
+        "Strike colour",
+        [646.0, 208.0, 150.0, 138.0],
+        "Creative excitation weighting of fitted modes, not a measured impact position; next strike only",
+    );
+    ui.only_revision(4);
     ui.label("Modes per voice", [40.0, 416.0, 196.0, 20.0]);
     ui.menu("quality", "Modes per voice", [240.0, 412.0, 132.0, 30.0], "8 or 16 resonances per modal voice");
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 416.0, 440.0, 20.0]);

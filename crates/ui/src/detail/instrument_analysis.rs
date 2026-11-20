@@ -109,17 +109,41 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                 if let Some(report) = &view.modal {
                     if let Some(profile) = report.profile {
                         let error = report.modes.iter().map(|m|m.validation_rms_db).fold(0.0_f64, f64::max);
+                        // The revision-4 recording when there is one; its modes are what will play.
+                        let modes = if report.recording.is_some() { &report.recording_modes } else { &report.modes };
+                        let mut summary = format!("Experimental: {} modes", modes.len());
+                        for (count, what) in [
+                            (modes.iter().filter(|m| m.sustained).count(), "sustained"),
+                            (modes.iter().filter(|m| m.fast_share > 0.0).count(), "two-part"),
+                            (modes.iter().filter(|m| m.beat_share > 0.0).count(), "beating"),
+                        ] {
+                            if count > 0 {
+                                summary.push_str(&format!(" · {count} {what}"));
+                            }
+                        }
+                        if let Some(recording) = report.recording.as_ref().filter(|r| !r.attack.is_empty()) {
+                            summary.push_str(&format!(" · attack {:.0} ms", recording.attack.len() as f64 * 1000.0 / f64::from(recording.attack_rate.max(1))));
+                        }
+                        summary.push_str(&format!(" · root {} · envelope error ≤ {:.2} dB", key_name(profile.reference_key()), error));
                         ui.horizontal(|ui| {
-                            ui.label(format!("Experimental: {} modes{} · root {} · envelope error ≤ {:.2} dB",profile.modes().len(),match report.modes.iter().filter(|m| m.sustained).count() { 0 => String::new(), held => format!(" ({held} sustained)") },key_name(profile.reference_key()),error))
-                                .on_hover_text(format!("Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Initial phases, attack and room response are not reconstructed.",report.channel+1,report.range.start,report.range.end,report.analyzed_seconds));
+                            ui.label(summary)
+                                .on_hover_text(format!("Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Phases and the attack are measured from this recording; room response is not separated.",report.channel+1,report.range.start,report.range.end,report.analyzed_seconds));
                             let accept = ui.button("Accept model");
                             remember_keyboard_owner(&accept);
                             if accept.clicked() {
                                 actions.push(Action::new("instrument.acceptFit",json!({"track":track_value,"device":device_value,"job":view.job})));
                             }
+                            // A recording joins the model already accepted on this Instrument.
+                            if let Some(count) = view.model_recordings.filter(|n| *n < 16 && report.recording.is_some()) {
+                                let add = ui.button(format!("Add to model ({count})"));
+                                remember_keyboard_owner(&add);
+                                if add.clicked() {
+                                    actions.push(Action::new("instrument.addFit",json!({"track":track_value,"device":device_value,"job":view.job})));
+                                }
+                            }
                         });
-                        ui.label("Accept selects Modal, resets model controls and enables all fitted modes. One undo step.");
-                        ui.label("One recording cannot establish physical identity or behaviour at other notes and dynamics.");
+                        ui.label("Accept replaces the model, selects Modal and resets model controls. Add fuses this recording into the accepted model by key. One undo step each.");
+                        ui.label("Add recordings of other notes, velocities or instruments to make one instrument; set Root to each recording's note first.");
                     } else {
                         ui.label(match report.outcome {
                             ModalFitOutcome::Silent => "The selected region is silent or constant. Choose a sounding strike.",
@@ -181,7 +205,10 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
             }
             AnalysisPhase::Accepted => {
                 if view.kind == AnalysisKind::Modal {
-                    ui.label("Experimental modal profile accepted. Play it and edit the model controls.");
+                    ui.label(match view.model_recordings {
+                        Some(count) => format!("Fitted model holds {count} recording(s). Play it and edit the model controls."),
+                        None => "Experimental modal profile accepted. Play it and edit the model controls.".to_owned(),
+                    });
                     ui.label("Undo restores the previous instrument. The source sample is retained.");
                 }
                 if let Some(root) = view.accepted_root {

@@ -18,10 +18,27 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "instrument.acceptFit",
-        label: "Adopt the current modal fit, reset model controls and enable all fitted modes in one undo step",
+        label: "Adopt the current modal fit as a fitted model (its modes, attack and level), reset model controls and enable all fitted modes in one undo step",
         params: &[DEVICE_TRACK, DEVICE, JOB],
         kind: CommandKind::EDIT,
         run: instrument_analysis::accept_fit,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "instrument.addFit",
+        label: "Add the current modal fit's recording to the Instrument's fitted model, fused with its other recordings by key and velocity, in one undo step",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            JOB,
+            optional(
+                "velocity",
+                ParamType::Number,
+                "the velocity this recording stands for, above 0 and at most 1 (default 0.8)",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: instrument_analysis::add_fit,
         policy: Policy::DEFAULT,
     },
     CommandSpec {

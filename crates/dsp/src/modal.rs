@@ -6,6 +6,7 @@
 
 use std::f64::consts::TAU;
 
+pub mod model;
 pub mod profile;
 
 /// One exponentially decaying mode, expressed in physical units.
@@ -129,6 +130,20 @@ impl<const N: usize> ModalBank<N> {
         self.modes.fill(Resonance::default());
         self.active = false;
     }
+
+    /// Like [`strike`](Self::strike), with mode `i` starting at `phases[i]` radians: its output
+    /// is `amplitude * radius^n * sin(omega * n + phase)`. A missing or nonfinite phase is zero,
+    /// which is `strike`. The first output sample is therefore not zero unless every phase is;
+    /// the caller ramps its gate.
+    pub fn strike_phased(&mut self, sample_rate: f64, modes: &[Mode], phases: &[f64]) {
+        self.strike(sample_rate, modes);
+        for (target, phase) in self.modes.iter_mut().zip(phases) {
+            let phase = if phase.is_finite() { *phase } else { 0.0 };
+            let amplitude = target.real;
+            target.real = amplitude * phase.cos();
+            target.imaginary = amplitude * phase.sin();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -169,6 +184,36 @@ mod tests {
         bank.strike(8000.0, &[Mode { frequency_hz: 3600.0, decay_seconds: 1.0, amplitude: 1.0 }]);
         assert!(!bank.is_active());
         assert_eq!(bank.next_sample(), 0.0);
+    }
+
+    #[test]
+    fn phased_strikes_start_each_mode_at_its_phase() {
+        let mut bank = ModalBank::<2>::default();
+        let modes = [
+            Mode { frequency_hz: 440.0, decay_seconds: 0.5, amplitude: 0.3 },
+            Mode { frequency_hz: 1234.5, decay_seconds: 0.2, amplitude: 0.2 },
+        ];
+        bank.strike_phased(48000.0, &modes, &[0.7, -2.1]);
+        for n in 0..4800 {
+            let t = n as f64;
+            let expected: f64 = modes
+                .iter()
+                .zip([0.7, -2.1])
+                .map(|(m, phase)| {
+                    m.amplitude
+                        * (-1000.0_f64.ln() * t / (48000.0 * m.decay_seconds)).exp()
+                        * (TAU * m.frequency_hz * t / 48000.0 + phase).sin()
+                })
+                .sum();
+            assert!((f64::from(bank.next_sample()) - expected).abs() < 2e-7, "{n}");
+        }
+        let mut plain = ModalBank::<2>::default();
+        let mut zero = ModalBank::<2>::default();
+        plain.strike(48000.0, &modes);
+        zero.strike_phased(48000.0, &modes, &[]);
+        for _ in 0..256 {
+            assert_eq!(plain.next_sample(), zero.next_sample());
+        }
     }
 
     #[test]

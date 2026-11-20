@@ -55,6 +55,36 @@ pub(crate) fn apply_profile(
     Ok(overridden)
 }
 
+/// The revision-4 counterpart of [`apply_profile`]: writes already-encoded set bytes, revision 4
+/// and Source Modal; with `reset_controls` also the full mode budget and the neutral model
+/// controls (acceptance), without them when a recording joins an existing set.
+pub(crate) fn apply_model_set(device: &mut Device, bytes: &[u8], reset_controls: bool) -> Result<bool, CommandError> {
+    if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument") {
+        return Err("modal adoption needs an Instrument".into());
+    }
+    device.set_instrument_modal_profile(bytes)?;
+    let mut values = vec![("model_revision", f64::from(suhina_dsp::modal::model::MODEL_REVISION)), ("source", 0.0)];
+    if reset_controls {
+        values.extend([
+            ("quality", 1.0),
+            ("body_decay", 2.0),
+            ("brightness", 0.5),
+            ("structure", 0.002),
+            ("strike", 0.25),
+        ]);
+    }
+    let mut overridden = false;
+    for (id, value) in values {
+        if let Some(param) = device.params.iter_mut().find(|param| param.id == id) {
+            param.value = value;
+        } else {
+            device.params.push(DeviceParam::new(id, value));
+        }
+        overridden |= crate::automation::override_lane(&mut device.automation, |lane| lane.param == id);
+    }
+    Ok(overridden)
+}
+
 fn parse_profile(value: &Value) -> Result<ModalProfile, CommandError> {
     let object = value.as_object().ok_or("profile must be an object")?;
     if object.keys().any(|key| !matches!(key.as_str(), "referenceKey" | "referenceHz" | "modes")) {

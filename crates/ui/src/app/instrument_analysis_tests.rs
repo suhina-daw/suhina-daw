@@ -98,6 +98,14 @@ fn instrument_analysis_controls_require_explicit_acceptance_and_reject_stale_pro
     assert_eq!(h.state().session().unwrap().undo_steps().0, fit_depth.0 + 1);
     assert!(h.state().session().unwrap().project().channels[0].devices[0].instrument_modal_profile().is_some());
     assert!(h.query_by_label("Accept model").is_none());
+    // With a fitted model accepted, the next fit offers to join it.
+    h.get_by_label("Fit resonances").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    h.state_mut().projects.session_mut(None).unwrap().sync_instrument_analysis();
+    h.run_steps(4);
+    assert!(h.query_by_label("Add to model (1)").is_some());
     h.state_mut().run(&Action::new("edit.undo", json!({})));
     h.run_steps(4);
     assert_eq!(h.state().session().unwrap().project(), &fit_before);
