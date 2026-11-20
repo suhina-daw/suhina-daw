@@ -72,8 +72,14 @@ pub(super) fn canvas() -> DeviceUi {
         ui.number(id, label, 44.0 + i as f32 * 206.0, 390.0, 174.0);
     }
     ui.label(
-        "Keys: C3 = 60. Pitch wheel: ±2 semitones. Sustain pedal holds released keys; soft pedal (CC 67) on fitted models.",
-        [24.0, 486.0, 832.0, 24.0],
+        "Keys: C3 = 60. Pitch wheel ±2 semitones. Sustain pedal holds keys; CC 67 is the soft pedal.",
+        [24.0, 486.0, 640.0, 24.0],
+    );
+    ui.toggle(
+        "soft_pedal",
+        "Soft pedal",
+        [704.0, 480.0, 152.0, 32.0],
+        "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down",
     );
 
     ui.page(1);

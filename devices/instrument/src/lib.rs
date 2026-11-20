@@ -69,12 +69,13 @@ pub mod param {
     pub const VELOCITY_BRIGHTNESS: usize = 24;
     pub const DAMPER_NOISE: usize = 25;
     pub const PEDAL_RESONANCE: usize = 26;
-    pub const BODY: usize = 27;
-    pub const HARDNESS: usize = 28;
-    pub const MALLET_MODEL: usize = 29;
-    pub const RESONATOR: usize = 30;
-    pub const STEREO_WIDTH: usize = 31;
-    pub const COUNT: usize = 32;
+    pub const SOFT_PEDAL: usize = 27;
+    pub const BODY: usize = 28;
+    pub const HARDNESS: usize = 29;
+    pub const MALLET_MODEL: usize = 30;
+    pub const RESONATOR: usize = 31;
+    pub const STEREO_WIDTH: usize = 32;
+    pub const COUNT: usize = 33;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -109,6 +110,7 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("velocity_brightness", "Velocity to brightness", (0.0, 1.0), 0.35, Unit::Percent),
     control("damper_noise", "Damper noise", (0.0, 1.0), 0.2, Unit::Percent),
     control("pedal_resonance", "Pedal resonance", (0.0, 1.0), 0.3, Unit::Percent),
+    ParamInfo::toggle("soft_pedal", "Soft pedal", false),
     ParamInfo::choice("body", "Body", &["Struck", "Marimba bar", "Vibraphone bar"], 0),
     control("mallet_hardness", "Mallet hardness", (0.0, 1.0), 0.5, Unit::Percent),
     ParamInfo::choice("mallet_model", "Mallet model", &["Contact", "Pulse"], 0),
@@ -385,7 +387,8 @@ impl Instrument {
             morph: self.params.get(param::MORPH),
             velocity_brightness: self.params.get(param::VELOCITY_BRIGHTNESS),
             pedal_resonance: if self.pedal { self.params.get(param::PEDAL_RESONANCE) } else { 0.0 },
-            soft: self.soft_pedal,
+            // Controller 67 or the switch: either holds the soft pedal down.
+            soft: self.soft_pedal || self.params.get(param::SOFT_PEDAL) >= 0.5,
         };
         set.voice(key, velocity, &controls, self.sample_rate, &mut self.set_voice);
         let slot = self.free_or_oldest();
