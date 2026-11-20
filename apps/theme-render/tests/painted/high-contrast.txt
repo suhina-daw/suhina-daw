@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog high-contrast 7a7156c0ffc8d338
+agent-dialog high-contrast bd6e3bf4a7283492
 arrangement high-contrast f4918b9f6470d817
 arrangement-scrolled high-contrast 61176c4e1469e169
 browser high-contrast f9c908b9345c4603
@@ -9,17 +9,17 @@ browser-plug-ins high-contrast da1fd90912ef1719
 browser-search high-contrast adc2c6802f39b620
 clip-audio high-contrast 912de111dc8716e1
 clip-midi high-contrast f8cc48792fe10b87
-colour-picker high-contrast 6e8d820dda8e3b10
-colour-picker-field high-contrast 11d392343056413a
-colour-picker-wheel high-contrast 0f95560a2712c6cc
-context-menu high-contrast 74cbaaa4ee0a60ad
+colour-picker high-contrast 1b13a7d9a0008bb8
+colour-picker-field high-contrast ca89ec34d76840c8
+colour-picker-wheel high-contrast dae78864bf696552
+context-menu high-contrast 0720b5495887b892
 control-bar-toggles high-contrast f4add764345e81ee
-count-in-menu high-contrast e94d05b2e3b3595e
+count-in-menu high-contrast 9fa2df76fb4e90fc
 cpu high-contrast f7a2d4f34e0ece4b
 detail-beside high-contrast d87086cb0b814741
 device-group high-contrast 4d4598173b8b1a00
 devices high-contrast 616e5394ffa9a8b8
-empty-space-menu high-contrast b2dc3bde726815ee
+empty-space-menu high-contrast cd347dbf6e294450
 expanded-delay high-contrast ed2a67b44b95b6e3
 expanded-fm-synth high-contrast 110c342343193bd2
 expanded-instrument high-contrast a599d3676519351f
@@ -28,8 +28,8 @@ expanded-instrument-sample high-contrast 708b924fd057c5ae
 expanded-multiband high-contrast e8195f125a68e7a0
 expanded-reverb high-contrast 25e8b83926825a61
 expanded-vinyl-distortion high-contrast 5572d2994c84fa37
-export-dialog high-contrast fa8ca15cefcbaa2f
-grid-menu high-contrast f02cd92a37feb4ad
+export-dialog high-contrast 8c0f7b72f59bfc01
+grid-menu high-contrast 40e44f9d043b5a18
 instrument-instrument high-contrast 1f2acd814296c035
 instrument-sampler high-contrast 9f0bf31272cd4a51
 launcher high-contrast 9b1fe97a1d721ea6
@@ -37,15 +37,15 @@ launcher-hover high-contrast 228d4a146993df69
 launcher-scrolled high-contrast e13c2b23464051c7
 launcher-selected high-contrast e46363cab8336338
 launcher-toggles high-contrast bca0d1f166bc674b
-menu high-contrast 32a410bcf371f953
+menu high-contrast 5cc0e4dd936ef9b7
 missing-files high-contrast 012cecbf28502d50
 new-theme-dialog high-contrast d71766914747b8d7
 piano-roll high-contrast 72526e14053816f7
-project-dialog high-contrast cb1abee8cdc8d285
-quantize-menu high-contrast d9ea7e60cb1ea19d
-quick-add high-contrast a67d1d9dfc9b9b7d
+project-dialog high-contrast f6e1d32ded0ca354
+quantize-menu high-contrast eb50b44e750be5a8
+quick-add high-contrast 36ef7584b31cd61a
 sample-map high-contrast e77666a4cf336459
-save-dialog high-contrast ba3a7a2b66936c7a
+save-dialog high-contrast c42c0c35bd4b6981
 settings high-contrast 98356fe5b362137f
 settings-agents high-contrast 7e7dc3028a7e7f17
 settings-appearance high-contrast 821740af6b256993
@@ -54,12 +54,12 @@ settings-browser high-contrast 52a198abb5d04392
 settings-devices high-contrast 200330f82e9c5d73
 settings-keys high-contrast 8f1e8d7a1b077529
 settings-launcher high-contrast dddb641b88767105
-settings-menu high-contrast 2a224cab6b5f4e02
+settings-menu high-contrast 55ca3c49f43c6d56
 settings-midi high-contrast d411a60c1c32053f
 settings-plug-ins high-contrast 855835156d24249d
 settings-themes high-contrast a93474899f823260
 start-panel high-contrast 0272f239de9038ce
-time-signature-menu high-contrast 7b5eb40c468ba09f
-tooltip high-contrast c60192526b72be00
-unsaved-dialog high-contrast 1664ad3ed1c8657c
-updates-dialog high-contrast 490da2cdb2e0738c
+time-signature-menu high-contrast 24197b82629a4975
+tooltip high-contrast f974550534320a85
+unsaved-dialog high-contrast 8ab3146e1c5b37a8
+updates-dialog high-contrast 17dcdcd22ccd8e06

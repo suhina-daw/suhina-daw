@@ -66,7 +66,7 @@ folder is never written over (the unpack stops there with an error, keeping what
 ## The panel
 
 A dialog over the window, as wide as the window allows (at most 1180 px) and as high as it
-needs (at most the window), drawn from the theme like every dialog: its box from `dialog`, its
+needs (at most the window), drawn from the theme like every dialog: its box from `dialog[name="missing-files"]`, its
 title bar from `dialog-title`, its rows from `list-row[kind="missing-file"]`, its words from
 `label`. Escape or **Close** closes it; nothing changes until **Apply**.
 

@@ -92,14 +92,17 @@ fn the_dialogs_update_buttons_work_over_the_start_panels_line() {
 
 /// The bar over an open project for `phase`, and what was chosen in it.
 fn bar(phase: Phase) -> Harness<'static, Option<BarChoice>> {
-    Harness::builder().allow_missing_glyphs().with_size(Vec2::new(1000.0, ROW + 12.0)).build_ui_state(
-        move |ui, chosen: &mut Option<BarChoice>| {
-            if let Some(choice) = bar_line(ui, ui.max_rect(), phase.clone()) {
-                *chosen = Some(choice);
-            }
-        },
-        None,
-    )
+    Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1000.0, crate::kit::theme::ROW + 12.0))
+        .build_ui_state(
+            move |ui, chosen: &mut Option<BarChoice>| {
+                if let Some(choice) = bar_line(ui, ui.max_rect(), phase.clone()) {
+                    *chosen = Some(choice);
+                }
+            },
+            None,
+        )
 }
 
 /// A newer nightly is named as one in the bar over an open project, with its button, its page and

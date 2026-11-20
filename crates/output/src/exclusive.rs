@@ -53,7 +53,7 @@ impl Encoding {
             Self::I24 => (24, 24, SampleType::Int),
             Self::I16 => (16, 16, SampleType::Int),
         };
-        WaveFormat::new(store, valid, &kind, sample_rate as usize, usize::from(channels), None)
+        WaveFormat::new(store, valid, kind, sample_rate as usize, usize::from(channels), None)
     }
 }
 
@@ -173,7 +173,7 @@ pub(crate) fn capable_devices() -> Vec<String> {
             return Vec::new();
         }
         let Ok(collection) =
-            wasapi::DeviceEnumerator::new().and_then(|devices| devices.get_device_collection(&Direction::Render))
+            wasapi::DeviceEnumerator::new().and_then(|devices| devices.get_device_collection(Direction::Render))
         else {
             return Vec::new();
         };
@@ -227,7 +227,7 @@ fn run(
     let cue = cue_channel(cue_pair, channels);
     let mut ringed = vec![0.0f32; frames * RING_CHANNELS];
     // A buffer of silence before starting, so the first period has something to play.
-    if render.write_to_device(frames, &bytes, None).is_err() || client.start_stream().is_err() {
+    if render.write_to_device(&bytes, None).is_err() || client.start_stream().is_err() {
         let _unheard = ready.send(Err("the device would not start in exclusive mode".into()));
         return;
     }
@@ -262,7 +262,7 @@ fn run(
         progress.set_callback_frames(space);
         let Some(data) = bytes.get_mut(..space * frame_bytes) else { continue };
         encode(encoding, out, channels_n, cue, data);
-        if render.write_to_device(space, data, None).is_err() {
+        if render.write_to_device(data, None).is_err() {
             progress.fail();
             break;
         }
@@ -320,14 +320,14 @@ fn set_up(name: Option<&str>, sample_rate: u32, buffer_frames: Option<u32>) -> R
     let device = match name {
         Some(name) => {
             let collection =
-                devices.get_device_collection(&Direction::Render).map_err(|e| error("no output devices", e))?;
+                devices.get_device_collection(Direction::Render).map_err(|e| error("no output devices", e))?;
             let count = collection.get_nbr_devices().map_err(|e| error("no output devices", e))?;
             (0..count)
                 .filter_map(|i| collection.get_device_at_index(i).ok())
                 .find(|d| d.get_friendlyname().is_ok_and(|n: String| crate::devices::same_name(&n, name)))
                 .ok_or_else(|| format!("no output device {name:?}"))?
         }
-        None => devices.get_default_device(&Direction::Render).map_err(|e| error("no default output", e))?,
+        None => devices.get_default_device(Direction::Render).map_err(|e| error("no default output", e))?,
     };
     let mut client = device.get_iaudioclient().map_err(|e| error("could not open the device", e))?;
     let channels = client.get_mixformat().map(|m| m.get_nchannels()).unwrap_or(2).clamp(1, 64);
@@ -343,7 +343,7 @@ fn set_up(name: Option<&str>, sample_rate: u32, buffer_frames: Option<u32>) -> R
     // Intel HDA devices need buffers in multiples of 128 bytes.
     let period = client.calculate_aligned_period_near(wanted, Some(128), &format).unwrap_or(wanted);
     let mode = StreamMode::EventsExclusive { period_hns: period };
-    if let Err(e) = client.initialize_client(&format, &Direction::Render, &mode) {
+    if let Err(e) = client.initialize_client(&format, Direction::Render, mode, None) {
         if hresult(&e) != Some(AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED) {
             return Err(init_error(&e));
         }
@@ -353,7 +353,7 @@ fn set_up(name: Option<&str>, sample_rate: u32, buffer_frames: Option<u32>) -> R
         let period = wasapi::calculate_period_100ns(i64::from(frames), i64::from(sample_rate));
         client = device.get_iaudioclient().map_err(|e| error("could not open the device", e))?;
         client
-            .initialize_client(&format, &Direction::Render, &StreamMode::EventsExclusive { period_hns: period })
+            .initialize_client(&format, Direction::Render, StreamMode::EventsExclusive { period_hns: period }, None)
             .map_err(|e| init_error(&e))?;
     }
     let event = client.set_get_eventhandle().map_err(|e| error("no device event", e))?;

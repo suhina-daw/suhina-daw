@@ -9,16 +9,17 @@
 use egui::{Align2, Color32, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 use suhina_session::PluginProgress;
 
-use crate::kit::theme::{self, PAD, ROW};
+use crate::kit::dialog;
+use crate::kit::theme::{self, PAD};
 use crate::kit::widgets;
 
 /// Width of the dialog.
-pub const WIDTH: f32 = 360.0;
+pub const WIDTH: f32 = 344.0;
 /// Names of loading plug-ins listed before "and N more".
 const LISTED: usize = 6;
 const LINE: f32 = 16.0;
 const BAR: f32 = 4.0;
-const BUTTON: Vec2 = Vec2::new(150.0, 18.0);
+const BUTTON: f32 = 150.0;
 
 /// Draws the dialog over `area` for `project`, above everything else, and returns whether the
 /// user sent it to the background (its button, or Escape).
@@ -32,7 +33,7 @@ pub fn show_preparing(ui: &Ui, area: Rect, project: &str) -> bool {
 }
 
 fn show_status(ui: &Ui, area: Rect, project: &str, progress: Option<&PluginProgress>) -> bool {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("loading");
     crate::kit::floating::area(ui.ctx(), Id::unique("plugin-loading"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -66,24 +67,13 @@ fn draw(
     let lines = progress.map_or(2, |p| {
         1 + p.loading.len().min(LISTED) + usize::from(p.loading.len() > LISTED) + p.failed.len().min(LISTED)
     });
-    let height = ROW + PAD * 3.0 + BAR + lines as f32 * LINE + BUTTON.y + PAD;
-    let size = crate::kit::floating::dialog_size(dialog, area, Vec2::new(WIDTH, height));
-    let rect = Rect::from_center_size(area.center(), size);
-    let rect = crate::kit::floating::dialog(
-        &painter,
-        dialog,
-        rect,
-        crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel")),
-    );
-
-    let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
+    let height = BAR + PAD + lines as f32 * LINE + PAD + dialog::BUTTON_HEIGHT;
+    let outer = Rect::from_center_size(area.center(), dialog::size(dialog, area, Vec2::new(WIDTH, height), true));
     let what = if progress.is_some() { "Loading plug-ins" } else { "Preparing audio" };
-    drop(super::project_dialog::title_bar(&painter, title, &format!("{what} · {project}")));
-
-    let inner = Rect::from_min_max(
-        Pos2::new(rect.left() + PAD, title.bottom() + PAD),
-        Pos2::new(rect.right() - PAD, rect.bottom() - PAD),
-    );
+    let title = format!("{what} · {project}");
+    let (painted, title_row) = dialog::paint(&painter, dialog, outer, Some(&title));
+    drop(title_row);
+    let inner = painted.content;
     let bar = Rect::from_min_size(inner.min, Vec2::new(inner.width(), BAR));
     // `progress` (its background and radius) and `progress-fill` (its background) style the bar.
     if let Some(progress) = progress {
@@ -129,12 +119,8 @@ fn draw(
         line("Please wait. Your plug-ins stay loaded.", crate::kit::element::hint_ink());
     }
 
-    let button = Rect::from_min_size(Pos2::new(inner.right() - BUTTON.x, inner.bottom() - BUTTON.y), BUTTON);
-    let response = widgets::button_area(ui, button, Id::unique("plugin-loading-hide"), "Continue in the background");
-    let hover = widgets::hover(ui, &response);
-    let el = crate::kit::element::BUTTON.response(&response).enter();
-    widgets::push_face(&painter, button, &el, hover, "Continue in the background");
-    response.clicked() || ui.input(|i| i.key_pressed(Key::Escape))
+    let hide = dialog::Action::new("Continue in the background", "Continue in the background").wide(BUTTON);
+    dialog::actions(ui, &painter, inner, &[hide]).is_some() || ui.input(|i| i.key_pressed(Key::Escape))
 }
 
 /// Names a line of the dialog for screen readers and tests; two copies of a plug-in give two
