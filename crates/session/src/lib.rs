@@ -54,6 +54,7 @@ mod files;
 mod follow;
 mod history;
 mod instrument_analysis;
+pub(crate) mod instrument_profile;
 mod lane_layout;
 mod launch;
 mod library;

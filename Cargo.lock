@@ -5877,6 +5877,7 @@ dependencies = [
  "suhina-device-fm-synth",
  "suhina-device-registry",
  "suhina-device-sdk",
+ "suhina-dsp",
  "suhina-engine",
  "suhina-flp",
  "suhina-fs",
