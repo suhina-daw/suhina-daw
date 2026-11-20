@@ -3,7 +3,7 @@ description: Native-device CLAP and VST3 export identities, host conversion, sta
 read_when: native device export, stock CLAP, stock VST3, plugin factory, export state
 type: spec
 status: draft
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/plugin-host/src/exports/
   - crates/plugin-host/tests/device_exports.rs
