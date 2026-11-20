@@ -11,6 +11,8 @@ use suhina_dsp::bar::{BarMode, Mallet, Tube, mode_shape, uniform_ratio};
 pub const MAX_SPEED: f64 = 4.0;
 /// Output scale of a bar's weighted mode velocities.
 pub const OUTPUT_SCALE: f64 = 0.12;
+/// Mallet noise per newton of contact force at the reference bar mass.
+const NOISE_PER_NEWTON: f64 = 3e-5;
 /// Quality factor of every bar's tube.
 const TUBE_QUALITY: f64 = 40.0;
 const MALLET_MASS: f64 = 0.025;
@@ -85,6 +87,11 @@ impl Profile {
             quality: TUBE_QUALITY,
             radiation_seconds: self.material().radiation_seconds,
         })
+    }
+
+    /// The mallet noise's output per newton at `key`, scaled like the bar's own level.
+    pub fn noise_gain(self, key: u8) -> f64 {
+        NOISE_PER_NEWTON * (self.bar_mass(f64::from(key)) / self.material().reference_mass).sqrt()
     }
 
     /// Whether note-off damps the bar (unless the sustain pedal holds it).

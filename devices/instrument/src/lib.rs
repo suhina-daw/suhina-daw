@@ -408,6 +408,7 @@ impl Instrument {
             bar.set_modes(self.sample_rate, &modes);
             bar.set_tube(profile.tube(self.params.get(param::RESONATOR)));
             bar.transpose(self.bend_semitones);
+            bar.set_mallet_noise(profile.noise_gain(key));
             bar.strike(excitation, mallet, bars::MAX_SPEED * f64::from(velocity));
         }
         voice.profile = Some(profile);

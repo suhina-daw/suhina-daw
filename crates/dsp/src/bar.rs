@@ -20,6 +20,8 @@ pub const MAX_CONTACT_SECONDS: f64 = 0.020;
 pub const MAX_APPROACH_SECONDS: f64 = 0.010;
 /// Time over which the output step of a coefficient change fades out.
 pub const DECLICK_SECONDS: f64 = 0.002;
+/// The mallet noise's high-pass corner.
+pub const NOISE_HIGH_PASS_HZ: f64 = 200.0;
 
 /// The first sixteen roots of `cos(b) cosh(b) = 1`; higher ones are `(2n + 1) pi / 2` to double
 /// precision.
@@ -312,6 +314,56 @@ pub struct StruckBar<const N: usize> {
     /// Output offset that removes a coefficient change's step, and its fade per sample.
     declick: f64,
     declick_step: f64,
+    noise: Noise,
+}
+
+/// The knock of a mallet's head: white noise, band-limited by the stroke, scaled by its force.
+#[derive(Debug, Clone, Copy)]
+struct Noise {
+    /// Output per newton of contact force; 0 is no noise.
+    gain: f64,
+    random: u32,
+    low_pass: f64,
+    high_pass: f64,
+    low: f64,
+    previous_low: f64,
+    high: f64,
+    /// What the next sample's output adds.
+    output: f64,
+}
+
+impl Default for Noise {
+    fn default() -> Self {
+        Self {
+            gain: 0.0,
+            random: 0x2545_f491,
+            low_pass: 0.0,
+            high_pass: 0.0,
+            low: 0.0,
+            previous_low: 0.0,
+            high: 0.0,
+            output: 0.0,
+        }
+    }
+}
+
+impl Noise {
+    /// Shape this sample's noise by `force`; no force, no noise.
+    fn sample(&mut self, force: f64) {
+        if self.gain == 0.0 || force <= 0.0 || !force.is_finite() {
+            self.output = 0.0;
+            return;
+        }
+        // xorshift32: deterministic, never zero.
+        self.random ^= self.random << 13;
+        self.random ^= self.random >> 17;
+        self.random ^= self.random << 5;
+        let white = f64::from(self.random) / f64::from(u32::MAX) * 2.0 - 1.0;
+        self.low += (1.0 - self.low_pass) * (white - self.low);
+        self.high = self.high_pass * (self.high + self.low - self.previous_low);
+        self.previous_low = self.low;
+        self.output = self.gain * force * self.high;
+    }
 }
 
 impl<const N: usize> Default for StruckBar<N> {
@@ -327,6 +379,7 @@ impl<const N: usize> Default for StruckBar<N> {
             radiation: 0.0,
             declick: 0.0,
             declick_step: 0.0,
+            noise: Noise::default(),
         }
     }
 }
@@ -370,6 +423,11 @@ impl<const N: usize> StruckBar<N> {
         self.apply_tube();
         self.refresh_active();
         self.fade_step_from(before);
+    }
+
+    /// Sound each stroke's contact as noise too, `gain` of output per newton (0: none).
+    pub fn set_mallet_noise(&mut self, gain: f64) {
+        self.noise.gain = if gain.is_finite() { gain.clamp(0.0, 1.0) } else { 0.0 };
     }
 
     /// Put a tube under the bar (`None` or amount 0: none), keeping a ringing tube's motion.
@@ -501,6 +559,14 @@ impl<const N: usize> StruckBar<N> {
             return;
         }
         let reduced = mallet.mass * point / (mallet.mass + point);
+        // The knock is band-limited by the contact: shorter contacts knock brighter.
+        let corner = (0.6 / mallet.contact_time(reduced, speed)).min(0.45 * self.sample_rate);
+        if corner.is_finite() && corner > 0.0 {
+            self.noise.low_pass = (-TAU * corner / self.sample_rate).exp();
+            self.noise.high_pass = (-TAU * NOISE_HIGH_PASS_HZ / self.sample_rate).exp();
+        } else {
+            self.noise.gain = 0.0;
+        }
         match excitation {
             Excitation::Contact => {
                 let compression = mallet.max_compression(reduced, speed);
@@ -535,7 +601,8 @@ impl<const N: usize> StruckBar<N> {
         if !self.active {
             return 0.0;
         }
-        let output = self.current_output() + self.declick;
+        let output = self.current_output() + self.declick + self.noise.output;
+        self.noise.output = 0.0;
         if self.declick != 0.0 {
             let next = self.declick - self.declick_step;
             self.declick = if next.signum() == self.declick.signum() { next } else { 0.0 };
@@ -553,7 +620,7 @@ impl<const N: usize> StruckBar<N> {
             Stroke::Pulse { .. } => self.pulse_sample(),
             Stroke::Contact { .. } => self.contact_sample(),
         }
-        let mut active = !matches!(self.stroke, Stroke::Idle) || self.declick != 0.0;
+        let mut active = !matches!(self.stroke, Stroke::Idle) || self.declick != 0.0 || self.noise.output != 0.0;
         let mut finite = self.tube.z.is_finite();
         if self.tube.z.re.abs() + self.tube.z.im.abs() < 1e-12 {
             self.tube.z = Complex::default();
@@ -591,6 +658,7 @@ impl<const N: usize> StruckBar<N> {
             }
             return;
         }
+        self.noise.sample(amplitude * (omega * (start + length / 2.0)).sin());
         let up = Complex::new(0.0, omega * start).exp();
         let down = Complex::new(up.re, -up.im);
         for mode in self.modes.iter_mut().filter(|mode| mode.enabled()) {
@@ -624,6 +692,7 @@ impl<const N: usize> StruckBar<N> {
             }
         }
         let mut separated = false;
+        let mut impulse = 0.0;
         for _ in 0..steps {
             let mut surface = 0.0;
             let mut surface_velocity = 0.0;
@@ -639,6 +708,7 @@ impl<const N: usize> StruckBar<N> {
             } else {
                 0.0
             };
+            impulse += force;
             velocity -= force / mallet.mass * h;
             position += velocity * h;
             for (mode, (pole, gain)) in self.modes.iter_mut().zip(step_poles.iter()) {
@@ -648,6 +718,7 @@ impl<const N: usize> StruckBar<N> {
                 separated = true;
             }
         }
+        self.noise.sample(impulse / f64::from(steps));
         self.last_stroke_steps = self.last_stroke_steps.saturating_add(u64::from(steps));
         let samples = samples.saturating_add(1);
         let elapsed = f64::from(samples) / self.sample_rate;

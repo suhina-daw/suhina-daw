@@ -397,3 +397,61 @@ fn set_modes_keeps_the_motion_of_a_ringing_bar() {
     }
     assert_eq!(kept, 4, "two modes still ring");
 }
+
+#[test]
+fn mallet_noise_sounds_only_while_the_mallet_touches_and_leaves_the_bar_alone() {
+    let modes = bar_modes(8, 0.4);
+    for excitation in [Excitation::Contact, Excitation::Pulse] {
+        let mut quiet = StruckBar::<8>::default();
+        let mut noisy = StruckBar::<8>::default();
+        for bar in [&mut quiet, &mut noisy] {
+            bar.set_modes(48000.0, &modes);
+        }
+        noisy.set_mallet_noise(1e-4);
+        quiet.strike(excitation, hard(), 4.0);
+        noisy.strike(excitation, hard(), 4.0);
+        let mut differed = false;
+        let mut after = 0;
+        for _ in 0..4800 {
+            let touching = noisy.is_struck();
+            let (a, b) = (quiet.next_sample(), noisy.next_sample());
+            assert!(b.is_finite());
+            if a != b {
+                differed = true;
+                assert!(touching || after == 0, "{excitation:?}: noise only during the contact and one sample after");
+            }
+            if !touching {
+                after += 1;
+            }
+            assert_eq!(quiet.energy(), noisy.energy(), "{excitation:?}: the noise never moves the bar");
+        }
+        assert!(differed, "{excitation:?}: the stroke knocks");
+    }
+}
+
+#[test]
+fn harder_and_faster_strokes_knock_louder() {
+    let modes = bar_modes(8, 0.4);
+    let knock = |mallet: Mallet, speed: f64| {
+        let mut quiet = StruckBar::<8>::default();
+        let mut noisy = StruckBar::<8>::default();
+        for bar in [&mut quiet, &mut noisy] {
+            bar.set_modes(48000.0, &modes);
+        }
+        noisy.set_mallet_noise(1e-4);
+        quiet.strike(Excitation::Contact, mallet, speed);
+        noisy.strike(Excitation::Contact, mallet, speed);
+        (0..960).map(|_| f64::from(noisy.next_sample() - quiet.next_sample()).powi(2)).sum::<f64>()
+    };
+    assert!(knock(soft(), 4.0) > knock(soft(), 1.0));
+    assert!(knock(hard(), 4.0) > knock(soft(), 4.0));
+    let mut bar = StruckBar::<8>::default();
+    bar.set_modes(48000.0, &modes);
+    for gain in [f64::NAN, f64::INFINITY, -1.0, 1e9] {
+        bar.set_mallet_noise(gain);
+        bar.strike(Excitation::Contact, hard(), 100.0);
+        for _ in 0..2400 {
+            assert!(bar.next_sample().is_finite());
+        }
+    }
+}
