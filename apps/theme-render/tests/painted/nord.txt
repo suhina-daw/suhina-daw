@@ -24,7 +24,7 @@ expanded-delay nord 81a1bd02052facb7
 expanded-fm-synth nord 98264f584badb770
 expanded-instrument nord c91d70cc40aac954
 expanded-instrument-model nord cdaf24e1f5900b98
-expanded-instrument-sample nord 7c8b11581a16892f
+expanded-instrument-sample nord 601e4d740ad7e61e
 expanded-multiband nord 38c69ceb6bb43895
 expanded-reverb nord 5599b1813dfe4b74
 expanded-vinyl-distortion nord 1932c0fdf7f20365
