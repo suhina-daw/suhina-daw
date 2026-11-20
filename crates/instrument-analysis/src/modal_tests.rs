@@ -309,6 +309,28 @@ fn a_beating_pair_becomes_a_mode_with_a_partner() {
     assert!(report.recording_modes.iter().all(|m| m.beat_share == 0.0), "{:?}", report.recording_modes);
 }
 
+/// Two strings of one note a little apart beat deeply: the partial misses the error limits but
+/// stays in the recording, loose, instead of leaving only the smooth partials.
+#[test]
+fn a_deeply_beating_partial_is_kept_loose_in_the_recording_but_not_the_profile() {
+    let ln1000 = 1000.0_f64.ln();
+    let pcm: Vec<f32> = (0..22050 * 3)
+        .map(|n| {
+            let t = n as f64 / 22050.0;
+            let smooth = 0.5 * (-ln1000 * t / 2.5).exp() * (TAU * 220.0 * t).sin();
+            let strings = (TAU * 660.0 * t).sin() + 0.9 * (TAU * 661.5 * t).sin();
+            (smooth + 0.3 * (-ln1000 * t / 2.0).exp() * strings) as f32
+        })
+        .collect();
+    let report = fit(&pcm, 22050, 1, 0..pcm.len(), 57, |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Fitted, "{report:?}");
+    assert!(report.modes.iter().all(|m| !m.loose), "the profile holds validated modes only");
+    let beating = report.recording_modes.iter().find(|m| (m.frequency_hz - 660.75).abs() < 3.0);
+    let beating = beating.unwrap_or_else(|| panic!("the beating partial is kept: {report:?}"));
+    assert!(beating.loose && (0.5..=10.0).contains(&beating.decay_seconds), "{beating:?}");
+    assert!(report.recording.as_ref().is_some_and(|r| r.validate().is_ok()));
+}
+
 #[test]
 fn a_noisy_strike_keeps_an_attack_that_a_clean_one_barely_needs() {
     let clean = struck(22050, 2.0, &[(421.7, 1.8, 0.5), (1139.3, 1.1, 0.3)]);

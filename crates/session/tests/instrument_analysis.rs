@@ -360,6 +360,23 @@ fn folder_fitting_lifecycle() {
     session.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(session.project(), &accepted_project);
 
+    // Files from anywhere run the same job: two of the notes, from their own paths.
+    assert!(
+        session
+            .execute("instrument.fitFiles", &json!({"track":1,"device":0,"paths":[notes.join("readme.txt")]}))
+            .is_err(),
+        "only audio files"
+    );
+    let files =
+        run(&mut session, "instrument.fitFiles", json!({"paths":[notes.join("c5.wav"), notes.join("c4-hard.wav")]}));
+    assert_eq!(files["files"], 2);
+    session.sync_instrument_analysis();
+    let status = run(&mut session, "instrument.analysis", json!({}));
+    let names: Vec<_> =
+        status["folder"]["files"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(names, vec!["c4-hard.wav", "c5.wav"], "{status}");
+    assert_eq!(status["folder"]["recordings"], 2);
+
     // A ready folder fit is stale once the Instrument's fitted model changes.
     let stale = run(&mut session, "instrument.fitFolder", json!({"path":notes}));
     session.execute("edit.undo", &json!({})).unwrap();

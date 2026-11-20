@@ -396,6 +396,37 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
 
 /// `instrument.fitFolder`: fit a folder's one-note files into one model, on the worker.
 pub(crate) fn start_folder(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let folder = Args::new(params).raw_str("path").ok_or("path must be a folder of audio files")?;
+    let folder = crate::files::absolute(std::path::Path::new(folder));
+    let files = crate::instrument_folder::list(&folder)?;
+    start_listed(session, params, files, folder.display().to_string())
+}
+
+/// `instrument.fitFiles`: the same job on a list of audio files from anywhere.
+pub(crate) fn start_files(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let paths: Vec<std::path::PathBuf> = params
+        .get("paths")
+        .and_then(Value::as_array)
+        .ok_or("paths must be a list of audio files")?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(|p| crate::files::absolute(std::path::Path::new(p)))
+                .ok_or("paths must be a list of audio files")
+        })
+        .collect::<Result<_, _>>()?;
+    let files = crate::instrument_folder::listed(&paths)?;
+    let label = format!("{} files", files.len());
+    start_listed(session, params, files, label)
+}
+
+/// Start a folder job on `files` for the selected Instrument; `label` names them in the source.
+fn start_listed(
+    session: &mut Session,
+    params: &Value,
+    files: Vec<std::path::PathBuf>,
+    label: String,
+) -> Result<Value, CommandError> {
     session.refresh_instrument_analysis();
     if session.analysis.current.as_ref().is_some_and(|j| j.receiver.is_some()) {
         return Err("the previous analysis is still running or cancelling".into());
@@ -405,12 +436,8 @@ pub(crate) fn start_folder(session: &mut Session, params: &Value) -> Result<Valu
         return Err("folder fitting needs an Instrument".into());
     }
     let (device_id, profile) = (device.id, device.instrument_modal_profile().map(<[u8]>::to_vec));
-    let folder = Args::new(params).raw_str("path").ok_or("path must be a folder of audio files")?;
-    let folder = crate::files::absolute(std::path::Path::new(folder));
-    let files = crate::instrument_folder::list(&folder)?;
     let pcm = Arc::new(AudioData { sample_rate: 48000, channels: 1, samples: Vec::new() });
-    let file = folder.display().to_string();
-    let source = Source { channel, device: device_id, file, pcm, start: 0.0, end: 1.0, root: 60.0, profile };
+    let source = Source { channel, device: device_id, file: label, pcm, start: 0.0, end: 1.0, root: 60.0, profile };
     let count = files.len();
     let mut result = spawn(session, AnalysisKind::Folder, source, move |progress| {
         crate::instrument_folder::fit_folder(&files, progress).map(|r| Prepared::Folder(Box::new(r)))
@@ -525,7 +552,7 @@ fn view_json(view: &AnalysisView) -> Value {
                 "risingModes":h.rise.iter().filter(|v| **v > 0.0).count()}))})),
         "recordingModes":r.recording_modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
             "fastDecaySeconds":m.fast_decay_seconds,"fastShare":m.fast_share,"beatHz":m.beat_hz,"beatShare":m.beat_share,
-            "phase":m.phase,"sustained":m.sustained})).collect::<Vec<_>>(),
+            "phase":m.phase,"sustained":m.sustained,"loose":m.loose})).collect::<Vec<_>>(),
         "modes":r.modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
             "estimationRmsDb":m.estimation_rms_db,"validationRmsDb":m.validation_rms_db,"sustained":m.sustained,
             "estimationWindows":m.estimation_windows,"validationWindows":m.validation_windows})).collect::<Vec<_>>()

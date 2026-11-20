@@ -63,6 +63,22 @@ fn sampler_drop_replaces_source_without_creating_clips() {
 }
 
 #[test]
+fn several_samples_on_an_instrument_fit_into_one_model_and_load_none() {
+    let target = DropTarget::InstrumentFit { track: TrackId(3), device: 1 };
+    let items = [item("/s/c3.wav", ItemKind::Sample), item("/t/c4.wav", ItemKind::Sample)];
+    let result = plan(&items, target, false, "rhythmic", false, &name).unwrap();
+    assert_eq!(
+        result.commands,
+        vec![("instrument.fitFiles", json!({"track":3, "device":1, "paths":["/s/c3.wav", "/t/c4.wav"]}))]
+    );
+    assert!(result.samples.is_empty(), "nothing is decoded or loaded as the sample");
+    assert_eq!(result.label, "Fit 2 samples into one model");
+    assert!(plan(&items[..1], target, false, "rhythmic", false, &name).is_none());
+    let mixed = [items[0].clone(), item("/s/a.mid", ItemKind::Midi)];
+    assert!(plan(&mixed, target, false, "rhythmic", false, &name).is_none());
+}
+
+#[test]
 fn slots_and_empty_space_take_scenes_and_new_tracks() {
     let items = [item("/s/a.wav", ItemKind::Sample)];
     let slot = plan(&items, DropTarget::Slot { track: TrackId(1), scene: 2 }, false, "rhythmic", false, &name).unwrap();

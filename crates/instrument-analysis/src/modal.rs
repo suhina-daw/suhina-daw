@@ -41,6 +41,14 @@ const SUSTAIN_DB: f64 = 3.0;
 const SUSTAINED_SECONDS: f64 = 60.0;
 /// A failing span this long is fitted once more on its last two thirds.
 const LATE_RETRY_WINDOWS: usize = 9;
+/// A partial that fails every fit is kept loose with at least this many windows, this fall over
+/// them and at most this RMS envelope error (see instrument-modal-fitting.md › Loose partials).
+const LOOSE_MIN_WINDOWS: usize = 6;
+const LOOSE_DROP_DB: f64 = 6.0;
+const LOOSE_MAX_DB: f64 = 15.0;
+/// Each third of a loose span's windows is on average at least this much below the one before:
+/// a burst followed by a flat floor is not a decay.
+const LOOSE_THIRD_DB: f64 = 1.0;
 /// A fast part is kept when it lowers the span's RMS envelope error by this much, or leaves at
 /// most this fraction of a single exponential's error of at least this much.
 const TWO_STAGE_GAIN_DB: f64 = 1.0;
@@ -86,6 +94,8 @@ pub struct ModeEvidence {
     pub beat_share: f64,
     /// Radians at the strike.
     pub phase: f64,
+    /// Kept although its envelope failed the error limits: in the recording, not the profile.
+    pub loose: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -355,8 +365,8 @@ pub fn fit(
             accepted.push(Fitted { hz, slow, fast, evidence });
         }
     }
-    // Schema-1 profile: the 16 largest slow magnitudes, as before.
-    let mut largest: Vec<&Fitted> = accepted.iter().collect();
+    // Schema-1 profile: the 16 largest slow magnitudes of validated modes, as before.
+    let mut largest: Vec<&Fitted> = accepted.iter().filter(|f| !f.evidence.loose).collect();
     largest.sort_by(|a, b| b.slow.total_cmp(&a.slow).then_with(|| a.hz.total_cmp(&b.hz)));
     largest.truncate(MAX_PROFILE_MODES);
     largest.sort_by(|a, b| a.hz.total_cmp(&b.hz));
@@ -734,8 +744,56 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
         }
         (Some(one), None) => Some(plain(one)),
         (None, Some((two, _))) => Some(two),
-        (None, None) => late.map(plain),
+        (None, None) => late.or_else(|| loose_span(hz, values)).map(plain),
     }
+}
+
+/// A partial no fit describes, kept loose: the least-squares decay from its loudest of the first
+/// three windows until the floor, ignoring rises, when it clearly falls.
+fn loose_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEvidence)> {
+    let head = values.get(..values.len().min(3))?;
+    let start = head.iter().enumerate().max_by(|a, b| a.1.2.total_cmp(&b.1.2))?.0;
+    let peak = values.get(start)?.2;
+    let span: Vec<(f64, f64)> =
+        values.get(start..)?.iter().take_while(|v| (peak - v.2) * DB <= SPAN_FLOOR_DB).map(|v| (v.1, v.2)).collect();
+    if span.len() < LOOSE_MIN_WINDOWS {
+        return None;
+    }
+    let (intercept, slope) = line(&span)?;
+    let decay = -1000.0_f64.ln() / slope;
+    let drop_db = -slope * (span.last()?.0 - span.first()?.0) * DB;
+    let rms_db =
+        (span.iter().map(|(t, y)| ((y - intercept - slope * t) * DB).powi(2)).sum::<f64>() / span.len() as f64).sqrt();
+    let third = span.len() / 3;
+    let mean = |part: &[(f64, f64)]| part.iter().map(|p| p.1).sum::<f64>() / part.len().max(1) as f64;
+    let (first, middle, last) =
+        (span.get(..third)?, span.get(third..span.len() - third)?, span.get(span.len() - third..)?);
+    let falling =
+        (mean(first) - mean(middle)) * DB >= LOOSE_THIRD_DB && (mean(middle) - mean(last)) * DB >= LOOSE_THIRD_DB;
+    let clear = slope < 0.0
+        && falling
+        && (0.001..=SUSTAINED_SECONDS).contains(&decay)
+        && drop_db >= LOOSE_DROP_DB
+        && rms_db <= LOOSE_MAX_DB;
+    clear.then_some((
+        intercept,
+        slope,
+        ModeEvidence {
+            frequency_hz: hz,
+            decay_seconds: decay,
+            estimation_rms_db: rms_db,
+            validation_rms_db: rms_db,
+            estimation_windows: span.len(),
+            validation_windows: 0,
+            sustained: false,
+            fast_decay_seconds: 0.0,
+            fast_share: 0.0,
+            beat_hz: 0.0,
+            beat_share: 0.0,
+            phase: 0.0,
+            loose: true,
+        },
+    ))
 }
 
 /// Least-squares intercept and slope through (time, value) points.
@@ -836,6 +894,7 @@ fn fit_span(hz: f64, span: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEviden
             beat_hz: 0.0,
             beat_share: 0.0,
             phase: 0.0,
+            loose: false,
         },
     ))
 }

@@ -67,6 +67,26 @@ impl FolderReport {
     }
 }
 
+/// A list of audio files from anywhere, sorted by file name: each must be an existing audio file.
+pub(crate) fn listed(paths: &[std::path::PathBuf]) -> Result<Vec<PathBuf>, CommandError> {
+    if paths.is_empty() {
+        return Err("paths is empty".into());
+    }
+    if paths.len() > MAX_FILES {
+        return Err(format!("at most {MAX_FILES} files can be fitted at once").into());
+    }
+    let mut files = Vec::with_capacity(paths.len());
+    for path in paths {
+        if !path.is_file() || kind_of(path) != Some(FileKind::Sample) {
+            return Err(format!("{} is not an audio file", path.display()).into());
+        }
+        files.push(path.clone());
+    }
+    files.sort_by(|a, b| a.file_name().cmp(&b.file_name()).then_with(|| a.cmp(b)));
+    files.dedup();
+    Ok(files)
+}
+
 /// The folder's audio files (not its subfolders), sorted by name.
 pub(crate) fn list(folder: &Path) -> Result<Vec<PathBuf>, CommandError> {
     let entries = std::fs::read_dir(folder).map_err(|error| format!("could not read the folder: {error}"))?;
@@ -271,6 +291,25 @@ mod tests {
             list(&folder).unwrap().iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
         assert_eq!(names, vec!["a.flac", "b.wav"]);
         assert!(list(&folder.join("missing")).is_err());
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn listed_files_from_anywhere_are_sorted_by_name_and_must_be_audio() {
+        let folder = std::env::temp_dir().join(format!("suhina-files-fit-list-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(folder.join("a")).unwrap();
+        std::fs::create_dir_all(folder.join("b")).unwrap();
+        for name in ["b/c4.wav", "a/c5.flac", "a/notes.txt"] {
+            std::fs::write(folder.join(name), b"").unwrap();
+        }
+        let paths = [folder.join("b/c4.wav"), folder.join("a/c5.flac"), folder.join("b/c4.wav")];
+        let names: Vec<_> =
+            listed(&paths).unwrap().iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, vec!["c4.wav", "c5.flac"], "sorted by name, each once");
+        assert!(listed(&[folder.join("a/notes.txt")]).is_err());
+        assert!(listed(&[folder.join("a/missing.wav")]).is_err());
+        assert!(listed(&[]).is_err());
         let _ = std::fs::remove_dir_all(&folder);
     }
 

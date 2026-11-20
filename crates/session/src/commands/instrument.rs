@@ -29,6 +29,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::UNHEARD,
     },
     CommandSpec {
+        id: "instrument.fitFiles",
+        label: "Fit one-note audio files from anywhere into one fitted model (velocity layers by level) without changing playback",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            param("paths", ParamType::Path(PathKind::Files), "the one-note audio files, at most 128"),
+        ],
+        kind: CommandKind::on(Target::Project, Effect::Change),
+        run: instrument_analysis::start_files,
+        policy: Policy::UNHEARD,
+    },
+    CommandSpec {
         id: "instrument.acceptFit",
         label: "Adopt the current modal fit as a fitted model (its modes, attack and level), reset model controls and enable all fitted modes in one undo step",
         params: &[DEVICE_TRACK, DEVICE, JOB],
