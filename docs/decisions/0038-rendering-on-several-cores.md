@@ -278,6 +278,21 @@ Launch drift is measured against the live render's first audible frame. The exis
 clip click guard makes frame zero silent, so the beat at 24000 becomes audible at
 24001; this shared offset is not a scheduling error and no tolerance is added.
 
+Measured on 2026-11-20 in [CI run 3565](https://github.com/suhina-daw/suhina-daw/actions/runs/44654764069),
+commit `e71a699549677d5d4c05e79e93f6b230b790b001`: the `render-path-Windows`,
+`render-path-macOS` and `render-path-Linux` JSON artifacts agree on every value below.
+Each is one deterministic sample-domain run per setting, at 48 kHz and 128 frames;
+there is no hardware configuration, repeated wall-clock latency distribution or load
+measurement behind this table. All switching renders were bit-identical; the mixer
+first changed one frame after its control, for every setting on every platform.
+
+| Lead setting | Device response, frames | Device response, ms | Early launch drift, frames | Late launch drift, frames |
+|---|---:|---:|---:|---:|
+| Off | 0 | 0 | 0 | 0 |
+| 50 ms | 2432 | 50.666667 | 0 | 24000 |
+| 100 ms | 4864 | 101.333333 | 0 | 24000 |
+| 200 ms | 9600 | 200.000000 | 0 | 24000 |
+
 These are checks of the proposed policy, not an amendment choosing another one. Neither
 the queue contract passing nor a bit-identical continuous switch validates Studio mode's
 live acceptance. Hardware measurements and a decision about immediate-response actions
