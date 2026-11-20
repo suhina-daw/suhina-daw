@@ -131,8 +131,8 @@ fn band_noise_is_measured_beside_the_partials() {
     let layer = layer(&noisy, &modes, None, None, true, sum).unwrap();
     // One-sided density of white noise: 2 sigma^2 / rate.
     let expected = (2.0 * sigma * sigma / R).sqrt() / sum;
-    for band in 3..NOISE_BANDS {
-        let measured = f64::from(layer.noise[band]);
+    for (band, value) in layer.noise.iter().enumerate().skip(3) {
+        let measured = f64::from(*value);
         let error = 20.0 * (measured / expected).log10();
         assert!(error.abs() < 3.0, "band {band}: {error} dB");
     }

@@ -199,9 +199,12 @@ fn onsets_swell_in_and_the_release_sets_the_damper_and_fades_the_noise() {
     // Before the onset only the noise (well under the sine) sounds.
     assert!(peak(0..4500) < 0.05, "{}", peak(0..4500));
     // 90 % at onset + rise (0.3 s), within the control ramp.
-    let at_rise = peak(14200..14600);
-    assert!((at_rise / 0.5 - 0.9).abs() < 0.05, "{at_rise}");
-    assert!((peak(40000..48000) / 0.5 - 1.0).abs() < 0.05);
+    // The sine itself decays with its 60 s T60: 10^(-3 t / 60) of 0.5 at time t.
+    let level = |t: f64| 0.5 * 10.0_f64.powf(-3.0 * t / 60.0);
+    let at_rise = f64::from(peak(14200..14600));
+    assert!((at_rise / level(0.3) - 0.9).abs() < 0.05, "{at_rise}");
+    let late = f64::from(peak(40000..48000));
+    assert!((late / level(0.85) - 1.0).abs() < 0.05, "{late}");
     // The measured release at the Release control's default, and twice it.
     assert!((performer.release(0.25) - 0.5).abs() < 1e-9);
     assert!(performer.sounding());
