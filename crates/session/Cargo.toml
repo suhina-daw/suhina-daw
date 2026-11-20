@@ -16,6 +16,7 @@ suhina-media.workspace = true
 suhina-mp3.workspace = true
 suhina-library.workspace = true
 suhina-soundmap.workspace = true
+suhina-instrument-analysis.workspace = true
 suhina-als.workspace = true
 suhina-flp.workspace = true
 suhina-project-file.workspace = true

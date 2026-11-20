@@ -3333,6 +3333,11 @@ impl App {
         self.arrangement.name_bar_moves = !self.settings.view.clip_halves;
         self.arrangement.grid_in_clips = self.settings.view.grid_in_clips;
         let take_crossfade = f64::from(self.settings.view.take_crossfade_ms());
+        crate::detail::instrument_analysis::publish(
+            ui.ctx(),
+            self.projects.active(),
+            self.projects.session_mut(None).ok(),
+        );
         if let Ok(session) = self.projects.session_mut(None) {
             session.set_take_crossfade_ms(take_crossfade);
         }
@@ -4542,6 +4547,8 @@ enum CopiedLast {
     Other,
 }
 
+#[cfg(test)]
+mod instrument_analysis_tests;
 #[cfg(test)]
 #[path = "app/instrument_editor_tests.rs"]
 mod instrument_editor_tests;

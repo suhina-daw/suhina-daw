@@ -127,6 +127,8 @@ pub enum Widget {
     SampleWaveform,
     /// Host-backed sample input and recording controls, independent of the waveform.
     SampleRecording,
+    /// Host-owned local analysis/proposal commands; never an automatable sound parameter.
+    SampleAnalysis,
     /// Cumulative ADSR; omitting release makes a bipolar Attack/Decay envelope.
     Envelope {
         attack: String,
@@ -528,7 +530,11 @@ impl Widget {
                     value,
                 ];
             }
-            Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } | Self::EqCurve => {}
+            Self::SampleWaveform
+            | Self::SampleRecording
+            | Self::SampleAnalysis
+            | Self::Envelope { .. }
+            | Self::EqCurve => {}
             // Host-rendered: the host draws them from its own state.
             Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote => {}
             Self::Knob { label } => {

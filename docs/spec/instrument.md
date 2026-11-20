@@ -80,8 +80,10 @@ one undoable project edit and selects Sample, so the next note plays the importe
 Like manually selecting Source, import overrides an enabled Source automation lane while keeping
 its points. Undo restores the previous source reference, Source value and lane state together;
 redo restores the complete import.
-Root defaults to MIDI 60; the user sets it when the file was recorded at another pitch. Pitch
-detection, automatic segmentation and fitting are not silently guessed. Source bytes use the
+Root defaults to MIDI 60. The explicit [local analysis workflow](instrument-analysis.md) can
+propose a root from the loaded audio; the person checks it and accepts it in one undo step,
+including the normal root-automation override. Completion itself changes nothing. Automatic
+segmentation and physical-model fitting are not part of that pitch proposal. Source bytes use the
 existing decoded-audio and sample-reference lifecycle: project save rebases the path, keeps
 an absolute fallback, and the existing collect/missing-file/relink workflow applies.
 

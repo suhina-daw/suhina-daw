@@ -24,7 +24,7 @@ expanded-delay catppuccin-mocha e792fbea7ac32967
 expanded-fm-synth catppuccin-mocha 6de5b5b924888e95
 expanded-instrument catppuccin-mocha 59d55aeb9c89f585
 expanded-instrument-model catppuccin-mocha 0ba4561fc5338839
-expanded-instrument-sample catppuccin-mocha 2eceb0de3aab4a2a
+expanded-instrument-sample catppuccin-mocha 00747149bbb52bca
 expanded-multiband catppuccin-mocha ebc543e86668b4d2
 expanded-reverb catppuccin-mocha 8cb4273f2656d797
 expanded-vinyl-distortion catppuccin-mocha 295b0199e959a1fe

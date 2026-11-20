@@ -41,6 +41,7 @@ pub mod modal;
 pub mod multimode;
 pub mod oversample;
 pub mod pan;
+pub mod pitch;
 pub mod resampler;
 pub mod shape;
 pub mod smooth;

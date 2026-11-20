@@ -4,7 +4,7 @@
 //! Expanded pages expose the existing engine honestly; page selection stays in the host.
 
 use super::Canvas;
-use suhina_device_sdk::ui::DeviceUi;
+use suhina_device_sdk::ui::{DeviceUi, UiGesture, Widget};
 
 pub(super) fn canvas() -> DeviceUi {
     let mut ui = Canvas::new([880.0, 520.0]);
@@ -114,11 +114,13 @@ pub(super) fn canvas() -> DeviceUi {
     }
     ui.dial("attack", "Sample fade in", [24.0, 386.0, 104.0, 104.0], "Sample layer attack time");
     ui.dial("sustain", "Held sample level", [148.0, 386.0, 120.0, 104.0], "Sample layer held amplitude");
-    ui.label("Import selects Sample in one undo step. Set Root to the recorded note.", [300.0, 394.0, 548.0, 24.0]);
-    ui.label(
-        "Trim and loop positions are fractions of the source. No model is fitted here.",
-        [300.0, 426.0, 548.0, 24.0],
+    ui.add(
+        "Sample analysis",
+        Widget::SampleAnalysis,
+        [300.0, 386.0, 548.0, 124.0],
+        None,
+        UiGesture::Drag,
+        "Analyze the loaded sample locally, check its root proposal, then accept one undoable change",
     );
-    ui.label("Single-source map · key and velocity ranges are on Play", [300.0, 466.0, 548.0, 24.0]);
     ui.finish()
 }
