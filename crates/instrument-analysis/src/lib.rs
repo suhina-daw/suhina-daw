@@ -8,9 +8,12 @@ use std::ops::Range;
 
 use suhina_dsp::{Resampler, pitch::Yin};
 
+mod key;
 pub mod modal;
 
-pub const VERSION: u32 = 1;
+pub use key::{KeyCandidate, KeyMode, KeyProposal, MIN_KEY_CORRELATION};
+
+pub const VERSION: u32 = 2;
 pub const RATE: u32 = 22_050;
 pub const MAX_SECONDS: usize = 8;
 pub const MAX_WINDOWS: usize = 32;
@@ -49,6 +52,8 @@ pub enum Outcome {
     Silent,
     TooShort,
     NoStablePitch,
+    /// Several notes without one stable pitch, with a clear key: `Report::key` proposes its tonic.
+    TonalCentre,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -71,6 +76,8 @@ pub struct Report {
     pub range: Range<usize>,
     pub outcome: Outcome,
     pub proposal: Option<Proposal>,
+    /// Only when no single-note proposal exists: the material's tonal centre.
+    pub key: Option<KeyProposal>,
     pub active_windows: usize,
     pub voiced_windows: usize,
 }
@@ -102,6 +109,7 @@ pub fn analyze(
         range: range.clone(),
         outcome: Outcome::NoStablePitch,
         proposal: None,
+        key: None,
         active_windows: 0,
         voiced_windows: 0,
     };
@@ -110,7 +118,7 @@ pub fn analyze(
     let last = range.end.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let input = samples.get(first..last).ok_or(Error::InvalidRange)?;
     let chunks = length.div_ceil(CHUNK);
-    let total = chunks * (1 + channels) + channels * MAX_WINDOWS;
+    let total = chunks * (1 + channels) + channels * (MAX_WINDOWS + key::MAX_KEY_FRAMES);
     let mut done = 0;
     let mut peak = 0.0f64;
     let mut channel_min = [f32::INFINITY; 2];
@@ -136,6 +144,7 @@ pub fn analyze(
         report.outcome = Outcome::Silent;
         return Ok(report);
     }
+    let mut classes = key::PitchClasses::new(channels);
     let mut notes = Vec::with_capacity(MAX_WINDOWS * channels);
     let mut periodicities = Vec::with_capacity(MAX_WINDOWS * channels);
     let mut channel_medians = Vec::with_capacity(channels);
@@ -169,6 +178,14 @@ pub fn analyze(
             report.outcome = Outcome::TooShort;
             return Ok(report);
         }
+        let used = classes
+            .add_channel(&mono, || {
+                let keep = progress(done, total);
+                done += 1;
+                keep
+            })
+            .ok_or(Error::Cancelled)?;
+        done += key::MAX_KEY_FRAMES - used;
         let count = available.min(MAX_WINDOWS);
         let starts: Vec<usize> = (0..count).map(|i| i * (mono.len() - FRAME) / (count - 1)).collect();
         let mut energies = Vec::with_capacity(count);
@@ -245,30 +262,40 @@ pub fn analyze(
         report.outcome = Outcome::Silent;
         return Ok(report);
     }
+    if let Some(proposal) = stable(&mut notes, &periodicities, &report, &channel_medians) {
+        report.outcome = Outcome::Stable;
+        report.proposal = Some(proposal);
+    } else if let Some(key) = classes.key() {
+        report.outcome = Outcome::TonalCentre;
+        report.key = Some(key);
+    }
+    Ok(report)
+}
+
+/// One stable pitch across the voiced windows and channels, or None.
+fn stable(notes: &mut [f32], periodicities: &[f32], report: &Report, channel_medians: &[f32]) -> Option<Proposal> {
     if notes.len() < 3 || report.voiced_windows * 4 < report.active_windows * 3 {
-        return Ok(report);
+        return None;
     }
     notes.sort_by(f32::total_cmp);
-    let midi = notes.get(notes.len() / 2).copied().ok_or(Error::InvalidRange)?;
+    let midi = notes.get(notes.len() / 2).copied()?;
     let lower = notes.get((notes.len() - 1) / 10).copied().unwrap_or(midi);
     let upper = notes.get((notes.len() - 1) * 9 / 10).copied().unwrap_or(midi);
     let spread_cents = (upper - lower) * 100.0;
     if spread_cents > 35.0 || channel_medians.iter().any(|m| !m.is_finite() || (*m - midi).abs() > 0.35) {
-        return Ok(report);
+        return None;
     }
     let rounded = midi.round();
     if !(0.0..=127.0).contains(&rounded) {
-        return Ok(report);
+        return None;
     }
     let periodicity = periodicities.iter().sum::<f32>() / periodicities.len() as f32;
-    report.outcome = Outcome::Stable;
-    report.proposal = Some(Proposal {
+    Some(Proposal {
         root: rounded as u8,
         midi,
         hz: 440.0 * 2.0f32.powf((midi - 69.0) / 12.0),
         cents: (midi - rounded) * 100.0,
         periodicity,
         spread_cents,
-    });
-    Ok(report)
+    })
 }
