@@ -7,6 +7,7 @@ use super::*;
 fn recording(key: u8, velocity: f32, ratio_two: f64, decay: f64) -> ModelRecording {
     ModelRecording {
         key,
+        source: 0,
         velocity,
         level: 0.5,
         modes: vec![
@@ -70,6 +71,7 @@ fn recordings_validate_every_bound() {
     assert!(good.validate().is_ok());
     let cases: Vec<Breakage> = vec![
         Box::new(|r| r.key = 128),
+        Box::new(|r| r.source = 16),
         Box::new(|r| r.velocity = 0.0),
         Box::new(|r| r.velocity = 1.5),
         Box::new(|r| r.level = 0.0),
@@ -101,7 +103,7 @@ fn recordings_validate_every_bound() {
     }
     assert!(ModelSet::new(vec![]).is_err());
     assert!(ModelSet::new(vec![good.clone(), good.clone()]).is_err(), "same key and velocity");
-    assert!(ModelSet::new((0..17).map(|k| recording(40 + k, 0.8, 2.0, 1.0)).collect()).is_err());
+    assert!(ModelSet::new((0..33).map(|k| recording(40 + k, 0.8, 2.0, 1.0)).collect()).is_err());
 }
 
 #[test]
@@ -189,6 +191,7 @@ fn controls_transform_fused_modes_and_the_sine_budget_holds() {
         })
         .collect();
     let set = ModelSet::new(vec![ModelRecording {
+        source: 0,
         key: 36,
         velocity: 0.8,
         level: 1.0,
@@ -219,4 +222,82 @@ fn controls_transform_fused_modes_and_the_sine_budget_holds() {
             .fold(0.0, f64::max)
     };
     assert!((slow(&voice) - 2.0 * slow(&neutral)).abs() < 1e-9);
+}
+
+#[test]
+fn source_morph_tilts_the_fusion_between_instruments() {
+    let mut a = recording(60, 0.8, 2.0, 2.0);
+    let mut b = recording(60, 0.8, 2.0, 0.5);
+    a.source = 0;
+    b.source = 1;
+    let set = ModelSet::new(vec![a, b]).unwrap();
+    let encoded = set.encode();
+    assert_eq!(ModelSet::decode(&encoded).unwrap(), set);
+    let c3 = 440.0 * 2.0_f64.powf(-9.0 / 12.0);
+    let t60 = |morph: f64| {
+        let mut controls = Controls::NEUTRAL;
+        controls.morph = morph;
+        let mut voice = Voice::default();
+        set.voice(60, 0.8, &controls, 48000.0, &mut voice);
+        frequency_near(&voice, c3).unwrap().decay_seconds
+    };
+    // Equal at 0.5 (geometric mean 1 s); 70 % / 30 % at 0.3; only the first source at 0.
+    assert!((t60(0.5) - 1.0).abs() < 1e-9);
+    assert!((t60(0.3) - (0.7 * 2.0_f64.ln() + 0.3 * 0.5_f64.ln()).exp()).abs() < 1e-9);
+    assert!((t60(0.0) - 2.0).abs() < 1e-9);
+    assert!((t60(1.0) - 0.5).abs() < 1e-9);
+}
+
+#[test]
+fn a_recordings_decay_law_shortens_higher_notes() {
+    // Higher modes ring shorter: T60 proportional to 1 / frequency gives a law of -1.
+    let modes = vec![ModelMode::plain(1.0, 0.5, 2.0), ModelMode::plain(2.0, 0.3, 1.0), ModelMode::plain(4.0, 0.2, 0.5)];
+    let set = ModelSet::new(vec![ModelRecording {
+        key: 48,
+        source: 0,
+        velocity: 0.8,
+        level: 1.0,
+        modes,
+        attack_rate: 0,
+        attack: vec![],
+    }])
+    .unwrap();
+    let mut voice = Voice::default();
+    set.voice(60, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    let c3 = 440.0 * 2.0_f64.powf(-9.0 / 12.0);
+    // An octave above the recording: the fundamental rings half as long.
+    assert!((frequency_near(&voice, c3).unwrap().decay_seconds - 1.0).abs() < 1e-9);
+    set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert!((frequency_near(&voice, c3 / 2.0).unwrap().decay_seconds - 2.0).abs() < 1e-9);
+}
+
+#[test]
+fn hammer_velocity_soft_pedal_and_pedal_resonance_shape_a_note() {
+    let set = ModelSet::new(vec![recording(60, 0.8, 2.0, 1.0)]).unwrap();
+    let c3 = 440.0 * 2.0_f64.powf(-9.0 / 12.0);
+    let mut controls = Controls::NEUTRAL;
+    controls.velocity_brightness = 1.0;
+    let mut soft = Voice::default();
+    let mut hard = Voice::default();
+    set.voice(60, 0.4, &controls, 48000.0, &mut soft);
+    set.voice(60, 1.0, &controls, 48000.0, &mut hard);
+    let upper =
+        |v: &Voice| v.modes[..v.count].iter().filter(|m| m.frequency_hz > 1.5 * c3).map(|m| m.amplitude).sum::<f64>();
+    assert!(upper(&hard) > upper(&soft), "a harder strike is brighter");
+    assert!((soft.attack_gain - 0.5).abs() < 1e-6 && (hard.attack_gain - 1.25).abs() < 1e-6);
+    // The soft pedal: quieter and without the beating partner.
+    let mut pedal = Controls::NEUTRAL;
+    pedal.soft = true;
+    let mut voice = Voice::default();
+    set.voice(60, 0.8, &pedal, 48000.0, &mut voice);
+    assert!((voice.level - 0.35).abs() < 1e-12);
+    assert!(frequency_near(&voice, 2.0 * c3 * 1.002).is_none());
+    // The sustain pedal's resonance adds a long sine at each partial.
+    let mut resonant = Controls::NEUTRAL;
+    resonant.pedal_resonance = 1.0;
+    set.voice(60, 0.8, &resonant, 48000.0, &mut voice);
+    let at_fundamental: Vec<_> =
+        voice.modes[..voice.count].iter().filter(|m| (m.frequency_hz - c3).abs() < 1e-9).collect();
+    assert_eq!(at_fundamental.len(), 2);
+    assert!(at_fundamental.iter().any(|m| (m.decay_seconds - 2.0).abs() < 1e-9 && (m.amplitude - 0.09).abs() < 1e-12));
 }

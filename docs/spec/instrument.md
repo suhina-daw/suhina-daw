@@ -37,7 +37,11 @@ revision 2: a bounded stored list of ratios, magnitudes and T60 values replaces 
 modal data. Default model controls preserve that profile; Decay, Brightness, Structure and
 creative Strike colour transform it on the next strike. This runtime accepts data and does not
 fit, calibrate or infer a physical instrument from a recording.
-Release damps a released key; the sustain pedal holds it. Gain and the Hybrid sample blend are
+Release damps a released key; the sustain pedal holds it. Attack, Decay and Sustain are an
+amplitude envelope shared by the Sample layer and fitted (revision-4) models; the original
+struck model (revision 1) and profiles (revision 2) keep their 2 ms onset. For fitted models
+Release is a damper that caps every resonance's T60, and the soft pedal (controller 67), damper
+noise and pedal resonance apply ([fitted model sets](instrument-modal-profile.md#fitted-model-sets-revision-4)). Gain and the Hybrid sample blend are
 smoothed. Changing the body controls or Source affects the next strike, so a held body does
 not jump to another body's state. Modal mode starts no sample voices; Sample mode starts no
 modal voices. Hybrid starts and advances both layers even at Blend 0% or 100%, so moving Blend

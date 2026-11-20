@@ -115,7 +115,8 @@ instrument. `suhina_dsp::modal::model` owns `ModelSet`, a bounded set of fitted 
 the native Instrument renders as **revision 4**. Revision 2 profiles keep their contract.
 
 **One recording** (`ModelRecording`) has a key (the mapping anchor; its equal-tempered frequency
-is the reference), a velocity in (0, 1] it stands for, an absolute `level` (the recording's
+is the reference), a velocity in (0, 1] it stands for, a `source` 0..15 (which instrument it was
+recorded from, for morphing: ten pianos are ten sources), an absolute `level` (the recording's
 amplitude in source full-scale units that the normalized magnitudes multiply, 0 < level <= 16),
 one to 32 modes and an optional attack. A mode has:
 
@@ -132,32 +133,42 @@ The **attack** is mono PCM at `attack_rate` (1000..48000 Hz, or no attack with l
 0.25 s, in the same normalized units as the magnitudes. It is what the modes do not explain at
 the start of the recording (strike noise, hammer and body knock), faded out over its second half.
 
-**Set and codec.** A set holds one to 16 recordings, sorted by key and then velocity, with no
-two at the same key and velocity. `encode()` writes magic `SHMSET2` and NUL, little-endian u16
-schema 2, u16 revision 4, u8 count and three zero bytes; then per recording: u8 key, three zero
-bytes, f32 velocity, f64 level, u8 mode count, three zero bytes, u32 attack rate, u32 attack
+**Set and codec.** A set holds one to 32 recordings, sorted by key, then velocity, then source,
+with no two at the same key, velocity and source. `encode()` writes magic `SHMSET2` and NUL,
+little-endian u16 schema 2, u16 revision 4, u8 count and three zero bytes; then per recording:
+u8 key, u8 source, two zero bytes, f32 velocity, f64 level, u8 mode count, three zero bytes, u32 attack rate, u32 attack
 length, the modes as eight little-endian f64 each (ratio, magnitude, decay, fast decay, fast
 share, beat ratio, beat share, phase) and the attack as little-endian f32. `decode` accepts only
-canonical bytes within these bounds (at most 16 recordings, 32 modes and 12000 attack samples
+canonical bytes within these bounds (at most 32 recordings, 32 modes and 12000 attack samples
 each, every number finite) and fails before returning anything otherwise. The model layer's
-opaque state limit is 1 MiB. Decoding precomputes, off the audio thread, which mode of every
-other recording each mode matches: the nearest ratio within 3 % (`|ln(r2 / r1)| <= 0.03`), each
-mode used at most once.
+opaque state limit is 1 MiB, which holds 32 fitted recordings with their 22050 Hz attacks.
+Decoding precomputes, off the audio thread, which mode of every other recording each mode
+matches (the nearest ratio within 3 %, `|ln(r2 / r1)| <= 0.03`, each mode used at most once) and
+each recording's **decay law**: the least-squares slope of `ln T60` against `ln frequency` over
+its non-sustained modes, weighted by magnitude and limited to -2..0 (0 with fewer than two such
+modes). Higher partials and higher notes of real instruments ring shorter; the law says how much
+for this recording.
 
 **A played note** (`ModelSet::voice`, allocation-free, at note-on) fuses the recordings in
 parameter space, never by mixing their audio:
 
 1. Each recording gets weight `1 / (d^2 + 1e-6)` with distance
-   `d = |key - recording key| / 12 + 2 * |velocity - recording velocity|`; only the four heaviest
-   take part and the weights are normalized. Recordings at the same key and velocity (ten
-   pianos playing one note) therefore average with equal weight; between recorded keys, the
-   nearer recordings dominate.
+   `d = |key - recording key| / 12 + 2 * |velocity - recording velocity|`, times its source's
+   morph factor; all recordings take part and the weights are normalized. Recordings of one note
+   at one velocity from several sources (ten pianos playing one note) therefore average with
+   equal weight at the neutral morph; between recorded keys, the nearer recordings dominate.
+   **Source morph** `m` (0..1, neutral 0.5) tilts the weights across the sources present, in
+   source-number order: source rank `k` of `S` gets `x = k / (S - 1)` and factor
+   `(1 - x) * (1 - m) + x * m` (all equal at 0.5; with two sources, `m = 0.3` is 70 % the first
+   and 30 % the second). With one source the factor is 1.
 2. The heaviest recording is the anchor. For each of its modes, the matched modes of the other
    participating recordings are combined with their weights: ratio, both T60s and the beat ratio
    as weighted geometric means, shares as weighted arithmetic means over the matching
    recordings, and magnitude as a weighted mean in which a recording without a match counts
-   zero, so a resonance only one source has fades in proportion. Level is a weighted geometric
-   mean. Phases are the anchor's.
+   zero, so a resonance only one source has fades in proportion. Before combining, each
+   recording's T60s follow its decay law to the played key: times `2^((key - recording key) / 12)`
+   raised to the law's slope (sustained 60 s modes stay). Level is a weighted geometric mean.
+   Phases are the anchor's.
 3. Frequencies are the played key's equal-tempered frequency times the fused ratio. Each mode
    becomes up to three sines with its phase: the slow part
    `magnitude * (1 - fast_share) * (1 - beat_share)` at T60 `decay_seconds`, the fast part
@@ -173,21 +184,56 @@ The voice level is `velocity * level`, so at the recording's own key a Modal not
 the Sample note; magnitudes are normalized by their sum when it exceeds 1. The model controls
 transform each fused mode exactly as revision 2 transforms a profile mode (Decay scales both
 T60s, Brightness tilts by ratio, Structure disperses ratios, Strike colour weights by mode
-index); the attack is not changed by them. A revision-4 voice ramps its gate in over 0.25 ms
-instead of 2 ms, since the attack reproduces the recorded onset. Release, pedal, voice stealing,
-pitch wheel and source fades behave as for revision 2. A missing, malformed or unsupported set is
-silent.
+index); the attack is not changed by them.
 
-**Budget.** A revision-4 voice holds 64 resonators and an attack read position in place of the
-16 resonators of revisions 1 and 2 or a bar body: under 4 KiB per voice, under 64 KiB for 16 voices, within the runtime's 256 KiB inline target; the set itself (at most
-about 800 KiB with 16 full attacks) is shared and prepared off the audio thread.
+**Hammer and felt.** A harder strike on a felt hammer or mallet is brighter and knocks more, not
+only louder. Recordings at several velocities supply that directly: the nearest layer's attack
+plays and the modes interpolate. **Velocity to brightness** `v` (0..1, default 0.35) adds the rest
+relative to the anchor recording's velocity `v0`: the tilt exponent gains `1.5 * v * (velocity - v0)`
+and the attack is multiplied by `(velocity / v0)^v`, so a softer note than the recording is darker
+with less knock. At `v = 0` velocity changes only the level.
+
+**Envelope.** A revision-4 voice ramps its gate in over 0.25 ms instead of 2 ms, since the attack
+reproduces the recorded onset. The amplitude envelope controls, shared with the Sample layer, then
+shape it: Attack (linear rise, 0..10 s), Decay (linear fall to Sustain, 0..10 s) and Sustain
+(0..1) multiply the voice on top of the fitted decays; at Attack 0 and Sustain 1 the recording
+plays as fitted. **Release** is a damper, not a fade: on note-off (or pedal-up for a released key)
+every sine's T60 is capped at Release, keeping its phase and frequency, as felt dampers stop
+strings; the attack runs to its end. Pedal, voice stealing, pitch wheel and source fades behave as
+for revision 2. A missing, malformed or unsupported set is silent.
+
+**Piano pedals and dampers** (approximations of the mechanism, not fitted from recordings, which
+rarely contain them):
+
+- **Damper noise** (0..1, default 0.2): when a damper lands (note-off, or pedal-up for a released
+  key), the voice adds a 40 ms burst of low-passed noise (one-pole low-pass at 600 Hz, linear
+  fade) at `damper noise * 0.05` of the voice level at that moment. Deterministic per voice
+  (a fixed linear-congruential sequence), allocation-free.
+- **Pedal resonance** (0..1, default 0.3): a note struck while the sustain pedal is down also
+  sets undamped strings ringing at its partials. Each mode gains a fourth sine at its frequency
+  with `pedal resonance * 0.15` of its slow part, twice its slow T60 and a quarter-cycle phase
+  offset; the sine budget still keeps the strongest 64. A coupling model between strings is not
+  attempted.
+- **Soft pedal** (controller 67 at or above half): fewer strings and a softer felt region are
+  struck, so a note is quieter (level times 0.7), darker (tilt exponent -0.45) and has no beating
+  partner. It applies to notes struck while it is down.
+
+The fitted attack is the recorded hammer; these settings shape what a single recording cannot
+show. Sympathetic coupling between particular strings, the damper's recorded sound and
+half-pedalling remain open in #1624.
+
+**Budget.** A revision-4 voice holds 64 resonators, an attack read position and its envelope
+in place of the 16 resonators of revisions 1 and 2 or a bar body: under 4 KiB per voice, under 64 KiB for 16 voices,
+within the runtime's 256 KiB inline target. The set itself (at most 1 MiB) is shared and prepared
+off the audio thread. Note-on fuses at most 32 recordings of 32 modes without allocating.
 
 **Commands.** `instrument.acceptFit` adopts a set with the fitted recording as its only member
-(revision 4, Source Modal, full modes, neutral model controls, one undo step). `instrument.addFit`
-adds a ready fit's recording to the device's existing revision-4 set as one undo step, with an
-optional `velocity` (default 0.8); a recording at the same key and velocity as an existing one is
-an error, as are a seventeenth recording or a device without a revision-4 set. It selects Source
-Modal and leaves the model controls alone. The proposal invalidation rules of fitting apply.
+(revision 4, Source Modal, full modes, neutral model controls, Attack 0, Sustain 1, Source morph
+0.5, one undo step). `instrument.addFit` adds a ready fit's recording to the device's existing
+revision-4 set as one undo step, with an optional `velocity` (default 0.8) and `source` (default
+0); a recording at the same key, velocity and source as an existing one is an error, as are a
+thirty-third recording or a device without a revision-4 set. It selects Source Modal and leaves
+the model controls alone. The proposal invalidation rules of fitting apply.
 
 ## Evidence and limits
 
@@ -196,3 +242,28 @@ and changed model controls, revision-1 render preservation, block partitions, al
 rendering, missing/unknown models, graph identity, atomic automation/undo, and saved-project
 render equality. Fixtures are self-authored. CI performs compilation and tests under the
 maintainer's CI-only instruction. No new calibrated-family or musician acceptance is claimed.
+
+## Sources
+
+Public research that informs revision 4's choices; no implementation is copied from any of them.
+
+- Gabriel Weinreich, *Coupled piano strings*, J. Acoust. Soc. Am. 62(6), 1474-1484 (1977): unison
+  strings slightly out of tune produce a prompt sound followed by a longer aftersound, and beating.
+  Revision 4 approximates this with a fast and a slow part per mode and a beating partner, fitted
+  from the recording rather than from a coupling model.
+- Anatoli Stulov, *Hysteretic model of the grand piano hammer felt*, J. Acoust. Soc. Am. 97(4),
+  2577-2585 (1995), and Donald E. Hall, *Piano string excitation* (series), J. Acoust. Soc. Am.
+  (1986-1987): felt stiffens under harder blows, so higher partials grow faster than the
+  fundamental with hammer velocity. Velocity to brightness and the attack gain are a bounded
+  stand-in when only one velocity was recorded; recordings at several velocities supply it.
+- Balázs Bank, Stefano Zambon, Federico Fontana, *A modal-based real-time piano synthesizer*,
+  IEEE Trans. Audio, Speech, Lang. Process. 18(4), 809-821 (2010): a piano rendered as banks of
+  decaying modes, with dampers as added losses and sympathetic resonance of undamped strings
+  under the pedal. Revision 4's damper caps T60 the same way; its pedal resonance is a simpler
+  per-partial approximation without string coupling.
+- Neville H. Fletcher and Thomas D. Rossing, *The Physics of Musical Instruments*, 2nd ed.
+  (Springer, 1998): partials and higher notes of struck and plucked strings decay faster, the
+  basis of each recording's decay law.
+- Anders Askenfelt and Erik V. Jansson, *From touch to string vibrations*, J. Acoust. Soc. Am.
+  88(1) (1990) and later parts: the hammer and action noise precede and accompany the string
+  tone, which the fitted attack keeps from the recording.

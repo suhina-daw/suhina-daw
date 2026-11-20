@@ -32,17 +32,21 @@ The panel fits the standard 168-point body height and uses less width than the i
 The larger canvas uses the existing centred, scrollable SDK expanded-panel path. Its header
 identifies Instrument and its experimental model, with Source always available. The pages are:
 
-- **Play:** the shared Gain and Release, Hybrid sample blend, sample Attack and Sustain, the
-  bar bodies' Stereo width, and key/velocity admission ranges. Labels distinguish sample-only and Hybrid-only controls.
+- **Play:** the shared Gain and Release, Hybrid sample blend, the amplitude envelope (Attack,
+  Decay, Sustain) shared by the Sample layer and fitted models, and key/velocity admission
+  ranges. Release is the damper for fitted models and the fade otherwise.
 - **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
   describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
   excitation control Strike colour: a creative weighting of accepted modes, not a measured
   physical impact position. Profile adoption resets the four model controls and enables all
-  profile modes; the underlying stable parameter IDs remain the same. At revisions 1 and 3 the
-  page also shows Body, Mallet (model), Hardness and Resonator, the [bar bodies'](instrument.md#bar-bodies-revision-3)
-  controls; revisions 2 and 4 hide them, since an accepted profile or fitted set ignores them.
+  profile modes; the underlying stable parameter IDs remain the same. Revision 4 (fitted models)
+  adds a Fitted model group: Source morph, Velocity to brightness, Damper noise and Pedal
+  resonance. At revisions 1 and 3 the same place holds a Bar body group with the
+  [bar bodies'](instrument.md#bar-bodies-revision-3) controls: Body, Mallet (model), Hardness,
+  Resonator and Stereo width; revisions 2 and 4 hide them, since an accepted profile or fitted set
+  ignores them.
 - **Sample:** local waveform/drop target, Root (shown as a note name, 60 is C3), Playback, source Start/End, loop Start/End,
-  Attack and Sustain. A source imported here uses `device.loadSample`, including the same
+  Attack, Decay and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.
 
 All sound controls use the existing stable parameter IDs and `device.setParam`, including

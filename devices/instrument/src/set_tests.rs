@@ -11,6 +11,7 @@ const RATE: f64 = 48000.0;
 fn recording(attack: Vec<f32>) -> ModelRecording {
     ModelRecording {
         key: 60,
+        source: 0,
         velocity: 0.8,
         level: 0.5,
         modes: vec![
@@ -26,6 +27,9 @@ fn core(set: ModelSet) -> Instrument {
     let mut core = Instrument::with_rate(RATE).unwrap();
     core.load_model_state(&set.encode()).unwrap();
     core.set_param(param::GAIN, 0.0);
+    // The recording as fitted: no envelope attack, no velocity colouring.
+    core.set_param(param::ATTACK, 0.0);
+    core.set_param(param::VELOCITY_BRIGHTNESS, 0.0);
     core.reset();
     core
 }
@@ -128,4 +132,97 @@ fn malformed_sets_are_silent_and_a_set_replaces_a_profile() {
     // A revision that does not match the loaded state stays silent.
     core.set_param(param::REVISION, 2.0);
     assert!(!core.model_supported());
+}
+
+fn long_ringing() -> ModelSet {
+    let mut r = recording(Vec::new());
+    r.modes = vec![ModelMode::plain(1.0, 0.8, 5.0)];
+    ModelSet::new(vec![r]).unwrap()
+}
+
+fn render(core: &mut Instrument, frames: usize) -> Vec<f32> {
+    let mut output = vec![0.0; frames * 2];
+    for buffer in output.chunks_mut(256) {
+        core.process(&ProcessContext::default(), buffer);
+    }
+    output.chunks(2).map(|frame| frame[0]).collect()
+}
+
+fn peak(samples: &[f32]) -> f32 {
+    samples.iter().fold(0.0_f32, |p, x| p.max(x.abs()))
+}
+
+#[test]
+fn note_off_lands_a_damper_on_fitted_modes() {
+    let mut damped = core(long_ringing());
+    damped.set_param(param::RELEASE, 0.1);
+    damped.set_param(param::DAMPER_NOISE, 0.0);
+    damped.event(NoteEvent::On { key: 60, velocity: 1.0 });
+    let before = render(&mut damped, 2400);
+    damped.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+    let after = render(&mut damped, 9600);
+    // A 0.1 s T60 cap: 0.2 s later the note is 120 dB down, where without the damper it rings on.
+    assert!(peak(&after[9000..]) < peak(&before[1200..]) * 1e-5, "{}", peak(&after[9000..]));
+    let mut held = core(long_ringing());
+    held.event(NoteEvent::On { key: 60, velocity: 1.0 });
+    render(&mut held, 2400);
+    assert!(peak(&render(&mut held, 9600)[9000..]) > peak(&before[1200..]) * 0.5);
+    // The sustain pedal keeps the damper up until it lifts.
+    let mut pedal = core(long_ringing());
+    pedal.set_param(param::RELEASE, 0.1);
+    pedal.event(NoteEvent::Controller { number: 64, value: 1.0 });
+    pedal.event(NoteEvent::On { key: 60, velocity: 1.0 });
+    render(&mut pedal, 2400);
+    pedal.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+    assert!(peak(&render(&mut pedal, 9600)[9000..]) > peak(&before[1200..]) * 0.5);
+    pedal.event(NoteEvent::Controller { number: 64, value: 0.0 });
+    assert!(peak(&render(&mut pedal, 9600)[9000..]) < peak(&before[1200..]) * 1e-5);
+}
+
+#[test]
+fn a_landing_damper_makes_a_short_noise() {
+    let release_tail = |noise: f64| {
+        let mut core = core(long_ringing());
+        core.set_param(param::RELEASE, 0.005);
+        core.set_param(param::DAMPER_NOISE, noise);
+        core.event(NoteEvent::On { key: 60, velocity: 1.0 });
+        render(&mut core, 2400);
+        core.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+        render(&mut core, 4800)
+    };
+    let (quiet, noisy) = (release_tail(0.0), release_tail(1.0));
+    let difference: Vec<f32> = quiet.iter().zip(&noisy).map(|(a, b)| b - a).collect();
+    assert!(peak(&difference[..1900]) > 1e-4, "the damper's noise sounds");
+    assert!(peak(&difference[1930..]) < 1e-6, "and ends after 40 ms");
+    assert_eq!(release_tail(1.0), noisy, "deterministic");
+}
+
+#[test]
+fn the_envelope_shapes_fitted_notes() {
+    let reference = play(&mut core(long_ringing()), 60, 1.0, 4800, 128);
+    let mut slow = core(long_ringing());
+    slow.set_param(param::ATTACK, 0.01);
+    let ramped = play(&mut slow, 60, 1.0, 4800, 128);
+    // A linear 10 ms attack: half way up after 240 samples.
+    for n in [120, 240, 360] {
+        let expected = reference[n] * (n + 1) as f32 / 480.0;
+        assert!((ramped[n] - expected).abs() < 2e-3 * reference[n].abs().max(0.01), "{n}");
+    }
+    let mut sustain = core(long_ringing());
+    sustain.set_param(param::ENVELOPE_DECAY, 0.01);
+    sustain.set_param(param::SUSTAIN, 0.5);
+    let held = play(&mut sustain, 60, 1.0, 4800, 128);
+    for n in [2000, 3000, 4000] {
+        assert!((held[n] - 0.5 * reference[n]).abs() < 1e-4, "{n}");
+    }
+}
+
+#[test]
+fn the_soft_pedal_strikes_quieter_and_darker() {
+    let loud = play(&mut core(ModelSet::new(vec![recording(Vec::new())]).unwrap()), 60, 1.0, 4800, 128);
+    let mut pedal = core(ModelSet::new(vec![recording(Vec::new())]).unwrap());
+    pedal.event(NoteEvent::Controller { number: 67, value: 1.0 });
+    let soft = play(&mut pedal, 60, 1.0, 4800, 128);
+    let energy = |x: &[f32]| x.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>();
+    assert!(energy(&soft) < 0.6 * energy(&loud));
 }
