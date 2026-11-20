@@ -285,6 +285,17 @@ fn settings_mpe_configures_one_port_through_the_command_and_saves_it() {
         "pointer selection after wheel: {first:?} -> {last:?} inside {window:?}"
     );
     assert_eq!(harness.state_mut().take_changed_settings().unwrap().midi_mpe["Keys In"].lower_member_bend, 96);
+    // Accessibility scrolling must leave the same ordinary pointer target usable too.
+    harness.get_by_label("Lower member bend Keys In: 96").click();
+    harness.run_steps(2);
+    harness.get_by_label("0").scroll_to_me();
+    harness.run_steps(3);
+    let first = harness.get_by_label("0").rect();
+    assert!(window.contains(first.center()), "scroll-to-view must reveal the first option: {first:?}");
+    harness.get_by_label("0").click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().projects().midi_mpe()["Keys In"].lower_member_bend, 0);
+    assert_eq!(harness.state_mut().take_changed_settings().unwrap().midi_mpe["Keys In"].lower_member_bend, 0);
 }
 
 #[test]

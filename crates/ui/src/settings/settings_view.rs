@@ -3486,6 +3486,10 @@ fn choice_field<T: Clone + PartialEq>(
         if options.len() > 16 {
             // Popup itself only clips to the viewport. Long ranges (for example all 97
             // MPE bend values) need a scroll container so their final values are reachable.
+            // Numeric choices can otherwise shrink to 18px: a floating 10px scrollbar
+            // then intercepts clicks at their centers. Keep its hit area outside the items.
+            ui.set_min_width(field.width());
+            ui.spacing_mut().scroll.floating = false;
             egui::ScrollArea::vertical().max_height(240.).show(ui, choices);
         } else {
             choices(ui);
