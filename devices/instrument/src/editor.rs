@@ -7,7 +7,9 @@ use super::Canvas;
 use suhina_device_sdk::ui::{DeviceUi, UiGesture, Widget};
 
 pub(super) fn canvas() -> DeviceUi {
-    let mut ui = Canvas::new([880.0, 520.0]);
+    // 40 points below the controls keep the artwork's logo clear of them.
+    let mut ui = Canvas::new([880.0, 560.0]);
+    ui.artwork(super::EDITOR_LIGHT);
     ui.title("Instrument", [24.0, 16.0, 400.0, 34.0], 28.0);
     ui.label("Experimental struck modal · revision 1", [24.0, 54.0, 450.0, 20.0]);
     ui.only_revision(1);
@@ -73,7 +75,7 @@ pub(super) fn canvas() -> DeviceUi {
     ui.toggle(
         "soft_pedal",
         "Soft pedal",
-        [704.0, 480.0, 152.0, 32.0],
+        [704.0, 92.0, 152.0, 32.0],
         "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down",
     );
 

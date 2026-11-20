@@ -9,10 +9,17 @@ mod editor;
 use suhina_device_sdk::{
     builtin::Layout,
     ui::{
-        CustomControl, DeviceUi, Draw, PAGE_ID, TextAlign, TextFormat, UiBinding, UiExpression, UiGesture, UiValue,
-        Widget,
+        CustomControl, DeviceUi, Draw, ImageAsset, PAGE_ID, TextAlign, TextFormat, UiBinding, UiExpression, UiGesture,
+        UiValue, Widget,
     },
 };
+
+/// The light themes' backgrounds (`devices/instrument/panel/README.md`): the compact panel's strip
+/// and the expanded editor's, each with the logo at its bottom right.
+const PANEL_LIGHT: &[u8] = include_bytes!("../panel/panel-light.jpg");
+const EDITOR_LIGHT: &[u8] = include_bytes!("../panel/editor-light.jpg");
+/// The artwork shows with a light theme only: a dark theme's light text would not read on it.
+const ARTWORK_STYLE: &str = "@media (prefers-color-scheme: dark) { #artwork-light { display: none; } }";
 
 pub(super) struct Canvas {
     ui: DeviceUi,
@@ -32,6 +39,28 @@ impl Canvas {
             },
             page: None,
         }
+    }
+
+    /// The canvas's background artwork, behind every control and on every page: `bytes` as the
+    /// asset `artwork-light`, shown with a light theme. An image the SDK refuses leaves the
+    /// canvas without it rather than failing the panel.
+    pub(super) fn artwork(&mut self, bytes: &[u8]) {
+        let Ok(asset) = ImageAsset::from_bytes("artwork-light", bytes) else { return };
+        self.ui.assets.push(asset);
+        let [width, height] = self.ui.size;
+        self.ui.controls.push(CustomControl {
+            id: "artwork-light".into(),
+            name: "Instrument artwork".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, width, height],
+            widget: Some(Widget::Graphic { drawing: vec![Draw::image("artwork-light", [0.0, 0.0, width, height])] }),
+            gesture: UiGesture::Drag,
+            x: None,
+            y: None,
+            drawing: vec![],
+            visible_when: None,
+        });
+        self.ui.style = Some(ARTWORK_STYLE.into());
     }
 
     pub(super) fn page(&mut self, page: u16) {
@@ -219,6 +248,7 @@ impl Canvas {
 /// Two presentations of the same native parameter set, without a second sound-state path.
 pub fn layout() -> Layout {
     let mut panel = Canvas::new([620.0, 168.0]);
+    panel.artwork(PANEL_LIGHT);
     panel.label("STRUCK MODAL · experimental v1", [10.0, 4.0, 248.0, 20.0]);
     panel.only_revision(1);
     panel.label("MODAL PROFILE · experimental v2", [10.0, 4.0, 248.0, 20.0]);
@@ -241,6 +271,7 @@ pub fn layout() -> Layout {
     {
         panel.dial(id, name, [270.0 + i as f32 * 68.0, 44.0, 64.0, 88.0], hint);
     }
-    panel.label("Model and sample details in the editor", [270.0, 140.0, 336.0, 18.0]);
+    // Clear of the artwork's logo at the bottom right.
+    panel.label("Model and sample details in the editor", [270.0, 140.0, 228.0, 18.0]);
     Layout { ui: Some(panel.finish()), expanded: Some(editor::canvas()), ..Layout::default() }
 }

@@ -97,6 +97,18 @@ fn key_parameters_are_shown_as_note_names() {
     }
 }
 
+/// Both canvases draw the background artwork first, behind every control, and hide it with a
+/// dark theme.
+#[test]
+fn both_canvases_carry_the_light_artwork_behind_their_controls() {
+    let layout = crate::panel::layout();
+    for canvas in [layout.ui.as_ref().unwrap(), layout.expanded.as_ref().unwrap()] {
+        assert!(canvas.assets.iter().any(|a| a.id == "artwork-light"), "the artwork is embedded");
+        assert_eq!(canvas.controls.first().map(|c| c.id.as_str()), Some("artwork-light"));
+        assert!(canvas.style.as_deref().is_some_and(|s| s.contains("#artwork-light")));
+    }
+}
+
 #[test]
 fn stock_panel_is_valid_sdk_layout() {
     let panel = panel::layout().panel(&INFO).unwrap();

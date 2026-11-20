@@ -33,8 +33,9 @@ The larger canvas uses the existing centred, scrollable SDK expanded-panel path.
 identifies Instrument and its experimental model, with Source always available. The pages are:
 
 - **Play:** the shared Gain and Release, Hybrid sample blend, the amplitude envelope (Attack,
-  Decay, Sustain) shared by the Sample layer and fitted models, and key/velocity admission
-  ranges. Release is the damper for fitted models and the fade otherwise.
+  Decay, Sustain) shared by the Sample layer and fitted models, key/velocity admission ranges,
+  and a **Soft pedal** switch beside the page buttons (una corda for fitted models, the same as
+  controller 67 held down). Release is the damper for fitted models and the fade otherwise.
 - **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
   describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
   excitation control Strike colour: a creative weighting of accepted modes, not a measured
@@ -73,10 +74,15 @@ the same local state without modifying the DSP or exported parameter list.
 ## Appearance and validation
 
 Controls, labels, focus and selection use native SDK widgets, theme palette tokens and
-Suhina typography. The supplied warm background is visual direction only: this slice
-ships no unverified bitmap and keeps text/branding independent from artwork. The canvas
-uses a quiet centre with grouped controls, distinct primary controls and explicit source
-limitations; all themes retain their own contrast. Narrow windows scroll the full editor.
+Suhina typography. With a light theme (a variant whose sheet declares a light colour scheme),
+both canvases draw the maintainer's warm ivory artwork behind every control: a cream surface
+with soft relief waves and the Suhina logo at the bottom right
+(`devices/instrument/panel/`, with its provenance). The expanded editor is 880 × 560, its last
+40 points free of controls so the logo stays clear; the compact panel's bottom-right label
+stops short of it. A dark theme hides the artwork (the panel's own style sheet), since its
+light text would not read on it, and keeps its own background. Text and controls stay native
+over the artwork. The canvas uses a quiet centre with grouped controls, distinct primary
+controls and explicit source limitations. Narrow windows scroll the full editor.
 
 Tests validate every binding and hidden parameter, local-page bounds and malformed layouts,
 keyboard/click navigation without project actions, parameter command parity, sample target
