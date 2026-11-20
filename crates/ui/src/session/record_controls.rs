@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::kit::element::{BUTTON, Checked, POPUP, Recording, SLIDER, SLIDER_FILL, SLIDER_HANDLE, SLIDER_RAIL};
 use crate::kit::widgets::{self, Action, Lit};
-use crate::kit::{motion, theme};
+use crate::kit::{menu, motion, theme};
 
 /// The count-in menu's accessible name.
 pub const COUNT_IN_LABEL: &str = "Count-in";
@@ -101,7 +101,8 @@ pub fn metronome_menu_on(
 }
 
 /// The metronome's right-click menu: its sound and the bar's, each by family, then where its
-/// click joins the output (`transport.setMetronome`), the current ones marked.
+/// click joins the output (`transport.setMetronome`), the current ones marked. Its rows are the
+/// kit's ([`crate::kit::menu`]), so the theme styles them.
 pub fn metronome_menu(
     ui: &mut Ui,
     metronome: &suhina_session::MetronomeState,
@@ -110,18 +111,16 @@ pub fn metronome_menu(
 ) {
     use suhina_engine::ClickRoute;
     let on = metronome.on;
-    ui.menu_button("Sound", |ui| {
+    menu::submenu(ui, "Sound", false, |ui| {
         if let Some(id) = sound_choices(ui, metronome, Some(metronome.sound.as_str())) {
             actions.push(Action::new("transport.setMetronome", json!({ "on": on, "sound": id })));
             ui.close();
         }
     })
-    .response
     .on_hover_text("The sound every beat plays");
-    ui.menu_button("Bar sound", |ui| {
+    menu::submenu(ui, "Bar sound", false, |ui| {
         let higher = metronome.accent.is_none();
-        if ui
-            .selectable_label(higher, "Beat sound, higher")
+        if menu::item(ui, "Beat sound, higher", higher)
             .on_hover_text("The first beat of a bar plays the beat's sound, higher")
             .clicked()
             && !higher
@@ -129,16 +128,15 @@ pub fn metronome_menu(
             actions.push(Action::new("transport.setMetronome", json!({ "on": on, "accent": "higher" })));
             ui.close();
         }
-        ui.separator();
+        menu::separator(ui);
         if let Some(id) = sound_choices(ui, metronome, metronome.accent.as_deref()) {
             actions.push(Action::new("transport.setMetronome", json!({ "on": on, "accent": id })));
             ui.close();
         }
     })
-    .response
     .on_hover_text("The sound the first beat of a bar plays");
-    ui.separator();
-    ui.label("Plays");
+    menu::separator(ui);
+    menu::heading(ui, "Plays");
     for choice in ClickRoute::ALL {
         let (name, hint) = match choice {
             ClickRoute::PreFader => {
@@ -148,37 +146,35 @@ pub fn metronome_menu(
             ClickRoute::Cue => ("Cue output only", "Only on the cue output, when it has outputs of its own"),
             ClickRoute::ThroughMain => ("Through Main", "Into the main channel: its devices, fader and mute apply"),
         };
-        if ui.selectable_label(choice == route, name).on_hover_text(hint).clicked() && choice != route {
+        if menu::item(ui, name, choice == route).on_hover_text(hint).clicked() && choice != route {
             actions.push(Action::new("transport.setMetronome", json!({ "on": on, "route": choice.name() })));
             ui.close();
         }
     }
 }
 
-/// A submenu for each family of the metronome's sounds, the one holding `current` in bold and
-/// `current` marked in it; the id of the sound clicked, when it is another.
+/// A submenu for each family of the metronome's sounds, the one holding `current` marked with a
+/// dot and `current` chosen in it; the id of the sound clicked, when it is another.
 fn sound_choices(ui: &mut Ui, metronome: &suhina_session::MetronomeState, current: Option<&str>) -> Option<String> {
     let mut picked = None;
     for family in metronome.families.iter() {
         let holds = family.sounds.iter().any(|(id, _)| Some(id.as_str()) == current);
-        let title = if holds { egui::RichText::new(&family.name).strong() } else { egui::RichText::new(&family.name) };
         let hint = match &family.folder {
             Some(folder) => format!("Sound files in the library's Sounds/Metronome/{folder}"),
             None => "Built into Suhina".to_string(),
         };
-        ui.menu_button(title, |ui| {
+        menu::submenu(ui, &family.name, holds, |ui| {
             for (id, name) in &family.sounds {
                 let here = Some(id.as_str()) == current;
-                if ui.selectable_label(here, name.as_str()).clicked() && !here {
+                if menu::item(ui, name, here).clicked() && !here {
                     picked = Some(id.clone());
                 }
             }
         })
-        .response
         .on_hover_text(hint);
     }
-    ui.separator();
-    ui.weak("Your own: a folder of sound files in the library's Sounds/Metronome");
+    menu::separator(ui);
+    menu::hint(ui, "Your own: a folder of sound files in the library's Sounds/Metronome");
     picked
 }
 
