@@ -119,6 +119,8 @@ contact time the mallet would have against a rigid surface at 1 m/s,
 `I = sqrt(pi) * Gamma(1 + 1/3.5) / Gamma(1/2 + 1/3.5)`; and the dissipation
 `lambda = 0.05 + 0.45 * (1 - h)` s/m. Harder and faster strokes therefore touch the bar for a
 shorter time and excite higher modes: brightness follows velocity and hardness without a filter.
+Below middle C the mallet is softer, as players use graded sets with softer mallets for the low
+bars: the hardness used is `max(0, h - 0.3 * clamp((60 - key) / 36, 0, 1))`.
 
 Mallet model selects how a stroke reaches the modes. Both drive each mode, as a damped
 oscillator, with `phi_n(x) * F(t) / (M / 4)`, integrated exactly over each sample for the force
@@ -153,14 +155,16 @@ for their frequency. At 16 modes per voice the bar has 13 bending and 3 torsiona
 it has 6 and 2. `T_1` and the offset are assumptions of literature scale, not measurements.
 
 **Mallet noise.** While the mallet touches the bar, the stroke also sounds a short noise of its
-own, the knock of the mallet's head: white noise from the bar's own generator, high-passed at
+own, the knock of the mallet's head: white noise, high-passed at
 200 Hz and low-passed at `0.6 / tau` (tau as for Pulse, so harder and faster strokes knock
 brighter), multiplied in each sample by the contact force and by `3e-5 * sqrt(M(key) / M_ref)`
-per newton. It ends with the contact and goes to the output only: the bar's motion is the same
+per newton. Each stroke starts its noise afresh from its own speed and mallet, so the same
+stroke knocks the same whatever the bar did before, and different strokes knock differently. It
+ends with the contact and goes to the output only: the bar's motion is the same
 with or without it. It is an attack residual, not a model of the mallet head's vibration.
 
 **Sound.** The output is each mode's velocity weighted by Brightness `b` as a tilt,
-`(f_n / f1)^(b - 0.5)`, summed and scaled by `0.12 * sqrt(M(key) / M_ref)`, which keeps the level of
+`(f_n / f1)^(b - 0.5)`, summed and scaled by `0.08 * sqrt(M(key) / M_ref)`, which keeps the level of
 light, high bars comparable with heavy, low ones. Quality selects 8 or 16 modes; modes at or above
 0.45 times the sample rate are left out of the bar, its point mass and its output. Structure has
 no effect on bar bodies.
@@ -168,12 +172,19 @@ no effect on bar bodies.
 **Resonator.** The tube under each bar is one damped resonance tuned to the bar's fundamental
 `f1`, with quality factor 40 (decay rate `pi * f1 / 40`). The first mode's velocity drives it, and
 its own velocity joins the output with the first mode's weight: once it has built up, it adds
-`2 * r` times the first mode's output, in phase with it, where `r` is the Resonator control (0 to
+`4 * r` times the first mode's output, in phase with it (the tube, not the bar, radiates most of a
+mallet instrument's fundamental), where `r` is the Resonator control (0 to
 100 %, default 100 %). A low tube builds up and dies away more slowly than a high one. The tube
 draws its energy from the bar: the first mode's decay rate grows by `r * ln(1000) / T_rad`, with
 `T_rad` 1.2 s for Marimba bar and 4 s for Vibraphone bar, so the fundamental sounds stronger and
 shorter. The tube follows the pitch wheel with its bar; at 0 % there is no tube. A tube above the
 anti-alias margin is left out with its mode.
+
+**Stereo.** The bars lie in a row, so each bar body's voice is panned by its key: pan
+`w * clamp((key - 60) / 36, -1, 1)`, low keys to the left and high keys to the right, by the
+equal-power law scaled to unity at the centre, where `w` is Stereo width (0 to 100 %, default
+50 %). The pan is fixed when the bar takes its voice. Struck, accepted profiles and fitted sets stay
+in the centre on both channels, as before.
 
 **Coefficient changes.** When a re-strike, damping or the pitch wheel changes a ringing bar's
 frequencies, decays or weights, the step this would make in its output fades out linearly over
@@ -191,7 +202,8 @@ per-key body; it adds no allocator to the shared crates.
 **Release and pedal.** Marimba bar rings freely: note-off and the sustain pedal do not damp it.
 Vibraphone bar is damped on note-off, unless the sustain pedal holds it, and when the pedal lifts
 for released keys: damping caps every mode's time to lose 60 dB at Release, keeping its phase; a
-new stroke restores the profile's decay. All notes off damps both bodies the same way. Pitch
+new stroke restores the profile's decay. Damping caps the tube's decay the same way. All notes
+off damps both bodies the same way. Pitch
 wheel retunes a ringing bar as it retunes Struck.
 
 A bar whose state stops being finite falls silent instead of producing invalid output.
@@ -212,12 +224,12 @@ an absolute fallback, and the existing collect/missing-file/relink workflow appl
 
 All sound controls are stored as stable native parameter IDs. `model_revision` is metadata in
 the existing native parameter state, hidden from the stock panel; a newly added Instrument stores
-3. Revision 3 adds Body, Mallet hardness, Mallet model and Resonator, and its Struck body is revision 1's
+3. Revision 3 adds Body, Mallet hardness, Mallet model, Resonator and Stereo width, and its Struck body is revision 1's
 renderer unchanged. A stored 1 is therefore read as revision 3: a revision-1 project has no Body
 value, so it opens on Struck with the new controls at their defaults and renders exactly as
 before. A project without a stored revision is read as revision 1. Revisions 2 and 4 render an
 accepted profile or a [fitted model set](instrument-modal-fitting.md) and ignore Body, Mallet
-hardness, Mallet model and Resonator; adopting a profile stores 2, adopting a set stores 4.
+hardness, Mallet model, Resonator and Stereo width; adopting a profile stores 2, adopting a set stores 4.
 The device never rewrites the stored value, so an older build that knows only revisions 1 and 2
 silences a revision-3 project's modal body, but plays Struck for a revision-1 project in which a
 bar body was chosen later. Unknown

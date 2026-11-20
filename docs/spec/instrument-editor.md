@@ -32,8 +32,8 @@ The panel fits the standard 168-point body height and uses less width than the i
 The larger canvas uses the existing centred, scrollable SDK expanded-panel path. Its header
 identifies Instrument and its experimental model, with Source always available. The pages are:
 
-- **Play:** the shared Gain and Release, Hybrid sample blend, sample Attack and Sustain,
-  and key/velocity admission ranges. Labels distinguish sample-only and Hybrid-only controls.
+- **Play:** the shared Gain and Release, Hybrid sample blend, sample Attack and Sustain, the
+  bar bodies' Stereo width, and key/velocity admission ranges. Labels distinguish sample-only and Hybrid-only controls.
 - **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
   describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
   excitation control Strike colour: a creative weighting of accepted modes, not a measured
