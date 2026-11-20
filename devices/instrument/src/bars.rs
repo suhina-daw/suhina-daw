@@ -13,6 +13,8 @@ pub const MAX_SPEED: f64 = 4.0;
 pub const OUTPUT_SCALE: f64 = 0.12;
 /// Mallet noise per newton of contact force at the reference bar mass.
 const NOISE_PER_NEWTON: f64 = 3e-5;
+/// The stroke's offset from the centre line, relative to the cross-section's radius of gyration.
+const TORSION_OFFSET: f64 = 0.2;
 /// Quality factor of every bar's tube.
 const TUBE_QUALITY: f64 = 40.0;
 const MALLET_MASS: f64 = 0.025;
@@ -38,6 +40,8 @@ struct Material {
     reference_mass: f64,
     /// The first mode's added decay with a full tube, as a time to lose 60 dB.
     radiation_seconds: f64,
+    /// The first torsional mode's frequency ratio to the fundamental.
+    torsion_ratio: f64,
 }
 
 impl Profile {
@@ -68,6 +72,7 @@ impl Profile {
                 exponent: 1.4,
                 reference_mass: 0.4,
                 radiation_seconds: 1.2,
+                torsion_ratio: 6.1,
             },
             Self::Vibraphone => Material {
                 reference_decay: 8.0,
@@ -75,6 +80,7 @@ impl Profile {
                 exponent: 1.0,
                 reference_mass: 0.5,
                 radiation_seconds: 4.0,
+                torsion_ratio: 5.3,
             },
         }
     }
@@ -146,17 +152,32 @@ impl Profile {
         let contact = 0.5 * (0.98 - strike) / 0.96;
         let mass = self.bar_mass(key);
         let level = OUTPUT_SCALE * (mass / self.material().reference_mass).sqrt();
+        // A stroke slightly off the centre line also twists the bar.
+        let torsional = if count >= 16 {
+            3
+        } else if count >= 8 {
+            2
+        } else {
+            0
+        };
+        let bending = count.saturating_sub(torsional);
+        let torsion_ratio = self.material().torsion_ratio;
         let mut modes = [BarMode::default(); N];
         for (index, mode) in modes.iter_mut().take(count).enumerate() {
-            let n = index + 1;
-            let ratio = self.ratio(n, key);
+            let (ratio, shape, modal_mass, weight) = if index < bending {
+                let n = index + 1;
+                (self.ratio(n, key), mode_shape(n, contact), mass / 4.0, 1.0)
+            } else {
+                let n = (index - bending + 1) as f64;
+                (n * torsion_ratio, TORSION_OFFSET * (n * std::f64::consts::PI * contact).cos(), mass / 2.0, 0.5)
+            };
             let frequency_hz = fundamental * ratio;
             *mode = BarMode {
                 frequency_hz,
                 decay_seconds: self.decay_seconds(frequency_hz, decay),
-                shape: mode_shape(n, contact),
-                modal_mass: mass / 4.0,
-                output: level * ratio.powf(brightness - 0.5),
+                shape,
+                modal_mass,
+                output: weight * level * ratio.powf(brightness - 0.5),
             };
         }
         modes
