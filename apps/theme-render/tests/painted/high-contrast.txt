@@ -7,7 +7,7 @@ arrangement-scrolled high-contrast 61176c4e1469e169
 browser high-contrast f9c908b9345c4603
 browser-plug-ins high-contrast da1fd90912ef1719
 browser-search high-contrast adc2c6802f39b620
-clip-audio high-contrast 912de111dc8716e1
+clip-audio high-contrast b05ad93c70729aca
 clip-midi high-contrast f8cc48792fe10b87
 colour-picker high-contrast 6e8d820dda8e3b10
 colour-picker-field high-contrast 11d392343056413a
@@ -52,7 +52,7 @@ settings-appearance high-contrast 821740af6b256993
 settings-audio high-contrast 4b83e874dfc7c211
 settings-browser high-contrast 52a198abb5d04392
 settings-devices high-contrast 200330f82e9c5d73
-settings-keys high-contrast 8f1e8d7a1b077529
+settings-keys high-contrast 9bfcb722db7464d7
 settings-launcher high-contrast dddb641b88767105
 settings-menu high-contrast 2a224cab6b5f4e02
 settings-midi high-contrast d411a60c1c32053f

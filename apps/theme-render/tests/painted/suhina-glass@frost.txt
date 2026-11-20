@@ -7,7 +7,7 @@ arrangement-scrolled suhina-glass@frost 9b0e006d00e43626
 browser suhina-glass@frost 23287ac5168451c2
 browser-plug-ins suhina-glass@frost 6ec0e1c859fbd634
 browser-search suhina-glass@frost b9a8648783d31450
-clip-audio suhina-glass@frost 5b0e6f509e6a63ec
+clip-audio suhina-glass@frost 0727b254d4e77c1a
 clip-midi suhina-glass@frost 71aefd61addfb217
 colour-picker suhina-glass@frost 4092fcd2f17e453c
 colour-picker-field suhina-glass@frost d580158874ef476e
@@ -52,7 +52,7 @@ settings-appearance suhina-glass@frost c22326333d691bdb
 settings-audio suhina-glass@frost 9faadedfda71bb33
 settings-browser suhina-glass@frost 40a81955c7cad719
 settings-devices suhina-glass@frost 0137dfe40af30a26
-settings-keys suhina-glass@frost 17829bffc2b80cf7
+settings-keys suhina-glass@frost ac5c668444328225
 settings-launcher suhina-glass@frost e1631bcb9bffe0be
 settings-menu suhina-glass@frost 339434da2d6f94c6
 settings-midi suhina-glass@frost 2125d211dc45c74c

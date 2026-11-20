@@ -7,7 +7,7 @@ arrangement-scrolled nord 3ea9518238f3dafe
 browser nord b3a49f7b607ef1df
 browser-plug-ins nord 404bdc09897649a3
 browser-search nord f71c1b2b702580b4
-clip-audio nord d60e60f3ec437491
+clip-audio nord 522132b8c102ddde
 clip-midi nord 40db53eb797606c7
 colour-picker nord d84587feb636dfa4
 colour-picker-field nord e67e0b5ef6c3e482
@@ -52,7 +52,7 @@ settings-appearance nord cc74f69fec11169d
 settings-audio nord 01fc6bd4676e1f99
 settings-browser nord 697ccf2a6102973a
 settings-devices nord 0e9968d264efd4fc
-settings-keys nord 213d4a2e20c2bfab
+settings-keys nord b46d3be4e13777e1
 settings-launcher nord 7dbaad2a9c008d42
 settings-menu nord bcc0e8fa8222055f
 settings-midi nord 8d8883559ee7883e

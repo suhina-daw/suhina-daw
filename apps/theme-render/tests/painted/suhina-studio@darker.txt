@@ -7,7 +7,7 @@ arrangement-scrolled suhina-studio@darker b582cce51293db31
 browser suhina-studio@darker 0e5c136224ab618c
 browser-plug-ins suhina-studio@darker 91b16c06f133c048
 browser-search suhina-studio@darker eaec295606e863a9
-clip-audio suhina-studio@darker dd6ba59a6d2b3083
+clip-audio suhina-studio@darker 28ccf00ed9a240a7
 clip-midi suhina-studio@darker 66ce616e47bbd76f
 colour-picker suhina-studio@darker 4bacc675bd2eb46a
 colour-picker-field suhina-studio@darker e795551be14f9017
@@ -52,7 +52,7 @@ settings-appearance suhina-studio@darker 18468e5f4807d3c5
 settings-audio suhina-studio@darker 55267ee28e315668
 settings-browser suhina-studio@darker 66b5f1eed500e394
 settings-devices suhina-studio@darker f2927c9fac4c764a
-settings-keys suhina-studio@darker f1a127bcc6c5a9c0
+settings-keys suhina-studio@darker 676c64181750ba32
 settings-launcher suhina-studio@darker 739c8556e699925f
 settings-menu suhina-studio@darker 20d9dbbe329df6ff
 settings-midi suhina-studio@darker 85b401f1ece26e1e
