@@ -106,6 +106,16 @@ fn instrument_analysis_controls_require_explicit_acceptance_and_reject_stale_pro
     h.state_mut().projects.session_mut(None).unwrap().sync_instrument_analysis();
     h.run_steps(4);
     assert!(h.query_by_label("Add to model (1)").is_some());
+    // Another instrument's recording joins as a source of its own, for Source morph.
+    h.get_by_label("Add as new source").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    h.run_steps(4);
+    let device = &h.state().session().unwrap().project().channels[0].devices[0];
+    let set = suhina_dsp::modal::model::ModelSet::decode(device.instrument_modal_profile().unwrap()).unwrap();
+    assert_eq!(set.recordings().iter().map(|r| r.source).collect::<Vec<_>>(), vec![0, 1]);
+    h.state_mut().run(&Action::new("edit.undo", json!({})));
+    h.run_steps(4);
     // Fit folder… asks for the folder with the system's dialog before anything runs.
     h.get_by_label("Fit folder…").focus();
     h.step();

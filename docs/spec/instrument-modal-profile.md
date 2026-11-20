@@ -231,8 +231,11 @@ off the audio thread. Note-on fuses at most 32 recordings of 32 modes without al
 (revision 4, Source Modal, full modes, neutral model controls, Attack 0, Sustain 1, Source morph
 0.5, one undo step). `instrument.addFit` adds a ready fit's recording to the device's existing
 revision-4 set as one undo step, with an optional `velocity` (default 0.8) and `source` (default
-0); a recording at the same key, velocity and source as an existing one is an error, as are a
-thirty-third recording or a device without a revision-4 set. It selects Source Modal and leaves
+0), or `newSource` instead of `source`: one more than the highest source in the set, so another
+instrument's recordings morph against the ones already there (a set that already uses source 15
+refuses it). A recording at the same key, velocity and source as an existing one is an error, as
+are a thirty-third recording or a device without a revision-4 set. The Sample page offers both
+**Add to model** (source 0) and **Add as new source**. It selects Source Modal and leaves
 the model controls alone. The proposal invalidation rules of fitting apply.
 
 ## Evidence and limits
