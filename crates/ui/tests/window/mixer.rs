@@ -331,7 +331,10 @@ fn arming_is_exclusive_unless_ctrl_is_held_and_changes_no_project() {
 fn a_tracks_menu_chooses_the_midi_port_and_channel_it_hears() {
     use suhina_engine::model::{MidiInput, MidiPort};
     let mut app = demo_app();
-    app.projects_mut().set_midi_system(std::sync::Arc::new(StandMidi(vec!["Keys In".into(), "Pads In".into()])));
+    app.projects_mut().set_midi_system(std::sync::Arc::new(StandMidi(vec![
+        ("Keys In".into(), "Keys In#1".into()),
+        ("Pads In".into(), "Pads In#1".into()),
+    ])));
     let mut harness = window(app);
     let input = |h: &Harness<'static, App>| {
         h.state()

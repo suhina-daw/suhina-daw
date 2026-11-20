@@ -192,6 +192,8 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
         .columns
         .iter()
         .map(|column| {
+            // A clip without a colour of its own shows its track's, exactly as the views do.
+            let track_color = p.track(column.track).and_then(|t| t.color);
             let slots: Vec<Value> = column
                 .slots
                 .iter()
@@ -202,6 +204,7 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
                         "scene_id": scene_id(p, number as usize),
                         "id": clip.id.0,
                         "clip": p.content(clip.content).map(|c| c.name.as_str()),
+                        "color": clip.color.or(track_color).map(rgb_text),
                         "length": clip.length,
                         "loop": clip.loop_range.is_some(),
                         "enabled": clip.enabled,
@@ -222,4 +225,9 @@ fn launcher_grid(session: &mut Session, _: &Value) -> Result<Value, CommandError
         })
         .collect();
     Ok(json!({ "scenes": scenes, "tracks": tracks }))
+}
+
+/// `#rrggbb`, the text a clip's colour carries in JSON.
+fn rgb_text(color: suhina_model::Rgb) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.0, color.1, color.2)
 }
