@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Public native Instrument runtime, shared by stock and export adapters. The struck-modal
-//! model is experimental revision 1. Sample playback uses the existing SDK runtime.
+//! model is experimental revision 1; accepted modal profiles use revision 2. Sample playback
+//! uses the existing SDK runtime.
 
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ParamInfo, ProcessContext, Role,
@@ -203,7 +204,7 @@ impl Instrument {
     pub fn set_modal_profile(&mut self, profile: ModalProfile) {
         self.profile = Some(profile);
         self.invalid_profile = false;
-        self.params.set(param::REVISION, f64::from(PROFILE_MODEL_REVISION));
+        let _ = self.params.set(param::REVISION, f64::from(PROFILE_MODEL_REVISION));
         self.reset();
     }
 

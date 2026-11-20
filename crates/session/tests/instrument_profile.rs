@@ -134,6 +134,11 @@ fn malformed_profiles_and_wrong_targets_leave_project_and_history_unchanged() {
         assert!(session.execute("instrument.adoptModalProfile", &extra).is_err());
         assert_eq!(session.project(), &before);
     }
+    let mut wrong = before;
+    wrong.channels[0].devices[0].kind = DeviceKind::Builtin("sampler".into());
+    let mut other = Session::new(wrong.clone());
+    assert!(other.execute("instrument.adoptModalProfile", &json!({"track":1,"device":0,"profile":profile()})).is_err());
+    assert_eq!(other.project(), &wrong);
 }
 
 #[test]

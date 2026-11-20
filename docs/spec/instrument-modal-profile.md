@@ -10,12 +10,17 @@ covers:
   - crates/dsp/src/modal/profile_tests.rs
   - devices/instrument/src/lib.rs
   - devices/instrument/src/profile_tests.rs
+  - devices/instrument/src/panel.rs
+  - devices/instrument/src/editor.rs
   - crates/device-api/src/lib.rs
   - crates/model/src/instrument_profile.rs
   - crates/engine/src/slot_factory.rs
   - crates/engine/src/chain.rs
+  - crates/engine/src/chain_tests.rs
   - crates/session/src/instrument_profile.rs
+  - crates/session/src/commands/instrument_profile.rs
   - crates/session/tests/instrument_profile.rs
+  - crates/device-registry/tests/reset.rs
 ---
 
 # Modal profiles
@@ -83,9 +88,13 @@ graph identity includes their exact content as well as the current sample identi
 device path, a bounded profile object (`referenceKey`, `referenceHz`, `modes` containing
 `ratio`, `magnitude`, `decaySeconds`) and optional `source` (`Modal`, default, or `Hybrid`).
 It validates the complete profile and Instrument target before editing. Adoption writes the
-profile, model revision 2, Source, and the four neutral model controls above, with the same
+profile, model revision 2, Source, the full 16-mode quality budget and the four neutral model controls above, with the same
 manual automation override contract as `device.setParam`. Lane points remain intact. One undo
 restores the old profile, revision, controls, source and lane enabled/override state together.
+
+The compact and expanded SDK captions follow the stored revision. Revision 2 labels Strike as
+creative colour rather than physical position. A revision label identifies the requested model;
+it does not certify valid/correct calibration data. Unsupported or missing modal data is silent.
 
 The session's typed `apply_profile` helper performs those same mutations inside an existing
 EDIT command; future fit acceptance uses it after validating its job and device identity,

@@ -27,6 +27,12 @@ mode amplitudes, Structure stretches their frequency ratios, Strike position cha
 excitation pattern and Decay sets the fundamental's time to lose 60 dB. High modes decay faster.
 Quality selects 8 or 16 modes. Modes at or above 0.45 times the sample rate are omitted, not
 folded into the audible band.
+
+The original remains revision 1. [Accepted modal profiles](instrument-modal-profile.md) use
+revision 2: a bounded stored list of ratios, magnitudes and T60 values replaces the heuristic
+modal data. Default model controls preserve that profile; Decay, Brightness, Structure and
+creative Strike colour transform it on the next strike. This runtime accepts data and does not
+fit, calibrate or infer a physical instrument from a recording.
 Release damps a released key; the sustain pedal holds it. Gain and the Hybrid sample blend are
 smoothed. Changing the body controls or Source affects the next strike, so a held body does
 not jump to another body's state. Modal mode starts no sample voices; Sample mode starts no
@@ -75,7 +81,7 @@ detection, automatic segmentation and fitting are not silently guessed. Source b
 existing decoded-audio and sample-reference lifecycle: project save rebases the path, keeps
 an absolute fallback, and the existing collect/missing-file/relink workflow applies.
 
-All sound controls are stored as stable native parameter IDs. `model_revision` persists 1 as
+All sound controls are stored as stable native parameter IDs. `model_revision` persists 1 or 2 as
 metadata using the existing native parameter state, hidden from the stock panel. Unknown
 revisions retain their value and silence the modal body rather than running another revision.
 This temporary metadata parameter is not a sound control; export adapters must preserve it in
@@ -84,6 +90,11 @@ contract or provide a migration and retained renderer. The sample reference is `
 independent of the model revision. Opening a project decodes its local source and restores
 controls; it never refits. Portable plug-in assets are not implemented by this source-reference
 contract, which currently belongs to the stock project's model layer.
+Revision-2 profile bytes have their own bounded `instrument_modal_profile` extension; changing
+or moving a sample reference cannot overwrite them. Graph identity includes their content, and
+project save/reopen restores the accepted modes without a recording, fitting run or cache.
+Missing, invalid or incompatible profiles silence the modal layer, while sample playback stays
+independent. The canonical format and atomic adoption command are in the profile specification.
 
 ## Bounds and quality gates
 

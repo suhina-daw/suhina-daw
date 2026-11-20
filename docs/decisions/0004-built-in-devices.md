@@ -64,7 +64,7 @@ decision 9.
    each value it stores and ignores an index past the end, so every device's `set_param` and
    `param` follow that rule by one tested path and the device writes only what it does when a
    value changes.
-4. **The `Device` trait.** Construction, `prepare(sample_rate)` and drop run off the audio thread
+4. **The `Device` trait.** Construction, `prepare(sample_rate)`, `load_model_state` and drop run off the audio thread
    and may allocate. `reset`, `set_param(index, value)`, `param(index)` and
    `process(context, buffer)` run on it and must be real-time safe and panic-free whatever they
    are given. `process` works in place on interleaved stereo, the engine's format, and gets a
@@ -73,6 +73,11 @@ decision 9.
    makes no sense). `latency()` reports added delay for compensation. A device is made for the
    rate it will run at (`with_rate`), and `prepare` moves a made device to another rate (see
    *Amendment: a device is made at its rate*).
+   `load_model_state` is the optional data-only model handoff, before restored parameters are
+   applied. The device validates its own bounded codec; a rejected model layer stays silent
+   instead of selecting a default model. Independent layers can remain available. The engine
+   includes persisted model content in graph identity and uses its normal off-thread retirement
+   path ([modal profile contract](../spec/instrument-modal-profile.md)).
 5. **Automation: the host splits, the device smooths.** The host addresses parameters by index
    and splits a block where an automation point falls, so a change lands on its frame, and gives
    each part the song position of its own first frame; the device ramps a change that would click (20 ms for the utility). The output must not depend on

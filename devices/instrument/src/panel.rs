@@ -72,6 +72,20 @@ impl Canvas {
         self.add(text, Widget::Label { label: text.into() }, bounds, None, UiGesture::Drag, "");
     }
 
+    /// Model identity is read-only metadata; it never adds a sound parameter or edit action.
+    pub(super) fn only_revision(&mut self, revision: u16) {
+        if let Some(control) = self.ui.controls.last_mut() {
+            let condition = UiValue::Expression(Box::new(UiExpression::Equal {
+                a: UiValue::parameter("model_revision", false),
+                b: f32::from(revision).into(),
+            }));
+            control.visible_when = Some(match control.visible_when.take() {
+                Some(page) => UiValue::Expression(Box::new(UiExpression::Multiply { a: page, b: condition })),
+                None => condition,
+            });
+        }
+    }
+
     pub(super) fn title(&mut self, text: &str, bounds: [f32; 4], size: f32) {
         self.add(
             text,
@@ -195,6 +209,9 @@ impl Canvas {
 pub fn layout() -> Layout {
     let mut panel = Canvas::new([620.0, 168.0]);
     panel.label("STRUCK MODAL · experimental v1", [10.0, 4.0, 248.0, 20.0]);
+    panel.only_revision(1);
+    panel.label("MODAL PROFILE · experimental v2", [10.0, 4.0, 248.0, 20.0]);
+    panel.only_revision(2);
     panel.menu("source", "Source", [272.0, 4.0, 136.0, 24.0], "Modal, local Sample, or both in Hybrid");
     panel.navigate("Open editor", [456.0, 4.0, 152.0, 24.0], 0, true);
     panel.waveform([10.0, 36.0, 244.0, 88.0]);

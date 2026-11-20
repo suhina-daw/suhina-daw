@@ -118,3 +118,28 @@ fn profile_extremes_remain_finite_at_supported_rates() {
         }
     }
 }
+
+#[test]
+fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
+    let layout = panel::layout();
+    let ui = layout.expanded.as_ref().unwrap();
+    for revision in [1.0, 2.0] {
+        let visible = |name: &str| {
+            ui.controls.iter().any(|control| {
+                control.name == name
+                    && control.visible_when.as_ref().is_none_or(|value| {
+                        value.evaluate(&|id, _, _| match id {
+                            "model_revision" => revision,
+                            "#page" => 1.0,
+                            _ => 0.0,
+                        }) > 0.0
+                    })
+            })
+        };
+        assert_eq!(visible("Experimental struck modal · revision 1"), revision == 1.0);
+        assert_eq!(visible("Experimental modal profile · revision 2"), revision == 2.0);
+        assert_eq!(visible("Strike position"), revision == 1.0);
+        assert_eq!(visible("Strike colour"), revision == 2.0);
+    }
+    assert!(layout.panel(&INFO).is_ok());
+}
