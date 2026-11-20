@@ -35,6 +35,8 @@ navigation drags must not toggle the dimmer.
 Text inputs and dropdowns use transparent fills and only a
 theme-coloured underline, stronger on hover and accented on focus. Navigation rows
 have no opaque background: only selected/hovered rows add a translucent tint.
+Long settings dropdowns scroll within a bounded popup, so all MIDI bend-range values remain
+reachable in a short window.
 
 ### Choosing an audio driver and device
 

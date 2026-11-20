@@ -126,8 +126,9 @@ How 8 to 14 behave in detail (orders, room for events, latency, what a swap keep
 
 - **Mono, multichannel and side-chain inputs.** The trait is stereo in, stereo out.
   Side-chained dynamics extend it ([sidechain](../spec/sidechain.md), planned).
-- **Per-note expression.** `NoteEvent` has no channel and no per-note controls yet (MIDI
-  Polyphonic Expression, per-note pitch); they come with the first instrument that uses them.
+- **Per-note expression was resolved by [ADR 0039](0039-per-note-expression.md).** The
+  protocol-neutral `NoteEvent::Instance` and opt-in endpoint carry identified live pitch,
+  pressure and timbre; [the MPE spec](../spec/mpe.md) records supported devices and compatibility.
 
 ## Consequences
 

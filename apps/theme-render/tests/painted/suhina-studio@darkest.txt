@@ -52,7 +52,7 @@ settings-devices suhina-studio@darkest 19c22c365cf4a3f8
 settings-keys suhina-studio@darkest 3b3cd15f1e9a5335
 settings-launcher suhina-studio@darkest 00adf62a1cd85115
 settings-menu suhina-studio@darkest f1b58136b4c8b98e
-settings-midi suhina-studio@darkest 33c938e0c4da9989
+settings-midi suhina-studio@darkest 3374712706b8d6b1
 settings-plug-ins suhina-studio@darkest 8979b51f8157287b
 settings-themes suhina-studio@darkest e77fbe849cb2d10e
 start-panel suhina-studio@darkest c023474ca357c894

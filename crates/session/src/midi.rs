@@ -194,12 +194,12 @@ static MIDI_COMMANDS: &[CommandSpec<Projects>] = &[
         params: &[
             param("port", ParamType::Text, "physical input name from midi.inputs"),
             param("mode", ParamType::Text, "off, automatic, or manual"),
-            optional("lower_members", ParamType::Integer, "lower-zone members, 0 to 15, excluding channel 1"),
-            optional("upper_members", ParamType::Integer, "upper-zone members, 0 to 15, excluding channel 16"),
-            optional("lower_member_bend", ParamType::Integer, "member pitch range, 0 to 96 semitones"),
-            optional("lower_manager_bend", ParamType::Integer, "manager pitch range, 0 to 96 semitones"),
-            optional("upper_member_bend", ParamType::Integer, "member pitch range, 0 to 96 semitones"),
-            optional("upper_manager_bend", ParamType::Integer, "manager pitch range, 0 to 96 semitones"),
+            optional("lowerMembers", ParamType::Integer, "lower-zone members, 0 to 15, excluding channel 1"),
+            optional("upperMembers", ParamType::Integer, "upper-zone members, 0 to 15, excluding channel 16"),
+            optional("lowerMemberBend", ParamType::Integer, "member pitch range, 0 to 96 semitones"),
+            optional("lowerManagerBend", ParamType::Integer, "manager pitch range, 0 to 96 semitones"),
+            optional("upperMemberBend", ParamType::Integer, "member pitch range, 0 to 96 semitones"),
+            optional("upperManagerBend", ParamType::Integer, "manager pitch range, 0 to 96 semitones"),
         ],
         kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
         run: set_mpe,
@@ -274,12 +274,12 @@ fn set_mpe(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
         _ => return Err("mode must be off, automatic, or manual".into()),
     };
     for (name, field) in [
-        ("lower_members", &mut config.lower_members),
-        ("upper_members", &mut config.upper_members),
-        ("lower_member_bend", &mut config.lower_member_bend),
-        ("lower_manager_bend", &mut config.lower_manager_bend),
-        ("upper_member_bend", &mut config.upper_member_bend),
-        ("upper_manager_bend", &mut config.upper_manager_bend),
+        ("lowerMembers", &mut config.lower_members),
+        ("upperMembers", &mut config.upper_members),
+        ("lowerMemberBend", &mut config.lower_member_bend),
+        ("lowerManagerBend", &mut config.lower_manager_bend),
+        ("upperMemberBend", &mut config.upper_member_bend),
+        ("upperManagerBend", &mut config.upper_manager_bend),
     ] {
         if args.has(name) {
             *field = u8::try_from(args.index(name, "from zero")?)

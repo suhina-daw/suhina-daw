@@ -52,7 +52,7 @@ settings-devices catppuccin-mocha@macchiato ec773ba0d20f87f7
 settings-keys catppuccin-mocha@macchiato 65dbad226a68ab87
 settings-launcher catppuccin-mocha@macchiato bf5e439bdd8f5d5f
 settings-menu catppuccin-mocha@macchiato 96d0aecc16e8fe9a
-settings-midi catppuccin-mocha@macchiato 4f71b70ed568a65c
+settings-midi catppuccin-mocha@macchiato 057d2792e77653a2
 settings-plug-ins catppuccin-mocha@macchiato 786bc6faa0011673
 settings-themes catppuccin-mocha@macchiato ba9ad71631b8c3e2
 start-panel catppuccin-mocha@macchiato 938de2752bfde478

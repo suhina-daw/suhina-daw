@@ -337,9 +337,12 @@ A direct single VoiceGroup instrument can opt into the shared identified-note en
 private graph before its first sample, and targeted off/choke never changes another ID.
 Native admission rejects a new occurrence at its voice or retirement limit; the ordinary
 stealing policy remains unchanged. Final completion is reported after VoiceOutput ends or
-the occurrence is choked. Graphs with other native consumers or transformed outer event
-routing stay in ordinary compatibility until their layered admission and retirement are
-implemented; they do not advertise the endpoint.
+the occurrence is choked. The private body currently supports VoiceInput, MidiController,
+PitchBend, Pressure, VoiceOutput, AD/ADSR and ordinary signal nodes, with direct event input.
+Other native consumers, including a private Sampler/SamplerAsset or Component, and transformed
+inner or outer event routes stay in ordinary compatibility until their admission and retirement
+are implemented together. They do not advertise the endpoint: one native occurrence must not
+start both an ordinary and an independently identified note inside a nested sampler.
 
 Component embeds a named, positive-version graph snapshot including its parameters and optional
 panel. Its stable public ports are in/control1/control2/control3 signals, optional MIDI events and stereo out;

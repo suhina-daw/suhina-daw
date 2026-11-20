@@ -52,7 +52,7 @@ settings-devices catppuccin-latte 8f16ea088c80991e
 settings-keys catppuccin-latte c3ed5aba6e4e2aed
 settings-launcher catppuccin-latte c6c16ede7ceab770
 settings-menu catppuccin-latte 1df3b677341ecde6
-settings-midi catppuccin-latte f1e95473b635b33c
+settings-midi catppuccin-latte 77e4943695ce96d7
 settings-plug-ins catppuccin-latte c5d263cb7bb72fd1
 settings-themes catppuccin-latte 42de502609c111a9
 start-panel catppuccin-latte 588307d3a070c325

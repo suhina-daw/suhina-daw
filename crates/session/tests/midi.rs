@@ -143,9 +143,9 @@ fn mpe_settings_reopen_only_the_changed_port_and_reject_malformed_changes_atomic
     let mut projects = Projects::new();
     projects.set_midi_system(midi.clone());
     let params =
-        json!({ "port": "Keys", "mode": "manual", "lower_members": 8, "upper_members": 6, "lower_member_bend": 24 });
+        json!({ "port": "Keys", "mode": "manual", "lowerMembers": 8, "upperMembers": 6, "lowerMemberBend": 24 });
     let result = run(&mut projects, "midi.setMpe", params.clone()).unwrap();
-    assert_eq!(result["inputs"][0]["mpe"]["lower_member_bend"], 24);
+    assert_eq!(result["inputs"][0]["mpe"]["lowerMemberBend"], 24);
     assert_eq!(*midi.closed.lock().unwrap(), ["Keys"]);
     assert_eq!(midi.opened.lock().unwrap().len(), 3);
     assert_eq!(midi.configured.lock().unwrap().last().unwrap().1.lower_members, 8);
@@ -154,10 +154,10 @@ fn mpe_settings_reopen_only_the_changed_port_and_reject_malformed_changes_atomic
     let before = projects.midi_mpe();
     for invalid in [
         json!({ "port":"Keys", "mode":"unknown" }),
-        json!({ "port":"Keys", "mode":"manual", "lower_members":9, "upper_members":6 }),
-        json!({ "port":"Keys", "mode":"manual", "lower_member_bend":97 }),
-        json!({ "port":"Keys", "mode":"manual", "upper_members":-1 }),
-        json!({ "port":"Keys", "mode":"manual", "upper_members":2.5 }),
+        json!({ "port":"Keys", "mode":"manual", "lowerMembers":9, "upperMembers":6 }),
+        json!({ "port":"Keys", "mode":"manual", "lowerMemberBend":97 }),
+        json!({ "port":"Keys", "mode":"manual", "upperMembers":-1 }),
+        json!({ "port":"Keys", "mode":"manual", "upperMembers":2.5 }),
         json!({ "port":"Missing", "mode":"manual" }),
     ] {
         assert!(run(&mut projects, "midi.setMpe", invalid).is_err());
@@ -180,10 +180,10 @@ fn mpe_configuration_json_and_startup_settings_round_trip_with_validation() {
     for bad in [
         json!(null),
         json!({"mode":"invalid"}),
-        json!({"lower_members":256}),
-        json!({"lower_members":-1}),
+        json!({"lowerMembers":256}),
+        json!({"lowerMembers":-1}),
         json!({"pressure":1}),
-        json!({"lower_members":10,"upper_members":10}),
+        json!({"lowerMembers":10,"upperMembers":10}),
     ] {
         assert!(MpeConfig::from_json(&bad).is_none());
     }

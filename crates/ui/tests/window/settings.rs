@@ -254,6 +254,18 @@ fn settings_mpe_configures_one_port_through_the_command_and_saves_it() {
     assert_eq!(config.mode, suhina_session::MpeMode::Manual);
     assert_eq!(config.lower_members, 4);
     assert_eq!(harness.state_mut().take_changed_settings().unwrap().midi_mpe["Keys In"], config);
+    harness.set_size(egui::vec2(1000., 420.));
+    harness.run_steps(3);
+    harness.get_by_label("Lower member bend Keys In: 48").scroll_to_me();
+    harness.run_steps(3);
+    harness.get_by_label("Lower member bend Keys In: 48").click();
+    harness.run_steps(2);
+    harness.get_by_label("96").scroll_to_me();
+    harness.run_steps(3);
+    harness.get_by_label("96").click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().projects().midi_mpe()["Keys In"].lower_member_bend, 96);
+    assert_eq!(harness.state_mut().take_changed_settings().unwrap().midi_mpe["Keys In"].lower_member_bend, 96);
 }
 
 #[test]

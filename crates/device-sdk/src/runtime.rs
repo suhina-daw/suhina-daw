@@ -130,6 +130,28 @@ fn feedback_islands(nodes: &[Op], order: &[usize]) -> Vec<Island> {
 }
 
 impl PreparedEffect {
+    /// Private voices currently adapt their one occurrence to ordinary graph events plus
+    /// VoiceInput expression. Other native consumers can own independent note lifetimes;
+    /// do not advertise their admission/retirement until that routing is implemented.
+    pub(crate) fn supports_voice_expression(&self) -> bool {
+        self.nodes.iter().all(|node| {
+            (!matches!(node.state, State::Native(_))
+                || matches!(
+                    node.kind,
+                    NodeKind::VoiceInput { .. }
+                        | NodeKind::MidiController { .. }
+                        | NodeKind::PitchBend
+                        | NodeKind::Pressure
+                        | NodeKind::VoiceOutput
+                        | NodeKind::Adsr
+                        | NodeKind::Ad
+                ))
+                && node.event_source.is_none_or(|source| {
+                    self.nodes.get(source).is_some_and(|source| matches!(source.kind, NodeKind::MidiInput))
+                })
+        })
+    }
+
     /// A single direct voice-group endpoint. Graphs with another native event consumer or
     /// transformed event routing stay explicitly in ordinary compatibility until admission
     /// and final retirement can be aggregated across every participating layer.

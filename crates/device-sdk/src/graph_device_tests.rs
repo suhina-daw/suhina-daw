@@ -88,6 +88,47 @@ fn mpe_voice_on_preserves_shared_controller_latches_and_its_own_expression() {
     }
 }
 
+#[test]
+fn mpe_capability_rejects_private_sample_lifetimes_including_components() {
+    use crate::sample_resource::{PreparedSamples, SampleAsset};
+    use std::sync::Arc;
+
+    for nested in [false, true] {
+        let mut body = DeviceGraph::new("org.test.sample-body", "Sample body", DeviceRole::Instrument);
+        body.nodes = vec![N::new("sample", K::SamplerAsset { sample: "tone".into() }), N::audio_output("out")];
+        body.connections = vec![C::new("sample", "out")];
+        let mut voice = if nested {
+            let mut wrapper = DeviceGraph::new("org.test.sample-component", "Component", DeviceRole::Instrument);
+            wrapper.nodes = vec![
+                N::new("sample", K::Component { name: "Source".into(), version: 1, graph: body.to_sd().unwrap() }),
+                N::new("midi", K::MidiInput),
+                N::audio_output("out"),
+            ];
+            wrapper
+        } else {
+            body
+        };
+        voice.nodes.extend([N::new("done", K::Constant { value: 0. }), N::new("result", K::VoiceOutput)]);
+        voice.connections =
+            vec![C::new("sample", "result"), C::ports("done", "out", "result", "finished"), C::new("result", "out")];
+        let mut graph = DeviceGraph::new("org.test.sample-group", "Group", DeviceRole::Instrument);
+        graph.nodes =
+            vec![N::new("group", K::VoiceGroup { graph: voice.to_sd().unwrap(), voices: 1 }), N::audio_output("out")];
+        graph.connections = vec![C::new("group", "out")];
+        let mut samples = PreparedSamples::default();
+        samples.insert("tone", Arc::new(SampleAsset::new(Arc::new(vec![0.25; 4096]), 48000, 1).unwrap())).unwrap();
+        let compiled = graph.clone();
+        let mut device =
+            GraphDevice::audio(&graph, 48000., Box::new(move |rate| compiled.compile_with_samples_at(rate, &samples)))
+                .unwrap();
+        assert!(device.note_instances().is_none(), "nested={nested}");
+        device.event(NoteEvent::On { key: 60, velocity: 1. });
+        let mut buffer = [0.; 128];
+        device.process(&ProcessContext::default(), &mut buffer);
+        assert!(buffer.iter().any(|sample| *sample > 0.), "ordinary compatibility remains playable");
+    }
+}
+
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
 
 fn fixture(name: &str) -> DeviceGraph {

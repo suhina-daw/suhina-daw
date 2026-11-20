@@ -52,7 +52,7 @@ settings-devices nord 0e9968d264efd4fc
 settings-keys nord 213d4a2e20c2bfab
 settings-launcher nord 7dbaad2a9c008d42
 settings-menu nord bcc0e8fa8222055f
-settings-midi nord 8d8883559ee7883e
+settings-midi nord d2164d08d838f023
 settings-plug-ins nord 786f9bb19be852c8
 settings-themes nord 60c55de95b1e58a3
 start-panel nord ab0f0978635742d8

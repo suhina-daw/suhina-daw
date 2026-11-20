@@ -47,9 +47,9 @@ impl MpeConfig {
     pub fn to_json(self) -> Value {
         json!({
             "mode": match self.mode { MpeMode::Off => "off", MpeMode::Automatic => "automatic", MpeMode::Manual => "manual" },
-            "lower_members": self.lower_members, "upper_members": self.upper_members,
-            "lower_member_bend": self.lower_member_bend, "lower_manager_bend": self.lower_manager_bend,
-            "upper_member_bend": self.upper_member_bend, "upper_manager_bend": self.upper_manager_bend,
+            "lowerMembers": self.lower_members, "upperMembers": self.upper_members,
+            "lowerMemberBend": self.lower_member_bend, "lowerManagerBend": self.lower_manager_bend,
+            "upperMemberBend": self.upper_member_bend, "upperManagerBend": self.upper_manager_bend,
         })
     }
 
@@ -68,12 +68,12 @@ impl MpeConfig {
                 continue;
             }
             let field = match key.as_str() {
-                "lower_members" => &mut config.lower_members,
-                "upper_members" => &mut config.upper_members,
-                "lower_member_bend" => &mut config.lower_member_bend,
-                "lower_manager_bend" => &mut config.lower_manager_bend,
-                "upper_member_bend" => &mut config.upper_member_bend,
-                "upper_manager_bend" => &mut config.upper_manager_bend,
+                "lowerMembers" => &mut config.lower_members,
+                "upperMembers" => &mut config.upper_members,
+                "lowerMemberBend" => &mut config.lower_member_bend,
+                "lowerManagerBend" => &mut config.lower_manager_bend,
+                "upperMemberBend" => &mut config.upper_member_bend,
+                "upperManagerBend" => &mut config.upper_manager_bend,
                 _ => return None,
             };
             *field = u8::try_from(value.as_u64()?).ok()?;

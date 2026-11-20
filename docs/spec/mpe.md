@@ -159,7 +159,8 @@ with additional native consumers or transformed event routing do not advertise i
 expression until their admission and final retirement can be aggregated safely.
 
 `midi.setMpe` takes a port name, `mode` (`off`, `automatic`, `manual`) and optional lower/upper
-member counts and member/manager bend ranges. It validates the whole configuration before
+member counts (`lowerMembers`, `upperMembers`) and bend ranges (`lowerMemberBend`,
+`lowerManagerBend`, `upperMemberBend`, `upperManagerBend`). It validates the whole configuration before
 closing/reopening only that port, so old occurrences are choked first. Unchanged values do
 not interrupt notes. `midi.inputs` reports saved configuration; automatic runtime zone changes
 follow the controller and are not persisted as manual choices. At most 256 saved inputs are

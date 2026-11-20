@@ -52,7 +52,7 @@ settings-devices nord@snow-storm c201f148718b6ae9
 settings-keys nord@snow-storm c55be8e6f995f026
 settings-launcher nord@snow-storm 6f24dc813d317900
 settings-menu nord@snow-storm 11ef4f920dd3340c
-settings-midi nord@snow-storm 98c99aa0453ff371
+settings-midi nord@snow-storm 4b20be2ad0108383
 settings-plug-ins nord@snow-storm 78a64aea1298fbbe
 settings-themes nord@snow-storm a804897e476644d0
 start-panel nord@snow-storm d614a2365d743805

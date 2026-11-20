@@ -266,6 +266,7 @@ struct Voice {
     fade: usize,
 }
 struct Group {
+    supports_expression: bool,
     lifetimes: NoteLifetimes<64>,
     voices: Vec<Voice>,
     controllers: [f32; 128],
@@ -278,6 +279,7 @@ struct Group {
 }
 pub(crate) fn group(graphs: Vec<crate::PreparedEffect>, rate: f64) -> Box<dyn NativeNode> {
     Box::new(Group {
+        supports_expression: graphs.iter().all(crate::PreparedEffect::supports_voice_expression),
         lifetimes: NoteLifetimes::default(),
         voices: graphs
             .into_iter()
@@ -307,7 +309,7 @@ pub(crate) fn group(graphs: Vec<crate::PreparedEffect>, rate: f64) -> Box<dyn Na
 }
 impl NativeNode for Group {
     fn note_instances(&mut self) -> Option<&mut dyn NoteInstanceDevice> {
-        Some(self)
+        if self.supports_expression { Some(self) } else { None }
     }
     fn prepare_block(&mut self, value: &ProcessContext) {
         self.context = super::component::context(value);

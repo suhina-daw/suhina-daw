@@ -52,7 +52,7 @@ settings-devices suhina-glass@frost 0137dfe40af30a26
 settings-keys suhina-glass@frost 17829bffc2b80cf7
 settings-launcher suhina-glass@frost e1631bcb9bffe0be
 settings-menu suhina-glass@frost 339434da2d6f94c6
-settings-midi suhina-glass@frost 2125d211dc45c74c
+settings-midi suhina-glass@frost 7021532de0566efe
 settings-plug-ins suhina-glass@frost 8027ac77f0145de4
 settings-themes suhina-glass@frost 116ee085e1134477
 start-panel suhina-glass@frost f26f49189e19c429

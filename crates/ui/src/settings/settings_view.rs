@@ -3476,10 +3476,19 @@ fn choice_field<T: Clone + PartialEq>(
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
         let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
-        for (label, value) in options {
-            if ui.selectable_label(value == current, text(label)).clicked() && value != current {
-                picked = Some(value.clone());
+        let mut choices = |ui: &mut Ui| {
+            for (label, value) in options {
+                if ui.selectable_label(value == current, text(label)).clicked() && value != current {
+                    picked = Some(value.clone());
+                }
             }
+        };
+        if options.len() > 16 {
+            // Popup itself only clips to the viewport. Long ranges (for example all 97
+            // MPE bend values) need a scroll container so their final values are reachable.
+            egui::ScrollArea::vertical().max_height(240.).show(ui, choices);
+        } else {
+            choices(ui);
         }
     });
     picked

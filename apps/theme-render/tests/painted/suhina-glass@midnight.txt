@@ -52,7 +52,7 @@ settings-devices suhina-glass@midnight 1d783ada3c129c23
 settings-keys suhina-glass@midnight 3e113502de44da98
 settings-launcher suhina-glass@midnight 19c8b18e0b94b05a
 settings-menu suhina-glass@midnight f7db5474d1a33adb
-settings-midi suhina-glass@midnight 26ac575a33dc6e2a
+settings-midi suhina-glass@midnight 152ba051d3d8729f
 settings-plug-ins suhina-glass@midnight cae40548d3a93b03
 settings-themes suhina-glass@midnight 293090f336dab5fb
 start-panel suhina-glass@midnight 19b6cc00e61a053c

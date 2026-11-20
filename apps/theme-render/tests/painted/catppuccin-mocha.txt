@@ -52,7 +52,7 @@ settings-devices catppuccin-mocha a927565070269d7d
 settings-keys catppuccin-mocha 9effddbcb51ce97f
 settings-launcher catppuccin-mocha 090937645bb6e2e1
 settings-menu catppuccin-mocha be4914736757473c
-settings-midi catppuccin-mocha 3d4cdb563cd33cb2
+settings-midi catppuccin-mocha 357d9896fe62ff93
 settings-plug-ins catppuccin-mocha a892ae4ccbf75e35
 settings-themes catppuccin-mocha 94ad680ba2b14250
 start-panel catppuccin-mocha 36940abb3f8d781a
