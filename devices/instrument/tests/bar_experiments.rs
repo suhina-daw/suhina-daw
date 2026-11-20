@@ -13,6 +13,14 @@ use suhina_device_instrument::{Instrument, bars::Profile, param};
 const MODELS: [(f64, &str); 2] = [(0.0, "Contact"), (1.0, "Pulse")];
 const PROFILES: [(Profile, f64, &str, u8, u8); 2] =
     [(Profile::Marimba, 1.0, "Marimba bar", 36, 96), (Profile::Vibraphone, 2.0, "Vibraphone bar", 53, 89)];
+/// Every body with its usual range: the xylophone and glockenspiel sounding, a 17-tine kalimba.
+const BODIES: [(f64, &str, u8, u8); 5] = [
+    (1.0, "Marimba bar", 36, 96),
+    (2.0, "Vibraphone bar", 53, 89),
+    (3.0, "Xylophone bar", 65, 108),
+    (4.0, "Glockenspiel bar", 79, 108),
+    (5.0, "Kalimba tine", 60, 88),
+];
 
 #[allow(clippy::unwrap_used)] // test helper
 fn bar(rate: f64, body: f64, model: f64, hardness: f64) -> Instrument {
@@ -222,9 +230,9 @@ fn e3_a_roll_never_gives_the_bar_more_energy_than_the_mallet_brought() {
             let mut worst: f64 = 0.0;
             for hardness in [0.0, 1.0] {
                 for strike in [0.02, 0.25, 0.98] {
-                    let mallet = suhina_device_instrument::bars::mallet(hardness);
+                    let mallet = suhina_device_instrument::bars::mallet(hardness, 0.5);
                     let mut bar = StruckBar::<16>::default();
-                    bar.set_modes(48000.0, &profile.modes::<16>(60, 16, 2.0, 0.5, strike));
+                    bar.set_modes(48000.0, &profile.modes::<16>(60, 16, 2.0, 0.5, strike, Default::default()));
                     let mut injected = 0.0;
                     for n in 0..48000 {
                         // A roll: alternating strokes every 61 ms with uneven speeds.
@@ -359,16 +367,20 @@ fn bar_levels_are_comparable_with_struck() {
     struck.set_param(param::GAIN, 0.0);
     struck.reset();
     let reference = peak(&render(&mut struck, 9600, &[(0, NoteEvent::On { key: 60, velocity: 1.0 })]));
-    for (_, body, name, low, high) in PROFILES {
+    let mut within = true;
+    for (body, name, low, high) in BODIES {
         for (model, model_name) in MODELS {
-            let levels: Vec<f32> = [low, 60, high]
+            let levels: Vec<f32> = [low, (low + high) / 2, high]
                 .into_iter()
                 .map(|key| {
                     peak(&render(&mut bar(rate, body, model, 0.5), 9600, &[(0, NoteEvent::On { key, velocity: 1.0 })]))
                 })
                 .collect();
-            println!("level {name} {model_name}: peaks at keys {low}, 60, {high} = {levels:?} (Struck {reference:.3})");
-            assert!(levels.iter().all(|l| *l > reference * 0.1 && *l < reference * 4.0));
+            println!(
+                "level {name} {model_name}: peaks at keys {low}, middle, {high} = {levels:?} (Struck {reference:.3})"
+            );
+            within &= levels.iter().all(|l| *l > reference * 0.1 && *l < reference * 4.0);
         }
     }
+    assert!(within, "a body's level is outside a tenth to four times Struck's");
 }

@@ -5,6 +5,8 @@
 
 #[path = "editor.rs"]
 mod editor;
+#[path = "editor_bodies.rs"]
+mod editor_bodies;
 
 use suhina_device_sdk::{
     builtin::Layout,
@@ -63,6 +65,43 @@ impl Canvas {
         self.ui.style = Some(ARTWORK_STYLE.into());
     }
 
+    /// More of the canvas's style sheet, after what it has.
+    pub(super) fn style(&mut self, sheet: &str) {
+        let style = self.ui.style.take().unwrap_or_default();
+        self.ui.style = Some(if style.is_empty() { sheet.into() } else { format!("{style}\n{sheet}") });
+    }
+
+    /// A dot dragged along a drawing that sets parameter `id`, its minimum at the right of
+    /// `bounds` and its maximum at the left, drawn as a short line across `span` (canvas y).
+    pub(super) fn handle(
+        &mut self,
+        id: &str,
+        name: &str,
+        bounds: [f32; 4],
+        span: [f32; 2],
+        color: [u8; 4],
+        tooltip: &str,
+    ) {
+        self.add(
+            name,
+            Widget::Handle {
+                color,
+                span: Some([span[0].into(), span[1].into()]),
+                offset: None,
+                dot: true,
+                relative: false,
+                hollow: false,
+            },
+            bounds,
+            Some(id),
+            UiGesture::Position,
+            tooltip,
+        );
+        if let Some(binding) = self.ui.controls.last_mut().and_then(|control| control.x.as_mut()) {
+            binding.drag_scale = -1.0;
+        }
+    }
+
     pub(super) fn page(&mut self, page: u16) {
         self.page = Some(page);
     }
@@ -113,6 +152,32 @@ impl Canvas {
             .map(|revision| revision_is(*revision))
             .reduce(|a, b| UiValue::Expression(Box::new(UiExpression::Add { a, b })));
         self.when(controls, &condition.unwrap_or_else(|| 0.0_f32.into()));
+    }
+
+    /// The last `controls` controls show only while parameter `id` has one of `values`.
+    pub(super) fn only_values(&mut self, id: &str, values: &[u16], controls: usize) {
+        let condition = values
+            .iter()
+            .map(|value| value_is(id, *value))
+            .reduce(|a, b| UiValue::Expression(Box::new(UiExpression::Add { a, b })));
+        self.when(controls, &condition.unwrap_or_else(|| 0.0_f32.into()));
+    }
+
+    /// A segmented button: pressing it sets parameter `id` to `value`.
+    pub(super) fn choice(&mut self, id: &str, value: u16, label: &str, bounds: [f32; 4], tooltip: &str) {
+        self.add(
+            label,
+            Widget::Button { label: label.into(), off_label: None, indicator: false },
+            bounds,
+            Some(id),
+            UiGesture::Set(value),
+            tooltip,
+        );
+    }
+
+    /// A drawing, its coordinates relative to `bounds`' top left.
+    pub(super) fn graphic(&mut self, name: &str, drawing: Vec<Draw>, bounds: [f32; 4]) {
+        self.add(name, Widget::Graphic { drawing }, bounds, None, UiGesture::Drag, "");
     }
 
     /// Show the last `controls` controls only while `condition` holds, on their page.
@@ -257,10 +322,11 @@ impl Canvas {
 }
 
 fn revision_is(revision: u16) -> UiValue {
-    UiValue::Expression(Box::new(UiExpression::Equal {
-        a: UiValue::parameter("model_revision", false),
-        b: f32::from(revision).into(),
-    }))
+    value_is("model_revision", revision)
+}
+
+fn value_is(id: &str, value: u16) -> UiValue {
+    UiValue::Expression(Box::new(UiExpression::Equal { a: UiValue::parameter(id, false), b: f32::from(value).into() }))
 }
 
 /// Two presentations of the same native parameter set, without a second sound-state path.

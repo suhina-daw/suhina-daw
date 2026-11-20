@@ -6,13 +6,31 @@
 use super::Canvas;
 use suhina_device_sdk::ui::{DeviceUi, UiGesture, Widget};
 
-/// The revisions whose Model page shows Strike position and the bar controls.
-const STRUCK_OR_BARS: &[u16] = &[1, 3];
-
+/// The editor's look over its light artwork: see-through cards instead of solid sections,
+/// pill buttons, a dark lit button and a brass accent. Dark themes keep the theme's own look.
+const EDITOR_STYLE: &str = "@media (prefers-color-scheme: light) {
+  device-section { background-color: rgba(255, 250, 242, 0.55); color: #8a6a4c;
+    border-color: rgba(110, 78, 48, 0.22); border-width: 1px; radius: 12px;
+    box-shadow: 0 6px 18px rgba(90, 60, 30, 0.12); }
+  button { image: none; background-color: rgba(255, 252, 246, 0.62); color: #4b3a2c;
+    border-color: rgba(110, 78, 48, 0.25); border-width: 1px; radius: 15px; accent-color: #d9a066; }
+  dropdown { background-color: rgba(255, 252, 246, 0.62); color: #4b3a2c;
+    border-color: rgba(110, 78, 48, 0.25); border-width: 1px; radius: 8px; }
+  button:hover { background-color: rgba(255, 252, 246, 0.92); }
+  button[checked] { background-color: #3b2b22; border-color: #3b2b22; color: #fbf1e3; }
+  knob { color: #6b5442; accent-color: #b8742f; }
+  knob-body { color: #fffaf3; }
+  knob-ring { background-color: rgba(110, 78, 48, 0.16); }
+  knob-pointer { color: #3b2b22; }
+  label { color: #5b4636; }
+}";
+/// The revisions whose Model page shows #1599's struck-body group: a profile or a fitted set.
+const PROFILE_OR_FITTED: &[u16] = &[2, 4];
 pub(super) fn canvas() -> DeviceUi {
     // 40 points below the controls keep the artwork's logo clear of them.
     let mut ui = Canvas::new([880.0, 560.0]);
     ui.artwork(super::EDITOR_LIGHT);
+    ui.style(EDITOR_STYLE);
     ui.title("Instrument", [24.0, 16.0, 400.0, 34.0], 28.0);
     ui.label("Experimental struck modal · revision 1", [24.0, 54.0, 450.0, 20.0]);
     ui.only_revision(1);
@@ -86,31 +104,28 @@ pub(super) fn canvas() -> DeviceUi {
 
     ui.page(1);
     ui.group("STRUCK BODY", [24.0, 144.0, 832.0, 180.0]);
+    ui.only_revisions(PROFILE_OR_FITTED, 1);
     ui.dial(
         "body_decay",
         "Body decay",
         [54.0, 170.0, 150.0, 140.0],
         "Struck: fundamental T60. Profile, fitted model and bars: scales their decays relative to 2 seconds. Next strike only",
     );
+    ui.only_revisions(PROFILE_OR_FITTED, 1);
     ui.dial(
         "brightness",
         "Brightness",
         [248.0, 170.0, 150.0, 140.0],
         "Energy in the higher resonances; affects the next strike",
     );
+    ui.only_revisions(PROFILE_OR_FITTED, 1);
     ui.dial(
         "structure",
         "Structure",
         [446.0, 170.0, 150.0, 140.0],
         "Stretch the original or accepted resonance frequencies; affects the next strike",
     );
-    ui.dial(
-        "strike",
-        "Strike position",
-        [646.0, 170.0, 150.0, 140.0],
-        "Excitation position along the resonant body; on a bar, from its centre (lowest) to its end. Next strike",
-    );
-    ui.only_revisions(STRUCK_OR_BARS, 1);
+    ui.only_revisions(PROFILE_OR_FITTED, 1);
     ui.dial(
         "strike",
         "Strike colour",
@@ -144,6 +159,9 @@ pub(super) fn canvas() -> DeviceUi {
         ui.dial(id, name, [54.0 + i as f32 * 196.0, 350.0, 110.0, 92.0], hint);
         ui.only_revision(4);
     }
+    // Struck and the bar and tine bodies (revision 3, and 1 read as 3); a profile or fitted set
+    // ignores them.
+    super::editor_bodies::body_page(&mut ui);
     ui.label("Modes per voice", [40.0, 456.0, 196.0, 20.0]);
     ui.menu(
         "quality",
@@ -152,28 +170,6 @@ pub(super) fn canvas() -> DeviceUi {
         "8 or 16 resonances per modal voice; fitted models: 64 or 128 sines",
     );
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 456.0, 440.0, 20.0]);
-    // Bar bodies and their mallet (revision 3, and 1 read as 3); a profile or fitted set ignores them.
-    ui.group("BAR BODY", [24.0, 334.0, 832.0, 112.0]);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.label("Body", [44.0, 354.0, 150.0, 18.0]);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.menu("body", "Body", [44.0, 376.0, 150.0, 28.0], "Struck, or an experimental Marimba or Vibraphone bar");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.label("Mallet", [206.0, 354.0, 150.0, 18.0]);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.menu(
-        "mallet_model",
-        "Mallet model",
-        [206.0, 376.0, 150.0, 28.0],
-        "Bars: Contact simulates the mallet against the moving bar; Pulse adds a fixed force pulse",
-    );
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.number("mallet_hardness", "Hardness", 368.0, 354.0, 150.0);
-    ui.only_revisions(STRUCK_OR_BARS, 2);
-    ui.number("resonator", "Resonator", 530.0, 354.0, 150.0);
-    ui.only_revisions(STRUCK_OR_BARS, 2);
-    ui.number("stereo_width", "Stereo width", 692.0, 354.0, 150.0);
-    ui.only_revisions(STRUCK_OR_BARS, 2);
     ui.label(
         "An experimental resonator or a model fitted from recordings, not a calibrated instrument. Changes shape the next strike.",
         [24.0, 490.0, 832.0, 24.0],

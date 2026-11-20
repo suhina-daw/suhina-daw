@@ -196,6 +196,24 @@ Peak of a velocity-1 stroke at default controls (Struck at middle C: 0.173): Mar
 Contact 0.16 / 0.14 / 0.06 at keys 36 / 60 / 96, with Pulse 0.08 / 0.08 / 0.03; Vibraphone bar with
 Contact 0.22 / 0.23 / 0.16 at keys 53 / 60 / 89, with Pulse 0.12 / 0.13 / 0.09.
 
+The later bodies were measured at the bottom, middle and top of their ranges and given a level
+factor to land beside the first two: Xylophone bar (0.6) with Contact 0.21 / 0.16 / 0.04 at keys
+65 / 86 / 108, with Pulse 0.10 / 0.07 / 0.02; Glockenspiel bar (3) with Contact 0.24 / 0.14 / 0.07
+at keys 79 / 93 / 108, with Pulse 0.16 / 0.08 / 0.03; Kalimba tine (0.6), plucked whichever mallet
+model is chosen, 0.16 / 0.19 / 0.12 at keys 60 / 74 / 88.
+
+## More bodies and shaping
+
+After the first listening the maintainer asked for more bodies and for controls that edit a body
+rather than only choose one. Revision 3 now also has Xylophone bar, Glockenspiel bar and Kalimba
+tine, and four shaping controls, Tuning, Ring, Torsion and Mallet weight, neutral at their
+defaults, so a project made before them sounds the same (`docs/spec/instrument.md` › More bodies,
+The tine, Shaping controls). The kalimba needed two pieces of shared DSP in `crates/dsp/src/bar.rs`:
+clamped-free mode ratios and shapes, and a pluck that starts the tine from a static deflection at
+rest. Its box resonance is a fixed-frequency tube driven by the whole tine, which the pitch wheel
+leaves in place. The Model page now shows the bodies as buttons, a drawing of the bar or tine whose
+contact point moves with Strike, and the controls in Body, Mallet and Space groups.
+
 ## First listening and real use
 
 The maintainer played the Windows test build of the head before the tubes (`d733d20`) on an ASIO
@@ -222,6 +240,10 @@ longer step the output.
 - Strike position measures from the centre with uniform-bar shapes; undercut bars' shapes and
   centre-versus-edge strokes need references.
 - Dead strokes, the damper pedal and the motor are not modelled.
+- The glockenspiel's decay law, the kalimba's decay law, box quality and box frequency are
+  assumptions; recordings of either instrument would settle them. The kalimba's tines are thin
+  plates whose second overtone (McNeil & Mitran: about 14 times the fundamental) varies from tine
+  to tine.
 
 ## Sources
 

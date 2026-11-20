@@ -124,30 +124,43 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
     let layout = panel::layout();
     let ui = layout.expanded.as_ref().unwrap();
     for revision in [1.0, 2.0, 3.0, 4.0] {
-        let visible = |name: &str| {
-            ui.controls.iter().any(|control| {
-                control.name == name
-                    && control.visible_when.as_ref().is_none_or(|value| {
-                        value.evaluate(&|id, _, _| match id {
-                            "model_revision" => revision,
-                            "#page" => 1.0,
-                            _ => 0.0,
-                        }) > 0.0
-                    })
-            })
-        };
-        assert_eq!(visible("Experimental struck modal · revision 1"), revision == 1.0);
-        assert_eq!(visible("Experimental modal profile · revision 2"), revision == 2.0);
-        assert_eq!(visible("Experimental struck and bar bodies · revision 3"), revision == 3.0);
-        assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
-        assert_eq!(visible("Strike position"), revision == 1.0 || revision == 3.0);
-        assert_eq!(visible("Strike colour"), revision == 2.0 || revision == 4.0);
-        for bar_control in ["Body", "Mallet model", "Hardness", "Resonator"] {
-            assert_eq!(
-                visible(bar_control),
-                revision == 1.0 || revision == 3.0,
-                "{bar_control} at revision {revision}"
-            );
+        for body in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] {
+            let visible = |name: &str| {
+                ui.controls.iter().any(|control| {
+                    control.name == name
+                        && control.visible_when.as_ref().is_none_or(|value| {
+                            value.evaluate(&|id, _, _| match id {
+                                "model_revision" => revision,
+                                "body" => body,
+                                "#page" => 1.0,
+                                _ => 0.0,
+                            }) > 0.0
+                        })
+                })
+            };
+            let bodies = revision == 1.0 || revision == 3.0;
+            let bar = bodies && body > 0.0;
+            assert_eq!(visible("Experimental struck modal · revision 1"), revision == 1.0);
+            assert_eq!(visible("Experimental modal profile · revision 2"), revision == 2.0);
+            assert_eq!(visible("Experimental struck and bar bodies · revision 3"), revision == 3.0);
+            assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
+            assert_eq!(visible("Strike"), bodies);
+            assert_eq!(visible("Strike colour"), !bodies);
+            assert_eq!(visible("Body decay"), !bodies);
+            assert_eq!(visible("Structure"), !bodies || body == 0.0, "Structure at {revision}, body {body}");
+            for button in ["Struck", "Marimba", "Vibraphone", "Xylophone", "Glockenspiel", "Kalimba", "Decay"] {
+                assert_eq!(visible(button), bodies, "{button} at revision {revision}");
+            }
+            for bar_control in ["Tuning", "Ring", "Hardness", "Weight", "Resonator", "Width"] {
+                assert_eq!(visible(bar_control), bar, "{bar_control} at revision {revision}, body {body}");
+            }
+            // A tine is plucked and has no torsional modes: no mallet model and no Torsion.
+            assert_eq!(visible("Contact"), bar && body != 5.0);
+            assert_eq!(visible("Torsion"), bar && body != 5.0);
+            assert_eq!(visible("MALLET"), bar && body != 5.0);
+            assert_eq!(visible("FINGER"), bodies && body == 5.0);
+            assert_eq!(visible("Tine"), bodies && body == 5.0);
+            assert_eq!(visible("Bar"), bar && body != 5.0);
         }
     }
     assert!(layout.panel(&INFO).is_ok());

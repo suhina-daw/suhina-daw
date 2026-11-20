@@ -21,8 +21,9 @@ Play, Model and Sample pages; navigation is local view state, not an audio contr
 ## Sound and controls
 
 Source selects Modal, Sample or Hybrid. Body selects what Modal plays: **Struck** (the struck
-modal body of revision 1, described in the rest of this section) or one of the two experimental
-bar bodies of revision 3, **Marimba bar** and **Vibraphone bar** ([Bar bodies](#bar-bodies-revision-3)).
+modal body of revision 1, described in the rest of this section) or one of the experimental
+bodies of revision 3: **Marimba bar**, **Vibraphone bar**, **Xylophone bar**, **Glockenspiel bar**
+and **Kalimba tine** ([Bar bodies](#bar-bodies-revision-3)).
 Struck is an original mathematical
 prototype, not a calibrated piano, string or orchestral instrument. Sixteen damped modes per
 voice describe a struck resonant body. Sixteen voices bound its work and memory. A key sets the
@@ -204,6 +205,52 @@ equal-power law scaled to unity at the centre, where `w` is Stereo width (0 to 1
 50 %). The pan is fixed when the bar takes its voice. Struck, accepted profiles and fitted sets stay
 in the centre on both channels, as before.
 
+**More bodies.** Body's later entries keep the earlier ones' values (Struck 0, Marimba bar 1,
+Vibraphone bar 2) and add Xylophone bar (3), Glockenspiel bar (4) and Kalimba tine (5). Unless
+stated here, they behave as Marimba bar.
+
+| Body | Tuned targets (register weight) | Torsion `T_1`, `T_2` | Decay law, `T60(f)` at Decay 2 s | Tube or box | `M_ref` | Hardness added | Level |
+|---|---|---|---|---|---|---|---|
+| Xylophone bar | `T_2 = 3`, `T_3 = 6` (full at every key) | 1.98, 4.07 | the rosewood law | tube as Marimba bar | 0.156 kg | +0.3 | 0.6 |
+| Glockenspiel bar | measured ratios 2.71, 5.15, 8.43, 12.21 for modes 2 to 5, uniform beyond | 3.57, 7.07 | `4 s * (1047 Hz / f)^1.5` | none | 0.7 kg | +0.4 | 3 |
+| Kalimba tine | `T_2 = 5.63`, `T_3 = 14`, on clamped-free modes | none | `2.5 s * (261.63 Hz / f)` | box at 480 Hz, quality 10, steady gain 1, no added damping | 0.008 kg | 0 | 0.6 |
+
+Level multiplies the body's output weights and mallet noise beside the bar mass law (Marimba bar
+and Vibraphone bar are 1); it is measured so that each body's loudest key peaks between a tenth and
+four times Struck's at full velocity, as for the first two bodies.
+
+The xylophone's 1 : 3 : 6 is a thinned-bar profile (Gough 2007, after Fletcher & Rossing), its
+torsional ratios those of the untuned rosewood bar Rucz et al. measured, and its bar mass theirs
+(135 g at F4). The glockenspiel's bars are not tuned beyond the fundamental; its ratios are those
+of a measured C6 bar (Gough 2007, after Fletcher & Rossing), and its decay law an assumption chosen
+so that only the first two partials still sound after 0.2 s, as Gough describes. Kalimba tine's
+ratios are the mean measured first overtone of a five-tine kalimba (Chapman 2006, 5.3 to 5.9, where
+an ideal clamped-free tine gives 6.27) and the second prominent overtone of an mbira (McNeil &
+Mitran 2008); its decay law and box quality are assumptions, and its box frequency comes from a
+builder's figure of 440 to 520 Hz (low confidence).
+
+**The tine.** Kalimba tine's modes have clamped-free shapes, `phi_n(x)` 0 at the clamp and 1 or -1
+at the free end, where `x` is `1 - 0.5 * p` of the tine's length from the clamp for Strike position
+`p`. A tine is plucked, not struck: the finger bends it statically at `x` by `5e-4 s * v` (2 mm
+at full velocity) and lets go, so it starts from that deflection at rest, each mode's share
+divided by `sqrt(1 + (omega_n * t)^2)`, where `t` is the mallet's contact time at the stroke's
+speed (a softer finger rounds off the higher modes). A pluck adds to what the tine already does
+and has no mallet noise. The box resonance sits at its fixed frequency, driven by the tine's whole
+weighted output, and does not follow the pitch wheel. Kalimba tine rings freely like Marimba bar.
+
+**Shaping controls.** Every bar body (not Struck) has four more controls, neutral at their
+defaults, that shape the selected body rather than replace it:
+
+- **Tuning** (0 to 100 %, default 100 %) multiplies every tuned target's register weight, so 0 %
+  leaves the bar's or tine's natural ratios (uniform free-free, or ideal clamped-free).
+- **Ring** (0 to 100 %, default 50 %) multiplies each mode's time to lose 60 dB by
+  `(f_n / f1)^(ring - 0.5)`: higher settings let the upper modes ring longer, lower ones damp them.
+- **Torsion** (0 to 100 %, default 50 %) scales the torsional modes' output weight by `2 * torsion`.
+- **Mallet weight** (0 to 100 %, default 50 %) sets the mallet's mass to `25 g * 2^(2 * weight - 1)`
+  (12.5 to 50 g; Rucz et al. used 35 g, McAdams et al. 12 g).
+
+A body's added hardness is added to Mallet hardness after the graded set, capped at 100 %.
+
 **Coefficient changes.** When a re-strike, damping or the pitch wheel changes a ringing bar's
 frequencies, decays or weights, the step this would make in its output fades out linearly over
 2 ms instead of sounding as a click.
@@ -242,12 +289,13 @@ an absolute fallback, and the existing collect/missing-file/relink workflow appl
 
 All sound controls are stored as stable native parameter IDs. `model_revision` is metadata in
 the existing native parameter state, hidden from the stock panel; a newly added Instrument stores
-3. Revision 3 adds Body, Mallet hardness, Mallet model, Resonator and Stereo width, and its Struck body is revision 1's
+3. Revision 3 adds Body, Mallet hardness, Mallet model, Resonator, Stereo width, Tuning, Ring,
+Torsion and Mallet weight, and its Struck body is revision 1's
 renderer unchanged. A stored 1 is therefore read as revision 3: a revision-1 project has no Body
 value, so it opens on Struck with the new controls at their defaults and renders exactly as
 before. A project without a stored revision is read as revision 1. Revisions 2 and 4 render an
 accepted profile or a [fitted model set](instrument-modal-fitting.md) and ignore Body, Mallet
-hardness, Mallet model, Resonator and Stereo width; adopting a profile stores 2, adopting a set stores 4.
+hardness, Mallet model, Resonator, Stereo width, Tuning, Ring, Torsion and Mallet weight; adopting a profile stores 2, adopting a set stores 4.
 The device never rewrites the stored value, so an older build that knows only revisions 1 and 2
 silences a revision-3 project's modal body, but plays Struck for a revision-1 project in which a
 bar body was chosen later. Unknown
@@ -316,6 +364,9 @@ implementation workstreams that must use this same core.
 - Bar modes, mode shapes and mallet contact: [F11 research](../research/instrument-f11-mallets.md)
   and its sources (Fletcher & Rossing; Chaigne & Doutaut 1997; Hunt & Crossley 1975; Avanzini &
   Rocchesso 2001).
+- More bodies: C. Gough, "Musical Acoustics", ch. 15 of the Springer Handbook of Acoustics
+  (2007), pp. 649–651; D. M. F. Chapman, Canadian Acoustics 34(3):26–27, 2006; L. McNeil,
+  S. Mitran, J. Acoust. Soc. Am. 123(2):1169–1178, 2008.
 - Values of the bar bodies: P. Rucz et al., J. Acoust. Soc. Am. 149(5):3200–3212, 2021 (bar and resonator decay, resonator gain and damping, rosewood loss factor,
   mallet contact times); M. Soares, V. Debut, J. Antunes, 53º Congreso Español de Acústica 2022
   (tube damping); L. H. Stevens, "The Acoustics of Resonators" (resonator decay in the low

@@ -15,7 +15,7 @@ use suhina_device_api::{
 use suhina_device_sdk::sample_instrument::{self, Sampler};
 use suhina_dsp::{
     Smoother,
-    bar::{Excitation, StruckBar},
+    bar::StruckBar,
     envelope::{LinearEnvelope, LinearEnvelopeSettings},
     modal::{
         ModalBank, Mode,
@@ -75,7 +75,11 @@ pub mod param {
     pub const MALLET_MODEL: usize = 30;
     pub const RESONATOR: usize = 31;
     pub const STEREO_WIDTH: usize = 32;
-    pub const COUNT: usize = 33;
+    pub const TUNING: usize = 33;
+    pub const RING: usize = 34;
+    pub const TORSION: usize = 35;
+    pub const MALLET_WEIGHT: usize = 36;
+    pub const COUNT: usize = 37;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -111,11 +115,20 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("damper_noise", "Damper noise", (0.0, 1.0), 0.2, Unit::Percent),
     control("pedal_resonance", "Pedal resonance", (0.0, 1.0), 0.3, Unit::Percent),
     ParamInfo::toggle("soft_pedal", "Soft pedal", false),
-    ParamInfo::choice("body", "Body", &["Struck", "Marimba bar", "Vibraphone bar"], 0),
+    ParamInfo::choice(
+        "body",
+        "Body",
+        &["Struck", "Marimba bar", "Vibraphone bar", "Xylophone bar", "Glockenspiel bar", "Kalimba tine"],
+        0,
+    ),
     control("mallet_hardness", "Mallet hardness", (0.0, 1.0), 0.5, Unit::Percent),
     ParamInfo::choice("mallet_model", "Mallet model", &["Contact", "Pulse"], 0),
     control("resonator", "Resonator", (0.0, 1.0), 1.0, Unit::Percent),
     control("stereo_width", "Stereo width", (0.0, 1.0), 0.5, Unit::Percent),
+    control("tuning", "Tuning", (0.0, 1.0), 1.0, Unit::Percent),
+    control("ring", "Ring", (0.0, 1.0), 0.5, Unit::Percent),
+    control("torsion", "Torsion", (0.0, 1.0), 0.5, Unit::Percent),
+    control("mallet_weight", "Mallet weight", (0.0, 1.0), 0.5, Unit::Percent),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
@@ -432,10 +445,15 @@ impl Instrument {
             self.params.get(param::DECAY),
             self.params.get(param::BRIGHTNESS),
             self.params.get(param::STRIKE),
+            bars::Shaping {
+                tuning: self.params.get(param::TUNING),
+                ring: self.params.get(param::RING),
+                torsion: self.params.get(param::TORSION),
+            },
         );
-        let excitation =
-            if self.params.get(param::MALLET_MODEL) < 0.5 { Excitation::Contact } else { Excitation::Pulse };
-        let mallet = bars::mallet(bars::graded_hardness(key, self.params.get(param::HARDNESS)));
+        let excitation = profile.excitation(self.params.get(param::MALLET_MODEL));
+        let hardness = bars::graded_hardness(key, self.params.get(param::HARDNESS)) + profile.added_hardness();
+        let mallet = bars::mallet(hardness.min(1.0), self.params.get(param::MALLET_WEIGHT));
         let same = self
             .voices
             .iter()

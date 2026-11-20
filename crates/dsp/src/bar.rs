@@ -52,6 +52,50 @@ pub fn beta(n: usize) -> f64 {
     }
 }
 
+/// The first eight roots of `cos(b) cosh(b) = -1`, a clamped-free beam (a tine); higher ones are
+/// `(2n - 1) pi / 2` to double precision.
+const TINE_BETA: [f64; 8] = [
+    1.875_104_068_711_961,
+    4.694_091_132_974_175,
+    7.854_757_438_237_613,
+    10.995_540_734_875_467,
+    14.137_168_391_046_47,
+    17.278_759_532_088_237,
+    20.420_352_251_041_25,
+    23.561_944_901_806_445,
+];
+
+/// The `n`-th clamped-free wavenumber (times the tine's length), `n` from one; zero for `n == 0`.
+pub fn tine_beta(n: usize) -> f64 {
+    match n {
+        0 => 0.0,
+        n => TINE_BETA.get(n - 1).copied().unwrap_or((2.0 * n as f64 - 1.0) * PI / 2.0),
+    }
+}
+
+/// A clamped-free tine's frequency ratio of mode `n` to mode 1 (1 : 6.27 : 17.55 …).
+pub fn tine_ratio(n: usize) -> f64 {
+    (tine_beta(n) / TINE_BETA[0]).powi(2)
+}
+
+/// Mode `n`'s shape at `x` (0 at the clamp, 1 at the free end), normalised to ±1 at the free end,
+/// in a form without the cancellation of `cosh - sinh` for high modes. Zero for `n == 0` or a
+/// non-finite `x`; `x` is clamped to the tine.
+pub fn tine_shape(n: usize, x: f64) -> f64 {
+    if n == 0 || !x.is_finite() {
+        return 0.0;
+    }
+    let b = tine_beta(n);
+    let x = x.clamp(0.0, 1.0);
+    // s = (sinh b - sin b) / (cosh b + cos b); 1 - s without cancellation.
+    let one_minus_s = ((-b).exp() + b.cos() + b.sin()) / (b.cosh() + b.cos());
+    let s = 1.0 - one_minus_s;
+    let z = b * x;
+    // cosh z - s sinh z = e^-z (1 + s) / 2 + e^z (1 - s) / 2.
+    let hyperbolic = (-z).exp() * (1.0 + s) / 2.0 + z.exp() * one_minus_s / 2.0;
+    (hyperbolic - z.cos() + s * z.sin()) / 2.0
+}
+
 /// The uniform free-free bar's frequency ratio of mode `n` to mode 1: `(beta_n / beta_1)^2`.
 pub fn uniform_ratio(n: usize) -> f64 {
     (beta(n) / BETA[0]).powi(2)
@@ -173,6 +217,10 @@ pub struct Tube {
     pub quality: f64,
     /// The first mode's added decay at full amount, as a time to lose 60 dB.
     pub radiation_seconds: f64,
+    /// `None`: a tube tuned to the first mode and driven by it. `Some(f)`: a body resonance at a
+    /// fixed `f` (a box under a tine), driven by the whole bar's weighted output and left where it
+    /// is by the pitch wheel.
+    pub frequency_hz: Option<f64>,
 }
 
 /// How a stroke's force reaches the modes.
@@ -182,7 +230,14 @@ pub enum Excitation {
     Contact,
     /// Linear half-sine force pulse, added to what the bar already does.
     Pulse,
+    /// A pluck: the finger bends the bar statically at the contact point and lets go; the bar
+    /// starts from that deflection at rest, added to what it already does. A softer finger (a
+    /// longer contact time of the mallet) rounds off the higher modes.
+    Pluck,
 }
+
+/// Static deflection of a pluck per metre per second of the stroke's speed.
+pub const PLUCK_SECONDS: f64 = 0.0005;
 
 #[derive(Debug, Clone, Copy, Default)]
 struct Complex {
@@ -274,6 +329,8 @@ struct TubeState {
     output: f64,
     /// The input gain `b` of `z' = s z + b v`, from the steady ratio and the quality factor.
     drive: f64,
+    /// A fixed body resonance driven by the whole bar, not the first mode.
+    whole_bar: bool,
 }
 
 impl TubeState {
@@ -481,8 +538,17 @@ impl<const N: usize> StruckBar<N> {
         first.pole = first.s().scale(1.0 / rate).exp();
         self.radiation = radiation;
         let quality = spec.quality.clamp(0.5, 1000.0);
-        self.tube.omega = first.omega;
-        self.tube.sigma = first.omega / (2.0 * quality);
+        let omega = match spec.frequency_hz {
+            Some(hz) if hz.is_finite() && hz > 0.0 && hz < rate * 0.45 => TAU * hz,
+            Some(_) => {
+                self.tube = TubeState::default();
+                return;
+            }
+            None => first.omega,
+        };
+        self.tube.omega = omega;
+        self.tube.whole_bar = spec.frequency_hz.is_some();
+        self.tube.sigma = omega / (2.0 * quality);
         self.tube.output = first.output;
         // At resonance the steady velocity is `drive * Q` times the driving mode's.
         self.tube.drive = spec.gain.min(100.0) * amount / quality;
@@ -597,6 +663,28 @@ impl<const N: usize> StruckBar<N> {
                 self.stroke =
                     Stroke::Contact { mallet, position: surface, velocity: speed, touched: false, steps, samples: 0 };
             }
+            Excitation::Pluck => {
+                // The bar's compliance at the contact point, from its sounding modes.
+                let compliance: f64 = self
+                    .modes
+                    .iter()
+                    .filter(|mode| mode.enabled())
+                    .map(|mode| mode.shape * mode.shape / (mode.mass * (mode.sigma.powi(2) + mode.omega.powi(2))))
+                    .sum();
+                if !compliance.is_finite() || compliance <= 0.0 {
+                    return;
+                }
+                let force = speed * PLUCK_SECONDS / compliance;
+                let release = mallet.contact_time(mallet.mass, speed);
+                let release = if release.is_finite() { release } else { 0.0 };
+                for mode in self.modes.iter_mut().filter(|mode| mode.enabled()) {
+                    let stiffness = mode.mass * (mode.sigma.powi(2) + mode.omega.powi(2));
+                    let displacement = force * mode.shape / stiffness / (1.0 + (mode.omega * release).powi(2)).sqrt();
+                    // At rest: the velocity Im(s z) = omega Re z - sigma Im z is zero.
+                    mode.z = mode.z.add(Complex::new(mode.sigma * displacement / mode.omega, displacement));
+                }
+                self.noise.gain = 0.0;
+            }
             Excitation::Pulse => {
                 let duration = mallet.contact_time(reduced, speed);
                 if !duration.is_finite() || duration <= 0.0 {
@@ -627,7 +715,11 @@ impl<const N: usize> StruckBar<N> {
             self.declick = if next.signum() == self.declick.signum() { next } else { 0.0 };
         }
         if self.tube.omega > 0.0 {
-            let drive = self.modes.first().map_or(0.0, ModeState::velocity);
+            let drive = if self.tube.whole_bar && self.tube.output != 0.0 {
+                self.modes.iter().map(|mode| mode.output * mode.velocity()).sum::<f64>() / self.tube.output
+            } else {
+                self.modes.first().map_or(0.0, ModeState::velocity)
+            };
             self.tube.z = self.tube.pole.mul(self.tube.z).add(self.tube.gain.scale(drive));
         }
         match self.stroke {

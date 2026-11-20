@@ -7,6 +7,7 @@ last_verified: 2026-11-20
 covers:
   - devices/instrument/src/panel.rs
   - devices/instrument/src/editor.rs
+  - devices/instrument/src/editor_bodies.rs
   - crates/ui/src/detail/device_canvas.rs
 ---
 
@@ -36,16 +37,32 @@ identifies Instrument and its experimental model, with Source always available. 
   Decay, Sustain) shared by the Sample layer and fitted models, key/velocity admission ranges,
   and a **Soft pedal** switch beside the page buttons (una corda for fitted models, the same as
   controller 67 held down). Release is the damper for fitted models and the fade otherwise.
-- **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
-  describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
-  excitation control Strike colour: a creative weighting of accepted modes, not a measured
-  physical impact position. Profile adoption resets the four model controls and enables all
-  profile modes; the underlying stable parameter IDs remain the same. Revision 4 (fitted models)
-  adds a Fitted model group: Source morph, Velocity to brightness, Damper noise and Pedal
-  resonance. At revisions 1 and 3 the same place holds a Bar body group with the
-  [bar bodies'](instrument.md#bar-bodies-revision-3) controls: Body, Mallet (model), Hardness,
-  Resonator and Stereo width; revisions 2 and 4 hide them, since an accepted profile or fitted set
-  ignores them.
+- **Model:** what it shows depends on the model revision, and every control applies to the
+  next strike.
+  - Revisions 2 and 4 (an accepted profile or a fitted set) show a Struck body group: Body decay,
+    Brightness, Structure and Strike colour, a creative weighting of accepted modes, not a
+    measured physical impact position. Profile adoption resets these four controls and enables
+    all profile modes; the underlying stable parameter IDs remain the same. Revision 4 adds a
+    Fitted model group: Source morph, Velocity to brightness, Damper noise and Pedal resonance.
+  - Revisions 1 and 3 show a row of body buttons (Struck, Marimba, Vibraphone, Xylophone,
+    Glockenspiel, Kalimba; [bar bodies](instrument.md#bar-bodies-revision-3)) that set Body, the
+    one lit is the one playing. Under them a side view of the selected body: a bar (rosewood for
+    Marimba, lighter wood for Xylophone, aluminium for Vibraphone, steel for Glockenspiel) with
+    its underside arched where the body's is, on posts at its first mode's nodes, over a
+    resonator tube (felt pads for Glockenspiel), and a mallet whose head grows with Weight; or a
+    kalimba's box with the tine over its bridge and a thumb. The mallet or thumb sits at the
+    contact point, a faint dot marks the bar's mirror point, and the contact point is a handle
+    that sets Strike when dragged along the bar or tine (one undo step, like the dial). Struck
+    shows rings and a line of text in its place. Below, three groups of
+    dials: **Body** (Decay, Brightness, Strike; Structure for Struck, Tuning and Ring for a bar
+    or tine, Torsion for a bar), **Mallet** (Hardness, Weight, and Contact and Pulse buttons that
+    set Mallet model; a tine is plucked, so the group is called **Finger** and hides the buttons)
+    and **Space** (Resonator, Width).
+    Struck hides the Mallet and Space groups, which it ignores.
+  - Over the light artwork the editor's own style sheet draws the groups as see-through cards,
+    the buttons as pills (the lit one dark), the drop-downs to match, and the dials' arcs in brass;
+    a dark theme keeps its own look.
+  - Every revision shows Modes per voice.
 - **Sample:** local waveform/drop target, Root (shown as a note name, 60 is C3), Playback, source Start/End, loop Start/End,
   Attack, Decay and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.

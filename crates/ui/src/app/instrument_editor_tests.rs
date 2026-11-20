@@ -49,7 +49,7 @@ fn instrument_editor_pages_are_keyboard_accessible_view_state() {
     h.step();
     h.key_press(egui::Key::Enter);
     h.run_steps(4);
-    assert!(h.query_by_label("Strike position").is_some());
+    assert!(h.query_by_label("Strike").is_some());
     assert!(h.query_by_label("Output gain").is_none());
     h.key_press(egui::Key::Tab);
     h.step();
@@ -111,7 +111,7 @@ fn instrument_editor_pages_do_not_leak_to_another_project_and_narrow_windows_scr
     h.run_steps(4);
     h.get_by_label("Model page").click();
     h.run_steps(4);
-    assert!(h.query_by_label("Strike position").is_some());
+    assert!(h.query_by_label("Strike").is_some());
     h.state_mut().set_session(Session::new(project), &[]);
     h.state_mut().view.selected = Some(TrackId(1));
     h.state_mut().detail_open = true;
@@ -122,7 +122,7 @@ fn instrument_editor_pages_do_not_leak_to_another_project_and_narrow_windows_scr
         h.run_steps(4);
     }
     assert!(h.query_by_label("Output gain").is_some(), "same device address in a new project starts on Play");
-    assert!(h.query_by_label("Strike position").is_none());
+    assert!(h.query_by_label("Strike").is_none());
     h.set_size(Vec2::new(640.0, 600.0));
     h.run_steps(4);
     h.get_by_label("Highest velocity").focus();

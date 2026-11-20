@@ -287,7 +287,7 @@ fn coefficient_changes_on_a_ringing_bar_do_not_click() {
     for change in 0..4 {
         let mut bar = StruckBar::<8>::default();
         bar.set_modes(48000.0, &modes);
-        bar.set_tube(Some(Tube { amount: 1.0, gain: 2.0, quality: 40.0, radiation_seconds: 1.2 }));
+        bar.set_tube(Some(Tube { amount: 1.0, gain: 2.0, quality: 40.0, radiation_seconds: 1.2, frequency_hz: None }));
         bar.strike(Excitation::Pulse, soft(), 2.0);
         let mut before: Vec<f32> = (0..2400).map(|_| bar.next_sample()).collect();
         // Change where the output is large, so a step there would be a loud click.
@@ -324,7 +324,7 @@ fn a_tube_adds_twice_its_amount_of_the_first_mode_once_built_up() {
     let render = |amount: f64| {
         let mut bar = StruckBar::<1>::default();
         bar.set_modes(48000.0, &mode);
-        bar.set_tube(Some(Tube { amount, gain: 2.0, quality: 40.0, radiation_seconds: 600.0 }));
+        bar.set_tube(Some(Tube { amount, gain: 2.0, quality: 40.0, radiation_seconds: 600.0, frequency_hz: None }));
         bar.strike(Excitation::Pulse, soft(), 2.0);
         let signal: Vec<f32> = (0..24000).map(|_| bar.next_sample()).collect();
         signal[14400..19200].iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt()
@@ -338,7 +338,7 @@ fn a_tube_adds_twice_its_amount_of_the_first_mode_once_built_up() {
     let mut zero = StruckBar::<1>::default();
     plain.set_modes(48000.0, &mode);
     zero.set_modes(48000.0, &mode);
-    zero.set_tube(Some(Tube { amount: 0.0, gain: 2.0, quality: 40.0, radiation_seconds: 1.0 }));
+    zero.set_tube(Some(Tube { amount: 0.0, gain: 2.0, quality: 40.0, radiation_seconds: 1.0, frequency_hz: None }));
     plain.strike(Excitation::Contact, hard(), 3.0);
     zero.strike(Excitation::Contact, hard(), 3.0);
     for _ in 0..4800 {
@@ -363,13 +363,14 @@ fn a_tube_shortens_the_first_mode_and_stays_bounded() {
         (bar.energy(), peak)
     };
     let (free, free_peak) = energy(None);
-    let (tubed, tubed_peak) = energy(Some(Tube { amount: 1.0, gain: 4.0, quality: 40.0, radiation_seconds: 1.2 }));
+    let (tubed, tubed_peak) =
+        energy(Some(Tube { amount: 1.0, gain: 4.0, quality: 40.0, radiation_seconds: 1.2, frequency_hz: None }));
     assert!(tubed < free * 0.5, "the tube draws energy from the bar: {tubed} vs {free}");
     assert!(tubed_peak < free_peak * 4.0);
     for tube in [
-        Tube { amount: f64::NAN, gain: 4.0, quality: 40.0, radiation_seconds: 1.0 },
-        Tube { amount: 1e9, gain: 1e9, quality: 1e-9, radiation_seconds: 1e-9 },
-        Tube { amount: 1.0, gain: f64::NAN, quality: f64::INFINITY, radiation_seconds: -1.0 },
+        Tube { amount: f64::NAN, gain: 4.0, quality: 40.0, radiation_seconds: 1.0, frequency_hz: None },
+        Tube { amount: 1e9, gain: 1e9, quality: 1e-9, radiation_seconds: 1e-9, frequency_hz: None },
+        Tube { amount: 1.0, gain: f64::NAN, quality: f64::INFINITY, radiation_seconds: -1.0, frequency_hz: None },
     ] {
         let mut bar = StruckBar::<4>::default();
         bar.set_modes(22050.0, &modes);
@@ -459,4 +460,99 @@ fn harder_and_faster_strokes_knock_louder() {
             assert!(bar.next_sample().is_finite());
         }
     }
+}
+
+#[test]
+fn tine_shapes_are_clamped_normalised_and_orthogonal() {
+    assert!((tine_ratio(2) - 6.2669).abs() < 1e-3);
+    assert!((tine_ratio(3) - 17.5475).abs() < 1e-3);
+    for n in 1..=12 {
+        assert!(tine_shape(n, 0.0).abs() < 1e-9, "mode {n} is clamped");
+        assert!((tine_shape(n, 1.0).abs() - 1.0).abs() < 1e-9, "mode {n} at the free end");
+    }
+    let integral = |f: &dyn Fn(f64) -> f64| (0..20000).map(|i| f((i as f64 + 0.5) / 20000.0)).sum::<f64>() / 20000.0;
+    for m in 1..=8 {
+        for n in m..=8 {
+            let value = integral(&|x| tine_shape(m, x) * tine_shape(n, x));
+            let expected = if m == n { 0.25 } else { 0.0 };
+            assert!((value - expected).abs() < 1e-5, "modes {m} and {n}: {value}");
+        }
+    }
+    assert_eq!(tine_shape(0, 0.5), 0.0);
+    assert_eq!(tine_shape(2, f64::NAN), 0.0);
+}
+
+fn tine_modes(count: usize, x: f64) -> Vec<BarMode> {
+    (1..=count)
+        .map(|n| BarMode {
+            frequency_hz: 440.0 * tine_ratio(n),
+            decay_seconds: 3.0 / n as f64,
+            shape: tine_shape(n, x),
+            modal_mass: 0.002,
+            output: 1.0,
+        })
+        .collect()
+}
+
+#[test]
+fn a_pluck_starts_from_rest_and_holds_no_more_than_the_work_of_bending() {
+    for release in [0.0001, 0.001] {
+        let mut bar = StruckBar::<6>::default();
+        bar.set_modes(48000.0, &tine_modes(6, 0.9));
+        let finger = Mallet::from_contact_time(0.01, 2.5, release, 0.3);
+        bar.strike(Excitation::Pluck, finger, 2.0);
+        assert!(bar.next_sample().abs() < 1e-9, "the tine starts at rest");
+        let energy = bar.energy();
+        assert!(energy > 0.0);
+        // Work of a static bend: half the force times the deflection at the contact point.
+        let compliance: f64 = tine_modes(6, 0.9)
+            .iter()
+            .map(|mode| {
+                let sigma = 1000.0_f64.ln() / mode.decay_seconds;
+                let omega = TAU * mode.frequency_hz;
+                mode.shape * mode.shape / (mode.modal_mass * (sigma * sigma + omega * omega))
+            })
+            .sum();
+        let deflection = 2.0 * PLUCK_SECONDS;
+        assert!(energy <= 0.5 * deflection * deflection / compliance * 1.0001, "{energy}");
+        for _ in 0..48000 {
+            assert!(bar.next_sample().is_finite());
+        }
+    }
+    let soft = |release: f64| {
+        let mut bar = StruckBar::<6>::default();
+        bar.set_modes(48000.0, &tine_modes(6, 0.9));
+        bar.strike(Excitation::Pluck, Mallet::from_contact_time(0.01, 2.5, release, 0.3), 2.0);
+        bar.energy()
+    };
+    assert!(soft(0.002) < soft(0.0001), "a softer finger rounds off the higher modes");
+}
+
+#[test]
+fn a_fixed_body_resonance_stays_where_it_is_under_the_pitch_wheel() {
+    let mut bar = StruckBar::<6>::default();
+    bar.set_modes(48000.0, &tine_modes(6, 0.9));
+    bar.set_tube(Some(Tube {
+        amount: 1.0,
+        gain: 2.0,
+        quality: 8.0,
+        radiation_seconds: 600.0,
+        frequency_hz: Some(250.0),
+    }));
+    bar.strike(Excitation::Pluck, soft(), 2.0);
+    for _ in 0..4800 {
+        assert!(bar.next_sample().is_finite());
+    }
+    let omega = bar.tube.omega;
+    bar.transpose(5.0);
+    assert_eq!(bar.tube.omega, omega);
+    assert!((omega - TAU * 250.0).abs() < 1e-9);
+    bar.set_tube(Some(Tube {
+        amount: 1.0,
+        gain: 2.0,
+        quality: 8.0,
+        radiation_seconds: 600.0,
+        frequency_hz: Some(1e9),
+    }));
+    assert_eq!(bar.tube.omega, 0.0, "a resonance above the margin is left out");
 }

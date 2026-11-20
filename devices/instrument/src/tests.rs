@@ -581,3 +581,42 @@ fn low_bars_get_a_softer_mallet_from_a_graded_set() {
     assert_eq!(bars::graded_hardness(0, 0.1), 0.0);
     assert_eq!(bars::graded_hardness(30, f64::NAN), 0.0);
 }
+
+#[test]
+fn every_body_sounds_finite_and_the_kalimba_plucks_from_rest() {
+    let peak = |buffer: &[f32]| buffer.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    for body in 1..=5 {
+        for key in [48, 72, 96] {
+            let mut instrument = bar_instrument(f64::from(body), 0.0);
+            instrument.event(NoteEvent::On { key, velocity: 0.8 });
+            let mut buffer = vec![0.0; 9600];
+            instrument.process(&ProcessContext::default(), &mut buffer);
+            assert!(buffer.iter().all(|x| x.is_finite()), "body {body}, key {key}");
+            assert!(peak(&buffer) > 1e-4, "body {body}, key {key} sounds");
+            assert!(peak(&buffer) < 1.0, "body {body}, key {key}: {}", peak(&buffer));
+        }
+    }
+    let mut kalimba = bar_instrument(5.0, 0.0);
+    kalimba.event(NoteEvent::On { key: 60, velocity: 1.0 });
+    let mut first = [0.0; 2];
+    kalimba.process(&ProcessContext::default(), &mut first);
+    assert_eq!(first, [0.0, 0.0], "a plucked tine starts at rest, without a click");
+}
+
+#[test]
+fn shaping_controls_change_a_bar_and_leave_struck_alone() {
+    let render = |body: f64, index: usize, value: f64| {
+        let mut instrument = bar_instrument(body, 0.0);
+        instrument.set_param(index, value);
+        instrument.event(NoteEvent::On { key: 60, velocity: 0.8 });
+        let mut buffer = vec![0.0; 9600];
+        instrument.process(&ProcessContext::default(), &mut buffer);
+        buffer
+    };
+    for (index, value) in [(param::TUNING, 0.0), (param::RING, 1.0), (param::TORSION, 1.0), (param::MALLET_WEIGHT, 1.0)]
+    {
+        let default = PARAMS[index].default;
+        assert_ne!(render(1.0, index, value), render(1.0, index, default), "{} shapes a bar", PARAMS[index].id);
+        assert_eq!(render(0.0, index, value), render(0.0, index, default), "{} leaves Struck alone", PARAMS[index].id);
+    }
+}
