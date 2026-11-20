@@ -187,6 +187,26 @@ pub fn scenes() -> Vec<Scene> {
             }),
         });
     }
+    // Instrument's ordinary row remains visible alongside its expanded pages. Keeping a scene
+    // for each page catches source/mapping controls hidden by navigation or a theme.
+    scenes.push(Scene {
+        name: "instrument-instrument".into(),
+        width: crate::SIZE.0,
+        app: Arc::new(|| on_keys(&["instrument"])),
+        drive: Arc::new(|h| click(h, "Track Keys")),
+    });
+    for (suffix, page) in [("model", "Model page"), ("sample", "Sample page")] {
+        scenes.push(Scene {
+            name: format!("expanded-instrument-{suffix}"),
+            width: crate::SIZE.0,
+            app: Arc::new(|| on_keys(&["instrument"])),
+            drive: Arc::new(move |h| {
+                click(h, "Track Keys")?;
+                click(h, "Expand Instrument (experimental)")?;
+                click(h, page)
+            }),
+        });
+    }
     scenes
 }
 

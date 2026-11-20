@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-20
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -33,6 +33,13 @@ same columns to the canvas's right. In a row a device is as wide as its canvas a
 12 px (220 px at least, 272 px for one column); the stacked column is 272 px wide by default. A
 smaller detail area or column scrolls the panel. A panel a theme sizes with `.device { width }`
 and no canvas keeps one column that follows that width and scrolls.
+
+A built-in layout may use `#page` for host-local navigation (0..15, initially zero). Only a
+button with a linear X binding and a `Set` or `Expand` gesture may write it; drawing and
+visibility expressions may read it. The compact and expanded canvases share the selection for
+their project, track and complete device address. It is temporary view state: no DSP parameter,
+automation, project edit or undo entry. `.sd` version 6 does not accept this writable host binding.
+The [Instrument editor](instrument-editor.md) uses it for Play, Model and Sample.
 
 A device may also have an expanded panel: one larger fixed-size canvas (`device.expanded` in a
 `.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.

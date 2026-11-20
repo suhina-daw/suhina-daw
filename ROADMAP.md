@@ -1318,3 +1318,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - Selected track headers move together in project order into open or folded groups and folders, with separate inside and before/after drop feedback in the Arrangement and Launcher. Disclosure buttons reveal their clickable gutter on hover and keyboard focus; in Arrangement the gutter spans the header's full height and follows the timeline-facing edge on either side. The colour strip remains separate, and header double-clicks also open and close containers (#1569).
 - Source folders and groups disappear when their last members leave, in the same undo step. Removing a group's processing asks first, with a remembered desktop preference; command clients confirm the affected groups explicitly (#1569).
 
+- The experimental **Instrument** has a compact stock panel and a larger native editor with
+  Play, Model and Sample pages. They share the same sound controls, sample import and undo;
+  keyboard page navigation changes only the view, and narrow windows scroll the editor.
+
