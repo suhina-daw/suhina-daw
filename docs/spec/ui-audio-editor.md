@@ -1,6 +1,6 @@
 ---
-description: Functional spec of the audio editor in the detail area: what a double-clicked audio clip shows (its whole file across the content's beats under a bar, beat and sixteenth ruler, the played part lit, the loop's edges), the waveform colour, zoom and scroll, and editing warp markers (add, drag, remove, reset warp)
-read_when: audio editor, audio clip editor, waveform view, big waveform, detail area waveform, double-click audio clip, warp markers, add warp marker, move warp marker, reset warp, align snares, audio ruler, audio grid, waveform colour
+description: Functional spec of the audio editor in the detail area: what a double-clicked audio clip shows (its whole file across the content's beats under a bar, beat and sixteenth ruler, the played part lit, the loop's edges), the waveform colour, zoom and scroll, and editing warp markers (add, place on transients, drag, remove with a double-click or Delete, reset warp)
+read_when: audio editor, audio clip editor, waveform view, big waveform, detail area waveform, double-click audio clip, warp markers, add warp marker, move warp marker, delete warp marker, warp markers at transients, reset warp, align snares, audio ruler, audio grid, waveform colour
 type: spec
 status: draft
 last_verified: 2026-11-16
@@ -19,8 +19,9 @@ Functional spec of the view the detail area shows for a selected audio clip, in 
 MIDI clip shows its piano roll. Suhina's own design, written in our own words under the clean-room
 rules (`CONTRIBUTING.md` › Clean-room).
 
-**What is built.** The audio shown large under a ruler, its warp markers added, moved and removed
-on it, and a dialog that resets the warp. Playing from a click on the ruler is **Later**.
+**What is built.** The audio shown large under a ruler, its warp markers added (one at a time or
+on every transient), moved and removed on it, and a dialog that resets the warp. Playing from a
+click on the ruler is **Later**.
 
 ## Where it opens
 
@@ -87,7 +88,7 @@ follow):
 
 | Setting | The editor's waveform |
 |---|---|
-| Theme (the default) | The theme's `clip-waveform` `color` where a theme gives one; else the clip's own colour (its track's) |
+| Theme (the default) | The theme's `clip-waveform` `color` where a theme gives one; else the clip's own colour (its track's when it has none) |
 | Auto | The clip's own colour |
 | Light, Dark, Custom | That ink |
 
@@ -104,8 +105,16 @@ command and one undo step, and the clip is heard with it at once.
 | Double-click on the waveform | Pins a marker at that beat (on the grid; Alt: free), where the sound is: nothing moves yet | `clip.addWarpMarker` |
 | Drag a marker | Moves the marker, on the grid (Alt: free), and the sound pinned to it with it, so what plays between it and its neighbours stretches or squeezes. The waveform is drawn moving while it is dragged and the ruler says the beat it is at | `clip.moveWarpMarker` |
 | Double-click a marker | Takes it away; the audio between its neighbours then runs evenly. A warped clip keeps two | `clip.removeWarpMarker` |
+| Click a marker, then **Delete** | Takes away the marker clicked last (lit while it is the one), or the one under the pointer when none is; a clip with two markers keeps them | `clip.removeWarpMarker` |
+| **Transients** in the clip panel's audio editor part | Pins a marker on every transient of the file (where its level jumps, as Rhythmic finds them), each where its sound plays, so nothing moves yet; a transient near a marker keeps that marker. One undo step | `clip.addWarpMarkersAtTransients` |
 
-A marker never passes its neighbours (it stops a 64th of a beat short of them).
+A marker never passes its neighbours (it stops a 64th of a beat short of them). A marker dragged
+past the editor's edge goes on following the pointer, and moves when the button is let go there.
+
+**The keyboard.** While the editor has the keyboard (it, or the clip's panel, was pressed last),
+the edit keys act on its markers or on nothing, never on the clip behind it, as in the piano roll:
+Delete removes a marker as above, and Copy, Cut, Paste, Duplicate and Mute do nothing. A press in
+another view, or the Clip / Devices switch on Devices, gives the keyboard back to that view.
 
 **The end of the audio.** Moving a marker moves where the audio ends in beats (dragging the last
 one later stretches the whole file longer). The clip keeps its start and length, and the end its
@@ -150,6 +159,6 @@ clip starts fitted. The zoom and scroll are the view's and are not saved with th
 ## Later
 
 - A playhead, and a click on the ruler to move it.
-- Warp markers snapped to the file's transients, and Alt-drag to move a marker's sound without
+- A marker dragged near a transient snapping to it, and Alt-drag to move a marker's sound without
   its neighbours stretching.
 - Vertical zoom of the waveform.

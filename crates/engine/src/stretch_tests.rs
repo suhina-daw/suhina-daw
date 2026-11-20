@@ -406,3 +406,21 @@ fn a_segment_far_faster_or_slower_than_its_audio_keeps_its_pitch() {
         assert!((hz - 440.0).abs() < 440.0 * 0.06, "{label}: {hz} Hz, not 440");
     }
 }
+
+/// Rhythmic keeps a beat as a cut when no cut is within half a beat of it, half a beat measured
+/// from that beat's own neighbours: uneven warp markers squeeze some beats close together in the
+/// file, and a mean spacing hid the beat between two close ones (#1540).
+#[test]
+fn a_beat_between_close_markers_is_still_cut() {
+    // Markers at (beat, frame) (0, 0), (2, 0.2) and (4, 2.2): the beats fall at these frames.
+    let fill = [0.0, 0.1, 0.2, 1.2, 2.2];
+    // The markers are cuts; no transients.
+    let near = [0.0, 0.2, 2.2];
+    assert_eq!(beats_without_a_cut(&fill, &near), vec![0.1, 1.2], "the beat at 0.1 is not hidden by 0");
+    // An even grid keeps its behaviour: a cut within half a beat hides the beat, one further out
+    // does not.
+    let even = [0.0, 1.0, 2.0, 3.0];
+    assert_eq!(beats_without_a_cut(&even, &[1.4]), vec![0.0, 2.0, 3.0]);
+    assert_eq!(beats_without_a_cut(&even, &[1.6]), vec![0.0, 1.0, 3.0]);
+    assert_eq!(beats_without_a_cut(&even, &[]), even.to_vec());
+}

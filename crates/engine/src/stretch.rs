@@ -302,17 +302,7 @@ impl StretchSpec {
         points.extend(found.iter().map(|f| *f as f64));
         let mut near = points.clone();
         near.sort_by(f64::total_cmp);
-        let half = mean_gap(&self.fill) / 2.0;
-        for f in self.fill.iter() {
-            let i = near.partition_point(|p| p < f);
-            let close = [i.checked_sub(1).and_then(|j| near.get(j)), near.get(i)]
-                .into_iter()
-                .flatten()
-                .any(|p| (p - f).abs() < half);
-            if !close {
-                points.push(*f);
-            }
-        }
+        points.extend(beats_without_a_cut(&self.fill, &near));
         points
     }
 }
@@ -326,12 +316,34 @@ fn tail_of(tail: SliceTail) -> Tail {
     }
 }
 
-/// The mean gap between `points`, or infinity with fewer than two.
-fn mean_gap(points: &[f64]) -> f64 {
-    match (points.first(), points.last()) {
-        (Some(a), Some(b)) if points.len() > 1 && b > a => (b - a) / (points.len() - 1) as f64,
+/// The beats of `fill` (file frames, rising) with no cut of `near` (sorted) within half a beat
+/// of them. Half a beat is measured on each side from the beat's own neighbours, not from the
+/// mean spacing: warp markers squeeze some beats close together in the file and spread others
+/// far apart, and a cut half a mean beat away could hide a beat whose neighbours are much
+/// closer (#1540).
+fn beats_without_a_cut(fill: &[f64], near: &[f64]) -> Vec<f64> {
+    let gap = |a: Option<&f64>, b: Option<&f64>| match (a, b) {
+        (Some(a), Some(b)) if b > a => b - a,
         _ => f64::INFINITY,
+    };
+    let mut kept = Vec::new();
+    for (k, f) in fill.iter().enumerate() {
+        let before = gap(k.checked_sub(1).and_then(|j| fill.get(j)), Some(f));
+        let after = gap(Some(f), fill.get(k + 1));
+        // A beat at an end has one neighbour, whose gap stands for both sides.
+        let (before, after) = match (before.is_finite(), after.is_finite()) {
+            (false, true) => (after, after),
+            (true, false) => (before, before),
+            _ => (before, after),
+        };
+        let i = near.partition_point(|p| p < f);
+        let left = i.checked_sub(1).and_then(|j| near.get(j)).is_some_and(|p| f - p < before / 2.0);
+        let right = near.get(i).is_some_and(|p| p - f < after / 2.0);
+        if !(left || right) {
+            kept.push(*f);
+        }
     }
+    kept
 }
 
 /// Most points a clip's grid of slices is cut at.

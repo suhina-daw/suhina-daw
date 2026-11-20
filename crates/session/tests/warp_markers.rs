@@ -85,6 +85,47 @@ fn a_marker_is_added_where_the_sound_is_then_moved_and_removed_one_undo_step_eac
     assert_eq!(markers_of(&session), [(0.0, 0.0), (2.5, 1.0), (4.0, 2.0)]);
 }
 
+/// Two seconds with a decaying click every half second (at 0.5, 1 and 1.5 s), a little hiss under
+/// them.
+fn clicks() -> Vec<f32> {
+    let period = SR as usize / 2;
+    let mut noise = 12_345u32;
+    (0..2 * SR as usize)
+        .map(|i| {
+            noise = noise.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let hiss = (noise >> 9) as f32 / (1u32 << 23) as f32 - 0.5;
+            let t = (i % period) as f32 / SR as f32;
+            (t * 2_000.0).sin() * (-t * 40.0).exp() * 0.8 + hiss * 0.001
+        })
+        .collect()
+}
+
+/// Markers placed at the transients pin each click where it plays, so nothing moves; placed
+/// again they add nothing, and the whole placing is one undo step (#1185).
+#[test]
+fn warp_markers_are_placed_on_the_transients_where_the_sound_is() {
+    let dir = TempDir::new("warp-transients");
+    let (mut session, id) = warped(&wav(&dir, "clicks.wav", &clicks()));
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (4.0, 2.0)]);
+    let placed = run(&mut session, "clip.addWarpMarkersAtTransients", json!({ "clip": id })).unwrap();
+    assert_eq!(placed["added"], json!(3), "{placed}");
+    let markers = markers_of(&session);
+    assert_eq!(markers.len(), 5, "{markers:?}");
+    for (k, (beat, seconds)) in markers.iter().enumerate() {
+        let want = k as f64 * 0.5;
+        assert!((seconds - want).abs() < 0.002, "marker {k} at {seconds} s, want {want}");
+        assert!((beat - seconds * 2.0).abs() < 1e-9, "marker {k}: the sound stays at its beat");
+    }
+    let again = run(&mut session, "clip.addWarpMarkersAtTransients", json!({ "clip": id })).unwrap();
+    assert_eq!(again["added"], json!(0));
+    assert_eq!(markers_of(&session).len(), 5);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (4.0, 2.0)]);
+    // Warp off: no markers to place.
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    assert!(run(&mut session, "clip.addWarpMarkersAtTransients", json!({ "clip": id })).is_err());
+}
+
 #[test]
 fn a_marker_on_a_beat_that_has_one_changes_nothing() {
     let dir = TempDir::new("warp-markers-twice");
@@ -235,6 +276,31 @@ fn the_end_of_a_stretched_audio_is_where_its_clip_can_be_drawn_out_to() {
     assert_eq!(content_length(&session), 12.0);
     // A reset to the clip's tempo (now three times slower) keeps that end.
     run(&mut session, "clip.resetWarp", json!({ "clip": id })).unwrap();
+    assert_eq!(content_length(&session), 12.0);
+}
+
+/// Warp turned off reads the file at the project's tempo again, so the end follows the audio
+/// back: a reset after it and a trim never draw the clip out past where the audio ends.
+#[test]
+fn warp_turned_off_brings_the_end_back_to_the_audio() {
+    let dir = TempDir::new("warp-end-off");
+    let (mut session, id) = tone(&dir);
+    let content_length = |session: &Session| {
+        let clip = clips(session)[0].clone();
+        session.project().content(clip.content).unwrap().length
+    };
+    run(&mut session, "clip.moveWarpMarker", json!({ "clip": id, "from": 4.0, "beat": 12.0 })).unwrap();
+    assert_eq!(content_length(&session), 12.0);
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    assert_eq!(content_length(&session), 4.0, "two seconds at 120 BPM end at beat 4 unwarped");
+    run(&mut session, "clip.resetWarp", json!({ "clip": id })).unwrap();
+    assert_eq!(content_length(&session), 4.0);
+    let trimmed = run(&mut session, "clip.trim", json!({ "clip": id, "end": 20.0 })).unwrap();
+    assert_eq!(trimmed["end"], json!(4.0), "no further than the audio");
+    // Undo goes back through the reset and the switch, each one step, to the stretched end.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(content_length(&session), 12.0);
 }
 

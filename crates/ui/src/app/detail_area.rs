@@ -344,6 +344,11 @@ impl App {
         let ara = ara.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let audio = audio.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
+        // An audio editor not on show (the switch on Devices, a MIDI clip, no clip) gives up the
+        // keyboard, so the view's own keys work again after a click there.
+        if audio.is_none() {
+            self.audio_editor.set_focused(false);
+        }
         let edits = piano.is_some() || ara.is_some() || audio.is_some();
         // What the boxes add around what they hold (#1336). The area keeps the height of what it
         // shows when a theme pads it: the height the user set grows by what the padding adds.
@@ -1170,6 +1175,23 @@ impl App {
     /// behind; only a press in another view takes the keyboard from it.
     pub(super) fn piano_has_keyboard(&self) -> bool {
         self.piano_roll.focused && self.detail_open && self.piano_roll_on_show() && self.piano_shows_the_selection()
+    }
+
+    /// Whether the keyboard is the audio editor's: it, or its clip's panel, was pressed last and it
+    /// is on show. Then an edit key acts on its warp markers or on nothing, never on the clip
+    /// behind it, as for the piano roll.
+    pub(super) fn audio_editor_has_keyboard(&self) -> bool {
+        self.audio_editor.focused()
+            && self.detail_open
+            && self.piano_roll_on_show()
+            && self.audio_clip(self.shown_clip()).is_some()
+    }
+
+    /// What Delete does while the audio editor has the keyboard: removes its picked or hovered
+    /// warp marker, or nothing.
+    pub(super) fn audio_editor_delete(&self) -> Option<Action> {
+        let clip = self.audio_clip(self.shown_clip())?;
+        self.audio_editor.delete_key(&clip)
     }
 
     /// Whether the piano roll shows the one clip selected: the Launcher's slot, or the only clip

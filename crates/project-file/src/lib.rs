@@ -658,8 +658,10 @@ fn clip_audio_value(a: &ClipAudio) -> Value {
             map.insert("tempo_source".into(), json!(source.name()));
         }
         // The stretch modes' settings, only where one differs from its default.
-        if a.warp != WarpSettings::default() {
-            let w = a.warp;
+        // Written as the engine plays them, every number in its range, so a project built in
+        // code with one outside it still saves to a file that reads back.
+        let w = a.warp.held();
+        if w != WarpSettings::default() {
             map.insert(
                 "warp_settings".into(),
                 json!({

@@ -39,7 +39,8 @@ Gain and Pitch part centred.
 **Width.** In a row the panel is first as wide as all its parts side by side (680 points with the
 audio editor's part), the most it is ever made. Its right edge (*Clip panel width* to a screen
 reader) is dragged to make it narrower, down to two columns (312 points: the Clip part's and one as
-wide as Gain and Pitch); a double-click on it makes it as wide as it goes again. Narrower, the parts
+wide as Gain and Pitch); a double-click on it makes it as wide as it goes again. A drag starts from
+the edge where it is drawn, also when a narrow detail area cuts the panel short of its width. Narrower, the parts
 fold: they keep their order and go one over another (14 points apart) in as few, as short columns
 as fit the width, the least tall way first. Parts taller than the detail area scroll with the wheel
 over the panel. The width is the view's, not saved with the project, and the editor beside the panel
@@ -58,7 +59,7 @@ beside it, and controls are 6 points apart, so no two touch.
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
 | | **Edit gain envelope**: a switch that opens the gain envelope on the waveform for editing (every audio clip's, or the clip's own, by Settings › *Envelope editing*), as Alt+E and the button by the clip's name do | `clip.setEnvelope` |
 | **Warp** (110 points) | The settings of the clip's warp mode (› Warp mode settings) | `clip.setAudio` |
-| **Audio editor** (110 points) | While the editor shows the clip: its **Grid**, **Snap**, **Fit** and **Reset warp…** | the editor's own state |
+| **Audio editor** (110 points) | While the editor shows the clip: its **Grid**, **Snap**, **Fit**, **Reset warp…** and **Transients** | the editor's own state; Transients `clip.addWarpMarkersAtTransients` |
 | **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
 | | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
 
@@ -101,9 +102,11 @@ with it, as it is after a tempo change.
 **The audio editor's buttons.** While the [audio editor](ui-audio-editor.md) shows the clip, the
 Audio editor part after the Warp part holds its controls (on its ruler before, where they covered the
 grid): **Editor grid**, a list of Adaptive, 1 bar, 1/2, 1/4, 1/8, 1/16 and 1/32; **Snap**, a switch,
-lit while marks snap to the grid; **Fit**, which fits the file to the editor; and **Reset…**, which
-opens the Reset warp dialog. They change the editor, not the project. Without the editor the part
-is left out.
+lit while marks snap to the grid; **Fit**, which fits the file to the editor; **Reset…**, which
+opens the Reset warp dialog; and **Transients** (*Add warp markers at transients* to a screen
+reader), which pins a warp marker on every transient of the file, where its sound is
+(`clip.addWarpMarkersAtTransients`, one undo step). The others change the editor, not the project.
+Without the editor the part is left out.
 
 ## Numbers
 

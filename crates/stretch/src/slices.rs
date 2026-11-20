@@ -72,6 +72,9 @@ pub struct Slices {
     leaving: Option<(Play, u64)>,
     /// The last output frame rendered, to tell playing on from a jump.
     last: Option<u64>,
+    /// The file frame the clip's time was at on that frame: the clip's time going back (a loop
+    /// that jumps back inside one slice) is a jump too.
+    last_position: Option<f64>,
 }
 
 impl Slices {
@@ -99,6 +102,7 @@ impl Slices {
             playing: None,
             leaving: None,
             last: None,
+            last_position: None,
         }
     }
 
@@ -117,6 +121,7 @@ impl Slices {
         self.playing = None;
         self.leaving = None;
         self.last = None;
+        self.last_position = None;
     }
 
     /// Renders output frames `first..` into `out` (interleaved): `position` gives the file frame
@@ -135,14 +140,19 @@ impl Slices {
             let on = self.last.is_some_and(|l| l.checked_add(1) == Some(t));
             let p = position(t);
             let index = self.points.partition_point(|s| *s <= p).saturating_sub(1);
-            if !on || self.playing.is_none_or(|play| play.index != index) {
+            // The clip's time went back (a loop's end jumped to its start) though the slice is the
+            // same: the slice starts again from there, so a loop inside one slice plays its sound
+            // on every pass instead of running out after the first (#1540).
+            let back = on && self.last_position.is_some_and(|before| p.is_finite() && p < before - 1.0);
+            if !on || back || self.playing.is_none_or(|play| play.index != index) {
                 let start = self.points.get(index).copied().unwrap_or(0.0);
                 let next = self.points.get(index + 1).copied().unwrap_or(self.frames);
                 // Reached by playing on: from the slice's own start, so its attack is on time.
-                let in_start = if on && p.is_finite() && p - start <= self.snap { start } else { p };
+                let in_start = if on && !back && p.is_finite() && p - start <= self.snap { start } else { p };
                 // The slice before has just reached this one's start (the clip at the file's
                 // speed): it carries on, with no seam.
                 let seamless = on
+                    && !back
                     && self.playing.is_some_and(|before| {
                         let gone = (t - before.out_start) as f64 * self.pitch;
                         gone <= before.length + 1.0 && (before.in_start + gone - in_start).abs() < 1.0
@@ -157,6 +167,7 @@ impl Slices {
                 self.playing = Some(fresh);
             }
             self.last = Some(t);
+            self.last_position = Some(p);
             for c in 0..channels {
                 let mut value = self.playing.map_or(0.0, |play| self.voice(play, t, c, sample));
                 if let Some((play, from)) = self.leaving {
@@ -268,6 +279,20 @@ mod tests {
         assert!(near(&onsets(&out), &[0, 24_000, 48_000, 72_000]), "{:?}", onsets(&out));
         let loud = out[24_000..24_100].iter().filter(|s| s.abs() > 0.5).count();
         assert!((40..=50).contains(&loud), "{loud} frames of click");
+    }
+
+    /// A loop inside one slice (file frames 0 to 6000 of the slice 0 to 12 000, at half speed)
+    /// with Tail off plays its click on every pass: the clip's time going back starts the slice
+    /// again, though the slice is the same (#1540).
+    #[test]
+    fn a_loop_inside_one_slice_plays_on_every_pass() {
+        let mut slices = Slices::new(1, RATE, 48_000, &points(), Tail::Off, 1.0);
+        let mut out = vec![0.0; 48_000];
+        let looped = |t: u64| (t as f64 * 0.5).rem_euclid(6_000.0);
+        for (i, chunk) in out.chunks_mut(500).enumerate() {
+            slices.render((i * 500) as u64, chunk, &looped, &clicks);
+        }
+        assert!(near(&onsets(&out), &[0, 12_000, 24_000, 36_000]), "{:?}", onsets(&out));
     }
 
     #[test]

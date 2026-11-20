@@ -587,6 +587,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "clip.addWarpMarkersAtTransients",
+        label: "Add a warp marker at every transient of a warped audio clip's file (where its level jumps, as the Rhythmic mode finds them), each pinning the sound playing there to its beat, so nothing moves until a marker is moved. A transient near a marker the clip has keeps that marker. One undo step; only that clip changes",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::add_warp_markers_at_transients,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "clip.moveWarpMarker",
         label: "Move a warp marker of a warped audio clip from one content beat to another: the sound it is pinned to goes with it, so what plays between it and its neighbours stretches or squeezes. It stays between its neighbours. Only that clip changes",
         params: &[

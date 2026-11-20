@@ -1962,3 +1962,27 @@ fn warp_settings_are_written_when_changed_and_checked_when_read() {
     }
     assert!(read_with(Value::Null).is_ok(), "null is no settings");
 }
+
+/// Settings out of their ranges (a project built in code) are written as the engine plays them,
+/// so the file reads back; settings in range are written as they are.
+#[test]
+fn warp_settings_out_of_range_save_as_they_play() {
+    for (grain, envelope, flux) in [(5.0, 50.0, 25.0), (f64::NAN, 50.0, 25.0), (60.0, f64::INFINITY, -3.0)] {
+        let mut project = everything();
+        for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+            clip.audio.warp = WarpSettings { grain, envelope, flux, ..WarpSettings::default() };
+        }
+        let read = from_json(&to_json(&project)).unwrap_or_else(|e| panic!("{grain} {envelope} {flux}: {e}"));
+        let held = WarpSettings { grain, envelope, flux, ..WarpSettings::default() }.held();
+        for clip in read.arrangement.lanes.iter().flat_map(|l| &l.clips) {
+            assert_eq!(clip.audio.warp, held, "{grain} {envelope} {flux}");
+        }
+    }
+    let mut project = everything();
+    let own = WarpSettings { grain: 120.0, envelope: 40.0, flux: 10.0, ..WarpSettings::default() };
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warp = own;
+    }
+    let read = from_json(&to_json(&project)).unwrap();
+    assert!(read.arrangement.lanes.iter().flat_map(|l| &l.clips).all(|c| c.audio.warp == own));
+}

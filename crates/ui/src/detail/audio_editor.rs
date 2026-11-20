@@ -78,11 +78,10 @@ fn audio_clip_from(project: &Project, track: TrackId, clip: &Clip) -> Option<Aud
     let content = project.content(clip.content)?;
     let view = audio_view(content, clip, project.transport.tempo_bpm)?;
     let position = project.tracks.iter().position(|t| t.id == track)?;
-    let color = project
-        .tracks
-        .get(position)
-        .map(|track| track_colour(track, position))
-        .unwrap_or(suhina_session::colours::MIDI);
+    // The clip's own colour when it has one; its track's otherwise (`Clip::color`).
+    let color = clip.color.unwrap_or_else(|| {
+        project.tracks.get(position).map(|track| track_colour(track, position)).unwrap_or(suhina_session::colours::MIDI)
+    });
     let ts = project.transport.time_signature;
     let bar_beats =
         if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) };
@@ -120,6 +119,11 @@ pub struct AudioEditorState {
     /// finer, Ctrl+2 coarser, Ctrl+3 triplets, Ctrl+4 snap) and by the clip panel's Grid list.
     grid: PianoGrid,
     drag: Option<MarkerDrag>,
+    /// The warp marker clicked last (its content beat), which Delete removes; lit while picked.
+    picked: Option<f64>,
+    /// The warp marker under the pointer in the last frame, which Delete removes when none is
+    /// picked.
+    hovered: Option<f64>,
     reset_open: bool,
     /// Pressed last: the grid keys are the editor's, as the piano roll's are while it has the
     /// keyboard.
@@ -135,6 +139,8 @@ impl Default for AudioEditorState {
             shown: None,
             grid: default_grid(),
             drag: None,
+            picked: None,
+            hovered: None,
             reset_open: false,
             focused: false,
         }
@@ -165,6 +171,40 @@ impl AudioEditorState {
     /// Gives the editor the keyboard, or takes it away.
     pub fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
+    }
+
+    /// Lets go of the clip shown: a marker drag ends without a move, the reset dialog closes, the
+    /// editor gives up the keyboard, and the next clip shown starts fitted. The grid stays.
+    pub fn forget_clip(&mut self) {
+        self.shown = None;
+        self.drag = None;
+        self.picked = None;
+        self.hovered = None;
+        self.reset_open = false;
+        self.focused = false;
+    }
+
+    /// What Delete does while the editor has the keyboard: removes the warp marker picked last,
+    /// or the one under the pointer, as a double-click on it does. `None` when there is none, or
+    /// when `clip` keeps only the two a warped clip needs: the key then does nothing, and never
+    /// acts on the clip behind the editor.
+    pub fn delete_key(&self, clip: &AudioClip) -> Option<Action> {
+        if self.shown.as_ref() != Some(&clip.address) || clip.view.markers.len() <= 2 {
+            return None;
+        }
+        let beat = self.picked.or(self.hovered)?;
+        clip.view.markers.iter().find(|m| (m.0 - beat).abs() < 1e-9)?;
+        Some(Action::new("clip.removeWarpMarker", with_address(&clip.address, json!({ "beat": beat }))))
+    }
+
+    /// The warp marker picked last, for tests.
+    pub fn picked(&self) -> Option<f64> {
+        self.picked
+    }
+
+    /// Whether a warp marker is being dragged, for tests.
+    pub fn dragging(&self) -> bool {
+        self.drag.is_some()
     }
 
     /// Zooms and scrolls so that the file fills `width` points.
@@ -257,11 +297,13 @@ pub fn grid_key(action: &str, grid: PianoGrid) -> Option<PianoGrid> {
 }
 
 /// What the clip panel's buttons ask of the audio editor (`docs/spec/clip-panel.md` › Warp mode
-/// settings): fit the file, open the Reset warp dialog, or use another grid.
+/// settings): fit the file, open the Reset warp dialog, place warp markers on the file's
+/// transients, or use another grid.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Request {
     Fit,
     Reset,
+    Transients,
     Grid(PianoGrid),
 }
 
@@ -392,6 +434,7 @@ pub fn show(
         state.shown = Some(clip.address.clone());
         state.fit(last - first, area.width());
         state.drag = None;
+        state.picked = None;
         state.reset_open = false;
     }
     // A press here gives the editor the keyboard; one anywhere else takes it away (the clip's panel
@@ -405,6 +448,9 @@ pub fn show(
         match request {
             Request::Fit => state.fit(last - first, area.width()),
             Request::Reset => state.reset_open = true,
+            Request::Transients => {
+                actions.push(Action::new("clip.addWarpMarkersAtTransients", with_address(&clip.address, json!({}))))
+            }
             Request::Grid(grid) => state.grid = grid,
         }
     }
@@ -451,15 +497,24 @@ pub fn show(
     let markers = &clip.view.markers;
     let editable = markers.len() >= 2;
     let mut hot = None;
+    // Where a marker was let go this frame: the project has it there from the next frame on.
+    let mut moved_to = None;
     if editable {
         for (i, &(beat, _)) in markers.iter().enumerate() {
-            let shown = state.drag.filter(|d| (d.from - beat).abs() < 1e-9).map_or(beat, |d| d.to);
+            let dragged = state.drag.is_some_and(|d| (d.from - beat).abs() < 1e-9);
+            let shown = if dragged { state.drag.map_or(beat, |d| d.to) } else { beat };
             let x = x_of(shown);
-            if !(area.left() - GRAB..=area.right() + GRAB).contains(&x) {
+            // Markers off screen are left out, but never the one being dragged: the pointer may
+            // carry it past an edge, and its release must still move it.
+            if !dragged && !(area.left() - GRAB..=area.right() + GRAB).contains(&x) {
                 continue;
             }
+            // A dragged marker past an edge keeps a zone at that edge, so egui goes on reporting
+            // its drag and its release.
+            let zone_x = if dragged { x.clamp(area.left(), area.right()) } else { x };
             let zone =
-                Rect::from_min_max(Pos2::new(x - GRAB, area.top()), Pos2::new(x + GRAB, area.bottom())).intersect(area);
+                Rect::from_min_max(Pos2::new(zone_x - GRAB, area.top()), Pos2::new(zone_x + GRAB, area.bottom()))
+                    .intersect(area);
             let id = egui::Id::unique(("audio-editor-marker", &key, i));
             let marker =
                 ui.interact(zone, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
@@ -468,12 +523,16 @@ pub fn show(
             if marker.hovered() || marker.dragged() {
                 hot = Some(i);
             }
+            if marker.clicked() {
+                state.picked = Some(beat);
+            }
             // Where the button went down, not where the drag was recognised: the marker keeps its
             // place under the pointer.
             if marker.drag_started_by(egui::PointerButton::Primary)
                 && let Some(p) = ui.input(|i| i.pointer.press_origin()).or(marker.interact_pointer_pos())
             {
                 state.drag = Some(MarkerDrag { from: beat, grab: beat_at_x(p.x) - beat, to: beat });
+                state.picked = Some(beat);
             }
             if marker.dragged_by(egui::PointerButton::Primary)
                 && let Some(p) = marker.interact_pointer_pos()
@@ -485,15 +544,20 @@ pub fn show(
                 let wanted = snap(beat_at_x(p.x) - drag.grab, step, free);
                 drag.to = if low <= high { wanted.clamp(low, high) } else { drag.from };
             }
+            // Only the drag this marker started: one kept from another clip or project is dropped.
             if marker.drag_stopped_by(egui::PointerButton::Primary)
                 && let Some(drag) = state.drag.take()
+                && dragged
                 && (drag.to - drag.from).abs() > 1e-9
             {
                 let own = json!({ "from": drag.from, "beat": drag.to });
                 actions.push(Action::new("clip.moveWarpMarker", with_address(&clip.address, own)));
+                state.picked = Some(drag.to);
+                moved_to = Some(drag.to);
             }
             if marker.double_clicked() && markers.len() > 2 {
                 state.drag = None;
+                state.picked = None;
                 actions
                     .push(Action::new("clip.removeWarpMarker", with_address(&clip.address, json!({ "beat": beat }))));
             }
@@ -504,6 +568,22 @@ pub fn show(
             let beat = snap(beat_at_x(p.x), step, free);
             actions.push(Action::new("clip.addWarpMarker", with_address(&clip.address, json!({ "beat": beat }))));
         }
+    }
+    // A click on the waveform away from the markers puts the picked one down; one that is gone
+    // (removed, or the project changed under it) is no longer picked.
+    if response.clicked() && hot.is_none() {
+        state.picked = None;
+    }
+    if state.drag.is_none()
+        && state.picked.is_some_and(|b| moved_to != Some(b) && !markers.iter().any(|m| (m.0 - b).abs() < 1e-9))
+    {
+        state.picked = None;
+    }
+    state.hovered = hot.and_then(|i| markers.get(i)).map(|m| m.0);
+    // The button is up and no marker took the release (its marker is gone, or Warp went off):
+    // the drag ends without a move, and the waveform shows the project's markers again.
+    if state.drag.is_some() && !ui.input(|i| i.pointer.primary_down()) {
+        state.drag = None;
     }
 
     // The waveform with the marker being dragged where it is now, so the sound moves under it.
@@ -556,7 +636,7 @@ pub fn show(
         if !(area.left() - 4.0..=area.right() + 4.0).contains(&x) {
             continue;
         }
-        let lit = hot == Some(i);
+        let lit = hot == Some(i) || state.picked.is_some_and(|b| (b - beat).abs() < 1e-9);
         let width = if lit { 2.0 } else { 1.0 };
         painter.line_segment(
             [Pos2::new(x, ruler_rect.bottom() - 6.0), Pos2::new(x, wave.bottom())],
@@ -632,29 +712,54 @@ enum Reset {
 /// The dialog that asks whether to keep the clip's warp markers or put the audio back on an even
 /// grid; `None` while it is up and nothing is chosen. Escape or a click outside keeps them.
 fn reset_dialog(ctx: &egui::Context, markers: usize) -> Option<Reset> {
+    use crate::kit::widgets::{self, button};
+    const WIDTH: f32 = 380.0;
+    const BUTTON_HEIGHT: f32 = 18.0;
     let modal = crate::kit::floating::modal(ctx, egui::Id::unique("audio-editor-reset")).show(ctx, |ui| {
-        ui.set_width(380.0);
-        ui.label(egui::RichText::new("Reset warp markers").font(theme::ui_font(theme::TEXT + 2.0)).color(title_ink()));
-        ui.add_space(6.0);
-        let text = format!(
-            "This clip has {markers} warp markers. Keep them, or reset the warp so the audio runs evenly again, \
-             with one marker at each end? The clip's start, length and loop stay where they are."
-        );
-        ui.label(egui::RichText::new(text).font(theme::ui_font(theme::TEXT_SMALL)).color(caption_ink()));
+        ui.set_width(WIDTH);
+        // The title and the question are the kit's text (golden rule 15), the question wrapped to
+        // the dialog's width.
+        let lines = [
+            ("Reset warp markers".to_owned(), theme::ui_font(theme::TEXT + 2.0), title_ink()),
+            (
+                format!(
+                    "This clip has {markers} warp markers. Keep them, or reset the warp so the audio runs evenly                      again, with one marker at each end? The clip's start, length and loop stay where they are."
+                ),
+                theme::ui_font(theme::TEXT_SMALL),
+                caption_ink(),
+            ),
+        ];
+        for (index, (text, font, ink)) in lines.into_iter().enumerate() {
+            if index > 0 {
+                ui.add_space(6.0);
+            }
+            let galley = ui.painter().layout(text.clone(), font, ink, WIDTH);
+            let (rect, response) = ui.allocate_exact_size(Vec2::new(WIDTH, galley.size().y), Sense::hover());
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
+            widgets::paint_text(ui.painter(), rect.min, galley, ink);
+        }
         ui.add_space(10.0);
-        let button = |ui: &mut Ui, label: &str| ui.button(egui::RichText::new(label).font(theme::ui_font(theme::TEXT)));
+        // The three choices are the kit's buttons, side by side, each as wide as its words.
+        let choices =
+            [("Keep warp markers", Reset::Keep), ("Reset to clip tempo", Reset::Even), ("Find tempo again", Reset::Detect)];
+        let font = theme::ui_font(theme::TEXT);
+        let widths: Vec<f32> = choices
+            .iter()
+            .map(|(text, _)| ui.painter().layout_no_wrap((*text).to_owned(), font.clone(), title_ink()).size().x + 20.0)
+            .collect();
+        let gap = 6.0;
+        let row_width = widths.iter().sum::<f32>() + gap * (widths.len() as f32 - 1.0);
+        let (row, _) = ui.allocate_exact_size(Vec2::new(row_width.max(WIDTH), BUTTON_HEIGHT), Sense::hover());
+        let painter = ui.painter().clone();
+        let mut left = row.left();
         let mut choice = None;
-        ui.horizontal(|ui| {
-            if button(ui, "Keep warp markers").clicked() {
-                choice = Some(Reset::Keep);
+        for ((text, pick), width) in choices.into_iter().zip(widths) {
+            let rect = Rect::from_min_size(Pos2::new(left, row.top()), Vec2::new(width, BUTTON_HEIGHT));
+            if button(ui, &painter, rect, text, text) {
+                choice = Some(pick);
             }
-            if button(ui, "Reset to clip tempo").clicked() {
-                choice = Some(Reset::Even);
-            }
-            if button(ui, "Find tempo again").clicked() {
-                choice = Some(Reset::Detect);
-            }
-        });
+            left += width + gap;
+        }
         choice
     });
     modal.inner.or_else(|| modal.should_close().then_some(Reset::Keep))

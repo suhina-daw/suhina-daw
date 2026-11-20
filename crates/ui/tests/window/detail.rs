@@ -584,6 +584,116 @@ fn the_reset_dialog_keeps_the_markers_or_resets_them() {
     assert_eq!(loop_markers(&harness).len(), 3, "one undo step brings the markers back");
 }
 
+/// Presses and lets go once at `at`, a second after anything before it, so it is a click and not
+/// part of a double-click.
+fn click_once_at(harness: &mut Harness<'static, App>, at: egui::Pos2) {
+    harness.hover_at(at);
+    harness.run();
+    let ready = harness.ctx.input(|i| i.time) + 1.0;
+    while harness.ctx.input(|i| i.time) < ready {
+        harness.step();
+    }
+    harness.hover_at(at);
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.step();
+    harness.run();
+}
+
+#[allow(clippy::unwrap_used)]
+fn loop_clips(harness: &Harness<'static, App>) -> usize {
+    let project = harness.state().session().unwrap().project();
+    project.arrangement.lanes.iter().find(|l| l.name == "Loop").unwrap().clips.len()
+}
+
+/// With the audio editor holding the keyboard, Delete removes the warp marker clicked and never
+/// the clip behind the editor; with the two markers a warped clip keeps, it does nothing.
+#[test]
+fn delete_in_the_audio_editor_removes_the_marker_not_the_clip() {
+    let mut harness = opened_audio_editor();
+    let id = loop_clip_id(&harness);
+    harness.state_mut().run(&Action::new("clip.addWarpMarker", json!({ "clip": id, "beat": 2.0 })));
+    harness.run();
+    assert_eq!(loop_markers(&harness).len(), 3);
+    let wave = harness.get_by_label("Audio editor").rect();
+    let on_it = harness.get_by_label("Warp marker 2").rect().center();
+    click_once_at(&mut harness, egui::pos2(on_it.x, wave.center().y + 20.0));
+    assert!(harness.state().audio_editor().focused(), "the click gave the editor the keyboard");
+    assert_eq!(harness.state().audio_editor().picked(), Some(2.0), "the marker clicked is picked");
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(loop_markers(&harness), [(0.0, 0.0), (4.0, 2.0)], "the picked marker is gone");
+    assert_eq!(loop_clips(&harness), 1, "the clip is still there");
+    // Two markers left: Delete does nothing, and still not to the clip.
+    let on_last = harness.get_by_label("Warp marker 2").rect().center();
+    click_once_at(&mut harness, egui::pos2(on_last.x - 2.0, wave.center().y + 20.0));
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(loop_markers(&harness).len(), 2);
+    assert_eq!(loop_clips(&harness), 1, "the clip is still there");
+}
+
+/// A warp marker dragged past the editor's right edge still moves when the button is let go
+/// there, and the editor shows no drag afterwards.
+#[test]
+fn a_marker_dragged_past_the_editors_edge_still_moves() {
+    let mut harness = opened_audio_editor();
+    let wave = harness.get_by_label("Audio editor").rect();
+    let from = harness.get_by_label("Warp marker 2").rect().center();
+    let from = egui::pos2(from.x - 2.0, wave.center().y + 20.0);
+    drag_from_to(&mut harness, from, egui::pos2(wave.right() + 60.0, from.y));
+    let markers = loop_markers(&harness);
+    assert_eq!(markers.len(), 2);
+    assert!(markers[1].0 > 4.0, "the end marker moved later: {markers:?}");
+    assert_eq!(markers[1].1, 2.0, "with the same second of the file");
+    assert!(!harness.state().audio_editor().dragging(), "no drag is left over");
+}
+
+/// An audio clip with a colour of its own is drawn in the editor in that colour, not its track's.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn the_audio_editor_takes_the_clips_own_colour() {
+    let mut harness = opened_audio_editor();
+    let id = loop_clip_id(&harness);
+    let track = {
+        let project = harness.state().session().unwrap().project();
+        project.arrangement.lanes.iter().find(|l| l.name == "Loop").unwrap().track.unwrap()
+    };
+    let shown = |harness: &Harness<'static, App>| {
+        let project = harness.state().session().unwrap().project();
+        suhina_ui::detail::audio_editor::arrangement_clip(project, track, suhina_engine::model::ClipId(id))
+            .unwrap()
+            .color
+    };
+    let before = shown(&harness);
+    harness.state_mut().run(&Action::new("clip.setColor", json!({ "track": track.0, "clip": id, "color": "#123456" })));
+    harness.run();
+    assert_eq!(shown(&harness), egui::Color32::from_rgb(0x12, 0x34, 0x56));
+    harness.state_mut().run(&Action::new("clip.setColor", json!({ "track": track.0, "clip": id, "color": "none" })));
+    harness.run();
+    assert_eq!(shown(&harness), before, "back to the track's colour");
+}
+
+/// The Transients button pins markers on the file's transients: one command, one undo step.
+#[test]
+fn the_transients_button_places_markers_in_one_step() {
+    let mut harness = opened_audio_editor();
+    let before = loop_markers(&harness);
+    harness.get_by_label("Add warp markers at transients").click();
+    harness.run();
+    let after = loop_markers(&harness);
+    assert!(after.len() >= before.len(), "{after:?}");
+    // Every marker it adds keeps its sound where it plays: beat and second on the clip's tempo.
+    for (beat, seconds) in &after {
+        assert!((beat - seconds * 2.0).abs() < 1e-6, "{beat} beats for {seconds} s");
+    }
+    if after.len() > before.len() {
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+        assert_eq!(loop_markers(&harness), before, "one undo step");
+    }
+}
+
 /// The clip panel's Warp part shows the settings of the clip's warp mode, and its editor buttons
 /// while the audio editor shows the clip; the editor's ruler has none of them.
 #[test]

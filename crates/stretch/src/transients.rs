@@ -32,13 +32,14 @@ pub fn transients(samples: &[f32], channels: usize, rate: f32) -> Vec<usize> {
     if hops < 3 {
         return Vec::new();
     }
-    // The energy of each hop, mixed to mono.
+    // The energy of each hop: each channel's squared samples, averaged over the channels. The
+    // channels are squared before they are combined, so channels in opposite phase do not cancel
+    // into silence and hide their attacks (#1540).
     let energy: Vec<f32> = (0..hops)
         .map(|h| {
             let from = h * hop * channels;
             let part = samples.get(from..from + hop * channels).unwrap_or_default();
-            let sum: f32 =
-                part.chunks_exact(channels).map(|f| f.iter().sum::<f32>() / channels as f32).map(|m| m * m).sum();
+            let sum: f32 = part.iter().map(|v| v * v).sum::<f32>() / channels as f32;
             sum / hop as f32
         })
         .collect();
@@ -133,6 +134,9 @@ mod tests {
         let mono = clicks(0.5, 2.0);
         let stereo: Vec<f32> = mono.iter().flat_map(|s| [*s, *s]).collect();
         assert_eq!(transients(&stereo, 2, RATE), transients(&mono, 1, RATE));
+        // Channels in opposite phase are as loud as in phase: their attacks are found the same.
+        let opposite: Vec<f32> = mono.iter().flat_map(|s| [*s, -*s]).collect();
+        assert_eq!(transients(&opposite, 2, RATE), transients(&mono, 1, RATE));
         let odd = [f32::NAN, 1.0, f32::INFINITY, -1.0];
         let _ = transients(&odd.repeat(10_000), 3, RATE);
     }

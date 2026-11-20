@@ -133,21 +133,25 @@ impl Grains {
     }
 
     /// The start near `ideal` (within a quarter grain) whose sound best matches the sound from
-    /// `going_on`, over the half grain where the two overlap, on the mixed channels.
+    /// `going_on`, over the half grain where the two overlap, every channel counted. One offset
+    /// serves all channels.
     fn lined_up(&self, ideal: f64, going_on: f64, sample: &impl Fn(f64, usize) -> f32) -> f64 {
         let reach = (self.grain / 4) as i64;
-        let mono = |at: f64| (0..self.channels).map(|c| sample(at, c)).sum::<f32>();
         // How well the sound from `ideal + offset` matches the sound going on, over `points`
-        // frames spread across the half grain where the two overlap.
+        // frames spread across the half grain where the two overlap. Each channel's products are
+        // summed rather than the channels mixed first, so channels in opposite phase do not cancel
+        // into silence and leave the grains unaligned (#1540).
         let overlap = self.hop as f64;
         let score = |offset: i64, points: usize| {
             let (mut dot, mut energy) = (0.0f32, 1e-9f32);
             for p in 0..points {
                 let j = overlap * p as f64 / points as f64;
-                let a = mono(ideal + offset as f64 + j * self.pitch);
-                let b = mono(going_on + j * self.pitch);
-                dot += a * b;
-                energy += a * a;
+                for c in 0..self.channels {
+                    let a = sample(ideal + offset as f64 + j * self.pitch, c);
+                    let b = sample(going_on + j * self.pitch, c);
+                    dot += a * b;
+                    energy += a * a;
+                }
             }
             dot / energy.sqrt()
         };
@@ -231,6 +235,24 @@ mod tests {
                 // Lined up, the grains add up to the tone's level without beating.
                 assert!((rms(middle) - 0.354).abs() < 0.03, "{}", rms(middle));
             }
+        }
+    }
+
+    /// A stereo tone whose channels are in opposite phase is lined up as a mono one is: at half
+    /// speed each channel keeps the tone's level, without beating (#1540).
+    #[test]
+    fn opposite_phase_stereo_keeps_the_level() {
+        let tone = sine(440.0);
+        let opposite = move |at: f64, c: usize| if c == 0 { tone(at, 0) } else { -tone(at, 0) };
+        let mut grains = Grains::new(2, RATE, 0.06, 0.0, true);
+        let mut out = vec![0.0; 2 * 96_000];
+        for (i, chunk) in out.chunks_mut(2 * 1000).enumerate() {
+            grains.render((i * 1000) as u64, chunk, &|t| t as f64 * 0.5, &opposite);
+        }
+        for c in 0..2 {
+            let channel: Vec<f32> = out.chunks_exact(2).map(|f| f[c]).collect();
+            let middle = &channel[24_000..72_000];
+            assert!((rms(middle) - 0.354).abs() < 0.03, "channel {c}: {}", rms(middle));
         }
     }
 

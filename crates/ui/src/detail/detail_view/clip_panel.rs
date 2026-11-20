@@ -1284,8 +1284,9 @@ fn audio_part(
 /// The most the Warp part is tall: a caption and the settings of the mode with the most
 /// (Rhythmic's three).
 const WARP_HEIGHT: f32 = NAME + (NAME + FIELD + GAP) * 3.0;
-/// How tall the audio editor's part is: a caption, the grid list, Snap, then Fit and Reset.
-const EDITOR_HEIGHT: f32 = NAME + NAME + FIELD + GAP + FIELD + GAP + FIELD;
+/// How tall the audio editor's part is: a caption, the grid list, Snap, then Fit and Reset, then
+/// Transients.
+const EDITOR_HEIGHT: f32 = NAME + NAME + FIELD + GAP + FIELD + GAP + FIELD + GAP + FIELD;
 
 /// What Rhythmic's Slice at list offers, and how each is shown.
 const SLICES: [(SliceAt, &str); 5] = [
@@ -1321,7 +1322,7 @@ fn named_list(
 }
 
 /// The audio editor's part, while it shows the clip (`docs/spec/clip-panel.md` › Warp mode
-/// settings): its Grid, Snap, Fit and Reset warp. Returns where it ends.
+/// settings): its Grid, Snap, Fit, Reset warp and Transients. Returns where it ends.
 fn editor_part(ui: &mut Ui, painter: &egui::Painter, part: Rect) -> f32 {
     let Some(grid) = crate::detail::audio_editor::shown_grid(ui.ctx()) else { return part.top() };
     let row = |y: f32, height: f32| Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), height));
@@ -1356,6 +1357,12 @@ fn editor_part(ui: &mut Ui, painter: &egui::Painter, part: Rect) -> f32 {
     }
     if small_button(ui, painter, reset, "Reset…", "Reset warp…", true) {
         crate::detail::audio_editor::ask(ui.ctx(), crate::detail::audio_editor::Request::Reset);
+    }
+    y += FIELD + GAP;
+    // A warp marker on every transient of the file, each where its sound is (#1185).
+    let transients = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), FIELD));
+    if small_button(ui, painter, transients, "Transients", "Add warp markers at transients", true) {
+        crate::detail::audio_editor::ask(ui.ctx(), crate::detail::audio_editor::Request::Transients);
     }
     y + FIELD
 }

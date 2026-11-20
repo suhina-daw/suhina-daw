@@ -246,6 +246,8 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
     let (at, clip) = named(session, params)?;
     let clip = clip.clone();
     let id = clip.id;
+    // The clip as it was, for the end of its audio below.
+    let original = clip.clone();
     // Turning warp on keeps the audio at its own speed at the tempo it plays at now, not at the
     // one it was imported at. An arrangement clip plays by the song's tempo map from where its
     // content's beat 0 falls, ramps and changes included; a slot's clip has no place on that map
@@ -308,6 +310,12 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
     let (warped, stretch, transpose, settings) = (audio.warped, audio.stretch, audio.transpose, audio.warp);
     if let Some(before) = before {
         crate::audio_timing::follow(clip, &before, transport.tempo_bpm);
+    }
+    // Warp turned on or off reads the file at another rate, so the audio ends at another beat:
+    // the end the clip can be drawn out to follows it, as after a warp marker's move
+    // (`docs/spec/ui-audio-editor.md` › Warp markers).
+    if warp.is_some() {
+        crate::clip_audio::follow_audio_end(session, at, &original, &region)?;
     }
     let mut out = address(at, id);
     out.insert("warp".into(), json!(warped));
