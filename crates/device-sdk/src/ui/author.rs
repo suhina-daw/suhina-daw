@@ -104,6 +104,7 @@ impl CustomControl {
             bounds,
             tooltip: String::new(),
             visible_when: None,
+            active_when: None,
             gesture: UiGesture::Drag,
             x: None,
             y: None,
@@ -200,6 +201,12 @@ impl CustomControl {
     }
     pub fn visible_when(mut self, condition: UiValue) -> Self {
         self.visible_when = Some(condition);
+        self
+    }
+    /// Dims the control while `condition` reads zero or less, its tooltip saying `reason`
+    /// ([`ActiveWhen`]). It still takes edits.
+    pub fn active_when(mut self, condition: UiValue, reason: impl Into<String>) -> Self {
+        self.active_when = Some(ActiveWhen::new(condition, reason));
         self
     }
 

@@ -77,6 +77,7 @@ pub(super) fn canvas() -> DeviceUi {
         "Excitation position along the resonant body; affects the next strike",
     );
     ui.label("Modes per voice", [40.0, 416.0, 196.0, 20.0]);
+    ui.caption_of("quality");
     ui.menu("quality", "Modes per voice", [240.0, 412.0, 132.0, 30.0], "8 or 16 resonances per modal voice");
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 416.0, 440.0, 20.0]);
     ui.label(
@@ -88,6 +89,7 @@ pub(super) fn canvas() -> DeviceUi {
     ui.waveform([24.0, 144.0, 832.0, 140.0]);
     ui.number("root", "Root key", 24.0, 304.0, 130.0);
     ui.label("Playback", [182.0, 304.0, 148.0, 18.0]);
+    ui.caption_of("playback");
     ui.menu(
         "playback",
         "Sample playback",

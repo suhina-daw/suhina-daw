@@ -582,6 +582,7 @@ fn expanded_device() -> Device {
     graph.connections = vec![Connection::new("in", "g"), Connection::new("g", "out")];
     let mut big = DeviceUi { size: [600.0, 300.0], ..DeviceUi::default() };
     big.controls.push(CustomControl {
+        active_when: None,
         widget: None,
         visible_when: None,
         id: "power".into(),

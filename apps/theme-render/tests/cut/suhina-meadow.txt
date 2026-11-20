@@ -3,6 +3,7 @@
 # `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/cut.rs).
 suhina-meadow devices: clipped "-60"
 suhina-meadow devices: clipped "4"
+suhina-meadow expanded-instrument-sample: clipped "50%"
 suhina-meadow devices: clipped "Analog Clip"
 suhina-meadow devices: clipped "Right"
 suhina-meadow devices: clipped "Slope"

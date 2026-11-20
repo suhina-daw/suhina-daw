@@ -643,7 +643,9 @@ who chose Left or Right keeps their side.
 The toolbar exposes `browser`, `tempo`, `signature`, `grid`, `count-in`, `transport`,
 `position`, `metronome`, `mapping`, `performance`, `views`, `agents` module ids.
 Device SDK controls are elements such as `device-panel`, `knob`, `button` and
-`device-control`. Stable named track/clip/slot/scene scopes also exist.
+`device-control`; a control that has no effect in its device's current state is
+`device-control[inactive]`, drawn at its `opacity` (0.45 in the base sheet; still editable).
+Stable named track/clip/slot/scene scopes also exist.
 The native centred toolbar exposes the same module ids as CSS layouts. Padding and a border on
 `toolbar` pad it and keep it, and moving it in the window's grid (`grid-area`, margins) keeps it
 too; `display`, flex and grid properties, `gap`, sizes or a module's placement or `order` switch

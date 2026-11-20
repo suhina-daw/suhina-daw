@@ -81,6 +81,125 @@ fn stock_panel_is_valid_sdk_layout() {
     assert!(panel.ui.is_some());
 }
 
+/// A note held past the end of a looping, decaying sample and released, at `source`, with one
+/// parameter (by id) set to another value first.
+fn render_with(source: f64, change: Option<(&str, f64)>) -> Vec<f32> {
+    let mut instrument = Instrument::new();
+    let sample: Vec<f32> = (0..9600).map(|i| (i as f32 * 0.013).sin() * (1.0 - i as f32 / 9600.0)).collect();
+    instrument.samples().unwrap().load_sample(48000, 1, std::sync::Arc::from(sample));
+    instrument.set_param(param::SOURCE, source);
+    instrument.set_param(param::PLAYBACK, 2.0);
+    if let Some((id, value)) = change {
+        let index = PARAMS.iter().position(|info| info.id == id).unwrap();
+        instrument.set_param(index, value);
+    }
+    instrument.reset();
+    let mut out = vec![0.0; 2 * 32768];
+    instrument.event(NoteEvent::On { key: 64, velocity: 0.8 });
+    let (held, released) = out.split_at_mut(2 * 16384);
+    instrument.process(&ProcessContext::default(), held);
+    instrument.event(NoteEvent::Off { key: 64, velocity: 0.0 });
+    instrument.process(&ProcessContext::default(), released);
+    out
+}
+
+/// The panel dims a control exactly when it cannot change the sound: in each Source, every
+/// control its rule calls inactive leaves the render bit for bit the same, and every one it calls
+/// active changes it. Controls without a rule change the sound in every Source.
+#[test]
+fn inactive_controls_are_the_ones_that_change_nothing_in_that_source() {
+    let changes = [
+        ("quality", 0.0),
+        ("body_decay", 0.3),
+        ("brightness", 1.0),
+        ("structure", 0.04),
+        ("strike", 0.6),
+        ("blend", 0.1),
+        ("root", 48.0),
+        ("start", 0.3),
+        ("end", 0.5),
+        ("loop_start", 0.2),
+        ("loop_end", 0.6),
+        ("playback", 1.0),
+        ("attack", 0.05),
+        ("sustain", 0.3),
+    ];
+    for source in [0.0, 1.0, 2.0] {
+        let plain = render_with(source, None);
+        assert!(plain.iter().any(|v| v.abs() > 0.001), "source {source} plays");
+        for (id, value) in changes {
+            let rule = active::active_rule(id).unwrap_or_else(|| panic!("{id} has a rule"));
+            let lookup = |parameter: &str, _: bool, _: bool| {
+                if parameter == "source" {
+                    source
+                } else {
+                    PARAMS.iter().find(|info| info.id == parameter).map_or(0.0, |info| info.default)
+                }
+            };
+            let active = rule.condition.evaluate(&lookup) > 0.0;
+            let changed = render_with(source, Some((id, value))) != plain;
+            assert_eq!(changed, active, "{id} at source {source}: changes the sound {changed}, drawn active {active}");
+        }
+        for (id, value) in [
+            ("gain", -20.0),
+            ("release", 2.0),
+            ("key_low", 70.0),
+            ("key_high", 50.0),
+            ("velocity_low", 0.9),
+            ("velocity_high", 0.5),
+        ] {
+            assert!(active::active_rule(id).is_none(), "{id} acts on both layers");
+            assert_ne!(render_with(source, Some((id, value))), plain, "{id} at source {source}");
+        }
+    }
+    assert_eq!(
+        active::active_rule(active::WAVEFORM).map(|r| r.condition),
+        active::active_rule("start").map(|r| r.condition)
+    );
+}
+
+/// Every control of the compact panel and the expanded editor that edits a parameter dims by
+/// that parameter's rule, each caption with its control, the waveform by the sample layer's;
+/// page buttons and labels of their own never dim.
+#[test]
+fn both_presentations_dim_each_control_and_caption_by_its_parameter() {
+    use suhina_device_sdk::ui::Widget;
+    let layout = panel::layout();
+    for ui in [layout.ui.unwrap(), layout.expanded.unwrap()] {
+        for (index, control) in ui.controls.iter().enumerate() {
+            let bound = control.x.iter().chain(control.y.iter()).next().map(|b| b.parameter.as_str());
+            let expected = match (&control.widget, bound) {
+                (_, Some(parameter)) => active::active_rule(parameter),
+                (Some(Widget::SampleWaveform), None) => active::active_rule(active::WAVEFORM),
+                // A number's caption sits right before it and dims with it.
+                (Some(Widget::Label { .. }), None) => match ui.controls.get(index + 1) {
+                    Some(next) if matches!(next.widget, Some(Widget::Number { .. })) => {
+                        next.y.as_ref().and_then(|b| active::active_rule(&b.parameter))
+                    }
+                    _ => control.active_when.clone(),
+                },
+                _ => None,
+            };
+            assert_eq!(control.active_when, expected, "{}", control.name);
+        }
+        let label = |name: &str| {
+            ui.controls
+                .iter()
+                .find(|c| c.name == name && matches!(c.widget, Some(Widget::Label { .. })))
+                .map(|c| c.active_when.clone())
+        };
+        if ui.size[0] < 700.0 {
+            assert_eq!(label("Drop a local sample to play it"), Some(active::active_rule(active::WAVEFORM)));
+            assert_eq!(label("STRUCK MODAL · experimental v1"), Some(None));
+        } else {
+            assert_eq!(label("Modes per voice"), Some(active::active_rule("quality")));
+            assert_eq!(label("Playback"), Some(active::active_rule("playback")));
+            assert_eq!(label("Root key"), Some(active::active_rule("root")));
+            assert_eq!(label("Lowest key"), Some(None));
+        }
+    }
+}
+
 #[test]
 fn sustain_holds_both_hybrid_layers_until_the_same_pedal_release() {
     for source in [0.0, 1.0, 2.0] {

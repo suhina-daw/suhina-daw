@@ -111,7 +111,7 @@ let control = CustomControl::number("time_left", [64., 48., 50., 24.])
 ui.controls.push(control);
 ```
 
-Chainable `bounds`, `id`, `name`, `tooltip`, `visible_when` and `logarithmic` setters retain ordinary
+Chainable `bounds`, `id`, `name`, `tooltip`, `visible_when`, `active_when` and `logarithmic` setters retain ordinary
 `CustomControl` fields for custom X/Y bindings. Fallible `format`, `decimals`, `prefix` and
 `off_label` setters configure supported widgets and return an error on an incompatible widget;
 precision must be within 0..8. For example, `.format(TextFormat::Number)?.decimals(2)?`
@@ -336,6 +336,19 @@ same bounded validation as drawing expressions. Control width and height are at 
 Text supports `align: left|center` (default left) and `format: number|frequency|choice|tempo` (default number).
 Frequency formatting uses two decimal kHz at >=1000 Hz and the declared numeric precision below.
 The Delay example uses these fields for mutually exclusive tempo-step and millisecond controls.
+
+A control can also set `active_when`, an object with a numeric `condition` and a `reason`
+(1 to 256 bytes), for a control that stays on the panel but has no effect in the current state
+of the device, such as a sample control while the device plays its synthesized body. While the
+condition reads zero or less the control is *inactive*: the host draws it at the opacity the
+theme gives `device-control[inactive]` (0.45 in the base sheet), and its tooltip adds
+"Inactive: " and the reason on a new line. An inactive control still takes edits, menus and
+drops, so a value can be prepared before the setting that brings it into play; dimming is
+presentation only and never changes a parameter, its automation or the project. Give a control's
+caption (a separate label) the same rule so the pair dims together. The condition uses the same
+bounded validation as `visible_when`; a hidden control is not drawn at all, whatever
+`active_when` reads. The Rust builder is `.active_when(condition, reason)`; a file that uses the
+field is `.sd` version 7.
 
 `exp` and `log` expressions each take `value`; `log` is the natural logarithm. Domain errors
 and non-finite results evaluate to zero, like other drawing expressions. These support a continuous

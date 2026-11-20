@@ -63,6 +63,31 @@ The independent analytical render anchors in
 48 kHz, key 60 and velocity 0.8. They are self-authored CC0 data, not recorded reference audio.
 Acoustic quality is not established by matching this mathematical reference.
 
+### What each control affects
+
+Not every control acts in every Source. The compact panel and the expanded editor
+([Instrument editor](instrument-editor.md)) draw a control that has no effect in the current
+Source dimmed, and its tooltip says why and which Source brings it into play (the SDK's
+`active_when`, [custom UI](sdk-custom-ui.md#conditional-controls-and-text-layout)); a number's or
+menu's caption dims with it. `active::active_rule` holds the rules, so both presentations dim by
+the same table:
+
+| Control | Modal | Sample | Hybrid |
+|---|---|---|---|
+| Source, Gain | yes | yes | yes |
+| Release, the key range and the velocity range | yes | yes | yes |
+| Modes per voice, Body decay, Brightness, Structure, Strike position | yes | dimmed | yes |
+| Root, Attack, Sustain, Playback (Gate / One shot / Loop), source Start and End, loop Start and End, the waveform | dimmed | yes | yes |
+| Hybrid blend | dimmed | dimmed | yes |
+
+Release fades both layers after a key is released, and the key and velocity ranges decide which
+notes either layer plays, so none of them dims. A dimmed control still takes edits, menu choices
+and automation, so a value can be prepared before switching Source; dimming changes no
+parameter, automation lane or project state. A file dropped on the dimmed waveform still imports
+and selects Sample (*Import and project state*). A test renders each Source with every control
+changed in turn: a control the table dims leaves the output bit for bit the same, and one it
+leaves active changes it.
+
 ## Import and project state
 
 `device.loadSample` accepts Instrument and loads an ordinary local audio file. The command is

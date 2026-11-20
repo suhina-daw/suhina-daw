@@ -14,6 +14,7 @@ use suhina_dsp::{
     modal::{ModalBank, Mode},
 };
 
+pub mod active;
 pub mod panel;
 
 /// Model revision retained in project parameter state. Unknown revisions never run revision 1.

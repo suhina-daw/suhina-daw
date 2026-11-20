@@ -5,6 +5,7 @@ use super::*;
 #[test]
 fn the_eq_curves_display_takes_no_binding_and_draws_nothing_of_its_own() {
     let control = |x: Option<UiBinding>, y: Option<UiBinding>| CustomControl {
+        active_when: None,
         widget: Some(Widget::EqCurve),
         id: "curve".into(),
         name: "EQ curve".into(),
@@ -43,6 +44,7 @@ fn panels_follow_the_theme_and_tabs_validate_their_zero_based_range() {
     let parameter = Parameter::new("view", "View", (0., 2.), 0.);
     let mut ui = DeviceUi::default();
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "tab".into(),
         name: "Tab".into(),
         tooltip: String::new(),
@@ -114,6 +116,7 @@ fn widgets_work_with_unrelated_parameter_names() {
         let position = gesture == UiGesture::Position;
         let drag = gesture == UiGesture::Drag;
         let control = CustomControl {
+            active_when: None,
             widget: Some(widget),
             id: "reused".into(),
             name: "Reused".into(),
@@ -141,6 +144,7 @@ fn widgets_work_with_unrelated_parameter_names() {
 fn the_device_state_widgets_bind_no_parameter_and_the_layouts_gate_them() {
     let parameter = Parameter::new("gain", "Gain", (-24., 24.), 0.);
     let control = |widget, gesture| CustomControl {
+        active_when: None,
         id: "one".into(),
         name: "One".into(),
         tooltip: String::new(),
@@ -192,6 +196,7 @@ fn the_device_state_widgets_bind_no_parameter_and_the_layouts_gate_them() {
 #[test]
 fn widget_drawings_resolve_the_host_palette() {
     let control = CustomControl {
+        active_when: None,
         widget: Some(Widget::Button { label: "Enable".into(), off_label: None, indicator: false }),
         id: "enable".into(),
         name: "Enable".into(),
@@ -217,6 +222,7 @@ fn widget_drawings_resolve_the_host_palette() {
     assert!(draws.iter().any(|draw| matches!(draw, Draw::Text { color, .. } if *color == palette.text)));
 
     let knob = CustomControl {
+        active_when: None,
         widget: Some(Widget::Knob { label: "Amount".into() }),
         id: "amount".into(),
         name: "Amount".into(),
@@ -234,6 +240,7 @@ fn widget_drawings_resolve_the_host_palette() {
     assert!(!draws.iter().any(|draw| matches!(draw, Draw::Arc { .. })));
 
     let authored = CustomControl {
+        active_when: None,
         widget: None,
         id: "authored".into(),
         name: "Authored".into(),
@@ -254,6 +261,7 @@ fn widget_drawings_resolve_the_host_palette() {
     );
 
     let number = CustomControl {
+        active_when: None,
         widget: Some(Widget::Number {
             decimals: 0,
             format: TextFormat::Number,

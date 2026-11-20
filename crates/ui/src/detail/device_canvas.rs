@@ -325,6 +325,7 @@ fn sample_waveform(
     actions: &mut Vec<Action>,
     inline_recording: bool,
     style: Option<&crate::kit::element::Computed>,
+    inactive: Option<&str>,
 ) {
     let sample_marker_color = || color(styled_palette(widget_palette(), style).accent);
     let visible = bounds.intersect(ui.clip_rect());
@@ -741,11 +742,14 @@ fn sample_waveform(
     } else {
         egui::CursorIcon::Default
     };
-    response.on_hover_cursor(cursor).on_hover_text(if slicing {
-        "Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Click a slice to play it. Right-click: fit or edit. Slice: double-click to add/remove a boundary; drag a line to move it. Alt bypasses snap."
-    } else {
-        "Drop a local sample. Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Right-click: fit the view. Drag S/E to set source or loop boundaries."
-    });
+    response.on_hover_cursor(cursor).on_hover_text(inactive_tooltip(
+        if slicing {
+            "Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Click a slice to play it. Right-click: fit or edit. Slice: double-click to add/remove a boundary; drag a line to move it. Alt bypasses snap."
+        } else {
+            "Drop a local sample. Drag down to zoom in, up to zoom out, sideways to move. Ctrl+wheel: zoom at pointer. Shift+wheel or middle drag: pan. Right-click: fit the view. Drag S/E to set source or loop boundaries."
+        },
+        inactive,
+    ));
     let pointer_down = ui.input(|i| i.pointer.primary_down());
     ui.ctx().data_mut(|d| {
         d.insert_temp(view_id, (source.clone(), view));
@@ -1118,6 +1122,7 @@ impl EnvelopePlot {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn envelope(
     ui: &mut egui::Ui,
     bounds: Rect,
@@ -1126,6 +1131,7 @@ fn envelope(
     target: (TrackId, usize),
     actions: &mut Vec<Action>,
     style: Option<&crate::kit::element::Computed>,
+    inactive: Option<&str>,
 ) {
     let Some(Widget::Envelope { attack, decay, level, release }) = &control.widget else { return };
     let find = |id: &str| parameters.iter().find(|p| p.id == id);
@@ -1176,7 +1182,10 @@ fn envelope(
             .join(" + ");
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &caption));
         let response = response
-            .on_hover_text(format!("{caption}: drag point; Shift for precision; double-click resets"))
+            .on_hover_text(inactive_tooltip(
+                &format!("{caption}: drag point; Shift for precision; double-click resets"),
+                inactive,
+            ))
             .on_hover_cursor(egui::CursorIcon::Grab);
         if response.is_pointer_button_down_on() {
             response.request_focus();
@@ -1996,6 +2005,21 @@ fn paint_scaled(
         }
     }
 }
+/// How opaque an inactive control is drawn where no sheet styles `device-control[inactive]`.
+const INACTIVE_OPACITY: f32 = 0.45;
+
+/// A control's tooltip, with why it has no effect on a line of its own while it is inactive.
+fn inactive_tooltip(tooltip: &str, inactive: Option<&str>) -> String {
+    match inactive {
+        Some(reason) if tooltip.is_empty() => format!("Inactive: {reason}"),
+        Some(reason) => format!(
+            "{tooltip}
+Inactive: {reason}"
+        ),
+        None => tooltip.to_owned(),
+    }
+}
+
 fn control_selected(control: &CustomControl, values: &Values) -> bool {
     control.x.iter().chain(control.y.iter()).any(|binding| {
         values.get(&binding.parameter).is_some_and(|parameter| match control.gesture {
@@ -2398,6 +2422,7 @@ pub(crate) fn show(
     let reduction = canvas.size[1] - fitted_size(canvas, rect.height()).y;
     let stroke_id = ui.scope_id().with(("sd-draw", track.0, device));
     let stroke = draw_stroke(ui, stroke_id);
+    let base_opacity = ui.opacity();
     for (control, drawings) in canvas.controls.iter().zip(&loaded.controls) {
         if sample_panel
             && control
@@ -2418,7 +2443,41 @@ pub(crate) fn show(
         }
         let [x, y, w, h] = fitted_control_bounds(control, reduction);
         let bounds = Rect::from_min_size(rect.min + Vec2::new(x, y) * stretch, Vec2::new(w, h) * stretch);
-        let control_scope = crate::kit::element::DEVICE_CONTROL.id(&control.id).enter();
+        // A control with no effect in the device's current state is drawn dimmed and says why, but
+        // still takes edits: dimming changes no parameter (`active_when`, sdk-custom-ui.md).
+        let inactive = control
+            .active_when
+            .as_ref()
+            .filter(|active| active.condition.evaluate(&|id, norm, log| values.read(id, norm, log)) <= 0.0)
+            .map(|active| active.reason.as_str());
+        let control_scope = match inactive {
+            Some(_) => crate::kit::element::DEVICE_CONTROL.id(&control.id).attribute("inactive", "").enter(),
+            None => crate::kit::element::DEVICE_CONTROL.id(&control.id).enter(),
+        };
+        // The sheet's `device-control[inactive] { opacity }` (the base sheet's 0.45), or that.
+        let opacity = if inactive.is_some() {
+            match control_scope
+                .style()
+                .and_then(|style| style.authored_value(suhina_style::property::Property::Opacity))
+            {
+                Some(suhina_style::value::Value::Number(opacity)) => opacity.clamp(0.0, 1.0),
+                _ => INACTIVE_OPACITY,
+            }
+        } else {
+            1.0
+        };
+        ui.set_opacity(base_opacity * opacity);
+        let mut painter = painter.clone();
+        painter.multiply_opacity(opacity);
+        let restated;
+        let control = match inactive {
+            Some(reason) => {
+                restated =
+                    CustomControl { tooltip: inactive_tooltip(&control.tooltip, Some(reason)), ..control.clone() };
+                &restated
+            }
+            None => control,
+        };
         // The panel's sheet hides a control with `display: none`: artwork in a light and a dark
         // version, under `@media (prefers-color-scheme: …)`.
         if control_scope
@@ -2432,7 +2491,7 @@ pub(crate) fn show(
             let style = role.style();
             let mut styled_ui = role.ui(ui);
             let ui = &mut *styled_ui;
-            envelope(ui, bounds, control, parameters, (track, device), actions, style.as_ref());
+            envelope(ui, bounds, control, parameters, (track, device), actions, style.as_ref(), inactive);
             continue;
         }
         if matches!(control.widget, Some(Widget::SampleRecording)) {
@@ -2469,6 +2528,7 @@ pub(crate) fn show(
                 actions,
                 !canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleRecording))),
                 style.as_ref(),
+                inactive,
             );
             continue;
         }
@@ -2787,7 +2847,7 @@ pub(crate) fn show(
                     )
                 })
                 .inner
-                .on_hover_text("Drag to adjust, click to type; Shift for precision");
+                .on_hover_text(inactive_tooltip("Drag to adjust, click to type; Shift for precision", inactive));
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &control.name));
             if value.is_finite() && (response.changed() || response.drag_stopped()) {
                 actions.push(Action::new(
@@ -3127,6 +3187,7 @@ pub(crate) fn show(
             }
         }
     }
+    ui.set_opacity(base_opacity);
 }
 
 #[cfg(test)]

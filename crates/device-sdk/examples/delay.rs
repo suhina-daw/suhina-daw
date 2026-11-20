@@ -430,6 +430,7 @@ fn build_panel(parameters: &[Parameter]) -> Result<DeviceUi, suhina_device_sdk::
         )?,
     );
     ui.controls.push(tone.place(CustomControl {
+        active_when: None,
         widget: Some(Widget::FilterBand { min_hz: 50., max_hz: 18000. }),
         id: "filter_graph".into(),
         name: "Filter frequency and width".into(),

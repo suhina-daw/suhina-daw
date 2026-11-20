@@ -30,6 +30,7 @@ fn graphics_need_no_binding_and_a_negative_drag_scale_is_allowed() {
     let params = [Parameter::new("slope", "Slope", (0., 2.), 1.)];
     let mut ui = DeviceUi { size: [100., 100.], ..DeviceUi::default() };
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "view".into(),
         name: "View".into(),
         tooltip: String::new(),
@@ -42,6 +43,7 @@ fn graphics_need_no_binding_and_a_negative_drag_scale_is_allowed() {
         visible_when: None,
     });
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "ratio".into(),
         name: "Ratio".into(),
         tooltip: String::new(),
@@ -62,6 +64,7 @@ fn graphics_need_no_binding_and_a_negative_drag_scale_is_allowed() {
 fn draw_and_expand_gestures_need_their_bindings() {
     let params = [Parameter::new("bar", "Bar", (0., 1.), 0.), Parameter::new("page", "Page", (0., 6.), 0.)];
     let control = |id: &str, widget, gesture, x, y| CustomControl {
+        active_when: None,
         id: id.into(),
         name: id.into(),
         tooltip: String::new(),
@@ -88,6 +91,7 @@ fn draw_and_expand_gestures_need_their_bindings() {
 fn local_pages_are_bounded_native_ui_state_and_not_sd_parameters() {
     let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "model".into(),
         name: "Model".into(),
         tooltip: String::new(),
@@ -121,6 +125,7 @@ fn handles_bind_an_axis_or_two_and_presets_name_declared_values() {
     let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.), Parameter::new("res", "Res", (0., 1.), 0.)];
     let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "cut_handle".into(),
         name: "Cut".into(),
         tooltip: String::new(),
@@ -210,6 +215,7 @@ fn waveform_preview_round_trips_and_rejects_missing_shape() {
     let params = [Parameter::new("rate", "Rate", (0.01, 20.), 1.), shape];
     let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "preview".into(),
         name: "Preview".into(),
         tooltip: String::new(),
@@ -240,6 +246,7 @@ fn envelope_widgets_round_trip_and_reject_invalid_stage_references() {
         Widget::Envelope { attack: "a".into(), decay: "d".into(), level: "s".into(), release: Some("r".into()) };
     let mut ui = DeviceUi {
         controls: vec![CustomControl {
+            active_when: None,
             widget: Some(widget),
             visible_when: None,
             id: "env".into(),
@@ -269,6 +276,7 @@ fn drag_scale_defaults_to_one_and_rejects_invalid_values() {
     assert_eq!(old.drag_scale, 1.);
     let mut ui = DeviceUi {
         controls: vec![CustomControl {
+            active_when: None,
             widget: None,
             visible_when: None,
             id: "amount".into(),
@@ -288,4 +296,24 @@ fn drag_scale_defaults_to_one_and_rejects_invalid_values() {
         ui.controls[0].x.as_mut().unwrap().drag_scale = scale;
         assert_eq!(ui.validate(&parameters).is_ok(), [1., 2., -1.].contains(&scale), "{scale}");
     }
+}
+
+#[test]
+fn an_inactive_rule_names_a_reason_and_reads_only_known_values() {
+    let params = [Parameter::new("mode", "Mode", (0., 2.), 0.), Parameter::new("depth", "Depth", (0., 1.), 0.5)];
+    let panel = |rule: ActiveWhen| DeviceUi {
+        controls: vec![CustomControl { active_when: Some(rule), ..CustomControl::number("depth", [0., 0., 60., 24.]) }],
+        ..DeviceUi::default()
+    };
+    let mode = || UiValue::parameter("mode", false);
+    assert!(panel(ActiveWhen::new(mode().equals(1.0), "Mode B only")).validate(&params).is_ok());
+    assert!(panel(ActiveWhen::new(mode(), "a".repeat(MAX_INACTIVE_REASON))).validate(&params).is_ok());
+    assert!(panel(ActiveWhen::new(mode(), "")).validate(&params).is_err(), "it says why");
+    assert!(panel(ActiveWhen::new(mode(), "  ")).validate(&params).is_err(), "it says why");
+    assert!(panel(ActiveWhen::new(mode(), "a".repeat(MAX_INACTIVE_REASON + 1))).validate(&params).is_err());
+    let unknown = UiValue::parameter("missing", false);
+    assert!(panel(ActiveWhen::new(unknown, "Never")).validate(&params).is_err(), "unknown parameter");
+    // A host value, such as whether the expanded panel is open, may decide it too.
+    let expanded = UiValue::parameter(EXPANDED_ID, false);
+    assert!(panel(ActiveWhen::new(expanded, "Open the editor")).validate(&params).is_ok());
 }

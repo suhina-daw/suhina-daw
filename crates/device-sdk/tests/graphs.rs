@@ -225,7 +225,7 @@ fn version_one_gain_example_remains_readable_and_new_nodes_require_version_two()
     let mut out = [1.0, -1.0];
     g.compile().unwrap().process(&mut out);
     assert_eq!(out, [1.0, -1.0]);
-    let text = graph(K::Tanh).to_sd().unwrap().replace("\"version\": 6", "\"version\": 1");
+    let text = graph(K::Tanh).to_sd().unwrap().replace("\"version\": 7", "\"version\": 1");
     assert!(DeviceGraph::from_sd(&text).is_err());
     assert!(g.compile_at(f64::NAN).is_err());
     assert!(g.compile_at(1e9).is_err());
@@ -933,5 +933,23 @@ fn the_expanded_panel_fixture_reads_and_round_trips() {
     assert_eq!(expanded.controls[0].name, "Big power switch");
     assert!(g.ui.is_none());
     // A Windows checkout may have turned the fixture's line ends into CRLF; `to_sd` writes LF.
-    assert_eq!(g.to_sd().unwrap(), text.replace("\r\n", "\n").replacen("\"version\": 5", "\"version\": 6", 1));
+    assert_eq!(g.to_sd().unwrap(), text.replace("\r\n", "\n").replacen("\"version\": 5", "\"version\": 7", 1));
+}
+
+/// The version 7 file: a control that is inactive while Power is off (`active_when`). Older
+/// versions refuse it, and it writes back what it read.
+#[test]
+fn the_inactive_control_fixture_reads_and_round_trips_as_version_7() {
+    let text = include_str!("fixtures/active-when-v7.sd");
+    let g = DeviceGraph::from_sd(text).unwrap();
+    let expanded = g.expanded.as_ref().unwrap();
+    let rule = expanded.controls[1].active_when.as_ref().unwrap();
+    assert!(rule.reason.starts_with("Power is off"));
+    let power = |on: f64| move |id: &str, _: bool, _: bool| if id == "power" { on } else { 0.0 };
+    assert_eq!(rule.condition.evaluate(&power(0.0)), 0.0);
+    assert_eq!(rule.condition.evaluate(&power(1.0)), 1.0);
+    assert!(expanded.controls[0].active_when.is_none());
+    let json = |text: &str| serde_json::from_str::<serde_json::Value>(text).unwrap();
+    assert_eq!(json(&g.to_sd().unwrap()), json(text));
+    assert!(DeviceGraph::from_sd(&text.replacen("\"version\": 7", "\"version\": 6", 1)).is_err());
 }

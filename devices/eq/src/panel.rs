@@ -34,6 +34,7 @@ fn panel() -> DeviceUi {
         ..DeviceUi::default()
     };
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "eq-curve".into(),
         name: "EQ curve".into(),
         tooltip: "Drag a band's dot to move its frequency and gain; double-click resets the \
@@ -52,6 +53,7 @@ fn panel() -> DeviceUi {
     // The globals' column: a row every 28 px, 8 px between rows, from the caption at 4 to the
     // Edit switch at 135 (which the curve display's host side draws, `eq_curve.rs`).
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "mode".into(),
         name: "Mode".into(),
         tooltip: "Stereo runs curve A on both sides; Left/Right and Mid/Side run curve A on the \
@@ -75,6 +77,7 @@ fn panel() -> DeviceUi {
 /// ink (the sampler's labels give it that too); a shorter box clips the glyphs' bottoms.
 fn caption(ui: &mut DeviceUi, text: &str, y: f32) {
     ui.controls.push(CustomControl {
+        active_when: None,
         id: format!("{text}-caption"),
         name: format!("{text} caption"),
         tooltip: String::new(),
@@ -91,6 +94,7 @@ fn caption(ui: &mut DeviceUi, text: &str, y: f32) {
 /// A toggle in the globals' column: Adaptive Q, the only one.
 fn toggle(ui: &mut DeviceUi, label: &str, y: f32) {
     ui.controls.push(CustomControl {
+        active_when: None,
         id: "adaptiveQ".into(),
         name: "Adaptive Q".into(),
         tooltip: "Narrows a bell as its gain grows past 6 dB and widens it below.".into(),
@@ -107,6 +111,7 @@ fn toggle(ui: &mut DeviceUi, label: &str, y: f32) {
 /// A value in the globals' column: Scale or Output, named by a prefix on its readout.
 fn number(ui: &mut DeviceUi, id: &str, name: &str, prefix: &str, format: TextFormat, y: f32) {
     ui.controls.push(CustomControl {
+        active_when: None,
         id: id.into(),
         name: name.into(),
         tooltip: "Drag vertically; Shift for precision; double click resets".into(),

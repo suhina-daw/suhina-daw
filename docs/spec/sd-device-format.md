@@ -56,8 +56,9 @@ Legacy `native_device` wrappers are rejected, as on main.
 
 The top-level object contains `format: "suhina-device"`, `version`, a `device` object,
 `nodes`, `connections` and optional `editor` metadata. The reader accepts file versions 1 through
-6, and a writer always writes the newest (*Versions* below); a version 4 or older file with
-`device.expanded`, or a version 5 or older file with a panel `style`, is rejected. Older readers
+7, and a writer always writes the newest (*Versions* below); a version 4 or older file with
+`device.expanded`, a version 5 or older file with a panel `style`, or a version 6 or older file
+with a control's `active_when`, is rejected. Older readers
 reject a version they do not know, preventing
 silent loss of authoring metadata when saving. File version describes
 the JSON schema; `device.version` describes revisions of a device's identity and parameter
@@ -144,6 +145,7 @@ separate (above).
 | 4 | `device.version` and `migrations`, apart from the file version |
 | 5 | `device.expanded`, the expanded panel; since 2026-10-24 written by every file, not only one with an expanded panel |
 | 6 | A panel's `style`, its own style sheet (theme tiers, `docs/spec/theme-skins.md`) |
+| 7 | A control's `active_when`, which dims a control while it has no effect ([custom UI](sdk-custom-ui.md) › Conditional controls) |
 
 ## Visual connection layout
 
