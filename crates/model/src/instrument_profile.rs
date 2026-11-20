@@ -6,7 +6,8 @@
 use crate::{Device, DeviceKind, Extension};
 
 const KEY: &str = "instrument_modal_profile";
-const MAX_BYTES: usize = 4096;
+/// Room for a revision-4 set of 16 fitted recordings with their attacks (about 800 KiB).
+const MAX_BYTES: usize = 1 << 20;
 
 impl Device {
     /// Opaque modal bytes. The native profile codec validates their contents before rendering.
@@ -24,7 +25,7 @@ impl Device {
             return Err("modal profiles need an Instrument");
         }
         if bytes.is_empty() || bytes.len() > MAX_BYTES {
-            return Err("modal profile state needs 1..4096 bytes");
+            return Err("modal profile state needs 1 byte to 1 MiB");
         }
         self.clear_instrument_modal_profile();
         self.extensions.0.push(Extension { format: "suhina".into(), key: KEY.into(), data: bytes.to_vec() });
@@ -49,7 +50,7 @@ mod tests {
         assert_eq!(device.instrument_modal_profile(), Some([1, 2, 3].as_slice()));
         assert_eq!(device.sample_file(), Some("moved.wav"));
         let before = device.clone();
-        assert!(device.set_instrument_modal_profile(&[0; MAX_BYTES + 1]).is_err());
+        assert!(device.set_instrument_modal_profile(&vec![0; MAX_BYTES + 1]).is_err());
         assert_eq!(device, before);
         device.clear_instrument_modal_profile();
         assert_eq!(device.sample_file(), Some("moved.wav"));

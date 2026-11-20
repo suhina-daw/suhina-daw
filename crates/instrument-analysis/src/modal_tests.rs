@@ -71,22 +71,29 @@ fn constant_offset_and_gain_do_not_change_relative_modal_energy() {
 }
 
 #[test]
-fn silence_short_constant_growing_and_noise_sources_do_not_get_a_model() {
+fn silence_short_growing_and_noise_sources_do_not_get_a_model_but_a_held_tone_is_sustained() {
     for pcm in [vec![0.0; 22050], vec![0.3; 22050]] {
         assert_eq!(fit(&pcm, 22050, 1, 0..pcm.len(), 60, |_, _| true).unwrap().outcome, Outcome::Silent);
     }
     let short = struck(22050, 0.05, &[(660.0, 1.0, 0.8)]);
     assert_eq!(fit(&short, 22050, 1, 0..short.len(), 60, |_, _| true).unwrap().outcome, Outcome::TooShort);
-    for slope in [0.0, 1.0] {
-        let pcm: Vec<_> = (0..44100)
+    let held = |slope: f64| -> Vec<f32> {
+        (0..44100)
             .map(|n| {
                 let t = n as f64 / 22050.0;
                 (0.05 * (slope * t).exp() * (TAU * 733.0 * t).sin()) as f32
             })
-            .collect();
-        let report = fit(&pcm, 22050, 1, 0..pcm.len(), 60, |_, _| true).unwrap();
-        assert!(report.profile.is_none(), "{report:?}");
-    }
+            .collect()
+    };
+    // A rising envelope is no resonance.
+    let rising = held(1.0);
+    assert!(fit(&rising, 22050, 1, 0..rising.len(), 60, |_, _| true).unwrap().profile.is_none());
+    // A level that stays put (a bowed or blown partial) is kept as sustained, longest T60.
+    let steady = held(0.0);
+    let report = fit(&steady, 22050, 1, 0..steady.len(), 60, |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Fitted, "{report:?}");
+    let mode = report.modes.iter().find(|m| (m.frequency_hz - 733.0).abs() < 0.5).unwrap();
+    assert!(mode.sustained && mode.decay_seconds == SUSTAINED_SECONDS, "{mode:?}");
     let mut seed = 1u32;
     let noise: Vec<_> = (0..44100)
         .map(|_| {
@@ -129,9 +136,10 @@ fn held_out_temporal_errors_are_not_used_to_fit_the_decay() {
     let hz = 440.0;
     let slope = -3.0;
     let data: Vec<_> = (0..12).map(|i| (i, i as f64 * 0.1, -0.3 + slope * i as f64 * 0.1)).collect();
-    let (_, fitted, evidence) = estimate(hz, &data).unwrap();
-    assert!((fitted - slope).abs() < 1e-12);
-    assert!(evidence.validation_rms_db < 1e-12);
+    let fitted = estimate(hz, &data).unwrap();
+    assert!((fitted.slope - slope).abs() < 1e-12);
+    assert!(fitted.evidence.validation_rms_db < 1e-12);
+    assert!(fitted.fast.is_none(), "one exponential needs no fast part");
     let mut disturbed = data;
     for (i, _, log_amp) in &mut disturbed {
         if *i % 2 == 1 {
@@ -233,4 +241,89 @@ fn a_mode_span_skips_an_attack_and_stops_at_the_floor_or_a_rise() {
         .map(|(i, db)| (i, i as f64 * 0.05, log(*db)))
         .collect();
     assert_eq!(envelope_span(&deep).len(), 4);
+}
+
+fn angle_between(a: f64, b: f64) -> f64 {
+    (a - b + std::f64::consts::PI).rem_euclid(TAU) - std::f64::consts::PI
+}
+
+#[test]
+fn a_recording_keeps_phases_level_and_up_to_32_modes() {
+    let truth = [(421.7, 1.8, 0.5), (1139.3, 1.1, 0.3), (2497.1, 0.7, 0.15)];
+    for rate in [22050, 48000] {
+        let pcm = struck(rate, 2.0, &truth);
+        let report = fit(&pcm, rate, 1, 0..pcm.len(), 57, |_, _| true).unwrap();
+        let recording = report.recording.as_ref().unwrap();
+        assert_eq!(recording.key, 57);
+        assert!(recording.validate().is_ok());
+        assert!(recording.modes.len() <= 32 && recording.modes.len() == report.recording_modes.len());
+        assert!((recording.level - 0.95).abs() < 0.15, "{rate}: level {}", recording.level);
+        for (i, &(hz, _, _)) in truth.iter().enumerate() {
+            let mode = report
+                .recording_modes
+                .iter()
+                .min_by(|a, b| (a.frequency_hz - hz).abs().total_cmp(&(b.frequency_hz - hz).abs()))
+                .unwrap();
+            assert!((mode.frequency_hz - hz).abs() < 0.4);
+            assert!(angle_between(mode.phase, 0.37 * i as f64).abs() < 0.25, "{rate} {hz}: {mode:?}");
+        }
+    }
+}
+
+#[test]
+fn a_fast_first_decay_becomes_a_two_part_mode() {
+    let ln1000 = 1000.0_f64.ln();
+    let pcm: Vec<f32> = (0..22050 * 3)
+        .map(|n| {
+            let t = n as f64 / 22050.0;
+            let envelope = 0.6 * (-ln1000 * t / 0.25).exp() + 0.4 * (-ln1000 * t / 2.5).exp();
+            (0.5 * envelope * (TAU * 523.0 * t).sin()) as f32
+        })
+        .collect();
+    let report = fit(&pcm, 22050, 1, 0..pcm.len(), 60, |_, _| true).unwrap();
+    let mode = report.recording_modes.iter().find(|m| (m.frequency_hz - 523.0).abs() < 1.0).unwrap();
+    assert!((mode.decay_seconds - 2.5).abs() / 2.5 < 0.15, "{mode:?}");
+    assert!((mode.fast_decay_seconds - 0.25).abs() / 0.25 < 0.3, "{mode:?}");
+    assert!((mode.fast_share - 0.6).abs() < 0.15, "{mode:?}");
+    let stored = report.recording.unwrap();
+    assert!(stored.modes.iter().any(|m| m.fast_share > 0.0 && m.fast_decay_seconds > 0.0));
+}
+
+#[test]
+fn a_beating_pair_becomes_a_mode_with_a_partner() {
+    let ln1000 = 1000.0_f64.ln();
+    let pcm: Vec<f32> = (0..22050 * 4)
+        .map(|n| {
+            let t = n as f64 / 22050.0;
+            let envelope = (-ln1000 * t / 2.0).exp();
+            (0.5 * envelope * ((TAU * 440.0 * t).sin() + 0.2 * (TAU * 443.0 * t).sin())) as f32
+        })
+        .collect();
+    let report = fit(&pcm, 22050, 1, 0..pcm.len(), 69, |_, _| true).unwrap();
+    let mode = report.recording_modes.iter().find(|m| (m.frequency_hz - 440.5).abs() < 3.0).unwrap();
+    assert!((2.7..=3.3).contains(&mode.beat_hz), "{mode:?}");
+    assert!((0.1..=0.25).contains(&mode.beat_share), "{mode:?}");
+    // A single decaying sine has no partner.
+    let plain = struck(22050, 2.0, &[(733.2, 1.4, 0.7)]);
+    let report = fit(&plain, 22050, 1, 0..plain.len(), 60, |_, _| true).unwrap();
+    assert!(report.recording_modes.iter().all(|m| m.beat_share == 0.0), "{:?}", report.recording_modes);
+}
+
+#[test]
+fn a_noisy_strike_keeps_an_attack_that_a_clean_one_barely_needs() {
+    let clean = struck(22050, 2.0, &[(421.7, 1.8, 0.5), (1139.3, 1.1, 0.3)]);
+    let mut noisy = clean.clone();
+    let mut seed = 7u32;
+    for (n, sample) in noisy.iter_mut().take(441).enumerate() {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        *sample += 0.4 * (f64::from(seed) / f64::from(u32::MAX) * 2.0 - 1.0) as f32 * (1.0 - n as f32 / 441.0);
+    }
+    let energy = |pcm: &[f32]| -> f64 {
+        let recording = fit(pcm, 22050, 1, 0..pcm.len(), 60, |_, _| true).unwrap().recording.unwrap();
+        assert!(recording.attack.len() <= 22050 / 4);
+        recording.attack.iter().map(|x| f64::from(*x).powi(2)).sum()
+    };
+    let (clean_energy, noisy_energy) = (energy(&clean), energy(&noisy));
+    assert!(noisy_energy > 0.0, "the strike noise is kept as the attack");
+    assert!(noisy_energy > 10.0 * clean_energy, "{noisy_energy} vs {clean_energy}");
 }

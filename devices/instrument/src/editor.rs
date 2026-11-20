@@ -6,6 +6,9 @@
 use super::Canvas;
 use suhina_device_sdk::ui::{DeviceUi, UiGesture, Widget};
 
+/// The revisions whose Model page shows Strike position and the bar controls.
+const STRUCK_OR_BARS: &[u16] = &[1, 3];
+
 pub(super) fn canvas() -> DeviceUi {
     let mut ui = Canvas::new([880.0, 520.0]);
     ui.title("Instrument", [24.0, 16.0, 400.0, 34.0], 28.0);
@@ -15,6 +18,8 @@ pub(super) fn canvas() -> DeviceUi {
     ui.only_revision(2);
     ui.label("Experimental struck and bar bodies · revision 3", [24.0, 54.0, 450.0, 20.0]);
     ui.only_revision(3);
+    ui.label("Experimental fitted model · revision 4", [24.0, 54.0, 450.0, 20.0]);
+    ui.only_revision(4);
     ui.label("SOURCE", [632.0, 16.0, 220.0, 18.0]);
     ui.menu(
         "source",
@@ -81,7 +86,7 @@ pub(super) fn canvas() -> DeviceUi {
         [646.0, 208.0, 150.0, 138.0],
         "Excitation position along the resonant body; on a bar, from its centre (lowest) to its end. Next strike",
     );
-    ui.except_revision(2, 1);
+    ui.only_revisions(STRUCK_OR_BARS, 1);
     ui.dial(
         "strike",
         "Strike colour",
@@ -89,26 +94,33 @@ pub(super) fn canvas() -> DeviceUi {
         "Creative excitation weighting of accepted modes, not a measured impact position; next strike only",
     );
     ui.only_revision(2);
+    ui.dial(
+        "strike",
+        "Strike colour",
+        [646.0, 208.0, 150.0, 138.0],
+        "Creative excitation weighting of fitted modes, not a measured impact position; next strike only",
+    );
+    ui.only_revision(4);
     ui.label("Modes per voice", [40.0, 416.0, 196.0, 20.0]);
     ui.menu("quality", "Modes per voice", [240.0, 412.0, 132.0, 30.0], "8 or 16 resonances per modal voice");
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 416.0, 440.0, 20.0]);
     ui.only_revision(2);
-    // Bar bodies and their mallet (revision 3); an accepted profile ignores them.
+    // Bar bodies and their mallet (revision 3, and 1 read as 3); a profile or fitted set ignores them.
     ui.label("Body", [400.0, 394.0, 150.0, 18.0]);
-    ui.except_revision(2, 1);
+    ui.only_revisions(STRUCK_OR_BARS, 1);
     ui.menu("body", "Body", [400.0, 416.0, 150.0, 28.0], "Struck, or an experimental Marimba or Vibraphone bar");
-    ui.except_revision(2, 1);
+    ui.only_revisions(STRUCK_OR_BARS, 1);
     ui.label("Mallet model", [566.0, 394.0, 120.0, 18.0]);
-    ui.except_revision(2, 1);
+    ui.only_revisions(STRUCK_OR_BARS, 1);
     ui.menu(
         "mallet_model",
         "Mallet model",
         [566.0, 416.0, 120.0, 28.0],
         "Bars: Contact simulates the mallet against the moving bar; Pulse adds a fixed force pulse",
     );
-    ui.except_revision(2, 1);
+    ui.only_revisions(STRUCK_OR_BARS, 1);
     ui.number("mallet_hardness", "Mallet hardness", 702.0, 394.0, 140.0);
-    ui.except_revision(2, 2);
+    ui.only_revisions(STRUCK_OR_BARS, 2);
     ui.label(
         "An original experimental resonator, not a calibrated acoustic instrument. Changes shape the next strike.",
         [24.0, 486.0, 832.0, 24.0],

@@ -239,18 +239,21 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     modal_fitting_lifecycle();
 }
 
+fn strike(scale: f64) -> Vec<f32> {
+    (0..96000)
+        .map(|i| {
+            let t = i as f64 / 48000.0;
+            (0.5 * (-1000.0_f64.ln() * t / 1.6).exp() * (std::f64::consts::TAU * 447.3 * scale * t).sin()
+                + 0.25 * (-1000.0_f64.ln() * t / 0.9).exp() * (std::f64::consts::TAU * 1237.9 * scale * t + 0.4).sin())
+                as f32
+        })
+        .collect()
+}
+
 fn modal_fitting_lifecycle() {
     let folder = super::temp_dir::TempDir::new("instrument-modal-fit");
     let path = folder.join("authored-strike.wav");
-    let samples: Vec<_> = (0..96000)
-        .map(|i| {
-            let t = i as f64 / 48000.0;
-            (0.5 * (-1000.0_f64.ln() * t / 1.6).exp() * (std::f64::consts::TAU * 447.3 * t).sin()
-                + 0.25 * (-1000.0_f64.ln() * t / 0.9).exp() * (std::f64::consts::TAU * 1237.9 * t + 0.4).sin())
-                as f32
-        })
-        .collect();
-    suhina_test_support::write_wav(&path, 48000, 1, suhina_test_support::WavFormat::Float32, &samples);
+    suhina_test_support::write_wav(&path, 48000, 1, suhina_test_support::WavFormat::Float32, &strike(1.0));
     let mut session = Session::new(project());
     run(&mut session, "device.add", json!({"id":"instrument"}));
     run(&mut session, "device.loadSample", json!({"path":path}));
@@ -267,7 +270,8 @@ fn modal_fitting_lifecycle() {
     assert_eq!(status["status"], "ready");
     assert_eq!(status["modal"]["outcome"], "fitted", "{status}");
     assert_eq!(status["modal"]["validationScope"], "sameRecordingTemporalEnvelopes");
-    assert_eq!(status["modal"]["phaseReconstructed"], false);
+    assert_eq!(status["modal"]["phaseReconstructed"], true, "phases are measured from the recording");
+    assert!(status["modal"]["recording"]["modeCount"].as_u64().unwrap() >= 2, "{status}");
     assert_eq!(session.project(), &before);
     assert_eq!(session.undo_steps(), depth);
     assert_eq!(render(session.project(), session.audio()), sample_sound);
@@ -282,10 +286,12 @@ fn modal_fitting_lifecycle() {
     let device = &fitted.channels[0].devices[0];
     assert_eq!(device.sample_file(), before.channels[0].devices[0].sample_file());
     assert_eq!(device.state, before.channels[0].devices[0].state);
-    let profile = suhina_dsp::modal::profile::ModalProfile::decode(device.instrument_modal_profile().unwrap()).unwrap();
-    assert_eq!(profile.reference_key(), 60);
-    assert!(profile.modes().len() >= 2);
-    assert_eq!(device.params.iter().find(|p| p.id == "model_revision").unwrap().value, 2.0);
+    let set = suhina_dsp::modal::model::ModelSet::decode(device.instrument_modal_profile().unwrap()).unwrap();
+    assert_eq!(set.recordings().len(), 1);
+    assert_eq!(set.recordings()[0].key, 60);
+    assert!(set.recordings()[0].modes.len() >= 2);
+    assert_eq!(accepted["revision"], 4);
+    assert_eq!(device.params.iter().find(|p| p.id == "model_revision").unwrap().value, 4.0);
     assert_eq!(device.params.iter().find(|p| p.id == "quality").unwrap().value, 1.0);
     assert_eq!(device.params.iter().find(|p| p.id == "body_decay").unwrap().value, 2.0);
     assert_eq!(device.automation[0].points, before.channels[0].devices[0].automation[0].points);
@@ -298,6 +304,43 @@ fn modal_fitting_lifecycle() {
     session.execute("edit.redo", &json!({})).unwrap();
     assert_eq!(session.project(), &fitted);
     assert_eq!(render(session.project(), session.audio()), model_sound);
+
+    // A recording of another note joins the accepted model, fused by key, as one undo step.
+    let higher = folder.join("authored-strike-octave.wav");
+    suhina_test_support::write_wav(&higher, 48000, 1, suhina_test_support::WavFormat::Float32, &strike(2.0));
+    run(&mut session, "device.loadSample", json!({"path":higher}));
+    run(&mut session, "device.setParam", json!({"param":"root","value":72}));
+    assert!(
+        session.execute("instrument.addFit", &json!({"track":1,"device":0,"job":job["job"]})).is_err(),
+        "an accepted or stale fit cannot be added"
+    );
+    let second = run(&mut session, "instrument.fitSample", json!({}));
+    session.sync_instrument_analysis();
+    assert_eq!(session.instrument_analysis_view().unwrap().model_recordings, Some(1));
+    let before_add = session.project().clone();
+    let add_depth = session.undo_steps();
+    assert!(
+        session
+            .execute("instrument.addFit", &json!({"track":1,"device":0,"job":second["job"],"velocity":1.5}))
+            .is_err()
+    );
+    assert_eq!(session.project(), &before_add);
+    let added = run(&mut session, "instrument.addFit", json!({"job":second["job"],"velocity":0.9}));
+    assert_eq!(added["recordings"], 2);
+    assert_eq!(session.undo_steps().0, add_depth.0 + 1);
+    let device = &session.project().channels[0].devices[0];
+    let set = suhina_dsp::modal::model::ModelSet::decode(device.instrument_modal_profile().unwrap()).unwrap();
+    let keys: Vec<_> = set.recordings().iter().map(|r| (r.key, r.velocity)).collect();
+    assert_eq!(keys, vec![(60, 0.8), (72, 0.9)]);
+    assert_eq!(device.params.iter().find(|p| p.id == "source").unwrap().value, 0.0, "Add selects Modal");
+    let fused = render(session.project(), session.audio());
+    assert!(fused.iter().all(|x| x.is_finite()) && fused.iter().any(|x| x.abs() > 1e-5));
+    session.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(session.project(), &before_add);
+    for _ in 0..2 {
+        session.execute("edit.undo", &json!({})).unwrap();
+    }
+    assert_eq!(session.project(), &fitted);
 
     // An invalid transaction must leave both the project and the ready candidate intact.
     let mut invalid = before.clone();

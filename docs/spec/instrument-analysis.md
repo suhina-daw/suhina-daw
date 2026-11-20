@@ -48,8 +48,11 @@ It includes fractional MIDI pitch, Hz, proposed integer MIDI root, remaining cen
 periodicity, pitch spread, voiced/active window counts, analysis version and analyzed bounds.
 The initial supported pitch-search range is 40..4,000 Hz, also limited by the source Nyquist
 frequency. Results outside it are not clamped to a boundary note. A failed or uncertain estimate
-never fabricates a middle-C proposal. Polyphonic, strongly inharmonic, noisy and changing-pitch
-material may have no useful single root. Stereo channels are assessed separately, so reversed
+never fabricates a middle-C proposal. A stable proposal needs three quarters of the voiced
+windows within 50 cents of their median: vibrato swinging around one note (a cello's, a voice's)
+keeps its note, while a melody, trill or glide does not (version 1 demanded an interdecile spread
+of at most 35 cents, which ordinary vibrato exceeds). The spread is still reported. Polyphonic,
+strongly inharmonic, noisy and changing-pitch material may have no useful single root. Stereo channels are assessed separately, so reversed
 polarity cannot cancel a valid tone; inconsistent channel pitches prevent automatic proposal.
 Windows with a zero-crossing rate above the admitted band are conservatively rejected rather
 than assigning an out-of-band tone a lower octave; this can also reject bright mixtures.
@@ -89,10 +92,13 @@ proposal is only made when no stable single note was found and the analyzed rang
   correlations are reported; relative major/minor keys share their pitch classes and often
   differ by little, which the interface shows instead of hiding. Correlations are measurements
   of fit to a profile, not probabilities.
-- **Root key.** The root is the tonic's MIDI note nearest to the median of each window's lowest
-  prominent pitch (its lowest kept peak within 20 dB of its strongest), the lower one on a tie,
-  within 0..127: the register of the bass or melody, not of its harmonics. The tuning offset is shown in cents and,
-  as for a single note, is not removed by accepting the integer root.
+- **Root key.** The root is the tonic's MIDI note nearest middle C (MIDI 60, shown as C3), the
+  lower one on a tie. A loop's root only says which key plays it unchanged, so this octave keeps
+  the keys around the middle of the keyboard within six semitones of the original speed and
+  pitch, whatever the loop's register. The median of each window's lowest prominent pitch (its
+  lowest kept peak within 20 dB of its strongest) is reported as the material's register. The
+  tuning offset is shown in cents and, as for a single note, is not removed by accepting the
+  integer root.
 
 The analyzed range is the selected trim, as for a single note; loop start and end do not
 change it. The command report marks such a result with outcome `tonalCentre` and a `key`

@@ -10,6 +10,7 @@ use std::sync::{
 };
 
 use serde_json::{Value, json};
+use suhina_dsp::modal::model::{MODEL_MAGIC, MODEL_REVISION, ModelSet};
 use suhina_instrument_analysis::{Outcome, Report, modal};
 use suhina_model::{AudioData, ChannelId, Device, DeviceId, DeviceKind};
 
@@ -96,6 +97,8 @@ pub struct AnalysisView {
     pub modal: Option<modal::Report>,
     pub accepted_root: Option<u8>,
     pub message: Option<String>,
+    /// Recordings in the target Instrument's fitted model now; None without a revision-4 set.
+    pub model_recordings: Option<usize>,
 }
 
 struct Source {
@@ -126,7 +129,8 @@ struct Job {
     modal: Option<modal::Report>,
     message: Option<String>,
     pending_root: Option<u8>,
-    pending_fit: bool,
+    /// Model bytes an accept or add is writing; adopted as the job's state once it succeeds.
+    pending_state: Option<Vec<u8>>,
 }
 
 impl Drop for Job {
@@ -201,6 +205,7 @@ impl Job {
             message: self.message.clone(),
             accepted_root: (self.phase == AnalysisPhase::Accepted && self.kind == AnalysisKind::Root)
                 .then_some(self.source.root as u8),
+            model_recordings: None,
         }
     }
 }
@@ -267,9 +272,10 @@ impl Session {
             job.phase = AnalysisPhase::Accepted;
         }
         if let Some(job) = &mut self.analysis.current {
-            let pending = std::mem::take(&mut job.pending_fit);
-            if succeeded && pending {
-                job.source.profile = job.modal.as_ref().and_then(|r| r.profile).map(|p| p.encode().to_vec());
+            if let Some(state) = job.pending_state.take()
+                && succeeded
+            {
+                job.source.profile = Some(state);
                 job.phase = AnalysisPhase::Accepted;
             }
         }
@@ -278,7 +284,17 @@ impl Session {
     /// The latest job for this session, after a nonblocking poll.
     pub fn instrument_analysis_view(&mut self) -> Option<AnalysisView> {
         self.refresh_instrument_analysis();
-        self.analysis.current.as_ref().map(Job::view)
+        let job = self.analysis.current.as_ref()?;
+        let mut view = job.view();
+        // Only the set's header is read: the UI asks every frame.
+        view.model_recordings = self.project.channel(job.source.channel).and_then(|channel| {
+            suhina_model::walk_devices(&channel.devices)
+                .into_iter()
+                .find(|(_, d)| d.id == job.source.device)
+                .and_then(|(_, d)| d.instrument_modal_profile())
+                .and_then(ModelSet::recording_count)
+        });
+        Some(view)
     }
 
     /// Explicit completion barrier for offline clients and deterministic tests; the UI never calls it.
@@ -335,14 +351,8 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
     if range.is_empty() {
         return Err("the sample trim contains no audio frames".into());
     }
-    let profile = if kind == AnalysisKind::Modal {
-        if device.instrument_modal_profile().is_some_and(|p| p.len() > suhina_dsp::modal::profile::PROFILE_BYTES) {
-            return Err("the existing instrument profile exceeds the supported size".into());
-        }
-        device.instrument_modal_profile().map(<[u8]>::to_vec)
-    } else {
-        None
-    };
+    let profile =
+        if kind == AnalysisKind::Modal { device.instrument_modal_profile().map(<[u8]>::to_vec) } else { None };
     let source = Source { channel, device: device.id, file, pcm: pcm.clone(), start, end, root, profile };
     let permit = Permit::acquire()?;
     let id = NEXT_JOB
@@ -391,7 +401,7 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
         modal: None,
         message: None,
         pending_root: None,
-        pending_fit: false,
+        pending_state: None,
     });
     Ok(json!({"job":id.to_string(),"kind":kind.as_str(),"status":"running"}))
 }
@@ -435,14 +445,19 @@ fn view_json(view: &AnalysisView) -> Value {
     let modal = view.modal.as_ref().map(|r| json!({
         "version":r.version,"firstFrame":r.range.start,"endFrame":r.range.end,"channel":r.channel,
         "frameSize":r.frame_size,"analyzedSeconds":r.analyzed_seconds,
-        "sourceAssumption":"singleIsolatedDecayingStrike","phaseReconstructed":false,"validationScope":"sameRecordingTemporalEnvelopes",
+        "sourceAssumption":"singleIsolatedDecayingStrike","phaseReconstructed":r.recording.is_some(),"validationScope":"sameRecordingTemporalEnvelopes",
         "outcome":match r.outcome { modal::Outcome::Fitted=>"fitted",modal::Outcome::Silent=>"silent",modal::Outcome::TooShort=>"tooShort",modal::Outcome::NoDecayingModes=>"noDecayingModes" },
         "referenceKey":r.profile.map(|p|p.reference_key()),"referenceHz":r.profile.map(|p|p.reference_hz()),
+        "recording":r.recording.as_ref().map(|rec| json!({"key":rec.key,"level":rec.level,"modeCount":rec.modes.len(),
+            "attackSeconds":rec.attack.len() as f64 / f64::from(rec.attack_rate.max(1))})),
+        "recordingModes":r.recording_modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
+            "fastDecaySeconds":m.fast_decay_seconds,"fastShare":m.fast_share,"beatHz":m.beat_hz,"beatShare":m.beat_share,
+            "phase":m.phase,"sustained":m.sustained})).collect::<Vec<_>>(),
         "modes":r.modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
-            "estimationRmsDb":m.estimation_rms_db,"validationRmsDb":m.validation_rms_db,
+            "estimationRmsDb":m.estimation_rms_db,"validationRmsDb":m.validation_rms_db,"sustained":m.sustained,
             "estimationWindows":m.estimation_windows,"validationWindows":m.validation_windows})).collect::<Vec<_>>()
     }));
-    json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"report":report,"modal":modal,"acceptedRoot":view.accepted_root,"message":view.message})
+    json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"modelRecordings":view.model_recordings,"report":report,"modal":modal,"acceptedRoot":view.accepted_root,"message":view.message})
 }
 
 /// A key by its tonic's name (sharps) and mode; the correlation is a profile fit, not a probability.
@@ -496,15 +511,75 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
     if job.kind != AnalysisKind::Modal || job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current modal fit can be accepted".into());
     }
-    let profile =
-        job.modal.as_ref().and_then(|r| r.profile).ok_or("the sample did not yield a decaying modal profile")?;
+    let report = job.modal.as_ref().ok_or("the sample did not yield a decaying modal profile")?;
+    let recording = report.recording.clone();
+    let profile = report.profile.ok_or("the sample did not yield a decaying modal profile")?;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
-    let overridden =
-        crate::instrument_profile::apply_profile(device, &profile, crate::instrument_profile::ProfileSource::Modal)?;
+    // A fitted recording becomes a one-member revision-4 set; a fit that could not form one
+    // (its level out of bounds) is still adopted as its revision-2 profile.
+    let (state, overridden, result) = match recording {
+        Some(recording) => {
+            let attack = recording.attack.len() as f64 / f64::from(recording.attack_rate.max(1));
+            let modes = recording.modes.len();
+            let set = ModelSet::new(vec![recording]).map_err(|error| error.to_string())?;
+            let bytes = set.encode();
+            let overridden = crate::instrument_profile::apply_model_set(device, &bytes, true)?;
+            let result = json!({"accepted":true,"modeCount":modes,"recordings":1,"attackSeconds":attack,"revision":MODEL_REVISION,"source":"modal"});
+            (bytes, overridden, result)
+        }
+        None => {
+            let overridden = crate::instrument_profile::apply_profile(
+                device,
+                &profile,
+                crate::instrument_profile::ProfileSource::Modal,
+            )?;
+            let result =
+                json!({"accepted":true,"modeCount":profile.modes().len(),"recordings":0,"revision":2,"source":"modal"});
+            (profile.encode().to_vec(), overridden, result)
+        }
+    };
     if let Some(job) = &mut session.analysis.current {
-        job.pending_fit = true;
+        job.pending_state = Some(state);
     }
-    Ok(with_override(json!({"accepted":true,"modeCount":profile.modes().len(),"source":"modal"}), overridden))
+    Ok(with_override(result, overridden))
+}
+
+/// `instrument.addFit`: the ready fit's recording joins the device's revision-4 set.
+pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let velocity = match Args::new(params).opt_f64("velocity")? {
+        None => suhina_instrument_analysis::modal::DEFAULT_VELOCITY,
+        Some(v) if v.is_finite() && v > 0.0 && v <= 1.0 => v as f32,
+        Some(_) => return Err("velocity must be a number above 0 and at most 1".into()),
+    };
+    let job = matching_job(session, params)?;
+    if job.kind != AnalysisKind::Modal || job.phase != AnalysisPhase::Ready {
+        return Err("only a completed, current modal fit can be added".into());
+    }
+    let mut recording = job
+        .modal
+        .as_ref()
+        .and_then(|r| r.recording.clone())
+        .ok_or("the sample did not yield a fitted recording to add")?;
+    recording.velocity = velocity;
+    let (key, modes) = (recording.key, recording.modes.len());
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
+    let existing = device
+        .instrument_modal_profile()
+        .filter(|bytes| bytes.starts_with(MODEL_MAGIC))
+        .ok_or("add needs an Instrument with an accepted fitted model; accept one first")?;
+    let set = ModelSet::decode(existing).and_then(|set| set.with(recording)).map_err(|error| error.to_string())?;
+    let bytes = set.encode();
+    let overridden = crate::instrument_profile::apply_model_set(device, &bytes, false)?;
+    let count = set.recordings().len();
+    if let Some(job) = &mut session.analysis.current {
+        job.pending_state = Some(bytes);
+    }
+    Ok(with_override(
+        json!({"added":true,"recordings":count,"key":key,"velocity":velocity,"modeCount":modes,"revision":MODEL_REVISION,"source":"modal"}),
+        overridden,
+    ))
 }

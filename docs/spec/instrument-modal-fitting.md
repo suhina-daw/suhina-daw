@@ -66,17 +66,55 @@ decays as one exponential: beating partials and a fast early decay followed by a
 leave decibels of error that version 1's limits (1.0 dB estimation, 1.5 dB validation) rejected,
 so a recorded strike could yield no model at all. When a span of nine or more windows fails,
 the fit is repeated once on its last two thirds, which describes the sustained part after a fast
-early decay. The result contains at most 16 modes within the canonical profile's bounds.
-Constant tones, rising envelopes, noise and short sounds yield no model; the playable sample
-remains usable.
+early decay. A mode whose fitted level changes by at most 3 dB across its span without
+clearly decaying, within the same error limits, is **sustained**: a bowed, blown or held partial
+(a cello, an organ, a voice) is stored with the profile's longest T60, 60 s, and is reported as
+sustained; note-off releases it like any modal voice. This approximates a held tone by its
+spectrum and is not a bowing or breath model. The result contains at most 16 modes within the
+canonical profile's bounds. Rising envelopes, noise and short sounds yield no model; the
+playable sample remains usable.
+
+**The fitted recording.** Besides the schema-1 profile, a fit returns a `ModelRecording` for a
+revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-revision-4)):
+
+- **Up to 32 modes.** Detection proposes at most 48 candidates; the 32 with the most energy
+  (`magnitude^2 * T60`) are kept. The schema-1 profile keeps the 16 largest magnitudes.
+- **Phase.** The complex projection of a mode's first span window gives its phase at that
+  window, carried back to the strike (the start of the analyzed interval) by its frequency. With
+  the phases, the modes start where the recording's partials do, so the attack below hands over
+  to them without cancelling.
+- **Two-part decay.** When a span of nine or more windows has a valid fit on its last two thirds
+  (the slow part), the excess of the earlier windows over that line is fitted as a second,
+  faster exponential. It is kept as `fast_decay_seconds` and `fast_share` when its T60 is under
+  half the slow one, it has at least two windows, and it lowers the RMS envelope error over the
+  whole span by at least 1 dB compared with one exponential, or one exponential failed.
+- **Beating.** Each kept mode's amplitude is also measured on 1024-sample Hann windows every 256
+  samples. After removing the fitted decay, the residual log envelope's normalized
+  autocorrelation is searched over beat periods of 0.1 to 5 s (shorter than half the measured
+  span). A peak of at least 0.5 with an RMS ripple of at least 1 dB is a beat: its rate gives
+  `beat_ratio = 1 + rate / frequency`, and the ripple's peak-to-peak depth `D = 2 * sqrt(2) * RMS`
+  dB gives the partner's share `a2 / (a1 + a2)` from `(a1 + a2) / (a1 - a2) = 10^(D / 20)`, at most
+  0.5. The sign of the detuning is not observable and is taken as positive.
+- **Level.** `level` is the sum of the modes' magnitudes in the source's own full-scale units,
+  so the fitted model at the recording's key is as loud as its sample.
+- **Attack.** The fitted modes, with their phases, two-part decays and partners, are rendered at
+  22050 Hz over the first 0.25 s of the interval (or less, if shorter); the difference from the
+  prepared signal, faded out with a raised cosine over its second half and divided by `level`,
+  is the attack. It is kept only when its energy is at least 0.1 % (-30 dB) of the signal's in
+  that window, so a purely modal sound carries none. The attack holds what the modes miss, so the
+  body response is not applied twice.
+
+The report lists per mode the fast part, the beat and the phase, and the attack's duration.
+Acceptance and addition to a set are described with the revision-4 commands.
 
 Report errors are RMS dB differences of a mode's amplitude envelope, not waveform errors,
 probabilities, realism percentages or independent listening results. Odd windows belong to
 the **same recording**: they do not establish held-out note, velocity, gesture or session
 performance. Mode discovery itself has a fixed small search budget; no converged global
-optimum is claimed. Initial phases, attack waveform, excitation/contact physics, room response,
-nonlinear dynamics and coupled modes are not reconstructed. The source may contain these
-components; fitted resonances must not be presented as a uniquely recovered physical body.
+optimum is claimed. Initial phases and the attack are measured from the one recording, not
+reconstructed as excitation or contact physics; room response, nonlinear dynamics and coupled
+modes are not separated, and the attack and modes may carry the room. Fitted resonances must
+not be presented as a uniquely recovered physical body.
 
 ## Shared jobs and commands
 
@@ -100,14 +138,16 @@ alone invokes it. Ordinary use is offline.
 
 Deterministic CI fixtures use original analytic inharmonic decays with known frequencies and
 T60, not the fitter's own synthesized output as the sole oracle. They cover hostile inputs,
-silence, growing/constant/noisy sources, repeatability, opposite-polarity stereo, cancellation
+silence, growing and noisy sources, sustained (constant) tones, repeatability, opposite-polarity stereo, cancellation
 and temporal estimation limits. Session tests cover explicit/stale adoption, transaction
 rollback, undo/redo, save/reopen and native render consistency. Builds and test execution for
 this change occur in CI only at the maintainer's request.
 
-This is the bounded first fitting slice tracked by #1646. Full fitting #1624 retains coherent
-multi-recording/dynamic fitting, feature locks beyond root/trim, independent held-out notes and
-gestures, level-matched candidate audition, residual/excitation modelling and musician evidence.
+This is the bounded first fitting slice tracked by #1646, extended in #1599 with attack
+residuals, two-part decays, beating partners and parameter-space fusion of up to 16 recordings
+by key and velocity. Full fitting #1624 retains feature locks beyond root/trim, morphing
+controls, room and microphone separation, independent held-out notes and gestures, level-matched
+candidate audition before acceptance and musician evidence.
 F11's calibrated-model, content and release gates remain open.
 
 ## Sources

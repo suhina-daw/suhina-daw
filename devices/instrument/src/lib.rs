@@ -3,9 +3,11 @@
 
 //! Public native Instrument runtime, shared by stock and export adapters. The struck-modal
 //! model is experimental revision 1; accepted modal profiles use revision 2; revision 3 keeps
-//! revision 1's struck body and adds two struck-bar bodies. Sample playback uses the existing
-//! SDK runtime.
+//! revision 1's struck body and adds two struck-bar bodies; fitted model sets (recordings fused
+//! in parameter space, with attacks) use revision 4. Sample playback uses the existing SDK
+//! runtime.
 
+use std::sync::Arc;
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ParamInfo, ProcessContext, Role,
     SampleSource, Scale, Unit, check_sample_rate,
@@ -16,6 +18,9 @@ use suhina_dsp::{
     bar::{Excitation, StruckBar},
     modal::{
         ModalBank, Mode,
+        model::{
+            Controls, MAX_VOICE_SINES, MODEL_MAGIC, MODEL_REVISION as SET_MODEL_REVISION, ModelSet, Voice as SetVoice,
+        },
         profile::{ModalProfile, PROFILE_MODEL_REVISION},
     },
 };
@@ -26,8 +31,8 @@ pub mod panel;
 use bars::Profile;
 
 /// Model revision a new Instrument stores in project parameter state. Revision 1 is read as
-/// revision 3, whose Struck body is revision 1's renderer; revision 2 renders an accepted
-/// profile and ignores Body; unknown revisions stay silent.
+/// revision 3, whose Struck body is revision 1's renderer; revisions 2 and 4 render an accepted
+/// profile or fitted set and ignore Body; unknown revisions stay silent.
 pub const MODEL_REVISION: u16 = 3;
 /// The original struck-modal revision, still accepted and read as [`MODEL_REVISION`].
 pub const ORIGINAL_MODEL_REVISION: u16 = 1;
@@ -97,9 +102,10 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
 
-/// What a voice sounds: revision 1's struck bank, or a struck bar. Voices live inline in a
-/// fixed array, so the size of the larger variant is the bounded per-voice storage; boxing the
-/// bar would allocate on the audio thread whenever a voice changes body.
+/// What a voice sounds: revision 1's struck bank, a struck bar, or revision 4's fused fitted
+/// sines with their phases. Voices live inline in a fixed array, so the size of the largest
+/// variant is the bounded per-voice storage; boxing one would allocate on the audio thread
+/// whenever a voice changes body.
 #[derive(Clone, Copy)]
 #[allow(
     clippy::large_enum_variant,
@@ -108,6 +114,7 @@ pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experim
 enum Body {
     Struck(ModalBank<MAX_MODES>),
     Bar(StruckBar<MAX_MODES>),
+    Fitted(ModalBank<MAX_VOICE_SINES>),
 }
 
 impl Body {
@@ -115,6 +122,7 @@ impl Body {
         match self {
             Self::Struck(bank) => bank.is_active(),
             Self::Bar(bar) => bar.is_active(),
+            Self::Fitted(bank) => bank.is_active(),
         }
     }
 
@@ -122,6 +130,7 @@ impl Body {
         match self {
             Self::Struck(bank) => bank.next_sample(),
             Self::Bar(bar) => bar.next_sample(),
+            Self::Fitted(bank) => bank.next_sample(),
         }
     }
 
@@ -129,6 +138,7 @@ impl Body {
         match self {
             Self::Struck(bank) => bank.reset(),
             Self::Bar(bar) => bar.reset(),
+            Self::Fitted(bank) => bank.reset(),
         }
     }
 
@@ -136,6 +146,7 @@ impl Body {
         match self {
             Self::Struck(bank) => bank.transpose(sample_rate, semitones),
             Self::Bar(bar) => bar.transpose(semitones),
+            Self::Fitted(bank) => bank.transpose(sample_rate, semitones),
         }
     }
 }
@@ -145,6 +156,8 @@ struct Voice {
     body: Body,
     /// The bar profile this voice sounds; `None` for Struck.
     profile: Option<Profile>,
+    /// Revision 4: (recording, read position, step) of the attack still playing.
+    attack: Option<(usize, f64, f64)>,
     key: u8,
     held: bool,
     serial: u64,
@@ -160,6 +173,7 @@ impl Default for Voice {
         Self {
             body: Body::Struck(ModalBank::default()),
             profile: None,
+            attack: None,
             key: 0,
             held: false,
             serial: 0,
@@ -187,6 +201,10 @@ pub struct Instrument {
     sample_mix: Smoother,
     modal_mix: Smoother,
     profile: Option<ModalProfile>,
+    /// Revision 4. Prepared off the audio thread; the callback only reads it.
+    set: Option<Arc<ModelSet>>,
+    /// Scratch for a revision-4 note-on: no allocation in the callback.
+    set_voice: SetVoice,
     invalid_profile: bool,
 }
 
@@ -221,6 +239,8 @@ impl Instrument {
             sample_mix: Smoother::new(0.0, ramp),
             modal_mix: Smoother::new(1.0, ramp),
             profile: None,
+            set: None,
+            set_voice: SetVoice::default(),
             invalid_profile: false,
         };
         core.set_sample_parameter("poly", MAX_VOICES as f64);
@@ -255,8 +275,9 @@ impl Instrument {
             return false;
         }
         match self.params.get(param::REVISION) as u16 {
-            ORIGINAL_MODEL_REVISION | MODEL_REVISION => self.profile.is_none(),
+            ORIGINAL_MODEL_REVISION | MODEL_REVISION => self.profile.is_none() && self.set.is_none(),
             PROFILE_MODEL_REVISION => self.profile.is_some(),
+            SET_MODEL_REVISION => self.set.is_some(),
             _ => false,
         }
     }
@@ -264,6 +285,7 @@ impl Instrument {
     /// Adopt validated modes off the audio thread. Preparation and reset retain this profile.
     pub fn set_modal_profile(&mut self, profile: ModalProfile) {
         self.profile = Some(profile);
+        self.set = None;
         self.invalid_profile = false;
         let _ = self.params.set(param::REVISION, f64::from(PROFILE_MODEL_REVISION));
         self.reset();
@@ -271,6 +293,19 @@ impl Instrument {
 
     pub fn modal_profile(&self) -> Option<&ModalProfile> {
         self.profile.as_ref()
+    }
+
+    /// Adopt a fitted model set off the audio thread (revision 4); any profile is cleared.
+    pub fn set_model_set(&mut self, set: ModelSet) {
+        self.set = Some(Arc::new(set));
+        self.profile = None;
+        self.invalid_profile = false;
+        let _ = self.params.set(param::REVISION, f64::from(SET_MODEL_REVISION));
+        self.reset();
+    }
+
+    pub fn model_set(&self) -> Option<&ModelSet> {
+        self.set.as_deref()
     }
 
     /// Release `key` (or every key): a struck voice fades over Release; a bar that damps on
@@ -292,11 +327,53 @@ impl Instrument {
         if !self.model_supported() {
             return;
         }
-        // An accepted profile (revision 2) is rendered whatever Body says.
+        if self.set.is_some() {
+            return self.strike_fitted(key, velocity);
+        }
+        // An accepted profile (revision 2) or fitted set is rendered whatever Body says.
         match Profile::from_body(self.params.get(param::BODY)).filter(|_| self.profile.is_none()) {
             Some(profile) => self.strike_bar(profile, key, velocity),
             None => self.strike_struck(key, velocity),
         }
+    }
+
+    /// Revision 4: the set fuses its recordings for this key and velocity.
+    fn strike_fitted(&mut self, key: u8, velocity: f32) {
+        let Some(set) = self.set.as_deref() else {
+            return;
+        };
+        let controls = Controls {
+            decay: self.params.get(param::DECAY),
+            brightness: self.params.get(param::BRIGHTNESS),
+            structure: self.params.get(param::STRUCTURE),
+            strike: self.params.get(param::STRIKE),
+            sines: if self.params.get(param::QUALITY) < 0.5 { MAX_VOICE_SINES / 2 } else { MAX_VOICE_SINES },
+        };
+        set.voice(key, velocity, &controls, self.sample_rate, &mut self.set_voice);
+        let slot = self.free_or_oldest();
+        self.serial = self.serial.saturating_add(1);
+        let Some(voice) = slot.and_then(|index| self.voices.get_mut(index)) else {
+            return;
+        };
+        voice.start_steal_fade(self.sample_rate);
+        let count = self.set_voice.count;
+        let mut fitted = ModalBank::default();
+        fitted.strike_phased(
+            self.sample_rate,
+            self.set_voice.modes.get(..count).unwrap_or(&[]),
+            self.set_voice.phases.get(..count).unwrap_or(&[]),
+        );
+        fitted.transpose(self.sample_rate, self.bend_semitones);
+        voice.body = Body::Fitted(fitted);
+        voice.profile = None;
+        voice.attack = self.set_voice.attack.map(|(recording, step)| (recording, 0.0, step));
+        voice.amplitude = (f64::from(velocity) * self.set_voice.level) as f32;
+        // The attack reproduces the recorded onset; only a click guard remains.
+        voice.gate = Smoother::new(0.0, Smoother::ramp_frames(0.00025, self.sample_rate));
+        voice.key = key;
+        voice.held = true;
+        voice.serial = self.serial;
+        voice.gate.set_target(1.0);
     }
 
     /// One body per bar: a ringing bar of this key and profile is struck again.
@@ -331,6 +408,7 @@ impl Instrument {
             bar.strike(excitation, mallet, bars::MAX_SPEED * f64::from(velocity));
         }
         voice.profile = Some(profile);
+        voice.attack = None;
         voice.key = key;
         voice.held = true;
         voice.serial = self.serial;
@@ -341,7 +419,7 @@ impl Instrument {
     fn free_or_oldest(&self) -> Option<usize> {
         self.voices
             .iter()
-            .position(|voice| !voice.body.is_active())
+            .position(|voice| !voice.sounding())
             .or_else(|| self.voices.iter().enumerate().min_by_key(|(_, voice)| voice.serial).map(|(index, _)| index))
     }
 
@@ -392,6 +470,7 @@ impl Instrument {
             bank.transpose(self.sample_rate, self.bend_semitones);
             voice.body = Body::Struck(bank);
             voice.profile = None;
+            voice.attack = None;
             voice.key = key;
             voice.held = true;
             voice.serial = self.serial;
@@ -403,6 +482,11 @@ impl Instrument {
 }
 
 impl Voice {
+    /// Whether any modal layer of this voice still sounds.
+    fn sounding(&self) -> bool {
+        self.body.is_active() || self.attack.is_some()
+    }
+
     /// The previous output fades for 2 ms while the voice starts another body.
     fn start_steal_fade(&mut self, sample_rate: f64) {
         self.stolen_tail = self.last_output;
@@ -433,18 +517,18 @@ impl Device for Instrument {
         &INFO
     }
     fn load_model_state(&mut self, state: &[u8]) -> Result<(), DeviceError> {
-        match ModalProfile::decode(state) {
-            Ok(profile) => {
-                self.set_modal_profile(profile);
-                Ok(())
-            }
-            Err(error) => {
-                self.profile = None;
-                self.invalid_profile = true;
-                self.reset();
-                Err(DeviceError::InvalidModelState(error.0))
-            }
-        }
+        let loaded = if state.starts_with(MODEL_MAGIC) {
+            ModelSet::decode(state).map(|set| self.set_model_set(set)).map_err(|error| error.0)
+        } else {
+            ModalProfile::decode(state).map(|profile| self.set_modal_profile(profile)).map_err(|error| error.0)
+        };
+        loaded.map_err(|error| {
+            self.profile = None;
+            self.set = None;
+            self.invalid_profile = true;
+            self.reset();
+            DeviceError::InvalidModelState(error)
+        })
     }
     fn samples(&mut self) -> Option<&mut dyn SampleSource> {
         Some(&mut self.sampler)
@@ -519,18 +603,36 @@ impl Device for Instrument {
                 frame.fill(0.0);
             }
         }
+        let bend_ratio = 2.0_f64.powf(self.bend_semitones / 12.0);
+        let set = self.set.as_deref();
         for frame in buffer.as_chunks_mut::<2>().0 {
             let mut modal = 0.0;
             for voice in &mut self.voices {
-                if !voice.body.is_active() && voice.stolen_fade.current() == 0.0 {
+                if !voice.sounding() && voice.stolen_fade.current() == 0.0 {
                     continue;
                 }
                 let gate = voice.gate.next_value();
                 if gate == 0.0 && voice.gate.is_settled() {
                     voice.body.reset();
+                    voice.attack = None;
                 }
-                voice.last_output = voice.body.next_sample() * gate * voice.amplitude
-                    + voice.stolen_tail * voice.stolen_fade.next_value();
+                let mut output = voice.body.next_sample();
+                let mut attack_done = false;
+                if let Some((recording, position, step)) = voice.attack.as_mut() {
+                    let attack = set.map_or(&[][..], |set| set.attack(*recording));
+                    let index = *position as usize;
+                    if let (Some(a), Some(b)) = (attack.get(index), attack.get(index + 1)) {
+                        output += a + (b - a) * (*position - index as f64) as f32;
+                        *position += *step * bend_ratio;
+                    } else {
+                        attack_done = true;
+                    }
+                }
+                if attack_done {
+                    voice.attack = None;
+                }
+                voice.last_output =
+                    output * gate * voice.amplitude + voice.stolen_tail * voice.stolen_fade.next_value();
                 modal += voice.last_output;
             }
             let sample_mix = self.sample_mix.next_value();
@@ -543,7 +645,7 @@ impl Device for Instrument {
             }
             if !hybrid && self.modal_mix.current() == 0.0 && self.modal_mix.is_settled() {
                 for voice in &mut self.voices {
-                    if voice.body.is_active() || voice.stolen_fade.current() != 0.0 {
+                    if voice.sounding() || voice.stolen_fade.current() != 0.0 {
                         *voice = Voice::default();
                     }
                 }
@@ -624,3 +726,6 @@ mod tests;
 
 #[cfg(test)]
 mod profile_tests;
+
+#[cfg(test)]
+mod set_tests;

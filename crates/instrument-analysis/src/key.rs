@@ -24,6 +24,9 @@ const PROMINENCE: f64 = 10.0;
 const HARMONIC_TOLERANCE: f64 = 0.25;
 /// A window's lowest note is its lowest kept peak within this fraction (-20 dB) of the strongest.
 const LOWEST_FLOOR: f64 = 0.1;
+/// A loop's root is its tonic nearest this key (middle C, shown as C3), so the keys around the
+/// middle of the keyboard transpose it by at most six semitones.
+pub const ROOT_CENTRE: f64 = 60.0;
 /// Below this Pearson correlation the material has no clear tonal centre.
 pub const MIN_KEY_CORRELATION: f32 = 0.6;
 
@@ -46,7 +49,7 @@ pub struct KeyCandidate {
     pub correlation: f32,
 }
 
-/// A proposed root for melodic or chordal material: its key's tonic near its median pitch.
+/// A proposed root for melodic or chordal material: its key's tonic nearest middle C.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KeyProposal {
     pub root: u8,
@@ -202,7 +205,7 @@ impl PitchClasses {
         lowest.sort_by(f64::total_cmp);
         let median = *lowest.get((lowest.len().checked_sub(1)?) / 2)?;
         Some(KeyProposal {
-            root: nearest_root(key.tonic, median)?,
+            root: nearest_root(key.tonic, ROOT_CENTRE)?,
             key,
             runner_up,
             tuning_cents: (tuning * 100.0) as f32,
@@ -270,6 +273,6 @@ mod tests {
         assert!((key.key.correlation - 1.0).abs() < 1e-6);
         assert!(key.runner_up.correlation < 1.0);
         assert!(key.tuning_cents.abs() < 1e-3);
-        assert_eq!(key.root, 57, "A nearest the median pitch 60");
+        assert_eq!(key.root, 57, "the A nearest middle C");
     }
 }

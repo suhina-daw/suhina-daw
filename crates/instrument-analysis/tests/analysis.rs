@@ -195,9 +195,10 @@ fn melodic_and_chordal_loops_propose_the_tonic_of_their_key() {
             ),
             0,
             Major,
-            48,
+            60,
         ),
-        ("bass", melody(&[40.0, 43.0, 45.0, 47.0, 40.0, 47.0, 45.0, 43.0]), 4, Minor, 40),
+        // The root is the tonic nearest middle C whatever the register: E3, not the bass's E1.
+        ("bass", melody(&[40.0, 43.0, 45.0, 47.0, 40.0, 47.0, 45.0, 43.0]), 4, Minor, 64),
     ];
     for (name, samples, tonic, mode, root) in cases {
         let report = analyze(&samples, RATE, 1, 0..samples.len(), |_, _| true).unwrap();
@@ -243,4 +244,38 @@ fn unpitched_loops_and_single_notes_get_no_key() {
     let single = tone(RATE, 220.0, 2.0, 0.5, 0.0);
     let report = analyze(&single, RATE, 1, 0..single.len(), |_, _| true).unwrap();
     assert_eq!((report.outcome, report.key), (Outcome::Stable, None));
+}
+
+#[test]
+fn vibrato_keeps_its_note_but_a_semitone_trill_does_not() {
+    // A bowed low C (MIDI 36) with 5.5 Hz vibrato of +-35 cents and six harmonics.
+    let vibrato = |depth_cents: f64, centre: f64, rate_hz: f64| -> Vec<f32> {
+        let mut phase = 0.0f64;
+        (0..RATE as usize * 2)
+            .map(|i| {
+                let t = i as f64 / f64::from(RATE);
+                let midi = centre + depth_cents / 100.0 * (std::f64::consts::TAU * rate_hz * t).sin();
+                phase += 440.0 * 2.0f64.powf((midi - 69.0) / 12.0) / f64::from(RATE);
+                ((1..=6).map(f64::from).map(|k| (std::f64::consts::TAU * phase * k).sin() / k).sum::<f64>() * 0.3)
+                    as f32
+            })
+            .collect()
+    };
+    let cello = vibrato(35.0, 36.0, 5.5);
+    let report = analyze(&cello, RATE, 1, 0..cello.len(), |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Stable, "{report:?}");
+    let proposal = report.proposal.unwrap();
+    assert_eq!(proposal.root, 36);
+    assert!(proposal.cents.abs() < 10.0, "{proposal:?}");
+    // Alternating between two notes a semitone apart (a square "vibrato" of +-50 cents around
+    // the midpoint) is not one note.
+    let trill: Vec<f32> = (0..RATE as usize * 2)
+        .scan(0.0f64, |phase, i| {
+            let t = i as f64 / f64::from(RATE);
+            let midi = if (t * 4.0) as usize % 2 == 0 { 60.0 } else { 61.0 };
+            *phase += 440.0 * 2.0f64.powf((midi - 69.0) / 12.0) / f64::from(RATE);
+            Some(((std::f64::consts::TAU * *phase).sin() * 0.5) as f32)
+        })
+        .collect();
+    assert_eq!(analyze(&trill, RATE, 1, 0..trill.len(), |_, _| true).unwrap().proposal, None);
 }

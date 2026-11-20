@@ -185,15 +185,16 @@ the existing native parameter state, hidden from the stock panel; a newly added 
 3. Revision 3 adds Body, Mallet hardness and Mallet model, and its Struck body is revision 1's
 renderer unchanged. A stored 1 is therefore read as revision 3: a revision-1 project has no Body
 value, so it opens on Struck with the new controls at their defaults and renders exactly as
-before. A project without a stored revision is read as revision 1. Revision 2 renders its
-accepted profile and ignores Body, Mallet hardness and Mallet model; adopting a profile stores 2.
+before. A project without a stored revision is read as revision 1. Revisions 2 and 4 render an
+accepted profile or a [fitted model set](instrument-modal-fitting.md) and ignore Body, Mallet
+hardness and Mallet model; adopting a profile stores 2, adopting a set stores 4.
 The device never rewrites the stored value, so an older build that knows only revisions 1 and 2
 silences a revision-3 project's modal body, but plays Struck for a revision-1 project in which a
 bar body was chosen later. Unknown
 revisions retain their value and silence the modal body rather than running another revision.
 This temporary metadata parameter is not a sound control; export adapters must preserve it in
 state without exposing it as an automatable control. Future revisions must preserve the rendering
-contract of revisions 1, 2 and 3 or provide a migration and retained renderer. The sample reference is `suhina-sample-v1`,
+contract of revisions 1 to 4 or provide a migration and retained renderer. The sample reference is `suhina-sample-v1`,
 independent of the model revision. Opening a project decodes its local source and restores
 controls; it never refits. Portable plug-in assets are not implemented by this source-reference
 contract, which currently belongs to the stock project's model layer.

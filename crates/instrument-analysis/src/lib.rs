@@ -282,7 +282,11 @@ fn stable(notes: &mut [f32], periodicities: &[f32], report: &Report, channel_med
     let lower = notes.get((notes.len() - 1) / 10).copied().unwrap_or(midi);
     let upper = notes.get((notes.len() - 1) * 9 / 10).copied().unwrap_or(midi);
     let spread_cents = (upper - lower) * 100.0;
-    if spread_cents > 35.0 || channel_medians.iter().any(|m| !m.is_finite() || (*m - midi).abs() > 0.35) {
+    // Vibrato swings around one note; a melody, trill or glide leaves it. Three quarters of the
+    // voiced windows must lie within 50 cents of the median (version 1 demanded a 35-cent spread,
+    // which a cello's or a voice's vibrato exceeds).
+    let near = notes.iter().filter(|n| (**n - midi).abs() <= 0.5).count();
+    if near * 4 < notes.len() * 3 || channel_medians.iter().any(|m| !m.is_finite() || (*m - midi).abs() > 0.35) {
         return None;
     }
     let rounded = midi.round();

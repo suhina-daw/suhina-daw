@@ -77,13 +77,13 @@ impl Canvas {
         self.when(1, &revision_is(revision));
     }
 
-    /// The last `controls` controls are shown for every revision but `revision`.
-    pub(super) fn except_revision(&mut self, revision: u16, controls: usize) {
-        let condition = UiValue::Expression(Box::new(UiExpression::Add {
-            a: 1.0_f32.into(),
-            b: UiValue::Expression(Box::new(UiExpression::Multiply { a: (-1.0_f32).into(), b: revision_is(revision) })),
-        }));
-        self.when(controls, &condition);
+    /// The last `controls` controls are shown only for `revisions` (distinct values).
+    pub(super) fn only_revisions(&mut self, revisions: &[u16], controls: usize) {
+        let condition = revisions
+            .iter()
+            .map(|revision| revision_is(*revision))
+            .reduce(|a, b| UiValue::Expression(Box::new(UiExpression::Add { a, b })));
+        self.when(controls, &condition.unwrap_or_else(|| 0.0_f32.into()));
     }
 
     /// Show the last `controls` controls only while `condition` holds, on their page.
@@ -232,6 +232,8 @@ pub fn layout() -> Layout {
     panel.only_revision(2);
     panel.label("MODAL BODIES · experimental v3", [10.0, 4.0, 248.0, 20.0]);
     panel.only_revision(3);
+    panel.label("FITTED MODEL · experimental v4", [10.0, 4.0, 248.0, 20.0]);
+    panel.only_revision(4);
     panel.menu("source", "Source", [272.0, 4.0, 136.0, 24.0], "Modal, local Sample, or both in Hybrid");
     panel.navigate("Open editor", [456.0, 4.0, 152.0, 24.0], 0, true);
     panel.waveform([10.0, 36.0, 244.0, 88.0]);
