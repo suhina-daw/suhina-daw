@@ -236,6 +236,13 @@ jobs:
       # The ASIO host (the patched cpal backend and the output's driver code) builds only with
       # the `asio` feature, which the workspace steps above leave off: without this step a
       # change there is first compiled by a Windows package build.
+      # The 32-bit plug-in host, the bridge for 32-bit Windows plug-ins: it builds without ARA
+      # (ara_off.rs), which the steps above never compile.
+      - name: 32-bit plug-in host
+        if: runner.os == 'Windows'
+        run: |
+          rustup target add i686-pc-windows-msvc
+          cargo clippy -p suhina-plugin-host --target i686-pc-windows-msvc -- -D warnings
       - name: ASIO host code
         if: runner.os == 'Windows'
         env:
@@ -310,6 +317,15 @@ jobs:
       - name: Documentation tests
         if: matrix.partition == 1
         run: cargo test --workspace --doc
+      # The 64-bit side driving the 32-bit host (crates/plugin-host/tests/bridge.rs): the test
+      # plug-ins of every format, audio, events and state across the two bitnesses.
+      - name: 32-bit plug-in host driven from the 64-bit side
+        if: runner.os == 'Windows' && matrix.partition == 1
+        shell: bash
+        run: |
+          rustup target add i686-pc-windows-msvc
+          host=$(python scripts/bridge_host.py | tail -n 1)
+          SUHINA_TEST_BRIDGE_HOST="$host" cargo nextest run --workspace -E "binary(bridge)" --profile ci
       - name: Native device export runtime
         if: matrix.partition == 1
         run: cargo test -p suhina-plugin-host --lib --features device-exports

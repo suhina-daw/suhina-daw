@@ -336,6 +336,17 @@ jobs:
           for target in ${TARGETS//,/ }; do
             cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
           done
+      # The 32-bit plug-in host, the bridge for 32-bit Windows plug-ins
+      # (docs/spec/plugin-hosting.md › 32-bit plug-ins on Windows), with the C runtime linked
+      # statically like the rest.
+      - name: Build the 32-bit plug-in host
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          rustup target add i686-pc-windows-msvc
+          cargo build --release --locked -p suhina-plugin-host --target i686-pc-windows-msvc
 
       - name: Collect and smoke-test the package
         shell: bash
@@ -352,6 +363,9 @@ jobs:
               *) cp "target/x86_64-unknown-linux-gnu/release/$bin" "dist/$PACKAGE/" ;;
             esac
           done
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/i686-pc-windows-msvc/release/suhina-plugin-host.exe "dist/$PACKAGE/suhina-plugin-host-32.exe"
+          fi
           # Suhina.app on macOS, as release.yml makes it.
           if [ "$RUNNER_OS" = "macOS" ]; then scripts/macos_app.sh "dist/$PACKAGE" "$VERSION"; fi
           cp LICENSE NOTICE README.md ATTRIBUTION.md "dist/$PACKAGE/"
@@ -361,6 +375,8 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             "$exe" audio devices > audio-devices.json
             jq -e '.hosts | any(.name == "ASIO")' audio-devices.json
+            # The 32-bit host loads its built-in VST2 test plug-in.
+            "dist/$PACKAGE/suhina-plugin-host-32.exe" --scan test:vst2 | grep -q '^SUHINA-SCAN {"plugins"'
           fi
           output=$("$exe" --version)
           echo "$output"
@@ -455,3 +471,14 @@ jobs:
           for target in ${TARGETS//,/ }; do
             cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
           done
+      # The 32-bit plug-in host, the bridge for 32-bit Windows plug-ins
+      # (docs/spec/plugin-hosting.md › 32-bit plug-ins on Windows), with the C runtime linked
+      # statically like the rest.
+      - name: Build the 32-bit plug-in host
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          rustup target add i686-pc-windows-msvc
+          cargo build --release --locked -p suhina-plugin-host --target i686-pc-windows-msvc

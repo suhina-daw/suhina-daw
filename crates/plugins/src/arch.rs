@@ -131,7 +131,8 @@ pub fn read(header: &[u8]) -> Option<Vec<Arch>> {
 
 /// The executable that holds a plug-in's code: the file itself, or in a bundle (a folder) the
 /// one the plug-in host loads: `Contents/MacOS/<name>` (or the folder's first file) on macOS,
-/// `Contents/x86_64-win/<name>.vst3` on Windows, `Contents/x86_64-linux/<name>.so` on Linux.
+/// `Contents/x86_64-win/<name>.vst3` on Windows (or `Contents/x86-win/<name>.vst3` in a bundle
+/// with only 32-bit code), `Contents/x86_64-linux/<name>.so` on Linux.
 pub fn executable(plugin: &Path) -> Option<PathBuf> {
     if plugin.is_file() {
         return Some(plugin.to_path_buf());
@@ -154,7 +155,10 @@ pub fn executable(plugin: &Path) -> Option<PathBuf> {
         return files.into_iter().next();
     }
     let inner = if cfg!(windows) {
-        contents.join("x86_64-win").join(plugin.file_name()?)
+        // A bundle with only 32-bit code holds it in `x86-win`; it loads through the bridge.
+        let name = plugin.file_name()?;
+        let native = contents.join("x86_64-win").join(name);
+        if native.is_file() { native } else { contents.join("x86-win").join(name) }
     } else {
         contents.join("x86_64-linux").join(stem).with_extension("so")
     };

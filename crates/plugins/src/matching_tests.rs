@@ -204,3 +204,47 @@ fn names_lose_build_words_and_vendors() {
     assert_eq!(versioned(&words("XY OldHeater2")), (vec!["xy".to_string(), "oldheater".to_string()], 2));
     assert_eq!(versioned(&words("ABC-2A")), (vec!["abc-2a".to_string()], 1));
 }
+
+/// A PE file's header for `machine` (0x8664 for x86-64, 0x014C for 32-bit x86).
+fn pe(machine: u16) -> Vec<u8> {
+    let mut bytes = vec![0u8; 0x100];
+    bytes[0..2].copy_from_slice(b"MZ");
+    bytes[0x3C..0x40].copy_from_slice(&0x80_u32.to_le_bytes());
+    bytes[0x80..0x84].copy_from_slice(b"PE\0\0");
+    bytes[0x84..0x86].copy_from_slice(&machine.to_le_bytes());
+    bytes
+}
+
+/// A 64-bit and a 32-bit copy of one plug-in (the second loaded through the 32-bit bridge)
+/// are one plug-in: a project finds the copy that runs natively, by VST2 id, VST3 class id
+/// and CLAP id alike, whichever the catalog lists first.
+#[test]
+fn of_a_64_bit_and_a_32_bit_copy_the_native_one_is_found() {
+    if !(cfg!(windows) && cfg!(target_arch = "x86_64")) {
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("suhina-matching-bridge-{}", std::process::id()));
+    // The 32-bit copy's path sorts first, as `Program Files (x86)` does before `Program Files`.
+    let (old, new) = (dir.join("a-x86"), dir.join("b-x64"));
+    for folder in [&old, &new] {
+        std::fs::create_dir_all(folder).unwrap();
+    }
+    let (id, name) = (0x476C_4374_u32, "Cataract");
+    let vst3_id = "56534544474C6C4C696D69746C657373";
+    let mut entries = Vec::new();
+    for (folder, machine) in [(&old, 0x014C_u16), (&new, 0x8664)] {
+        for file in ["Cataract.dll", "Limitless.vst3", "Thing.clap"] {
+            std::fs::write(folder.join(file), pe(machine)).unwrap();
+        }
+        let entry = |file: &str, plugin: serde_json::Value| json!({ "path": folder.join(file).display().to_string(), "modified": 1, "size": 1, "plugins": [plugin] });
+        entries.push(entry("Cataract.dll", json!({ "id": format!("{id:08X}"), "name": name, "vendor": "G", "version": "1", "features": [], "replaces": [] })));
+        entries.push(entry("Limitless.vst3", vst3(vst3_id, "Limitless", "D", &[])));
+        entries.push(entry("Thing.clap", json!({ "id": "com.example.thing", "name": "Thing", "vendor": "Example" })));
+    }
+    let catalog = Catalog::from_json(&json!({ "version": 2, "entries": entries }).to_string());
+    let path = |m: Option<Match<'_>>| m.map(|m| m.plugin.path.clone());
+    assert_eq!(path(catalog.match_vst2(id, name)), Some(new.join("Cataract.dll")));
+    assert_eq!(path(catalog.match_vst3(vst3_id, "Limitless")), Some(new.join("Limitless.vst3")));
+    assert_eq!(path(catalog.match_clap("com.example.thing", "Thing")), Some(new.join("Thing.clap")));
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -43,7 +43,15 @@
 //! crate allowed `unsafe`: opening plug-in files, the VST3 COM calls and the audio threads'
 //! floating-point mode, each block documented.
 
+// ARA's bindings are generated for 64-bit processors; the 32-bit host (the bridge for 32-bit
+// Windows plug-ins) builds without ARA.
+#[cfg(target_pointer_width = "64")]
 mod ara;
+#[cfg(not(target_pointer_width = "64"))]
+#[path = "ara_off.rs"]
+mod ara;
+mod ara_state;
+#[cfg(target_pointer_width = "64")]
 #[allow(
     non_camel_case_types,
     non_snake_case,
@@ -399,6 +407,7 @@ static NOW: std::sync::Mutex<Option<Box<dyn Write + Send>>> = std::sync::Mutex::
 /// Sends `message` at once, from whichever thread, rather than at the main loop's next turn:
 /// an ARA plug-in's transport request, which waited for its own click to be handled before
 /// (100 ms or more, so its playhead went to the new place late). Returns whether it was sent.
+#[cfg_attr(not(target_pointer_width = "64"), allow(dead_code, reason = "only ARA sends at once"))]
 pub(crate) fn send_now(message: &Message) -> bool {
     let mut now = NOW.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     now.as_mut().is_some_and(|writer| send(writer, message).is_ok())
