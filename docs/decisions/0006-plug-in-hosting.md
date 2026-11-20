@@ -139,7 +139,8 @@ workspace forbids.
     On Linux the desktop app opens an X11 window whenever an X server is there, so editors can
     be owned or embedded.
 11. **Other architectures later, same protocol:** a 32-bit Windows host, an x86-64 host on Apple
-    silicon, Windows plug-ins on Linux through Wine.
+    silicon, Windows plug-ins on Linux through Wine. *The 32-bit Windows host is built
+    (2026-11-20): [plug-in hosting › 32-bit plug-ins on Windows](../spec/plugin-hosting.md#32-bit-plug-ins-on-windows).*
 12. **Windows plug-ins on Linux: yabridge first.** Linux has native CLAP and VST3 plug-ins, which
     load like any other. Windows-only plug-ins reach Linux through yabridge (GPL-3.0), which
     wraps each one as a Linux CLAP or VST3 file; Suhina loads those like native plug-ins, with

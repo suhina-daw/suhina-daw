@@ -140,7 +140,9 @@ fn binary(path: &Path) -> Result<PathBuf, String> {
     let stem = path.file_stem().ok_or("not a VST3 bundle")?;
     let contents = path.join("Contents");
     let inner = if cfg!(windows) {
-        contents.join("x86_64-win").join(name)
+        // The 32-bit host (the bridge) loads a bundle's 32-bit code.
+        let folder = if cfg!(target_arch = "x86") { "x86-win" } else { "x86_64-win" };
+        contents.join(folder).join(name)
     } else if cfg!(target_os = "linux") {
         contents.join("x86_64-linux").join(stem).with_extension("so")
     } else {

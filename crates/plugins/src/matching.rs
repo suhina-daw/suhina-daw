@@ -157,6 +157,24 @@ fn major_version(version: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
+/// Whether this program loads `plugin` in its own host, not the 32-bit bridge.
+fn native(plugin: &PluginInfo) -> bool {
+    crate::arch::incompatible(&plugin.path).is_none()
+}
+
+/// The first of `candidates`, or where there are several (a 64-bit and a 32-bit copy of one
+/// plug-in, the second loaded through the bridge), the first that runs natively. The files'
+/// headers are read only when there are several.
+fn native_first<'a>(candidates: impl Iterator<Item = &'a PluginInfo>) -> Option<&'a PluginInfo> {
+    let all: Vec<&PluginInfo> = candidates.collect();
+    if all.len() > 1
+        && let Some(plugin) = all.iter().copied().find(|p| native(p))
+    {
+        return Some(plugin);
+    }
+    all.first().copied()
+}
+
 impl Catalog {
     fn vst3_plugins(&self) -> impl Iterator<Item = &PluginInfo> {
         self.plugins().filter(|p| p.format() == "vst3")
@@ -165,7 +183,7 @@ impl Catalog {
     /// The installed plug-in for a VST3 device with class id `id`, saved under `name`.
     pub fn match_vst3(&self, id: &str, name: &str) -> Option<Match<'_>> {
         let found = |how, plugin| Some(Match { plugin, how });
-        if let Some(plugin) = self.vst3_plugins().find(|p| p.id.eq_ignore_ascii_case(id)) {
+        if let Some(plugin) = native_first(self.vst3_plugins().filter(|p| p.id.eq_ignore_ascii_case(id))) {
             return found(How::Same, plugin);
         }
         if let Some(plugin) = self.vst3_plugins().find(|p| p.replaces.iter().any(|r| r.eq_ignore_ascii_case(id))) {
@@ -186,20 +204,20 @@ impl Catalog {
         // VST2 itself first). Identical product metadata at multiple paths is one installed
         // product; distinct products sharing an id remain ambiguous.
         let wanted = format!("{id:08X}");
-        let mut itself = self.plugins().filter(|p| p.format() == "vst2" && p.id == wanted);
-        if let Some(first) = itself.next() {
-            let mut chosen = first;
-            let mut same_product = true;
-            for other in itself {
-                same_product &= other.name == first.name
+        // A 64-bit and a 32-bit copy (the bridge loads the second) are one product too: the
+        // copy that runs natively is taken, so installing the bridge never moves a project to
+        // the 32-bit copy.
+        let itself: Vec<&PluginInfo> = self.plugins().filter(|p| p.format() == "vst2" && p.id == wanted).collect();
+        if let Some(first) = itself.first() {
+            let same_product = itself.iter().all(|other| {
+                other.name == first.name
                     && other.vendor == first.vendor
                     && other.version == first.version
-                    && other.features == first.features;
-                if other.path < chosen.path {
-                    chosen = other;
-                }
-            }
-            if same_product {
+                    && other.features == first.features
+            });
+            let chosen =
+                if itself.len() > 1 { itself.iter().min_by_key(|p| (!native(p), &p.path)) } else { itself.first() };
+            if same_product && let Some(chosen) = chosen {
                 return found(How::Itself, chosen);
             }
         }
@@ -213,7 +231,7 @@ impl Catalog {
 
     /// The installed plug-in for a CLAP device with id `id`, saved under `name`.
     pub fn match_clap(&self, id: &str, name: &str) -> Option<Match<'_>> {
-        match self.plugins().find(|p| p.format() == "clap" && p.id == id) {
+        match native_first(self.plugins().filter(|p| p.format() == "clap" && p.id == id)) {
             Some(plugin) => Some(Match { plugin, how: How::Same }),
             None => self.match_name(name),
         }

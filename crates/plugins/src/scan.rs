@@ -301,6 +301,15 @@ pub fn standard_folders() -> Vec<PathBuf> {
         folders.extend(env("COMMONPROGRAMFILES").map(|p| p.join("VSTPlugins")));
         folders.extend(env("PROGRAMFILES").map(|p| p.join("Steinberg").join("VSTPlugins")));
         folders.extend(env("COMMONPROGRAMFILES").map(|p| p.join("Steinberg").join("Shared")));
+        // The 32-bit programs' folders, where 32-bit plug-ins are installed, once the 32-bit
+        // host is there to load them ([`crate::bridge`]).
+        if crate::bridge::host_beside(&crate::library::host_next_to_this_program()).is_file() {
+            for format in ["CLAP", "VST3", "VST2", "VSTPlugins"] {
+                folders.extend(env("COMMONPROGRAMFILES(X86)").map(|p| p.join(format)));
+            }
+            folders.extend(env("PROGRAMFILES(X86)").map(|p| p.join("VSTPlugins")));
+            folders.extend(env("PROGRAMFILES(X86)").map(|p| p.join("Steinberg").join("VSTPlugins")));
+        }
     } else if cfg!(target_os = "macos") {
         for format in ["CLAP", "VST3"] {
             folders.extend(env("HOME").map(|p| p.join("Library/Audio/Plug-Ins").join(format)));
@@ -377,7 +386,8 @@ fn stamp(path: &Path) -> Option<(u64, u64)> {
 /// Reads `file` in a `host --scan` process, waiting at most `timeout`. `file` may also be a
 /// `test:` name the host understands, for tests.
 pub fn scan_file(host: &Path, file: &str, timeout: Duration) -> Scanned {
-    let child = crate::host_command(host)
+    let host = crate::bridge::host_for_file(host, Path::new(file));
+    let child = crate::host_command(&host)
         .args(["--scan", file])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -670,7 +680,12 @@ impl Catalog {
         for file in files {
             let Some((modified, size)) = stamp(&file) else { continue };
             let same = self.entries.iter().find(|e| e.path == file && e.modified == modified && e.size == size);
-            if same.is_some_and(|e| !e.retry_due(now)) {
+            // A file settled as built for another processor is read again once the 32-bit
+            // host is there to load it.
+            let bridged_now = |e: &Entry| {
+                matches!(e.scanned, Scanned::Incompatible(_)) && crate::bridge::bridge_for_file(host, &e.path).is_some()
+            };
+            if same.is_some_and(|e| !e.retry_due(now) && !bridged_now(e)) {
                 report.unchanged += 1;
                 continue;
             }
@@ -782,7 +797,9 @@ impl Catalog {
 
 /// Reads `files` (path, modification time, size): a file built for another processor is settled
 /// from its header, a VST3 bundle with a `moduleinfo.json` is read from it, and the rest are
-/// loaded by worker processes, the failures once more one at a time.
+/// loaded by worker processes, the failures once more one at a time. A 32-bit plug-in is loaded
+/// by the 32-bit host beside `host` when it is there ([`crate::bridge`]), and settled as built
+/// for another processor when it is not.
 fn read_files(
     host: &Path,
     files: Vec<(PathBuf, u64, u64)>,
@@ -790,32 +807,60 @@ fn read_files(
     now: u64,
     report: &mut Report,
 ) -> Vec<Entry> {
-    use crate::scan_pool::{default_workers, module_info, scan_files_retrying, timeout_for};
+    use crate::scan_pool::module_info;
     let mut fresh: Vec<Entry> = Vec::new();
-    let mut to_load: Vec<(PathBuf, u64, u64)> = Vec::new();
+    let mut native: Vec<(PathBuf, u64, u64)> = Vec::new();
+    let mut bridged: Vec<(PathBuf, u64, u64)> = Vec::new();
+    let mut bridge_host: Option<PathBuf> = None;
     for (file, modified, size) in files {
         let scanned = match crate::arch::incompatible(&file) {
-            Some(archs) => Scanned::Incompatible(crate::arch::reason(&archs)),
+            Some(archs) => match crate::bridge::bridge_for_file(host, &file) {
+                Some(bridge) => {
+                    bridge_host = Some(bridge);
+                    bridged.push((file, modified, size));
+                    continue;
+                }
+                None => Scanned::Incompatible(crate::arch::reason(&archs)),
+            },
             None => match module_info(&file) {
                 Some(plugins) => Scanned::Plugins(plugins),
                 None => {
-                    to_load.push((file, modified, size));
+                    native.push((file, modified, size));
                     continue;
                 }
             },
         };
         fresh.push(Entry { path: file, modified, size, scanned, tried: now });
     }
+    load_files(host, native, timeout, now, report, &mut fresh);
+    if let Some(bridge) = bridge_host {
+        load_files(&bridge, bridged, timeout, now, report, &mut fresh);
+    }
+    fresh
+}
+
+/// Loads `to_load` in `host`'s worker processes ([`read_files`]), into `fresh`.
+fn load_files(
+    host: &Path,
+    to_load: Vec<(PathBuf, u64, u64)>,
+    timeout: Duration,
+    now: u64,
+    report: &mut Report,
+    fresh: &mut Vec<Entry>,
+) {
+    use crate::scan_pool::{default_workers, scan_files_retrying, timeout_for};
+    if to_load.is_empty() {
+        return;
+    }
     let names: Vec<String> = to_load.iter().map(|(f, _, _)| f.display().to_string()).collect();
     let (loaded, retried) = scan_files_retrying(host, &names, default_workers(), &|f| timeout_for(f, timeout));
-    report.retried = retried.iter().filter_map(|&i| to_load.get(i)).map(|(f, _, _)| f.clone()).collect();
+    report.retried.extend(retried.iter().filter_map(|&i| to_load.get(i)).map(|(f, _, _)| f.clone()));
     for ((file, modified, size), mut scanned) in to_load.into_iter().zip(loaded) {
         if let Scanned::Plugins(plugins) = &mut scanned {
             plugins.iter_mut().for_each(|p| p.path = file.clone());
         }
         fresh.push(Entry { path: file, modified, size, scanned, tried: now });
     }
-    fresh
 }
 
 #[cfg(test)]

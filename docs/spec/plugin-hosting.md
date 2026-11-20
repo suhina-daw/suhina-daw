@@ -1,6 +1,6 @@
 ---
 description: How Suhina hosts plug-ins in detail - host processes and instances, joint round trips, events in a block, the deadline and real-time priority, state, formats, VST2 projects, scanning, editors, plug-ins in groups, latency, output changes and stopping instruments
-read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade
+read_when: plug-in host process, hosting choice, plugin-hosting.json, joint round trip, deadline, late blocks, real-time priority, rtkit, MMCSS, plug-in state, VST2 replacement, scanning, scan worker, plug-in editor, embedded editor, Device view, plug-in latency, retained instances, output change, stop fade, 32-bit plug-ins, bridge
 type: spec
 status: current
 last_verified: 2026-11-20
@@ -537,6 +537,9 @@ bundle with no classes) is passed over; `plugin.list` with `ignored` lists it. A
 built only for another processor (an Intel-only plug-in on an Apple silicon Mac) is never
 loaded: its executable's header (Mach-O, PE or ELF, `suhina_plugins::arch`) says so before
 any load, and it is listed apart as `incompatible` with the processors it is built for.
+The exception is a 32-bit Windows plug-in when the 32-bit host is installed: it is read
+by that host's workers and listed like any other ([32-bit plug-ins on Windows](#32-bit-plug-ins-on-windows)),
+and a file settled as `incompatible` before the 32-bit host was there is read again.
 The catalog (format 3) keeps when each file was last read; a catalog in format 2 is read
 as it is. A failure's reason is kept to its first line (a loader can list every path it
 tried).
@@ -558,6 +561,39 @@ The `plugin.*` commands run scans and choose the added folders (ADR 0002 amendme
 folders, the catalog, the plug-ins switched off and marked as owned, and the hosting choices
 are kept as JSON in
 Suhina's settings folder.
+
+## 32-bit plug-ins on Windows
+
+ADR 0006 › 11's 32-bit Windows host: the same `suhina-plugin-host`, built for
+`i686-pc-windows-msvc` and installed beside the 64-bit one as `suhina-plugin-host-32.exe`
+(`python scripts/bridge_host.py` builds and copies it). Nothing else changes: it speaks the
+same protocol over the same shared memory, whose words are fixed-width (`u32` atomics,
+`f32` samples, 16-byte events) and so read the same in a 32-bit process.
+
+- **Which plug-ins.** `suhina_plugins::bridge` picks the host per plug-in file: when Suhina
+  runs on x86-64 Windows and the file's PE header says 32-bit x86 only
+  (`suhina_plugins::arch`), the 32-bit host beside the 64-bit one loads it, if it is there.
+  A VST3 bundle with only 32-bit code holds it in `Contents/x86-win/`, which the 32-bit host
+  loads and the scanner reads the header of; a bundle with both loads its 64-bit code.
+- **Where.** `Plugin::start` swaps the host before it picks the group, so every caller (the
+  rack, offline renders, the CLI, restarts after a crash) gets it, and since a group is keyed
+  by its host, 32-bit instances share 32-bit processes only, grouped as the hosting choice
+  says. The scanner sends 32-bit files to workers of the 32-bit host (`scan_file` too).
+- **Folders.** With the 32-bit host installed, the standard folders gain the 32-bit programs'
+  ones (`%CommonProgramFiles(x86)%\CLAP`, `VST3`, `VST2` and `VSTPlugins`,
+  `%ProgramFiles(x86)%\VSTPlugins` and `Steinberg\VSTPlugins`).
+- **Two copies of one plug-in.** A 64-bit and a 32-bit file of the same plug-in share their
+  ids. A project's plug-in found by id (VST2 id, VST3 class id, CLAP id) takes the copy that
+  runs natively, so installing the 32-bit host never moves a project to the 32-bit copy,
+  and a VST2 id two copies share is not taken as two plug-ins (which would leave it
+  unresolved).
+- **Without it.** With no `suhina-plugin-host-32.exe` beside the host, a 32-bit file is
+  listed as `incompatible`, as before; a project that uses one loads it as missing.
+- **What it leaves out.** ARA: its bindings are generated for 64-bit processors and check
+  their layout as they compile, so the 32-bit host builds `ara_off.rs` in place of `ara.rs`,
+  which binds no document. States read and write the same in both hosts
+  (`ara_state.rs`). An editor embedded in Suhina's window gets the window's handle, which
+  Windows keeps to 32 significant bits, so embedding works across the two.
 
 ## Editors
 
