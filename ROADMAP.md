@@ -1322,3 +1322,5 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   Play, Model and Sample pages. They share the same sound controls, sample import and undo;
   keyboard page navigation changes only the view, and narrow windows scroll the editor.
 
+- Native audio effects follow the tempo and song position of their delayed input audio, including inside nested groups, on buses, returns and Main, and across historical transport boundaries.
+
