@@ -131,7 +131,7 @@ fn one_sine() -> ModalBank<MAX_VOICE_SINES> {
 /// demodulation, averaged over blocks of 96 samples (four periods of the 2000 Hz image).
 fn frequencies(signal: &[f32], nominal: f64) -> Vec<f64> {
     let mut phases = Vec::new();
-    for (b, block) in signal.chunks_exact(96).enumerate() {
+    for (b, block) in signal.as_chunks::<96>().0.iter().enumerate() {
         let (mut re, mut im) = (0.0, 0.0);
         for (n, x) in block.iter().enumerate() {
             let angle = TAU * nominal * (b * 96 + n) as f64 / RATE;
