@@ -167,7 +167,7 @@ pub fn fit(
     mono.truncate((length as f64 * f64::from(RATE) / f64::from(sample_rate)).floor() as usize);
     // Long silent tails must not turn a quick strike into widely separated empty windows.
     // Use the residual's AC span, rather than a DC offset introduced by mean subtraction.
-    let tail_mean = mono.iter().rev().take(MIN_FRAME).sum::<f64>() / mono.len().min(MIN_FRAME).max(1) as f64;
+    let tail_mean = mono.iter().rev().take(MIN_FRAME).sum::<f64>() / mono.len().clamp(1, MIN_FRAME) as f64;
     let mono_peak = mono.iter().map(|x| (x - tail_mean).abs()).fold(0.0_f64, f64::max);
     let useful = mono.iter().rposition(|x| (x - tail_mean).abs() > mono_peak * 1e-5).map_or(0, |i| i + 1);
     mono.truncate(useful);
