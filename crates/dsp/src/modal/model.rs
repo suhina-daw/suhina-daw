@@ -13,10 +13,10 @@ pub const MODEL_REVISION: u16 = 4;
 pub const MAX_RECORDINGS: usize = 32;
 /// Sources a set can tell apart for morphing (ten pianos are ten sources).
 pub const MAX_SOURCES: usize = 16;
-pub const MAX_MODEL_MODES: usize = 32;
+pub const MAX_MODEL_MODES: usize = 64;
 /// Attack samples per recording: 0.25 s at 48 kHz.
 pub const MAX_ATTACK: usize = 12000;
-pub const MAX_VOICE_SINES: usize = 64;
+pub const MAX_VOICE_SINES: usize = 128;
 const CANDIDATE_SINES: usize = 4 * MAX_MODEL_MODES;
 /// First bytes of an encoded set, so a loader can tell it from a schema-1 profile.
 pub const MODEL_MAGIC: &[u8; 8] = b"SHMSET2\0";
@@ -97,7 +97,7 @@ impl ModelRecording {
             return fail("a fitted recording needs a level in (0, 16]");
         }
         if self.modes.is_empty() || self.modes.len() > MAX_MODEL_MODES {
-            return fail("a fitted recording needs 1..32 modes");
+            return fail("a fitted recording needs 1..64 modes");
         }
         let mut previous = 0.0;
         let mut sum = 0.0;

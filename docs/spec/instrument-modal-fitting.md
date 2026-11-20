@@ -49,6 +49,28 @@ other). Candidates closer than two envelope-window bins (the Hann main lobe's ha
 merged into the stronger one. Bounded interval refinement on the detection window estimates
 each peak frequency.
 
+**Partials along the string.** A piano note has dozens of partials, a bass note a hundred under
+10 kHz, and most are far weaker than the few that prominence finds; a model of only those
+sounds like a few sine waves (published modal pianos use about 100 partials for a bass note,
+Bank, Zambon and Fontana 2010; a differentiable piano model uses 96 and found an explicit
+stiff-string inharmonicity essential, Renault, Mignot and Roebel 2022). So after the prominent
+peaks are refined, the fit predicts the rest from the stiff string, `f_k = k * f0 *
+sqrt(1 + B * k^2)`:
+
+1. `f0` is the refined peak nearest the reference key's frequency, within 70 cents; without
+   one, no partials are predicted (a bell or bar is left to prominence).
+2. `B` is the least-squares fit through the origin of `(f/(k*f0))^2 - 1 = B * k^2` over the
+   other refined peaks within 5 % of a whole multiple `k` of 2..32 of `f0`, from at least three
+   such peaks, clamped to 0..0.01; otherwise 0.
+3. For each `k` from 1 while `f_k` is below the analysis ceiling (at most 128 partials), when no
+   candidate lies within the candidate separation or 1 % of `f_k`, the strongest detection bin
+   within 1 % of `f_k` becomes a candidate if it is a local maximum within 80 dB of the
+   strongest bin and stands 6 dB above the median of its neighbours 3..8 bins away; candidates
+   stop at 96 in all.
+
+Every candidate is then measured and fitted alike (a predicted partial is kept, loose or
+validated, only when its envelope says so).
+
 **Measuring decay.** The interval is cut into 6..12 consecutive non-overlapping Hann windows
 with a power-of-two size from 1024 to 8192. A complex projection at the mode's frequency
 measures its amplitude in each window. Each mode uses its own span: it starts at its loudest of
@@ -79,8 +101,8 @@ playable sample remains usable.
 **The fitted recording.** Besides the schema-1 profile, a fit returns a `ModelRecording` for a
 revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-revision-4)):
 
-- **Up to 32 modes.** Detection proposes at most 48 candidates; the 32 with the most energy
-  (`magnitude^2 * T60`) are kept. The schema-1 profile keeps the 16 largest magnitudes.
+- **Up to 64 modes.** Detection and the string's partials propose at most 96 candidates; the
+  64 with the most energy (`magnitude^2 * T60`) are kept. The schema-1 profile keeps the 16 largest magnitudes.
 - **Phase.** The complex projection of a mode's first span window gives its phase at that
   window, carried back to the strike (the start of the analyzed interval) by its frequency. With
   the phases, the modes start where the recording's partials do, so the attack below hands over

@@ -118,7 +118,7 @@ the native Instrument renders as **revision 4**. Revision 2 profiles keep their 
 is the reference), a velocity in (0, 1] it stands for, a `source` 0..15 (which instrument it was
 recorded from, for morphing: ten pianos are ten sources), an absolute `level` (the recording's
 amplitude in source full-scale units that the normalized magnitudes multiply, 0 < level <= 16),
-one to 32 modes and an optional attack. A mode has:
+one to 64 modes and an optional attack. A mode has:
 
 - `ratio` (1/256..256, strictly increasing), `magnitude` (0..1; the magnitudes of a recording sum
   to at most 1), `decay_seconds` (T60 of the slow part, 0.001..60) and `phase` (radians at the
@@ -139,7 +139,7 @@ little-endian u16 schema 2, u16 revision 4, u8 count and three zero bytes; then 
 u8 key, u8 source, two zero bytes, f32 velocity, f64 level, u8 mode count, three zero bytes, u32 attack rate, u32 attack
 length, the modes as eight little-endian f64 each (ratio, magnitude, decay, fast decay, fast
 share, beat ratio, beat share, phase) and the attack as little-endian f32. `decode` accepts only
-canonical bytes within these bounds (at most 32 recordings, 32 modes and 12000 attack samples
+canonical bytes within these bounds (at most 32 recordings, 64 modes and 12000 attack samples
 each, every number finite) and fails before returning anything otherwise. The model layer's
 opaque state limit is 1 MiB, which holds 32 fitted recordings with their 22050 Hz attacks.
 Decoding precomputes, off the audio thread, which mode of every other recording each mode
@@ -174,7 +174,7 @@ parameter space, never by mixing their audio:
    `magnitude * (1 - fast_share) * (1 - beat_share)` at T60 `decay_seconds`, the fast part
    `magnitude * fast_share` at `fast_decay_seconds`, and the partner
    `magnitude * (1 - fast_share) * beat_share` at `ratio * beat_ratio` with the slow T60. At most
-   64 sines sound per voice (32 with Modes per voice 8); the weakest by `amplitude * sqrt(T60)`
+   128 sines sound per voice (64 with Modes per voice 8); the weakest by `amplitude * sqrt(T60)`
    are left out.
 4. The anchor's attack plays from the strike, read at
    `attack_rate / sample_rate * 2^((key - recording key) / 12)` with linear interpolation and the
@@ -223,10 +223,11 @@ The fitted attack is the recorded hammer; these settings shape what a single rec
 show. Sympathetic coupling between particular strings, the damper's recorded sound and
 half-pedalling remain open in #1624.
 
-**Budget.** A revision-4 voice holds 64 resonators, an attack read position and its envelope
-in place of the 16 resonators of revisions 1 and 2 or a bar body: under 4 KiB per voice, under 64 KiB for 16 voices,
-within the runtime's 256 KiB inline target. The set itself (at most 1 MiB) is shared and prepared
-off the audio thread. Note-on fuses at most 32 recordings of 32 modes without allocating.
+**Budget.** A revision-4 voice holds 128 resonators, an attack read position and its envelope
+in place of the 16 resonators of revisions 1 and 2 or a bar body: under 8 KiB per voice, under
+128 KiB for 16 voices, within the runtime's 256 KiB inline target. The set itself (at most 1 MiB)
+is shared and prepared off the audio thread. Note-on fuses at most 32 recordings of 64 modes
+without allocating.
 
 **Commands.** `instrument.acceptFit` adopts a set with the fitted recording as its only member
 (revision 4, Source Modal, full modes, neutral model controls, Attack 0, Sustain 1, Source morph

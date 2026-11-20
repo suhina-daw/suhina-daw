@@ -19,7 +19,15 @@ pub const VERSION: u32 = 2;
 const MIN_FRAME: usize = 1024;
 const MAX_FRAME: usize = 8192;
 const MAX_FRAMES: usize = 12;
-const MAX_CANDIDATES: usize = 48;
+const MAX_CANDIDATES: usize = 96;
+/// Partials along the string (instrument-modal-fitting.md): the fundamental's distance from the
+/// reference key, the inharmonicity bound, the search width and the weakest partial kept.
+const FUNDAMENTAL_RATIO: f64 = 1.041_299; // 70 cents
+const MAX_INHARMONICITY: f64 = 0.01;
+const PARTIAL_SEARCH: f64 = 0.01;
+const PARTIAL_FLOOR: f64 = 1e-4;
+const PARTIAL_PROMINENCE: f64 = 2.0;
+const MAX_PARTIALS: usize = 128;
 const CHUNK: usize = 256;
 const REFINEMENTS: usize = 20;
 const DB: f64 = 20.0 / std::f64::consts::LN_10;
@@ -315,7 +323,8 @@ pub fn fit(
             .sum::<f64>()
             / window.iter().sum::<f64>()
     };
-    let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
+    // The prominent peaks first: the string's other partials are predicted from them.
+    let mut frequencies = Vec::with_capacity(MAX_CANDIDATES);
     for bin in candidates {
         let hz = refine(
             detection,
@@ -324,9 +333,25 @@ pub fn fit(
             (bin as f64 + 0.75) * bin_hz,
             &mut work,
         )?;
-        if hz < low_hz || hz > high_hz {
-            continue;
+        if (low_hz..=high_hz).contains(&hz) {
+            frequencies.push(hz);
         }
+    }
+    let string = Spectrum { values: &spectrum, bin_hz, highest, separation_hz: separation_bins.max(3.0) * bin_hz };
+    for bin in string_partials(&frequencies, reference_hz, high_hz, &string, MAX_CANDIDATES) {
+        let hz = refine(
+            detection,
+            &detection_window,
+            (bin as f64 - 0.75) * bin_hz,
+            (bin as f64 + 0.75) * bin_hz,
+            &mut work,
+        )?;
+        if (low_hz..=high_hz).contains(&hz) {
+            frequencies.push(hz);
+        }
+    }
+    let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
+    for hz in frequencies {
         let mut measurements = Vec::with_capacity(frames);
         let mut thetas = Vec::with_capacity(frames);
         for index in 0..frames {
@@ -392,6 +417,88 @@ pub fn fit(
     }
     work.finish()?;
     Ok(report)
+}
+
+/// The detection spectrum the string's partials are looked for in.
+struct Spectrum<'a> {
+    values: &'a [f64],
+    bin_hz: f64,
+    highest: f64,
+    /// Closest two candidates may be, in Hz.
+    separation_hz: f64,
+}
+
+/// Detection bins of the string's partials that prominence missed: from the fundamental nearest
+/// `reference_hz` and an inharmonicity fitted to the `found` frequencies, each predicted partial
+/// below `high_hz` with a peak near it and no candidate there yet, until `total` candidates.
+fn string_partials(
+    found: &[f64],
+    reference_hz: f64,
+    high_hz: f64,
+    spectrum: &Spectrum<'_>,
+    total: usize,
+) -> Vec<usize> {
+    let Some(f0) = found
+        .iter()
+        .copied()
+        .filter(|f| (1.0 / FUNDAMENTAL_RATIO..=FUNDAMENTAL_RATIO).contains(&(f / reference_hz)))
+        .min_by(|a, b| (a / reference_hz).ln().abs().total_cmp(&(b / reference_hz).ln().abs()))
+    else {
+        return Vec::new();
+    };
+    // B through the origin: (f / (k f0))^2 - 1 = B k^2.
+    let (mut sum_xy, mut sum_xx, mut points) = (0.0, 0.0, 0);
+    for f in found {
+        let ratio = f / f0;
+        let k = ratio.round();
+        if (2.0..=32.0).contains(&k) && (ratio / k - 1.0).abs() < 0.05 {
+            let k2 = k * k;
+            sum_xy += ((ratio / k).powi(2) - 1.0) * k2;
+            sum_xx += k2 * k2;
+            points += 1;
+        }
+    }
+    let b = if points >= 3 && sum_xx > 0.0 { (sum_xy / sum_xx).clamp(0.0, MAX_INHARMONICITY) } else { 0.0 };
+    let values = spectrum.values;
+    let mut taken: Vec<f64> = found.to_vec();
+    let mut bins = Vec::new();
+    for k in 1..=MAX_PARTIALS {
+        if taken.len() >= total {
+            break;
+        }
+        let k = k as f64;
+        let hz = k * f0 * (1.0 + b * k * k).sqrt();
+        if !hz.is_finite() || hz > high_hz {
+            break;
+        }
+        let near = spectrum.separation_hz.max(PARTIAL_SEARCH * hz);
+        if taken.iter().any(|f| (f - hz).abs() < near) {
+            continue;
+        }
+        let low = (hz * (1.0 - PARTIAL_SEARCH) / spectrum.bin_hz).floor().max(2.0) as usize;
+        let high =
+            ((hz * (1.0 + PARTIAL_SEARCH) / spectrum.bin_hz).ceil() as usize).min(values.len().saturating_sub(10));
+        let Some((bin, value)) =
+            (low..=high).filter_map(|b| values.get(b).map(|v| (b, *v))).max_by(|a, b| a.1.total_cmp(&b.1))
+        else {
+            continue;
+        };
+        let (Some(&before), Some(&after)) = (values.get(bin - 1), values.get(bin + 1)) else { continue };
+        if value < spectrum.highest * PARTIAL_FLOOR || value <= before || value <= after {
+            continue;
+        }
+        let mut nearby = [0.0_f64; 12];
+        for (slot, delta) in nearby.iter_mut().zip([-8_isize, -7, -6, -5, -4, -3, 3, 4, 5, 6, 7, 8]) {
+            *slot = bin.checked_add_signed(delta).and_then(|b| values.get(b)).copied().unwrap_or(value);
+        }
+        nearby.sort_by(f64::total_cmp);
+        if value < nearby[6] * PARTIAL_PROMINENCE {
+            continue;
+        }
+        taken.push(bin as f64 * spectrum.bin_hz);
+        bins.push(bin);
+    }
+    bins
 }
 
 /// One accepted mode: frequency, slow and fast magnitudes at the strike (prepared units).
