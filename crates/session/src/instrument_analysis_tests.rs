@@ -18,6 +18,7 @@ fn admission_and_late_completion_have_no_timing_dependency() {
     let (tx, rx) = mpsc::sync_channel(1);
     let flag = Arc::new(AtomicBool::new(false));
     let mut job = Job {
+        kind: AnalysisKind::Root,
         id: 1,
         source: Source {
             channel: ChannelId(1),
@@ -27,28 +28,31 @@ fn admission_and_late_completion_have_no_timing_dependency() {
             start: 0.0,
             end: 1.0,
             root: 60.0,
+            profile: None,
         },
         cancel: flag.clone(),
         progress: Arc::new([AtomicUsize::new(0), AtomicUsize::new(0)]),
         receiver: Some(rx),
         phase: AnalysisPhase::Running,
         report: None,
+        modal: None,
         message: None,
         pending_root: None,
+        pending_fit: false,
     };
     job.receive(false);
     assert_eq!(job.phase, AnalysisPhase::Running);
     job.stop(AnalysisPhase::Cancelled, "cancelled");
     assert!(flag.load(Ordering::Acquire));
     // A finished report arrives after cancellation; it must not restore a proposal.
-    tx.send(Ok(Report {
+    tx.send(Ok(Prepared::Root(Report {
         version: 1,
         range: 0..4096,
         outcome: Outcome::Silent,
         proposal: None,
         active_windows: 0,
         voiced_windows: 0,
-    }))
+    })))
     .unwrap();
     job.receive(true);
     assert_eq!(job.phase, AnalysisPhase::Cancelled);

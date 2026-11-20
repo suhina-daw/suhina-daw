@@ -8,6 +8,8 @@ use std::ops::Range;
 
 use suhina_dsp::{Resampler, pitch::Yin};
 
+pub mod modal;
+
 pub const VERSION: u32 = 1;
 pub const RATE: u32 = 22_050;
 pub const MAX_SECONDS: usize = 8;
@@ -24,6 +26,7 @@ pub enum Error {
     InvalidRange,
     NonFinite,
     Cancelled,
+    InvalidSettings,
 }
 
 impl std::fmt::Display for Error {
@@ -33,6 +36,7 @@ impl std::fmt::Display for Error {
             Self::InvalidRange => "analysis needs a nonempty frame range inside the source",
             Self::NonFinite => "the analyzed audio contains a nonfinite sample",
             Self::Cancelled => "analysis was cancelled",
+            Self::InvalidSettings => "analysis settings are outside the supported bounds",
         })
     }
 }

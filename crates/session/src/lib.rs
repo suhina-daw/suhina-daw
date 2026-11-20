@@ -109,7 +109,7 @@ pub use devices::reads_a_key;
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::stage_and_rename;
 pub use files::{MAX_FILES, file_tempo};
-pub use instrument_analysis::{AnalysisPhase, AnalysisView};
+pub use instrument_analysis::{AnalysisKind, AnalysisPhase, AnalysisView};
 pub use library::{
     Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets,
 };
@@ -133,6 +133,7 @@ pub use relink::COLLECTED;
 pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
 pub use suhina_instrument_analysis::Outcome as SampleAnalysisOutcome;
+pub use suhina_instrument_analysis::modal::Outcome as ModalFitOutcome;
 pub use suhina_plugins::Placement;
 pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
 pub use zipped::{ZippedProject, default_extract_folder, extract_zipped_project, zipped_project};
