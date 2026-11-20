@@ -519,7 +519,7 @@ fn view_json(view: &AnalysisView) -> Value {
             "attackSeconds":rec.attack.len() as f64 / f64::from(rec.attack_rate.max(1))})),
         "recordingModes":r.recording_modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
             "fastDecaySeconds":m.fast_decay_seconds,"fastShare":m.fast_share,"beatHz":m.beat_hz,"beatShare":m.beat_share,
-            "phase":m.phase,"sustained":m.sustained})).collect::<Vec<_>>(),
+            "phase":m.phase,"sustained":m.sustained,"loose":m.loose})).collect::<Vec<_>>(),
         "modes":r.modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
             "estimationRmsDb":m.estimation_rms_db,"validationRmsDb":m.validation_rms_db,"sustained":m.sustained,
             "estimationWindows":m.estimation_windows,"validationWindows":m.validation_windows})).collect::<Vec<_>>()

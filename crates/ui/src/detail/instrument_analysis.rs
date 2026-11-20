@@ -135,6 +135,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                             (modes.iter().filter(|m| m.sustained).count(), "sustained"),
                             (modes.iter().filter(|m| m.fast_share > 0.0).count(), "two-part"),
                             (modes.iter().filter(|m| m.beat_share > 0.0).count(), "beating"),
+                            (modes.iter().filter(|m| m.loose).count(), "loose"),
                         ] {
                             if count > 0 {
                                 summary.push_str(&format!(" · {count} {what}"));

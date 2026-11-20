@@ -85,6 +85,17 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   window, carried back to the strike (the start of the analyzed interval) by its frequency. With
   the phases, the modes start where the recording's partials do, so the attack below hands over
   to them without cancelling.
+- **Loose partials.** A candidate whose envelope fails every fit above (a deep beat between
+  two or three strings of one note dips more than the error limits allow, and its rise after a
+  dip ends the span early) is still a partial of the sound; dropping it leaves a few smooth
+  partials that sound like sine waves. It is kept **loose** when, from its loudest of the first
+  three windows until 60 dB below that peak (no rise rule), it has at least six windows, a
+  least-squares line through them falls by at least 6 dB with a T60 within 0.001..60 s, and the
+  line's RMS envelope error is at most 15 dB, and the mean level of each third of those windows
+  is at least 1 dB below the third before it (a burst followed by a flat floor is no decay). A
+  loose mode joins the fitted recording with that
+  T60 (and may get a beating partner below), but never the schema-1 profile or its reported
+  validation errors, and a sound with loose modes only has no model.
 - **Two-part decay.** When a span of nine or more windows has a valid fit on its last two thirds
   (the slow part), the excess of the earlier windows over that line is fitted as a second,
   faster exponential. It is kept as `fast_decay_seconds` and `fast_share` when its T60 is under
