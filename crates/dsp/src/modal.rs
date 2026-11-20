@@ -6,6 +6,8 @@
 
 use std::f64::consts::TAU;
 
+pub mod profile;
+
 /// One exponentially decaying mode, expressed in physical units.
 #[derive(Debug, Clone, Copy)]
 pub struct Mode {
