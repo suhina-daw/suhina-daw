@@ -3,7 +3,7 @@ description: Experimental Instrument modal core, local single-source import and 
 read_when: Instrument, modal synthesis, sample-to-instrument, comprehensive instrument
 type: spec
 status: planned
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - devices/instrument/**
   - crates/dsp/src/modal.rs
