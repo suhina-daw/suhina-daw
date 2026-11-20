@@ -97,8 +97,14 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
 
-/// What a voice sounds: revision 1's struck bank, or a struck bar.
+/// What a voice sounds: revision 1's struck bank, or a struck bar. Voices live inline in a
+/// fixed array, so the size of the larger variant is the bounded per-voice storage; boxing the
+/// bar would allocate on the audio thread whenever a voice changes body.
 #[derive(Clone, Copy)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "fixed-capacity voice storage; boxing would allocate in the audio callback"
+)]
 enum Body {
     Struck(ModalBank<MAX_MODES>),
     Bar(StruckBar<MAX_MODES>),
