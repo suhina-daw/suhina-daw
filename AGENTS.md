@@ -105,6 +105,14 @@ describe a file. Read only the ones that match your task.
     Collected files keep their owners' filenames; Suhina's own content is CC0-1.0; the
     provenance lives in the `README.md` beside the files, with a publisher's licence text
     carried beside the files it covers.
+15. **Suhina's own widgets, not egui's.** The UI avoids native egui widgets (`Button`,
+    `Slider`, `ComboBox`, `TextEdit`, `Checkbox` and the like, through `ui.button(…)`,
+    `ui.add(egui::…)` or their helpers) and uses Suhina's custom widgets instead
+    (`crates/ui/src/kit`, and `device-sdk`'s UI system for device panels), so every control
+    follows the layout and theme system. A control the kit lacks is added to the kit, not drawn
+    with an egui widget in a view
+    ([docs/design/components.md](docs/design/components.md),
+    [docs/guide/theme-authoring.md](docs/guide/theme-authoring.md)).
 
 ## 2. Where to read more
 
