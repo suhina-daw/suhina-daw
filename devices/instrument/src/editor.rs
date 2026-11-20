@@ -10,6 +10,9 @@ pub(super) fn canvas() -> DeviceUi {
     let mut ui = Canvas::new([880.0, 520.0]);
     ui.title("Instrument", [24.0, 16.0, 400.0, 34.0], 28.0);
     ui.label("Experimental struck modal · revision 1", [24.0, 54.0, 450.0, 20.0]);
+    ui.only_revision(1);
+    ui.label("Experimental modal profile · revision 2", [24.0, 54.0, 450.0, 20.0]);
+    ui.only_revision(2);
     ui.label("SOURCE", [632.0, 16.0, 220.0, 18.0]);
     ui.menu(
         "source",
@@ -56,7 +59,7 @@ pub(super) fn canvas() -> DeviceUi {
         "body_decay",
         "Body decay",
         [54.0, 188.0, 170.0, 164.0],
-        "Time for the fundamental to decay by 60 dB; affects the next strike",
+        "Original model: fundamental T60. Profile: scales stored decays relative to 2 seconds. Next strike only",
     );
     ui.dial(
         "brightness",
@@ -68,7 +71,7 @@ pub(super) fn canvas() -> DeviceUi {
         "structure",
         "Structure",
         [446.0, 208.0, 150.0, 138.0],
-        "Stretch resonance frequencies away from integer harmonics; affects the next strike",
+        "Stretch the original or accepted resonance frequencies; affects the next strike",
     );
     ui.dial(
         "strike",
@@ -76,6 +79,14 @@ pub(super) fn canvas() -> DeviceUi {
         [646.0, 208.0, 150.0, 138.0],
         "Excitation position along the resonant body; affects the next strike",
     );
+    ui.only_revision(1);
+    ui.dial(
+        "strike",
+        "Strike colour",
+        [646.0, 208.0, 150.0, 138.0],
+        "Creative excitation weighting of accepted modes, not a measured impact position; next strike only",
+    );
+    ui.only_revision(2);
     ui.label("Modes per voice", [40.0, 416.0, 196.0, 20.0]);
     ui.menu("quality", "Modes per voice", [240.0, 412.0, 132.0, 30.0], "8 or 16 resonances per modal voice");
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 416.0, 440.0, 20.0]);

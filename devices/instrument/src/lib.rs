@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Public native Instrument runtime, shared by stock and export adapters. The struck-modal
-//! model is experimental revision 1. Sample playback uses the existing SDK runtime.
+//! model is experimental revision 1; accepted modal profiles use revision 2. Sample playback
+//! uses the existing SDK runtime.
 
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ParamInfo, ProcessContext, Role,
@@ -11,7 +12,10 @@ use suhina_device_api::{
 use suhina_device_sdk::sample_instrument::{self, Sampler};
 use suhina_dsp::{
     Smoother,
-    modal::{ModalBank, Mode},
+    modal::{
+        ModalBank, Mode,
+        profile::{ModalProfile, PROFILE_MODEL_REVISION},
+    },
 };
 
 pub mod panel;
@@ -121,6 +125,8 @@ pub struct Instrument {
     gain: Smoother,
     sample_mix: Smoother,
     modal_mix: Smoother,
+    profile: Option<ModalProfile>,
+    invalid_profile: bool,
 }
 
 impl Default for Instrument {
@@ -153,6 +159,8 @@ impl Instrument {
             gain: Smoother::new(0.0, ramp),
             sample_mix: Smoother::new(0.0, ramp),
             modal_mix: Smoother::new(1.0, ramp),
+            profile: None,
+            invalid_profile: false,
         };
         core.set_sample_parameter("poly", MAX_VOICES as f64);
         for (index, info) in PARAMS.iter().enumerate() {
@@ -182,7 +190,26 @@ impl Instrument {
     /// Whether the persisted model revision is supported. Unsupported modal bodies remain
     /// silent instead of silently changing their sound; sample playback remains available.
     pub fn model_supported(&self) -> bool {
-        self.params.get(param::REVISION) == f64::from(MODEL_REVISION)
+        if self.invalid_profile {
+            return false;
+        }
+        match self.params.get(param::REVISION) as u16 {
+            MODEL_REVISION => self.profile.is_none(),
+            PROFILE_MODEL_REVISION => self.profile.is_some(),
+            _ => false,
+        }
+    }
+
+    /// Adopt validated modes off the audio thread. Preparation and reset retain this profile.
+    pub fn set_modal_profile(&mut self, profile: ModalProfile) {
+        self.profile = Some(profile);
+        self.invalid_profile = false;
+        let _ = self.params.set(param::REVISION, f64::from(PROFILE_MODEL_REVISION));
+        self.reset();
+    }
+
+    pub fn modal_profile(&self) -> Option<&ModalProfile> {
+        self.profile.as_ref()
     }
 
     fn release(&mut self, key: Option<u8>) {
@@ -206,13 +233,37 @@ impl Instrument {
         let fundamental = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
         let structure = self.params.get(param::STRUCTURE);
         let count = if self.params.get(param::QUALITY) < 0.5 { 8 } else { MAX_MODES };
-        for (index, mode) in modes.iter_mut().take(count).enumerate() {
-            let harmonic = (index + 1) as f64;
-            mode.frequency_hz =
-                fundamental * harmonic * ((1.0 + structure * harmonic * harmonic) / (1.0 + structure)).sqrt();
-            mode.decay_seconds = self.params.get(param::DECAY) / (1.0 + 0.12 * (harmonic - 1.0));
-            mode.amplitude = (std::f64::consts::PI * harmonic * self.params.get(param::STRIKE)).sin()
-                / harmonic.powf(2.0 - 1.5 * self.params.get(param::BRIGHTNESS));
+        if self.profile.is_none() {
+            for (index, mode) in modes.iter_mut().take(count).enumerate() {
+                let harmonic = (index + 1) as f64;
+                mode.frequency_hz =
+                    fundamental * harmonic * ((1.0 + structure * harmonic * harmonic) / (1.0 + structure)).sqrt();
+                mode.decay_seconds = self.params.get(param::DECAY) / (1.0 + 0.12 * (harmonic - 1.0));
+                mode.amplitude = (std::f64::consts::PI * harmonic * self.params.get(param::STRIKE)).sin()
+                    / harmonic.powf(2.0 - 1.5 * self.params.get(param::BRIGHTNESS));
+            }
+        }
+        if let Some(profile) = self.profile.as_ref() {
+            modes.fill(Mode { frequency_hz: 0.0, decay_seconds: 0.0, amplitude: 0.0 });
+            let reference =
+                profile.reference_hz() * 2.0_f64.powf((f64::from(key) - f64::from(profile.reference_key())) / 12.0);
+            let mut magnitude_sum = 0.0;
+            for (index, (mode, fitted)) in modes.iter_mut().take(count).zip(profile.modes()).enumerate() {
+                let ratio = fitted.ratio;
+                let dispersion = |s: f64| ((1.0 + s * ratio * ratio) / (1.0 + s)).sqrt();
+                let excitation =
+                    |strike: f64| 0.25 + 0.75 * (std::f64::consts::PI * (index + 1) as f64 * strike).sin().abs();
+                mode.frequency_hz = reference * ratio * dispersion(structure) / dispersion(0.002);
+                mode.decay_seconds = fitted.decay_seconds * self.params.get(param::DECAY) / 2.0;
+                mode.amplitude = fitted.magnitude
+                    * ratio.powf(1.5 * (self.params.get(param::BRIGHTNESS) - 0.5))
+                    * excitation(self.params.get(param::STRIKE))
+                    / excitation(0.25);
+                magnitude_sum += mode.amplitude;
+            }
+            for mode in &mut modes {
+                mode.amplitude /= magnitude_sum.max(1.0);
+            }
         }
         let slot =
             self.voices.iter().position(|voice| !voice.bank.is_active()).or_else(|| {
@@ -241,6 +292,20 @@ impl Instrument {
 impl Device for Instrument {
     fn info(&self) -> &DeviceInfo {
         &INFO
+    }
+    fn load_model_state(&mut self, state: &[u8]) -> Result<(), DeviceError> {
+        match ModalProfile::decode(state) {
+            Ok(profile) => {
+                self.set_modal_profile(profile);
+                Ok(())
+            }
+            Err(error) => {
+                self.profile = None;
+                self.invalid_profile = true;
+                self.reset();
+                Err(DeviceError::InvalidModelState(error.0))
+            }
+        }
     }
     fn samples(&mut self) -> Option<&mut dyn SampleSource> {
         Some(&mut self.sampler)
@@ -417,3 +482,6 @@ impl Device for Instrument {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod profile_tests;

@@ -22,7 +22,8 @@ slice #1597 of #1579, designed from the maintainer's requested interactions and 
 The lower device area presents Source, a local sample waveform/drop target, Body decay,
 Brightness, Release, Hybrid sample blend and Gain. A visible Open editor button and the
 standard device-header expand button open the same expanded editor. The current model is
-identified as experimental struck modal revision 1, separately from its sound controls.
+identified as experimental struck modal revision 1 or modal profile revision 2, separately from
+its sound controls. The revision label names the stored request, not calibration acceptance.
 The panel fits the standard 168-point body height and uses less width than the initial
 900-point panel. Narrow device areas scroll instead of shrinking controls below readable sizes.
 
@@ -34,7 +35,10 @@ identifies Instrument and its experimental model, with Source always available. 
 - **Play:** the shared Gain and Release, Hybrid sample blend, sample Attack and Sustain,
   and key/velocity admission ranges. Labels distinguish sample-only and Hybrid-only controls.
 - **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
-  describe the actual struck-modal model, and apply to the next strike.
+  describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
+  excitation control Strike colour: a creative weighting of accepted modes, not a measured
+  physical impact position. Profile adoption resets the four model controls and enables all
+  profile modes; the underlying stable parameter IDs remain the same.
 - **Sample:** local waveform/drop target, Root, Playback, source Start/End, loop Start/End,
   Attack and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.

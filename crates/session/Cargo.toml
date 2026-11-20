@@ -22,6 +22,7 @@ suhina-flp.workspace = true
 suhina-project-file.workspace = true
 suhina-plugins.workspace = true
 suhina-device-api.workspace = true
+suhina-dsp.workspace = true
 suhina-device-sdk.workspace = true
 suhina-device-registry.workspace = true
 serde_json.workspace = true
