@@ -78,8 +78,9 @@ Acoustic quality is not established by matching this mathematical reference.
 Marimba bar and Vibraphone bar are experimental physical models of one struck bar per key: a
 free-free bar's modes, excited by a mallet whose contact time depends on how hard and how fast it
 strikes. They are not calibrated against recordings and claim no likeness to a particular
-instrument; resonators, the vibraphone motor, the damper pedal and dead strokes are not modelled
-yet. Struck, Sample and Hybrid behave as described above whatever these controls say.
+instrument. Each bar has a tube resonator under it; the vibraphone motor, the damper pedal and
+dead strokes are not modelled yet. Struck, Sample and Hybrid behave as described above whatever
+these controls say.
 
 **Tuning.** A key sets the fundamental `f1` in equal temperament (A4 = 440 Hz). Mode `n` sounds at
 `f1 * ratio_n(key)`. `U_n` are the uniform free-free bar's ratios `(beta_n / beta_1)^2`, where
@@ -144,10 +145,24 @@ A new stroke on a bar whose previous contact or pulse has not finished replaces 
 the earlier stroke is dropped.
 
 **Sound.** The output is each mode's velocity weighted by Brightness `b` as a tilt,
-`(f_n / f1)^(b - 0.5)`, summed and scaled by `0.2 * sqrt(M(key) / M_ref)`, which keeps the level of
+`(f_n / f1)^(b - 0.5)`, summed and scaled by `0.12 * sqrt(M(key) / M_ref)`, which keeps the level of
 light, high bars comparable with heavy, low ones. Quality selects 8 or 16 modes; modes at or above
 0.45 times the sample rate are left out of the bar, its point mass and its output. Structure has
 no effect on bar bodies.
+
+**Resonator.** The tube under each bar is one damped resonance tuned to the bar's fundamental
+`f1`, with quality factor 40 (decay rate `pi * f1 / 40`). The first mode's velocity drives it, and
+its own velocity joins the output with the first mode's weight: once it has built up, it adds
+`2 * r` times the first mode's output, in phase with it, where `r` is the Resonator control (0 to
+100 %, default 100 %). A low tube builds up and dies away more slowly than a high one. The tube
+draws its energy from the bar: the first mode's decay rate grows by `r * ln(1000) / T_rad`, with
+`T_rad` 1.2 s for Marimba bar and 4 s for Vibraphone bar, so the fundamental sounds stronger and
+shorter. The tube follows the pitch wheel with its bar; at 0 % there is no tube. A tube above the
+anti-alias margin is left out with its mode.
+
+**Coefficient changes.** When a re-strike, damping or the pitch wheel changes a ringing bar's
+frequencies, decays or weights, the step this would make in its output fades out linearly over
+2 ms instead of sounding as a click.
 
 **One body per bar.** A key is one bar. A note on a key whose bar still sounds strikes that same
 bar again, whether the key is held, released or damping, so a roll keeps one voice and a stroke
@@ -182,12 +197,12 @@ an absolute fallback, and the existing collect/missing-file/relink workflow appl
 
 All sound controls are stored as stable native parameter IDs. `model_revision` is metadata in
 the existing native parameter state, hidden from the stock panel; a newly added Instrument stores
-3. Revision 3 adds Body, Mallet hardness and Mallet model, and its Struck body is revision 1's
+3. Revision 3 adds Body, Mallet hardness, Mallet model and Resonator, and its Struck body is revision 1's
 renderer unchanged. A stored 1 is therefore read as revision 3: a revision-1 project has no Body
 value, so it opens on Struck with the new controls at their defaults and renders exactly as
 before. A project without a stored revision is read as revision 1. Revisions 2 and 4 render an
 accepted profile or a [fitted model set](instrument-modal-fitting.md) and ignore Body, Mallet
-hardness and Mallet model; adopting a profile stores 2, adopting a set stores 4.
+hardness, Mallet model and Resonator; adopting a profile stores 2, adopting a set stores 4.
 The device never rewrites the stored value, so an older build that knows only revisions 1 and 2
 silences a revision-3 project's modal body, but plays Struck for a revision-1 project in which a
 bar body was chosen later. Unknown
@@ -243,8 +258,9 @@ planned families still need their own model, independently licensed references, 
 coverage and listening validation. Folder/multisample import builds on the shared zone work
 in #739; model candidates, automatic fitting, provenance and portable preset bundles remain
 future work. The broader resonator request #394 also includes excitation and coupling models
-that this first struck body does not supply. The bar bodies still lack resonators, the vibraphone
-motor and damper pedal, dead strokes, mallet noise and calibration (#1609). MPE (#921) and CLAP/VST3 exports (#931) are parallel
+that this first struck body does not supply. The bar bodies still lack the vibraphone motor
+and damper pedal, dead strokes, mallet noise, resonances of the tube above its first, and
+calibration (#1609). MPE (#921) and CLAP/VST3 exports (#931) are parallel
 implementation workstreams that must use this same core.
 
 ## Sources

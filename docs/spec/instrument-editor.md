@@ -39,7 +39,7 @@ identifies Instrument and its experimental model, with Source always available. 
   excitation control Strike colour: a creative weighting of accepted modes, not a measured
   physical impact position. Profile adoption resets the four model controls and enables all
   profile modes; the underlying stable parameter IDs remain the same. At revisions 1 and 3 the
-  page also shows Body, Mallet model and Mallet hardness, the [bar bodies'](instrument.md#bar-bodies-revision-3)
+  page also shows Body, Mallet (model), Hardness and Resonator, the [bar bodies'](instrument.md#bar-bodies-revision-3)
   controls; revisions 2 and 4 hide them, since an accepted profile or fitted set ignores them.
 - **Sample:** local waveform/drop target, Root (shown as a note name, 60 is C3), Playback, source Start/End, loop Start/End,
   Attack and Sustain. A source imported here uses `device.loadSample`, including the same
