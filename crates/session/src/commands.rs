@@ -21,6 +21,7 @@ mod branch;
 mod clip;
 mod device;
 mod history;
+mod instrument_profile;
 mod launcher;
 mod mapping;
 mod marker;
@@ -125,6 +126,7 @@ impl ParamType {
             Self::Item => "index or id",
             Self::Items => "indices or ids",
             Self::MappingTarget => "mapping target",
+            Self::ModalProfile => "modal profile",
             Self::Path(PathKind::File) => "file",
             Self::Path(PathKind::Files) => "files",
             Self::Path(PathKind::Folder) => "folder",
@@ -162,6 +164,7 @@ impl ParamType {
             Self::Item => "an index, from 0, or {\"id\": n}",
             Self::Items => "a list of indices, from 0, or {\"id\": n}",
             Self::MappingTarget => "a target, {\"command\", \"track\", \"scene\"}",
+            Self::ModalProfile => "a profile, {referenceKey, referenceHz, modes}",
             Self::Path(_) => "a path",
         }
     }
@@ -191,7 +194,7 @@ impl ParamType {
             Self::Curves => value.is_array(),
             Self::Items => value.is_array(),
             Self::Path(PathKind::Files) => value.is_array(),
-            Self::Range | Self::MappingTarget => value.is_object(),
+            Self::Range | Self::MappingTarget | Self::ModalProfile => value.is_object(),
         }
     }
 }
@@ -270,6 +273,8 @@ pub enum ParamType {
     /// What a controller mapping runs: `{ "command", "track", "scene" }`, the command and the
     /// parameters it fixes (`docs/spec/midi-mapping.md`).
     MappingTarget,
+    /// A bounded modal profile, `{referenceKey, referenceHz, modes}`.
+    ModalProfile,
     /// A place on disk the command reads or writes, as text (a list of them for
     /// [`PathKind::Files`]). An agent's is checked against its roots before the command runs
     /// (`suhina-automation`'s `confine`), by this kind.
@@ -614,7 +619,7 @@ impl<T> CommandSpec<T> {
                 ParamType::DevicePath => json!(["integer", "string", "object"]),
                 ParamType::Item => json!(["integer", "object"]),
                 ParamType::Decibels | ParamType::NameOrNumber => json!(["number", "string"]),
-                ParamType::Range | ParamType::MappingTarget => json!("object"),
+                ParamType::Range | ParamType::MappingTarget | ParamType::ModalProfile => json!("object"),
                 ParamType::Text | ParamType::Path(_) => json!("string"),
             };
             properties.insert(p.name.to_string(), json!({ "type": ty, "description": p.doc }));
@@ -711,6 +716,7 @@ static NAMESPACES: &[&[CommandSpec]] = &[
     note::COMMANDS,
     take::COMMANDS,
     history::COMMANDS,
+    instrument_profile::COMMANDS,
 ];
 
 fn list(_: &mut Session, _: &Value) -> Result<Value, CommandError> {
