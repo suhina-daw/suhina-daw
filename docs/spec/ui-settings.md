@@ -102,7 +102,7 @@ what is inside it).
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |
 | Browser | Tags | Colour tag limit |
-| Keys | Mouse and key behaviour | The clip editor's workflow settings (click, right click, double-click, duplicate key); kept in `keymap.json` |
+| Keys | Mouse and key behavior | The clip editor's workflow settings (click, right click, double-click, duplicate key); kept in `keymap.json` |
 | Keys | Shortcuts | The preset, every action's keys, Reset all |
 | Appearance | Window | Window zoom, Animations, Hide pointer while dragging (On by default; a theme's `drag-pointer` wins for its controls), Menu bar in window |
 | Appearance | Waveforms | Waveform scale |
