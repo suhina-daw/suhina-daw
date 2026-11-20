@@ -56,13 +56,23 @@ parameter change, beside the response of the live mixer. It fails if the switchi
 differs from the ordinary chain or the measured sample offsets violate the queue contract.
 These are audio-frame measurements, not wall-clock performance or hardware latency results.
 
+The example also supplies audio from the ordinary renderer's clip launcher. A self-authored
+constant audio clip is requested at a fixed play frame with one-beat quantization (120 bpm).
+One request arrives before the next beat enters the queue; another arrives 960 frames before
+the beat. Both are compared with a live renderer receiving the same command at the same play
+frame. The report records the first audible sample and the drift, including a missed grid
+boundary when that boundary has already been rendered. This measures the existing launcher's
+behaviour at the render cursor; it is not a new policy for scheduling commands in Studio mode.
+CI runs the example on Windows, macOS and Linux and saves the JSON lines as artifacts.
+
 ## Not yet
 
-- The desktop setting and commands, automatic live-track selection, arrangement/launcher
-  source scheduling, stop/seek declicking, graph swaps and per-track worker scheduling.
+- Full application integration (#1509): the desktop setting and commands, automatic
+  live-track selection, scheduling commands at the play cursor across queued sources,
+  stop/seek declicking, graph swaps and per-track worker scheduling.
 - Actual controller-to-output and quantized-launch measurements on Windows and macOS,
-  with the hardware and run metadata required by ADR 0038. The laboratory's scheduled
-  input must not be presented as a measurement of the launcher's scheduling.
+  with the hardware and run metadata required by ADR 0038. CI exercises the actual
+  launcher in software, without a controller, audio driver or output device.
 - A decision about actions that require immediate response: draining a full 50–200 ms
   queue already exceeds a 10 ms bound in the sample domain. The ADR is not changed or
   marked validated by this experiment; #1508 remains open for the integration and measurements.
