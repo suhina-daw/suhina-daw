@@ -864,6 +864,25 @@ impl Entered {
         self.style().and_then(|style| style.height).unwrap_or(fallback)
     }
 
+    /// Paints the element as the root of a window of its own ([`super::own_window`]), as CSS
+    /// paints a page's root on its canvas. Its background colour and gradients cover all of
+    /// `rect`, in the window's own `corners`. Its border, `border-radius`, shadows and
+    /// `backdrop-filter` are not drawn: the system draws the window's edge, and nothing of
+    /// Suhina's is behind it. Returns where its contents go: `rect` less its `padding`.
+    pub fn paint_root(&self, painter: &Painter, rect: Rect, corners: egui::CornerRadius) -> Rect {
+        self.finish();
+        let Some(mut style) = self.style() else {
+            super::native_css::set_box(self.scope.node, rect, painter);
+            return rect;
+        };
+        painter.rect_filled(rect, corners, self.background());
+        let mut gradients = style.clone();
+        gradients.authored.radius = false;
+        super::native_css::gradients_rounded(painter, rect, corners.average(), gradients);
+        style.border_sides = [0.0; 4];
+        self.contain(painter, rect, Some(style), 0.0, None)
+    }
+
     /// The element's shadows, gradients and inset shadows in `rect`, with `radius` where the sheet
     /// gives none: for a surface whose fill its caller paints. Whether it painted anything.
     pub fn paint_background(&self, painter: &Painter, rect: Rect, radius: f32) -> bool {
@@ -1165,17 +1184,16 @@ names! {
     TOOLTIP = "tooltip";
     PROGRESS = "progress";
     PROGRESS_FILL = "progress-fill";
-    COLOUR_PICKER = "colour-picker";
     COLOUR_FIELD = "colour-field";
     SETTINGS = "settings";
     SETTINGS_NAV = "settings-nav";
     DIALOG = "dialog";
     DIALOG_TITLE = "dialog-title";
+    DIALOG_ACTIONS = "dialog-actions";
     COLOUR_SWATCH = "colour-swatch";
     LIST_ROW = "list-row";
     START_PAGE = "start-page";
     PLUGIN_MANAGER = "plugin-manager";
-    EXPORT = "export";
     THEME_CARD = "theme-card";
     THEME_SWATCH = "theme-swatch";
     APP_FILL = "app-fill";

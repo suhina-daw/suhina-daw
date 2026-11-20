@@ -369,7 +369,7 @@ fn colour_property(name: &str) -> bool {
 }
 
 /// The user-agent sheet's only colours are the window's plain text and background, and the same
-/// opaque background for the menus, pop-ups and dialogs over it (#1448): a theme that opts out of
+/// opaque background for the menus, pop-ups, tooltips and dialogs over it (#1448): a theme that opts out of
 /// the base sheet stands on a bare floor it can read. All are fixed, opaque values. The theme swatch's square takes its colour from its element,
 /// not from the sheet.
 #[test]
@@ -412,7 +412,7 @@ fn the_user_agent_sheet_colours_only_the_window_and_what_floats_over_it() {
         }
         rest = &rest[close + 1..];
     }
-    assert_eq!(coloured, ["window", "window,\npopup,\nmenu,\ndialog"]);
+    assert_eq!(coloured, ["window", "window,\npopup,\nmenu,\ntooltip,\ndialog"]);
 }
 
 /// No colour in the base sheet is fixed (#1448): every colour it gives reads a variable, so a

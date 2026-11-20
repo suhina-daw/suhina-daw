@@ -88,6 +88,29 @@ All history reads and event planning are bounded and allocate nothing in the aud
 callback. Preparation occurs before worker dispatch. Offline rendering uses the same
 history and planning path as playback.
 
+## Native audio-effect context
+
+A native audio effect, including an SDK graph effect, receives tempo, beat and playing
+state at its device input time even when it has no automation lanes. Its own latency is
+excluded. The same cumulative delay used for its automation includes upstream devices,
+nested branch paths and the incoming sum of a bus, return or Main.
+
+A delayed block can cross an earlier tempo change, loop, seek or stop/resume boundary.
+Processing splits at those historical boundaries as well as at parameter and event
+boundaries. Each sub-block receives the context of its first input sample. Context is also
+set before a parameter or note event at that sample. Before retained playback starts, the
+initial context is extrapolated backwards (the beat can be negative); stopped spans hold
+their recorded position. This does not advance automation before arrangement zero.
+
+Context spans are prepared from transport history before worker dispatch, in fixed-capacity
+storage reserved with the graph. Graph replacement uses the new path delays while retaining
+compatible running devices. The serial, parallel and offline paths share this preparation
+and processing. Manual controls keep their next-block response.
+
+This applies to audio effects. Native instruments and MIDI effects keep their existing
+source-time contexts until note/event alignment is implemented together with their timing;
+moving a context alone would move it away from the notes that drive the instrument.
+
 ## History and compensation limits
 
 The supported compensation horizon is two seconds at the renderer's sample rate. Every
@@ -117,7 +140,7 @@ plug-in that changes its physical latency before a replacement graph is ready.
 
 ## Later work
 
-The first slice does not establish the complete PDC guarantee. Native device process
+These slices do not establish the complete PDC guarantee. Native instrument and MIDI-effect
 contexts, MIDI/note timing, tempo-map envelope conversion, mixer automation across transport
 discontinuities, dynamic-latency transitions, late-block fallback, recording placement and
 live/render-ahead handoffs still need their own implementation and acceptance evidence.
