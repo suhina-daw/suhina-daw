@@ -552,6 +552,10 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         Some(v) if v.is_finite() && v > 0.0 && v <= 1.0 => v as f32,
         Some(_) => return Err("velocity must be a number above 0 and at most 1".into()),
     };
+    let source = match Args::new(params).opt_index("source", "source number, 0 to 15")? {
+        None => 0,
+        Some(n) => u8::try_from(n).ok().filter(|n| *n < 16).ok_or("source must be a whole number from 0 to 15")?,
+    };
     let job = matching_job(session, params)?;
     if job.kind != AnalysisKind::Modal || job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current modal fit can be added".into());
@@ -562,6 +566,7 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         .and_then(|r| r.recording.clone())
         .ok_or("the sample did not yield a fitted recording to add")?;
     recording.velocity = velocity;
+    recording.source = source;
     let (key, modes) = (recording.key, recording.modes.len());
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
@@ -578,7 +583,7 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         job.pending_state = Some(bytes);
     }
     Ok(with_override(
-        json!({"added":true,"recordings":count,"key":key,"velocity":velocity,"modeCount":modes,"revision":MODEL_REVISION,"source":"modal"}),
+        json!({"added":true,"recordings":count,"key":key,"velocity":velocity,"source":source,"modeCount":modes,"revision":MODEL_REVISION,"source":"modal"}),
         overridden,
     ))
 }

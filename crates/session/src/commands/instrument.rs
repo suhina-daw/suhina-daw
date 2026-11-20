@@ -36,6 +36,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "the velocity this recording stands for, above 0 and at most 1 (default 0.8)",
             ),
+            optional(
+                "source",
+                ParamType::Integer,
+                "which instrument the recording is from, 0 to 15 (default 0), for Source morph: ten pianos are ten sources",
+            ),
         ],
         kind: CommandKind::EDIT,
         run: instrument_analysis::add_fit,

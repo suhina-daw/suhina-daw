@@ -131,6 +131,23 @@ impl<const N: usize> ModalBank<N> {
         self.active = false;
     }
 
+    /// Caps every mode's T60 at `seconds` (0.001..60), keeping its phase and current frequency,
+    /// as a damper stops a ringing string. Modes already shorter are left alone. Allocation-free.
+    pub fn cap_decay(&mut self, sample_rate: f64, seconds: f64) {
+        if !sample_rate.is_finite() || !(1000.0..=384000.0).contains(&sample_rate) || !seconds.is_finite() {
+            return;
+        }
+        let cap = (-1000.0_f64.ln() / (sample_rate * seconds.clamp(0.001, 60.0))).exp();
+        for mode in &mut self.modes {
+            if mode.radius > cap {
+                let scale = cap / mode.radius;
+                mode.cosine *= scale;
+                mode.sine *= scale;
+                mode.radius = cap;
+            }
+        }
+    }
+
     /// Like [`strike`](Self::strike), with mode `i` starting at `phases[i]` radians: its output
     /// is `amplitude * radius^n * sin(omega * n + phase)`. A missing or nonfinite phase is zero,
     /// which is `strike`. The first output sample is therefore not zero unless every phase is;
@@ -184,6 +201,33 @@ mod tests {
         bank.strike(8000.0, &[Mode { frequency_hz: 3600.0, decay_seconds: 1.0, amplitude: 1.0 }]);
         assert!(!bank.is_active());
         assert_eq!(bank.next_sample(), 0.0);
+    }
+
+    #[test]
+    fn a_capped_decay_keeps_phase_and_follows_the_new_t60() {
+        let mut bank = ModalBank::<1>::default();
+        bank.strike(48000.0, &[Mode { frequency_hz: 440.0, decay_seconds: 10.0, amplitude: 0.5 }]);
+        for _ in 0..480 {
+            bank.next_sample();
+        }
+        let at_cap = 0.5 * (-1000.0_f64.ln() * 480.0 / (48000.0 * 10.0)).exp();
+        bank.cap_decay(48000.0, 0.1);
+        for n in 0..4800 {
+            let t = (480 + n) as f64;
+            let expected =
+                at_cap * (-1000.0_f64.ln() * n as f64 / (48000.0 * 0.1)).exp() * (TAU * 440.0 * t / 48000.0).sin();
+            assert!((f64::from(bank.next_sample()) - expected).abs() < 1e-7, "{n}");
+        }
+        // A longer cap changes nothing.
+        let mut long = ModalBank::<1>::default();
+        let mut plain = ModalBank::<1>::default();
+        let mode = [Mode { frequency_hz: 220.0, decay_seconds: 0.2, amplitude: 0.5 }];
+        long.strike(48000.0, &mode);
+        plain.strike(48000.0, &mode);
+        long.cap_decay(48000.0, 5.0);
+        for _ in 0..2000 {
+            assert_eq!(long.next_sample(), plain.next_sample());
+        }
     }
 
     #[test]

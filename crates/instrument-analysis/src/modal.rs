@@ -547,6 +547,7 @@ fn recording(accepted: &[Fitted], mono: &[f64], key: u8, reference_hz: f64, scal
         .collect();
     let recording = ModelRecording {
         key,
+        source: 0,
         velocity: DEFAULT_VELOCITY,
         level: sum * scale,
         modes,
