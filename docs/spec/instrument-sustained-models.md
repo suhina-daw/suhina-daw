@@ -218,9 +218,12 @@ fixed storage, no allocation):
   or above 0.45 of the sample rate are silent. The layer follows
   its onset envelope and, while the recording's attack fades out (its second half), a raised
   cosine from 0 to 1, since the attack already carries the noise of the start.
-- **Release.** With a measured release, note-off (or pedal-up) makes every sine and the noise fall
-  exponentially with T60 `release_seconds * Release / 0.25`, so the Release control still scales
-  it; the voice ends at -60 dB. Without one, the gate ramp of revision 4 applies.
+- **Release.** Revision 4's release is a damper that caps every sine's T60 at Release on note-off
+  (or pedal-up). With a measured release the cap is `release_seconds * Release / 0.25` instead, so
+  the recording's own release plays at the control's default and the control still scales it;
+  without one it is Release. The noise layer falls with the same T60 and stops at -60 dB. The
+  onset of the whole note stays with the shared amplitude envelope (Attack, Decay, Sustain): the
+  held layer adds no second envelope, only per-partial onsets on top of it.
 
 A voice without a held layer plays exactly as before. The pitch wheel offset is applied together
 with the vibrato. Rendering is identical for every block split, since control updates count
