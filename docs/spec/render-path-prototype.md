@@ -74,5 +74,6 @@ CI runs the example on Windows, macOS and Linux and saves the JSON lines as arti
   with the hardware and run metadata required by ADR 0038. CI exercises the actual
   launcher in software, without a controller, audio driver or output device.
 - A decision about actions that require immediate response: draining a full 50–200 ms
-  queue already exceeds a 10 ms bound in the sample domain. The ADR is not changed or
-  marked validated by this experiment; #1508 remains open for the integration and measurements.
+  queue already exceeds a 10 ms bound in the sample domain. ADR 0038 records this
+  consequence without marking the policy validated; #1508 remains open for the remaining
+  acceptance measurements and decision.
