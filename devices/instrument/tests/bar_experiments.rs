@@ -14,6 +14,7 @@ const MODELS: [(f64, &str); 2] = [(0.0, "Contact"), (1.0, "Pulse")];
 const PROFILES: [(Profile, f64, &str, u8, u8); 2] =
     [(Profile::Marimba, 1.0, "Marimba bar", 36, 96), (Profile::Vibraphone, 2.0, "Vibraphone bar", 53, 89)];
 
+#[allow(clippy::unwrap_used)] // test helper
 fn bar(rate: f64, body: f64, model: f64, hardness: f64) -> Instrument {
     let mut instrument = Instrument::with_rate(rate).unwrap();
     instrument.set_param(param::REVISION, 3.0);
