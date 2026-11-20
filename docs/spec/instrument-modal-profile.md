@@ -178,8 +178,8 @@ instead of 2 ms, since the attack reproduces the recorded onset. Release, pedal,
 pitch wheel and source fades behave as for revision 2. A missing, malformed or unsupported set is
 silent.
 
-**Budget.** A revision-4 voice holds 64 resonators and an attack read position: about 3.2 KiB per
-voice, 52 KiB for 16 voices, within the runtime's 256 KiB inline target; the set itself (at most
+**Budget.** A revision-4 voice holds 64 resonators and an attack read position beside the 16
+resonators of revisions 1 and 2: under 4 KiB per voice, under 64 KiB for 16 voices, within the runtime's 256 KiB inline target; the set itself (at most
 about 800 KiB with 16 full attacks) is shared and prepared off the audio thread.
 
 **Commands.** `instrument.acceptFit` adopts a set with the fitted recording as its only member
