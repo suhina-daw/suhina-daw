@@ -274,6 +274,10 @@ Two consequences must be resolved before this policy can satisfy those limits:
   Draining preserves the queued sound but cannot make this late request land on the
   same beat as the live renderer.
 
+Launch drift is measured against the live render's first audible frame. The existing
+clip click guard makes frame zero silent, so the beat at 24000 becomes audible at
+24001; this shared offset is not a scheduling error and no tolerance is added.
+
 These are checks of the proposed policy, not an amendment choosing another one. Neither
 the queue contract passing nor a bit-identical continuous switch validates Studio mode's
 live acceptance. Hardware measurements and a decision about immediate-response actions

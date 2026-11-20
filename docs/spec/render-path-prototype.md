@@ -63,6 +63,8 @@ the beat. Both are compared with a live renderer receiving the same command at t
 frame. The report records the first audible sample and the drift, including a missed grid
 boundary when that boundary has already been rendered. This measures the existing launcher's
 behaviour at the render cursor; it is not a new policy for scheduling commands in Studio mode.
+The clip's click guard silences its first frame: a launch on frame 24000 first becomes audible
+on frame 24001. The comparison keeps this exact offset in both paths, without a tolerance.
 CI runs the example on Windows, macOS and Linux and saves the JSON lines as artifacts.
 
 ## Not yet

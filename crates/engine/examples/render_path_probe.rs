@@ -114,7 +114,10 @@ fn launch_measurement(lead: u32, request_block: usize) -> Result<(usize, usize),
     };
     let request_frame = request_block * BLOCK;
     let next_beat = (request_frame + queued_at_request).div_ceil(RATE as usize / 2) * (RATE as usize / 2);
-    if expected_start != RATE as usize / 2 || actual_start != next_beat {
+    // The clip's existing click guard makes its first frame silent (Fades::gain_at).
+    // Measure the first audible frame against that same guard in the live oracle;
+    // do not mistake it for a one-frame scheduling error or add a timing tolerance.
+    if expected_start != RATE as usize / 2 + 1 || actual_start != next_beat + 1 {
         return Err(format!("unexpected launch positions: live {expected_start}, switched {actual_start}").into());
     }
     if actual_start == expected_start && !identical {
@@ -189,10 +192,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("the controls did not follow their render/play cursors".into());
     }
     let ms = |frames: usize| frames as f64 * 1000.0 / f64::from(RATE);
-    let (early_launch_frame, early_launch_drift) = launch_measurement(lead, 96)?;
-    let (late_launch_frame, late_launch_drift) = launch_measurement(lead, 180)?;
+    let (early_first_audible_frame, early_launch_drift) = launch_measurement(lead, 96)?;
+    let (late_first_audible_frame, late_launch_drift) = launch_measurement(lead, 180)?;
     println!(
-        "{{\"kind\":\"sample-domain\",\"platform\":\"{}\",\"sample_rate\":{RATE},\"block_frames\":{BLOCK},\"lead_ms\":{lead},\"rounded_lead_frames\":{target},\"bit_identical\":true,\"device_response_frames\":{device_frame},\"device_response_ms\":{:.6},\"mixer_response_frames\":{mixer_frame},\"mixer_response_ms\":{:.6},\"early_launch_frame\":{early_launch_frame},\"early_launch_drift_frames\":{early_launch_drift},\"late_launch_frame\":{late_launch_frame},\"late_launch_drift_frames\":{late_launch_drift}}}",
+        "{{\"kind\":\"sample-domain\",\"platform\":\"{}\",\"sample_rate\":{RATE},\"block_frames\":{BLOCK},\"lead_ms\":{lead},\"rounded_lead_frames\":{target},\"bit_identical\":true,\"device_response_frames\":{device_frame},\"device_response_ms\":{:.6},\"mixer_response_frames\":{mixer_frame},\"mixer_response_ms\":{:.6},\"early_first_audible_frame\":{early_first_audible_frame},\"early_launch_drift_frames\":{early_launch_drift},\"late_first_audible_frame\":{late_first_audible_frame},\"late_launch_drift_frames\":{late_launch_drift}}}",
         std::env::consts::OS,
         ms(device_frame),
         ms(mixer_frame),
