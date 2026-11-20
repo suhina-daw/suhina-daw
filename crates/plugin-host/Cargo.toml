@@ -9,12 +9,17 @@ rust-version.workspace = true
 name = "suhina-plugin-host"
 path = "src/main.rs"
 
+[lib]
+name = "suhina_device_exports"
+crate-type = ["rlib", "cdylib"]
+
 # The VST2 interface layer (ADR 0022, amended 2026-10-31: VST2-enabled builds may be
 # distributed): on by default, so every build of the host runs VST2 plug-ins. The feature stays
 # declared, so a build can opt out with `--no-default-features`.
 [features]
 default = ["vst2"]
 vst2 = []
+device-exports = ["dep:suhina-device-api", "dep:suhina-device-registry", "clack-extensions/note-ports"]
 
 [dependencies]
 suhina-ipc.workspace = true
@@ -30,6 +35,8 @@ libloading = "0.9"  # ISC
 memory-stats.workspace = true
 # Real-time priority for the audio threads.
 suhina-realtime.workspace = true
+suhina-device-api = { workspace = true, optional = true }
+suhina-device-registry = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 # The window a plug-in's editor is attached to.
