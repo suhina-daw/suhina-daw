@@ -5814,6 +5814,8 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "serde_json",
+ "suhina-device-api",
+ "suhina-device-registry",
  "suhina-engine",
  "suhina-ipc",
  "suhina-media",

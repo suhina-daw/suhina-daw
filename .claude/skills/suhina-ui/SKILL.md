@@ -59,6 +59,12 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   "the innermost scope". A setting a theme gives (`appearance`, `track-height`) is a registered
   property in `suhina_style::property`, read from its element's style. A new element goes in the
   registry first.
+- **Kit widgets, not egui's** (AGENTS.md golden rule 15): a button is `widgets::button`, a field
+  `widgets::text_input`, a value `widgets::number_input`/`percent_slider`, a switch
+  `widgets::lit_toggle`, words `widgets::text_in`, and a menu's rows `kit::menu` (`item`,
+  `submenu`, `heading`, `hint`, `separator`) inside the menu egui opens. The metronome's menu
+  (`session/record_controls.rs`) is the example; the older menus in `interaction/menus.rs` still
+  use egui's rows and move over in their own change. A control the kit lacks is added to it.
 - `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
   rects, `Status::Hint` for status-bar hints.
 - **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which

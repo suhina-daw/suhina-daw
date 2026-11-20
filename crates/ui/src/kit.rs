@@ -15,6 +15,7 @@ pub mod frame_trace;
 pub mod gradient;
 pub mod liquid;
 pub mod logo;
+pub mod menu;
 pub mod meter;
 pub mod mixer_controls;
 pub mod motion;
