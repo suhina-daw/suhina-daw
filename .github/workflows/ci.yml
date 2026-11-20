@@ -212,7 +212,7 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref_name == github.event.repository.default_branch }}
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --features suhina-engine/render-path-prototype -- -D warnings
       # The vst2 feature is on by default (ADR 0022's amendment), so the workspace steps
       # above check it; this checks that a build opting out still compiles.
       - run: cargo clippy -p suhina-plugin-host --all-targets --no-default-features -- -D warnings
@@ -278,6 +278,22 @@ jobs:
       - name: Install cargo-nextest
         shell: bash
         run: scripts/install_nextest.sh
+      - name: Render-path sample-domain measurements
+        if: matrix.partition == 1
+        shell: bash
+        run: |
+          mkdir -p target
+          : > target/render-path-report.jsonl
+          for lead in 0 50 100 200; do
+            cargo run -p suhina-engine --profile test --example render_path_probe --features render-path-prototype -- --lead-ms "$lead" >> target/render-path-report.jsonl
+          done
+          cat target/render-path-report.jsonl
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.partition == 1
+        with:
+          name: render-path-${{ runner.os }}
+          path: target/render-path-report.jsonl
+          if-no-files-found: error
       # On Linux under a virtual X server, so the plug-in editor tests open real windows.
       # -noreset: without it the X server resets as its last client leaves, and a test that opens
       # the next window at that moment has its connection reset.
@@ -337,7 +353,20 @@ jobs:
         run: scripts/install_nextest.sh
       # The corpus tests need Live Sets that are not in the repository, so the `corpus` feature
       # stays off here.
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --features suhina-engine/render-path-prototype -- -D warnings
+      - name: Render-path sample-domain measurements
+        run: |
+          mkdir -p target
+          : > target/render-path-report.jsonl
+          for lead in 0 50 100 200; do
+            cargo run -p suhina-engine --profile test --example render_path_probe --features render-path-prototype -- --lead-ms "$lead" >> target/render-path-report.jsonl
+          done
+          cat target/render-path-report.jsonl
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: render-path-${{ runner.os }}
+          path: target/render-path-report.jsonl
+          if-no-files-found: error
       - run: cargo nextest run --workspace --profile "$PROFILE"
         env:
           PROFILE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.pack != 'true' && 'ci-pr' || 'ci' }}
@@ -367,6 +396,7 @@ jobs:
           target = Path(os.environ.get("CARGO_TARGET_DIR", "target")).resolve()
           subprocess.run([str(candidates[0]), str(target / "device-exports" / "SuhinaDevices.vst3")], check=True)
           PY
+
 
   # Pull requests from forks: every commit must carry a Signed-off-by line (Developer
   # Certificate of Origin, CONTRIBUTING.md). Branches of this repository are the maintainers', and

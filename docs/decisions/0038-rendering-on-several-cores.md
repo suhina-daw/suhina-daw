@@ -243,6 +243,61 @@ Suhina's offline renders are its test oracle (AGENTS.md rule 4), so it has to.
   compete with playback's, and measurements (#1512) say whether an export needs slowing down
   while playback runs.
 
+## Phase 3: checking the switch policy
+
+The opt-in [single-chain prototype](../spec/render-path-prototype.md) for
+[#1508](https://github.com/suhina-daw/suhina-daw/issues/1508) isolates decision 10 before
+the full paths are built. Its queue contains the ordinary chain's pre-fader samples;
+the ordinary mixer and compensation delay consume them at the play position. Tests
+compare the switching render against the ordinary chain bit for bit, including a
+stateful latency-reporting test plug-in. A continuous switch needs no crossfade, which
+would itself change samples. Discontinuous transport operations remain outside this probe.
+
+The CI example reports first changed samples and quantized clip launches on Windows,
+macOS and Linux at 48 kHz and 128 frames. Commands are applied at known play frames;
+the source uses the actual clip launcher. These are deterministic software measurements,
+without an audio driver, interface or physical controller. They cannot establish the
+hardware limits in decision 17, jitter, dropouts or callback wall time.
+
+Two consequences must be resolved before this policy can satisfy those limits:
+
+- A device parameter changed while the full queue drains cannot affect samples already
+  rendered. The 50, 100 and 200 ms settings round up to 2432, 4864 and 9600 frames here
+  (50.667, 101.333 and 200 ms). This lower bound alone exceeds the controller row's
+  30 ms ceiling and an unquantized launch's 10 ms limit. A fader can still respond at
+  the play cursor. Keeping a mapped track live beforehand avoids this particular wait;
+  switching only when the first command arrives does not.
+- Applying a launch at the source's render cursor cannot recover a quantization boundary
+  already inside its queue. The example compares requests at frames 12288 and 23040,
+  with the next beat at frame 24000. The first has enough notice for all three leads;
+  the second arrives after that beat has been rendered when the lead is nonzero.
+  Draining preserves the queued sound but cannot make this late request land on the
+  same beat as the live renderer.
+
+Launch drift is measured against the live render's first audible frame. The existing
+clip click guard makes frame zero silent, so the beat at 24000 becomes audible at
+24001; this shared offset is not a scheduling error and no tolerance is added.
+
+Measured on 2026-11-20 in [CI run 3565](https://github.com/suhina-daw/suhina-daw/actions/runs/44654764069),
+commit `e71a699549677d5d4c05e79e93f6b230b790b001`: the `render-path-Windows`,
+`render-path-macOS` and `render-path-Linux` JSON artifacts agree on every value below.
+Each is one deterministic sample-domain run per setting, at 48 kHz and 128 frames;
+there is no hardware configuration, repeated wall-clock latency distribution or load
+measurement behind this table. All switching renders were bit-identical; the mixer
+first changed one frame after its control, for every setting on every platform.
+
+| Lead setting | Device response, frames | Device response, ms | Early launch drift, frames | Late launch drift, frames |
+|---|---:|---:|---:|---:|
+| Off | 0 | 0 | 0 | 0 |
+| 50 ms | 2432 | 50.666667 | 0 | 24000 |
+| 100 ms | 4864 | 101.333333 | 0 | 24000 |
+| 200 ms | 9600 | 200.000000 | 0 | 24000 |
+
+These are checks of the proposed policy, not an amendment choosing another one. Neither
+the queue contract passing nor a bit-identical continuous switch validates Studio mode's
+live acceptance. Hardware measurements and a decision about immediate-response actions
+remain required by #1508 before decision 10 is validated.
+
 ## Alternatives
 
 - **Exports on the real-time pool, real-time work first, or some workers kept for playback.**
