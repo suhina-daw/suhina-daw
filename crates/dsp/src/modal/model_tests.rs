@@ -322,10 +322,8 @@ fn layer(modes: usize, vibrato_cents: f32) -> crate::modal::sustain::Sustain {
         ..Default::default()
     };
     layer.noise[4] = 2e-4;
-    for i in 0..modes {
-        layer.rise[i] = 0.2;
-        layer.am_slope[i] = 0.04;
-    }
+    layer.rise[..modes].fill(0.2);
+    layer.am_slope[..modes].fill(0.04);
     layer
 }
 

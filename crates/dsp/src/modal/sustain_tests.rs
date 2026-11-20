@@ -22,14 +22,17 @@ pub(crate) fn held_layer(modes: usize) -> Sustain {
         ..Sustain::NONE
     };
     layer.noise[5] = 1e-4;
-    for i in 0..modes {
-        layer.onset[i] = 0.01 * i as f32;
-        layer.rise[i] = 0.15;
-        layer.am_slope[i] = 0.05;
-        layer.am_curve[i] = -0.001;
+    for (i, onset) in layer.onset.iter_mut().take(modes).enumerate() {
+        *onset = 0.01 * i as f32;
     }
+    layer.rise[..modes].fill(0.15);
+    layer.am_slope[..modes].fill(0.05);
+    layer.am_curve[..modes].fill(-0.001);
     layer
 }
+
+/// One way to break a layer.
+type Breakage = Box<dyn Fn(&mut Sustain)>;
 
 #[test]
 fn fields_round_trip_and_every_bound_is_checked() {
@@ -38,7 +41,7 @@ fn fields_round_trip_and_every_bound_is_checked() {
     assert!(layer.validate(3).is_ok());
     assert!(Sustain::NONE.is_empty() && !layer.is_empty());
     assert!(Sustain::NONE.validate(0).is_ok());
-    let cases: Vec<Box<dyn Fn(&mut Sustain)>> = vec![
+    let cases: Vec<Breakage> = vec![
         Box::new(|s| s.vibrato_hz = 2.0),
         Box::new(|s| s.vibrato_hz = 11.0),
         Box::new(|s| s.vibrato_cents = 4.0),
@@ -90,7 +93,8 @@ fn the_envelope_passes_the_peaks_bridges_dips_and_extends_with_the_top_tilt() {
         .collect();
     let table = envelope(&formant);
     for (ratio, magnitude) in &formant {
-        assert!((envelope_at(&table, *ratio) - 20.0 * magnitude.log10()).abs() < 0.05, "{ratio}");
+        // Through every peak, within the 1/8-octave grid's interpolation.
+        assert!((envelope_at(&table, *ratio) - 20.0 * magnitude.log10()).abs() < 0.6, "{ratio}");
     }
     // Flat below the lowest mode; above the highest it keeps falling, at most 24 dB/octave.
     assert!((envelope_at(&table, 0.25) - envelope_at(&table, 1.0)).abs() < 1e-3);

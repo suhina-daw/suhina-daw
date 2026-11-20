@@ -260,7 +260,11 @@ fn track(mono: &[f64], window: &[f64], hz: f64) -> Vec<(f64, f64, f64)> {
 
 /// One partial's cent curve over the held region, with gaps (amplitude under 10 % of its median)
 /// filled linearly; None with more than 10 % gaps.
-fn held_curve(track: &[(f64, f64, f64)]) -> Option<(Vec<(f64, f64)>, f64, f64)> {
+/// A partial's cent curve over the held region, its median amplitude and its level's RMS ripple
+/// in dB.
+type HeldCurve = (Vec<(f64, f64)>, f64, f64);
+
+fn held_curve(track: &[(f64, f64, f64)]) -> Option<HeldCurve> {
     let held: Vec<&(f64, f64, f64)> = track.iter().filter(|p| p.0 >= HELD_START).collect();
     let mut amplitudes: Vec<f64> = held.iter().map(|p| p.1).collect();
     let level = median(&mut amplitudes);
