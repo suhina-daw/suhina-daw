@@ -152,6 +152,8 @@ pub fn system_file(path: &Path) -> Option<BrowserItem> {
 pub enum DropTarget {
     /// Replace a sampler source, without creating a clip or a track.
     Sampler { track: TrackId, device: usize },
+    /// Fit several samples into an Instrument's model (`instrument.fitFiles`), loading none.
+    InstrumentFit { track: TrackId, device: usize },
     /// An arrangement lane, at a beat (already snapped).
     Lane { track: TrackId, beat: f64 },
     /// A clip slot (scene from 0).
@@ -254,6 +256,23 @@ pub fn plan(
     stack: bool,
     track_name: &dyn Fn(TrackId) -> String,
 ) -> Option<DropPlan> {
+    if let DropTarget::InstrumentFit { track, device } = target {
+        let paths: Vec<String> = items
+            .iter()
+            .filter(|i| i.kind == ItemKind::Sample)
+            .filter_map(|i| i.path())
+            .map(|p| p.display().to_string())
+            .collect();
+        if paths.len() < 2 || paths.len() != items.len() {
+            return None;
+        }
+        let label = format!("Fit {} samples into one model", paths.len());
+        return Some(DropPlan {
+            commands: vec![("instrument.fitFiles", json!({"track": track.0, "device": device, "paths": paths}))],
+            samples: Vec::new(),
+            label,
+        });
+    }
     if let DropTarget::Sampler { track, device } = target {
         let [sample] = items else { return None };
         if sample.kind != ItemKind::Sample {
@@ -293,7 +312,10 @@ pub fn plan(
                 params["scene"] = json!(scene);
                 label.push(spread(&count, files.len(), separate, &track_name(track)));
             }
-            DropTarget::Track(_) | DropTarget::Chain(_) | DropTarget::Sampler { .. } => return None,
+            DropTarget::Track(_)
+            | DropTarget::Chain(_)
+            | DropTarget::Sampler { .. }
+            | DropTarget::InstrumentFit { .. } => return None,
             DropTarget::NewTracks { beat, scene } => {
                 match (beat, scene) {
                     (_, Some(scene)) => params["scene"] = json!(scene),
@@ -347,7 +369,8 @@ pub fn plan(
             | DropTarget::Slot { track, .. }
             | DropTarget::Track(track)
             | DropTarget::Chain(track)
-            | DropTarget::Sampler { track, .. } => {
+            | DropTarget::Sampler { track, .. }
+            | DropTarget::InstrumentFit { track, .. } => {
                 params["track"] = json!(track.0);
                 commands.push((id, params));
                 label.push(format!("Add {} to {}", device.name, track_name(track)));
