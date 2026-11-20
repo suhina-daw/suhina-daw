@@ -44,10 +44,13 @@ pitch belong to F13.
 **Bars.** A uniform free-free bar has inharmonic transverse modes in the ratios
 1 : 2.756 : 5.404 : 8.933. Makers undercut the bar's middle to pull the upper modes onto
 musical ratios: the second mode two octaves above the fundamental for marimba and vibraphone,
-an octave and a fifth for xylophone, and on concert marimbas the third mode tuned as well
-(Fletcher & Rossing, ch. 19; Bork 1995). A profile therefore needs per-note mode ratios, not one
-stretch formula for the whole range: the low marimba register is tuned to three modes, the top
-register often to one.
+an octave and a fifth (3 : 1) for xylophone, and on concert marimbas the third mode near ten
+times the fundamental as well (Fletcher & Rossing, ch. 19; Bork 1995, who reports that tuning the
+lower overtones as well as the fundamental clearly improves the tone). Many modern xylophones are
+not tuned to the twelfth, or only in their lowest bars, so the xylophone ratio is a profile
+choice, not a constant. A profile therefore needs per-note mode ratios, not one stretch formula
+for the whole range: the low marimba register is tuned to three modes, the top register often to
+one.
 
 **Damping.** Losses rise with frequency, and differently by material: wooden bars lose their
 upper modes within a fraction of a second while aluminium vibraphone bars ring for many
@@ -57,7 +60,10 @@ seconds. Each mode needs its own decay, and the decay law is a property of the p
 fundamental. It strengthens and shortens the fundamental by radiating energy faster (Doutaut,
 Matignon & Chaigne 1998). On the vibraphone, motor-driven discs in the tube tops open and close
 the tubes, modulating the resonator's contribution at the motor rate; the bar itself is not
-modulated.
+modulated. Manufacturer documentation describes the result as a level change with a small pitch
+fluctuation, deeper as the motor speeds up. Commonly quoted motor rates reach about 12 rotations
+per second, but no peer-reviewed acoustics source for the range was found; the prototype measures
+or records it rather than assuming it.
 
 **Mallet contact.** The mallet touches the bar for roughly a millisecond, and the force is
 nonlinear: a felt or yarn head stiffens as it compresses, commonly modelled as
@@ -72,9 +78,10 @@ node at the bar's centre.
 surface, so the result depends on the bar's phase and velocity at contact; it is not a second,
 independent bar sounding on top of the first.
 
-**Bells and bowls.** A bell's partials sit near ideal ratios (hum 0.5, prime 1, tierce 1.2, quint
-1.5, nominal 2 relative to the prime) and the perceived strike note is a virtual pitch built from
-the upper partials (Rossing & Perrin 1987). Axisymmetric shells split each mode into two close
+**Bells and bowls.** A bell's partials sit near ideal ratios relative to the prime: hum 0.5,
+prime 1, tierce a minor third above (1.2 just; tuned bells measure nearer 1.18–1.19), quint 1.5
+and nominal 2. The perceived strike note is a virtual pitch built from the upper partials, and
+it shifts measurably with the partial tuning (Rossing & Perrin 1987; Hibbert 2008). Axisymmetric shells split each mode into two close
 frequencies when the symmetry is imperfect, which is heard as beating or warble. A rubbed singing
 bowl is a continuously excited friction system whose excitation travels around the rim (Inácio,
 Henrique & Antunes 2006); it belongs to the continuous-excitation problem that #1637 explores for
@@ -153,6 +160,20 @@ pedal and motor states for the vibraphone, and the room, microphone position and
 Self-recorded or CC0 material comes first; every candidate source's terms are checked file by
 file before use, and generated audio is never calibration evidence (#1621, #1629).
 
+Candidates found so far, none adopted:
+
+- **University of Iowa Electronic Music Studios, Musical Instrument Samples:** marimba,
+  xylophone, vibraphone, crotales and an unlabelled "Bells" set (C5–E8, plastic and brass
+  mallets, anechoic). The page says the recordings may be used "for any projects, without
+  restrictions", but names no licence and does not mention redistribution. Usable at most as
+  local measurement input; shipping or redistributing any file needs #1621's decision first
+  (golden rule 14).
+- **Synthesis ToolKit (STK) `ModalBar`:** a permissively licensed (MIT-style, copyright Cook and
+  Scavone) open-source struck-bar modal model with marimba and vibraphone presets. Its parameter
+  values are a licence question, not a clean-room one (golden rule 1); a port keeps the
+  copyright and permission notice. They are a starting point to compare against, not calibration
+  evidence.
+
 ## 7. Proposed delivery slices under #1609
 
 1. **Research** (this document).
@@ -175,20 +196,40 @@ file before use, and generated audio is never calibration evidence (#1621, #1629
 
 ## Sources
 
-- N. H. Fletcher and T. D. Rossing, *The Physics of Musical Instruments*, 2nd ed., Springer, 1998.
+Bibliographic details were checked on 2026-11-20 against Crossref, DataCite, publisher and
+author pages; the free-free bar ratios were also recomputed from the Euler–Bernoulli roots.
+
+- N. H. Fletcher and T. D. Rossing, *The Physics of Musical Instruments*, 2nd ed., Springer, 1998,
+  ch. 19 "Mallet Percussion Instruments" and ch. 21 "Bells".
+  [doi:10.1007/978-0-387-21603-4](https://doi.org/10.1007/978-0-387-21603-4)
 - T. D. Rossing, *Science of Percussion Instruments*, World Scientific, 2000.
 - A. Chaigne and V. Doutaut, "Numerical simulations of xylophones. I. Time-domain modeling of the
-  vibrating bars", *J. Acoust. Soc. Am.* 101(1), 1997.
+  vibrating bars", *J. Acoust. Soc. Am.* 101(1):539–557, 1997.
+  [doi:10.1121/1.418117](https://doi.org/10.1121/1.418117)
 - V. Doutaut, D. Matignon and A. Chaigne, "Numerical simulations of xylophones. II. Time-domain
-  modeling of the resonator and of the radiated sound pressure", *J. Acoust. Soc. Am.* 104(3), 1998.
-- I. Bork, "Practical tuning of xylophone bars and resonators", *Applied Acoustics* 46(1), 1995.
+  modeling of the resonator and of the radiated sound pressure", *J. Acoust. Soc. Am.*
+  104(3):1633–1647, 1998. [doi:10.1121/1.424376](https://doi.org/10.1121/1.424376)
+- I. Bork, "Practical tuning of xylophone bars and resonators", *Applied Acoustics*
+  46(1):103–127, 1995. [doi:10.1016/0003-682X(95)93953-F](https://doi.org/10.1016/0003-682X(95)93953-F)
 - K. H. Hunt and F. R. E. Crossley, "Coefficient of restitution interpreted as damping in
-  vibroimpact", *J. Applied Mechanics* 42(2), 1975.
-- F. Avanzini and D. Rocchesso, "Modeling collision sounds: non-linear contact force", DAFx 2001.
-- T. D. Rossing and R. Perrin, "Vibrations of bells", *Applied Acoustics* 20(1), 1987.
+  vibroimpact", *J. Applied Mechanics* 42(2):440–445, 1975.
+  [doi:10.1115/1.3423596](https://doi.org/10.1115/1.3423596)
+- F. Avanzini and D. Rocchesso, "Modeling collision sounds: non-linear contact force", Proc.
+  COST G-6 DAFx-01, Limerick, 2001.
+  [PDF](https://avanzini.di.unimi.it/downloads/publications/avanzini_dafx01_revised.pdf)
+- T. D. Rossing and R. Perrin, "Vibrations of bells", *Applied Acoustics* 20(1):41–70, 1987.
+  [doi:10.1016/0003-682X(87)90082-X](https://doi.org/10.1016/0003-682X(87)90082-X)
+- W. A. Hibbert, *The quantification of strike pitch and pitch shifts in church bells*, PhD
+  thesis, The Open University, 2008. [doi:10.21954/ou.ro.0000add2](https://doi.org/10.21954/ou.ro.0000add2)
 - O. Inácio, L. Henrique and J. Antunes, "The dynamics of Tibetan singing bowls", *Acta Acustica
-  united with Acustica* 92(4), 2006.
-- J.-M. Adrien, "The missing link: modal synthesis", in *Representations of Musical Signals*,
-  MIT Press, 1991.
-- S. Bilbao, *Numerical Sound Synthesis*, Wiley, 2009.
+  united with Acustica* 92(4):637–653, 2006.
+- J.-M. Adrien, "The missing link: modal synthesis", in G. De Poli, A. Piccialli and C. Roads
+  (eds.), *Representations of Musical Signals*, MIT Press, 1991.
+- S. Bilbao, *Numerical Sound Synthesis*, Wiley, 2009 (ideal and variable-section bars,
+  collisions, power-law mallet nonlinearity).
+- P. R. Cook, *Real Sound Synthesis for Interactive Applications*, A K Peters, 2002 (modal
+  synthesis, strings and bars).
+- Synthesis ToolKit in C++, P. R. Cook and G. P. Scavone, MIT-style licence:
+  [repository](https://github.com/thestk/stk), [`ModalBar`](https://ccrma.stanford.edu/software/stk/classstk_1_1ModalBar.html).
+- University of Iowa Electronic Music Studios, [Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html).
 - Current implementation: [instrument.md](../spec/instrument.md), `crates/dsp/src/modal.rs`.
