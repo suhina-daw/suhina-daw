@@ -24,7 +24,7 @@ expanded-delay suhina-studio@forest 841879fe6eeb566a
 expanded-fm-synth suhina-studio@forest 13ab160fe87b3e8b
 expanded-instrument suhina-studio@forest ece169bab3641077
 expanded-instrument-model suhina-studio@forest 2bb8c19aea9d8933
-expanded-instrument-sample suhina-studio@forest e1c850c91f7a178f
+expanded-instrument-sample suhina-studio@forest c12467bc74d4227f
 expanded-multiband suhina-studio@forest 6646a358991dbfa1
 expanded-reverb suhina-studio@forest 510efd3fcbd815ac
 expanded-vinyl-distortion suhina-studio@forest a8d87c144c12ac9f
