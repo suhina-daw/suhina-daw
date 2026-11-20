@@ -111,6 +111,9 @@ fn mpe_capability_rejects_private_sample_lifetimes_including_components() {
         voice.nodes.extend([N::new("done", K::Constant { value: 0. }), N::new("result", K::VoiceOutput)]);
         voice.connections =
             vec![C::new("sample", "result"), C::ports("done", "out", "result", "finished"), C::new("result", "out")];
+        if nested {
+            voice.connections.push(C::ports("midi", "out", "sample", "events"));
+        }
         let mut graph = DeviceGraph::new("org.test.sample-group", "Group", DeviceRole::Instrument);
         graph.nodes =
             vec![N::new("group", K::VoiceGroup { graph: voice.to_sd().unwrap(), voices: 1 }), N::audio_output("out")];
