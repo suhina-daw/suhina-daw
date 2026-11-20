@@ -144,9 +144,10 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                             summary.push_str(&format!(" · attack {:.0} ms", recording.attack.len() as f64 * 1000.0 / f64::from(recording.attack_rate.max(1))));
                         }
                         summary.push_str(&format!(" · root {} · envelope error ≤ {:.2} dB", key_name(profile.reference_key()), error));
-                        ui.horizontal(|ui| {
-                            ui.label(summary)
+                        ui.label(summary)
                                 .on_hover_text(format!("Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Phases and the attack are measured from this recording; room response is not separated.",report.channel+1,report.range.start,report.range.end,report.analyzed_seconds));
+                        // One row of actions that wraps: Accept and Add first, then the A/B.
+                        ui.horizontal_wrapped(|ui| {
                             let accept = flow_button(ui, "Accept model", true);
                             remember_keyboard_owner(&accept);
                             if accept.clicked() {
@@ -160,9 +161,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                                     actions.push(Action::new("instrument.addFit",json!({"track":track_value,"device":device_value,"job":view.job})));
                                 }
                             }
-                        });
-                        // Level-matched A/B against the source before accepting.
-                        ui.horizontal(|ui| {
+                            // Level-matched A/B against the source before accepting.
                             for (label, which) in [("Play original", "original"), ("Play fitted", "fitted")] {
                                 let play = flow_button(ui, label, true);
                                 remember_keyboard_owner(&play);
@@ -170,13 +169,13 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                                     actions.push(Action::new("instrument.auditionFit",json!({"track":track_value,"device":device_value,"job":view.job,"which":which})));
                                 }
                             }
-                            if let Some(comparison) = &view.comparison {
+                        });
+                        if let Some(comparison) = &view.comparison {
                                 let bands: Vec<String> = comparison.bands.iter().map(|b| format!("{:.0} Hz {:+.1} dB", b.centre_hz, b.difference_db)).collect();
                                 ui.label(format!("Spectral distance {:.1} dB · level {:+.1} dB", comparison.mean_distance_db, comparison.level_difference_db))
                                     .on_hover_text(format!("Octave bands after level matching, fitted minus original: {}. Smaller is closer; this measures the same recording, not realism.", bands.join(", ")));
-                            }
-                        });
-                        ui.label("Accept replaces the model; Add fuses this recording into it by key and velocity. One undo step each. Set Root to each recording's note first.");
+                        }
+                        ui.label("Accept replaces the model; Add joins it by note and velocity. One undo step each. Set Root first.");
                     } else {
                         ui.label(match report.outcome {
                             ModalFitOutcome::Silent => "The selected region is silent or constant. Choose a sounding strike.",
@@ -210,7 +209,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     let mut correction = ui.ctx().data(|data| data.get_temp::<Correction>(correction_id()))
                         .filter(|c| c.job == view.job)
                         .unwrap_or(Correction { job:view.job.clone(),root });
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label("Root key");
                         let response = number_input(ui, None, egui::DragValue::new(&mut correction.root).range(0..=127).speed(0.1)
                             .custom_formatter(|key, _| key_name(key.round().clamp(0.0, 127.0) as u8))
@@ -293,8 +292,10 @@ fn folder_ready(
     if folder.files.len() > 40 {
         details.push(format!("… and {} more", folder.files.len() - 40));
     }
-    ui.horizontal(|ui| {
-        ui.label(summary).on_hover_text(details.join("\n"));
+    // The summary on its own line and the buttons on a row that wraps: neither runs past the
+    // panel's right edge.
+    ui.label(summary).on_hover_text(details.join("\n"));
+    ui.horizontal_wrapped(|ui| {
         if folder.recordings.is_empty() {
             return;
         }
