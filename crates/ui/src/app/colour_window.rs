@@ -12,6 +12,8 @@ use crate::interaction::colour_picker::{
 use suhina_engine::model::Rgb;
 
 const WIDTH: f32 = 340.0;
+/// How many frames a taller layout waits for the window to grow to it.
+const MAX_WAIT: u8 = 12;
 
 #[derive(Default)]
 pub(super) struct ColourWindow {
@@ -24,6 +26,11 @@ pub(super) struct ColourWindow {
     // before applying queued moves, so feeding observations back here oscillates.
     initial_position: Option<Pos2>,
     height: f32,
+    /// How tall the window was when last drawn: in a window of its own the system applies a new
+    /// size a frame or more after it is asked for.
+    shown: f32,
+    /// Frames a taller layout has waited for the window to reach its size.
+    waited: u8,
     /// How much taller the size asked of the window is than the panel in it, as last measured:
     /// the dialog's padding, and its border and title row embedded, or the system's title bar in
     /// a window of its own.
@@ -33,6 +40,14 @@ pub(super) struct ColourWindow {
     minimised: bool,
     embedded_layer: Option<egui::LayerId>,
     pub pending_recent: Option<Rgb>,
+}
+
+/// Whether the layout the user asked for, `asked` tall where the one drawn is `now` tall, is
+/// drawn this frame: a shorter one at once; a taller one, which needs a window `target` tall,
+/// once the window is asked to be that tall and was drawn that tall (`(asked for, drawn)`), or
+/// after waiting [`MAX_WAIT`] frames for a system that will not make it so.
+fn settles(now: Option<f32>, asked: Option<f32>, target: f32, (requested, shown): (f32, f32), waited: u8) -> bool {
+    asked <= now || (requested >= target - 0.5 && shown >= target - 0.5) || waited >= MAX_WAIT
 }
 
 impl App {
@@ -177,19 +192,24 @@ impl App {
         // more room (Fine adjustment opening, the wheel's Value row) is drawn once the window has
         // grown to it; one that needs less is drawn at once and the window shrinks after.
         let room = (bounds.height() - 48.0).max(180.0);
-        let fit = |content: Option<f32>| {
-            content.map_or(400.0, |content| (content + self.colour_window.chrome).ceil()).min(room)
-        };
-        let panel = &mut self.colour_window.panel;
-        if panel.asks() {
-            let (now, asked) = (panel.height(false), panel.height(true));
-            let grown = self.colour_window.height >= fit(asked) - 0.5;
-            if grown || asked <= now {
-                panel.settle();
+        let chrome = self.colour_window.chrome;
+        let fit = |content: Option<f32>| content.map_or(400.0, |content| (content + chrome).ceil()).min(room);
+        let window = &mut self.colour_window;
+        if window.panel.asks() {
+            let (now, asked) = (window.panel.height(false), window.panel.height(true));
+            // Grown when the window drawn last was that tall, not when the size was asked for:
+            // the system resizes a window of its own a frame or more later, sometimes, and the
+            // taller layout drawn in the shorter window would flicker. A system that will not
+            // make it that tall is waited for a few frames only.
+            if settles(now, asked, fit(asked), (window.height, window.shown), window.waited) {
+                window.panel.settle();
+                window.waited = 0;
             } else {
+                window.waited += 1;
                 ctx.request_repaint_of(egui::ViewportId::from_hash_of("track-colour-window"));
             }
         }
+        let panel = &mut window.panel;
         let height = fit(match (panel.height(false), panel.height(true)) {
             (Some(now), Some(asked)) => Some(now.max(asked)),
             (now, asked) => now.or(asked),
@@ -234,6 +254,7 @@ impl App {
         let mut placement = None;
         let mut embedded_layer = None;
         let mut chrome = None;
+        let mut shown = None;
         let mut render = |ui: &mut Ui, embedded: bool| {
             if embedded {
                 embedded_layer = Some(ui.layer_id());
@@ -288,6 +309,7 @@ impl App {
                     (base.whole.height(), inside)
                 };
                 chrome = Some(outer - inside.height());
+                shown = Some(outer);
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
                     let mut styled = style.ui(ui);
                     egui::ScrollArea::vertical().show(&mut styled, |ui| {
@@ -346,6 +368,9 @@ impl App {
             ctx.show_viewport_immediate(id, builder, |ui, class| {
                 render(ui, class == egui::ViewportClass::EmbeddedWindow);
             });
+        }
+        if let Some(shown) = shown {
+            self.colour_window.shown = shown;
         }
         if let Some(chrome) = chrome
             && chrome.is_finite()
@@ -446,5 +471,17 @@ mod tests {
             let rect = Rect::from_min_size(place(bounds, expanded, Some(remembered)), expanded);
             assert!(bounds.contains_rect(rect));
         }
+    }
+
+    /// A taller layout waits for the window to be drawn at its size, not only asked for it: the
+    /// system resizes a window of its own a frame or more later.
+    #[test]
+    fn a_taller_layout_waits_until_the_window_is_drawn_that_tall() {
+        let (now, asked) = (Some(300.0), Some(500.0));
+        assert!(!settles(now, asked, 540.0, (400.0, 400.0), 0), "not asked for yet");
+        assert!(!settles(now, asked, 540.0, (540.0, 400.0), 1), "asked for, not drawn yet");
+        assert!(settles(now, asked, 540.0, (540.0, 540.0), 2), "drawn that tall");
+        assert!(settles(now, asked, 540.0, (540.0, 400.0), MAX_WAIT), "a system that will not");
+        assert!(settles(asked, now, 340.0, (540.0, 540.0), 0), "a shorter layout at once");
     }
 }
