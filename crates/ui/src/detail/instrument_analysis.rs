@@ -105,7 +105,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
             }
         });
         let Some(view) = view else {
-            ui.label("Analyze a root note, fit resonances from an isolated decaying strike, or fit a folder of one-note recordings.");
+            ui.label("Analyze a root, fit one decaying strike, or fit a folder of notes.");
             ui.label("Fitting is experimental. Inspect the result before accepting; the source stays playable.");
             return;
         };
