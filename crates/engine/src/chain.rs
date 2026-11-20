@@ -1304,10 +1304,20 @@ impl Chain {
     /// Runs the devices over the rest of a block of `frames` frames; [`Chain::mix`] then adds
     /// the result to where the track plays into, and the sends read it before that.
     pub(crate) fn complete(&mut self, frames: usize, context: &ProcessContext) {
+        self.plan_mix(frames);
+        self.run_devices(frames, context);
+    }
+
+    /// Plans the mixer at the play position, independently of when the devices run.
+    pub(crate) fn plan_mix(&mut self, frames: usize) {
         self.live.plan(frames, self.sample_rate);
         self.pan.0.plan(frames, self.sample_rate);
         self.pan.1.plan(frames, self.sample_rate);
         self.plan_sends(frames);
+    }
+
+    /// Runs only the devices, leaving the mixer and compensation delay for playback.
+    pub(crate) fn run_devices(&mut self, frames: usize, context: &ProcessContext) {
         self.context = *context;
         self.run(frames);
     }
