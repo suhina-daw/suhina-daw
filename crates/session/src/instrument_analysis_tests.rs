@@ -38,7 +38,7 @@ fn admission_and_late_completion_have_no_timing_dependency() {
         modal: None,
         message: None,
         pending_root: None,
-        pending_fit: false,
+        pending_state: None,
     };
     job.receive(false);
     assert_eq!(job.phase, AnalysisPhase::Running);

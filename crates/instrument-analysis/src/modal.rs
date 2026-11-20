@@ -628,8 +628,13 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
     let span = envelope_span(values);
     let first_window = span.first()?.0;
     let single = fit_span(hz, span);
-    let late =
-        if span.len() >= LATE_RETRY_WINDOWS { span.get(span.len() / 3..).and_then(|l| fit_span(hz, l)) } else { None };
+    // The late retry describes what rings on after a fast early decay; it never makes a mode
+    // sustained (beating can flatten a decaying partial's late windows).
+    let late = if span.len() >= LATE_RETRY_WINDOWS {
+        span.get(span.len() / 3..).and_then(|l| fit_span(hz, l)).filter(|(_, _, e)| !e.sustained)
+    } else {
+        None
+    };
     let plain = |(intercept, slope, evidence): (f64, f64, ModeEvidence)| Estimate {
         intercept,
         slope,
@@ -637,7 +642,7 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
         fast: None,
         first_window,
     };
-    let two_stage = late.filter(|(_, _, e)| !e.sustained).and_then(|(intercept, slope, evidence)| {
+    let two_stage = late.and_then(|(intercept, slope, evidence)| {
         let early = span.get(..span.len() / 3)?;
         let excess: Vec<(f64, f64)> = early
             .iter()

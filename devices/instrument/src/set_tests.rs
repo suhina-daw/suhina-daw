@@ -80,15 +80,15 @@ fn the_attack_plays_from_the_strike_at_the_keys_rate() {
     };
     let mut at_root = core(quiet(attack.clone()));
     let output = play(&mut at_root, 60, 1.0, 2400, 128);
-    for n in 32..1990 {
-        assert!((output[n] - 0.5 * attack[n]).abs() < 1e-5, "{n}");
+    for (n, (out, expected)) in output.iter().zip(&attack).enumerate().take(1990).skip(32) {
+        assert!((out - 0.5 * expected).abs() < 1e-5, "{n}");
     }
     assert!(output[2100..].iter().all(|x| x.abs() < 1e-6), "the attack ends");
     // An octave up reads it twice as fast.
     let mut octave = core(quiet(attack.clone()));
     let output = play(&mut octave, 72, 1.0, 1200, 128);
-    for n in 32..990 {
-        assert!((output[n] - 0.5 * attack[2 * n]).abs() < 1e-5, "{n}");
+    for (n, (out, expected)) in output.iter().zip(attack.iter().step_by(2)).enumerate().take(990).skip(32) {
+        assert!((out - 0.5 * expected).abs() < 1e-5, "{n}");
     }
 }
 

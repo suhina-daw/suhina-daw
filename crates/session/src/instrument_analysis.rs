@@ -271,13 +271,12 @@ impl Session {
             job.source.root = f64::from(root);
             job.phase = AnalysisPhase::Accepted;
         }
-        if let Some(job) = &mut self.analysis.current {
-            if let Some(state) = job.pending_state.take()
-                && succeeded
-            {
-                job.source.profile = Some(state);
-                job.phase = AnalysisPhase::Accepted;
-            }
+        if let Some(job) = &mut self.analysis.current
+            && let Some(state) = job.pending_state.take()
+            && succeeded
+        {
+            job.source.profile = Some(state);
+            job.phase = AnalysisPhase::Accepted;
         }
     }
 
