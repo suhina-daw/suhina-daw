@@ -63,6 +63,12 @@ impl TypingKeys {
         u8::try_from(key).ok().filter(|k| *k <= 127)
     }
 
+    /// How many keys hold a note now.
+    #[cfg(test)]
+    pub(crate) fn held_count(&self) -> usize {
+        self.held.len()
+    }
+
     /// The note of A, as the control bar shows it ("C3").
     pub(crate) fn label(&self) -> String {
         format!("C{}", self.octave)
@@ -102,7 +108,12 @@ impl App {
         if !self.typing.on {
             return;
         }
-        if ui.ctx().egui_wants_keyboard_input() {
+        // A text field takes the letters. A focused control of the expanded device editor keeps
+        // only arrows, Enter and Space, so the letters still play notes after a knob is turned.
+        let ctx = ui.ctx();
+        if ctx.text_edit_focused()
+            || (ctx.egui_wants_keyboard_input() && !crate::detail::device_canvas::owns_keyboard(ctx))
+        {
             self.release_typing_keys();
             return;
         }
