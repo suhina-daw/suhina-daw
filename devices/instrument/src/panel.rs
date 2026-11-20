@@ -74,14 +74,25 @@ impl Canvas {
 
     /// Model identity is read-only metadata; it never adds a sound parameter or edit action.
     pub(super) fn only_revision(&mut self, revision: u16) {
-        if let Some(control) = self.ui.controls.last_mut() {
-            let condition = UiValue::Expression(Box::new(UiExpression::Equal {
-                a: UiValue::parameter("model_revision", false),
-                b: f32::from(revision).into(),
-            }));
+        self.when(1, &revision_is(revision));
+    }
+
+    /// The last `controls` controls are shown for every revision but `revision`.
+    pub(super) fn except_revision(&mut self, revision: u16, controls: usize) {
+        let condition = UiValue::Expression(Box::new(UiExpression::Add {
+            a: 1.0_f32.into(),
+            b: UiValue::Expression(Box::new(UiExpression::Multiply { a: (-1.0_f32).into(), b: revision_is(revision) })),
+        }));
+        self.when(controls, &condition);
+    }
+
+    /// Show the last `controls` controls only while `condition` holds, on their page.
+    fn when(&mut self, controls: usize, condition: &UiValue) {
+        let start = self.ui.controls.len().saturating_sub(controls);
+        for control in self.ui.controls.iter_mut().skip(start) {
             control.visible_when = Some(match control.visible_when.take() {
-                Some(page) => UiValue::Expression(Box::new(UiExpression::Multiply { a: page, b: condition })),
-                None => condition,
+                Some(page) => UiValue::Expression(Box::new(UiExpression::Multiply { a: page, b: condition.clone() })),
+                None => condition.clone(),
             });
         }
     }
@@ -205,6 +216,13 @@ impl Canvas {
     }
 }
 
+fn revision_is(revision: u16) -> UiValue {
+    UiValue::Expression(Box::new(UiExpression::Equal {
+        a: UiValue::parameter("model_revision", false),
+        b: f32::from(revision).into(),
+    }))
+}
+
 /// Two presentations of the same native parameter set, without a second sound-state path.
 pub fn layout() -> Layout {
     let mut panel = Canvas::new([620.0, 168.0]);
@@ -212,6 +230,8 @@ pub fn layout() -> Layout {
     panel.only_revision(1);
     panel.label("MODAL PROFILE · experimental v2", [10.0, 4.0, 248.0, 20.0]);
     panel.only_revision(2);
+    panel.label("MODAL BODIES · experimental v3", [10.0, 4.0, 248.0, 20.0]);
+    panel.only_revision(3);
     panel.menu("source", "Source", [272.0, 4.0, 136.0, 24.0], "Modal, local Sample, or both in Hybrid");
     panel.navigate("Open editor", [456.0, 4.0, 152.0, 24.0], 0, true);
     panel.waveform([10.0, 36.0, 244.0, 88.0]);

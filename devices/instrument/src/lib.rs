@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Public native Instrument runtime, shared by stock and export adapters. The struck-modal
-//! model is experimental revision 1; accepted modal profiles use revision 2. Sample playback
-//! uses the existing SDK runtime.
+//! model is experimental revision 1; accepted modal profiles use revision 2; revision 3 keeps
+//! revision 1's struck body and adds two struck-bar bodies. Sample playback uses the existing
+//! SDK runtime.
 
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ParamInfo, ProcessContext, Role,
@@ -12,16 +13,24 @@ use suhina_device_api::{
 use suhina_device_sdk::sample_instrument::{self, Sampler};
 use suhina_dsp::{
     Smoother,
+    bar::{Excitation, StruckBar},
     modal::{
         ModalBank, Mode,
         profile::{ModalProfile, PROFILE_MODEL_REVISION},
     },
 };
 
+pub mod bars;
 pub mod panel;
 
-/// Model revision retained in project parameter state. Unknown revisions never run revision 1.
-pub const MODEL_REVISION: u16 = 1;
+use bars::Profile;
+
+/// Model revision a new Instrument stores in project parameter state. Revision 1 is read as
+/// revision 3, whose Struck body is revision 1's renderer; revision 2 renders an accepted
+/// profile and ignores Body; unknown revisions stay silent.
+pub const MODEL_REVISION: u16 = 3;
+/// The original struck-modal revision, still accepted and read as [`MODEL_REVISION`].
+pub const ORIGINAL_MODEL_REVISION: u16 = 1;
 pub const MAX_VOICES: usize = 16;
 pub const MAX_MODES: usize = 16;
 
@@ -48,7 +57,10 @@ pub mod param {
     pub const SUSTAIN: usize = 19;
     pub const VELOCITY_LOW: usize = 20;
     pub const VELOCITY_HIGH: usize = 21;
-    pub const COUNT: usize = 22;
+    pub const BODY: usize = 22;
+    pub const HARDNESS: usize = 23;
+    pub const MALLET_MODEL: usize = 24;
+    pub const COUNT: usize = 25;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -78,13 +90,55 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("sustain", "Sample sustain", (0.0, 1.0), 1.0, Unit::Percent),
     control("velocity_low", "Lowest velocity", (0.0, 1.0), 0.0, Unit::Percent),
     control("velocity_high", "Highest velocity", (0.0, 1.0), 1.0, Unit::Percent),
+    ParamInfo::choice("body", "Body", &["Struck", "Marimba bar", "Vibraphone bar"], 0),
+    control("mallet_hardness", "Mallet hardness", (0.0, 1.0), 0.5, Unit::Percent),
+    ParamInfo::choice("mallet_model", "Mallet model", &["Contact", "Pulse"], 0),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
 
+/// What a voice sounds: revision 1's struck bank, or a struck bar.
+#[derive(Clone, Copy)]
+enum Body {
+    Struck(ModalBank<MAX_MODES>),
+    Bar(StruckBar<MAX_MODES>),
+}
+
+impl Body {
+    fn is_active(&self) -> bool {
+        match self {
+            Self::Struck(bank) => bank.is_active(),
+            Self::Bar(bar) => bar.is_active(),
+        }
+    }
+
+    fn next_sample(&mut self) -> f32 {
+        match self {
+            Self::Struck(bank) => bank.next_sample(),
+            Self::Bar(bar) => bar.next_sample(),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Struck(bank) => bank.reset(),
+            Self::Bar(bar) => bar.reset(),
+        }
+    }
+
+    fn transpose(&mut self, sample_rate: f64, semitones: f64) {
+        match self {
+            Self::Struck(bank) => bank.transpose(sample_rate, semitones),
+            Self::Bar(bar) => bar.transpose(semitones),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Voice {
-    bank: ModalBank<MAX_MODES>,
+    body: Body,
+    /// The bar profile this voice sounds; `None` for Struck.
+    profile: Option<Profile>,
     key: u8,
     held: bool,
     serial: u64,
@@ -98,7 +152,8 @@ struct Voice {
 impl Default for Voice {
     fn default() -> Self {
         Self {
-            bank: ModalBank::default(),
+            body: Body::Struck(ModalBank::default()),
+            profile: None,
             key: 0,
             held: false,
             serial: 0,
@@ -194,7 +249,7 @@ impl Instrument {
             return false;
         }
         match self.params.get(param::REVISION) as u16 {
-            MODEL_REVISION => self.profile.is_none(),
+            ORIGINAL_MODEL_REVISION | MODEL_REVISION => self.profile.is_none(),
             PROFILE_MODEL_REVISION => self.profile.is_some(),
             _ => false,
         }
@@ -212,14 +267,16 @@ impl Instrument {
         self.profile.as_ref()
     }
 
-    fn release(&mut self, key: Option<u8>) {
-        let frames = Smoother::ramp_frames(self.params.get(param::RELEASE), self.sample_rate);
+    /// Release `key` (or every key): a struck voice fades over Release; a bar that damps on
+    /// release, or every bar when `all`, is damped to Release.
+    fn release(&mut self, key: Option<u8>, all: bool) {
+        let release = self.params.get(param::RELEASE);
+        let frames = Smoother::ramp_frames(release, self.sample_rate);
         for voice in &mut self.voices {
             if key.is_none_or(|key| key == voice.key) {
                 voice.held = false;
                 if !self.pedal {
-                    voice.gate.set_ramp(frames);
-                    voice.gate.set_target(0.0);
+                    voice.damp(frames, release, all);
                 }
             }
         }
@@ -229,6 +286,61 @@ impl Instrument {
         if !self.model_supported() {
             return;
         }
+        // An accepted profile (revision 2) is rendered whatever Body says.
+        match Profile::from_body(self.params.get(param::BODY)).filter(|_| self.profile.is_none()) {
+            Some(profile) => self.strike_bar(profile, key, velocity),
+            None => self.strike_struck(key, velocity),
+        }
+    }
+
+    /// One body per bar: a ringing bar of this key and profile is struck again.
+    fn strike_bar(&mut self, profile: Profile, key: u8, velocity: f32) {
+        let count = if self.params.get(param::QUALITY) < 0.5 { 8 } else { MAX_MODES };
+        let modes: [_; MAX_MODES] = profile.modes(
+            key,
+            count,
+            self.params.get(param::DECAY),
+            self.params.get(param::BRIGHTNESS),
+            self.params.get(param::STRIKE),
+        );
+        let excitation =
+            if self.params.get(param::MALLET_MODEL) < 0.5 { Excitation::Contact } else { Excitation::Pulse };
+        let mallet = bars::mallet(self.params.get(param::HARDNESS));
+        let same = self
+            .voices
+            .iter()
+            .position(|voice| voice.key == key && voice.profile == Some(profile) && voice.body.is_active());
+        let slot = same.or_else(|| self.free_or_oldest());
+        self.serial = self.serial.saturating_add(1);
+        let Some(voice) = slot.and_then(|index| self.voices.get_mut(index)) else {
+            return;
+        };
+        if same.is_none() {
+            voice.start_steal_fade(self.sample_rate);
+            voice.body = Body::Bar(StruckBar::default());
+        }
+        if let Body::Bar(bar) = &mut voice.body {
+            bar.set_modes(self.sample_rate, &modes);
+            bar.transpose(self.bend_semitones);
+            bar.strike(excitation, mallet, bars::MAX_SPEED * f64::from(velocity));
+        }
+        voice.profile = Some(profile);
+        voice.key = key;
+        voice.held = true;
+        voice.serial = self.serial;
+        voice.amplitude = 1.0;
+        voice.gate = Smoother::new(1.0, 1);
+    }
+
+    fn free_or_oldest(&self) -> Option<usize> {
+        self.voices
+            .iter()
+            .position(|voice| !voice.body.is_active())
+            .or_else(|| self.voices.iter().enumerate().min_by_key(|(_, voice)| voice.serial).map(|(index, _)| index))
+    }
+
+    /// Revision 1's struck body, unchanged, or an accepted profile's modes.
+    fn strike_struck(&mut self, key: u8, velocity: f32) {
         let mut modes = [Mode { frequency_hz: 0.0, decay_seconds: 0.0, amplitude: 0.0 }; MAX_MODES];
         let fundamental = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
         let structure = self.params.get(param::STRUCTURE);
@@ -265,26 +377,47 @@ impl Instrument {
                 mode.amplitude /= magnitude_sum.max(1.0);
             }
         }
-        let slot =
-            self.voices.iter().position(|voice| !voice.bank.is_active()).or_else(|| {
-                self.voices.iter().enumerate().min_by_key(|(_, voice)| voice.serial).map(|(index, _)| index)
-            });
+        let slot = self.free_or_oldest();
         self.serial = self.serial.saturating_add(1);
         if let Some(voice) = slot.and_then(|index| self.voices.get_mut(index)) {
-            voice.stolen_tail = voice.last_output;
-            voice.stolen_fade = Smoother::new(
-                if voice.last_output == 0.0 { 0.0 } else { 1.0 },
-                Smoother::ramp_frames(0.002, self.sample_rate),
-            );
-            voice.stolen_fade.set_target(0.0);
-            voice.bank.strike(self.sample_rate, &modes);
-            voice.bank.transpose(self.sample_rate, self.bend_semitones);
+            voice.start_steal_fade(self.sample_rate);
+            let mut bank = ModalBank::default();
+            bank.strike(self.sample_rate, &modes);
+            bank.transpose(self.sample_rate, self.bend_semitones);
+            voice.body = Body::Struck(bank);
+            voice.profile = None;
             voice.key = key;
             voice.held = true;
             voice.serial = self.serial;
             voice.amplitude = velocity * 0.25;
             voice.gate = Smoother::new(0.0, Smoother::ramp_frames(0.002, self.sample_rate));
             voice.gate.set_target(1.0);
+        }
+    }
+}
+
+impl Voice {
+    /// The previous output fades for 2 ms while the voice starts another body.
+    fn start_steal_fade(&mut self, sample_rate: f64) {
+        self.stolen_tail = self.last_output;
+        self.stolen_fade =
+            Smoother::new(if self.last_output == 0.0 { 0.0 } else { 1.0 }, Smoother::ramp_frames(0.002, sample_rate));
+        self.stolen_fade.set_target(0.0);
+    }
+
+    /// Damp a released voice: Struck fades over `frames`; a bar is damped to `release` seconds
+    /// when its profile damps on release, or always when `all`.
+    fn damp(&mut self, frames: u32, release: f64, all: bool) {
+        match (&mut self.body, self.profile) {
+            (Body::Bar(bar), Some(profile)) => {
+                if all || profile.damps_on_release() {
+                    bar.damp(release);
+                }
+            }
+            _ => {
+                self.gate.set_ramp(frames);
+                self.gate.set_target(0.0);
+            }
         }
     }
 }
@@ -383,14 +516,14 @@ impl Device for Instrument {
         for frame in buffer.as_chunks_mut::<2>().0 {
             let mut modal = 0.0;
             for voice in &mut self.voices {
-                if !voice.bank.is_active() && voice.stolen_fade.current() == 0.0 {
+                if !voice.body.is_active() && voice.stolen_fade.current() == 0.0 {
                     continue;
                 }
                 let gate = voice.gate.next_value();
                 if gate == 0.0 && voice.gate.is_settled() {
-                    voice.bank.reset();
+                    voice.body.reset();
                 }
-                voice.last_output = voice.bank.next_sample() * gate * voice.amplitude
+                voice.last_output = voice.body.next_sample() * gate * voice.amplitude
                     + voice.stolen_tail * voice.stolen_fade.next_value();
                 modal += voice.last_output;
             }
@@ -404,7 +537,7 @@ impl Device for Instrument {
             }
             if !hybrid && self.modal_mix.current() == 0.0 && self.modal_mix.is_settled() {
                 for voice in &mut self.voices {
-                    if voice.bank.is_active() || voice.stolen_fade.current() != 0.0 {
+                    if voice.body.is_active() || voice.stolen_fade.current() != 0.0 {
                         *voice = Voice::default();
                     }
                 }
@@ -439,7 +572,7 @@ impl Device for Instrument {
         match event {
             NoteEvent::On { key, velocity } if key <= 127 && velocity.is_finite() => {
                 if velocity <= 0.0 {
-                    self.release(Some(key));
+                    self.release(Some(key), false);
                 } else if self.params.get(param::SOURCE) != 1.0
                     && f64::from(key) >= self.params.get(param::KEY_LOW)
                     && f64::from(key) <= self.params.get(param::KEY_HIGH)
@@ -449,29 +582,29 @@ impl Device for Instrument {
                     self.strike(key, velocity.clamp(0.0, 1.0));
                 }
             }
-            NoteEvent::Off { key, .. } if key <= 127 => self.release(Some(key)),
+            NoteEvent::Off { key, .. } if key <= 127 => self.release(Some(key), false),
             NoteEvent::Controller { number: 64, value } if value.is_finite() => {
                 let old = self.pedal;
                 self.pedal = value >= 0.5;
                 if old && !self.pedal {
-                    let frames = Smoother::ramp_frames(self.params.get(param::RELEASE), self.sample_rate);
+                    let release = self.params.get(param::RELEASE);
+                    let frames = Smoother::ramp_frames(release, self.sample_rate);
                     for voice in &mut self.voices {
                         if !voice.held {
-                            voice.gate.set_ramp(frames);
-                            voice.gate.set_target(0.0);
+                            voice.damp(frames, release, false);
                         }
                     }
                 }
             }
             NoteEvent::AllNotesOff => {
                 self.pedal = false;
-                self.release(None);
+                self.release(None, true);
             }
             NoteEvent::PitchBend(value) if value.is_finite() => {
                 self.bend_semitones = f64::from(value.clamp(-1.0, 1.0)) * 2.0;
                 for voice in &mut self.voices {
-                    if voice.bank.is_active() {
-                        voice.bank.transpose(self.sample_rate, self.bend_semitones);
+                    if voice.body.is_active() {
+                        voice.body.transpose(self.sample_rate, self.bend_semitones);
                     }
                 }
             }

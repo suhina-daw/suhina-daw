@@ -5538,6 +5538,7 @@ dependencies = [
  "suhina-device-api",
  "suhina-device-sdk",
  "suhina-dsp",
+ "suhina-test-support",
 ]
 
 [[package]]
