@@ -51,12 +51,12 @@ pub const FIXED: &[(&str, Step)] = &[
     ("colour-picker", colour_picker),
     ("colour-picker-field", |h| {
         colour_picker(h)?;
-        click(h, "› Fine adjustment")
+        click(h, "Fine adjustment")
     }),
     ("colour-picker-wheel", |h| {
         colour_picker(h)?;
-        click(h, "› Fine adjustment")?;
-        click(h, "Wheel")
+        click(h, "Fine adjustment")?;
+        click(h, "View: Wheel")
     }),
     ("settings", settings),
     ("settings-menu", settings_menu),

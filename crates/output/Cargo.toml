@@ -30,7 +30,7 @@ cpal = { workspace = true, features = ["pulseaudio"] }
 
 [target.'cfg(windows)'.dependencies]
 # WASAPI in exclusive mode, which cpal does not open.
-wasapi = "0.26"  # MIT
+wasapi = "0.27"  # MIT
 
 [dev-dependencies]
 suhina-model.workspace = true

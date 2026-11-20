@@ -1875,28 +1875,8 @@ pub fn percent_slider(
         info.value = Some(shown);
         info
     });
-    let hovered = hover(ui, &response);
     let track = rect.shrink2(Vec2::new(4.0, 0.0));
-    let mid = rect.center().y;
-    let handle_x = track.left() + track.width() * (shown / 100.0) as f32;
-    // `slider`, `[checked]` while lit: the `background-color` of its `slider-rail`, `slider-fill`
-    // and `slider-handle`. A fill and a handle fade toward the colour they have under the pointer,
-    // looked up (as comparisons are) before the slider is entered.
-    let slider = |pointer: bool| SLIDER.pointer(pointer, false, false).attr(Checked, lit);
-    let part_fade = |part: super::element::Name| {
-        let rest = part.probe_in(slider(false)).background();
-        if hovered > 0.0 { motion::mix(rest, part.probe_in(slider(true)).background(), hovered) } else { rest }
-    };
-    let (unlit_fill, handle) = (part_fade(SLIDER_FILL), part_fade(SLIDER_HANDLE));
-    let el = SLIDER.response(&response).attr(Checked, lit).enter();
-    let rail = SLIDER_RAIL.look().background();
-    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)], Stroke::new(3.0, rail));
-    // Lit, the fill is the lit slider's own colour whatever the pointer does.
-    let fill = if lit { SLIDER_FILL.look().background() } else { unlit_fill };
-    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], Stroke::new(3.0, fill));
-    let cap = Rect::from_center_size(Pos2::new(handle_x, mid), Vec2::new(8.0, 12.0));
-    painter.rect_filled(cap, 2.0, handle);
-    drop(el);
+    slider_face(ui, painter, track, &response, (shown / 100.0) as f32, lit);
     let sent = id.with("sent");
     if response.double_clicked() {
         ui.data_mut(|d| d.remove::<bool>(sent));
@@ -1922,6 +1902,117 @@ pub fn percent_slider(
         ui.data_mut(|d| d.remove::<bool>(sent));
     }
     out
+}
+
+/// A slider's face along `track`, a horizontal line: its `slider-rail`, the `slider-fill` up to
+/// `share` (0 to 1) of the way and the `slider-handle` there, the `background-color` of each.
+/// `slider` is entered with `response` (`:hover`, `:active`, `:focus`) and `[checked]` while `lit`;
+/// the fill and the handle fade toward the colour they have under the pointer, and while the
+/// slider has the keys its handle is outlined in the slider's `accent-color`.
+pub fn slider_face(ui: &Ui, painter: &Painter, track: Rect, response: &Response, share: f32, lit: bool) {
+    let hovered = hover(ui, response);
+    let mid = track.center().y;
+    let handle_x = track.left() + track.width() * share.clamp(0.0, 1.0);
+    // The colours under the pointer are looked up (as comparisons are) before the slider is
+    // entered: only `:hover` differs between the two, so a rule for `:active`, `:disabled` or
+    // `:focus` reaches its parts as it reaches the slider.
+    let (pressed, disabled, focused) =
+        (response.is_pointer_button_down_on(), !response.enabled(), response.has_focus());
+    let slider = |pointer: bool| SLIDER.pointer(pointer, pressed, disabled).focused(focused).attr(Checked, lit);
+    let part_fade = |part: super::element::Name| {
+        let rest = part.probe_in(slider(false)).background();
+        if hovered > 0.0 { motion::mix(rest, part.probe_in(slider(true)).background(), hovered) } else { rest }
+    };
+    let (unlit_fill, handle) = (part_fade(SLIDER_FILL), part_fade(SLIDER_HANDLE));
+    let el = SLIDER.response(response).attr(Checked, lit).enter();
+    let rail = SLIDER_RAIL.look().background();
+    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(track.right(), mid)], Stroke::new(3.0, rail));
+    // Lit, the fill is the lit slider's own colour whatever the pointer does.
+    let fill = if lit { SLIDER_FILL.look().background() } else { unlit_fill };
+    painter.line_segment([Pos2::new(track.left(), mid), Pos2::new(handle_x, mid)], Stroke::new(3.0, fill));
+    let cap = Rect::from_center_size(Pos2::new(handle_x, mid), Vec2::new(8.0, 12.0));
+    painter.rect_filled(cap, 2.0, handle);
+    if response.has_focus() {
+        painter.rect_stroke(cap.expand(1.0), 2.0, Stroke::new(1.0, el.accent()), egui::StrokeKind::Outside);
+    }
+}
+
+/// A tick box and its words in `rect`, one control named `label`: a `button[kind="check"]`,
+/// `[checked]` while `on`, its `border-color` for the box (a step stronger under the pointer)
+/// and its `background-color` for the mark; the words a `label[kind="check"]`'s `color`, its
+/// `:hover` one under the pointer. The response; a click asks for the other value.
+pub fn check_box(ui: &Ui, painter: &Painter, rect: Rect, id: Id, label: &str, on: bool) -> Response {
+    let response = ui.interact(rect, id, Sense::click());
+    response.widget_info(|| WidgetInfo::selected(Role::CheckBox, ui.is_enabled(), on, label));
+    let mark = Rect::from_center_size(Pos2::new(rect.left() + 6.0, rect.center().y), Vec2::splat(11.0));
+    let el = BUTTON.attribute("kind", "check").response(&response).attr(Checked, on).enter();
+    let edge = if response.has_focus() { el.accent() } else { el.border() };
+    painter.rect_stroke(mark, 0.0, theme::hairline(edge), egui::StrokeKind::Inside);
+    if on {
+        painter.rect_filled(mark.shrink(2.5), 0.0, el.background());
+    }
+    drop(el);
+    let ink = super::element::LABEL
+        .attribute("kind", "check")
+        .response(&response)
+        .enter()
+        .hover_fade(hover(ui, &response), Look::color);
+    let words = Rect::from_min_max(Pos2::new(mark.right() + 6.0, rect.top()), rect.max);
+    text_in(painter, words, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), ink);
+    response
+}
+
+/// One part of a row of choices, a `button` of `kind` (`option`, `preset`), `[checked]` while it
+/// is the one chosen: its face painted in `rect` and its fill and ink, which fade with the choice
+/// and the pointer.
+pub fn option_face(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    response: &Response,
+    chosen: bool,
+    kind: &'static str,
+) -> (Color32, Color32) {
+    let lit = lit_toggle_kind(ui, response, BUTTON.builder(), &[Checked], chosen, kind);
+    let (fill, color) = lit.colors();
+    lit.el.paint_over(painter, rect, super::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
+    if response.has_focus() {
+        painter.rect_stroke(rect, 0.0, Stroke::new(1.0, lit.el.accent()), egui::StrokeKind::Inside);
+    }
+    (fill, color)
+}
+
+/// A row of choices from the left of `rect`, one [`option_face`] part of `kind` `option` for each
+/// of `options` (its words and its value), `widths[i]` wide and one point apart, `[checked]` on
+/// `current`'s. Part `i` answers to `id(i)` and is named "`name`: words", selected while chosen.
+/// The value clicked, if it is not `current`.
+#[allow(clippy::too_many_arguments)]
+pub fn option_parts<T: Copy + PartialEq>(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    widths: &[f32],
+    id: impl Fn(usize) -> Id,
+    name: &str,
+    options: &[(&str, T)],
+    current: T,
+) -> Option<T> {
+    let mut picked = None;
+    let mut x = rect.left();
+    for (index, ((text, value), part)) in options.iter().zip(widths).enumerate() {
+        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(*part, rect.height()));
+        x += part + 1.0;
+        let label = format!("{name}: {text}");
+        let response = ui.interact(cell, id(index), Sense::click());
+        let chosen = *value == current;
+        response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), chosen, &label));
+        if response.clicked() && !chosen {
+            picked = Some(*value);
+        }
+        let (_, ink) = option_face(ui, painter, cell, &response, chosen, "option");
+        text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
+    }
+    picked
 }
 
 #[cfg(test)]

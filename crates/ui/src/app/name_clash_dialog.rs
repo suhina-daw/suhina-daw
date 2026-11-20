@@ -7,9 +7,9 @@
 
 use egui::{Id, Key, Pos2, Rect, Ui, Vec2};
 
-use super::project_dialog::{BUTTON, CloseChoice, LINE, SAVE_WIDTH, panel};
-use crate::kit::theme::{self, PAD, ROW};
-use crate::kit::widgets::{self, button};
+use super::project_dialog::{CloseChoice, LINE, SAVE_WIDTH, panel};
+use crate::kit::theme::{self, PAD};
+use crate::kit::{dialog, widgets};
 
 /// What the person answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,7 +29,7 @@ impl CloseChoice for NameClashChoice {
 /// Returns the answer, or `None` while it stays open.
 pub fn show(ui: &Ui, area: Rect, taken: &[String], count: usize, folder: &str) -> Option<NameClashChoice> {
     // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("name-clash");
     crate::kit::floating::area(ui.ctx(), Id::unique("name-clash-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -51,13 +51,10 @@ fn draw(
     folder: &str,
 ) -> Option<NameClashChoice> {
     let mut closed: Option<NameClashChoice> = None;
-    let size = Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD);
+    let size = Vec2::new(SAVE_WIDTH, 2.0 * LINE + PAD + dialog::BUTTON_HEIGHT);
     let panel = panel(ui, dialog, area, size, "Name already taken", &mut closed);
     let painter = ui.painter_at(area);
-    let line = Rect::from_min_size(
-        Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD),
-        Vec2::new(panel.width() - 2.0 * PAD, LINE),
-    );
+    let line = Rect::from_min_size(Pos2::new(panel.left(), panel.top()), Vec2::new(panel.width(), LINE));
     let message = match taken {
         [one] => format!("{folder} already has a file named {one}"),
         _ => format!("{folder} already has files named as {} of the {count} samples", taken.len()),
@@ -72,18 +69,23 @@ fn draw(
     let caption = crate::kit::element::caption_ink();
     let fitted = widgets::fitted(&painter, note, small, caption, hint.width());
     painter.galley(Pos2::new(hint.left(), hint.center().y - fitted.size().y / 2.0), fitted, caption);
-    let keep = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
-    let skip = Rect::from_min_size(Pos2::new(keep.left() - 4.0 - BUTTON.x, keep.top()), BUTTON);
-    let cancel = Rect::from_min_size(Pos2::new(skip.left() - 4.0 - BUTTON.x, keep.top()), BUTTON);
-    if button(ui, &painter, keep, "Keep both", "Keep both files, the new one with a number added to its name")
-        || ui.input(|i| i.key_pressed(Key::Enter))
-    {
+    let clicked = dialog::actions(
+        ui,
+        &painter,
+        panel,
+        &[
+            dialog::Action::new("Cancel", "Move or copy nothing"),
+            dialog::Action::new("Skip", "Leave out the samples whose name is taken"),
+            dialog::Action::new("Keep both", "Keep both files, the new one with a number added to its name"),
+        ],
+    );
+    if clicked == Some(2) || ui.input(|i| i.key_pressed(Key::Enter)) {
         return Some(NameClashChoice::KeepBoth);
     }
-    if button(ui, &painter, skip, "Skip", "Leave out the samples whose name is taken") {
+    if clicked == Some(1) {
         return Some(NameClashChoice::Skip);
     }
-    if button(ui, &painter, cancel, "Cancel", "Move or copy nothing") || ui.input(|i| i.key_pressed(Key::Escape)) {
+    if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) {
         return Some(NameClashChoice::Cancel);
     }
     closed

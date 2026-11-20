@@ -4,7 +4,7 @@ read_when: native device export, stock CLAP, stock VST3, export adapter, plugin 
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/plugin-host/src/lib.rs
   - crates/plugin-host/src/exports/
