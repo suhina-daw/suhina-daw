@@ -29,6 +29,11 @@ const MAX_VALIDATION_DB: f64 = 3.0;
 const MIN_DROP_DB: f64 = 1.0;
 /// The fitted fall must exceed the larger envelope error this many times.
 const DROP_TO_ERROR: f64 = 3.0;
+/// A mode whose fitted level changes by at most this across its span, without clearly
+/// decaying, is sustained.
+const SUSTAIN_DB: f64 = 3.0;
+/// T60 stored for a sustained mode: the profile's maximum; note-off releases it.
+const SUSTAINED_SECONDS: f64 = 60.0;
 /// A failing span this long is fitted once more on its last two thirds.
 const LATE_RETRY_WINDOWS: usize = 9;
 
@@ -49,6 +54,8 @@ pub struct ModeEvidence {
     pub validation_rms_db: f64,
     pub estimation_windows: usize,
     pub validation_windows: usize,
+    /// The level did not fall: a bowed, blown or held partial stored with the longest T60.
+    pub sustained: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -402,11 +409,7 @@ fn fit_span(hz: f64, span: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEviden
         return None;
     }
     let slope = training.iter().map(|v| (v.1 - mean_t) * (v.2 - mean_y)).sum::<f64>() / variance;
-    if !slope.is_finite() || slope >= 0.0 {
-        return None;
-    }
-    let decay = -1000.0_f64.ln() / slope;
-    if !(0.001..=60.0).contains(&decay) {
+    if !slope.is_finite() {
         return None;
     }
     let intercept = mean_y - slope * mean_t;
@@ -415,14 +418,24 @@ fn fit_span(hz: f64, span: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEviden
     };
     let estimation_rms_db = rms(&training);
     let validation_rms_db = rms(&validation);
-    let drop_db = -slope * (training.last()?.1 - training.first()?.1) * DB;
-    if drop_db < MIN_DROP_DB
-        || drop_db < DROP_TO_ERROR * estimation_rms_db.max(validation_rms_db)
-        || estimation_rms_db > MAX_ESTIMATION_DB
-        || validation_rms_db > MAX_VALIDATION_DB
-    {
+    if estimation_rms_db > MAX_ESTIMATION_DB || validation_rms_db > MAX_VALIDATION_DB {
         return None;
     }
+    let drop_db = -slope * (training.last()?.1 - training.first()?.1) * DB;
+    let decay = -1000.0_f64.ln() / slope;
+    let decaying = slope < 0.0
+        && (0.001..=SUSTAINED_SECONDS).contains(&decay)
+        && drop_db >= MIN_DROP_DB
+        && drop_db >= DROP_TO_ERROR * estimation_rms_db.max(validation_rms_db);
+    // A level that stays put within the error limits is a sustained partial, not a failure.
+    let (intercept, slope, decay, sustained) = if decaying {
+        (intercept, slope, decay, false)
+    } else if drop_db.abs() <= SUSTAIN_DB {
+        let slope = -1000.0_f64.ln() / SUSTAINED_SECONDS;
+        (mean_y - slope * mean_t, slope, SUSTAINED_SECONDS, true)
+    } else {
+        return None;
+    };
     Some((
         intercept,
         slope,
@@ -433,6 +446,7 @@ fn fit_span(hz: f64, span: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEviden
             validation_rms_db,
             estimation_windows: training.len(),
             validation_windows: validation.len(),
+            sustained,
         },
     ))
 }

@@ -110,7 +110,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     if let Some(profile) = report.profile {
                         let error = report.modes.iter().map(|m|m.validation_rms_db).fold(0.0_f64, f64::max);
                         ui.horizontal(|ui| {
-                            ui.label(format!("Experimental: {} modes · root {} · envelope error ≤ {:.2} dB",profile.modes().len(),key_name(profile.reference_key()),error))
+                            ui.label(format!("Experimental: {} modes{} · root {} · envelope error ≤ {:.2} dB",profile.modes().len(),match report.modes.iter().filter(|m| m.sustained).count() { 0 => String::new(), held => format!(" ({held} sustained)") },key_name(profile.reference_key()),error))
                                 .on_hover_text(format!("Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Initial phases, attack and room response are not reconstructed.",report.channel+1,report.range.start,report.range.end,report.analyzed_seconds));
                             let accept = ui.button("Accept model");
                             remember_keyboard_owner(&accept);

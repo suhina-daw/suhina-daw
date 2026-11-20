@@ -66,9 +66,13 @@ decays as one exponential: beating partials and a fast early decay followed by a
 leave decibels of error that version 1's limits (1.0 dB estimation, 1.5 dB validation) rejected,
 so a recorded strike could yield no model at all. When a span of nine or more windows fails,
 the fit is repeated once on its last two thirds, which describes the sustained part after a fast
-early decay. The result contains at most 16 modes within the canonical profile's bounds.
-Constant tones, rising envelopes, noise and short sounds yield no model; the playable sample
-remains usable.
+early decay. A mode whose fitted level changes by at most 3 dB across its span without
+clearly decaying, within the same error limits, is **sustained**: a bowed, blown or held partial
+(a cello, an organ, a voice) is stored with the profile's longest T60, 60 s, and is reported as
+sustained; note-off releases it like any modal voice. This approximates a held tone by its
+spectrum and is not a bowing or breath model. The result contains at most 16 modes within the
+canonical profile's bounds. Rising envelopes, noise and short sounds yield no model; the
+playable sample remains usable.
 
 Report errors are RMS dB differences of a mode's amplitude envelope, not waveform errors,
 probabilities, realism percentages or independent listening results. Odd windows belong to
@@ -100,7 +104,7 @@ alone invokes it. Ordinary use is offline.
 
 Deterministic CI fixtures use original analytic inharmonic decays with known frequencies and
 T60, not the fitter's own synthesized output as the sole oracle. They cover hostile inputs,
-silence, growing/constant/noisy sources, repeatability, opposite-polarity stereo, cancellation
+silence, growing and noisy sources, sustained (constant) tones, repeatability, opposite-polarity stereo, cancellation
 and temporal estimation limits. Session tests cover explicit/stale adoption, transaction
 rollback, undo/redo, save/reopen and native render consistency. Builds and test execution for
 this change occur in CI only at the maintainer's request.

@@ -71,22 +71,29 @@ fn constant_offset_and_gain_do_not_change_relative_modal_energy() {
 }
 
 #[test]
-fn silence_short_constant_growing_and_noise_sources_do_not_get_a_model() {
+fn silence_short_growing_and_noise_sources_do_not_get_a_model_but_a_held_tone_is_sustained() {
     for pcm in [vec![0.0; 22050], vec![0.3; 22050]] {
         assert_eq!(fit(&pcm, 22050, 1, 0..pcm.len(), 60, |_, _| true).unwrap().outcome, Outcome::Silent);
     }
     let short = struck(22050, 0.05, &[(660.0, 1.0, 0.8)]);
     assert_eq!(fit(&short, 22050, 1, 0..short.len(), 60, |_, _| true).unwrap().outcome, Outcome::TooShort);
-    for slope in [0.0, 1.0] {
-        let pcm: Vec<_> = (0..44100)
+    let held = |slope: f64| -> Vec<f32> {
+        (0..44100)
             .map(|n| {
                 let t = n as f64 / 22050.0;
                 (0.05 * (slope * t).exp() * (TAU * 733.0 * t).sin()) as f32
             })
-            .collect();
-        let report = fit(&pcm, 22050, 1, 0..pcm.len(), 60, |_, _| true).unwrap();
-        assert!(report.profile.is_none(), "{report:?}");
-    }
+            .collect()
+    };
+    // A rising envelope is no resonance.
+    let rising = held(1.0);
+    assert!(fit(&rising, 22050, 1, 0..rising.len(), 60, |_, _| true).unwrap().profile.is_none());
+    // A level that stays put (a bowed or blown partial) is kept as sustained, longest T60.
+    let steady = held(0.0);
+    let report = fit(&steady, 22050, 1, 0..steady.len(), 60, |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Fitted, "{report:?}");
+    let mode = report.modes.iter().find(|m| (m.frequency_hz - 733.0).abs() < 0.5).unwrap();
+    assert!(mode.sustained && mode.decay_seconds == SUSTAINED_SECONDS, "{mode:?}");
     let mut seed = 1u32;
     let noise: Vec<_> = (0..44100)
         .map(|_| {

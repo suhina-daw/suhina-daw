@@ -439,7 +439,7 @@ fn view_json(view: &AnalysisView) -> Value {
         "outcome":match r.outcome { modal::Outcome::Fitted=>"fitted",modal::Outcome::Silent=>"silent",modal::Outcome::TooShort=>"tooShort",modal::Outcome::NoDecayingModes=>"noDecayingModes" },
         "referenceKey":r.profile.map(|p|p.reference_key()),"referenceHz":r.profile.map(|p|p.reference_hz()),
         "modes":r.modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
-            "estimationRmsDb":m.estimation_rms_db,"validationRmsDb":m.validation_rms_db,
+            "estimationRmsDb":m.estimation_rms_db,"validationRmsDb":m.validation_rms_db,"sustained":m.sustained,
             "estimationWindows":m.estimation_windows,"validationWindows":m.validation_windows})).collect::<Vec<_>>()
     }));
     json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"report":report,"modal":modal,"acceptedRoot":view.accepted_root,"message":view.message})
