@@ -803,12 +803,8 @@ pub(crate) fn panel<T: CloseChoice>(
         crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
     );
     let outer = Rect::from_center_size(area.center(), dialog::size(dialog, area, content, true));
-    let fill = crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel"));
-    let (painted, title_row) = dialog::paint(&painter, dialog, outer, fill, Some(title));
-    let bar = painted.title;
-    let close = Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, bar.height()));
-    let response = widgets::button_area(ui, close, Id::unique(("dialog-close", title)), format!("Close {title}"));
-    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT_SMALL, None));
+    let (painted, title_row) = dialog::paint(&painter, dialog, outer, Some(title));
+    let response = dialog::close_button(ui, &painter, painted.title, Id::unique(("dialog-close", title)), title);
     drop(title_row);
     if response.clicked() {
         *closed = Some(T::close());

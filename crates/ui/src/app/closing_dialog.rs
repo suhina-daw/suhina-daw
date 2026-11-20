@@ -43,8 +43,7 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[S
     let height = (1 + listed) as f32 * LINE;
     let outer =
         Rect::from_center_size(area.center(), crate::kit::dialog::size(dialog, area, Vec2::new(WIDTH, height), true));
-    let fill = crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel"));
-    let (painted, title) = crate::kit::dialog::paint(&painter, dialog, outer, fill, Some("Closing Suhina"));
+    let (painted, title) = crate::kit::dialog::paint(&painter, dialog, outer, Some("Closing Suhina"));
     drop(title);
     let content = painted.content;
 

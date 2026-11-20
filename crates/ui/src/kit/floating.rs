@@ -170,12 +170,17 @@ pub(crate) fn dialog_size(dialog: &Entered, area: Rect, size: Vec2) -> Vec2 {
 }
 
 /// A dialog's box in `rect`: the window blurred under it (unless its `backdrop-filter` is
-/// `none`), then its own background over `fill` in CSS's order, with Suhina's hairline round it
-/// where the sheet gives it no border. Returns the content box what it holds goes in (#1336).
-pub(crate) fn dialog(painter: &Painter, dialog: &Entered, rect: Rect, fill: Color32) -> Rect {
-    // Its background from whichever sheet gives it, the user-agent's included; `fill` where none
-    // does.
-    let fill = dialog.style().map(|style| style.background).filter(|color| color.a() > 0).unwrap_or(fill);
+/// `none`), then its own background in CSS's order, with Suhina's hairline round it where the
+/// sheet gives it no border. Returns the content box what it holds goes in (#1336).
+pub(crate) fn dialog(painter: &Painter, dialog: &Entered, rect: Rect) -> Rect {
+    // Its background from whichever sheet gives it, the user-agent's included (which always
+    // does), so a dialog never takes the colour of the window or region it opens over; the
+    // panel colour only where no sheet is loaded or the one that is gives a clear background.
+    let fill = dialog
+        .style()
+        .map(|style| style.background)
+        .filter(|color| color.a() > 0)
+        .unwrap_or_else(|| element::app_fill("panel"));
     if style_blurs(dialog.style()) {
         let radius = dialog.style().filter(|style| style.authored.radius).map_or(0.0, |style| style.radius);
         super::liquid::backdrop(painter, rect, radius);
@@ -247,6 +252,9 @@ pub(crate) fn frame_styled(
     // user-agent sheet's and the base sheet's too, not only a theme's own rule. egui fills its
     // frame from the window's frame (`widget[kind="window"]`), which a theme on the user-agent
     // sheet alone leaves clear. A frame a view filled in a colour of its own keeps it.
+    // egui's frame is told by its colour: `opacity` is egui's own fade to the bit ([`shown`], its
+    // test) and both fade with `gamma_multiply`, so the faded colours are equal, not near. A view
+    // that fills a frame with `window_fill` itself gets the sheet's background, as egui's does.
     let default = ctx.global_style().visuals.window_fill;
     let faded = |color: Color32| if opacity > 0.0 && opacity < 1.0 { color.gamma_multiply(opacity) } else { color };
     if frame.fill == default || frame.fill == faded(default) {

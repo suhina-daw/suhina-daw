@@ -264,22 +264,9 @@ impl App {
                     let outer = Rect::from_min_size(ui.max_rect().min, Vec2::new(WIDTH, height));
                     ui.allocate_rect(outer, egui::Sense::hover());
                     let painter = ui.painter().clone();
-                    let fill = crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel"));
-                    let (painted, title_row) =
-                        crate::kit::dialog::paint(&painter, &style, outer, fill, Some(title.as_str()));
-                    let bar = painted.title;
-                    let button =
-                        Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, bar.height()));
+                    let (painted, title_row) = crate::kit::dialog::paint(&painter, &style, outer, Some(title.as_str()));
                     let id = Id::unique("track-colour-window-close");
-                    let response = crate::kit::widgets::button_area(ui, button, id, format!("Close {title}"));
-                    crate::kit::widgets::flat_button(
-                        ui,
-                        &painter,
-                        button,
-                        &response,
-                        "Close",
-                        (crate::kit::theme::TEXT_SMALL, None),
-                    );
+                    let response = crate::kit::dialog::close_button(ui, &painter, painted.title, id, &title);
                     drop(title_row);
                     close |= response.clicked();
                     (outer.height(), painted.content)
@@ -412,14 +399,6 @@ impl App {
         }
         for key in keys {
             self.do_action(&key, actions);
-/// How big the window is on screen with content `height` tall, as [`place`] keeps it on screen:
-/// the system's title bar over it, unless the content runs under that bar (`frame.title_bar`),
-/// when `height` holds the bar already.
-fn outer_size(height: f32, frame: crate::kit::own_window::Frame) -> Vec2 {
-    let bar = if frame.title_bar > 0.0 { 0.0 } else { SYSTEM_TITLE_BAR };
-    Vec2::new(WIDTH, height + bar)
-}
-
         }
         if close {
             actions.push(Action::new("ui.finishColour", json!({})));
@@ -431,6 +410,14 @@ fn outer_size(height: f32, frame: crate::kit::own_window::Frame) -> Vec2 {
 
 fn focused_in_layer(ctx: &egui::Context, layer: egui::LayerId) -> bool {
     ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|r| r.layer_id == layer)
+}
+
+/// How big the window is on screen with content `height` tall, as [`place`] keeps it on screen:
+/// the system's title bar over it, unless the content runs under that bar (`frame.title_bar`),
+/// when `height` holds the bar already.
+fn outer_size(height: f32, frame: crate::kit::own_window::Frame) -> Vec2 {
+    let bar = if frame.title_bar > 0.0 { 0.0 } else { SYSTEM_TITLE_BAR };
+    Vec2::new(WIDTH, height + bar)
 }
 
 /// A new or remembered window stays on the current screen even after a monitor is removed.
@@ -446,6 +433,19 @@ fn place(bounds: Rect, size: Vec2, remembered: Option<Pos2>) -> Pos2 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn initial_placement_centres_and_expansion_or_stale_positions_stay_inside_bounds() {
+        let bounds = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(1280.0, 900.0));
+        let compact = Vec2::new(WIDTH, 432.0);
+        let centre = place(bounds, compact, None);
+        assert_eq!(centre + compact * 0.5, bounds.center());
+        let expanded = Vec2::new(WIDTH, 752.0);
+        for remembered in [centre, Pos2::new(-3000.0, 2000.0), Pos2::new(f32::NAN, 0.0)] {
+            let rect = Rect::from_min_size(place(bounds, expanded, Some(remembered)), expanded);
+            assert!(bounds.contains_rect(rect));
+        }
+    }
+
     /// A window whose content runs under the system's title bar is as tall as its content, so near
     /// the screen's bottom it sits on the bottom edge, not a title bar's height above it.
     #[test]
@@ -458,18 +458,5 @@ mod tests {
         let low = Some(Pos2::new(100.0, 790.0));
         assert_eq!(place(bounds, outer_size(400.0, under), low).y, 400.0);
         assert_eq!(place(bounds, outer_size(400.0, framed), low).y, 400.0 - SYSTEM_TITLE_BAR);
-    }
-
-    #[test]
-    fn initial_placement_centres_and_expansion_or_stale_positions_stay_inside_bounds() {
-        let bounds = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(1280.0, 900.0));
-        let compact = Vec2::new(WIDTH, 432.0);
-        let centre = place(bounds, compact, None);
-        assert_eq!(centre + compact * 0.5, bounds.center());
-        let expanded = Vec2::new(WIDTH, 752.0);
-        for remembered in [centre, Pos2::new(-3000.0, 2000.0), Pos2::new(f32::NAN, 0.0)] {
-            let rect = Rect::from_min_size(place(bounds, expanded, Some(remembered)), expanded);
-            assert!(bounds.contains_rect(rect));
-        }
     }
 }

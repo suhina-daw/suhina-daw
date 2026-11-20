@@ -71,8 +71,7 @@ fn draw(
     let outer = Rect::from_center_size(area.center(), dialog::size(dialog, area, Vec2::new(WIDTH, height), true));
     let what = if progress.is_some() { "Loading plug-ins" } else { "Preparing audio" };
     let title = format!("{what} · {project}");
-    let fill = crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel"));
-    let (painted, title_row) = dialog::paint(&painter, dialog, outer, fill, Some(&title));
+    let (painted, title_row) = dialog::paint(&painter, dialog, outer, Some(&title));
     drop(title_row);
     let inner = painted.content;
     let bar = Rect::from_min_size(inner.min, Vec2::new(inner.width(), BAR));

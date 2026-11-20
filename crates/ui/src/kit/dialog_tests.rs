@@ -42,7 +42,7 @@ fn the_padding_is_the_room_inside_and_the_title_row_lies_outside_it() {
     let (other, export) = frames(css, |ui| {
         let painted = |name: &str| {
             let dialog = enter(name);
-            let (painted, title) = paint(ui.painter(), &dialog, OUTER, Color32::BLACK, Some("Title"));
+            let (painted, title) = paint(ui.painter(), &dialog, OUTER, Some("Title"));
             drop(title);
             (painted.title, painted.content)
         };
@@ -124,7 +124,7 @@ fn without_the_base_sheet_a_dialog_is_opaque() {
         let dialog = enter("save");
         let layer = ui.layer_id();
         let start = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx().0);
-        let (_, title) = paint(ui.painter(), &dialog, OUTER, Color32::TRANSPARENT, Some("Title"));
+        let (_, title) = paint(ui.painter(), &dialog, OUTER, Some("Title"));
         drop(title);
         ui.ctx().graphics(|layers| {
             layers
@@ -142,4 +142,36 @@ fn without_the_base_sheet_a_dialog_is_opaque() {
         })
     });
     assert!(fills.contains(&Color32::from_rgb(0x1e, 0x1e, 0x1e)), "{fills:?}");
+}
+
+/// How many shapes [`actions`] paints with one button, under `css` on the user-agent sheet alone,
+/// in `content`.
+fn painted_actions(css: &str, content: Rect) -> usize {
+    frames_on(false, css, |ui| {
+        let layer = ui.layer_id();
+        let start = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx().0);
+        let _ = actions(ui, ui.painter(), content, &[Action::new("Allow", "Allow")]);
+        ui.ctx().graphics(|layers| layers.get(layer).map_or(0, |list| list.all_entries().skip(start).count()))
+    })
+}
+
+/// A box the sheet cannot lay the row out in still shows the dialog's only button, at its right;
+/// a sheet that hides the row is obeyed.
+#[test]
+fn a_dialog_s_buttons_show_without_a_layout_but_not_when_the_sheet_hides_them() {
+    let room = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 100.0));
+    assert!(painted_actions("", room) > 0);
+    let none = Rect::from_min_size(Pos2::new(400.0, 0.0), Vec2::new(0.0, 100.0));
+    assert!(painted_actions("", none) > 0, "no room for the row, the button still shows");
+    assert_eq!(painted_actions("dialog-actions { display: none; }", room), 0);
+
+    let bar = Rect::from_min_max(Pos2::new(0.0, 70.0), Pos2::new(400.0, 100.0));
+    let placed = at_the_end(bar, &[Action::new("A", "A"), Action::space(), Action::new("B", "B").wide(100.0)]);
+    assert_eq!(
+        placed[0],
+        Some(Rect::from_min_max(Pos2::new(400.0 - 100.0 - 8.0 - BUTTON_WIDTH, 70.0), Pos2::new(292.0, 100.0)))
+    );
+    assert_eq!(placed[1], None);
+    assert_eq!(placed[2], Some(Rect::from_min_max(Pos2::new(300.0, 70.0), Pos2::new(400.0, 100.0))));
+    assert_eq!(at_the_end(Rect::NOTHING, &[Action::new("A", "A")]), vec![None]);
 }

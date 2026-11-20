@@ -45,16 +45,10 @@ pub struct Painted {
 }
 
 /// Paints `dialog`'s box in `outer`: the window blurred under it (unless its `backdrop-filter` is
-/// `none`), its background over `fill`, and its border, then its title row when it has `title`.
+/// `none`), its background, and its border, then its title row when it has `title`.
 /// The title row's element stays entered in what is returned for a Close button on it.
-pub fn paint(
-    painter: &Painter,
-    dialog: &Entered,
-    outer: Rect,
-    fill: egui::Color32,
-    title: Option<&str>,
-) -> (Painted, Option<Entered>) {
-    let inside = super::floating::dialog(painter, dialog, outer, fill);
+pub fn paint(painter: &Painter, dialog: &Entered, outer: Rect, title: Option<&str>) -> (Painted, Option<Entered>) {
+    let inside = super::floating::dialog(painter, dialog, outer);
     let Some(title) = title else {
         return (Painted { outer, title: Rect::from_min_size(inside.min, Vec2::ZERO), content: inside }, None);
     };
@@ -84,6 +78,20 @@ pub fn title_row(painter: &Painter, row: Rect, title: &str) -> Entered {
         super::element::title_ink(),
     );
     entered
+}
+
+/// How wide the Close button at the right of a dialog's title row is.
+const CLOSE_WIDTH: f32 = 52.0;
+
+/// The Close button at the right of a dialog's title row `bar` ([`Painted::title`]), a flat
+/// button answering to `id`, named "Close `title`". Drawn while the title row's element from
+/// [`paint`] is still entered, so the theme styles it as part of that row. A click closes.
+pub fn close_button(ui: &Ui, painter: &Painter, bar: Rect, id: egui::Id, title: &str) -> egui::Response {
+    let rect =
+        Rect::from_min_size(Pos2::new(bar.right() - CLOSE_WIDTH, bar.top()), Vec2::new(CLOSE_WIDTH, bar.height()));
+    let response = widgets::button_area(ui, rect, id, format!("Close {title}"));
+    widgets::flat_button(ui, painter, rect, &response, "Close", (theme::TEXT_SMALL, None));
+    response
 }
 
 /// One button of a dialog's [`actions`].
@@ -120,7 +128,9 @@ impl<'a> Action<'a> {
 /// The dialog's buttons in a `dialog-actions` row along the bottom of `content`, the dialog's
 /// content box, in the order given: the sheet places them (`justify-content`, `gap`; the
 /// user-agent sheet's put them at the right, 8 points apart). The index of the one clicked; a
-/// [`Action::space`] is never clicked.
+/// [`Action::space`] is never clicked. Where the sheet cannot lay the row out (a box with no room,
+/// a sheet that fails), the buttons stand at its right, [`FALLBACK_GAP`] apart, so a dialog never
+/// loses the only buttons that answer it; a sheet that hides the row (`display: none`) is obeyed.
 pub fn actions(ui: &Ui, painter: &Painter, content: Rect, actions: &[Action<'_>]) -> Option<usize> {
     let height = BUTTON_HEIGHT;
     let bar = Rect::from_min_max(Pos2::new(content.left(), content.bottom() - height), content.max);
@@ -135,15 +145,47 @@ pub fn actions(ui: &Ui, painter: &Painter, content: Rect, actions: &[Action<'_>]
             }
         })
         .collect();
-    let laid = row::row(&Bar::of(&element, bar.size()), &items)?;
+    let laid = row::row(&Bar::of(&element, bar.size()), &items);
+    let fallback = if laid.is_none() { at_the_end(bar, actions) } else { Vec::new() };
     let mut clicked = None;
     for (index, action) in actions.iter().enumerate() {
-        let Some(rect) = laid.at(index, bar.min).filter(|_| !action.space) else { continue };
+        let place = match &laid {
+            Some(laid) => laid.at(index, bar.min),
+            None => fallback.get(index).copied().flatten(),
+        };
+        let Some(rect) = place.filter(|_| !action.space) else { continue };
         if widgets::button(ui, painter, rect, action.text, action.label) && clicked.is_none() {
             clicked = Some(index);
         }
     }
     clicked
+}
+
+/// How far apart [`actions`] puts the buttons where the sheet lays out none: the user-agent
+/// sheet's `gap`.
+const FALLBACK_GAP: f32 = 8.0;
+
+/// Where [`actions`] puts the buttons without the sheet: in their order at the right of `bar`,
+/// [`FALLBACK_GAP`] apart; nowhere for a space, or in a box that is not finite.
+fn at_the_end(bar: Rect, actions: &[Action<'_>]) -> Vec<Option<Rect>> {
+    if !bar.is_finite() {
+        return vec![None; actions.len()];
+    }
+    let buttons = actions.iter().filter(|action| !action.space);
+    let width = buttons.clone().map(|action| action.width.max(0.0)).sum::<f32>()
+        + FALLBACK_GAP * buttons.count().saturating_sub(1) as f32;
+    let mut x = bar.right() - width;
+    actions
+        .iter()
+        .map(|action| {
+            if action.space {
+                return None;
+            }
+            let rect = Rect::from_min_size(Pos2::new(x, bar.top()), Vec2::new(action.width.max(0.0), bar.height()));
+            x = rect.right() + FALLBACK_GAP;
+            Some(rect)
+        })
+        .collect()
 }
 
 #[cfg(test)]
