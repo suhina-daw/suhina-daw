@@ -460,6 +460,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   change's line on the ruler drags to another bar
   ([#1259](https://github.com/suhina-daw/suhina-daw/issues/1259)).
 
+- An experimental **Instrument** combines a struck-modal body with local single-sample
+  playback, with a compact native panel, a source blend, key/root mapping and project source
+  persistence. Its first modal revision is explicitly experimental; calibrated acoustic
+  families and automatic sample fitting remain planned.
+
 ### M3 Commands and agents (in progress)
 - Every edit is a command with an id, typed parameters and one undo step; failed or invalid edits
   leave the project unchanged ([ADR 0002](docs/decisions/0002-commands.md)).
