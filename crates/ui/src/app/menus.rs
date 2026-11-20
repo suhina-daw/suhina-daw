@@ -129,16 +129,22 @@ fn open_menu<R>(ui: &mut Ui, content: impl FnOnce(&mut Ui) -> R) -> R {
     let menu = crate::kit::element::MENU.enter();
     // The menu opens over the window, not the bar: text it inherits from the bar (Suhina
     // Sheet's white on green) must still read on the menu's own background.
+    // Its background from whichever sheet gives it, the user-agent's included; egui's window fill
+    // where none does.
     let background = menu
         .style()
-        .filter(|style| style.authored.background)
+        .filter(|style| style.authored.background || style.background.a() > 0)
         .map_or(ui.visuals().window_fill, |style| style.background);
     let ink = menu.readable_on(background);
     // The background covers the menu as it was laid out last frame: its own rect, never the
     // layer's clip, which is the whole window.
     let id = ui.scope_id().with("menu-rect");
     if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
-        menu.paint(ui.painter(), rect);
+        // egui's frame under it is filled already where its fill is the menu's: a see-through fill
+        // painted twice would read twice as solid.
+        let fill = if ui.visuals().window_fill == background { egui::Color32::TRANSPARENT } else { background };
+        let native = crate::kit::element::Native { fill, ..Default::default() };
+        menu.paint_with(ui.painter(), rect, native);
     }
     let mut styled = menu.ui(ui);
     if let Some(ink) = ink {

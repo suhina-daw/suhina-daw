@@ -239,6 +239,16 @@ pub(crate) fn frame_styled(
     frame: &Frame,
     opacity: f32,
 ) -> Option<Restyled> {
+    let mut style = style;
+    // Over egui's own frame, the element's background from whichever sheet gives it: the
+    // user-agent sheet's and the base sheet's too, not only a theme's own rule. egui fills its
+    // frame from the window's frame (`widget[kind="window"]`), which a theme on the user-agent
+    // sheet alone leaves clear. A frame a view filled in a colour of its own keeps it.
+    let default = ctx.global_style().visuals.window_fill;
+    let faded = |color: Color32| if opacity > 0.0 && opacity < 1.0 { color.gamma_multiply(opacity) } else { color };
+    if frame.fill == default || frame.fill == faded(default) {
+        style.authored.background |= style.background.a() > 0;
+    }
     let authored = style.authored.background
         || style.authored.border
         || style.authored.border_width
