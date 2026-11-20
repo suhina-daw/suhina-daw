@@ -140,3 +140,97 @@ fn held_out_temporal_errors_are_not_used_to_fit_the_decay() {
     }
     assert!(estimate(hz, &disturbed).is_none(), "held-out envelope mismatch must reject this mode");
 }
+
+struct Lcg(u32);
+impl Lcg {
+    fn next(&mut self) -> f64 {
+        self.0 = self.0.wrapping_mul(1664525).wrapping_add(1013904223);
+        f64::from(self.0) / f64::from(u32::MAX)
+    }
+}
+
+/// A recording-like strike at 22050 Hz: eight slightly stretched partials, each two components
+/// `beat_hz` apart (beating) with a fast early decay followed by a slower one, a 20 ms noise
+/// burst on the attack, 5 ms of lead-in and a -60 dB noise floor. None of it is one exponential.
+fn recorded_like(seconds: f64, root: f64, beat_hz: f64, seed: u32) -> (Vec<f32>, Vec<f64>) {
+    let mut random = Lcg(seed);
+    let n = (22050.0 * seconds) as usize;
+    let lead = 110;
+    let mut out = vec![0.0_f64; n];
+    let mut partials = Vec::new();
+    for k in 1..=8 {
+        let k = f64::from(k);
+        let hz = root * k * (1.0 + 0.0004 * k * k);
+        partials.push(hz);
+        for (detune, fast, slow, share) in [(0.0, 0.35, 4.0 / k.sqrt(), 0.6), (beat_hz, 0.5, 3.0 / k.sqrt(), 0.4)] {
+            let phase = random.next() * TAU;
+            for (i, sample) in out.iter_mut().enumerate().skip(lead) {
+                let t = (i - lead) as f64 / 22050.0;
+                let envelope = 0.55 * (-1000.0_f64.ln() * t / fast).exp() + 0.45 * (-1000.0_f64.ln() * t / slow).exp();
+                *sample += 0.6 / k * share * envelope * (TAU * (hz + detune) * t + phase).sin();
+            }
+        }
+    }
+    let burst = 441;
+    for (i, sample) in out.iter_mut().enumerate().skip(lead).take(burst) {
+        *sample += 0.3 * (random.next() * 2.0 - 1.0) * (1.0 - (i - lead) as f64 / burst as f64);
+    }
+    (out.into_iter().map(|x| (x + 0.001 * (random.next() * 2.0 - 1.0)) as f32).collect(), partials)
+}
+
+// Regression: algorithm version 1 found no model in such a strike. It searched peaks only in the
+// first envelope window (1024 samples for a short trim), where neighbouring partials of a low note
+// hid each other, and demanded one exponential within 1 dB. Measured on this fixture in a script
+// mirroring the estimator, version 1 kept 0..3 of 8 partials; version 2 keeps 6..8.
+#[test]
+fn recorded_strikes_with_beating_two_stage_decay_and_an_attack_are_fitted() {
+    for (seconds, root, beat, at_least) in
+        [(0.9, 110.0, 0.8, 4), (2.0, 110.0, 0.8, 4), (0.9, 110.0, 0.0, 5), (0.9, 55.0, 0.0, 5)]
+    {
+        let (pcm, partials) = recorded_like(seconds, root, beat, 7);
+        let report = fit(&pcm, 22050, 1, 0..pcm.len(), 45, |_, _| true).unwrap();
+        assert_eq!(report.outcome, Outcome::Fitted, "{seconds} s at {root} Hz: {report:?}");
+        let matched: Vec<_> =
+            report.modes.iter().filter(|mode| partials.iter().any(|hz| (mode.frequency_hz - hz).abs() < 1.5)).collect();
+        assert!(matched.len() >= at_least, "{seconds} s at {root} Hz kept {matched:?} of {partials:?}");
+        for mode in &report.modes {
+            assert!(mode.estimation_rms_db <= MAX_ESTIMATION_DB && mode.validation_rms_db <= MAX_VALIDATION_DB);
+        }
+        for mode in matched {
+            assert!((0.05..=10.0).contains(&mode.decay_seconds), "{mode:?}");
+        }
+        assert_eq!(report, fit(&pcm, 22050, 1, 0..pcm.len(), 45, |_, _| true).unwrap());
+    }
+}
+
+#[test]
+fn a_second_strike_inside_the_trim_ends_each_mode_span_instead_of_rejecting_the_fit() {
+    let (mut pcm, _) = recorded_like(2.0, 110.0, 0.8, 7);
+    let (second, _) = recorded_like(1.4, 110.0, 0.8, 9);
+    for (sample, extra) in pcm.iter_mut().skip(13230).zip(second) {
+        *sample += extra;
+    }
+    let report = fit(&pcm, 22050, 1, 0..pcm.len(), 45, |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Fitted, "{report:?}");
+}
+
+#[test]
+fn a_mode_span_skips_an_attack_and_stops_at_the_floor_or_a_rise() {
+    let log = |db: f64| db / DB;
+    // Rising first window (an attack), a decay, then a 7 dB rise (the next strike).
+    let values: Vec<_> = [-20.0, -6.0, -8.0, -10.0, -12.0, -14.0, -16.0, -9.0, -11.0]
+        .iter()
+        .enumerate()
+        .map(|(i, db)| (i, i as f64 * 0.05, log(*db)))
+        .collect();
+    let span = envelope_span(&values);
+    assert_eq!(span.first().map(|v| v.0), Some(1));
+    assert_eq!(span.last().map(|v| v.0), Some(6));
+    // A level more than 60 dB below the peak ends the span.
+    let deep: Vec<_> = [0.0, -20.0, -40.0, -59.0, -61.0, -62.0]
+        .iter()
+        .enumerate()
+        .map(|(i, db)| (i, i as f64 * 0.05, log(*db)))
+        .collect();
+    assert_eq!(envelope_span(&deep).len(), 4);
+}
