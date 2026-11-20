@@ -66,7 +66,8 @@ pub mod param {
     pub const HARDNESS: usize = 23;
     pub const MALLET_MODEL: usize = 24;
     pub const RESONATOR: usize = 25;
-    pub const COUNT: usize = 26;
+    pub const STEREO_WIDTH: usize = 26;
+    pub const COUNT: usize = 27;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -100,6 +101,7 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("mallet_hardness", "Mallet hardness", (0.0, 1.0), 0.5, Unit::Percent),
     ParamInfo::choice("mallet_model", "Mallet model", &["Contact", "Pulse"], 0),
     control("resonator", "Resonator", (0.0, 1.0), 1.0, Unit::Percent),
+    control("stereo_width", "Stereo width", (0.0, 1.0), 0.5, Unit::Percent),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
@@ -168,6 +170,8 @@ struct Voice {
     last_output: f32,
     stolen_tail: f32,
     stolen_fade: Smoother,
+    /// Left and right gains: a bar's place in the row, unity for every other body.
+    pan: (f32, f32),
 }
 
 impl Default for Voice {
@@ -184,6 +188,7 @@ impl Default for Voice {
             last_output: 0.0,
             stolen_tail: 0.0,
             stolen_fade: Smoother::new(0.0, 1),
+            pan: (1.0, 1.0),
         }
     }
 }
@@ -367,6 +372,7 @@ impl Instrument {
         );
         fitted.transpose(self.sample_rate, self.bend_semitones);
         voice.body = Body::Fitted(fitted);
+        voice.pan = (1.0, 1.0);
         voice.profile = None;
         voice.attack = self.set_voice.attack.map(|(recording, step)| (recording, 0.0, step));
         voice.amplitude = (f64::from(velocity) * self.set_voice.level) as f32;
@@ -390,7 +396,7 @@ impl Instrument {
         );
         let excitation =
             if self.params.get(param::MALLET_MODEL) < 0.5 { Excitation::Contact } else { Excitation::Pulse };
-        let mallet = bars::mallet(self.params.get(param::HARDNESS));
+        let mallet = bars::mallet(bars::graded_hardness(key, self.params.get(param::HARDNESS)));
         let same = self
             .voices
             .iter()
@@ -403,6 +409,7 @@ impl Instrument {
         if same.is_none() {
             voice.start_steal_fade(self.sample_rate);
             voice.body = Body::Bar(StruckBar::default());
+            voice.pan = bar_pan(key, self.params.get(param::STEREO_WIDTH));
         }
         if let Body::Bar(bar) = &mut voice.body {
             bar.set_modes(self.sample_rate, &modes);
@@ -473,6 +480,7 @@ impl Instrument {
             bank.strike(self.sample_rate, &modes);
             bank.transpose(self.sample_rate, self.bend_semitones);
             voice.body = Body::Struck(bank);
+            voice.pan = (1.0, 1.0);
             voice.profile = None;
             voice.attack = None;
             voice.key = key;
@@ -483,6 +491,18 @@ impl Instrument {
             voice.gate.set_target(1.0);
         }
     }
+}
+
+/// A bar's left and right gains: its key's place in the row, scaled by `width`, by the shared
+/// equal-power law at unity in the centre.
+fn bar_pan(key: u8, width: f64) -> (f32, f32) {
+    let place = ((f64::from(key) - 60.0) / 36.0).clamp(-1.0, 1.0);
+    let pan = if width.is_finite() { width.clamp(0.0, 1.0) * place } else { 0.0 };
+    if pan == 0.0 {
+        return (1.0, 1.0);
+    }
+    let (left, right) = suhina_dsp::pan::gains(pan);
+    ((left * std::f64::consts::SQRT_2) as f32, (right * std::f64::consts::SQRT_2) as f32)
 }
 
 impl Voice {
@@ -610,7 +630,7 @@ impl Device for Instrument {
         let bend_ratio = 2.0_f64.powf(self.bend_semitones / 12.0);
         let set = self.set.as_deref();
         for frame in buffer.as_chunks_mut::<2>().0 {
-            let mut modal = 0.0;
+            let (mut left, mut right) = (0.0, 0.0);
             for voice in &mut self.voices {
                 if !voice.sounding() && voice.stolen_fade.current() == 0.0 {
                     continue;
@@ -637,12 +657,14 @@ impl Device for Instrument {
                 }
                 voice.last_output =
                     output * gate * voice.amplitude + voice.stolen_tail * voice.stolen_fade.next_value();
-                modal += voice.last_output;
+                left += voice.last_output * voice.pan.0;
+                right += voice.last_output * voice.pan.1;
             }
             let sample_mix = self.sample_mix.next_value();
-            let modal = modal * self.modal_mix.next_value();
+            let modal_mix = self.modal_mix.next_value();
+            let modal = [left * modal_mix, right * modal_mix];
             let gain = self.gain.next_value();
-            for sample in frame {
+            for (sample, modal) in frame.iter_mut().zip(modal) {
                 // Imported float audio may already reach the finite f32 limit. Preserve normal
                 // mixing exactly, but saturate an overflow from the final positive gain.
                 *sample = ((*sample * sample_mix + modal) * gain).clamp(-f32::MAX, f32::MAX);

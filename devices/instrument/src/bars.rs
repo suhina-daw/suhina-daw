@@ -10,13 +10,15 @@ use suhina_dsp::bar::{BarMode, Mallet, Tube, mode_shape, uniform_ratio};
 /// Impact speed at full velocity, in m/s.
 pub const MAX_SPEED: f64 = 4.0;
 /// Output scale of a bar's weighted mode velocities.
-pub const OUTPUT_SCALE: f64 = 0.12;
+pub const OUTPUT_SCALE: f64 = 0.08;
 /// Mallet noise per newton of contact force at the reference bar mass.
 const NOISE_PER_NEWTON: f64 = 3e-5;
 /// The stroke's offset from the centre line, relative to the cross-section's radius of gyration.
 const TORSION_OFFSET: f64 = 0.2;
 /// Quality factor of every bar's tube.
 const TUBE_QUALITY: f64 = 40.0;
+/// The tube's steady velocity relative to the first mode's at full Resonator.
+const TUBE_GAIN: f64 = 4.0;
 const MALLET_MASS: f64 = 0.025;
 const MALLET_EXPONENT: f64 = 2.5;
 
@@ -90,6 +92,7 @@ impl Profile {
         let amount = if amount.is_finite() { amount.clamp(0.0, 1.0) } else { 0.0 };
         (amount > 0.0).then(|| Tube {
             amount,
+            gain: TUBE_GAIN,
             quality: TUBE_QUALITY,
             radiation_seconds: self.material().radiation_seconds,
         })
@@ -182,6 +185,13 @@ impl Profile {
         }
         modes
     }
+}
+
+/// The hardness a graded mallet set gives `key` for Mallet hardness `hardness`: softer below
+/// middle C, by up to 0.3 three octaves down.
+pub fn graded_hardness(key: u8, hardness: f64) -> f64 {
+    let low = ((60.0 - f64::from(key)) / 36.0).clamp(0.0, 1.0);
+    (hardness - 0.3 * low).max(0.0)
 }
 
 /// The mallet for Mallet hardness `hardness` (0 soft to 1 hard).

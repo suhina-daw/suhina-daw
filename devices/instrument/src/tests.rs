@@ -537,3 +537,35 @@ The file as this run renders it, between the lines:
         );
     }
 }
+
+#[test]
+fn bars_spread_across_the_stereo_image_by_key_and_struck_stays_centred() {
+    let render = |body: f64, key: u8, width: f64| {
+        let mut instrument = bar_instrument(body, 0.0);
+        instrument.set_param(param::STEREO_WIDTH, width);
+        instrument.event(NoteEvent::On { key, velocity: 0.8 });
+        let mut buffer = vec![0.0; 9600];
+        instrument.process(&ProcessContext::default(), &mut buffer);
+        let energy =
+            |channel: usize| buffer.iter().skip(channel).step_by(2).map(|x| f64::from(*x).powi(2)).sum::<f64>();
+        (energy(0), energy(1), buffer)
+    };
+    let (left, right, _) = render(1.0, 40, 1.0);
+    assert!(left > right * 4.0, "a low bar sits to the left");
+    let (left, right, _) = render(1.0, 84, 1.0);
+    assert!(right > left * 4.0, "a high bar sits to the right");
+    for (body, key, width) in [(1.0, 40, 0.0), (1.0, 60, 1.0), (0.0, 40, 1.0), (2.0, 60, 1.0)] {
+        let (_, _, buffer) = render(body, key, width);
+        assert!(buffer.chunks(2).all(|frame| frame[0] == frame[1]), "body {body}, key {key}, width {width}");
+    }
+}
+
+#[test]
+fn low_bars_get_a_softer_mallet_from_a_graded_set() {
+    assert_eq!(bars::graded_hardness(60, 0.5), 0.5);
+    assert_eq!(bars::graded_hardness(96, 0.5), 0.5);
+    assert!((bars::graded_hardness(42, 0.5) - 0.35).abs() < 1e-12);
+    assert!((bars::graded_hardness(24, 0.5) - 0.2).abs() < 1e-12);
+    assert_eq!(bars::graded_hardness(0, 0.1), 0.0);
+    assert_eq!(bars::graded_hardness(30, f64::NAN), 0.0);
+}

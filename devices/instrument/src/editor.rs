@@ -40,9 +40,15 @@ pub(super) fn canvas() -> DeviceUi {
         [214.0, 180.0, 144.0, 136.0],
         "Release damping for modal voices and gated/looped samples",
     );
-    ui.dial("blend", "Hybrid blend", [394.0, 192.0, 120.0, 116.0], "Hybrid only: move from modal body to local sample");
-    ui.dial("attack", "Sample attack", [548.0, 192.0, 120.0, 116.0], "Sample layer only: onset fade time");
-    ui.dial("sustain", "Sample sustain", [702.0, 192.0, 120.0, 116.0], "Sample layer only: held amplitude level");
+    ui.dial("blend", "Hybrid blend", [376.0, 192.0, 108.0, 116.0], "Hybrid only: move from modal body to local sample");
+    ui.dial("attack", "Sample attack", [496.0, 192.0, 108.0, 116.0], "Sample layer only: onset fade time");
+    ui.dial("sustain", "Sample sustain", [616.0, 192.0, 108.0, 116.0], "Sample layer only: held amplitude level");
+    ui.dial(
+        "stereo_width",
+        "Stereo width",
+        [736.0, 192.0, 108.0, 116.0],
+        "Bar bodies: spread the bars from left (low) to right (high) like a row of bars",
+    );
     ui.group("PLAYABLE RANGE", [24.0, 352.0, 832.0, 112.0]);
     for (i, (id, label)) in [
         ("key_low", "Lowest key"),

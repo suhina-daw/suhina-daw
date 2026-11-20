@@ -46,11 +46,12 @@ tube's stronger fundamental, and E3's differences change with the first mode's a
 | E3 repeated strokes | Pass: differs from superposition by 0.8–8.6 % RMS; energy ≤ 0.95 of the strokes' | Superposes (differences ~1e-8, as designed); energy ≤ 0.60 |
 | E4 strike position | Pass (mode 2 ≥ 129 dB weaker at the centre) | Pass (same) |
 | E5 resonator | Reports; checks that the tube makes the fundamental stronger and shorter | Not measured separately (the tube does not depend on the mallet) |
-| E6 budget | Not validly measured; an unreliable run suggests the every-block worst case is over budget | Not validly measured |
+| E6 budget | Pass: worst case 11 % of a core, p99 16 % of the deadline (64 frames) | Pass: 11 % / 16 % (same workload) |
 | E7 stability | Pass at 8 and 22.05 kHz | Pass |
 
 Contact is the default mallet model because it is the only candidate that passes every
-experiment that could be measured; its cost (E6) is still open. Pulse stays selectable for comparison and as the cheaper alternative.
+experiment that could be measured, at a cost close to Pulse's. Pulse stays selectable for
+comparison.
 
 ## E1: tuned modes
 
@@ -126,19 +127,20 @@ so the depth of this notch is a property of the model, not a prediction for an i
 ## E5: the resonator
 
 Each bar's tube is one damped resonance at the bar's fundamental, quality factor 40, driven by
-the first mode's velocity; at full Resonator its velocity settles at twice the first mode's, so
-the fundamental's steady level rises by `20 log10(3)` ≈ 9.5 dB, and the first mode's decay rate
+the first mode's velocity; at full Resonator its velocity settles at four times the first mode's,
+so the fundamental's steady level rises by `20 log10(5)` ≈ 14 dB, and the first mode's decay rate
 rises by `60 / T_rad` dB/s (50 dB/s for Marimba bar, 15 dB/s for Vibraphone bar). Those are the
 model's design values, not measurements. A low tube builds up slowly (its time constant is
 `40 / (pi * f1)`, about 0.2 s at C2 and 6 ms at C7), so a low note's fundamental swells after the
 stroke while a high note's is boosted almost at once.
 
 `e5_the_resonator_strengthens_and_shortens_the_fundamental` renders the lowest, middle and
-highest key of each profile with Resonator at 0 and 100 % and compares the fundamental's level in
-0.1–0.4 s and its decay between that window and 0.8–1.1 s. It asserts only the direction the
+highest key of each profile with Resonator at 0 and 100 % and compares the fundamental's level
+and decay in two windows scaled by the bare fundamental's decay time `T` (capped at 2 s): from
+0.05 `T` to 0.3 `T`, and from 0.5 `T` to 0.75 `T`. It asserts only the direction the
 physics gives (stronger and shorter); the research's pass criterion needs reference recordings of
 the same register (#1621) and stays open. The shared DSP's tests check the steady gain of
-`1 + 2 * amount` within 4 %, that amount 0 is bit-identical to no tube, that the tube draws energy
+`1 + gain * amount` within 4 %, that amount 0 is bit-identical to no tube, that the tube draws energy
 from the bar, and that hostile tube values stay bounded.
 
 The vibraphone motor, which modulates the tubes, is not modelled.
@@ -154,21 +156,31 @@ on" condition could not be measured. #1619 has set no budget yet; the measuremen
 with the spec's provisional target (20 % of one core on average at 64 frames, p99 under one
 block deadline).
 
-**Not validly measured yet.** One local run was made, but another build was compiling on the
-same machine at the time, and its results are not self-consistent (Marimba bar with Contact took 45 % of
-a core for the 30 ms roll at 256 frames but 9.5 % at 64 frames), so they are not recorded as a
-measurement. Read as an upper bound only, they show what to look at when
-the benchmark is repeated on an idle machine:
+Measured at commit `7baadffc` (tubes and mallet noise included) on an otherwise idle machine:
+no other compiler ran during the build or the run. Mean and 99th-percentile block times, as a
+share of one core and of the block's deadline:
 
-- The 30 ms roll on sixteen bars averaged roughly 10–15 % of one core at 64 frames for both
-  mallets, inside the provisional 20 % target, but its p99 did not stay under the block deadline.
-- Striking all sixteen bars in every block is the worst case: Contact, which runs up to 32 steps
-  per sample during each contact, averaged far above the target; Pulse was above it too, by less.
+| Workload | 64 frames: mean core / p99 of deadline | 256 frames: mean core / p99 of deadline |
+|---|---|---|
+| Marimba bar, Contact, roll every 30 ms | 3.8 % / 4.8 % | 3.5 % / 4.0 % |
+| Marimba bar, Contact, every block | 11.2 % / 16.5 % | 5.0 % / 6.8 % |
+| Marimba bar, Pulse, roll every 30 ms | 3.7 % / 4.8 % | 3.5 % / 4.3 % |
+| Marimba bar, Pulse, every block | 10.8 % / 16.4 % | 5.0 % / 6.2 % |
+| Vibraphone bar, Contact, roll every 30 ms | 3.8 % / 5.1 % | 3.5 % / 4.4 % |
+| Vibraphone bar, Contact, every block | 11.4 % / 15.3 % | 5.3 % / 7.9 % |
+| Vibraphone bar, Pulse, roll every 30 ms | 3.8 % / 4.6 % | 4.3 % / 5.5 % |
+| Vibraphone bar, Pulse, every block | 10.6 % / 13.1 % | 5.0 % / 6.8 % |
 
-E6 therefore does not pass yet. Before slice 3, the benchmark has to be rerun on an idle machine,
-and Contact's cost per contact step reduced if the rerun confirms it (fewer steps for soft
-mallets, whose contact is long and smooth, or a step count chosen per stroke from the actual
-compression rather than the rigid bound).
+For comparison, the revision-1 Struck body in the same run: 2.0 % / 3.5 % at 64 frames, and 2.8 %
+/ 5.0 % with sixteen retriggers per block. The inline core is 70 984 bytes, inside the 256 KiB
+target.
+
+E6 passes against the provisional target: the worst case, sixteen bars struck in every 64-frame
+block with the Contact mallet, averages 11 % of one core with a 99th-percentile block at 16 % of
+its deadline. Contact costs about the same as Pulse in practice, because a contact lasts only a
+few dozen samples. An earlier run reported several times these figures; it overlapped another
+compiler on the same machine and is not a measurement. The budget #1619 will set may still differ
+from the provisional one.
 
 ## E7: low sample rates and extreme settings
 
@@ -194,7 +206,7 @@ no longer step the output.
 
 ## What this slice leaves open
 
-- E6 on an idle machine, and Contact's cost if the rerun confirms the worst case.
+- The budget of #1619, once set, for E6.
 - E5 against reference recordings (#1621), the tube's higher resonances and the vibraphone
   motor; E8 (listening) belongs to #1631.
 - The crackle reported in the first listening: confirm or rule out the gain chain.

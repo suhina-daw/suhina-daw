@@ -165,8 +165,10 @@ pub struct BarMode {
 /// its first resonance and the energy it draws from the bar).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tube {
-    /// 0 (no tube) to 1: the tube's steady velocity is `2 * amount` times the first mode's.
+    /// 0 (no tube) to 1: the tube's steady velocity is `gain * amount` times the first mode's.
     pub amount: f64,
+    /// The tube's steady velocity relative to the first mode's at full amount.
+    pub gain: f64,
     /// Quality factor of the tube's resonance.
     pub quality: f64,
     /// The first mode's added decay at full amount, as a time to lose 60 dB.
@@ -270,9 +272,17 @@ struct TubeState {
     sigma: f64,
     omega: f64,
     output: f64,
+    /// The input gain `b` of `z' = s z + b v`, from the steady ratio and the quality factor.
+    drive: f64,
 }
 
 impl TubeState {
+    fn tune(&mut self, rate: f64) {
+        let step = Complex::new(-self.sigma, self.omega).scale(1.0 / rate);
+        self.pole = step.exp();
+        self.gain = step.phi1().scale(self.drive / rate);
+    }
+
     fn velocity(&self) -> f64 {
         self.omega * self.z.re - self.sigma * self.z.im
     }
@@ -454,6 +464,8 @@ impl<const N: usize> StruckBar<N> {
         let spec = self.tube_spec.filter(|tube| {
             tube.amount.is_finite()
                 && tube.amount > 0.0
+                && tube.gain.is_finite()
+                && tube.gain > 0.0
                 && tube.quality.is_finite()
                 && tube.quality > 0.0
                 && tube.radiation_seconds.is_finite()
@@ -472,12 +484,9 @@ impl<const N: usize> StruckBar<N> {
         self.tube.omega = first.omega;
         self.tube.sigma = first.omega / (2.0 * quality);
         self.tube.output = first.output;
-        // Steady velocity `2 * amount` times the driving mode's: drive = 4 amount sigma / omega.
-        let drive = 2.0 * amount / quality;
-        let s = Complex::new(-self.tube.sigma, self.tube.omega);
-        let step = s.scale(1.0 / rate);
-        self.tube.pole = step.exp();
-        self.tube.gain = step.phi1().scale(drive / rate);
+        // At resonance the steady velocity is `drive * Q` times the driving mode's.
+        self.tube.drive = spec.gain.min(100.0) * amount / quality;
+        self.tube.tune(rate);
     }
 
     /// The output this sample would give before any declick offset.
@@ -509,6 +518,10 @@ impl<const N: usize> StruckBar<N> {
                 mode.sigma = sigma;
                 mode.pole = mode.s().scale(1.0 / self.sample_rate).exp();
             }
+        }
+        if self.tube.omega > 0.0 && sigma > self.tube.sigma {
+            self.tube.sigma = sigma;
+            self.tube.tune(self.sample_rate);
         }
         self.fade_step_from(before);
     }
@@ -564,6 +577,12 @@ impl<const N: usize> StruckBar<N> {
         if corner.is_finite() && corner > 0.0 {
             self.noise.low_pass = (-TAU * corner / self.sample_rate).exp();
             self.noise.high_pass = (-TAU * NOISE_HIGH_PASS_HZ / self.sample_rate).exp();
+            // Each stroke's noise starts afresh from the stroke itself, whatever came before.
+            let seed = (speed.to_bits() ^ mallet.stiffness.to_bits().rotate_left(17)) as u32;
+            self.noise.random = seed | 1;
+            self.noise.low = 0.0;
+            self.noise.previous_low = 0.0;
+            self.noise.high = 0.0;
         } else {
             self.noise.gain = 0.0;
         }

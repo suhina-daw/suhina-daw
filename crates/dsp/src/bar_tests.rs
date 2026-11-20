@@ -287,7 +287,7 @@ fn coefficient_changes_on_a_ringing_bar_do_not_click() {
     for change in 0..4 {
         let mut bar = StruckBar::<8>::default();
         bar.set_modes(48000.0, &modes);
-        bar.set_tube(Some(Tube { amount: 1.0, quality: 40.0, radiation_seconds: 1.2 }));
+        bar.set_tube(Some(Tube { amount: 1.0, gain: 2.0, quality: 40.0, radiation_seconds: 1.2 }));
         bar.strike(Excitation::Pulse, soft(), 2.0);
         let mut before: Vec<f32> = (0..2400).map(|_| bar.next_sample()).collect();
         // Change where the output is large, so a step there would be a loud click.
@@ -305,9 +305,14 @@ fn coefficient_changes_on_a_ringing_bar_do_not_click() {
         let jump = (jump - bar.current_output()).abs();
         let mut across = vec![*before.last().unwrap()];
         across.extend((0..480).map(|_| bar.next_sample()));
-        let normal = largest_step(&before[1200..]);
+        // The signal's own steps may grow or shrink with the change (a brighter bar moves faster).
+        let normal = largest_step(&before[1200..]).max(largest_step(&across[200..]));
         if change == 0 || change == 3 {
-            assert!(jump > f64::from(normal), "change {change}: the change must move the output by more than a step");
+            let step_before = largest_step(&before[1200..]);
+            assert!(
+                jump > f64::from(step_before),
+                "change {change}: the change must move the output by more than a step"
+            );
         }
         assert!(largest_step(&across) <= normal * 1.5, "change {change}: {} vs {normal}", largest_step(&across));
     }
@@ -319,7 +324,7 @@ fn a_tube_adds_twice_its_amount_of_the_first_mode_once_built_up() {
     let render = |amount: f64| {
         let mut bar = StruckBar::<1>::default();
         bar.set_modes(48000.0, &mode);
-        bar.set_tube(Some(Tube { amount, quality: 40.0, radiation_seconds: 600.0 }));
+        bar.set_tube(Some(Tube { amount, gain: 2.0, quality: 40.0, radiation_seconds: 600.0 }));
         bar.strike(Excitation::Pulse, soft(), 2.0);
         let signal: Vec<f32> = (0..24000).map(|_| bar.next_sample()).collect();
         signal[14400..19200].iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt()
@@ -333,7 +338,7 @@ fn a_tube_adds_twice_its_amount_of_the_first_mode_once_built_up() {
     let mut zero = StruckBar::<1>::default();
     plain.set_modes(48000.0, &mode);
     zero.set_modes(48000.0, &mode);
-    zero.set_tube(Some(Tube { amount: 0.0, quality: 40.0, radiation_seconds: 1.0 }));
+    zero.set_tube(Some(Tube { amount: 0.0, gain: 2.0, quality: 40.0, radiation_seconds: 1.0 }));
     plain.strike(Excitation::Contact, hard(), 3.0);
     zero.strike(Excitation::Contact, hard(), 3.0);
     for _ in 0..4800 {
@@ -358,13 +363,13 @@ fn a_tube_shortens_the_first_mode_and_stays_bounded() {
         (bar.energy(), peak)
     };
     let (free, free_peak) = energy(None);
-    let (tubed, tubed_peak) = energy(Some(Tube { amount: 1.0, quality: 40.0, radiation_seconds: 1.2 }));
+    let (tubed, tubed_peak) = energy(Some(Tube { amount: 1.0, gain: 4.0, quality: 40.0, radiation_seconds: 1.2 }));
     assert!(tubed < free * 0.5, "the tube draws energy from the bar: {tubed} vs {free}");
     assert!(tubed_peak < free_peak * 4.0);
     for tube in [
-        Tube { amount: f64::NAN, quality: 40.0, radiation_seconds: 1.0 },
-        Tube { amount: 1e9, quality: 1e-9, radiation_seconds: 1e-9 },
-        Tube { amount: 1.0, quality: f64::INFINITY, radiation_seconds: -1.0 },
+        Tube { amount: f64::NAN, gain: 4.0, quality: 40.0, radiation_seconds: 1.0 },
+        Tube { amount: 1e9, gain: 1e9, quality: 1e-9, radiation_seconds: 1e-9 },
+        Tube { amount: 1.0, gain: f64::NAN, quality: f64::INFINITY, radiation_seconds: -1.0 },
     ] {
         let mut bar = StruckBar::<4>::default();
         bar.set_modes(22050.0, &modes);

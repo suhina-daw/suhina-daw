@@ -271,24 +271,26 @@ fn e5_the_resonator_strengthens_and_shortens_the_fundamental() {
         let slice = &signal[(from * rate) as usize..(to * rate) as usize];
         20.0 * magnitude(slice, rate, hz).log10()
     };
-    for (_, body, name, low, high) in PROFILES {
+    for (profile, body, name, low, high) in PROFILES {
         for key in [low, 60, high] {
             let f1 = fundamental(key);
+            // Windows scale with the bare fundamental's decay time, capped at 2 s.
+            let t = profile.decay_seconds(f1, 2.0).min(2.0);
             let measure = |resonator: f64| {
                 let mut instrument = bar(rate, body, 0.0, 0.5);
-                instrument.set_param(param::DECAY, 4.0);
                 instrument.set_param(param::RESONATOR, resonator);
-                let signal =
-                    render(&mut instrument, (rate * 1.2) as usize, &[(0, NoteEvent::On { key, velocity: 0.8 })]);
-                let early = window(&signal, 0.1, 0.4, f1);
-                let late = window(&signal, 0.8, 1.1, f1);
-                (early, (early - late) / 0.7)
+                let signal = render(&mut instrument, (rate * t) as usize, &[(0, NoteEvent::On { key, velocity: 0.8 })]);
+                let early = window(&signal, 0.05 * t, 0.3 * t, f1);
+                let late = window(&signal, 0.5 * t, 0.75 * t, f1);
+                (early, (early - late) / (0.45 * t))
             };
             let (bare, bare_rate) = measure(0.0);
             let (tubed, tubed_rate) = measure(1.0);
             println!(
-                "E5 {name} key {key}: fundamental {:+.1} dB with the tube (0.1-0.4 s), decay {bare_rate:.1} -> {tubed_rate:.1} dB/s",
-                tubed - bare
+                "E5 {name} key {key}: fundamental {:+.1} dB with the tube ({:.0}-{:.0} ms), decay {bare_rate:.1} -> {tubed_rate:.1} dB/s",
+                tubed - bare,
+                50.0 * t,
+                300.0 * t
             );
             assert!(tubed > bare, "{name} key {key}: the tube strengthens the fundamental");
             assert!(tubed_rate > bare_rate, "{name} key {key}: the tube shortens the fundamental");
