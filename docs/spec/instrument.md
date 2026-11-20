@@ -100,10 +100,14 @@ bar's spacing from it: `ratio_n = ratio_last * U_n / U_last`.
 | Vibraphone bar | `T_2 = 4` | `w_2 = 1` at every key | 2 |
 
 **Decay.** Each mode's time to lose 60 dB depends on its frequency `f` by the profile's material
-law, scaled by Body decay `D` relative to its 2-second default:
-`T60(f) = T_ref * (1 + (261.63 / f_c)^q) / (1 + (f / f_c)^q) * D / 2`.
-Marimba bar (wood) uses `T_ref = 1.2 s`, `f_c = 300 Hz`, `q = 1.4`; Vibraphone bar (aluminium)
-uses `T_ref = 8 s`, `f_c = 1500 Hz`, `q = 1`. `T_ref` is the fundamental's time at middle C.
+law, scaled by Body decay `D` relative to its 2-second default. Marimba bar (wood) uses the loss
+law of Chaigne & Doutaut, an amplitude decay rate `alpha(f) = a0 + a2 * f^2` with
+`a2 = 2 * pi^2 * eta`, `eta = 9.4e-7 s` for rosewood (Rucz et al. 2021) and `a0 = 1.5 / s`, so
+`T60(f) = ln(1000) / alpha(f) * D / 2`. `a0` is chosen so that a low bar rings near the 3 to 4 s
+Stevens gives for a marimba bar over a detuned tube; a bare F4 bar then rings 1.8 s, shorter than
+the 3.03 s Rucz et al. measured on a thinner xylophone bar.
+Vibraphone bar (aluminium) uses `T60(f) = 8 s * (1 + (261.63 / 1500)) / (1 + f / 1500) * D / 2`;
+no per-mode measurements of vibraphone bars were found, so its law is an assumption.
 
 **Bar and strike position.** The bar's mass is `M(key) = M_ref * 2^(-(key - 60) / 24)`, with
 `M_ref` 0.4 kg (Marimba bar) or 0.5 kg (Vibraphone bar); every mode's modal mass is `M / 4`.
@@ -118,7 +122,8 @@ setting strikes the centre and the highest the end.
 `m = 0.025 kg` and a contact force `F = K * d^2.5 * (1 + lambda * d')` while it compresses
 the bar's surface by `d > 0` (never negative, so it does not stick). Mallet hardness `h` sets the
 contact time the mallet would have against a rigid surface at 1 m/s,
-`tau_ref = 2.5 ms * 0.1^h` (2.5 ms soft to 0.25 ms hard), from which
+`tau_ref = 1.5 ms * (0.4 / 1.5)^h` (1.5 ms soft to 0.4 ms hard, the range of contact times in
+Rucz et al. 2021, whose 35 g mallet at 1 m/s touched for 0.7 ms), from which
 `K = 3.5 * m / (2 * d_ref^3.5)` with `d_ref = tau_ref / (2 * I)` and
 `I = sqrt(pi) * Gamma(1 + 1/3.5) / Gamma(1/2 + 1/3.5)`; and the dissipation
 `lambda = 0.05 + 0.45 * (1 - h)` s/m. Harder and faster strokes therefore touch the bar for a
@@ -150,13 +155,17 @@ the model gives.
 A new stroke on a bar whose previous contact or pulse has not finished replaces it; the rest of
 the earlier stroke is dropped.
 
-**Torsion.** A stroke lands a little off the bar's centre line, so the bar also twists. Its
-free-free torsional modes sound at `n * T_1 * f1` for `n` = 1, 2, 3, with `T_1` 6.1 (Marimba bar)
-or 5.3 (Vibraphone bar), decay by the profile's material law like the bending modes, have the
-shape `0.2 * cos(n * pi * x)` at the contact point (an offset of a fifth of the cross-section's
-radius of gyration) and modal mass `M / 2`, and join the output at half a bending mode's weight
-for their frequency. At 16 modes per voice the bar has 13 bending and 3 torsional modes, at 8
-it has 6 and 2. `T_1` and the offset are assumptions of literature scale, not measurements.
+**Torsion.** A stroke lands a little off the bar's centre line, so a Marimba bar also twists.
+Its first two torsional modes sound at `T_n(key) * f1`, from the measurements of one rosewood
+marimba (La Favre): `T_1` is 1.56 at key 36, 1.8 at key 43, 2.05 from key 50 to 59 and 1.87 from
+key 60 up, linear in between, so it lies between the first two bending modes (as Yoo, Rossing &
+Larkin 2003 report for concert marimbas); `T_2` is 9.1 at key 36 and 7.6 from key 47 up. They
+decay by the material law like the bending modes, have the shape `0.2 * cos(n * pi * x)` at the
+contact point (an offset of a fifth of the cross-section's radius of gyration, an assumption) and
+modal mass `M / 2`, and join the output at a quarter of a bending mode's weight for their
+frequency, since they radiate weakly (Bork et al. 1999). At 16 modes per voice a Marimba bar has
+14 bending and 2 torsional modes, at 8 it has 7 and 1. Vibraphone bar has no torsional modes: no
+measurements of them were found.
 
 **Mallet noise.** While the mallet touches the bar, the stroke also sounds a short noise of its
 own, the knock of the mallet's head: white noise, high-passed at
@@ -174,14 +183,19 @@ light, high bars comparable with heavy, low ones. Quality selects 8 or 16 modes;
 no effect on bar bodies.
 
 **Resonator.** The tube under each bar is one damped resonance tuned to the bar's fundamental
-`f1`, with quality factor 40 (decay rate `pi * f1 / 40`). The first mode's velocity drives it, and
+`f1`, with quality factor 60 (decay rate `pi * f1 / 60`; measured tube damping gives 57 to 68:
+Rucz et al. 2021, Soares, Debut & Antunes 2022). The first mode's velocity drives it, and
 its own velocity joins the output with the first mode's weight: once it has built up, it adds
 `4 * r` times the first mode's output, in phase with it (the tube, not the bar, radiates most of a
 mallet instrument's fundamental), where `r` is the Resonator control (0 to
-100 %, default 100 %). A low tube builds up and dies away more slowly than a high one. The tube
-draws its energy from the bar: the first mode's decay rate grows by `r * ln(1000) / T_rad`, with
-`T_rad` 1.2 s for Marimba bar and 4 s for Vibraphone bar, so the fundamental sounds stronger and
-shorter. The tube follows the pitch wheel with its bar; at 0 % there is no tube. A tube above the
+100 %, default 100 %); a tuned tube raises the fundamental by more than 10 dB (Rucz et al.
+2021). A low tube builds up and dies away more slowly than a high one. The tube draws its energy
+from the bar, so the fundamental sounds stronger and shorter: the first mode's amplitude decay rate
+grows by `r * 8 / s * (f1 / 349 Hz)^0.75` for Marimba bar, fitted to a bare F4 bar's 3.03 s
+shrinking to 0.67 s over a tuned resonator (Rucz et al. 2021) and to a low D sharp ringing 3 to 4 s
+over a detuned tube and 1 to 2 s over a tuned one (Stevens); and by `r * ln(1000) / 12 s` for
+Vibraphone bar, an assumption that keeps middle C near the 5.7 s overall decay Wang et al. 2012
+measured on a vibraphone. The tube follows the pitch wheel with its bar; at 0 % there is no tube. A tube above the
 anti-alias margin is left out with its mode.
 
 **Stereo.** The bars lie in a row, so each bar body's voice is panned by its key: pan
@@ -301,5 +315,12 @@ implementation workstreams that must use this same core.
 - Native device architecture: [ADR 0004](../decisions/0004-built-in-devices.md).
 - Bar modes, mode shapes and mallet contact: [F11 research](../research/instrument-f11-mallets.md)
   and its sources (Fletcher & Rossing; Chaigne & Doutaut 1997; Hunt & Crossley 1975; Avanzini &
-  Rocchesso 2001). The contact time against a rigid surface is the closed-form duration of a mass
+  Rocchesso 2001).
+- Values of the bar bodies: P. Rucz et al., J. Acoust. Soc. Am. 149(5):3200–3212, 2021 (bar and resonator decay, resonator gain and damping, rosewood loss factor,
+  mallet contact times); M. Soares, V. Debut, J. Antunes, 53º Congreso Español de Acústica 2022
+  (tube damping); L. H. Stevens, "The Acoustics of Resonators" (resonator decay in the low
+  register); La Favre, measurements of the torsional modes of a rosewood marimba
+  (lafavre.us); J. Yoo, T. D. Rossing, M. Larkin, "Vibrational modes of five-octave concert
+  marimbas", SMAC 2003; I. Bork et al., Acustica 85, 1999; S. McAdams et al., J. Acoust. Soc.
+  Am. 115(3), 2004 (the loss law's form); Wang et al., ICSV19, 2012 (vibraphone decay). The contact time against a rigid surface is the closed-form duration of a mass
   striking a spring `K * d^alpha`.
