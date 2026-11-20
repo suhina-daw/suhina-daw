@@ -2595,7 +2595,7 @@ pub(crate) fn plugin_folders(
             plugins.new_format = format;
         }
         // A `button[kind="option"]`, `[checked]` for the format chosen.
-        let (_, color) = option_face(ui, painter, cell, &response, chosen, "option");
+        let (_, color) = widgets::option_face(ui, painter, cell, &response, chosen, "option");
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
@@ -3301,7 +3301,7 @@ fn preset_segmented(
         let response =
             widgets::button_area(ui, segment, Id::unique(("keymap-preset", *text)), format!("Preset: {text}"));
         // A `button[kind="preset"]`, `[checked]` for the chosen preset.
-        let (_, color) = option_face(ui, painter, segment, &response, chosen, "preset");
+        let (_, color) = widgets::option_face(ui, painter, segment, &response, chosen, "preset");
         widgets::text_in(painter, segment, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !chosen {
             picked = Some(*value);
@@ -3573,34 +3573,10 @@ fn segmented_parts<T: Copy + PartialEq>(
             picked = Some(*value);
         }
         // A part is a `button[kind="option"]`, `[checked]` when chosen.
-        let (_, color) = option_face(ui, painter, cell, &response, *value == current, "option");
+        let (_, color) = widgets::option_face(ui, painter, cell, &response, *value == current, "option");
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
     }
     picked
-}
-
-/// One part of a row of choices, a `button` of `kind` (`option`, `preset`), `[checked]` while it
-/// is the one chosen: its face painted in `rect` and its fill and ink, which fade with the choice
-/// and the pointer.
-fn option_face(
-    ui: &Ui,
-    painter: &egui::Painter,
-    rect: Rect,
-    response: &egui::Response,
-    chosen: bool,
-    kind: &'static str,
-) -> (egui::Color32, egui::Color32) {
-    let lit = widgets::lit_toggle_kind(
-        ui,
-        response,
-        crate::kit::element::BUTTON.builder(),
-        &[crate::kit::element::Checked],
-        chosen,
-        kind,
-    );
-    let (fill, color) = lit.colors();
-    lit.el.paint_over(painter, rect, crate::kit::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
-    (fill, color)
 }
 
 /// The colour picker's button for `colour` at the control's place in `row`, labelled `name`, its

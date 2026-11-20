@@ -13,6 +13,7 @@ covers:
   - crates/session/tests/track_colours.rs
   - crates/ui/tests/window/colours.rs
   - crates/ui/tests/window/colours_native.rs
+  - crates/ui/src/kit/controls.rs
 ---
 
 # Track colours

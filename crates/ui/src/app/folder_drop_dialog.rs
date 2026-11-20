@@ -5,7 +5,7 @@
 //! there or copy them, with Remember my choice, which sets Settings › Browser › Samples dropped
 //! on a folder so the question is not asked again.
 
-use egui::{Align2, Id, Key, Pos2, Rect, Ui, Vec2};
+use egui::{Id, Key, Pos2, Rect, Ui, Vec2};
 
 use super::project_dialog::{BUTTON, CloseChoice, LINE, SAVE_WIDTH, panel};
 use crate::kit::theme::{self, PAD, ROW};
@@ -66,30 +66,8 @@ fn draw(
     painter.galley(Pos2::new(line.left(), line.center().y - fitted.size().y / 2.0), fitted, ink);
     // Remember my choice: a box and its label, both one control.
     let check = Rect::from_min_size(Pos2::new(line.left(), line.bottom()), Vec2::new(line.width() * 0.6, LINE));
-    let response = widgets::button_area(ui, check, Id::unique("folder-drop-remember"), "Remember my choice");
-    let mark = Rect::from_center_size(Pos2::new(check.left() + 6.0, check.center().y), Vec2::splat(11.0));
-    // A `button[kind="check"]`, `[checked]` while remembered: its `border-color` for the box (a step
-    // stronger under the pointer), and its `background-color` for the mark while it is checked.
-    let el = crate::kit::element::BUTTON
-        .attribute("kind", "check")
-        .response(&response)
-        .attr(crate::kit::element::Checked, *remember)
-        .enter();
-    painter.rect_stroke(mark, 0.0, theme::hairline(el.border()), egui::StrokeKind::Inside);
-    if *remember {
-        painter.rect_filled(mark.shrink(2.5), 0.0, el.background());
-    }
-    drop(el);
-    let label = Rect::from_min_max(Pos2::new(mark.right() + 6.0, check.top()), check.max);
-    let small = theme::ui_font(theme::TEXT_SMALL);
-    widgets::text_in(
-        &painter,
-        label,
-        Align2::LEFT_CENTER,
-        "Remember my choice",
-        small,
-        crate::kit::element::caption_ink(),
-    );
+    let response =
+        widgets::check_box(ui, &painter, check, Id::unique("folder-drop-remember"), "Remember my choice", *remember);
     if response.clicked() {
         *remember = !*remember;
     }

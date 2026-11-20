@@ -64,7 +64,12 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   `widgets::lit_toggle`, words `widgets::text_in`, and a menu's rows `kit::menu` (`item`,
   `submenu`, `heading`, `hint`, `separator`) inside the menu egui opens. The metronome's menu
   (`session/record_controls.rs`) is the example; the older menus in `interaction/menus.rs` still
-  use egui's rows and move over in their own change. A control the kit lacks is added to it.
+  use egui's rows and move over in their own change. A panel laid out in egui's flow (a column
+  of rows, as the track colour window) takes `kit::controls` (`button`, `check_box`, `options`,
+  `disclosure`, `slider`, `heading`, `note`, `text`, `separator`); a view with a fixed geometry
+  paints the same faces from `widgets` (`button_with_id`, `check_box`, `option_face`,
+  `slider_face`) into its own rectangles. Both reuse the elements Settings and the dialogs use,
+  so a theme needs no rule of the panel's own. A control the kit lacks is added to it.
 - `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
   rects, `Status::Hint` for status-bar hints.
 - **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which

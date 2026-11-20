@@ -82,7 +82,7 @@ fn embedded_colour_background_stays_inside_its_fitted_window_in_every_mode() {
         if custom {
             suhina_ui::kit::native_css::set_user_sheet(Some("colour-picker { background-color: #ff00ff; }".into()));
         }
-        for control in [None, Some("› Fine adjustment"), Some("Wheel")] {
+        for control in [None, Some("Fine adjustment"), Some("View: Wheel")] {
             if let Some(control) = control {
                 h.get_by_label(control).click();
             }
@@ -218,7 +218,7 @@ fn escape_discards_a_valid_text_draft_instead_of_committing_on_focus_loss() {
     h.run();
     assert_eq!(h.state().session().unwrap().project(), &before);
     assert!(h.state().settings().recent_colours.is_empty());
-    h.get_by_label("› Fine adjustment").click();
+    h.get_by_label("Fine adjustment").click();
     h.run();
     h.get_by_label("Red").click();
     h.key_press_modifiers(Modifiers::COMMAND, Key::A);
@@ -234,7 +234,7 @@ fn invalid_numeric_entries_remain_cancellable_and_default_clears_the_error() {
     let mut app = demo_app();
     app.run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
     let mut h = window(app);
-    h.get_by_label("› Fine adjustment").click();
+    h.get_by_label("Fine adjustment").click();
     h.run();
     let before = h.state().session().unwrap().project().clone();
     for (label, invalid) in [("Red", "999"), ("HSL saturation", "no")] {
@@ -275,7 +275,7 @@ fn picker_arrows_and_tab_stay_in_the_tool_and_main_shortcuts_resume_outside_it()
     h.run();
     h.key_press(Key::F2);
     h.run();
-    h.get_by_label("› Fine adjustment").click();
+    h.get_by_label("Fine adjustment").click();
     h.run();
     h.get_by_label("Colour field").click();
     h.run();
@@ -328,7 +328,7 @@ fn escape_stops_a_live_drag_until_release_without_undoing_an_intervening_edit() 
         app.run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
         let mut h = window(app);
         let before = h.state().session().unwrap().project().track(TrackId(1)).unwrap().color;
-        h.get_by_label("› Fine adjustment").click();
+        h.get_by_label("Fine adjustment").click();
         h.run();
         let field = h.get_by_label("Colour field").rect();
         let from = field.left_top() + field.size() * 0.3;
@@ -391,9 +391,9 @@ fn closing_keeps_the_applied_colour_and_reopening_preserves_exact_values() {
     assert_eq!(h.state().session().unwrap().project(), &chosen);
     h.state_mut().run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
     h.run();
-    h.get_by_label("› Fine adjustment").click();
+    h.get_by_label("Fine adjustment").click();
     h.run();
-    h.get_by_label("Wheel").click();
+    h.get_by_label("View: Wheel").click();
     h.run();
     assert_eq!(h.state().session().unwrap().project(), &chosen);
     assert_eq!(h.state().session().unwrap().undo_steps().0, 1);

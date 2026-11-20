@@ -89,25 +89,13 @@ pub(super) fn show(ui: &Ui, area: Rect, names: &[String], remember: &mut bool) -
                 );
             }
             let check = line.translate(Vec2::new(0.0, 3.0 * LINE));
-            let response = widgets::button_area(ui, check, Id::unique("group-removal-remember"), "Remember my choice");
-            let mark = Rect::from_center_size(Pos2::new(check.left() + 6.0, check.center().y), Vec2::splat(11.0));
-            let el = crate::kit::element::BUTTON
-                .attribute("kind", "check")
-                .response(&response)
-                .attr(crate::kit::element::Checked, *remember)
-                .enter();
-            painter.rect_stroke(mark, 0.0, theme::hairline(el.border()), egui::StrokeKind::Inside);
-            if *remember {
-                painter.rect_filled(mark.shrink(2.5), 0.0, el.background());
-            }
-            drop(el);
-            widgets::text_in(
+            let response = widgets::check_box(
+                ui,
                 &painter,
-                Rect::from_min_max(Pos2::new(mark.right() + 6.0, check.top()), check.max),
-                Align2::LEFT_CENTER,
+                check,
+                Id::unique("group-removal-remember"),
                 "Remember my choice",
-                theme::ui_font(theme::TEXT_SMALL),
-                crate::kit::element::caption_ink(),
+                *remember,
             );
             if response.clicked() {
                 *remember = !*remember;

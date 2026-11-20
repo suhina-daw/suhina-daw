@@ -181,7 +181,11 @@ and closes the menu. A choice matching every target's current colour makes no ed
 The **+ More colours** row shows the configured shortcut (F2 by default) and opens a separate
 non-modal colour window. It is 340 points wide, initially centred, movable and kept open while
 the DAW is used. The surface, text, field border and focus indicators use the `colour-picker`,
-`colour-field` and `colour-swatch` elements. Swatches are 18 points tall, up to 30 wide;
+`colour-field` and `colour-swatch` elements; its other controls are the kit's flow controls
+(`kit::controls`), the same elements as Settings and the dialogs: Copy, Random and Default are
+`button`s, Field/Wheel `button[kind="option"]` parts, Steps and Soft colours tick boxes
+(`button[kind="check"]`), the Fine adjustment row a `button[kind="entry"]`, Hue and Value
+`slider`s, the headings `label[kind="caption"]` and the lines `separator[kind="row"]`. Swatches are 18 points tall, up to 30 wide;
 the twelve-column palette fits the available width without widening the window:
 Palette, Related shades, Recent colours, current swatch/hex/copy, collapsed Fine adjustment,
 then Random and Default. There is no per-track list; Recent colours is bounded to eight.
