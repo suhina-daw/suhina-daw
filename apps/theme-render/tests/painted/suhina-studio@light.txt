@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog suhina-studio@light 1b21d7ebb21a89c5
+agent-dialog suhina-studio@light 2380b84806ae3abf
 arrangement suhina-studio@light 7d23492e912f66dc
 arrangement-scrolled suhina-studio@light 6fdd192b35c393ed
 browser suhina-studio@light f4880b53598ec9c1
@@ -9,17 +9,17 @@ browser-plug-ins suhina-studio@light b6504fe625b24bff
 browser-search suhina-studio@light 1f8e741dabcea915
 clip-audio suhina-studio@light 10a31e19e7dec034
 clip-midi suhina-studio@light 5aaad9a3a769fc99
-colour-picker suhina-studio@light 3bff2cea0d802dd9
-colour-picker-field suhina-studio@light 42a49915c7b5bd26
-colour-picker-wheel suhina-studio@light 9f0e11dfc3cb506b
-context-menu suhina-studio@light 34683274f436d719
+colour-picker suhina-studio@light 2f96714b55874044
+colour-picker-field suhina-studio@light bf92d6f226559672
+colour-picker-wheel suhina-studio@light c6e93d280e0d3f57
+context-menu suhina-studio@light 5fbe5ed7a047b2e6
 control-bar-toggles suhina-studio@light d27d57e1c3d31fa8
-count-in-menu suhina-studio@light 81e175af3541d7ee
+count-in-menu suhina-studio@light bd6dbf4d2c916cf0
 cpu suhina-studio@light c70f3cdb72209a25
 detail-beside suhina-studio@light 8741266f7ad337d6
 device-group suhina-studio@light f2e0ac7f19c17b9f
 devices suhina-studio@light a4f87aa49ff94d57
-empty-space-menu suhina-studio@light 07bbdd7f90090542
+empty-space-menu suhina-studio@light 97798084027a1d18
 expanded-delay suhina-studio@light 804722d66a2c794c
 expanded-fm-synth suhina-studio@light 5e6512b61b188b89
 expanded-instrument suhina-studio@light d47f35b0e90e000a
@@ -28,8 +28,8 @@ expanded-instrument-sample suhina-studio@light f1ee93d121e49096
 expanded-multiband suhina-studio@light 4703437aa709141f
 expanded-reverb suhina-studio@light 6ba8a0dd83669618
 expanded-vinyl-distortion suhina-studio@light 7b86a5a276cadea3
-export-dialog suhina-studio@light 3d4794961f83fb38
-grid-menu suhina-studio@light 2c5c9fde3fc5079e
+export-dialog suhina-studio@light 07dec5c474476ab0
+grid-menu suhina-studio@light c51f46f3c4b673d3
 instrument-instrument suhina-studio@light 569c056148bb1ec3
 instrument-sampler suhina-studio@light 98ee4233ef95b1ff
 launcher suhina-studio@light 6b3e23a7bf015c79
@@ -37,15 +37,15 @@ launcher-hover suhina-studio@light 2c01e10979e92254
 launcher-scrolled suhina-studio@light b86081209c7179e6
 launcher-selected suhina-studio@light 906a94067c76defb
 launcher-toggles suhina-studio@light 510616ae0dd1b6e7
-menu suhina-studio@light 5b23963c0d9f28c6
+menu suhina-studio@light 2f479058b8ce0480
 missing-files suhina-studio@light 7e856186bea4f4ff
 new-theme-dialog suhina-studio@light 89f35ad0f9fbb31c
 piano-roll suhina-studio@light 33ce5e815dc64efc
-project-dialog suhina-studio@light 011080d820ffda00
-quantize-menu suhina-studio@light 6d741b3f19df74dd
-quick-add suhina-studio@light a38b2922639282cf
+project-dialog suhina-studio@light d1f3336a2c974345
+quantize-menu suhina-studio@light 8dd89e75622577fc
+quick-add suhina-studio@light 5efc0edbe457125c
 sample-map suhina-studio@light bf94e9d81dd31324
-save-dialog suhina-studio@light 9366f6fb471d8ae4
+save-dialog suhina-studio@light 371340ff72408c69
 settings suhina-studio@light 5f2fce0ec2f8ac63
 settings-agents suhina-studio@light b7bb1e3cfbbee80f
 settings-appearance suhina-studio@light e59aa4e9e3bc0912
@@ -54,12 +54,12 @@ settings-browser suhina-studio@light c3ab23493f575f7d
 settings-devices suhina-studio@light 05923f8ec7ae4cbd
 settings-keys suhina-studio@light 824be7aec094e07f
 settings-launcher suhina-studio@light 0a6f45d3a9ef2981
-settings-menu suhina-studio@light c72c7a9564d01209
+settings-menu suhina-studio@light f79f316534787a21
 settings-midi suhina-studio@light 916710dcc35f398d
 settings-plug-ins suhina-studio@light c93004664a5b0ea9
 settings-themes suhina-studio@light 8f1995bbe656427b
 start-panel suhina-studio@light f21d44e5e66b0c65
-time-signature-menu suhina-studio@light 013e304c86986ed7
-tooltip suhina-studio@light 6596c876c9cb2c22
-unsaved-dialog suhina-studio@light af14e927d7d64d60
-updates-dialog suhina-studio@light 3776b95c98bfc108
+time-signature-menu suhina-studio@light 80795cef849cb6cd
+tooltip suhina-studio@light 16b9fe11f0626087
+unsaved-dialog suhina-studio@light 8c1f13066af6fcb8
+updates-dialog suhina-studio@light 1952d1fe869f9374

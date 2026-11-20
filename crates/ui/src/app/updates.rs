@@ -13,12 +13,13 @@ use suhina_update::{Build, BuildKind, Channel, Phase, Updater};
 
 use crate::app::project_dialog::{self, BUTTON, LINE, VERSION};
 use crate::app::start_panel::{self, Notice, StartChoice};
+use crate::kit::dialog as dialog_box;
 use crate::kit::element::{PROGRESS, PROGRESS_FILL, error_ink, hint_ink, name_ink};
-use crate::kit::theme::{self, PAD, ROW};
+use crate::kit::theme::{self, PAD};
 use crate::kit::widgets::{self, button};
 use crate::settings::update_settings::UpdateSettings;
 
-const WIDTH: f32 = 560.0;
+const WIDTH: f32 = 544.0;
 const WIDE_BUTTON: Vec2 = Vec2::new(150.0, 18.0);
 /// How many test builds the dialog lists.
 const LISTED: usize = 8;
@@ -205,7 +206,7 @@ impl Updates {
     /// The dialog in a layer of its own over the window, the updater in `phase`.
     fn dialog(&self, ctx: &egui::Context, area: Rect, channel: Channel, phase: Phase) -> Option<Choice> {
         // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
-        let style_class = crate::kit::element::DIALOG.enter();
+        let style_class = dialog_box::enter("updates");
         crate::kit::floating::area(ctx, Id::unique("updates-dialog"), crate::kit::floating::Kind::Own)
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
@@ -235,14 +236,13 @@ impl Updates {
         };
         let gh_lines = if channel == Channel::TestBuilds { 1.0 } else { 0.0 };
         let lines = 4.0 + gh_lines + test_builds.len() as f32 + f32::from(u8::from(self.note.is_some()));
-        let height = ROW + lines * LINE + BUTTON.y + 4.0 * PAD;
+        let height = lines * LINE + 2.0 * PAD + dialog_box::BUTTON_HEIGHT;
         let panel = project_dialog::panel(ui, dialog, area, Vec2::new(WIDTH, height), "Updates", &mut chosen);
         let painter = ui.painter_at(area);
         let font = theme::ui_font(theme::TEXT);
-        let mut y = panel.top() + ROW + PAD;
+        let mut y = panel.top();
         let line = |y: &mut f32| {
-            let rect =
-                Rect::from_min_size(Pos2::new(panel.left() + PAD, *y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
+            let rect = Rect::from_min_size(Pos2::new(panel.left(), *y), Vec2::new(panel.width(), LINE));
             *y += LINE;
             rect
         };
@@ -371,17 +371,18 @@ impl Updates {
         }
 
         // The buttons along the bottom.
-        let bottom = panel.bottom() - PAD - BUTTON.y;
-        let check = Rect::from_min_size(Pos2::new(panel.left() + PAD, bottom), BUTTON);
-        if !busy && button(ui, &painter, check, "Check now", "Check for updates now") {
-            chosen = Some(Choice::Check);
-        }
-        if let Some((text, choice)) = action
-            && !busy
-        {
-            let at = Rect::from_min_size(Pos2::new(panel.right() - PAD - WIDE_BUTTON.x, bottom), WIDE_BUTTON);
-            if button(ui, &painter, at, text, text) {
-                chosen = Some(choice);
+        // Check now at the start of the row, the step the updater offers at its end; none while
+        // it is busy.
+        if !busy {
+            let mut buttons =
+                vec![dialog_box::Action::new("Check now", "Check for updates now"), dialog_box::Action::space()];
+            if let Some((text, _)) = &action {
+                buttons.push(dialog_box::Action::new(text, text).wide(WIDE_BUTTON.x));
+            }
+            match dialog_box::actions(ui, &painter, panel, &buttons) {
+                Some(0) => chosen = Some(Choice::Check),
+                Some(2) => chosen = action.map(|(_, choice)| choice),
+                _ => {}
             }
         }
         if ui.input(|i| i.key_pressed(Key::Escape)) {

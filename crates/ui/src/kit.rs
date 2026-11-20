@@ -7,6 +7,8 @@
 
 pub mod artwork;
 pub mod artwork_png;
+pub mod controls;
+pub mod dialog;
 pub mod divider;
 pub mod element;
 pub mod floating;
@@ -20,6 +22,7 @@ pub mod meter;
 pub mod mixer_controls;
 pub mod motion;
 pub mod native_css;
+pub mod own_window;
 pub mod platform;
 pub mod scroll;
 pub mod selection;

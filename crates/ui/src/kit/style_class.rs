@@ -475,7 +475,8 @@ impl WidgetRules {
 
 /// egui frames its menus and pop-ups with the window's fill and stroke: `menu`'s rules over them.
 pub(super) fn apply_menu(menu: &super::native_css::Computed, visuals: &mut egui::Visuals) {
-    if menu.authored.background {
+    // From whichever sheet gives it, the user-agent's included (see `floating::frame`).
+    if menu.authored.background || menu.background.a() > 0 {
         visuals.window_fill = menu.background;
     }
     if menu.authored.border || menu.authored.border_width {
