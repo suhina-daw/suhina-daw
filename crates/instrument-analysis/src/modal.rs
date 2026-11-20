@@ -474,15 +474,17 @@ fn string_partials(
     else {
         return Vec::new();
     };
-    // B through the origin: (f / (k f0))^2 - 1 = B k^2.
+    // The measured first partial is itself stretched, f1 = f0 sqrt(1 + B), so against it
+    // (r/k)^2 - 1 = B (k^2 - (r/k)^2) with r = f_k / f1: least squares through the origin.
     let (mut sum_xy, mut sum_xx, mut points) = (0.0, 0.0, 0);
     for f in found {
         let ratio = f / f0;
         let k = ratio.round();
         if (2.0..=32.0).contains(&k) && (ratio / k - 1.0).abs() < 0.05 {
-            let k2 = k * k;
-            sum_xy += ((ratio / k).powi(2) - 1.0) * k2;
-            sum_xx += k2 * k2;
+            let stretch = (ratio / k).powi(2);
+            let x = k * k - stretch;
+            sum_xy += (stretch - 1.0) * x;
+            sum_xx += x * x;
             points += 1;
         }
     }
@@ -495,7 +497,7 @@ fn string_partials(
             break;
         }
         let k = k as f64;
-        let hz = k * f0 * (1.0 + b * k * k).sqrt();
+        let hz = k * f0 * ((1.0 + b * k * k) / (1.0 + b)).sqrt();
         if !hz.is_finite() || hz > high_hz {
             break;
         }
