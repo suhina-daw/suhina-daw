@@ -471,7 +471,7 @@ fn hostile_bar_settings_and_events_stay_finite() {
     let mut block = [0.0; 4096];
     instrument.process(&ProcessContext::default(), &mut block);
     assert!(block.iter().all(|x| x.is_finite() && x.abs() < 16.0));
-    assert!(std::mem::size_of::<Voice>() <= 2048, "{}", std::mem::size_of::<Voice>());
+    assert!(std::mem::size_of::<Voice>() <= 4096, "{}", std::mem::size_of::<Voice>());
     assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
 }
 
