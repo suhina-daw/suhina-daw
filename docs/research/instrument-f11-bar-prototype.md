@@ -1,6 +1,6 @@
 ---
-description: Results of the F11 bar prototype (slice 2) - experiments E1-E4, E6 and E7 on Instrument's Marimba bar and Vibraphone bar bodies, comparing the nonlinear Contact mallet with the linear Pulse mallet
-read_when: F11 bar prototype results, marimba, vibraphone, mallet contact, Hunt-Crossley, half-sine pulse, E1 E2 E3 E4 E6 E7, modal bar benchmark, Instrument bar bodies
+description: Results of the F11 bar prototype (slice 2) - experiments E1-E7 on Instrument's Marimba bar and Vibraphone bar bodies with tube resonators, comparing the nonlinear Contact mallet with the linear Pulse mallet, and the first listening and trace of the test build
+read_when: F11 bar prototype results, marimba, vibraphone, mallet contact, Hunt-Crossley, half-sine pulse, tube resonator, E1 E2 E3 E4 E5 E6 E7, modal bar benchmark, Instrument bar bodies
 type: plan
 status: draft
 last_verified: 2026-11-20
@@ -14,10 +14,11 @@ covers:
 Slice 2 of the [F11 research](instrument-f11-mallets.md) › 7 built two experimental bar bodies
 into Instrument, Marimba bar and Vibraphone bar, with two mallet models: **Contact** (candidate A,
 a Hunt–Crossley contact simulated against the bar's motion) and **Pulse** (candidate B, a linear
-half-sine force whose duration follows velocity and hardness). Their behaviour is specified in
-[instrument.md](../spec/instrument.md) › Bar bodies; this report records what the experiments of
-the research's section 5 measured. It makes no calibration claim: no reference recordings were
-used (#1621), and no listening session took place (E8, #1631).
+half-sine force whose duration follows velocity and hardness), and a tube resonator under each
+bar (candidate D). Their behaviour is specified in [instrument.md](../spec/instrument.md) › Bar
+bodies; this report records what the experiments of the research's section 5 measured. It makes
+no calibration claim: no reference recordings were used (#1621), and no formal listening session
+took place (E8, #1631).
 
 The deterministic experiments are tests in `devices/instrument/tests/bar_experiments.rs` that
 assert each pass criterion and print their measurements:
@@ -29,6 +30,13 @@ cargo test -p suhina-device-instrument --test bar_experiments -- --nocapture
 All renders are offline at fixed frame counts, key 60 (middle C) and default controls unless
 stated. Measurements come from the rendered output, not from the model's internal values.
 
+The numbers printed below for E1–E4 and E7 were taken before the tube resonators and the lower
+output scale (0.12, from 0.2) were added, that is with no tube. The tests assert the same
+criteria with the tube at its default (100 %) in CI at every push; their printed numbers have not
+been taken again, since the measurements run only as local tests. The tube is tuned to the
+fundamental, so E1's tuning and E4's notch are unchanged by it; E2's centroids are lower with the
+tube's stronger fundamental, and E3's differences change with the first mode's added decay.
+
 ## Summary
 
 | # | Contact | Pulse |
@@ -37,6 +45,7 @@ stated. Measurements come from the rendered output, not from the model's interna
 | E2 brightness | Pass on every cell | **Fails** for velocity at soft and medium hardness; passes for hardness |
 | E3 repeated strokes | Pass: differs from superposition by 0.8–8.6 % RMS; energy ≤ 0.95 of the strokes' | Superposes (differences ~1e-8, as designed); energy ≤ 0.60 |
 | E4 strike position | Pass (mode 2 ≥ 129 dB weaker at the centre) | Pass (same) |
+| E5 resonator | Reports; checks that the tube makes the fundamental stronger and shorter | Not measured separately (the tube does not depend on the mallet) |
 | E6 budget | Not validly measured; an unreliable run suggests the every-block worst case is over budget | Not validly measured |
 | E7 stability | Pass at 8 and 22.05 kHz | Pass |
 
@@ -114,6 +123,26 @@ node exactly at the centre, so the centre stroke leaves it unexcited and the mea
 only the analysis floor. Real, undercut bars have shapes that differ from the uniform bar's,
 so the depth of this notch is a property of the model, not a prediction for an instrument.
 
+## E5: the resonator
+
+Each bar's tube is one damped resonance at the bar's fundamental, quality factor 40, driven by
+the first mode's velocity; at full Resonator its velocity settles at twice the first mode's, so
+the fundamental's steady level rises by `20 log10(3)` ≈ 9.5 dB, and the first mode's decay rate
+rises by `60 / T_rad` dB/s (50 dB/s for Marimba bar, 15 dB/s for Vibraphone bar). Those are the
+model's design values, not measurements. A low tube builds up slowly (its time constant is
+`40 / (pi * f1)`, about 0.2 s at C2 and 6 ms at C7), so a low note's fundamental swells after the
+stroke while a high note's is boosted almost at once.
+
+`e5_the_resonator_strengthens_and_shortens_the_fundamental` renders the lowest, middle and
+highest key of each profile with Resonator at 0 and 100 % and compares the fundamental's level in
+0.1–0.4 s and its decay between that window and 0.8–1.1 s. It asserts only the direction the
+physics gives (stronger and shorter); the research's pass criterion needs reference recordings of
+the same register (#1621) and stays open. The shared DSP's tests check the steady gain of
+`1 + 2 * amount` within 4 %, that amount 0 is bit-identical to no tube, that the tube draws energy
+from the bar, and that hostile tube values stay bounded.
+
+The vibraphone motor, which modulates the tubes, is not modelled.
+
 ## E6: rolls within budget
 
 `cargo run --release -p suhina-device-instrument --example benchmark` on the development
@@ -151,10 +180,24 @@ roll, and the largest sample was 0.61. Contact runs at most 32 steps per sample 
 at most 30 ms per stroke; the shared DSP's tests check the step bound with a 100 m/s stroke at
 22.05 kHz and hostile modes, rates, masses and speeds.
 
+## First listening and real use
+
+The maintainer played the Windows test build of the head before the tubes (`d733d20`) on an ASIO
+interface at 44.1 kHz with a 2048-frame buffer and found Marimba bar fairly convincing, with room
+to improve over time. The trace of that session showed both bodies and both mallet models in use,
+the engine load at 4–7 % for the whole project, and no underruns or late render blocks. A mild
+crackle was reported; the trace rules out dropouts, and at the time the track ran the Instrument
+at +1.6 dB into two Multiband devices with +5 dB inputs and up to +10 dB band gains, so clipping
+in that chain is the likeliest cause, not yet confirmed. Two changes since address what the
+session showed: Contact's output is lower (scale 0.12), and coefficient changes on a ringing bar
+no longer step the output.
+
 ## What this slice leaves open
 
 - E6 on an idle machine, and Contact's cost if the rerun confirms the worst case.
-- E5 (resonators) and E8 (listening) belong to slice 3 and #1631.
+- E5 against reference recordings (#1621), the tube's higher resonances and the vibraphone
+  motor; E8 (listening) belongs to #1631.
+- The crackle reported in the first listening: confirm or rule out the gain chain.
 - Pulse's E2 failure: try a pulse shape without spectral zeros before deciding whether B has a
   place beside A.
 - Strike position measures from the centre with uniform-bar shapes; undercut bars' shapes and
