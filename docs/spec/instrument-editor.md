@@ -39,6 +39,10 @@ identifies Instrument and its experimental model, with Source always available. 
   Attack and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.
 
+In both presentations a control that cannot change the sound in the current Source is drawn
+dimmed, with a tooltip that says why; it still takes edits (the table is in
+[Instrument](instrument.md#what-each-control-affects) › What each control affects).
+
 All sound controls use the existing stable parameter IDs and `device.setParam`, including
 gesture coalescing, automation overrides, reset and undo/redo. All sound parameters are
 reachable; `model_revision` remains hidden persisted metadata. Both presentations read the
@@ -59,7 +63,7 @@ retain their keyboard focus across frames, so page keys and parameter arrows do 
 Launcher behind it. Escape closes the editor unless a text field is being edited. Closing it
 or focusing another part of the application restores ordinary shortcut handling.
 
-This host binding is initially available to built-in layouts only; `.sd` version 6's
+This host binding is initially available to built-in layouts only; the `.sd` format's
 parameter-binding contract is unchanged. A future standalone SDK editor can implement
 the same local state without modifying the DSP or exported parameter list.
 

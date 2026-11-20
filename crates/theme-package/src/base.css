@@ -385,6 +385,8 @@ slider[kind="parameter"] slider-handle { background-color: var(--text-primary); 
 device-control[kind="name"] { color: var(--text-secondary); }
 device-control[kind="value"] { color: var(--text-value); }
 device-control[kind="knob"] { background-color: var(--control-background); color: var(--text-hint); accent-color: var(--text-primary); }
+/* A control with no effect in the device's current state (its `active_when`): dimmed, still editable. */
+device-control[inactive] { opacity: 0.45; }
 
 /* A device's own drawings: the colours their theme tokens take, by the element's `color`,
    `background-color`, `border-color` and `accent-color` and its kinds. */

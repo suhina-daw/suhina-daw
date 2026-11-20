@@ -4,9 +4,9 @@
 //! Build, validate, save, and run data-only Suhina device graphs (`.sd`).
 //!
 //! Version 4 separates device revisions from the file format version; version 5 adds an
-//! optional expanded panel; version 6 a panel style sheet. A validated graph compiles off the
-//! audio thread into a processor whose `process` method performs no allocation. File versions
-//! 1 through 6 remain readable.
+//! optional expanded panel; version 6 a panel style sheet; version 7 a control's inactive rule
+//! (`active_when`). A validated graph compiles off the audio thread into a processor whose
+//! `process` method performs no allocation. File versions 1 through 7 remain readable.
 //!
 //! In detail: Builds, validates, serializes and prepares data-only `.sd` audio-effect, MIDI-effect
 //! and instrument graphs; stereo DSP graphs support branching, modulation and delayed feedback,
@@ -55,8 +55,8 @@ pub const FORMAT: &str = "suhina-device";
 /// The version every file is written as, and the newest this crate reads. It rises with every
 /// change to what a file holds, so an older Suhina refuses a newer file rather than dropping
 /// what it does not know (ADR 0010 › Amendment: format versions, `docs/spec/sd-device-format.md`
-/// › Versions). Files of every earlier version are still read. Version 6 adds a panel's style sheet.
-pub const VERSION: u32 = 6;
+/// › Versions). Files of every earlier version are still read. Version 6 adds a panel's style sheet, version 7 a control's `active_when`.
+pub const VERSION: u32 = 7;
 pub const MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_NODES: usize = 128;
 pub const MAX_CONNECTIONS: usize = MAX_NODES * 5;
@@ -450,6 +450,17 @@ impl DeviceGraph {
         }
         if file.version < 6 && file.device.ui.iter().chain(file.device.expanded.iter()).any(|ui| ui.style.is_some()) {
             return Err(DeviceSdkError("a panel style sheet requires .sd version 6".into()));
+        }
+        if file.version < 7
+            && file
+                .device
+                .ui
+                .iter()
+                .chain(file.device.expanded.iter())
+                .flat_map(|ui| &ui.controls)
+                .any(|control| control.active_when.is_some())
+        {
+            return Err(DeviceSdkError("a control's active_when requires .sd version 7".into()));
         }
         if file.version == 1
             && (file

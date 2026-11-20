@@ -326,6 +326,9 @@ Typed SDK device-panel knobs/dials and buttons consume the same SVG roles. Their
 labels, readouts, parameter angles and native response/command paths remain in the
 SDK host. Named `device-panel` and `device-control` scopes expose semantic widget
 classes and scoped colour and text styling; see [custom panels](sdk-custom-ui.md#host-theme-css-and-svg-controls).
+A control with no effect in its device's current state (the SDK's `active_when`) is
+`device-control[inactive]`; the host draws it at that element's `opacity`, 0.45 in the base sheet,
+and it still takes edits ([custom panels](sdk-custom-ui.md#conditional-controls-and-text-layout)).
 
 Asset roles include fader cap and rail, knob body and pointer, button surface and
 play/stop/record/solo/arm/cue icons. State suffixes `.hover`, `.active`, `.disabled`

@@ -86,6 +86,7 @@ fn test_ui_graph() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
         size: [320.0, 180.0],
         assets: vec![ImageAsset::from_bytes("pixel", &png)?],
         controls: vec![CustomControl {
+            active_when: None,
             widget: None,
             id: "level-control".into(),
             name: "Level".into(),

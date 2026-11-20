@@ -47,9 +47,12 @@ impl Canvas {
         gesture: UiGesture,
         tooltip: &str,
     ) {
+        // A control that cannot change the sound in the current Source is drawn dimmed.
+        let active_when = binding.and_then(crate::active::active_rule);
         let binding = binding.map(UiBinding::new);
         let vertical = gesture == UiGesture::Drag && binding.is_some();
         self.ui.controls.push(CustomControl {
+            active_when,
             id: format!("control_{}", self.ui.controls.len()),
             name: name.into(),
             tooltip: tooltip.into(),
@@ -70,6 +73,14 @@ impl Canvas {
 
     pub(super) fn label(&mut self, text: &str, bounds: [f32; 4]) {
         self.add(text, Widget::Label { label: text.into() }, bounds, None, UiGesture::Drag, "");
+    }
+
+    /// The control just added is the caption of `id` (a parameter, or the waveform): it dims
+    /// with that control.
+    pub(super) fn caption_of(&mut self, id: &str) {
+        if let Some(control) = self.ui.controls.last_mut() {
+            control.active_when = crate::active::active_rule(id);
+        }
     }
 
     pub(super) fn title(&mut self, text: &str, bounds: [f32; 4], size: f32) {
@@ -126,6 +137,7 @@ impl Canvas {
 
     pub(super) fn number(&mut self, id: &str, name: &str, x: f32, y: f32, w: f32) {
         self.label(name, [x, y, w, 18.0]);
+        self.caption_of(id);
         let integer = matches!(id, "root" | "key_low" | "key_high");
         self.add(
             name,
@@ -184,6 +196,7 @@ impl Canvas {
             UiGesture::Position,
             "Drop a local audio file here; drag the source or loop boundaries",
         );
+        self.caption_of(crate::active::WAVEFORM);
     }
 
     pub(super) fn finish(self) -> DeviceUi {
@@ -199,6 +212,7 @@ pub fn layout() -> Layout {
     panel.navigate("Open editor", [456.0, 4.0, 152.0, 24.0], 0, true);
     panel.waveform([10.0, 36.0, 244.0, 88.0]);
     panel.label("Drop a local sample to play it", [10.0, 132.0, 244.0, 20.0]);
+    panel.caption_of(crate::active::WAVEFORM);
     for (i, (id, name, hint)) in [
         ("body_decay", "Decay", "Modal: time to decay by 60 dB; next strike"),
         ("brightness", "Brightness", "Modal: energy in higher resonances; next strike"),

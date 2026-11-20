@@ -40,22 +40,44 @@ fn device_revisions_are_separate_from_format_versions_and_old_files_default_to_o
 }
 
 #[test]
-fn a_panel_style_sheet_round_trips_as_version_6_and_older_versions_refuse_it() {
+fn a_panel_style_sheet_round_trips_and_older_versions_refuse_it() {
     let mut graph = gain_graph();
     let style = "#gain { color: #ff8800; }\n";
     graph.ui = Some(ui::DeviceUi { style: Some(style.into()), ..ui::DeviceUi::default() });
     let encoded = graph.to_sd().unwrap();
     let json: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(json["version"], 6);
+    assert_eq!(json["version"], VERSION);
     assert_eq!(json["device"]["ui"]["style"], style);
     assert_eq!(DeviceGraph::from_sd(&encoded), Ok(graph.clone()));
-    assert!(DeviceGraph::from_sd(&encoded.replace("\"version\": 6", "\"version\": 5")).is_err());
+    assert!(DeviceGraph::from_sd(&encoded.replace("\"version\": 7", "\"version\": 5")).is_err());
     // Without a style sheet the file stays version 4, and the key is not written.
     let plain = gain_graph().to_sd().unwrap();
     assert!(!plain.contains("\"style\""));
     let mut huge = graph;
     huge.ui = Some(ui::DeviceUi { style: Some("a".repeat(ui::MAX_STYLE_BYTES + 1)), ..ui::DeviceUi::default() });
     assert!(huge.validate().is_err());
+}
+
+#[test]
+fn an_inactive_rule_round_trips_as_version_7_and_older_versions_refuse_it() {
+    let mut graph = gain_graph();
+    let rule = ui::UiValue::parameter("gain", false).equals(1.0);
+    let control = ui::CustomControl::number("gain", [0., 0., 60., 24.]).active_when(rule, "Only at unity gain");
+    graph.ui = Some(ui::DeviceUi { controls: vec![control], ..ui::DeviceUi::default() });
+    let encoded = graph.to_sd().unwrap();
+    let json: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    assert_eq!(json["version"], 7);
+    assert_eq!(json["device"]["ui"]["controls"][0]["active_when"]["reason"], "Only at unity gain");
+    assert_eq!(DeviceGraph::from_sd(&encoded), Ok(graph.clone()));
+    assert!(DeviceGraph::from_sd(&encoded.replace("\"version\": 7", "\"version\": 6")).is_err());
+    // A control without the rule writes no key, so the rest of a file reads as before.
+    let mut plain = graph.clone();
+    if let Some(ui) = plain.ui.as_mut() {
+        ui.controls[0].active_when = None;
+    }
+    let plain = plain.to_sd().unwrap();
+    assert!(!plain.contains("active_when"));
+    assert!(DeviceGraph::from_sd(&plain.replace("\"version\": 7", "\"version\": 6")).is_ok());
 }
 
 #[test]
@@ -68,7 +90,7 @@ fn an_expanded_panel_round_trips_and_older_versions_refuse_it() {
     assert_eq!(json["version"], VERSION);
     assert_eq!(json["device"]["expanded"]["size"], serde_json::json!([720.0, 400.0]));
     assert_eq!(DeviceGraph::from_sd(&encoded), Ok(graph.clone()));
-    assert!(DeviceGraph::from_sd(&encoded.replace("\"version\": 6", "\"version\": 4")).is_err());
+    assert!(DeviceGraph::from_sd(&encoded.replace("\"version\": 7", "\"version\": 4")).is_err());
     // The expanded panel is checked against the parameters like the compact one.
     let mut bad = graph;
     bad.expanded = Some(ui::DeviceUi { hidden_parameters: vec!["missing".into()], ..ui::DeviceUi::default() });

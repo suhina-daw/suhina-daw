@@ -556,6 +556,24 @@ impl UiBinding {
         Self { parameter: parameter.into(), logarithmic: false, drag_scale: 1. }
     }
 }
+/// When a control has an effect. While `condition` reads zero or less the control is inactive:
+/// the host draws it dimmed and adds `reason` to its tooltip, and it still takes edits, so a value
+/// can be prepared before the setting that brings it into play. It changes nothing a parameter
+/// holds: presentation only, written in `.sd` version 7.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActiveWhen {
+    pub condition: UiValue,
+    /// Why the control has no effect while inactive (\"Modal and Hybrid only\"), 1 to 256 bytes.
+    pub reason: String,
+}
+impl ActiveWhen {
+    pub fn new(condition: UiValue, reason: impl Into<String>) -> Self {
+        Self { condition, reason: reason.into() }
+    }
+}
+/// Longest [`ActiveWhen::reason`], in bytes.
+pub const MAX_INACTIVE_REASON: usize = 256;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CustomControl {
@@ -563,6 +581,9 @@ pub struct CustomControl {
     pub widget: Option<Widget>,
     #[serde(default)]
     pub visible_when: Option<UiValue>,
+    /// Dims the control while it has no effect ([`ActiveWhen`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_when: Option<ActiveWhen>,
     pub id: String,
     pub name: String,
     #[serde(default)]
@@ -835,6 +856,12 @@ impl DeviceUi {
             }
             if let Some(condition) = &c.visible_when {
                 condition.validate(&readouts, 0, &mut expression_budget)?;
+            }
+            if let Some(active) = &c.active_when {
+                if active.reason.trim().is_empty() || active.reason.len() > MAX_INACTIVE_REASON {
+                    return Err(fail(&format!("an inactive control says why in 1..256 bytes: {:.64}", c.id)));
+                }
+                active.condition.validate(&readouts, 0, &mut expression_budget)?;
             }
             if matches!(c.gesture, UiGesture::Expand(_)) && c.x.is_none() {
                 return Err(fail("an expand gesture binds X to the parameter it sets"));

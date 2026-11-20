@@ -77,6 +77,7 @@ pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
     let px = UiValue::from(12.0) + UiValue::normalized("cutoff", true) * 366.0.into();
     let py = UiValue::from(136.0) + UiValue::normalized("balance", false) * (-124.0).into();
     canvas.controls.push(CustomControl {
+        active_when: None,
         widget: None,
         visible_when: None,
         id: "orbit".into(),
@@ -105,6 +106,7 @@ pub fn build() -> Result<DeviceGraph, Box<dyn std::error::Error>> {
     });
     let angle = UiValue::from(-2.35) + UiValue::normalized("level", false) * 4.7.into();
     canvas.controls.push(CustomControl {
+        active_when: None,
         widget: None,
         visible_when: None,
         id: "output".into(),

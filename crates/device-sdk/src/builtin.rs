@@ -236,6 +236,7 @@ mod tests {
 
     fn knob(id: &str, parameter: &str) -> CustomControl {
         CustomControl {
+            active_when: None,
             widget: None,
             visible_when: None,
             id: id.into(),

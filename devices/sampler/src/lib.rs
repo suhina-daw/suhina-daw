@@ -31,6 +31,7 @@ fn equals(id: &str, value: f32) -> UiValue {
 }
 fn control(ui: &mut DeviceUi, id: &str, widget: Widget, bounds: [f32; 4], gesture: UiGesture, view: Option<u16>) {
     ui.controls.push(CustomControl {
+        active_when: None,
         id: format!("{id}_{}", ui.controls.len()),
         name: id.replace('_', " "),
         tooltip: id.replace('_', " "),

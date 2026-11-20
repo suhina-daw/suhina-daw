@@ -97,6 +97,7 @@ integration target.
 | Selected | A track header and a clip, in both views: `selection.background` (or the colour Settings › Appearance › Selection colour chose), the track's or clip's own colour in its band or leading edge, text in the ink that reads on it; an Arrangement clip's name bar keeps its own colour; a clip with a 1 px `text.primary` inset; the selected tracks' lanes and Launcher columns tinted with `selection.background` at 12 % ([arrangement editing](../spec/arrangement-editing.md#selection-colour)) |
 | Keyboard focus | (planned) 1 px inset outline in `accent` |
 | Disabled | Text `text.hint`, no fills |
+| Inactive device control | A device control with no effect in the device's current state (the SDK's `active_when`): drawn at the opacity of `device-control[inactive]`, 0.45 in the base sheet; its tooltip adds why on a line of its own; it still takes edits ([custom UI](../spec/sdk-custom-ui.md#conditional-controls-and-text-layout)) |
 | Track off (muted) | Launcher: its name in `text.hint`; its slots, clips, marks and colour strip at 55 % opacity. Arrangement: its header and its clips' bodies grey (`arrangement track-header[muted]`, `arrangement clip[muted]` in the user-agent sheet), the colour band, the clips' leading edges and name bars in their colours ([arrangement](../spec/arrangement-editing.md) › Clips off) |
 
 ### Motion

@@ -48,6 +48,7 @@ fn button(ui: &mut DeviceUi, id: &str, value: Option<u16>, label: &str, b: [f32;
     let [_, _, w, h] = b;
     let active = value.map_or_else(|| UiValue::normalized(id, false), |v| equal(id, v));
     ui.controls.push(CustomControl {
+        active_when: None,
         id: format!("{id}_{}", value.unwrap_or(99)),
         name: label.into(),
         tooltip: format!("{id}: {label}"),
@@ -67,6 +68,7 @@ fn button(ui: &mut DeviceUi, id: &str, value: Option<u16>, label: &str, b: [f32;
 }
 fn number(ui: &mut DeviceUi, id: &str, b: [f32; 4], decimals: usize, log: bool, color: [u8; 4], center: bool) {
     ui.controls.push(CustomControl {
+        active_when: None,
         id: id.into(),
         name: id.replace('_', " "),
         tooltip: "Drag vertically; Shift for precision; double click resets".into(),
@@ -88,6 +90,7 @@ fn knob(ui: &mut DeviceUi, id: &str, label: &str, b: [f32; 4], log: bool) {
     let center_y = cy + label_height;
     let radius = cy.clamp(0., 9.);
     ui.controls.push(CustomControl {
+        active_when: None,
         id: id.into(),
         name: if label.is_empty() { id.replace('_', " ") } else { label.into() },
         tooltip: "Drag vertically; Shift for precision; double click resets".into(),

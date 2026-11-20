@@ -65,6 +65,7 @@ fn a_device_control_is_drawn_and_clicked_where_the_sdk_lays_it_out() {
     let canvas = Arc::new(DeviceUi {
         size: [240.0, 120.0],
         controls: vec![CustomControl {
+            active_when: None,
             id: "enabled".into(),
             name: "Enabled".into(),
             tooltip: String::new(),
@@ -105,9 +106,89 @@ fn a_device_control_is_drawn_and_clicked_where_the_sdk_lays_it_out() {
     assert!(click(&canvas, &parameters, egui::pos2(120.0, 70.0)).is_empty());
 }
 
+/// Two identical buttons, the second inactive while `mode` reads 0 (`active_when`).
+fn active_and_inactive_buttons() -> Arc<DeviceUi> {
+    let button = |id: &str, x: f32| CustomControl {
+        active_when: None,
+        id: id.into(),
+        name: id.into(),
+        tooltip: "Turns it on".into(),
+        bounds: [x, 20.0, 40.0, 20.0],
+        widget: Some(Widget::Button { label: "On".into(), off_label: None, indicator: false }),
+        visible_when: None,
+        gesture: UiGesture::Toggle,
+        x: None,
+        y: Some(UiBinding::new(id)),
+        drawing: Vec::new(),
+    };
+    let rule = ActiveWhen::new(UiValue::parameter("mode", false).equals(1.0), "Mode B only");
+    Arc::new(DeviceUi {
+        size: [240.0, 120.0],
+        controls: vec![button("live", 20.0), CustomControl { active_when: Some(rule), ..button("dimmed", 120.0) }],
+        ..Default::default()
+    })
+}
+
+#[test]
+fn an_inactive_control_is_drawn_dimmed_says_why_and_still_takes_edits() {
+    let canvas = active_and_inactive_buttons();
+    let parameters = [
+        GraphParameter { value: 0.0, ..parameter("live", false) },
+        GraphParameter { value: 0.0, ..parameter("dimmed", false) },
+        GraphParameter { value: 0.0, max: 2.0, ..parameter("mode", false) },
+    ];
+    let fills = |parameters: &[GraphParameter]| {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            show(
+                ui,
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(240.0, 120.0)),
+                &canvas,
+                &crate::detail::device_widgets::PanelState::none(),
+                parameters,
+                TrackId(1),
+                &crate::detail::detail_view::DeviceAt(vec![0]),
+                &mut Vec::new(),
+            )
+        });
+        output.textures_delta.clear();
+        let fill = |x: f32| {
+            let face = Rect::from_min_size(egui::pos2(x, 20.0), Vec2::new(40.0, 20.0));
+            output
+                .shapes
+                .iter()
+                .find_map(|shape| match &shape.shape {
+                    egui::Shape::Rect(rect) if rect.rect == face && rect.fill.a() > 0 => Some(rect.fill),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        (fill(20.0), fill(120.0))
+    };
+    let (live, dimmed) = fills(&parameters);
+    let expected = (f32::from(live.a()) * INACTIVE_OPACITY).round();
+    assert!((f32::from(dimmed.a()) - expected).abs() <= 1.0, "dimmed {dimmed:?}, live {live:?}");
+    // While its rule holds, it is drawn like any other control.
+    let mut active = parameters.clone();
+    active[2].value = 1.0;
+    let (live, undimmed) = fills(&active);
+    assert_eq!(live, undimmed);
+    // Dimming is presentation: a click still edits its parameter.
+    let actions = click(&canvas, &parameters, egui::pos2(140.0, 30.0));
+    assert!(actions.iter().any(|action| action.id == "device.setParam" && action.params["param"] == "dimmed"));
+    assert_eq!(
+        inactive_tooltip("Turns it on", Some("Mode B only")),
+        "Turns it on
+Inactive: Mode B only"
+    );
+    assert_eq!(inactive_tooltip("", Some("Mode B only")), "Inactive: Mode B only");
+    assert_eq!(inactive_tooltip("Turns it on", None), "Turns it on");
+}
+
 #[test]
 fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     let control = |id: &str, widget: Widget, x: f32, gesture| CustomControl {
+        active_when: None,
         id: id.into(),
         name: id.into(),
         tooltip: String::new(),
@@ -208,6 +289,7 @@ fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
         size: [60.0, 52.0],
         assets: vec![face],
         controls: vec![CustomControl {
+            active_when: None,
             id: "gain".into(),
             name: "gain".into(),
             tooltip: String::new(),
@@ -393,6 +475,7 @@ fn sample_waveform_draws_a_line_for_each_active_voice() {
             &mut Vec::new(),
             false,
             None,
+            None,
         );
     });
     output.textures_delta.clear();
@@ -430,6 +513,7 @@ fn the_device_widgets_show_state_and_dispatch_their_commands() {
         crate::detail::device_widgets::PanelState { name: "NAM Amp Modeler".into(), enabled, file, lists: Some(lists) }
     }
     let control = |id: &str, bounds: [f32; 4], widget| CustomControl {
+        active_when: None,
         id: id.into(),
         name: id.to_owned(),
         tooltip: String::new(),
@@ -600,6 +684,7 @@ fn a_folder_and_its_file_read_apart_and_the_folder_carries_the_artwork() {
         }
     }
     let control = |id: &str, bounds: [f32; 4], widget| CustomControl {
+        active_when: None,
         id: id.into(),
         name: id.to_owned(),
         tooltip: String::new(),
@@ -1884,6 +1969,7 @@ fn unknown_tempo_has_a_time_grid_under_its_times_whatever_the_grid() {
                 &mut Vec::new(),
                 false,
                 None,
+                None,
             );
         });
         let lines = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::LineSegment { points, stroke } if points[0].x == points[1].x && *stroke == Stroke::new(1., crate::kit::theme::studio("text-primary").gamma_multiply(0.09)))).count();
@@ -1989,6 +2075,7 @@ fn slow_drag_on_an_integer_control_adds_up_across_frames() {
     let canvas = Arc::new(DeviceUi {
         size: [60.0, 60.0],
         controls: vec![CustomControl {
+            active_when: None,
             widget: None,
             visible_when: None,
             id: "feedback".into(),
@@ -2058,6 +2145,7 @@ fn two_axis_integer_drag_keeps_a_position_per_axis() {
     let canvas = Arc::new(DeviceUi {
         size: [60.0, 60.0],
         controls: vec![CustomControl {
+            active_when: None,
             widget: None,
             visible_when: None,
             id: "xy".into(),
@@ -2140,6 +2228,7 @@ fn idle_log_control_does_not_emit_edits_and_xy_click_is_one_gesture() {
     let canvas = Arc::new(DeviceUi {
         size: [160.0, 160.0],
         controls: vec![CustomControl {
+            active_when: None,
             widget: None,
             visible_when: None,
             id: "xy".into(),
@@ -2205,6 +2294,7 @@ fn built_in_widget_colors_follow_the_active_theme_and_refresh_the_cache() {
     let context = egui::Context::default();
     let canvas = Arc::new(DeviceUi {
         controls: vec![CustomControl {
+            active_when: None,
             widget: Some(Widget::Button { label: "On".into(), off_label: None, indicator: false }),
             id: "on".into(),
             name: "On".into(),
@@ -2308,6 +2398,7 @@ fn one_control(
         size,
         strip,
         controls: vec![CustomControl {
+            active_when: None,
             widget,
             visible_when: None,
             id: "control".into(),
@@ -2643,6 +2734,7 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     let canvas = Arc::new(DeviceUi {
         size: [60.0, 20.0],
         controls: vec![CustomControl {
+            active_when: None,
             widget: None,
             visible_when: None,
             id: "line".into(),
@@ -2734,6 +2826,7 @@ fn the_pack_dropdown_groups_a_collections_captures() {
     let canvas = Arc::new(DeviceUi {
         size: [428., 168.],
         controls: vec![CustomControl {
+            active_when: None,
             id: "pack".into(),
             name: "pack".into(),
             tooltip: String::new(),
@@ -2814,6 +2907,7 @@ fn image_dial_canvas() -> Arc<DeviceUi> {
         size: [60.0, 52.0],
         assets: vec![face],
         controls: vec![CustomControl {
+            active_when: None,
             id: "gain".into(),
             name: "gain".into(),
             tooltip: String::new(),
@@ -2873,6 +2967,7 @@ fn drawn_with(
 #[test]
 fn a_panel_picks_its_light_or_dark_artwork_by_the_declared_colour_scheme() {
     let artwork = |id: &str, color: [u8; 4]| CustomControl {
+        active_when: None,
         id: id.into(),
         name: id.into(),
         tooltip: String::new(),
@@ -2928,6 +3023,7 @@ fn button_drawn(style: Option<&str>, on: bool, fill: Color32) -> (bool, bool) {
         size: [40.0, 20.0],
         style: style.map(str::to_owned),
         controls: vec![CustomControl {
+            active_when: None,
             id: "eq".into(),
             name: "eq".into(),
             tooltip: String::new(),
@@ -2985,6 +3081,7 @@ fn a_buttons_label_sits_centred_in_the_button() {
             size: [60.0, 52.0],
             style: style.map(str::to_owned),
             controls: vec![CustomControl {
+                active_when: None,
                 id: "eq".into(),
                 name: "eq".into(),
                 tooltip: String::new(),
@@ -3045,6 +3142,7 @@ fn a_panels_font_size_beats_the_themes_for_its_drawn_text() {
             size: [60.0, 20.0],
             style: style.map(str::to_owned),
             controls: vec![CustomControl {
+                active_when: None,
                 id: "caption".into(),
                 name: "caption".into(),
                 tooltip: String::new(),
