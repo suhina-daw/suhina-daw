@@ -35,6 +35,10 @@ const CONTROL_COLUMN: f32 = 240.0;
 /// tooltip.
 const LINE_ROW: f32 = 24.0;
 const SEGMENT: f32 = 15.0;
+/// The width of a colour row's picker button.
+const COLOUR_SWATCH_WIDTH: f32 = 40.0;
+/// The width of a colour row's **Theme** button.
+const THEME_BUTTON_WIDTH: f32 = 52.0;
 /// The Browse… button at the end of a path field.
 const BROWSE_WIDTH: f32 = 60.0;
 /// A dropdown on the right of its row (Settings › Audio).
@@ -757,7 +761,7 @@ impl Cx<'_> {
     ) {
         let value = field(self.settings);
         let mut colour = *value;
-        let (held, _) = colour_picker(self.ui, self.name, row, &mut colour, false, see_through);
+        let (held, _) = colour_picker(self.ui, self.painter, self.name, row, &mut colour, false, see_through);
         self.outcome.adjusting |= held;
         if colour != *value {
             *value = colour;
@@ -776,7 +780,7 @@ impl Cx<'_> {
     ) {
         let value = field(self.settings);
         let mut colour = value.unwrap_or(themed);
-        let (held, reset) = colour_picker(self.ui, self.name, row, &mut colour, value.is_some(), false);
+        let (held, reset) = colour_picker(self.ui, self.painter, self.name, row, &mut colour, value.is_some(), false);
         self.outcome.adjusting |= held;
         if reset {
             *value = None;
@@ -3600,11 +3604,13 @@ fn option_face(
 }
 
 /// The colour picker's button for `colour` at the control's place in `row`, labelled `name`, its
-/// hex beside it, and a **Theme** button after them when `resettable`; with an opacity slider
-/// when `see_through`: whether the picker is held open with the button down (a drag in it), and
-/// whether **Theme** was clicked.
+/// hex beside it, and a **Theme** button at the control's right end when `resettable`; with an
+/// opacity slider when `see_through`: whether the picker is held open with the button down (a
+/// drag in it), and whether **Theme** was clicked. The hex and **Theme** are the kit's text and
+/// button, so the theme styles them as every other row's.
 fn colour_picker(
     ui: &mut Ui,
+    painter: &egui::Painter,
     name: &str,
     row: Rect,
     colour: &mut egui::Color32,
@@ -3612,27 +3618,30 @@ fn colour_picker(
     see_through: bool,
 ) -> (bool, bool) {
     let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
-    let (mut held, mut reset) = (false, false);
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        ui.horizontal(|ui| {
-            let popup = ui.auto_id_with("popup");
-            let alpha =
-                if see_through { egui::color_picker::Alpha::OnlyBlend } else { egui::color_picker::Alpha::Opaque };
-            let response = egui::color_picker::color_edit_button_srgba(ui, colour, alpha);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, name));
-            held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
-            ui.label(
-                egui::RichText::new(theme::hex(*colour)).font(theme::mono_font(theme::TEXT_SMALL)).color(ink().name),
-            );
-            if resettable {
-                let button = ui.small_button("Theme");
-                button.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::Role::Button, true, format!("{name}: the theme's"))
-                });
-                reset = button.clicked();
-            }
-        });
+    let swatch = Rect::from_min_size(rect.min, Vec2::new(COLOUR_SWATCH_WIDTH, SEGMENT));
+    let theme_button = Rect::from_min_size(
+        Pos2::new(rect.right() - THEME_BUTTON_WIDTH, rect.top() + 1.0),
+        Vec2::new(THEME_BUTTON_WIDTH, SEGMENT),
+    );
+    let hex_right = if resettable { theme_button.left() - 6.0 } else { rect.right() };
+    let hex = Rect::from_min_max(Pos2::new(swatch.right() + 6.0, rect.top()), Pos2::new(hex_right, rect.bottom()));
+    let mut held = false;
+    ui.scope_builder(egui::UiBuilder::new().max_rect(swatch), |ui| {
+        let popup = ui.auto_id_with("popup");
+        let alpha = if see_through { egui::color_picker::Alpha::OnlyBlend } else { egui::color_picker::Alpha::Opaque };
+        let response = egui::color_picker::color_edit_button_srgba(ui, colour, alpha);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, name));
+        held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
     });
+    widgets::text_in(
+        painter,
+        hex,
+        Align2::LEFT_CENTER,
+        &theme::hex(*colour),
+        theme::mono_font(theme::TEXT_SMALL),
+        ink().name,
+    );
+    let reset = resettable && widgets::button(ui, painter, theme_button, "Theme", &format!("{name}: the theme's"));
     (held, reset)
 }
 

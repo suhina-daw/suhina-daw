@@ -52,11 +52,20 @@ pub(super) fn show(ui: &Ui, area: Rect, names: &[String], remember: &mut bool) -
                     .max_height(names_area.height())
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        // Each name is the kit's text in the dialog's ink, wrapped to the list's
+                        // width so a long one is read whole, and styled by the theme as the lines
+                        // below.
+                        let ink = crate::kit::element::name_ink();
                         for name in names {
-                            ui.add(
-                                egui::Label::new(egui::RichText::new(name).font(theme::ui_font(theme::TEXT_SMALL)))
-                                    .wrap(),
-                            );
+                            let width = ui.available_width();
+                            let galley =
+                                ui.painter().layout(name.clone(), theme::ui_font(theme::TEXT_SMALL), ink, width);
+                            let height = galley.size().y.max(LINE);
+                            let (rect, response) =
+                                ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
+                            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, name));
+                            let at = Pos2::new(rect.left(), rect.center().y - galley.size().y / 2.0);
+                            widgets::paint_text(ui.painter(), at, galley, ink);
                         }
                     });
             });
