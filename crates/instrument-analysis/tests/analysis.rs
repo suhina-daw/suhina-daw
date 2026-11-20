@@ -272,7 +272,7 @@ fn vibrato_keeps_its_note_but_a_semitone_trill_does_not() {
     let trill: Vec<f32> = (0..RATE as usize * 2)
         .scan(0.0f64, |phase, i| {
             let t = i as f64 / f64::from(RATE);
-            let midi = if (t * 4.0) as usize % 2 == 0 { 60.0 } else { 61.0 };
+            let midi = if ((t * 4.0) as usize).is_multiple_of(2) { 60.0 } else { 61.0 };
             *phase += 440.0 * 2.0f64.powf((midi - 69.0) / 12.0) / f64::from(RATE);
             Some(((std::f64::consts::TAU * *phase).sin() * 0.5) as f32)
         })

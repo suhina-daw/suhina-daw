@@ -66,8 +66,9 @@ decays as one exponential: beating partials and a fast early decay followed by a
 leave decibels of error that version 1's limits (1.0 dB estimation, 1.5 dB validation) rejected,
 so a recorded strike could yield no model at all. When a span of nine or more windows fails,
 the fit is repeated once on its last two thirds, which describes the sustained part after a fast
-early decay. A mode whose fitted level changes by at most 3 dB across its span without
-clearly decaying, within the same error limits, is **sustained**: a bowed, blown or held partial
+early decay. A mode whose fitted level changes by at most 3 dB across its whole span without
+clearly decaying, within the same error limits, is **sustained** (the late retry never makes a
+mode sustained, since beating can flatten a decaying partial's late windows): a bowed, blown or held partial
 (a cello, an organ, a voice) is stored with the profile's longest T60, 60 s, and is reported as
 sustained; note-off releases it like any modal voice. This approximates a held tone by its
 spectrum and is not a bowing or breath model. The result contains at most 16 modes within the
