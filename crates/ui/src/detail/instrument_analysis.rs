@@ -160,6 +160,12 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                                 if add.clicked() {
                                     actions.push(Action::new("instrument.addFit",json!({"track":track_value,"device":device_value,"job":view.job})));
                                 }
+                                // Another instrument: Source morph weighs it against the others.
+                                let other = flow_button(ui, "Add as new source", true);
+                                remember_keyboard_owner(&other);
+                                if other.clicked() {
+                                    actions.push(Action::new("instrument.addFit",json!({"track":track_value,"device":device_value,"job":view.job,"newSource":true})));
+                                }
                             }
                             // Level-matched A/B against the source before accepting.
                             for (label, which) in [("Play original", "original"), ("Play fitted", "fitted")] {
@@ -309,6 +315,14 @@ fn folder_ready(
             remember_keyboard_owner(&add);
             if add.clicked() {
                 actions.push(Action::new("instrument.addFit", json!({"track":track,"device":device,"job":view.job})));
+            }
+            let other = flow_button(ui, "Add as new source", true);
+            remember_keyboard_owner(&other);
+            if other.clicked() {
+                actions.push(Action::new(
+                    "instrument.addFit",
+                    json!({"track":track,"device":device,"job":view.job,"newSource":true}),
+                ));
             }
         }
     });

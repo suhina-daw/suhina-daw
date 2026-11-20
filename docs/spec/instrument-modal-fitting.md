@@ -146,7 +146,7 @@ reason it was skipped), and the recordings kept. Nothing changes until the perso
 `instrument.acceptFit` with a folder job adopts all its recordings as a new set (as for one
 recording, with the model controls reset); `instrument.addFit` adds them all to the device's
 existing set (all or none: duplicates of a key, velocity and source already there, or more than
-32 in all, refuse the whole addition), with an optional `source` for all of them. The folder job
+32 in all, refuse the whole addition), with an optional `source` or `newSource` for all of them. The folder job
 is stale once the device is removed or its fitted model changes; the device's own sample, trim
 and root do not concern it. The Sample page offers **Fit folder…**, which asks for the folder
 with the system's dialog.

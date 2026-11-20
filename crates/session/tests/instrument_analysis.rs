@@ -347,7 +347,12 @@ fn folder_fitting_lifecycle() {
     assert!(session.execute("instrument.addFit", &json!({"track":1,"device":0,"job":again["job"]})).is_err());
     assert_eq!(session.project(), &accepted_project);
     // As another source (instrument) all three join, in one undo step.
-    let added = run(&mut session, "instrument.addFit", json!({"job":again["job"],"source":1}));
+    assert!(
+        session
+            .execute("instrument.addFit", &json!({"track":1,"device":0,"job":again["job"],"source":1,"newSource":true}))
+            .is_err()
+    );
+    let added = run(&mut session, "instrument.addFit", json!({"job":again["job"],"newSource":true}));
     assert_eq!(added["added"], true);
     assert_eq!(added["recordings"], 6);
     assert_eq!(added["recordingSource"], 1);
