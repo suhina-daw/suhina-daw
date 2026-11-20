@@ -24,11 +24,14 @@ pub(crate) struct Limits {
     pub hidden: usize,
     pub draws: usize,
     pub expressions: usize,
+    pub local_pages: bool,
 }
 
 impl Limits {
-    pub const SD: Self = Self { controls: 128, hidden: 128, draws: MAX_DRAW_COMMANDS, expressions: 32_768 };
-    pub const BUILT_IN: Self = Self { controls: 2_048, hidden: 2_048, draws: 32_768, expressions: 2_000_000 };
+    pub const SD: Self =
+        Self { controls: 128, hidden: 128, draws: MAX_DRAW_COMMANDS, expressions: 32_768, local_pages: false };
+    pub const BUILT_IN: Self =
+        Self { controls: 2_048, hidden: 2_048, draws: 32_768, expressions: 2_000_000, local_pages: true };
 }
 type Color = [u8; 4];
 fn white() -> Color {
@@ -528,6 +531,10 @@ pub const THEME_PALETTE_TOKENS: [([u8; 3], &str); 5] =
 
 /// The id a canvas reads to know whether its device's expanded panel is open (1) or not (0).
 pub const EXPANDED_ID: &str = "#expanded";
+/// Built-in layouts' host-owned page selection. Not a device parameter or project edit.
+/// Only linear X bindings on Set/Expand buttons may write it; expressions may read it.
+pub const PAGE_ID: &str = "#page";
+pub const MAX_PAGE: u16 = 15;
 /// What a [`Draw::Plot`]'s `y` reads for its share of the way along the curve, 0 to 1.
 pub const PLOT_X_ID: &str = "#x";
 /// What an expression reads for the host's clock, in seconds, for a drawing that moves by itself.
@@ -597,6 +604,7 @@ impl DeviceUi {
             .map(|p| p.id.as_str())
             .chain(READOUT_IDS)
             .chain([EXPANDED_ID, PLOT_X_ID, TIME_ID])
+            .chain(limits.local_pages.then_some(PAGE_ID))
             .collect::<HashSet<_>>();
         let ids = parameters.iter().map(|p| p.id.as_str()).collect::<HashSet<_>>();
         let mut asset_ids = HashSet::new();
@@ -881,6 +889,23 @@ impl DeviceUi {
                 // A negative scale drags the other way (a ratio knob over a slope).
                 if !binding.drag_scale.is_finite() || !(0.01..=100.).contains(&binding.drag_scale.abs()) {
                     return Err(fail("drag scale must be finite and within 0.01..100 either way"));
+                }
+                if binding.parameter == PAGE_ID {
+                    let target = match c.gesture {
+                        UiGesture::Set(page) | UiGesture::Expand(page) => Some(page),
+                        _ => None,
+                    };
+                    if !limits.local_pages
+                        || !matches!(c.widget, Some(Widget::Button { .. }))
+                        || binding.logarithmic
+                        || c.y.is_some()
+                        || target.is_none_or(|page| page > MAX_PAGE)
+                    {
+                        return Err(fail(
+                            "local pages require a built-in Set/Expand button with a linear X binding, 0..15",
+                        ));
+                    }
+                    continue;
                 }
                 let p = parameters
                     .iter()

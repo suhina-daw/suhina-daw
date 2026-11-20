@@ -85,6 +85,38 @@ fn draw_and_expand_gestures_need_their_bindings() {
 }
 
 #[test]
+fn local_pages_are_bounded_native_ui_state_and_not_sd_parameters() {
+    let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };
+    ui.controls.push(CustomControl {
+        id: "model".into(),
+        name: "Model".into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 100., 30.],
+        widget: Some(Widget::Button { label: "Model".into(), off_label: None, indicator: false }),
+        gesture: UiGesture::Set(1),
+        x: Some(UiBinding::new(PAGE_ID)),
+        y: None,
+        drawing: vec![],
+        visible_when: Some(UiValue::parameter(PAGE_ID, false)),
+    });
+    ui.validate_within(&[], &Limits::BUILT_IN).unwrap();
+    assert!(ui.validate(&[]).is_err(), "version 6 graph bindings remain device parameters");
+    let roundtrip: DeviceUi = serde_json::from_str(&serde_json::to_string(&ui).unwrap()).unwrap();
+    assert_eq!(roundtrip, ui);
+    for gesture in
+        [UiGesture::Set(16), UiGesture::Expand(u16::MAX), UiGesture::Toggle, UiGesture::Tab(1), UiGesture::Drag]
+    {
+        ui.controls[0].gesture = gesture;
+        assert!(ui.validate_within(&[], &Limits::BUILT_IN).is_err(), "{gesture:?}");
+    }
+    ui.controls[0].gesture = UiGesture::Expand(MAX_PAGE);
+    ui.validate_within(&[], &Limits::BUILT_IN).unwrap();
+    ui.controls[0].x.as_mut().unwrap().logarithmic = true;
+    assert!(ui.validate_within(&[], &Limits::BUILT_IN).is_err());
+    assert!(crate::validate_parameters(&[Parameter::new(PAGE_ID, "Page", (0., 15.), 0.)]).is_err());
+}
+
+#[test]
 fn handles_bind_an_axis_or_two_and_presets_name_declared_values() {
     let params = [Parameter::new("cut", "Cut", (20., 20_000.), 1_000.), Parameter::new("res", "Res", (0., 1.), 0.)];
     let mut ui = DeviceUi { size: [200., 60.], ..DeviceUi::default() };

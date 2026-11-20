@@ -900,14 +900,6 @@ impl App {
             self.pending_device_remove = None;
         }
         self.place_editors(&places);
-        self.sample_drops = ui
-            .ctx()
-            .data(|d| {
-                d.get_temp::<Vec<crate::detail::device_canvas::SampleTarget>>(
-                    crate::detail::device_canvas::sample_targets_id(),
-                )
-            })
-            .unwrap_or_default();
         // The toolbar's × hides the editor.
         if std::mem::take(&mut self.piano_roll.hide_requested) {
             self.hide_editor();
