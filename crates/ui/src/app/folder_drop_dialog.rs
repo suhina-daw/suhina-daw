@@ -5,11 +5,11 @@
 //! there or copy them, with Remember my choice, which sets Settings › Browser › Samples dropped
 //! on a folder so the question is not asked again.
 
-use egui::{Align2, Id, Key, Pos2, Rect, Ui, Vec2};
+use egui::{Id, Key, Pos2, Rect, Ui, Vec2};
 
-use super::project_dialog::{BUTTON, CloseChoice, LINE, SAVE_WIDTH, panel};
-use crate::kit::theme::{self, PAD, ROW};
-use crate::kit::widgets::{self, button};
+use super::project_dialog::{CloseChoice, LINE, SAVE_WIDTH, panel};
+use crate::kit::theme::{self, PAD};
+use crate::kit::{dialog, widgets};
 
 /// What the person answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,7 +29,7 @@ impl CloseChoice for FolderDropChoice {
 /// Remember my choice box. Returns the answer, or `None` while it stays open.
 pub fn show(ui: &Ui, area: Rect, count: usize, folder: &str, remember: &mut bool) -> Option<FolderDropChoice> {
     // A dialog: the sheet's `dialog` rules reach it, as the other dialogs.
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("folder-drop");
     crate::kit::floating::area(ui.ctx(), Id::unique("folder-drop-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -51,14 +51,11 @@ fn draw(
     remember: &mut bool,
 ) -> Option<FolderDropChoice> {
     let mut closed: Option<FolderDropChoice> = None;
-    let size = Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD);
+    let size = Vec2::new(SAVE_WIDTH, 2.0 * LINE + PAD + dialog::BUTTON_HEIGHT);
     let panel = panel(ui, dialog, area, size, "Move or copy", &mut closed);
     let painter = ui.painter_at(area);
     let samples = if count == 1 { "the sample".to_string() } else { format!("the {count} samples") };
-    let line = Rect::from_min_size(
-        Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD),
-        Vec2::new(panel.width() - 2.0 * PAD, LINE),
-    );
+    let line = Rect::from_min_size(Pos2::new(panel.left(), panel.top()), Vec2::new(panel.width(), LINE));
     let message = format!("Move or copy {samples} to {folder}?");
     let font = theme::ui_font(theme::TEXT);
     let ink = crate::kit::element::name_ink();
@@ -66,47 +63,28 @@ fn draw(
     painter.galley(Pos2::new(line.left(), line.center().y - fitted.size().y / 2.0), fitted, ink);
     // Remember my choice: a box and its label, both one control.
     let check = Rect::from_min_size(Pos2::new(line.left(), line.bottom()), Vec2::new(line.width() * 0.6, LINE));
-    let response = widgets::button_area(ui, check, Id::unique("folder-drop-remember"), "Remember my choice");
-    let mark = Rect::from_center_size(Pos2::new(check.left() + 6.0, check.center().y), Vec2::splat(11.0));
-    // A `button[kind="check"]`, `[checked]` while remembered: its `border-color` for the box (a step
-    // stronger under the pointer), and its `background-color` for the mark while it is checked.
-    let el = crate::kit::element::BUTTON
-        .attribute("kind", "check")
-        .response(&response)
-        .attr(crate::kit::element::Checked, *remember)
-        .enter();
-    painter.rect_stroke(mark, 0.0, theme::hairline(el.border()), egui::StrokeKind::Inside);
-    if *remember {
-        painter.rect_filled(mark.shrink(2.5), 0.0, el.background());
-    }
-    drop(el);
-    let label = Rect::from_min_max(Pos2::new(mark.right() + 6.0, check.top()), check.max);
-    let small = theme::ui_font(theme::TEXT_SMALL);
-    widgets::text_in(
-        &painter,
-        label,
-        Align2::LEFT_CENTER,
-        "Remember my choice",
-        small,
-        crate::kit::element::caption_ink(),
-    );
+    let response =
+        widgets::check_box(ui, &painter, check, Id::unique("folder-drop-remember"), "Remember my choice", *remember);
     if response.clicked() {
         *remember = !*remember;
     }
-    let moved = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
-    let copied = Rect::from_min_size(Pos2::new(moved.left() - 4.0 - BUTTON.x, moved.top()), BUTTON);
-    let cancel = Rect::from_min_size(Pos2::new(copied.left() - 4.0 - BUTTON.x, moved.top()), BUTTON);
-    if button(ui, &painter, moved, "Move", "Move the samples into the folder")
-        || ui.input(|i| i.key_pressed(Key::Enter))
-    {
+    let clicked = dialog::actions(
+        ui,
+        &painter,
+        panel,
+        &[
+            dialog::Action::new("Cancel", "Leave the samples where they are"),
+            dialog::Action::new("Copy", "Copy the samples into the folder, leaving them where they are"),
+            dialog::Action::new("Move", "Move the samples into the folder"),
+        ],
+    );
+    if clicked == Some(2) || ui.input(|i| i.key_pressed(Key::Enter)) {
         return Some(FolderDropChoice::Move);
     }
-    if button(ui, &painter, copied, "Copy", "Copy the samples into the folder, leaving them where they are") {
+    if clicked == Some(1) {
         return Some(FolderDropChoice::Copy);
     }
-    if button(ui, &painter, cancel, "Cancel", "Leave the samples where they are")
-        || ui.input(|i| i.key_pressed(Key::Escape))
-    {
+    if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) {
         return Some(FolderDropChoice::Cancel);
     }
     closed

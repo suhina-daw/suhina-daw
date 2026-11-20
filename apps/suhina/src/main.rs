@@ -37,6 +37,8 @@ mod crash_log;
 mod data_folder;
 #[cfg(target_os = "macos")]
 mod mac_menu;
+#[cfg(target_os = "macos")]
+mod mac_windows;
 mod pack_materialize;
 mod recent;
 mod save_error;
@@ -240,6 +242,7 @@ fn main() -> ExitCode {
         }),
     };
     // The audio devices, and the output the settings choose (Settings › Audio, `audio.*`).
+    window.app.set_see_through_asked(see_through_asked);
     if under_title_bar {
         let (title_bar, corner) = mac_window_frame();
         window.app.set_window_frame(title_bar, corner);
@@ -478,6 +481,16 @@ impl eframe::App for Window {
             self.see_through = Some(see_through);
         }
         self.draw(ui, frame);
+        // What the windows of their own show while the system resizes them.
+        #[cfg(target_os = "macos")]
+        if let Some(window) = frame.winit_window() {
+            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            if let Ok(handle) = window.window_handle()
+                && let RawWindowHandle::AppKit(main) = handle.as_raw()
+            {
+                mac_windows::pin_frames_top_left(main.ns_view.as_ptr().cast_const());
+            }
+        }
         suhina_ui::kit::liquid::finish_backdrops(ui.ctx());
         self.blur(frame);
     }

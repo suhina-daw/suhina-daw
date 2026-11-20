@@ -134,7 +134,7 @@ impl Splash {
         );
 
         // The card is a `dialog`: its edge in its `border-color`, its words as a dialog's.
-        let card = crate::kit::element::DIALOG.enter();
+        let card = crate::kit::dialog::enter("splash");
         let rect = Rect::from_center_size(area.center(), SIZE.min(area.size()));
         painter.rect_filled(
             rect,

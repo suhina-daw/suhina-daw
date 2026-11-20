@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog suhina-glass 11fde04d415e3caf
+agent-dialog suhina-glass 6cf8839a9dfb30c9
 arrangement suhina-glass e53717d4b96c7ff6
 arrangement-scrolled suhina-glass 53363d02d45e0db5
 browser suhina-glass 65406df4221e5918
@@ -9,17 +9,17 @@ browser-plug-ins suhina-glass 29afa734da33b169
 browser-search suhina-glass abccb9030fba41bf
 clip-audio suhina-glass ded8ae5addeb5e2c
 clip-midi suhina-glass 101b6af199981845
-colour-picker suhina-glass dfe1c23111ce66fa
-colour-picker-field suhina-glass 0317e5c9cc5d425b
-colour-picker-wheel suhina-glass 58f71918babb2780
-context-menu suhina-glass 685025f8d8f31486
+colour-picker suhina-glass 01615f35e78a0901
+colour-picker-field suhina-glass 365754f6b94f3896
+colour-picker-wheel suhina-glass 0324130fced26160
+context-menu suhina-glass a8494d13636598b5
 control-bar-toggles suhina-glass 68d2d6fc0c3e6ee5
-count-in-menu suhina-glass 34cdbf8a34b7182f
+count-in-menu suhina-glass b966eb5b827aed01
 cpu suhina-glass dd8290c2ee1f2340
 detail-beside suhina-glass f10d55a6ec6b0934
 device-group suhina-glass c513bd237a4409fb
 devices suhina-glass 0a06825fd0914ece
-empty-space-menu suhina-glass 8154b4b7c3f29876
+empty-space-menu suhina-glass 6d47fe97b3f6bae0
 expanded-delay suhina-glass f7187416886498a3
 expanded-fm-synth suhina-glass e0a3f4dc2c091b22
 expanded-instrument suhina-glass f80d286ef4fd7102
@@ -28,8 +28,8 @@ expanded-instrument-sample suhina-glass 38ef91d6e92c751c
 expanded-multiband suhina-glass df827cc869ed7ce4
 expanded-reverb suhina-glass 56b7c4c8e760a25c
 expanded-vinyl-distortion suhina-glass f23b28f2c7c0bb69
-export-dialog suhina-glass 46e6403a7f7dd37e
-grid-menu suhina-glass c8dcf179c0a745da
+export-dialog suhina-glass bce52a489afda68c
+grid-menu suhina-glass edc044cf9873ca13
 instrument-instrument suhina-glass 3c210592a34f1c10
 instrument-sampler suhina-glass 7896452a9e1e2188
 launcher suhina-glass cc85052e179f5138
@@ -37,15 +37,15 @@ launcher-hover suhina-glass 20e315392672b6d4
 launcher-scrolled suhina-glass e4ceeda3fab72a12
 launcher-selected suhina-glass c416e3cdbe95c541
 launcher-toggles suhina-glass 49d2dc22f13173a6
-menu suhina-glass 241c5f284eea4597
+menu suhina-glass 7da9e2fc69a6b863
 missing-files suhina-glass 05fff21ef5b17292
 new-theme-dialog suhina-glass f9dad92b41a7c6eb
 piano-roll suhina-glass bae08caa6fafa24c
-project-dialog suhina-glass e078dd8e3bcac854
-quantize-menu suhina-glass 0406edb20b286f2e
-quick-add suhina-glass 5baf13bcf86471ee
+project-dialog suhina-glass 16bddf90b84c2149
+quantize-menu suhina-glass 291ef24e7fd367b5
+quick-add suhina-glass b4258027f33535d1
 sample-map suhina-glass 51052ed5d8a2897f
-save-dialog suhina-glass 79e799be0b57c982
+save-dialog suhina-glass ba34dfb74fbd8999
 settings suhina-glass d1f5508ea38803d4
 settings-agents suhina-glass 48301e60d65c1cb8
 settings-appearance suhina-glass 4029c924d4bb2e39
@@ -54,12 +54,12 @@ settings-browser suhina-glass 4ad5c0442a4b6b71
 settings-devices suhina-glass bf104ddd5ded4efe
 settings-keys suhina-glass 1adf11fa6d959231
 settings-launcher suhina-glass 0c5d5c345830afcd
-settings-menu suhina-glass b2aec81011471a84
+settings-menu suhina-glass 917153e5a5003cae
 settings-midi suhina-glass aba26a1c5ab12d36
 settings-plug-ins suhina-glass 668d1c60e9eba877
 settings-themes suhina-glass f97b8efa4bab4b44
 start-panel suhina-glass ee355f90540cebf9
-time-signature-menu suhina-glass 74df7e7062b2c804
-tooltip suhina-glass 6f46a24c8929f12a
-unsaved-dialog suhina-glass b86ad7121e8646b8
-updates-dialog suhina-glass f59f22ae5868da67
+time-signature-menu suhina-glass 4e2b9be679b7b50c
+tooltip suhina-glass db4c731cb94b9e09
+unsaved-dialog suhina-glass 4993426b2ff144fc
+updates-dialog suhina-glass 89a3a8faeebbdf9d

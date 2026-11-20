@@ -255,12 +255,11 @@ fn floating(ctx: &Context, order: &[egui::LayerId]) -> (Vec<Floating>, Vec<egui:
             if shown <= 0.0 {
                 return None;
             }
-            // A popup styled where it opens (a device panel's drop-down) takes that style, its
-            // frame and its blur; the bar's menus paint `menu` themselves.
-            let own = (name == POPUP).then(|| in_place.get(&layer.id).cloned()).flatten();
+            // A popup or a bar's menu styled where it opens (a device panel's drop-down, the
+            // menu in its bar) takes that style, its frame and its blur.
+            let own = in_place.get(&layer.id).cloned();
             let restyled = match &own {
                 Some(style) => super::floating::frame_styled(ctx, style.clone(), &frame, shown),
-                None if name == MENU => None,
                 None => super::floating::frame(ctx, name, &frame, shown),
             };
             let blur = match own {

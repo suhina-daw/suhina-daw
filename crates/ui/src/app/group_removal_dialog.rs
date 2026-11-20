@@ -5,9 +5,9 @@
 
 use egui::{Align2, Id, Key, Pos2, Rect, Ui, Vec2};
 
-use super::project_dialog::{BUTTON, CloseChoice, LINE, panel};
-use crate::kit::theme::{self, PAD, ROW};
-use crate::kit::widgets::{self, button};
+use super::project_dialog::{CloseChoice, LINE, panel};
+use crate::kit::theme::{self, PAD};
+use crate::kit::{dialog, widgets};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Choice {
@@ -22,28 +22,25 @@ impl CloseChoice for Choice {
 }
 
 pub(super) fn show(ui: &Ui, area: Rect, names: &[String], remember: &mut bool) -> Option<Choice> {
-    let dialog = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("group-removal");
     crate::kit::floating::area(ui.ctx(), Id::unique("group-removal-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
         .show(ui.ctx(), |ui| {
-            let mut styled = dialog.ui(ui);
+            let mut styled = style_class.ui(ui);
             let ui = &mut *styled;
             ui.set_min_size(area.size());
             let mut closed = None;
-            let box_rect = panel(
+            let content = panel(
                 ui,
-                &dialog,
+                &style_class,
                 area,
-                Vec2::new(480.0, ROW + 8.0 * LINE + BUTTON.y + 3.0 * PAD),
+                Vec2::new(464.0, 8.0 * LINE + PAD + dialog::BUTTON_HEIGHT),
                 "Remove group processing?",
                 &mut closed,
             );
             let painter = ui.painter_at(area);
-            let line = Rect::from_min_size(
-                Pos2::new(box_rect.left() + PAD, box_rect.top() + ROW + PAD),
-                Vec2::new(box_rect.width() - 2.0 * PAD, LINE),
-            );
+            let line = Rect::from_min_size(content.min, Vec2::new(content.width(), LINE));
             let names_area = Rect::from_min_size(line.min, Vec2::new(line.width(), 4.0 * LINE));
             ui.scope_builder(egui::UiBuilder::new().max_rect(names_area), |ui| {
                 ui.set_clip_rect(names_area.intersect(area));
@@ -89,40 +86,30 @@ pub(super) fn show(ui: &Ui, area: Rect, names: &[String], remember: &mut bool) -
                 );
             }
             let check = line.translate(Vec2::new(0.0, 3.0 * LINE));
-            let response = widgets::button_area(ui, check, Id::unique("group-removal-remember"), "Remember my choice");
-            let mark = Rect::from_center_size(Pos2::new(check.left() + 6.0, check.center().y), Vec2::splat(11.0));
-            let el = crate::kit::element::BUTTON
-                .attribute("kind", "check")
-                .response(&response)
-                .attr(crate::kit::element::Checked, *remember)
-                .enter();
-            painter.rect_stroke(mark, 0.0, theme::hairline(el.border()), egui::StrokeKind::Inside);
-            if *remember {
-                painter.rect_filled(mark.shrink(2.5), 0.0, el.background());
-            }
-            drop(el);
-            widgets::text_in(
+            let response = widgets::check_box(
+                ui,
                 &painter,
-                Rect::from_min_max(Pos2::new(mark.right() + 6.0, check.top()), check.max),
-                Align2::LEFT_CENTER,
+                check,
+                Id::unique("group-removal-remember"),
                 "Remember my choice",
-                theme::ui_font(theme::TEXT_SMALL),
-                crate::kit::element::caption_ink(),
+                *remember,
             );
             if response.clicked() {
                 *remember = !*remember;
             }
-            let remove = Rect::from_min_size(
-                Pos2::new(box_rect.right() - PAD - 132.0, box_rect.bottom() - PAD - BUTTON.y),
-                Vec2::new(132.0, BUTTON.y),
+            let clicked = dialog::actions(
+                ui,
+                &painter,
+                content,
+                &[
+                    dialog::Action::new("Cancel", "Keep the project unchanged"),
+                    dialog::Action::new("Remove processing", "Remove the groups and their processing").wide(132.0),
+                ],
             );
-            let cancel = Rect::from_min_size(Pos2::new(remove.left() - PAD - BUTTON.x, remove.top()), BUTTON);
-            if button(ui, &painter, remove, "Remove processing", "Remove the groups and their processing") {
+            if clicked == Some(1) {
                 return Some(Choice::Remove);
             }
-            if button(ui, &painter, cancel, "Cancel", "Keep the project unchanged")
-                || ui.input(|i| i.key_pressed(Key::Escape))
-            {
+            if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) {
                 return Some(Choice::Cancel);
             }
             closed

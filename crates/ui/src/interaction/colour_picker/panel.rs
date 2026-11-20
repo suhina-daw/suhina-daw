@@ -11,7 +11,14 @@ use suhina_engine::model::Rgb;
 use suhina_style::value::{hsl_to_srgb, oklch_to_srgb, srgb_to_hsl, srgb_to_oklch};
 
 use super::{color32, hex};
-use crate::kit::{element, theme, widgets};
+use crate::kit::{controls, element, widgets};
+
+/// The room between rows.
+const SPACING: Vec2 = Vec2::new(4.0, 5.0);
+/// How tall Fine adjustment is with the field and with the wheel in the built-in themes, until it
+/// has been drawn: the window sizes itself from these the first time, and from what it measures
+/// after.
+const FINE_GUESS: [f32; 2] = [241.0, 306.0];
 
 /// Conventional HSV of encoded sRGB, so its hue agrees with numeric HSL. Reuse egui's
 /// component conversion, without its linear-light Hsva transfer functions.
@@ -44,7 +51,16 @@ pub(crate) enum Edit {
 }
 
 pub(crate) struct Panel {
-    pub expanded: bool,
+    /// Whether Fine adjustment is drawn open, and the wheel drawn in place of the field.
+    expanded: bool,
+    wheel: bool,
+    /// What the user last asked for, drawn once [`Self::settle`] runs (see [`Self::asks`]).
+    ask_expanded: bool,
+    ask_wheel: bool,
+    /// The heights last measured: the whole panel less what Fine adjustment adds, and Fine
+    /// adjustment with the field and with the wheel (its Value slider too).
+    base: Option<f32>,
+    fine: [f32; 2],
     pub dragging: bool,
     cancelled_drag: bool,
     pub colour: Rgb,
@@ -53,7 +69,6 @@ pub(crate) struct Panel {
     name: String,
     numbers: [String; 6],
     invalid: bool,
-    wheel: bool,
     steps: bool,
     soft: bool,
     random: u64,
@@ -65,6 +80,11 @@ impl Default for Panel {
         let colour = suhina_session::colours::MIDI;
         let mut panel = Self {
             expanded: false,
+            wheel: false,
+            ask_expanded: false,
+            ask_wheel: false,
+            base: None,
+            fine: FINE_GUESS,
             dragging: false,
             cancelled_drag: false,
             colour,
@@ -73,7 +93,6 @@ impl Default for Panel {
             name: String::new(),
             numbers: Default::default(),
             invalid: false,
-            wheel: false,
             steps: false,
             soft: false,
             random: std::time::SystemTime::now()
@@ -88,6 +107,26 @@ impl Default for Panel {
 }
 
 impl Panel {
+    /// Whether the user asked for a layout that is not drawn yet. Opening Fine adjustment or
+    /// choosing the wheel waits until the window has grown to [`Self::height`], so no frame draws
+    /// controls the window cuts off; closing or choosing the field may settle at once.
+    pub fn asks(&self) -> bool {
+        (self.ask_expanded, self.ask_wheel) != (self.expanded, self.wheel)
+    }
+
+    /// Draw the layout the user asked for from the next [`Self::show`] on.
+    pub fn settle(&mut self) {
+        (self.expanded, self.wheel) = (self.ask_expanded, self.ask_wheel);
+    }
+
+    /// How tall the panel is in the layout drawn now (`asked` false) or the one asked for, once it
+    /// has been shown once. Fine adjustment's height is a guess until it has been open.
+    pub fn height(&self, asked: bool) -> Option<f32> {
+        let (expanded, wheel) = if asked { (self.ask_expanded, self.ask_wheel) } else { (self.expanded, self.wheel) };
+        let fine = if expanded { self.fine[usize::from(wheel)] } else { 0.0 };
+        self.base.map(|base| base + fine)
+    }
+
     pub fn discard_drafts(&mut self) {
         self.fields();
     }
@@ -161,32 +200,35 @@ impl Panel {
 
     pub fn show(&mut self, ui: &mut Ui, recent: &[Rgb]) -> Vec<Edit> {
         let mut edits = Vec::new();
-        ui.spacing_mut().item_spacing = Vec2::new(4.0, 5.0);
+        ui.spacing_mut().item_spacing = SPACING;
         ui.spacing_mut().button_padding = Vec2::new(5.0, 2.0);
-        ui.label("Palette");
+        controls::heading(ui, "Palette");
         for row in super::swatches().chunks(suhina_session::colours::PALETTE_COLUMNS) {
             if let Some(colour) = swatch_line(ui, "Palette", row, self.colour) {
                 self.choose(colour, true, &mut edits);
             }
         }
-        ui.separator();
-        ui.label("Related shades");
+        controls::separator(ui);
+        controls::heading(ui, "Related shades");
         if let Some(colour) = swatch_line(ui, "Related shade", &related_shades(self.colour), self.colour) {
             self.choose(colour, true, &mut edits);
         }
-        ui.separator();
-        ui.label("Recent colours");
+        controls::separator(ui);
+        controls::heading(ui, "Recent colours");
         if recent.is_empty() {
-            ui.label(egui::RichText::new("Colours you use appear here").small().color(element::caption_ink()));
+            controls::note(ui, "Colours you use appear here");
         } else if let Some(colour) = swatch_line(ui, "Recent colour", &recent[..recent.len().min(8)], self.colour) {
             self.choose(colour, true, &mut edits);
         }
-        ui.separator();
-        ui.label(format!("Current colour · {}", self.name))
+        controls::separator(ui);
+        controls::text(ui, &format!("Current colour · {}", self.name))
             .on_hover_text("≈ means the nearest named shade. The hex value remains exact.");
         ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(62.0, 20.0), Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(62.0, controls::HEIGHT), Sense::hover());
             ui.painter().rect_filled(rect, 0.0, color32(self.colour));
+            // `colour-swatch[kind="square"]`'s `border-color`, as beside a colour's name in a menu.
+            let edge = element::COLOUR_SWATCH.attribute("kind", "square").look().border();
+            ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
             let id = Id::unique("track-colour-hex");
             let focused = ui.memory(|m| m.has_focus(id) || m.had_focus_last_frame(id));
             let response = widgets::text_input(
@@ -214,27 +256,30 @@ impl Panel {
                     }
                 }
             }
-            if ui.button("Copy").on_hover_text("Copy exact #RRGGBB colour").clicked() {
+            if controls::button(ui, "Copy").on_hover_text("Copy exact #RRGGBB colour").clicked() {
                 ui.ctx().copy_text(hex(self.colour));
             }
         });
-        let title = if self.expanded { "⌄ Fine adjustment" } else { "› Fine adjustment" };
-        if ui.selectable_label(self.expanded, title).clicked() {
-            self.expanded = !self.expanded;
+        if controls::disclosure(ui, "Fine adjustment", self.ask_expanded).clicked() {
+            self.ask_expanded = !self.ask_expanded;
+            ui.ctx().request_repaint();
         }
+        let mut fine = 0.0;
         if self.expanded {
+            let top = ui.cursor().top();
             self.fine(ui, &mut edits);
+            fine = ui.cursor().top() - top;
         }
-        ui.separator();
+        controls::separator(ui);
         ui.horizontal(|ui| {
-            if ui.button("Random").clicked() {
+            if controls::button(ui, "Random").clicked() {
                 self.random ^= self.random << 13;
                 self.random ^= self.random >> 7;
                 self.random ^= self.random << 17;
                 let colour = random_colour(self.colour, self.steps, self.soft, self.random);
                 self.choose(colour, false, &mut edits);
             }
-            if ui.button("Default").on_hover_text("Restore each selected track's default colour").clicked() {
+            if controls::button(ui, "Default").on_hover_text("Restore each selected track's default colour").clicked() {
                 self.discard_drafts();
                 edits.push(Edit::Default);
             }
@@ -243,7 +288,7 @@ impl Panel {
             } else {
                 ("Changes apply immediately", element::caption_ink())
             };
-            ui.label(egui::RichText::new(caption).small().color(ink));
+            controls::words(ui, caption, ink);
         });
         if self.dragging && ui.input(|i| i.key_pressed(Key::Escape)) {
             ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
@@ -257,25 +302,26 @@ impl Panel {
         if !ui.input(|i| i.pointer.any_down()) {
             self.cancelled_drag = false;
         }
+        let whole = ui.min_rect().height();
+        self.base = Some(whole - fine);
+        if self.expanded {
+            self.fine[usize::from(self.wheel)] = fine;
+        }
         edits
     }
 
     fn fine(&mut self, ui: &mut Ui, edits: &mut Vec<Edit>) {
-        ui.horizontal(|ui| {
-            if ui.selectable_label(!self.wheel, "Field").clicked() {
-                self.wheel = false;
-            }
-            if ui.selectable_label(self.wheel, "Wheel").clicked() {
-                self.wheel = true;
-            }
-        });
+        if let Some(wheel) = controls::options(ui, "View", &[("Field", false), ("Wheel", true)], self.ask_wheel) {
+            self.ask_wheel = wheel;
+            ui.ctx().request_repaint();
+        }
         let mut hsv = self.hsv;
         let response = self.canvas.show(ui, &mut hsv, self.wheel, self.steps, self.soft);
         if response.changed() {
             self.pointer_colour(hsv, response.dragged() || self.dragging, edits);
         }
         let mut hue = self.hsv.h * 360.0;
-        let response = ui.add(egui::Slider::new(&mut hue, 0.0..=360.0).text("Hue").suffix("°"));
+        let response = controls::slider(ui, "Hue", &mut hue, 0.0..=360.0, 1.0, |h| format!("{h:.0}°"));
         if response.changed() {
             let mut hsv = self.hsv;
             hsv.h = hue / 360.0;
@@ -283,7 +329,8 @@ impl Panel {
         }
         if self.wheel {
             let mut value = self.hsv.v;
-            let response = ui.add(egui::Slider::new(&mut value, 0.0..=1.0).text("Value"));
+            let response =
+                controls::slider(ui, "Value", &mut value, 0.0..=1.0, 0.01, |v| format!("{:.0} %", v * 100.0));
             if response.changed() {
                 let mut hsv = self.hsv;
                 hsv.v = value;
@@ -293,11 +340,17 @@ impl Panel {
         self.numeric_row(ui, false, edits);
         self.numeric_row(ui, true, edits);
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.steps, "Steps")
+            let steps = controls::check_box(ui, "Steps", self.steps)
                 .on_hover_text("Pointer selection: 15° hue and 10% saturation/value steps");
-            ui.checkbox(&mut self.soft, "Soft colours").on_hover_text(
+            if steps.clicked() {
+                self.steps = !self.steps;
+            }
+            let soft = controls::check_box(ui, "Soft colours", self.soft).on_hover_text(
                 "Pointer selection: 25–70% saturation, 45–90% value. Exact entries remain unrestricted.",
             );
+            if soft.clicked() {
+                self.soft = !self.soft;
+            }
         });
     }
 
@@ -310,7 +363,7 @@ impl Panel {
         let mut cancel = false;
         ui.horizontal(|ui| {
             for (offset, (label, name)) in labels.into_iter().zip(names).enumerate() {
-                ui.label(label);
+                controls::text(ui, label);
                 let Some(text) = self.numbers.get_mut(start + offset) else { continue };
                 let id = Id::unique(("track-colour-number", name));
                 let focused = ui.memory(|m| m.has_focus(id) || m.had_focus_last_frame(id));
@@ -384,12 +437,7 @@ fn swatch_line(ui: &mut Ui, label: &str, colours: &[Rgb], current: Rgb) -> Optio
                 });
                 ui.painter().rect_filled(rect, 0.0, color32(colour));
                 if colour == current || response.hovered() || response.has_focus() {
-                    ui.painter().rect_stroke(
-                        rect.shrink(1.0),
-                        0.0,
-                        egui::Stroke::new(2.0, theme::text_on(color32(colour))),
-                        egui::StrokeKind::Inside,
-                    );
+                    super::swatch_ring(ui.painter(), rect, colour, colour == current);
                 }
                 if response.clicked() {
                     picked = Some(colour);

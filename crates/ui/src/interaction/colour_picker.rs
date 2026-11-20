@@ -72,8 +72,6 @@ impl Pick {
 /// swatch is a button named "Colour #rrggbb".
 pub(crate) fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
     let mut picked = None;
-    // A `colour-swatch`'s `border-color` outlines the chosen swatch and the one under the pointer.
-    let ring = crate::kit::element::COLOUR_SWATCH.look().border();
     for colours in swatches().chunks(suhina_session::colours::PALETTE_COLUMNS) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::splat(SWATCH_GAP);
@@ -84,13 +82,7 @@ pub(crate) fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
                 response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), chosen, &name));
                 ui.painter().rect_filled(rect, 0.0, color32(colour));
                 if chosen || response.hovered() || response.has_focus() {
-                    let width = if chosen { 1.5 } else { 1.0 };
-                    let ring = if theme::text_contrast(ring, color32(colour)) >= 3.0 {
-                        ring
-                    } else {
-                        theme::text_on(color32(colour))
-                    };
-                    ui.painter().rect_stroke(rect, 0.0, Stroke::new(width, ring), StrokeKind::Inside);
+                    swatch_ring(ui.painter(), rect, colour, chosen);
                 }
                 if response.clicked() {
                     picked = Some(colour);
@@ -102,6 +94,15 @@ pub(crate) fn swatch_strip(ui: &mut Ui, current: Option<Rgb>) -> Option<Rgb> {
         });
     }
     picked
+}
+
+/// The ring round a swatch of `colour` in `rect`, the chosen one's (`chosen`) a little wider: a
+/// `colour-swatch`'s `border-color`, or the ink that reads on the colour where that does not.
+pub(crate) fn swatch_ring(painter: &egui::Painter, rect: Rect, colour: Rgb, chosen: bool) {
+    let ring = crate::kit::element::COLOUR_SWATCH.look().border();
+    let fill = color32(colour);
+    let ring = if theme::text_contrast(ring, fill) >= 3.0 { ring } else { theme::text_on(fill) };
+    painter.rect_stroke(rect, 0.0, Stroke::new(if chosen { 1.5 } else { 1.0 }, ring), StrokeKind::Inside);
 }
 
 /// A track menu's compact palette; + opens the persistent window through the app.

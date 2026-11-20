@@ -368,8 +368,11 @@ Suhina has a user-agent style sheet, as a browser does: `crates/theme-package/sr
 (`suhina_theme_package::USER_AGENT_SHEET`), built into the app. It is the bare floor every
 element stands on: what keeps it usable, with no design of Suhina's. Its only colours are a
 plain readable floor on `window`, fixed light text on an opaque dark background, and the same
-opaque background on `menu`, `popup` and `dialog`, so what floats over the window never shows
-what is behind it; the base sheet replaces them with Suhina's colours.
+opaque background on `menu`, `popup`, `tooltip` and `dialog`, so what floats over the window
+never shows what is behind it; the base sheet replaces them with Suhina's colours. Those
+backgrounds reach the surfaces whichever sheet gives them: egui frames its menus, pop-ups and
+tooltips in the window's frame (`widget[kind="window"]`), which this sheet leaves clear, and the
+element's background replaces that frame's fill.
 
 - **It selects elements by name, state and attribute only:** no classes (but the standard toolbar
   group classes, `group.transport` and `group.display`, once the toolbar has groups), no ids, no
@@ -385,7 +388,9 @@ what is behind it; the base sheet replaces them with Suhina's colours.
   `project-tabs`, `toolbar`) and a 1 px `border-top-width` on `status-bar`, in `--border` from
   the base sheet (the lines over and under the views are `separator#views-top` and
   `#views-bottom`); the window's grid (*The window grid*);
-  `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; the default
+  `backdrop-filter: blur(20px)` on `popup`, `menu`, `dialog` and `tooltip`; a dialog's
+  `padding: 10px` and its `dialog-actions` row (`display: flex`, at the end, 8 points apart); the
+  default
   artwork; the theme swatch's rounded square, in the colour its element carries.
 - **Default artwork** belongs to it: `knob-body { image: url("suhina:knob.body.svg"); }`. A
   `suhina:` URL names an SVG built into Suhina (`assets/themes/default/`), and a theme may use one

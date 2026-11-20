@@ -490,7 +490,8 @@ specific selector to win over Suhina's.
   `piano-roll-toolbar` to reach one of them), the status bar's counts
   (`bar-item[kind="status-counts"]`), Settings' pages' list (`settings-nav`, `[checked]` for the page
   shown), its switches, choices and presets (`button[kind="switch"]`, `"option"`, `"preset"`), a tick
-  box (`button[kind="check"]`), the start page's tabs (`editor-tab[kind="start"]`), the theme
+  box (`button[kind="check"]`; the track colour window's choices, tick boxes, buttons and sliders
+  are these same elements, with no rules of their own to write), the start page's tabs (`editor-tab[kind="start"]`), the theme
   picker's cards (`theme-card`), a dialog's title row and list rows (`dialog-title`,
   `list-row[kind="dialog"]`) and the drag pill (`tooltip`). **A rule for every `button` hides their
   lit looks too**: state `button[kind="map"][checked]`, `button[kind="option"][checked]`,
@@ -513,8 +514,9 @@ specific selector to win over Suhina's.
   `--browser-icon-effect`) and the sample map's sounds (`--sample-kick`, `--sample-snare`, …
   `--sample-other`).
 - **Opting out.** `"base": "none"` in `theme.json` leaves the base sheet out: your theme stands on
-  the user-agent sheet, whose window has plain light text on an opaque dark background and no
-  other colours, and styles the rest itself. The colour variables still resolve, so your rules can
+  the user-agent sheet, whose window has plain light text on an opaque dark background (the
+  menus, pop-ups, tooltips and dialogs over it the same background) and no other colours, and
+  styles the rest itself. The colour variables still resolve, so your rules can
   use them.
 
 ## SVG inheritance and safe defaults
@@ -724,7 +726,7 @@ Elements, by name:
 | `menu`, `popup` | an open menu of the menu bar; a control's popup (`#metronome-level`, the metronome's level) |
 | `knob`, `fader`, `fader-cap`, `fader-scale`, `pan` | mixer and device controls (`fader-scale` also the clip gain fader's); a dial (an audio clip's Pitch, the EQ's) is a `knob[kind="dial"]` with its rim in its `border-color` (as wide as its `border-width`, else a sixth of the dial's radius), the disc between rim and face in `knob-ring`'s `background-color`, its inner disc in its `background-color` and its pointer in its `accent-color` |
 | `meter`, `meter-level`, `meter-vertical`, `meter-horizontal` | level meters and their lit part |
-| `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs |
+| `label`, `separator`, `settings`, `dialog` | labels, rules, the Settings page and dialogs (one `dialog` element, told apart by `name`; see *Dialogs*) |
 | `app-fill` | the fills the bars, Settings, the dialogs and menus paint for themselves where the region behind gives none, by `kind` (`window`, `panel`, `panel-hover`, `control`, `control-hover`, `control-active`; `knob` the knob of a switch that is on over a see-through window) |
 | `widget` | egui's own widgets under your `button`, `text-input`, `menu` and `scroll-bar` rules: at rest, `:hover`, `:active`, `:disabled`, `[checked]` (the selection), `[kind="window"]`, `[kind="field"]` |
 | `label[kind]` | the browser's and the detail panels' words by how much they stand out: dim words (`hint`) and a control's or figure's name (`caption`) take only a colour given to them, not one around them; a panel's title (`title`), a value shown as words (`value`), a fault (`error`), a plug-in's state (`plugin-state`), a device parameter's name (`parameter`), a check box's words (`check`), the head of the MIDI tools' figures (`head`, `[selected]` in its `accent-color`), words or a mark in the accent (`accent`), and the light and dark inks of text on a colour (`on-light`, `on-dark`, from `--text-onColorLight` and `--text-onColorDark`); inside the browser `hint`, `caption` and `value` take the browser's own colours |
@@ -735,7 +737,7 @@ Elements, by name:
 | `device[kind="group"]`, `device-row` | a device group's panel, and its branches (`[selected]` while shown, `[muted]` while muted); its `+ Branch` is `add-track[kind="branch"]`; a device's `accent-color` outlines it while selected |
 | `icon[kind]` in the piano roll | its tool pointer (`pointer`, the ring its `background-color`) and the strip's magnifier (`magnifier`); a clip's colour swatch is `icon[kind="swatch"]` |
 | `start-page`, `plugin-manager` | the page with no project open, the Plug-in manager |
-| `dialog-title`, `list-row`, `colour-swatch`, `theme-card` | a dialog's title row (`background-color`; its words `label[kind="title"]`); a row of a list a click picks, in a dialog, on the start page, in the quick-add and project switcher lists and the Plug-in manager (`[selected]` for the picked one); a swatch of the colour picker (`border-color` outlines the chosen one); a theme's card in the picker (`[selected]` for the theme in use: `border-color`, `background-color` for its tint, `accent-color` for the word *Active*) |
+| `dialog-title`, `dialog-actions`, `list-row`, `colour-swatch`, `theme-card` | a dialog's title row (`background-color`; its words `label[kind="title"]`); a dialog's row of buttons (a flex row: `justify-content`, `gap`); a row of a list a click picks, in a dialog, on the start page, in the quick-add and project switcher lists and the Plug-in manager (`[selected]` for the picked one); a swatch of the colour picker (`border-color` outlines the chosen one); a theme's card in the picker (`[selected]` for the theme in use: `border-color`, `background-color` for its tint, `accent-color` for the word *Active*) |
 | Control bar, tabs, Settings and dialogs | their words are `label` by kind (`hint` for headings and notes, `caption`, `title`, `value`, `error`), their rules, and the outlines of the start page's cards, `separator[kind="row"]`, their buttons `button` (lit ones `[checked]`: a rule for every `button` leaves them lit), the start page's tabs `editor-tab#tab-recent` and `#tab-templates`, the toolbar's RAM and CPU bars `meter` and `meter-level` (`[kind="hot"]`); `divider#detail-splitter[closed]` while the detail area is closed |
 | `send` | a send, in a mixer strip and in a track header |
 | `add-track` | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons after the last track |
@@ -1009,6 +1011,53 @@ button:hover { background-color: #2E3238; }
 button[checked] { background-color: var(--accent); color: #000; }
 text-input { background-color: #15171A; }
 ```
+
+### Dialogs
+
+Every dialog is one element, `dialog`, told apart by its `name` attribute: `about`, `agent`,
+`ara-edits`, `backup`, `closing`, `color-picker` (the track colour window), `export`,
+`folder-drop`, `group-removal`, `loading`, `missing-files`, `move-folder`, `name-clash`,
+`project` (New or open), `save`, `splash`, `theme-exists`, `unsaved` and `updates`. One rule
+styles them all, and one more styles one:
+
+```css
+dialog { background-color: var(--panel-background); border-color: var(--border-strong); border-radius: 8px; padding: 12px; }
+dialog[name="color-picker"] { padding: 6px; }
+dialog-title { background-color: transparent; }
+dialog-actions { justify-content: center; gap: 12px; }
+```
+
+- **Its box** is the sheet's: `background-color`, `background-image`, `border-*`,
+  `border-radius`, `box-shadow`, `backdrop-filter` and `padding`.
+- **`padding` is the room inside it**: what it holds sits that far in from its border. Its title
+  row (`dialog-title`) runs along its top inside the border and outside the padding, so the
+  padding never moves the title row.
+- **Its buttons** stand in a `dialog-actions` row along the bottom of what it holds, laid out as a
+  flex row: `justify-content` and `gap` place them. Where a dialog puts a button at each end
+  (Updates' *Check now*), a `flexible-space` between them takes the room left.
+- **Without the base sheet** (`"base": "none"`) a dialog has the window's opaque background,
+  `padding: 10px` and its buttons at the end of the row, 8 points apart. The base sheet gives
+  Suhina's themes `padding: 8px`, buttons 4 points apart, and no padding on `missing-files`, whose
+  own title and status bars run to its edges.
+
+### Windows of their own
+
+Settings, the track colour window and the sample map can open in a window of their own. Each is
+made like the main window: its base is `window`'s background, so a see-through theme shows the
+desktop there too, and on macOS its content runs under the system's title bar. The element that
+fills such a window (`settings`, `dialog[name="color-picker"]`) is its root, as a page's root
+element is in CSS: its `background-color` and `background-image` cover the whole window, title bar
+included, and its `padding` keeps what it holds in from the window's edge. Its `border-*`,
+`border-radius`, `box-shadow` and `backdrop-filter` are not drawn there: the system draws the
+window's edge and its corners, and nothing of Suhina's is behind it to blur. So one rule for
+`dialog` styles the colour window over the main window and in its own:
+
+```css
+dialog { background-color: rgb(255 255 255 / 0.6); border-radius: 12px; backdrop-filter: blur(24px); }
+```
+
+Over the main window it is a rounded, blurred pane; in its own window it is that window's
+see-through background over `window`'s.
 
 ### How an element is painted: padding, overflow and outline
 

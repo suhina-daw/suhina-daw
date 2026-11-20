@@ -492,7 +492,7 @@ fn live_colour_drag(from_menu: bool) {
     harness.run();
     harness.get_by_label("+ More colours").click();
     harness.run();
-    harness.get_by_label("› Fine adjustment").click();
+    harness.get_by_label("Fine adjustment").click();
     harness.run();
     let field = harness.get_by_label("Colour field").rect();
     let from = field.left_top() + field.size() * 0.3;

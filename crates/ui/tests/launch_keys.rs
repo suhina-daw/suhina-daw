@@ -59,7 +59,7 @@ fn focusing_the_colour_picker_releases_a_held_gate_launch() {
     let (mut h, mut renderer) = window_with_project(project);
     h.state_mut().run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
     h.run();
-    h.get_by_label("› Fine adjustment").click();
+    h.get_by_label("Fine adjustment").click();
     h.run();
     h.get_by_label("Track Drums").click();
     h.run();
