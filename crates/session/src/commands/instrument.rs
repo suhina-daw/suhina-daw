@@ -47,6 +47,19 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "instrument.auditionFit",
+        label: "Play the fit's original source or its fitted model, level-matched, and report their level and spectral distance",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            JOB,
+            param("which", ParamType::Text, "original (the analyzed source range) or fitted (the model rendered)"),
+        ],
+        kind: CommandKind::TRANSPORT,
+        run: instrument_analysis::audition_fit,
+        policy: Policy::PREVIEW,
+    },
+    CommandSpec {
         id: "instrument.analyzeSample",
         label: "Analyze the loaded sample locally and propose its root note (one note), or the tonic of its key (a loop or phrase), without changing the instrument",
         params: &[DEVICE_TRACK, DEVICE],

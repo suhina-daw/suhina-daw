@@ -99,6 +99,8 @@ pub struct AnalysisView {
     pub message: Option<String>,
     /// Recordings in the target Instrument's fitted model now; None without a revision-4 set.
     pub model_recordings: Option<usize>,
+    /// The last audition's comparison of the fit with its source.
+    pub comparison: Option<suhina_instrument_analysis::compare::Comparison>,
 }
 
 struct Source {
@@ -131,6 +133,8 @@ struct Job {
     pending_root: Option<u8>,
     /// Model bytes an accept or add is writing; adopted as the job's state once it succeeds.
     pending_state: Option<Vec<u8>>,
+    /// The last audition's level-matched comparison of the fit with its source.
+    comparison: Option<suhina_instrument_analysis::compare::Comparison>,
 }
 
 impl Drop for Job {
@@ -206,6 +210,7 @@ impl Job {
             accepted_root: (self.phase == AnalysisPhase::Accepted && self.kind == AnalysisKind::Root)
                 .then_some(self.source.root as u8),
             model_recordings: None,
+            comparison: self.comparison.clone(),
         }
     }
 }
@@ -401,6 +406,7 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
         message: None,
         pending_root: None,
         pending_state: None,
+        comparison: None,
     });
     Ok(json!({"job":id.to_string(),"kind":kind.as_str(),"status":"running"}))
 }
@@ -543,6 +549,80 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
         job.pending_state = Some(state);
     }
     Ok(with_override(result, overridden))
+}
+
+/// `instrument.auditionFit`: play the source or the fitted model, level-matched, and compare them.
+pub(crate) fn audition_fit(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let which = Args::new(params).text("which")?;
+    if !matches!(which, "original" | "fitted") {
+        return Err("which must be original or fitted".into());
+    }
+    let job = matching_job(session, params)?;
+    if job.kind != AnalysisKind::Modal || !matches!(job.phase, AnalysisPhase::Ready | AnalysisPhase::Accepted) {
+        return Err("only a completed modal fit can be auditioned".into());
+    }
+    let report = job.modal.as_ref().ok_or("this fit has no model to audition")?;
+    let recording = report.recording.clone().ok_or("this fit has no model to audition")?;
+    let pcm = job.source.pcm.clone();
+    let channels = usize::from(pcm.channels).max(1);
+    let channel = usize::from(report.channel);
+    let original: Vec<f32> = pcm
+        .samples
+        .chunks_exact(channels)
+        .skip(report.range.start)
+        .take(report.range.end.saturating_sub(report.range.start))
+        .map(|frame| frame.get(channel).copied().unwrap_or(0.0))
+        .collect();
+    let fitted = render_recording(&recording, pcm.sample_rate, original.len())?;
+    let comparison = suhina_instrument_analysis::compare::compare(&original, &fitted, pcm.sample_rate)
+        .ok_or("the fit and its source have too little sound to compare")?;
+    job.comparison = Some(comparison.clone());
+    let samples = if which == "original" {
+        original
+    } else {
+        // Level-matched: the fitted model at the original's RMS, at most 24 dB apart.
+        let gain = 10.0_f64.powf((-comparison.level_difference_db).clamp(-24.0, 24.0) / 20.0) as f32;
+        fitted.iter().map(|x| x * gain).collect()
+    };
+    let seconds = samples.len() as f64 / f64::from(pcm.sample_rate.max(1));
+    let data = std::sync::Arc::new(AudioData { sample_rate: pcm.sample_rate, channels: 1, samples });
+    let preview_gain = 10.0_f64.powf(-6.0 / 20.0) as f32;
+    let played = match session.player_mut() {
+        Ok(player) => player.controller_mut().preview_sample(data, 0.0, preview_gain).is_ok(),
+        Err(_) => false,
+    };
+    Ok(json!({
+        "which": which, "played": played, "seconds": seconds,
+        "levelDifferenceDb": comparison.level_difference_db, "meanDistanceDb": comparison.mean_distance_db,
+        "bands": comparison.bands.iter().map(|b| json!({"centreHz": b.centre_hz, "differenceDb": b.difference_db})).collect::<Vec<_>>()
+    }))
+}
+
+/// The fitted recording as the native Instrument plays it: its key and velocity held for
+/// `frames` at `sample_rate`, mono.
+fn render_recording(
+    recording: &suhina_dsp::modal::model::ModelRecording,
+    sample_rate: u32,
+    frames: usize,
+) -> Result<Vec<f32>, CommandError> {
+    use suhina_device_api::{Device as NativeDevice, NoteEvent, ProcessContext};
+    let set = ModelSet::new(vec![recording.clone()]).map_err(|error| error.to_string())?;
+    let mut device = suhina_device_registry::create("instrument", f64::from(sample_rate))
+        .ok_or("the Instrument cannot render at this sample rate")?;
+    NativeDevice::load_model_state(device.as_mut(), &set.encode())
+        .map_err(|_| "the fitted model could not be loaded")?;
+    for (id, value) in [("gain", 0.0), ("attack", 0.0), ("sustain", 1.0), ("source", 0.0)] {
+        if let Some(index) = NativeDevice::info(device.as_ref()).param_index(id) {
+            NativeDevice::set_param(device.as_mut(), index, value);
+        }
+    }
+    NativeDevice::reset(device.as_mut());
+    NativeDevice::event(device.as_mut(), NoteEvent::On { key: recording.key, velocity: recording.velocity });
+    let mut output = vec![0.0f32; frames * 2];
+    for block in output.chunks_mut(1024) {
+        NativeDevice::process(device.as_mut(), &ProcessContext::default(), block);
+    }
+    Ok(output.chunks(2).map(|frame| frame.first().copied().unwrap_or(0.0)).collect())
 }
 
 /// `instrument.addFit`: the ready fit's recording joins the device's revision-4 set.

@@ -142,8 +142,22 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                                 }
                             }
                         });
-                        ui.label("Accept replaces the model, selects Modal and resets model controls. Add fuses this recording into the accepted model by key. One undo step each.");
-                        ui.label("Add recordings of other notes, velocities or instruments to make one instrument; set Root to each recording's note first.");
+                        // Level-matched A/B against the source before accepting.
+                        ui.horizontal(|ui| {
+                            for (label, which) in [("Play original", "original"), ("Play fitted", "fitted")] {
+                                let play = ui.button(label);
+                                remember_keyboard_owner(&play);
+                                if play.clicked() {
+                                    actions.push(Action::new("instrument.auditionFit",json!({"track":track_value,"device":device_value,"job":view.job,"which":which})));
+                                }
+                            }
+                            if let Some(comparison) = &view.comparison {
+                                let bands: Vec<String> = comparison.bands.iter().map(|b| format!("{:.0} Hz {:+.1} dB", b.centre_hz, b.difference_db)).collect();
+                                ui.label(format!("Spectral distance {:.1} dB · level {:+.1} dB", comparison.mean_distance_db, comparison.level_difference_db))
+                                    .on_hover_text(format!("Octave bands after level matching, fitted minus original: {}. Smaller is closer; this measures the same recording, not realism.", bands.join(", ")));
+                            }
+                        });
+                        ui.label("Accept replaces the model; Add fuses this recording into it by key and velocity. One undo step each. Set Root to each recording's note first.");
                     } else {
                         ui.label(match report.outcome {
                             ModalFitOutcome::Silent => "The selected region is silent or constant. Choose a sounding strike.",
