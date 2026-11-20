@@ -116,6 +116,17 @@ impl Canvas {
         self.add(name, Widget::Menu, bounds, Some(id), UiGesture::Menu, tooltip);
     }
 
+    pub(super) fn toggle(&mut self, id: &str, name: &str, bounds: [f32; 4], tooltip: &str) {
+        self.add(
+            name,
+            Widget::Button { label: name.into(), off_label: None, indicator: true },
+            bounds,
+            Some(id),
+            UiGesture::Toggle,
+            tooltip,
+        );
+    }
+
     pub(super) fn dial(&mut self, id: &str, name: &str, bounds: [f32; 4], tooltip: &str) {
         let format = match id {
             "gain" => TextFormat::Decibels,

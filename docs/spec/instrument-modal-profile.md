@@ -214,8 +214,9 @@ rarely contain them):
   with `pedal resonance * 0.15` of its slow part, twice its slow T60 and a quarter-cycle phase
   offset; the sine budget still keeps the strongest 64. A coupling model between strings is not
   attempted.
-- **Soft pedal** (controller 67 at or above half): fewer strings and a softer felt region are
-  struck, so a note is quieter (level times 0.7), darker (tilt exponent -0.45) and has no beating
+- **Soft pedal** (controller 67 at or above half, or the Play page's **Soft pedal** switch, the
+  `soft_pedal` parameter, for playing without a pedal or automating it): fewer strings and a
+  softer felt region are struck, so a note is quieter (level times 0.7), darker (tilt exponent -0.45) and has no beating
   partner. It applies to notes struck while it is down.
 
 The fitted attack is the recorded hammer; these settings shape what a single recording cannot
