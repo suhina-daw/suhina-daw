@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog suhina-meadow a62a2cec27865359
+agent-dialog suhina-meadow 318202dc65c1cccf
 arrangement suhina-meadow 43596640951b4b00
 arrangement-scrolled suhina-meadow 68190c86f723d5fc
 browser suhina-meadow 6be723462f05516f
@@ -9,9 +9,9 @@ browser-plug-ins suhina-meadow c08e590777c61ca6
 browser-search suhina-meadow d06850a5e2ea68f1
 clip-audio suhina-meadow 5d25d3400d20a417
 clip-midi suhina-meadow 9fa54a33b1a27a80
-colour-picker suhina-meadow 41436b33496d9fa3
-colour-picker-field suhina-meadow a4d24c55f67bdea9
-colour-picker-wheel suhina-meadow 7ce26e3b95a36e05
+colour-picker suhina-meadow 9f9751565e2ea8ea
+colour-picker-field suhina-meadow 8545c88624d2ddfb
+colour-picker-wheel suhina-meadow 5301d8cc9b0102fa
 context-menu suhina-meadow 9e0ac30af1ff95f1
 control-bar-toggles suhina-meadow fea5e456d49e96f0
 count-in-menu suhina-meadow cea334285f687cf4
@@ -28,7 +28,7 @@ expanded-instrument-sample suhina-meadow 6cd293dcf49246f0
 expanded-multiband suhina-meadow 97e183229da5c2e7
 expanded-reverb suhina-meadow fbea5f6cdadc0745
 expanded-vinyl-distortion suhina-meadow 95cd7c9a8b0bac56
-export-dialog suhina-meadow 0801e7a72e926eea
+export-dialog suhina-meadow cf254a4c901e6996
 grid-menu suhina-meadow fe18229647723009
 instrument-instrument suhina-meadow 3c02470de04aae9c
 instrument-sampler suhina-meadow 6f762b3e5ca0aafb
@@ -41,11 +41,11 @@ menu suhina-meadow 1c8bae433b4d0193
 missing-files suhina-meadow 10d943258756d3b3
 new-theme-dialog suhina-meadow 89c58dc3b4dd2681
 piano-roll suhina-meadow ddb68dcba8df2014
-project-dialog suhina-meadow fa39561fa53b0174
+project-dialog suhina-meadow 5e7bcb71c32f895d
 quantize-menu suhina-meadow 0c4a679c1e8be556
 quick-add suhina-meadow 81f85f2aee2bcbde
 sample-map suhina-meadow 590800b0dfea1117
-save-dialog suhina-meadow 860da85149328539
+save-dialog suhina-meadow abb24623bc3bc920
 settings suhina-meadow ecdd1f0182480ee0
 settings-agents suhina-meadow e96dd0cdb3b715c2
 settings-appearance suhina-meadow c1f67b617248180a
@@ -61,5 +61,5 @@ settings-themes suhina-meadow 8eab88f0a1c54058
 start-panel suhina-meadow 48b727d1fd246f0c
 time-signature-menu suhina-meadow e447b5abb294e012
 tooltip suhina-meadow ade24f13b5d46f81
-unsaved-dialog suhina-meadow a666f46940f7c536
-updates-dialog suhina-meadow b0cda3335d1cd180
+unsaved-dialog suhina-meadow c7a5629bb8ea458e
+updates-dialog suhina-meadow 4fe8f255dbab70fc

@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog suhina-light d53f1ed0d142be3e
+agent-dialog suhina-light cf941d0b380a011a
 arrangement suhina-light a5c6a6f6ab3310b8
 arrangement-scrolled suhina-light 5ec9681992218135
 browser suhina-light cd80226a5bbeb485
@@ -9,9 +9,9 @@ browser-plug-ins suhina-light 3656a9d7c9548af2
 browser-search suhina-light 8d71283dfdc39832
 clip-audio suhina-light 973f5f2a359882de
 clip-midi suhina-light b579079ec09a1e0a
-colour-picker suhina-light 2184ef06aabe1aeb
-colour-picker-field suhina-light e4e2a3c030fd5a51
-colour-picker-wheel suhina-light 8ddb498033857062
+colour-picker suhina-light 23bca574c89f6bfe
+colour-picker-field suhina-light ac3255d26eacc851
+colour-picker-wheel suhina-light 691b4d2ec7f8ae1b
 context-menu suhina-light e884c2e69316d313
 control-bar-toggles suhina-light 79c1fb64c45bd710
 count-in-menu suhina-light bb6c6afb324eb8e5
@@ -28,7 +28,7 @@ expanded-instrument-sample suhina-light 2106029ffef1cec6
 expanded-multiband suhina-light 013ba16f6e37e864
 expanded-reverb suhina-light 30ee600b2ec02df5
 expanded-vinyl-distortion suhina-light 4feb696e942665fa
-export-dialog suhina-light b7c5540bad610b9a
+export-dialog suhina-light a70f19d43c692112
 grid-menu suhina-light 0a4eff7ddf2b3300
 instrument-instrument suhina-light 79ff91bc6e29b6b0
 instrument-sampler suhina-light 12c150d1725e5ee8
@@ -41,11 +41,11 @@ menu suhina-light 5d38934facf173cf
 missing-files suhina-light 5725ee28c2140aa1
 new-theme-dialog suhina-light 2d452c6829750ce6
 piano-roll suhina-light 69e8e3afa0c8c96d
-project-dialog suhina-light 04d5e30e88eade54
+project-dialog suhina-light ff3911bb758f6a9d
 quantize-menu suhina-light 4667e808b31b752f
 quick-add suhina-light 7ee621087da7de87
 sample-map suhina-light ba542d17e1745290
-save-dialog suhina-light ac0e1d5e58848476
+save-dialog suhina-light 1aac41e38b1d0353
 settings suhina-light ac58034437916ccf
 settings-agents suhina-light 81c5d69330b6823d
 settings-appearance suhina-light 2344706b498e7410
@@ -61,5 +61,5 @@ settings-themes suhina-light 7002d641d377e2c7
 start-panel suhina-light 11565cce0ce03fb1
 time-signature-menu suhina-light 4e26fcea746e25a2
 tooltip suhina-light b36758d375c7fffa
-unsaved-dialog suhina-light 66b81980b8e09eb4
-updates-dialog suhina-light aa21b9aea51ebea4
+unsaved-dialog suhina-light ed59f834bed0b214
+updates-dialog suhina-light 77ad458f0adf42c0

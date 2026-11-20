@@ -8,6 +8,7 @@
 pub mod artwork;
 pub mod artwork_png;
 pub mod controls;
+pub mod dialog;
 pub mod divider;
 pub mod element;
 pub mod floating;

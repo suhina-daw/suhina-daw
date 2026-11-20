@@ -80,7 +80,9 @@ fn embedded_colour_background_stays_inside_its_fitted_window_in_every_mode() {
             }),
         );
         if custom {
-            suhina_ui::kit::native_css::set_user_sheet(Some("colour-picker { background-color: #ff00ff; }".into()));
+            suhina_ui::kit::native_css::set_user_sheet(Some(
+                "dialog[name=\"color-picker\"] { background-color: #ff00ff; }".into(),
+            ));
         }
         for control in [None, Some("Fine adjustment"), Some("View: Wheel")] {
             if let Some(control) = control {

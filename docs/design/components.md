@@ -180,8 +180,9 @@ and closes the menu. A choice matching every target's current colour makes no ed
 
 The **+ More colours** row shows the configured shortcut (F2 by default) and opens a separate
 non-modal colour window. It is 340 points wide, initially centred, movable and kept open while
-the DAW is used. The surface, text, field border and focus indicators use the `colour-picker`,
-`colour-field` and `colour-swatch` elements; its other controls are the kit's flow controls
+the DAW is used. It is a dialog, `dialog[name="color-picker"]`: its surface, text, border and
+padding are the dialog's, its field and swatches `colour-field` and `colour-swatch`; its other
+controls are the kit's flow controls
 (`kit::controls`), the same elements as Settings and the dialogs: Copy, Random and Default are
 `button`s, Field/Wheel `button[kind="option"]` parts, Steps and Soft colours tick boxes
 (`button[kind="check"]`), the Fine adjustment row a `button[kind="entry"]`, Hue and Value

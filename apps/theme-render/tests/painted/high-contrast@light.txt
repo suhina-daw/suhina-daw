@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog high-contrast@light 8935c1aae2a6b2af
+agent-dialog high-contrast@light f8f32e5d6e0e3ac5
 arrangement high-contrast@light ed03fae3dc56877c
 arrangement-scrolled high-contrast@light d5640788d0cd6bfe
 browser high-contrast@light a2428080eca32f55
@@ -9,9 +9,9 @@ browser-plug-ins high-contrast@light a5a9ebb6fdedc44d
 browser-search high-contrast@light ce42a88330290bd7
 clip-audio high-contrast@light d89892fea2d79c94
 clip-midi high-contrast@light 5644c8f916cead8e
-colour-picker high-contrast@light 2b14b207f052fdd0
-colour-picker-field high-contrast@light c07cb6218628ca70
-colour-picker-wheel high-contrast@light d4a67d686dad82bf
+colour-picker high-contrast@light 59ef5fb7dc310099
+colour-picker-field high-contrast@light 97117324a809f0b8
+colour-picker-wheel high-contrast@light 06ad16ee09d6d614
 context-menu high-contrast@light ffe95fdbfda92e86
 control-bar-toggles high-contrast@light bff6475f58750c91
 count-in-menu high-contrast@light 87ddb7104d71cf8c
@@ -28,7 +28,7 @@ expanded-instrument-sample high-contrast@light 25a218952e38dc1b
 expanded-multiband high-contrast@light a85aca661ae57847
 expanded-reverb high-contrast@light 44cc605548413bd8
 expanded-vinyl-distortion high-contrast@light fab6d60be100d1a0
-export-dialog high-contrast@light cc9b5c9a7d9e4c4a
+export-dialog high-contrast@light e59b112efa15bc1a
 grid-menu high-contrast@light bbb90f78650efe69
 instrument-instrument high-contrast@light 359a0890a03c9968
 instrument-sampler high-contrast@light 8de2cdc7861a5894
@@ -41,11 +41,11 @@ menu high-contrast@light d754fca3dda92995
 missing-files high-contrast@light 11f55ef0dc431d03
 new-theme-dialog high-contrast@light 6650178bf56a3bd6
 piano-roll high-contrast@light 3101859cdee15d08
-project-dialog high-contrast@light 3c9b182a41d5f24d
+project-dialog high-contrast@light e32f0dc158bf5a70
 quantize-menu high-contrast@light 48218bbe8d360fc6
 quick-add high-contrast@light 3133903fedac9a3e
 sample-map high-contrast@light 3f35311b2cd1b47b
-save-dialog high-contrast@light 888fcd328c284f1d
+save-dialog high-contrast@light caa47d8131ae83ec
 settings high-contrast@light 4a10e27c61bb15c0
 settings-agents high-contrast@light 17307e25b55f4323
 settings-appearance high-contrast@light 0e4b0204bdfb5d46
@@ -61,5 +61,5 @@ settings-themes high-contrast@light 2248ecfcaa0643cd
 start-panel high-contrast@light af01c5999c495811
 time-signature-menu high-contrast@light 18ad99b5a09e0e29
 tooltip high-contrast@light c89b7e1807690521
-unsaved-dialog high-contrast@light 564f7bde4b9626aa
-updates-dialog high-contrast@light 3abbd1e2269f60b2
+unsaved-dialog high-contrast@light ba15ebe87d2b9f86
+updates-dialog high-contrast@light 8bebe0d21fbccade

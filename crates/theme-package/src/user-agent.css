@@ -24,6 +24,11 @@ menu,
 tooltip,
 dialog { background-color: #1e1e1e; }
 
+/* A dialog keeps what it holds 10 points in from its edge; its title row runs along its top,
+   outside that. Its buttons stand in a row at the right of its bottom, 8 points apart. */
+dialog { padding: 10px; }
+dialog-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+
 /* The window is one grid of named areas (#1370): the bars, the lines over and under the views, the
    notice strip and the three panels. A theme moves one by giving it another area, or hides it with
    `display: none` or a template without its area. A region that is not there (the menu bar turned
@@ -107,12 +112,10 @@ piano-roll-toolbar,
 sample-map,
 popup,
 tooltip,
-colour-picker,
 settings,
 dialog,
 start-page,
-plugin-manager,
-export { overflow: hidden; }
+plugin-manager { overflow: hidden; }
 
 /* What floats over the window blurs the window's own layers behind it. */
 popup,

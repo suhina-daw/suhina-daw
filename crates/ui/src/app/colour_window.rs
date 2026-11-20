@@ -237,7 +237,7 @@ impl App {
                 embedded_layer = Some(ui.layer_id());
             }
             {
-                let style = crate::kit::element::COLOUR_PICKER.enter();
+                let style = crate::kit::dialog::enter("color-picker");
                 if !embedded && suhina_plugins::trace::on() {
                     suhina_plugins::trace::state(
                         "colour window surface",
@@ -252,14 +252,22 @@ impl App {
                         ),
                     );
                 }
-                // A base-sheet background is not an authored theme override. Only a
-                // detached viewport needs that explicit fill: its renderer clears to
-                // transparent. An embedded Window owns its background and final bounds;
-                // its content's available max_rect can extend beyond the fitted frame.
+                // A detached viewport's renderer clears to transparent, so it is filled with the
+                // dialog's background. An embedded Window owns its final bounds; its content's
+                // available max_rect can extend beyond the fitted frame.
                 let inside = if embedded {
                     let layer = ui.layer_id();
                     let start = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx());
-                    let boxed = style.paint(ui.painter(), ui.max_rect());
+                    // Its background from whichever sheet gives it, the user-agent's included,
+                    // where egui's frame under it is not already that colour.
+                    let background = style.background();
+                    let fill =
+                        if background == ui.visuals().window_fill { egui::Color32::TRANSPARENT } else { background };
+                    let boxed = style.paint_with(
+                        ui.painter(),
+                        ui.max_rect(),
+                        crate::kit::element::Native { fill, ..Default::default() },
+                    );
                     let end = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx());
                     embedded_background = Some((layer, start, end));
                     boxed

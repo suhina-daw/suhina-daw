@@ -70,6 +70,12 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   paints the same faces from `widgets` (`button_with_id`, `check_box`, `option_face`,
   `slider_face`) into its own rectangles. Both reuse the elements Settings and the dialogs use,
   so a theme needs no rule of the panel's own. A control the kit lacks is added to it.
+- A dialog is `kit::dialog`: `dialog::enter("<name>")` (one `dialog` element, told apart by
+  `name`; add a new name to the `dialog` element's description in `theme-package`), then
+  `project_dialog::panel` with the size of its *contents*, which returns the content box (inside
+  the sheet's padding, under the title row), and its buttons through `dialog::actions` (a
+  `dialog-actions` row the sheet lays out; `Action::space()` splits it). Never add `PAD` around
+  a dialog's contents: the padding is the theme's.
 - `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
   rects, `Status::Hint` for status-bar hints.
 - **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which

@@ -173,6 +173,9 @@ pub(crate) fn dialog_size(dialog: &Entered, area: Rect, size: Vec2) -> Vec2 {
 /// `none`), then its own background over `fill` in CSS's order, with Suhina's hairline round it
 /// where the sheet gives it no border. Returns the content box what it holds goes in (#1336).
 pub(crate) fn dialog(painter: &Painter, dialog: &Entered, rect: Rect, fill: Color32) -> Rect {
+    // Its background from whichever sheet gives it, the user-agent's included; `fill` where none
+    // does.
+    let fill = dialog.style().map(|style| style.background).filter(|color| color.a() > 0).unwrap_or(fill);
     if style_blurs(dialog.style()) {
         let radius = dialog.style().filter(|style| style.authored.radius).map_or(0.0, |style| style.radius);
         super::liquid::backdrop(painter, rect, radius);

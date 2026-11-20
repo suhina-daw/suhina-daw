@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog suhina-blocks fc6e8a94d1655a1d
+agent-dialog suhina-blocks bad6ab5270b75ed5
 arrangement suhina-blocks b9c8574305a09531
 arrangement-scrolled suhina-blocks 16fc28e5f1560f80
 browser suhina-blocks 942e0fa37286003e
@@ -9,9 +9,9 @@ browser-plug-ins suhina-blocks c99399c3dd6d6339
 browser-search suhina-blocks a1314e8e143ed20b
 clip-audio suhina-blocks a9e144291d1ef6f6
 clip-midi suhina-blocks 443a1a340df7e040
-colour-picker suhina-blocks b7c4ab30b42c7c4b
-colour-picker-field suhina-blocks 21d3e24971282464
-colour-picker-wheel suhina-blocks b77d1a46c82be89b
+colour-picker suhina-blocks dfa89625a58db31e
+colour-picker-field suhina-blocks a29521f5f825ed6e
+colour-picker-wheel suhina-blocks 4615cb18cc2a313c
 context-menu suhina-blocks b1492d178f2c78da
 control-bar-toggles suhina-blocks a23a7d4a69d08a92
 count-in-menu suhina-blocks 23111049d9babf16
@@ -28,7 +28,7 @@ expanded-instrument-sample suhina-blocks 8e614c9f58b47632
 expanded-multiband suhina-blocks 94104da2670213c9
 expanded-reverb suhina-blocks ca524cb1938a41f6
 expanded-vinyl-distortion suhina-blocks 080d79f7de6c521e
-export-dialog suhina-blocks db3c1dd41dbd59b9
+export-dialog suhina-blocks 3f0cf9a92d669519
 grid-menu suhina-blocks 2785a8bbd06ddf72
 instrument-instrument suhina-blocks 96fa48d63278203f
 instrument-sampler suhina-blocks 59bb438a25c725bc
@@ -41,11 +41,11 @@ menu suhina-blocks a1892d01a33518d6
 missing-files suhina-blocks 3a968f934c8a996f
 new-theme-dialog suhina-blocks 8afc4dad691ccd47
 piano-roll suhina-blocks 71bf11d3fd60b291
-project-dialog suhina-blocks b772a142f791293a
+project-dialog suhina-blocks 4b0688415a20110b
 quantize-menu suhina-blocks 46103f83bf40e6ae
 quick-add suhina-blocks a32a4b818dbb280f
 sample-map suhina-blocks 1b320ea828862811
-save-dialog suhina-blocks e36e4c78ae520e08
+save-dialog suhina-blocks 34f0cad40923b049
 settings suhina-blocks fb1cc61f58802bb8
 settings-agents suhina-blocks 83c5260ca9fe828f
 settings-appearance suhina-blocks 02fa3c7c871a61c1
@@ -61,5 +61,5 @@ settings-themes suhina-blocks 5380cde0683044f4
 start-panel suhina-blocks c2b691ce4f78abb2
 time-signature-menu suhina-blocks 19d30de92577f42f
 tooltip suhina-blocks 6457134f5fe6409e
-unsaved-dialog suhina-blocks 3afb112be7c9c1c0
-updates-dialog suhina-blocks 918fbc15d452ec89
+unsaved-dialog suhina-blocks 7546f955d32bf858
+updates-dialog suhina-blocks ca52461c3a692d59

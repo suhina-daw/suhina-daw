@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog suhina-studio@darker bec1907ff6fc8e9e
+agent-dialog suhina-studio@darker 775da9364d814f8c
 arrangement suhina-studio@darker a595fb739c70b45c
 arrangement-scrolled suhina-studio@darker b582cce51293db31
 browser suhina-studio@darker 0e5c136224ab618c
@@ -9,9 +9,9 @@ browser-plug-ins suhina-studio@darker 91b16c06f133c048
 browser-search suhina-studio@darker eaec295606e863a9
 clip-audio suhina-studio@darker dd6ba59a6d2b3083
 clip-midi suhina-studio@darker 66ce616e47bbd76f
-colour-picker suhina-studio@darker 5217972f083fd275
-colour-picker-field suhina-studio@darker 45ea1c4e7507927b
-colour-picker-wheel suhina-studio@darker f1f5474fb605731f
+colour-picker suhina-studio@darker 21163b9d33347ab8
+colour-picker-field suhina-studio@darker 0ce74555c023f19f
+colour-picker-wheel suhina-studio@darker f8e5eeb8df56c434
 context-menu suhina-studio@darker b14563ca4d098d85
 control-bar-toggles suhina-studio@darker 47e927104a1e19e5
 count-in-menu suhina-studio@darker fa4637cb5975bcef
@@ -28,7 +28,7 @@ expanded-instrument-sample suhina-studio@darker 82d6bb0feaaafa4a
 expanded-multiband suhina-studio@darker edf6deb9fce99386
 expanded-reverb suhina-studio@darker 5ef1021758440c95
 expanded-vinyl-distortion suhina-studio@darker 6cc2ee401914feb6
-export-dialog suhina-studio@darker 3f4ef5c319f0d0b9
+export-dialog suhina-studio@darker 6f4d7c25d1f24389
 grid-menu suhina-studio@darker b3a51e69b43b8dd0
 instrument-instrument suhina-studio@darker c1bf3070eb44ab4d
 instrument-sampler suhina-studio@darker 6c50d9c5422b048d
@@ -41,11 +41,11 @@ menu suhina-studio@darker d46fd6f3827aea6b
 missing-files suhina-studio@darker e1ccee0eaa890a66
 new-theme-dialog suhina-studio@darker ea17caf470ded3a1
 piano-roll suhina-studio@darker b93e1ef7320757ab
-project-dialog suhina-studio@darker 1ae2b177311d26e0
+project-dialog suhina-studio@darker 86cc98c4cd5aae61
 quantize-menu suhina-studio@darker 30af5f9e760061e5
 quick-add suhina-studio@darker 302be9f817b654b7
 sample-map suhina-studio@darker 9f5231cde96fd98d
-save-dialog suhina-studio@darker 9a32b719888438e9
+save-dialog suhina-studio@darker 09120e396a4ec460
 settings suhina-studio@darker 80e3923f6b107ab5
 settings-agents suhina-studio@darker 3f4cc2ed24c4e4cf
 settings-appearance suhina-studio@darker 18468e5f4807d3c5
@@ -61,5 +61,5 @@ settings-themes suhina-studio@darker 32699eaa70841a11
 start-panel suhina-studio@darker 3881e26a7d09f142
 time-signature-menu suhina-studio@darker 3a9175f666dae9c4
 tooltip suhina-studio@darker 9d52e0800a5ff3a0
-unsaved-dialog suhina-studio@darker af82acac7fc8e2e4
-updates-dialog suhina-studio@darker e6a1e0f417dd8353
+unsaved-dialog suhina-studio@darker 4488c7bb22face70
+updates-dialog suhina-studio@darker b357ce615ba63ddf

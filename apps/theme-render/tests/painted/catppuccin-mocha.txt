@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog catppuccin-mocha 32a899153b1a64c4
+agent-dialog catppuccin-mocha dd41cee96b09520a
 arrangement catppuccin-mocha 2dbe94fcd1a185a5
 arrangement-scrolled catppuccin-mocha 90ccf5c906cbcfc4
 browser catppuccin-mocha 56d7ca553019b991
@@ -9,9 +9,9 @@ browser-plug-ins catppuccin-mocha 83c9cf07ac7ddcef
 browser-search catppuccin-mocha 53e60c5447c6164c
 clip-audio catppuccin-mocha 56a1f40a3a804967
 clip-midi catppuccin-mocha fa7f189506a5c45b
-colour-picker catppuccin-mocha 61c80ae5c4b09f71
-colour-picker-field catppuccin-mocha 4ed2b3503caaee5c
-colour-picker-wheel catppuccin-mocha 55fb325d6055faf7
+colour-picker catppuccin-mocha 27675f5a8f2373c8
+colour-picker-field catppuccin-mocha fc3638b765b9271e
+colour-picker-wheel catppuccin-mocha df767109562c3f2a
 context-menu catppuccin-mocha 69e8eb7065346012
 control-bar-toggles catppuccin-mocha 6b729534523eb76b
 count-in-menu catppuccin-mocha 2d60977d886c378e
@@ -28,7 +28,7 @@ expanded-instrument-sample catppuccin-mocha 2eceb0de3aab4a2a
 expanded-multiband catppuccin-mocha ebc543e86668b4d2
 expanded-reverb catppuccin-mocha 8cb4273f2656d797
 expanded-vinyl-distortion catppuccin-mocha 295b0199e959a1fe
-export-dialog catppuccin-mocha c25236570d2476d1
+export-dialog catppuccin-mocha 17d435295b1e9309
 grid-menu catppuccin-mocha 7e862ebbc57d09fd
 instrument-instrument catppuccin-mocha 6cda979ec661b527
 instrument-sampler catppuccin-mocha 14650c0510b5678d
@@ -41,11 +41,11 @@ menu catppuccin-mocha 225a334a3e261722
 missing-files catppuccin-mocha a75bae392f2e68cb
 new-theme-dialog catppuccin-mocha f28a9dada759476b
 piano-roll catppuccin-mocha f187314475f99e97
-project-dialog catppuccin-mocha 8d9ddba85e23bdac
+project-dialog catppuccin-mocha 153048e3121c6255
 quantize-menu catppuccin-mocha 5c7c925aaee3bd88
 quick-add catppuccin-mocha 84ee6a39c12f971c
 sample-map catppuccin-mocha e08654d5c8c91140
-save-dialog catppuccin-mocha 5485c36d522a9aef
+save-dialog catppuccin-mocha bf42c10370e82da2
 settings catppuccin-mocha d16d05fe9bd9bec5
 settings-agents catppuccin-mocha 3a756301ffbf6912
 settings-appearance catppuccin-mocha b8a6da5788a5b43c
@@ -61,5 +61,5 @@ settings-themes catppuccin-mocha 94ad680ba2b14250
 start-panel catppuccin-mocha 36940abb3f8d781a
 time-signature-menu catppuccin-mocha 83ce607d5548f23b
 tooltip catppuccin-mocha 01f09bd8f7f5d7cd
-unsaved-dialog catppuccin-mocha 05481b124ab7bb23
-updates-dialog catppuccin-mocha 7ab66a295997e72f
+unsaved-dialog catppuccin-mocha b52ada83e63c0213
+updates-dialog catppuccin-mocha d23324b3f53517d7

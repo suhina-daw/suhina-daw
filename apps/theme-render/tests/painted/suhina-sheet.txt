@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog suhina-sheet 59ed588114e32d45
+agent-dialog suhina-sheet 9d14b0018ff9c7a9
 arrangement suhina-sheet 7a4315e8460ad7a1
 arrangement-scrolled suhina-sheet 81615f532853c8a3
 browser suhina-sheet 7f976cef9193193e
@@ -9,9 +9,9 @@ browser-plug-ins suhina-sheet 56fabc51b77397d4
 browser-search suhina-sheet 1837a120e0c3c6cc
 clip-audio suhina-sheet 7bd685001e443c19
 clip-midi suhina-sheet 6ea8468b271e5c63
-colour-picker suhina-sheet 683c35489997171c
-colour-picker-field suhina-sheet 0e21fbc201c2978f
-colour-picker-wheel suhina-sheet 20a26802b6a088ca
+colour-picker suhina-sheet d422d2defb119451
+colour-picker-field suhina-sheet 232547c6072412b5
+colour-picker-wheel suhina-sheet 6cdfcada909272ab
 context-menu suhina-sheet a58aba9081130b0e
 control-bar-toggles suhina-sheet 5941a1b0b791c10c
 count-in-menu suhina-sheet 4342fdcac653606e
@@ -28,7 +28,7 @@ expanded-instrument-sample suhina-sheet 1f1b2729f76adc7e
 expanded-multiband suhina-sheet d63172276ab9963e
 expanded-reverb suhina-sheet ce7a13dba0a152ea
 expanded-vinyl-distortion suhina-sheet 4df48e927e48ad2a
-export-dialog suhina-sheet d438d94339551ea0
+export-dialog suhina-sheet 352a8801f7fbb5ae
 grid-menu suhina-sheet 0c59603cba5fcabe
 instrument-instrument suhina-sheet 64f00c4d5aed3759
 instrument-sampler suhina-sheet 7620716f392642ff
@@ -41,11 +41,11 @@ menu suhina-sheet d35d3fec2f7a42f0
 missing-files suhina-sheet f4a5002b528ae292
 new-theme-dialog suhina-sheet 6b223047f2d39e16
 piano-roll suhina-sheet 4cc318d8b356bf48
-project-dialog suhina-sheet 84ebb0f4c967831e
+project-dialog suhina-sheet 39bf564f45067947
 quantize-menu suhina-sheet be5d95bef5fc37c2
 quick-add suhina-sheet dc1348d9dd2d4eaf
 sample-map suhina-sheet fb3637b6463cfa8a
-save-dialog suhina-sheet 7648a7c183c48330
+save-dialog suhina-sheet ec5f0826f3337cd3
 settings suhina-sheet 6fc0ac4231baff94
 settings-agents suhina-sheet 11fb4f3caa9a7b77
 settings-appearance suhina-sheet e3fe2571b2b37c73
@@ -61,5 +61,5 @@ settings-themes suhina-sheet f52eb7465a2d658a
 start-panel suhina-sheet b9cc445d23dcb656
 time-signature-menu suhina-sheet 57698a7c8e56ab96
 tooltip suhina-sheet 27018db17b6f3b76
-unsaved-dialog suhina-sheet c4aefdb01036130e
-updates-dialog suhina-sheet 21f5622955c3573e
+unsaved-dialog suhina-sheet f7f236f1b59ee9ce
+updates-dialog suhina-sheet 9cd863310bfcf838

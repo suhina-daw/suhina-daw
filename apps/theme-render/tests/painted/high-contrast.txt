@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog high-contrast 7a7156c0ffc8d338
+agent-dialog high-contrast bd6e3bf4a7283492
 arrangement high-contrast f4918b9f6470d817
 arrangement-scrolled high-contrast 61176c4e1469e169
 browser high-contrast f9c908b9345c4603
@@ -9,9 +9,9 @@ browser-plug-ins high-contrast da1fd90912ef1719
 browser-search high-contrast adc2c6802f39b620
 clip-audio high-contrast 912de111dc8716e1
 clip-midi high-contrast f8cc48792fe10b87
-colour-picker high-contrast 35454881c4adf260
-colour-picker-field high-contrast 8c4c979a14fcec64
-colour-picker-wheel high-contrast 29ef08fd23081745
+colour-picker high-contrast ed0f2361223f1f01
+colour-picker-field high-contrast b76c40774574dd96
+colour-picker-wheel high-contrast 3c4e7b6e0a232088
 context-menu high-contrast 0720b5495887b892
 control-bar-toggles high-contrast f4add764345e81ee
 count-in-menu high-contrast 9fa2df76fb4e90fc
@@ -28,7 +28,7 @@ expanded-instrument-sample high-contrast aab6ad34c944b61b
 expanded-multiband high-contrast e8195f125a68e7a0
 expanded-reverb high-contrast 25e8b83926825a61
 expanded-vinyl-distortion high-contrast 5572d2994c84fa37
-export-dialog high-contrast fa8ca15cefcbaa2f
+export-dialog high-contrast 8c0f7b72f59bfc01
 grid-menu high-contrast 40e44f9d043b5a18
 instrument-instrument high-contrast ed6c19545c693d2d
 instrument-sampler high-contrast 9f0bf31272cd4a51
@@ -41,11 +41,11 @@ menu high-contrast 32a410bcf371f953
 missing-files high-contrast 012cecbf28502d50
 new-theme-dialog high-contrast d71766914747b8d7
 piano-roll high-contrast 72526e14053816f7
-project-dialog high-contrast cb1abee8cdc8d285
+project-dialog high-contrast f6e1d32ded0ca354
 quantize-menu high-contrast eb50b44e750be5a8
 quick-add high-contrast 36ef7584b31cd61a
 sample-map high-contrast e77666a4cf336459
-save-dialog high-contrast ba3a7a2b66936c7a
+save-dialog high-contrast 95e34f573de2a4d1
 settings high-contrast 98356fe5b362137f
 settings-agents high-contrast 7e7dc3028a7e7f17
 settings-appearance high-contrast 821740af6b256993
@@ -61,5 +61,5 @@ settings-themes high-contrast a93474899f823260
 start-panel high-contrast 0272f239de9038ce
 time-signature-menu high-contrast 24197b82629a4975
 tooltip high-contrast f974550534320a85
-unsaved-dialog high-contrast 1664ad3ed1c8657c
-updates-dialog high-contrast 490da2cdb2e0738c
+unsaved-dialog high-contrast 8ab3146e1c5b37a8
+updates-dialog high-contrast 17dcdcd22ccd8e06

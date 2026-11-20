@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog suhina-studio@forest 87e37a9c3b8be120
+agent-dialog suhina-studio@forest 733058cd0f9d06f0
 arrangement suhina-studio@forest 4303a2cd8e28324b
 arrangement-scrolled suhina-studio@forest a272eed868778ff3
 browser suhina-studio@forest ae1853ed48bed218
@@ -9,9 +9,9 @@ browser-plug-ins suhina-studio@forest 620cb02fa45cbd5f
 browser-search suhina-studio@forest 32c8d1733a169787
 clip-audio suhina-studio@forest 7e4979b5f82f0f72
 clip-midi suhina-studio@forest 71bb45430844e653
-colour-picker suhina-studio@forest 0fd29dd33e7d7f24
-colour-picker-field suhina-studio@forest 4115388dbb344b50
-colour-picker-wheel suhina-studio@forest 51a78a1c94cf77c2
+colour-picker suhina-studio@forest 60d240fec3fc1ee5
+colour-picker-field suhina-studio@forest 25ee880f7553cd52
+colour-picker-wheel suhina-studio@forest 79366a44aaa1a5e7
 context-menu suhina-studio@forest d0612b49131dcacf
 control-bar-toggles suhina-studio@forest 02b86787b8c43db1
 count-in-menu suhina-studio@forest 2d5c95d5bf6610ed
@@ -28,7 +28,7 @@ expanded-instrument-sample suhina-studio@forest 9ee9bda3b4b1f5ce
 expanded-multiband suhina-studio@forest 6646a358991dbfa1
 expanded-reverb suhina-studio@forest 510efd3fcbd815ac
 expanded-vinyl-distortion suhina-studio@forest a8d87c144c12ac9f
-export-dialog suhina-studio@forest 3970e66cb92775aa
+export-dialog suhina-studio@forest d30b5f07c6808e2c
 grid-menu suhina-studio@forest f28de496584955ed
 instrument-instrument suhina-studio@forest 54d4b3841179ebae
 instrument-sampler suhina-studio@forest 5e8a1a93207c6951
@@ -41,11 +41,11 @@ menu suhina-studio@forest 17fd94334e7ceede
 missing-files suhina-studio@forest a9a3f101ff2294a9
 new-theme-dialog suhina-studio@forest 2672fcedb9da093e
 piano-roll suhina-studio@forest 48b41da6ad695611
-project-dialog suhina-studio@forest 0c26cbf5e3652688
+project-dialog suhina-studio@forest 2a983f2d625986bd
 quantize-menu suhina-studio@forest aff31cb0285babef
 quick-add suhina-studio@forest 4425856e8f94fed8
 sample-map suhina-studio@forest 45514abc693573b8
-save-dialog suhina-studio@forest 8b4b2fa174bed659
+save-dialog suhina-studio@forest 5b7c3dddb9cd01d2
 settings suhina-studio@forest 5c9b869f94c2bdec
 settings-agents suhina-studio@forest 27b256b9073d77b9
 settings-appearance suhina-studio@forest 7284642a184e1ab1
@@ -61,5 +61,5 @@ settings-themes suhina-studio@forest 02313a5c32880189
 start-panel suhina-studio@forest 4df0a9ac383ba107
 time-signature-menu suhina-studio@forest 713ae259811096ae
 tooltip suhina-studio@forest be5474ab45bd9579
-unsaved-dialog suhina-studio@forest a52033e53cf3db5d
-updates-dialog suhina-studio@forest fd8f977ffe3c28b9
+unsaved-dialog suhina-studio@forest 592d3925c9f9a8a9
+updates-dialog suhina-studio@forest 340c2949401398d3

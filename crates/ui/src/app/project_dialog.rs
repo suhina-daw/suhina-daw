@@ -13,13 +13,16 @@ use std::path::{Path, PathBuf};
 
 use egui::{Align2, Id, Key, Pos2, Rect, Sense, Ui, Vec2};
 
+use crate::kit::dialog;
 use crate::kit::element::{LIST_ROW, Look, caption_ink, error_ink, hint_ink, name_ink, row_line};
-use crate::kit::theme::{self, PAD, ROW};
+use crate::kit::theme::{self, PAD};
 use crate::kit::widgets::{self, button};
 
-const WIDTH: f32 = 620.0;
-const HEIGHT: f32 = 380.0;
-pub(crate) const SAVE_WIDTH: f32 = 420.0;
+/// The New or open dialog's contents: how wide and how tall.
+const WIDTH: f32 = 604.0;
+const HEIGHT: f32 = 344.0;
+/// How wide the contents of the save prompt and of the dialogs as narrow as it are.
+pub(crate) const SAVE_WIDTH: f32 = 404.0;
 pub(crate) const LINE: f32 = 20.0;
 pub(crate) const BUTTON: Vec2 = Vec2::new(96.0, 18.0);
 /// The logo's width at the top of Help › About Suhina, the splash's own.
@@ -63,7 +66,7 @@ pub enum Choice {
 
 /// Draws the project dialog over `area`, above everything else.
 pub fn show(ui: &Ui, area: Rect, state: &mut DialogState, lists: &Lists) -> Option<Choice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("project");
     crate::kit::floating::area(ui.ctx(), Id::unique("project-dialog"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -88,10 +91,10 @@ fn draw(
     let panel = panel(ui, dialog, area, Vec2::new(WIDTH, HEIGHT), "New or open a project", &mut choice);
     let painter = ui.painter_at(area);
     let small = theme::ui_font(theme::TEXT_SMALL);
-    let half = (panel.width() - 3.0 * PAD) / 2.0;
-    let left = Rect::from_min_size(Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD), Vec2::new(half, 0.0));
+    let half = (panel.width() - PAD) / 2.0;
+    let left = Rect::from_min_size(Pos2::new(panel.left(), panel.top()), Vec2::new(half, 0.0));
     let right = Rect::from_min_size(Pos2::new(left.right() + PAD, left.top()), Vec2::new(half, 0.0));
-    let bottom = panel.bottom() - PAD;
+    let bottom = panel.bottom();
 
     // New: blank, or from a template.
     heading(&painter, left, "New");
@@ -215,7 +218,7 @@ pub enum SaveChoice {
 
 /// Draws the save prompt over `area`.
 pub fn show_save(ui: &Ui, area: Rect, prompt: &mut SavePrompt) -> Option<SaveChoice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("save");
     crate::kit::floating::area(ui.ctx(), Id::unique("save-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -237,15 +240,15 @@ fn draw_save(
 ) -> Option<SaveChoice> {
     let mut closed: Option<SaveChoice> = None;
     let title = if prompt.template { "Save as template" } else { "Save project" };
-    let panel = panel(ui, dialog, area, Vec2::new(SAVE_WIDTH, ROW + 4.0 * LINE + 2.0 * PAD), title, &mut closed);
+    let panel = panel(ui, dialog, area, Vec2::new(SAVE_WIDTH, 4.0 * LINE), title, &mut closed);
     let painter = ui.painter_at(area);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let label_width = 52.0;
-    let mut y = panel.top() + ROW + PAD;
+    let mut y = panel.top();
     let mut browse_folder = false;
     let caption = caption_ink();
     let mut field = |ui: &mut Ui, label: &str, value: &mut String, focus: bool| {
-        let r = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
+        let r = Rect::from_min_size(Pos2::new(panel.left(), y), Vec2::new(panel.width(), LINE));
         widgets::text_in(&painter, r, Align2::LEFT_CENTER, label, small.clone(), caption);
         let mut input = Rect::from_min_max(Pos2::new(r.left() + label_width, r.top()), r.max);
         if label == "Folder" {
@@ -267,7 +270,7 @@ fn draw_save(
     let name = prompt.name.trim();
     let path = (!name.is_empty() && !name.contains(['/', '\\', ':']))
         .then(|| Path::new(prompt.folder.trim()).join(format!("{name}.{}", suhina_session::PROJECT_EXTENSION)));
-    let note = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
+    let note = Rect::from_min_size(Pos2::new(panel.left(), y), Vec2::new(panel.width(), LINE));
     let text = match &path {
         Some(path) if path.exists() => format!("{} is there already and will be replaced", path.display()),
         Some(path) => path.display().to_string(),
@@ -275,10 +278,14 @@ fn draw_save(
     };
     let color = if path.as_ref().is_some_and(|p| p.exists()) { error_ink() } else { hint_ink() };
     widgets::text_in(&painter, note, Align2::LEFT_CENTER, &text, small, color);
-    let save = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
-    let cancel = Rect::from_min_size(Pos2::new(save.left() - 4.0 - BUTTON.x, save.top()), BUTTON);
-    let saved = button(ui, &painter, save, "Save", "Save");
-    if button(ui, &painter, cancel, "Cancel", "Cancel saving") || ui.input(|i| i.key_pressed(Key::Escape)) {
+    let clicked = dialog::actions(
+        ui,
+        &painter,
+        panel,
+        &[dialog::Action::new("Cancel", "Cancel saving"), dialog::Action::new("Save", "Save")],
+    );
+    let saved = clicked == Some(1);
+    if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) {
         return Some(SaveChoice::Cancel);
     }
     if closed.is_some() {
@@ -303,7 +310,7 @@ pub enum UnsavedChoice {
 
 /// Asks whether to save `name`'s changes before `doing` ("closing it", "quitting"), over `area`.
 pub fn show_unsaved(ui: &Ui, area: Rect, name: &str, doing: &str) -> Option<UnsavedChoice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("unsaved");
     crate::kit::floating::area(ui.ctx(), Id::unique("unsaved-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -345,7 +352,7 @@ fn platform() -> String {
 
 /// Draws the About dialog over `area`. Returns what was chosen, or `None` while it stays open.
 pub fn show_about(ui: &Ui, area: Rect) -> Option<AboutChoice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("about");
     crate::kit::floating::area(ui.ctx(), Id::unique("about-dialog"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -369,13 +376,13 @@ fn draw_about(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect) ->
         ("Licence", "GPL-3.0-or-later, free software"),
     ];
     let logo_height = ABOUT_LOGO_WIDTH / crate::kit::logo::aspect();
-    let facts_top = ROW + 2.0 * PAD + logo_height + PAD;
-    let height = facts_top + facts.len() as f32 * LINE + BUTTON.y + 2.0 * PAD;
+    let facts_top = PAD + logo_height + PAD;
+    let height = facts_top + facts.len() as f32 * LINE + PAD + dialog::BUTTON_HEIGHT;
     let panel = panel(ui, dialog, area, Vec2::new(SAVE_WIDTH, height), "About Suhina", &mut closed);
     let painter = ui.painter_at(area);
     // The logo, as on the splash, above what names the build.
     let logo = Rect::from_center_size(
-        Pos2::new(panel.center().x, panel.top() + ROW + 2.0 * PAD + logo_height / 2.0),
+        Pos2::new(panel.center().x, panel.top() + PAD + logo_height / 2.0),
         Vec2::new(ABOUT_LOGO_WIDTH, logo_height),
     );
     crate::kit::logo::paint(ui, &painter, logo, theme::ui_font(theme::TEXT + 2.0), 1.0);
@@ -383,16 +390,16 @@ fn draw_about(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect) ->
     let (hint, ink) = (hint_ink(), name_ink());
     for (i, (name, value)) in facts.iter().enumerate() {
         let line = Rect::from_min_size(
-            Pos2::new(panel.left() + PAD, panel.top() + facts_top + i as f32 * LINE),
-            Vec2::new(panel.width() - 2.0 * PAD, LINE),
+            Pos2::new(panel.left(), panel.top() + facts_top + i as f32 * LINE),
+            Vec2::new(panel.width(), LINE),
         );
         widgets::text_in(&painter, line, Align2::LEFT_CENTER, name, font.clone(), hint);
         let value_at = Rect::from_min_max(Pos2::new(line.left() + 80.0, line.top()), line.max);
         widgets::text_in(&painter, value_at, Align2::LEFT_CENTER, value, font.clone(), ink);
     }
-    let copy = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
     // The label carries the line itself, so a screen reader reads the version too.
-    if button(ui, &painter, copy, "Copy version", &format!("Copy version: {}", version_line())) {
+    let label = format!("Copy version: {}", version_line());
+    if dialog::actions(ui, &painter, panel, &[dialog::Action::new("Copy version", &label)]).is_some() {
         return Some(AboutChoice::Copy);
     }
     if ui.input(|i| i.key_pressed(Key::Escape) || i.key_pressed(Key::Enter)) {
@@ -413,29 +420,31 @@ fn draw_unsaved(
         ui,
         dialog,
         area,
-        Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD),
+        Vec2::new(SAVE_WIDTH, 2.0 * LINE + PAD + dialog::BUTTON_HEIGHT),
         "Unsaved changes",
         &mut closed,
     );
     let painter = ui.painter_at(area);
-    let text = Rect::from_min_size(
-        Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD),
-        Vec2::new(panel.width() - 2.0 * PAD, LINE),
-    );
+    let text = Rect::from_min_size(Pos2::new(panel.left(), panel.top()), Vec2::new(panel.width(), LINE));
     let message = format!("Save the changes to {name} before {doing}?");
     widgets::text_in(&painter, text, Align2::LEFT_CENTER, &message, theme::ui_font(theme::TEXT), name_ink());
-    let save = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
-    let dont = Rect::from_min_size(Pos2::new(save.left() - 4.0 - BUTTON.x, save.top()), BUTTON);
-    let cancel = Rect::from_min_size(Pos2::new(dont.left() - 4.0 - BUTTON.x, save.top()), BUTTON);
-    if button(ui, &painter, save, "Save", "Save the changes") || ui.input(|i| i.key_pressed(Key::Enter)) {
+    let clicked = dialog::actions(
+        ui,
+        &painter,
+        panel,
+        &[
+            dialog::Action::new("Cancel", "Cancel and keep the project open"),
+            dialog::Action::new("Don't save", "Don't save the changes"),
+            dialog::Action::new("Save", "Save the changes"),
+        ],
+    );
+    if clicked == Some(2) || ui.input(|i| i.key_pressed(Key::Enter)) {
         return Some(UnsavedChoice::Save);
     }
-    if button(ui, &painter, dont, "Don't save", "Don't save the changes") {
+    if clicked == Some(1) {
         return Some(UnsavedChoice::DontSave);
     }
-    if button(ui, &painter, cancel, "Cancel", "Cancel and keep the project open")
-        || ui.input(|i| i.key_pressed(Key::Escape))
-    {
+    if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) {
         return Some(UnsavedChoice::Cancel);
     }
     closed
@@ -453,7 +462,7 @@ pub enum AraEditsChoice {
 
 /// Asks whether clips `plugin` edits keep their edits on the track they go to, over `area`.
 pub fn show_ara_edits(ui: &Ui, area: Rect, plugin: &str) -> Option<AraEditsChoice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("ara-edits");
     crate::kit::floating::area(ui.ctx(), Id::unique("ara-edits-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -478,7 +487,7 @@ fn draw_ara_edits(
         ui,
         dialog,
         area,
-        Vec2::new(SAVE_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD),
+        Vec2::new(SAVE_WIDTH, 2.0 * LINE + PAD + dialog::BUTTON_HEIGHT),
         "Another track",
         &mut closed,
     );
@@ -491,27 +500,28 @@ fn draw_ara_edits(
     .iter()
     .enumerate()
     {
-        let at = Rect::from_min_size(
-            Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + i as f32 * LINE),
-            Vec2::new(panel.width() - 2.0 * PAD, LINE),
-        );
+        let at =
+            Rect::from_min_size(Pos2::new(panel.left(), panel.top() + i as f32 * LINE), Vec2::new(panel.width(), LINE));
         let color = if i == 0 { first } else { rest };
         widgets::text_in(&painter, at, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), color);
     }
-    let keep = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
-    let new = Rect::from_min_size(Pos2::new(keep.left() - 4.0 - BUTTON.x, keep.top()), BUTTON);
-    let cancel = Rect::from_min_size(Pos2::new(new.left() - 4.0 - BUTTON.x, keep.top()), BUTTON);
-    if button(ui, &painter, keep, "Keep edits", "Keep the clips' edits on that track")
-        || ui.input(|i| i.key_pressed(Key::Enter))
-    {
+    let clicked = dialog::actions(
+        ui,
+        &painter,
+        panel,
+        &[
+            dialog::Action::new("Cancel", "Leave the clips where they are"),
+            dialog::Action::new("Copy as new", "Start the clips there without their edits"),
+            dialog::Action::new("Keep edits", "Keep the clips' edits on that track"),
+        ],
+    );
+    if clicked == Some(2) || ui.input(|i| i.key_pressed(Key::Enter)) {
         return Some(AraEditsChoice::Keep);
     }
-    if button(ui, &painter, new, "Copy as new", "Start the clips there without their edits") {
+    if clicked == Some(1) {
         return Some(AraEditsChoice::New);
     }
-    if button(ui, &painter, cancel, "Cancel", "Leave the clips where they are")
-        || ui.input(|i| i.key_pressed(Key::Escape))
-    {
+    if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) {
         return Some(AraEditsChoice::Cancel);
     }
     closed
@@ -528,13 +538,15 @@ pub enum RecoveryChoice {
     Ignore,
 }
 
-const RECOVERY_WIDTH: f32 = 520.0;
-const RECOVERY_BUTTON: Vec2 = Vec2::new(120.0, 18.0);
+/// How wide the contents of the backup offer and of the dialogs as wide as it are.
+const RECOVERY_WIDTH: f32 = 504.0;
+/// How wide the backup offer's buttons are.
+const RECOVERY_BUTTON: f32 = 120.0;
 
 /// Offers the backup of `name` written at `written` (local time) that is newer than its project
 /// file, over `area`; `saved` says whether the project has a file at all.
 pub fn show_recovery(ui: &Ui, area: Rect, name: &str, written: &str, saved: bool) -> Option<RecoveryChoice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("backup");
     crate::kit::floating::area(ui.ctx(), Id::unique("recovery-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -557,7 +569,7 @@ fn draw_recovery(
     saved: bool,
 ) -> Option<RecoveryChoice> {
     let mut closed: Option<RecoveryChoice> = None;
-    let size = Vec2::new(RECOVERY_WIDTH, ROW + 3.0 * LINE + RECOVERY_BUTTON.y + 3.0 * PAD);
+    let size = Vec2::new(RECOVERY_WIDTH, 3.0 * LINE + PAD + dialog::BUTTON_HEIGHT);
     let panel = panel(ui, dialog, area, size, "Backup found", &mut closed);
     let painter = ui.painter_at(area);
     let lines = [
@@ -570,23 +582,27 @@ fn draw_recovery(
     ];
     let ink = name_ink();
     for (n, line) in lines.iter().enumerate() {
-        let text = Rect::from_min_size(
-            Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
-            Vec2::new(panel.width() - 2.0 * PAD, LINE),
-        );
+        let text =
+            Rect::from_min_size(Pos2::new(panel.left(), panel.top() + n as f32 * LINE), Vec2::new(panel.width(), LINE));
         widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), ink);
     }
-    let bottom = panel.bottom() - PAD - RECOVERY_BUTTON.y;
-    let open = Rect::from_min_size(Pos2::new(panel.right() - PAD - RECOVERY_BUTTON.x, bottom), RECOVERY_BUTTON);
-    let folder = Rect::from_min_size(Pos2::new(open.left() - 4.0 - RECOVERY_BUTTON.x, bottom), RECOVERY_BUTTON);
-    let ignore = Rect::from_min_size(Pos2::new(folder.left() - 4.0 - RECOVERY_BUTTON.x, bottom), RECOVERY_BUTTON);
-    if button(ui, &painter, open, "Open the backup", "Open the backup") || ui.input(|i| i.key_pressed(Key::Enter)) {
+    let clicked = dialog::actions(
+        ui,
+        &painter,
+        panel,
+        &[
+            dialog::Action::new("Ignore", "Ignore the backup").wide(RECOVERY_BUTTON),
+            dialog::Action::new("Show the folder", "Show the backup's folder").wide(RECOVERY_BUTTON),
+            dialog::Action::new("Open the backup", "Open the backup").wide(RECOVERY_BUTTON),
+        ],
+    );
+    if clicked == Some(2) || ui.input(|i| i.key_pressed(Key::Enter)) {
         return Some(RecoveryChoice::Open);
     }
-    if button(ui, &painter, folder, "Show the folder", "Show the backup's folder") {
+    if clicked == Some(1) {
         return Some(RecoveryChoice::ShowFolder);
     }
-    if button(ui, &painter, ignore, "Ignore", "Ignore the backup") || ui.input(|i| i.key_pressed(Key::Escape)) {
+    if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) {
         return Some(RecoveryChoice::Ignore);
     }
     closed
@@ -602,7 +618,7 @@ pub enum AgentChoice {
 /// Asks whether to let `client`, an agent that has just connected, work on the open projects,
 /// over `area`.
 pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("agent");
     crate::kit::floating::area(ui.ctx(), Id::unique("agent-prompt"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -618,7 +634,7 @@ pub fn show_agent(ui: &Ui, area: Rect, client: &str) -> Option<AgentChoice> {
 
 fn draw_agent(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, client: &str) -> Option<AgentChoice> {
     let mut closed: Option<AgentChoice> = None;
-    let size = Vec2::new(RECOVERY_WIDTH, ROW + 3.0 * LINE + BUTTON.y + 3.0 * PAD);
+    let size = Vec2::new(RECOVERY_WIDTH, 3.0 * LINE + PAD + dialog::BUTTON_HEIGHT);
     let panel = panel(ui, dialog, area, size, "An agent wants to connect", &mut closed);
     let painter = ui.painter_at(area);
     let lines = [
@@ -628,21 +644,23 @@ fn draw_agent(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, cl
     ];
     let (first, rest) = (name_ink(), hint_ink());
     for (n, line) in lines.iter().enumerate() {
-        let text = Rect::from_min_size(
-            Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
-            Vec2::new(panel.width() - 2.0 * PAD, LINE),
-        );
+        let text =
+            Rect::from_min_size(Pos2::new(panel.left(), panel.top() + n as f32 * LINE), Vec2::new(panel.width(), LINE));
         let colour = if n == 0 { first } else { rest };
         widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
     }
-    let bottom = panel.bottom() - PAD - BUTTON.y;
-    let allow = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, bottom), BUTTON);
-    let deny = Rect::from_min_size(Pos2::new(allow.left() - 4.0 - BUTTON.x, bottom), BUTTON);
-    if button(ui, &painter, allow, "Allow", &format!("Allow {client}")) {
+    let (deny, allow) = (format!("Deny {client}"), format!("Allow {client}"));
+    let clicked = dialog::actions(
+        ui,
+        &painter,
+        panel,
+        &[dialog::Action::new("Deny", &deny), dialog::Action::new("Allow", &allow)],
+    );
+    if clicked == Some(1) {
         return Some(AgentChoice::Allow);
     }
     // Enter does not allow: letting an agent in takes a click.
-    if button(ui, &painter, deny, "Deny", &format!("Deny {client}")) || ui.input(|i| i.key_pressed(Key::Escape)) {
+    if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) {
         return Some(AgentChoice::Deny);
     }
     closed
@@ -651,7 +669,7 @@ fn draw_agent(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, cl
 /// Asks whether to move Suhina's `what` to the folder `to`, a backup made first. `Some(true)` to
 /// move, `Some(false)` to leave them.
 pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<bool> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("move-folder");
     crate::kit::floating::area(ui.ctx(), Id::unique("folder-move"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -660,7 +678,7 @@ pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<boo
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             let mut closed: Option<AgentChoice> = None;
-            let size = Vec2::new(RECOVERY_WIDTH, ROW + 3.0 * LINE + BUTTON.y + 3.0 * PAD);
+            let size = Vec2::new(RECOVERY_WIDTH, 3.0 * LINE + PAD + dialog::BUTTON_HEIGHT);
             let panel = panel(ui, &style_class, area, size, "Move the folder?", &mut closed);
             let painter = ui.painter_at(area);
             let lines = [
@@ -671,22 +689,23 @@ pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<boo
             let (first, rest) = (name_ink(), hint_ink());
             for (n, line) in lines.iter().enumerate() {
                 let text = Rect::from_min_size(
-                    Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
-                    Vec2::new(panel.width() - 2.0 * PAD, LINE),
+                    Pos2::new(panel.left(), panel.top() + n as f32 * LINE),
+                    Vec2::new(panel.width(), LINE),
                 );
                 let colour = if n == 0 { first } else { rest };
                 widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
             }
-            let bottom = panel.bottom() - PAD - BUTTON.y;
-            let confirm = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, bottom), BUTTON);
-            let cancel = Rect::from_min_size(Pos2::new(confirm.left() - 4.0 - BUTTON.x, bottom), BUTTON);
-            if button(ui, &painter, confirm, "Move", &format!("Move your {what}")) {
+            let move_label = format!("Move your {what}");
+            let clicked = dialog::actions(
+                ui,
+                &painter,
+                panel,
+                &[dialog::Action::new("Cancel", "Leave them where they are"), dialog::Action::new("Move", &move_label)],
+            );
+            if clicked == Some(1) {
                 return Some(true);
             }
-            if button(ui, &painter, cancel, "Cancel", "Leave them where they are")
-                || ui.input(|i| i.key_pressed(Key::Escape))
-                || closed.is_some()
-            {
+            if clicked == Some(0) || ui.input(|i| i.key_pressed(Key::Escape)) || closed.is_some() {
                 return Some(false);
             }
             None
@@ -711,7 +730,7 @@ impl CloseChoice for ImportChoice {
 /// Asks what to do with a theme package whose theme, `name`, is here already: replace it, bring
 /// it in as a copy, or leave it.
 pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("theme-exists");
     crate::kit::floating::area(ui.ctx(), Id::unique("theme-import"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -720,7 +739,7 @@ pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice
             let ui = &mut *styled_ui;
             ui.set_min_size(area.size());
             let mut closed: Option<ImportChoice> = None;
-            let size = Vec2::new(RECOVERY_WIDTH, ROW + 2.0 * LINE + BUTTON.y + 3.0 * PAD);
+            let size = Vec2::new(RECOVERY_WIDTH, 2.0 * LINE + PAD + dialog::BUTTON_HEIGHT);
             let panel = panel(ui, &style_class, area, size, "The theme is here already", &mut closed);
             let painter = ui.painter_at(area);
             let lines = [
@@ -730,19 +749,23 @@ pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice
             let (first, rest) = (name_ink(), hint_ink());
             for (n, line) in lines.iter().enumerate() {
                 let text = Rect::from_min_size(
-                    Pos2::new(panel.left() + PAD, panel.top() + ROW + PAD + n as f32 * LINE),
-                    Vec2::new(panel.width() - 2.0 * PAD, LINE),
+                    Pos2::new(panel.left(), panel.top() + n as f32 * LINE),
+                    Vec2::new(panel.width(), LINE),
                 );
                 let colour = if n == 0 { first } else { rest };
                 widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
             }
-            let bottom = panel.bottom() - PAD - BUTTON.y;
-            let replace = Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, bottom), BUTTON);
-            let copy = Rect::from_min_size(Pos2::new(replace.left() - 4.0 - BUTTON.x, bottom), BUTTON);
-            if button(ui, &painter, replace, "Replace", &format!("Replace {name}")) {
+            let (copy, replace) = (format!("Bring in {name} as a copy"), format!("Replace {name}"));
+            let clicked = dialog::actions(
+                ui,
+                &painter,
+                panel,
+                &[dialog::Action::new("Copy", &copy), dialog::Action::new("Replace", &replace)],
+            );
+            if clicked == Some(1) {
                 return Some(ImportChoice::Replace);
             }
-            if button(ui, &painter, copy, "Copy", &format!("Bring in {name} as a copy")) {
+            if clicked == Some(0) {
                 return Some(ImportChoice::Copy);
             }
             if ui.input(|i| i.key_pressed(Key::Escape)) {
@@ -753,13 +776,14 @@ pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice
         .inner
 }
 
-/// A panel in the middle of `area` with a title row and a Close button, the area behind dimmed
-/// and its clicks swallowed. Returns the panel; `closed` is set when Close is clicked.
+/// A dialog's box over `area`, the window dimmed behind it: `content` big inside its padding,
+/// with its title row and a Close button along its top. Where its contents go: the content box,
+/// under the title row and inside the padding. A click on Close sets `closed`.
 pub(crate) fn panel<T: CloseChoice>(
     ui: &Ui,
     dialog: &crate::kit::element::Entered,
     area: Rect,
-    size: Vec2,
+    content: Vec2,
     title: &str,
     closed: &mut Option<T>,
 ) -> Rect {
@@ -771,39 +795,18 @@ pub(crate) fn panel<T: CloseChoice>(
         0.0,
         crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window")).gamma_multiply(0.6),
     );
-    let rect = Rect::from_center_size(area.center(), crate::kit::floating::dialog_size(dialog, area, size));
-    let rect = crate::kit::floating::dialog(
-        &painter,
-        dialog,
-        rect,
-        crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel")),
-    );
-    let bar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    let title_row = title_bar(&painter, bar, title);
-    let close = Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, ROW));
+    let outer = Rect::from_center_size(area.center(), dialog::size(dialog, area, content, true));
+    let fill = crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel"));
+    let (painted, title_row) = dialog::paint(&painter, dialog, outer, fill, Some(title));
+    let bar = painted.title;
+    let close = Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, bar.height()));
     let response = widgets::button_area(ui, close, Id::unique(("dialog-close", title)), format!("Close {title}"));
     widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT_SMALL, None));
     drop(title_row);
     if response.clicked() {
         *closed = Some(T::close());
     }
-    rect
-}
-
-/// A dialog's title row in `bar`, `dialog-title`: its fill and its words, `label[kind="title"]`.
-/// The element stays entered for what its caller puts on the row (a Close button).
-pub(crate) fn title_bar(painter: &egui::Painter, bar: Rect, title: &str) -> crate::kit::element::Entered {
-    let row = crate::kit::element::DIALOG_TITLE.enter();
-    painter.rect_filled(bar, 0.0, row.background());
-    widgets::text_in(
-        painter,
-        bar.shrink2(Vec2::new(PAD, 0.0)),
-        Align2::LEFT_CENTER,
-        title,
-        theme::ui_font(theme::TEXT),
-        crate::kit::element::title_ink(),
-    );
-    row
+    painted.content
 }
 
 /// The choice that closes a dialog.

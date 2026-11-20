@@ -1,7 +1,7 @@
 # What each built-in theme paints in each scene, drawn as on Linux on every system: `scene theme
 # digest`, written by `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`
 # (tests/painted.rs).
-agent-dialog catppuccin-latte 855f4162724442a1
+agent-dialog catppuccin-latte 291ecbac1c526e05
 arrangement catppuccin-latte 4993daf5ed14f986
 arrangement-scrolled catppuccin-latte 25642a1a974af11c
 browser catppuccin-latte 22e4cb75e7651c56
@@ -9,9 +9,9 @@ browser-plug-ins catppuccin-latte f37e5e81a3afe8e2
 browser-search catppuccin-latte 594cd8430ff544f5
 clip-audio catppuccin-latte 4537d5fe42ec4059
 clip-midi catppuccin-latte 5b42fdca6dbfbd62
-colour-picker catppuccin-latte 56419322d68ca187
-colour-picker-field catppuccin-latte a5746269edafdb96
-colour-picker-wheel catppuccin-latte f962f6267eb5be24
+colour-picker catppuccin-latte cd6d060096a45b0a
+colour-picker-field catppuccin-latte c2bda3cc17d8e6be
+colour-picker-wheel catppuccin-latte fe02ceffb55de90d
 context-menu catppuccin-latte 18c922351f47729c
 control-bar-toggles catppuccin-latte ffd7c6c8598df4de
 count-in-menu catppuccin-latte ad2c7b097c795225
@@ -28,7 +28,7 @@ expanded-instrument-sample catppuccin-latte 9b7e4b649fa47d56
 expanded-multiband catppuccin-latte 58f2b33d0eb84ff4
 expanded-reverb catppuccin-latte f096bc7fe451ae4f
 expanded-vinyl-distortion catppuccin-latte e1c8cd58c26ec986
-export-dialog catppuccin-latte 8feee32b81c0b297
+export-dialog catppuccin-latte 2b9fbb5ccb97c9e1
 grid-menu catppuccin-latte 897a15d1feee4df6
 instrument-instrument catppuccin-latte a5418e90099ef0ef
 instrument-sampler catppuccin-latte b5050746a600a809
@@ -41,11 +41,11 @@ menu catppuccin-latte 1e8fd9e923882c23
 missing-files catppuccin-latte 50fb4ebb35872e74
 new-theme-dialog catppuccin-latte eab52c9cba162822
 piano-roll catppuccin-latte 1f9b7a7a3cd9c0ed
-project-dialog catppuccin-latte 2a317b042242d3da
+project-dialog catppuccin-latte 119b3ccf23d99b8b
 quantize-menu catppuccin-latte c470fb45db6f59af
 quick-add catppuccin-latte 102f3d1592e3d832
 sample-map catppuccin-latte 7a4f3310b7deca7f
-save-dialog catppuccin-latte 69373b9d0c4fbb66
+save-dialog catppuccin-latte d2c125bbb955b6f9
 settings catppuccin-latte 62c466163774c16b
 settings-agents catppuccin-latte 8dccdcecf230e4c3
 settings-appearance catppuccin-latte b36d1cc10a401046
@@ -61,5 +61,5 @@ settings-themes catppuccin-latte 42de502609c111a9
 start-panel catppuccin-latte 588307d3a070c325
 time-signature-menu catppuccin-latte 8947d7053d686b50
 tooltip catppuccin-latte c1057243edf4b479
-unsaved-dialog catppuccin-latte 1f0ad1c867ad6e8c
-updates-dialog catppuccin-latte 1f39568524167ff4
+unsaved-dialog catppuccin-latte 2ec83b472b038258
+updates-dialog catppuccin-latte e930f74e5ac6a726
