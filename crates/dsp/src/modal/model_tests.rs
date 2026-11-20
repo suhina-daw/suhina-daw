@@ -61,11 +61,14 @@ fn sets_round_trip_canonically_and_reject_hostile_bytes() {
     assert!(ModelSet::decode(&swapped).is_err());
 }
 
+/// A change that makes a recording invalid.
+type Breakage = Box<dyn Fn(&mut ModelRecording)>;
+
 #[test]
 fn recordings_validate_every_bound() {
     let good = recording(60, 0.8, 2.0, 1.0);
     assert!(good.validate().is_ok());
-    let cases: Vec<Box<dyn Fn(&mut ModelRecording)>> = vec![
+    let cases: Vec<Breakage> = vec![
         Box::new(|r| r.key = 128),
         Box::new(|r| r.velocity = 0.0),
         Box::new(|r| r.velocity = 1.5),
