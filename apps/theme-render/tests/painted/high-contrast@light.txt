@@ -22,9 +22,9 @@ devices high-contrast@light 33ba9073132cc0fe
 empty-space-menu high-contrast@light 4c7b05d116e2637c
 expanded-delay high-contrast@light f9fed742457fc670
 expanded-fm-synth high-contrast@light d9f985a695f42c8b
-expanded-instrument high-contrast@light 609d5cce1ad8c661
+expanded-instrument high-contrast@light 5118ae265846676d
 expanded-instrument-model high-contrast@light 244983a264a85b0b
-expanded-instrument-sample high-contrast@light 5c85a7657e1e55bb
+expanded-instrument-sample high-contrast@light 95eb8a390c19f43e
 expanded-multiband high-contrast@light a85aca661ae57847
 expanded-reverb high-contrast@light 44cc605548413bd8
 expanded-vinyl-distortion high-contrast@light fab6d60be100d1a0
