@@ -76,6 +76,27 @@ fn single_sample_maps_play_through_the_shared_runtime() {
 }
 
 #[test]
+fn key_parameters_are_shown_as_note_names() {
+    use suhina_device_sdk::ui::{TextFormat, Widget};
+    for index in [param::ROOT, param::KEY_LOW, param::KEY_HIGH] {
+        assert_eq!(PARAMS[index].unit, Unit::Key, "{}", PARAMS[index].id);
+    }
+    let layout = panel::layout();
+    let editor = layout.expanded.as_ref().unwrap();
+    for id in ["root", "key_low", "key_high"] {
+        let fields: Vec<_> = editor
+            .controls
+            .iter()
+            .filter(|c| c.y.as_ref().or(c.x.as_ref()).is_some_and(|b| b.parameter == id))
+            .collect();
+        assert!(!fields.is_empty(), "{id} has a field");
+        for field in fields {
+            assert!(matches!(field.widget, Some(Widget::Number { format: TextFormat::Key, .. })), "{id}");
+        }
+    }
+}
+
+#[test]
 fn stock_panel_is_valid_sdk_layout() {
     let panel = panel::layout().panel(&INFO).unwrap();
     assert!(panel.ui.is_some());

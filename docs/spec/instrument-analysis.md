@@ -93,7 +93,8 @@ the project or consume an undo step. Completion messages never target another op
 The already imported sample is the playable preview. Analysis shows what was measured without
 silently retuning held or newly played notes. The sample controls expose Analyze, progress,
 Cancel, the proposed root and cents, a manual root correction and Accept when a current proposal
-exists. Silence, unstable pitch, unsupported input and stale results have distinct explanatory
+exists. Keys are shown as note names (60 is C3); the correction also accepts a typed note name
+(`A2`, `C#3`, `Db3`) or a MIDI number. Silence, unstable pitch, unsupported input and stale results have distinct explanatory
 messages. An analysis action is a command control, never a fake automatable sound parameter.
 
 The expanded editor's Sample page places these controls through the SDK `SampleAnalysis`

@@ -39,7 +39,7 @@ identifies Instrument and its experimental model, with Source always available. 
   excitation control Strike colour: a creative weighting of accepted modes, not a measured
   physical impact position. Profile adoption resets the four model controls and enables all
   profile modes; the underlying stable parameter IDs remain the same.
-- **Sample:** local waveform/drop target, Root, Playback, source Start/End, loop Start/End,
+- **Sample:** local waveform/drop target, Root (shown as a note name, 60 is C3), Playback, source Start/End, loop Start/End,
   Attack and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.
 

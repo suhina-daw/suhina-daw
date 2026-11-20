@@ -145,7 +145,7 @@ impl Canvas {
             name,
             Widget::Number {
                 decimals: if integer { 0 } else { 2 },
-                format: if integer { TextFormat::Number } else { TextFormat::Percent },
+                format: if integer { TextFormat::Key } else { TextFormat::Percent },
                 color: [3, 1, 5, 255],
                 center: false,
                 bordered: true,
