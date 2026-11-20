@@ -144,6 +144,14 @@ the model gives.
 A new stroke on a bar whose previous contact or pulse has not finished replaces it; the rest of
 the earlier stroke is dropped.
 
+**Torsion.** A stroke lands a little off the bar's centre line, so the bar also twists. Its
+free-free torsional modes sound at `n * T_1 * f1` for `n` = 1, 2, 3, with `T_1` 6.1 (Marimba bar)
+or 5.3 (Vibraphone bar), decay by the profile's material law like the bending modes, have the
+shape `0.2 * cos(n * pi * x)` at the contact point (an offset of a fifth of the cross-section's
+radius of gyration) and modal mass `M / 2`, and join the output at half a bending mode's weight
+for their frequency. At 16 modes per voice the bar has 13 bending and 3 torsional modes, at 8
+it has 6 and 2. `T_1` and the offset are assumptions of literature scale, not measurements.
+
 **Mallet noise.** While the mallet touches the bar, the stroke also sounds a short noise of its
 own, the knock of the mallet's head: white noise from the bar's own generator, high-passed at
 200 Hz and low-passed at `0.6 / tau` (tau as for Pulse, so harder and faster strokes knock
