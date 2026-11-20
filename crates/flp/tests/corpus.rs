@@ -4,7 +4,7 @@
 //! Tests against the local, uncommitted FL Studio corpus (`corpus/flp`, see
 //! `docs/spec/flp-corpus.md`). Run with `cargo test -p suhina-flp --features corpus`.
 //!
-//! Nothing here prints the values of events 28 and 200 (the licence flag and the licensee's name).
+//! Nothing here prints the values of events 28 and 200 (the license flag and the licensee's name).
 #![cfg(feature = "corpus")]
 #![allow(clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
 

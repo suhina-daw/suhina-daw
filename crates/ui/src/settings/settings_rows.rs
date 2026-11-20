@@ -1001,8 +1001,8 @@ pub(crate) static ROWS: &[Entry] = &[
     }),
     block(
         Page::Keys,
-        "Mouse and key behaviour",
-        "Piano roll mouse behaviour",
+        "Mouse and key behavior",
+        "Piano roll mouse behavior",
         "What clicks, double-clicks and right-clicks do to notes in the piano roll",
         KEYMAP,
         crate::settings::settings_view::mouse_switches,
@@ -1114,7 +1114,7 @@ pub(crate) static ROWS: &[Entry] = &[
         "Application name position",
         "Where the name Suhina sits in the bar at the top of the window",
         &["app_name_centered"],
-        |cx, r| cx.choose(r, &[("Left", false), ("Centre", true)], |s| &mut s.view.app_name_centered),
+        |cx, r| cx.choose(r, &[("Left", false), ("Center", true)], |s| &mut s.view.app_name_centered),
     ),
     row(
         Page::Appearance,
@@ -1138,7 +1138,7 @@ pub(crate) static ROWS: &[Entry] = &[
         "Project information position",
         "Where the project's name and timing sit in the bar at the top of the window",
         &["bar_project_centered"],
-        |cx, r| cx.choose(r, &[("Left", false), ("Centre", true)], |s| &mut s.view.bar_project_centered),
+        |cx, r| cx.choose(r, &[("Left", false), ("Center", true)], |s| &mut s.view.bar_project_centered),
     ),
     row(
         Page::Appearance,

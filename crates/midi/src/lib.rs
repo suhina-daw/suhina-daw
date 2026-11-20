@@ -27,8 +27,8 @@ const SUSTAIN: u8 = 64;
 const ALL_SOUND_OFF: u8 = 120;
 const ALL_NOTES_OFF: u8 = 123;
 
-/// The MIDI pitch bend wheel's centre, as a 14-bit value.
-const BEND_CENTRE: f32 = 8_192.0;
+/// The MIDI pitch bend wheel's center, as a 14-bit value.
+const BEND_CENTER: f32 = 8_192.0;
 
 /// The engine's live note or performance control for one MIDI message, with its channel (0 to
 /// 15); `None` for anything else, including short or malformed messages. Note on and off,
@@ -67,7 +67,7 @@ pub fn parse(message: &[u8]) -> Option<(u8, LiveEvent)> {
                 return None;
             }
             let combined = f32::from(u16::from(lsb) | (u16::from(msb) << 7));
-            LiveEvent::PitchBend(((combined - BEND_CENTRE) / BEND_CENTRE).clamp(-1.0, 1.0))
+            LiveEvent::PitchBend(((combined - BEND_CENTER) / BEND_CENTER).clamp(-1.0, 1.0))
         }
         0xD0 => {
             let &value = data.first()?;
@@ -190,8 +190,8 @@ mod tests {
     }
 
     #[test]
-    fn pitch_bend_is_read_as_fourteen_bits_centred_on_zero() {
-        assert_eq!(parse(&[0xE0, 0, 64]), Some((0, LiveEvent::PitchBend(0.0))), "centre");
+    fn pitch_bend_is_read_as_fourteen_bits_centered_on_zero() {
+        assert_eq!(parse(&[0xE0, 0, 64]), Some((0, LiveEvent::PitchBend(0.0))), "center");
         assert_eq!(parse(&[0xE0, 0, 0]), Some((0, LiveEvent::PitchBend(-1.0))), "full down");
         let full_up = (16_383.0 - 8_192.0) / 8_192.0;
         assert_eq!(parse(&[0xEF, 127, 127]), Some((15, LiveEvent::PitchBend(full_up))), "full up, channel 16");

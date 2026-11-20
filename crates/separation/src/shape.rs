@@ -28,7 +28,7 @@ pub enum Weighting {
     /// Every frame of the window counts the same: neighbouring windows meet with a step if
     /// their outputs differ.
     Flat,
-    /// A triangle peaking at the centre, as htdemucs weights its windows.
+    /// A triangle peaking at the center, as htdemucs weights its windows.
     Triangle,
     /// A Hann window sampled between its zeros, as MDX-Net weights its windows.
     Hann,

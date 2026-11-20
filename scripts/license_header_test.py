@@ -1,7 +1,7 @@
 # Copyright (C) 2026 The Suhina contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Check `scripts/license_header.py`, the licence header CI keeps in every source file.
+"""Check `scripts/license_header.py`, the license header CI keeps in every source file.
 
     python scripts/license_header_test.py
 """

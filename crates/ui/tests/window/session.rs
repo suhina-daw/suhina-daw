@@ -1005,7 +1005,7 @@ fn a_carried_launch_mark_press_takes_the_focus_off_a_selected_track() {
 /// Needs an audio device, so it is ignored by default, like the preview test.
 #[test]
 #[ignore]
-fn launching_a_clip_greys_the_arrangement_until_back_to_arrangement() {
+fn launching_a_clip_grays_the_arrangement_until_back_to_arrangement() {
     let mut session = Session::new(demo_project());
     let player = suhina_output::open_chosen(
         session.project(),
@@ -1202,7 +1202,7 @@ fn rename_in_a_slots_menu_edits_the_name_on_the_slot_and_ctrl_r_does_too() {
 }
 
 /// A slot's right-click menu deletes its clip, MIDI or audio, as the Delete key does, in one
-/// undo step; an empty slot's Delete is greyed out (#842).
+/// undo step; an empty slot's Delete is grayed out (#842).
 #[test]
 fn a_slots_context_menu_deletes_its_clip() {
     // A MIDI clip: Walk, in Bass's second slot.

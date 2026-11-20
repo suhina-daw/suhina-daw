@@ -931,7 +931,7 @@ fn the_toolbar_cuts_copies_pastes_and_duplicates_the_selection() {
     // The buttons show the key they run.
     assert!(h.query_by_label(&format!("Copy ({})", shown("Ctrl+C"))).is_some(), "Copy names its key");
     assert!(h.query_by_label(&format!("Cut ({})", shown("Ctrl+X"))).is_some(), "Cut names its key");
-    // Nothing selected: the clipboard buttons are greyed out, so a click does nothing.
+    // Nothing selected: the clipboard buttons are grayed out, so a click does nothing.
     clipboard(&mut h, "Copy");
     assert_eq!(notes(&h).len(), start, "nothing to copy");
     // A click in the piano roll selects a note; the buttons then run the same commands as the

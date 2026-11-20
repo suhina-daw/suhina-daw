@@ -303,7 +303,7 @@ pub struct Channel {
     pub role: ChannelRole,
     /// Linear gain; 1.0 is unity.
     pub volume: f64,
-    /// -1.0 is hard left, 0.0 centre, 1.0 hard right.
+    /// -1.0 is hard left, 0.0 center, 1.0 hard right.
     pub pan: f64,
     pub mute: bool,
     pub solo: bool,
@@ -891,7 +891,7 @@ impl FadeShape {
         // SPDX-License-Identifier: GPL-3.0-or-later
         // From Lemon Studio crates/os-model/src/lib.rs (fade_curve) at
         // 011a03f23d9db7f10f07cd7d165cc978a9dda263; the tension law written over Suhina's
-        // normalised curve, with bounded inputs.
+        // normalized curve, with bounded inputs.
         if self == Self::Cosine && exponent != 1.0 {
             let base = if exponent < 1.0 { 1.0 / exponent } else { exponent };
             let squared = base * base;

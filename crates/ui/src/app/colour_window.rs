@@ -409,13 +409,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initial_placement_centres_and_expansion_or_stale_positions_stay_inside_bounds() {
+    fn initial_placement_centers_and_expansion_or_stale_positions_stay_inside_bounds() {
         let bounds = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(1280.0, 900.0));
         let compact = Vec2::new(WIDTH, 432.0);
-        let centre = place(bounds, compact, None);
-        assert_eq!(centre + compact * 0.5, bounds.center());
+        let center = place(bounds, compact, None);
+        assert_eq!(center + compact * 0.5, bounds.center());
         let expanded = Vec2::new(WIDTH, 752.0);
-        for remembered in [centre, Pos2::new(-3000.0, 2000.0), Pos2::new(f32::NAN, 0.0)] {
+        for remembered in [center, Pos2::new(-3000.0, 2000.0), Pos2::new(f32::NAN, 0.0)] {
             let rect = Rect::from_min_size(place(bounds, expanded, Some(remembered)), expanded);
             assert!(bounds.contains_rect(rect));
         }

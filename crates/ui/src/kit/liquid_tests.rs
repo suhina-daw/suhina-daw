@@ -496,7 +496,7 @@ fn coloured_gradient_keeps_the_fill_opacity() {
 }
 
 #[test]
-fn edge_refraction_bends_current_backdrop_without_moving_the_centre() {
+fn edge_refraction_bends_current_backdrop_without_moving_the_center() {
     let screen = Rect::from_min_size(pos2(10.0, 20.0), egui::vec2(800.0, 600.0));
     let rect = Rect::from_min_size(pos2(50.0, 60.0), egui::vec2(400.0, 300.0));
     let backdrop = Backdrop { screen, texture: TextureId::User(1), sharp_texture: Some(TextureId::User(2)) };
@@ -546,7 +546,7 @@ fn coloured_body_retains_a_gradient_between_the_rims() {
 }
 
 #[test]
-fn optical_rim_is_bounded_and_leaves_the_centre_clear() {
+fn optical_rim_is_bounded_and_leaves_the_center_clear() {
     for size in [egui::vec2(13.0, 14.0), egui::vec2(220.0, 64.0), egui::vec2(1600.0, 200.0)] {
         let rect = Rect::from_min_size(pos2(30.0, 50.0), size);
         let mesh = rim_mesh(rect, 1.0);

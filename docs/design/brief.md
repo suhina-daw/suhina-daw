@@ -143,7 +143,7 @@ a theme file can change any of them (see Themes). Current values:
 | `slot.empty` | `#484642` | The mark in an empty clip slot |
 | `track.mutedBackground` | `#21201D` | The fills of a muted track |
 | `pan.background` | `#1F1E1C` | Behind a track header's pan field |
-| `pan.centre` | `#817F7A` | The centre mark of a pan field |
+| `pan.center` | `#817F7A` | The center mark of a pan field |
 | type | 12 px UI, 11 px values, 9 px rulers | |
 | row height | 20 px grid rows and fields, 15–16 px inline fields, 17 px browser rows (`theme::BROWSER_ROW`) | |
 | radius | 0 everywhere | |

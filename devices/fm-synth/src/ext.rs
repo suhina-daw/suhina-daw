@@ -46,7 +46,7 @@ const FILTER_LFO_OCTAVES: f32 = 4.0;
 /// How far a full modulation moves fixed frequencies, in octaves.
 const FIXED_OCTAVES: f32 = 2.0;
 /// Key the filter and level tracking pivot on.
-const CENTRE_KEY: f32 = 60.0;
+const CENTER_KEY: f32 = 60.0;
 /// Frames between filter updates.
 const FILTER_STEP: usize = 16;
 /// One voice at full scale in the engine's output.
@@ -582,7 +582,7 @@ impl Default for NoteExt {
             lfo_env: TimeEnvelope::default(),
             pitch_env: TimeEnvelope::default(),
             velocity: 1.0,
-            key: CENTRE_KEY,
+            key: CENTER_KEY,
             random: 0.0,
             noise: 0x1234_5679,
             down: false,
@@ -674,7 +674,7 @@ impl NoteExt {
         if routed {
             let sources = [
                 self.velocity,
-                (self.key - CENTRE_KEY) / 60.0,
+                (self.key - CENTER_KEY) / 60.0,
                 frame.pressure,
                 frame.bend,
                 frame.wheel,
@@ -696,7 +696,7 @@ impl NoteExt {
         for (op, o) in ext.ops.iter().enumerate() {
             let number = 5 - op;
             let mut offset = mods.sum(dest::OP_LEVEL + number) * LEVEL_RANGE_DB;
-            offset += o.level_by_key * (self.key - CENTRE_KEY) / 12.0 * 6.0;
+            offset += o.level_by_key * (self.key - CENTER_KEY) / 12.0 * 6.0;
             if number == 0 {
                 offset += (-mods.sum(dest::CROSSFADE_1_3)).min(0.0) * LEVEL_RANGE_DB;
             } else if number == 2 {
@@ -752,7 +752,7 @@ impl NoteExt {
             let by_velocity = 1.0 + ext.lfo.by_velocity * (self.velocity - 1.0);
             let amount = (ext.lfo.amount + mods.sum(dest::LFO_AMOUNT)).clamp(-1.0, 1.0) * by_velocity * envelope;
             let rate_scale =
-                2f32.powf(mods.sum(dest::LFO_RATE) * 4.0 + ext.lfo.by_key * (self.key - CENTRE_KEY) / 12.0);
+                2f32.powf(mods.sum(dest::LFO_RATE) * 4.0 + ext.lfo.by_key * (self.key - CENTER_KEY) / 12.0);
             let hertz = if ext.lfo.range == 2 {
                 f64::from(ext.lfo.sync_beats).recip() * frame.clock.tempo / 60.0
             } else {
@@ -844,7 +844,7 @@ impl NoteExt {
         let f = &frame.ext.filter;
         let knobs = frame.filter;
         let by_velocity = f.by_velocity * (self.velocity - 0.5) * 2.0 * 4.0;
-        let by_key = f.by_key * (self.key - CENTRE_KEY) / 12.0;
+        let by_key = f.by_key * (self.key - CENTER_KEY) / 12.0;
         let env_amount = (f.env_amount + mods.sum(dest::FILTER_ENV)).clamp(-1.0, 1.0);
         let moved = env_amount * mods.filter_env * FILTER_ENV_OCTAVES
             + by_velocity

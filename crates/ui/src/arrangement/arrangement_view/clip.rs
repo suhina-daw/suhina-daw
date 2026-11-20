@@ -1486,11 +1486,11 @@ pub(super) fn paint_clip(
     let painter = &inside;
     // Keep the clip colour legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
-    // A muted clip is the sheet's `clip[muted]` grey, not a dimmer shade of its colour (#1393):
+    // A muted clip is the sheet's `clip[muted]` gray, not a dimmer shade of its colour (#1393):
     // its own colour stays only down its leading edge, and on a muted track in its name bar.
     let strength = if clip.audio { look.audio_colour_strength } else { 82 };
     let surface = super::panel_surface();
-    // A muted clip's grey is the computed `arrangement clip[muted]` background: the base sheet's
+    // A muted clip's gray is the computed `arrangement clip[muted]` background: the base sheet's
     // rule reads `--clip-mutedBackground`, so a theme that sets only the variable reaches it, and
     // a theme's own rule for the clip still wins.
     // A selected clip that plays has its body filled with the one selection colour every selected
@@ -1612,7 +1612,7 @@ pub(super) fn paint_clip(
         Some((_, fill)) => crate::kit::selection::readable(content_ink, fill),
         None => content_ink,
     };
-    // A muted clip's notes and waveform step back, so the grey reads first.
+    // A muted clip's notes and waveform step back, so the gray reads first.
     let content_ink = if off { motion::mix(body, content_ink, 0.6) } else { content_ink };
     let wave_ink = if ara_notes.is_some() { motion::mix(body, content_ink, 0.75) } else { content_ink };
     let dim = |_: Color32| wave_ink;
@@ -1640,13 +1640,13 @@ pub(super) fn paint_clip(
     };
     let name_left = rect.left().max(view.left()) + 7.0 + button;
     // A clip turned off itself has the mute mark before its name: with it, it is never taken for
-    // a clip whose colour is grey, and a clip on a muted track (which has none) is told from one
+    // a clip whose colour is gray, and a clip on a muted track (which has none) is told from one
     // muted on its own. A clip too low for a name bar has it too, before the name its body shows
     // (below).
-    let mark = if clip.enabled { None } else { mute_mark_centre(rect, bar, name_left) };
+    let mark = if clip.enabled { None } else { mute_mark_center(rect, bar, name_left) };
     if let (Some(bar), Some(look)) = (bar, name_look.as_ref()) {
-        if let Some(centre) = mark {
-            paint_mute_mark(painter, centre, text_color);
+        if let Some(center) = mark {
+            paint_mute_mark(painter, center, text_color);
         }
         let left = after_mute_mark(name_left, mark);
         let name_rect =
@@ -1746,8 +1746,8 @@ pub(super) fn paint_clip(
         let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
         let ink = el.color_or(text_color);
         // A clip turned off has its mute mark first, the name after it, as in a name bar.
-        if let Some(centre) = mark {
-            paint_mute_mark(painter, centre, ink);
+        if let Some(center) = mark {
+            paint_mute_mark(painter, center, ink);
         }
         let left = after_mute_mark(name_left, mark);
         let name_rect = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
@@ -1864,10 +1864,10 @@ fn paint_link_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
     if rect.height() < 16.0 || rect.width() < 24.0 {
         return;
     }
-    let centre = Pos2::new(rect.right() - 10.0, rect.bottom() - 6.0);
+    let center = Pos2::new(rect.right() - 10.0, rect.bottom() - 6.0);
     let stroke = Stroke::new(1.0, ink);
     for dx in [-2.5, 2.5] {
-        let link = Rect::from_center_size(centre + egui::vec2(dx, 0.0), egui::vec2(6.0, 4.0));
+        let link = Rect::from_center_size(center + egui::vec2(dx, 0.0), egui::vec2(6.0, 4.0));
         painter.rect_stroke(link, 2.0, stroke, StrokeKind::Inside);
     }
 }
@@ -1976,13 +1976,13 @@ pub(super) fn drawn_muted(track_muted: bool, enabled: bool) -> bool {
 }
 
 /// A clip's body where no sheet styles it. A muted clip (turned off, or on a muted track) is the
-/// base sheet's `clip[muted]` grey whatever its colour, so it never reads as a darker shade
+/// base sheet's `clip[muted]` gray whatever its colour, so it never reads as a darker shade
 /// of a clip that plays (#1393); its colour stays in the project, down its leading edge, and in
 /// its name bar on a muted track. Selection lifts the brightness either way and never changes
 /// the hue.
 pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: bool, selected: bool) -> Color32 {
     if muted {
-        return muted_clip_grey(selected);
+        return muted_clip_gray(selected);
     }
     let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
     colour_surface(surface, colour, strength)
@@ -1991,26 +1991,26 @@ pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: 
 /// The background the base sheet gives `arrangement clip[muted]` (`[muted][selected]` while
 /// selected), with Suhina Studio's colours, worked out once: the fallback where no sheet styles the
 /// window, as the sample map's kind colours are.
-pub(crate) fn muted_clip_grey(selected: bool) -> Color32 {
-    static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
-    muted_grey(&GREYS, "clip", selected)
+pub(crate) fn muted_clip_gray(selected: bool) -> Color32 {
+    static GRAYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
+    muted_gray(&GRAYS, "clip", selected)
 }
 
 /// The background the base sheet gives `arrangement <element>[muted]` (`[muted][selected]` while
-/// `selected`), worked out once into `greys`.
-pub(super) fn muted_grey(greys: &std::sync::OnceLock<[Color32; 2]>, element: &str, selected: bool) -> Color32 {
-    let greys = greys.get_or_init(|| {
+/// `selected`), worked out once into `grays`.
+pub(super) fn muted_gray(grays: &std::sync::OnceLock<[Color32; 2]>, element: &str, selected: bool) -> Color32 {
+    let grays = grays.get_or_init(|| {
         let of = |attributes: &[(&str, &str)]| {
             crate::kit::native_css::base_background(Some("arrangement"), element, attributes).unwrap_or(Color32::GRAY)
         };
         [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
     });
-    greys[usize::from(selected)]
+    grays[usize::from(selected)]
 }
 
 /// The colour of a clip's name bar: a hair off its body, or, for a clip that plays on a muted
 /// track, the clip's colour as an unmuted clip's body has it, so the clips of a muted track keep
-/// their colour in their names while their bodies are grey.
+/// their colour in their names while their bodies are gray.
 pub(super) fn name_bar_fill(
     body: Color32,
     surface: Color32,
@@ -2049,7 +2049,7 @@ const MUTE_MARK: f32 = 9.0;
 /// Where the mute mark of a clip turned off goes, its name starting at `left`: before the name,
 /// in the middle of the name bar or, on a clip too low for one, of the body that shows the name.
 /// `None` when the clip is too small to hold it.
-pub(super) fn mute_mark_centre(rect: Rect, bar: Option<Rect>, left: f32) -> Option<Pos2> {
+pub(super) fn mute_mark_center(rect: Rect, bar: Option<Rect>, left: f32) -> Option<Pos2> {
     let x = left + MUTE_MARK / 2.0;
     match bar {
         Some(bar) => Some(Pos2::new(x, bar.center().y)),
@@ -2065,12 +2065,12 @@ pub(super) fn after_mute_mark(left: f32, mark: Option<Pos2>) -> f32 {
 }
 
 /// The mark before the name of a clip turned off: a ring crossed by a slash, in the name's ink.
-fn paint_mute_mark(painter: &egui::Painter, centre: Pos2, ink: Color32) {
+fn paint_mute_mark(painter: &egui::Painter, center: Pos2, ink: Color32) {
     let radius = MUTE_MARK / 2.0 - 0.5;
     let stroke = Stroke::new(1.25, ink);
-    painter.circle_stroke(centre, radius, stroke);
+    painter.circle_stroke(center, radius, stroke);
     let reach = radius * std::f32::consts::FRAC_1_SQRT_2;
-    painter.line_segment([centre + Vec2::new(-reach, reach), centre + Vec2::new(reach, -reach)], stroke);
+    painter.line_segment([center + Vec2::new(-reach, reach), center + Vec2::new(reach, -reach)], stroke);
 }
 
 /// A colour over a theme surface at `strength` per cent, keeping its hue.

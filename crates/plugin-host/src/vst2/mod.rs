@@ -9,7 +9,7 @@
 //!
 //! - ***from VeSTige*** — a value or layout the pinned header states. It is ported into
 //!   [`vestige`] and nothing here restates it.
-//! - ***observed*** — behaviour our mock and probe have run, or an ignored test has seen a
+//! - ***observed*** — behavior our mock and probe have run, or an ignored test has seen a
 //!   real installed plug-in do (`SUHINA_TEST_VST2`, `vst2_tests`).
 //! - ***assumed*** — a fact the pinned header lacks, which we had to choose to write code at
 //!   all: an op-code number the header does not list, which argument of a call carries what,

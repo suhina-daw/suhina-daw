@@ -244,7 +244,7 @@ pub fn text_width(ui: &Ui, text: &str, font: FontId) -> f32 {
 }
 
 /// Draws one line of text in `rect`, cut to its width, aligned horizontally by `align` and
-/// centred vertically. Where not even one letter and the ellipsis fit, nothing is drawn: a cut
+/// centered vertically. Where not even one letter and the ellipsis fit, nothing is drawn: a cut
 /// never leaves a lone ellipsis, or one wider than `rect` (#1198).
 pub fn text_in(painter: &Painter, rect: Rect, align: Align2, text: &str, font: FontId, color: Color32) {
     let galley = fitted(painter, text, font, color, rect.width());
@@ -492,7 +492,7 @@ impl ValuePosition {
             Some("left") => Self::Left,
             Some("top") => Self::Top,
             Some("bottom") => Self::Bottom,
-            Some("inside" | "center" | "centre") => Self::Inside,
+            Some("inside" | "center") => Self::Inside,
             Some("none" | "hidden") => Self::None,
             _ => default,
         }
@@ -738,7 +738,7 @@ pub fn solo_button(
 }
 
 /// A track's cue button (headphones; a C read as part of the pan field beside it, which shows C
-/// for centre, #744): draws it in `rect` and returns the command a click asks for,
+/// for center, #744): draws it in `rect` and returns the command a click asks for,
 /// which turns the track's cue on or off, so it is also heard on the cue output (headphones).
 pub fn cue_button(
     ui: &Ui,
@@ -1544,7 +1544,7 @@ pub fn value_area_axis(
     response
 }
 
-/// The knob: a small circle with a pointer from the centre, −135° … +135° of travel for
+/// The knob: a small circle with a pointer from the center, −135° … +135° of travel for
 /// `position` 0 … 1 (components › Mixer strip).
 /// The artwork roles of a knob's body and pointer: a pan's and a send's (a return's level) knob
 /// take `pan.knob.*` and `send.knob.*` when the theme has them, in the Launcher and the

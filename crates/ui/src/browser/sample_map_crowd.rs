@@ -37,7 +37,7 @@ fn kind_index(kind: Kind) -> usize {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Cluster {
     pub kind: Kind,
-    /// The cluster's item nearest to its centre, in map coordinates.
+    /// The cluster's item nearest to its center, in map coordinates.
     pub spot: [f32; 2],
     pub count: usize,
 }
@@ -111,7 +111,7 @@ pub(crate) fn clusters(items: &[([f32; 2], Kind)]) -> Vec<Cluster> {
             *size >= floor.max(at_least)
         })
         .collect();
-    // The centre of each kept cluster, then the item nearest to it.
+    // The center of each kept cluster, then the item nearest to it.
     let component_of = |p: [f32; 2], kind: Kind| -> Option<usize> {
         let id = *component.get(cell_of(p, side)?)?.get(kind_index(kind))?;
         let id = usize::try_from(id).ok()?;
@@ -124,7 +124,7 @@ pub(crate) fn clusters(items: &[([f32; 2], Kind)]) -> Vec<Cluster> {
             sum[1] += f64::from(p[1]);
         }
     }
-    let centres: Vec<[f32; 2]> = sums
+    let centers: Vec<[f32; 2]> = sums
         .iter()
         .zip(&found)
         .map(|(s, (_, n))| {
@@ -135,8 +135,8 @@ pub(crate) fn clusters(items: &[([f32; 2], Kind)]) -> Vec<Cluster> {
     let mut nearest: Vec<Option<([f32; 2], f32)>> = vec![None; found.len()];
     for (p, kind) in items {
         let Some(id) = component_of(*p, *kind) else { continue };
-        let (Some(centre), Some(best)) = (centres.get(id), nearest.get_mut(id)) else { continue };
-        let d = (p[0] - centre[0]).powi(2) + (p[1] - centre[1]).powi(2);
+        let (Some(center), Some(best)) = (centers.get(id), nearest.get_mut(id)) else { continue };
+        let d = (p[0] - center[0]).powi(2) + (p[1] - center[1]).powi(2);
         if best.is_none_or(|(_, b)| d < b) {
             *best = Some((*p, d));
         }
@@ -159,7 +159,7 @@ pub(crate) fn label_scale(count: usize, smallest: usize) -> f32 {
     (1.0 + 0.15 * ratio.max(1.0).log2()).min(LABEL_MAX_SCALE)
 }
 
-/// Where each label goes, in the order given (largest cluster first): centred on its spot, or
+/// Where each label goes, in the order given (largest cluster first): centered on its spot, or
 /// moved up or down by its own height when that overlaps a label already placed; `None` when
 /// none of the three is free or the label would leave `area`. No two placed labels overlap.
 pub(crate) fn place_labels(labels: &[(Pos2, Vec2)], area: Rect) -> Vec<Option<Rect>> {
@@ -186,9 +186,9 @@ pub(crate) fn place_labels(labels: &[(Pos2, Vec2)], area: Rect) -> Vec<Option<Re
 /// soft regions rather than blocks. A texel is coloured by the mix of the kinds' colours there
 /// (each weighted by its alpha), and more opaque the more points are near it (the logarithm,
 /// against the densest texel) and the more opaque their colours are. `colour(i)` is point `i`'s
-/// colour, or `None` when it is dimmed: dimmed points only show as faint grey under the others.
+/// colour, or `None` when it is dimmed: dimmed points only show as faint gray under the others.
 /// `spread` is how many times the kernel is applied: 0 keeps each point to its own texel, so
-/// neighbours stand apart; more makes softer regions. `dimmed` is the grey the dimmed points show
+/// neighbours stand apart; more makes softer regions. `dimmed` is the gray the dimmed points show
 /// in. Drawn with linear filtering.
 pub(crate) fn density(
     screen: &[Pos2],
@@ -226,7 +226,7 @@ pub(crate) fn density(
     }
     let densest = texels.iter().map(|t| t[0]).fold(0.0f32, f32::max).max(1e-6).ln_1p();
     let dimmest = texels.iter().map(|t| t[4]).fold(0.0f32, f32::max).max(1e-6).ln_1p();
-    let [grey_r, grey_g, grey_b, grey_a] = dimmed.to_srgba_unmultiplied();
+    let [gray_r, gray_g, gray_b, gray_a] = dimmed.to_srgba_unmultiplied();
     let pixels = texels
         .iter()
         .map(|t| {
@@ -243,8 +243,8 @@ pub(crate) fn density(
                     (alpha * 255.0) as u8,
                 )
             } else if t[4] > 0.02 {
-                let alpha = 48.0 * f32::from(grey_a) / 255.0 * (t[4].ln_1p() / dimmest).min(1.0);
-                Color32::from_rgba_unmultiplied(grey_r, grey_g, grey_b, alpha as u8)
+                let alpha = 48.0 * f32::from(gray_a) / 255.0 * (t[4].ln_1p() / dimmest).min(1.0);
+                Color32::from_rgba_unmultiplied(gray_r, gray_g, gray_b, alpha as u8)
             } else {
                 Color32::TRANSPARENT
             }
@@ -291,13 +291,13 @@ pub(crate) fn dot_style(visible: usize, area: f32) -> (f32, f32) {
 mod tests {
     use super::*;
 
-    /// `n` items of `kind` spread evenly in a small square around `centre`.
-    fn blob(kind: Kind, centre: [f32; 2], n: usize) -> Vec<([f32; 2], Kind)> {
+    /// `n` items of `kind` spread evenly in a small square around `center`.
+    fn blob(kind: Kind, center: [f32; 2], n: usize) -> Vec<([f32; 2], Kind)> {
         let side = (n as f32).sqrt().ceil() as usize;
         (0..n)
             .map(|i| {
                 let (x, y) = ((i % side) as f32 / side as f32, (i / side) as f32 / side as f32);
-                ([centre[0] - 0.04 + x * 0.08, centre[1] - 0.04 + y * 0.08], kind)
+                ([center[0] - 0.04 + x * 0.08, center[1] - 0.04 + y * 0.08], kind)
             })
             .collect()
     }

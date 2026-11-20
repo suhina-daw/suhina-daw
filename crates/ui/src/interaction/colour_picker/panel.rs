@@ -150,7 +150,7 @@ impl Panel {
         let [r, g, b] = hsv.to_srgb();
         let colour = Rgb(r, g, b);
         self.hsv = hsv;
-        // Hue can change while black/grey without changing RGB: retain it for the next move.
+        // Hue can change while black/gray without changing RGB: retain it for the next move.
         if colour != self.colour {
             self.colour = colour;
             self.fields();

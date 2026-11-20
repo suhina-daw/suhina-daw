@@ -12,7 +12,7 @@ use crate::kit::theme;
 /// A grid menu's entries, all in the menu itself, compact: Snap to grid; the adaptive widths in
 /// rows of three and the fixed values in two rows of five under small headings; Narrow grid,
 /// Widen grid and Triplet grid. `keys` are the key labels of snap, narrow, widen and triplet
-/// (empty for none). The chosen ones carry a tick; an entry `enabled` refuses is greyed out. The
+/// (empty for none). The chosen ones carry a tick; an entry `enabled` refuses is grayed out. The
 /// piano roll's toolbar, the Arrangement's toolbar and its menus show the same entries. Returns
 /// the grid picked.
 pub fn grid_entries(

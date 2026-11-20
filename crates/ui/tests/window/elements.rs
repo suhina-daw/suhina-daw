@@ -326,7 +326,7 @@ fn a_hover_rule_is_a_slot_clip_s_selected_outline_too() {
 /// the deactivated clip's fill too: the base sheet's `clip[muted]` is hidden by it, so a theme
 /// states `clip[muted]` (#1450).
 #[test]
-fn a_rule_for_every_slot_clip_needs_a_muted_rule_to_keep_the_deactivated_clip_grey() {
+fn a_rule_for_every_slot_clip_needs_a_muted_rule_to_keep_the_deactivated_clip_gray() {
     let mut project = demo_project();
     if let Some(clip) = project.launcher.columns[1].slots[1].clip.as_mut() {
         clip.enabled = false;
@@ -348,11 +348,11 @@ fn a_rule_for_every_slot_clip_needs_a_muted_rule_to_keep_the_deactivated_clip_gr
     assert_eq!(count_with(&mut h, &muted, odd(55)), 0, "and the clips' fill no longer reaches it");
 }
 
-/// The muted greys are variables of the base sheet: setting `--clip-mutedBackground` or
+/// The muted grays are variables of the base sheet: setting `--clip-mutedBackground` or
 /// `--track-headerMutedBackground` recolours a muted track's Arrangement clips and header, and a
 /// theme's own `arrangement clip[muted]` rule still wins over the variable (#1474 review).
 #[test]
-fn the_muted_grey_variables_reach_the_arrangement() {
+fn the_muted_gray_variables_reach_the_arrangement() {
     let mut project = demo_project();
     let bass = project.tracks.iter().find(|t| project.shown_track_name(t.id) == "Bass").unwrap().clone();
     project.channel_mut(bass.channel.unwrap()).unwrap().mute = true;
@@ -681,11 +681,11 @@ fn a_solo_turned_off_fades_from_its_lit_rule_s_fill() {
     h.run_steps(3);
     let fills = fills_at(&h, h.get_by_label("Solo Drums").rect());
     suhina_ui::kit::native_css::set_user_sheet(None);
-    let grey = |c: &egui::Color32| {
+    let gray = |c: &egui::Color32| {
         let [r, g, b, _] = c.to_srgba_unmultiplied();
         r.abs_diff(g) <= 2 && g.abs_diff(b) <= 2 && r > 0x10 && r < 0xf0
     };
-    assert!(fills.iter().any(grey), "half way between the two rules' greys: {fills:?}");
+    assert!(fills.iter().any(gray), "half way between the two rules' grays: {fills:?}");
 }
 
 /// A rule's `background-image` for every `button` does not cover a lit solo, cue or arm, which

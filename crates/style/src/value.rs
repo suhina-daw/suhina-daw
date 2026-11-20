@@ -715,7 +715,7 @@ mod tests {
         assert_eq!(Color::parse("contrast-color(navy)"), white);
         assert_eq!(Color::parse("contrast-color(#ffff00)"), black);
         assert_eq!(Color::parse("contrast-color(rgb(0 0 255 / 10%))"), white);
-        // Black and white contrast equally at a luminance of 0.179, between greys 117 and 118.
+        // Black and white contrast equally at a luminance of 0.179, between grays 117 and 118.
         assert_eq!(Color::parse("contrast-color(#757575)"), white);
         assert_eq!(Color::parse("contrast-color(#767676)"), black);
         assert_eq!(Color::parse("contrast-color(#808080)"), black);

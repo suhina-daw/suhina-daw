@@ -366,7 +366,7 @@ fn draw_about(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect) ->
         ("Version", VERSION),
         ("Build", BUILD),
         ("Platform", platform.as_str()),
-        ("Licence", "GPL-3.0-or-later, free software"),
+        ("License", "GPL-3.0-or-later, free software"),
     ];
     let logo_height = ABOUT_LOGO_WIDTH / crate::kit::logo::aspect();
     let facts_top = ROW + 2.0 * PAD + logo_height + PAD;

@@ -1023,7 +1023,7 @@ slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 
   `start-marker`, `marker`, `time-selection`, `marquee`, `drop-target`, `slot-mark`, `slot-record`,
   `mapping-overlay`, `clip-fade`, `clip-envelope`, `take-header`, `automation-header`,
   `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `device-list`,
-  `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool`, `piano-slice`,
+  `device-row`, `scroll-bar`, `pan-center`, `meter-clip`, `arrangement-tool`, `piano-slice`,
   `piano-row[kind="hover"]`, `piano-note[kind="draft"]`, `velocity[kind="line"]`; Main's header is
   `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all**
   `scene[kind="stop-all"]`, the Launcher mixer's top line `divider#mixer-splitter`.

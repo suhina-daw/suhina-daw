@@ -106,7 +106,7 @@ pub(super) fn value_row(
 
 /// The value a drag of a branch's row sends this frame, if it moves: every frame that moves it
 /// sends it, so a playing group is heard following the drag (#763 › 4). A reset sends the default
-/// (0 dB, or the centre). The drag's calls share a gesture, so they make one undo step.
+/// (0 dB, or the center). The drag's calls share a gesture, so they make one undo step.
 pub(super) fn branch_value(ui: &Ui, id: Id, stored: f64, dragged: &Dragged, min: f64, max: f64) -> Option<f64> {
     let draft = ui.data(|d| d.get_temp::<f64>(id));
     if dragged.reset {

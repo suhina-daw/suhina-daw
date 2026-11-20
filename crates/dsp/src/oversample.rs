@@ -7,24 +7,24 @@
 
 use crate::flush;
 
-/// Taps of the half-band filter. A half-band filter's centre tap is 1/2 and every other tap is
+/// Taps of the half-band filter. A half-band filter's center tap is 1/2 and every other tap is
 /// zero, so only the odd-offset taps are stored and computed.
 const TAPS: usize = 63;
-/// Centre of the filter, in samples at the high rate.
-const CENTRE: usize = (TAPS - 1) / 2;
-/// Non-zero taps on one side of the centre.
+/// Center of the filter, in samples at the high rate.
+const CENTER: usize = (TAPS - 1) / 2;
+/// Non-zero taps on one side of the center.
 const HALF: usize = TAPS.div_ceil(4);
 /// Kaiser window β: about 80 dB of stopband attenuation.
 const KAISER_BETA: f64 = 8.0;
 
-/// The non-zero taps at offsets ±1, ±3, ±5, … from the centre (the same on both sides).
+/// The non-zero taps at offsets ±1, ±3, ±5, … from the center (the same on both sides).
 fn side_taps() -> [f64; HALF] {
     let mut taps = [0.0; HALF];
     let i0_beta = bessel_i0(KAISER_BETA);
     for (j, tap) in taps.iter_mut().enumerate() {
         let offset = (2 * j + 1) as f64;
         let sinc = (std::f64::consts::FRAC_PI_2 * offset).sin() / (std::f64::consts::PI * offset);
-        let ratio = offset / CENTRE as f64;
+        let ratio = offset / CENTER as f64;
         let window = bessel_i0(KAISER_BETA * (1.0 - ratio * ratio).max(0.0).sqrt()) / i0_beta;
         *tap = sinc * window;
     }
@@ -53,7 +53,7 @@ pub struct Oversampler2x {
     /// Recent input samples, newest last, for the interpolator.
     input: [f64; 2 * HALF],
     /// Recent high-rate samples, newest last, for the decimator. One longer than the filter, so
-    /// its centre falls on a sample that lines up with an input sample and the delay is a whole
+    /// its center falls on a sample that lines up with an input sample and the delay is a whole
     /// number of base-rate frames.
     output: [f64; TAPS + 1],
 }
@@ -66,7 +66,7 @@ impl Default for Oversampler2x {
 
 impl Oversampler2x {
     /// Delay the round trip adds, in frames at the base rate.
-    pub const LATENCY: u32 = CENTRE as u32;
+    pub const LATENCY: u32 = CENTER as u32;
 
     pub fn new() -> Self {
         Self { taps: side_taps(), input: [0.0; 2 * HALF], output: [0.0; TAPS + 1] }
@@ -89,7 +89,7 @@ impl Oversampler2x {
             *last = flush(x);
         }
         // Zero-stuffed input filtered by the half-band, times two for the lost energy. The
-        // sample between two inputs uses the odd taps; the one on an input is the centre tap
+        // sample between two inputs uses the odd taps; the one on an input is the center tap
         // alone, a delayed copy.
         let mut between = 0.0;
         for (j, tap) in self.taps.iter().enumerate() {
@@ -111,11 +111,11 @@ impl Oversampler2x {
         if let Some(slot) = self.output.get_mut(len - 1) {
             *slot = flush(b);
         }
-        let mut sum = 0.5 * self.output.get(CENTRE).copied().unwrap_or(0.0);
+        let mut sum = 0.5 * self.output.get(CENTER).copied().unwrap_or(0.0);
         for (j, tap) in self.taps.iter().enumerate() {
             let offset = 2 * j + 1;
-            let newer = self.output.get(CENTRE + offset).copied().unwrap_or(0.0);
-            let older = self.output.get(CENTRE - offset).copied().unwrap_or(0.0);
+            let newer = self.output.get(CENTER + offset).copied().unwrap_or(0.0);
+            let older = self.output.get(CENTER - offset).copied().unwrap_or(0.0);
             sum += tap * (newer + older);
         }
         sum

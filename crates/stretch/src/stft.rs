@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-//! A self-normalising short-time Fourier transform with Kaiser windows and a half-bin-shifted
+//! A self-normalizing short-time Fourier transform with Kaiser windows and a half-bin-shifted
 //! ("modified") real FFT, ported from Signalsmith Linear's `DynamicSTFT` (MIT, see
 //! `LICENSE-signalsmith.txt`).
 //!
@@ -249,7 +249,7 @@ impl Stft {
         }
     }
 
-    /// Adds `samples` (already normalised) to channel `channel`'s output.
+    /// Adds `samples` (already normalized) to channel `channel`'s output.
     pub(crate) fn add_output(&mut self, channel: usize, samples: &[f32]) {
         let base = channel * self.block;
         for (i, s) in samples.iter().take(self.block).enumerate() {

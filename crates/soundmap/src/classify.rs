@@ -38,7 +38,7 @@ pub enum From {
 const MIN_EXAMPLES: usize = 4;
 /// At most this many examples of a kind are learned from, taken evenly.
 const MAX_EXAMPLES: usize = 2_000;
-/// Prototypes per kind (the centres of its sub-groups, by k-means), and the examples each needs.
+/// Prototypes per kind (the centers of its sub-groups, by k-means), and the examples each needs.
 const PROTOTYPES: usize = 4;
 const EXAMPLES_PER_PROTOTYPE: usize = 6;
 const KMEANS_ROUNDS: usize = 12;
@@ -47,7 +47,7 @@ const KMEANS_ROUNDS: usize = 12;
 const MIN_PROTOTYPE_SHARE: f32 = 0.15;
 /// The share of a kind's examples, nearest its prototypes first, whose distance is its radius.
 const RADIUS_SHARE: f32 = 0.9;
-/// A kind's radius is at least this share of the scope's typical distance from its centre, so a
+/// A kind's radius is at least this share of the scope's typical distance from its center, so a
 /// kind whose examples are all alike still reaches sounds a little different.
 const MIN_RADIUS: f32 = 0.25;
 /// An item further than this many radii from the nearest kind is not given it.
@@ -57,9 +57,9 @@ const REACH: f32 = 2.5;
 const GUESS_MARGIN: f32 = 1.15;
 /// A folder's kind gives way when the sound's kind is nearer by at least this factor.
 const OVERRULE_MARGIN: f32 = 1.4;
-/// How far each item is drawn towards its kind's centre in the layout's input (0 none, 1 all
+/// How far each item is drawn towards its kind's center in the layout's input (0 none, 1 all
 /// the way), and how far each kind's items are moved apart from the others', in the scope's
-/// typical distance from the centre.
+/// typical distance from the center.
 const PULL: f32 = 0.5;
 const SEPARATION: f32 = 1.5;
 /// Below this many items, the classifier runs on the caller's thread.
@@ -203,22 +203,22 @@ pub fn classify(rows: &[Features], evidence: &[Option<(Kind, Evidence)>]) -> Vec
     })
 }
 
-/// The layout's input: each item drawn [`PULL`] of the way towards its kind's centre and moved
+/// The layout's input: each item drawn [`PULL`] of the way towards its kind's center and moved
 /// [`SEPARATION`] along a direction of its kind's own, so that the kinds form regions of their
 /// own on the map and an item of one kind cannot sit inside another's. Items of no kind stay
 /// where their sound puts them.
 pub fn layout_rows(rows: &[Features], kinds: &[Kind]) -> Vec<Features> {
     let typical = typical_norm(rows);
-    let mut centres = vec![([0.0f32; FEATURE_COUNT], 0usize); Kind::ALL.len()];
+    let mut centers = vec![([0.0f32; FEATURE_COUNT], 0usize); Kind::ALL.len()];
     for (row, kind) in rows.iter().zip(kinds) {
-        if let Some((sum, count)) = centres.get_mut(*kind as usize) {
+        if let Some((sum, count)) = centers.get_mut(*kind as usize) {
             for (s, v) in sum.iter_mut().zip(row) {
                 *s += v;
             }
             *count += 1;
         }
     }
-    for (sum, count) in centres.iter_mut() {
+    for (sum, count) in centers.iter_mut() {
         let c = (*count).max(1) as f32;
         sum.iter_mut().for_each(|s| *s /= c);
     }
@@ -226,7 +226,7 @@ pub fn layout_rows(rows: &[Features], kinds: &[Kind]) -> Vec<Features> {
     rows.iter()
         .zip(kinds)
         .map(|(row, kind)| {
-            let (Some((centre, _)), Some(direction)) = (centres.get(*kind as usize), directions.get(*kind as usize))
+            let (Some((center, _)), Some(direction)) = (centers.get(*kind as usize), directions.get(*kind as usize))
             else {
                 return *row;
             };
@@ -234,7 +234,7 @@ pub fn layout_rows(rows: &[Features], kinds: &[Kind]) -> Vec<Features> {
                 return *row;
             }
             let mut out = *row;
-            for ((o, c), d) in out.iter_mut().zip(centre).zip(direction) {
+            for ((o, c), d) in out.iter_mut().zip(center).zip(direction) {
                 *o += PULL * (c - *o) + SEPARATION * typical * d;
             }
             out
@@ -267,7 +267,7 @@ fn directions() -> Vec<Features> {
     out
 }
 
-/// The root mean square distance of standardised rows from their centre (the origin).
+/// The root mean square distance of standardised rows from their center (the origin).
 fn typical_norm(rows: &[Features]) -> f32 {
     let n = rows.len().max(1) as f32;
     (rows.iter().map(|r| r.iter().map(|v| v * v).sum::<f32>()).sum::<f32>() / n).sqrt()
@@ -282,10 +282,10 @@ fn nearest(prototypes: &[Features], row: &Features) -> f32 {
     prototypes.iter().map(|p| distance(p, row)).fold(f32::INFINITY, f32::min)
 }
 
-/// `count` centres of `examples` by k-means, started from points spread over them (each the
+/// `count` centers of `examples` by k-means, started from points spread over them (each the
 /// example furthest from those chosen, among the nearer nine tenths, so an odd one out is not a
-/// centre of its own); centres left holding less than [`MIN_PROTOTYPE_SHARE`] of the examples
-/// are dropped. The same examples always give the same centres.
+/// center of its own); centers left holding less than [`MIN_PROTOTYPE_SHARE`] of the examples
+/// are dropped. The same examples always give the same centers.
 fn kmeans(examples: &[&Features], count: usize) -> Vec<Features> {
     let Some(first) = examples.first() else { return Vec::new() };
     let n = examples.len() as f32;
@@ -303,19 +303,19 @@ fn kmeans(examples: &[&Features], count: usize) -> Vec<Features> {
         .copied()
         .copied()
         .unwrap_or(**first);
-    let mut centres = vec![start];
-    while centres.len() < count {
-        let far = core.iter().max_by(|a, b| nearest(&centres, a).total_cmp(&nearest(&centres, b)));
+    let mut centers = vec![start];
+    while centers.len() < count {
+        let far = core.iter().max_by(|a, b| nearest(&centers, a).total_cmp(&nearest(&centers, b)));
         match far {
-            Some(far) if nearest(&centres, far) > 0.0 => centres.push(**far),
+            Some(far) if nearest(&centers, far) > 0.0 => centers.push(**far),
             _ => break,
         }
     }
-    let mut held = vec![0usize; centres.len()];
+    let mut held = vec![0usize; centers.len()];
     for _ in 0..KMEANS_ROUNDS {
-        let mut sums = vec![([0.0f32; FEATURE_COUNT], 0usize); centres.len()];
+        let mut sums = vec![([0.0f32; FEATURE_COUNT], 0usize); centers.len()];
         for e in examples {
-            let closest = centres
+            let closest = centers
                 .iter()
                 .enumerate()
                 .min_by(|a, b| distance(a.1, e).total_cmp(&distance(b.1, e)))
@@ -326,15 +326,15 @@ fn kmeans(examples: &[&Features], count: usize) -> Vec<Features> {
             }
         }
         held = sums.iter().map(|(_, c)| *c).collect();
-        for (centre, (sum, c)) in centres.iter_mut().zip(sums) {
+        for (center, (sum, c)) in centers.iter_mut().zip(sums) {
             if c > 0 {
-                centre.iter_mut().zip(sum).for_each(|(x, s)| *x = s / c as f32);
+                center.iter_mut().zip(sum).for_each(|(x, s)| *x = s / c as f32);
             }
         }
     }
     let largest = held.iter().copied().max().unwrap_or(0);
     let enough = (MIN_PROTOTYPE_SHARE * n).ceil() as usize;
-    centres.into_iter().zip(held).filter(|(_, c)| *c >= enough || *c == largest).map(|(centre, _)| centre).collect()
+    centers.into_iter().zip(held).filter(|(_, c)| *c >= enough || *c == largest).map(|(center, _)| center).collect()
 }
 
 #[cfg(test)]

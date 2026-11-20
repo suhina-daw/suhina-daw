@@ -89,7 +89,7 @@ The JSON catalog uses the same records and includes a minimal configuration exam
 
 
 <!-- sdk-nodes:begin -->
-| JSON kind / Rust variant | Inputs (default, unit) | Behaviour |
+| JSON kind / Rust variant | Inputs (default, unit) | Behavior |
 |---|---|---|
 | `native_effect` / `NativeEffect` | `in` (0, signal), `control1` (0, signal), `control2` (0, signal), `control3` (0, signal), `control4` (0, signal) | Trusted native graph kernel, resolved off-thread by the host. Supports graph wiring and delayed feedback; never loads third-party code. |
 | `sampler` / `Sampler` | `pitch` (0, semitones), `cutoff` (20000, Hz), `pan` (0, balance), `position` (0.5, normalized), `events` (0, midi) | Polyphonic sample source using the shared Sampler kernel. Receives timestamped instrument events; bind sample data and parameters by node id before processing. Audio can feed any signal node. |
@@ -180,7 +180,7 @@ The JSON catalog uses the same records and includes a minimal configuration exam
 | `mono` / `Mono` | `in` (required, signal) | Broadcasts (left+right)/2 to both channels. |
 | `mid_side_encode` / `MidSideEncode` | `in` (required, signal) | Outputs mid=(L+R)/2 in left, side=(L-R)/2 in right. |
 | `mid_side_decode` / `MidSideDecode` | `in` (required, signal) | Outputs left=mid+side and right=mid-side. |
-| `pan` / `Pan` | `in` (required, signal), `balance` (0, balance) | Balance -1..1: unity at centre, attenuates the opposite channel to zero at the extremes. |
+| `pan` / `Pan` | `in` (required, signal), `balance` (0, balance) | Balance -1..1: unity at center, attenuates the opposite channel to zero at the extremes. |
 | `oscillator` / `Oscillator` | `frequency` (1, Hz) | Free-running phase in cycles, frequency limited to +/-0.49*sample rate. Starts at phase zero on reset. Waveforms are not band-limited. |
 | `synced_lfo` / `SyncedLfo` | `rate` (1, cycles/beat) | Waveform at transport beat * rate; follows song position, including stopped transport. No phase state. |
 | `noise` / `Noise` | None | Deterministic xorshift32 white noise -1..1, broadcast to both channels; seed zero becomes one. Reset restores seed. |

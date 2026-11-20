@@ -488,7 +488,7 @@ page's (ADR 0031, amendment of 2026-11-15).
   text, edge, ring, `:hover`) and the toggles, `button[kind="toggle"]` and `toggle` with their `[checked]` look
   (solo, `button[kind="solo"]`, in the accent; arm, `button[kind="arm"]`, in the recording colours);
   `knob` and `knob-ring`; the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) with
-  `value-fill`, `value-handle`, the pan field (`pan`, `pan-centre`) and `send`; the fields'
+  `value-fill`, `value-handle`, the pan field (`pan`, `pan-center`) and `send`; the fields'
   lines (`text-input`, `value`, `dropdown`, with `:hover`), a drop-down's text and
   `dropdown-arrow`, a typed number (`text-input[kind="typed"]`), a routing field's `:hover`
   (`dropdown[kind="subtle"]`); a slider's rail, fill and handle; a fader cap's fill; a meter's
@@ -1164,7 +1164,7 @@ grid's tracks).
 | Toolbar | `toolbar` | `group#toolbar-start` and `group#toolbar-end` around `toolbar-module#transport` and `#position`; the modules by id (`#browser`, `#tempo`, `#signature`, `#keys`, `#grid`, `#count-in`, `#metronome`, `#mapping`, `#performance`, `#views`, `#agents`) |
 | Status bar | `status-bar` | `bar-item#status-message`, `bar-item#status-counts` |
 | Project tabs | `project-tabs` | a `project-tab` per open project, `[selected]` on the one shown; its close button is inside it |
-| Application bar | `application-bar` | `group#app-bar-start`, `#app-bar-centre`, `#app-bar-end`; `bar-item#app-name`, `#project-name`, `#project-timing` |
+| Application bar | `application-bar` | `group#app-bar-start`, `#app-bar-center`, `#app-bar-end`; `bar-item#app-name`, `#project-name`, `#project-timing` |
 | Piano roll's toolbar | `piano-roll-toolbar[size]` | `piano-tool` buttons by id (`#piano-select` … `#piano-hide`, `#piano-edit` for the folded clipboard), `separator[kind="bar"]`, `#piano-fold`, `#piano-scale` and `#piano-highlight`, a `flexible-space`, `bar-item#piano-roll-workflow`, `#piano-roll-ghosts`, `#piano-roll-grid` |
 | MIDI tools' tabs | `tab-row` | `editor-tab#tab-notes`, `#tab-transform`, `[checked]` on the one shown |
 
@@ -1186,7 +1186,7 @@ The user-agent sheet lays each bar out as Suhina's own layout did: `display: fle
 (`flex: 1`, the end `justify-content: flex-end`), so the transport and the position stay in the
 middle; the application bar's start and end groups do the same round its centre. The settings
 that put the app's name or the project's information in the centre of the application bar move
-those items to `#app-bar-centre`. `piano-roll-toolbar[size]` is `normal`, `large` or `larger`
+those items to `#app-bar-center`. `piano-roll-toolbar[size]` is `normal`, `large` or `larger`
 (the *Toolbar size* setting), and its gap grows with it.
 
 **Giving way.** A bar too narrow for its items takes a sparser set of them, in the app's order,

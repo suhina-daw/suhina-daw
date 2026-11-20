@@ -26,7 +26,7 @@ impl Shape {
 }
 
 /// The waveform at `cycles` (any real number; the integer part counts cycles), from -1.0 to 1.0.
-/// Every shape except the saws starts at its centre, rising, so a phase offset of a quarter
+/// Every shape except the saws starts at its center, rising, so a phase offset of a quarter
 /// cycle reaches the top. Non-finite input gives 0.0.
 pub fn wave(shape: Shape, cycles: f64) -> f64 {
     if !cycles.is_finite() {

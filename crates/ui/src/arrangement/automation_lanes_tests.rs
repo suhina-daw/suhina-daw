@@ -392,13 +392,13 @@ fn a_place_next_to_a_lanes_top_or_bottom_is_the_end() {
 }
 
 /// A point dragged to a pixel under the top of a pan lane is let go of at 50R exactly, even when
-/// it was taken hold of off its centre; the value moved there is the one the command sets, the
+/// it was taken hold of off its center; the value moved there is the one the command sets, the
 /// one the engine plays. A Shift drag, for fine values, does not jump to the end.
 #[test]
 fn a_point_dragged_next_to_the_top_or_bottom_gets_the_end_value() {
     let (plot, geometry) = plot_and_geometry();
     let param = pan_lane(0.0);
-    // Taken hold of a little above the point's centre (C, the lane's middle).
+    // Taken hold of a little above the point's center (C, the lane's middle).
     let grab = (4.0, 0.55);
     let start = grabbed_at(&param, &point_drag(grab));
     assert_eq!(start, 0.5);
@@ -442,13 +442,13 @@ fn the_text_of_a_dragged_point_has_its_value_and_beat() {
     assert_eq!(dragged_text(&param, &gone, &geometry, false), None);
 }
 
-/// A point taken hold of well off its centre still reaches the lane's ends: the pointer is
+/// A point taken hold of well off its center still reaches the lane's ends: the pointer is
 /// measured past the plot's top and bottom, not held in it (#811).
 #[test]
-fn a_point_taken_off_its_centre_reaches_the_lanes_ends() {
+fn a_point_taken_off_its_center_reaches_the_lanes_ends() {
     let (plot, geometry) = plot_and_geometry();
     let param = pan_lane(0.0);
-    // 4.8 points above the point's centre, near the edge of the square that takes it.
+    // 4.8 points above the point's center, near the edge of the square that takes it.
     let grab = (4.0, place_of(plot, plot.center().y - 4.8));
     let start = grabbed_at(&param, &point_drag(grab));
     let mut drag = point_drag(grab);

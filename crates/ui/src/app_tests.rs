@@ -826,7 +826,7 @@ fn a_second_export_is_refused_while_one_runs_and_a_reopened_dialog_shows_it() {
     assert!(app.export.is_some(), "the first export's result is still coming");
 
     // Wait for the real worker's result without a clock, then return that result through
-    // a ready channel so the normal polling path still owns all completion behaviour.
+    // a ready channel so the normal polling path still owns all completion behavior.
     let result = app.export.as_ref().unwrap().recv().unwrap();
     let (done, receive) = std::sync::mpsc::channel();
     done.send(result).unwrap();
@@ -1211,7 +1211,7 @@ fn a_theme_s_grid_moves_the_controls_and_keeps_the_project() {
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
 }
 
-/// A rename in the launcher view's header reads as the name itself: the name's size, centred in
+/// A rename in the launcher view's header reads as the name itself: the name's size, centered in
 /// the header as the name is, and no selection colour of the theme's, which reads as a box of
 /// its own on a coloured header (#916).
 #[test]
@@ -1244,7 +1244,7 @@ fn a_rename_in_a_session_header_reads_as_the_name() {
     let size = text.galley.job.sections.first().map(|s| s.format.font_id.size);
     assert_eq!(size, Some(theme::TEXT), "the name's own size");
     let middle = text.pos.y + text.galley.size().y / 2.0;
-    assert!((middle - field.center().y).abs() <= 1.5, "centred: text at {middle}, field {field:?}");
+    assert!((middle - field.center().y).abs() <= 1.5, "centered: text at {middle}, field {field:?}");
 }
 
 /// Every copy in Suhina puts a line on the system clipboard, automation, devices and tracks too,

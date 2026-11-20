@@ -137,18 +137,18 @@ pub type FoundAudio<'a> = &'a dyn Fn(&str, Option<&str>) -> Option<PathBuf>;
 /// not touched when it is saved, or backed up while it is open (#617). A file `found` does not
 /// know is moved by its name alone, its absolute path kept as the project has it.
 pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path, found: FoundAudio<'_>) {
-    let to = normalise(&std::path::absolute(to).unwrap_or_else(|_| to.into()));
+    let to = normalize(&std::path::absolute(to).unwrap_or_else(|_| to.into()));
     // The absolute path to write and the file to make the relative path from.
     let place = |source: &str, absolute: Option<&str>| -> (PathBuf, Option<String>) {
         match found(source, absolute) {
             Some(file) => {
-                let file = normalise(&std::path::absolute(&file).unwrap_or(file));
+                let file = normalize(&std::path::absolute(&file).unwrap_or(file));
                 let text = file.display().to_string();
                 (file, Some(text))
             }
             None => {
                 let here = from.join(source);
-                (normalise(&std::path::absolute(&here).unwrap_or(here)), absolute.map(str::to_owned))
+                (normalize(&std::path::absolute(&here).unwrap_or(here)), absolute.map(str::to_owned))
             }
         }
     };
@@ -185,7 +185,7 @@ pub fn rebase_audio(project: &mut Project, from: &Path, to: &Path, found: FoundA
 }
 
 /// `path` with `.` and `..` resolved without touching the disk.
-fn normalise(path: &Path) -> PathBuf {
+fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for part in path.components() {
         match part {

@@ -137,7 +137,7 @@ struct Devices {
 pub struct Projects {
     /// Host-owned MCP write permissions, never exposed through project commands.
     mcp_write_folders: Vec<PathBuf>,
-    /// Defaults to allowing the saved project's folder, preserving attached MCP behaviour.
+    /// Defaults to allowing the saved project's folder, preserving attached MCP behavior.
     mcp_project_writes_disabled: bool,
     tabs: Tabs,
     plugin_host: PluginHost,

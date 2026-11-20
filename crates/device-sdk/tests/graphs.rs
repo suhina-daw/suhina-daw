@@ -599,11 +599,11 @@ fn delay_layout_has_no_overlapping_controls_in_any_timing_or_motion_mode() {
 }
 
 #[test]
-fn delay_dials_share_centres_despite_different_caption_lengths_and_widths() {
+fn delay_dials_share_centers_despite_different_caption_lengths_and_widths() {
     use suhina_device_sdk::ui::Draw;
     let graph = examples::build("delay").unwrap();
     let canvas = graph.ui.as_ref().unwrap();
-    let centre = |id: &str| {
+    let center = |id: &str| {
         let c = canvas.controls.iter().find(|c| c.id == id).unwrap();
         c.drawings()
             .iter()
@@ -614,9 +614,9 @@ fn delay_dials_share_centres_despite_different_caption_lengths_and_widths() {
             .unwrap()
     };
     for id in ["mod_filter", "mod_morph"] {
-        assert_eq!(centre(id), centre("mod_delay"), "{id}");
+        assert_eq!(center(id), center("mod_delay"), "{id}");
     }
-    assert_eq!(centre("feedback"), centre("wet"));
+    assert_eq!(center("feedback"), center("wet"));
 }
 
 #[test]
@@ -683,7 +683,7 @@ fn delay_uses_independent_widgets_and_rejects_invalid_widget_contracts() {
 }
 
 #[test]
-fn delay_controls_have_padding_frames_and_aligned_centres() {
+fn delay_controls_have_padding_frames_and_aligned_centers() {
     use suhina_device_sdk::ui::Draw;
     let graph = examples::build("delay").unwrap();
     let canvas = graph.ui.as_ref().unwrap();

@@ -65,7 +65,7 @@ pub const TOKENS: [(&str, &str); 38] = [
     ("slot.empty", "The mark in an empty clip slot"),
     ("track.mutedBackground", "The fills of a muted track"),
     ("pan.background", "Behind a track header's pan field"),
-    ("pan.centre", "The centre mark of a pan field"),
+    ("pan.center", "The center mark of a pan field"),
 ];
 
 /// Whether `key` names a colour token.
@@ -286,7 +286,7 @@ macro_rules! folder {
 }
 
 /// The themes that come with Suhina, Suhina Studio first. Nord and Catppuccin
-/// are popular open palettes (MIT, their licences in `themes/licenses/`), mapped onto Suhina's
+/// are popular open palettes (MIT, their licenses in `themes/licenses/`), mapped onto Suhina's
 /// tokens.
 const BUILT_IN_FOLDERS: [BuiltInFolder; 10] = [
     folder!("suhina-studio": "theme.json", "theme.css", "thumbnail.svg", "variants/blue.json", "variants/darker.json", "variants/darkest.json", "variants/forest.json", "variants/light.json"),

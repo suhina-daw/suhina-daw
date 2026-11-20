@@ -421,7 +421,7 @@ specific selector to win over Suhina's.
   toggles (`button[kind="toggle"]`, and `toggle` for a switch a view draws itself: dim words, and
   when `[checked]` the chosen fill and the text on it; solo, `button[kind="solo"]`, is lit in the
   accent, arm, `button[kind="arm"]`, in the recording colours), `knob`, the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) and their
-  `value-fill` and `value-handle`, the pan field and its `pan-centre`, `send`, the line under a
+  `value-fill` and `value-handle`, the pan field and its `pan-center`, `send`, the line under a
   field (`text-input`, `value`, `dropdown`), a drop-down's `dropdown-arrow`, a typed number
   (`text-input[kind="typed"]`), a slider's `slider-rail`, `slider-fill` and `slider-handle`, a
   fader cap's fill, a meter's `meter-level` (`meter-level[kind="hot"]` near the top) and
@@ -682,7 +682,7 @@ control is dragged or shows the arrow of the drag's direction; `auto` keeps the 
 | Toolbar `toolbar` | `toolbar-module`, modules `#browser`, `#tempo`, `#position`, `#signature`, `#grid`, `#count-in`, `#metronome`, `#views`, `#performance`, `#mapping`, `#agents`; `#control-play`, `#control-stop`, `#control-record`, `#control-metronome-toggle`, `#control-browser-toggle` |
 | Arrangement header `arrangement track-header` | `track-name`, `track-number`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-automation`, `#control-monitor`, `fold`, `#arrangement-volume`, `#arrangement-pan`, `send`, `value-fill`, `value-handle` |
 | Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `tempo-mark`, `loop-region`, `loop-line`, `marker`, `playhead`, `start-marker`, `grid-line`, `time-selection`, `marquee`, `track-lane`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade`, `clip-fade-handle`, `clip-envelope`, `take-header`, `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `arrangement-tool`, `add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
-| Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `slot-mark`, `slot-record`, `scene`, `scene-column`, `mapping-overlay`, `#mixer-volume`, `#mixer-pan`, `pan-centre`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `meter-level`, `meter-clip`, `device-list`, `device-row`, `scroll-bar`, `#mixer-divider`, `#mixer-splitter` |
+| Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `slot-mark`, `slot-record`, `scene`, `scene-column`, `mapping-overlay`, `#mixer-volume`, `#mixer-pan`, `pan-center`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `meter-level`, `meter-clip`, `device-list`, `device-row`, `scroll-bar`, `#mixer-divider`, `#mixer-splitter` |
 | Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-slice`, `start-marker`, `loop-region`, `ruler-number`, `ruler-tick`, `piano-tool` with `#piano-<tool>`, `midi-tools` (with `slider#quantise-amount`), `clip-info`, `editor-tab` (`#tab-clip`, `#tab-devices`, `#tab-notes`, `#tab-transform`) |
 | Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search`, `#browser-new-folder` (`text-input`) |
 | Devices `device`, `#device-<id>` | `device-header`, `device-control`, `slider`, `slider-rail`, `slider-fill`, `slider-handle`, `knob`, `value` |
@@ -747,7 +747,7 @@ Elements, by name:
 | `time-selection`, `marquee` | selected time (`background-color` over the lanes, `color` at its edges; `kind="ruler"`, `"draw"`, `"editor"`, `"take"`, `"automation"`), and the rectangle that picks clips, notes (piano roll) or sample-map points |
 | `clip-fade`, `clip-envelope`, `take-header` | a fade's line (`kind="crossfade"` between takes), a clip's gain envelope while it is edited, a take lane's header |
 | `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin` | an automation lane's header (`kind="group"` for a group's), a group's time, the envelope (`[muted]` while off), its points (`[selected]`) and the pin; the line and points are `[kind="fixed"]` while Settings › Arrangement › Automation colour is Fixed, which the base sheet colours with `var(--accent)` |
-| `device-list`, `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends (or the device chain) are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
+| `device-list`, `device-row`, `scroll-bar`, `pan-center`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends (or the device chain) are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
 | `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles |
 | `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail (the mixer's and the clip gain fader's) |
 | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-note`, `velocity` | the piano roll's grid (`kind="strong"` on an octave and a bar), its rows (`kind="hover"` under the pointer), its keys (with `[selected]` and `[playing]`), the notes (`kind="draft"` while a drag makes them; their own inks `kind="outline"`, `"dashes"` and `"name"`, `[checked]` on a strong note) and their velocity stems (`[selected]`, `[muted]`; `kind="line"` for a velocity drag's line) |
@@ -1376,4 +1376,4 @@ tokens.
 | `slot.empty` | `#484642` | The mark in an empty clip slot |
 | `track.mutedBackground` | `#21201D` | The fills of a muted track |
 | `pan.background` | `#1F1E1C` | Behind a track header's pan field |
-| `pan.centre` | `#817F7A` | The centre mark of a pan field |
+| `pan.center` | `#817F7A` | The center mark of a pan field |

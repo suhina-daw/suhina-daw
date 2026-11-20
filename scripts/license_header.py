@@ -2,7 +2,7 @@
 # Copyright (C) 2026 The Suhina contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Puts the licence header at the top of every source file git tracks (issue #342).
+"""Puts the license header at the top of every source file git tracks (issue #342).
 
     python scripts/license_header.py           # add the header where it is missing
     python scripts/license_header.py --check   # list the files without it, change nothing
@@ -21,7 +21,7 @@ again changes nothing; that is what lets a branch merge main and run it once mor
 Exceptions, kept in the lists below:
 
 - Ported code (`PORTED`) keeps its original notice and gets only the SPDX line of its own
-  licence, `// SPDX-License-Identifier: <licence>`, then an empty line, then the file as
+  license, `// SPDX-License-Identifier: <license>`, then an empty line, then the file as
   before. Original copyright lines are never removed or changed. The ported files are the MSFA
   engine files of `devices/fm-synth` (Apache-2.0) and the Signalsmith Stretch port in
   `crates/stretch` (MIT); the other files of those crates are Suhina's own and get the header.
@@ -48,11 +48,11 @@ ROOT = Path(
 
 COPYRIGHT = "Copyright (C) 2026 The Suhina contributors"
 SPDX = "SPDX-License-Identifier:"
-OWN_LICENCE = "GPL-3.0-or-later"
+OWN_LICENSE = "GPL-3.0-or-later"
 
 EXTENSIONS = {".rs": "//", ".py": "#", ".sh": "#", ".ps1": "#"}
 
-# Ported files and the licence of the code they were ported from.
+# Ported files and the license of the code they were ported from.
 PORTED = {
     "crates/flp/src/patcher.rs": "GPL-3.0-or-later",
     "crates/flp/src/wrapper.rs": "GPL-3.0-or-later",
@@ -98,10 +98,10 @@ def wanted(path: str) -> list[str] | None:
     mark = EXTENSIONS.get(Path(path).suffix)
     if mark is None:
         return None
-    licence = PORTED.get(path)
-    if licence is not None:
-        return [f"{mark} {SPDX} {licence}"]
-    return [f"{mark} {COPYRIGHT}", f"{mark} {SPDX} {OWN_LICENCE}"]
+    license = PORTED.get(path)
+    if license is not None:
+        return [f"{mark} {SPDX} {license}"]
+    return [f"{mark} {COPYRIGHT}", f"{mark} {SPDX} {OWN_LICENSE}"]
 
 
 def preamble(lines: list[str], suffix: str) -> int:
@@ -180,7 +180,7 @@ def main(argv: list[str]) -> int:
         print(p)
     if check:
         for path in missing:
-            print(f"{path}: no licence header (python scripts/license_header.py adds it)")
+            print(f"{path}: no license header (python scripts/license_header.py adds it)")
         return 1 if missing or problems else 0
     print(
         f"{counts['added']} headers added, {counts['ok']} already there, "

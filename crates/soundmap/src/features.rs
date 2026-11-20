@@ -369,16 +369,16 @@ fn mel_filters() -> Vec<Vec<f32>> {
     edges
         .windows(3)
         .map(|w| {
-            let (low, centre, high) = (w[0], w[1], w[2]);
+            let (low, center, high) = (w[0], w[1], w[2]);
             (0..bins)
                 .map(|k| {
                     let hz = k as f32 * bin_hz;
                     if hz <= low || hz >= high {
                         0.0
-                    } else if hz <= centre {
-                        (hz - low) / (centre - low).max(1e-6)
+                    } else if hz <= center {
+                        (hz - low) / (center - low).max(1e-6)
                     } else {
-                        (high - hz) / (high - centre).max(1e-6)
+                        (high - hz) / (high - center).max(1e-6)
                     }
                 })
                 .collect()
@@ -515,7 +515,7 @@ struct Yin {
     tau_min: usize,
     tau_max: usize,
     difference: Vec<f32>,
-    normalised: Vec<f32>,
+    normalized: Vec<f32>,
 }
 
 impl Yin {
@@ -525,7 +525,7 @@ impl Yin {
             tau_min: (RATE as f32 / PITCH_MAX_HZ) as usize,
             tau_max,
             difference: vec![0.0; tau_max + 1],
-            normalised: vec![1.0; tau_max + 1],
+            normalized: vec![1.0; tau_max + 1],
         }
     }
 
@@ -537,17 +537,17 @@ impl Yin {
         for (tau, slot) in self.difference.iter_mut().enumerate() {
             *slot = frame.iter().take(width).zip(frame.iter().skip(tau)).map(|(a, b)| (a - b) * (a - b)).sum();
         }
-        // Cumulative mean normalised difference.
-        let normalised = &mut self.normalised;
+        // Cumulative mean normalized difference.
+        let normalized = &mut self.normalized;
         let mut running = 0.0;
         for tau in 1..=tau_max {
             let d = self.difference.get(tau).copied().unwrap_or(0.0);
             running += d;
-            if let Some(slot) = normalised.get_mut(tau) {
+            if let Some(slot) = normalized.get_mut(tau) {
                 *slot = if running > 0.0 { d * tau as f32 / running } else { 1.0 };
             }
         }
-        let value = |tau: usize| normalised.get(tau).copied().unwrap_or(1.0);
+        let value = |tau: usize| normalized.get(tau).copied().unwrap_or(1.0);
         let mut tau = tau_min.max(2);
         let mut found = None;
         while tau < tau_max {

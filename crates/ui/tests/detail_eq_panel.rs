@@ -395,7 +395,7 @@ fn the_edit_switch_edits_curve_b_in_the_stereo_spread_modes() {
 
 /// Renders the window with the EQ's panel showing to `target/ui-snapshots/eq-panel.png`,
 /// `eq-panel-b.png` (curve B edited in Left/Right) and `eq-panel-spectrum.png` (the transport
-/// playing through the EQ, so the analyser's grey line shows behind the curve), to look the
+/// playing through the EQ, so the analyser's gray line shows behind the curve), to look the
 /// display, the dots, the strips, the rows, the switch and the line over. Needs a GPU
 /// adapter, so it runs only when asked:
 /// `cargo test -p suhina-ui --test main detail_eq_panel -- --ignored render_the_panel`.
@@ -424,7 +424,7 @@ fn render_the_panel() {
     harness.run();
     save(&mut harness, "eq-panel-b.png");
 
-    // With a real renderer playing through the EQ, the analyser's grey line behind the curve.
+    // With a real renderer playing through the EQ, the analyser's gray line behind the curve.
     let mut renderer = suhina_engine::Renderer::stopped(
         &eq_project(),
         &suhina_engine::AudioPool::new(),
