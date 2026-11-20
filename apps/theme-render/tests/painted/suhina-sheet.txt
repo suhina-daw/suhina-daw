@@ -22,9 +22,9 @@ devices suhina-sheet a8a69d1727a008fc
 empty-space-menu suhina-sheet b2cd698da4a6d351
 expanded-delay suhina-sheet a15e5bc97d824eee
 expanded-fm-synth suhina-sheet 96f4ba6471a1b17d
-expanded-instrument suhina-sheet 325d0fe06b86532a
-expanded-instrument-model suhina-sheet addd7b6fb42ca576
-expanded-instrument-sample suhina-sheet 40452cea13998b7c
+expanded-instrument suhina-sheet 23826a345b28b05b
+expanded-instrument-model suhina-sheet 5a457afc0663b978
+expanded-instrument-sample suhina-sheet ba2b3d66a5077a57
 expanded-multiband suhina-sheet d63172276ab9963e
 expanded-reverb suhina-sheet ce7a13dba0a152ea
 expanded-vinyl-distortion suhina-sheet 4df48e927e48ad2a

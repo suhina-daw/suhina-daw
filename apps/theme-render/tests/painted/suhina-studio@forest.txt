@@ -22,9 +22,9 @@ devices suhina-studio@forest 2a75fb455309515f
 empty-space-menu suhina-studio@forest 83981727f49a4da6
 expanded-delay suhina-studio@forest 841879fe6eeb566a
 expanded-fm-synth suhina-studio@forest 13ab160fe87b3e8b
-expanded-instrument suhina-studio@forest 5cb0bb4f6d48d7f8
-expanded-instrument-model suhina-studio@forest a2f082a966f36483
-expanded-instrument-sample suhina-studio@forest 520b37bfa2e60c1d
+expanded-instrument suhina-studio@forest 4441d0145ac2746e
+expanded-instrument-model suhina-studio@forest 9e84460284f57c5e
+expanded-instrument-sample suhina-studio@forest 55af1ab8a1319f43
 expanded-multiband suhina-studio@forest 6646a358991dbfa1
 expanded-reverb suhina-studio@forest 510efd3fcbd815ac
 expanded-vinyl-distortion suhina-studio@forest a8d87c144c12ac9f

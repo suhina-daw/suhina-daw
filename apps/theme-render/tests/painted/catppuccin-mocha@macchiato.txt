@@ -22,9 +22,9 @@ devices catppuccin-mocha@macchiato 1d0c0168f9b45f78
 empty-space-menu catppuccin-mocha@macchiato 5bc077d472c742fc
 expanded-delay catppuccin-mocha@macchiato 832cade3c766a841
 expanded-fm-synth catppuccin-mocha@macchiato 4dda5812d74a17f4
-expanded-instrument catppuccin-mocha@macchiato efcc5ed236495714
-expanded-instrument-model catppuccin-mocha@macchiato 91bc5dc108c57f7b
-expanded-instrument-sample catppuccin-mocha@macchiato 496382fbabb67abf
+expanded-instrument catppuccin-mocha@macchiato b11c7eeb5da9aeba
+expanded-instrument-model catppuccin-mocha@macchiato b4518b83487c9f7a
+expanded-instrument-sample catppuccin-mocha@macchiato 3d23d3d0deab3825
 expanded-multiband catppuccin-mocha@macchiato f3a3c9e12c0ca01e
 expanded-reverb catppuccin-mocha@macchiato a6eb4500bc8266f5
 expanded-vinyl-distortion catppuccin-mocha@macchiato 16135031570b84b2

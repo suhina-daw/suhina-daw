@@ -22,9 +22,9 @@ devices catppuccin-latte c3dcce9663b5ec7c
 empty-space-menu catppuccin-latte 156501a1546ee9ec
 expanded-delay catppuccin-latte 59fa605016a0d405
 expanded-fm-synth catppuccin-latte a3cbaf02befdd5d9
-expanded-instrument catppuccin-latte d1ff6fde373f204d
-expanded-instrument-model catppuccin-latte 027a6b2769f8edf3
-expanded-instrument-sample catppuccin-latte 965f134f0bfe794b
+expanded-instrument catppuccin-latte d04233dfd9017237
+expanded-instrument-model catppuccin-latte b686d1121af9920a
+expanded-instrument-sample catppuccin-latte 628e32d429423b93
 expanded-multiband catppuccin-latte 58f2b33d0eb84ff4
 expanded-reverb catppuccin-latte f096bc7fe451ae4f
 expanded-vinyl-distortion catppuccin-latte e1c8cd58c26ec986

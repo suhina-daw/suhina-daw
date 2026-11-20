@@ -22,9 +22,9 @@ devices suhina-studio@blue c2ad865dd5e48220
 empty-space-menu suhina-studio@blue 2e60f4c73eecf584
 expanded-delay suhina-studio@blue 0b28749e3e56222d
 expanded-fm-synth suhina-studio@blue 1cb9a49b9f579491
-expanded-instrument suhina-studio@blue 0268c14514c9e80b
-expanded-instrument-model suhina-studio@blue 2a39c2df438b4ab8
-expanded-instrument-sample suhina-studio@blue 8b6c7bcb309c11af
+expanded-instrument suhina-studio@blue 28613e8428b2c130
+expanded-instrument-model suhina-studio@blue 4ee9b337db97f341
+expanded-instrument-sample suhina-studio@blue 643d7119404a0eac
 expanded-multiband suhina-studio@blue 0784e9d23e1fe4c1
 expanded-reverb suhina-studio@blue c1ddb4c9023452f2
 expanded-vinyl-distortion suhina-studio@blue 197f157d2e843028

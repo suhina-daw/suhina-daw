@@ -22,9 +22,9 @@ devices suhina-glass@midnight 14197429e40ab5cc
 empty-space-menu suhina-glass@midnight 71f4e1c71caa5b00
 expanded-delay suhina-glass@midnight 393900c46afb0931
 expanded-fm-synth suhina-glass@midnight b55c477b88758353
-expanded-instrument suhina-glass@midnight bdb02c545d0bad5b
-expanded-instrument-model suhina-glass@midnight 4cdbd8ac1e0ff7dc
-expanded-instrument-sample suhina-glass@midnight 64e41496726e1f27
+expanded-instrument suhina-glass@midnight 609a3739e39e71cb
+expanded-instrument-model suhina-glass@midnight f11ce0e442b8ff41
+expanded-instrument-sample suhina-glass@midnight 65f1fd9c6e1ef44f
 expanded-multiband suhina-glass@midnight 5979f07b8e477d5a
 expanded-reverb suhina-glass@midnight 82e2ce9c7679e963
 expanded-vinyl-distortion suhina-glass@midnight ff5fa579e09b4c55
