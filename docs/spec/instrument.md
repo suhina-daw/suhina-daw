@@ -144,6 +144,13 @@ the model gives.
 A new stroke on a bar whose previous contact or pulse has not finished replaces it; the rest of
 the earlier stroke is dropped.
 
+**Mallet noise.** While the mallet touches the bar, the stroke also sounds a short noise of its
+own, the knock of the mallet's head: white noise from the bar's own generator, high-passed at
+200 Hz and low-passed at `0.6 / tau` (tau as for Pulse, so harder and faster strokes knock
+brighter), multiplied in each sample by the contact force and by `3e-5 * sqrt(M(key) / M_ref)`
+per newton. It ends with the contact and goes to the output only: the bar's motion is the same
+with or without it. It is an attack residual, not a model of the mallet head's vibration.
+
 **Sound.** The output is each mode's velocity weighted by Brightness `b` as a tilt,
 `(f_n / f1)^(b - 0.5)`, summed and scaled by `0.12 * sqrt(M(key) / M_ref)`, which keeps the level of
 light, high bars comparable with heavy, low ones. Quality selects 8 or 16 modes; modes at or above
@@ -259,8 +266,7 @@ coverage and listening validation. Folder/multisample import builds on the share
 in #739; model candidates, automatic fitting, provenance and portable preset bundles remain
 future work. The broader resonator request #394 also includes excitation and coupling models
 that this first struck body does not supply. The bar bodies still lack the vibraphone motor
-and damper pedal, dead strokes, mallet noise, resonances of the tube above its first, and
-calibration (#1609). MPE (#921) and CLAP/VST3 exports (#931) are parallel
+and damper pedal, dead strokes, resonances of the tube above its first, and calibration (#1609). MPE (#921) and CLAP/VST3 exports (#931) are parallel
 implementation workstreams that must use this same core.
 
 ## Sources
