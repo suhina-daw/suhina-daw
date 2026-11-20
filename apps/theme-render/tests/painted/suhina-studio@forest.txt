@@ -9,9 +9,9 @@ browser-plug-ins suhina-studio@forest 620cb02fa45cbd5f
 browser-search suhina-studio@forest 32c8d1733a169787
 clip-audio suhina-studio@forest 7e4979b5f82f0f72
 clip-midi suhina-studio@forest 71bb45430844e653
-colour-picker suhina-studio@forest c126f7240e7afc9d
-colour-picker-field suhina-studio@forest 4929cb34030c4327
-colour-picker-wheel suhina-studio@forest 6225098471cf07d6
+colour-picker suhina-studio@forest 0fd29dd33e7d7f24
+colour-picker-field suhina-studio@forest 4115388dbb344b50
+colour-picker-wheel suhina-studio@forest 51a78a1c94cf77c2
 context-menu suhina-studio@forest 653f6c59f9094220
 control-bar-toggles suhina-studio@forest 02b86787b8c43db1
 count-in-menu suhina-studio@forest 9fbe049aa5f7c1df

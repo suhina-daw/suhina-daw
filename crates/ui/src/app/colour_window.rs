@@ -24,6 +24,9 @@ pub(super) struct ColourWindow {
     // before applying queued moves, so feeding observations back here oscillates.
     initial_position: Option<Pos2>,
     height: f32,
+    /// How much taller the size asked of the window is than the panel in it: the `colour-picker`
+    /// box's padding and border (and an embedded Window's title bar), as last measured.
+    chrome: f32,
     focus_requested: bool,
     focused: bool,
     minimised: bool,
@@ -169,8 +172,27 @@ impl App {
         });
         let bounds = main_rect.unwrap_or_else(|| Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0)));
         let id = egui::ViewportId::from_hash_of("track-colour-window");
-        let height = (if self.colour_window.panel.expanded { 720.0_f32 } else { 400.0 })
-            .min((bounds.height() - 48.0).max(180.0));
+        // As tall as the panel, measured as it was drawn. A layout the user asked for that needs
+        // more room (Fine adjustment opening, the wheel's Value row) is drawn once the window has
+        // grown to it; one that needs less is drawn at once and the window shrinks after.
+        let room = (bounds.height() - 48.0).max(180.0);
+        let fit = |content: Option<f32>| {
+            content.map_or(400.0, |content| (content + self.colour_window.chrome).ceil()).min(room)
+        };
+        let panel = &mut self.colour_window.panel;
+        if panel.asks() {
+            let (now, asked) = (panel.height(false), panel.height(true));
+            let grown = self.colour_window.height >= fit(asked) - 0.5;
+            if grown || asked <= now {
+                panel.settle();
+            } else {
+                ctx.request_repaint_of(egui::ViewportId::from_hash_of("track-colour-window"));
+            }
+        }
+        let height = fit(match (panel.height(false), panel.height(true)) {
+            (Some(now), Some(asked)) => Some(now.max(asked)),
+            (now, asked) => now.or(asked),
+        });
         if self.colour_window.height != height {
             // Expanding near the bottom must keep the new controls on screen. Ordinary
             // moves are left alone; only a size change rechecks the available bounds.
@@ -209,6 +231,7 @@ impl App {
         let mut placement = None;
         let mut embedded_layer = None;
         let mut embedded_background = None;
+        let mut chrome = None;
         let mut render = |ui: &mut Ui, embedded: bool| {
             if embedded {
                 embedded_layer = Some(ui.layer_id());
@@ -248,6 +271,10 @@ impl App {
                     )
                 }
                 .content;
+                // A native window's inner size is its surface; an embedded Window's fixed size
+                // also holds its title bar and margins.
+                let outer = if embedded { height } else { ui.max_rect().height() };
+                chrome = Some(outer - inside.height());
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
                     let mut styled = style.ui(ui);
                     egui::ScrollArea::vertical().show(&mut styled, |ui| {
@@ -326,6 +353,13 @@ impl App {
             ctx.show_viewport_immediate(id, builder, |ui, class| {
                 render(ui, class == egui::ViewportClass::EmbeddedWindow);
             });
+        }
+        if let Some(chrome) = chrome
+            && chrome.is_finite()
+            && (chrome - self.colour_window.chrome).abs() > 0.5
+        {
+            self.colour_window.chrome = chrome.max(0.0);
+            ctx.request_repaint_of(id);
         }
         self.colour_window.focused = focused;
         self.colour_window.embedded_layer = embedded_layer;

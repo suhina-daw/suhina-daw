@@ -40,6 +40,11 @@ The native client area must paint the active theme's background, and idle render
 settle without alternating content, geometry or scale.
 Native position observations are saved for reopening; they never become continuous move
 requests. Only opening and an explicit size-change adjustment may position the window.
+The window is as tall as its contents, measured as they are drawn, and never taller than the
+screen less 48 px (its contents then scroll). Opening **Fine adjustment** or choosing **Wheel**
+grows the window first and draws the new controls in the frame after, so no frame shows them cut
+off; closing it or choosing **Field** draws the shorter layout at once and shrinks the window
+after.
 
 The compact order is **Palette**, **Related shades**, **Recent colours**, the current
 colour and editable/copyable hex value, collapsed **Fine adjustment**, and **Random** /

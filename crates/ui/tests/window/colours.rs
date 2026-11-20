@@ -394,8 +394,48 @@ fn closing_keeps_the_applied_colour_and_reopening_preserves_exact_values() {
     h.get_by_label("Fine adjustment").click();
     h.run();
     h.get_by_label("View: Wheel").click();
+    // Growing takes a few frames, and the harness runs at most four at a time.
+    h.run();
     h.run();
     assert_eq!(h.state().session().unwrap().project(), &chosen);
     assert_eq!(h.state().session().unwrap().undo_steps().0, 1);
     assert_eq!(h.state().settings().recent_colours, [Rgb(47, 217, 196)]);
+}
+
+#[test]
+fn the_window_fits_its_controls_and_grows_before_fine_adjustment_is_drawn() {
+    let mut app = demo_app();
+    app.run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+    let mut h = window(app);
+    let area =
+        |h: &Harness<'static, App>| h.ctx.memory(|m| m.area_rect(egui::Id::unique("track-colour-window"))).unwrap();
+    // The last row ends at the window's padding: no room is left under it.
+    let fits = |h: &Harness<'static, App>| {
+        let gap = area(h).bottom() - h.get_by_label("Default").rect().bottom();
+        assert!((0.0..=24.0).contains(&gap), "{gap} under the last row of {:?}", area(h));
+    };
+    fits(&h);
+    let compact = area(&h).height();
+    h.get_by_label("Fine adjustment").click();
+    // The frame that takes the click asks, and the window grows before the new controls draw:
+    // no frame shows them in the compact window.
+    for _ in 0..4 {
+        h.step();
+        let hue = h.query_by_label("Hue").is_some();
+        assert!(!hue || area(&h).height() > compact, "Hue drawn in a window {} tall", area(&h).height());
+    }
+    h.run();
+    assert!(h.query_by_label("Hue").is_some());
+    fits(&h);
+    h.get_by_label("View: Wheel").click();
+    // Growing takes a few frames, and the harness runs at most four at a time.
+    h.run();
+    h.run();
+    h.get_by_label("Value").rect();
+    fits(&h);
+    h.get_by_label("Fine adjustment").click();
+    h.run();
+    assert!(h.query_by_label("Hue").is_none());
+    assert_eq!(area(&h).height(), compact, "closing gives the room back");
+    fits(&h);
 }

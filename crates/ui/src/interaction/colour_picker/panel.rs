@@ -13,6 +13,13 @@ use suhina_style::value::{hsl_to_srgb, oklch_to_srgb, srgb_to_hsl, srgb_to_oklch
 use super::{color32, hex};
 use crate::kit::{controls, element, widgets};
 
+/// The room between rows.
+const SPACING: Vec2 = Vec2::new(4.0, 5.0);
+/// How tall Fine adjustment is with the field and with the wheel in the built-in themes, until it
+/// has been drawn: the window sizes itself from these the first time, and from what it measures
+/// after.
+const FINE_GUESS: [f32; 2] = [241.0, 306.0];
+
 /// Conventional HSV of encoded sRGB, so its hue agrees with numeric HSL. Reuse egui's
 /// component conversion, without its linear-light Hsva transfer functions.
 #[derive(Clone, Copy)]
@@ -44,7 +51,16 @@ pub(crate) enum Edit {
 }
 
 pub(crate) struct Panel {
-    pub expanded: bool,
+    /// Whether Fine adjustment is drawn open, and the wheel drawn in place of the field.
+    expanded: bool,
+    wheel: bool,
+    /// What the user last asked for, drawn once [`Self::settle`] runs (see [`Self::asks`]).
+    ask_expanded: bool,
+    ask_wheel: bool,
+    /// The heights last measured: the whole panel less what Fine adjustment adds, and Fine
+    /// adjustment with the field and with the wheel (its Value slider too).
+    base: Option<f32>,
+    fine: [f32; 2],
     pub dragging: bool,
     cancelled_drag: bool,
     pub colour: Rgb,
@@ -53,7 +69,6 @@ pub(crate) struct Panel {
     name: String,
     numbers: [String; 6],
     invalid: bool,
-    wheel: bool,
     steps: bool,
     soft: bool,
     random: u64,
@@ -65,6 +80,11 @@ impl Default for Panel {
         let colour = suhina_session::colours::MIDI;
         let mut panel = Self {
             expanded: false,
+            wheel: false,
+            ask_expanded: false,
+            ask_wheel: false,
+            base: None,
+            fine: FINE_GUESS,
             dragging: false,
             cancelled_drag: false,
             colour,
@@ -73,7 +93,6 @@ impl Default for Panel {
             name: String::new(),
             numbers: Default::default(),
             invalid: false,
-            wheel: false,
             steps: false,
             soft: false,
             random: std::time::SystemTime::now()
@@ -88,6 +107,26 @@ impl Default for Panel {
 }
 
 impl Panel {
+    /// Whether the user asked for a layout that is not drawn yet. Opening Fine adjustment or
+    /// choosing the wheel waits until the window has grown to [`Self::height`], so no frame draws
+    /// controls the window cuts off; closing or choosing the field may settle at once.
+    pub fn asks(&self) -> bool {
+        (self.ask_expanded, self.ask_wheel) != (self.expanded, self.wheel)
+    }
+
+    /// Draw the layout the user asked for from the next [`Self::show`] on.
+    pub fn settle(&mut self) {
+        (self.expanded, self.wheel) = (self.ask_expanded, self.ask_wheel);
+    }
+
+    /// How tall the panel is in the layout drawn now (`asked` false) or the one asked for, once it
+    /// has been shown once. Fine adjustment's height is a guess until it has been open.
+    pub fn height(&self, asked: bool) -> Option<f32> {
+        let (expanded, wheel) = if asked { (self.ask_expanded, self.ask_wheel) } else { (self.expanded, self.wheel) };
+        let fine = if expanded { self.fine[usize::from(wheel)] } else { 0.0 };
+        self.base.map(|base| base + fine)
+    }
+
     pub fn discard_drafts(&mut self) {
         self.fields();
     }
@@ -161,7 +200,7 @@ impl Panel {
 
     pub fn show(&mut self, ui: &mut Ui, recent: &[Rgb]) -> Vec<Edit> {
         let mut edits = Vec::new();
-        ui.spacing_mut().item_spacing = Vec2::new(4.0, 5.0);
+        ui.spacing_mut().item_spacing = SPACING;
         ui.spacing_mut().button_padding = Vec2::new(5.0, 2.0);
         controls::heading(ui, "Palette");
         for row in super::swatches().chunks(suhina_session::colours::PALETTE_COLUMNS) {
@@ -221,11 +260,15 @@ impl Panel {
                 ui.ctx().copy_text(hex(self.colour));
             }
         });
-        if controls::disclosure(ui, "Fine adjustment", self.expanded).clicked() {
-            self.expanded = !self.expanded;
+        if controls::disclosure(ui, "Fine adjustment", self.ask_expanded).clicked() {
+            self.ask_expanded = !self.ask_expanded;
+            ui.ctx().request_repaint();
         }
+        let mut fine = 0.0;
         if self.expanded {
+            let top = ui.cursor().top();
             self.fine(ui, &mut edits);
+            fine = ui.cursor().top() - top;
         }
         controls::separator(ui);
         ui.horizontal(|ui| {
@@ -259,12 +302,18 @@ impl Panel {
         if !ui.input(|i| i.pointer.any_down()) {
             self.cancelled_drag = false;
         }
+        let whole = ui.min_rect().height();
+        self.base = Some(whole - fine);
+        if self.expanded {
+            self.fine[usize::from(self.wheel)] = fine;
+        }
         edits
     }
 
     fn fine(&mut self, ui: &mut Ui, edits: &mut Vec<Edit>) {
-        if let Some(wheel) = controls::options(ui, "View", &[("Field", false), ("Wheel", true)], self.wheel) {
-            self.wheel = wheel;
+        if let Some(wheel) = controls::options(ui, "View", &[("Field", false), ("Wheel", true)], self.ask_wheel) {
+            self.ask_wheel = wheel;
+            ui.ctx().request_repaint();
         }
         let mut hsv = self.hsv;
         let response = self.canvas.show(ui, &mut hsv, self.wheel, self.steps, self.soft);

@@ -9,9 +9,9 @@ browser-plug-ins suhina-studio@darkest ddc3c0849d5a691d
 browser-search suhina-studio@darkest 8b75864957585e73
 clip-audio suhina-studio@darkest a0d06320da5415d3
 clip-midi suhina-studio@darkest 2b78abe994162a55
-colour-picker suhina-studio@darkest faff2eb69c5c07c3
-colour-picker-field suhina-studio@darkest 432916e8494361c3
-colour-picker-wheel suhina-studio@darkest 0acf1a39d8e3353a
+colour-picker suhina-studio@darkest f510dd1b5ec9dc2e
+colour-picker-field suhina-studio@darkest ee1a301453ccc954
+colour-picker-wheel suhina-studio@darkest d84f4f6e87232222
 context-menu suhina-studio@darkest a86e7d961a20a2c8
 control-bar-toggles suhina-studio@darkest bc2e26a119a07a12
 count-in-menu suhina-studio@darkest 380a59c53b24c71d
