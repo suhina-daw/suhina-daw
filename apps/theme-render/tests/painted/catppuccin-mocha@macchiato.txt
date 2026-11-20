@@ -24,7 +24,7 @@ expanded-delay catppuccin-mocha@macchiato 832cade3c766a841
 expanded-fm-synth catppuccin-mocha@macchiato 4dda5812d74a17f4
 expanded-instrument catppuccin-mocha@macchiato 11950ae844aa9abb
 expanded-instrument-model catppuccin-mocha@macchiato 13e876fe1e142466
-expanded-instrument-sample catppuccin-mocha@macchiato ed391103ffef42c0
+expanded-instrument-sample catppuccin-mocha@macchiato a7a2c1e42efad85b
 expanded-multiband catppuccin-mocha@macchiato f3a3c9e12c0ca01e
 expanded-reverb catppuccin-mocha@macchiato a6eb4500bc8266f5
 expanded-vinyl-distortion catppuccin-mocha@macchiato 16135031570b84b2

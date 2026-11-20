@@ -24,7 +24,7 @@ expanded-delay suhina-blocks ffe0767ef301081f
 expanded-fm-synth suhina-blocks b624f5d6fdf02125
 expanded-instrument suhina-blocks e7789bd7d8fe7f84
 expanded-instrument-model suhina-blocks 4aacb93e2d4c6843
-expanded-instrument-sample suhina-blocks 626e4fc3edaf9ccb
+expanded-instrument-sample suhina-blocks cc38dd041c13d0b4
 expanded-multiband suhina-blocks 94104da2670213c9
 expanded-reverb suhina-blocks ca524cb1938a41f6
 expanded-vinyl-distortion suhina-blocks 080d79f7de6c521e

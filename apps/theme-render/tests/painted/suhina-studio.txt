@@ -24,7 +24,7 @@ expanded-delay suhina-studio 4e8d03efb47d8b43
 expanded-fm-synth suhina-studio ddd58dad137c2ac0
 expanded-instrument suhina-studio ebf44156482e73f3
 expanded-instrument-model suhina-studio 4befab675d04aa33
-expanded-instrument-sample suhina-studio 8f46ccd96716faf3
+expanded-instrument-sample suhina-studio 4fd5561bfbd6e839
 expanded-multiband suhina-studio 1f690562faaf2ebd
 expanded-reverb suhina-studio b0abb1a3b761c7fd
 expanded-vinyl-distortion suhina-studio 999f9b6bbb632d19

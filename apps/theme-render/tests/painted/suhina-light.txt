@@ -24,7 +24,7 @@ expanded-delay suhina-light 0c278b108025efdb
 expanded-fm-synth suhina-light bf624aa577c6de75
 expanded-instrument suhina-light a20644514cef345c
 expanded-instrument-model suhina-light ab1151423408f2a8
-expanded-instrument-sample suhina-light fb738797c7653c58
+expanded-instrument-sample suhina-light 6609d04590b42a08
 expanded-multiband suhina-light 013ba16f6e37e864
 expanded-reverb suhina-light 30ee600b2ec02df5
 expanded-vinyl-distortion suhina-light 4feb696e942665fa

@@ -24,7 +24,7 @@ expanded-delay suhina-glass@midnight 393900c46afb0931
 expanded-fm-synth suhina-glass@midnight b55c477b88758353
 expanded-instrument suhina-glass@midnight e931300052717adc
 expanded-instrument-model suhina-glass@midnight 0fabbea36f8984d7
-expanded-instrument-sample suhina-glass@midnight c121d73fa05cadba
+expanded-instrument-sample suhina-glass@midnight 512a834e6f85c789
 expanded-multiband suhina-glass@midnight 5979f07b8e477d5a
 expanded-reverb suhina-glass@midnight 82e2ce9c7679e963
 expanded-vinyl-distortion suhina-glass@midnight ff5fa579e09b4c55

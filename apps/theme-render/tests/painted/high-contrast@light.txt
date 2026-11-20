@@ -24,7 +24,7 @@ expanded-delay high-contrast@light f9fed742457fc670
 expanded-fm-synth high-contrast@light d9f985a695f42c8b
 expanded-instrument high-contrast@light b448b24a23e98914
 expanded-instrument-model high-contrast@light 0aaeae995d0d43aa
-expanded-instrument-sample high-contrast@light 95eb8a390c19f43e
+expanded-instrument-sample high-contrast@light b8c338cb6d889365
 expanded-multiband high-contrast@light a85aca661ae57847
 expanded-reverb high-contrast@light 44cc605548413bd8
 expanded-vinyl-distortion high-contrast@light fab6d60be100d1a0

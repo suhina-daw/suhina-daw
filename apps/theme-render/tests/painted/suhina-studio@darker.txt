@@ -24,7 +24,7 @@ expanded-delay suhina-studio@darker 60165bd4c25b20ab
 expanded-fm-synth suhina-studio@darker 6b89c7654d0801d5
 expanded-instrument suhina-studio@darker 97e07183e16c1b83
 expanded-instrument-model suhina-studio@darker 8a6d632d66a3153d
-expanded-instrument-sample suhina-studio@darker 5f1c0d07e8e4c9cf
+expanded-instrument-sample suhina-studio@darker 97b9d5fce9199ae7
 expanded-multiband suhina-studio@darker edf6deb9fce99386
 expanded-reverb suhina-studio@darker 5ef1021758440c95
 expanded-vinyl-distortion suhina-studio@darker 6cc2ee401914feb6
