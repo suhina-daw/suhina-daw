@@ -140,7 +140,7 @@ pub(super) fn canvas() -> DeviceUi {
     );
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 456.0, 440.0, 20.0]);
     ui.label(
-        "An experimental resonator or a model fitted from recordings, not a calibrated acoustic instrument. Changes shape the next strike.",
+        "An experimental resonator or a model fitted from recordings, not a calibrated instrument. Changes shape the next strike.",
         [24.0, 490.0, 832.0, 24.0],
     );
 

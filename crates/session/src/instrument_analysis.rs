@@ -16,6 +16,7 @@ use suhina_model::{AudioData, ChannelId, Device, DeviceId, DeviceKind};
 
 use crate::commands::{Args, device_channel, device_channel_read, with_override};
 use crate::device_groups::device_path;
+use crate::instrument_folder::FolderReport;
 use crate::{CommandError, Session};
 
 static NEXT_JOB: AtomicU64 = AtomicU64::new(1);
@@ -55,6 +56,8 @@ pub enum AnalysisPhase {
 pub enum AnalysisKind {
     Root,
     Modal,
+    /// A folder of one-note files fitted into one model; see instrument-modal-fitting.md.
+    Folder,
 }
 
 impl AnalysisKind {
@@ -62,6 +65,7 @@ impl AnalysisKind {
         match self {
             Self::Root => "root",
             Self::Modal => "modal",
+            Self::Folder => "folder",
         }
     }
 }
@@ -69,6 +73,7 @@ impl AnalysisKind {
 enum Prepared {
     Root(Report),
     Modal(Box<modal::Report>),
+    Folder(Box<FolderReport>),
 }
 
 impl AnalysisPhase {
@@ -101,6 +106,8 @@ pub struct AnalysisView {
     pub model_recordings: Option<usize>,
     /// The last audition's comparison of the fit with its source.
     pub comparison: Option<suhina_instrument_analysis::compare::Comparison>,
+    /// A folder fit's files and recordings.
+    pub folder: Option<FolderReport>,
 }
 
 struct Source {
@@ -135,6 +142,7 @@ struct Job {
     pending_state: Option<Vec<u8>>,
     /// The last audition's level-matched comparison of the fit with its source.
     comparison: Option<suhina_instrument_analysis::compare::Comparison>,
+    folder: Option<FolderReport>,
 }
 
 impl Drop for Job {
@@ -173,6 +181,7 @@ impl Job {
                         match report {
                             Prepared::Root(report) => self.report = Some(report),
                             Prepared::Modal(report) => self.modal = Some(*report),
+                            Prepared::Folder(report) => self.folder = Some(*report),
                         }
                         self.phase = AnalysisPhase::Ready;
                     }
@@ -211,6 +220,7 @@ impl Job {
                 .then_some(self.source.root as u8),
             model_recordings: None,
             comparison: self.comparison.clone(),
+            folder: self.folder.clone(),
         }
     }
 }
@@ -240,23 +250,38 @@ impl Session {
                     .find(|(_, d)| d.id == job.source.device)
                     .map(|(_, d)| d)
             });
-            let matches_source = device.is_some_and(|d| {
-                matches!(&d.kind, DeviceKind::Builtin(id) if matches!(id.as_str(), "instrument" | "sampler"))
-                    && d.sample_file() == Some(job.source.file.as_str())
-                    && parameter(d, "start", 0.0) == job.source.start
-                    && parameter(d, "end", 1.0) == job.source.end
-                    && (job.kind != AnalysisKind::Modal
-                        || (d.instrument_modal_profile() == job.source.profile.as_deref()
-                            && matches!(&d.kind, DeviceKind::Builtin(id) if id == "instrument")))
-            }) && self
-                .audio
-                .pool
-                .files
-                .get(&job.source.file)
-                .is_some_and(|audio| Arc::ptr_eq(audio, &job.source.pcm));
+            let folder = job.kind == AnalysisKind::Folder;
+            let matches_source = if folder {
+                device.is_some_and(|d| {
+                    matches!(&d.kind, DeviceKind::Builtin(id) if id == "instrument")
+                        && d.instrument_modal_profile() == job.source.profile.as_deref()
+                })
+            } else {
+                device.is_some_and(|d| {
+                    matches!(&d.kind, DeviceKind::Builtin(id) if matches!(id.as_str(), "instrument" | "sampler"))
+                        && d.sample_file() == Some(job.source.file.as_str())
+                        && parameter(d, "start", 0.0) == job.source.start
+                        && parameter(d, "end", 1.0) == job.source.end
+                        && (job.kind != AnalysisKind::Modal
+                            || (d.instrument_modal_profile() == job.source.profile.as_deref()
+                                && matches!(&d.kind, DeviceKind::Builtin(id) if id == "instrument")))
+                }) && self
+                    .audio
+                    .pool
+                    .files
+                    .get(&job.source.file)
+                    .is_some_and(|audio| Arc::ptr_eq(audio, &job.source.pcm))
+            };
             if !matches_source {
-                job.stop(AnalysisPhase::Stale, "the device, source or trim changed; analyze the current source again");
-            } else if let Some(device) = device {
+                job.stop(
+                    AnalysisPhase::Stale,
+                    if folder {
+                        "the Instrument or its fitted model changed; fit the folder again"
+                    } else {
+                        "the device, source or trim changed; analyze the current source again"
+                    },
+                );
+            } else if !folder && let Some(device) = device {
                 let root = parameter(device, "root", 60.0);
                 if root != job.source.root {
                     job.stop(AnalysisPhase::Stale, "the sample root changed; analyze again before accepting");
@@ -358,6 +383,51 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
     let profile =
         if kind == AnalysisKind::Modal { device.instrument_modal_profile().map(<[u8]>::to_vec) } else { None };
     let source = Source { channel, device: device.id, file, pcm: pcm.clone(), start, end, root, profile };
+    spawn(session, kind, source, move |progress| {
+        if kind == AnalysisKind::Root {
+            suhina_instrument_analysis::analyze(&pcm.samples, pcm.sample_rate, pcm.channels, range, progress)
+                .map(Prepared::Root)
+        } else {
+            modal::fit(&pcm.samples, pcm.sample_rate, pcm.channels, range, root.round() as u8, progress)
+                .map(|r| Prepared::Modal(Box::new(r)))
+        }
+    })
+}
+
+/// `instrument.fitFolder`: fit a folder's one-note files into one model, on the worker.
+pub(crate) fn start_folder(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    session.refresh_instrument_analysis();
+    if session.analysis.current.as_ref().is_some_and(|j| j.receiver.is_some()) {
+        return Err("the previous analysis is still running or cancelling".into());
+    }
+    let (channel, device) = selected(session, params)?;
+    if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument") {
+        return Err("folder fitting needs an Instrument".into());
+    }
+    let (device_id, profile) = (device.id, device.instrument_modal_profile().map(<[u8]>::to_vec));
+    let folder = Args::new(params).raw_str("path").ok_or("path must be a folder of audio files")?;
+    let folder = crate::files::absolute(std::path::Path::new(folder));
+    let files = crate::instrument_folder::list(&folder)?;
+    let pcm = Arc::new(AudioData { sample_rate: 48000, channels: 1, samples: Vec::new() });
+    let file = folder.display().to_string();
+    let source = Source { channel, device: device_id, file, pcm, start: 0.0, end: 1.0, root: 60.0, profile };
+    let count = files.len();
+    let mut result = spawn(session, AnalysisKind::Folder, source, move |progress| {
+        crate::instrument_folder::fit_folder(&files, progress).map(|r| Prepared::Folder(Box::new(r)))
+    })?;
+    result["files"] = json!(count);
+    Ok(result)
+}
+
+type Progress<'a> = &'a mut dyn FnMut(usize, usize) -> bool;
+
+/// Start `work` on a preparation worker within the admission budget, as the session's job.
+fn spawn(
+    session: &mut Session,
+    kind: AnalysisKind,
+    source: Source,
+    work: impl FnOnce(Progress<'_>) -> Result<Prepared, suhina_instrument_analysis::Error> + Send + 'static,
+) -> Result<Value, CommandError> {
     let permit = Permit::acquire()?;
     let id = NEXT_JOB
         .try_update(Ordering::AcqRel, Ordering::Acquire, |id| id.checked_add(1))
@@ -372,22 +442,13 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
     let worker = std::thread::Builder::new()
         .name("instrument-analysis".into())
         .spawn(move || {
-            let progress = |done, total| {
+            let mut progress = |done: usize, total: usize| -> bool {
                 worker_progress[1].store(total, Ordering::Release);
                 worker_progress[0].store(done, Ordering::Release);
                 !worker_cancel.load(Ordering::Acquire)
             };
-            let result = match kind {
-                AnalysisKind::Root => {
-                    suhina_instrument_analysis::analyze(&pcm.samples, pcm.sample_rate, pcm.channels, range, progress)
-                        .map(Prepared::Root)
-                }
-                AnalysisKind::Modal => {
-                    modal::fit(&pcm.samples, pcm.sample_rate, pcm.channels, range, root.round() as u8, progress)
-                        .map(|r| Prepared::Modal(Box::new(r)))
-                }
-            };
-            drop(pcm);
+            // `work` owns its PCM and releases it when it returns.
+            let result = work(&mut progress);
             drop(permit);
             let _ = send.send(result);
         })
@@ -407,6 +468,7 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
         pending_root: None,
         pending_state: None,
         comparison: None,
+        folder: None,
     });
     Ok(json!({"job":id.to_string(),"kind":kind.as_str(),"status":"running"}))
 }
@@ -468,7 +530,14 @@ fn view_json(view: &AnalysisView) -> Value {
             "estimationRmsDb":m.estimation_rms_db,"validationRmsDb":m.validation_rms_db,"sustained":m.sustained,
             "estimationWindows":m.estimation_windows,"validationWindows":m.validation_windows})).collect::<Vec<_>>()
     }));
-    json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"modelRecordings":view.model_recordings,"report":report,"modal":modal,"acceptedRoot":view.accepted_root,"message":view.message})
+    let folder = view.folder.as_ref().map(|f| {
+        json!({
+            "recordings":f.recordings.len(),
+            "files":f.files.iter().map(|file| json!({"name":file.name,"key":file.key,"velocity":file.velocity,
+                "outcome":file.outcome.as_str(),"reason":file.outcome.reason()})).collect::<Vec<_>>()
+        })
+    });
+    json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"modelRecordings":view.model_recordings,"report":report,"modal":modal,"folder":folder,"acceptedRoot":view.accepted_root,"message":view.message})
 }
 
 /// A key by its tonic's name (sharps) and mode; the correlation is a profile fit, not a probability.
@@ -518,6 +587,9 @@ pub(crate) fn accept(session: &mut Session, params: &Value) -> Result<Value, Com
 }
 
 pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    if matching_job(session, params)?.kind == AnalysisKind::Folder {
+        return adopt_folder(session, params, false);
+    }
     let job = matching_job(session, params)?;
     if job.kind != AnalysisKind::Modal || job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current modal fit can be accepted".into());
@@ -638,10 +710,10 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         Some(v) if v.is_finite() && v > 0.0 && v <= 1.0 => v as f32,
         Some(_) => return Err("velocity must be a number above 0 and at most 1".into()),
     };
-    let source = match Args::new(params).opt_index("source", "source number, 0 to 15")? {
-        None => 0,
-        Some(n) => u8::try_from(n).ok().filter(|n| *n < 16).ok_or("source must be a whole number from 0 to 15")?,
-    };
+    if matching_job(session, params)?.kind == AnalysisKind::Folder {
+        return adopt_folder(session, params, true);
+    }
+    let source = source_param(params)?;
     let job = matching_job(session, params)?;
     if job.kind != AnalysisKind::Modal || job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current modal fit can be added".into());
@@ -669,7 +741,61 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         job.pending_state = Some(bytes);
     }
     Ok(with_override(
-        json!({"added":true,"recordings":count,"key":key,"velocity":velocity,"source":source,"modeCount":modes,"revision":MODEL_REVISION,"source":"modal"}),
+        json!({"added":true,"recordings":count,"key":key,"velocity":velocity,"recordingSource":source,"modeCount":modes,"revision":MODEL_REVISION,"source":"modal"}),
+        overridden,
+    ))
+}
+
+/// The optional `source` (instrument) number a fit is added as, 0 when absent.
+fn source_param(params: &Value) -> Result<u8, CommandError> {
+    match Args::new(params).opt_index("source", "source number, 0 to 15")? {
+        None => Ok(0),
+        Some(n) => Ok(u8::try_from(n).ok().filter(|n| *n < 16).ok_or("source must be a whole number from 0 to 15")?),
+    }
+}
+
+/// Accept (a new set) or add (into the device's set, all or none) a folder fit's recordings.
+fn adopt_folder(session: &mut Session, params: &Value, add: bool) -> Result<Value, CommandError> {
+    if add && Args::new(params).has("velocity") {
+        return Err("a folder's velocities come from its layers; leave velocity out".into());
+    }
+    let source = source_param(params)?;
+    let job = matching_job(session, params)?;
+    if job.phase != AnalysisPhase::Ready {
+        return Err("only a completed, current folder fit can be accepted or added".into());
+    }
+    let mut recordings = job.folder.as_ref().map(|f| f.recordings.clone()).unwrap_or_default();
+    if recordings.is_empty() {
+        return Err("no file in the folder gave a fitted recording".into());
+    }
+    for recording in &mut recordings {
+        recording.source = source;
+    }
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
+    let set = if add {
+        let existing = device
+            .instrument_modal_profile()
+            .filter(|bytes| bytes.starts_with(MODEL_MAGIC))
+            .ok_or("add needs an Instrument with an accepted fitted model; accept one first")?;
+        let mut set = ModelSet::decode(existing).map_err(|error| error.to_string())?;
+        for recording in recordings {
+            set = set.with(recording).map_err(|error| format!("nothing was added: {error}"))?;
+        }
+        set
+    } else {
+        ModelSet::new(recordings).map_err(|error| error.to_string())?
+    };
+    let bytes = set.encode();
+    let overridden = crate::instrument_profile::apply_model_set(device, &bytes, !add)?;
+    let count = set.recordings().len();
+    if let Some(job) = &mut session.analysis.current {
+        job.pending_state = Some(bytes);
+    }
+    let verb = if add { "added" } else { "accepted" };
+    Ok(with_override(
+        json!({verb:true,"recordings":count,"recordingSource":source,"revision":MODEL_REVISION,"source":"modal"}),
         overridden,
     ))
 }

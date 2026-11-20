@@ -41,8 +41,11 @@ const SUSTAIN_DB: f64 = 3.0;
 const SUSTAINED_SECONDS: f64 = 60.0;
 /// A failing span this long is fitted once more on its last two thirds.
 const LATE_RETRY_WINDOWS: usize = 9;
-/// A fast part is kept when it lowers the span's RMS envelope error by this much.
+/// A fast part is kept when it lowers the span's RMS envelope error by this much, or leaves at
+/// most this fraction of a single exponential's error of at least this much.
 const TWO_STAGE_GAIN_DB: f64 = 1.0;
+const TWO_STAGE_RATIO: f64 = 1.0 / 3.0;
+const TWO_STAGE_MIN_SINGLE_DB: f64 = 0.25;
 /// Fine envelope for beating: 1024-sample windows every 256 samples.
 const BEAT_FRAME: usize = 1024;
 const BEAT_HOP: usize = 256;
@@ -725,7 +728,9 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
     match (single, two_stage) {
         (Some(one), Some((two, rms))) => {
             let single_rms = span_rms(span, |t| one.0 + one.1 * t);
-            Some(if rms + TWO_STAGE_GAIN_DB <= single_rms { two } else { plain(one) })
+            let better = rms + TWO_STAGE_GAIN_DB <= single_rms
+                || (single_rms >= TWO_STAGE_MIN_SINGLE_DB && rms <= single_rms * TWO_STAGE_RATIO);
+            Some(if better { two } else { plain(one) })
         }
         (Some(one), None) => Some(plain(one)),
         (None, Some((two, _))) => Some(two),

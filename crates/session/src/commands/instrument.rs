@@ -17,6 +17,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::UNHEARD,
     },
     CommandSpec {
+        id: "instrument.fitFolder",
+        label: "Fit every one-note audio file in a folder into one fitted model (velocity layers by level) without changing playback",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            param("path", ParamType::Path(PathKind::Folder), "folder of one-note audio files, at most 128"),
+        ],
+        kind: CommandKind::on(Target::Project, Effect::Change),
+        run: instrument_analysis::start_folder,
+        policy: Policy::UNHEARD,
+    },
+    CommandSpec {
         id: "instrument.acceptFit",
         label: "Adopt the current modal fit as a fitted model (its modes, attack and level), reset model controls and enable all fitted modes in one undo step",
         params: &[DEVICE_TRACK, DEVICE, JOB],
@@ -55,9 +67,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             JOB,
             param("which", ParamType::Text, "original (the analyzed source range) or fitted (the model rendered)"),
         ],
-        kind: CommandKind::TRANSPORT,
+        // Plays through the preview player when there is one, and reports the comparison either way.
+        kind: CommandKind::on(Target::Project, Effect::Change),
         run: instrument_analysis::audition_fit,
-        policy: Policy::PREVIEW,
+        policy: Policy::DEFAULT,
     },
     CommandSpec {
         id: "instrument.analyzeSample",

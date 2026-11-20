@@ -63,11 +63,14 @@ fn sets_round_trip_canonically_and_reject_hostile_bytes() {
     assert!(ModelSet::decode(&swapped).is_err());
 }
 
+/// A change that makes a recording invalid.
+type Breakage = Box<dyn Fn(&mut ModelRecording)>;
+
 #[test]
 fn recordings_validate_every_bound() {
     let good = recording(60, 0.8, 2.0, 1.0);
     assert!(good.validate().is_ok());
-    let cases: Vec<Box<dyn Fn(&mut ModelRecording)>> = vec![
+    let cases: Vec<Breakage> = vec![
         Box::new(|r| r.key = 128),
         Box::new(|r| r.source = 16),
         Box::new(|r| r.velocity = 0.0),
@@ -146,10 +149,15 @@ fn notes_between_recordings_fuse_parameters_and_equal_recordings_average() {
     let mut voice = Voice::default();
     set.voice(60, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
     let c3 = 440.0 * 2.0_f64.powf(-9.0 / 12.0);
-    // Halfway: weighted geometric means of ratio and T60.
+    // Halfway: weighted geometric means of ratio and of T60, each recording's T60 first carried
+    // to the key by its own decay law (slope of ln T60 over ln ratio: its second mode decays
+    // twice as fast at ratio 2 or 2.02).
     let ratio = (2.0_f64 * 2.02).sqrt();
     let fundamental = frequency_near(&voice, c3).unwrap();
-    assert!((fundamental.decay_seconds - 1.0).abs() < 1e-9, "{fundamental:?}");
+    let (low_law, high_law) = (-1.0, -(2.0_f64.ln()) / 2.02_f64.ln());
+    let expected = (2.0 * 2.0_f64.powf(low_law) * 0.5 * 2.0_f64.powf(-high_law)).sqrt();
+    assert!((expected - 0.995).abs() < 0.001, "{expected}");
+    assert!((fundamental.decay_seconds - expected).abs() < 1e-9, "{fundamental:?}");
     assert!(voice.modes[..voice.count].iter().any(|m| (m.frequency_hz - c3 * ratio).abs() < 1e-6));
     // Nearer the lower recording, its parameters dominate.
     set.voice(50, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);

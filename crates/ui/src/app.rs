@@ -719,6 +719,9 @@ pub struct App {
     map_window: MapWindow,
     /// Samples Copy to folder… copies once the system's dialog has picked the folder (#865).
     copy_to: Vec<PathBuf>,
+    /// The Instrument (track and device) Fit folder… fits once the system's dialog has picked
+    /// the folder.
+    fit_folder_target: Option<serde_json::Value>,
     /// Samples a drag carried out of every Suhina window, for the desktop app to hand the
     /// system as a drag of files the file manager copies (#865).
     drag_out: Option<Vec<PathBuf>>,
@@ -924,6 +927,7 @@ impl App {
             sample_map: crate::browser::sample_map_panel::Panel::default(),
             map_window: MapWindow::default(),
             copy_to: Vec::new(),
+            fit_folder_target: None,
             drag_out: None,
             pending_drop: None,
             detail_drop: None,
@@ -2112,6 +2116,7 @@ impl App {
             PickField::BrowserFolder
             | PickField::McpWriteFolder
             | PickField::CopyToFolder
+            | PickField::InstrumentFitFolder
             | PickField::PluginFolder
             | PickField::BackgroundImage
             | PickField::ThemePackage => None,
@@ -2189,6 +2194,13 @@ impl App {
                     self.status = copied_status(
                         self.projects.execute("library.copyTo", &json!({ "items": items, "folder": text })),
                     );
+                }
+                return;
+            }
+            PickField::InstrumentFitFolder => {
+                if let Some(mut params) = self.fit_folder_target.take() {
+                    params["path"] = json!(text);
+                    self.run(&Action::new("instrument.fitFolder", params));
                 }
                 return;
             }
@@ -2921,6 +2933,12 @@ impl App {
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
             self.colour_history_changed();
+        }
+        // Fit folder… asks for the folder first; the pick runs instrument.fitFolder.
+        if action.id == "ui.instrumentFitFolder" {
+            self.fit_folder_target = Some(action.params.clone());
+            self.ask_pick(PickField::InstrumentFitFolder);
+            return;
         }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();

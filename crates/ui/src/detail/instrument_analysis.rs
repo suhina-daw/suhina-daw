@@ -8,13 +8,17 @@ use egui::{Id, Rect, Ui};
 use serde_json::json;
 use suhina_engine::model::TrackId;
 use suhina_session::{
-    AnalysisKind, AnalysisPhase, AnalysisView, ModalFitOutcome, ProjectId, SampleAnalysisOutcome, Session,
+    AnalysisKind, AnalysisPhase, AnalysisView, FolderFileOutcome, FolderReport, ModalFitOutcome, ProjectId,
+    SampleAnalysisOutcome, Session,
 };
 
 use super::device_canvas::remember_keyboard_owner;
 use crate::interaction::device_at::DeviceAt;
 use crate::interaction::key_name::{key_name, parse_key_name, pitch_class_name};
-use crate::kit::widgets::Action;
+use crate::kit::widgets::{Action, flow_button, number_input, progress_bar};
+
+/// A fitted model holds at most this many recordings.
+const MAX_RECORDINGS: usize = 32;
 
 #[derive(Clone, Default)]
 struct Snapshot {
@@ -76,18 +80,24 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
         ui.horizontal(|ui| {
             ui.strong("Sample analysis");
             let running = view.is_some_and(|v| v.phase == AnalysisPhase::Running);
-            let analyze = ui.add_enabled(!running, egui::Button::new("Analyze sample"));
+            let analyze = flow_button(ui, "Analyze sample", !running);
             remember_keyboard_owner(&analyze);
             if analyze.clicked() {
                 actions.push(Action::new("instrument.analyzeSample",json!({"track":track_value,"device":device_value})));
             }
-            let fit = ui.add_enabled(!running, egui::Button::new("Fit resonances"));
+            let fit = flow_button(ui, "Fit resonances", !running);
             remember_keyboard_owner(&fit);
             if fit.clicked() {
                 actions.push(Action::new("instrument.fitSample",json!({"track":track_value,"device":device_value})));
             }
+            // The app asks for the folder, then runs instrument.fitFolder on this Instrument.
+            let folder = flow_button(ui, "Fit folder…", !running);
+            remember_keyboard_owner(&folder);
+            if folder.clicked() {
+                actions.push(Action::new("ui.instrumentFitFolder",json!({"track":track_value,"device":device_value})));
+            }
             if let Some(view) = view.filter(|v| running || v.phase == AnalysisPhase::Ready) {
-                let cancel = ui.button(if running { "Cancel analysis" } else { "Discard proposal" });
+                let cancel = flow_button(ui, if running { "Cancel analysis" } else { "Discard proposal" }, true);
                 remember_keyboard_owner(&cancel);
                 if cancel.clicked() {
                     actions.push(Action::new("instrument.cancelAnalysis",json!({"track":track_value,"device":device_value,"job":view.job})));
@@ -95,17 +105,26 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
             }
         });
         let Some(view) = view else {
-            ui.label("Analyze a root note, or fit resonances from an isolated decaying strike.");
+            ui.label("Analyze a root note, fit resonances from an isolated decaying strike, or fit a folder of one-note recordings.");
             ui.label("Fitting is experimental. Inspect the result before accepting; the source stays playable.");
             return;
         };
         match view.phase {
             AnalysisPhase::Running => {
                 let fraction = if view.total > 0 { (view.completed as f32 / view.total as f32).clamp(0.0,1.0) } else { 0.0 };
-                ui.add(egui::ProgressBar::new(fraction).text(if view.kind == AnalysisKind::Modal { "Fitting resonances locally…" } else { "Analyzing locally…" }));
+                let text = match view.kind {
+                    AnalysisKind::Modal => "Fitting resonances locally…".to_owned(),
+                    AnalysisKind::Folder => format!("Fitting file {} of {} locally…", (view.completed + 1).min(view.total.max(1)), view.total.max(1)),
+                    AnalysisKind::Root => "Analyzing locally…".to_owned(),
+                };
+                progress_bar(ui, fraction, &text);
                 ui.ctx().request_repaint();
             }
             AnalysisPhase::Ready => {
+                if let Some(folder) = &view.folder {
+                    folder_ready(ui, view, folder, &track_value, &device_value, actions);
+                    return;
+                }
                 if let Some(report) = &view.modal {
                     if let Some(profile) = report.profile {
                         let error = report.modes.iter().map(|m|m.validation_rms_db).fold(0.0_f64, f64::max);
@@ -143,14 +162,14 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                         ui.horizontal(|ui| {
                             ui.label(summary)
                                 .on_hover_text(format!("Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Phases and the attack are measured from this recording; room response is not separated.",report.channel+1,report.range.start,report.range.end,report.analyzed_seconds));
-                            let accept = ui.button("Accept model");
+                            let accept = flow_button(ui, "Accept model", true);
                             remember_keyboard_owner(&accept);
                             if accept.clicked() {
                                 actions.push(Action::new("instrument.acceptFit",json!({"track":track_value,"device":device_value,"job":view.job})));
                             }
                             // A recording joins the model already accepted on this Instrument.
-                            if let Some(count) = view.model_recordings.filter(|n| *n < 16 && report.recording.is_some()) {
-                                let add = ui.button(format!("Add to model ({count})"));
+                            if let Some(count) = view.model_recordings.filter(|n| *n < MAX_RECORDINGS && report.recording.is_some()) {
+                                let add = flow_button(ui, &format!("Add to model ({count})"), true);
                                 remember_keyboard_owner(&add);
                                 if add.clicked() {
                                     actions.push(Action::new("instrument.addFit",json!({"track":track_value,"device":device_value,"job":view.job})));
@@ -160,7 +179,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                         // Level-matched A/B against the source before accepting.
                         ui.horizontal(|ui| {
                             for (label, which) in [("Play original", "original"), ("Play fitted", "fitted")] {
-                                let play = ui.button(label);
+                                let play = flow_button(ui, label, true);
                                 remember_keyboard_owner(&play);
                                 if play.clicked() {
                                     actions.push(Action::new("instrument.auditionFit",json!({"track":track_value,"device":device_value,"job":view.job,"which":which})));
@@ -208,13 +227,13 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                         .unwrap_or(Correction { job:view.job.clone(),root });
                     ui.horizontal(|ui| {
                         ui.label("Root key");
-                        let response = ui.add(egui::DragValue::new(&mut correction.root).range(0..=127).speed(0.1)
+                        let response = number_input(ui, None, egui::DragValue::new(&mut correction.root).range(0..=127).speed(0.1)
                             .custom_formatter(|key, _| key_name(key.round().clamp(0.0, 127.0) as u8))
                             .custom_parser(|text| parse_key_name(text).map(f64::from)));
                         remember_keyboard_owner(&response);
                         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton,true,"Proposed root key"));
                         ui.label(measured).on_hover_text(hover);
-                        let accept = ui.button("Accept root");
+                        let accept = flow_button(ui, "Accept root", true);
                         remember_keyboard_owner(&accept);
                         if accept.clicked() {
                             actions.push(Action::new("instrument.acceptAnalysis",json!({"track":track_value,"device":device_value,"job":view.job,"root":correction.root})));
@@ -233,7 +252,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                 }
             }
             AnalysisPhase::Accepted => {
-                if view.kind == AnalysisKind::Modal {
+                if matches!(view.kind, AnalysisKind::Modal | AnalysisKind::Folder) {
                     ui.label(match view.model_recordings {
                         Some(count) => format!("Fitted model holds {count} recording(s). Play it and edit the model controls."),
                         None => "Experimental modal profile accepted. Play it and edit the model controls.".to_owned(),
@@ -249,4 +268,67 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
             }
         }
     });
+}
+
+/// A ready folder fit: what became of its files, and Accept or Add for its recordings.
+fn folder_ready(
+    ui: &mut Ui,
+    view: &AnalysisView,
+    folder: &FolderReport,
+    track: &serde_json::Value,
+    device: &serde_json::Value,
+    actions: &mut Vec<Action>,
+) {
+    let skipped = folder.files.iter().filter(|f| f.outcome.reason().is_some()).count();
+    let left_out = folder.files.iter().filter(|f| f.outcome == FolderFileOutcome::LeftOut).count();
+    let mut summary = format!("Folder: {} of {} files fitted", folder.recordings.len(), folder.files.len());
+    if left_out > 0 {
+        summary.push_str(&format!(" · {left_out} left out ({MAX_RECORDINGS} at most)"));
+    }
+    if skipped > 0 {
+        summary.push_str(&format!(" · {skipped} skipped"));
+    }
+    // Every file and what became of it, in the hover, at most 40 lines.
+    let mut details: Vec<String> = folder
+        .files
+        .iter()
+        .take(40)
+        .map(|file| match (&file.outcome, file.key, file.velocity) {
+            (FolderFileOutcome::Skipped(reason), _, _) => format!("{}: {reason}", file.name),
+            (outcome, Some(key), Some(velocity)) => format!(
+                "{}: {} at velocity {:.0} %{}",
+                file.name,
+                key_name(key),
+                velocity * 100.0,
+                if *outcome == FolderFileOutcome::LeftOut { " (left out)" } else { "" }
+            ),
+            _ => file.name.clone(),
+        })
+        .collect();
+    if folder.files.len() > 40 {
+        details.push(format!("… and {} more", folder.files.len() - 40));
+    }
+    ui.horizontal(|ui| {
+        ui.label(summary).on_hover_text(details.join("\n"));
+        if folder.recordings.is_empty() {
+            return;
+        }
+        let accept = flow_button(ui, "Accept model", true);
+        remember_keyboard_owner(&accept);
+        if accept.clicked() {
+            actions.push(Action::new("instrument.acceptFit", json!({"track":track,"device":device,"job":view.job})));
+        }
+        if let Some(count) = view.model_recordings {
+            let add = flow_button(ui, &format!("Add to model ({count})"), true);
+            remember_keyboard_owner(&add);
+            if add.clicked() {
+                actions.push(Action::new("instrument.addFit", json!({"track":track,"device":device,"job":view.job})));
+            }
+        }
+    });
+    if folder.recordings.is_empty() {
+        ui.label("No file gave a fitted recording: each needs one isolated note with a stable pitch.");
+    } else {
+        ui.label("Files of one note are velocity layers, quietest first. Accept replaces the model with them; Add puts them all into it, or none if a note and velocity is there already. One undo step each.");
+    }
 }

@@ -106,6 +106,15 @@ fn instrument_analysis_controls_require_explicit_acceptance_and_reject_stale_pro
     h.state_mut().projects.session_mut(None).unwrap().sync_instrument_analysis();
     h.run_steps(4);
     assert!(h.query_by_label("Add to model (1)").is_some());
+    // Fit folder… asks for the folder with the system's dialog before anything runs.
+    h.get_by_label("Fit folder…").focus();
+    h.step();
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    assert_eq!(
+        h.state_mut().take_pick_request().map(|request| request.field),
+        Some(crate::interaction::pick::PickField::InstrumentFitFolder)
+    );
     h.state_mut().run(&Action::new("edit.undo", json!({})));
     h.run_steps(4);
     assert_eq!(h.state().session().unwrap().project(), &fit_before);
