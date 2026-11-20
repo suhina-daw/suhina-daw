@@ -494,6 +494,13 @@ impl FmSynth {
         let Some(slot) = self.slots.get_mut(index) else { return };
         // A voice taken over while it sounds keeps its phases, so the change does not click.
         let was_sounding = slot.live && slot.note.is_playing();
+        // A voice holds one occurrence and one retiring tail. Taking it twice before the
+        // tail retired ends the older tail now, so its completion is never lost.
+        if slot.instance.is_some()
+            && let Some(older) = slot.retiring_instance
+        {
+            self.lifetimes.finish(older);
+        }
         *slot = Slot {
             instance: identified.map(|(_, id, _)| id),
             retiring_instance: slot.instance.or(slot.retiring_instance),

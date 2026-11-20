@@ -483,8 +483,10 @@ private voice graphs and smaller playback/envelope/granular nodes are specified 
 The shared runtime accepts identified native notes as described in [MPE](mpe.md). Each
 occurrence owns its pitch, pressure and timbre; repeated pitches do not release one another.
 Pressure adds up to 6 dB without muting a neutral note, and timbre shifts the enabled voice
-filter by ±2 octaves. Pitch is applied at the next processing sample. Native voice exhaustion
-rejects a new occurrence atomically, and completion is retained until the host drains it.
+filter by ±2 octaves. Pitch is applied at the next processing sample. When every voice is busy,
+a new occurrence takes the next voice in turn, as an ordinary note does; the taken occurrence
+reports its completion after its crossfade. Admission is rejected only when retirement storage
+is full, and completion is retained until the host drains it.
 Ordinary MIDI retains its existing key/sustain and voice-stealing behavior.
 
 ## SDK graphs in projects

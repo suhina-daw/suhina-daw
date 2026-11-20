@@ -144,3 +144,73 @@ fn live_mpe_dispatch_and_fm_processing_allocate_and_free_nothing() {
     assert_eq!(allocation.count_total, 0);
     assert_eq!(allocation.count_current, 0);
 }
+
+/// A chain whose instrument has no identified-note capability (a MIDI effect in front of the
+/// track's implicit tones), so it plays identified input through ordinary-note compatibility.
+fn compatibility_setup() -> (Renderer, crate::Controller, crate::LiveSender) {
+    let project = project(Vec::new(), 1., vec![device("pitch", &[])]);
+    let mut renderer = Renderer::stopped(&project, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    let live = controller.take_live_input().unwrap();
+    controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+    (renderer, controller, live)
+}
+
+fn peak(out: &[f32]) -> f32 {
+    out.iter().fold(0.0, |m, s| m.max(s.abs()))
+}
+
+#[test]
+fn live_mpe_reclaiming_a_released_occurrence_keeps_a_newer_ordinary_note_on_that_key() {
+    // The MIDI input chokes its oldest released occurrence before reusing its slot. On an
+    // ordinary-compatibility chain that occurrence's off was already sent; the choke must not
+    // become a second key-wide off that ends the note now holding the same key.
+    for (control, choke_released) in [(false, true), (true, false)] {
+        let (mut renderer, _controller, mut live) = compatibility_setup();
+        assert!(live.send(instance(1, on(60))));
+        blocks(&mut renderer, 2, 256);
+        assert!(live.send(instance(1, NoteInstanceEvent::Off { key: 60, velocity: 0. })));
+        blocks(&mut renderer, 2, 256);
+        assert!(live.send(instance(2, on(60))));
+        let held = peak(&blocks(&mut renderer, 4, 256));
+        if choke_released {
+            assert!(live.send(instance(1, NoteInstanceEvent::Choke { key: 60 })));
+        }
+        if control {
+            // Control: the held note's own off still reaches the compatibility instrument.
+            assert!(live.send(instance(2, NoteInstanceEvent::Off { key: 60, velocity: 0. })));
+        }
+        blocks(&mut renderer, 40, 256);
+        let after = peak(&blocks(&mut renderer, 4, 256));
+        println!("control={control} held={held} after={after}");
+        assert!(held > 1e-3, "the second note sounds before the choke");
+        if control {
+            assert!(after < 1e-6, "its own off releases the held note");
+        } else {
+            assert!(after > held * 0.5, "a stale choke left the held note sounding");
+        }
+    }
+}
+
+#[test]
+fn live_mpe_records_one_release_per_occurrence() {
+    let (mut renderer, mut controller, mut live) = setup();
+    let mut recorder = controller.take_recorder().unwrap();
+    controller.send(LaunchCommand::Play).unwrap();
+    controller.send(LaunchCommand::SetRecording { on: true }).unwrap();
+    blocks(&mut renderer, 2, 256);
+    assert!(live.send(instance(1, on(60))));
+    assert!(live.send(instance(1, NoteInstanceEvent::Off { key: 60, velocity: 0. })));
+    assert!(live.send(instance(2, on(60))));
+    // Reclaiming the released occurrence records nothing; a choke of a held one is its release.
+    assert!(live.send(instance(1, NoteInstanceEvent::Choke { key: 60 })));
+    assert!(live.send(instance(3, on(64))));
+    assert!(live.send(instance(3, NoteInstanceEvent::Choke { key: 64 })));
+    blocks(&mut renderer, 4, 256);
+    let mut recorded = Vec::new();
+    while let Some(note) = recorder.next_note() {
+        recorded.push((note.key, note.velocity.is_some()));
+    }
+    println!("recorded={recorded:?}");
+    assert_eq!(recorded, [(60, true), (60, false), (60, true), (64, true), (64, false)]);
+}

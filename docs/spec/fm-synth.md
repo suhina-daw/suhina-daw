@@ -157,8 +157,11 @@ Live per-note expression follows [MPE](mpe.md): separate runtime occurrences ret
 own pitch, pressure and timbre, including equal-key notes and released tails. Neutral
 pressure preserves existing patch level; pressure adds up to 6 dB and feeds the pressure
 modulation source. Timbre moves an enabled per-voice filter by ±2 octaves; it has no effect
-when that filter is off. Native occurrence admission rejects a new note when the configured
-voice budget or reserved retirement storage is full. Ordinary note allocation is unchanged.
+when that filter is off. When every voice is busy, a new native occurrence takes a voice as an
+ordinary note does: a silent one, else the released voice that started first, else the voice
+that started first. The taken occurrence still reports its completion once its last computed
+quantum has played. Admission is rejected only when reserved retirement storage is full.
+Ordinary note allocation is unchanged.
 The existing fixed 64-frame synthesis/control quantum remains, independent of host block size.
 
 ## Randomizer

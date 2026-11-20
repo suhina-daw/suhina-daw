@@ -143,3 +143,31 @@ fn mpe_sample_events_processing_and_retirement_allocate_and_free_nothing() {
     assert_eq!(counted.count_total, 0);
     assert_eq!(counted.bytes_total, 0);
 }
+
+#[test]
+fn mpe_sample_full_voice_pool_takes_a_voice_and_still_retires_every_id() {
+    let mut sampler = sampler();
+    sampler.set_param(PARAMS.iter().position(|p| p.id == "poly").unwrap(), 2.);
+    for serial in 1..=2 {
+        NoteInstanceDevice::event(&mut sampler, id(serial), on(60 + serial as u8)).unwrap();
+    }
+    // Both voices are held: the third note takes the next voice in turn, as an ordinary note
+    // does, instead of being refused.
+    NoteInstanceDevice::event(&mut sampler, id(3), on(67)).unwrap();
+    let held: Vec<_> = sampler.voices.iter().take(2).map(|v| (v.instance, v.retiring_instance)).collect();
+    println!("voices={held:?}");
+    assert!(held.contains(&(Some(id(3)), Some(id(1)))), "{held:?}");
+    let mut buffer = vec![0.; 512];
+    sampler.process(&ProcessContext::default(), &mut buffer);
+    assert!(buffer.iter().any(|s| s.abs() > 1e-4), "the new note sounds");
+    let mut finished = [None; 8];
+    let first = NoteInstanceDevice::drain_finished(&mut sampler, &mut finished);
+    assert_eq!(&finished[..first], &[Some(id(1))], "the taken occurrence retires after its fade");
+    for serial in [2, 3] {
+        NoteInstanceDevice::event(&mut sampler, id(serial), NoteInstanceEvent::Choke { key: 60 }).unwrap();
+    }
+    let rest = NoteInstanceDevice::drain_finished(&mut sampler, &mut finished);
+    let mut rest: Vec<_> = finished[..rest].to_vec();
+    rest.sort_by_key(|id| id.map(|id| id.serial()));
+    assert_eq!(rest, [Some(id(2)), Some(id(3))]);
+}

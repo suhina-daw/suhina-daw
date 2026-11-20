@@ -388,7 +388,7 @@ impl NativeNode for Group {
                 };
                 self.age = self.age.saturating_add(1);
                 let voice = &mut self.voices[index];
-                voice.retiring_instance = voice.instance.take().or(voice.retiring_instance);
+                Self::retire_taken(&mut self.lifetimes, voice);
                 voice.fade_from = if voice.active { voice.last } else { [0.; 2] };
                 voice.fade = if voice.active { 64 } else { 0 };
                 voice.graph.reset();
@@ -496,6 +496,22 @@ impl NativeNode for Group {
     }
 }
 
+impl Group {
+    /// A new note takes `voice`: its occurrence becomes the retiring tail. A voice keeps one
+    /// retiring tail, so an older tail that has not retired yet is finished now.
+    fn retire_taken(lifetimes: &mut NoteLifetimes<64>, voice: &mut Voice) {
+        if let Some(taken) = voice.instance.take() {
+            if let Some(older) = voice.retiring_instance.replace(taken) {
+                lifetimes.finish(older);
+            }
+        } else if !voice.active
+            && let Some(older) = voice.retiring_instance.take()
+        {
+            lifetimes.finish(older);
+        }
+    }
+}
+
 impl NoteInstanceDevice for Group {
     fn event(&mut self, id: NoteInstanceId, event: NoteInstanceEvent) -> Result<(), NoteInstanceDispatchError> {
         let event = event.validated().ok_or(NoteInstanceDispatchError::InvalidEvent)?;
@@ -503,18 +519,28 @@ impl NoteInstanceDevice for Group {
             if self.lifetimes.contains(id) {
                 return Err(NoteInstanceDispatchError::AlreadyActive);
             }
-            let index = self.voices.iter().position(|v| !v.active).ok_or(NoteInstanceDispatchError::Capacity)?;
+            // An idle voice, else the oldest, as an ordinary note takes one. A taken occurrence
+            // moves to the voice's retiring tail and is finished once its fade has played.
+            let index = self
+                .voices
+                .iter()
+                .position(|v| !v.active)
+                .or_else(|| self.voices.iter().enumerate().min_by_key(|(_, v)| v.age).map(|(i, _)| i))
+                .ok_or(NoteInstanceDispatchError::Capacity)?;
             self.lifetimes.admit(id)?;
-            let voice = &mut self.voices[index];
+            let Some(voice) = self.voices.get_mut(index) else {
+                self.lifetimes.finish(id);
+                return Err(NoteInstanceDispatchError::Capacity);
+            };
+            Self::retire_taken(&mut self.lifetimes, voice);
+            voice.fade_from = if voice.active { voice.last } else { [0.; 2] };
+            voice.fade = if voice.active { 64 } else { 0 };
             voice.graph.reset();
             voice.instance = Some(id);
-            voice.retiring_instance = None;
             voice.key = key;
             voice.active = true;
             voice.held = true;
             voice.pending = false;
-            voice.last = [0.; 2];
-            voice.fade = 0;
             self.age = self.age.saturating_add(1);
             voice.age = self.age;
             for (number, &value) in self.controllers.iter().enumerate() {

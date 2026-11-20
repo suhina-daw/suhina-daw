@@ -5,6 +5,24 @@
 use super::*;
 
 impl FmSynth {
+    /// The voice an identified note takes: a silent one, else the released voice that started
+    /// first, else the voice that started first, as ordinary notes take one. A taken
+    /// occurrence moves to the voice's retiring tail and still reports its completion.
+    fn identified_voice(&self) -> Option<usize> {
+        let first_started = |wanted: &dyn Fn(&Slot) -> bool| {
+            self.slots
+                .iter()
+                .take(self.voices)
+                .enumerate()
+                .filter(|(_, s)| wanted(s))
+                .min_by_key(|(_, s)| s.seq)
+                .map(|(i, _)| i)
+        };
+        first_started(&|s| s.instance.is_none() && (!s.live || !s.note.is_playing()))
+            .or_else(|| first_started(&|s| !s.down && !s.sustained))
+            .or_else(|| first_started(&|_| true))
+    }
+
     pub(super) fn finish_instances(&mut self) {
         // A completed compute quantum may still have audible cached samples. Retire only
         // after the host consumed those samples, including both detuned layers.
@@ -32,12 +50,7 @@ impl NoteInstanceDevice for FmSynth {
             if self.lifetimes.contains(id) {
                 return Err(NoteInstanceDispatchError::AlreadyActive);
             }
-            let index = self
-                .slots
-                .iter()
-                .take(self.voices)
-                .position(|s| s.instance.is_none() && (!s.live || !s.note.is_playing()))
-                .ok_or(NoteInstanceDispatchError::Capacity)?;
+            let index = self.identified_voice().ok_or(NoteInstanceDispatchError::Capacity)?;
             self.lifetimes.admit(id)?;
             self.key_down_at(key, seven_bit(velocity), Some((index, id, expression)));
             return Ok(());

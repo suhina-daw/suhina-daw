@@ -845,9 +845,12 @@ impl Live {
         }) {
             chain.live_instance(frame, id, event);
         }
+        // A take keeps one open note per key: only an occurrence's first termination is its
+        // release. A later choke of its tail would close a newer note on the same key.
+        let released = self.instances[index].is_some_and(|note| note.released);
         let recorded = match event {
             NoteInstanceEvent::On { key, velocity, .. } => Some((key, Some(velocity))),
-            NoteInstanceEvent::Off { key, .. } | NoteInstanceEvent::Choke { key } => Some((key, None)),
+            NoteInstanceEvent::Off { key, .. } | NoteInstanceEvent::Choke { key } if !released => Some((key, None)),
             _ => None,
         };
         if let Some((key, velocity)) = recorded {

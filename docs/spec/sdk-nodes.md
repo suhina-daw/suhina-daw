@@ -335,8 +335,9 @@ A coarse Sampler consumes 32 of that capacity; a TimeStretchPlayer consumes one.
 A direct single VoiceGroup instrument can opt into the shared identified-note endpoint
 ([MPE](mpe.md)). Equal-key occurrences use separate voices, initial expression reaches the
 private graph before its first sample, and targeted off/choke never changes another ID.
-Native admission rejects a new occurrence at its voice or retirement limit; the ordinary
-stealing policy remains unchanged. Final completion is reported after VoiceOutput ends or
+At its voice limit a new occurrence takes the oldest voice, as an ordinary note does, and the
+taken occurrence is reported finished after its 64-frame fade; admission is rejected only at the
+retirement limit. Final completion is reported after VoiceOutput ends or
 the occurrence is choked. The private body currently supports VoiceInput, MidiController,
 PitchBend, Pressure, VoiceOutput, AD/ADSR and ordinary signal nodes, with direct event input.
 Other native consumers, including a private Sampler/SamplerAsset or Component, and transformed

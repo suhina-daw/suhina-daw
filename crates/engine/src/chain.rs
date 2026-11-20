@@ -1067,15 +1067,12 @@ impl Chain {
             else {
                 return;
             };
-            if let Some(old) = self.live_instances[index].take() {
-                self.push(
-                    frame,
-                    if old.native {
-                        NoteEvent::Instance { id: old.id, event: NoteInstanceEvent::Choke { key: old.key } }
-                    } else {
-                        NoteEvent::Off { key: old.key, velocity: 0. }
-                    },
-                );
+            // Only released entries are reclaimed. An ordinary-compatibility note was already
+            // let go by its off; another key-wide off would release a newer note on that key.
+            if let Some(old) = self.live_instances[index].take()
+                && old.native
+            {
+                self.push(frame, NoteEvent::Instance { id: old.id, event: NoteInstanceEvent::Choke { key: old.key } });
             }
             let mut native = false;
             for slot in &mut self.slots {
@@ -1102,7 +1099,9 @@ impl Chain {
         };
         if note.native {
             self.push(frame, NoteEvent::Instance { id, event });
-        } else {
+        } else if !note.released {
+            // Ordinary notes are addressed by key: once this occurrence's off has been sent,
+            // a later off or choke for it would end whichever note now holds that key.
             match event {
                 NoteInstanceEvent::On { key, velocity, .. } => self.push(frame, NoteEvent::On { key, velocity }),
                 NoteInstanceEvent::Off { key, velocity } => self.push(frame, NoteEvent::Off { key, velocity }),

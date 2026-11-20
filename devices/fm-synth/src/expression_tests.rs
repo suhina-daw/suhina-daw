@@ -67,7 +67,7 @@ fn mpe_same_key_occurrences_release_and_retire_independently() {
 }
 
 #[test]
-fn mpe_native_zero_velocity_remains_an_on_and_rejected_capacity_owns_no_id() {
+fn mpe_native_zero_velocity_remains_an_on_and_a_second_note_takes_the_only_voice() {
     let mut synth = FmSynth::new();
     synth.set_param(params::VOICE_COUNT, 1.);
     let event =
@@ -75,8 +75,13 @@ fn mpe_native_zero_velocity_remains_an_on_and_rejected_capacity_owns_no_id() {
     NoteInstanceDevice::event(&mut synth, id(1), event).unwrap();
     assert!(synth.slots[0].down);
     assert_eq!(synth.slots[0].expression.value(NoteExpressionKind::Pitch), 12.);
-    assert_eq!(NoteInstanceDevice::event(&mut synth, id(2), on(67)), Err(NoteInstanceDispatchError::Capacity));
-    assert!(!synth.lifetimes.contains(id(2)));
+    // One voice: the second note takes it with its own expression, and the first occurrence
+    // keeps its identity as the voice's retiring tail until its completion is reported.
+    NoteInstanceDevice::event(&mut synth, id(2), on(67)).unwrap();
+    assert_eq!(synth.slots[0].instance, Some(id(2)));
+    assert_eq!(synth.slots[0].retiring_instance, Some(id(1)));
+    assert_eq!(synth.slots[0].expression.value(NoteExpressionKind::Pitch), 0.);
+    assert!(synth.lifetimes.contains(id(1)) && synth.lifetimes.contains(id(2)));
 }
 
 #[test]
@@ -98,4 +103,33 @@ fn mpe_pressure_is_audible_without_muting_neutral_notes() {
     let energy = |values: &[f32]| values.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>();
     assert!(energy(&a) > 1e-6);
     assert!(energy(&b) > energy(&a) * 1.2);
+}
+
+#[test]
+fn mpe_a_full_voice_pool_takes_the_oldest_voice_and_still_retires_every_id() {
+    let mut synth = FmSynth::new();
+    synth.set_param(params::VOICE_COUNT, 2.);
+    for serial in 1..=2 {
+        NoteInstanceDevice::event(&mut synth, id(serial), on(60 + serial as u8)).unwrap();
+    }
+    // Both voices are held: the third note takes the one that started first, as an ordinary
+    // note does, instead of being refused.
+    NoteInstanceDevice::event(&mut synth, id(3), on(67)).unwrap();
+    let instances: Vec<_> = synth.slots.iter().take(2).map(|s| s.instance).collect();
+    println!("instances={instances:?}");
+    assert_eq!(instances, [Some(id(3)), Some(id(2))]);
+    let mut buffer = vec![0.; 256];
+    synth.process(&ProcessContext::default(), &mut buffer);
+    assert!(buffer.iter().any(|s| s.abs() > 1e-4), "the new note sounds");
+    let mut finished = [None; 8];
+    let first = NoteInstanceDevice::drain_finished(&mut synth, &mut finished);
+    assert_eq!(&finished[..first], &[Some(id(1))], "the taken occurrence retires once its quantum played");
+    for serial in [2, 3] {
+        NoteInstanceDevice::event(&mut synth, id(serial), NoteInstanceEvent::Choke { key: 60 }).unwrap();
+    }
+    synth.process(&ProcessContext::default(), &mut buffer);
+    let rest = NoteInstanceDevice::drain_finished(&mut synth, &mut finished);
+    let mut rest: Vec<_> = finished[..rest].to_vec();
+    rest.sort_by_key(|id| id.map(|id| id.serial()));
+    assert_eq!(rest, [Some(id(2)), Some(id(3))]);
 }

@@ -137,7 +137,10 @@ conservative protocol history. A live queue overflow sets an out-of-band atomic 
 the renderer discards the incomplete queue batch and terminates its existing notes.
 Per-chain recipient entries record delivery intent, not a promise of device admission. A
 device-capacity rejection starts no voice and owes no completion; the bounded recipient
-entry remains until the matching release/reclamation. There is no reverse admission channel
+entry remains until the matching release/reclamation. On an ordinary-compatibility chain only
+an occurrence's first termination becomes a key-wide off: reclaiming an already released entry
+sends nothing there, so it cannot end a newer note on the same key. Recording likewise writes
+one release per occurrence. There is no reverse admission channel
 to the physical input in this slice. Timestamped expression floods coalesce only the same
 ID/dimension; a new expression with no reserved control slot is dropped rather than being
 played before its note-on. Exhausting the note timeline invokes the same panic recovery.

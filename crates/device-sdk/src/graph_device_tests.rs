@@ -89,6 +89,32 @@ fn mpe_voice_on_preserves_shared_controller_latches_and_its_own_expression() {
 }
 
 #[test]
+fn mpe_voice_group_with_every_voice_held_takes_the_oldest_and_retires_it_after_the_fade() {
+    use suhina_device_api::{NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    let graph = expression_graph("pitch");
+    let mut device = audio(&graph);
+    let ids: Vec<_> = (1..=3).map(|serial| NoteInstanceId::from_parts(5, serial).unwrap()).collect();
+    for (id, pitch) in ids.iter().zip([12., -4., 5.]) {
+        let expression = NoteExpressionState::new(pitch, 0., 0.5).unwrap();
+        device.note_instances().unwrap().event(*id, E::On { key: 60, velocity: 1., expression }).unwrap();
+    }
+    // The third note took the oldest voice: after its 64-frame fade only the two newest sound.
+    let mut buffer = [0.; 128];
+    device.process(&ProcessContext::default(), &mut buffer);
+    device.process(&ProcessContext::default(), &mut buffer);
+    println!("after fade: {:?}", &buffer[..4]);
+    assert!(buffer.iter().all(|sample| (*sample - 1.).abs() < 1e-6), "{buffer:?}");
+    let mut finished = [None; 4];
+    assert_eq!(device.note_instances().unwrap().drain_finished(&mut finished), 1);
+    assert_eq!(finished[0], Some(ids[0]));
+    device.reset();
+    let rest = device.note_instances().unwrap().drain_finished(&mut finished);
+    let mut rest: Vec<_> = finished[..rest].to_vec();
+    rest.sort_by_key(|id| id.map(|id| id.serial()));
+    assert_eq!(rest, [Some(ids[1]), Some(ids[2])]);
+}
+
+#[test]
 fn mpe_capability_rejects_private_sample_lifetimes_including_components() {
     use crate::sample_resource::{PreparedSamples, SampleAsset};
     use std::sync::Arc;
