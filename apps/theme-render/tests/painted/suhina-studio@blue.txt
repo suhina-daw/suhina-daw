@@ -9,9 +9,9 @@ browser-plug-ins suhina-studio@blue 1ffbb4d6fcff7213
 browser-search suhina-studio@blue 5328defcd1d6c010
 clip-audio suhina-studio@blue c9635e52f2964bc7
 clip-midi suhina-studio@blue af27da14a880a3eb
-colour-picker suhina-studio@blue dc3f70b0832bcd17
-colour-picker-field suhina-studio@blue 8773d12eade53851
-colour-picker-wheel suhina-studio@blue 6ebe3be63bb03b40
+colour-picker suhina-studio@blue 3b13c11a16f4cf28
+colour-picker-field suhina-studio@blue d48bc6ee0e1a64e5
+colour-picker-wheel suhina-studio@blue 81684e241f5a4f8e
 context-menu suhina-studio@blue 28acb954588673b3
 control-bar-toggles suhina-studio@blue 1b8a31f7b7a284d8
 count-in-menu suhina-studio@blue 9eccc5cfe16bdb59
@@ -37,7 +37,7 @@ launcher-hover suhina-studio@blue a925eb2f07027d22
 launcher-scrolled suhina-studio@blue c08b497350f77042
 launcher-selected suhina-studio@blue d4323d0328b0e22a
 launcher-toggles suhina-studio@blue fb1915812de64487
-menu suhina-studio@blue 56cf2edae01c2498
+menu suhina-studio@blue a312458ee167d36e
 missing-files suhina-studio@blue a5d12f7d4fbc7eda
 new-theme-dialog suhina-studio@blue fc504bd9ad1d0938
 piano-roll suhina-studio@blue 15efecbed3644d12

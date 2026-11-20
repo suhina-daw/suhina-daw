@@ -9,9 +9,9 @@ browser-plug-ins suhina-glass@midnight d2968b0c4b63b941
 browser-search suhina-glass@midnight 9d1880f7629f77f0
 clip-audio suhina-glass@midnight 94484af14248c22b
 clip-midi suhina-glass@midnight 666d75e0f6e21f63
-colour-picker suhina-glass@midnight 07a75ce86a591343
-colour-picker-field suhina-glass@midnight 192cb1a8b65dd85d
-colour-picker-wheel suhina-glass@midnight acf3b82ddb963010
+colour-picker suhina-glass@midnight d341392bad23ce8c
+colour-picker-field suhina-glass@midnight d5546b66b977dd01
+colour-picker-wheel suhina-glass@midnight 1f9ea70c4e70170a
 context-menu suhina-glass@midnight 1b0a39a11fdb4c4c
 control-bar-toggles suhina-glass@midnight 273248b9400c5e9d
 count-in-menu suhina-glass@midnight 577fa13fd8f16cbb
@@ -37,7 +37,7 @@ launcher-hover suhina-glass@midnight 673fd296634b8024
 launcher-scrolled suhina-glass@midnight 9df008b61cc0fe40
 launcher-selected suhina-glass@midnight 5788f0c2710b8f03
 launcher-toggles suhina-glass@midnight 9eedc9fc1cfcbf6f
-menu suhina-glass@midnight 408a16daaa655ef8
+menu suhina-glass@midnight ff552b9eab754f8a
 missing-files suhina-glass@midnight a8d714bc54a1a423
 new-theme-dialog suhina-glass@midnight 143e279ddf0e8f71
 piano-roll suhina-glass@midnight b781021a6093d51e

@@ -9,9 +9,9 @@ browser-plug-ins suhina-blocks c99399c3dd6d6339
 browser-search suhina-blocks a1314e8e143ed20b
 clip-audio suhina-blocks a9e144291d1ef6f6
 clip-midi suhina-blocks 443a1a340df7e040
-colour-picker suhina-blocks dfa89625a58db31e
-colour-picker-field suhina-blocks a29521f5f825ed6e
-colour-picker-wheel suhina-blocks 4615cb18cc2a313c
+colour-picker suhina-blocks a3871fb7cf24a6d8
+colour-picker-field suhina-blocks cae0c7875ccfcf01
+colour-picker-wheel suhina-blocks 835a8396e84a3931
 context-menu suhina-blocks b1492d178f2c78da
 control-bar-toggles suhina-blocks a23a7d4a69d08a92
 count-in-menu suhina-blocks 23111049d9babf16
@@ -37,7 +37,7 @@ launcher-hover suhina-blocks 19913a65f4512f46
 launcher-scrolled suhina-blocks f63ca8e92769c02e
 launcher-selected suhina-blocks b4dcdb612236f9cb
 launcher-toggles suhina-blocks 43b9b79f7e2afed9
-menu suhina-blocks a1892d01a33518d6
+menu suhina-blocks 98bd4189cc5ede64
 missing-files suhina-blocks 3a968f934c8a996f
 new-theme-dialog suhina-blocks 8afc4dad691ccd47
 piano-roll suhina-blocks 71bf11d3fd60b291

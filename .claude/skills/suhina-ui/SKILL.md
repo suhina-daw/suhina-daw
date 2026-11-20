@@ -76,6 +76,11 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   the sheet's padding, under the title row), and its buttons through `dialog::actions` (a
   `dialog-actions` row the sheet lays out; `Action::space()` splits it). Never add `PAD` around
   a dialog's contents: the padding is the theme's.
+- A view in a system window of its own (Settings, the color window, the sample map) is made with
+  `kit::own_window`: `builder` for its viewport (see-through, under the macOS title bar as the
+  main window is), `base` for `window`'s background under it, and `Entered::paint_root` for the
+  element that fills it (its background over the whole window, its padding; no border, corners,
+  shadow or blur). Never fill such a window with a colour of the view's own.
 - `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
   rects, `Status::Hint` for status-bar hints.
 - **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which

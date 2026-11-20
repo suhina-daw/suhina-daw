@@ -141,7 +141,7 @@ fn colour_tool_previews_selected_headers_and_restores_the_selection_appearance_o
             "selection remains visible as an outline"
         );
         let project = h.state().session().unwrap().project().clone();
-        h.get_by_label("Close window").click();
+        h.get_by_label_contains("Close Track colour").click();
         h.run();
         assert!(h.output().shapes.iter().any(|shape| covers(shape, selection.custom)), "selection fill returns");
         assert_eq!(h.state().settings().view.selection, selection);
@@ -387,7 +387,7 @@ fn closing_keeps_the_applied_colour_and_reopening_preserves_exact_values() {
     h.get_by_label("Palette #2fd9c4").click();
     h.run();
     let chosen = h.state().session().unwrap().project().clone();
-    h.get_by_label("Close window").click();
+    h.get_by_label_contains("Close Track colour").click();
     h.run();
     assert!(h.query_by_label("Hex colour").is_none());
     assert_eq!(h.state().session().unwrap().project(), &chosen);

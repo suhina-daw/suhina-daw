@@ -1040,6 +1040,25 @@ dialog-actions { justify-content: center; gap: 12px; }
   Suhina's themes `padding: 8px`, buttons 4 points apart, and no padding on `missing-files`, whose
   own title and status bars run to its edges.
 
+### Windows of their own
+
+Settings, the track colour window and the sample map can open in a window of their own. Each is
+made like the main window: its base is `window`'s background, so a see-through theme shows the
+desktop there too, and on macOS its content runs under the system's title bar. The element that
+fills such a window (`settings`, `dialog[name="color-picker"]`) is its root, as a page's root
+element is in CSS: its `background-color` and `background-image` cover the whole window, title bar
+included, and its `padding` keeps what it holds in from the window's edge. Its `border-*`,
+`border-radius`, `box-shadow` and `backdrop-filter` are not drawn there: the system draws the
+window's edge and its corners, and nothing of Suhina's is behind it to blur. So one rule for
+`dialog` styles the colour window over the main window and in its own:
+
+```css
+dialog { background-color: rgb(255 255 255 / 0.6); border-radius: 12px; backdrop-filter: blur(24px); }
+```
+
+Over the main window it is a rounded, blurred pane; in its own window it is that window's
+see-through background over `window`'s.
+
 ### How an element is painted: padding, overflow and outline
 
 Every element with a box paints in one order, as CSS does: its outer `box-shadow`, its

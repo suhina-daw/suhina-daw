@@ -9,9 +9,9 @@ browser-plug-ins nord 404bdc09897649a3
 browser-search nord f71c1b2b702580b4
 clip-audio nord d60e60f3ec437491
 clip-midi nord 40db53eb797606c7
-colour-picker nord ffff41dbd37b8f6a
-colour-picker-field nord 37921d79c9a2e009
-colour-picker-wheel nord bf899b23984e79a1
+colour-picker nord 2bf94341ac5b7b2d
+colour-picker-field nord 28ffa248c0c51a77
+colour-picker-wheel nord fac18885d05fcf3f
 context-menu nord de2383c5da92bf0e
 control-bar-toggles nord 321aacb132287ce0
 count-in-menu nord 241f4011f871a2c8
@@ -37,7 +37,7 @@ launcher-hover nord 2a05de8d42670d89
 launcher-scrolled nord f7294eea01dc01da
 launcher-selected nord adbd7f161576f824
 launcher-toggles nord 51a363dea3b274b3
-menu nord 77da84c5bc0402b2
+menu nord fb4ee25120c869fc
 missing-files nord f83438ef94d1b5a8
 new-theme-dialog nord a582c4af1a2ec3e3
 piano-roll nord 647137a40c94b3a1

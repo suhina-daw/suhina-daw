@@ -9,9 +9,9 @@ browser-plug-ins catppuccin-latte f37e5e81a3afe8e2
 browser-search catppuccin-latte 594cd8430ff544f5
 clip-audio catppuccin-latte 4537d5fe42ec4059
 clip-midi catppuccin-latte 5b42fdca6dbfbd62
-colour-picker catppuccin-latte cd6d060096a45b0a
-colour-picker-field catppuccin-latte c2bda3cc17d8e6be
-colour-picker-wheel catppuccin-latte fe02ceffb55de90d
+colour-picker catppuccin-latte 78339ca2ce6304b1
+colour-picker-field catppuccin-latte 5a69387027994f48
+colour-picker-wheel catppuccin-latte c6a6741a4ea819b3
 context-menu catppuccin-latte 18c922351f47729c
 control-bar-toggles catppuccin-latte ffd7c6c8598df4de
 count-in-menu catppuccin-latte ad2c7b097c795225
@@ -37,7 +37,7 @@ launcher-hover catppuccin-latte 1eb06a6a3b331edd
 launcher-scrolled catppuccin-latte fbd0193157b3796f
 launcher-selected catppuccin-latte 08d6597023d34e10
 launcher-toggles catppuccin-latte 1f734f3540f43181
-menu catppuccin-latte 1e8fd9e923882c23
+menu catppuccin-latte 11a669cad6b8496b
 missing-files catppuccin-latte 50fb4ebb35872e74
 new-theme-dialog catppuccin-latte eab52c9cba162822
 piano-roll catppuccin-latte 1f9b7a7a3cd9c0ed

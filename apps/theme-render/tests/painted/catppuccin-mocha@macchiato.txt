@@ -9,9 +9,9 @@ browser-plug-ins catppuccin-mocha@macchiato fd30d4de2df78acc
 browser-search catppuccin-mocha@macchiato f118b8dae729d6f2
 clip-audio catppuccin-mocha@macchiato 1d64d18d552d8f28
 clip-midi catppuccin-mocha@macchiato a39f5425a31ec88b
-colour-picker catppuccin-mocha@macchiato c70bc303e4e9f44f
-colour-picker-field catppuccin-mocha@macchiato 7f38a134f4cf17ed
-colour-picker-wheel catppuccin-mocha@macchiato 9fa2ce6066438620
+colour-picker catppuccin-mocha@macchiato 8a648f7d459b313c
+colour-picker-field catppuccin-mocha@macchiato b5bb8de0948ae0e7
+colour-picker-wheel catppuccin-mocha@macchiato 6d54bb235fc109d6
 context-menu catppuccin-mocha@macchiato ed183cc5c975d68f
 control-bar-toggles catppuccin-mocha@macchiato 44f7eb7c6ff14a04
 count-in-menu catppuccin-mocha@macchiato 7ee6cf3492c3c409
@@ -37,7 +37,7 @@ launcher-hover catppuccin-mocha@macchiato 5c6af94fefbc1393
 launcher-scrolled catppuccin-mocha@macchiato 1d6d9e1beacbf68c
 launcher-selected catppuccin-mocha@macchiato 7b9181ae44bc6efd
 launcher-toggles catppuccin-mocha@macchiato 38564569ecba937f
-menu catppuccin-mocha@macchiato 59c61ec0de1dc416
+menu catppuccin-mocha@macchiato 36de3c095853a980
 missing-files catppuccin-mocha@macchiato 8d16a5ffa27d49ad
 new-theme-dialog catppuccin-mocha@macchiato a1c7664f5c11819c
 piano-roll catppuccin-mocha@macchiato 1c8dd219bb3198d2

@@ -120,41 +120,29 @@ fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
     }
 }
 
-/// The contents of an open menu of the bar, or of one of its submenus: its layer is the bar's menu
-/// (blurred as `menu` says), and the menu paints itself.
+/// The contents of an open menu of the bar, or of one of its submenus: its layer is the bar's menu,
+/// framed and blurred as `menu` is where it opens.
 fn open_menu<R>(ui: &mut Ui, content: impl FnOnce(&mut Ui) -> R) -> R {
-    // Its layer is the bar's menu: blurred as `menu` says, and framed by the menu itself.
     crate::kit::floating::declare(ui.ctx(), ui.layer_id().id, crate::kit::floating::Kind::Menu);
-    // `menu` styles the open menu: its background, text colour, corner radius and font size.
+    // `menu` styles the open menu: its box, text colour, corner radius and font size.
     let menu = crate::kit::element::MENU.enter();
+    // Its box takes the place of egui's frame once the frame is painted (`liquid`), as a
+    // pop-up's does: one box, `menu`'s as it is here, in the bar.
+    if let Some(style) = menu.style() {
+        crate::kit::floating::style_in_place(ui.ctx(), ui.layer_id().id, style);
+    }
     // The menu opens over the window, not the bar: text it inherits from the bar (Suhina
     // Sheet's white on green) must still read on the menu's own background.
-    // Its background from whichever sheet gives it, the user-agent's included; egui's window fill
-    // where none does.
     let background = menu
         .style()
         .filter(|style| style.authored.background || style.background.a() > 0)
         .map_or(ui.visuals().window_fill, |style| style.background);
     let ink = menu.readable_on(background);
-    // The background covers the menu as it was laid out last frame: its own rect, never the
-    // layer's clip, which is the whole window.
-    let id = ui.scope_id().with("menu-rect");
-    if let Some(rect) = ui.ctx().data(|d| d.get_temp::<egui::Rect>(id)) {
-        // egui's frame under it is filled already where its fill is the menu's: a see-through fill
-        // painted twice would read twice as solid.
-        let fill = if ui.visuals().window_fill == background { egui::Color32::TRANSPARENT } else { background };
-        let native = crate::kit::element::Native { fill, ..Default::default() };
-        menu.paint_with(ui.painter(), rect, native);
-    }
     let mut styled = menu.ui(ui);
     if let Some(ink) = ink {
         styled.visuals_mut().override_text_color = Some(ink);
     }
-    let inner = content(&mut styled);
-    drop(styled);
-    let rect = ui.min_rect() + ui.style().spacing.menu_margin;
-    ui.ctx().data_mut(|d| d.insert_temp(id, rect));
-    inner
+    content(&mut styled)
 }
 
 /// A menu of the bar that opens when the pointer moves onto it while another is open.
@@ -221,42 +209,49 @@ mod tests {
         assert!(biggest < 1280.0 * 800.0 / 4.0, "only the menu's area: {biggest}");
     }
 
-    /// A submenu is `open_menu` on a layer of its own, as the bar's menu is: what `menu` gives
-    /// the one it gives the other, an outline included.
+    /// An open menu of the bar is one box, `menu`'s, in place of egui's frame: its background
+    /// painted once, however see-through, and its outline.
     #[test]
-    fn open_menu_in_a_layer_of_its_own_paints_the_menu_s_background_and_outline() {
+    fn an_open_menu_is_one_box_the_menu_s() {
         let ctx = egui::Context::default();
         crate::kit::skin::configure(&crate::kit::skin::Skin {
-            css: Some(std::sync::Arc::from("menu { background-color: #FF0000; outline: 2px solid #00FF00; }")),
+            css: Some(std::sync::Arc::from(
+                "menu { background-color: #FF000080; outline: 2px solid #00FF00; backdrop-filter: none; }",
+            )),
             ..Default::default()
         });
-        let (mut background, mut outline) = (false, false);
-        for _ in 0..5 {
+        let (mut backgrounds, mut outline) = (0, false);
+        for frame in 0..5 {
             let mut output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                    time: Some(f64::from(frame)),
                     ..Default::default()
                 },
                 |ui| {
                     crate::kit::native_css::begin_frame(ui);
                     let _frame = crate::kit::native_css::frame(ui);
-                    crate::kit::floating::area(ui.ctx(), egui::Id::unique("submenu"), crate::kit::floating::Kind::Menu)
-                        .order(egui::Order::Foreground)
-                        .show(ui.ctx(), |ui| {
-                            open_menu(ui, |ui| ui.label("Item"));
-                        });
+                    crate::kit::liquid::begin_frame(ui.ctx(), Default::default());
+                    let shown = bar_menu(ui, "Options", |ui| {
+                        let _ = ui.button("Settings…");
+                    });
+                    if frame == 0 {
+                        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&shown.response));
+                    }
+                    crate::kit::liquid::finish_backdrops(ui.ctx());
                 },
             );
             output.textures_delta.clear();
+            (backgrounds, outline) = (0, false);
             for shape in &output.shapes {
                 if let egui::Shape::Rect(rect) = &shape.shape {
-                    background |= matches!(rect.fill.to_array(), [r, 0, 0, _] if r > 0);
+                    backgrounds += usize::from(matches!(rect.fill.to_array(), [r, 0, 0, _] if r > 0));
                     outline |= matches!(rect.stroke.color.to_array(), [0, g, 0, _] if g > 0);
                 }
             }
         }
         crate::kit::skin::configure(&crate::kit::skin::Skin::default());
-        assert!(background, "the menu's background");
+        assert_eq!(backgrounds, 1, "the menu's background, once");
         assert!(outline, "the menu's outline");
     }
 

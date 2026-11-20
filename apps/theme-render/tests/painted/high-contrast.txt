@@ -9,9 +9,9 @@ browser-plug-ins high-contrast da1fd90912ef1719
 browser-search high-contrast adc2c6802f39b620
 clip-audio high-contrast 912de111dc8716e1
 clip-midi high-contrast f8cc48792fe10b87
-colour-picker high-contrast ed0f2361223f1f01
-colour-picker-field high-contrast b76c40774574dd96
-colour-picker-wheel high-contrast 3c4e7b6e0a232088
+colour-picker high-contrast 1b13a7d9a0008bb8
+colour-picker-field high-contrast ca89ec34d76840c8
+colour-picker-wheel high-contrast dae78864bf696552
 context-menu high-contrast 0720b5495887b892
 control-bar-toggles high-contrast f4add764345e81ee
 count-in-menu high-contrast 9fa2df76fb4e90fc
@@ -37,7 +37,7 @@ launcher-hover high-contrast 228d4a146993df69
 launcher-scrolled high-contrast e13c2b23464051c7
 launcher-selected high-contrast e46363cab8336338
 launcher-toggles high-contrast bca0d1f166bc674b
-menu high-contrast 32a410bcf371f953
+menu high-contrast 5cc0e4dd936ef9b7
 missing-files high-contrast 012cecbf28502d50
 new-theme-dialog high-contrast d71766914747b8d7
 piano-roll high-contrast 72526e14053816f7

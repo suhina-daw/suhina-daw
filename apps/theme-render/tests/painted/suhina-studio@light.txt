@@ -9,9 +9,9 @@ browser-plug-ins suhina-studio@light b6504fe625b24bff
 browser-search suhina-studio@light 1f8e741dabcea915
 clip-audio suhina-studio@light 10a31e19e7dec034
 clip-midi suhina-studio@light 5aaad9a3a769fc99
-colour-picker suhina-studio@light e14d72d49957c28f
-colour-picker-field suhina-studio@light b70adf3a332befc8
-colour-picker-wheel suhina-studio@light 69624a923bf4215f
+colour-picker suhina-studio@light 2f96714b55874044
+colour-picker-field suhina-studio@light bf92d6f226559672
+colour-picker-wheel suhina-studio@light c6e93d280e0d3f57
 context-menu suhina-studio@light 5fbe5ed7a047b2e6
 control-bar-toggles suhina-studio@light d27d57e1c3d31fa8
 count-in-menu suhina-studio@light bd6dbf4d2c916cf0
@@ -37,7 +37,7 @@ launcher-hover suhina-studio@light 2c01e10979e92254
 launcher-scrolled suhina-studio@light b86081209c7179e6
 launcher-selected suhina-studio@light 906a94067c76defb
 launcher-toggles suhina-studio@light 510616ae0dd1b6e7
-menu suhina-studio@light 5b23963c0d9f28c6
+menu suhina-studio@light 2f479058b8ce0480
 missing-files suhina-studio@light 7e856186bea4f4ff
 new-theme-dialog suhina-studio@light 89f35ad0f9fbb31c
 piano-roll suhina-studio@light 33ce5e815dc64efc

@@ -24,8 +24,9 @@ pub(super) struct ColourWindow {
     // before applying queued moves, so feeding observations back here oscillates.
     initial_position: Option<Pos2>,
     height: f32,
-    /// How much taller the size asked of the window is than the panel in it: the `colour-picker`
-    /// box's padding and border (and an embedded Window's title bar), as last measured.
+    /// How much taller the size asked of the window is than the panel in it, as last measured:
+    /// the dialog's padding, and its border and title row embedded, or the system's title bar in
+    /// a window of its own.
     chrome: f32,
     focus_requested: bool,
     focused: bool,
@@ -212,6 +213,7 @@ impl App {
             let proposed = self.settings.colour_window_rect.map(|[x, y, _, _]| Pos2::new(x as f32, y as f32));
             place(bounds, Vec2::new(WIDTH, height + 32.0), proposed)
         });
+        let own_frame = self.own_window_frame();
         let builder = egui::ViewportBuilder::default()
             .with_title(title.clone())
             .with_position(position)
@@ -220,6 +222,7 @@ impl App {
             .with_minimize_button(false)
             .with_maximize_button(false)
             .with_window_level(browser_panel::map_window_level(main_focused, self.colour_window.focused));
+        let builder = crate::kit::own_window::builder(builder, own_frame);
         let enabled = current.is_some() && !self.dialog_holds_actions();
         let recent = &self.settings.recent_colours;
         let panel = &mut self.colour_window.panel;
@@ -230,7 +233,6 @@ impl App {
         let mut focused = false;
         let mut placement = None;
         let mut embedded_layer = None;
-        let mut embedded_background = None;
         let mut chrome = None;
         let mut render = |ui: &mut Ui, embedded: bool| {
             if embedded {
@@ -252,36 +254,39 @@ impl App {
                         ),
                     );
                 }
-                // A detached viewport's renderer clears to transparent, so it is filled with the
-                // dialog's background. An embedded Window owns its final bounds; its content's
-                // available max_rect can extend beyond the fitted frame.
-                let inside = if embedded {
-                    let layer = ui.layer_id();
-                    let start = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx());
-                    // Its background from whichever sheet gives it, the user-agent's included,
-                    // where egui's frame under it is not already that colour.
-                    let background = style.background();
-                    let fill =
-                        if background == ui.visuals().window_fill { egui::Color32::TRANSPARENT } else { background };
-                    let boxed = style.paint_with(
-                        ui.painter(),
-                        ui.max_rect(),
-                        crate::kit::element::Native { fill, ..Default::default() },
+                // Embedded, it is a dialog over the window, its title row and Close button its
+                // own. In a window of its own it is that window's root, under the system's title
+                // bar; the window's base is `window`'s background, as under the main window.
+                let (outer, inside) = if embedded {
+                    let outer = Rect::from_min_size(ui.max_rect().min, Vec2::new(WIDTH, height));
+                    ui.allocate_rect(outer, egui::Sense::hover());
+                    let painter = ui.painter().clone();
+                    let fill = crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel"));
+                    let (painted, title_row) =
+                        crate::kit::dialog::paint(&painter, &style, outer, fill, Some(title.as_str()));
+                    let bar = painted.title;
+                    let button =
+                        Rect::from_min_size(Pos2::new(bar.right() - 52.0, bar.top()), Vec2::new(52.0, bar.height()));
+                    let id = Id::unique("track-colour-window-close");
+                    let response = crate::kit::widgets::button_area(ui, button, id, format!("Close {title}"));
+                    crate::kit::widgets::flat_button(
+                        ui,
+                        &painter,
+                        button,
+                        &response,
+                        "Close",
+                        (crate::kit::theme::TEXT_SMALL, None),
                     );
-                    let end = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx());
-                    embedded_background = Some((layer, start, end));
-                    boxed
+                    drop(title_row);
+                    close |= response.clicked();
+                    (outer.height(), painted.content)
                 } else {
-                    style.paint_with(
-                        ui.painter(),
-                        ui.max_rect(),
-                        crate::kit::element::Native { fill: style.background(), ..Default::default() },
-                    )
-                }
-                .content;
-                // A native window's inner size is its surface; an embedded Window's fixed size
-                // also holds its title bar and margins.
-                let outer = if embedded { height } else { ui.max_rect().height() };
+                    let base = crate::kit::own_window::base(ui, own_frame);
+                    let content = style.paint_root(ui.painter(), base.whole, base.corners);
+                    let inside =
+                        Rect::from_min_max(Pos2::new(content.left(), content.top() + base.title_bar), content.max);
+                    (base.whole.height(), inside)
+                };
                 chrome = Some(outer - inside.height());
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
                     let mut styled = style.ui(ui);
@@ -330,33 +335,13 @@ impl App {
             });
         };
         if ctx.embed_viewports() {
-            // egui 0.37 already wraps an embedded viewport in a Window. Own that
-            // fallback here instead, to provide closing and changing compact/fine size
-            // without nesting one floating Window inside another.
-            let mut open = true;
-            let shown = egui::Window::new(&title)
-                .id(Id::unique("track-colour-window"))
-                .open(&mut open)
-                .collapsible(false)
-                .resizable(false)
-                .fixed_size([WIDTH, height])
+            // Where windows cannot open (the tests), the tool is a dialog over the window: one
+            // box, the dialog's, not one in an egui Window's frame.
+            crate::kit::floating::area(ctx, Id::unique("track-colour-window"), crate::kit::floating::Kind::Own)
+                .order(egui::Order::Middle)
+                .movable(true)
                 .default_pos(ctx.content_rect().center() - Vec2::new(WIDTH, height) * 0.5)
                 .show(ctx, |ui| render(ui, true));
-            // An authored panel background must obey the fitted Window too. Its final
-            // rectangle is known only after show; leave the Window's own shadow and
-            // other layers (menus/tooltips) alone.
-            if let (Some(shown), Some((layer, start, end))) = (shown, embedded_background) {
-                ctx.graphics_mut(|layers| {
-                    if let Some(list) = layers.get_mut(layer) {
-                        for index in start.0..end.0 {
-                            list.mutate_shape(egui::layers::ShapeIdx(index), |shape| {
-                                shape.clip_rect = shape.clip_rect.intersect(shown.response.rect);
-                            });
-                        }
-                    }
-                });
-            }
-            close = !open;
         } else {
             ctx.show_viewport_immediate(id, builder, |ui, class| {
                 render(ui, class == egui::ViewportClass::EmbeddedWindow);

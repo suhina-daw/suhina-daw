@@ -398,6 +398,9 @@ pub struct PageState {
     pub page: Page,
     /// Settings lives in a separate native viewport until Dock is chosen.
     pub window: bool,
+    /// What the system draws of that window: its title bar, where Settings' content runs under
+    /// it (macOS, as in the main window), and its corners.
+    pub frame: crate::kit::own_window::Frame,
     pub capture: Option<String>,
     /// The variant editor, a child view of Themes, is open.
     pub theme_editor: bool,
@@ -1075,13 +1078,21 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     if !state.window && crate::kit::floating::asks_to_blur(style_class.style()) {
         crate::kit::liquid::backdrop(&painter, area, 0.0);
     }
-    let panel_base = crate::kit::liquid::panel_base(ui.ctx());
-    painter.rect_filled(area, 0.0, panel_base);
-    if !state.window {
+    // In a window of its own, Settings is the window's root: its background over the whole
+    // window above the status bar, under the system's title bar too; the system draws its edge.
+    // Docked, its box over the window, the page inside its border and padding (#1336).
+    let area = if state.window {
+        let (title_bar, corners) = crate::kit::own_window::shown(ui, state.frame);
+        // The status bar is under it, at the bottom of the window.
+        let corners = egui::CornerRadius { sw: 0, se: 0, ..corners };
+        let content = style_class.paint_root(&painter, area, corners);
+        Rect::from_min_max(Pos2::new(content.left(), content.top() + title_bar), content.max)
+    } else {
+        let panel_base = crate::kit::liquid::panel_base(ui.ctx());
+        painter.rect_filled(area, 0.0, panel_base);
         crate::kit::liquid::paint(&painter, area, &style_class, panel_base, crate::kit::liquid::Surface::Panel);
-    }
-    // Its border, and the page in its content box, inside its border and padding (#1336).
-    let area = style_class.paint_border(&painter, area);
+        style_class.paint_border(&painter, area)
+    };
     input_style(ui);
 
     let width = SIDEBAR + SIDEBAR_GAP + PAGE_WIDTH;

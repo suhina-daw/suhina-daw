@@ -1101,6 +1101,11 @@ impl App {
         self.window_corner = corner;
     }
 
+    /// What a window of its own takes after the main window: its title bar and corners.
+    pub(crate) fn own_window_frame(&self) -> crate::kit::own_window::Frame {
+        crate::kit::own_window::Frame { title_bar: self.title_bar, corner: self.window_corner }
+    }
+
     /// The open projects.
     pub fn projects(&self) -> &Projects {
         &self.projects

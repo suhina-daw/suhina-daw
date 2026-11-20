@@ -37,7 +37,10 @@ the selection fill, tint or muted grey. Selection outlines and all selection/tra
 intact; clips and lane selection shading keep their ordinary look. Closing the tool restores
 the configured header appearance without changing the selection or saved appearance setting.
 The native client area must paint the active theme's background, and idle rendering must
-settle without alternating content, geometry or scale.
+settle without alternating content, geometry or scale. In its own window the picker is that
+window's root (`dialog[name="color-picker"]` over `window`'s background, under the system's
+title bar on macOS); where windows cannot open (the tests), it is a dialog over the main window,
+with its title row and **Close** button.
 Native position observations are saved for reopening; they never become continuous move
 requests. Only opening and an explicit size-change adjustment may position the window.
 The window is as tall as its contents, measured as they are drawn, and never taller than the
@@ -139,7 +142,8 @@ replace feedback from people with colour-vision deficiencies or native-window te
 
 The theme renderer includes compact, expanded-field and expanded-wheel colour-picker scenes.
 They participate in every built-in theme's paint and clipped-text checks. The rendered examples
-below show the actual controls in an embedded window, not the operating system's title bar.
+below show the actual controls in the dialog drawn where windows cannot open, not the operating
+system's title bar.
 
 | Theme | Compact | Field | Wheel |
 |---|---|---|---|
