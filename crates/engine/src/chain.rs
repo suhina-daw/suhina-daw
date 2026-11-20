@@ -1828,9 +1828,18 @@ pub(crate) fn run_device_keyed(
     key: Option<&[f32]>,
 ) {
     // Give context-dependent instruments the tempo before an event at frame zero.
-    device.set_context(context);
-    let run_span = |device: &mut Box<dyn Device>, buffer: &mut [f32], from: usize, to: usize| {
-        process(device, buffer, from, to, &span_context(context, from, sample_rate), key);
+    let at_context = |frame| lanes.context_span(slot, frame, to, context, sample_rate).0;
+    let timed = lanes.has_context(slot);
+    device.set_context(&if timed { at_context(from) } else { *context });
+    let run_span = |device: &mut Box<dyn Device>, buffer: &mut [f32], mut from: usize, end: usize| {
+        while from < end {
+            let (heard, next) = lanes.context_span(slot, from, end, context, sample_rate);
+            if timed {
+                device.set_context(&heard);
+            }
+            process(device, buffer, from, next, &heard, key);
+            from = next;
+        }
     };
     let mut at_done = from;
     let mut changes = lanes.changes(slot, from, to).peekable();
@@ -1839,15 +1848,24 @@ pub(crate) fn run_device_keyed(
         while let Some(change) = changes.next_if(|c| c.frame <= at) {
             run_span(device, buffer, at_done, change.frame.max(at_done));
             at_done = change.frame.max(at_done);
+            if timed {
+                device.set_context(&at_context(at_done));
+            }
             device.set_param(change.param, change.value);
         }
         run_span(device, buffer, at_done, at);
         at_done = at;
+        if timed {
+            device.set_context(&at_context(at));
+        }
         device.event(event);
     }
     for change in changes {
         run_span(device, buffer, at_done, change.frame.max(at_done));
         at_done = change.frame.max(at_done);
+        if timed {
+            device.set_context(&at_context(at_done));
+        }
         device.set_param(change.param, change.value);
     }
     run_span(device, buffer, at_done, to);
@@ -1937,14 +1955,6 @@ pub(crate) fn set_song_delay(slot: &mut DeviceSlot, before: u32) {
         DeviceSlot::Group(group) => group.add_song_delay(before),
         DeviceSlot::Device(_) | DeviceSlot::MidiDevice(_) => {}
     }
-}
-
-fn span_context(context: &ProcessContext, frame: usize, sample_rate: f64) -> ProcessContext {
-    let mut context = *context;
-    if context.playing {
-        context.beat += frame as f64 * context.tempo / (60.0 * sample_rate);
-    }
-    context
 }
 
 fn process(
