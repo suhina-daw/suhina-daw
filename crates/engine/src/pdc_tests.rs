@@ -3,6 +3,9 @@
 
 //! PDC against independently specified gain steps, with allocation-free test processors.
 
+#[path = "pdc_context_tests.rs"]
+mod context;
+
 use std::sync::Arc;
 use std::time::Duration;
 
