@@ -3,7 +3,7 @@
 
 //! A struck free-free bar: damped modes excited through their mode shapes by a mallet, either a
 //! nonlinear Hunt–Crossley contact simulated against the bar's motion or a linear half-sine force
-//! pulse. Each mode is a complex one-pole `z' = s z + b F` whose imaginary part is the mode's
+//! pulse, with an optional tube resonator tuned to its first mode. Each mode is a complex one-pole `z' = s z + b F` whose imaginary part is the mode's
 //! displacement, so every force is integrated exactly over a sample (or a contact step) and a
 //! free mode is a bounded, decaying rotation. Fixed capacity, no allocation, no panics.
 //!
@@ -18,6 +18,8 @@ pub const MAX_CONTACT_STEPS: u32 = 32;
 /// Longest time a mallet presses on the bar, and longest it chases a receding surface.
 pub const MAX_CONTACT_SECONDS: f64 = 0.020;
 pub const MAX_APPROACH_SECONDS: f64 = 0.010;
+/// Time over which the output step of a coefficient change fades out.
+pub const DECLICK_SECONDS: f64 = 0.002;
 
 /// The first sixteen roots of `cos(b) cosh(b) = 1`; higher ones are `(2n + 1) pi / 2` to double
 /// precision.
@@ -156,6 +158,19 @@ pub struct BarMode {
     pub output: f64,
 }
 
+/// A closed tube under the bar: one damped resonance at the first mode's frequency, driven by
+/// that mode's velocity (Doutaut, Matignon & Chaigne 1998 model the coupling in full; this keeps
+/// its first resonance and the energy it draws from the bar).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tube {
+    /// 0 (no tube) to 1: the tube's steady velocity is `2 * amount` times the first mode's.
+    pub amount: f64,
+    /// Quality factor of the tube's resonance.
+    pub quality: f64,
+    /// The first mode's added decay at full amount, as a time to lose 60 dB.
+    pub radiation_seconds: f64,
+}
+
 /// How a stroke's force reaches the modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Excitation {
@@ -245,6 +260,23 @@ impl ModeState {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+struct TubeState {
+    z: Complex,
+    pole: Complex,
+    /// Response to the first mode's velocity held over a sample: `drive (e^{s/rate} - 1) / s`.
+    gain: Complex,
+    sigma: f64,
+    omega: f64,
+    output: f64,
+}
+
+impl TubeState {
+    fn velocity(&self) -> f64 {
+        self.omega * self.z.re - self.sigma * self.z.im
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 enum Stroke {
     #[default]
     Idle,
@@ -273,6 +305,13 @@ pub struct StruckBar<const N: usize> {
     stroke: Stroke,
     active: bool,
     last_stroke_steps: u64,
+    tube_spec: Option<Tube>,
+    tube: TubeState,
+    /// The first mode's decay rate added by the tube.
+    radiation: f64,
+    /// Output offset that removes a coefficient change's step, and its fade per sample.
+    declick: f64,
+    declick_step: f64,
 }
 
 impl<const N: usize> Default for StruckBar<N> {
@@ -283,19 +322,27 @@ impl<const N: usize> Default for StruckBar<N> {
             stroke: Stroke::Idle,
             active: false,
             last_stroke_steps: 0,
+            tube_spec: None,
+            tube: TubeState::default(),
+            radiation: 0.0,
+            declick: 0.0,
+            declick_step: 0.0,
         }
     }
 }
 
 impl<const N: usize> StruckBar<N> {
     /// Set the bar's modes, keeping each mode's motion (a fresh bar is at rest). A mode that is
-    /// invalid, inaudible or missing from `modes` stops. Undoes any damping and transposition.
+    /// invalid, inaudible or missing from `modes` stops. Undoes any damping and transposition, and
+    /// applies the tube of [`Self::set_tube`] to the new first mode.
     pub fn set_modes(&mut self, sample_rate: f64, modes: &[BarMode]) {
         if !sample_rate.is_finite() || !(1000.0..=384000.0).contains(&sample_rate) {
             self.reset();
             return;
         }
+        let before = self.current_output();
         self.sample_rate = sample_rate;
+        self.radiation = 0.0;
         let mut given = modes.iter();
         for state in &mut self.modes {
             let mode = given.next().copied().unwrap_or_default();
@@ -320,7 +367,76 @@ impl<const N: usize> StruckBar<N> {
             state.output = mode.output;
             state.pole = state.s().scale(1.0 / sample_rate).exp();
         }
+        self.apply_tube();
         self.refresh_active();
+        self.fade_step_from(before);
+    }
+
+    /// Put a tube under the bar (`None` or amount 0: none), keeping a ringing tube's motion.
+    pub fn set_tube(&mut self, tube: Option<Tube>) {
+        let before = self.current_output();
+        self.tube_spec = tube;
+        self.apply_tube();
+        self.refresh_active();
+        self.fade_step_from(before);
+    }
+
+    /// Tune the tube to the first mode as it is now and add its radiation to that mode's decay.
+    fn apply_tube(&mut self) {
+        let rate = self.sample_rate;
+        let radiation = self.radiation;
+        let Some(first) = self.modes.first_mut() else {
+            return;
+        };
+        if first.enabled() && radiation > 0.0 {
+            first.sigma = (first.sigma - radiation).max(0.0);
+            first.pole = first.s().scale(1.0 / rate).exp();
+        }
+        self.radiation = 0.0;
+        let spec = self.tube_spec.filter(|tube| {
+            tube.amount.is_finite()
+                && tube.amount > 0.0
+                && tube.quality.is_finite()
+                && tube.quality > 0.0
+                && tube.radiation_seconds.is_finite()
+                && tube.radiation_seconds > 0.0
+        });
+        let Some(spec) = spec.filter(|_| first.enabled()) else {
+            self.tube = TubeState::default();
+            return;
+        };
+        let amount = spec.amount.min(1.0);
+        let radiation = amount * 1000.0_f64.ln() / spec.radiation_seconds.clamp(0.01, 600.0);
+        first.sigma += radiation;
+        first.pole = first.s().scale(1.0 / rate).exp();
+        self.radiation = radiation;
+        let quality = spec.quality.clamp(0.5, 1000.0);
+        self.tube.omega = first.omega;
+        self.tube.sigma = first.omega / (2.0 * quality);
+        self.tube.output = first.output;
+        // Steady velocity `2 * amount` times the driving mode's: drive = 4 amount sigma / omega.
+        let drive = 2.0 * amount / quality;
+        let s = Complex::new(-self.tube.sigma, self.tube.omega);
+        let step = s.scale(1.0 / rate);
+        self.tube.pole = step.exp();
+        self.tube.gain = step.phi1().scale(drive / rate);
+    }
+
+    /// The output this sample would give before any declick offset.
+    fn current_output(&self) -> f64 {
+        let modes: f64 = self.modes.iter().map(|mode| mode.output * mode.velocity()).sum();
+        modes + self.tube.output * self.tube.velocity()
+    }
+
+    /// Fade out the step a coefficient change made from `before` over [`DECLICK_SECONDS`].
+    fn fade_step_from(&mut self, before: f64) {
+        let step = before - self.current_output();
+        if !step.is_finite() || step == 0.0 {
+            return;
+        }
+        self.declick += step;
+        self.declick_step = self.declick / (DECLICK_SECONDS * self.sample_rate).max(1.0);
+        self.active = true;
     }
 
     /// Cap every mode's time to decay by 60 dB at `decay_seconds`, keeping its phase.
@@ -328,6 +444,7 @@ impl<const N: usize> StruckBar<N> {
         if !decay_seconds.is_finite() || decay_seconds <= 0.0 {
             return;
         }
+        let before = self.current_output();
         let sigma = 1000.0_f64.ln() / decay_seconds.clamp(0.001, 60.0);
         for mode in self.modes.iter_mut().filter(|mode| mode.enabled()) {
             if sigma > mode.sigma {
@@ -335,6 +452,7 @@ impl<const N: usize> StruckBar<N> {
                 mode.pole = mode.s().scale(1.0 / self.sample_rate).exp();
             }
         }
+        self.fade_step_from(before);
     }
 
     /// Retune by an absolute offset from the frequencies of `set_modes`, keeping phase. A mode
@@ -343,6 +461,7 @@ impl<const N: usize> StruckBar<N> {
         if !semitones.is_finite() {
             return;
         }
+        let before = self.current_output();
         let ratio = 2.0_f64.powf(semitones.clamp(-96.0, 96.0) / 12.0);
         let limit = TAU * self.sample_rate * 0.45;
         for mode in self.modes.iter_mut().filter(|mode| mode.enabled()) {
@@ -354,7 +473,12 @@ impl<const N: usize> StruckBar<N> {
             mode.omega = omega;
             mode.pole = mode.s().scale(1.0 / self.sample_rate).exp();
         }
+        // The tube follows its first mode; it keeps its motion, or stops with that mode.
+        let motion = self.tube.z;
+        self.apply_tube();
+        self.tube.z = if self.tube.omega > 0.0 { motion } else { Complex::default() };
         self.refresh_active();
+        self.fade_step_from(before);
     }
 
     /// The bar's mass at the contact point, `1 / sum(shape^2 / mass)`, over its sounding modes.
@@ -411,9 +535,14 @@ impl<const N: usize> StruckBar<N> {
         if !self.active {
             return 0.0;
         }
-        let mut output = 0.0;
-        for mode in &self.modes {
-            output += mode.output * mode.velocity();
+        let output = self.current_output() + self.declick;
+        if self.declick != 0.0 {
+            let next = self.declick - self.declick_step;
+            self.declick = if next.signum() == self.declick.signum() { next } else { 0.0 };
+        }
+        if self.tube.omega > 0.0 {
+            let drive = self.modes.first().map_or(0.0, ModeState::velocity);
+            self.tube.z = self.tube.pole.mul(self.tube.z).add(self.tube.gain.scale(drive));
         }
         match self.stroke {
             Stroke::Idle => {
@@ -424,8 +553,13 @@ impl<const N: usize> StruckBar<N> {
             Stroke::Pulse { .. } => self.pulse_sample(),
             Stroke::Contact { .. } => self.contact_sample(),
         }
-        let mut active = !matches!(self.stroke, Stroke::Idle);
-        let mut finite = true;
+        let mut active = !matches!(self.stroke, Stroke::Idle) || self.declick != 0.0;
+        let mut finite = self.tube.z.is_finite();
+        if self.tube.z.re.abs() + self.tube.z.im.abs() < 1e-12 {
+            self.tube.z = Complex::default();
+        } else {
+            active = true;
+        }
         for mode in &mut self.modes {
             if !mode.z.is_finite() {
                 finite = false;
@@ -558,6 +692,8 @@ impl<const N: usize> StruckBar<N> {
 
     fn refresh_active(&mut self) {
         self.active = !matches!(self.stroke, Stroke::Idle)
+            || self.declick != 0.0
+            || self.tube.z.re.abs() + self.tube.z.im.abs() >= 1e-12
             || self.modes.iter().any(|mode| mode.enabled() && mode.z.re.abs() + mode.z.im.abs() >= 1e-12);
     }
 }

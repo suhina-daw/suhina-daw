@@ -5,12 +5,14 @@
 //! mode ratios, material decay laws, bar masses and the mallet, turned into `suhina_dsp::bar`
 //! modes. The DSP itself lives in the shared crate.
 
-use suhina_dsp::bar::{BarMode, Mallet, mode_shape, uniform_ratio};
+use suhina_dsp::bar::{BarMode, Mallet, Tube, mode_shape, uniform_ratio};
 
 /// Impact speed at full velocity, in m/s.
 pub const MAX_SPEED: f64 = 4.0;
 /// Output scale of a bar's weighted mode velocities.
-pub const OUTPUT_SCALE: f64 = 0.2;
+pub const OUTPUT_SCALE: f64 = 0.12;
+/// Quality factor of every bar's tube.
+const TUBE_QUALITY: f64 = 40.0;
 const MALLET_MASS: f64 = 0.025;
 const MALLET_EXPONENT: f64 = 2.5;
 
@@ -32,6 +34,8 @@ struct Material {
     corner_hz: f64,
     exponent: f64,
     reference_mass: f64,
+    /// The first mode's added decay with a full tube, as a time to lose 60 dB.
+    radiation_seconds: f64,
 }
 
 impl Profile {
@@ -56,11 +60,31 @@ impl Profile {
 
     fn material(self) -> Material {
         match self {
-            Self::Marimba => Material { reference_decay: 1.2, corner_hz: 300.0, exponent: 1.4, reference_mass: 0.4 },
-            Self::Vibraphone => {
-                Material { reference_decay: 8.0, corner_hz: 1500.0, exponent: 1.0, reference_mass: 0.5 }
-            }
+            Self::Marimba => Material {
+                reference_decay: 1.2,
+                corner_hz: 300.0,
+                exponent: 1.4,
+                reference_mass: 0.4,
+                radiation_seconds: 1.2,
+            },
+            Self::Vibraphone => Material {
+                reference_decay: 8.0,
+                corner_hz: 1500.0,
+                exponent: 1.0,
+                reference_mass: 0.5,
+                radiation_seconds: 4.0,
+            },
         }
+    }
+
+    /// The tube under each bar for Resonator `amount` (0 to 1); `None` at 0.
+    pub fn tube(self, amount: f64) -> Option<Tube> {
+        let amount = if amount.is_finite() { amount.clamp(0.0, 1.0) } else { 0.0 };
+        (amount > 0.0).then(|| Tube {
+            amount,
+            quality: TUBE_QUALITY,
+            radiation_seconds: self.material().radiation_seconds,
+        })
     }
 
     /// Whether note-off damps the bar (unless the sustain pedal holds it).

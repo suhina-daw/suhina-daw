@@ -262,6 +262,40 @@ fn e4_strike_position_follows_bar_mode_shapes() {
     }
 }
 
+/// E5 reports how the tube shapes the fundamental; without references it only checks the
+/// direction the physics gives: louder once built up, and shorter.
+#[test]
+fn e5_the_resonator_strengthens_and_shortens_the_fundamental() {
+    let rate = 48000.0;
+    let window = |signal: &[f32], from: f64, to: f64, hz: f64| {
+        let slice = &signal[(from * rate) as usize..(to * rate) as usize];
+        20.0 * magnitude(slice, rate, hz).log10()
+    };
+    for (_, body, name, low, high) in PROFILES {
+        for key in [low, 60, high] {
+            let f1 = fundamental(key);
+            let measure = |resonator: f64| {
+                let mut instrument = bar(rate, body, 0.0, 0.5);
+                instrument.set_param(param::DECAY, 4.0);
+                instrument.set_param(param::RESONATOR, resonator);
+                let signal =
+                    render(&mut instrument, (rate * 1.2) as usize, &[(0, NoteEvent::On { key, velocity: 0.8 })]);
+                let early = window(&signal, 0.1, 0.4, f1);
+                let late = window(&signal, 0.8, 1.1, f1);
+                (early, (early - late) / 0.7)
+            };
+            let (bare, bare_rate) = measure(0.0);
+            let (tubed, tubed_rate) = measure(1.0);
+            println!(
+                "E5 {name} key {key}: fundamental {:+.1} dB with the tube (0.1-0.4 s), decay {bare_rate:.1} -> {tubed_rate:.1} dB/s",
+                tubed - bare
+            );
+            assert!(tubed > bare, "{name} key {key}: the tube strengthens the fundamental");
+            assert!(tubed_rate > bare_rate, "{name} key {key}: the tube shortens the fundamental");
+        }
+    }
+}
+
 #[test]
 fn e7_low_rates_and_extreme_settings_stay_finite_and_decay() {
     let mut largest: f32 = 0.0;
@@ -277,6 +311,8 @@ fn e7_low_rates_and_extreme_settings_stay_finite_and_decay() {
                     (param::HARDNESS, 7.0),
                     (param::BODY, f64::INFINITY),
                     (param::MALLET_MODEL, -3.0),
+                    (param::RESONATOR, f64::NAN),
+                    (param::RESONATOR, 9.0),
                 ] {
                     instrument.set_param(index, value);
                 }
@@ -323,7 +359,7 @@ fn bar_levels_are_comparable_with_struck() {
                 })
                 .collect();
             println!("level {name} {model_name}: peaks at keys {low}, 60, {high} = {levels:?} (Struck {reference:.3})");
-            assert!(levels.iter().all(|l| *l > reference * 0.25 && *l < reference * 8.0));
+            assert!(levels.iter().all(|l| *l > reference * 0.1 && *l < reference * 4.0));
         }
     }
 }

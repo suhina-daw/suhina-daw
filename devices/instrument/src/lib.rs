@@ -65,7 +65,8 @@ pub mod param {
     pub const BODY: usize = 22;
     pub const HARDNESS: usize = 23;
     pub const MALLET_MODEL: usize = 24;
-    pub const COUNT: usize = 25;
+    pub const RESONATOR: usize = 25;
+    pub const COUNT: usize = 26;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -98,6 +99,7 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     ParamInfo::choice("body", "Body", &["Struck", "Marimba bar", "Vibraphone bar"], 0),
     control("mallet_hardness", "Mallet hardness", (0.0, 1.0), 0.5, Unit::Percent),
     ParamInfo::choice("mallet_model", "Mallet model", &["Contact", "Pulse"], 0),
+    control("resonator", "Resonator", (0.0, 1.0), 1.0, Unit::Percent),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
@@ -404,6 +406,7 @@ impl Instrument {
         }
         if let Body::Bar(bar) = &mut voice.body {
             bar.set_modes(self.sample_rate, &modes);
+            bar.set_tube(profile.tube(self.params.get(param::RESONATOR)));
             bar.transpose(self.bend_semitones);
             bar.strike(excitation, mallet, bars::MAX_SPEED * f64::from(velocity));
         }

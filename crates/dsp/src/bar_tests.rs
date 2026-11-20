@@ -269,10 +269,111 @@ fn damping_and_retuning_keep_the_phase_and_never_add_energy() {
     assert!(up.is_active() && up.energy().is_finite());
     let mut out = bar;
     out.transpose(96.0);
-    for _ in 0..16 {
-        out.next_sample();
+    // Its output fades out over the declick time instead of stopping at once.
+    for _ in 0..(DECLICK_SECONDS * 48000.0) as usize + 2 {
+        assert!(out.next_sample().is_finite());
     }
     assert!(!out.is_active(), "every mode crossed the margin and stopped");
+}
+
+fn largest_step(samples: &[f32]) -> f32 {
+    samples.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f32::max)
+}
+
+#[test]
+fn coefficient_changes_on_a_ringing_bar_do_not_click() {
+    let modes = bar_modes(8, 0.4);
+    let brighter: Vec<BarMode> = modes.iter().map(|mode| BarMode { output: mode.output * 3.0, ..*mode }).collect();
+    for change in 0..4 {
+        let mut bar = StruckBar::<8>::default();
+        bar.set_modes(48000.0, &modes);
+        bar.set_tube(Some(Tube { amount: 1.0, quality: 40.0, radiation_seconds: 1.2 }));
+        bar.strike(Excitation::Pulse, soft(), 2.0);
+        let mut before: Vec<f32> = (0..2400).map(|_| bar.next_sample()).collect();
+        // Change where the output is large, so a step there would be a loud click.
+        let largest = before.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+        while bar.current_output().abs() < 0.5 * f64::from(largest) && before.len() < 4800 {
+            before.push(bar.next_sample());
+        }
+        let jump = bar.current_output();
+        match change {
+            0 => bar.set_modes(48000.0, &brighter),
+            1 => bar.damp(0.01),
+            2 => bar.transpose(2.0),
+            _ => bar.set_tube(None),
+        }
+        let jump = (jump - bar.current_output()).abs();
+        let mut across = vec![*before.last().unwrap()];
+        across.extend((0..480).map(|_| bar.next_sample()));
+        let normal = largest_step(&before[1200..]);
+        if change == 0 || change == 3 {
+            assert!(jump > f64::from(normal), "change {change}: the change must move the output by more than a step");
+        }
+        assert!(largest_step(&across) <= normal * 1.5, "change {change}: {} vs {normal}", largest_step(&across));
+    }
+}
+
+#[test]
+fn a_tube_adds_twice_its_amount_of_the_first_mode_once_built_up() {
+    let mode = [BarMode { frequency_hz: 440.0, decay_seconds: 30.0, shape: 1.0, modal_mass: 0.1, output: 1.0 }];
+    let render = |amount: f64| {
+        let mut bar = StruckBar::<1>::default();
+        bar.set_modes(48000.0, &mode);
+        bar.set_tube(Some(Tube { amount, quality: 40.0, radiation_seconds: 600.0 }));
+        bar.strike(Excitation::Pulse, soft(), 2.0);
+        let signal: Vec<f32> = (0..24000).map(|_| bar.next_sample()).collect();
+        signal[14400..19200].iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt()
+    };
+    let none = render(0.0);
+    for amount in [0.25, 0.5, 1.0] {
+        let ratio = render(amount) / none;
+        assert!((ratio - (1.0 + 2.0 * amount)).abs() < 0.04 * (1.0 + 2.0 * amount), "amount {amount}: {ratio}");
+    }
+    let mut plain = StruckBar::<1>::default();
+    let mut zero = StruckBar::<1>::default();
+    plain.set_modes(48000.0, &mode);
+    zero.set_modes(48000.0, &mode);
+    zero.set_tube(Some(Tube { amount: 0.0, quality: 40.0, radiation_seconds: 1.0 }));
+    plain.strike(Excitation::Contact, hard(), 3.0);
+    zero.strike(Excitation::Contact, hard(), 3.0);
+    for _ in 0..4800 {
+        assert_eq!(plain.next_sample(), zero.next_sample(), "amount 0 is no tube");
+    }
+}
+
+#[test]
+fn a_tube_shortens_the_first_mode_and_stays_bounded() {
+    let modes = bar_modes(4, 0.5);
+    let energy = |tube: Option<Tube>| {
+        let mut bar = StruckBar::<4>::default();
+        bar.set_modes(48000.0, &modes);
+        bar.set_tube(tube);
+        bar.strike(Excitation::Contact, soft(), 4.0);
+        let mut peak: f32 = 0.0;
+        for _ in 0..48000 {
+            let x = bar.next_sample();
+            assert!(x.is_finite());
+            peak = peak.max(x.abs());
+        }
+        (bar.energy(), peak)
+    };
+    let (free, free_peak) = energy(None);
+    let (tubed, tubed_peak) = energy(Some(Tube { amount: 1.0, quality: 40.0, radiation_seconds: 1.2 }));
+    assert!(tubed < free * 0.5, "the tube draws energy from the bar: {tubed} vs {free}");
+    assert!(tubed_peak < free_peak * 4.0);
+    for tube in [
+        Tube { amount: f64::NAN, quality: 40.0, radiation_seconds: 1.0 },
+        Tube { amount: 1e9, quality: 1e-9, radiation_seconds: 1e-9 },
+        Tube { amount: 1.0, quality: f64::INFINITY, radiation_seconds: -1.0 },
+    ] {
+        let mut bar = StruckBar::<4>::default();
+        bar.set_modes(22050.0, &modes);
+        bar.set_tube(Some(tube));
+        bar.strike(Excitation::Contact, hard(), 10.0);
+        for _ in 0..22050 {
+            assert!(bar.next_sample().is_finite());
+        }
+    }
 }
 
 #[test]

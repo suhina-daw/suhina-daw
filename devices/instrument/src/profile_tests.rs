@@ -142,7 +142,7 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
         assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
         assert_eq!(visible("Strike position"), revision == 1.0 || revision == 3.0);
         assert_eq!(visible("Strike colour"), revision == 2.0 || revision == 4.0);
-        for bar_control in ["Body", "Mallet model", "Mallet hardness"] {
+        for bar_control in ["Body", "Mallet model", "Hardness", "Resonator"] {
             assert_eq!(
                 visible(bar_control),
                 revision == 1.0 || revision == 3.0,

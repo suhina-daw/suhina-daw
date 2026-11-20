@@ -106,20 +106,22 @@ pub(super) fn canvas() -> DeviceUi {
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 416.0, 440.0, 20.0]);
     ui.only_revision(2);
     // Bar bodies and their mallet (revision 3, and 1 read as 3); a profile or fitted set ignores them.
-    ui.label("Body", [400.0, 394.0, 150.0, 18.0]);
+    ui.label("Body", [392.0, 394.0, 120.0, 18.0]);
     ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.menu("body", "Body", [400.0, 416.0, 150.0, 28.0], "Struck, or an experimental Marimba or Vibraphone bar");
+    ui.menu("body", "Body", [392.0, 416.0, 120.0, 28.0], "Struck, or an experimental Marimba or Vibraphone bar");
     ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.label("Mallet model", [566.0, 394.0, 120.0, 18.0]);
+    ui.label("Mallet", [520.0, 394.0, 104.0, 18.0]);
     ui.only_revisions(STRUCK_OR_BARS, 1);
     ui.menu(
         "mallet_model",
         "Mallet model",
-        [566.0, 416.0, 120.0, 28.0],
+        [520.0, 416.0, 104.0, 28.0],
         "Bars: Contact simulates the mallet against the moving bar; Pulse adds a fixed force pulse",
     );
     ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.number("mallet_hardness", "Mallet hardness", 702.0, 394.0, 140.0);
+    ui.number("mallet_hardness", "Hardness", 632.0, 394.0, 104.0);
+    ui.only_revisions(STRUCK_OR_BARS, 2);
+    ui.number("resonator", "Resonator", 744.0, 394.0, 104.0);
     ui.only_revisions(STRUCK_OR_BARS, 2);
     ui.label(
         "An original experimental resonator, not a calibrated acoustic instrument. Changes shape the next strike.",

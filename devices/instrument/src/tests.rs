@@ -458,7 +458,15 @@ fn bar_performances_are_identical_across_block_partitions() {
 #[test]
 fn hostile_bar_settings_and_events_stay_finite() {
     let mut instrument = bar_instrument(1.0, 0.0);
-    for index in [param::BODY, param::HARDNESS, param::MALLET_MODEL, param::STRIKE, param::DECAY, param::QUALITY] {
+    for index in [
+        param::BODY,
+        param::HARDNESS,
+        param::MALLET_MODEL,
+        param::RESONATOR,
+        param::STRIKE,
+        param::DECAY,
+        param::QUALITY,
+    ] {
         for value in [f64::NAN, f64::INFINITY, -1e300, 1e300] {
             instrument.set_param(index, value);
         }
@@ -506,14 +514,26 @@ fn bar_bodies_match_their_render_anchors() {
     }
     let stored = std::fs::read_to_string(&path).unwrap();
     let anchors: Vec<_> = stored.lines().filter(|line| !line.starts_with('#')).collect();
-    assert_eq!(anchors.len(), rendered.len());
-    for (line, (name, model, frame, value)) in anchors.iter().zip(rendered) {
+    // On a difference, the whole file as this run renders it, to compare or to record from CI.
+    let report = |what: String| {
+        format!(
+            "{what}
+
+The file as this run renders it, between the lines:
+----- {} -----
+{text}----- end -----",
+            path.display()
+        )
+    };
+    assert_eq!(anchors.len(), rendered.len(), "{}", report("the anchor count differs".into()));
+    for (line, (name, model, frame, value)) in anchors.iter().zip(&rendered) {
         let fields: Vec<_> = line.split(' ').collect();
-        assert_eq!(fields[..3], [name, model, frame.to_string().as_str()]);
+        assert_eq!(fields[..3], [*name, *model, frame.to_string().as_str()], "{}", report("the anchors differ".into()));
         let expected: f32 = fields[3].parse().unwrap();
         assert!(
             (value - expected).abs() <= 2e-6 + expected.abs() * 1e-5,
-            "{name} {model} frame {frame}: {value} vs {expected}"
+            "{}",
+            report(format!("{name} {model} frame {frame}: {value} vs {expected}"))
         );
     }
 }
