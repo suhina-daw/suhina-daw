@@ -99,11 +99,14 @@ fn e1_tuned_modes_sit_on_the_profile_ratios() {
             for key in (low..=high).step_by(4) {
                 let mut instrument = bar(rate, body, model, 0.5);
                 let signal = render(&mut instrument, 24000, &[(0, NoteEvent::On { key, velocity: 0.8 })]);
-                // The tuned modes: the profile's targets and the fundamental.
-                let tuned = if profile == Profile::Marimba { 3 } else { 2 };
-                for n in 1..=tuned {
+                // The tuned modes at this key: the fundamental and every target whose register weight
+                // is above zero, when the mode rings long enough (20 ms) for a peak to be resolved.
+                for n in 1..=3 {
                     let expected = fundamental(key) * profile.ratio(n, f64::from(key));
-                    if expected >= rate * 0.45 * 0.95 {
+                    if !profile.is_tuned(n, f64::from(key))
+                        || expected >= rate * 0.45 * 0.95
+                        || profile.decay_seconds(expected, 2.0) < 0.02
+                    {
                         continue;
                     }
                     let error = cents(peak(&signal, rate, expected), expected);
@@ -293,7 +296,11 @@ fn e5_the_resonator_strengthens_and_shortens_the_fundamental() {
                 300.0 * t
             );
             assert!(tubed > bare, "{name} key {key}: the tube strengthens the fundamental");
-            assert!(tubed_rate > bare_rate, "{name} key {key}: the tube shortens the fundamental");
+            // Shortening shows where the bar rings well beyond the tube's own decay (Q 60).
+            let tube_t60 = 1000.0_f64.ln() * 60.0 / (std::f64::consts::PI * f1);
+            if t > 5.0 * tube_t60 {
+                assert!(tubed_rate > bare_rate, "{name} key {key}: the tube shortens the fundamental");
+            }
         }
     }
 }
