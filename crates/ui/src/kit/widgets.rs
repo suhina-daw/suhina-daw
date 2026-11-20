@@ -1949,6 +1949,39 @@ pub fn option_face(
     (fill, color)
 }
 
+/// A row of choices from the left of `rect`, one [`option_face`] part of `kind` `option` for each
+/// of `options` (its words and its value), `widths[i]` wide and one point apart, `[checked]` on
+/// `current`'s. Part `i` answers to `id(i)` and is named "`name`: words", selected while chosen.
+/// The value clicked, if it is not `current`.
+#[allow(clippy::too_many_arguments)]
+pub fn option_parts<T: Copy + PartialEq>(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    widths: &[f32],
+    id: impl Fn(usize) -> Id,
+    name: &str,
+    options: &[(&str, T)],
+    current: T,
+) -> Option<T> {
+    let mut picked = None;
+    let mut x = rect.left();
+    for (index, ((text, value), part)) in options.iter().zip(widths).enumerate() {
+        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(*part, rect.height()));
+        x += part + 1.0;
+        let label = format!("{name}: {text}");
+        let response = ui.interact(cell, id(index), Sense::click());
+        let chosen = *value == current;
+        response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), chosen, &label));
+        if response.clicked() && !chosen {
+            picked = Some(*value);
+        }
+        let (_, ink) = option_face(ui, painter, cell, &response, chosen, "option");
+        text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
+    }
+    picked
+}
+
 #[cfg(test)]
 #[path = "widgets_tests.rs"]
 mod tests;

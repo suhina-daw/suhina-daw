@@ -3572,20 +3572,8 @@ fn segmented_parts<T: Copy + PartialEq>(
     options: &[(&str, T)],
     current: T,
 ) -> Option<T> {
-    let mut picked = None;
-    let mut x = rect.left();
-    for (index, ((text, value), part)) in options.iter().zip(widths).enumerate() {
-        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(*part, rect.height()));
-        x += part + 1.0;
-        let response = widgets::button_area(ui, cell, Id::unique(("setting", name, index)), format!("{name}: {text}"));
-        if response.clicked() && *value != current {
-            picked = Some(*value);
-        }
-        // A part is a `button[kind="option"]`, `[checked]` when chosen.
-        let (_, color) = widgets::option_face(ui, painter, cell, &response, *value == current, "option");
-        widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
-    }
-    picked
+    let id = |index: usize| Id::unique(("setting", name, index));
+    widgets::option_parts(ui, painter, rect, widths, id, name, options, current)
 }
 
 /// The colour picker's button for `colour` at the control's place in `row`, labelled `name`, its

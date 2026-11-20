@@ -96,28 +96,15 @@ pub fn check_box(ui: &mut Ui, text: &str, on: bool) -> Response {
 /// value), `[checked]` on `current`'s, each named "`name`: words". The value clicked, if it is not
 /// `current`.
 pub fn options<T: Copy + PartialEq>(ui: &mut Ui, name: &str, options: &[(&str, T)], current: T) -> Option<T> {
-    let mut picked = None;
     let widths: Vec<f32> = options
         .iter()
         .map(|(text, _)| (widgets::text_width(ui, text, font()) + 2.0 * INSET).max(40.0).ceil())
         .collect();
     let width = widths.iter().sum::<f32>() + widths.len().saturating_sub(1) as f32;
     let (_, rect) = ui.allocate_space(Vec2::new(width, HEIGHT));
-    let mut x = rect.left();
-    for (index, ((text, value), part)) in options.iter().zip(widths).enumerate() {
-        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(part, rect.height()));
-        x += part + 1.0;
-        let label = format!("{name}: {text}");
-        let response = ui.interact(cell, ui.scope_id().with(("kit-options", name, index)), Sense::click());
-        let chosen = *value == current;
-        response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), chosen, &label));
-        let (_, ink) = widgets::option_face(ui, ui.painter(), cell, &response, chosen, "option");
-        widgets::text_in(ui.painter(), cell, Align2::CENTER_CENTER, text, font(), ink);
-        if response.clicked() && !chosen {
-            picked = Some(*value);
-        }
-    }
-    picked
+    let scope = ui.scope_id();
+    let id = |index: usize| scope.with(("kit-options", name, index));
+    widgets::option_parts(ui, ui.painter(), rect, &widths, id, name, options, current)
 }
 
 /// The row that opens and closes a section, across the row: an arrow (right while closed, down
