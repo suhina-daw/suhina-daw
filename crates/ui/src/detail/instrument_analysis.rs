@@ -13,6 +13,7 @@ use suhina_session::{
 
 use super::device_canvas::remember_keyboard_owner;
 use crate::interaction::device_at::DeviceAt;
+use crate::interaction::key_name::{key_name, parse_key_name};
 use crate::kit::widgets::Action;
 
 #[derive(Clone, Default)]
@@ -135,10 +136,12 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                         .unwrap_or(Correction { job:view.job.clone(),root:proposal.root });
                     ui.horizontal(|ui| {
                         ui.label("Root key");
-                        let response = ui.add(egui::DragValue::new(&mut correction.root).range(0..=127).speed(0.1));
+                        let response = ui.add(egui::DragValue::new(&mut correction.root).range(0..=127).speed(0.1)
+                            .custom_formatter(|key, _| key_name(key.round().clamp(0.0, 127.0) as u8))
+                            .custom_parser(|text| parse_key_name(text).map(f64::from)));
                         remember_keyboard_owner(&response);
                         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton,true,"Proposed root key"));
-                        ui.label(format!("Measured {:.2} Hz, {:+.1} cents",proposal.hz,proposal.cents))
+                        ui.label(format!("Measured {:.2} Hz ({} {:+.1} cents)",proposal.hz,key_name(proposal.root),proposal.cents))
                             .on_hover_text(format!("Periodicity {:.3}; spread {:.1} cents; voiced {} / {} active windows. Analyzed frames {}..{}. These measurements are not a correctness probability.", proposal.periodicity, proposal.spread_cents, report.voiced_windows, report.active_windows, report.range.start, report.range.end));
                         let accept = ui.button("Accept root");
                         remember_keyboard_owner(&accept);
@@ -163,7 +166,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     ui.label("Undo restores the previous instrument. The source sample is retained.");
                 }
                 if let Some(root) = view.accepted_root {
-                    ui.label(format!("Root key {root} accepted. Undo restores the previous mapping."));
+                    ui.label(format!("Root key {} accepted. Undo restores the previous mapping.", key_name(root)));
                 }
             }
             AnalysisPhase::Cancelled | AnalysisPhase::Stale | AnalysisPhase::Failed => {

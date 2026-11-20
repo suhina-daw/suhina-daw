@@ -1868,6 +1868,7 @@ fn paint_scaled(
                         TextFormat::Balance => {
                             format!("{text}{} {}", fixed(p.value.abs() * 100., 0), if p.value < 0. { "L" } else { "R" })
                         }
+                        TextFormat::Key => format!("{text}{}", key_text(p.value)),
                         _ => format!(
                             "{text}{}{}{}",
                             fixed(p.value, *decimals),
@@ -2592,7 +2593,7 @@ pub(crate) fn show(
             }
             response.widget_info(|| {
                 let mut info = egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &control.name);
-                info.current_text_value = Some(format!("{}: {} {}", p.name, p.value, p.unit));
+                info.current_text_value = Some(spoken_value(p));
                 info
             });
             continue;
@@ -2856,7 +2857,7 @@ pub(crate) fn show(
         for (axis, binding) in [control.x.as_ref(), control.y.as_ref()].into_iter().enumerate() {
             let Some(binding) = binding else { continue };
             let Some(p) = parameters.iter().find(|p| p.id == binding.parameter) else { continue };
-            descriptions.push(format!("{}: {} {}", p.name, p.value, p.unit));
+            descriptions.push(spoken_value(p));
             if control.gesture == UiGesture::Menu {
                 let key_open =
                     focused && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
@@ -3141,3 +3142,17 @@ mod tests;
 #[allow(clippy::duplicate_mod)]
 #[path = "../../../device-sdk/examples/delay.rs"]
 mod delay_example;
+
+/// A MIDI key parameter's value as its note name (60 is C3), the way the host names keys.
+fn key_text(value: f64) -> String {
+    crate::interaction::key_name::key_name(value.round().clamp(0.0, 127.0) as u8)
+}
+
+/// What a screen reader hears for a bound parameter: a key by its note name, others with their unit.
+fn spoken_value(p: &GraphParameter) -> String {
+    if p.unit == "key" {
+        format!("{}: {}", p.name, key_text(p.value))
+    } else {
+        format!("{}: {} {}", p.name, p.value, p.unit)
+    }
+}

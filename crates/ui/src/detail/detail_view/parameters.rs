@@ -158,6 +158,8 @@ pub(super) fn value_text(parameter: &GraphParameter, value: f64) -> String {
         parameter.ui.options.get(value as usize).cloned().unwrap_or_default()
     } else if !parameter.text.is_empty() && value == parameter.value {
         parameter.text.clone()
+    } else if parameter.unit == "key" {
+        crate::interaction::key_name::key_name(value.round().clamp(0.0, 127.0) as u8)
     } else {
         format!("{} {}", widgets::fixed(value, parameter.ui.decimals), parameter.unit).trim().to_owned()
     }

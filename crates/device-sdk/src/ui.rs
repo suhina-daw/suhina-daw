@@ -351,6 +351,8 @@ pub enum TextFormat {
     Percent,
     Decibels,
     Balance,
+    /// A MIDI key shown as its note name (60 is C3), as the host names keys elsewhere.
+    Key,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]

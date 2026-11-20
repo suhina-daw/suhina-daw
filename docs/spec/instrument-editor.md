@@ -41,7 +41,7 @@ identifies Instrument and its experimental model, with Source always available. 
   profile modes; the underlying stable parameter IDs remain the same. Outside revision 2 the
   page also shows Body, Mallet model and Mallet hardness, the [bar bodies'](instrument.md#bar-bodies-revision-3)
   controls; revision 2 hides them, since an accepted profile ignores them.
-- **Sample:** local waveform/drop target, Root, Playback, source Start/End, loop Start/End,
+- **Sample:** local waveform/drop target, Root (shown as a note name, 60 is C3), Playback, source Start/End, loop Start/End,
   Attack and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.
 
