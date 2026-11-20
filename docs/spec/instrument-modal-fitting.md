@@ -54,17 +54,19 @@ each peak frequency.
 sounds like a few sine waves (published modal pianos use about 100 partials for a bass note,
 Bank, Zambon and Fontana 2010; a differentiable piano model uses 96 and found an explicit
 stiff-string inharmonicity essential, Renault, Mignot and Roebel 2022). So after the prominent
-peaks are refined, the fit predicts the rest from the stiff string, `f_k = k * f0 *
-sqrt(1 + B * k^2)`:
+peaks are refined, the fit predicts the rest from the stiff string, whose partials lie at
+`k * f0 * sqrt(1 + B * k^2)`. The measured first partial `f1` is itself stretched
+(`f0 * sqrt(1 + B)`), so against it the k-th partial is `k * f1 * sqrt((1 + B * k^2) / (1 + B))`:
 
-1. `f0` is the refined peak nearest the reference key's frequency, within 70 cents; without
+1. `f1` is the refined peak nearest the reference key's frequency, within 70 cents; without
    one, no partials are predicted (a bell or bar is left to prominence).
-2. `B` is the least-squares fit through the origin of `(f/(k*f0))^2 - 1 = B * k^2` over the
-   other refined peaks within 5 % of a whole multiple `k` of 2..32 of `f0`, from at least three
-   such peaks, clamped to 0..0.01; otherwise 0.
-3. For each `k` from 1 while `f_k` is below the analysis ceiling (at most 128 partials), when no
-   candidate lies within the candidate separation or 1 % of `f_k`, the strongest detection bin
-   within 1 % of `f_k` becomes a candidate if it is a local maximum within 80 dB of the
+2. With `r = f / f1`, `B` is the least-squares fit through the origin of
+   `(r/k)^2 - 1 = B * (k^2 - (r/k)^2)` over the other refined peaks within 5 % of a whole
+   multiple `k` of 2..32 of `f1`, from at least three such peaks, clamped to 0..0.01;
+   otherwise 0.
+3. For each `k` from 1 while the predicted partial is below the analysis ceiling (at most 128 partials), when no
+   candidate lies within the candidate separation or 1 % of it, the strongest detection bin
+   within 1 % of it becomes a candidate if it is a local maximum within 80 dB of the
    strongest bin and stands 6 dB above the median of its neighbours 3..8 bins away; candidates
    stop at 96 in all.
 
