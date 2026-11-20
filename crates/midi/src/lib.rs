@@ -10,15 +10,20 @@
 //! message and hands the note to the session's [`LiveInput`], and from there to the engine of
 //! the project that plays, with the time the driver stamped it with turned into the engine's
 //! live clock ([`StampClock`]), so the engine plays it at a fixed delay from when it was played
-//! (#269). Notes, the sustain pedal, every other controller, pitch bend and channel pressure
-//! (aftertouch) are read, on every channel (#812); program change, polyphonic key pressure,
-//! system exclusive, clock and other system messages are ignored.
+//! (#269). The bounded [`mpe::MpeInput`] resolves per-port zones, RPN, sustain, polyphonic
+//! pressure and member/manager controls into native occurrences. System exclusive, clock,
+//! program changes and other system messages are ignored.
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use midir::{Ignore, MidiInput, MidiInputConnection};
 use suhina_engine::{LiveEvent, LiveSource, StampClock, live_now, port_id};
-use suhina_session::{LiveInput, MidiSystem};
+use suhina_session::{LiveInput, MidiSystem, MpeConfig};
+
+pub mod mpe;
 
 /// The name Suhina's ports carry in the system's MIDI graph.
 const CLIENT: &str = "Suhina";
@@ -30,6 +35,8 @@ const ALL_NOTES_OFF: u8 = 123;
 /// The MIDI pitch bend wheel's centre, as a 14-bit value.
 const BEND_CENTRE: f32 = 8_192.0;
 
+/// Legacy stateless parsing utility. Live ports use [`mpe::MpeInput`] for distinct note
+/// lifetimes, zone semantics and the CC120/CC123 distinction.
 /// The engine's live note or performance control for one MIDI message, with its channel (0 to
 /// 15); `None` for anything else, including short or malformed messages. Note on and off,
 /// control change and pitch bend are three bytes; channel pressure is two.
@@ -101,15 +108,23 @@ fn client() -> Result<MidiInput, String> {
 
 /// An open port: closing it lets go of the keys it holds, on every channel.
 struct Port {
-    connection: Option<MidiInputConnection<()>>,
+    connection: Option<MidiInputConnection<PortState>>,
     input: Arc<LiveInput>,
     port: u64,
+}
+
+struct PortState {
+    clock: StampClock,
+    expression: mpe::MpeInput,
 }
 
 impl Drop for Port {
     fn drop(&mut self) {
         if let Some(connection) = self.connection.take() {
-            connection.close();
+            let (_, mut state) = connection.close();
+            state
+                .expression
+                .panic(&mut |channel, event| self.input.send_from(LiveSource { port: self.port, channel }, event));
         }
         for channel in 0..16 {
             self.input.send_from(LiveSource { port: self.port, channel }, LiveEvent::AllNotesOff);
@@ -124,6 +139,21 @@ impl MidiSystem for Midi {
     }
 
     fn open(&self, name: &str, input: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String> {
+        self.open_configured(name, input, MpeConfig::default())
+    }
+
+    fn open_configured(
+        &self,
+        name: &str,
+        input: Arc<LiveInput>,
+        config: MpeConfig,
+    ) -> Result<Box<dyn std::any::Any + Send>, String> {
+        // Activation-local origins, never a truncated port hash or a reused reconnect ID.
+        static NEXT_ORIGIN: AtomicU64 = AtomicU64::new(1);
+        let origin = NEXT_ORIGIN
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .map_err(|_| "MIDI note identity space exhausted".to_string())?;
+        let expression = mpe::MpeInput::new(config, origin).ok_or("invalid MIDI expression configuration")?;
         let client = client()?;
         let port = client
             .ports()
@@ -132,27 +162,45 @@ impl MidiSystem for Midi {
             .ok_or_else(|| format!("{name} is not there"))?;
         let sink = Arc::clone(&input);
         let id = port_id(name);
-        let port_name = name.to_string();
+        let port_name = name.to_owned();
+        // Trace initialization is off the driver callback. Optional diagnostics run on
+        // the MIDI driver's own thread, never on the audio render thread.
+        let tracing = suhina_plugins::trace::on();
         // The live clock starts before the first message, so its first stamp is not at 0.
         let _started = live_now();
-        let mut clock = StampClock::default();
         let connection = client
             .connect(
                 &port,
                 &format!("{CLIENT} input"),
-                move |stamp, message, _| {
-                    let parsed = parse(message);
-                    // Everything but notes, which a player sends many of: whether a wheel or a
-                    // knob arrives at all, and what it was read as (docs/debugging.md).
-                    if !matches!(parsed, Some((_, LiveEvent::NoteOn { .. } | LiveEvent::NoteOff { .. }))) {
-                        suhina_plugins::trace!("midi in {port_name}: {message:02x?} read as {parsed:?}");
-                    }
-                    if let Some((channel, event)) = parsed {
-                        let time = clock.time(stamp, live_now());
-                        sink.send_at(LiveSource { port: id, channel }, event, time);
+                move |stamp, message, state: &mut PortState| {
+                    let time = state.clock.time(stamp, live_now());
+                    let mut emitted = false;
+                    state.expression.process(message, &mut |channel, event| {
+                        emitted = true;
+                        if tracing
+                            && !matches!(
+                                event,
+                                LiveEvent::NoteOn { .. }
+                                    | LiveEvent::NoteOff { .. }
+                                    | LiveEvent::Instance {
+                                        event: suhina_device_api::NoteInstanceEvent::On { .. }
+                                            | suhina_device_api::NoteInstanceEvent::Off { .. },
+                                        ..
+                                    }
+                            )
+                        {
+                            suhina_plugins::trace!(
+                                "midi in {port_name}: {message:02x?} read as {:?}",
+                                Some((channel, event))
+                            );
+                        }
+                        sink.send_at(LiveSource { port: id, channel }, event, time)
+                    });
+                    if tracing && !emitted {
+                        suhina_plugins::trace!("midi in {port_name}: {message:02x?} read as None (no outgoing event)");
                     }
                 },
-                (),
+                PortState { clock: StampClock::default(), expression },
             )
             .map_err(|e| e.to_string())?;
         Ok(Box::new(Port { connection: Some(connection), input, port: id }))

@@ -204,6 +204,14 @@ pub(crate) static ROWS: &[Entry] = &[
         &["midi_input_off"],
         crate::settings::settings_view::midi_inputs,
     ),
+    block(
+        Page::Midi,
+        "Expression",
+        "MPE",
+        "Per-input note expression mode, lower and upper zones, and pitch bend ranges",
+        &["midi_mpe"],
+        crate::settings::settings_view::midi_mpe,
+    ),
     row(
         Page::Midi,
         "Arming",

@@ -6,7 +6,9 @@
 //! (#763 › 5). Bounded: voices, slices and buffers have fixed limits.
 use std::sync::Arc;
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, NoteEvent, ParamInfo, ProcessContext, Role, SampleSource, Scale, Unit,
+    Device, DeviceError, DeviceInfo, NoteEvent, NoteExpressionKind, NoteExpressionState, NoteInstanceDevice,
+    NoteInstanceDispatchError, NoteInstanceEvent, NoteInstanceId, NoteLifetimes, ParamInfo, ProcessContext, Role,
+    SampleSource, Scale, Unit,
 };
 use suhina_dsp::{
     Biquad, Coefficients,
@@ -18,6 +20,9 @@ use crate::nodes::stretch as warp;
 #[cfg(test)]
 #[path = "sample_envelope_tests.rs"]
 mod envelope_tests;
+#[cfg(test)]
+#[path = "sample_expression_tests.rs"]
+mod expression_tests;
 
 /// The most notes a sampler plays at once; each has a voice and a warp voice.
 const VOICES: usize = 32;
@@ -158,6 +163,9 @@ struct Grain {
 }
 #[derive(Clone, Copy)]
 struct Voice {
+    instance: Option<NoteInstanceId>,
+    retiring_instance: Option<NoteInstanceId>,
+    expression: NoteExpressionState,
     active: bool,
     deferred_release: bool,
     age: f64,
@@ -183,6 +191,9 @@ struct Voice {
 impl Default for Voice {
     fn default() -> Self {
         Self {
+            instance: None,
+            retiring_instance: None,
+            expression: NoteExpressionState::NEUTRAL,
             active: false,
             deferred_release: false,
             age: 0.,
@@ -215,6 +226,7 @@ impl Voice {
     }
 }
 pub struct Sampler {
+    lifetimes: NoteLifetimes<64>,
     window: [f64; 2049],
     values: [f64; PARAMS.len()],
     analysis: Arc<SliceAnalysis>,
@@ -246,6 +258,99 @@ impl Default for Sampler {
     }
 }
 impl Sampler {
+    /// Starts an ordinary note and returns the voice it plays on, or `None` when the key,
+    /// velocity or slice map rejects it.
+    fn start_note(&mut self, key: u8, velocity: f32) -> Option<usize> {
+        let p = self.values;
+        if f64::from(key) < p[31]
+            || f64::from(key) > p[32]
+            || f64::from(velocity) < p[33]
+            || f64::from(velocity) > p[34]
+        {
+            return None;
+        }
+        let count = if (p[0] == 2. && p[90] != 1.) || (p[0] != 2. && p[40] > 0.) { 1 } else { p[7] as usize };
+        let slices = p[0] == 2. || p[0] == 0. && p[8] == 3.;
+        let map = self.analysis.points(&p, self.frames(), self.source_rate, self.tempo);
+        let index = usize::from(key).checked_sub(p[30] as usize);
+        let slice = if let Some(edits) = self.sample_edits.as_ref().filter(|_| p[0] == 2.) {
+            index.and_then(|index| {
+                let mut points = std::iter::once(p[1])
+                    .chain(self.analysis.edited_points(&p, self.frames(), self.source_rate, self.tempo, edits))
+                    .chain(std::iter::once(p[2]));
+                let start = points.nth(index)?;
+                Some((start, points.next()?))
+            })
+        } else if p[60] == 3. && self.manual_slices.is_some() {
+            index.and_then(|i| self.manual_slices.as_ref().and_then(|points| manual_slice(points, p[1], p[2], i)))
+        } else {
+            index.and_then(|i| map.get(i..=i + 1).map(|s| (s[0], s[1])))
+        };
+        if slices && slice.is_none_or(|s| s.1 <= s.0) {
+            return None;
+        }
+        let (slice_start, slice_end) = if slices { slice.unwrap_or((p[1], p[2])) } else { (p[1], p[2]) };
+        let (slice_start, slice_end) = if p[0] == 2. && p[90] == 2. {
+            if p[10] > 0. { (p[1], slice_end) } else { (slice_start, p[2]) }
+        } else {
+            (slice_start, slice_end)
+        };
+        let target_step = 2f64.powf(((if slices { 0. } else { f64::from(key) - p[30] }) + p[5] + p[6] / 100.) / 12.)
+            * self.source_rate
+            / self.rate;
+        let step = if p[29] > 0. {
+            self.voices.get((self.next_voice + count - 1) % count).filter(|v| v.active).map_or(target_step, |v| v.step)
+        } else {
+            target_step
+        };
+        let slot = self.voices.iter().take(count).position(|v| !v.active).unwrap_or(self.next_voice % count);
+        self.next_voice = (slot + 1) % count;
+        let frames = self.frames() as f64;
+        if let Some(v) = self.voices.get_mut(slot) {
+            // A voice keeps one retiring tail. Taking it again before that tail retired ends
+            // the older tail now, so its completion is never lost.
+            if v.instance.is_some()
+                && let Some(older) = v.retiring_instance
+            {
+                self.lifetimes.finish(older);
+            }
+            let retiring_instance = v.instance.take().or(v.retiring_instance);
+            if v.active && p[47] == 0. && !slices {
+                v.key = key;
+                v.velocity = f64::from(velocity.clamp(0., 1.));
+                v.deferred_release = false;
+                v.retiring_instance = retiring_instance;
+                v.expression = NoteExpressionState::NEUTRAL;
+                return Some(slot);
+            }
+            let fade_from = v.last;
+            if let Some(warp) = self.warp.get_mut(slot) {
+                warp.restart();
+            }
+            let fade = if v.active { 1. } else { 0. };
+            let direction = if p[10] > 0. { -1. } else { 1. };
+            *v = Voice {
+                active: true,
+                retiring_instance,
+                fade_from,
+                fade,
+                key,
+                velocity: f64::from(velocity.clamp(0., 1.)),
+                position: if direction > 0. { slice_start * frames } else { (slice_end * frames - 1.).max(0.) },
+                slice_start,
+                slice_end,
+                direction,
+                step,
+                ..Voice::default()
+            };
+            v.envelope.start();
+        }
+        Some(slot)
+    }
+    /// Ordinary device event entry point; identified callers use `NoteInstanceDevice`.
+    pub fn event(&mut self, event: NoteEvent) {
+        Device::event(self, event);
+    }
     /// A sampler with no sample, made for the default sample rate.
     pub fn new() -> Self {
         Self::at(suhina_device_api::DEFAULT_SAMPLE_RATE)
@@ -262,6 +367,7 @@ impl Sampler {
         Self {
             window: std::array::from_fn(|i| crate::nodes::granular::hann(i as f64 / 2048.)),
             values: std::array::from_fn(|i| PARAMS[i].default),
+            lifetimes: NoteLifetimes::default(),
             analysis: Arc::new(SliceAnalysis::default()),
             manual_slices: None,
             sample_edits: None,
@@ -395,6 +501,7 @@ impl Device for Sampler {
         Ok(())
     }
     fn reset(&mut self) {
+        self.lifetimes.finish_all();
         self.voices.fill(Voice::default());
         for voice in &mut self.warp {
             voice.restart();
@@ -433,6 +540,7 @@ impl Device for Sampler {
                 }
             }
             if matches!(p.id.as_ref(), "playback" | "mode") && next != *v {
+                self.lifetimes.finish_all();
                 self.voices.fill(Voice::default());
                 for voice in &mut self.warp {
                     voice.restart();
@@ -459,92 +567,17 @@ impl Device for Sampler {
     }
     fn event(&mut self, event: NoteEvent) {
         match event {
+            NoteEvent::Instance { id, event } => {
+                let _ = NoteInstanceDevice::event(self, id, event);
+            }
             NoteEvent::On { key, velocity } if key <= 127 && velocity.is_finite() && velocity > 0. => {
-                let p = self.values;
-                if f64::from(key) < p[31]
-                    || f64::from(key) > p[32]
-                    || f64::from(velocity) < p[33]
-                    || f64::from(velocity) > p[34]
-                {
-                    return;
-                }
-                let count = if (p[0] == 2. && p[90] != 1.) || (p[0] != 2. && p[40] > 0.) { 1 } else { p[7] as usize };
-                let slices = p[0] == 2. || p[0] == 0. && p[8] == 3.;
-                let map = self.analysis.points(&p, self.frames(), self.source_rate, self.tempo);
-                let index = usize::from(key).checked_sub(p[30] as usize);
-                let slice = if let Some(edits) = self.sample_edits.as_ref().filter(|_| p[0] == 2.) {
-                    index.and_then(|index| {
-                        let mut points = std::iter::once(p[1])
-                            .chain(self.analysis.edited_points(&p, self.frames(), self.source_rate, self.tempo, edits))
-                            .chain(std::iter::once(p[2]));
-                        let start = points.nth(index)?;
-                        Some((start, points.next()?))
-                    })
-                } else if p[60] == 3. && self.manual_slices.is_some() {
-                    index.and_then(|i| {
-                        self.manual_slices.as_ref().and_then(|points| manual_slice(points, p[1], p[2], i))
-                    })
-                } else {
-                    index.and_then(|i| map.get(i..=i + 1).map(|s| (s[0], s[1])))
-                };
-                if slices && slice.is_none_or(|s| s.1 <= s.0) {
-                    return;
-                }
-                let (slice_start, slice_end) = if slices { slice.unwrap_or((p[1], p[2])) } else { (p[1], p[2]) };
-                let (slice_start, slice_end) = if p[0] == 2. && p[90] == 2. {
-                    if p[10] > 0. { (p[1], slice_end) } else { (slice_start, p[2]) }
-                } else {
-                    (slice_start, slice_end)
-                };
-                let target_step = 2f64
-                    .powf(((if slices { 0. } else { f64::from(key) - p[30] }) + p[5] + p[6] / 100.) / 12.)
-                    * self.source_rate
-                    / self.rate;
-                let step = if p[29] > 0. {
-                    self.voices
-                        .get((self.next_voice + count - 1) % count)
-                        .filter(|v| v.active)
-                        .map_or(target_step, |v| v.step)
-                } else {
-                    target_step
-                };
-                let slot = self.voices.iter().take(count).position(|v| !v.active).unwrap_or(self.next_voice % count);
-                self.next_voice = (slot + 1) % count;
-                let frames = self.frames() as f64;
-                if let Some(v) = self.voices.get_mut(slot) {
-                    if v.active && p[47] == 0. && !slices {
-                        v.key = key;
-                        v.velocity = f64::from(velocity.clamp(0., 1.));
-                        v.deferred_release = false;
-                        return;
-                    }
-                    let fade_from = v.last;
-                    if let Some(warp) = self.warp.get_mut(slot) {
-                        warp.restart();
-                    }
-                    let fade = if v.active { 1. } else { 0. };
-                    let direction = if p[10] > 0. { -1. } else { 1. };
-                    *v = Voice {
-                        active: true,
-                        fade_from,
-                        fade,
-                        key,
-                        velocity: f64::from(velocity.clamp(0., 1.)),
-                        position: if direction > 0. { slice_start * frames } else { (slice_end * frames - 1.).max(0.) },
-                        slice_start,
-                        slice_end,
-                        direction,
-                        step,
-                        ..Voice::default()
-                    };
-                    v.envelope.start();
-                }
+                self.start_note(key, velocity);
             }
             NoteEvent::Off { key, .. } | NoteEvent::On { key, velocity: 0. } => {
                 let slicing = self.values[0] == 2. || self.values[0] == 0. && self.values[8] == 3.;
                 if slicing && self.values[84] > 0. || !slicing && self.values[8] != 1. && self.values[8] != 3. {
                     for v in &mut self.voices {
-                        if v.key == key && v.active {
+                        if v.key == key && v.active && v.instance.is_none() {
                             if self.pedal {
                                 // A released tail keeps advancing; pedal-up must not recapture it.
                                 if !v.envelope.is_releasing() && !v.envelope.is_done() {
@@ -585,9 +618,76 @@ impl Device for Sampler {
             self.tempo = context.tempo;
         }
     }
+    fn note_instances(&mut self) -> Option<&mut dyn NoteInstanceDevice> {
+        Some(self)
+    }
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
         self.prepare_block(context);
         self.process_prepared(buffer);
+    }
+}
+
+impl NoteInstanceDevice for Sampler {
+    fn event(&mut self, id: NoteInstanceId, event: NoteInstanceEvent) -> Result<(), NoteInstanceDispatchError> {
+        let event = event.validated().ok_or(NoteInstanceDispatchError::InvalidEvent)?;
+        if let NoteInstanceEvent::On { key, velocity, expression } = event {
+            if self.lifetimes.contains(id) {
+                return Err(NoteInstanceDispatchError::AlreadyActive);
+            }
+            self.lifetimes.admit(id)?;
+            // The voice is chosen as for an ordinary note: an idle one, else the next in turn,
+            // whose occurrence moves to its retiring tail. The legacy handler retains its MIDI
+            // zero-velocity rule; this native endpoint starts an occurrence at zero velocity
+            // and restores the exact native value.
+            let slot = self.start_note(key, velocity.max(f32::MIN_POSITIVE));
+            if let Some(voice) = slot.and_then(|slot| self.voices.get_mut(slot)).filter(|v| v.active) {
+                voice.instance = Some(id);
+                voice.expression = expression;
+                voice.velocity = f64::from(velocity);
+            } else {
+                self.lifetimes.finish(id);
+            }
+            return Ok(());
+        }
+        let voice = self
+            .voices
+            .iter_mut()
+            .find(|v| v.instance == Some(id) && v.active)
+            .ok_or(NoteInstanceDispatchError::UnknownInstance)?;
+        match event {
+            NoteInstanceEvent::Expression { kind, value } => {
+                voice.expression.set(kind, value);
+            }
+            NoteInstanceEvent::Off { .. } => {
+                let slicing = self.values[0] == 2. || self.values[0] == 0. && self.values[8] == 3.;
+                if slicing && self.values[84] > 0. || !slicing && self.values[8] != 1. && self.values[8] != 3. {
+                    voice.release();
+                }
+            }
+            NoteInstanceEvent::Choke { .. } => {
+                voice.active = false;
+                voice.instance = None;
+                self.lifetimes.finish(id);
+            }
+            NoteInstanceEvent::On { .. } => {}
+        }
+        Ok(())
+    }
+
+    fn drain_finished(&mut self, output: &mut [Option<NoteInstanceId>]) -> usize {
+        for voice in &mut self.voices {
+            if !voice.active
+                && let Some(id) = voice.instance.take()
+            {
+                self.lifetimes.finish(id);
+            }
+            if (!voice.active || voice.fade == 0.)
+                && let Some(id) = voice.retiring_instance.take()
+            {
+                self.lifetimes.finish(id);
+            }
+        }
+        self.lifetimes.drain(output)
     }
 }
 
@@ -886,6 +986,7 @@ impl Sampler {
                         + p[5]
                         + p[6] / 100.
                         + self.bend
+                        + v.expression.value(NoteExpressionKind::Pitch)
                         + lfo
                         + pitch_env * p[41])
                         / 12.,
@@ -1002,7 +1103,8 @@ impl Sampler {
                             v.filter_env * p[35]
                                 + v.velocity * p[36]
                                 + (f64::from(v.key) - p[30]) / 12. * p[46]
-                                + modulation * p[53],
+                                + modulation * p[53]
+                                + (v.expression.value(NoteExpressionKind::Timbre) - 0.5) * 4.,
                         ))
                     .clamp(20., (self.rate * 0.49).min(20000.));
                     let c = match p[15] as u8 {
@@ -1026,7 +1128,12 @@ impl Sampler {
                     }
                 }
                 for ch in 0..2 {
-                    let next = signal[ch] * v.envelope.value() * (1. - p[28] + p[28] * v.velocity);
+                    // Neutral pressure preserves old patches; pressure adds up to 6 dB and
+                    // timbre is a bipolar brightness source when the voice filter is enabled.
+                    let next = signal[ch]
+                        * v.envelope.value()
+                        * (1. - p[28] + p[28] * v.velocity)
+                        * (1. + v.expression.value(NoteExpressionKind::Pressure));
                     v.last[ch] = next * (1. - v.fade) + v.fade_from[ch] * v.fade;
                     out[ch] += v.last[ch];
                 }

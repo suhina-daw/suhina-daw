@@ -75,6 +75,14 @@ applies an event at its next internal block boundary on a grid counted from `res
 keeps the output independent of the host's block sizes at the cost of up to one internal
 block of timing.
 
+Identified live notes use `NoteEvent::Instance` and the opt-in `NoteInstanceDevice` endpoint
+([ADR 0039](../decisions/0039-per-note-expression.md), [MPE](mpe.md)). The chain preserves exact
+event frames through the same split-span path. It selects native expression only when each
+preceding MIDI effect preserves identity and the instrument advertises the endpoint; otherwise
+the whole occurrence uses ordinary-note compatibility. Per-chain recipient tracking is bounded,
+and changing monitoring or its input filter chokes only occurrences that track received.
+Device completion is drained after spans; it frees admission storage without recycling IDs.
+
 An importer can explicitly identify an unavailable instrument by setting a Foreign device's
 `instrument` field (#1416; the `suhina/missing-instrument` extension before version 15). This
 placeholder consumes note events and produces silence through a native instrument slot,

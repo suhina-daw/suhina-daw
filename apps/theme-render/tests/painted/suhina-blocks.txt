@@ -55,7 +55,7 @@ settings-devices suhina-blocks d2fb82f4522d4a11
 settings-keys suhina-blocks 2bf00050d704e6ff
 settings-launcher suhina-blocks b646a51e51ea98bb
 settings-menu suhina-blocks fdbe7a28099da186
-settings-midi suhina-blocks fe9b99d7c89645b8
+settings-midi suhina-blocks a65fd88ff2161712
 settings-plug-ins suhina-blocks d294ff98aadd0481
 settings-themes suhina-blocks 5380cde0683044f4
 start-panel suhina-blocks c2b691ce4f78abb2

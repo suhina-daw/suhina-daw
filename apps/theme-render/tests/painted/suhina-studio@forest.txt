@@ -55,7 +55,7 @@ settings-devices suhina-studio@forest 0ada558f1fed538a
 settings-keys suhina-studio@forest 79bfa2e08c3371ae
 settings-launcher suhina-studio@forest 677ecdd84f64e7aa
 settings-menu suhina-studio@forest 2873cddf37ffb7a1
-settings-midi suhina-studio@forest e818392548c79d13
+settings-midi suhina-studio@forest 8ed0bd870dcffc02
 settings-plug-ins suhina-studio@forest d204833b42779579
 settings-themes suhina-studio@forest 02313a5c32880189
 start-panel suhina-studio@forest 4df0a9ac383ba107

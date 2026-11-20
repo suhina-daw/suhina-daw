@@ -55,7 +55,7 @@ settings-devices high-contrast 200330f82e9c5d73
 settings-keys high-contrast 8f1e8d7a1b077529
 settings-launcher high-contrast dddb641b88767105
 settings-menu high-contrast 2a224cab6b5f4e02
-settings-midi high-contrast d411a60c1c32053f
+settings-midi high-contrast a2cc2ff4ce9440f8
 settings-plug-ins high-contrast 855835156d24249d
 settings-themes high-contrast a93474899f823260
 start-panel high-contrast 0272f239de9038ce

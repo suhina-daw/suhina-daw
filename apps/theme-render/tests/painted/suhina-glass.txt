@@ -55,7 +55,7 @@ settings-devices suhina-glass bf104ddd5ded4efe
 settings-keys suhina-glass 8e570c30a700dfbd
 settings-launcher suhina-glass 0c5d5c345830afcd
 settings-menu suhina-glass b2aec81011471a84
-settings-midi suhina-glass aba26a1c5ab12d36
+settings-midi suhina-glass 239e577487b33aa9
 settings-plug-ins suhina-glass 668d1c60e9eba877
 settings-themes suhina-glass f97b8efa4bab4b44
 start-panel suhina-glass ee355f90540cebf9

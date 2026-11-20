@@ -55,7 +55,7 @@ settings-devices suhina-studio@light 05923f8ec7ae4cbd
 settings-keys suhina-studio@light 824be7aec094e07f
 settings-launcher suhina-studio@light 0a6f45d3a9ef2981
 settings-menu suhina-studio@light c72c7a9564d01209
-settings-midi suhina-studio@light 916710dcc35f398d
+settings-midi suhina-studio@light a9a92871cf55e172
 settings-plug-ins suhina-studio@light c93004664a5b0ea9
 settings-themes suhina-studio@light 8f1995bbe656427b
 start-panel suhina-studio@light f21d44e5e66b0c65

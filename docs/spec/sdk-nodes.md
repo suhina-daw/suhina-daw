@@ -281,7 +281,7 @@ at 256 MiB and manual slice boundaries at 4096 per map. These limits are checked
 
 ## Named signal outputs
 
-In addition to out/left/right aliases, native kernels may expose up to eight named stereo
+In addition to out/left/right aliases, native kernels may expose up to ten named stereo
 signal outputs. The interpreter snapshots them at every rendered frame, so trigger/release
 pulses, envelope completion and per-voice controls keep exact timing across block boundaries.
 `NativeNode::output` reads one auxiliary output from the most recent process call, whose length
@@ -306,8 +306,13 @@ Instrument graphs may route MIDI Input through KeyRange, VelocityRange, Transpos
 into instruments or VoiceInput via midi-typed ports. Events retain input order at the same
 frame; event edges are acyclic. Unconnected native event inputs retain the legacy global
 stream. MIDI value nodes remain legacy global controls. VoiceInput emits key, velocity, gate,
-trigger/release one-frame pulses, bend, pressure and selected controller values. Explicit
-MidiController, PitchBend and Pressure nodes provide the same channel controls. Sustain defers
+trigger/release one-frame pulses, bend, pressure and selected controller values. Its appended
+`pitch` output is native per-note pitch in semitones and `timbre` is 0..1 with neutral 0.5;
+the legacy `bend` signal remains separate and normalized. Shared channel pressure and native note pressure
+retain separate latches; the `pressure` signal is their maximum, so lowering a global control
+does not erase the note's own expression. New identified voices inherit shared controllers
+and bend before applying their atomic note state.
+Explicit MidiController, PitchBend and Pressure nodes provide the same channel controls. Sustain defers
 note-offs until controller 64 falls below 0.5; note-on zero means note-off. VelocityRange remembers
 accepted keys so rejected notes cannot lose their corresponding releases. Fixed transpose reuses
 the existing MIDI processor. Event batches are bounded at 256; overflow increments a counter,
@@ -318,7 +323,7 @@ reports completion to its owner. Event outputs cannot connect to signal/resource
 ## Private voice graphs and components
 
 VoiceGroup contains an embedded instrument graph and 1..32 private instances, sums their
-outputs, and requires one VoiceOutput in that graph. Note identity is MIDI key: a repeated
+outputs, and requires one VoiceOutput in that graph. Ordinary note identity is MIDI key: a repeated
 note-on retriggers that key's voice; otherwise allocation uses a free voice, then the oldest
 voice (ties use slot order). A stolen voice fades from its last output over 64 samples.
 Controller 64 defers releases; retrigger cancels a deferred release. Controllers, pitch bend
@@ -326,6 +331,19 @@ and pressure are inherited by newly allocated voices. Completion frees a slot; n
 created or retired on the audio thread. Nested preparation caps depth at four, expanded nodes
 at 4096, expanded voice capacity at 128 and total delay storage at the existing delay budget.
 A coarse Sampler consumes 32 of that capacity; a TimeStretchPlayer consumes one. Private graphs cannot contain another VoiceGroup.
+
+A direct single VoiceGroup instrument can opt into the shared identified-note endpoint
+([MPE](mpe.md)). Equal-key occurrences use separate voices, initial expression reaches the
+private graph before its first sample, and targeted off/choke never changes another ID.
+At its voice limit a new occurrence takes the oldest voice, as an ordinary note does, and the
+taken occurrence is reported finished after its 64-frame fade; admission is rejected only at the
+retirement limit. Final completion is reported after VoiceOutput ends or
+the occurrence is choked. The private body currently supports VoiceInput, MidiController,
+PitchBend, Pressure, VoiceOutput, AD/ADSR and ordinary signal nodes, with direct event input.
+Other native consumers, including a private Sampler/SamplerAsset or Component, and transformed
+inner or outer event routes stay in ordinary compatibility until their admission and retirement
+are implemented together. They do not advertise the endpoint: one native occurrence must not
+start both an ordinary and an independently identified note inside a nested sampler.
 
 Component embeds a named, positive-version graph snapshot including its parameters and optional
 panel. Its stable public ports are in/control1/control2/control3 signals, optional MIDI events and stereo out;

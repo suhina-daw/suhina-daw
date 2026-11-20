@@ -193,6 +193,16 @@ fn settings_survive_a_round_trip() {
         ]
         .into(),
         midi_inputs_off: vec!["Keys, port 1".into(), "Pads:Pads MIDI 1 20:0".into()],
+        midi_mpe: [(
+            "Keys, port 1 = notes".into(),
+            suhina_session::MpeConfig {
+                mode: suhina_session::MpeMode::Manual,
+                lower_members: 8,
+                upper_members: 6,
+                ..Default::default()
+            },
+        )]
+        .into(),
         zoom: 130,
         map_window: true,
         map_window_rect: Some([-1600, 40, 900, 700]),

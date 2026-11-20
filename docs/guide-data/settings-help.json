@@ -256,6 +256,25 @@
     ],
     "workInProgress": true
   },
+  "Midi/Expression/midi_mpe": {
+    "sourceFingerprint": "2d6d83858caefd82c0d13265ce49982acecbc0e7ad63f063569bb2f0f835357f",
+    "summary": "Choose independent note expression and pitch ranges for each MIDI input.",
+    "description": "MPE lets different held notes bend, swell and change brightness independently. Choose a mode for each physical input. FM Synth and Sampler support independent expression; direct SDK voice-group instruments expose it as per-voice signals. Other instruments, plug-ins, layered graphs and chains with unsupported MIDI effects use ordinary-note compatibility. Pressure increases each voice's level; timbre changes its enabled filter. Timbre has no effect while that filter is off.\n\nOff preserves ordinary MIDI, including mono and legato behavior. Automatic and Manual enable independent note occurrences and poly key pressure on ordinary channels; Off does not consume poly key pressure. Automatic follows the controller's MPE zone messages. Manual shows lower and upper zone member counts and separate member and manager bend ranges. The lower manager is channel 1 and the upper manager is channel 16. Counts exclude the manager. Changing one manual zone makes room by shortening the other. Match the controller's bend settings: defaults are 48 semitones for members and 2 for managers; supported values are 0 to 96.\n\nChanging the mode or manual configuration ends that input's old notes and reopens it. These settings persist across restarts. Automatic zone messages are runtime state, not saved manual choices. FM Synth keeps its existing 64-frame internal response quantum. Expression recording and piano-roll curves are separate work; this setting enables live playing.",
+    "options": [
+      { "name": "Off", "description": "Use ordinary channel MIDI without activating MPE zones from the controller." },
+      { "name": "Automatic", "description": "Follow valid MPE configuration and pitch-sensitivity messages from the controller." },
+      { "name": "Manual", "description": "Use the shown zone counts and bend ranges, ignoring automatic reconfiguration." }
+    ],
+    "whenToChange": "Enable Automatic for a controller that sends its MPE setup, or Manual when you need to match its configured zones yourself. Arm a track with a supported instrument and select the input that should play it.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/settings_view.rs",
+      "crates/ui/src/settings.rs",
+      "crates/session/src/midi.rs",
+      "crates/midi/src/mpe.rs",
+      "docs/spec/mpe.md"
+    ]
+  },
   "Midi/MIDI inputs/midi_input_off": {
     "sourceFingerprint": "fafcce2abdc2be699a7605ca6bd38b4555a194ba1162d2301ad0a61d6ccece22",
     "summary": "Enable or disable each connected MIDI input port.",

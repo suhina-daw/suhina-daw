@@ -2,6 +2,32 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use super::*;
+
+#[test]
+fn completion_capacity_is_reserved_before_admission_and_small_drains_lose_nothing() {
+    let a = NoteInstanceId::from_parts(1, 1).unwrap();
+    let b = NoteInstanceId::from_parts(1, 2).unwrap();
+    let c = NoteInstanceId::from_parts(1, 3).unwrap();
+    let mut lifetimes = NoteLifetimes::<2>::default();
+    lifetimes.admit(a).unwrap();
+    lifetimes.admit(b).unwrap();
+    assert_eq!(lifetimes.admit(c), Err(NoteInstanceDispatchError::Capacity));
+    lifetimes.finish(a);
+    lifetimes.finish(b);
+    assert_eq!(lifetimes.admit(c), Err(NoteInstanceDispatchError::Capacity));
+    assert_eq!(lifetimes.drain(&mut []), 0);
+    let mut one = [None];
+    assert_eq!(lifetimes.drain(&mut one), 1);
+    assert_eq!(one, [Some(a)]);
+    lifetimes.admit(c).unwrap();
+    assert_eq!(lifetimes.drain(&mut one), 1);
+    assert_eq!(one, [Some(b)]);
+    assert!(lifetimes.contains(c));
+    lifetimes.finish_all();
+    assert_eq!(lifetimes.drain(&mut one), 1);
+    assert_eq!(one, [Some(c)]);
+    assert_eq!(lifetimes.drain(&mut one), 0);
+}
 use crate::{DeviceError, DeviceInfo, ProcessContext};
 
 #[test]

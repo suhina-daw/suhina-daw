@@ -5760,6 +5760,7 @@ name = "suhina-midi"
 version = "0.0.1"
 dependencies = [
  "midir",
+ "suhina-device-api",
  "suhina-engine",
  "suhina-plugins",
  "suhina-session",
