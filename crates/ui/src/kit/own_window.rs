@@ -14,6 +14,9 @@ use egui::{CornerRadius, Rect, Ui, ViewportBuilder};
 /// window.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Frame {
+    /// The main window was asked to be see-through (the GPU renderer), so its windows of their
+    /// own are too: without that they open opaque, as the main window does.
+    pub see_through: bool,
     /// How tall the system's title bar over the top of the content is: 0 where the content
     /// starts under it.
     pub title_bar: f32,
@@ -26,8 +29,9 @@ pub struct Frame {
 pub fn builder(builder: ViewportBuilder, frame: Frame) -> ViewportBuilder {
     // Every window clears to see-through under a see-through theme (`App::clear_color` is the
     // app's, not the window's): one that is not see-through shows the system's own window colour
-    // there.
-    let builder = builder.with_transparent(true);
+    // there. Where the main window is not asked to be see-through (the OpenGL renderer), nor are
+    // these.
+    let builder = builder.with_transparent(frame.see_through);
     if frame.title_bar > 0.0 { builder.with_fullsize_content_view(true).with_titlebar_shown(false) } else { builder }
 }
 

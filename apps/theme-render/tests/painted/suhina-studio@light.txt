@@ -45,7 +45,7 @@ project-dialog suhina-studio@light d1f3336a2c974345
 quantize-menu suhina-studio@light 8dd89e75622577fc
 quick-add suhina-studio@light 5efc0edbe457125c
 sample-map suhina-studio@light bf94e9d81dd31324
-save-dialog suhina-studio@light e5f5c4c4382fda1d
+save-dialog suhina-studio@light 371340ff72408c69
 settings suhina-studio@light 5f2fce0ec2f8ac63
 settings-agents suhina-studio@light b7bb1e3cfbbee80f
 settings-appearance suhina-studio@light e59aa4e9e3bc0912

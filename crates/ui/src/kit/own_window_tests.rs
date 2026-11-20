@@ -38,7 +38,7 @@ fn painted<R>(css: &str, mut draw: impl FnMut(&Ui) -> R) -> (Vec<egui::epaint::R
 }
 
 const WHOLE: Rect = Rect { min: Pos2::ZERO, max: Pos2::new(400.0, 300.0) };
-const FRAME: Frame = Frame { title_bar: 28.0, corner: 10 };
+const FRAME: Frame = Frame { see_through: true, title_bar: 28.0, corner: 10 };
 const SKY: Color32 = Color32::from_rgb(0x20, 0x60, 0xc0);
 const GLASS: Color32 = Color32::from_rgb(0xe0, 0xf0, 0xff);
 
@@ -75,4 +75,12 @@ fn the_root_of_a_window_paints_its_background_and_keeps_its_padding_only() {
     // Over the window, the same dialog has one.
     let (boxed, _) = painted(css, |ui| crate::kit::dialog::enter("color-picker").paint(ui.painter(), WHOLE));
     assert!(boxed.iter().any(|r| r.stroke.color == Color32::RED), "a border: {boxed:?}");
+}
+
+/// A window of its own is asked to be see-through where the main window is, and only there.
+#[test]
+fn a_window_is_see_through_where_the_main_window_is() {
+    let asked = |see_through| builder(ViewportBuilder::default(), Frame { see_through, ..FRAME }).transparent;
+    assert_eq!(asked(true), Some(true));
+    assert_eq!(asked(false), Some(false));
 }

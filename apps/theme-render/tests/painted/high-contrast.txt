@@ -45,7 +45,7 @@ project-dialog high-contrast f6e1d32ded0ca354
 quantize-menu high-contrast eb50b44e750be5a8
 quick-add high-contrast 36ef7584b31cd61a
 sample-map high-contrast e77666a4cf336459
-save-dialog high-contrast 95e34f573de2a4d1
+save-dialog high-contrast c42c0c35bd4b6981
 settings high-contrast 98356fe5b362137f
 settings-agents high-contrast 7e7dc3028a7e7f17
 settings-appearance high-contrast 821740af6b256993

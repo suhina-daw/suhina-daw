@@ -45,7 +45,7 @@ project-dialog suhina-glass@midnight 769269948fe540ad
 quantize-menu suhina-glass@midnight bfd7728f98e88ef5
 quick-add suhina-glass@midnight 688d0e1fb5490cf8
 sample-map suhina-glass@midnight 53eba8de19e63db5
-save-dialog suhina-glass@midnight e43c830193f91cf7
+save-dialog suhina-glass@midnight a018bd186c99dd8b
 settings suhina-glass@midnight 9a6360330d3fad95
 settings-agents suhina-glass@midnight 1ee37708e941c2a4
 settings-appearance suhina-glass@midnight 7e82a3d879d05424

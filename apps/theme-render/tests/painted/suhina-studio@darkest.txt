@@ -45,7 +45,7 @@ project-dialog suhina-studio@darkest 66dc4f79804af20c
 quantize-menu suhina-studio@darkest 10f4ca379b9f00e1
 quick-add suhina-studio@darkest 2ff9dc5e6d029f91
 sample-map suhina-studio@darkest 72b8636c9bc3d675
-save-dialog suhina-studio@darkest c59542100495897e
+save-dialog suhina-studio@darkest b8a4c7433593ea76
 settings suhina-studio@darkest 73846de138e51ba2
 settings-agents suhina-studio@darkest 10be39761ec9fb20
 settings-appearance suhina-studio@darkest 56c79fa7679003c4

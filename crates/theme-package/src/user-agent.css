@@ -27,6 +27,8 @@ dialog { background-color: #1e1e1e; }
 /* A dialog keeps what it holds 10 points in from its edge; its title row runs along its top,
    outside that. Its buttons stand in a row at the right of its bottom, 8 points apart. */
 dialog { padding: 10px; }
+/* The missing files panel's own title bar and status bar run to its edges. */
+dialog[name="missing-files"] { padding: 0; }
 dialog-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 
 /* The window is one grid of named areas (#1370): the bars, the lines over and under the views, the

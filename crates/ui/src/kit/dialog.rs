@@ -93,7 +93,7 @@ pub struct Action<'a> {
     pub text: &'a str,
     /// What it is named for readers and tests, and says when the pointer rests on it.
     pub label: &'a str,
-    /// How wide it is: [`BUTTON_WIDTH`] unless its words need more.
+    /// How wide it is: [`BUTTON_WIDTH`] unless [`Action::wide`] gave it another.
     pub width: f32,
     /// A `flexible-space` instead of a button: the room the buttons leave, which puts the ones
     /// after it at the other end of the row.

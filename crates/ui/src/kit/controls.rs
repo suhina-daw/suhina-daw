@@ -175,9 +175,13 @@ pub fn slider(
             m.set_focus_lock_filter(response.id, egui::EventFilter { horizontal_arrows: true, ..Default::default() });
         });
         let (left, right) = ui.input_mut(|i| {
-            (i.consume_key(Modifiers::NONE, Key::ArrowLeft), i.consume_key(Modifiers::NONE, Key::ArrowRight))
+            (
+                i.count_and_consume_key(Modifiers::NONE, Key::ArrowLeft),
+                i.count_and_consume_key(Modifiers::NONE, Key::ArrowRight),
+            )
         });
-        next += (f32::from(u8::from(right)) - f32::from(u8::from(left))) * step;
+        // Every press of a frame counts (a slow frame holds several).
+        next += (right as f32 - left as f32) * step;
     }
     let next = if low <= high { next.clamp(low, high) } else { *value };
     if next != *value && next.is_finite() {

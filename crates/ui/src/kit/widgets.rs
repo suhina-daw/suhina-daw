@@ -1880,8 +1880,12 @@ pub fn slider_face(ui: &Ui, painter: &Painter, track: Rect, response: &Response,
     let hovered = hover(ui, response);
     let mid = track.center().y;
     let handle_x = track.left() + track.width() * share.clamp(0.0, 1.0);
-    // The colours under the pointer are looked up (as comparisons are) before the slider is entered.
-    let slider = |pointer: bool| SLIDER.pointer(pointer, false, false).attr(Checked, lit);
+    // The colours under the pointer are looked up (as comparisons are) before the slider is
+    // entered: only `:hover` differs between the two, so a rule for `:active`, `:disabled` or
+    // `:focus` reaches its parts as it reaches the slider.
+    let (pressed, disabled, focused) =
+        (response.is_pointer_button_down_on(), !response.enabled(), response.has_focus());
+    let slider = |pointer: bool| SLIDER.pointer(pointer, pressed, disabled).focused(focused).attr(Checked, lit);
     let part_fade = |part: super::element::Name| {
         let rest = part.probe_in(slider(false)).background();
         if hovered > 0.0 { motion::mix(rest, part.probe_in(slider(true)).background(), hovered) } else { rest }

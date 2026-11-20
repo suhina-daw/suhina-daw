@@ -45,7 +45,7 @@ project-dialog suhina-studio@blue 675e42a5329cf499
 quantize-menu suhina-studio@blue 509fdf820b7a538f
 quick-add suhina-studio@blue 79c6ea949441d1bf
 sample-map suhina-studio@blue 8572919485d92a5a
-save-dialog suhina-studio@blue cd1f9170e012e2c9
+save-dialog suhina-studio@blue 776a5617bd6c0de9
 settings suhina-studio@blue a1ca5c2cac926962
 settings-agents suhina-studio@blue a6ab844c38632ea6
 settings-appearance suhina-studio@blue 67898bba0a3519d9

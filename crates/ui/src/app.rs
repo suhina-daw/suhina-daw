@@ -612,6 +612,8 @@ pub struct App {
     /// The radius of the window's rounded corners, which a see-through window does not clip to:
     /// the bars at the top and bottom round theirs to match. 0 when the system clips them.
     window_corner: u8,
+    /// The main window was asked to be see-through, which its windows of their own follow.
+    see_through_asked: bool,
     /// The detail area was closed as an editor (the splitter dragged down, the toolbar's ×, View ›
     /// Hide editor): selecting a clip opens it again. And the clip shown last frame, to tell when
     /// another is selected (`docs/spec/ui-clip-editor.md` › Least height and closing).
@@ -875,6 +877,7 @@ impl App {
             window: None,
             title_bar: 0.0,
             window_corner: 0,
+            see_through_asked: true,
             editor_closed: false,
             last_clip: None,
             piano_grid: crate::detail::piano_roll_grid::PianoGrid::default(),
@@ -1101,9 +1104,20 @@ impl App {
         self.window_corner = corner;
     }
 
-    /// What a window of its own takes after the main window: its title bar and corners.
+    /// Whether the main window was asked to be see-through (the GPU renderer): its windows of
+    /// their own are asked the same. On unless this says otherwise.
+    pub fn set_see_through_asked(&mut self, asked: bool) {
+        self.see_through_asked = asked;
+    }
+
+    /// What a window of its own takes after the main window: whether it is see-through, its
+    /// title bar and corners.
     pub(crate) fn own_window_frame(&self) -> crate::kit::own_window::Frame {
-        crate::kit::own_window::Frame { title_bar: self.title_bar, corner: self.window_corner }
+        crate::kit::own_window::Frame {
+            see_through: self.see_through_asked,
+            title_bar: self.title_bar,
+            corner: self.window_corner,
+        }
     }
 
     /// The open projects.

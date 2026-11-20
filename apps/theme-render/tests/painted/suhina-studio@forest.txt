@@ -45,7 +45,7 @@ project-dialog suhina-studio@forest 2a983f2d625986bd
 quantize-menu suhina-studio@forest aff31cb0285babef
 quick-add suhina-studio@forest 4425856e8f94fed8
 sample-map suhina-studio@forest 45514abc693573b8
-save-dialog suhina-studio@forest 5b7c3dddb9cd01d2
+save-dialog suhina-studio@forest e715108c7c8720be
 settings suhina-studio@forest 5c9b869f94c2bdec
 settings-agents suhina-studio@forest 27b256b9073d77b9
 settings-appearance suhina-studio@forest 7284642a184e1ab1

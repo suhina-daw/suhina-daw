@@ -45,7 +45,7 @@ project-dialog suhina-light ff3911bb758f6a9d
 quantize-menu suhina-light 4667e808b31b752f
 quick-add suhina-light 7ee621087da7de87
 sample-map suhina-light ba542d17e1745290
-save-dialog suhina-light 1aac41e38b1d0353
+save-dialog suhina-light 76ef3edc4d524ad3
 settings suhina-light ac58034437916ccf
 settings-agents suhina-light 81c5d69330b6823d
 settings-appearance suhina-light 2344706b498e7410

@@ -45,7 +45,7 @@ project-dialog high-contrast@light e32f0dc158bf5a70
 quantize-menu high-contrast@light 48218bbe8d360fc6
 quick-add high-contrast@light 3133903fedac9a3e
 sample-map high-contrast@light 3f35311b2cd1b47b
-save-dialog high-contrast@light caa47d8131ae83ec
+save-dialog high-contrast@light 4fb9d895011264f0
 settings high-contrast@light 4a10e27c61bb15c0
 settings-agents high-contrast@light 17307e25b55f4323
 settings-appearance high-contrast@light 0e4b0204bdfb5d46

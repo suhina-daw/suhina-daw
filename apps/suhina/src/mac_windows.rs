@@ -16,7 +16,7 @@ use objc2::rc::Retained;
 use objc2::runtime::NSObjectProtocol;
 use objc2::{MainThreadMarker, Message};
 use objc2_app_kit::NSApplication;
-use objc2_foundation::{NSArray, NSObjectNSKeyValueCoding, NSString, ns_string};
+use objc2_foundation::{NSArray, NSObjectNSKeyValueCoding, NSString};
 use objc2_quartz_core::CALayer;
 
 /// The contents gravity the windows of their own take: their top left on screen.
@@ -26,7 +26,6 @@ const PINNED: &str = "bottomLeft";
 /// window's top left. Called every frame: a window opened since gets it before it is first resized.
 pub fn pin_frames_top_left(main: *const c_void) {
     let Some(thread) = MainThreadMarker::new() else { return };
-    let gravity = ns_string!("bottomLeft");
     for window in NSApplication::sharedApplication(thread).windows().iter() {
         let Some(view) = window.contentView() else { continue };
         if Retained::as_ptr(&view).cast::<c_void>() == main {
@@ -35,7 +34,7 @@ pub fn pin_frames_top_left(main: *const c_void) {
         let Some(root) = view.layer() else { continue };
         for layer in metal_layers(&root) {
             if pins(layer.contentsGravity().to_string().as_str()) {
-                layer.setContentsGravity(gravity);
+                layer.setContentsGravity(&NSString::from_str(PINNED));
             }
         }
     }

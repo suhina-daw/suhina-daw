@@ -45,7 +45,7 @@ project-dialog catppuccin-mocha@macchiato db6ea7ec5d40f387
 quantize-menu catppuccin-mocha@macchiato 4bedc178f927ea51
 quick-add catppuccin-mocha@macchiato e7599234c6e4ad00
 sample-map catppuccin-mocha@macchiato 45a8d2c9dc6b468a
-save-dialog catppuccin-mocha@macchiato 3ac2bb59496478bb
+save-dialog catppuccin-mocha@macchiato 1a9851f27034ebb3
 settings catppuccin-mocha@macchiato 5432d7c5633b4cda
 settings-agents catppuccin-mocha@macchiato ba1f6127e5efa9e5
 settings-appearance catppuccin-mocha@macchiato 0ed14dda46e550bf

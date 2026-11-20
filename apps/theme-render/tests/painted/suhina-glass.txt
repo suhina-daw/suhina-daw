@@ -45,7 +45,7 @@ project-dialog suhina-glass 16bddf90b84c2149
 quantize-menu suhina-glass 291ef24e7fd367b5
 quick-add suhina-glass b4258027f33535d1
 sample-map suhina-glass 675164077c8f1f56
-save-dialog suhina-glass 1f48a885d995c0e9
+save-dialog suhina-glass ba34dfb74fbd8999
 settings suhina-glass d1f5508ea38803d4
 settings-agents suhina-glass 48301e60d65c1cb8
 settings-appearance suhina-glass a9a8782c9f01c70b

@@ -240,7 +240,14 @@ fn draw_save(
 ) -> Option<SaveChoice> {
     let mut closed: Option<SaveChoice> = None;
     let title = if prompt.template { "Save as template" } else { "Save project" };
-    let panel = panel(ui, dialog, area, Vec2::new(SAVE_WIDTH, 4.0 * LINE), title, &mut closed);
+    let panel = panel(
+        ui,
+        dialog,
+        area,
+        Vec2::new(SAVE_WIDTH, 2.0 * (LINE + 4.0) + LINE + PAD + dialog::BUTTON_HEIGHT),
+        title,
+        &mut closed,
+    );
     let painter = ui.painter_at(area);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let label_width = 52.0;

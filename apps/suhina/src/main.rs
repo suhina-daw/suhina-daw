@@ -242,6 +242,7 @@ fn main() -> ExitCode {
         }),
     };
     // The audio devices, and the output the settings choose (Settings › Audio, `audio.*`).
+    window.app.set_see_through_asked(see_through_asked);
     if under_title_bar {
         let (title_bar, corner) = mac_window_frame();
         window.app.set_window_frame(title_bar, corner);

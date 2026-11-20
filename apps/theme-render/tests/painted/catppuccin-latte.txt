@@ -45,7 +45,7 @@ project-dialog catppuccin-latte 119b3ccf23d99b8b
 quantize-menu catppuccin-latte c470fb45db6f59af
 quick-add catppuccin-latte 102f3d1592e3d832
 sample-map catppuccin-latte 7a4f3310b7deca7f
-save-dialog catppuccin-latte d2c125bbb955b6f9
+save-dialog catppuccin-latte 9c46937abcf13515
 settings catppuccin-latte 62c466163774c16b
 settings-agents catppuccin-latte 8dccdcecf230e4c3
 settings-appearance catppuccin-latte b36d1cc10a401046
