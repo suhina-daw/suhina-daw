@@ -272,7 +272,7 @@ fn folder_ready(
 ) {
     let skipped = folder.files.iter().filter(|f| f.outcome.reason().is_some()).count();
     let left_out = folder.files.iter().filter(|f| f.outcome == FolderFileOutcome::LeftOut).count();
-    let mut summary = format!("Folder: {} of {} files fitted", folder.recordings.len(), folder.files.len());
+    let mut summary = format!("{} of {} files fitted", folder.recordings.len(), folder.files.len());
     if left_out > 0 {
         summary.push_str(&format!(" · {left_out} left out ({MAX_RECORDINGS} at most)"));
     }

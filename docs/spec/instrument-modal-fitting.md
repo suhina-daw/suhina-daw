@@ -152,6 +152,12 @@ checks as a single fit):
    ordered by key and velocity is kept (`round(i * (n - 1) / 31)` for `i` = 0..31) and the rest are
    reported as left out for capacity.
 
+Recordings of one instrument are not always in one folder. `instrument.fitFiles` takes a list
+of audio files (`paths`, at most 128, from anywhere) instead of a folder and runs the same job
+on them, sorted by file name; a path that is not an audio file refuses the command before any
+work starts. Dropping two or more audio files at once on an Instrument's sample waveform runs
+it: the drop reads "Fit N samples into one model", and nothing is loaded as the sample.
+
 The job's report lists every file with its key, velocity and outcome (kept, left out, or the
 reason it was skipped), and the recordings kept. Nothing changes until the person accepts:
 `instrument.acceptFit` with a folder job adopts all its recordings as a new set (as for one
