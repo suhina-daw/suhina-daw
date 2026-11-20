@@ -67,7 +67,7 @@ impl Native for ContextProbe {
     }
     fn process(&mut self, context: &ProcessContext, buffer: &mut [f32]) {
         assert_eq!(*context, self.context);
-        for (frame, pair) in buffer.chunks_exact_mut(2).enumerate() {
+        for (frame, pair) in buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             pair[0] = (context.beat
                 + if context.playing { frame as f64 * context.tempo / (60.0 * self.rate) } else { 0.0 })
                 as f32;
@@ -132,7 +132,8 @@ fn native_effect_contexts_follow_delayed_audio_across_loops_and_routing() {
                 let actual = timed_render(latency, block, layout, false);
                 let total = latency * if matches!(layout, Layout::Nested) { 2 } else { 1 };
                 assert!(plain.iter().any(|sample| *sample > 0.01));
-                for (frame, (got, input)) in actual.chunks_exact(2).zip(plain.chunks_exact(2)).enumerate() {
+                for (frame, (got, input)) in actual.as_chunks::<2>().0.iter().zip(plain.as_chunks::<2>().0).enumerate()
+                {
                     let source = frame.saturating_sub(total) % LOOP;
                     let gain = if (1000..1500).contains(&source) { 0.0 } else { 1.0 };
                     for channel in 0..2 {
@@ -326,7 +327,9 @@ fn stock_synced_auto_pan_matches_processing_before_the_delay() {
             let actual = stock_pan_render(false, rate, block);
             // The gain filter has a different initial state during negative pre-roll.
             // Compare once that short startup has settled, retaining several LFO cycles.
-            for (frame, (got, want)) in actual.chunks_exact(2).zip(reference.chunks_exact(2)).enumerate().skip(4096) {
+            for (frame, (got, want)) in
+                actual.as_chunks::<2>().0.iter().zip(reference.as_chunks::<2>().0).enumerate().skip(4096)
+            {
                 for channel in 0..2 {
                     assert!(
                         (got[channel] - want[channel]).abs() < 1e-6,
