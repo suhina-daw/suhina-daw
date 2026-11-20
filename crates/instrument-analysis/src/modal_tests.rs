@@ -146,7 +146,11 @@ fn held_out_temporal_errors_are_not_used_to_fit_the_decay() {
             *log_amp += 0.5;
         }
     }
-    assert!(estimate(hz, &disturbed).is_none(), "held-out envelope mismatch must reject this mode");
+    // Held-out windows reject the validated fit; the clearly falling partial is kept only loose,
+    // outside the profile and its reported errors.
+    assert!(fit_span(hz, envelope_span(&disturbed)).is_none(), "held-out envelope mismatch must reject this mode");
+    let loose = estimate(hz, &disturbed).unwrap();
+    assert!(loose.evidence.loose && loose.evidence.validation_windows == 0, "{:?}", loose.evidence);
 }
 
 struct Lcg(u32);
