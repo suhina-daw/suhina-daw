@@ -47,6 +47,8 @@ pub enum PickField {
     MissingFile,
     /// A folder the missing files panel searches.
     MissingFolder,
+    /// A folder of one-note recordings an Instrument fits into one model (Fit folder…).
+    InstrumentFitFolder,
 }
 
 impl PickField {
@@ -84,6 +86,7 @@ impl PickField {
             Self::ThemePackage => "Import a theme",
             Self::MissingFile => "Locate the missing file",
             Self::MissingFolder => "Search a folder for the missing files",
+            Self::InstrumentFitFolder => "Fit a folder of one-note recordings",
         }
     }
 

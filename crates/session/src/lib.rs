@@ -54,6 +54,7 @@ mod files;
 mod follow;
 mod history;
 mod instrument_analysis;
+mod instrument_folder;
 pub(crate) mod instrument_profile;
 mod lane_layout;
 mod launch;
@@ -110,6 +111,7 @@ pub use export::{ExportData, ExportGather, export_from};
 pub use files::stage_and_rename;
 pub use files::{MAX_FILES, file_tempo};
 pub use instrument_analysis::{AnalysisKind, AnalysisPhase, AnalysisView};
+pub use instrument_folder::{FileOutcome as FolderFileOutcome, FolderFile, FolderReport};
 pub use library::{
     Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets,
 };

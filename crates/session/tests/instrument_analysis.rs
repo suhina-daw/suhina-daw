@@ -237,6 +237,7 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     assert!(reopened.execute("instrument.acceptAnalysis", &json!({"track":1,"device":0,"job":fifth["job"]})).is_err());
     assert_eq!(reopened.project(), &replaced);
     modal_fitting_lifecycle();
+    folder_fitting_lifecycle();
 }
 
 fn strike(scale: f64) -> Vec<f32> {
@@ -248,6 +249,119 @@ fn strike(scale: f64) -> Vec<f32> {
                 as f32
         })
         .collect()
+}
+
+/// A decaying harmonic note at `key`, `scale` loud: three partials with their own decays.
+fn note(key: u8, scale: f64) -> Vec<f32> {
+    let hz = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
+    (0..96000)
+        .map(|i| {
+            let t = i as f64 / 48000.0;
+            let partial = |n: f64, t60: f64, amplitude: f64| {
+                amplitude * (-1000.0_f64.ln() * t / t60).exp() * (std::f64::consts::TAU * hz * n * t + 0.3 * n).sin()
+            };
+            (scale * (partial(1.0, 3.0, 0.5) + partial(2.0, 2.0, 0.25) + partial(3.0, 1.2, 0.12))) as f32
+        })
+        .collect()
+}
+
+fn folder_fitting_lifecycle() {
+    let folder = super::temp_dir::TempDir::new("instrument-folder-fit");
+    let notes = folder.join("notes");
+    std::fs::create_dir_all(&notes).unwrap();
+    for (name, key, scale) in [("c4-soft.wav", 60, 0.25), ("c4-hard.wav", 60, 0.9), ("c5.wav", 72, 0.6)] {
+        suhina_test_support::write_wav(
+            &notes.join(name),
+            48000,
+            1,
+            suhina_test_support::WavFormat::Float32,
+            &note(key, scale),
+        );
+    }
+    std::fs::write(notes.join("broken.wav"), b"not audio").unwrap();
+    std::fs::write(notes.join("readme.txt"), b"").unwrap();
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"id":"instrument"}));
+    let before = session.project().clone();
+    let depth = session.undo_steps();
+    assert!(
+        session.execute("instrument.fitFolder", &json!({"track":1,"device":0,"path":folder.join("missing")})).is_err()
+    );
+    let job = run(&mut session, "instrument.fitFolder", json!({"path":notes}));
+    assert_eq!(job["kind"], "folder");
+    assert_eq!(job["files"], 4, "audio files only: {job}");
+    session.sync_instrument_analysis();
+    let status = run(&mut session, "instrument.analysis", json!({}));
+    assert_eq!(status["status"], "ready", "{status}");
+    let files = status["folder"]["files"].as_array().unwrap();
+    let summary: Vec<_> = files
+        .iter()
+        .map(|f| {
+            (f["name"].as_str().unwrap(), f["key"].as_u64(), f["velocity"].as_f64(), f["outcome"].as_str().unwrap())
+        })
+        .collect();
+    let single = f64::from(suhina_instrument_analysis::modal::DEFAULT_VELOCITY);
+    assert_eq!(
+        summary,
+        vec![
+            ("broken.wav", None, None, "skipped"),
+            ("c4-hard.wav", Some(60), Some(1.0), "kept"),
+            ("c4-soft.wav", Some(60), Some(0.5), "kept"),
+            ("c5.wav", Some(72), Some(single), "kept"),
+        ],
+        "{status}"
+    );
+    assert!(files[0]["reason"].as_str().unwrap().contains("decoded"), "{status}");
+    assert_eq!(status["folder"]["recordings"], 3);
+    assert_eq!(session.project(), &before, "a folder fit changes nothing until accepted");
+    assert_eq!(session.undo_steps(), depth);
+    assert!(
+        session.execute("instrument.addFit", &json!({"track":1,"device":0,"job":job["job"]})).is_err(),
+        "add needs an accepted model"
+    );
+    assert!(
+        session
+            .execute("instrument.auditionFit", &json!({"track":1,"device":0,"job":job["job"],"which":"fitted"}))
+            .is_err()
+    );
+    let accepted = run(&mut session, "instrument.acceptFit", json!({"job":job["job"]}));
+    assert_eq!(accepted["accepted"], true);
+    assert_eq!(accepted["recordings"], 3);
+    assert_eq!(session.undo_steps().0, depth.0 + 1);
+    assert_eq!(session.instrument_analysis_view().unwrap().phase, AnalysisPhase::Accepted);
+    let device = &session.project().channels[0].devices[0];
+    let set = suhina_dsp::modal::model::ModelSet::decode(device.instrument_modal_profile().unwrap()).unwrap();
+    let layers: Vec<_> = set.recordings().iter().map(|r| (r.key, r.velocity)).collect();
+    assert_eq!(layers, vec![(60, 0.5), (60, 1.0), (72, suhina_instrument_analysis::modal::DEFAULT_VELOCITY)]);
+    let accepted_project = session.project().clone();
+    let sound = render(&accepted_project, session.audio());
+    assert!(sound.iter().all(|x| x.is_finite()) && sound.iter().any(|x| x.abs() > 1e-5));
+
+    // The same folder again would duplicate every key and velocity: nothing is added.
+    let again = run(&mut session, "instrument.fitFolder", json!({"path":notes}));
+    session.sync_instrument_analysis();
+    assert!(
+        session.execute("instrument.addFit", &json!({"track":1,"device":0,"job":again["job"],"velocity":0.5})).is_err(),
+        "a folder's velocities come from its layers"
+    );
+    assert!(session.execute("instrument.addFit", &json!({"track":1,"device":0,"job":again["job"]})).is_err());
+    assert_eq!(session.project(), &accepted_project);
+    // As another source (instrument) all three join, in one undo step.
+    let added = run(&mut session, "instrument.addFit", json!({"job":again["job"],"source":1}));
+    assert_eq!(added["added"], true);
+    assert_eq!(added["recordings"], 6);
+    assert_eq!(added["recordingSource"], 1);
+    assert_eq!(session.undo_steps().0, depth.0 + 2);
+    session.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(session.project(), &accepted_project);
+
+    // A ready folder fit is stale once the Instrument's fitted model changes.
+    let stale = run(&mut session, "instrument.fitFolder", json!({"path":notes}));
+    session.execute("edit.undo", &json!({})).unwrap();
+    session.sync_instrument_analysis();
+    assert_eq!(session.instrument_analysis_view().unwrap().phase, AnalysisPhase::Stale);
+    assert!(session.execute("instrument.acceptFit", &json!({"track":1,"device":0,"job":stale["job"]})).is_err());
+    assert_eq!(session.project(), &before);
 }
 
 fn modal_fitting_lifecycle() {
