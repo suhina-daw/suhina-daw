@@ -1079,12 +1079,10 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
         crate::kit::liquid::backdrop(&painter, area, 0.0);
     }
     // In a window of its own, Settings is the window's root: its background over the whole
-    // window above the status bar, under the system's title bar too; the system draws its edge.
+    // window, under the system's title bar too; the system draws its edge.
     // Docked, its box over the window, the page inside its border and padding (#1336).
     let area = if state.window {
         let (title_bar, corners) = crate::kit::own_window::shown(ui, state.frame);
-        // The status bar is under it, at the bottom of the window.
-        let corners = egui::CornerRadius { sw: 0, se: 0, ..corners };
         let content = style_class.paint_root(&painter, area, corners);
         Rect::from_min_max(Pos2::new(content.left(), content.top() + title_bar), content.max)
     } else {

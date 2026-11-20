@@ -216,26 +216,13 @@ impl App {
             suhina_plugins::trace::timed("settings native viewport", || {
                 ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("settings-window"), builder, |ui, _| {
                     // The window's base, `window`'s background as under the main window: what the
-                    // status bar and the plug-in manager leave clear shows it.
+                    // plug-in manager leaves clear shows it. The window has no status bar: what
+                    // Settings reports shows in the main window's, as when it is docked.
                     let base = crate::kit::own_window::base(ui, frame);
-                    let whole = base.whole;
-                    // The main window's status bar may be out of sight: this window has its own.
-                    let top = (whole.bottom() - theme::STATUS_BAR).max(whole.top());
                     // Settings' page runs under the system's title bar and keeps clear of it
                     // itself; the plug-in manager starts under it.
-                    let panel = Rect::from_min_max(
-                        Pos2::new(
-                            whole.left(),
-                            if self.plugins.manager.open { base.under_title_bar().top() } else { whole.top() },
-                        ),
-                        Pos2::new(whole.right(), top),
-                    );
-                    let bar = Rect::from_min_max(Pos2::new(whole.left(), top), whole.max);
+                    let panel = if self.plugins.manager.open { base.under_title_bar() } else { base.whole };
                     suhina_plugins::trace::timed("settings native contents", || self.settings_contents(ui, panel));
-                    let status_bar = crate::kit::element::STATUS_BAR.enter();
-                    let _status = ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| {
-                        self.status_bar(ui, &status_bar, None)
-                    });
                     let requested = ui.input(|input| input.viewport().close_requested());
                     if (requested
                         || ui.input(|input| {
