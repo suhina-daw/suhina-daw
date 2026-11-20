@@ -24,7 +24,7 @@ expanded-delay suhina-sheet a15e5bc97d824eee
 expanded-fm-synth suhina-sheet 96f4ba6471a1b17d
 expanded-instrument suhina-sheet aa2fc15445fe7891
 expanded-instrument-model suhina-sheet d5bb8ac13233ee96
-expanded-instrument-sample suhina-sheet 7276b008e6783d31
+expanded-instrument-sample suhina-sheet a5186700626e01e6
 expanded-multiband suhina-sheet d63172276ab9963e
 expanded-reverb suhina-sheet ce7a13dba0a152ea
 expanded-vinyl-distortion suhina-sheet 4df48e927e48ad2a
