@@ -12,6 +12,8 @@ use crate::interaction::colour_picker::{
 use suhina_engine::model::Rgb;
 
 const WIDTH: f32 = 340.0;
+/// How tall the system's title bar is taken to be over a window whose content starts under it.
+const SYSTEM_TITLE_BAR: f32 = 32.0;
 
 #[derive(Default)]
 pub(super) struct ColourWindow {
@@ -194,13 +196,15 @@ impl App {
             (Some(now), Some(asked)) => Some(now.max(asked)),
             (now, asked) => now.or(asked),
         });
+        let own_frame = self.own_window_frame();
+        let outer = outer_size(height, own_frame);
         if self.colour_window.height != height {
             // Expanding near the bottom must keep the new controls on screen. Ordinary
             // moves are left alone; only a size change rechecks the available bounds.
             if let Some(requested) = self.colour_window.initial_position {
                 let observed =
                     self.settings.colour_window_rect.map_or(requested, |[x, y, _, _]| Pos2::new(x as f32, y as f32));
-                let adjusted = place(bounds, Vec2::new(WIDTH, height + 32.0), Some(observed));
+                let adjusted = place(bounds, outer, Some(observed));
                 if adjusted != observed {
                     // An explicit one-shot move also works if the clamped position
                     // happens to equal the builder's unchanged opening position.
@@ -211,9 +215,8 @@ impl App {
         }
         let position = *self.colour_window.initial_position.get_or_insert_with(|| {
             let proposed = self.settings.colour_window_rect.map(|[x, y, _, _]| Pos2::new(x as f32, y as f32));
-            place(bounds, Vec2::new(WIDTH, height + 32.0), proposed)
+            place(bounds, outer, proposed)
         });
-        let own_frame = self.own_window_frame();
         let builder = egui::ViewportBuilder::default()
             .with_title(title.clone())
             .with_position(position)
@@ -409,6 +412,14 @@ impl App {
         }
         for key in keys {
             self.do_action(&key, actions);
+/// How big the window is on screen with content `height` tall, as [`place`] keeps it on screen:
+/// the system's title bar over it, unless the content runs under that bar (`frame.title_bar`),
+/// when `height` holds the bar already.
+fn outer_size(height: f32, frame: crate::kit::own_window::Frame) -> Vec2 {
+    let bar = if frame.title_bar > 0.0 { 0.0 } else { SYSTEM_TITLE_BAR };
+    Vec2::new(WIDTH, height + bar)
+}
+
         }
         if close {
             actions.push(Action::new("ui.finishColour", json!({})));
@@ -434,6 +445,20 @@ fn place(bounds: Rect, size: Vec2, remembered: Option<Pos2>) -> Pos2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A window whose content runs under the system's title bar is as tall as its content, so near
+    /// the screen's bottom it sits on the bottom edge, not a title bar's height above it.
+    #[test]
+    fn a_window_with_its_content_under_the_title_bar_is_as_tall_as_its_content() {
+        let framed = crate::kit::own_window::Frame { title_bar: 0.0, ..Default::default() };
+        let under = crate::kit::own_window::Frame { title_bar: 28.0, ..Default::default() };
+        assert_eq!(outer_size(400.0, framed), Vec2::new(WIDTH, 400.0 + SYSTEM_TITLE_BAR));
+        assert_eq!(outer_size(400.0, under), Vec2::new(WIDTH, 400.0));
+        let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0));
+        let low = Some(Pos2::new(100.0, 790.0));
+        assert_eq!(place(bounds, outer_size(400.0, under), low).y, 400.0);
+        assert_eq!(place(bounds, outer_size(400.0, framed), low).y, 400.0 - SYSTEM_TITLE_BAR);
+    }
 
     #[test]
     fn initial_placement_centres_and_expansion_or_stale_positions_stay_inside_bounds() {
