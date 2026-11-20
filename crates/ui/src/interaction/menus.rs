@@ -981,6 +981,7 @@ pub fn device_menu(
     at: &crate::detail::detail_view::DeviceAt,
     branches: Option<usize>,
     is_builtin: bool,
+    collect_instrument: bool,
     name: &str,
     sidechain: Option<&crate::detail::detail_view::SidechainBox>,
     actions: &mut Vec<Action>,
@@ -1021,10 +1022,16 @@ pub fn device_menu(
         ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
         field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Preset name for {name}")));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        if (enter || ui.button("Save as preset…").clicked()) && !draft.trim().is_empty() {
+        let collect = if collect_instrument {
+            let (_, rect) = ui.allocate_space(egui::vec2(ui.available_width().max(190.0), 24.0));
+            crate::kit::widgets::button(ui, ui.painter(), rect, "Save collected preset…", "Save collected preset…")
+        } else {
+            false
+        };
+        if (enter || collect || ui.button("Save as preset…").clicked()) && !draft.trim().is_empty() {
             actions.push(Action::new(
                 "device.savePreset",
-                json!({ "track": track.0, "device": device, "name": draft.trim() }),
+                json!({ "track": track.0, "device": device, "name": draft.trim(), "collect": collect }),
             ));
             ui.ctx().data_mut(|d| d.remove::<String>(id));
             ui.close();

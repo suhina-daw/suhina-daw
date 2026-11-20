@@ -1025,6 +1025,7 @@ fn device_panel(
             &device.at,
             device.group.as_ref().map(|g| g.branches.len()),
             device.is_builtin,
+            device.theme_id == "instrument",
             &device.name,
             device.sidechain.as_ref(),
             actions,

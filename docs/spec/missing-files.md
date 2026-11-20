@@ -17,6 +17,11 @@ A project names the audio files its clips play. When a file has moved or been re
 project was saved, it cannot be decoded and its clips are silent. Suhina says so when the
 project opens and helps find the files again.
 
+Instrument sources with a saved identity are verified before decoding and when explicitly
+relinked. A candidate with different encoded bytes is refused; choosing new source material
+uses **Import sample…** instead. The accepted modal model survives missing sources and relinks.
+See [Instrument presets](instrument-presets.md) for the collected-folder and hash contract.
+
 - **Sources:** the maintainer's request (2026-10-13); other DAWs have such a view (a list of missing
   files with an automatic search by name and a folder to search), known from their public
   manuals. The design below is Suhina's own.

@@ -11,6 +11,10 @@ covers:
 
 # Instrument
 
+Native state can be saved through [Instrument presets](instrument-presets.md): the shared
+modal profile and one verified sample reference, with an explicit collected-folder option.
+Project save/reopen retains the same source identity and never re-runs analysis or fitting.
+
 Instrument is an experimental native instrument. Its public Rust runtime is shared by stock
 and future export adapters. The stock panel uses the device SDK. It has no network operation,
 training service, proprietary library dependency or background fitting requirement.

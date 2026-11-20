@@ -373,8 +373,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "device.savePreset",
-        label: "Save a built-in device's values — and the file it selects, for the NAM devices — into the library: Presets/<device>/<name>.<device id>.preset.suhina; a preset of the same name is replaced",
-        params: &[DEVICE_TRACK, DEVICE, param("name", ParamType::Text, "the preset's name, also its file's")],
+        label: "Save a built-in device's values and native Instrument model/source or NAM file reference into the library: Presets/<device>/<name>.<device id>.preset.suhina; a preset of the same name is replaced",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            param("name", ParamType::Text, "the preset's name, also its file's"),
+            optional(
+                "collect",
+                ParamType::Bool,
+                "Instrument only: collect its source beside the preset so the folder can move",
+            ),
+        ],
         kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Change),
         run: devices::save_preset,
         policy: Policy {

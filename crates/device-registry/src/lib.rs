@@ -13,6 +13,12 @@ use suhina_device_api::{Device, DeviceError, DeviceInfo};
 use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
 
+mod instrument_preset;
+pub use instrument_preset::{
+    InstrumentPreset, MAX_PRESET_SAMPLE_BYTES, PresetSample, PresetSourceScope, portable_relative_path,
+};
+pub use suhina_dsp::modal::profile::ModalProfile;
+
 /// One built-in device: everything the rest of Suhina asks the registry about it, in one row
 /// (#764 › 9). [`DEVICES`], [`create`], [`layout`], [`panel`] and [`is_file_device`] read this
 /// table, so a new device is one row here.
@@ -733,6 +739,8 @@ pub struct Preset {
     /// (`device.setNamFile`; the library-relative one is portable, an absolute one opens where
     /// the file sits). Left out for a device that runs none.
     pub file: Option<String>,
+    /// Native Instrument's canonical model and verified source, in version-2 presets.
+    pub instrument: Option<InstrumentPreset>,
 }
 
 /// A preset that ships with Suhina (ADR 0014): a file of `presets/` built into the executable.
@@ -848,11 +856,15 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
     if file["format"] != "suhina-preset" {
         return Err("not a preset file".into());
     }
-    if file["version"] != 1 {
+    let version = file["version"].as_u64().filter(|v| matches!(v, 1 | 2));
+    if version.is_none() {
         return Err("a preset file of a version this Suhina does not know".into());
     }
     let id = file["device"].as_str().ok_or("a preset file names its device")?;
     let info = info(id).ok_or_else(|| format!("a preset for {id:?}, which is not a built-in device"))?;
+    if version == Some(2) && id != "instrument" {
+        return Err("preset version 2 is for native Instrument state".into());
+    }
     let role = match info.role {
         suhina_device_api::Role::Effect => "effect",
         suhina_device_api::Role::MidiEffect => "midi_effect",
@@ -875,6 +887,18 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
         params.push((&*param.id, value));
     }
     let tags = file["tags"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(String::from)).collect();
+    let instrument = if version == Some(2) {
+        let revision = params.iter().find(|(id, _)| *id == "model_revision").map_or(1.0, |(_, v)| *v);
+        Some(InstrumentPreset::read(&file["instrument"], revision)?)
+    } else {
+        if file.get("instrument").is_some() {
+            return Err("Instrument state requires preset version 2".into());
+        }
+        if id == "instrument" && params.iter().any(|(id, value)| *id == "model_revision" && *value != 1.0) {
+            return Err("an Instrument profile revision requires preset version 2 and its profile".into());
+        }
+        None
+    };
     let file = match &file["file"] {
         serde_json::Value::Null => None,
         serde_json::Value::String(text) => Some(text.trim()).filter(|f| !f.is_empty()).map(str::to_owned),
@@ -889,7 +913,25 @@ fn read_preset_file(data: &[u8]) -> Result<(Preset, Vec<String>), String> {
     if let Some(file) = file.as_deref() {
         check_preset_file(file, info)?;
     }
-    Ok((Preset { device: &info.id, name: name.to_string(), params, file }, tags))
+    Ok((Preset { device: &info.id, name: name.to_string(), params, file, instrument }, tags))
+}
+
+/// Writes native Instrument state through the existing parameter/name validation and codec.
+pub fn write_instrument_preset(
+    name: &str,
+    params: &[(&str, f64)],
+    instrument: &InstrumentPreset,
+) -> Result<Vec<u8>, String> {
+    let revision = params.iter().find(|(id, _)| *id == "model_revision").map_or(1.0, |(_, v)| *v);
+    instrument.validate(revision)?;
+    let bytes = write_preset_file("instrument", name, None, params)?;
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    value["version"] = 2.into();
+    value["instrument"] = instrument.value();
+    let mut encoded = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+    encoded.push(b'\n');
+    check_preset_size(&encoded)?;
+    Ok(encoded)
 }
 
 /// Writes `device`'s values as a preset file's JSON: one name, the file its device selects (for a
@@ -1000,7 +1042,7 @@ pub fn preset(data: &[u8], voice: usize) -> Result<Preset, String> {
     let info = &suhina_device_fm_synth::INFO;
     let params =
         info.params.iter().enumerate().filter_map(|(i, p)| synth.param(i).map(|value| (&*p.id, value))).collect();
-    Ok(Preset { device: &info.id, name: patch.name().trim().to_string(), params, file: None })
+    Ok(Preset { device: &info.id, name: patch.name().trim().to_string(), params, file: None, instrument: None })
 }
 
 fn check_preset_size(data: &[u8]) -> Result<(), String> {

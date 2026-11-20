@@ -72,6 +72,19 @@ pub fn confine(workspace: &Workspace, id: &str, mut params: Value, source: Optio
             PathKind::WriteFile | PathKind::WriteFolder => {}
         }
     }
+    if matches!(id, "device.add" | "track.add")
+        && let Some(preset) = params.get("preset").and_then(Value::as_str)
+    {
+        match suhina_session::instrument_preset_reference(Path::new(preset))? {
+            Some(suhina_session::InstrumentPresetReference::Library) => {
+                return Err("an agent cannot load a library-referenced Instrument source through a preset; use a collected preset inside the read root".into());
+            }
+            Some(suhina_session::InstrumentPresetReference::Collected(source)) => {
+                workspace.readable(source.to_str().ok_or("the collected source path is not Unicode")?)?;
+            }
+            None => {}
+        }
+    }
     Ok(params)
 }
 

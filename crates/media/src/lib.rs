@@ -17,6 +17,7 @@ pub mod info;
 pub mod midi;
 pub mod stems;
 pub mod tempo;
+pub mod verified_source;
 pub mod write;
 
 use std::collections::HashMap;
@@ -191,6 +192,13 @@ pub fn decode_project_audio_found(project: &Project, project_dir: &Path, trusted
         }
     }
 
+    let identities: Vec<_> = sampler_devices(project)
+        .into_iter()
+        .filter_map(|device| {
+            let identity = device.instrument_source_identity().transpose()?;
+            Some((device.sample_file()?.to_owned(), identity))
+        })
+        .collect();
     let next = AtomicUsize::new(0);
     let threads = std::thread::available_parallelism().map_or(1, usize::from).clamp(1, 16).min(wanted.len().max(1));
     type Decoded = Result<AudioData, String>;
@@ -208,7 +216,19 @@ pub fn decode_project_audio_found(project: &Project, project_dir: &Path, trusted
                         };
                         let failed = |e: MediaError| format!("audio file {}: {e}", path.display());
                         if !*streams {
-                            match decode_file(path) {
+                            let identity =
+                                identities.iter().find(|(key, _)| key == file).map(|(_, identity)| *identity);
+                            let decoded = match identity {
+                                Some(identity)
+                                    if identities.iter().any(|(key, other)| key == file && *other != identity) =>
+                                {
+                                    Err(MediaError::from("conflicting Instrument source identities for one file"))
+                                }
+                                Some(Ok(identity)) => verified_source::decode_verified_source(path, identity),
+                                Some(Err(error)) => Err(MediaError::from(error)),
+                                None => decode_file(path),
+                            };
+                            match decoded {
                                 Ok(data) => {
                                     found.push((file.clone(), path.clone()));
                                     done.push((file.clone(), Ok(data)));

@@ -57,7 +57,9 @@ pub use id_list::{Entry, IdList, ListId};
 pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, NoteId, PointId, SceneId, TempoPointId};
 pub use lane_layout::{LaneGroup, LaneLayout, LaneRef, MAX_GROUP_NAME, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
+mod instrument_source;
 mod launch;
+pub use instrument_source::InstrumentSourceIdentity;
 mod mapping;
 mod overlap;
 mod roll;
