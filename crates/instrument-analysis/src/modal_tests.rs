@@ -57,6 +57,20 @@ fn opposed_stereo_channels_do_not_cancel_and_channel_choice_is_reported() {
 }
 
 #[test]
+fn constant_offset_and_gain_do_not_change_relative_modal_energy() {
+    let original = struck(22050, 2.0, &[(521.3, 1.5, 0.5), (1319.7, 0.9, 0.2)]);
+    let shifted: Vec<_> = original.iter().map(|x| x * 0.2 + 0.5).collect();
+    let a = fit(&original, 22050, 1, 0..original.len(), 60, |_, _| true).unwrap().profile.unwrap();
+    let b = fit(&shifted, 22050, 1, 0..shifted.len(), 60, |_, _| true).unwrap().profile.unwrap();
+    assert_eq!(a.modes().len(), b.modes().len());
+    for (left, right) in a.modes().iter().zip(b.modes()) {
+        assert!((left.ratio - right.ratio).abs() < 0.002);
+        assert!((left.decay_seconds - right.decay_seconds).abs() < 0.01);
+        assert!((left.magnitude - right.magnitude).abs() < 0.002);
+    }
+}
+
+#[test]
 fn silence_short_constant_growing_and_noise_sources_do_not_get_a_model() {
     for pcm in [vec![0.0; 22050], vec![0.3; 22050]] {
         assert_eq!(fit(&pcm, 22050, 1, 0..pcm.len(), 60, |_, _| true).unwrap().outcome, Outcome::Silent);

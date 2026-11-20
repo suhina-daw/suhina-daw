@@ -114,6 +114,8 @@ pub fn fit(
     let mut sums = [0.0_f64; 2];
     let mut squares = [0.0_f64; 2];
     let mut peaks = [0.0_f64; 2];
+    let mut minima = [f64::INFINITY; 2];
+    let mut maxima = [f64::NEG_INFINITY; 2];
     for chunk in input.chunks(CHUNK * channels) {
         work.step()?;
         for frame in chunk.chunks_exact(channels) {
@@ -128,6 +130,10 @@ pub fn fit(
                     *sum += value;
                     *square += value * value;
                     *peak = peak.max(value.abs());
+                    if let (Some(low), Some(high)) = (minima.get_mut(channel), maxima.get_mut(channel)) {
+                        *low = low.min(value);
+                        *high = high.max(value);
+                    }
                 }
             }
         }
@@ -141,7 +147,7 @@ pub fn fit(
         return Ok(report);
     }
     let mean = sums[channel] / length as f64;
-    let scale = peaks[channel].max(1e-12);
+    let scale = (maxima[channel] - mean).abs().max((minima[channel] - mean).abs()).max(1e-12);
     let mut resampler = Resampler::new(f64::from(sample_rate), f64::from(RATE));
     let mut output = vec![0.0; (CHUNK as f64 * f64::from(RATE) / f64::from(sample_rate)).ceil() as usize + 1024];
     let capacity = (length as f64 * f64::from(RATE) / f64::from(sample_rate)).ceil() as usize + 1024;
