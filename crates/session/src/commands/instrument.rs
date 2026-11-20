@@ -26,7 +26,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "instrument.analyzeSample",
-        label: "Analyze the loaded sample locally and propose its root note without changing the instrument",
+        label: "Analyze the loaded sample locally and propose its root note (one note), or the tonic of its key (a loop or phrase), without changing the instrument",
         params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::on(Target::Project, Effect::Change),
         run: instrument_analysis::start,

@@ -134,6 +134,7 @@ pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
 pub use suhina_instrument_analysis::Outcome as SampleAnalysisOutcome;
 pub use suhina_instrument_analysis::modal::Outcome as ModalFitOutcome;
+pub use suhina_instrument_analysis::{KeyCandidate as SampleKey, KeyMode as SampleKeyMode};
 pub use suhina_plugins::Placement;
 pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
 pub use zipped::{ZippedProject, default_extract_folder, extract_zipped_project, zipped_project};

@@ -418,10 +418,19 @@ pub(crate) fn status(session: &mut Session, params: &Value) -> Result<Value, Com
 fn view_json(view: &AnalysisView) -> Value {
     let report = view.report.as_ref().map(|r| json!({
         "version":r.version, "firstFrame":r.range.start, "endFrame":r.range.end,
-        "sourceAssumption":"singleIsolatedPitchedNote", "polyphonyAssessed":false,
-        "outcome":match r.outcome { Outcome::Stable=>"stable", Outcome::Silent=>"silent", Outcome::TooShort=>"tooShort", Outcome::NoStablePitch=>"noStablePitch" },
+        "sourceAssumption":if r.key.is_some() { "tonalMaterial" } else { "singleIsolatedPitchedNote" }, "polyphonyAssessed":false,
+        "outcome":match r.outcome { Outcome::Stable=>"stable", Outcome::Silent=>"silent", Outcome::TooShort=>"tooShort", Outcome::NoStablePitch=>"noStablePitch", Outcome::TonalCentre=>"tonalCentre" },
         "activeWindows":r.active_windows,"voicedWindows":r.voiced_windows,
-        "proposal":r.proposal.map(|p| json!({"root":p.root,"midi":p.midi,"hz":p.hz,"cents":p.cents,"periodicity":p.periodicity,"spreadCents":p.spread_cents}))
+        "proposal":r.proposal.map(|p| json!({"root":p.root,"midi":p.midi,"hz":p.hz,"cents":p.cents,"periodicity":p.periodicity,"spreadCents":p.spread_cents})),
+        "key":r.key.map(|k| {
+            let mut key = key_candidate_json(&k.key);
+            key["root"] = json!(k.root);
+            key["runnerUp"] = key_candidate_json(&k.runner_up);
+            key["tuningCents"] = json!(k.tuning_cents);
+            key["medianMidi"] = json!(k.median_midi);
+            key["windows"] = json!(k.windows);
+            key
+        })
     }));
     let modal = view.modal.as_ref().map(|r| json!({
         "version":r.version,"firstFrame":r.range.start,"endFrame":r.range.end,"channel":r.channel,
@@ -434,6 +443,16 @@ fn view_json(view: &AnalysisView) -> Value {
             "estimationWindows":m.estimation_windows,"validationWindows":m.validation_windows})).collect::<Vec<_>>()
     }));
     json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"report":report,"modal":modal,"acceptedRoot":view.accepted_root,"message":view.message})
+}
+
+/// A key by its tonic's name (sharps) and mode; the correlation is a profile fit, not a probability.
+fn key_candidate_json(key: &suhina_instrument_analysis::KeyCandidate) -> Value {
+    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let mode = match key.mode {
+        suhina_instrument_analysis::KeyMode::Major => "major",
+        suhina_instrument_analysis::KeyMode::Minor => "minor",
+    };
+    json!({"tonic":NAMES.get(usize::from(key.tonic)).copied().unwrap_or("?"),"mode":mode,"correlation":key.correlation})
 }
 
 pub(crate) fn cancel(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -450,8 +469,13 @@ pub(crate) fn accept(session: &mut Session, params: &Value) -> Result<Value, Com
     if job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current analysis proposal can be accepted".into());
     }
-    let proposal = job.report.as_ref().and_then(|r| r.proposal).ok_or("analysis found no stable root-note proposal")?;
-    let root = Args::new(params).opt_index("root", "MIDI root key")?.unwrap_or(usize::from(proposal.root));
+    // A single stable note, or else the tonal centre of melodic or chordal material.
+    let proposed = job
+        .report
+        .as_ref()
+        .and_then(|r| r.proposal.map(|p| p.root).or(r.key.map(|k| k.root)))
+        .ok_or("analysis found no root-note proposal")?;
+    let root = Args::new(params).opt_index("root", "MIDI root key")?.unwrap_or(usize::from(proposed));
     let root = u8::try_from(root).ok().filter(|v| *v <= 127).ok_or("root must be an integer from 0 to 127")?;
     // Reuse the actual manual-edit path, including parameter messages to the running graph.
     // Merely assigning the model value would request an unnecessary graph rebuild.

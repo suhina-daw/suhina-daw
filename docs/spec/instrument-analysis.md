@@ -30,7 +30,7 @@ access and never rereads a path behind the command's authorization checks.
 The dependency boundary and host responsibilities are proposed in
 [ADR 0041](../decisions/0041-instrument-sample-analysis.md).
 
-Analysis version 1 accepts mono/stereo audio at 1,000..384,000 Hz. It examines at most the first
+Analysis version 2 accepts mono/stereo audio at 1,000..384,000 Hz. It examines at most the first
 eight seconds of the selected trim and at most 32 evenly distributed analysis windows per
 channel. The report names the actual analyzed range; material beyond it is not assessed.
 Preparation uses the shared antialiasing resampler at 22,050 Hz, removes each analysis window's
@@ -63,6 +63,43 @@ That remaining acceptance point is tracked in
 
 Accepting an integer root does not remove the displayed residual cents offset. The person may
 choose a different root, but that choice is explicit and is not presented as a measured result.
+
+### Loops and melodic material
+
+A loop or phrase with several notes has no single pitch, so the note path above withholds its
+proposal. Analysis version 2 then proposes the material's **tonal centre** as the root: the
+tonic of its estimated key, so playing the loop from another key transposes it musically. This
+proposal is only made when no stable single note was found and the analyzed range is active.
+
+- **Pitch-class profile.** Each channel's prepared 22050 Hz signal is cut into consecutive,
+  non-overlapping 8192-sample Hann windows (at most 21 per channel within the eight-second
+  bound; every channel needs at least two, about 0.75 s). In each window, spectral peaks between
+  55 Hz and 4000 Hz are located with parabolic interpolation on log magnitude. A peak counts
+  when it is within 40 dB of the window's strongest and stands 20 dB above the median of its
+  neighbours 3..32 bins away, which unpitched noise does not do. Of the 64 strongest, a peak
+  within 25 cents of 2..8 times a lower kept peak is that peak's harmonic and is left out, so
+  every note does not also add its fifth and third. The kept peaks' magnitude-weighted circular
+  mean deviation from equal temperament is the tuning offset; each kept peak's magnitude then
+  adds to the pitch class it lies nearest to after that offset. Peaks, not a single fundamental,
+  are used, so chords and bass lines contribute and stereo polarity cannot cancel anything.
+- **Key.** The twelve-value profile is correlated (Pearson) with the 24 rotations of the major
+  and minor key profiles published by Krumhansl and Kessler. The best key's tonic is the
+  proposal's pitch class. A correlation below 0.6 means the material has no clear tonal centre
+  (unpitched drums, noise, atonal material) and no proposal is made. The runner-up key and both
+  correlations are reported; relative major/minor keys share their pitch classes and often
+  differ by little, which the interface shows instead of hiding. Correlations are measurements
+  of fit to a profile, not probabilities.
+- **Root key.** The root is the tonic's MIDI note nearest to the median of each window's lowest
+  prominent pitch (its lowest kept peak within 20 dB of its strongest), the lower one on a tie,
+  within 0..127: the register of the bass or melody, not of its harmonics. The tuning offset is shown in cents and,
+  as for a single note, is not removed by accepting the integer root.
+
+The analyzed range is the selected trim, as for a single note; loop start and end do not
+change it. The command report marks such a result with outcome `tonalCentre` and a `key`
+object (tonic, mode, correlation, runner-up, tuning cents, root). Acceptance, correction and
+undo work exactly as for a single-note proposal. A key estimate from one short loop can be
+wrong, for example between relative keys or when the loop dwells on its dominant; the person
+listens and corrects it before accepting.
 
 ## Session jobs and commands
 
@@ -125,6 +162,13 @@ separate sources, adjust sample tuning automatically or publish/import training 
 ## Sources
 
 - Own existing `suhina-soundmap` pitch estimator and sample/command/undo implementation.
+- Carol L. Krumhansl and Edward J. Kessler, *Tracing the dynamic changes in perceived tonal
+  organization in a spatial representation of musical keys*, Psychological Review 89(4),
+  334-368 (1982), [DOI](https://doi.org/10.1037/0033-295X.89.4.334): the published major and
+  minor key profile values; Carol L. Krumhansl, *Cognitive Foundations of Musical Pitch*
+  (Oxford University Press, 1990) describes correlating a pitch-class distribution with them.
+- Takuya Fujishima, *Realtime chord recognition of musical sound: a system using Common Lisp
+  Music*, ICMC 1999: the pitch-class profile of a spectrum. No implementation is copied.
 - Alain de Cheveigne and Hideki Kawahara, *YIN, a fundamental frequency estimator for speech
   and music* (2002), [paper](https://www.ee.columbia.edu/~dpwe/e6820/papers/deChevK02-yin.pdf),
   [DOI](https://doi.org/10.1121/1.1458024). The algorithm informs the original Rust estimator;

@@ -30,26 +30,45 @@ first, and its proposal can be corrected before acceptance.
 
 ## Estimator and limits
 
-Algorithm version 1 admits mono/stereo PCM at 1000..384000 Hz and at most the first eight
+Algorithm version 2 admits mono/stereo PCM at 1000..384000 Hz and at most the first eight
 seconds of the selected trim. It checks finite input and chooses the channel with greatest AC
 energy; the chosen zero-based channel and inspected source-frame range are reported. Opposite
 stereo polarity therefore cannot cancel the source. Stereo radiation and width are not fitted.
+A channel whose values do not vary (silence or a constant offset) is reported as silent.
 The existing shared resampler prepares one normalized channel at 22050 Hz. A relative trailing
 noise floor limits the useful analysis interval; the source itself is never trimmed or edited.
 
-The analysis uses 6..12 consecutive non-overlapping Hann windows, with a power-of-two size
-from 1024 to 8192. Even windows supply estimation data; odd windows are reserved for temporal
-envelope validation. An FFT of the first estimation window proposes at most 32 separated
-prominent peaks. Bounded interval refinement estimates each peak frequency. A complex
-projection at that frequency measures amplitude in each window. Least squares on log amplitude
+**Finding resonances.** A Hann-windowed FFT over the start of the analyzed interval, with the
+largest power-of-two length up to 8192 samples that fits it, proposes at most 32 prominent
+peaks: a local maximum within 60 dB of the strongest that stands 20 dB above the median of its
+neighbours 3..8 bins away. This detection window is independent of the envelope windows, so
+the partials of a low note in a short trim are resolved (version 1 searched only the first
+envelope window, as short as 1024 samples, where neighbouring partials of a low note hid each
+other). Candidates closer than two envelope-window bins (the Hann main lobe's half width) are
+merged into the stronger one. Bounded interval refinement on the detection window estimates
+each peak frequency.
+
+**Measuring decay.** The interval is cut into 6..12 consecutive non-overlapping Hann windows
+with a power-of-two size from 1024 to 8192. A complex projection at the mode's frequency
+measures its amplitude in each window. Each mode uses its own span: it starts at its loudest of
+the first three windows (an attack inside the first window is not a decay), and ends before the
+first window more than 60 dB below that peak or 6 dB above the lowest level so far (the
+recording's floor, or the next strike in the trim). Within the span, even windows supply
+estimation data and odd windows are held out for validation. Least squares on log amplitude
 versus time estimates exponential decay; T60 is minus ln(1000) divided by the slope. The
 window's damping-dependent amplitude bias is compensated before storing relative magnitudes.
 
-Only finite, decaying modes with sufficient measured amplitude, at least three estimation and
-three validation windows, measurable decay, and small estimation/validation envelope residuals
-are retained. The minimum separation is tied to window resolution. The result contains at most
-16 modes within the canonical profile's bounds. Constant tones, rising envelopes, unresolved
-beating, noise and short sounds may yield no model; the playable sample remains usable.
+**Accepting a mode.** A mode is kept when it has at least three estimation and three validation
+windows, its slope decays with a T60 within 0.001..60 s, the fitted level falls at least 1 dB
+across the estimation windows and at least three times the larger RMS envelope error, the
+estimation error is at most 2.5 dB and the validation error at most 3 dB. A real strike rarely
+decays as one exponential: beating partials and a fast early decay followed by a slower one
+leave decibels of error that version 1's limits (1.0 dB estimation, 1.5 dB validation) rejected,
+so a recorded strike could yield no model at all. When a span of nine or more windows fails,
+the fit is repeated once on its last two thirds, which describes the sustained part after a fast
+early decay. The result contains at most 16 modes within the canonical profile's bounds.
+Constant tones, rising envelopes, noise and short sounds yield no model; the playable sample
+remains usable.
 
 Report errors are RMS dB differences of a mode's amplitude envelope, not waveform errors,
 probabilities, realism percentages or independent listening results. Odd windows belong to

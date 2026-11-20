@@ -12,7 +12,7 @@ use suhina_dsp::{
     modal::profile::{MAX_PROFILE_MODES, ModalProfile, ProfileMode},
 };
 
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 const MIN_FRAME: usize = 1024;
 const MAX_FRAME: usize = 8192;
 const MAX_FRAMES: usize = 12;
@@ -20,6 +20,17 @@ const MAX_CANDIDATES: usize = 32;
 const CHUNK: usize = 256;
 const REFINEMENTS: usize = 20;
 const DB: f64 = 20.0 / std::f64::consts::LN_10;
+/// A mode's span ends this far below its own peak, where leakage and noise dominate.
+const SPAN_FLOOR_DB: f64 = 60.0;
+/// A mode's span ends where its level rises this much above its lowest so far.
+const RERISE_DB: f64 = 6.0;
+const MAX_ESTIMATION_DB: f64 = 2.5;
+const MAX_VALIDATION_DB: f64 = 3.0;
+const MIN_DROP_DB: f64 = 1.0;
+/// The fitted fall must exceed the larger envelope error this many times.
+const DROP_TO_ERROR: f64 = 3.0;
+/// A failing span this long is fitted once more on its last two thirds.
+const LATE_RETRY_WINDOWS: usize = 9;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -189,10 +200,17 @@ pub fn fit(
     }
     report.frame_size = frame_size;
     report.analyzed_seconds = (frames * frame_size) as f64 / f64::from(RATE);
-    let window: Vec<f64> = (0..frame_size).map(|i| 0.5 - 0.5 * (TAU * i as f64 / frame_size as f64).cos()).collect();
-    let first = mono.get(..frame_size).ok_or(Error::InvalidRange)?;
-    let mut bins: Vec<Complex64> = first.iter().zip(&window).map(|(x, w)| Complex64::new(x * w, 0.0)).collect();
-    let fft = FftPlanner::<f64>::new().plan_fft_forward(frame_size);
+    let window = hann(frame_size);
+    // Detection resolves the partials of a low note that a short envelope window would merge.
+    let mut detection_size = frame_size;
+    while detection_size < MAX_FRAME && detection_size * 2 <= mono.len() {
+        detection_size *= 2;
+    }
+    let detection = mono.get(..detection_size).ok_or(Error::InvalidRange)?;
+    let detection_window = hann(detection_size);
+    let mut bins: Vec<Complex64> =
+        detection.iter().zip(&detection_window).map(|(x, w)| Complex64::new(x * w, 0.0)).collect();
+    let fft = FftPlanner::<f64>::new().plan_fft_forward(detection_size);
     let mut scratch = vec![Complex64::default(); fft.get_inplace_scratch_len()];
     work.step()?;
     fft.process_with_scratch(&mut bins, &mut scratch);
@@ -200,10 +218,12 @@ pub fn fit(
     let reference_hz = 440.0 * 2.0_f64.powf((f64::from(reference_key) - 69.0) / 12.0);
     let low_hz = 40.0_f64.max(reference_hz / 256.0);
     let high_hz = 10000.0_f64.min(f64::from(sample_rate) * 0.4).min(reference_hz * 256.0);
-    let bin_hz = f64::from(RATE) / frame_size as f64;
-    let spectrum: Vec<f64> = bins.iter().take(frame_size / 2).map(|x| x.norm()).collect();
+    let bin_hz = f64::from(RATE) / detection_size as f64;
+    // Two candidates inside one envelope window's main lobe would measure the same energy.
+    let separation_bins = 2.0 * detection_size as f64 / frame_size as f64;
+    let spectrum: Vec<f64> = bins.iter().take(detection_size / 2).map(|x| x.norm()).collect();
     let highest = spectrum.iter().copied().fold(0.0_f64, f64::max);
-    let mut peaks = Vec::with_capacity(frame_size / 2);
+    let mut peaks = Vec::with_capacity(detection_size / 2);
     for bin in 2..spectrum.len().saturating_sub(9) {
         let hz = bin as f64 * bin_hz;
         if hz < low_hz || hz > high_hz {
@@ -226,7 +246,7 @@ pub fn fit(
     peaks.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     let mut candidates = Vec::with_capacity(MAX_CANDIDATES);
     for (bin, _) in peaks {
-        if candidates.iter().all(|other: &usize| other.abs_diff(bin) >= 3) {
+        if candidates.iter().all(|other: &usize| other.abs_diff(bin) as f64 >= separation_bins.max(3.0)) {
             candidates.push(bin);
         }
         if candidates.len() == MAX_CANDIDATES {
@@ -235,7 +255,13 @@ pub fn fit(
     }
     let mut accepted = Vec::with_capacity(MAX_CANDIDATES);
     for bin in candidates {
-        let hz = refine(first, &window, (bin as f64 - 0.75) * bin_hz, (bin as f64 + 0.75) * bin_hz, &mut work)?;
+        let hz = refine(
+            detection,
+            &detection_window,
+            (bin as f64 - 0.75) * bin_hz,
+            (bin as f64 + 0.75) * bin_hz,
+            &mut work,
+        )?;
         if hz < low_hz || hz > high_hz {
             continue;
         }
@@ -323,9 +349,48 @@ fn refine<F: FnMut(usize, usize) -> bool>(
     Ok((left + right) * 0.5)
 }
 
+fn hann(size: usize) -> Vec<f64> {
+    (0..size).map(|i| 0.5 - 0.5 * (TAU * i as f64 / size as f64).cos()).collect()
+}
+
+/// Decay of one mode from its (window, time, log amplitude) measurements: fitted on its own
+/// span, and once more on the span's last two thirds when a long span fails.
 fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEvidence)> {
-    let training: Vec<_> = values.iter().filter(|(i, _, _)| i % 2 == 0).collect();
-    let validation: Vec<_> = values.iter().filter(|(i, _, _)| i % 2 == 1).collect();
+    let span = envelope_span(values);
+    fit_span(hz, span).or_else(|| {
+        if span.len() < LATE_RETRY_WINDOWS {
+            return None;
+        }
+        fit_span(hz, span.get(span.len() / 3..)?)
+    })
+}
+
+/// From the loudest of the first three windows (an attack is not a decay) until the level is
+/// more than `SPAN_FLOOR_DB` below that peak or `RERISE_DB` above its lowest so far.
+fn envelope_span(values: &[(usize, f64, f64)]) -> &[(usize, f64, f64)] {
+    let head = values.get(..values.len().min(3)).unwrap_or_default();
+    let mut start = None;
+    for (index, value) in head.iter().enumerate() {
+        if start.is_none_or(|(_, peak)| value.2 > peak) {
+            start = Some((index, value.2));
+        }
+    }
+    let Some((start, peak)) = start else { return &[] };
+    let mut low = peak;
+    let mut end = start;
+    for value in values.iter().skip(start) {
+        if (peak - value.2) * DB > SPAN_FLOOR_DB || (value.2 - low) * DB > RERISE_DB {
+            break;
+        }
+        low = low.min(value.2);
+        end += 1;
+    }
+    values.get(start..end).unwrap_or_default()
+}
+
+fn fit_span(hz: f64, span: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEvidence)> {
+    let training: Vec<_> = span.iter().step_by(2).collect();
+    let validation: Vec<_> = span.iter().skip(1).step_by(2).collect();
     if training.len() < 3 || validation.len() < 3 {
         return None;
     }
@@ -344,17 +409,18 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEvid
     if !(0.001..=60.0).contains(&decay) {
         return None;
     }
-    let span = training.last()?.1 - training.first()?.1;
-    if -slope * span * DB < 1.0 {
-        return None;
-    }
     let intercept = mean_y - slope * mean_t;
     let rms = |v: &[&(usize, f64, f64)]| {
         (v.iter().map(|p| ((p.2 - intercept - slope * p.1) * DB).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
     };
     let estimation_rms_db = rms(&training);
     let validation_rms_db = rms(&validation);
-    if estimation_rms_db > 1.0 || validation_rms_db > 1.5 {
+    let drop_db = -slope * (training.last()?.1 - training.first()?.1) * DB;
+    if drop_db < MIN_DROP_DB
+        || drop_db < DROP_TO_ERROR * estimation_rms_db.max(validation_rms_db)
+        || estimation_rms_db > MAX_ESTIMATION_DB
+        || validation_rms_db > MAX_VALIDATION_DB
+    {
         return None;
     }
     Some((

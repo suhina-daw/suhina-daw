@@ -50,6 +50,7 @@ fn admission_and_late_completion_have_no_timing_dependency() {
         range: 0..4096,
         outcome: Outcome::Silent,
         proposal: None,
+        key: None,
         active_windows: 0,
         voiced_windows: 0,
     })))

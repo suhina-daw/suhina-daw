@@ -139,3 +139,108 @@ fn only_the_admitted_prefix_is_analyzed_and_reported() {
     assert_eq!(report.proposal.unwrap().root, 45);
     assert_eq!(last.0, last.1);
 }
+
+/// A harmonic note (six partials at 1/k) decaying over its duration, at the analysis rate.
+fn note(midi: f64, seconds: f64) -> Vec<f64> {
+    let hz = 440.0 * 2.0f64.powf((midi - 69.0) / 12.0);
+    (0..(f64::from(RATE) * seconds) as usize)
+        .map(|i| {
+            let t = i as f64 / f64::from(RATE);
+            let tone: f64 = (1..=6)
+                .map(f64::from)
+                .filter(|k| hz * k < 9000.0)
+                .map(|k| (std::f64::consts::TAU * hz * k * t).sin() / k)
+                .sum();
+            0.4 * tone * (-t / 1.5 * 3.0).exp()
+        })
+        .collect()
+}
+
+/// Notes (start seconds, MIDI keys, length) summed into `seconds` of audio.
+fn phrase(events: &[(f64, &[f64], f64)], seconds: f64) -> Vec<f32> {
+    let mut out = vec![0.0f64; (f64::from(RATE) * seconds) as usize];
+    for (start, keys, length) in events {
+        for key in *keys {
+            let first = (start * f64::from(RATE)) as usize;
+            for (sample, value) in out.iter_mut().skip(first).zip(note(*key, *length)) {
+                *sample += value;
+            }
+        }
+    }
+    out.into_iter().map(|x| x as f32).collect()
+}
+
+fn melody(keys: &[f64]) -> Vec<f32> {
+    let events: Vec<_> =
+        keys.iter().enumerate().map(|(i, key)| (i as f64 * 0.5, std::slice::from_ref(key), 0.5)).collect();
+    phrase(&events, keys.len() as f64 * 0.5)
+}
+
+#[test]
+fn melodic_and_chordal_loops_propose_the_tonic_of_their_key() {
+    use suhina_instrument_analysis::KeyMode::{Major, Minor};
+    // A natural minor melody A3 C4 E4 D4 C4 B3 A3 E3; C F G C triads; an E minor bass line.
+    let cases: [(&str, Vec<f32>, u8, suhina_instrument_analysis::KeyMode, u8); 3] = [
+        ("melody", melody(&[57.0, 60.0, 64.0, 62.0, 60.0, 59.0, 57.0, 52.0]), 9, Minor, 57),
+        (
+            "chords",
+            phrase(
+                &[
+                    (0.0, &[48.0, 52.0, 55.0][..], 1.0),
+                    (1.0, &[53.0, 57.0, 60.0][..], 1.0),
+                    (2.0, &[55.0, 59.0, 62.0][..], 1.0),
+                    (3.0, &[48.0, 52.0, 55.0][..], 1.0),
+                ],
+                4.0,
+            ),
+            0,
+            Major,
+            48,
+        ),
+        ("bass", melody(&[40.0, 43.0, 45.0, 47.0, 40.0, 47.0, 45.0, 43.0]), 4, Minor, 40),
+    ];
+    for (name, samples, tonic, mode, root) in cases {
+        let report = analyze(&samples, RATE, 1, 0..samples.len(), |_, _| true).unwrap();
+        assert_eq!(report.outcome, Outcome::TonalCentre, "{name}: {report:?}");
+        assert_eq!(report.proposal, None, "{name}: no single note");
+        let key = report.key.unwrap();
+        assert_eq!((key.key.tonic, key.key.mode, key.root), (tonic, mode, root), "{name}: {key:?}");
+        assert!(key.key.correlation >= key.runner_up.correlation && key.key.correlation >= 0.6, "{name}: {key:?}");
+        assert!(key.tuning_cents.abs() < 5.0, "{name}: {key:?}");
+        // Opposite polarity in stereo cancels nothing: magnitudes are summed per channel.
+        let stereo: Vec<_> = samples.iter().flat_map(|x| [*x, -*x]).collect();
+        let both = analyze(&stereo, RATE, 2, 0..samples.len(), |_, _| true).unwrap().key.unwrap();
+        assert_eq!((both.key.tonic, both.key.mode, both.root), (tonic, mode, root), "{name} stereo");
+    }
+}
+
+#[test]
+fn a_detuned_loop_reports_its_tuning_and_keeps_its_key() {
+    let detuned: Vec<_> = [57.0, 60.0, 64.0, 62.0, 60.0, 59.0, 57.0, 52.0].iter().map(|k| k + 0.3).collect();
+    let samples = melody(&detuned);
+    let key = analyze(&samples, RATE, 1, 0..samples.len(), |_, _| true).unwrap().key.unwrap();
+    assert_eq!((key.key.tonic, key.root), (9, 57));
+    assert!((key.tuning_cents - 30.0).abs() < 5.0, "{key:?}");
+}
+
+#[test]
+fn unpitched_loops_and_single_notes_get_no_key() {
+    // Decaying noise bursts on every quarter beat at 120 BPM: no prominent partials.
+    let mut seed = 0x1234_5678u32;
+    let mut drums = vec![0.0f32; RATE as usize * 4];
+    for hit in 0..16 {
+        let first = hit * RATE as usize / 4;
+        for (i, sample) in drums.iter_mut().skip(first).take(RATE as usize / 12).enumerate() {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            *sample += (seed as f32 / u32::MAX as f32 - 0.5) * (-(i as f32) / RATE as f32 * 40.0).exp();
+        }
+    }
+    let report = analyze(&drums, RATE, 1, 0..drums.len(), |_, _| true).unwrap();
+    assert_eq!((report.outcome, report.key), (Outcome::NoStablePitch, None), "{report:?}");
+    // A single stable note keeps its note proposal; the key path is not used.
+    let single = tone(RATE, 220.0, 2.0, 0.5, 0.0);
+    let report = analyze(&single, RATE, 1, 0..single.len(), |_, _| true).unwrap();
+    assert_eq!((report.outcome, report.key), (Outcome::Stable, None));
+}

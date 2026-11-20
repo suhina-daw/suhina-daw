@@ -13,7 +13,7 @@ use suhina_session::{
 
 use super::device_canvas::remember_keyboard_owner;
 use crate::interaction::device_at::DeviceAt;
-use crate::interaction::key_name::{key_name, parse_key_name};
+use crate::interaction::key_name::{key_name, parse_key_name, pitch_class_name};
 use crate::kit::widgets::Action;
 
 #[derive(Clone, Default)]
@@ -110,7 +110,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     if let Some(profile) = report.profile {
                         let error = report.modes.iter().map(|m|m.validation_rms_db).fold(0.0_f64, f64::max);
                         ui.horizontal(|ui| {
-                            ui.label(format!("Experimental: {} modes · root {} · envelope error ≤ {:.2} dB",profile.modes().len(),profile.reference_key(),error))
+                            ui.label(format!("Experimental: {} modes · root {} · envelope error ≤ {:.2} dB",profile.modes().len(),key_name(profile.reference_key()),error))
                                 .on_hover_text(format!("Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Initial phases, attack and room response are not reconstructed.",report.channel+1,report.range.start,report.range.end,report.analyzed_seconds));
                             let accept = ui.button("Accept model");
                             remember_keyboard_owner(&accept);
@@ -130,10 +130,29 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     return;
                 }
                 let Some(report) = &view.report else { return; };
-                if let Some(proposal) = report.proposal {
+                // One stable note, or else the tonal centre of a loop or phrase.
+                let proposed = report.proposal.map(|proposal| (
+                    proposal.root,
+                    format!("Measured {:.2} Hz ({} {:+.1} cents)",proposal.hz,key_name(proposal.root),proposal.cents),
+                    format!("Periodicity {:.3}; spread {:.1} cents; voiced {} / {} active windows. Analyzed frames {}..{}. These measurements are not a correctness probability.", proposal.periodicity, proposal.spread_cents, report.voiced_windows, report.active_windows, report.range.start, report.range.end),
+                    ["Accept changes the root key in one undo step. The cents offset remains in the source.",
+                     "For isolated notes: chords can produce an ambiguous root. Listen before accepting."],
+                )).or_else(|| report.key.map(|key| {
+                    let name = |k: &suhina_session::SampleKey| format!("{} {}", pitch_class_name(k.tonic), if k.mode == suhina_session::SampleKeyMode::Major { "major" } else { "minor" });
+                    // Relative keys share their notes; a close runner-up is shown, not hidden.
+                    let alternative = if key.runner_up.correlation >= key.key.correlation - 0.1 { format!(" · or {}", name(&key.runner_up)) } else { String::new() };
+                    (
+                        key.root,
+                        format!("Key {}{} → root {}, tuning {:+.1} cents",name(&key.key),alternative,key_name(key.root),key.tuning_cents),
+                        format!("Pitch-class profile of {} windows compared with major and minor key profiles: {} {:.2}, {} {:.2}. A correlation is a fit, not a probability. Analyzed frames {}..{}.", key.windows, name(&key.key), key.key.correlation, name(&key.runner_up), key.runner_up.correlation, report.range.start, report.range.end),
+                        ["Accept sets the root to the key's tonic in one undo step; playing other keys transposes the loop.",
+                         "A short loop's key can be ambiguous. Listen, and correct the root if its home note differs."],
+                    )
+                }));
+                if let Some((root, measured, hover, notes)) = proposed {
                     let mut correction = ui.ctx().data(|data| data.get_temp::<Correction>(correction_id()))
                         .filter(|c| c.job == view.job)
-                        .unwrap_or(Correction { job:view.job.clone(),root:proposal.root });
+                        .unwrap_or(Correction { job:view.job.clone(),root });
                     ui.horizontal(|ui| {
                         ui.label("Root key");
                         let response = ui.add(egui::DragValue::new(&mut correction.root).range(0..=127).speed(0.1)
@@ -141,22 +160,22 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                             .custom_parser(|text| parse_key_name(text).map(f64::from)));
                         remember_keyboard_owner(&response);
                         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton,true,"Proposed root key"));
-                        ui.label(format!("Measured {:.2} Hz ({} {:+.1} cents)",proposal.hz,key_name(proposal.root),proposal.cents))
-                            .on_hover_text(format!("Periodicity {:.3}; spread {:.1} cents; voiced {} / {} active windows. Analyzed frames {}..{}. These measurements are not a correctness probability.", proposal.periodicity, proposal.spread_cents, report.voiced_windows, report.active_windows, report.range.start, report.range.end));
+                        ui.label(measured).on_hover_text(hover);
                         let accept = ui.button("Accept root");
                         remember_keyboard_owner(&accept);
                         if accept.clicked() {
                             actions.push(Action::new("instrument.acceptAnalysis",json!({"track":track_value,"device":device_value,"job":view.job,"root":correction.root})));
                         }
                     });
-                    ui.label("Accept changes the root key in one undo step. The cents offset remains in the source.");
-                    ui.label("For isolated notes: chords can produce an ambiguous root. Listen before accepting.");
+                    for note in notes {
+                        ui.label(note);
+                    }
                     ui.ctx().data_mut(|data| data.insert_temp(correction_id(),correction));
                 } else {
                     ui.label(match report.outcome {
                         SampleAnalysisOutcome::Silent => "The analyzed region is silent or constant. Choose a sounding region.",
                         SampleAnalysisOutcome::TooShort => "The analyzed region is too short for a stable root. Use a longer isolated note.",
-                        SampleAnalysisOutcome::NoStablePitch | SampleAnalysisOutcome::Stable => "No stable root was found. Keep the sample playable and set Root by ear.",
+                        SampleAnalysisOutcome::NoStablePitch | SampleAnalysisOutcome::Stable | SampleAnalysisOutcome::TonalCentre => "No stable note or clear key was found. Keep the sample playable and set Root by ear.",
                     });
                 }
             }
