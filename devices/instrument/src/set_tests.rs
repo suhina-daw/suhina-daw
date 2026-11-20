@@ -19,6 +19,7 @@ fn recording(attack: Vec<f32>) -> ModelRecording {
         ],
         attack_rate: if attack.is_empty() { 0 } else { 48000 },
         attack,
+        sustain: None,
     }
 }
 
@@ -128,4 +129,80 @@ fn malformed_sets_are_silent_and_a_set_replaces_a_profile() {
     // A revision that does not match the loaded state stays silent.
     core.set_param(param::REVISION, 2.0);
     assert!(!core.model_supported());
+}
+
+fn held_recording() -> ModelRecording {
+    let mut layer = suhina_dsp::modal::sustain::Sustain {
+        vibrato_hz: 5.5,
+        vibrato_cents: 30.0,
+        vibrato_delay: 0.05,
+        vibrato_fade: 0.1,
+        drift_cents: 2.0,
+        drift_hz: 2.0,
+        release_seconds: 0.6,
+        body_fixed: 1.0,
+        noise_rise: 0.05,
+        ..Default::default()
+    };
+    layer.noise[6] = 1e-4;
+    layer.rise[0] = 0.1;
+    layer.rise[1] = 0.2;
+    layer.am_slope[0] = 0.05;
+    let mut recording = recording(Vec::new());
+    recording.modes = vec![
+        ModelMode { phase: 0.9, ..ModelMode::plain(1.0, 0.7, 60.0) },
+        ModelMode { phase: -0.4, ..ModelMode::plain(2.0, 0.2, 60.0) },
+    ];
+    recording.sustain = Some(layer);
+    recording
+}
+
+#[test]
+fn a_held_layer_renders_the_same_for_every_block_split() {
+    let set = ModelSet::new(vec![held_recording()]).unwrap();
+    let reference = play(&mut core(set.clone()), 62, 0.9, 24000, 24000);
+    for block in [1, 31, 32, 33, 64, 500] {
+        assert_eq!(play(&mut core(set.clone()), 62, 0.9, 24000, block), reference, "{block}");
+    }
+    assert!(reference.iter().all(|x| x.is_finite()));
+    // It swells in: quiet at first, full later.
+    let peak = |range: std::ops::Range<usize>| reference[range].iter().fold(0.0_f32, |m, x| m.max(x.abs()));
+    assert!(peak(0..480) < 0.3 * peak(20000..24000), "{} vs {}", peak(0..480), peak(20000..24000));
+    // The same set without its layer plays differently.
+    let mut plain = held_recording();
+    plain.sustain = None;
+    let without = play(&mut core(ModelSet::new(vec![plain]).unwrap()), 62, 0.9, 24000, 64);
+    assert!(without.iter().zip(&reference).any(|(a, b)| (a - b).abs() > 1e-3));
+}
+
+#[test]
+fn a_measured_release_falls_by_its_t60_scaled_by_the_release_control() {
+    let level_after_release = |release: f64| {
+        let mut instrument = core(ModelSet::new(vec![held_recording()]).unwrap());
+        instrument.set_param(param::RELEASE, release);
+        let _ = play(&mut instrument, 60, 1.0, 48000, 256);
+        let rms = |output: &[f32]| (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
+        let mut held = vec![0.0; 4800 * 2];
+        instrument.process(&ProcessContext::default(), &mut held);
+        instrument.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+        // 0.3 s later.
+        let mut skipped = vec![0.0; 14400 * 2];
+        instrument.process(&ProcessContext::default(), &mut skipped);
+        let mut later = vec![0.0; 4800 * 2];
+        instrument.process(&ProcessContext::default(), &mut later);
+        20.0 * (rms(&later) / rms(&held)).log10()
+    };
+    // T60 0.6 s at the default Release (0.25 s): about -30 dB at 0.3..0.4 s, -35 dB mid-window.
+    let default = level_after_release(0.25);
+    assert!((-42.0..-25.0).contains(&default), "{default} dB");
+    // Twice the Release, twice the T60: about half as many dB.
+    let longer = level_after_release(0.5);
+    assert!((longer - default / 2.0).abs() < 5.0, "{longer} vs {default}");
+    // It ends: after its T60 the voice is silent.
+    let mut instrument = core(ModelSet::new(vec![held_recording()]).unwrap());
+    let _ = play(&mut instrument, 60, 1.0, 4800, 256);
+    instrument.event(NoteEvent::Off { key: 60, velocity: 0.0 });
+    let mut tail = vec![0.0; 48000 * 2];
+    instrument.process(&ProcessContext::default(), &mut tail);
+    assert!(tail[40000 * 2..].iter().all(|x| *x == 0.0));
 }

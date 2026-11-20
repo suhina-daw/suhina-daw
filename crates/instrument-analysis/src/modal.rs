@@ -4,7 +4,7 @@
 //! Bounded Fourier approximation of separated exponentially decaying resonances.
 //! Preparation only. Assumptions and primary sources: instrument-modal-fitting.md.
 
-use crate::{Error, MAX_SECONDS, RATE};
+use crate::{Error, MAX_SECONDS, RATE, sustain};
 use rustfft::{FftPlanner, num_complex::Complex64};
 use std::{f64::consts::TAU, ops::Range};
 use suhina_dsp::{
@@ -12,10 +12,12 @@ use suhina_dsp::{
     modal::{
         model::{MAX_MODEL_MODES, ModelMode, ModelRecording},
         profile::{MAX_PROFILE_MODES, ModalProfile, ProfileMode},
+        sustain::Sustain,
     },
 };
 
-pub const VERSION: u32 = 2;
+/// Version 3 measures and removes vibrato first and adds the held layer.
+pub const VERSION: u32 = 3;
 const MIN_FRAME: usize = 1024;
 const MAX_FRAME: usize = 8192;
 const MAX_FRAMES: usize = 12;
@@ -146,7 +148,7 @@ pub fn fit(
     let first = range.start.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let last = range.end.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let input = samples.get(first..last).ok_or(Error::InvalidRange)?;
-    let total = 2 * length.div_ceil(CHUNK) + MAX_CANDIDATES * (REFINEMENTS + MAX_FRAMES + 4) + MAX_MODEL_MODES + 5;
+    let total = 2 * length.div_ceil(CHUNK) + MAX_CANDIDATES * (REFINEMENTS + MAX_FRAMES + 4) + MAX_MODEL_MODES + 8;
     let mut work = Work { done: 0, total, progress };
     let mut report = Report {
         version: VERSION,
@@ -229,6 +231,14 @@ pub fn fit(
     let mono_peak = mono.iter().map(|x| (x - tail_mean).abs()).fold(0.0_f64, f64::max);
     let useful = mono.iter().rposition(|x| (x - tail_mean).abs() > mono_peak * 1e-5).map_or(0, |i| i + 1);
     mono.truncate(useful);
+    // Vibrato smears every partial: measure the pitch and resample it flat before fitting.
+    work.step()?;
+    let pitch = sustain::pitch(&mono);
+    let vibrato = pitch.as_ref().and_then(sustain::vibrato);
+    if let (Some(pitch), Some(vibrato)) = (&pitch, &vibrato) {
+        mono = sustain::flatten(&mono, pitch, vibrato);
+    }
+    work.step()?;
     let mut frame_size = MIN_FRAME;
     while frame_size < MAX_FRAME && frame_size * 2 * MAX_FRAMES <= mono.len() {
         frame_size *= 2;
@@ -374,7 +384,25 @@ pub fn fit(
             }
         }
         work.step()?;
-        report.recording = recording(&accepted, &mono, reference_key, reference_hz, scale);
+        let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
+        let held_sum: f64 = accepted.iter().filter(|f| f.evidence.sustained).map(Fitted::magnitude).sum();
+        let held = sum > 0.0 && held_sum >= 0.5 * sum;
+        let layer = if held || vibrato.is_some() {
+            let inputs: Vec<sustain::ModeInput> = accepted
+                .iter()
+                .map(|f| sustain::ModeInput {
+                    hz: f.hz,
+                    partner_hz: (f.evidence.beat_hz > 0.0).then_some(f.hz + f.evidence.beat_hz),
+                    magnitude: f.magnitude(),
+                    sustained: f.evidence.sustained,
+                })
+                .collect();
+            sustain::layer(&mono, &inputs, pitch.as_ref(), vibrato.as_ref(), held, sum)
+        } else {
+            None
+        };
+        work.step()?;
+        report.recording = recording(&accepted, &mono, reference_key, reference_hz, scale, layer);
         report.recording_modes = accepted.iter().map(|f| f.evidence).collect();
     }
     work.finish()?;
@@ -494,7 +522,14 @@ fn beat(mono: &[f64], window: &[f64], fitted: &Fitted) -> Option<(f64, f64)> {
 }
 
 /// The revision-4 recording: normalized modes, level in source units and the attack residual.
-fn recording(accepted: &[Fitted], mono: &[f64], key: u8, reference_hz: f64, scale: f64) -> Option<ModelRecording> {
+fn recording(
+    accepted: &[Fitted],
+    mono: &[f64],
+    key: u8,
+    reference_hz: f64,
+    scale: f64,
+    layer: Option<Sustain>,
+) -> Option<ModelRecording> {
     let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
     if !(sum.is_finite() && sum > 0.0) {
         return None;
@@ -504,13 +539,29 @@ fn recording(accepted: &[Fitted], mono: &[f64], key: u8, reference_hz: f64, scal
     let mut attack = Vec::with_capacity(length);
     let (mut residual_energy, mut signal_energy) = (0.0, 0.0);
     let half = length / 2;
+    // A held mode swells in by its onset and rise: the attack holds what the modes miss, not the
+    // opposite of their swell.
+    let onset = |index: usize, t: f64| {
+        let Some(layer) = &layer else { return 1.0 };
+        let at = |a: &[f32; MAX_MODEL_MODES]| f64::from(a.get(index).copied().unwrap_or(0.0));
+        let (start, rise) = (at(&layer.onset), at(&layer.rise));
+        if t < start {
+            0.0
+        } else if rise > 0.0 {
+            1.0 - (-(t - start) * std::f64::consts::LN_10 / rise).exp()
+        } else {
+            1.0
+        }
+    };
     for (n, x) in mono.iter().take(length).enumerate() {
         let t = n as f64 / f64::from(RATE);
         let mut model = 0.0;
-        for fitted in accepted {
+        for (index, fitted) in accepted.iter().enumerate() {
+            let envelope = onset(index, t);
             for (hz, t60, amplitude) in fitted.parts() {
                 if amplitude > 0.0 && t60 > 0.0 {
-                    model += amplitude * (-ln1000 * t / t60).exp() * (TAU * hz * t + fitted.evidence.phase).sin();
+                    model +=
+                        envelope * amplitude * (-ln1000 * t / t60).exp() * (TAU * hz * t + fitted.evidence.phase).sin();
                 }
             }
         }
@@ -545,6 +596,10 @@ fn recording(accepted: &[Fitted], mono: &[f64], key: u8, reference_hz: f64, scal
             }
         })
         .collect();
+    let sustain = layer.map(|mut layer| {
+        layer.attack_seconds = (attack.len() as f64 / f64::from(RATE)).min(ATTACK_SECONDS) as f32;
+        layer
+    });
     let recording = ModelRecording {
         key,
         velocity: DEFAULT_VELOCITY,
@@ -552,6 +607,7 @@ fn recording(accepted: &[Fitted], mono: &[f64], key: u8, reference_hz: f64, scal
         modes,
         attack_rate: if attack.is_empty() { 0 } else { RATE },
         attack,
+        sustain: sustain.filter(|s| !s.is_empty() && s.validate(accepted.len()).is_ok()),
     };
     recording.validate().ok().map(|()| recording)
 }

@@ -8,6 +8,7 @@ use std::f64::consts::TAU;
 
 pub mod model;
 pub mod profile;
+pub mod sustain;
 
 /// One exponentially decaying mode, expressed in physical units.
 #[derive(Debug, Clone, Copy)]
@@ -122,6 +123,32 @@ impl<const N: usize> ModalBank<N> {
         output as f32
     }
 
+    /// Like [`next_sample`](Self::next_sample), with mode `i` weighted by `gains[i]`, which then
+    /// moves by `steps[i]`: per-mode levels ramped by the caller without touching phase or decay.
+    /// All gains 1 and steps 0 give exactly `next_sample`.
+    pub fn next_sample_gained(&mut self, gains: &mut [f32; N], steps: &[f32; N]) -> f32 {
+        if !self.active {
+            return 0.0;
+        }
+        let mut output = 0.0;
+        let mut active = false;
+        for ((mode, gain), step) in self.modes.iter_mut().zip(gains.iter_mut()).zip(steps) {
+            if mode.real.abs() + mode.imaginary.abs() < 1e-12 {
+                mode.real = 0.0;
+                mode.imaginary = 0.0;
+                continue;
+            }
+            output += mode.imaginary * f64::from(*gain);
+            *gain += *step;
+            let real = mode.real * mode.cosine - mode.imaginary * mode.sine;
+            mode.imaginary = mode.real * mode.sine + mode.imaginary * mode.cosine;
+            mode.real = real;
+            active = true;
+        }
+        self.active = active;
+        output as f32
+    }
+
     pub fn is_active(&self) -> bool {
         self.active
     }
@@ -213,6 +240,32 @@ mod tests {
         zero.strike_phased(48000.0, &modes, &[]);
         for _ in 0..256 {
             assert_eq!(plain.next_sample(), zero.next_sample());
+        }
+    }
+
+    #[test]
+    fn gained_samples_weight_each_mode_and_unit_gains_change_nothing() {
+        let modes = [
+            Mode { frequency_hz: 440.0, decay_seconds: 0.5, amplitude: 0.3 },
+            Mode { frequency_hz: 1234.5, decay_seconds: 0.2, amplitude: 0.2 },
+        ];
+        let mut plain = ModalBank::<2>::default();
+        let mut unit = ModalBank::<2>::default();
+        plain.strike_phased(48000.0, &modes, &[0.3, 1.0]);
+        unit.strike_phased(48000.0, &modes, &[0.3, 1.0]);
+        let mut gains = [1.0; 2];
+        for _ in 0..512 {
+            assert_eq!(plain.next_sample(), unit.next_sample_gained(&mut gains, &[0.0; 2]));
+        }
+        let mut one = ModalBank::<2>::default();
+        let mut weighted = ModalBank::<2>::default();
+        one.strike_phased(48000.0, &modes[..1], &[0.3]);
+        weighted.strike_phased(48000.0, &modes, &[0.3, 1.0]);
+        let mut gains = [0.0, 0.0];
+        let steps = [1.0 / 256.0, 0.0];
+        for n in 0..256 {
+            let expected = f64::from(one.next_sample()) * n as f64 / 256.0;
+            assert!((f64::from(weighted.next_sample_gained(&mut gains, &steps)) - expected).abs() < 1e-6, "{n}");
         }
     }
 

@@ -71,7 +71,10 @@ clearly decaying, within the same error limits, is **sustained** (the late retry
 mode sustained, since beating can flatten a decaying partial's late windows): a bowed, blown or held partial
 (a cello, an organ, a voice) is stored with the profile's longest T60, 60 s, and is reported as
 sustained; note-off releases it like any modal voice. This approximates a held tone by its
-spectrum and is not a bowing or breath model. The result contains at most 16 modes within the
+spectrum and is not a bowing or breath model. Algorithm version 3 first measures a vibrato and
+resamples the recording flat before this step, and gives a held recording a layer of vibrato,
+per-mode onsets, vibrato-coupled levels, band noise, a release and a spectral envelope that stays
+in Hz ([held tones](instrument-sustained-models.md)); the steps here are otherwise unchanged. The result contains at most 16 modes within the
 canonical profile's bounds. Rising envelopes, noise and short sounds yield no model; the
 playable sample remains usable.
 

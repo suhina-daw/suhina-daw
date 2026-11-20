@@ -20,6 +20,7 @@ use suhina_dsp::{
             Controls, MAX_VOICE_SINES, MODEL_MAGIC, MODEL_REVISION as SET_MODEL_REVISION, ModelSet, Voice as SetVoice,
         },
         profile::{ModalProfile, PROFILE_MODEL_REVISION},
+        sustain::Performer,
     },
 };
 
@@ -94,6 +95,8 @@ struct Voice {
     fitted: ModalBank<MAX_VOICE_SINES>,
     /// Revision 4: (recording, read position, step) of the attack still playing.
     attack: Option<(usize, f64, f64)>,
+    /// Revision 4: the held layer (vibrato, onsets, noise, release) playing on `fitted`.
+    layer: Performer,
     key: u8,
     held: bool,
     serial: u64,
@@ -110,6 +113,7 @@ impl Default for Voice {
             bank: ModalBank::default(),
             fitted: ModalBank::default(),
             attack: None,
+            layer: Performer::default(),
             key: 0,
             held: false,
             serial: 0,
@@ -125,7 +129,24 @@ impl Default for Voice {
 impl Voice {
     /// Whether any modal layer of this voice still sounds.
     fn sounding(&self) -> bool {
-        self.bank.is_active() || self.fitted.is_active() || self.attack.is_some()
+        self.bank.is_active() || self.fitted.is_active() || self.attack.is_some() || self.layer.sounding()
+    }
+
+    /// Let go of the note: a measured release falls by itself (its T60 scaled by the Release
+    /// control against its default); otherwise the gate ramps down over `frames`.
+    fn let_go(&mut self, frames: u32, release: f64) {
+        if !self.layer.release(release / 0.25) {
+            self.gate.set_ramp(frames);
+            self.gate.set_target(0.0);
+        }
+    }
+
+    /// Silence every modal layer.
+    fn silence(&mut self) {
+        self.bank.reset();
+        self.fitted.reset();
+        self.attack = None;
+        self.layer = Performer::default();
     }
 }
 
@@ -252,13 +273,13 @@ impl Instrument {
     }
 
     fn release(&mut self, key: Option<u8>) {
-        let frames = Smoother::ramp_frames(self.params.get(param::RELEASE), self.sample_rate);
+        let release = self.params.get(param::RELEASE);
+        let frames = Smoother::ramp_frames(release, self.sample_rate);
         for voice in &mut self.voices {
             if key.is_none_or(|key| key == voice.key) {
                 voice.held = false;
                 if !self.pedal {
-                    voice.gate.set_ramp(frames);
-                    voice.gate.set_target(0.0);
+                    voice.let_go(frames, release);
                 }
             }
         }
@@ -340,12 +361,16 @@ impl Instrument {
                 );
                 voice.fitted.transpose(self.sample_rate, self.bend_semitones);
                 voice.attack = self.set_voice.attack.map(|(recording, step)| (recording, 0.0, step));
+                // Seeded by the note's serial and key, so a render repeats exactly.
+                let seed = (self.serial as u32).wrapping_mul(0x0100_0193) ^ u32::from(key);
+                voice.layer.start(&self.set_voice.held, self.sample_rate, self.bend_semitones, seed);
                 voice.amplitude = (f64::from(velocity) * self.set_voice.level) as f32;
                 // The attack reproduces the recorded onset; only a click guard remains.
                 voice.gate = Smoother::new(0.0, Smoother::ramp_frames(0.00025, self.sample_rate));
             } else {
                 voice.fitted.reset();
                 voice.attack = None;
+                voice.layer = Performer::default();
                 voice.bank.strike(self.sample_rate, &modes);
                 voice.bank.transpose(self.sample_rate, self.bend_semitones);
                 voice.amplitude = velocity * 0.25;
@@ -459,12 +484,11 @@ impl Device for Instrument {
                     continue;
                 }
                 let gate = voice.gate.next_value();
-                if gate == 0.0 && voice.gate.is_settled() {
-                    voice.bank.reset();
-                    voice.fitted.reset();
-                    voice.attack = None;
+                if (gate == 0.0 && voice.gate.is_settled()) || voice.layer.finished() {
+                    voice.silence();
                 }
-                let mut body = voice.bank.next_sample() + voice.fitted.next_sample();
+                // Without a held layer the performer plays the fitted bank unchanged.
+                let mut body = voice.bank.next_sample() + voice.layer.next(&mut voice.fitted);
                 let mut attack_done = false;
                 if let Some((recording, position, step)) = voice.attack.as_mut() {
                     let attack = set.map_or(&[][..], |set| set.attack(*recording));
@@ -542,11 +566,11 @@ impl Device for Instrument {
                 let old = self.pedal;
                 self.pedal = value >= 0.5;
                 if old && !self.pedal {
-                    let frames = Smoother::ramp_frames(self.params.get(param::RELEASE), self.sample_rate);
+                    let release = self.params.get(param::RELEASE);
+                    let frames = Smoother::ramp_frames(release, self.sample_rate);
                     for voice in &mut self.voices {
                         if !voice.held {
-                            voice.gate.set_ramp(frames);
-                            voice.gate.set_target(0.0);
+                            voice.let_go(frames, release);
                         }
                     }
                 }
@@ -562,7 +586,11 @@ impl Device for Instrument {
                         voice.bank.transpose(self.sample_rate, self.bend_semitones);
                     }
                     if voice.fitted.is_active() {
-                        voice.fitted.transpose(self.sample_rate, self.bend_semitones);
+                        if voice.layer.is_active() {
+                            voice.layer.bend(&mut voice.fitted, self.bend_semitones);
+                        } else {
+                            voice.fitted.transpose(self.sample_rate, self.bend_semitones);
+                        }
                     }
                 }
             }

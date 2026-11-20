@@ -178,8 +178,15 @@ instead of 2 ms, since the attack reproduces the recorded onset. Release, pedal,
 pitch wheel and source fades behave as for revision 2. A missing, malformed or unsupported set is
 silent.
 
-**Budget.** A revision-4 voice holds 64 resonators and an attack read position beside the 16
-resonators of revisions 1 and 2: under 4 KiB per voice, under 64 KiB for 16 voices, within the runtime's 256 KiB inline target; the set itself (at most
+**Held layers.** A recording may carry a held layer (vibrato, per-mode onsets and
+vibrato-coupled levels, band noise, a measured release and a body envelope that stays in Hz).
+A set with one encodes as schema 3: schema 2 followed by a flagged layer per recording; a set
+without encodes byte for byte as schema 2. The layer, its fusion and how a voice plays it are in
+[held tones](instrument-sustained-models.md).
+
+**Budget.** A revision-4 voice holds 64 resonators, an attack read position and its held layer's
+state (per-sine levels and ramps, eleven noise filters) beside the 16 resonators of revisions 1
+and 2: under 8 KiB per voice, under 128 KiB for 16 voices, within the runtime's 256 KiB inline target; the set itself (at most
 about 800 KiB with 16 full attacks) is shared and prepared off the audio thread.
 
 **Commands.** `instrument.acceptFit` adopts a set with the fitted recording as its only member

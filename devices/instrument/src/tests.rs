@@ -22,8 +22,8 @@ fn revision_one_matches_the_independent_analytical_reference_render() {
         );
         assert_eq!(buffer[frame * 2], buffer[frame * 2 + 1]);
     }
-    // A revision-4 voice carries 64 fitted resonators beside the 16 of revisions 1 and 2.
-    assert!(std::mem::size_of::<Voice>() <= 4096);
+    // A revision-4 voice with its held layer: 64 resonators, levels, ramps and noise filters.
+    assert!(std::mem::size_of::<Voice>() <= 8192);
     assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
 }
 

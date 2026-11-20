@@ -22,6 +22,7 @@ fn recording(key: u8, velocity: f32, ratio_two: f64, decay: f64) -> ModelRecordi
         ],
         attack_rate: 22050,
         attack: (0..2205).map(|i| (i as f32 * 0.01).sin() * 0.1).collect(),
+        sustain: None,
     }
 }
 
@@ -192,6 +193,7 @@ fn controls_transform_fused_modes_and_the_sine_budget_holds() {
         modes,
         attack_rate: 0,
         attack: vec![],
+        sustain: None,
     }])
     .unwrap();
     let mut voice = Voice::default();
@@ -216,4 +218,147 @@ fn controls_transform_fused_modes_and_the_sine_budget_holds() {
             .fold(0.0, f64::max)
     };
     assert!((slow(&voice) - 2.0 * slow(&neutral)).abs() < 1e-9);
+}
+
+fn layer(modes: usize, vibrato_cents: f32) -> crate::modal::sustain::Sustain {
+    let mut layer = crate::modal::sustain::Sustain {
+        vibrato_hz: 5.0,
+        vibrato_cents,
+        vibrato_delay: 0.3,
+        vibrato_fade: 0.2,
+        release_seconds: 0.7,
+        body_fixed: 1.0,
+        attack_seconds: 0.1,
+        ..Default::default()
+    };
+    layer.noise[4] = 2e-4;
+    for i in 0..modes {
+        layer.rise[i] = 0.2;
+        layer.am_slope[i] = 0.04;
+    }
+    layer
+}
+
+#[test]
+fn held_layers_use_schema_three_and_schema_two_bytes_stay_as_they_were() {
+    let plain = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), recording(72, 0.8, 2.01, 1.0)]).unwrap();
+    let plain_bytes = plain.encode();
+    assert_eq!(&plain_bytes[8..10], &MODEL_SCHEMA_VERSION.to_le_bytes(), "no layer: schema 2");
+    assert_eq!(ModelSet::decode(&plain_bytes).unwrap(), plain);
+    let mut held = recording(72, 0.8, 2.01, 1.0);
+    held.sustain = Some(layer(2, 20.0));
+    let set = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), held]).unwrap();
+    let bytes = set.encode();
+    assert_eq!(&bytes[8..10], &MODEL_SCHEMA_HELD.to_le_bytes());
+    assert_eq!(ModelSet::recording_count(&bytes), Some(2));
+    // Schema 2 followed by the trailer: two flags, one layer of 152 f32.
+    assert_eq!(bytes.len(), plain_bytes.len() + 4 + 4 + 4 * SUSTAIN_FIELDS);
+    assert_eq!(&bytes[12..plain_bytes.len()], &plain_bytes[12..]);
+    let decoded = ModelSet::decode(&bytes).unwrap();
+    assert_eq!(decoded, set);
+    assert_eq!(decoded.recordings()[1].sustain, Some(layer(2, 20.0)));
+    // Hostile trailers.
+    let trailer = plain_bytes.len();
+    for (offset, value) in [(trailer, 2), (trailer + 1, 1), (trailer + 5, 1)] {
+        let mut bad = bytes.clone();
+        bad[offset] = value;
+        assert!(ModelSet::decode(&bad).is_err(), "byte {offset} = {value}");
+    }
+    let mut cut = bytes.clone();
+    cut.pop();
+    assert!(ModelSet::decode(&cut).is_err());
+    // Schema 2 bytes with a trailer, or schema 3 without one, are not canonical.
+    let mut relabelled = bytes.clone();
+    relabelled[8..10].copy_from_slice(&MODEL_SCHEMA_VERSION.to_le_bytes());
+    assert!(ModelSet::decode(&relabelled).is_err());
+    let mut empty = plain_bytes.clone();
+    empty[8..10].copy_from_slice(&MODEL_SCHEMA_HELD.to_le_bytes());
+    empty.extend_from_slice(&[0; 8]);
+    assert!(ModelSet::decode(&empty).is_err());
+    // A layer outside its bounds, and a layer of zeros (which is no layer).
+    let mut wild = bytes.clone();
+    let first_field = trailer + 8;
+    wild[first_field..first_field + 4].copy_from_slice(&50.0_f32.to_le_bytes());
+    assert!(ModelSet::decode(&wild).is_err());
+    let mut zero = recording(60, 0.8, 2.0, 1.0);
+    zero.sustain = Some(crate::modal::sustain::Sustain::NONE);
+    let normalized = ModelSet::new(vec![zero]).unwrap();
+    assert!(normalized.recordings()[0].sustain.is_none());
+    assert_eq!(&normalized.encode()[8..10], &MODEL_SCHEMA_VERSION.to_le_bytes());
+}
+
+#[test]
+fn a_played_note_carries_the_fused_held_layer() {
+    let mut held = recording(60, 0.8, 2.0, 1.0);
+    held.sustain = Some(layer(2, 40.0));
+    let set = ModelSet::new(vec![held.clone()]).unwrap();
+    let mut voice = Voice::default();
+    set.voice(60, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    let h = &voice.held;
+    assert!(h.is_active());
+    assert!((h.vibrato_hz - 5.0).abs() < 1e-6 && (h.vibrato_cents - 40.0).abs() < 1e-4);
+    assert!((h.release_seconds - 0.7).abs() < 1e-6 && (h.noise[4] - 2e-4).abs() < 1e-9);
+    assert!(h.rise[..voice.count].iter().all(|r| (*r - 0.2).abs() < 1e-6));
+    assert!(h.rise[voice.count..].iter().all(|r| *r == 0.0));
+    // Fused with an identical recording that has no layer, at the same key and velocity: depths
+    // and noise halve, rates and the release keep theirs.
+    let mut struck = held.clone();
+    struck.velocity = 0.81;
+    struck.sustain = None;
+    let fused = ModelSet::new(vec![held, struck]).unwrap();
+    fused.voice(60, 0.805, &Controls::NEUTRAL, 48000.0, &mut voice);
+    let h = &voice.held;
+    assert!((h.vibrato_hz - 5.0).abs() < 1e-6);
+    assert!((h.vibrato_cents - 20.0).abs() < 0.5, "{}", h.vibrato_cents);
+    assert!((h.noise[4] - 1e-4).abs() < 5e-6);
+    assert!((h.release_seconds - 0.7).abs() < 1e-6, "half the weight keeps the release");
+    assert!((h.rise[0] - 0.1).abs() < 0.01, "{}", h.rise[0]);
+    // A struck set plays no layer.
+    let struck_only = ModelSet::new(vec![recording(60, 0.8, 2.0, 1.0)]).unwrap();
+    struck_only.voice(60, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert!(!voice.held.is_active());
+}
+
+#[test]
+fn a_held_recordings_formant_stays_in_hz_when_the_key_moves() {
+    // Sixteen harmonics of C3 whose body peaks at the sixth harmonic's frequency.
+    let modes: Vec<ModelMode> = (1..=16)
+        .map(|k| {
+            let octaves = (f64::from(k) / 6.0).log2();
+            ModelMode::plain(f64::from(k), 0.06 * (-octaves * octaves / (2.0 * 0.5 * 0.5)).exp(), 60.0)
+        })
+        .collect();
+    let make = |body_fixed: f32| {
+        let mut r = ModelRecording {
+            key: 48,
+            velocity: 0.8,
+            level: 0.5,
+            modes: modes.clone(),
+            attack_rate: 0,
+            attack: vec![],
+            sustain: None,
+        };
+        if body_fixed > 0.0 {
+            r.sustain = Some(crate::modal::sustain::Sustain { body_fixed, ..Default::default() });
+        }
+        ModelSet::new(vec![r]).unwrap()
+    };
+    let c3 = 440.0 * 2.0_f64.powf(-21.0 / 12.0);
+    let loudest = |set: &ModelSet, key: u8| {
+        let mut voice = Voice::default();
+        set.voice(key, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+        voice.modes[..voice.count].iter().max_by(|a, b| a.amplitude.total_cmp(&b.amplitude)).unwrap().frequency_hz
+    };
+    // At its own key both peak at the sixth harmonic.
+    for set in [make(0.0), make(1.0)] {
+        assert!((loudest(&set, 48) / (6.0 * c3) - 1.0).abs() < 1e-6);
+    }
+    // An octave up the fixed body still peaks at 6 * C3 (the third harmonic of C4), an octave
+    // down at the twelfth harmonic of C2; the moving one follows the key.
+    for (key, harmonic) in [(60_u8, 2.0), (36, 0.5)] {
+        let fixed = loudest(&make(1.0), key);
+        let moving = loudest(&make(0.0), key);
+        assert!((fixed / (6.0 * c3) - 1.0).abs() < 1e-6, "{key}: {fixed}");
+        assert!((moving / (6.0 * harmonic * c3) - 1.0).abs() < 1e-6, "{key}: {moving}");
+    }
 }
