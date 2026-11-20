@@ -7,7 +7,7 @@ arrangement-scrolled suhina-studio@forest a272eed868778ff3
 browser suhina-studio@forest ae1853ed48bed218
 browser-plug-ins suhina-studio@forest 620cb02fa45cbd5f
 browser-search suhina-studio@forest 32c8d1733a169787
-clip-audio suhina-studio@forest 7e4979b5f82f0f72
+clip-audio suhina-studio@forest 1c498a87ec6ec91f
 clip-midi suhina-studio@forest 71bb45430844e653
 colour-picker suhina-studio@forest 41daad14347e3199
 colour-picker-field suhina-studio@forest c050cf0c3e509b41
@@ -52,7 +52,7 @@ settings-appearance suhina-studio@forest 7284642a184e1ab1
 settings-audio suhina-studio@forest b77c8a40a089c2b9
 settings-browser suhina-studio@forest 71f8fa07c33a92b0
 settings-devices suhina-studio@forest 0ada558f1fed538a
-settings-keys suhina-studio@forest 79bfa2e08c3371ae
+settings-keys suhina-studio@forest c373ecc152d577f0
 settings-launcher suhina-studio@forest 677ecdd84f64e7aa
 settings-menu suhina-studio@forest 5f925c299aca2fdb
 settings-midi suhina-studio@forest e818392548c79d13

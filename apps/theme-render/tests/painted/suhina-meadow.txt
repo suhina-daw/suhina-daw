@@ -7,7 +7,7 @@ arrangement-scrolled suhina-meadow 68190c86f723d5fc
 browser suhina-meadow 6be723462f05516f
 browser-plug-ins suhina-meadow c08e590777c61ca6
 browser-search suhina-meadow d06850a5e2ea68f1
-clip-audio suhina-meadow 5d25d3400d20a417
+clip-audio suhina-meadow f308b35b43fadb7f
 clip-midi suhina-meadow 9fa54a33b1a27a80
 colour-picker suhina-meadow 150f0b0894681871
 colour-picker-field suhina-meadow 8162942c0b63568d
@@ -52,7 +52,7 @@ settings-appearance suhina-meadow c1f67b617248180a
 settings-audio suhina-meadow 27036c4e2d2ef9b6
 settings-browser suhina-meadow d884a1cdca9da245
 settings-devices suhina-meadow 6f25d7c3a53e06ef
-settings-keys suhina-meadow 48ed3181d642edcb
+settings-keys suhina-meadow bbe8a5d6b5d91fb9
 settings-launcher suhina-meadow 8f10f5bb86682618
 settings-menu suhina-meadow 52a3a0228587c358
 settings-midi suhina-meadow 10ff251a4b1d326c

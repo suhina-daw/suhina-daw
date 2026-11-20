@@ -146,7 +146,7 @@ impl App {
         self.escape_twice = self.double_escape(ui);
         // The piano roll's own keys only while it has the keyboard; the selected slot's keys
         // only while it does not, as the two share keys.
-        let notes = self.piano_roll.focused;
+        let notes = self.piano_roll.focused || self.audio_editor_has_keyboard();
         let pressed = ui.input_mut(|i| {
             self.keymap.pressed(i, |id| {
                 if notes {
