@@ -65,12 +65,16 @@ pub(crate) fn apply_model_set(device: &mut Device, bytes: &[u8], reset_controls:
     device.set_instrument_modal_profile(bytes)?;
     let mut values = vec![("model_revision", f64::from(suhina_dsp::modal::model::MODEL_REVISION)), ("source", 0.0)];
     if reset_controls {
+        // The recording plays as fitted: its own attack, no envelope fade, every source equal.
         values.extend([
             ("quality", 1.0),
             ("body_decay", 2.0),
             ("brightness", 0.5),
             ("structure", 0.002),
             ("strike", 0.25),
+            ("attack", 0.0),
+            ("sustain", 1.0),
+            ("morph", 0.5),
         ]);
     }
     let mut overridden = false;

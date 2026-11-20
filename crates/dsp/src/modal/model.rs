@@ -15,16 +15,17 @@ pub const MODEL_SCHEMA_VERSION: u16 = 2;
 /// Schema of a set whose recordings carry held layers: schema 2 plus a trailer.
 pub const MODEL_SCHEMA_HELD: u16 = 3;
 pub const MODEL_REVISION: u16 = 4;
-pub const MAX_RECORDINGS: usize = 16;
+pub const MAX_RECORDINGS: usize = 32;
+/// Sources a set can tell apart for morphing (ten pianos are ten sources).
+pub const MAX_SOURCES: usize = 16;
 pub const MAX_MODEL_MODES: usize = 32;
 /// Attack samples per recording: 0.25 s at 48 kHz.
 pub const MAX_ATTACK: usize = 12000;
 pub const MAX_VOICE_SINES: usize = 64;
-const CANDIDATE_SINES: usize = 3 * MAX_MODEL_MODES;
+const CANDIDATE_SINES: usize = 4 * MAX_MODEL_MODES;
 /// First bytes of an encoded set, so a loader can tell it from a schema-1 profile.
 pub const MODEL_MAGIC: &[u8; 8] = b"SHMSET2\0";
 const MATCH_TOLERANCE: f64 = 0.03;
-const PARTICIPANTS: usize = 4;
 const NO_MATCH: u8 = u8::MAX;
 const RECORDING_HEADER: usize = 28;
 
@@ -65,6 +66,8 @@ impl ModelMode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelRecording {
     pub key: u8,
+    /// Which instrument it was recorded from, 0..15, for Source morph.
+    pub source: u8,
     pub velocity: f32,
     /// Source full-scale amplitude that the normalized magnitudes and attack multiply.
     pub level: f64,
@@ -91,8 +94,12 @@ impl std::error::Error for ModelError {}
 impl ModelRecording {
     pub fn validate(&self) -> Result<(), ModelError> {
         let fail = |message| Err(ModelError(message));
-        if self.key > 127 || !self.velocity.is_finite() || !(self.velocity > 0.0 && self.velocity <= 1.0) {
-            return fail("a fitted recording needs key 0..127 and velocity in (0, 1]");
+        if self.key > 127
+            || usize::from(self.source) >= MAX_SOURCES
+            || !self.velocity.is_finite()
+            || !(self.velocity > 0.0 && self.velocity <= 1.0)
+        {
+            return fail("a fitted recording needs key 0..127, source 0..15 and velocity in (0, 1]");
         }
         if !self.level.is_finite() || !(self.level > 0.0 && self.level <= 16.0) {
             return fail("a fitted recording needs a level in (0, 16]");
@@ -176,11 +183,29 @@ pub struct Controls {
     pub strike: f64,
     /// Sines per voice, at most `MAX_VOICE_SINES`.
     pub sines: usize,
+    /// Source morph, 0..1; 0.5 weighs every source equally.
+    pub morph: f64,
+    /// Velocity to brightness, 0..1: how much a strike harder or softer than the recording
+    /// brightens or darkens it and changes its attack.
+    pub velocity_brightness: f64,
+    /// Pedal resonance while the sustain pedal is down, else 0.
+    pub pedal_resonance: f64,
+    /// The soft pedal is down.
+    pub soft: bool,
 }
 
 impl Controls {
-    pub const NEUTRAL: Self =
-        Self { decay: 2.0, brightness: 0.5, structure: 0.002, strike: 0.25, sines: MAX_VOICE_SINES };
+    pub const NEUTRAL: Self = Self {
+        decay: 2.0,
+        brightness: 0.5,
+        structure: 0.002,
+        strike: 0.25,
+        sines: MAX_VOICE_SINES,
+        morph: 0.5,
+        velocity_brightness: 0.0,
+        pedal_resonance: 0.0,
+        soft: false,
+    };
 }
 
 /// What a note plays: sines with phases, a level and the anchor recording's attack.
@@ -192,6 +217,8 @@ pub struct Voice {
     pub level: f64,
     /// Recording whose attack plays, and its read step in attack samples per output sample.
     pub attack: Option<(usize, f64)>,
+    /// What the attack is multiplied by: harder strikes than the recording knock more.
+    pub attack_gain: f64,
     /// The fused held layer, per sine; inactive for struck recordings.
     pub held: Held,
 }
@@ -204,6 +231,7 @@ impl Default for Voice {
             count: 0,
             level: 0.0,
             attack: None,
+            attack_gain: 1.0,
             held: Held::NONE,
         }
     }
@@ -217,14 +245,19 @@ pub struct ModelSet {
     recordings: Vec<ModelRecording>,
     /// `matches[a][i][r]`: the mode of recording `r` matching mode `i` of recording `a`.
     matches: Vec<[[u8; MAX_RECORDINGS]; MAX_MODEL_MODES]>,
-    /// Each recording's smoothed spectral envelope (dB on the 1/8-octave ratio grid).
+    /// Each recording's decay law: d ln T60 / d ln frequency over its decaying modes.
+    decay_laws: Vec<f64>,
+    /// Morph rank of each source present, or `None`; and how many sources are present.
+    source_ranks: [Option<usize>; MAX_SOURCES],
+    sources: usize,
+    /// Each recording's spectral envelope (dB on the 1/8-octave ratio grid).
     envelopes: Vec<[f32; ENVELOPE_POINTS]>,
 }
 
 impl ModelSet {
     pub fn new(mut recordings: Vec<ModelRecording>) -> Result<Self, ModelError> {
         if recordings.is_empty() || recordings.len() > MAX_RECORDINGS {
-            return Err(ModelError("a model set needs 1..16 recordings"));
+            return Err(ModelError("a model set needs 1..32 recordings"));
         }
         for recording in &mut recordings {
             // A layer of zeros is no layer, so the encoding stays canonical.
@@ -233,16 +266,35 @@ impl ModelSet {
             }
             recording.validate()?;
         }
-        recordings.sort_by(|a, b| a.key.cmp(&b.key).then(a.velocity.total_cmp(&b.velocity)));
-        if recordings.windows(2).any(|pair| matches!(pair, [a, b] if a.key == b.key && a.velocity == b.velocity)) {
-            return Err(ModelError("two recordings of a model set share a key and velocity"));
+        recordings
+            .sort_by(|a, b| a.key.cmp(&b.key).then(a.velocity.total_cmp(&b.velocity)).then(a.source.cmp(&b.source)));
+        if recordings
+            .windows(2)
+            .any(|pair| matches!(pair, [a, b] if a.key == b.key && a.velocity == b.velocity && a.source == b.source))
+        {
+            return Err(ModelError("two recordings of a model set share a key, velocity and source"));
         }
         let matches = recordings.iter().map(|anchor| match_modes(anchor, &recordings)).collect();
+        let decay_laws = recordings.iter().map(decay_law).collect();
+        let mut present = [false; MAX_SOURCES];
+        for recording in &recordings {
+            if let Some(flag) = present.get_mut(usize::from(recording.source)) {
+                *flag = true;
+            }
+        }
+        let mut source_ranks = [None; MAX_SOURCES];
+        let mut sources = 0;
+        for (rank, flag) in source_ranks.iter_mut().zip(present) {
+            if flag {
+                *rank = Some(sources);
+                sources += 1;
+            }
+        }
         let envelopes = recordings
             .iter()
             .map(|r| envelope(&r.modes.iter().map(|m| (m.ratio, m.magnitude)).collect::<Vec<_>>()))
             .collect();
-        Ok(Self { recordings, matches, envelopes })
+        Ok(Self { recordings, matches, decay_laws, source_ranks, sources, envelopes })
     }
 
     /// This set with one more recording, validated as a whole.
@@ -275,13 +327,13 @@ impl ModelSet {
     pub fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(16 + self.recordings.len() * (RECORDING_HEADER + 2048));
         let held = self.recordings.iter().any(|r| r.sustain.is_some());
-        bytes.extend_from_slice(MODEL_MAGIC);
         let schema = if held { MODEL_SCHEMA_HELD } else { MODEL_SCHEMA_VERSION };
+        bytes.extend_from_slice(MODEL_MAGIC);
         bytes.extend_from_slice(&schema.to_le_bytes());
         bytes.extend_from_slice(&MODEL_REVISION.to_le_bytes());
         bytes.extend_from_slice(&[self.recordings.len() as u8, 0, 0, 0]);
         for recording in &self.recordings {
-            bytes.extend_from_slice(&[recording.key, 0, 0, 0]);
+            bytes.extend_from_slice(&[recording.key, recording.source, 0, 0]);
             bytes.extend_from_slice(&recording.velocity.to_le_bytes());
             bytes.extend_from_slice(&recording.level.to_le_bytes());
             bytes.extend_from_slice(&[recording.modes.len() as u8, 0, 0, 0]);
@@ -339,7 +391,8 @@ impl ModelSet {
         let mut recordings = Vec::with_capacity(count);
         for _ in 0..count {
             let key = reader.u8()?;
-            if reader.take(3)? != [0, 0, 0] {
+            let source = reader.u8()?;
+            if reader.take(2)? != [0, 0] {
                 return Err(header);
             }
             let velocity = f32::from_le_bytes(reader.array()?);
@@ -370,7 +423,16 @@ impl ModelSet {
             for _ in 0..attack_len {
                 attack.push(f32::from_le_bytes(reader.array()?));
             }
-            recordings.push(ModelRecording { key, velocity, level, modes: parsed, attack_rate, attack, sustain: None });
+            recordings.push(ModelRecording {
+                key,
+                source,
+                velocity,
+                level,
+                modes: parsed,
+                attack_rate,
+                attack,
+                sustain: None,
+            });
         }
         if schema == MODEL_SCHEMA_HELD {
             for recording in &mut recordings {
@@ -400,13 +462,22 @@ impl ModelSet {
     /// The sines, level and attack of `key` at `velocity` with `controls`. Allocation-free.
     pub fn voice(&self, key: u8, velocity: f32, controls: &Controls, sample_rate: f64, out: &mut Voice) {
         *out = Voice::default();
-        let mut chosen = [(usize::MAX, 0.0_f64); PARTICIPANTS];
+        let morph = if controls.morph.is_finite() { controls.morph.clamp(0.0, 1.0) } else { 0.5 };
+        let mut chosen = [(usize::MAX, 0.0_f64); MAX_RECORDINGS];
         for (index, recording) in self.recordings.iter().enumerate() {
             let distance = (f64::from(key) - f64::from(recording.key)).abs() / 12.0
                 + 2.0 * (f64::from(velocity) - f64::from(recording.velocity)).abs();
-            let weight = 1.0 / (distance * distance + 1e-6);
+            // Source morph tilts the weights across the sources present, in source order.
+            let factor = match self.source_ranks.get(usize::from(recording.source)).copied().flatten() {
+                Some(rank) if self.sources >= 2 => {
+                    let x = rank as f64 / (self.sources - 1) as f64;
+                    (1.0 - x) * (1.0 - morph) + x * morph
+                }
+                _ => 1.0,
+            };
+            let weight = factor / (distance * distance + 1e-6);
             if let Some(slot) = chosen.iter().position(|(_, w)| weight > *w) {
-                chosen.copy_within(slot..PARTICIPANTS - 1, slot + 1);
+                chosen.copy_within(slot..MAX_RECORDINGS - 1, slot + 1);
                 if let Some(target) = chosen.get_mut(slot) {
                     *target = (index, weight);
                 }
@@ -425,9 +496,23 @@ impl ModelSet {
             .sum::<f64>()
             .exp();
         let fundamental = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
+        let anchor_velocity = f64::from(anchor_recording.velocity);
+        let harder = f64::from(velocity) - anchor_velocity;
+        let velocity_brightness =
+            if controls.velocity_brightness.is_finite() { controls.velocity_brightness.clamp(0.0, 1.0) } else { 0.0 };
+        let tilt = 1.5 * (controls.brightness - 0.5) + 1.5 * velocity_brightness * harder
+            - if controls.soft { 0.45 } else { 0.0 };
+        let resonance =
+            if controls.pedal_resonance.is_finite() { controls.pedal_resonance.clamp(0.0, 1.0) } else { 0.0 };
+        if controls.soft {
+            out.level *= 0.7;
+        }
+        if velocity > 0.0 && anchor_velocity > 0.0 {
+            out.attack_gain = (f64::from(velocity) / anchor_velocity).powf(velocity_brightness);
+        }
         let dispersion = |s: f64, r: f64| ((1.0 + s * r * r) / (1.0 + s)).sqrt();
         let excitation = |n: usize, strike: f64| 0.25 + 0.75 * (PI * n as f64 * strike).sin().abs();
-        // Body envelope: a held recording's smoothed spectral envelope stays in Hz.
+        // Body envelope: a held recording's spectral envelope stays in Hz.
         let body_fixed = anchor_recording.sustain.map_or(0.0, |s| f64::from(s.body_fixed));
         let transpose = 2.0_f64.powf((f64::from(key) - f64::from(anchor_recording.key)) / 12.0);
         let body = self.envelopes.get(anchor);
@@ -446,36 +531,44 @@ impl ModelSet {
                         .filter(|j| **j != NO_MATCH)
                         .map(|j| usize::from(*j))
                 };
-                let source = self.recordings.get(recording);
-                let mode = matched.and_then(|j| source.and_then(|r| r.modes.get(j)));
-                fused.add(mode, weight / total);
+                let mode = matched.and_then(|j| self.recordings.get(recording).and_then(|r| r.modes.get(j)));
+                // Each recording's decay law carries its T60s to the played key.
+                let decay_scale = self
+                    .recordings
+                    .get(recording)
+                    .zip(self.decay_laws.get(recording))
+                    .map_or(1.0, |(r, law)| 2.0_f64.powf((f64::from(key) - f64::from(r.key)) / 12.0 * law));
+                fused.add(mode, weight / total, decay_scale);
                 if let (Some(j), Some(_)) = (matched, mode) {
-                    held.add(source.and_then(|r| r.sustain.as_ref()), j, weight / total);
+                    held.add(self.recordings.get(recording).and_then(|r| r.sustain.as_ref()), j, weight / total);
                 }
             }
             let Some(mode) = fused.mode(anchor_mode.phase) else { continue };
             let held = held.mode();
-            let ratio = mode.ratio * dispersion(controls.structure, mode.ratio) / dispersion(0.002, mode.ratio);
-            let decay_scale = controls.decay / 2.0;
             let correction = match body {
                 Some(table) if body_fixed > 0.0 => (body_fixed
                     * (envelope_at(table, mode.ratio * transpose) - envelope_at(table, mode.ratio)))
                 .clamp(-MAX_CORRECTION_DB, MAX_CORRECTION_DB),
                 _ => 0.0,
             };
-            let magnitude = mode.magnitude
-                * mode.ratio.powf(1.5 * (controls.brightness - 0.5))
-                * excitation(index + 1, controls.strike)
+            let ratio = mode.ratio * dispersion(controls.structure, mode.ratio) / dispersion(0.002, mode.ratio);
+            let decay_scale = controls.decay / 2.0;
+            let magnitude = mode.magnitude * mode.ratio.powf(tilt) * excitation(index + 1, controls.strike)
                 / excitation(index + 1, 0.25)
                 * 10.0_f64.powf(correction / 20.0);
             let frequency = fundamental * ratio;
             let slow = magnitude * (1.0 - mode.fast_share);
+            // The soft pedal strikes fewer strings: no beating partner.
+            let beat_share = if controls.soft { 0.0 } else { mode.beat_share };
+            let slow_t60 = mode.decay_seconds * decay_scale;
             let parts = [
-                (frequency, mode.decay_seconds * decay_scale, slow * (1.0 - mode.beat_share)),
-                (frequency, mode.fast_decay_seconds * decay_scale, magnitude * mode.fast_share),
-                (frequency * mode.beat_ratio, mode.decay_seconds * decay_scale, slow * mode.beat_share),
+                (frequency, slow_t60, slow * (1.0 - beat_share), mode.phase),
+                (frequency, mode.fast_decay_seconds * decay_scale, magnitude * mode.fast_share, mode.phase),
+                (frequency * mode.beat_ratio, slow_t60, slow * beat_share, mode.phase),
+                // Undamped strings under the sustain pedal ring along at this partial.
+                (frequency, (2.0 * slow_t60).min(60.0), slow * resonance * 0.15, mode.phase + PI / 2.0),
             ];
-            for (frequency_hz, decay_seconds, amplitude) in parts {
+            for (frequency_hz, decay_seconds, amplitude, phase) in parts {
                 if amplitude > 0.0
                     && decay_seconds > 0.0
                     && frequency_hz < sample_rate * 0.45
@@ -483,7 +576,7 @@ impl ModelSet {
                 {
                     *slot = Candidate {
                         mode: Mode { frequency_hz, decay_seconds, amplitude },
-                        phase: mode.phase,
+                        phase,
                         score: amplitude * decay_seconds.sqrt(),
                         held,
                     };
@@ -636,15 +729,18 @@ struct Fused {
 }
 
 impl Fused {
-    fn add(&mut self, mode: Option<&ModelMode>, weight: f64) {
+    fn add(&mut self, mode: Option<&ModelMode>, weight: f64, decay_scale: f64) {
         self.weight += weight;
         let Some(mode) = mode else { return };
         self.matched += weight;
         self.ratio += weight * mode.ratio.ln();
-        self.decay += weight * mode.decay_seconds.ln();
+        // A sustained (60 s) mode stays sustained at every key.
+        let decay =
+            if mode.decay_seconds >= 60.0 { 60.0 } else { (mode.decay_seconds * decay_scale).clamp(0.001, 60.0) };
+        self.decay += weight * decay.ln();
         self.magnitude += weight * mode.magnitude;
         if mode.fast_decay_seconds > 0.0 {
-            self.fast += weight * mode.fast_decay_seconds.ln();
+            self.fast += weight * (mode.fast_decay_seconds * decay_scale).clamp(0.001, 60.0).ln();
             self.fast_weight += weight;
         }
         self.fast_share += weight * mode.fast_share;
@@ -670,6 +766,29 @@ impl Fused {
             phase,
         })
     }
+}
+
+/// The slope of ln T60 against ln frequency over a recording's decaying modes, weighted by
+/// magnitude, limited to -2..0; 0 when fewer than two modes decay.
+fn decay_law(recording: &ModelRecording) -> f64 {
+    let points: Vec<(f64, f64, f64)> = recording
+        .modes
+        .iter()
+        .filter(|m| m.decay_seconds < 60.0 && m.magnitude > 0.0)
+        .map(|m| (m.ratio.ln(), m.decay_seconds.ln(), m.magnitude))
+        .collect();
+    if points.len() < 2 {
+        return 0.0;
+    }
+    let weight: f64 = points.iter().map(|p| p.2).sum();
+    let mean_x = points.iter().map(|p| p.2 * p.0).sum::<f64>() / weight;
+    let mean_y = points.iter().map(|p| p.2 * p.1).sum::<f64>() / weight;
+    let variance: f64 = points.iter().map(|p| p.2 * (p.0 - mean_x).powi(2)).sum();
+    if variance <= 1e-12 {
+        return 0.0;
+    }
+    let slope = points.iter().map(|p| p.2 * (p.0 - mean_x) * (p.1 - mean_y)).sum::<f64>() / variance;
+    if slope.is_finite() { slope.clamp(-2.0, 0.0) } else { 0.0 }
 }
 
 /// For each mode of `anchor`, strongest first, the nearest unused mode of every recording

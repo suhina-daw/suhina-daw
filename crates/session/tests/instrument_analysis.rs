@@ -282,6 +282,19 @@ fn modal_fitting_lifecycle() {
     assert_eq!(accepted["automation"], "off");
     assert_eq!(session.undo_steps().0, depth.0 + 1);
     assert_eq!(session.instrument_analysis_view().unwrap().phase, AnalysisPhase::Accepted);
+    // Level-matched A/B: without an audio output it reports the comparison and plays nothing.
+    let steps = session.undo_steps();
+    let audition = run(&mut session, "instrument.auditionFit", json!({"job":job["job"],"which":"fitted"}));
+    assert_eq!(audition["played"], false);
+    assert!(audition["meanDistanceDb"].as_f64().unwrap() < 6.0, "{audition}");
+    assert!(audition["levelDifferenceDb"].as_f64().unwrap().abs() < 3.0, "{audition}");
+    assert!(session.instrument_analysis_view().unwrap().comparison.is_some());
+    assert!(
+        session
+            .execute("instrument.auditionFit", &json!({"track":1,"device":0,"job":job["job"],"which":"both"}))
+            .is_err()
+    );
+    assert_eq!(session.undo_steps(), steps, "auditioning is not an edit");
     let fitted = session.project().clone();
     let device = &fitted.channels[0].devices[0];
     assert_eq!(device.sample_file(), before.channels[0].devices[0].sample_file());

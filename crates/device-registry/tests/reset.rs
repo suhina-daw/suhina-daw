@@ -94,6 +94,7 @@ fn instrument_render_events_and_reset_allocate_and_free_nothing() {
             layer.rise[0] = 0.1;
             let recording = ModelRecording {
                 key: 60,
+                source: 0,
                 velocity: 0.8,
                 level: 0.5,
                 modes: vec![ModelMode::plain(1.0, 0.5, 60.0), ModelMode::plain(2.0, 0.3, 60.0)],

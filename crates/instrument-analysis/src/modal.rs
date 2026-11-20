@@ -602,6 +602,7 @@ fn recording(
     });
     let recording = ModelRecording {
         key,
+        source: 0,
         velocity: DEFAULT_VELOCITY,
         level: sum * scale,
         modes,

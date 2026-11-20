@@ -119,7 +119,7 @@ impl Canvas {
     pub(super) fn dial(&mut self, id: &str, name: &str, bounds: [f32; 4], tooltip: &str) {
         let format = match id {
             "gain" => TextFormat::Decibels,
-            "body_decay" | "release" | "attack" => TextFormat::Seconds,
+            "body_decay" | "release" | "attack" | "decay" => TextFormat::Seconds,
             "structure" => TextFormat::Number,
             _ => TextFormat::Percent,
         };

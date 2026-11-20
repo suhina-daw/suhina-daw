@@ -395,7 +395,8 @@ pub struct Performer {
     bend: f64,
     drift: f64,
     drift_noise: Noise,
-    /// Level multiplier of a measured release and its factor per update.
+    /// Level of the noise layer after note-off and its factor per update (the damper fades the
+    /// sines).
     fall: f64,
     fall_factor: f64,
     retune: bool,
@@ -469,20 +470,26 @@ impl Performer {
         self.active && self.noise_on && self.fall > FALL_END
     }
 
-    /// Whether a measured release has reached its end.
+    /// Whether the noise layer's release has reached its end.
     pub fn finished(&self) -> bool {
         self.active && self.fall <= FALL_END
     }
 
-    /// Begin the measured release, its T60 scaled by `scale`; false when there is none and the
-    /// caller ramps its gate instead.
-    pub fn release(&mut self, scale: f64) -> bool {
-        if !self.active || self.held.release_seconds <= 0.0 || !scale.is_finite() {
-            return false;
+    /// Let go of the note with the Release control at `release` seconds: the T60 the caller's
+    /// damper caps the sines at, which is the measured release scaled by `release / 0.25` (the
+    /// control's default) when there is one, else `release`. The noise layer falls with it.
+    pub fn release(&mut self, release: f64) -> f64 {
+        let release = if release.is_finite() { release.max(0.001) } else { 0.25 };
+        if !self.active {
+            return release;
         }
-        let t60 = (self.held.release_seconds * scale).max(0.005);
+        let t60 = if self.held.release_seconds > 0.0 {
+            (self.held.release_seconds * release / 0.25).clamp(0.005, 60.0)
+        } else {
+            release
+        };
         self.fall_factor = (-1000.0_f64.ln() * CONTROL as f64 / (t60 * self.sample_rate)).exp();
-        true
+        t60
     }
 
     /// Set the pitch-wheel offset; the bank is retuned with the current deviation.
@@ -524,7 +531,7 @@ impl Performer {
         let mean_square = e * e * held.vibrato_cents * held.vibrato_cents / 2.0;
         let tremolo =
             if held.tremolo_hz > 0.0 { 1.0 + held.tremolo_depth * (TAU * held.tremolo_hz * t).sin() } else { 1.0 };
-        let common = tremolo * self.fall;
+        let common = tremolo;
         let mut gains = [0.0_f32; MAX_VOICE_SINES];
         for (i, gain) in gains.iter_mut().enumerate() {
             let at = |a: &[f32; MAX_VOICE_SINES]| f64::from(a.get(i).copied().unwrap_or(0.0));

@@ -181,34 +181,41 @@ fn vibrato_moves_the_pitch_by_its_depth_at_its_rate_after_its_delay() {
 }
 
 #[test]
-fn onsets_swell_in_and_the_measured_release_falls_and_ends() {
+fn onsets_swell_in_and_the_release_sets_the_damper_and_fades_the_noise() {
     let mut held = Held::NONE;
     held.onset[0] = 0.1;
     held.rise[0] = 0.2;
     held.release_seconds = 0.5;
+    held.noise[5] = 1e-4;
     let mut bank = one_sine();
     let mut performer = Performer::default();
     performer.start(&held, RATE, 0.0, 1);
     let output: Vec<f32> = (0..48000).map(|_| performer.next(&mut bank)).collect();
     let peak = |range: std::ops::Range<usize>| output[range].iter().fold(0.0_f32, |m, x| m.max(x.abs()));
-    assert!(peak(0..4500) < 1e-3, "silent before the onset");
+    // Before the onset only the noise (well under the sine) sounds.
+    assert!(peak(0..4500) < 0.05, "{}", peak(0..4500));
     // 90 % at onset + rise (0.3 s), within the control ramp.
     let at_rise = peak(14200..14600);
-    assert!((at_rise / 0.5 - 0.9).abs() < 0.03, "{at_rise}");
-    assert!((peak(40000..48000) / 0.5 - 1.0).abs() < 0.02);
-    assert!(performer.release(1.0));
+    assert!((at_rise / 0.5 - 0.9).abs() < 0.05, "{at_rise}");
+    assert!((peak(40000..48000) / 0.5 - 1.0).abs() < 0.05);
+    // The measured release at the Release control's default, and twice it.
+    assert!((performer.release(0.25) - 0.5).abs() < 1e-9);
+    assert!(performer.sounding());
     let mut fallen = 0;
-    while !performer.finished() && fallen < 48000 {
+    while !performer.finished() && fallen < 96000 {
         performer.next(&mut bank);
         fallen += 1;
     }
-    // -60 dB after T60 = 0.5 s.
+    // The noise is 60 dB down after T60 = 0.5 s.
     assert!((fallen as f64 / RATE - 0.5).abs() < 0.01, "{fallen}");
-    let mut none = Performer::default();
+    assert!(!performer.sounding());
     let mut plain = held;
     plain.release_seconds = 0.0;
+    let mut none = Performer::default();
     none.start(&plain, RATE, 0.0, 1);
-    assert!(!none.release(1.0), "no measured release: the caller ramps its gate");
+    assert_eq!(none.release(0.3), 0.3, "no measured release: the Release control");
+    let mut inactive = Performer::default();
+    assert_eq!(inactive.release(0.7), 0.7);
 }
 
 #[test]

@@ -36,10 +36,28 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Number,
                 "the velocity this recording stands for, above 0 and at most 1 (default 0.8)",
             ),
+            optional(
+                "source",
+                ParamType::Integer,
+                "which instrument the recording is from, 0 to 15 (default 0), for Source morph: ten pianos are ten sources",
+            ),
         ],
         kind: CommandKind::EDIT,
         run: instrument_analysis::add_fit,
         policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "instrument.auditionFit",
+        label: "Play the fit's original source or its fitted model, level-matched, and report their level and spectral distance",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            JOB,
+            param("which", ParamType::Text, "original (the analyzed source range) or fitted (the model rendered)"),
+        ],
+        kind: CommandKind::TRANSPORT,
+        run: instrument_analysis::audition_fit,
+        policy: Policy::PREVIEW,
     },
     CommandSpec {
         id: "instrument.analyzeSample",
