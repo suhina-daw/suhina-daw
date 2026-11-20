@@ -141,7 +141,13 @@ pub fn fit(
     let energy = |c: usize| squares[c] - sums[c] * sums[c] / length as f64;
     let channel = usize::from(channels == 2 && energy(1) > energy(0));
     report.channel = channel as u16;
-    if peaks[channel] <= 1e-12 || energy(channel) <= peaks[channel].powi(2) * length as f64 * 1e-14 {
+    // A constant channel is silent even when the one-pass energy keeps rounding residue: summing
+    // tens of thousands of equal f32 values leaves more than the energy threshold in f64.
+    let span = maxima[channel] - minima[channel];
+    if peaks[channel] <= 1e-12
+        || span <= peaks[channel] * 1e-9
+        || energy(channel) <= peaks[channel].powi(2) * length as f64 * 1e-14
+    {
         report.outcome = Outcome::Silent;
         work.finish()?;
         return Ok(report);
