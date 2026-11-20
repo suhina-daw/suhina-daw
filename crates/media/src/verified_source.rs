@@ -39,7 +39,11 @@ pub fn decode_source_bytes(
     if let Some(extension) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(extension);
     }
-    crate::decode_stream(stream, &hint, None)
+    let audio = crate::decode_stream(stream, &hint, None)?;
+    if audio.frames() < 2 || audio.samples.iter().any(|sample| !sample.is_finite()) {
+        return Err("an Instrument source needs at least two finite audio frames".into());
+    }
+    Ok(audio)
 }
 
 pub fn decode_verified_source(path: &Path, identity: InstrumentSourceIdentity) -> Result<AudioData, MediaError> {
@@ -97,5 +101,31 @@ mod tests {
         drop(file);
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(folder).unwrap();
+    }
+
+    #[test]
+    fn single_frame_and_nonfinite_pcm_are_not_prepared_as_instruments() {
+        for samples in [vec![0.1], vec![0.0, f32::NAN], vec![f32::INFINITY, 0.0]] {
+            let mut cursor = std::io::Cursor::new(Vec::new());
+            {
+                let mut writer = hound::WavWriter::new(
+                    &mut cursor,
+                    hound::WavSpec {
+                        channels: 1,
+                        sample_rate: 48000,
+                        bits_per_sample: 32,
+                        sample_format: hound::SampleFormat::Float,
+                    },
+                )
+                .unwrap();
+                for sample in samples {
+                    writer.write_sample(sample).unwrap();
+                }
+                writer.finalize().unwrap();
+            }
+            let bytes = cursor.into_inner();
+            let identity = source_identity(&bytes);
+            assert!(decode_source_bytes(Path::new("authored.wav"), bytes, identity).is_err());
+        }
     }
 }

@@ -54,7 +54,8 @@ by deleting unrelated files. Saving does not alter the loaded instrument or its 
 `device.add {preset}` and `track.add {preset}` use the same prepared Instrument state and the
 normal project edit/undo path, including grouped insertion. Validate the entire preset first.
 Resolve inside the specified root without following a link outside it, check encoded length
-and digest before decoding, and prepare source audio before project mutation. Corruption,
+and digest before decoding, and prepare source audio before project mutation. A prepared source
+has at least two frames of finite PCM, matching explicit Instrument sample loading. Corruption,
 unsupported revisions or invalid paths change neither the target nor its history.
 
 A genuinely missing source remains recorded, is reported in the command result and appears in
