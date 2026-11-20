@@ -236,4 +236,107 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     let replaced = reopened.project().clone();
     assert!(reopened.execute("instrument.acceptAnalysis", &json!({"track":1,"device":0,"job":fifth["job"]})).is_err());
     assert_eq!(reopened.project(), &replaced);
+    modal_fitting_lifecycle();
+}
+
+fn modal_fitting_lifecycle() {
+    let folder = super::temp_dir::TempDir::new("instrument-modal-fit");
+    let path = folder.join("authored-strike.wav");
+    let samples: Vec<_> = (0..96000)
+        .map(|i| {
+            let t = i as f64 / 48000.0;
+            (0.5 * (-1000.0_f64.ln() * t / 1.6).exp() * (std::f64::consts::TAU * 447.3 * t).sin()
+                + 0.25 * (-1000.0_f64.ln() * t / 0.9).exp() * (std::f64::consts::TAU * 1237.9 * t + 0.4).sin())
+                as f32
+        })
+        .collect();
+    suhina_test_support::write_wav(&path, 48000, 1, suhina_test_support::WavFormat::Float32, &samples);
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"id":"instrument"}));
+    run(&mut session, "device.loadSample", json!({"path":path}));
+    run(&mut session, "device.setParam", json!({"param":"body_decay","value":4}));
+    run(&mut session, "device.setParam", json!({"param":"quality","value":0}));
+    run(&mut session, "automation.addPoint", json!({"param":"body_decay","beat":0,"value":4}));
+    let before = session.project().clone();
+    let depth = session.undo_steps();
+    let sample_sound = render(&before, session.audio());
+    let job = run(&mut session, "instrument.fitSample", json!({}));
+    session.sync_instrument_analysis();
+    let status = run(&mut session, "instrument.analysis", json!({}));
+    assert_eq!(status["kind"], "modal");
+    assert_eq!(status["status"], "ready");
+    assert_eq!(status["modal"]["outcome"], "fitted", "{status}");
+    assert_eq!(status["modal"]["validationScope"], "sameRecordingTemporalEnvelopes");
+    assert_eq!(status["modal"]["phaseReconstructed"], false);
+    assert_eq!(session.project(), &before);
+    assert_eq!(session.undo_steps(), depth);
+    assert_eq!(render(session.project(), session.audio()), sample_sound);
+    assert!(session.execute("instrument.acceptAnalysis", &json!({"track":1,"device":0,"job":job["job"]})).is_err());
+    assert!(session.execute("instrument.acceptFit", &json!({"track":1,"device":0,"job":"old"})).is_err());
+    let accepted = run(&mut session, "instrument.acceptFit", json!({"job":job["job"]}));
+    assert_eq!(accepted["accepted"], true);
+    assert_eq!(accepted["automation"], "off");
+    assert_eq!(session.undo_steps().0, depth.0 + 1);
+    assert_eq!(session.instrument_analysis_view().unwrap().phase, AnalysisPhase::Accepted);
+    let fitted = session.project().clone();
+    let device = &fitted.channels[0].devices[0];
+    assert_eq!(device.sample_file(), before.channels[0].devices[0].sample_file());
+    assert_eq!(device.state, before.channels[0].devices[0].state);
+    let profile = suhina_dsp::modal::profile::ModalProfile::decode(device.instrument_modal_profile().unwrap()).unwrap();
+    assert_eq!(profile.reference_key(), 60);
+    assert!(profile.modes().len() >= 2);
+    assert_eq!(device.params.iter().find(|p| p.id == "model_revision").unwrap().value, 2.0);
+    assert_eq!(device.params.iter().find(|p| p.id == "quality").unwrap().value, 1.0);
+    assert_eq!(device.params.iter().find(|p| p.id == "body_decay").unwrap().value, 2.0);
+    assert_eq!(device.automation[0].points, before.channels[0].devices[0].automation[0].points);
+    assert!(!device.automation[0].enabled);
+    let model_sound = render(&fitted, session.audio());
+    assert!(model_sound.iter().any(|x| x.abs() > 1e-5));
+    assert_ne!(model_sound, sample_sound);
+    session.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(session.project(), &before);
+    session.execute("edit.redo", &json!({})).unwrap();
+    assert_eq!(session.project(), &fitted);
+    assert_eq!(render(session.project(), session.audio()), model_sound);
+
+    // An invalid transaction must leave both the project and the ready candidate intact.
+    let mut invalid = before.clone();
+    invalid.tracks[0].midi_input.channel = Some(0);
+    assert!(invalid.validate().is_err());
+    let mut rejected = Session::new(invalid.clone());
+    rejected.set_audio(session.audio().clone());
+    let proposal = run(&mut rejected, "instrument.fitSample", json!({}));
+    rejected.sync_instrument_analysis();
+    assert!(rejected.execute("instrument.acceptFit", &json!({"track":1,"device":0,"job":proposal["job"]})).is_err());
+    assert_eq!(rejected.project(), &invalid);
+    assert_eq!(rejected.instrument_analysis_view().unwrap().phase, AnalysisPhase::Ready);
+
+    let cancelled = run(&mut session, "instrument.fitSample", json!({}));
+    run(&mut session, "instrument.cancelAnalysis", json!({"job":cancelled["job"]}));
+    session.sync_instrument_analysis();
+    assert_eq!(session.instrument_analysis_view().unwrap().phase, AnalysisPhase::Cancelled);
+    assert_eq!(session.project(), &fitted);
+    let stale = run(&mut session, "instrument.fitSample", json!({}));
+    run(
+        &mut session,
+        "instrument.adoptModalProfile",
+        json!({"profile":{"referenceKey":60,"referenceHz":261.6255653,
+        "modes":[{"ratio":1.0,"magnitude":0.5,"decaySeconds":1.0}]}}),
+    );
+    session.sync_instrument_analysis();
+    assert_eq!(session.instrument_analysis_view().unwrap().phase, AnalysisPhase::Stale);
+    assert!(session.execute("instrument.acceptFit", &json!({"track":1,"device":0,"job":stale["job"]})).is_err());
+    session.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(session.project(), &fitted);
+
+    let plugin_library = suhina_plugins::library::Library::new(Some(folder.join("plugins")), folder.join("no-host"));
+    let mut projects = Projects::with_library(plugin_library);
+    projects.set_file_library(suhina_library::Library::new(Some(folder.join("settings"))));
+    projects.add(session, None).unwrap();
+    let song = folder.join("fitted.suhina");
+    projects.execute("project.save", &json!({"path":song})).unwrap();
+    let (mut reopened, warnings) = projects.open_path(&song, OpenOptions { audio: true }).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(render(reopened.project(), reopened.audio()), model_sound);
+    assert!(reopened.instrument_analysis_view().is_none());
 }

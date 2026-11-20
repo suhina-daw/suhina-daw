@@ -10,10 +10,10 @@ use std::sync::{
 };
 
 use serde_json::{Value, json};
-use suhina_instrument_analysis::{Outcome, Report};
+use suhina_instrument_analysis::{Outcome, Report, modal};
 use suhina_model::{AudioData, ChannelId, Device, DeviceId, DeviceKind};
 
-use crate::commands::{Args, device_channel_read};
+use crate::commands::{Args, device_channel, device_channel_read, with_override};
 use crate::device_groups::device_path;
 use crate::{CommandError, Session};
 
@@ -50,6 +50,26 @@ pub enum AnalysisPhase {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnalysisKind {
+    Root,
+    Modal,
+}
+
+impl AnalysisKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Root => "root",
+            Self::Modal => "modal",
+        }
+    }
+}
+
+enum Prepared {
+    Root(Report),
+    Modal(Box<modal::Report>),
+}
+
 impl AnalysisPhase {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -66,12 +86,14 @@ impl AnalysisPhase {
 /// A bounded snapshot for native UI/CLI clients, separate from saved instrument parameters.
 #[derive(Clone, Debug)]
 pub struct AnalysisView {
+    pub kind: AnalysisKind,
     pub job: String,
     pub device: DeviceId,
     pub phase: AnalysisPhase,
     pub completed: usize,
     pub total: usize,
     pub report: Option<Report>,
+    pub modal: Option<modal::Report>,
     pub accepted_root: Option<u8>,
     pub message: Option<String>,
 }
@@ -84,6 +106,7 @@ struct Source {
     start: f64,
     end: f64,
     root: f64,
+    profile: Option<Vec<u8>>,
 }
 
 #[derive(Default)]
@@ -92,15 +115,18 @@ pub(crate) struct Jobs {
 }
 
 struct Job {
+    kind: AnalysisKind,
     id: u64,
     source: Source,
     cancel: Arc<AtomicBool>,
     progress: Arc<[AtomicUsize; 2]>,
-    receiver: Option<mpsc::Receiver<Result<Report, suhina_instrument_analysis::Error>>>,
+    receiver: Option<mpsc::Receiver<Result<Prepared, suhina_instrument_analysis::Error>>>,
     phase: AnalysisPhase,
     report: Option<Report>,
+    modal: Option<modal::Report>,
     message: Option<String>,
     pending_root: Option<u8>,
+    pending_fit: bool,
 }
 
 impl Drop for Job {
@@ -136,7 +162,10 @@ impl Job {
                 }
                 match result {
                     Ok(report) => {
-                        self.report = Some(report);
+                        match report {
+                            Prepared::Root(report) => self.report = Some(report),
+                            Prepared::Modal(report) => self.modal = Some(*report),
+                        }
                         self.phase = AnalysisPhase::Ready;
                     }
                     Err(error) => {
@@ -161,14 +190,17 @@ impl Job {
 
     fn view(&self) -> AnalysisView {
         AnalysisView {
+            kind: self.kind,
             job: self.id.to_string(),
             device: self.source.device,
             phase: self.phase,
             completed: self.progress[0].load(Ordering::Acquire),
             total: self.progress[1].load(Ordering::Acquire),
             report: self.report.clone(),
+            modal: self.modal.clone(),
             message: self.message.clone(),
-            accepted_root: (self.phase == AnalysisPhase::Accepted).then_some(self.source.root as u8),
+            accepted_root: (self.phase == AnalysisPhase::Accepted && self.kind == AnalysisKind::Root)
+                .then_some(self.source.root as u8),
         }
     }
 }
@@ -203,6 +235,9 @@ impl Session {
                     && d.sample_file() == Some(job.source.file.as_str())
                     && parameter(d, "start", 0.0) == job.source.start
                     && parameter(d, "end", 1.0) == job.source.end
+                    && (job.kind != AnalysisKind::Modal
+                        || (d.instrument_modal_profile() == job.source.profile.as_deref()
+                            && matches!(&d.kind, DeviceKind::Builtin(id) if id == "instrument")))
             }) && self
                 .audio
                 .pool
@@ -231,6 +266,13 @@ impl Session {
             job.source.root = f64::from(root);
             job.phase = AnalysisPhase::Accepted;
         }
+        if let Some(job) = &mut self.analysis.current {
+            let pending = std::mem::take(&mut job.pending_fit);
+            if succeeded && pending {
+                job.source.profile = job.modal.as_ref().and_then(|r| r.profile).map(|p| p.encode().to_vec());
+                job.phase = AnalysisPhase::Accepted;
+            }
+        }
     }
 
     /// The latest job for this session, after a nonblocking poll.
@@ -249,16 +291,30 @@ impl Session {
 }
 
 pub(crate) fn start(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    start_kind(session, params, AnalysisKind::Root)
+}
+
+pub(crate) fn start_fit(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    start_kind(session, params, AnalysisKind::Modal)
+}
+
+fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Result<Value, CommandError> {
     session.refresh_instrument_analysis();
     if session.analysis.current.as_ref().is_some_and(|j| j.receiver.is_some()) {
         return Err("the previous analysis is still running or cancelling".into());
     }
     let (channel, device) = selected(session, params)?;
+    if kind == AnalysisKind::Modal && !matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument") {
+        return Err("modal fitting needs an Instrument".into());
+    }
     let file = device.sample_file().ok_or("load a sample before analyzing it")?.to_owned();
     let pcm = session.audio().files.get(&file).cloned().ok_or("the sample audio is missing or not prepared")?;
     let start = parameter(device, "start", 0.0);
     let end = parameter(device, "end", 1.0);
     let root = parameter(device, "root", 60.0);
+    if kind == AnalysisKind::Modal && root.fract() != 0.0 {
+        return Err("choose an integer sample root key before fitting".into());
+    }
     if !start.is_finite()
         || !end.is_finite()
         || !(0.0..=1.0).contains(&start)
@@ -279,7 +335,15 @@ pub(crate) fn start(session: &mut Session, params: &Value) -> Result<Value, Comm
     if range.is_empty() {
         return Err("the sample trim contains no audio frames".into());
     }
-    let source = Source { channel, device: device.id, file, pcm: pcm.clone(), start, end, root };
+    let profile = if kind == AnalysisKind::Modal {
+        if device.instrument_modal_profile().is_some_and(|p| p.len() > suhina_dsp::modal::profile::PROFILE_BYTES) {
+            return Err("the existing instrument profile exceeds the supported size".into());
+        }
+        device.instrument_modal_profile().map(<[u8]>::to_vec)
+    } else {
+        None
+    };
+    let source = Source { channel, device: device.id, file, pcm: pcm.clone(), start, end, root, profile };
     let permit = Permit::acquire()?;
     let id = NEXT_JOB
         .try_update(Ordering::AcqRel, Ordering::Acquire, |id| id.checked_add(1))
@@ -294,17 +358,21 @@ pub(crate) fn start(session: &mut Session, params: &Value) -> Result<Value, Comm
     let worker = std::thread::Builder::new()
         .name("instrument-analysis".into())
         .spawn(move || {
-            let result = suhina_instrument_analysis::analyze(
-                &pcm.samples,
-                pcm.sample_rate,
-                pcm.channels,
-                range,
-                |done, total| {
-                    worker_progress[1].store(total, Ordering::Release);
-                    worker_progress[0].store(done, Ordering::Release);
-                    !worker_cancel.load(Ordering::Acquire)
-                },
-            );
+            let progress = |done, total| {
+                worker_progress[1].store(total, Ordering::Release);
+                worker_progress[0].store(done, Ordering::Release);
+                !worker_cancel.load(Ordering::Acquire)
+            };
+            let result = match kind {
+                AnalysisKind::Root => {
+                    suhina_instrument_analysis::analyze(&pcm.samples, pcm.sample_rate, pcm.channels, range, progress)
+                        .map(Prepared::Root)
+                }
+                AnalysisKind::Modal => {
+                    modal::fit(&pcm.samples, pcm.sample_rate, pcm.channels, range, root.round() as u8, progress)
+                        .map(|r| Prepared::Modal(Box::new(r)))
+                }
+            };
             drop(pcm);
             drop(permit);
             let _ = send.send(result);
@@ -312,6 +380,7 @@ pub(crate) fn start(session: &mut Session, params: &Value) -> Result<Value, Comm
         .map_err(|error| format!("could not start sample analysis: {error}"))?;
     drop(worker);
     session.analysis.current = Some(Job {
+        kind,
         id,
         source,
         cancel,
@@ -319,10 +388,12 @@ pub(crate) fn start(session: &mut Session, params: &Value) -> Result<Value, Comm
         receiver: Some(receiver),
         phase: AnalysisPhase::Running,
         report: None,
+        modal: None,
         message: None,
         pending_root: None,
+        pending_fit: false,
     });
-    Ok(json!({"job":id.to_string(),"status":"running"}))
+    Ok(json!({"job":id.to_string(),"kind":kind.as_str(),"status":"running"}))
 }
 
 fn matching_job<'a>(session: &'a mut Session, params: &Value) -> Result<&'a mut Job, CommandError> {
@@ -352,7 +423,17 @@ fn view_json(view: &AnalysisView) -> Value {
         "activeWindows":r.active_windows,"voicedWindows":r.voiced_windows,
         "proposal":r.proposal.map(|p| json!({"root":p.root,"midi":p.midi,"hz":p.hz,"cents":p.cents,"periodicity":p.periodicity,"spreadCents":p.spread_cents}))
     }));
-    json!({"job":view.job,"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"report":report,"acceptedRoot":view.accepted_root,"message":view.message})
+    let modal = view.modal.as_ref().map(|r| json!({
+        "version":r.version,"firstFrame":r.range.start,"endFrame":r.range.end,"channel":r.channel,
+        "frameSize":r.frame_size,"analyzedSeconds":r.analyzed_seconds,
+        "sourceAssumption":"singleIsolatedDecayingStrike","phaseReconstructed":false,"validationScope":"sameRecordingTemporalEnvelopes",
+        "outcome":match r.outcome { modal::Outcome::Fitted=>"fitted",modal::Outcome::Silent=>"silent",modal::Outcome::TooShort=>"tooShort",modal::Outcome::NoDecayingModes=>"noDecayingModes" },
+        "referenceKey":r.profile.map(|p|p.reference_key()),"referenceHz":r.profile.map(|p|p.reference_hz()),
+        "modes":r.modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
+            "estimationRmsDb":m.estimation_rms_db,"validationRmsDb":m.validation_rms_db,
+            "estimationWindows":m.estimation_windows,"validationWindows":m.validation_windows})).collect::<Vec<_>>()
+    }));
+    json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"report":report,"modal":modal,"acceptedRoot":view.accepted_root,"message":view.message})
 }
 
 pub(crate) fn cancel(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -363,6 +444,9 @@ pub(crate) fn cancel(session: &mut Session, params: &Value) -> Result<Value, Com
 
 pub(crate) fn accept(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let job = matching_job(session, params)?;
+    if job.kind != AnalysisKind::Root {
+        return Err("this is a modal fitting result; use instrument.acceptFit".into());
+    }
     if job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current analysis proposal can be accepted".into());
     }
@@ -381,4 +465,22 @@ pub(crate) fn accept(session: &mut Session, params: &Value) -> Result<Value, Com
         job.pending_root = Some(root);
     }
     Ok(result)
+}
+
+pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let job = matching_job(session, params)?;
+    if job.kind != AnalysisKind::Modal || job.phase != AnalysisPhase::Ready {
+        return Err("only a completed, current modal fit can be accepted".into());
+    }
+    let profile =
+        job.modal.as_ref().and_then(|r| r.profile).ok_or("the sample did not yield a decaying modal profile")?;
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
+    let overridden =
+        crate::instrument_profile::apply_profile(device, &profile, crate::instrument_profile::ProfileSource::Modal)?;
+    if let Some(job) = &mut session.analysis.current {
+        job.pending_fit = true;
+    }
+    Ok(with_override(json!({"accepted":true,"modeCount":profile.modes().len(),"source":"modal"}), overridden))
 }

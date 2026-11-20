@@ -27,9 +27,11 @@ classification, file scanning and map layout are unrelated to instrument prepara
 
 ## Decision
 
-1. **Create `suhina-instrument-analysis` as a pure preparation library depending only on DSP.**
+1. **Create `suhina-instrument-analysis` as a pure preparation library using shared DSP and permitted numerical libraries.**
    It borrows decoded PCM and returns bounded measurements/proposals. It owns no files,
    projects, windows, threads or device instances. It may allocate bounded scratch memory.
+   Modal fitting reuses the workspace's FFT library and returns the canonical shared modal
+   profile. It introduces neither another model codec nor an analysis-time device renderer.
 2. **Keep the reusable frame estimator in `suhina-dsp`.** Both sample-map features and instrument
    analysis call it. Preserve the sample map's estimator settings, arithmetic and cache meaning.
    Its prepared buffers distinguish allocation during construction from estimation.
@@ -38,7 +40,9 @@ classification, file scanning and map layout are unrelated to instrument prepara
    releases worker resources. Workers receive immutable PCM, never a project or a path.
 4. **Accept explicitly through an ordinary edit command.** Completion is informational.
    Acceptance rechecks source identity, trim, original root and device identity; it overrides
-   root automation through existing manual-edit semantics and participates in normal undo.
+   the affected parameter automation through existing manual-edit semantics and participates
+   in normal undo. Profile adoption also rechecks the existing profile and explicitly resets
+   model transforms to reproduce the accepted result.
 5. **Expose host preparation through an SDK widget.** Analysis controls are commands, not
    automatable sound parameters. An exported host must supply its own jobs/permissions/editor
    integration before claiming equivalent preparation support.

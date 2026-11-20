@@ -7,7 +7,9 @@
 use egui::{Id, Rect, Ui};
 use serde_json::json;
 use suhina_engine::model::TrackId;
-use suhina_session::{AnalysisPhase, AnalysisView, ProjectId, SampleAnalysisOutcome, Session};
+use suhina_session::{
+    AnalysisKind, AnalysisPhase, AnalysisView, ModalFitOutcome, ProjectId, SampleAnalysisOutcome, Session,
+};
 
 use super::device_canvas::remember_keyboard_owner;
 use crate::interaction::device_at::DeviceAt;
@@ -78,6 +80,11 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
             if analyze.clicked() {
                 actions.push(Action::new("instrument.analyzeSample",json!({"track":track_value,"device":device_value})));
             }
+            let fit = ui.add_enabled(!running, egui::Button::new("Fit resonances"));
+            remember_keyboard_owner(&fit);
+            if fit.clicked() {
+                actions.push(Action::new("instrument.fitSample",json!({"track":track_value,"device":device_value})));
+            }
             if let Some(view) = view.filter(|v| running || v.phase == AnalysisPhase::Ready) {
                 let cancel = ui.button(if running { "Cancel analysis" } else { "Discard proposal" });
                 remember_keyboard_owner(&cancel);
@@ -87,16 +94,40 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
             }
         });
         let Some(view) = view else {
-            ui.label("Find a root note in an isolated pitched sample. Listen and check the proposal before accepting.");
+            ui.label("Analyze a root note, or fit resonances from an isolated decaying strike.");
+            ui.label("Fitting is experimental. Inspect the result before accepting; the source stays playable.");
             return;
         };
         match view.phase {
             AnalysisPhase::Running => {
                 let fraction = if view.total > 0 { (view.completed as f32 / view.total as f32).clamp(0.0,1.0) } else { 0.0 };
-                ui.add(egui::ProgressBar::new(fraction).text("Analyzing locally…"));
+                ui.add(egui::ProgressBar::new(fraction).text(if view.kind == AnalysisKind::Modal { "Fitting resonances locally…" } else { "Analyzing locally…" }));
                 ui.ctx().request_repaint();
             }
             AnalysisPhase::Ready => {
+                if let Some(report) = &view.modal {
+                    if let Some(profile) = report.profile {
+                        let error = report.modes.iter().map(|m|m.validation_rms_db).fold(0.0_f64, f64::max);
+                        ui.horizontal(|ui| {
+                            ui.label(format!("Experimental: {} modes · root {} · envelope error ≤ {:.2} dB",profile.modes().len(),profile.reference_key(),error))
+                                .on_hover_text(format!("Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Initial phases, attack and room response are not reconstructed.",report.channel+1,report.range.start,report.range.end,report.analyzed_seconds));
+                            let accept = ui.button("Accept model");
+                            remember_keyboard_owner(&accept);
+                            if accept.clicked() {
+                                actions.push(Action::new("instrument.acceptFit",json!({"track":track_value,"device":device_value,"job":view.job})));
+                            }
+                        });
+                        ui.label("Accept selects Modal, resets model controls and enables all fitted modes. One undo step.");
+                        ui.label("One recording cannot establish physical identity or behaviour at other notes and dynamics.");
+                    } else {
+                        ui.label(match report.outcome {
+                            ModalFitOutcome::Silent => "The selected region is silent or constant. Choose a sounding strike.",
+                            ModalFitOutcome::TooShort => "Too little decaying audio for estimation and validation. Choose a longer ring.",
+                            ModalFitOutcome::NoDecayingModes | ModalFitOutcome::Fitted => "No reliable separated decays were found. Keep the sample or try a clearer isolated strike.",
+                        });
+                    }
+                    return;
+                }
                 let Some(report) = &view.report else { return; };
                 if let Some(proposal) = report.proposal {
                     let mut correction = ui.ctx().data(|data| data.get_temp::<Correction>(correction_id()))
@@ -127,6 +158,10 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                 }
             }
             AnalysisPhase::Accepted => {
+                if view.kind == AnalysisKind::Modal {
+                    ui.label("Experimental modal profile accepted. Play it and edit the model controls.");
+                    ui.label("Undo restores the previous instrument. The source sample is retained.");
+                }
                 if let Some(root) = view.accepted_root {
                     ui.label(format!("Root key {root} accepted. Undo restores the previous mapping."));
                 }

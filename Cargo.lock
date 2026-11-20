@@ -5723,6 +5723,7 @@ dependencies = [
 name = "suhina-instrument-analysis"
 version = "0.0.1"
 dependencies = [
+ "rustfft",
  "suhina-dsp",
 ]
 
