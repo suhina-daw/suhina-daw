@@ -2835,6 +2835,14 @@ pub(crate) fn show(
         }
         let focused = response.has_focus();
         remember_keyboard_owner(&response);
+        if focused {
+            // The arrows step the focused control instead of also moving the focus on, which
+            // took the keyboard away from the editor.
+            ui.memory_mut(|m| {
+                let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
+                m.set_focus_lock_filter(response.id, arrows);
+            });
+        }
         let (dx, dy, button, fine) = ui.input(|i| {
             (
                 i32::from(focused && i.key_pressed(egui::Key::ArrowRight))

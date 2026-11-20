@@ -215,7 +215,9 @@ fn the_computer_keyboard_still_plays_after_a_knob_in_the_editor_is_used() {
     h.get_by_label("Open editor").click();
     h.run_steps(4);
     h.get_by_label("Output gain").focus();
-    h.step();
+    // A control locks the arrows once it has held the focus for a frame, as it always has by
+    // the time a person presses one.
+    h.run_steps(2);
     h.key_press(egui::Key::ArrowUp);
     h.run_steps(2);
     assert!(crate::detail::device_canvas::owns_keyboard(&h.ctx), "the knob keeps the editor's keys");

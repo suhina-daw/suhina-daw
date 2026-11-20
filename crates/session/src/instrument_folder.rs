@@ -216,7 +216,7 @@ mod tests {
             velocity: 0.8,
             level,
             modes: vec![ModelMode::plain(1.0, 0.5, 1.0)],
-            attack_rate: 48000,
+            attack_rate: 0,
             attack: Vec::new(),
             sustain: None,
         }

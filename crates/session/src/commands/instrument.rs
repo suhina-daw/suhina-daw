@@ -53,6 +53,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Integer,
                 "which instrument the recording is from, 0 to 15 (default 0), for Source morph: ten pianos are ten sources",
             ),
+            optional(
+                "newSource",
+                ParamType::Bool,
+                "instead of source: one more than the highest source in the model, for another instrument",
+            ),
         ],
         kind: CommandKind::EDIT,
         run: instrument_analysis::add_fit,

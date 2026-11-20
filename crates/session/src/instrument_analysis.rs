@@ -714,6 +714,7 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         return adopt_folder(session, params, true);
     }
     let source = source_param(params)?;
+    let new_source = new_source_param(params)?;
     let job = matching_job(session, params)?;
     if job.kind != AnalysisKind::Modal || job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current modal fit can be added".into());
@@ -724,7 +725,6 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         .and_then(|r| r.recording.clone())
         .ok_or("the sample did not yield a fitted recording to add")?;
     recording.velocity = velocity;
-    recording.source = source;
     let (key, modes) = (recording.key, recording.modes.len());
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
@@ -733,7 +733,10 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         .instrument_modal_profile()
         .filter(|bytes| bytes.starts_with(MODEL_MAGIC))
         .ok_or("add needs an Instrument with an accepted fitted model; accept one first")?;
-    let set = ModelSet::decode(existing).and_then(|set| set.with(recording)).map_err(|error| error.to_string())?;
+    let existing = ModelSet::decode(existing).map_err(|error| error.to_string())?;
+    let source = if new_source { next_source(&existing)? } else { source };
+    recording.source = source;
+    let set = existing.with(recording).map_err(|error| error.to_string())?;
     let bytes = set.encode();
     let overridden = crate::instrument_profile::apply_model_set(device, &bytes, false)?;
     let count = set.recordings().len();
@@ -744,6 +747,24 @@ pub(crate) fn add_fit(session: &mut Session, params: &Value) -> Result<Value, Co
         json!({"added":true,"recordings":count,"key":key,"velocity":velocity,"recordingSource":source,"modeCount":modes,"revision":MODEL_REVISION,"source":"modal"}),
         overridden,
     ))
+}
+
+/// Whether `newSource` asks for a source of its own; it and `source` exclude each other.
+fn new_source_param(params: &Value) -> Result<bool, CommandError> {
+    let new_source = Args::new(params).opt_bool("newSource")?.unwrap_or(false);
+    if new_source && Args::new(params).has("source") {
+        return Err("give either source or newSource, not both".into());
+    }
+    Ok(new_source)
+}
+
+/// One more than the highest source a set uses: another instrument's recordings.
+fn next_source(set: &ModelSet) -> Result<u8, CommandError> {
+    let highest = set.recordings().iter().map(|r| r.source).max().unwrap_or(0);
+    highest
+        .checked_add(1)
+        .filter(|n| *n < 16)
+        .ok_or_else(|| CommandError::from("the model already uses source 15, the last one"))
 }
 
 /// The optional `source` (instrument) number a fit is added as, 0 when absent.
@@ -760,6 +781,10 @@ fn adopt_folder(session: &mut Session, params: &Value, add: bool) -> Result<Valu
         return Err("a folder's velocities come from its layers; leave velocity out".into());
     }
     let source = source_param(params)?;
+    let new_source = new_source_param(params)?;
+    if new_source && !add {
+        return Err("newSource is for adding to a model".into());
+    }
     let job = matching_job(session, params)?;
     if job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current folder fit can be accepted or added".into());
@@ -768,24 +793,26 @@ fn adopt_folder(session: &mut Session, params: &Value, add: bool) -> Result<Valu
     if recordings.is_empty() {
         return Err("no file in the folder gave a fitted recording".into());
     }
-    for recording in &mut recordings {
-        recording.source = source;
-    }
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
-    let set = if add {
+    let (set, source) = if add {
         let existing = device
             .instrument_modal_profile()
             .filter(|bytes| bytes.starts_with(MODEL_MAGIC))
             .ok_or("add needs an Instrument with an accepted fitted model; accept one first")?;
         let mut set = ModelSet::decode(existing).map_err(|error| error.to_string())?;
-        for recording in recordings {
+        let source = if new_source { next_source(&set)? } else { source };
+        for mut recording in recordings {
+            recording.source = source;
             set = set.with(recording).map_err(|error| format!("nothing was added: {error}"))?;
         }
-        set
+        (set, source)
     } else {
-        ModelSet::new(recordings).map_err(|error| error.to_string())?
+        for recording in &mut recordings {
+            recording.source = source;
+        }
+        (ModelSet::new(recordings).map_err(|error| error.to_string())?, source)
     };
     let bytes = set.encode();
     let overridden = crate::instrument_profile::apply_model_set(device, &bytes, !add)?;
