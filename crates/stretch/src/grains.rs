@@ -250,7 +250,7 @@ mod tests {
             grains.render((i * 1000) as u64, chunk, &|t| t as f64 * 0.5, &opposite);
         }
         for c in 0..2 {
-            let channel: Vec<f32> = out.chunks_exact(2).map(|f| f[c]).collect();
+            let channel: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[c]).collect();
             let middle = &channel[24_000..72_000];
             assert!((rms(middle) - 0.354).abs() < 0.03, "channel {c}: {}", rms(middle));
         }
