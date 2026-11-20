@@ -256,7 +256,7 @@ fn a_recording_keeps_phases_level_and_up_to_32_modes() {
         let recording = report.recording.as_ref().unwrap();
         assert_eq!(recording.key, 57);
         assert!(recording.validate().is_ok());
-        assert!(recording.modes.len() <= 32 && recording.modes.len() == report.recording_modes.len());
+        assert!(recording.modes.len() <= MAX_MODEL_MODES && recording.modes.len() == report.recording_modes.len());
         assert!((recording.level - 0.95).abs() < 0.15, "{rate}: level {}", recording.level);
         for (i, &(hz, _, _)) in truth.iter().enumerate() {
             let mode = report
@@ -329,6 +329,31 @@ fn a_deeply_beating_partial_is_kept_loose_in_the_recording_but_not_the_profile()
     let beating = beating.unwrap_or_else(|| panic!("the beating partial is kept: {report:?}"));
     assert!(beating.loose && (0.5..=10.0).contains(&beating.decay_seconds), "{beating:?}");
     assert!(report.recording.as_ref().is_some_and(|r| r.validate().is_ok()));
+}
+
+/// A low string's weak partials, only a few decibels over the floor beside its strong ones, are
+/// found along the stiff string's inharmonic series that the strong ones give.
+#[test]
+fn a_strings_weak_partials_are_found_along_its_inharmonic_series() {
+    let (f0, b, bin_hz) = (98.0, 4e-4, 22050.0 / 8192.0);
+    let partial = |k: f64| k * f0 * (1.0 + b * k * k).sqrt();
+    let mut values = vec![1.0; 4096];
+    for k in 1..=30 {
+        let bin = (partial(f64::from(k)) / bin_hz).round() as usize;
+        values[bin] = if k <= 4 { 1000.0 } else { 5.0 };
+    }
+    let spectrum = Spectrum { values: &values, bin_hz, highest: 1000.0, separation_hz: 3.0 * bin_hz };
+    let found: Vec<f64> = (1..=4).map(|k| partial(f64::from(k))).collect();
+    let bins = string_partials(&found, 97.999, 9000.0, &spectrum, 96);
+    assert_eq!(bins.len(), 26, "partials 5..30: {bins:?}");
+    for (k, bin) in (5..=30).zip(&bins) {
+        let expected = partial(f64::from(k)) / bin_hz;
+        assert!((*bin as f64 - expected).abs() <= 1.0, "partial {k}: bin {bin}, expected {expected}");
+    }
+    // Without a fundamental near the reference key nothing is predicted.
+    assert!(string_partials(&found, 150.0, 9000.0, &spectrum, 96).is_empty());
+    // The candidate budget holds.
+    assert_eq!(string_partials(&found, 97.999, 9000.0, &spectrum, 10).len(), 6);
 }
 
 #[test]

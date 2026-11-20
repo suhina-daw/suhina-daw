@@ -144,7 +144,7 @@ pub(super) fn canvas() -> DeviceUi {
         "quality",
         "Modes per voice",
         [240.0, 452.0, 132.0, 30.0],
-        "8 or 16 resonances per modal voice; fitted models: 32 or 64 sines",
+        "8 or 16 resonances per modal voice; fitted models: 64 or 128 sines",
     );
     ui.label("Modal and Hybrid sources · up to 16 modal voices", [400.0, 456.0, 440.0, 20.0]);
     ui.label(
