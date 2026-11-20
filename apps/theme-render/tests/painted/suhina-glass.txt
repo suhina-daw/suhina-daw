@@ -22,8 +22,8 @@ devices suhina-glass 0a06825fd0914ece
 empty-space-menu suhina-glass 8154b4b7c3f29876
 expanded-delay suhina-glass f7187416886498a3
 expanded-fm-synth suhina-glass e0a3f4dc2c091b22
-expanded-instrument suhina-glass 248c56248d5cf016
-expanded-instrument-model suhina-glass 672cb854793ee18c
+expanded-instrument suhina-glass 019ccc7a77daacda
+expanded-instrument-model suhina-glass d1abab0e6e6910e1
 expanded-instrument-sample suhina-glass e1f66ef1584a25ac
 expanded-multiband suhina-glass df827cc869ed7ce4
 expanded-reverb suhina-glass 56b7c4c8e760a25c

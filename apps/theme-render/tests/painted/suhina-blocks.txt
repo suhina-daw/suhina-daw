@@ -22,8 +22,8 @@ devices suhina-blocks 7737e4bc9e339403
 empty-space-menu suhina-blocks b60356309bc6fd00
 expanded-delay suhina-blocks ffe0767ef301081f
 expanded-fm-synth suhina-blocks b624f5d6fdf02125
-expanded-instrument suhina-blocks ffec3db9928cc93a
-expanded-instrument-model suhina-blocks f8e333b480bb3b84
+expanded-instrument suhina-blocks e7789bd7d8fe7f84
+expanded-instrument-model suhina-blocks 4aacb93e2d4c6843
 expanded-instrument-sample suhina-blocks 626e4fc3edaf9ccb
 expanded-multiband suhina-blocks 94104da2670213c9
 expanded-reverb suhina-blocks ca524cb1938a41f6

@@ -22,8 +22,8 @@ devices nord e95b84c7527ccea2
 empty-space-menu nord e7114974b40db7c8
 expanded-delay nord 81a1bd02052facb7
 expanded-fm-synth nord 98264f584badb770
-expanded-instrument nord 63782caa506bcbda
-expanded-instrument-model nord cdaf24e1f5900b98
+expanded-instrument nord 7fb9e355430e14c7
+expanded-instrument-model nord 757e07e9c147899d
 expanded-instrument-sample nord 8ded6677511b1b7f
 expanded-multiband nord 38c69ceb6bb43895
 expanded-reverb nord 5599b1813dfe4b74
