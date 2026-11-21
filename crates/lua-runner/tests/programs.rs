@@ -78,6 +78,13 @@ end
 local columns = value and #value.tracks or 0
 suhina.send("APC out", suhina.midi.cc(1, 1, columns))
 "#;
+/// At the subscription cap: 64 subscribes, the first token's state marked on the pad.
+const SCRIPT_64_SUBSCRIBES: &str = r#"
+suhina.on_state(function(token, value)
+    if token == 1 then suhina.send("APC out", suhina.midi.cc(1, 0, 99)) end
+end)
+for i = 1, 64 do suhina.subscribe("project.launcher") end
+"#;
 
 impl Fixture {
     /// Makes `id` with `script` as its whole script, and a `Projects` whose extensions store
@@ -511,6 +518,114 @@ fn a_restarted_program_hears_its_ports_again() {
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
     assert_eq!(fixture.midi.written_for("APC out").len(), 1, "{:?}", fixture.midi.written_for("APC out"));
+}
+
+/// A restart whose folder no longer validates leaves the running program alone: the manifest
+/// is read before anything stops, so a checksum that moved under the program is refused with
+/// its reason while the process keeps answering.
+#[test]
+fn a_restart_that_no_longer_validates_leaves_the_program_running() {
+    let mut fixture = Fixture::claiming("stillruns", SCRIPT_ECHO);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    // The manifest breaks under the running program.
+    std::fs::write(fixture.folder().join("extension.json"), "{ not json").expect("written");
+    let error = fixture.projects.execute("extensions.restart", &json!({ "id": fixture.id })).expect_err("refused");
+    assert!(error.message().contains("manifest"), "{}", error.message());
+    // The running program is untouched: it answers still, and the store says running.
+    fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    fixture.pump_until(|f| written_contains(f, [0xB1, 7, 100]), "the echo of the untouched program");
+    let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
+    let entry = find(&listed, &fixture.id).expect("listed");
+    assert_eq!(entry["state"], "running", "{entry}");
+}
+
+/// A manifest that changed under a running program is not what the process runs: the next
+/// read of the store stops it, and the folder's manifest — the new script with it — runs
+/// from then on. The old script's echoes do not keep coming.
+#[test]
+fn a_manifest_changed_under_a_running_program_stops_the_old_process() {
+    // The old script echoes cc 7; the new one echoes cc 8, so the scripts are told apart.
+    const SCRIPT_OLD: &str = SCRIPT_ECHO;
+    const SCRIPT_NEW: &str =
+        "suhina.on_port_message(function(bytes, port) suhina.send(\"APC out\", suhina.midi.cc(1, 8, 100)) end)\n";
+    let mut fixture = Fixture::claiming("underneath", SCRIPT_OLD);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    fixture.pump_until(|f| written_contains(f, [0xB1, 7, 100]), "the old script's echo");
+    let old_echoes = fixture.midi.written_for("APC out").iter().filter(|m| m.as_slice() == [0xB1, 7, 100]).count();
+    assert_eq!(old_echoes, 1);
+
+    // The folder changes: a new script, a manifest that seals it, and a new name.
+    std::fs::write(fixture.folder().join("script.lua"), SCRIPT_NEW).expect("written");
+    let mut manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture.folder().join("extension.json")).expect("read"))
+            .expect("the manifest");
+    manifest["name"] = json!("Changed Pad");
+    manifest["programs"] = json!([{ "path": "script.lua", "sha256": sha(SCRIPT_NEW.as_bytes()) }]);
+    std::fs::write(fixture.folder().join("extension.json"), manifest.to_string()).expect("written");
+
+    // The store is read again when another extension is added; the running program's
+    // manifest no longer matches, so its process stops.
+    let second = std::env::temp_dir().join(format!("suhina-programs-second-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&second);
+    std::fs::create_dir_all(second.join("second-pad")).expect("made");
+    std::fs::write(
+        second.join("second-pad").join("extension.json"),
+        json!({
+            "id": "second-pad",
+            "name": "Second Pad",
+            "version": "1.0",
+            "provides": [{ "id": "surface", "label": "Second Pad surface" }],
+            "license": "MIT",
+            "license_source": "https://example.com/licence",
+            "license_checked": "2026-11-13",
+            "source": "user-provided",
+            "protocol": programs::PROTOCOL,
+            "programs": [{ "path": "script.lua", "sha256": sha("-- unused\n".as_bytes()) }],
+            "permissions": ["project.read"]
+        })
+        .to_string(),
+    )
+    .expect("written");
+    std::fs::write(second.join("second-pad").join("script.lua"), "-- unused\n").expect("written");
+    let answer = fixture
+        .projects
+        .execute("extensions.add", &json!({ "folder": second.join("second-pad").display().to_string() }))
+        .expect("added");
+    assert_eq!(answer["id"], "second-pad", "{answer}");
+    let _ = std::fs::remove_dir_all(&second);
+
+    // What runs now is the folder's manifest: its script, echoing cc 8. The look starts it;
+    // the message comes after it is running, so it reaches the new process.
+    fixture.projects.poll_plugins();
+    fixture.expect(|e| *e == programs::Event::Running, "the new program is running");
+    fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    fixture.pump_until(|f| written_contains(f, [0xB1, 8, 100]), "the new script's echo");
+    let echoes = fixture.midi.written_for("APC out");
+    assert_eq!(echoes.iter().filter(|m| m.as_slice() == [0xB1, 7, 100]).count(), old_echoes, "the old script stopped");
+    assert!(echoes.iter().any(|m| m.as_slice() == [0xB1, 8, 100]), "{echoes:?}");
+}
+
+/// A script at the subscription cap restarts into a working one: the old process's records
+/// go before the cap is counted, so the fresh script's first subscribe is taken and its
+/// first state arrives.
+#[test]
+fn a_script_at_the_subscription_cap_restarts_into_a_working_one() {
+    let mut fixture = Fixture::claiming("full64", SCRIPT_64_SUBSCRIBES);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.pump_until(|f| written_contains(f, [0xB1, 0, 99]), "the first run's state");
+    let first = fixture.midi.written_for("APC out").iter().filter(|m| m.as_slice() == [0xB1, 0, 99]).count();
+    assert_eq!(first, 1, "{first} states");
+    fixture.projects.execute("extensions.restart", &json!({ "id": fixture.id })).expect("restarted");
+    fixture.expect(|e| *e == programs::Event::Running, "running again");
+    fixture.pump_until(
+        |f| f.midi.written_for("APC out").iter().filter(|m| m.as_slice() == [0xB1, 0, 99]).count() > 1,
+        "the restarted script's first state",
+    );
 }
 
 /// A script stopped at its error boundary holds no ports; a restart brings both back.

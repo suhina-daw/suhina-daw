@@ -413,17 +413,21 @@ impl Extensions {
     }
 
     /// Reads the store's folders again: what the user (or a test) put there is picked up. The
-    /// programs running keep running — their handles re-attach to the re-read entries by id,
-    /// and a program whose extension is gone from the store stops when its handle is dropped.
+    /// programs running keep running when the folder still holds the manifest they were
+    /// started from — their handles re-attach to the re-read entries by id, and a program
+    /// whose extension is gone from the store, or whose manifest changed under it, stops
+    /// when its handle is dropped.
     pub fn reload(&mut self) {
         self.auto_blocked.clear();
-        let mut running: Vec<(String, bool, programs::Handle)> = self
-            .known
-            .iter_mut()
-            .filter_map(|extension| {
-                extension.program.take().map(|program| (extension.id.clone(), extension.script_stopped, program))
-            })
-            .collect();
+        let mut running: Vec<(String, bool, Option<Value>, programs::Handle)> =
+            self.known
+                .iter_mut()
+                .filter_map(|extension| {
+                    extension.program.take().map(|program| {
+                        (extension.id.clone(), extension.script_stopped, extension.value.clone(), program)
+                    })
+                })
+                .collect();
         self.known.clear();
         let Some(root) = &self.root else { return };
         let Ok(entries) = std::fs::read_dir(root) else { return };
@@ -458,11 +462,20 @@ impl Extensions {
                     program: None,
                 },
             };
-            if let Some(at) = running.iter().position(|(running_id, _, _)| *running_id == known.id) {
-                let (_, stopped, program) = running.remove(at);
-                known.program = Some(program);
-                known.state = State::Running;
-                known.script_stopped = stopped;
+            if let Some(at) = running.iter().position(|(running_id, ..)| *running_id == known.id) {
+                let (_, stopped, old_value, program) = running.remove(at);
+                // The process keeps running only on what it was started from: the same
+                // manifest as the one read now. A changed one — the script's checksum
+                // moved, the claims or the runner changed — is not what the process runs:
+                // it stops, and the store says what the folder holds now, refused or not.
+                let still_matches = matches!((&known.value, &old_value), (Some(new), Some(old)) if new == old);
+                if still_matches {
+                    known.program = Some(program);
+                    known.state = State::Running;
+                    known.script_stopped = stopped;
+                } else {
+                    program.stop();
+                }
             }
             self.known.push(known);
         }
@@ -541,16 +554,18 @@ impl Extensions {
             }
         }
         for (program, token, cmd, params) in subscribing {
+            // The subscribe binds to the handle that is running now; an older generation's
+            // records go before the count — a restart's fresh script re-subscribes with the
+            // same script tokens, and the old `last` values would swallow its first push
+            // (the controller dark) until something moved. Their number must not fill the
+            // cap the fresh ones are counted against, or a full old script would leave the
+            // new one no subscription.
+            let handle = self.program(&program).map(|h| h.token()).unwrap_or(0);
+            self.subs.retain(|sub| !(sub.program == program && sub.handle != handle));
             // At most the protocol's 64 live subscriptions per program; the runner refuses a
             // subscribe past it, so this one only guards what crosses the wire.
             let live = self.subs.iter().filter(|sub| sub.program == program).count();
             if live < programs::MAX_SUBSCRIPTIONS {
-                // The subscribe binds to the handle that is running now; an older
-                // generation's records go — a restart's fresh script re-subscribes with the
-                // same script tokens, and the old `last` values would swallow its first
-                // push, leaving its reads nil (the controller dark) until something moved.
-                let handle = self.program(&program).map(|h| h.token()).unwrap_or(0);
-                self.subs.retain(|sub| !(sub.program == program && sub.handle != handle));
                 self.subs.push(Sub { program, token, handle, cmd, params, last: None });
             }
         }
@@ -763,6 +778,24 @@ impl Extensions {
         started
     }
 
+    /// Records a start's failure on the extension: the process is not running (the store
+    /// says what the folder holds now — a validated manifest, if one was read), its
+    /// subscriptions go with the process that is gone, and the router looks again, for the
+    /// claims have moved. The user's next restart, or the scan's next look, starts it again.
+    pub(crate) fn start_failed(&mut self, id: &str, reason: String, manifest: Manifest, value: Value) {
+        if let Ok(extension) = self.known_mut(id) {
+            extension.manifest = Some(manifest);
+            extension.value = Some(value);
+            extension.reason = None;
+            extension.last_error = Some(reason);
+            extension.script_stopped = false;
+            extension.program = None;
+            extension.state = State::Available;
+        }
+        self.subs.retain(|sub| sub.program != id);
+        self.claims_epoch += 1;
+    }
+
     /// What each running program claims, for the MIDI router: the extension's id, its
     /// manifest's port name patterns, and the handle to deliver to. A program whose script
     /// stopped at its boundary holds no ports (they fall back) until `extensions.restart`.
@@ -912,17 +945,15 @@ fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
 
 /// `extensions.restart`: stops the program that is running and starts it again on what the
 /// folder holds now — the manifest is read again, so the restart runs a script whose SHA-256
-/// was checked this run. A refused or missing extension is refused with its reason.
+/// was checked this run. The folder is read before anything stops: a manifest that no longer
+/// validates, or a folder that is not a surface program's, is refused with its reason while
+/// the running program is untouched. A refused or missing extension is refused with its
+/// reason.
 fn restart(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let id = Args::new(params).text("id")?;
     // The pending requests the programs made are serviced here too, not dropped.
     projects.poll_programs();
     let folder = projects.extensions.known_mut(id)?.folder.clone();
-    // The old program stops before the new one takes its ports.
-    let old = projects.extensions.known_mut(id)?.program.take();
-    if let Some(old) = old {
-        old.stop();
-    }
     let (manifest, value) = Manifest::read(&folder).map_err(CommandError::from)?;
     let Some(runner) = &manifest.runner else {
         return Err(format!("{id:?} is not a surface program; there is nothing to restart").into());
@@ -930,11 +961,25 @@ fn restart(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
     let Some(script) = manifest.script() else {
         return Err(format!("{id:?}'s manifest names no program file").into());
     };
+    // The old program stops before the new one takes its ports.
+    let old = projects.extensions.known_mut(id)?.program.take();
+    if let Some(old) = old {
+        old.stop();
+    }
     // The old process's ports are what the new one hears at its handshake: its device is
     // where it was a moment ago, and the router opens the same ports for the new handle at
     // its next look.
     let ports = projects.program_ports(id);
-    let handle = programs::start(id, runner, &folder, script, ports)?;
+    let handle = match programs::start(id, runner, &folder, script, ports) {
+        Ok(handle) => handle,
+        Err(reason) => {
+            // The old process is already gone: the store says so with the reason, its
+            // subscriptions with it, and the router looks again — the ports fell back.
+            projects.extensions.start_failed(id, reason.to_string(), manifest, value);
+            projects.poll_plugins();
+            return Err(reason);
+        }
+    };
     let extension = projects.extensions.known_mut(id)?;
     extension.manifest = Some(manifest);
     extension.value = Some(value);
