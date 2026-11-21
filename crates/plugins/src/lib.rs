@@ -397,10 +397,12 @@ pub struct SavedState {
 
 /// The state a plug-in is taken to be in, kept for a restart (#1674): what it last reported, or
 /// what it was last given. Some plug-ins apply a state a moment after they are given it, and
-/// answer the load, and the reads for a while after, with the state they had before (a shell
-/// module's plug-ins do, answering with their initial state). Such a read is not taken for the
-/// plug-in's state: the state given stands until the plug-in reports anything else, so a backup,
-/// a save or a restart in that moment keeps it.
+/// answer the load, and the reads for a while after, with exactly the state they had before (a
+/// shell module's plug-ins do, answering with their initial state). Such a read is not taken for
+/// the plug-in's state: the state given stands until the plug-in reports anything else, so a
+/// backup, a save or a restart in that moment keeps it. A plug-in that answers with something new
+/// took the state in a form of its own (a VST2 bank read by its VST3 successor), and that form is
+/// its state.
 #[derive(Debug, Default, Clone)]
 struct KeptState {
     state: Option<SavedState>,
@@ -409,10 +411,10 @@ struct KeptState {
 }
 
 impl KeptState {
-    /// `given` was handed to the plug-in, which answered with `reply`, its state read straight
-    /// after.
-    fn given(&mut self, given: SavedState, reply: SavedState) {
-        self.settling = (reply != given).then_some(reply);
+    /// `given` was handed to the plug-in, which reported `before` just before (`None`: not known)
+    /// and answered with `reply`, its state read straight after.
+    fn given(&mut self, given: SavedState, reply: SavedState, before: Option<SavedState>) {
+        self.settling = (reply != given && before.as_ref() == Some(&reply)).then_some(reply);
         self.state = Some(given);
     }
 
@@ -1146,6 +1148,18 @@ impl Plugin {
     /// plug-in that still reports the one it had before gives the state it was given
     /// ([`KeptState`]).
     pub fn save_state(&mut self) -> Result<SavedState, PluginError> {
+        let read = self.read_state()?;
+        let (state, taken) = self.kept.read(read);
+        // Parameters set since the state given are not in it: they stay to be set again after a
+        // restart until a read that holds them is taken.
+        if taken {
+            lock(&self.params_since).clear();
+        }
+        Ok(state)
+    }
+
+    /// The plug-in's state as it reports it now, kept nowhere.
+    fn read_state(&mut self) -> Result<SavedState, PluginError> {
         let instance = self.instance;
         let reply = self.request(
             &Message::GetState { instance },
@@ -1155,13 +1169,7 @@ impl Plugin {
         let Message::State { data, controller, .. } = reply else {
             return Err(PluginError::Protocol("expected state".into()));
         };
-        let (state, taken) = self.kept.read(SavedState { data, controller });
-        // Parameters set since the state given are not in it: they stay to be set again after a
-        // restart until a read that holds them is taken.
-        if taken {
-            lock(&self.params_since).clear();
-        }
-        Ok(state)
+        Ok(SavedState { data, controller })
     }
 
     /// Hands `state` to the plug-in (and keeps it for a restart). A plug-in that does not take
@@ -1169,6 +1177,9 @@ impl Plugin {
     pub fn load_state(&mut self, state: impl Into<SavedState>) -> Result<(), PluginError> {
         let state = state.into();
         let instance = self.instance;
+        // What it reports before it is given the state: one that answers the load with exactly
+        // that has not applied the state yet ([`KeptState`]). A read that fails leaves it unknown.
+        let before = self.read_state().ok();
         let message = Message::SetState { instance, data: state.data.clone(), controller: state.controller.clone() };
         let reply =
             self.request(&message, "set_state", |m| matches!(m, Message::State { instance: i, .. } if *i == instance))?;
@@ -1177,7 +1188,7 @@ impl Plugin {
             Message::State { data, controller, .. } => SavedState { data, controller },
             _ => state.clone(),
         };
-        self.kept.given(state, reply);
+        self.kept.given(state, reply, before);
         lock(&self.params_since).clear();
         Ok(())
     }
