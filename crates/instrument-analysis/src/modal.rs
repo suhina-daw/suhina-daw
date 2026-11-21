@@ -2117,6 +2117,10 @@ fn loose_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEv
     ))
 }
 
+/// What the note track tells: how the note begins, a held tone's pitch wander (cents, Hz) and
+/// whether the sound is pitched.
+type NoteOnset = (Onset, Option<(f64, f64)>, bool);
+
 /// How a note begins: on its pitch, by a glide into it, or after another note (at `Start`
 /// seconds from the strike).
 enum Onset {
@@ -2138,7 +2142,7 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     mono: &[f64],
     sample_rate: u32,
     work: &mut Work<F>,
-) -> Result<(Onset, Option<(f64, f64)>, bool), Error> {
+) -> Result<NoteOnset, Error> {
     let pcm: Vec<f32> = mono.iter().map(|x| *x as f32).collect();
     let mut frames = notes::track(&pcm, sample_rate, |advance| {
         if advance { work.step().is_ok() } else { (work.progress)(work.done, work.total) }
