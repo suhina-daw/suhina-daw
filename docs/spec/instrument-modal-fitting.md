@@ -83,6 +83,21 @@ estimation data and odd windows are held out for validation. Least squares on lo
 versus time estimates exponential decay; T60 is minus ln(1000) divided by the slope. The
 window's damping-dependent amplitude bias is compensated before storing relative magnitudes.
 
+**Fast partials (algorithm version 4).** The envelope windows suit partials that ring for
+seconds, but the upper partials of a struck or plucked note (a synthesizer note whose filter
+closes, a piano's treble partials) fall 60 dB within a few tenths of a second, inside one or two
+of those windows, so no fit accepted them. They were only in the 0.25 s attack, and once it
+faded the note lost its brightness at once: measured on a synthesizer bass, the 2 kHz octave
+fell from -58 dB to below -130 dB at 0.3 s, and a piano chord's 500 Hz..2 kHz octaves were 6 dB
+low from 0.3 s on. So a candidate the envelope windows leave without a mode is measured again
+with **short windows**: the smallest power-of-two Hann size from 512 samples, below the envelope
+window size, whose main lobe stays clear of the nearest other candidate (size at least
+`4 * 22050 / gap`, the gap in Hz), cut from the start of the interval into at most 48
+consecutive windows. Its span, estimation and validation windows, error limits, late retry and
+loose rule are those above, and the window bias is compensated for the short window. A partial
+the short windows describe is kept like any other and competes for the recording's 64 modes by
+the same energy; one that fits neither stays out.
+
 **Accepting a mode.** A mode is kept when it has at least three estimation and three validation
 windows, its slope decays with a T60 within 0.001..60 s, the fitted level falls at least 1 dB
 across the estimation windows and at least three times the larger RMS envelope error, the

@@ -17,10 +17,14 @@ use suhina_dsp::{
 };
 
 /// Version 3 measures and removes vibrato first and adds the held layer.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 const MIN_FRAME: usize = 1024;
 const MAX_FRAME: usize = 8192;
 const MAX_FRAMES: usize = 12;
+/// Short windows for partials that die within one or two envelope windows: the smallest size and
+/// how many consecutive windows from the start.
+const SHORT_FRAME: usize = 512;
+const SHORT_FRAMES: usize = 48;
 const MAX_CANDIDATES: usize = 96;
 /// Partials along the string (instrument-modal-fitting.md): the fundamental's distance from the
 /// reference key, the inharmonicity bound, the search width and the weakest partial kept.
@@ -169,7 +173,10 @@ pub fn fit(
     let first = range.start.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let last = range.end.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let input = samples.get(first..last).ok_or(Error::InvalidRange)?;
-    let total = 2 * length.div_ceil(CHUNK) + MAX_CANDIDATES * (REFINEMENTS + MAX_FRAMES + 4) + MAX_MODEL_MODES + 8;
+    let total = 2 * length.div_ceil(CHUNK)
+        + MAX_CANDIDATES * (REFINEMENTS + MAX_FRAMES + SHORT_FRAMES + 4)
+        + MAX_MODEL_MODES
+        + 8;
     let mut work = Work { done: 0, total, progress };
     let mut report = Report {
         version: VERSION,
@@ -325,14 +332,6 @@ pub fn fit(
             break;
         }
     }
-    let bias = |slope: f64| {
-        window
-            .iter()
-            .enumerate()
-            .map(|(i, w)| w * (slope * (i as f64 - frame_size as f64 / 2.0) / f64::from(RATE)).exp())
-            .sum::<f64>()
-            / window.iter().sum::<f64>()
-    };
     // The prominent peaks first: the string's other partials are predicted from them.
     let mut frequencies = Vec::with_capacity(MAX_CANDIDATES);
     for bin in candidates {
@@ -360,26 +359,39 @@ pub fn fit(
             frequencies.push(hz);
         }
     }
+    // Short windows, smallest first, for partials the envelope windows cannot follow.
+    let mut short_windows = Vec::new();
+    let mut size = SHORT_FRAME;
+    while size < frame_size {
+        short_windows.push(hann(size));
+        size *= 2;
+    }
     let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
-    for hz in frequencies {
-        let mut measurements = Vec::with_capacity(frames);
-        let mut thetas = Vec::with_capacity(frames);
-        for index in 0..frames {
-            work.step()?;
-            let start = index * frame_size;
-            let frame = mono.get(start..start + frame_size).ok_or(Error::InvalidRange)?;
-            let (amplitude, theta) = projection_complex(frame, &window, hz);
-            thetas.push(theta);
-            if amplitude > 1e-7 {
-                measurements.push((index, (start + frame_size / 2) as f64 / f64::from(RATE), amplitude.ln()));
+    for (position, &hz) in frequencies.iter().enumerate() {
+        let (measurements, thetas) = measure(&mono, &window, frames, hz, &mut work)?;
+        let mut found = estimate(hz, &measurements).map(|e| (e, thetas, window.as_slice()));
+        if found.is_none() {
+            // The short window's main lobe (two bins each side) stays clear of the nearest
+            // other candidate.
+            let gap = frequencies
+                .iter()
+                .enumerate()
+                .filter(|(other, _)| *other != position)
+                .map(|(_, other)| (other - hz).abs())
+                .fold(f64::INFINITY, f64::min);
+            let needed = 4.0 * f64::from(RATE) / gap;
+            if let Some(short) = short_windows.iter().find(|w| w.len() as f64 >= needed) {
+                let count = (mono.len() / short.len()).min(SHORT_FRAMES);
+                let (measurements, thetas) = measure(&mono, short, count, hz, &mut work)?;
+                found = estimate(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
             }
         }
-        let Some(estimate) = estimate(hz, &measurements) else { continue };
-        let slow = estimate.intercept.exp() / bias(estimate.slope);
-        let fast = estimate.fast.map_or(0.0, |(intercept, slope)| intercept.exp() / bias(slope));
+        let Some((estimate, thetas, used)) = found else { continue };
+        let slow = estimate.intercept.exp() / window_bias(used, estimate.slope);
+        let fast = estimate.fast.map_or(0.0, |(intercept, slope)| intercept.exp() / window_bias(used, slope));
         // Phase at the strike, from the first window of the mode's span.
         let theta = thetas.get(estimate.first_window).copied().unwrap_or(0.0);
-        let phase = wrap(theta - TAU * hz * (estimate.first_window * frame_size) as f64 / f64::from(RATE));
+        let phase = wrap(theta - TAU * hz * (estimate.first_window * used.len()) as f64 / f64::from(RATE));
         if slow.is_finite() && slow > 0.0 && fast.is_finite() {
             let mut evidence = estimate.evidence;
             evidence.phase = phase;
@@ -733,6 +745,40 @@ fn recording(
         sustain: sustain.filter(|s| !s.is_empty() && s.validate(accepted.len()).is_ok()),
     };
     recording.validate().ok().map(|()| recording)
+}
+
+/// `hz` in `count` consecutive windows of `window`'s size from the start: the windows where it
+/// is above the floor as (window index, centre time, ln amplitude), and every window's phase.
+type Measured = (Vec<(usize, f64, f64)>, Vec<f64>);
+fn measure<F: FnMut(usize, usize) -> bool>(
+    mono: &[f64],
+    window: &[f64],
+    count: usize,
+    hz: f64,
+    work: &mut Work<F>,
+) -> Result<Measured, Error> {
+    let size = window.len();
+    let mut measurements = Vec::with_capacity(count);
+    let mut thetas = Vec::with_capacity(count);
+    for index in 0..count {
+        work.step()?;
+        let start = index * size;
+        let frame = mono.get(start..start + size).ok_or(Error::InvalidRange)?;
+        let (amplitude, theta) = projection_complex(frame, window, hz);
+        thetas.push(theta);
+        if amplitude > 1e-7 {
+            measurements.push((index, (start + size / 2) as f64 / f64::from(RATE), amplitude.ln()));
+        }
+    }
+    Ok((measurements, thetas))
+}
+
+/// How much a window over a decay with `slope` (per second) under- or overstates the level at
+/// its centre.
+fn window_bias(window: &[f64], slope: f64) -> f64 {
+    let centre = window.len() as f64 / 2.0;
+    window.iter().enumerate().map(|(i, w)| w * (slope * (i as f64 - centre) / f64::from(RATE)).exp()).sum::<f64>()
+        / window.iter().sum::<f64>()
 }
 
 fn projection(frame: &[f64], window: &[f64], hz: f64) -> f64 {

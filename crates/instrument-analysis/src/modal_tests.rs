@@ -378,3 +378,23 @@ fn a_noisy_strike_keeps_an_attack_that_a_clean_one_barely_needs() {
     assert!(noisy_energy > 0.0, "the strike noise is kept as the attack");
     assert!(noisy_energy > 10.0 * clean_energy, "{noisy_energy} vs {clean_energy}");
 }
+
+/// Upper partials that die within one or two envelope windows are measured again with short
+/// windows (version 4), so the note keeps its brightness after the attack.
+#[test]
+fn partials_that_die_within_an_envelope_window_are_fitted_with_short_windows() {
+    let truth = [(220.0, 3.0, 0.5), (660.0, 2.5, 0.3), (1500.0, 0.25, 0.3), (2600.0, 0.2, 0.2)];
+    let pcm = struck(22050, 3.0, &truth);
+    let report = fit(&pcm, 22050, 1, 0..pcm.len(), 57, |_, _| true).unwrap();
+    assert_eq!(report.version, 4);
+    assert_eq!(report.frame_size, 4096, "envelope windows of 186 ms");
+    for &(hz, t60, _) in &truth {
+        let mode = report
+            .recording_modes
+            .iter()
+            .find(|m| (m.frequency_hz - hz).abs() < 2.0)
+            .unwrap_or_else(|| panic!("{hz} Hz missing: {:?}", report.recording_modes));
+        assert!((mode.decay_seconds - t60).abs() / t60 < 0.15, "{mode:?} vs {t60}");
+    }
+    assert_eq!(report, fit(&pcm, 22050, 1, 0..pcm.len(), 57, |_, _| true).unwrap());
+}
