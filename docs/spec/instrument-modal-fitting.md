@@ -461,6 +461,28 @@ is stale once the device is removed or its fitted model changes; the device's ow
 and root do not concern it. The Sample page offers **Fit folder…**, which asks for the folder
 with the system's dialog.
 
+## Engine
+
+Sines resonating are what a struck or plucked sound is (a piano's, a guitar's, a bell's), and
+what a held tone is not: a cello, a trombone or a whistle modelled as sines sounded frozen,
+band-limited and in the end like a bell, whatever was added. So a fit names the **engine** that
+plays the sound best (algorithm version 4):
+
+- **Recording** for a held recording (a held note, or sustained modes holding half the
+  magnitude): the sample itself, its **held part** sustained in grains by the Sample layer's
+  Sustain playback ([sampler](sampler.md) › Sustain playback). The held part runs from the held
+  rule's first window (at least 0.25 s, after the attack) to its last (before the release), on the
+  whole prepared recording, at least 0.2 s long; the report gives it in source frames (`hold`).
+- **Resonance** otherwise: the fitted model.
+
+`instrument.acceptFit` adopts the fitted model as before and, for a Recording fit (not a chord's
+notes), also sets the Instrument's Source to Sample, its Sample playback to Sustain, Loop
+start and Loop end to the held part and Start to the note's own start (when the fit started
+after another note), all in the same undo step; the result names `engine`, `hold` and `start`.
+The fitted model stays: Source Modal plays it, so either engine can be heard on the same sample
+with one switch. The Sample page says which engine the fit chose. Measured: a cello's two notes,
+a whistle and a trombone chose Recording; pianos and guitars Resonance.
+
 ## Fitting a phrase
 
 A melody played on one instrument (a flute line, a cello phrase, a guitar lick) holds several of

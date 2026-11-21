@@ -240,6 +240,7 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     folder_fitting_lifecycle();
     chord_notes_lifecycle();
     phrase_notes_lifecycle();
+    recording_engine_lifecycle();
 }
 
 fn strike(scale: f64) -> Vec<f32> {
@@ -604,4 +605,38 @@ fn phrase_notes_lifecycle() {
     // A Sampler has no fitted model to fit a phrase into.
     run(&mut session, "device.add", json!({"id":"sampler"}));
     assert!(session.execute("instrument.fitPhrase", &json!({"track":1,"device":1})).is_err());
+}
+
+/// A held tone's fit chooses the recording engine: accepting it plays the Sample source with
+/// Sustain playback over the held part, in the same undo step, the fitted model kept.
+fn recording_engine_lifecycle() {
+    let folder = super::temp_dir::TempDir::new("instrument-recording-engine");
+    let path = folder.join("authored-held-tone.wav");
+    let hz = 440.0 * 2.0_f64.powf((60.0 - 69.0) / 12.0);
+    let tone: Vec<f32> = (0..96_000)
+        .map(|i| {
+            let t = i as f64 / 48000.0;
+            ((1..=6).map(|k| (std::f64::consts::TAU * hz * k as f64 * t).sin() / k as f64).sum::<f64>() * 0.2) as f32
+        })
+        .collect();
+    suhina_test_support::write_wav(&path, 48000, 1, suhina_test_support::WavFormat::Float32, &tone);
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"id":"instrument"}));
+    run(&mut session, "device.loadSample", json!({"path":path}));
+    run(&mut session, "device.setParam", json!({"param":"root","value":60}));
+    let job = run(&mut session, "instrument.fitSample", json!({}));
+    session.sync_instrument_analysis();
+    let status = run(&mut session, "instrument.analysis", json!({}));
+    assert_eq!(status["modal"]["engine"], "recording", "{status}");
+    let depth = session.undo_steps();
+    let accepted = run(&mut session, "instrument.acceptFit", json!({"job":job["job"]}));
+    assert_eq!(accepted["engine"], "recording", "{accepted}");
+    assert_eq!(session.undo_steps().0, depth.0 + 1);
+    let device = &session.project().channels[0].devices[0];
+    let value = |id: &str| device.params.iter().find(|p| p.id == id).map(|p| p.value);
+    assert_eq!(value("source"), Some(1.0));
+    assert_eq!(value("playback"), Some(3.0));
+    let (low, high) = (value("loop_start").unwrap(), value("loop_end").unwrap());
+    assert!(low >= 0.12 && high > low + 0.1 && high <= 1.0, "{low} {high}");
+    assert!(device.instrument_modal_profile().is_some(), "the fitted model stays for Source Modal");
 }

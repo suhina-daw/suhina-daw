@@ -35,7 +35,7 @@ pub const PARAMS: &[ParamInfo] = &[
     continuous("pitch", "Semitones", -48., 48., 0., Unit::None),
     continuous("cents", "Cents", -100., 100., 0., Unit::None),
     ParamInfo::integer("poly", "Poly", (1, 32), 8, Unit::None),
-    ParamInfo::choice("playback", "Playback", &["Gate", "One shot", "Loop", "Slices"], 0),
+    ParamInfo::choice("playback", "Playback", &["Gate", "One shot", "Loop", "Slices", "Sustain"], 0),
     ParamInfo::toggle("ping_pong", "Ping pong", false),
     ParamInfo::toggle("reverse", "Reverse", false),
     continuous("attack", "Attack", 0., 10., 0.005, Unit::Seconds),
@@ -156,9 +156,110 @@ struct Grain {
     step: f64,
     pan: f64,
 }
+/// Sustain playback's hold: two overlapping grains from the loop region, each new one starting
+/// where its waveform continues the one fading out (`docs/spec/sampler.md` › Sustain).
+#[derive(Clone, Copy, Default)]
+struct Hold {
+    active: bool,
+    /// Grain length in output samples and samples until the next grain.
+    length: usize,
+    until_next: usize,
+    /// Per grain: read position (source frames) and age (output samples; off at `length`).
+    grains: [(f64, usize); 2],
+}
+
+/// The sound's period in source frames, for lining up a new grain with the one it follows.
+fn hold_period(source_rate: f64, root: f64) -> f64 {
+    (source_rate / (440. * 2f64.powf((root - 69.) / 12.))).clamp(16., 2048.)
+}
+
+/// What a hold reads: the source, the loop region a grain may start in (`low..high`), the sound's
+/// period and the read step.
+struct HoldSource<'a> {
+    source: &'a [f32],
+    channels: usize,
+    low: f64,
+    high: f64,
+    period: f64,
+    step: f64,
+}
+
+impl HoldSource<'_> {
+    /// Mono level at `position`, for lining up grains.
+    fn mono(&self, position: f64) -> f64 {
+        let [left, right] = read(self.source, self.channels, position);
+        left + right
+    }
+
+    /// Where a new grain starts: a random point of the region, moved within one period to where
+    /// its waveform best continues the one now at `follow` (most correlated, normalized by its
+    /// energy, over 64 points every two steps).
+    fn start(&self, follow: f64, seed: &mut u32) -> f64 {
+        let candidate = self.low + (random(seed) + 1.) * 0.5 * (self.high - self.low);
+        let reference: [f64; 64] = std::array::from_fn(|n| self.mono(follow + n as f64 * 2. * self.step));
+        let mut best = (f64::NEG_INFINITY, candidate);
+        for shift in 0..(self.period as usize).clamp(1, 2048) {
+            let start = candidate + shift as f64;
+            let (mut dot, mut energy) = (0., 1e-12);
+            for (n, r) in reference.iter().enumerate() {
+                let x = self.mono(start + n as f64 * 2. * self.step);
+                dot += x * r;
+                energy += x * x;
+            }
+            let score = dot / energy.sqrt();
+            if score > best.0 {
+                best = (score, start);
+            }
+        }
+        best.1
+    }
+}
+
+impl Hold {
+    /// Takes over from direct playback at `position`: that grain at its peak, fading out, and a
+    /// new one fading in, in phase with it.
+    fn enter(&mut self, from: &HoldSource<'_>, position: f64, length: usize, seed: &mut u32) {
+        let length = length.max(4);
+        let half = length / 2;
+        let start = from.start(position, seed);
+        *self = Self { active: true, length, until_next: half, grains: [(position, half), (start, 0)] };
+    }
+
+    /// The next output frame; every half grain a new grain starts in phase with the one at its
+    /// peak, and the two Hann windows sum to one.
+    fn next(&mut self, from: &HoldSource<'_>, window: &[f64; 2049], seed: &mut u32) -> [f64; 2] {
+        let mut out = [0.; 2];
+        let length = self.length;
+        let window_step = 2048. / (length.max(2) - 1) as f64;
+        for (position, age) in &mut self.grains {
+            if *age >= length {
+                continue;
+            }
+            let gain = grain_window(window, *age as f64 * window_step);
+            let data = read(from.source, from.channels, *position);
+            out[0] += data[0] * gain;
+            out[1] += data[1] * gain;
+            *position += from.step;
+            *age += 1;
+        }
+        self.until_next = self.until_next.saturating_sub(1);
+        if self.until_next == 0 {
+            let follow = self.grains.iter().filter(|g| g.1 < length).max_by_key(|g| g.1).map_or(from.low, |g| g.0);
+            let start = from.start(follow, seed);
+            if let Some(slot) = self.grains.iter_mut().max_by_key(|g| g.1) {
+                *slot = (start, 0);
+            }
+            self.until_next = length / 2;
+        }
+        out
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Voice {
     active: bool,
+    /// Sustain playback: the grains holding the note once it reaches the loop region.
+    hold: Hold,
     deferred_release: bool,
     age: f64,
     key: u8,
@@ -184,6 +285,7 @@ impl Default for Voice {
     fn default() -> Self {
         Self {
             active: false,
+            hold: Hold::default(),
             deferred_release: false,
             age: 0.,
             key: 60,
@@ -847,6 +949,9 @@ impl Sampler {
         let lo = (p[3] * total).max(start);
         let hi = (p[4] * total).min(end);
         let looping = p[0] != 2. && p[8] == 2. && hi > lo + 1.;
+        // Sustain: the note plays from its start, then holds in grains from the loop region.
+        let sustaining = p[0] == 0. && p[8] == 4. && p[10] == 0.;
+        let period = hold_period(self.source_rate, p[30]);
         let grain_limit = self.block_grain_limit;
         let target_grain_gain = self.block_grain_gain;
         let target_gain = self.block_gain;
@@ -909,7 +1014,23 @@ impl Sampler {
                     / self.rate;
                 v.step += (target_step - v.step) / (p[29] * self.rate).max(1.);
                 let mut signal = [0.; 2];
-                if p[0] != 1. {
+                let length = ((p[22] * self.rate / 1000.).max(2.5 * period / v.step.max(1e-6))) as usize;
+                // The last start a grain may take and still end inside the loop region.
+                let hold_high = hi - length as f64 * v.step - period - 2.;
+                let from = HoldSource {
+                    source: self.source.as_ref().as_ref(),
+                    channels: self.channels,
+                    low: lo,
+                    high: hold_high.max(lo),
+                    period,
+                    step: v.step,
+                };
+                if sustaining && !v.hold.active && hold_high > lo && v.position >= lo {
+                    v.hold.enter(&from, v.position, length, &mut self.seed);
+                }
+                if v.hold.active {
+                    signal = v.hold.next(&from, &self.window, &mut self.seed);
+                } else if p[0] != 1. {
                     if v.position < start || v.position >= end {
                         v.active = false;
                         continue;

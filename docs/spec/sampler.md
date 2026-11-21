@@ -246,6 +246,30 @@ preview locally without preparing an audio graph per frame; releasing commits
 until release, then new notes use the edited map. View navigation
 never changes project data. The host resets the view when source audio changes.
 
+## Sustain playback
+
+**Sustain** (the Playback menu's fifth value, `playback` 4; the Instrument's Sample playback
+**Sustain**, its value 3) holds a note with the recording itself, as long as the key is down: a
+bowed, blown or sung tone, a pad or a texture keeps its real sound (its noise, its highs, its
+stereo and its own movement), which no model of sines gives back. In Sample mode, playing
+forward, the note plays from Start like Gate until it reaches Loop start; from there it holds in
+**grains** of the loop region:
+
+- A grain is Size long (at least two and a half periods of the root key's pitch), read at the
+  note's step, under a Hann window. Grains overlap by half: each half grain a new one starts and
+  the oldest has ended, so the two windows sum to one and the level stays.
+- The first grain is the direct playback at its window's peak, fading out; nothing is cut.
+- A new grain starts at a random point of the loop region (leaving room for the grain and a
+  period before Loop end), moved by up to one period of the root key to where its waveform best
+  continues the grain at its peak: the largest correlation, normalized by its own energy, over
+  64 points every two steps of the mono sum. The two grains then run in phase, so the hold has
+  neither the comb filtering nor the flutter of grains at random phases.
+- Note-off releases the envelope as for Gate; the grains go on through the release.
+- A loop region too short for a grain plays as Gate. Reverse turns Sustain off.
+
+The seeded random points and the per-sample counters make a render the same for every block
+split.
+
 ## LFO destinations and waveform handles
 
 One bipolar LFO drives independent depths: pitch (semitones), filter cutoff

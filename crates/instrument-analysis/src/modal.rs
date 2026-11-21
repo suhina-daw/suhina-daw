@@ -124,6 +124,10 @@ const ANTI_EARLY: f64 = 3.0;
 const ANTI_LATE_DB: f64 = 20.0;
 /// Work steps of the null search with the shortest window (6 s of 512-sample windows).
 const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
+/// The held part a recording engine sustains starts after the attack and lasts at least this
+/// long.
+const HOLD_FROM_SECONDS: f64 = 0.25;
+const MIN_HOLD_SECONDS: f64 = 0.2;
 /// A loose mode of a single note off its series and weaker than this share of the strongest mode
 /// (-20 dB) is left out.
 const STRAY_SHARE: f64 = 0.1;
@@ -151,6 +155,8 @@ const HELD_DIP_DB: f64 = 20.0;
 const HELD_MAX_DIPS: f64 = 0.25;
 /// A level rising by at least this much from each third to the next rises all the way.
 const HELD_RISE_STEP_DB: f64 = 1.0;
+/// A level settling by at most this much from its first third into a held level holds.
+const HELD_SETTLE_DB: f64 = 6.0;
 /// A held part ends at the last window within this much of its opening level: the release.
 const HELD_RELEASE_DB: f64 = 6.0;
 /// The held part starts after the attack, as the held layer's measurements do.
@@ -254,6 +260,20 @@ pub struct Report {
     pub recording_modes: Vec<ModeEvidence>,
     /// A chord split into one recording per note (version 4); empty for fewer than two notes.
     pub notes: Vec<ModelRecording>,
+    /// Which engine plays this sound best: its resonances, or the recording itself held in
+    /// grains (a held tone), with the held part in source frames.
+    pub engine: Engine,
+    pub hold: Option<Range<usize>>,
+}
+
+/// The engine a fitted sound plays best on (`docs/spec/instrument-modal-fitting.md` › Engine).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Engine {
+    /// The fitted model's resonances: a struck or plucked sound.
+    #[default]
+    Resonance,
+    /// The recording itself, its held part sustained in grains: a bowed, blown or sung tone.
+    Recording,
 }
 
 struct Work<F> {
@@ -335,6 +355,8 @@ fn fit_range(
         recording: None,
         recording_modes: Vec::new(),
         notes: Vec::new(),
+        engine: Engine::Resonance,
+        hold: None,
     };
     let mut sums = [0.0_f64; 2];
     let mut squares = [0.0_f64; 2];
@@ -676,6 +698,19 @@ fn fit_range(
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let held_sum: f64 = accepted.iter().filter(|f| f.evidence.sustained).map(Fitted::magnitude).sum();
         let held = held_note || (sum > 0.0 && held_sum >= 0.5 * sum);
+        // A held tone plays best from the recording itself, held in grains over its held part
+        // (after the attack, before the release); a decaying one on its resonances.
+        if held {
+            let recorded = mono.len() as f64 / f64::from(RATE);
+            let (from, until) = level.part.unwrap_or((HOLD_FROM_SECONDS, recorded));
+            let from = from.max(HOLD_FROM_SECONDS);
+            let until = until.min(recorded);
+            let frame = |seconds: f64| report.range.start + (seconds * f64::from(sample_rate)) as usize;
+            if until - from >= MIN_HOLD_SECONDS {
+                report.engine = Engine::Recording;
+                report.hold = Some(frame(from)..frame(until).min(report.range.end));
+            }
+        }
         let layer = if held || vibrato.is_some() {
             let inputs: Vec<sustain::ModeInput> = accepted
                 .iter()
@@ -2305,7 +2340,9 @@ fn liveliness<F: FnMut(usize, usize) -> bool>(
 /// rule of [`held_span`] on the RMS level of `HELD_LEVEL_FRAME`-sample windows over the analyzed
 /// span (finer than the envelope windows, so a short held note still has enough of them).
 fn held_level(mono: &[f64], frame_size: usize, frames: usize) -> NoteLevel {
-    let length = (frame_size * frames).min(mono.len());
+    // The whole prepared recording (at most eight seconds), not only the envelope windows: a held
+    // level can show only after them.
+    let length = mono.len().max((frame_size * frames).min(mono.len()));
     let frame_size = HELD_LEVEL_FRAME;
     let levels: Vec<(usize, f64, f64)> = mono
         .get(..length)
@@ -2319,6 +2356,15 @@ fn held_level(mono: &[f64], frame_size: usize, frames: usize) -> NoteLevel {
         })
         .collect();
     let held = held_span(0.0, &levels, 0.0).is_some();
+    // The held part, from after the attack to the release: the held rule's span.
+    let part = held.then(|| {
+        let start = levels.iter().position(|v| v.1 >= HELD_FROM_SECONDS)?;
+        let whole = levels.get(start..)?;
+        let mut opening: Vec<f64> = whole.get(..whole.len().div_ceil(2))?.iter().map(|v| v.2).collect();
+        let opening = median(&mut opening);
+        let end = whole.iter().rposition(|v| (opening - v.2) * DB <= HELD_RELEASE_DB)?;
+        Some((whole.first()?.1, whole.get(end)?.1))
+    });
     // The trend: the least-squares slope of the level after the attack, while within
     // `TREND_FLOOR_DB` of the loudest window (a swell has none).
     let loudest = levels.iter().map(|v| v.2).fold(f64::NEG_INFINITY, f64::max);
@@ -2329,7 +2375,7 @@ fn held_level(mono: &[f64], frame_size: usize, frames: usize) -> NoteLevel {
         .collect();
     let trend =
         if points.len() >= HELD_MIN_WINDOWS { line(&points).map_or(0.0, |(_, slope)| slope.min(0.0)) } else { 0.0 };
-    NoteLevel { held, trend: if held { 0.0 } else { trend }, loudest }
+    NoteLevel { held, trend: if held { 0.0 } else { trend }, loudest, part: part.flatten() }
 }
 
 /// How a recording's whole level moves after its attack.
@@ -2342,6 +2388,8 @@ struct NoteLevel {
     trend: f64,
     /// The loudest window's RMS level (log amplitude).
     loudest: f64,
+    /// A held note's held part, in seconds from the strike (window centres).
+    part: Option<(f64, f64)>,
 }
 
 /// A partial held at an uneven level (a bowed, blown or sung partial moving with the bow, the
@@ -2389,7 +2437,10 @@ fn held_span(hz: f64, values: &[(usize, f64, f64)], trend: f64) -> Option<(f64, 
     let rising = (middle - first) * DB >= HELD_RISE_STEP_DB
         && (last - middle) * DB >= HELD_RISE_STEP_DB
         && (last - first) * DB > SUSTAIN_DB;
-    if (first - last) * DB > SUSTAIN_DB || rising {
+    // An accent that settles into a held level (a trombone's 5 dB) holds too: its last two thirds
+    // stay within SUSTAIN_DB of each other.
+    let settles = (first - last) * DB <= HELD_SETTLE_DB && ((middle - last) * DB).abs() <= SUSTAIN_DB;
+    if ((first - last) * DB > SUSTAIN_DB && !settles) || rising {
         return None;
     }
     let count = span.len() as f64;

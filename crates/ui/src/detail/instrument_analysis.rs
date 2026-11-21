@@ -8,8 +8,8 @@ use egui::{Id, Rect, Ui};
 use serde_json::json;
 use suhina_engine::model::TrackId;
 use suhina_session::{
-    AnalysisKind, AnalysisPhase, AnalysisView, FolderFileOutcome, FolderReport, ModalFitOutcome, ProjectId,
-    SampleAnalysisOutcome, Session,
+    AnalysisKind, AnalysisPhase, AnalysisView, FolderFileOutcome, FolderReport, ModalFitEngine, ModalFitOutcome,
+    ProjectId, SampleAnalysisOutcome, Session,
 };
 
 use super::device_canvas::remember_keyboard_owner;
@@ -206,6 +206,10 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                                 ui.label(format!("Spectral distance {:.1} dB · level {:+.1} dB", comparison.mean_distance_db, comparison.level_difference_db))
                                     .on_hover_text(format!("Octave bands after level matching, fitted minus original: {}. Smaller is closer; this measures the same recording, not realism.", bands.join(", ")));
                         }
+                        ui.label(match report.engine {
+                            ModalFitEngine::Recording => "Engine: Recording (a held tone). Accept plays the sample itself, its held part sustained in grains; Source Modal plays the fitted resonances instead.",
+                            ModalFitEngine::Resonance => "Engine: Resonance (a struck or plucked sound). Accept plays the fitted resonances; Source Sample plays the recording instead.",
+                        });
                         ui.label("Accept replaces the model; Add joins it by note and velocity. One undo step each. Set Root first.");
                     } else {
                         ui.label(match report.outcome {

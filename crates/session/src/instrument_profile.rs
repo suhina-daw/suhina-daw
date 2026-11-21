@@ -77,8 +77,14 @@ pub(crate) fn apply_model_set(device: &mut Device, bytes: &[u8], reset_controls:
             ("morph", 0.5),
         ]);
     }
+    Ok(set_values(device, &values))
+}
+
+/// Sets each `(id, value)` on `device` as a manual edit (overriding its automation lane); whether
+/// a lane was overridden.
+pub(crate) fn set_values(device: &mut Device, values: &[(&str, f64)]) -> bool {
     let mut overridden = false;
-    for (id, value) in values {
+    for &(id, value) in values {
         if let Some(param) = device.params.iter_mut().find(|param| param.id == id) {
             param.value = value;
         } else {
@@ -86,7 +92,7 @@ pub(crate) fn apply_model_set(device: &mut Device, bytes: &[u8], reset_controls:
         }
         overridden |= crate::automation::override_lane(&mut device.automation, |lane| lane.param == id);
     }
-    Ok(overridden)
+    overridden
 }
 
 fn parse_profile(value: &Value) -> Result<ModalProfile, CommandError> {
