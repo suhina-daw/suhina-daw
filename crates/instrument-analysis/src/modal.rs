@@ -13,7 +13,7 @@ use suhina_dsp::{
         glide::{GLIDE_POINTS, Glide, MAX_GLIDE_CENTS, MAX_GLIDE_SECONDS},
         model::{MAX_MODEL_MODES, MAX_OTHER_GAIN, ModelMode, ModelRecording, Stereo},
         profile::{MAX_PROFILE_MODES, ModalProfile, ProfileMode},
-        sustain::{NOISE_BANDS, Sustain, noise_center_hz},
+        sustain::{MAX_SHIMMER_DB, MAX_SHIMMER_HZ, MIN_SHIMMER_HZ, NOISE_BANDS, Sustain, noise_center_hz},
         tail::{MAX_TAIL_DECAY, MIN_TAIL_DECAY, Tail},
     },
 };
@@ -124,6 +124,22 @@ const ANTI_EARLY: f64 = 3.0;
 const ANTI_LATE_DB: f64 = 20.0;
 /// Work steps of the null search with the shortest window (6 s of 512-sample windows).
 const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
+/// Liveliness: the level windows, where they start, how many on each side the moving average
+/// takes, how far below a mode's loudest they go, how many residual windows a mode needs, and
+/// the smallest shimmer kept (a piano's main partials fluctuate about 0.3 dB).
+const SHIMMER_FRAME: usize = 1024;
+const SHIMMER_HOP: usize = 256;
+const SHIMMER_FROM_SECONDS: f64 = 0.15;
+const SHIMMER_SMOOTH: usize = 13;
+const SHIMMER_FLOOR_DB: f64 = 40.0;
+const SHIMMER_MIN_FRAMES: usize = 20;
+const MIN_SHIMMER_DB: f32 = 0.2;
+/// A pitch wander from at least this many frames, of at least this many cents (a piano's YIN
+/// track jitters about a cent).
+const WANDER_MIN_FRAMES: usize = 20;
+const MIN_WANDER_CENTS: f64 = 3.0;
+/// A dip at least this far below the quieter of the two maxima around it is a slow beat's null.
+const BEAT_DIP_DB: f64 = 3.0;
 /// A held partial at an uneven level: windows it needs, how far below the span's median a window
 /// counts as a dip and the largest share of dips (see instrument-modal-fitting.md › Held
 /// partials at an uneven level).
@@ -301,6 +317,7 @@ fn fit_range(
         + MAX_CHORD_CANDIDATES * (REFINEMENTS + MAX_FRAMES + 2 * SHORT_FRAMES + ANTI_WORK + 4)
         + MAX_MODEL_MODES
         + notes::MAX_NOTE_FRAMES
+        + MAX_MODEL_MODES
         + 8;
     let mut work = Work { done: 0, total, progress };
     let mut report = Report {
@@ -379,7 +396,8 @@ fn fit_range(
     // A glide into the note smears every partial it moves: measure it densely, resample the
     // recording flat along it and keep it for playback (version 4).
     work.step()?;
-    let glide = match note_onset(&mono, sample_rate, &mut work)? {
+    let (onset, wander) = note_onset(&mono, sample_rate, &mut work)?;
+    let glide = match onset {
         Onset::Glide(glide) => Some(glide),
         // Another note before this one (a step or a pause, not a glide): only this note's sound
         // is its timbre, so it is fitted from its own start.
@@ -656,6 +674,26 @@ fn fit_range(
             sustain::layer(&mono, &inputs, pitch.as_ref(), vibrato.as_ref(), held, sum)
         } else {
             None
+        };
+        // Liveliness: every recording's partials fluctuate a little (a bowed or blown one much
+        // more), and a held tone's pitch wanders; measured here, played by the held layer.
+        let (shimmer, shimmer_hz) = liveliness(&mono, &accepted, &mut work)?;
+        let layer = {
+            let mut layer = layer.unwrap_or(Sustain::NONE);
+            if shimmer_hz > 0.0 {
+                for (slot, value) in layer.shimmer.iter_mut().zip(&shimmer) {
+                    *slot = *value;
+                }
+                layer.shimmer_hz = shimmer_hz;
+            }
+            if layer.drift_cents == 0.0
+                && vibrato.is_none()
+                && let Some((cents, hz)) = wander
+            {
+                layer.drift_cents = cents as f32;
+                layer.drift_hz = hz as f32;
+            }
+            (!layer.is_empty()).then_some(layer)
         };
         work.step()?;
         let whole = Residual { against: &accepted, share: 1.0, layer };
@@ -1848,7 +1886,9 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)], level: NoteLevel) -> Option<E
     // The late retry describes what rings on after a fast early decay; it never makes a mode
     // sustained (beating can flatten a decaying partial's late windows).
     let late = if span.len() >= LATE_RETRY_WINDOWS {
-        span.get(span.len() / 3..).and_then(|l| fit_span(hz, l)).filter(|(_, _, e)| !e.sustained)
+        span.get(span.len() / 3..)
+            .and_then(|l| fit_span(hz, l).map(|fitted| beat_corrected(l, fitted)))
+            .filter(|(_, _, e)| !e.sustained)
     } else {
         None
     };
@@ -1915,6 +1955,52 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)], level: NoteLevel) -> Option<E
                 held_span(hz, values, level.trend).filter(|_| !held_note && matters)
             })
             .map(plain),
+    }
+}
+
+/// A slowly beating partial's decay: when `span` dips between two of its local maxima (a window
+/// at least as loud as its neighbours; the first and last windows by their one neighbour) by at
+/// least `BEAT_DIP_DB` below the quieter of them, the line through those maxima, if it decays
+/// more slowly than the fitted line through every window (which a beat's null pulls down). A
+/// piano C5's fundamental held its aftersound for two seconds, dipped into a second null at
+/// 3.3 s and came back; the line through the null decayed 6 dB per second, and the note played
+/// 9..16 dB quiet after two seconds.
+fn beat_corrected(span: &[(usize, f64, f64)], fitted: (f64, f64, ModeEvidence)) -> (f64, f64, ModeEvidence) {
+    let value = |i: usize| span.get(i).map(|v| v.2);
+    let mut kept: Vec<(usize, f64, f64)> = Vec::new();
+    for (index, &(_, t, y)) in span.iter().enumerate() {
+        let before = index.checked_sub(1).and_then(value).is_none_or(|b| b <= y);
+        let after = value(index + 1).is_none_or(|a| a <= y);
+        if !(before && after) {
+            continue;
+        }
+        match kept.last().copied() {
+            None => kept.push((index, t, y)),
+            Some((last_index, _, last_y)) => {
+                let dip = span
+                    .get(last_index + 1..index)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|v| v.2)
+                    .fold(f64::INFINITY, f64::min);
+                if dip.is_finite() && (last_y.min(y) - dip) * DB >= BEAT_DIP_DB {
+                    kept.push((index, t, y));
+                } else if y > last_y
+                    && let Some(slot) = kept.last_mut()
+                {
+                    *slot = (index, t, y);
+                }
+            }
+        }
+    }
+    let points: Vec<(f64, f64)> = kept.iter().map(|&(_, t, y)| (t, y)).collect();
+    let (intercept, slope, mut evidence) = fitted;
+    match line(&points) {
+        Some((peak_intercept, peak_slope)) if points.len() >= 2 && peak_slope < 0.0 && peak_slope > slope => {
+            evidence.decay_seconds = -1000.0_f64.ln() / peak_slope;
+            (peak_intercept, peak_slope, evidence)
+        }
+        _ => (intercept, slope, evidence),
     }
 }
 
@@ -1987,7 +2073,7 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     mono: &[f64],
     sample_rate: u32,
     work: &mut Work<F>,
-) -> Result<Onset, Error> {
+) -> Result<(Onset, Option<(f64, f64)>), Error> {
     let pcm: Vec<f32> = mono.iter().map(|x| *x as f32).collect();
     let mut frames = notes::track(&pcm, sample_rate, |advance| {
         if advance { work.step().is_ok() } else { (work.progress)(work.done, work.total) }
@@ -1999,7 +2085,7 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
         .filter_map(|f| f.midi.map(|m| ((f.start as f64 + half) / f64::from(RATE), f64::from(m))))
         .collect();
     if voiced.len() < GLIDE_MIN_FRAMES {
-        return Ok(Onset::None);
+        return Ok((Onset::None, None));
     }
     let pitch_median = |part: &[(f64, f64)]| {
         let mut values: Vec<f64> = part.iter().map(|p| p.1).collect();
@@ -2009,9 +2095,10 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     // A glide moves less than half an octave: a frame farther from the note is YIN's octave
     // error, folded onto the octave nearest the note.
     let voiced: Vec<(f64, f64)> = voiced.iter().map(|&(t, m)| (t, m + 12.0 * ((settled - m) / 12.0).round())).collect();
+    let wander = pitch_wander(&voiced, settled);
     let first = pitch_median(voiced.get(..3).unwrap_or_default());
     if (first - settled).abs() < GLIDE_SEMITONES {
-        return Ok(Onset::None);
+        return Ok((Onset::None, wander));
     }
     let smooth: Vec<(f64, f64)> = (0..voiced.len())
         .map(|i| {
@@ -2020,17 +2107,17 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
         })
         .collect();
     let Some(last_off) = smooth.iter().rposition(|p| (p.1 - settled).abs() > GLIDE_SETTLED_SEMITONES) else {
-        return Ok(Onset::None);
+        return Ok((Onset::None, wander));
     };
     let end_index = last_off + 1;
     if end_index * 4 > smooth.len() * 3 {
-        return Ok(Onset::None);
+        return Ok((Onset::None, wander));
     }
     let Some(&(end, _)) = smooth.get(end_index) else {
-        return Ok(Onset::None);
+        return Ok((Onset::None, wander));
     };
     if !(GLIDE_MIN_SECONDS..=f64::from(MAX_GLIDE_SECONDS)).contains(&end) {
-        return Ok(Onset::None);
+        return Ok((Onset::None, wander));
     }
     // A glide moves into its note: the note's own partials are quiet while the pitch is still
     // away from it. When they already sound (another note over the held one, a hammer-on above
@@ -2059,20 +2146,20 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     let away = power(&mut voiced.iter().filter(|p| p.0 < end && (p.1 - settled).abs() >= GLIDE_SEMITONES).map(|p| p.0));
     let held = power(&mut voiced.iter().filter(|p| p.0 > end).map(|p| p.0));
     let (Some(away), Some(held)) = (away, held) else {
-        return Ok(Onset::None);
+        return Ok((Onset::None, wander));
     };
     if away > held * GLIDE_QUIET {
-        return Ok(Onset::None);
+        return Ok((Onset::None, wander));
     }
     // A step of a semitone or more between voiced frames, or a pause, before the note settles:
     // another note before this one, which starts at the last such break.
-    let breaks = voiced.windows(2).enumerate().filter(|(index, pair)| {
+    let mut breaks = voiced.windows(2).enumerate().filter(|(index, pair)| {
         let [(t0, m0), (t1, m1)] = pair else { return false };
         *index < end_index && ((m1 - m0).abs() >= GLIDE_SEMITONES || t1 - t0 > GLIDE_PAUSE_SECONDS)
     });
-    if let Some((index, _)) = breaks.last() {
+    if let Some((index, _)) = breaks.next_back() {
         let start = voiced.get(index + 1).map_or(0.0, |p| p.0) - half / f64::from(RATE);
-        return Ok(Onset::Start(start.max(0.0)));
+        return Ok((Onset::Start(start.max(0.0)), wander));
     }
     let curve: Vec<(f64, f64)> =
         smooth.get(..=end_index).unwrap_or_default().iter().map(|&(t, m)| (t, (m - settled) * 100.0)).collect();
@@ -2085,7 +2172,106 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
         })
         .collect();
     let glide = Glide::from_points(&points);
-    Ok(if glide.validate().is_ok() { Onset::Glide(glide) } else { Onset::None })
+    Ok((if glide.validate().is_ok() { Onset::Glide(glide) } else { Onset::None }, wander))
+}
+
+/// A held tone's slow pitch wander from the note track's voiced frames within half a semitone of
+/// the note: the standard deviation of their cents from the note (at least `MIN_WANDER_CENTS`,
+/// at most 20) and the bandwidth where the deviation's autocorrelation falls to half
+/// (`ln 2 / (2 pi lag)`, 0.5..10 Hz), as the held layer's drift.
+fn pitch_wander(voiced: &[(f64, f64)], settled: f64) -> Option<(f64, f64)> {
+    let cents: Vec<f64> =
+        voiced.iter().filter(|p| (p.1 - settled).abs() <= 0.5).map(|p| (p.1 - settled) * 100.0).collect();
+    if cents.len() < WANDER_MIN_FRAMES {
+        return None;
+    }
+    let mean = cents.iter().sum::<f64>() / cents.len() as f64;
+    let deviation: Vec<f64> = cents.iter().map(|c| c - mean).collect();
+    let power = deviation.iter().map(|d| d * d).sum::<f64>();
+    let spread = (power / deviation.len() as f64).sqrt();
+    if spread < MIN_WANDER_CENTS || power <= 0.0 {
+        return None;
+    }
+    let lag = (1..deviation.len() / 2)
+        .find(|&lag| {
+            deviation.iter().zip(deviation.get(lag..).unwrap_or_default()).map(|(a, b)| a * b).sum::<f64>()
+                <= 0.5 * power
+        })
+        .unwrap_or(deviation.len() / 2)
+        .max(1);
+    let seconds = lag as f64 * notes::NOTE_HOP as f64 / f64::from(RATE);
+    Some((spread.min(20.0), (2.0_f64.ln() / (TAU * seconds)).clamp(0.5, 10.0)))
+}
+
+/// Each mode's shimmer and their bandwidth: on 1024-sample Hann windows every 256 samples from
+/// 0.15 s, while within `SHIMMER_FLOOR_DB` of its loudest window, the mode's level in dB minus
+/// its moving average over `2 SHIMMER_SMOOTH + 1` windows (0.3 s, which keeps the decay and a
+/// beat slower than about 3 Hz out); its RMS, from `MIN_SHIMMER_DB` (below it, none) to
+/// `MAX_SHIMMER_DB`. A mode with a beating partner gets none (its beat is its fluctuation), and so
+/// does one with fewer than `SHIMMER_MIN_FRAMES` windows. The bandwidth is the magnitude-weighted
+/// median of the modes' (where the residual's autocorrelation falls to half), 0.5..20 Hz.
+fn liveliness<F: FnMut(usize, usize) -> bool>(
+    mono: &[f64],
+    modes: &[Fitted],
+    work: &mut Work<F>,
+) -> Result<(Vec<f32>, f32), Error> {
+    let window = hann(SHIMMER_FRAME);
+    let mut shimmer = vec![0.0_f32; modes.len()];
+    let mut bandwidths: Vec<(f64, f64)> = Vec::new();
+    for (slot, mode) in shimmer.iter_mut().zip(modes) {
+        work.step()?;
+        if mode.evidence.beat_share > 0.0 {
+            continue;
+        }
+        let mut levels = Vec::new();
+        let mut at = (SHIMMER_FROM_SECONDS * f64::from(RATE)) as usize;
+        while let Some(frame) = mono.get(at..at + SHIMMER_FRAME) {
+            levels.push(sustain::projection(frame, &window, mode.hz).0.max(1e-12).ln() * DB);
+            at += SHIMMER_HOP;
+        }
+        let loudest = levels.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let Some(end) = levels.iter().rposition(|v| loudest - v <= SHIMMER_FLOOR_DB) else { continue };
+        let levels = levels.get(..=end).unwrap_or_default();
+        let k = SHIMMER_SMOOTH;
+        let residual: Vec<f64> = (k..levels.len().saturating_sub(k))
+            .filter_map(|i| {
+                let around = levels.get(i - k..=i + k)?;
+                Some(levels.get(i)? - around.iter().sum::<f64>() / around.len() as f64)
+            })
+            .collect();
+        if residual.len() < SHIMMER_MIN_FRAMES {
+            continue;
+        }
+        let power = residual.iter().map(|r| r * r).sum::<f64>();
+        let rms = (power / residual.len() as f64).sqrt();
+        if rms < f64::from(MIN_SHIMMER_DB) {
+            continue;
+        }
+        *slot = rms.min(f64::from(MAX_SHIMMER_DB)) as f32;
+        let lag = (1..residual.len() / 2)
+            .find(|&lag| {
+                residual.iter().zip(residual.get(lag..).unwrap_or_default()).map(|(a, b)| a * b).sum::<f64>()
+                    <= 0.5 * power
+            })
+            .unwrap_or(1)
+            .max(1);
+        let seconds = lag as f64 * SHIMMER_HOP as f64 / f64::from(RATE);
+        bandwidths.push((2.0_f64.ln() / (TAU * seconds), mode.magnitude()));
+    }
+    if bandwidths.is_empty() {
+        return Ok((vec![0.0; modes.len()], 0.0));
+    }
+    bandwidths.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let half = bandwidths.iter().map(|b| b.1).sum::<f64>() / 2.0;
+    let mut running = 0.0;
+    let hz = bandwidths
+        .iter()
+        .find(|b| {
+            running += b.1;
+            running >= half
+        })
+        .map_or(0.0, |b| b.0);
+    Ok((shimmer, (hz as f32).clamp(MIN_SHIMMER_HZ, MAX_SHIMMER_HZ)))
 }
 
 /// Whether a recording's whole level holds after its attack (a release may follow), by the

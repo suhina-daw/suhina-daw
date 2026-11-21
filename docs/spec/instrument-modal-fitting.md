@@ -305,6 +305,12 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   envelope error by at least 1 dB compared with one exponential, or leaves at most a third of an
   error of at least 0.25 dB, or one exponential failed. (A fast part shorter than a window still
   bends the first windows: one exponential then fits within half a decibel yet misses it.)
+  When the last two thirds dip between two of their local maxima (a window at least as loud as
+  its neighbours, the first and last windows by their one neighbour) by at least 3 dB below the
+  quieter of them, a beat too slow to measure over the span, the slow part is the line through
+  those maxima if it decays more slowly than the fitted line, which the null pulls down
+  (algorithm version 4): a piano C5's fundamental held its aftersound for two seconds, dipped into
+  a second null at 3.3 s and came back, and the line through the null decayed 6 dB per second.
 - **Beating.** Each kept mode's amplitude is also measured on 1024-sample Hann windows every 256
   samples. After removing the fitted decay, the residual log envelope's normalized
   autocorrelation is searched over beat periods of 0.1 to 5 s (shorter than half the measured

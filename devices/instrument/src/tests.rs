@@ -211,7 +211,7 @@ fn every_parameter_is_reachable_and_each_page_carries_its_own() {
             assert!(on(SAMPLE, source, id), "Sample: {id}, source {source}");
         }
         for page in [KEYS_OVER_BODY, KEYS_OVER_SAMPLE] {
-            for id in ["key_low", "key_high", "velocity_low", "velocity_high", "soft_pedal"] {
+            for id in ["key_low", "key_high", "velocity_low", "velocity_high", "soft_pedal", "glide", "glide_time"] {
                 assert!(on(page, source, id), "Keys {page}: {id}, source {source}");
             }
         }

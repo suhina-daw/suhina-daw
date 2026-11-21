@@ -376,29 +376,44 @@ fn crossing_hz(part: &[f32]) -> f64 {
     crossings as f64 * RATE / (2.0 * (part.len() - 1) as f64)
 }
 
-/// A recorded glide plays only legato: a note started while another key is held glides from
-/// that key's pitch with the recorded shape, the same for every block split; a note on its own
-/// starts on its pitch.
+/// With Legato glide on, a note started while another key is held glides from that key's pitch
+/// with the recorded glide's shape over Glide time, the same for every block split; with it off,
+/// or for a note on its own, a note starts on its pitch; a recording without a glide glides
+/// straight.
 #[test]
 fn a_glide_plays_legato_from_the_held_note() {
     let mut glided = recording(Vec::new());
     glided.modes = vec![ModelMode::plain(1.0, 0.7, 20.0)];
-    glided.glide = Some(suhina_dsp::modal::glide::Glide::from_points(&[(0.0, -300.0), (0.1, -300.0), (0.2, 0.0)]));
+    glided.glide = Some(suhina_dsp::modal::glide::Glide::from_points(&[(0.0, -300.0), (0.05, -300.0), (0.1, 0.0)]));
     let set = || ModelSet::new(vec![glided.clone()]).unwrap();
     let c3 = 440.0 * 2.0_f64.powf(-9.0 / 12.0);
     let alone = play(&mut core(set()), 60, 1.0, 4800, 64);
     let on_pitch = crossing_hz(&alone[240..4800]);
     assert!((on_pitch - c3).abs() < 8.0, "{on_pitch}");
-    // C2 held very softly, then C3 legato: it starts an octave down and glides up.
-    let legato = |block: usize| {
-        let mut instrument = core(set());
+    // C2 held very softly, then C3 legato.
+    let legato = |set: ModelSet, glide: bool, block: usize| {
+        let mut instrument = core(set);
+        instrument.set_param(param::GLIDE, if glide { 1.0 } else { 0.0 });
+        instrument.set_param(param::GLIDE_TIME, 0.2);
         play(&mut instrument, 48, 1e-4, 480, block);
         play(&mut instrument, 60, 1.0, 24000, block)
     };
-    let output = legato(64);
+    // The recorded shape stretched to 0.2 s: an octave down until 0.1 s, then up.
+    let output = legato(set(), true, 64);
     let low = crossing_hz(&output[240..4800]);
     assert!((low - c3 / 2.0).abs() < 8.0, "{low}");
     let settled = crossing_hz(&output[12000..24000]);
     assert!((settled - c3).abs() < 3.0, "{settled}");
-    assert_eq!(output, legato(37));
+    assert_eq!(output, legato(set(), true, 37));
+    let off = legato(set(), false, 64);
+    let unglided = crossing_hz(&off[240..4800]);
+    assert!((unglided - c3).abs() < 8.0, "{unglided}");
+    // Without a recorded glide: a straight line from C2 over 0.2 s, below C3 at its start.
+    let mut plain = glided.clone();
+    plain.glide = None;
+    let straight = legato(ModelSet::new(vec![plain]).unwrap(), true, 64);
+    let early = crossing_hz(&straight[240..2400]);
+    assert!(early < c3 * 0.8, "{early}");
+    let late = crossing_hz(&straight[12000..24000]);
+    assert!((late - c3).abs() < 3.0, "{late}");
 }

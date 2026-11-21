@@ -1775,8 +1775,9 @@ pub(crate) fn caps_button(
     enabled: bool,
 ) -> Response {
     let galley = spaced_galley(ui, &text.to_uppercase(), font, spacing, ink);
-    // The last letter's spacing is not part of the word; the line sits 4 points under it.
-    let size = Vec2::new((galley.size().x - spacing).max(1.0), galley.size().y + 6.0);
+    // As wide as the laid-out word, so it never runs past the space it takes; the line sits 4
+    // points under it.
+    let size = Vec2::new(galley.size().x.max(1.0), galley.size().y + 6.0);
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (rect, response) = ui.allocate_exact_size(size, sense);
     response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, label));

@@ -141,8 +141,11 @@ The pages (`#page`) are:
     dragged as lines; the lowest and highest velocity stand at the right as values that are
     dragged too.
   - After a hairline, the **Soft pedal** switch (una corda for fitted models, the same as
-    controller 67 held down) and a line with the keyboard's facts: C3 is key 60 and the pitch
-    wheel bends ±2 semitones; its tooltip adds that the sustain pedal holds keys.
+    controller 67 held down), **Legato glide** and **Glide time** (seconds; a fitted note played
+    while another key is held glides from that key's pitch, [modal
+    profiles](instrument-modal-profile.md) › Glide), and a line with the keyboard's facts: C3 is
+    key 60 and the pitch wheel bends ±2 semitones; the Soft pedal's tooltip adds that the sustain
+    pedal holds keys.
 
 A layer's page while that layer is off shows a note over its picture, on a card: that the layer
 is off, and **Turn it on**, which plays both layers. Its controls stay, faded, so values can be

@@ -249,13 +249,8 @@ pub(super) fn keys_page(ui: &mut Canvas) {
         WEDGE_LIT,
     ));
     drawing.push(line([56.0, 396.5], [824.0, 396.5], HAIRLINE, 1.0));
-    drawing.push(text(
-        [196.0, 409.0],
-        "Quieter, darker strikes for fitted models, as with CC 67 held  ·  C3 = 60  ·  pitch wheel ±2 semitones",
-        10.0,
-        TextAlign::Left,
-        MUTED,
-    ));
+    drawing.push(text([482.0, 409.0], &spaced("Glide time"), 8.5, TextAlign::Left, MUTED));
+    drawing.push(text([660.0, 409.0], "C3 = 60  ·  pitch wheel ±2 semitones", 10.0, TextAlign::Left, MUTED));
     ui.graphic("Keys", drawing);
     // A key column's left edge for the lowest key, its right edge for the highest.
     ui.handle(
@@ -295,4 +290,12 @@ pub(super) fn keys_page(ui: &mut Canvas) {
         [56.0, 405.0, 120.0, 20.0],
         "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down. Keys: C3 = 60; the pitch wheel bends ±2 semitones; the sustain pedal holds keys",
     );
+    // Any fitted sound can glide: a note played while another key is held slides from its pitch.
+    ui.toggle(
+        "glide",
+        "Legato glide",
+        [196.0, 405.0, 140.0, 20.0],
+        "Fitted models: a note played while another key is held glides from that key's pitch, with the recording's own glide shape when it has one",
+    );
+    ui.readout("glide_time", "Glide time", [572.0, 405.0, 56.0, 16.0], TextFormat::Seconds, 2);
 }

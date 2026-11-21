@@ -74,16 +74,19 @@ pub mod param {
     pub const PEDAL_RESONANCE: usize = 26;
     pub const SOFT_PEDAL: usize = 27;
     pub const MODEL_TUNE: usize = 28;
-    pub const BODY: usize = 29;
-    pub const HARDNESS: usize = 30;
-    pub const MALLET_MODEL: usize = 31;
-    pub const RESONATOR: usize = 32;
-    pub const STEREO_WIDTH: usize = 33;
-    pub const TUNING: usize = 34;
-    pub const RING: usize = 35;
-    pub const TORSION: usize = 36;
-    pub const MALLET_WEIGHT: usize = 37;
-    pub const COUNT: usize = 38;
+    /// Legato notes glide from the held note's pitch, over Glide time.
+    pub const GLIDE: usize = 29;
+    pub const GLIDE_TIME: usize = 30;
+    pub const BODY: usize = 31;
+    pub const HARDNESS: usize = 32;
+    pub const MALLET_MODEL: usize = 33;
+    pub const RESONATOR: usize = 34;
+    pub const STEREO_WIDTH: usize = 35;
+    pub const TUNING: usize = 36;
+    pub const RING: usize = 37;
+    pub const TORSION: usize = 38;
+    pub const MALLET_WEIGHT: usize = 39;
+    pub const COUNT: usize = 40;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -120,6 +123,8 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("pedal_resonance", "Pedal resonance", (0.0, 1.0), 0.3, Unit::Percent),
     ParamInfo::toggle("soft_pedal", "Soft pedal", false),
     control("model_tune", "Model tune", (-24.0, 24.0), 0.0, Unit::Semitones),
+    ParamInfo::toggle("glide", "Legato glide", false),
+    control("glide_time", "Glide time", (0.01, 2.0), 0.15, Unit::Seconds),
     ParamInfo::choice(
         "body",
         "Body",
@@ -519,15 +524,24 @@ impl Instrument {
             soft: self.soft_pedal || self.params.get(param::SOFT_PEDAL) >= 0.5,
         };
         set.voice(key, velocity, &controls, self.sample_rate, &mut self.set_voice);
-        // Legato: the newest key still held, a fitted note sounding, and where its pitch is now.
-        let legato_from = self
-            .voices
-            .iter()
-            .filter(|v| {
-                v.held && v.fitted_voice && matches!(v.body, Body::Fitted(_)) && v.body.is_active() && v.key != key
+        // Legato with Glide on: the newest key still held, a fitted note sounding, and where its
+        // pitch is now.
+        let legato_from = (self.params.get(param::GLIDE) >= 0.5)
+            .then(|| {
+                self.voices
+                    .iter()
+                    .filter(|v| {
+                        v.held
+                            && v.fitted_voice
+                            && matches!(v.body, Body::Fitted(_))
+                            && v.body.is_active()
+                            && v.key != key
+                    })
+                    .max_by_key(|v| v.serial)
+                    .map(|v| f64::from(v.key) + v.glide_semitones)
             })
-            .max_by_key(|v| v.serial)
-            .map(|v| f64::from(v.key) + v.glide_semitones);
+            .flatten();
+        let glide_time = self.params.get(param::GLIDE_TIME);
         let slot = self.free_or_oldest();
         self.serial = self.serial.saturating_add(1);
         let shift = self.modal_shift();
@@ -546,7 +560,7 @@ impl Instrument {
         // Played legato, the note glides from the held note's pitch with the shape of the
         // recorded glide; otherwise it starts on its pitch.
         voice.stop_glide();
-        voice.glide = legato_glide(&self.set_voice.glide, legato_from.map(|from| from - f64::from(key)));
+        voice.glide = legato_glide(&self.set_voice.glide, legato_from.map(|from| from - f64::from(key)), glide_time);
         voice.glide_semitones = voice.glide.cents_at(0.0) / 100.0;
         voice.glide_ratio = 2.0_f64.powf(voice.glide_semitones / 12.0);
         fitted.transpose(self.sample_rate, shift + voice.glide_semitones);
@@ -728,22 +742,24 @@ fn bar_pan(key: u8, width: f64) -> (f32, f32) {
     ((left * std::f64::consts::SQRT_2) as f32, (right * std::f64::consts::SQRT_2) as f32)
 }
 
-/// The glide of a note played legato `offset` semitones from the held note: the recorded glide's
-/// points, each scaled so the glide starts at `offset` (its cents over its start, clamped to
-/// 0..1, so an overshoot holds at the held note's pitch); a recorded glide that starts within a
-/// cent of its note glides linearly over its time. None without a recorded glide or an offset.
-fn legato_glide(recorded: &Glide, offset: Option<f64>) -> Glide {
+/// The glide of a note played legato `offset` semitones from the held note, over `seconds`
+/// (Glide time): the recorded glide's shape, its times stretched to `seconds` and each point's
+/// cents scaled so it starts at `offset` (its cents over its start, clamped to 0..1, so an
+/// overshoot holds at the held note's pitch); without a recorded glide, or one that starts
+/// within a cent of its note, a straight line from `offset` to the note. None without an offset.
+fn legato_glide(recorded: &Glide, offset: Option<f64>, seconds: f64) -> Glide {
     let Some(offset) = offset.filter(|o| o.is_finite() && o.abs() >= 0.01) else { return Glide::NONE };
-    if recorded.is_empty() {
-        return Glide::NONE;
-    }
+    let seconds = if seconds.is_finite() { seconds.clamp(0.01, 2.0) } else { 0.15 };
     let target = (offset * 100.0).clamp(-f64::from(MAX_GLIDE_CENTS), f64::from(MAX_GLIDE_CENTS));
     let start = recorded.cents_at(0.0);
-    if start.abs() < 1.0 {
-        return Glide::from_points(&[(0.0, target as f32), (recorded.end() as f32, 0.0)]);
+    if recorded.is_empty() || start.abs() < 1.0 || recorded.end() <= 0.0 {
+        return Glide::from_points(&[(0.0, target as f32), (seconds as f32, 0.0)]);
     }
+    let stretch = seconds / recorded.end();
     let mut glide = *recorded;
-    for cents in glide.cents.iter_mut().take(usize::from(glide.count)) {
+    let count = usize::from(glide.count);
+    for (time, cents) in glide.times.iter_mut().zip(glide.cents.iter_mut()).take(count) {
+        *time = (f64::from(*time) * stretch) as f32;
         *cents = ((f64::from(*cents) / start).clamp(0.0, 1.0) * target) as f32;
     }
     glide

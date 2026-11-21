@@ -261,6 +261,36 @@ fn an_unevenly_bowed_note_is_held_with_its_release() {
     assert!((0.1..0.8).contains(&layer.release_seconds), "{layer:?}");
 }
 
+/// A partial whose level fluctuates gets its shimmer, about its RMS in dB; a steady one none.
+#[test]
+fn a_fluctuating_partial_gets_its_shimmer() {
+    let mut random = Gaussian(3);
+    // Unit-variance noise low-passed at 5 Hz, per sample.
+    let a = (-TAU * 5.0 / R).exp();
+    let mut state = 0.0;
+    let wobble: Vec<f64> = (0..(2.0 * R) as usize + 1)
+        .map(|_| {
+            state = a * state + (1.0 - a * a).sqrt() * random.next();
+            state
+        })
+        .collect();
+    let x = tone(2.0, 196.0, 6, (5.5, 0.0, 0.0, 0.0), |k, t, _| {
+        let db = if k == 2 { 2.0 * wobble.get((t * R) as usize).copied().unwrap_or(0.0) } else { 0.0 };
+        0.3 / k as f64 * 10.0_f64.powf(db / 20.0)
+    });
+    let pcm: Vec<f32> = x.iter().map(|s| *s as f32).collect();
+    let report = fit(&pcm, 22050, 1, 0..pcm.len(), 55, |_, _| true).unwrap();
+    let recording = report.recording.as_ref().unwrap();
+    let layer = recording.sustain.unwrap();
+    let shimmer_of = |ratio: f64| {
+        let index = recording.modes.iter().position(|m| (m.ratio - ratio).abs() < 0.01 * ratio).unwrap();
+        layer.shimmer[index]
+    };
+    assert!((1.0..3.5).contains(&shimmer_of(2.0)), "{:?}", layer.shimmer);
+    assert_eq!(shimmer_of(1.0), 0.0, "{:?}", layer.shimmer);
+    assert!(layer.shimmer_hz > 0.0);
+}
+
 #[test]
 fn interpolation_and_medians_handle_edges() {
     assert_eq!(interpolate(&[], 1.0), 0.0);

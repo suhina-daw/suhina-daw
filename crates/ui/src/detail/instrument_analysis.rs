@@ -95,7 +95,7 @@ impl Look {
 const CARD: Color32 = Color32::from_rgba_premultiplied(236, 225, 207, 246);
 /// Where the analysis's own block starts in its bounds, and how wide it is, in canvas units.
 const BLOCK_LEFT: f32 = 596.0;
-const BLOCK_WIDTH: f32 = 172.0;
+const BLOCK_WIDTH: f32 = 164.0;
 
 /// A text button in spaced capitals in the canvas's ink; `primary` underlines it in the accent.
 fn button(ui: &mut Ui, look: &Look, label: &str, text: &str, primary: bool, enabled: bool) -> egui::Response {
@@ -206,7 +206,8 @@ pub(crate) fn show(
     let place =
         |x: f32, y: f32, w: f32, h: f32| Rect::from_min_size(bounds.min + Vec2::new(x, y) * s, Vec2::new(w, h) * s);
     ui.scope_builder(egui::UiBuilder::new().max_rect(bounds).id_salt(("instrument-analysis", track.0, &at.0)), |ui| {
-        ui.set_clip_rect(ui.clip_rect().intersect(bounds));
+        // A little room past the bounds' edge, so a word's last letter is never cut.
+        ui.set_clip_rect(ui.clip_rect().intersect(bounds.expand2(Vec2::new(6.0 * s, 0.0))));
         ui.visuals_mut().override_text_color = Some(look.ink);
         let running = view.is_some_and(|v| v.phase == AnalysisPhase::Running);
         let wide = view.filter(|v| v.phase == AnalysisPhase::Ready && (v.folder.is_some() || v.modal.is_some()));

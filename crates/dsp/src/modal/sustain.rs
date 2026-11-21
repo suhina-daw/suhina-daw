@@ -27,6 +27,10 @@ pub const MAX_CORRECTION_DB: f64 = 24.0;
 pub const MAX_SWING_DB: f64 = 12.0;
 /// A falling voice ends this far down.
 const FALL_END: f64 = 1e-3;
+/// Largest shimmer (RMS of a partial's level fluctuation, in dB) and its bandwidth's bounds.
+pub const MAX_SHIMMER_DB: f32 = 9.0;
+pub const MIN_SHIMMER_HZ: f32 = 0.5;
+pub const MAX_SHIMMER_HZ: f32 = 20.0;
 
 /// Centre frequency of noise band `band`.
 pub fn noise_center_hz(band: usize) -> f64 {
@@ -65,6 +69,10 @@ pub struct Sustain {
     pub rise: [f32; MAX_MODEL_MODES],
     pub am_slope: [f32; MAX_MODEL_MODES],
     pub am_curve: [f32; MAX_MODEL_MODES],
+    /// Liveliness (schema 7, outside the encoded fields above): per mode, the RMS in dB of its
+    /// level's fast fluctuation, and the fluctuation's bandwidth shared by the modes.
+    pub shimmer: [f32; MAX_MODEL_MODES],
+    pub shimmer_hz: f32,
 }
 
 impl Default for Sustain {
@@ -94,11 +102,18 @@ impl Sustain {
         rise: [0.0; MAX_MODEL_MODES],
         am_slope: [0.0; MAX_MODEL_MODES],
         am_curve: [0.0; MAX_MODEL_MODES],
+        shimmer: [0.0; MAX_MODEL_MODES],
+        shimmer_hz: 0.0,
     };
 
     /// Whether every value is zero, which is the same as no layer.
     pub fn is_empty(&self) -> bool {
-        self.fields().iter().all(|v| *v == 0.0)
+        self.fields().iter().all(|v| *v == 0.0) && !self.lively()
+    }
+
+    /// Whether the layer carries liveliness (schema 7).
+    pub fn lively(&self) -> bool {
+        self.shimmer.iter().any(|v| *v != 0.0) || self.shimmer_hz != 0.0
     }
 
     /// The values in their encoded order.
@@ -198,6 +213,14 @@ impl Sustain {
             && within(self.noise_rise, 0.0, 4.0)
             && self.reserved == 0.0
             && self.noise.iter().all(|v| within(*v, 0.0, 1.0));
+        let shimmer_on = self.shimmer.iter().any(|v| *v != 0.0);
+        let shimmer = self.shimmer.iter().all(|v| v.is_finite() && within(*v, 0.0, MAX_SHIMMER_DB))
+            && self.shimmer.iter().skip(modes).all(|v| *v == 0.0)
+            && if shimmer_on {
+                self.shimmer_hz.is_finite() && within(self.shimmer_hz, MIN_SHIMMER_HZ, MAX_SHIMMER_HZ)
+            } else {
+                self.shimmer_hz == 0.0
+            };
         let per_mode = (0..MAX_MODEL_MODES).all(|i| {
             let get = |a: &[f32; MAX_MODEL_MODES]| a.get(i).copied().unwrap_or(0.0);
             let (onset, rise, slope, curve) =
@@ -211,7 +234,7 @@ impl Sustain {
                     && within(curve, -0.01, 0.01)
             }
         });
-        if scalars && per_mode { Ok(()) } else { Err("a held layer is outside its bounds") }
+        if scalars && per_mode && shimmer { Ok(()) } else { Err("a held layer is outside its bounds") }
     }
 }
 
@@ -314,6 +337,9 @@ pub struct Held {
     pub rise: [f32; MAX_VOICE_SINES],
     pub am_slope: [f32; MAX_VOICE_SINES],
     pub am_curve: [f32; MAX_VOICE_SINES],
+    /// Per sine, its level's fluctuation (RMS dB), and the fluctuation's bandwidth.
+    pub shimmer: [f32; MAX_VOICE_SINES],
+    pub shimmer_hz: f64,
 }
 
 impl Default for Held {
@@ -341,6 +367,8 @@ impl Held {
         rise: [0.0; MAX_VOICE_SINES],
         am_slope: [0.0; MAX_VOICE_SINES],
         am_curve: [0.0; MAX_VOICE_SINES],
+        shimmer: [0.0; MAX_VOICE_SINES],
+        shimmer_hz: 0.0,
     };
 
     /// Whether anything here changes a voice: otherwise it plays as plain revision 4.
@@ -355,6 +383,7 @@ impl Held {
             || any(&self.rise[..])
             || any(&self.am_slope[..])
             || any(&self.am_curve[..])
+            || (self.shimmer_hz > 0.0 && any(&self.shimmer[..]))
     }
 }
 
@@ -400,6 +429,9 @@ pub struct Performer {
     fall: f64,
     fall_factor: f64,
     retune: bool,
+    /// Per sine, its level fluctuation: unit-variance low-passed noise, and its generator.
+    shimmer: [f32; MAX_VOICE_SINES],
+    shimmer_noise: Noise,
 }
 
 impl Default for Performer {
@@ -424,6 +456,8 @@ impl Default for Performer {
             fall: 1.0,
             fall_factor: 1.0,
             retune: false,
+            shimmer: [0.0; MAX_VOICE_SINES],
+            shimmer_noise: Noise(1),
         }
     }
 }
@@ -444,6 +478,7 @@ impl Performer {
         // Nonzero, distinct seeds for the noise and the drift.
         self.generators = Noise(seed.wrapping_mul(2_654_435_761).max(1));
         self.drift_noise = Noise(seed.wrapping_mul(40_503).wrapping_add(0x9E37_79B9).max(1));
+        self.shimmer_noise = Noise(seed.wrapping_mul(0x85EB_CA6B).wrapping_add(0x27D4_EB2F).max(1));
         let scale = noise_gain(sample_rate);
         for (band, ((filter, gain), density)) in
             self.bands.iter_mut().zip(self.band_gains.iter_mut()).zip(held.noise).enumerate()
@@ -536,7 +571,9 @@ impl Performer {
         for (i, gain) in gains.iter_mut().enumerate() {
             let at = |a: &[f32; MAX_VOICE_SINES]| f64::from(a.get(i).copied().unwrap_or(0.0));
             let onset = rise_level(t, at(&held.onset), at(&held.rise));
-            let swing = (at(&held.am_slope) * u + at(&held.am_curve) * (u * u - mean_square))
+            // A sine's own fluctuation adds to the vibrato-coupled swing.
+            let shimmer = at(&held.shimmer) * f64::from(self.shimmer.get(i).copied().unwrap_or(0.0));
+            let swing = (at(&held.am_slope) * u + at(&held.am_curve) * (u * u - mean_square) + shimmer)
                 .clamp(-MAX_SWING_DB, MAX_SWING_DB);
             *gain = (onset * (swing * LN_10 / 20.0).exp() * common) as f32;
         }
@@ -560,6 +597,17 @@ impl Performer {
     fn control(&mut self, bank: &mut ModalBank<MAX_VOICE_SINES>) {
         self.ticks = self.ticks.saturating_add(1);
         let t = self.time();
+        // Each sine's level fluctuation: one-pole low-passed noise of unit variance at the
+        // shimmer's bandwidth.
+        if self.held.shimmer_hz > 0.0 {
+            let a = (-TAU * self.held.shimmer_hz * CONTROL as f64 / self.sample_rate).exp();
+            let b = (1.0 - a * a).sqrt() * 3.0_f64.sqrt();
+            for (state, depth) in self.shimmer.iter_mut().zip(&self.held.shimmer) {
+                if *depth > 0.0 {
+                    *state = (a * f64::from(*state) + b * self.shimmer_noise.next()) as f32;
+                }
+            }
+        }
         if self.held.drift_cents > 0.0 {
             let a = (-TAU * self.held.drift_hz * CONTROL as f64 / self.sample_rate).exp();
             let b = self.held.drift_cents * (1.0 - a * a).sqrt();

@@ -22,6 +22,8 @@ pub const MODEL_SCHEMA_STEREO: u16 = 4;
 pub const MODEL_SCHEMA_TAIL: u16 = 5;
 /// Schema of a set whose recordings carry glides: schema 5 plus a fourth trailer.
 pub const MODEL_SCHEMA_GLIDE: u16 = 6;
+/// Schema of a set whose held layers carry liveliness: schema 6 plus a fifth trailer.
+pub const MODEL_SCHEMA_LIVELY: u16 = 7;
 /// Largest fast share: above 1 the slow part starts in opposite phase (a piano string pair's
 /// aftersound), at most half the prompt sound.
 pub const MAX_FAST_SHARE: f64 = 2.0;
@@ -402,9 +404,16 @@ impl ModelSet {
     pub fn recording_count(bytes: &[u8]) -> Option<usize> {
         let header = bytes.get(..16)?;
         (header.get(..8) == Some(MODEL_MAGIC.as_slice())
-            && [MODEL_SCHEMA_VERSION, MODEL_SCHEMA_HELD, MODEL_SCHEMA_STEREO, MODEL_SCHEMA_TAIL, MODEL_SCHEMA_GLIDE]
-                .iter()
-                .any(|schema| header.get(8..10) == Some(schema.to_le_bytes().as_slice()))
+            && [
+                MODEL_SCHEMA_VERSION,
+                MODEL_SCHEMA_HELD,
+                MODEL_SCHEMA_STEREO,
+                MODEL_SCHEMA_TAIL,
+                MODEL_SCHEMA_GLIDE,
+                MODEL_SCHEMA_LIVELY,
+            ]
+            .iter()
+            .any(|schema| header.get(8..10) == Some(schema.to_le_bytes().as_slice()))
             && header.get(10..12) == Some(MODEL_REVISION.to_le_bytes().as_slice()))
         .then(|| usize::from(header.get(12).copied().unwrap_or(0)))
         .filter(|count| (1..=MAX_RECORDINGS).contains(count))
@@ -424,11 +433,14 @@ impl ModelSet {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(16 + self.recordings.len() * (RECORDING_HEADER + 2048));
-        let glided = self.recordings.iter().any(|r| r.glide.is_some());
+        let lively = self.recordings.iter().any(|r| r.sustain.is_some_and(|s| s.lively()));
+        let glided = lively || self.recordings.iter().any(|r| r.glide.is_some());
         let tailed = glided || self.recordings.iter().any(|r| r.tail.is_some());
         let stereo = tailed || self.recordings.iter().any(|r| r.stereo.is_some());
         let held = stereo || self.recordings.iter().any(|r| r.sustain.is_some());
-        let schema = if glided {
+        let schema = if lively {
+            MODEL_SCHEMA_LIVELY
+        } else if glided {
             MODEL_SCHEMA_GLIDE
         } else if tailed {
             MODEL_SCHEMA_TAIL
@@ -528,6 +540,20 @@ impl ModelSet {
                 }
             }
         }
+        // Schema 7: every recording's liveliness, flagged, after the glides.
+        if lively {
+            for recording in &self.recordings {
+                match recording.sustain.as_ref().filter(|s| s.lively()) {
+                    Some(sustain) => {
+                        bytes.extend_from_slice(&[1, 0, 0, 0]);
+                        for value in sustain.shimmer.iter().chain(std::iter::once(&sustain.shimmer_hz)) {
+                            bytes.extend_from_slice(&value.to_le_bytes());
+                        }
+                    }
+                    None => bytes.extend_from_slice(&[0, 0, 0, 0]),
+                }
+            }
+        }
         bytes
     }
 
@@ -540,7 +566,12 @@ impl ModelSet {
         let schema = reader.u16()?;
         if !matches!(
             schema,
-            MODEL_SCHEMA_VERSION | MODEL_SCHEMA_HELD | MODEL_SCHEMA_STEREO | MODEL_SCHEMA_TAIL | MODEL_SCHEMA_GLIDE
+            MODEL_SCHEMA_VERSION
+                | MODEL_SCHEMA_HELD
+                | MODEL_SCHEMA_STEREO
+                | MODEL_SCHEMA_TAIL
+                | MODEL_SCHEMA_GLIDE
+                | MODEL_SCHEMA_LIVELY
         ) || reader.u16()? != MODEL_REVISION
         {
             return Err(header);
@@ -653,7 +684,7 @@ impl ModelSet {
                 }
             }
         }
-        if schema == MODEL_SCHEMA_GLIDE {
+        if schema >= MODEL_SCHEMA_GLIDE {
             for recording in &mut recordings {
                 match reader.take(4)? {
                     [0, 0, 0, 0] => {}
@@ -663,6 +694,22 @@ impl ModelSet {
                             *field = f32::from_le_bytes(reader.array()?);
                         }
                         recording.glide = Some(Glide::from_fields(count, &fields));
+                    }
+                    _ => return Err(header),
+                }
+            }
+        }
+        if schema == MODEL_SCHEMA_LIVELY {
+            for recording in &mut recordings {
+                match reader.take(4)? {
+                    [0, 0, 0, 0] => {}
+                    [1, 0, 0, 0] => {
+                        // Liveliness belongs to a held layer the schema-3 trailer carried.
+                        let Some(sustain) = recording.sustain.as_mut() else { return Err(header) };
+                        for slot in &mut sustain.shimmer {
+                            *slot = f32::from_le_bytes(reader.array()?);
+                        }
+                        sustain.shimmer_hz = f32::from_le_bytes(reader.array()?);
                     }
                     _ => return Err(header),
                 }
@@ -827,11 +874,15 @@ impl ModelSet {
                 *phase = candidate.phase;
                 *other = candidate.other;
             }
-            let [onset, rise, slope, curve] = candidate.held;
+            let [onset, rise, slope, curve, shimmer] = candidate.held;
             let h = &mut out.held;
-            for (array, value) in
-                [(&mut h.onset, onset), (&mut h.rise, rise), (&mut h.am_slope, slope), (&mut h.am_curve, curve)]
-            {
+            for (array, value) in [
+                (&mut h.onset, onset),
+                (&mut h.rise, rise),
+                (&mut h.am_slope, slope),
+                (&mut h.am_curve, curve),
+                (&mut h.shimmer, shimmer),
+            ] {
                 if let Some(slot) = array.get_mut(index) {
                     *slot = value;
                 }
@@ -868,7 +919,7 @@ impl ModelSet {
         out: &mut Held,
     ) {
         let mut mean = [0.0_f64; 7 + NOISE_BANDS];
-        let mut geometric = [(0.0_f64, 0.0_f64); 4];
+        let mut geometric = [(0.0_f64, 0.0_f64); 5];
         let mut any = false;
         for &(index, weight) in participants {
             let w = weight / total;
@@ -886,7 +937,8 @@ impl ModelSet {
             for (slot, value) in mean.iter_mut().zip(values.iter().chain(&sustain.noise)) {
                 *slot += w * f64::from(*value);
             }
-            let rates = [sustain.vibrato_hz, sustain.tremolo_hz, sustain.drift_hz, sustain.release_seconds];
+            let rates =
+                [sustain.vibrato_hz, sustain.tremolo_hz, sustain.drift_hz, sustain.release_seconds, sustain.shimmer_hz];
             for ((sum, weight_sum), rate) in geometric.iter_mut().zip(rates) {
                 if rate > 0.0 {
                     *sum += w * f64::from(rate).ln();
@@ -898,7 +950,7 @@ impl ModelSet {
             return;
         }
         let rate = |(sum, weight): (f64, f64)| if weight > 0.0 { (sum / weight).exp() } else { 0.0 };
-        let [vibrato_hz, tremolo_hz, drift_hz, release] = geometric;
+        let [vibrato_hz, tremolo_hz, drift_hz, release, shimmer_hz] = geometric;
         let [cents, delay, fade, tremolo, drift, noise_onset, noise_rise, noise @ ..] = mean;
         out.vibrato_hz = rate(vibrato_hz);
         // Depths are weighted over every participant, so they fade with the weight of the
@@ -912,6 +964,7 @@ impl ModelSet {
         out.drift_hz = rate(drift_hz);
         out.drift_cents = if out.drift_hz > 0.0 { drift } else { 0.0 };
         out.release_seconds = if release.1 >= 0.5 { rate(release) } else { 0.0 };
+        out.shimmer_hz = rate(shimmer_hz);
         out.noise_onset = noise_onset;
         out.noise_rise = noise_rise;
         out.noise = noise;
@@ -919,18 +972,19 @@ impl ModelSet {
     }
 }
 
-/// One sine a note may play, with its mode's held values (onset, rise, slope, curvature).
+/// One sine a note may play, with its mode's held values (onset, rise, slope, curvature,
+/// shimmer).
 #[derive(Clone, Copy)]
 struct Candidate {
     mode: Mode,
     phase: f64,
     score: f64,
-    held: [f32; 4],
+    held: [f32; 5],
     other: [f32; 2],
 }
 
 impl Candidate {
-    const SILENT: Self = Self { mode: SILENT, phase: 0.0, score: 0.0, held: [0.0; 4], other: [1.0, 0.0] };
+    const SILENT: Self = Self { mode: SILENT, phase: 0.0, score: 0.0, held: [0.0; 5], other: [1.0, 0.0] };
 }
 
 /// Weighted per-mode held values over the matched modes; a recording without a layer counts
@@ -938,7 +992,7 @@ impl Candidate {
 #[derive(Default)]
 struct HeldMode {
     weight: f64,
-    sums: [f64; 4],
+    sums: [f64; 5],
 }
 
 impl HeldMode {
@@ -946,14 +1000,15 @@ impl HeldMode {
         self.weight += weight;
         let Some(s) = sustain else { return };
         let at = |a: &[f32; MAX_MODEL_MODES]| f64::from(a.get(mode).copied().unwrap_or(0.0));
-        for (sum, value) in self.sums.iter_mut().zip([at(&s.onset), at(&s.rise), at(&s.am_slope), at(&s.am_curve)]) {
+        let values = [at(&s.onset), at(&s.rise), at(&s.am_slope), at(&s.am_curve), at(&s.shimmer)];
+        for (sum, value) in self.sums.iter_mut().zip(values) {
             *sum += weight * value;
         }
     }
 
-    fn mode(&self) -> [f32; 4] {
+    fn mode(&self) -> [f32; 5] {
         if self.weight <= 0.0 {
-            return [0.0; 4];
+            return [0.0; 5];
         }
         self.sums.map(|sum| (sum / self.weight) as f32)
     }

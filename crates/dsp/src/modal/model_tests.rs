@@ -635,3 +635,39 @@ fn glides_use_schema_six_and_reach_the_played_note() {
     set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
     assert!(voice.glide.is_empty(), "the anchor at 48 has no glide");
 }
+
+/// Liveliness makes schema 7, round-trips, needs the held layer it belongs to, and reaches the
+/// played note's sines.
+#[test]
+fn liveliness_uses_schema_seven_and_reaches_the_played_note() {
+    let plain = ModelSet::new(vec![recording(60, 0.8, 2.0, 1.0)]).unwrap();
+    let plain_bytes = plain.encode();
+    let mut lively = recording(60, 0.8, 2.0, 1.0);
+    let mut layer = crate::modal::sustain::Sustain::NONE;
+    layer.shimmer[0] = 2.5;
+    layer.shimmer[1] = 1.0;
+    layer.shimmer_hz = 4.0;
+    lively.sustain = Some(layer);
+    let set = ModelSet::new(vec![lively]).unwrap();
+    let bytes = set.encode();
+    assert_eq!(&bytes[8..10], &super::MODEL_SCHEMA_LIVELY.to_le_bytes());
+    // Held flag and fields, stereo, tail and glide flags, the liveliness flag and 65 f32.
+    let fields = crate::modal::sustain::SUSTAIN_FIELDS;
+    assert_eq!(bytes.len(), plain_bytes.len() + 4 + 4 * fields + 4 * 3 + 4 + 4 * 65);
+    assert_eq!(ModelSet::decode(&bytes).unwrap(), set);
+    let flag = plain_bytes.len() + 4 + 4 * fields + 4 * 3;
+    for (offset, value) in [(flag, 2), (flag + 1, 1)] {
+        let mut bad = bytes.clone();
+        bad[offset] = value;
+        assert!(ModelSet::decode(&bad).is_err(), "byte {offset} = {value}");
+    }
+    let mut voice = Voice::default();
+    set.voice(60, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert!(voice.held.is_active());
+    assert!((voice.held.shimmer_hz - 4.0).abs() < 1e-6);
+    assert!(
+        voice.held.shimmer.iter().take(voice.count).any(|v| (*v - 2.5).abs() < 1e-6),
+        "{:?}",
+        &voice.held.shimmer[..voice.count]
+    );
+}
