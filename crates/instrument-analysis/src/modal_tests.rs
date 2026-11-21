@@ -489,10 +489,12 @@ fn decaying_noise_the_modes_miss_becomes_the_tail() {
         .collect();
     let report = fit(&noisy, rate, 1, 0..noisy.len(), 57, |_, _| true).unwrap();
     let tail = report.recording.unwrap().tail.expect("a tail");
-    let kept: Vec<f32> = tail.decay.iter().copied().filter(|d| *d > 0.0).collect();
-    assert!(kept.len() >= 5, "{tail:?}");
+    // From band 6 (800 Hz) up a band has dozens of bins; the lowest bands have three or four,
+    // too few for a close decay.
+    let kept: Vec<f32> = tail.decay.iter().skip(6).copied().filter(|d| *d > 0.0).collect();
+    assert!(kept.len() >= 4, "{tail:?}");
     for decay in &kept {
-        assert!((decay - 1.0).abs() < 0.35, "{tail:?}");
+        assert!((decay - 1.0).abs() < 0.2, "{tail:?}");
     }
     assert_eq!(tail.level, tail.other, "a mono recording's channels are the same");
     let report = fit(&clean, rate, 1, 0..clean.len(), 57, |_, _| true).unwrap();
