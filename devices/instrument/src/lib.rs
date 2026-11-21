@@ -22,6 +22,7 @@ use suhina_dsp::{
         },
         profile::{ModalProfile, PROFILE_MODEL_REVISION},
         sustain::Performer,
+        tail::TailPlayer,
     },
 };
 
@@ -114,6 +115,8 @@ struct Voice {
     attack_gain: f32,
     /// Revision 4: the held layer (vibrato, per-partial onsets, noise) playing on `fitted`.
     layer: Performer,
+    /// Revision 4: the recording's decaying noise tail, fitted channel and other channel.
+    tail: TailPlayer,
     /// Revision 4: the amplitude envelope's attack, decay and sustain; its release is the damper.
     envelope: LinearEnvelope,
     fitted_voice: bool,
@@ -140,6 +143,7 @@ impl Default for Voice {
             attack: None,
             attack_gain: 1.0,
             layer: Performer::default(),
+            tail: TailPlayer::default(),
             envelope: LinearEnvelope::default(),
             fitted_voice: false,
             damped: false,
@@ -175,6 +179,7 @@ impl Voice {
             || self.attack.is_some()
             || self.damper.is_some()
             || self.layer.sounding()
+            || self.tail.is_active()
     }
 
     /// A revision-4 damper lands once: every sine's T60 is capped at `release`, and its noise
@@ -188,6 +193,7 @@ impl Voice {
         // sines instead; its noise layer fades with the same T60.
         let cap = self.layer.release(release);
         self.fitted.cap_decay(sample_rate, cap);
+        self.tail.cap_decay(sample_rate, cap);
         let level = (f64::from(self.amplitude) * self.envelope.value() * noise * 0.05).abs() as f32;
         let total = (0.04 * sample_rate) as u32;
         if level > 0.0 && total > 0 {
@@ -450,6 +456,22 @@ impl Instrument {
                 // Seeded by the note's serial and key, so a render repeats exactly.
                 let seed = (self.serial as u32).wrapping_mul(0x0100_0193) ^ u32::from(key);
                 voice.layer.start(&self.set_voice.held, self.sample_rate, shift, seed);
+                // The tail comes in over the attack's second half, as the attack fades out.
+                let fade = match (self.set_voice.attack, self.set.as_deref()) {
+                    (Some((recording, step)), Some(set)) if step > 0.0 => {
+                        let end = (set.attack(recording).len() as f64 / step) as usize;
+                        (end / 2, end)
+                    }
+                    _ => (0, 0),
+                };
+                voice.tail.start(
+                    &self.set_voice.tail,
+                    self.set_voice.tail_decay_scale,
+                    self.sample_rate,
+                    fade,
+                    self.set_voice.tail_stereo,
+                    seed ^ 0x5bd1_e995,
+                );
                 voice.envelope.start();
                 voice.fitted_voice = true;
                 voice.damped = false;
@@ -462,6 +484,7 @@ impl Instrument {
                 voice.reference = 0;
                 voice.attack = None;
                 voice.layer = Performer::default();
+                voice.tail.reset();
                 voice.fitted_voice = false;
                 voice.damper = None;
                 voice.bank.strike(self.sample_rate, &modes);
@@ -594,6 +617,7 @@ impl Device for Instrument {
                     voice.attack = None;
                     voice.damper = None;
                     voice.layer = Performer::default();
+                    voice.tail.reset();
                 }
                 let shape =
                     if voice.fitted_voice { voice.envelope.next(&envelope, self.sample_rate) as f32 } else { 1.0 };
@@ -601,6 +625,9 @@ impl Device for Instrument {
                 // reference channel and the other channel with the recording's stereo weights.
                 let plain = voice.bank.next_sample();
                 let [mut reference, mut other] = voice.layer.next_stereo(&mut voice.fitted);
+                let [tail_reference, tail_other] = voice.tail.next();
+                reference += tail_reference;
+                other += tail_other;
                 let mut attack_done = false;
                 if let Some((recording, position, step)) = voice.attack.as_mut() {
                     let (first, second) =

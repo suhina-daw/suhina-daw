@@ -12,7 +12,8 @@ use suhina_dsp::{
     modal::{
         model::{MAX_MODEL_MODES, MAX_OTHER_GAIN, ModelMode, ModelRecording, Stereo},
         profile::{MAX_PROFILE_MODES, ModalProfile, ProfileMode},
-        sustain::Sustain,
+        sustain::{NOISE_BANDS, Sustain, noise_center_hz},
+        tail::{MAX_TAIL_DECAY, MIN_TAIL_DECAY, Tail},
     },
 };
 
@@ -32,6 +33,24 @@ const EARLY_MIN_WINDOWS: usize = 3;
 /// Splitting a chord: candidate fundamentals, partials per note, how near a partial lies, the
 /// inharmonicities tried, partials a note needs, how many notes and how weak the last may be
 /// against the first.
+/// The tail: Hann frames and their hop, at most this many, measured from this time, while
+/// within this power range of a band's largest, from at least this many frames falling at least
+/// this many decibels.
+const TAIL_FRAME: usize = 2048;
+const TAIL_HOP: usize = 1024;
+const TAIL_MAX_FRAMES: usize = 192;
+const TAIL_START: f64 = 0.1;
+const TAIL_RANGE: f64 = 1e-5;
+const TAIL_MIN_FRAMES: usize = 4;
+const TAIL_MIN_DROP_DB: f64 = 6.0;
+/// A band's tail must hold at least this share of the power the modes play in it.
+const TAIL_MIN_SHARE: f64 = 1e-3;
+/// How many bins around a mode the tail leaves out, and how many open bins a band needs.
+const TAIL_MASK_BINS: f64 = 2.0;
+const TAIL_MIN_OPEN_BINS: usize = 2;
+/// The frames a band's floor is the median of, and how far above it a frame must stand.
+const TAIL_FLOOR_FRAMES: usize = 8;
+const TAIL_ABOVE_FLOOR: f64 = 10.0;
 const NOTE_LOW_HZ: f64 = 27.5;
 const NOTE_HIGH_HZ: f64 = 4200.0;
 const NOTE_PARTIALS: usize = 32;
@@ -493,7 +512,11 @@ pub fn fit(
         };
         work.step()?;
         let whole = Residual { against: &accepted, share: 1.0, layer };
-        report.recording = recording(&accepted, &whole, &mono, reference_key, reference_hz, scale, stereo);
+        work.step()?;
+        let missing = tail(&accepted, &mono, stereo.map(|(other, _)| other));
+        let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
+        let own_tail = missing.as_ref().and_then(|m| m.tail(sum, 1.0));
+        report.recording = recording(&accepted, &whole, &mono, reference_key, reference_hz, scale, stereo, own_tail);
         report.recording_modes = accepted.iter().map(|f| f.evidence).collect();
         // A chord: one recording per note, its attack the residual against every note's modes.
         if notes.len() >= 2 {
@@ -501,13 +524,20 @@ pub fn fit(
             let kept: Vec<Vec<Fitted>> = parts.iter().map(|modes| most_energetic(modes)).collect();
             let every: Vec<Fitted> = kept.iter().flatten().cloned().collect();
             let shared = Residual { against: &every, share: 1.0 / notes.len() as f64, layer: None };
+            // What all the notes together miss; each note's independent noise takes an equal
+            // share of its power.
+            work.step()?;
+            let missing = tail(&every, &mono, stereo.map(|(other, _)| other));
+            let power_share = 1.0 / (notes.len() as f64).sqrt();
             report.notes = kept
                 .iter()
                 .zip(&notes)
                 .filter_map(|(modes, note)| {
                     let key = note.key;
                     let hz = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
-                    recording(modes, &shared, &mono, key, hz, scale, stereo)
+                    let sum: f64 = modes.iter().map(Fitted::magnitude).sum();
+                    let note_tail = missing.as_ref().and_then(|m| m.tail(sum, power_share));
+                    recording(modes, &shared, &mono, key, hz, scale, stereo, note_tail)
                 })
                 .collect();
             if report.notes.len() < 2 {
@@ -726,6 +756,7 @@ fn recording(
     reference_hz: f64,
     scale: f64,
     stereo: Option<(&[f64], u8)>,
+    tail: Option<Tail>,
 ) -> Option<ModelRecording> {
     let layer = residual.layer;
     let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
@@ -826,8 +857,249 @@ fn recording(
             offsets: accepted.iter().map(|f| f.other.1 as f32).collect(),
             attack: attack_other,
         }),
+        tail: tail.filter(|t| !t.is_empty() && t.validate().is_ok()),
     };
     recording.validate().ok().map(|()| recording)
+}
+
+/// What the modes miss after the attack, per noise band and channel: each band's summed
+/// missing power at the strike (fitted channel, other channel) and its T60.
+struct Missing {
+    power: [(f64, f64); NOISE_BANDS],
+    decay: [f64; NOISE_BANDS],
+    /// What turns a band's summed frame power into an amplitude density per bin.
+    density: [f64; NOISE_BANDS],
+}
+
+impl Missing {
+    /// The tail of a recording whose magnitudes sum to `sum`, its amplitudes times `share`.
+    fn tail(&self, sum: f64, share: f64) -> Option<Tail> {
+        if !(sum.is_finite() && sum > 0.0) {
+            return None;
+        }
+        let mut tail = Tail::NONE;
+        for band in 0..NOISE_BANDS {
+            let (Some(&(own, other)), Some(&decay), Some(&density)) =
+                (self.power.get(band), self.decay.get(band), self.density.get(band))
+            else {
+                continue;
+            };
+            if decay <= 0.0 {
+                continue;
+            }
+            let level = |power: f64| ((power * density).sqrt() * share / sum).min(1.0) as f32;
+            if let (Some(a), Some(b), Some(d)) =
+                (tail.level.get_mut(band), tail.other.get_mut(band), tail.decay.get_mut(band))
+            {
+                *a = level(own);
+                *b = level(other);
+                *d = decay as f32;
+            }
+        }
+        (!tail.is_empty()).then_some(tail)
+    }
+}
+
+/// The modes rendered over the whole interval (fitted channel, and with `other` the other channel
+/// by their stereo placements), against the recording in Hann frames: per noise band, the power
+/// the recording has beyond them, its level at the strike and its decay (`Tail` in the spec).
+fn tail(modes: &[Fitted], mono: &[f64], other: Option<&[f64]>) -> Option<Missing> {
+    let length = mono.len();
+    let frames = if length >= TAIL_FRAME { ((length - TAIL_FRAME) / TAIL_HOP + 1).min(TAIL_MAX_FRAMES) } else { 0 };
+    if frames < 4 {
+        return None;
+    }
+    let span = (frames - 1) * TAIL_HOP + TAIL_FRAME;
+    // The modes by recursion: each part a rotating, decaying phasor.
+    let (mut model, mut model_other) = (vec![0.0; span], vec![0.0; if other.is_some() { span } else { 0 }]);
+    let ln1000 = 1000.0_f64.ln();
+    for fitted in modes {
+        let (gain, offset) = fitted.other;
+        for (hz, t60, amplitude) in fitted.parts() {
+            if !(amplitude > 0.0 && t60 > 0.0 && hz < f64::from(RATE) * 0.5) {
+                continue;
+            }
+            let radius = (-ln1000 / (t60 * f64::from(RATE))).exp();
+            let (step_sin, step_cos) = (TAU * hz / f64::from(RATE)).sin_cos();
+            let (rotate_re, rotate_im) = (radius * step_cos, radius * step_sin);
+            let phase = fitted.evidence.phase;
+            let (mut re, mut im) = (amplitude * phase.cos(), amplitude * phase.sin());
+            let (offset_sin, offset_cos) = offset.sin_cos();
+            for (n, slot) in model.iter_mut().enumerate() {
+                *slot += im;
+                if let Some(o) = model_other.get_mut(n) {
+                    *o += gain * (im * offset_cos + re * offset_sin);
+                }
+                (re, im) = (re * rotate_re - im * rotate_im, re * rotate_im + im * rotate_re);
+                if re.abs() + im.abs() < 1e-12 {
+                    break;
+                }
+            }
+        }
+    }
+    let window = hann(TAIL_FRAME);
+    let fft = FftPlanner::<f64>::new().plan_fft_forward(TAIL_FRAME);
+    let mut scratch = vec![Complex64::default(); fft.get_inplace_scratch_len()];
+    let spectrum = |signal: &[f64], start: usize, scratch: &mut Vec<Complex64>| -> Vec<f64> {
+        let mut bins: Vec<Complex64> = (0..TAIL_FRAME)
+            .map(|i| {
+                Complex64::new(
+                    signal.get(start + i).copied().unwrap_or(0.0) * window.get(i).copied().unwrap_or(0.0),
+                    0.0,
+                )
+            })
+            .collect();
+        fft.process_with_scratch(&mut bins, scratch);
+        bins.iter().take(TAIL_FRAME / 2).map(|b| b.norm_sqr()).collect()
+    };
+    let bin_hz = f64::from(RATE) / TAIL_FRAME as f64;
+    let edge = 2.0_f64.powf(1.0 / 3.0);
+    let ranges: Vec<(usize, usize)> = (0..NOISE_BANDS)
+        .map(|band| {
+            let center = noise_center_hz(band);
+            (
+                (center / edge / bin_hz).ceil() as usize,
+                ((center * edge / bin_hz).floor() as usize).min(TAIL_FRAME / 2 - 1),
+            )
+        })
+        .collect();
+    // Bins near a mode or its partner are left out: a mode's small level error is not noise.
+    let mut masked = vec![false; TAIL_FRAME / 2];
+    for fitted in modes {
+        for (hz, _, amplitude) in fitted.parts() {
+            if amplitude <= 0.0 {
+                continue;
+            }
+            let center = hz / bin_hz;
+            let low = (center - TAIL_MASK_BINS).ceil().max(0.0) as usize;
+            let high = ((center + TAIL_MASK_BINS).floor().max(0.0) as usize).min(masked.len().saturating_sub(1));
+            for flag in masked.iter_mut().take(high + 1).skip(low) {
+                *flag = true;
+            }
+        }
+    }
+    // Per frame and band: the missing power of each channel, over the band's open bins scaled to
+    // all its bins.
+    let mut missing = vec![[(0.0_f64, 0.0_f64); NOISE_BANDS]; frames];
+    // What the modes play in each band of the fitted channel, every bin.
+    let mut played_power = vec![[0.0_f64; NOISE_BANDS]; frames];
+    let channels: [(&[f64], &[f64]); 2] = [(mono, &model), (other.unwrap_or(&[]), &model_other)];
+    for (frame, (row, played_row)) in missing.iter_mut().zip(played_power.iter_mut()).enumerate() {
+        let start = frame * TAIL_HOP;
+        for (channel, (signal, rendered)) in channels.iter().enumerate() {
+            if signal.is_empty() {
+                continue;
+            }
+            let (heard, played) = (spectrum(signal, start, &mut scratch), spectrum(rendered, start, &mut scratch));
+            if channel == 0 {
+                for (cell, &(low, high)) in played_row.iter_mut().zip(&ranges) {
+                    *cell = (low..=high).filter_map(|k| played.get(k)).sum();
+                }
+            }
+            for (cell, &(low, high)) in row.iter_mut().zip(&ranges) {
+                let open: Vec<usize> = (low..=high).filter(|k| !masked.get(*k).copied().unwrap_or(true)).collect();
+                if open.len() < TAIL_MIN_OPEN_BINS {
+                    continue;
+                }
+                let sum: f64 = open
+                    .iter()
+                    .map(|&k| (heard.get(k).copied().unwrap_or(0.0) - played.get(k).copied().unwrap_or(0.0)).max(0.0))
+                    .sum();
+                let power = sum * (high + 1).saturating_sub(low) as f64 / open.len() as f64;
+                if channel == 0 { cell.0 = power } else { cell.1 = power }
+            }
+        }
+    }
+    if other.is_none() {
+        for row in &mut missing {
+            for cell in row.iter_mut() {
+                cell.1 = cell.0;
+            }
+        }
+    }
+    let window_power = window.iter().map(|w| w * w).sum::<f64>();
+    let mut out = Missing { power: [(0.0, 0.0); NOISE_BANDS], decay: [0.0; NOISE_BANDS], density: [0.0; NOISE_BANDS] };
+    let first =
+        (0..frames).find(|f| (f * TAIL_HOP + TAIL_FRAME / 2) as f64 / f64::from(RATE) >= TAIL_START).unwrap_or(frames);
+    for band in 0..NOISE_BANDS {
+        let series: Vec<(f64, f64, f64)> = missing
+            .iter()
+            .enumerate()
+            .skip(first)
+            .filter_map(|(f, row)| {
+                row.get(band).map(|c| ((f * TAIL_HOP + TAIL_FRAME / 2) as f64 / f64::from(RATE), c.0, c.1))
+            })
+            .collect();
+        let largest = series.iter().map(|(_, a, b)| a + b).fold(0.0_f64, f64::max);
+        if largest <= 0.0 {
+            continue;
+        }
+        // The recording's own floor in this band (its last frames), which a decay must not be
+        // fitted into: frames count while they stand 10 dB above it.
+        let mut last: Vec<f64> = series.iter().rev().take(TAIL_FLOOR_FRAMES).map(|(_, a, b)| a + b).collect();
+        let floor = median(&mut last);
+        let points: Vec<(f64, f64)> = series
+            .iter()
+            .take_while(|(_, a, b)| a + b >= largest * TAIL_RANGE && a + b >= floor * TAIL_ABOVE_FLOOR)
+            .filter(|(_, a, b)| a + b > 0.0)
+            .map(|(t, a, b)| (*t, (a + b).ln()))
+            .collect();
+        if points.len() < TAIL_MIN_FRAMES {
+            continue;
+        }
+        // Far under what the modes play in the band, it is their own small error, not a tail.
+        let fitted_frames = first..first + points.len();
+        let heard: f64 = series.iter().take(points.len()).map(|(_, a, _)| a).sum();
+        let modal: f64 =
+            played_power.get(fitted_frames).map_or(0.0, |rows| rows.iter().filter_map(|r| r.get(band)).sum());
+        if heard < TAIL_MIN_SHARE * modal {
+            continue;
+        }
+        let Some((_, slope)) = line(&points) else { continue };
+        // Power falls twice as fast as amplitude.
+        let decay = -2.0 * 1000.0_f64.ln() / slope;
+        let span_seconds = points.last().map_or(0.0, |p| p.0) - points.first().map_or(0.0, |p| p.0);
+        let drop_db = -slope * span_seconds * 10.0 / std::f64::consts::LN_10;
+        if !(slope < 0.0
+            && (f64::from(MIN_TAIL_DECAY)..=f64::from(MAX_TAIL_DECAY)).contains(&decay)
+            && drop_db >= TAIL_MIN_DROP_DB)
+        {
+            continue;
+        }
+        // Each channel's level at the strike along the common slope.
+        let at_strike = |pick: fn(&(f64, f64, f64)) -> f64| {
+            let logs: Vec<f64> = series
+                .iter()
+                .take(points.len())
+                .filter(|s| pick(s) > 0.0)
+                .map(|s| pick(s).ln() - slope * s.0)
+                .collect();
+            if logs.is_empty() { 0.0 } else { (logs.iter().sum::<f64>() / logs.len() as f64).exp() }
+        };
+        let own = at_strike(|s| s.1);
+        let other_power = at_strike(|s| s.2);
+        let bins = ranges.get(band).map_or(1, |(low, high)| high.saturating_sub(*low) + 1) as f64;
+        if let (Some(p), Some(d), Some(n)) =
+            (out.power.get_mut(band), out.decay.get_mut(band), out.density.get_mut(band))
+        {
+            *p = (own, other_power);
+            *d = decay;
+            // Mean power per bin, as a one-sided density, as the held layer measures its noise.
+            *n = 2.0 / (bins * f64::from(RATE) * window_power);
+        }
+    }
+    out.decay.iter().any(|d| *d > 0.0).then_some(out)
+}
+
+/// The middle value (the mean of the two middle ones for an even count); 0 when empty.
+fn median(values: &mut [f64]) -> f64 {
+    values.sort_by(f64::total_cmp);
+    let n = values.len();
+    match n {
+        0 => 0.0,
+        _ if n % 2 == 1 => values.get(n / 2).copied().unwrap_or(0.0),
+        _ => (values.get(n / 2 - 1).copied().unwrap_or(0.0) + values.get(n / 2).copied().unwrap_or(0.0)) / 2.0,
+    }
 }
 
 /// The 64 modes with most energy (`magnitude^2 * T60`), in frequency order.

@@ -214,6 +214,25 @@ every sine's T60 is capped at Release, keeping its phase and frequency, as felt 
 strings; the attack runs to its end. Pedal, voice stealing, pitch wheel and source fades behave as
 for revision 2. A missing, malformed or unsupported set is silent.
 
+**Tail playback.** A recording's tail plays with each note of its anchor as decaying
+band-passed noise: per band and channel, white noise of unit variance from its own seeded
+generator (for a stereo recording the two channels are independent, so the tail is as wide as
+the recording's residue; a mono recording's tail is the fitted channel's noise in both) through three identical unity-peak band-pass sections, times the band's density and
+`sqrt(fs / 2)`, falling with the band's T60 (carried to the played key by the
+recording's decay law and scaled by Decay, as the modes are). The held layer's single
+section falls 6 dB per octave, so a piano's strong low bands leaked into the treble, where a band
+spans many more hertz: a fitted chord's 8 kHz octave played 28 dB above the recording's. Three
+sections fall 18 dB per octave; each has `Q = 1.2637`, which makes the cascade's noise bandwidth
+`f0 sqrt(pi) Gamma(5/2) / (2 Q Gamma(3))` exactly the band's 2/3 octave
+`f0 (2^(1/3) - 2^(-1/3))`, so with unit-variance noise (one-sided density `2 / fs`) the gain
+`density * sqrt(fs / 2)` gives each band the power measured in it. It comes in as the attack goes:
+silent for the attack's first half, then the complement of its raised-cosine fade, and in full
+from its end (at once without an attack). The damper caps its T60 like the modes', and the
+envelope shapes it with them. **Schema 5** stores the tail after the schema-4 parts: per
+recording `[1, 0, 0, 0]` and 33 f32 (the fitted channel's eleven densities, the other
+channel's, the eleven T60s), or `[0, 0, 0, 0]`; densities are 0..1 and T60s 0 (band off) or
+0.05..60.
+
 **Stereo playback.** A note takes each sine's stereo placement from the anchor recording's mode
 it comes from (its phase comes from there too): the reference channel plays the sine, the other
 channel plays it times the gain and shifted by the offset, `g * sin(phase + offset)`, which the
@@ -260,9 +279,10 @@ by Release against its default 0.25 s). The layer, its fusion and how a voice pl
 [held tones](instrument-sustained-models.md).
 
 **Budget.** A revision-4 voice holds 128 resonators (each with its two other-channel weights),
-an attack read position, its envelope and its held layer's state (per-sine levels, ramps and
-couplings, eleven noise filters) beside the 16 resonators of revisions 1 and 2: under 14 KiB per
-voice, under 224 KiB for 16 voices, within the runtime's 256 KiB inline target. The set itself
+an attack read position, its envelope, its held layer's state (per-sine levels, ramps and
+couplings, eleven noise filters) and its tail's (eleven bands of three `f32` sections in two
+channels) beside the 16 resonators of revisions 1 and 2: under 15 KiB per voice; the whole
+Instrument measured 240,304 bytes, within the runtime's 256 KiB inline target. The set itself
 (at most 2 MiB) is shared and prepared off the
 audio thread. Note-on fuses at most 32 recordings of 64 modes without allocating.
 

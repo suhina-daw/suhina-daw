@@ -189,6 +189,28 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   is the attack. It is kept only when its energy is at least 0.1 % (-30 dB) of the signal's in
   that window, so a purely modal sound carries none. The attack holds what the modes miss, so the
   body response is not applied twice.
+- **Tail (algorithm version 4).** What the modes miss does not end with the attack: a
+  piano's hammer and soundboard noise, partials too weak or too crowded to fit, a chord's
+  sympathetic strings. Measured on a recorded piano chord, the 1..2 kHz octaves fell 5..7 dB
+  between 0.15 s and 0.3 s as the attack faded, and stayed that much below the recording as
+  the notes rang on, so a note sounded rich for its first tenth of a second and then thin. So
+  the fit also renders the modes (with their stereo placements) over the whole interval and
+  measures, in Hann frames of 2048 samples every 1024, how much power the recording has beyond
+  them in each of the eleven 2/3-octave noise bands of the held layer
+  ([held tones](instrument-sustained-models.md)): `max(0, recording - modes)` per bin, summed
+  over the band's bins further than two bins (the Hann main lobe) from every part of every mode and scaled to the
+  band's whole width (a band with fewer than two such bins in a frame counts nothing there), so
+  a mode's small level error is not taken for noise; for the fitted channel and the other one. From the first frame centred after
+  0.1 s, while a band's summed missing power stays within 50 dB of its largest and 10 dB above
+  the band's floor (the median of its last eight frames: the recording's own noise, into which
+  a decay must not be fitted, or the fitted chord's 4..8 kHz tail rang 10 dB too long), a least-squares
+  line through its logarithm gives the band's level at the strike and its decay; a band is kept
+  when it has at least four frames, decays (its T60 within 0.05..60 s) and falls at least 6 dB
+  across them, so a recording's steady hiss is not taken for a tail, and when it holds at least
+  -30 dB of what the modes play in the band over those frames (below that it is the modes' own
+  small error, and inaudible beside them). Each channel's level is
+  stored as an amplitude density in the recording's normalized units per square-root hertz, as
+  the held layer's noise is; the decay is one per band for both channels.
 
 The report lists per mode the fast part, the beat and the phase, and the attack's duration.
 Acceptance and addition to a set are described with the revision-4 commands.
