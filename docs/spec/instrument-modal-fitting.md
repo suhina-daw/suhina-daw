@@ -414,6 +414,28 @@ is stale once the device is removed or its fitted model changes; the device's ow
 and root do not concern it. The Sample page offers **Fit folder…**, which asks for the folder
 with the system's dialog.
 
+## Fitting a phrase
+
+A melody played on one instrument (a flute line, a cello phrase, a guitar lick) holds several of
+its notes in one sample. `instrument.fitPhrase` takes an Instrument whose sample is that phrase
+and starts one job like a folder fit, on the sample's trim:
+
+1. Root analysis of the trim ([its held notes](instrument-analysis.md#notes-glides-and-phrases))
+   lists the phrase's held notes, at most 128.
+2. Each held note is fitted exactly as a single sample with its own key as the reference, over
+   the source frames from its start until the next held note starts (its release and ring
+   included) or the trim ends. A note without a fit is reported with the fit's reason; one whose
+   range is empty is skipped.
+3. Its recordings are assembled as a folder's: notes of the same key are velocity layers by
+   level, and at most 32 are kept.
+
+The report is a folder report whose entries are the notes (named by their order and start time,
+with their key) and marked as a phrase; acceptance, addition, staleness and undo are those of a
+folder fit. A note's range holds the start of the next note's attack when the notes overlap, and
+a phrase played legato into a reverberant room can merge two notes or split one; the person
+listens before accepting. The Sample page shows a phrase's held notes after root analysis with
+**Fit notes as model**.
+
 ## Audition and comparison
 
 Before accepting, the person can listen to the fit against its source. `instrument.auditionFit`

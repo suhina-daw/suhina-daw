@@ -239,6 +239,7 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     modal_fitting_lifecycle();
     folder_fitting_lifecycle();
     chord_notes_lifecycle();
+    phrase_notes_lifecycle();
 }
 
 fn strike(scale: f64) -> Vec<f32> {
@@ -569,4 +570,38 @@ fn chord_notes_lifecycle() {
     assert!(
         session.execute("instrument.acceptFit", &json!({"track":1,"device":0,"job":job["job"],"notes":true})).is_err()
     );
+}
+
+/// A phrase of three notes in one sample: each held note becomes a recording of one model.
+fn phrase_notes_lifecycle() {
+    let folder = super::temp_dir::TempDir::new("instrument-phrase-fit");
+    let path = folder.join("authored-phrase.wav");
+    let length = 38400;
+    let phrase: Vec<f32> = [57, 60, 64].iter().flat_map(|key| note(*key, 0.8).into_iter().take(length)).collect();
+    suhina_test_support::write_wav(&path, 48000, 1, suhina_test_support::WavFormat::Float32, &phrase);
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"id":"instrument"}));
+    run(&mut session, "device.loadSample", json!({"path":path}));
+    let before = session.project().clone();
+    let job = run(&mut session, "instrument.fitPhrase", json!({}));
+    assert_eq!(job["kind"], "folder");
+    session.sync_instrument_analysis();
+    let status = run(&mut session, "instrument.analysis", json!({}));
+    assert_eq!(status["status"], "ready", "{status}");
+    assert_eq!(status["folder"]["phrase"], true, "{status}");
+    let notes: Vec<_> = status["folder"]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["key"].as_u64(), f["outcome"].as_str().unwrap()))
+        .collect();
+    assert_eq!(notes, vec![(Some(57), "kept"), (Some(60), "kept"), (Some(64), "kept")], "{status}");
+    assert_eq!(session.project(), &before, "a phrase fit changes nothing until accepted");
+    let depth = session.undo_steps();
+    let accepted = run(&mut session, "instrument.acceptFit", json!({"job":job["job"]}));
+    assert_eq!(accepted["recordings"], 3);
+    assert_eq!(session.undo_steps().0, depth.0 + 1);
+    // A Sampler has no fitted model to fit a phrase into.
+    run(&mut session, "device.add", json!({"id":"sampler"}));
+    assert!(session.execute("instrument.fitPhrase", &json!({"track":1,"device":1})).is_err());
 }
