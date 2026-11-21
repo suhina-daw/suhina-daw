@@ -421,7 +421,7 @@ fn fit_range(
     // A glide into the note smears every partial it moves: measure it densely, resample the
     // recording flat along it and keep it for playback (version 4).
     work.step()?;
-    let (onset, wander) = note_onset(&mono, sample_rate, &mut work)?;
+    let (onset, wander, pitched) = note_onset(&mono, sample_rate, &mut work)?;
     let glide = match onset {
         Onset::Glide(glide) => Some(glide),
         // Another note before this one (a step or a pause, not a glide): only this note's sound
@@ -496,7 +496,7 @@ fn fit_range(
     let separation_bins = 2.0 * detection_size as f64 / frame_size as f64;
     let spectrum: Vec<f64> = bins.iter().take(detection_size / 2).map(|x| x.norm()).collect();
     let highest = spectrum.iter().copied().fold(0.0_f64, f64::max);
-    let mut peaks = prominent_peaks(&spectrum, bin_hz, low_hz, high_hz);
+    let mut peaks = prominent_peaks(&spectrum, bin_hz, low_hz, high_hz, pitched);
     peaks.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     let mut candidates = Vec::with_capacity(MAX_CANDIDATES);
     for (bin, _) in peaks {
@@ -627,7 +627,7 @@ fn fit_range(
     let mut largest: Vec<&Fitted> = accepted.iter().filter(|f| !f.evidence.loose).collect();
     // A sound whose partials are all loose (a breathy stab, a fading wind note) still has them:
     // its profile takes the loose modes rather than none.
-    if largest.is_empty() {
+    if largest.is_empty() && pitched {
         largest = accepted.iter().collect();
     }
     largest.sort_by(|a, b| b.slow.total_cmp(&a.slow).then_with(|| a.hz.total_cmp(&b.hz)));
@@ -1678,7 +1678,7 @@ impl Fitter<'_> {
 /// the strongest bin that stand 20 dB above the median of their neighbours 3..8 bins away, or,
 /// when none does, those within 30 dB of it that stand 10 dB above that median, or else those
 /// within 20 dB of it that stand 6 dB above it.
-fn prominent_peaks(spectrum: &[f64], bin_hz: f64, low_hz: f64, high_hz: f64) -> Vec<(usize, f64)> {
+fn prominent_peaks(spectrum: &[f64], bin_hz: f64, low_hz: f64, high_hz: f64, pitched: bool) -> Vec<(usize, f64)> {
     let highest = spectrum.iter().copied().fold(0.0_f64, f64::max);
     let pick = |prominence: f64, range: f64| {
         let mut peaks = Vec::with_capacity(spectrum.len());
@@ -1705,8 +1705,11 @@ fn prominent_peaks(spectrum: &[f64], bin_hz: f64, low_hz: f64, high_hz: f64) -> 
     };
     // A breathy flute's breath and flutter widen its partials until none stands 20 dB out; a
     // whistle's wandering pitch smears its one partial over a dozen bins.
+    // The lower tiers only for a pitched sound: noise has peaks that stand 6..10 dB out too.
+    let tiers = if pitched { 3 } else { 1 };
     [(PEAK_PROMINENCE, 1e-3), (PEAK_PROMINENCE_FALLBACK, PEAK_RANGE_FALLBACK), (PEAK_PROMINENCE_LAST, PEAK_RANGE_LAST)]
         .into_iter()
+        .take(tiers)
         .map(|(prominence, range)| pick(prominence, range))
         .find(|peaks| !peaks.is_empty())
         .unwrap_or_default()
@@ -2135,7 +2138,7 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     mono: &[f64],
     sample_rate: u32,
     work: &mut Work<F>,
-) -> Result<(Onset, Option<(f64, f64)>), Error> {
+) -> Result<(Onset, Option<(f64, f64)>, bool), Error> {
     let pcm: Vec<f32> = mono.iter().map(|x| *x as f32).collect();
     let mut frames = notes::track(&pcm, sample_rate, |advance| {
         if advance { work.step().is_ok() } else { (work.progress)(work.done, work.total) }
@@ -2146,8 +2149,13 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
         .iter()
         .filter_map(|f| f.midi.map(|m| ((f.start as f64 + half) / f64::from(RATE), f64::from(m))))
         .collect();
+    // Pitched: at least half the sounding frames (within 30 dB of the loudest) voiced (a whistle,
+    // a flute), unlike noise.
+    let loudest = frames.iter().map(|f| f.energy).fold(0.0_f64, f64::max);
+    let sounding = frames.iter().filter(|f| f.energy >= loudest * 1e-3).count();
+    let pitched = voiced.len() >= GLIDE_MIN_FRAMES && voiced.len() * 2 >= sounding;
     if voiced.len() < GLIDE_MIN_FRAMES {
-        return Ok((Onset::None, None));
+        return Ok((Onset::None, None, pitched));
     }
     let pitch_median = |part: &[(f64, f64)]| {
         let mut values: Vec<f64> = part.iter().map(|p| p.1).collect();
@@ -2160,7 +2168,7 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     let wander = pitch_wander(&voiced, settled);
     let first = pitch_median(voiced.get(..3).unwrap_or_default());
     if (first - settled).abs() < GLIDE_SEMITONES {
-        return Ok((Onset::None, wander));
+        return Ok((Onset::None, wander, pitched));
     }
     let smooth: Vec<(f64, f64)> = (0..voiced.len())
         .map(|i| {
@@ -2169,17 +2177,17 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
         })
         .collect();
     let Some(last_off) = smooth.iter().rposition(|p| (p.1 - settled).abs() > GLIDE_SETTLED_SEMITONES) else {
-        return Ok((Onset::None, wander));
+        return Ok((Onset::None, wander, pitched));
     };
     let end_index = last_off + 1;
     if end_index * 4 > smooth.len() * 3 {
-        return Ok((Onset::None, wander));
+        return Ok((Onset::None, wander, pitched));
     }
     let Some(&(end, _)) = smooth.get(end_index) else {
-        return Ok((Onset::None, wander));
+        return Ok((Onset::None, wander, pitched));
     };
     if !(GLIDE_MIN_SECONDS..=f64::from(MAX_GLIDE_SECONDS)).contains(&end) {
-        return Ok((Onset::None, wander));
+        return Ok((Onset::None, wander, pitched));
     }
     // A glide moves into its note: the note's own partials are quiet while the pitch is still
     // away from it. When they already sound (another note over the held one, a hammer-on above
@@ -2208,10 +2216,10 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     let away = power(&mut voiced.iter().filter(|p| p.0 < end && (p.1 - settled).abs() >= GLIDE_SEMITONES).map(|p| p.0));
     let held = power(&mut voiced.iter().filter(|p| p.0 > end).map(|p| p.0));
     let (Some(away), Some(held)) = (away, held) else {
-        return Ok((Onset::None, wander));
+        return Ok((Onset::None, wander, pitched));
     };
     if away > held * GLIDE_QUIET {
-        return Ok((Onset::None, wander));
+        return Ok((Onset::None, wander, pitched));
     }
     // A step of a semitone or more between voiced frames, or a pause, before the note settles:
     // another note before this one, which starts at the last such break.
@@ -2221,7 +2229,7 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     });
     if let Some((index, _)) = breaks.next_back() {
         let start = voiced.get(index + 1).map_or(0.0, |p| p.0) - half / f64::from(RATE);
-        return Ok((Onset::Start(start.max(0.0)), wander));
+        return Ok((Onset::Start(start.max(0.0)), wander, pitched));
     }
     let curve: Vec<(f64, f64)> =
         smooth.get(..=end_index).unwrap_or_default().iter().map(|&(t, m)| (t, (m - settled) * 100.0)).collect();
@@ -2234,7 +2242,7 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
         })
         .collect();
     let glide = Glide::from_points(&points);
-    Ok((if glide.validate().is_ok() { Onset::Glide(glide) } else { Onset::None }, wander))
+    Ok((if glide.validate().is_ok() { Onset::Glide(glide) } else { Onset::None }, wander, pitched))
 }
 
 /// A held tone's slow pitch wander from the note track's voiced frames within half a semitone of

@@ -43,7 +43,9 @@ noise floor limits the useful analysis interval; the source itself is never trim
 **Finding resonances.** A Hann-windowed FFT over the start of the analyzed interval, with the
 largest power-of-two length up to 8192 samples that fits it, proposes at most 192 prominent
 peaks: a local maximum within 60 dB of the strongest that stands 20 dB above the median of its
-neighbours 3..8 bins away. When no peak stands that far out (algorithm version 4), the local
+neighbours 3..8 bins away. For a **pitched** sound (at least half of the note track's frames
+within 30 dB of its loudest are voiced; noise is not) two lower tiers follow. When no peak stands
+that far out (algorithm version 4), the local
 maxima within 30 dB of the strongest that stand 10 dB above that median are proposed instead: a
 breathy flute's breath and flutter widen its partials, and a flute G#5 stab had no candidate at
 all, so no model, though its 856 Hz partial stood 33 dB above everything else. When none stands
@@ -196,8 +198,8 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   beating and from energy moving between strings) were the 1..2 kHz energy the model lacked. A
   loose mode joins the fitted recording with that
   T60 (and may get a beating partner below), but never the schema-1 profile or its reported
-  validation errors, unless every mode of the sound is loose (algorithm version 4): then the
-  profile takes the loose modes, so a breathy stab whose partials no fit validates still has a
+  validation errors, unless every mode of a pitched sound is loose (algorithm version 4): then the
+  profile takes the loose modes (white noise still has no model), so a breathy stab whose partials no fit validates still has a
   model (before, it had none).
 - **Held partials at an uneven level (algorithm version 4).** A bowed, blown or sung note
   holds its partials, but not at one level: the bow's pressure and speed, a bow change, the
