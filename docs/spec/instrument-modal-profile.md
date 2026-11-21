@@ -281,8 +281,11 @@ by Release against its default 0.25 s). The layer, its fusion and how a voice pl
 **Budget.** A revision-4 voice holds 128 resonators (each with its two other-channel weights),
 an attack read position, its envelope, its held layer's state (per-sine levels, ramps and
 couplings, eleven noise filters) and its tail's (eleven bands of three `f32` sections in two
-channels) beside the 16 resonators of revisions 1 and 2: under 15 KiB per voice; the whole
-Instrument measured 240,304 bytes, within the runtime's 256 KiB inline target. The set itself
+channels) beside the 16 resonators of revisions 1 and 2: under 15 KiB per voice, about 240 KB
+for the sixteen, within the runtime's 256 KiB target. The voices are one heap allocation made
+when the Instrument is built (never on the audio thread): inline, a debug build copied the whole
+Instrument through its constructors several times on the stack, and a plug-in scanner's 1 MB
+stack overflowed. The set itself
 (at most 2 MiB) is shared and prepared off the
 audio thread. Note-on fuses at most 32 recordings of 64 modes without allocating.
 
