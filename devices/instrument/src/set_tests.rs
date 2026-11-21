@@ -23,6 +23,7 @@ fn recording(attack: Vec<f32>) -> ModelRecording {
         sustain: None,
         stereo: None,
         tail: None,
+        glide: None,
     }
 }
 
@@ -367,4 +368,37 @@ fn a_measured_release_falls_by_its_t60_scaled_by_the_release_control() {
     let mut tail = vec![0.0; 48000 * 2];
     instrument.process(&ProcessContext::default(), &mut tail);
     assert!(tail[40000 * 2..].iter().all(|x| x.abs() < 1e-4));
+}
+
+/// Zero crossings per second of `part`, as a frequency.
+fn crossing_hz(part: &[f32]) -> f64 {
+    let crossings = part.windows(2).filter(|pair| (pair[0] < 0.0) != (pair[1] < 0.0)).count();
+    crossings as f64 * RATE / (2.0 * (part.len() - 1) as f64)
+}
+
+/// A recorded glide plays only legato: a note started while another key is held glides from
+/// that key's pitch with the recorded shape, the same for every block split; a note on its own
+/// starts on its pitch.
+#[test]
+fn a_glide_plays_legato_from_the_held_note() {
+    let mut glided = recording(Vec::new());
+    glided.modes = vec![ModelMode::plain(1.0, 0.7, 20.0)];
+    glided.glide = Some(suhina_dsp::modal::glide::Glide::from_points(&[(0.0, -300.0), (0.1, -300.0), (0.2, 0.0)]));
+    let set = || ModelSet::new(vec![glided.clone()]).unwrap();
+    let c3 = 440.0 * 2.0_f64.powf(-9.0 / 12.0);
+    let alone = play(&mut core(set()), 60, 1.0, 4800, 64);
+    let on_pitch = crossing_hz(&alone[240..4800]);
+    assert!((on_pitch - c3).abs() < 8.0, "{on_pitch}");
+    // C2 held very softly, then C3 legato: it starts an octave down and glides up.
+    let legato = |block: usize| {
+        let mut instrument = core(set());
+        play(&mut instrument, 48, 1e-4, 480, block);
+        play(&mut instrument, 60, 1.0, 24000, block)
+    };
+    let output = legato(64);
+    let low = crossing_hz(&output[240..4800]);
+    assert!((low - c3 / 2.0).abs() < 8.0, "{low}");
+    let settled = crossing_hz(&output[12000..24000]);
+    assert!((settled - c3).abs() < 3.0, "{settled}");
+    assert_eq!(output, legato(37));
 }

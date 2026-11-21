@@ -70,7 +70,7 @@ impl Vibrato {
     }
 }
 
-fn interpolate(points: &[(f64, f64)], t: f64) -> f64 {
+pub(crate) fn interpolate(points: &[(f64, f64)], t: f64) -> f64 {
     let Some(&(first_t, first_v)) = points.first() else { return 0.0 };
     if t <= first_t {
         return first_v;
@@ -438,6 +438,13 @@ pub(crate) fn drift(pitch: &Pitch, vibrato: Option<&Vibrato>) -> Option<(f64, f6
 
 /// Step 8: the signal resampled along the pitch curve, so every partial keeps one frequency.
 pub(crate) fn flatten(mono: &[f64], pitch: &Pitch, vibrato: &Vibrato) -> Vec<f64> {
+    // The measured curve is the true one seen through the tracking frames.
+    flatten_by(mono, |t| pitch.at(t) / vibrato.response)
+}
+
+/// The signal resampled so that a pitch `cents(t)` away from its note at input time `t` (seconds)
+/// is moved onto the note: every partial keeps one frequency.
+pub(crate) fn flatten_by(mono: &[f64], cents: impl Fn(f64) -> f64) -> Vec<f64> {
     const HALF: isize = 8;
     let rate = f64::from(RATE);
     let mut out = Vec::with_capacity(mono.len() + mono.len() / 8);
@@ -445,8 +452,7 @@ pub(crate) fn flatten(mono: &[f64], pitch: &Pitch, vibrato: &Vibrato) -> Vec<f64
     let mut phi = 0.0;
     let mut m = 0.0;
     for n in 0..mono.len() {
-        // The measured curve is the true one seen through the tracking frames.
-        let ratio = 2.0_f64.powf(pitch.at(n as f64 / rate) / vibrato.response / 1200.0);
+        let ratio = 2.0_f64.powf(cents(n as f64 / rate) / 1200.0);
         let next = phi + ratio;
         while m < next {
             let t = n as f64 + (m - phi) / ratio;
@@ -720,10 +726,19 @@ fn noise(mono: &[f64], modes: &[ModeInput], until: f64, sum: f64) -> [f32; NOISE
     }
     let bin_hz = rate / NOISE_FRAME as f64;
     let mut masked = vec![false; power.len()];
+    // A partial's skirt: at least MASK_BINS each side, and on while the power keeps falling away
+    // from it (a whistle's or a voice's wandering pitch spreads its partial over many bins, which
+    // read as noise and played as a hiss).
     let mut mask = |hz: f64| {
         let center = hz / bin_hz;
-        let low = (center - MASK_BINS).ceil().max(0.0) as usize;
-        let high = ((center + MASK_BINS).floor().max(0.0) as usize).min(masked.len().saturating_sub(1));
+        let mut low = (center - MASK_BINS).ceil().max(0.0) as usize;
+        let mut high = ((center + MASK_BINS).floor().max(0.0) as usize).min(masked.len().saturating_sub(1));
+        while low > 0 && power.get(low - 1).zip(power.get(low)).is_some_and(|(next, here)| next < here) {
+            low -= 1;
+        }
+        while power.get(high + 1).zip(power.get(high)).is_some_and(|(next, here)| next < here) {
+            high += 1;
+        }
         for flag in masked.iter_mut().take(high + 1).skip(low) {
             *flag = true;
         }

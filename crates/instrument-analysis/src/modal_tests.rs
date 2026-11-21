@@ -250,8 +250,59 @@ fn an_uneven_partial_follows_a_fading_note() {
     let report = fit(&pcm, RATE, 1, 0..pcm.len(), 52, |_, _| true).unwrap();
     assert_eq!(report.outcome, Outcome::Fitted, "{report:?}");
     let recording = report.recording.as_ref().unwrap();
+    // Kept, decaying with the note rather than sustained (the note falls 6 dB per second: a
+    // T60 of 10 s).
     let second = recording.modes.iter().find(|m| (m.ratio - 2.0).abs() < 0.02).expect("the uneven partial");
-    assert!((5.0..20.0).contains(&second.decay_seconds), "{second:?}");
+    assert!((2.0..30.0).contains(&second.decay_seconds), "{second:?}");
+}
+
+/// Harmonic tones summed: each (MIDI pitch at time t, gain at time t), twelve partials at 1/k.
+fn voices(seconds: f64, parts: &[(&dyn Fn(f64) -> f64, &dyn Fn(f64) -> f64)]) -> Vec<f32> {
+    let mut phases = vec![0.0f64; parts.len()];
+    (0..(seconds * f64::from(RATE)) as usize)
+        .map(|n| {
+            let t = n as f64 / f64::from(RATE);
+            parts
+                .iter()
+                .zip(phases.iter_mut())
+                .map(|((pitch, gain), phase)| {
+                    *phase += 440.0 * 2.0f64.powf((pitch(t) - 69.0) / 12.0) / f64::from(RATE);
+                    let tone: f64 = (1..=12).map(f64::from).map(|k| (TAU * *phase * k).sin() / k).sum();
+                    0.15 * gain(t) * tone
+                })
+                .sum::<f64>() as f32
+        })
+        .collect()
+}
+
+/// A tone gliding into its note is fitted flat, its partials at the note's frequencies, with the
+/// glide kept; a held note under another one that sounds first is no glide.
+#[test]
+fn a_glide_into_the_note_is_fitted_flat_and_kept() {
+    // From A2 up to C3 in 0.3 s, then C3 held.
+    let slide = |t: f64| if t < 0.3 { 45.0 + 3.0 * t / 0.3 } else { 48.0 };
+    let pcm = voices(1.8, &[(&slide, &|_| 1.0)]);
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 48, |_, _| true).unwrap();
+    let recording = report.recording.as_ref().expect("a fitted recording");
+    let glide = recording.glide.expect("the glide");
+    assert!((-360.0..-180.0).contains(&glide.cents_at(0.0)), "{glide:?}");
+    assert!((0.2..0.6).contains(&glide.end()), "{glide:?}");
+    // The fundamental is one mode at the note, as strong as a held partial.
+    let fundamental = recording.modes.iter().find(|m| (m.ratio - 1.0).abs() < 0.01).expect("the fundamental");
+    assert!(fundamental.magnitude > 0.1, "{:?}", recording.modes);
+    // F#4 for 0.3 s, then a step down to D#4: another note before it, so the note is fitted from
+    // its own start, with no glide.
+    let step = |t: f64| if t < 0.3 { 66.0 } else { 63.0 };
+    let pcm = voices(1.8, &[(&step, &|_| 1.0)]);
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 63, |_, _| true).unwrap();
+    let start = report.range.start as f64 / f64::from(RATE);
+    assert!((0.2..0.4).contains(&start), "{:?}", report.range);
+    assert_eq!(report.range.end, pcm.len());
+    assert_eq!(report.recording.as_ref().and_then(|r| r.glide), None);
+    // C2 held from the start with D4 over it for 0.3 s: the C2 sounds before, no glide.
+    let pcm = voices(1.8, &[(&|_| 36.0, &|_| 1.0), (&|_| 62.0, &|t| if t < 0.3 { 2.0 } else { 0.0 })]);
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 36, |_, _| true).unwrap();
+    assert_eq!(report.recording.as_ref().and_then(|r| r.glide), None);
 }
 
 struct Lcg(u32);

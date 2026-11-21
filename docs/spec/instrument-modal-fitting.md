@@ -46,7 +46,9 @@ peaks: a local maximum within 60 dB of the strongest that stands 20 dB above the
 neighbours 3..8 bins away. When no peak stands that far out (algorithm version 4), the local
 maxima within 30 dB of the strongest that stand 10 dB above that median are proposed instead: a
 breathy flute's breath and flutter widen its partials, and a flute G#5 stab had no candidate at
-all, so no model, though its 856 Hz partial stood 33 dB above everything else. This detection
+all, so no model, though its 856 Hz partial stood 33 dB above everything else. When none stands
+even 10 dB out, those within 20 dB of the strongest that stand 6 dB above it are: a whistle's
+wandering pitch spread its one partial over a dozen bins, 9 dB above their median. This detection
 window is independent of the envelope windows, so
 the partials of a low note in a short trim are resolved (version 1 searched only the first
 envelope window, as short as 1024 samples, where neighbouring partials of a low note hid each
@@ -216,8 +218,10 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   (after the accent) and runs to the last window at most 6 dB below the median of the first
   half of the windows from there (what follows is the release, which the held layer measures);
   it needs at least five windows, at most a quarter of them more than 20 dB below the held
-  part's median (a bow change's or a beat's null), and the median level of its last third at most
-  3 dB below its first third's (a swell is allowed: the held layer gives the mode its rise).
+  part's median (a bow change's or a beat's null), the median level of its last third at most
+  3 dB below its first third's, and no rise all the way (each third's median at least 1 dB above
+  the one before and more than 3 dB in all: a level that keeps rising is no held tone and no
+  resonance, while a whistle that swells by 20 dB and then holds is).
   Medians, since a few dips pull a mean down as a decay would. A held partial is sustained (the
   profile's longest T60, 60 s) at its mean amplitude over the held part, its phase from the
   held part's first window; its reported estimation and validation errors are the RMS of its
@@ -240,6 +244,35 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   note: its slope is the trend (at most the profile's longest T60, 60 s), its level its mean
   amplitude against the trend, and it is loose. On the trombone its octave then stayed within
   6 dB of the recording to 1 s.
+- **Glide (algorithm version 4).** A note reached by a glide (a cello sliding up a tone into
+  C3, a guitar bend, a whistle falling three semitones) moves every partial through the first
+  envelope windows, so they read as smeared, decaying or missing. Before the vibrato step, the
+  prepared signal is pitch-tracked as the root analysis's note track does (2048-sample YIN frames
+  every 512 samples, octave runs folded). The note's pitch is the median of the last half of
+  the voiced frames, and every frame is moved by octaves to within half an octave of it (YIN's
+  octave errors on the cello read its A#2 as A#1 and A#3). There is a glide when the median of
+  the first three voiced frames lies at least a semitone from the note; it ends at the frame
+  after the last whose smoothed pitch (the median of it and its neighbours) lies more than 30
+  cents from the note, which must leave at least the last quarter of the voiced frames held,
+  and within 0.02..4 s. A glide moves into its note, so the note's own partials are quiet while
+  the pitch is still away: over the frames at least a semitone from the note, four of the note's
+  partials (from the lowest that a semitone moves 2.5 bins, out of the window's main lobe) must
+  hold at most a tenth of the power they hold after the glide; otherwise another note sounded
+  over the held one (a pedal steel's D4 over its C2) and there is no glide. The glide's sixteen
+  points lie evenly from 0 s to its end, the smoothed pitch interpolated in cents from the note,
+  the last at 0. Only a continuous movement is a glide: a step of a semitone or more between
+  consecutive voiced frames, or a pause of more than 0.07 s between them, before the note
+  settles is another note (a whistle stepping from F# down to D#, a cello playing A# and then C
+  after a pause). Then the recording's timbre is the settled note's alone: the fit starts again
+  at the first voiced frame after the last such break (its frame's start), over the rest of the
+  interval, and the report names that range; that fit does not restart again. Fitted from the
+  start, the whistle's model sounded 53 cents sharp, a hump of its first note's partials, and the
+  cello played its A# bent into C. The signal (and the other channel) is then resampled flat along it, as for a
+  vibrato, so each partial keeps the note's frequency; modes, attack and held layer are fitted
+  on the flat signal, the attack at the prepared rate. The recording carries the glide
+  ([modal profiles](instrument-modal-profile.md) › Glide), which plays it back when a note is
+  played legato. A guitar bend rose 114 cents in 0.4 s; a pedal steel's D4 hammer-on above C2
+  was told from a glide, and the cello and the whistle from a change of note.
 - **Prompt sound and aftersound (algorithm version 4).** A piano note's two or three strings,
   tuned a little apart and coupled through the bridge, give a partial a fast "prompt sound" and
   a slow "aftersound" that can start in opposite phase (Weinreich 1977): the partial falls fast,

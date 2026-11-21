@@ -26,6 +26,7 @@ fn recording(key: u8, velocity: f32, ratio_two: f64, decay: f64) -> ModelRecordi
         sustain: None,
         stereo: None,
         tail: None,
+        glide: None,
     }
 }
 
@@ -209,6 +210,7 @@ fn controls_transform_fused_modes_and_the_sine_budget_holds() {
         sustain: None,
         stereo: None,
         tail: None,
+        glide: None,
     }])
     .unwrap();
     let mut voice = Voice::default();
@@ -274,6 +276,7 @@ fn a_recordings_decay_law_shortens_higher_notes() {
         sustain: None,
         stereo: None,
         tail: None,
+        glide: None,
     }])
     .unwrap();
     let mut voice = Voice::default();
@@ -434,6 +437,7 @@ fn a_held_recordings_formant_stays_in_hz_when_the_key_moves() {
             sustain: None,
             stereo: None,
             tail: None,
+            glide: None,
         };
         if body_fixed > 0.0 {
             r.sustain = Some(crate::modal::sustain::Sustain { body_fixed, ..Default::default() });
@@ -594,4 +598,40 @@ fn a_fast_share_above_one_plays_the_aftersound_in_opposite_phase() {
     assert!((parts.iter().sum::<f64>() - 0.6).abs() < 1e-9, "{parts:?}");
     r.modes[0].fast_share = 2.5;
     assert!(r.validate().is_err());
+}
+
+/// A glide makes schema 6 (with the earlier trailers' flags, here all zero), round-trips with
+/// its point count, is bounded, and a played note carries its anchor's glide.
+#[test]
+fn glides_use_schema_six_and_reach_the_played_note() {
+    let plain = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), recording(72, 0.8, 2.01, 1.0)]).unwrap();
+    let plain_bytes = plain.encode();
+    let glide = Glide::from_points(&[(0.0, -200.0), (0.2, -50.0), (0.3, 0.0)]);
+    let mut glided = recording(72, 0.8, 2.01, 1.0);
+    glided.glide = Some(glide);
+    let set = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), glided]).unwrap();
+    let bytes = set.encode();
+    assert_eq!(&bytes[8..10], &super::MODEL_SCHEMA_GLIDE.to_le_bytes());
+    // Held, stereo, tail and glide flags for both recordings, and one glide of 32 f32.
+    assert_eq!(bytes.len(), plain_bytes.len() + 4 * 8 + 4 * 32);
+    assert_eq!(ModelSet::decode(&bytes).unwrap(), set);
+    // The second recording's glide flag: 1 and its three points.
+    let flag = plain_bytes.len() + 3 * 8 + 4;
+    assert_eq!(&bytes[flag..flag + 4], &[1, 3, 0, 0]);
+    for (offset, value) in [(flag, 2), (flag + 1, 1), (flag + 1, 17), (flag + 2, 1)] {
+        let mut bad = bytes.clone();
+        bad[offset] = value;
+        assert!(ModelSet::decode(&bad).is_err(), "byte {offset} = {value}");
+    }
+    let mut wild = recording(60, 0.8, 2.0, 1.0);
+    wild.glide = Some(Glide::from_points(&[(0.0, -3000.0), (0.3, 0.0)]));
+    assert!(wild.validate().is_err());
+    let mut empty = recording(60, 0.8, 2.0, 1.0);
+    empty.glide = Some(Glide::NONE);
+    assert!(ModelSet::new(vec![empty]).unwrap().recordings()[0].glide.is_none());
+    let mut voice = Voice::default();
+    set.voice(72, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert_eq!(voice.glide, glide);
+    set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert!(voice.glide.is_empty(), "the anchor at 48 has no glide");
 }

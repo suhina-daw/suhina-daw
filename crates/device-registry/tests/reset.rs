@@ -103,6 +103,7 @@ fn instrument_render_events_and_reset_allocate_and_free_nothing() {
                 sustain: Some(layer),
                 stereo: None,
                 tail: None,
+                glide: None,
             };
             instrument.load_model_state(&ModelSet::new(vec![recording]).unwrap().encode()).unwrap();
         }

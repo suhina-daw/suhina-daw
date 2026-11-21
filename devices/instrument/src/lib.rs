@@ -19,11 +19,12 @@ use suhina_dsp::{
     envelope::{LinearEnvelope, LinearEnvelopeSettings},
     modal::{
         ModalBank, Mode,
+        glide::{Glide, MAX_GLIDE_CENTS},
         model::{
             Controls, MAX_VOICE_SINES, MODEL_MAGIC, MODEL_REVISION as SET_MODEL_REVISION, ModelSet, Voice as SetVoice,
         },
         profile::{ModalProfile, PROFILE_MODEL_REVISION},
-        sustain::Performer,
+        sustain::{CONTROL, Performer},
         tail::TailPlayer,
     },
 };
@@ -213,6 +214,12 @@ struct Voice {
     layer: Performer,
     /// Revision 4: the recording's decaying noise tail, fitted channel and other channel.
     tail: TailPlayer,
+    /// Revision 4: the recording's glide into the note, the samples since the note-on, and the
+    /// glide's current offset in semitones and as a frequency ratio (for the attack's reading).
+    glide: Glide,
+    glide_at: u32,
+    glide_semitones: f64,
+    glide_ratio: f64,
     /// Revision 4: the amplitude envelope's attack, decay and sustain; its release is the damper.
     envelope: LinearEnvelope,
     fitted_voice: bool,
@@ -246,6 +253,10 @@ impl Default for Voice {
             attack_gain: 1.0,
             layer: Performer::default(),
             tail: TailPlayer::default(),
+            glide: Glide::NONE,
+            glide_at: 0,
+            glide_semitones: 0.0,
+            glide_ratio: 1.0,
             envelope: LinearEnvelope::default(),
             fitted_voice: false,
             damped: false,
@@ -428,9 +439,10 @@ impl Instrument {
         let shift = self.modal_shift();
         for voice in &mut self.voices {
             if voice.body.is_active() {
-                match &mut voice.body {
-                    Body::Fitted(bank) if voice.layer.is_active() => voice.layer.bend(bank, shift),
-                    body => body.transpose(self.sample_rate, shift),
+                if matches!(voice.body, Body::Fitted(_)) {
+                    voice.tune_fitted(self.sample_rate, shift);
+                } else {
+                    voice.body.transpose(self.sample_rate, shift);
                 }
             }
         }
@@ -507,6 +519,15 @@ impl Instrument {
             soft: self.soft_pedal || self.params.get(param::SOFT_PEDAL) >= 0.5,
         };
         set.voice(key, velocity, &controls, self.sample_rate, &mut self.set_voice);
+        // Legato: the newest key still held, a fitted note sounding, and where its pitch is now.
+        let legato_from = self
+            .voices
+            .iter()
+            .filter(|v| {
+                v.held && v.fitted_voice && matches!(v.body, Body::Fitted(_)) && v.body.is_active() && v.key != key
+            })
+            .max_by_key(|v| v.serial)
+            .map(|v| f64::from(v.key) + v.glide_semitones);
         let slot = self.free_or_oldest();
         self.serial = self.serial.saturating_add(1);
         let shift = self.modal_shift();
@@ -522,7 +543,13 @@ impl Instrument {
             self.set_voice.phases.get(..count).unwrap_or(&[]),
         );
         fitted.set_other(self.set_voice.other.get(..count).unwrap_or(&[]));
-        fitted.transpose(self.sample_rate, shift);
+        // Played legato, the note glides from the held note's pitch with the shape of the
+        // recorded glide; otherwise it starts on its pitch.
+        voice.stop_glide();
+        voice.glide = legato_glide(&self.set_voice.glide, legato_from.map(|from| from - f64::from(key)));
+        voice.glide_semitones = voice.glide.cents_at(0.0) / 100.0;
+        voice.glide_ratio = 2.0_f64.powf(voice.glide_semitones / 12.0);
+        fitted.transpose(self.sample_rate, shift + voice.glide_semitones);
         voice.body = Body::Fitted(fitted);
         voice.reference = self.set_voice.reference;
         voice.pan = (1.0, 1.0);
@@ -531,7 +558,7 @@ impl Instrument {
         voice.attack_gain = self.set_voice.attack_gain as f32;
         // Seeded by the note's serial and key, so a render repeats exactly.
         let seed = (self.serial as u32).wrapping_mul(0x0100_0193) ^ u32::from(key);
-        voice.layer.start(&self.set_voice.held, self.sample_rate, shift, seed);
+        voice.layer.start(&self.set_voice.held, self.sample_rate, shift + voice.glide_semitones, seed);
         // The tail comes in over the attack's second half, as the attack fades out.
         let fade = match (self.set_voice.attack, self.set.as_deref()) {
             (Some((recording, step)), Some(set)) if step > 0.0 => {
@@ -593,6 +620,7 @@ impl Instrument {
             voice.start_steal_fade(self.sample_rate);
             voice.body = Body::Bar(StruckBar::default());
             voice.layer = Performer::default();
+            voice.stop_glide();
             voice.tail.reset();
             voice.reference = 0;
             voice.pan = bar_pan(key, self.params.get(param::STEREO_WIDTH));
@@ -670,6 +698,7 @@ impl Instrument {
             bank.transpose(self.sample_rate, shift);
             voice.body = Body::Struck(bank);
             voice.layer = Performer::default();
+            voice.stop_glide();
             voice.tail.reset();
             voice.reference = 0;
             voice.pan = (1.0, 1.0);
@@ -699,6 +728,27 @@ fn bar_pan(key: u8, width: f64) -> (f32, f32) {
     ((left * std::f64::consts::SQRT_2) as f32, (right * std::f64::consts::SQRT_2) as f32)
 }
 
+/// The glide of a note played legato `offset` semitones from the held note: the recorded glide's
+/// points, each scaled so the glide starts at `offset` (its cents over its start, clamped to
+/// 0..1, so an overshoot holds at the held note's pitch); a recorded glide that starts within a
+/// cent of its note glides linearly over its time. None without a recorded glide or an offset.
+fn legato_glide(recorded: &Glide, offset: Option<f64>) -> Glide {
+    let Some(offset) = offset.filter(|o| o.is_finite() && o.abs() >= 0.01) else { return Glide::NONE };
+    if recorded.is_empty() {
+        return Glide::NONE;
+    }
+    let target = (offset * 100.0).clamp(-f64::from(MAX_GLIDE_CENTS), f64::from(MAX_GLIDE_CENTS));
+    let start = recorded.cents_at(0.0);
+    if start.abs() < 1.0 {
+        return Glide::from_points(&[(0.0, target as f32), (recorded.end() as f32, 0.0)]);
+    }
+    let mut glide = *recorded;
+    for cents in glide.cents.iter_mut().take(usize::from(glide.count)) {
+        *cents = ((f64::from(*cents) / start).clamp(0.0, 1.0) * target) as f32;
+    }
+    glide
+}
+
 /// The noise of a damper landing: 40 ms of low-passed noise fading out.
 #[derive(Clone, Copy)]
 struct Damper {
@@ -710,6 +760,27 @@ struct Damper {
 }
 
 impl Voice {
+    /// Moves the fitted sines to `semitones` (bend and Model tune) plus the glide's offset,
+    /// through the held layer when it plays, keeping their phase.
+    fn tune_fitted(&mut self, sample_rate: f64, semitones: f64) {
+        let total = semitones + self.glide_semitones;
+        if let Body::Fitted(bank) = &mut self.body {
+            if self.layer.is_active() {
+                self.layer.bend(bank, total);
+            } else {
+                bank.transpose(sample_rate, total);
+            }
+        }
+    }
+
+    /// Ends the glide: the note holds its pitch.
+    fn stop_glide(&mut self) {
+        self.glide = Glide::NONE;
+        self.glide_at = 0;
+        self.glide_semitones = 0.0;
+        self.glide_ratio = 1.0;
+    }
+
     /// Whether any modal layer of this voice still sounds.
     fn sounding(&self) -> bool {
         self.body.is_active()
@@ -886,8 +957,10 @@ impl Device for Instrument {
                 frame.fill(0.0);
             }
         }
-        // The attack is read at the modal voices' pitch: the wheel's bend plus Model tune.
-        let bend_ratio = 2.0_f64.powf(self.modal_shift() / 12.0);
+        // The attack is read at the modal voices' pitch: the wheel's bend plus Model tune, and
+        // each voice's glide.
+        let shift = self.modal_shift();
+        let bend_ratio = 2.0_f64.powf(shift / 12.0);
         let set = self.set.as_deref();
         let envelope = LinearEnvelopeSettings {
             attack: self.params.get(param::ATTACK),
@@ -908,7 +981,23 @@ impl Device for Instrument {
                     voice.attack = None;
                     voice.damper = None;
                     voice.layer = Performer::default();
+                    voice.stop_glide();
                     voice.tail.reset();
+                }
+                // The glide moves the fitted sines every CONTROL samples until the note holds.
+                if !voice.glide.is_empty() {
+                    if voice.glide_at.is_multiple_of(CONTROL as u32) {
+                        let t = f64::from(voice.glide_at) / self.sample_rate;
+                        voice.glide_semitones = voice.glide.cents_at(t) / 100.0;
+                        voice.glide_ratio = 2.0_f64.powf(voice.glide_semitones / 12.0);
+                        if voice.body.is_active() {
+                            voice.tune_fitted(self.sample_rate, shift);
+                        }
+                        if t >= voice.glide.end() {
+                            voice.stop_glide();
+                        }
+                    }
+                    voice.glide_at = voice.glide_at.saturating_add(1);
                 }
                 let shape =
                     if voice.fitted_voice { voice.envelope.next(&envelope, self.sample_rate) as f32 } else { 1.0 };
@@ -941,7 +1030,7 @@ impl Device for Instrument {
                     if let (Some(a), Some(b)) = (read(first), read(second)) {
                         reference += a * voice.attack_gain;
                         other += b * voice.attack_gain;
-                        *position += *step * bend_ratio;
+                        *position += *step * bend_ratio * voice.glide_ratio;
                     } else {
                         attack_done = true;
                     }
