@@ -2,13 +2,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Folder fitting: one note per audio file, velocity layers by level, fused into one fitted
-//! model. See `docs/spec/instrument-modal-fitting.md` › Fitting a folder.
+//! model; and a phrase's held notes, one recording each. See
+//! `docs/spec/instrument-modal-fitting.md` › Fitting a folder, › Fitting a phrase.
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use suhina_dsp::modal::model::{MAX_RECORDINGS, ModelRecording};
 use suhina_instrument_analysis::{Error, Outcome, modal};
 use suhina_media::info::{FileKind, kind_of};
+use suhina_model::AudioData;
 
 use crate::CommandError;
 
@@ -59,6 +62,8 @@ pub struct FolderFile {
 pub struct FolderReport {
     pub files: Vec<FolderFile>,
     pub recordings: Vec<ModelRecording>,
+    /// The entries are a phrase's held notes, not files.
+    pub phrase: bool,
 }
 
 impl FolderReport {
@@ -147,7 +152,70 @@ pub(crate) fn fit_folder(
         return Err(Error::Cancelled);
     }
     let recordings = assemble(fitted, &mut entries);
-    Ok(FolderReport { files: entries, recordings })
+    Ok(FolderReport { files: entries, recordings, phrase: false })
+}
+
+/// Fit each held note of the phrase in `range` of `pcm` as its own recording at its key: the
+/// root analysis's held notes, each from its start until the next note starts (its release
+/// included) or the range ends. `progress(done, total)` returns false to cancel.
+pub(crate) fn fit_phrase(
+    pcm: &AudioData,
+    range: Range<usize>,
+    progress: &mut dyn FnMut(usize, usize) -> bool,
+) -> Result<FolderReport, Error> {
+    let root = suhina_instrument_analysis::analyze(
+        &pcm.samples,
+        pcm.sample_rate,
+        pcm.channels,
+        range.clone(),
+        &mut |_, _| progress(0, 1),
+    )?;
+    let notes: Vec<_> = root.notes.iter().take(MAX_FILES).copied().collect();
+    let total = notes.len() + 1;
+    let rate = f64::from(pcm.sample_rate);
+    let frame = |seconds: f32| range.start.saturating_add((f64::from(seconds) * rate) as usize).min(range.end);
+    let mut entries = Vec::with_capacity(notes.len());
+    let mut fitted = Vec::new();
+    for (index, note) in notes.iter().enumerate() {
+        if !progress(index + 1, total) {
+            return Err(Error::Cancelled);
+        }
+        let start = frame(note.start_seconds);
+        let end = notes.get(index + 1).map_or(range.end, |next| frame(next.start_seconds));
+        let name = format!("note {} at {:.2} s", index + 1, note.start_seconds);
+        let mut file = FolderFile { name, key: Some(note.root), velocity: None, outcome: FileOutcome::Kept };
+        if start >= end {
+            file.outcome = FileOutcome::Skipped("is empty".into());
+        } else {
+            let fit = modal::fit(&pcm.samples, pcm.sample_rate, pcm.channels, start..end, note.root, &mut |_, _| {
+                progress(index + 1, total)
+            });
+            match fit {
+                Ok(report) => match report.recording {
+                    Some(recording) => fitted.push((index, recording)),
+                    None => file.outcome = FileOutcome::Skipped(unfitted(report.outcome).into()),
+                },
+                Err(Error::Cancelled) => return Err(Error::Cancelled),
+                Err(error) => file.outcome = FileOutcome::Skipped(error.to_string()),
+            }
+        }
+        entries.push(file);
+    }
+    if !progress(total, total) {
+        return Err(Error::Cancelled);
+    }
+    let recordings = assemble(fitted, &mut entries);
+    Ok(FolderReport { files: entries, recordings, phrase: true })
+}
+
+/// Why a fit gave no recording.
+fn unfitted(outcome: modal::Outcome) -> &'static str {
+    match outcome {
+        modal::Outcome::Silent => "is silent",
+        modal::Outcome::TooShort => "is too short to fit",
+        modal::Outcome::NoDecayingModes => "has no decaying resonances",
+        modal::Outcome::Fitted => "its fit could not form a recording",
+    }
 }
 
 /// One file: decode, propose its key from a stable single note, fit it at that key.
@@ -173,17 +241,7 @@ fn fit_file(path: &Path, progress: &mut dyn FnMut(usize, usize) -> bool) -> Resu
         _ => return Err(Skip::Reason("has no stable single pitch".into())),
     };
     let report = modal::fit(&audio.samples, audio.sample_rate, audio.channels, 0..frames, key, &mut *progress)?;
-    report.recording.ok_or_else(|| {
-        Skip::Reason(
-            match report.outcome {
-                modal::Outcome::Silent => "is silent",
-                modal::Outcome::TooShort => "is too short to fit",
-                modal::Outcome::NoDecayingModes => "has no decaying resonances",
-                modal::Outcome::Fitted => "its fit could not form a recording",
-            }
-            .into(),
-        )
-    })
+    report.recording.ok_or_else(|| Skip::Reason(unfitted(report.outcome).into()))
 }
 
 /// Velocity layers by level within each key, then at most 32 recordings, evenly spaced over

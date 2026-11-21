@@ -226,6 +226,41 @@ fn a_bowed_like_tone_is_fitted_with_its_held_layer() {
     assert_eq!(report, fit(&pcm, 22050, 1, 0..pcm.len(), 55, |_, _| true).unwrap());
 }
 
+/// A bowed note without a vibrato whose partials wobble unevenly (each its own way, more than a
+/// decay's error limits allow), with an accent at the start and a release at the end: every
+/// partial is held, the recording gets its held layer and the release is measured.
+#[test]
+fn an_unevenly_bowed_note_is_held_with_its_release() {
+    let mut random = Gaussian(5);
+    // Per harmonic, a level in dB every 0.09 s, interpolated linearly.
+    let nodes: Vec<Vec<f64>> =
+        (0..8).map(|_| (0..30).map(|_| (2.0 * random.next()).clamp(-4.0, 4.0)).collect()).collect();
+    let release_at = 1.65;
+    let x = tone(2.4, 326.0, 8, (5.5, 0.0, 0.0, 0.0), |k, t, _| {
+        let Some(levels) = nodes.get(k - 1) else { return 0.0 };
+        let position = t / 0.09;
+        let i = position.floor() as usize;
+        let (a, b) = (levels.get(i).copied().unwrap_or(0.0), levels.get(i + 1).copied().unwrap_or(0.0));
+        let wobble = a + (b - a) * position.fract();
+        let accent = 1.0 + (-t / 0.06).exp();
+        let release = if t < release_at { 1.0 } else { 10.0_f64.powf(-3.0 * (t - release_at) / 0.3) };
+        0.3 / k as f64 * 10.0_f64.powf(wobble / 20.0) * accent * release
+    });
+    let pcm: Vec<f32> = x.iter().map(|s| (s + 0.001 * random.next()) as f32).collect();
+    let report = fit(&pcm, 22050, 1, 0..pcm.len(), 64, |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Fitted, "{report:?}");
+    let recording = report.recording.as_ref().unwrap();
+    let held = recording
+        .modes
+        .iter()
+        .filter(|m| (m.ratio - m.ratio.round()).abs() < 0.01 * m.ratio && m.decay_seconds == 60.0)
+        .count();
+    assert!(held >= 7, "{:?}", recording.modes);
+    let layer = recording.sustain.unwrap();
+    assert_eq!(layer.vibrato_hz, 0.0);
+    assert!((0.1..0.8).contains(&layer.release_seconds), "{layer:?}");
+}
+
 #[test]
 fn interpolation_and_medians_handle_edges() {
     assert_eq!(interpolate(&[], 1.0), 0.0);

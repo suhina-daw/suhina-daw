@@ -343,6 +343,12 @@ pub(crate) fn start_fit(session: &mut Session, params: &Value) -> Result<Value, 
     start_kind(session, params, AnalysisKind::Modal)
 }
 
+/// `instrument.fitPhrase`: fit each held note of the sample's phrase into one model, on the
+/// worker; accepted or added like a folder fit.
+pub(crate) fn start_phrase(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    start_kind(session, params, AnalysisKind::Folder)
+}
+
 fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Result<Value, CommandError> {
     session.refresh_instrument_analysis();
     if session.analysis.current.as_ref().is_some_and(|j| j.receiver.is_some()) {
@@ -351,6 +357,9 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
     let (channel, device) = selected(session, params)?;
     if kind == AnalysisKind::Modal && !matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument") {
         return Err("modal fitting needs an Instrument".into());
+    }
+    if kind == AnalysisKind::Folder && !matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument") {
+        return Err("phrase fitting needs an Instrument".into());
     }
     let file = device.sample_file().ok_or("load a sample before analyzing it")?.to_owned();
     let pcm = session.audio().files.get(&file).cloned().ok_or("the sample audio is missing or not prepared")?;
@@ -380,16 +389,19 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
     if range.is_empty() {
         return Err("the sample trim contains no audio frames".into());
     }
-    let profile =
-        if kind == AnalysisKind::Modal { device.instrument_modal_profile().map(<[u8]>::to_vec) } else { None };
+    let profile = if kind == AnalysisKind::Root { None } else { device.instrument_modal_profile().map(<[u8]>::to_vec) };
     let source = Source { channel, device: device.id, file, pcm: pcm.clone(), start, end, root, profile };
-    spawn(session, kind, source, move |progress| {
-        if kind == AnalysisKind::Root {
+    spawn(session, kind, source, move |progress| match kind {
+        AnalysisKind::Root => {
             suhina_instrument_analysis::analyze(&pcm.samples, pcm.sample_rate, pcm.channels, range, progress)
                 .map(Prepared::Root)
-        } else {
+        }
+        AnalysisKind::Modal => {
             modal::fit(&pcm.samples, pcm.sample_rate, pcm.channels, range, root.round() as u8, progress)
                 .map(|r| Prepared::Modal(Box::new(r)))
+        }
+        AnalysisKind::Folder => {
+            crate::instrument_folder::fit_phrase(&pcm, range, progress).map(|r| Prepared::Folder(Box::new(r)))
         }
     })
 }
@@ -525,6 +537,9 @@ fn view_json(view: &AnalysisView) -> Value {
         "sourceAssumption":if r.key.is_some() { "tonalMaterial" } else { "singleIsolatedPitchedNote" }, "polyphonyAssessed":false,
         "outcome":match r.outcome { Outcome::Stable=>"stable", Outcome::Silent=>"silent", Outcome::TooShort=>"tooShort", Outcome::NoStablePitch=>"noStablePitch", Outcome::TonalCenter=>"tonalCenter" },
         "activeWindows":r.active_windows,"voicedWindows":r.voiced_windows,
+        "notes":r.notes.iter().map(|n| json!({"startSeconds":n.start_seconds,"endSeconds":n.end_seconds,"midi":n.midi,"root":n.root,
+            "periodicity":n.periodicity,"spreadCents":n.spread_cents,"share":n.share})).collect::<Vec<_>>(),
+        "glide":r.glide.map(|g| json!({"fromMidi":g.from_midi,"seconds":g.seconds})),
         "proposal":r.proposal.map(|p| json!({"root":p.root,"midi":p.midi,"hz":p.hz,"cents":p.cents,"periodicity":p.periodicity,"spreadCents":p.spread_cents})),
         "key":r.key.map(|k| {
             let mut key = key_candidate_json(&k.key);
@@ -562,6 +577,7 @@ fn view_json(view: &AnalysisView) -> Value {
     let folder = view.folder.as_ref().map(|f| {
         json!({
             "recordings":f.recordings.len(),
+            "phrase":f.phrase,
             "files":f.files.iter().map(|file| json!({"name":file.name,"key":file.key,"velocity":file.velocity,
                 "outcome":file.outcome.as_str(),"reason":file.outcome.reason()})).collect::<Vec<_>>()
         })

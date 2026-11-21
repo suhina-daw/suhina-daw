@@ -29,6 +29,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::UNHEARD,
     },
     CommandSpec {
+        id: "instrument.fitPhrase",
+        label: "Fit each held note of the Instrument's sample phrase as its own recording of one fitted model, without changing playback",
+        params: &[DEVICE_TRACK, DEVICE],
+        kind: CommandKind::on(Target::Project, Effect::Change),
+        run: instrument_analysis::start_phrase,
+        policy: Policy::UNHEARD,
+    },
+    CommandSpec {
         id: "instrument.fitFiles",
         label: "Fit one-note audio files from anywhere into one fitted model (velocity layers by level) without changing playback",
         params: &[

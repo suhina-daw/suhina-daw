@@ -136,7 +136,7 @@ fn held_out_temporal_errors_are_not_used_to_fit_the_decay() {
     let hz = 440.0;
     let slope = -3.0;
     let data: Vec<_> = (0..12).map(|i| (i, i as f64 * 0.1, -0.3 + slope * i as f64 * 0.1)).collect();
-    let fitted = estimate(hz, &data).unwrap();
+    let fitted = estimate(hz, &data, FADING).unwrap();
     assert!((fitted.slope - slope).abs() < 1e-12);
     assert!(fitted.evidence.validation_rms_db < 1e-12);
     assert!(fitted.fast.is_none(), "one exponential needs no fast part");
@@ -149,8 +149,109 @@ fn held_out_temporal_errors_are_not_used_to_fit_the_decay() {
     // Held-out windows reject the validated fit; the clearly falling partial is kept only loose,
     // outside the profile and its reported errors.
     assert!(fit_span(hz, envelope_span(&disturbed)).is_none(), "held-out envelope mismatch must reject this mode");
-    let loose = estimate(hz, &disturbed).unwrap();
+    let loose = estimate(hz, &disturbed, FADING).unwrap();
     assert!(loose.evidence.loose && loose.evidence.validation_windows == 0, "{:?}", loose.evidence);
+}
+
+/// A note whose level neither holds nor has a trend.
+const FADING: NoteLevel = NoteLevel { held: false, trend: 0.0, loudest: 0.0 };
+
+/// A held partial is told from a decaying one by medians after the attack, whatever its dips,
+/// accent and release; in a fading note, an uneven partial follows the note's trend.
+#[test]
+fn a_held_partial_at_an_uneven_level_is_held_and_a_decay_is_not() {
+    let db = |v: f64| v / DB;
+    // Windows of 0.1 s: an accent, a held level wobbling +-4 dB with one 25 dB dip, a release.
+    let wobble = [0.0, 3.0, -4.0, 2.0, -3.0, 4.0, -2.0, -25.0, -4.0, 2.0, -1.0, 3.0];
+    let mut held: Vec<(usize, f64, f64)> =
+        wobble.iter().enumerate().map(|(i, w)| (i, 0.05 + i as f64 * 0.1, db(-20.0 + w))).collect();
+    held.get_mut(0).unwrap().2 = db(-12.0);
+    for (i, value) in [-30.0, -40.0, -50.0].iter().enumerate() {
+        held.push((12 + i, 1.25 + i as f64 * 0.1, db(*value)));
+    }
+    let (intercept, slope, evidence) = held_span(300.0, &held, 0.0).unwrap();
+    assert!(evidence.sustained && !evidence.loose && evidence.decay_seconds == SUSTAINED_SECONDS);
+    // Its level is the mean amplitude of the held part, a little under -20 dB with the dip.
+    let level = (intercept + slope * 0.6) * DB;
+    assert!((-22.0..-19.0).contains(&level), "{level}");
+    assert!(estimate(300.0, &held, NoteLevel { held: true, trend: 0.0, loudest: 0.0 }).unwrap().evidence.sustained);
+    assert!(fit_span(300.0, envelope_span(&held)).is_none(), "the decay fits reject it");
+    // The same wobble on a 12 dB fall over the held part is a decay.
+    let falling: Vec<_> = held.iter().map(|&(i, t, y)| (i, t, y - db(12.0 * t))).collect();
+    assert!(held_span(300.0, &falling, 0.0).is_none());
+    // Against a note fading by those 12 dB per second, it holds: it follows the note, loose.
+    let (_, slope, evidence) = held_span(300.0, &falling, db(-12.0)).unwrap();
+    assert!((slope * DB + 12.0).abs() < 1e-9, "{slope}");
+    assert!(evidence.loose && !evidence.sustained && (evidence.decay_seconds - 5.0).abs() < 1e-9);
+    // A whole level that falls steadily is no held note; one that holds and releases is.
+    let mut decaying = vec![0.0; 22050 * 2];
+    let mut sustained = vec![0.0; 22050 * 2];
+    for (n, (d, h)) in decaying.iter_mut().zip(sustained.iter_mut()).enumerate() {
+        let t = n as f64 / f64::from(RATE);
+        let tone = (TAU * 220.0 * t).sin();
+        *d = tone * (-1000.0_f64.ln() * t / 3.0).exp();
+        *h = tone * if t < 1.5 { 1.0 } else { (-1000.0_f64.ln() * (t - 1.5) / 0.2).exp() };
+    }
+    let fading = held_level(&decaying, 2048, 21);
+    assert!(!fading.held && (fading.trend * DB + 20.0).abs() < 1.0, "{fading:?}");
+    let holding = held_level(&sustained, 2048, 21);
+    assert!(holding.held && holding.trend == 0.0, "{holding:?}");
+}
+
+/// A partial no peak stands 20 dB out from is still proposed at 10 dB within 30 dB of the
+/// strongest; a flat floor proposes nothing either way.
+#[test]
+fn a_widened_partial_is_detected_by_the_fallback_prominence() {
+    let mut spectrum = vec![1e-4; 1024];
+    // A partial at bin 300 whose skirt 3..8 bins out stands 14 dB below it, and a weaker one at
+    // bin 600, 40 dB down, as wide.
+    for (center, peak) in [(300_usize, 1.0), (600, 0.01)] {
+        for delta in -8_isize..=8 {
+            let level = match delta.unsigned_abs() {
+                0 => peak,
+                1 | 2 => peak * 0.5,
+                _ => peak * 0.2,
+            };
+            if let Some(slot) = center.checked_add_signed(delta).and_then(|b| spectrum.get_mut(b)) {
+                *slot = level;
+            }
+        }
+    }
+    let peaks = prominent_peaks(&spectrum, 2.69, 40.0, 10_000.0);
+    assert_eq!(peaks.iter().map(|p| p.0).collect::<Vec<_>>(), vec![300], "{peaks:?}");
+    assert!(prominent_peaks(&[1e-4; 1024], 2.69, 40.0, 10_000.0).is_empty());
+}
+
+/// A fading note's partial at an uneven level that never clearly falls follows the note's
+/// trend instead of being dropped.
+#[test]
+fn an_uneven_partial_follows_a_fading_note() {
+    let mut random = Lcg(17);
+    // A partial's level in dB, a new step every 0.08 s.
+    let steps: Vec<f64> = (0..40).map(|_| 12.0 * random.next() - 6.0).collect();
+    let f0 = 164.8;
+    let pcm: Vec<f32> = (0..(2.2 * f64::from(RATE)) as usize)
+        .map(|n| {
+            let t = n as f64 / f64::from(RATE);
+            // The whole note fades by 6 dB per second.
+            let fade = 10.0_f64.powf(-6.0 * t / 20.0);
+            (1..=6)
+                .map(|k| {
+                    let level = if k == 2 {
+                        10.0_f64.powf(steps.get((t / 0.08) as usize).copied().unwrap_or(0.0) / 20.0)
+                    } else {
+                        1.0
+                    };
+                    0.3 / k as f64 * level * fade * (TAU * f0 * k as f64 * t + 0.4 * k as f64).sin()
+                })
+                .sum::<f64>() as f32
+        })
+        .collect();
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 52, |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Fitted, "{report:?}");
+    let recording = report.recording.as_ref().unwrap();
+    let second = recording.modes.iter().find(|m| (m.ratio - 2.0).abs() < 0.02).expect("the uneven partial");
+    assert!((5.0..20.0).contains(&second.decay_seconds), "{second:?}");
 }
 
 struct Lcg(u32);

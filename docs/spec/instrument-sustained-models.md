@@ -91,7 +91,9 @@ pitch is therefore measured and removed first.
 ### 2. Held recordings
 
 After the modes are fitted, a recording is **held** when its sustained modes (those modal
-fitting marks sustained) hold at least half of its total magnitude. Only a held recording, or
+fitting marks sustained) hold at least half of its total magnitude, or when modal fitting found
+it a held note (its whole level holds after the attack, a release may follow:
+[held partials at an uneven level](instrument-modal-fitting.md)). Only a held recording, or
 one with vibrato, gets a held layer; a struck recording gets none.
 
 For a held recording the fine envelope of every mode is measured on the flattened signal with

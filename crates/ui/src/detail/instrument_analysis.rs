@@ -114,7 +114,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                 let fraction = if view.total > 0 { (view.completed as f32 / view.total as f32).clamp(0.0,1.0) } else { 0.0 };
                 let text = match view.kind {
                     AnalysisKind::Modal => "Fitting resonances locally…".to_owned(),
-                    AnalysisKind::Folder => format!("Fitting file {} of {} locally…", (view.completed + 1).min(view.total.max(1)), view.total.max(1)),
+                    AnalysisKind::Folder => format!("Fitting {} of {} locally…", (view.completed + 1).min(view.total.max(1)), view.total.max(1)),
                     AnalysisKind::Root => "Analyzing locally…".to_owned(),
                 };
                 progress_bar(ui, fraction, &text);
@@ -217,6 +217,19 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     return;
                 }
                 let Some(report) = &view.report else { return; };
+                // A phrase's held notes: each can become a recording of one fitted model.
+                if report.notes.len() >= 2 {
+                    let names: Vec<String> = report.notes.iter().take(12).map(|n| key_name(n.root)).collect();
+                    let more = if report.notes.len() > 12 { " …" } else { "" };
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(format!("Phrase of {} notes: {}{more}", report.notes.len(), names.join(" ")));
+                        let phrase = flow_button(ui, "Fit notes as model", true);
+                        remember_keyboard_owner(&phrase);
+                        if phrase.clicked() {
+                            actions.push(Action::new("instrument.fitPhrase",json!({"track":track_value,"device":device_value})));
+                        }
+                    });
+                }
                 // One stable note, or else the tonal center of a loop or phrase.
                 let proposed = report.proposal.map(|proposal| (
                     proposal.root,
@@ -257,6 +270,9 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     for note in notes {
                         ui.label(note);
                     }
+                    if let Some(glide) = report.glide {
+                        ui.label(format!("Glides in from {} over {:.2} s.", key_name(glide.from_midi.round().clamp(0.0, 127.0) as u8), glide.seconds));
+                    }
                     ui.ctx().data_mut(|data| data.insert_temp(correction_id(),correction));
                 } else {
                     ui.label(match report.outcome {
@@ -296,7 +312,8 @@ fn folder_ready(
 ) {
     let skipped = folder.files.iter().filter(|f| f.outcome.reason().is_some()).count();
     let left_out = folder.files.iter().filter(|f| f.outcome == FolderFileOutcome::LeftOut).count();
-    let mut summary = format!("{} of {} files fitted", folder.recordings.len(), folder.files.len());
+    let entries = if folder.phrase { "notes" } else { "files" };
+    let mut summary = format!("{} of {} {entries} fitted", folder.recordings.len(), folder.files.len());
     if left_out > 0 {
         summary.push_str(&format!(" · {left_out} left out ({MAX_RECORDINGS} at most)"));
     }

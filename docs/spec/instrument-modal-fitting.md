@@ -43,7 +43,11 @@ noise floor limits the useful analysis interval; the source itself is never trim
 **Finding resonances.** A Hann-windowed FFT over the start of the analyzed interval, with the
 largest power-of-two length up to 8192 samples that fits it, proposes at most 192 prominent
 peaks: a local maximum within 60 dB of the strongest that stands 20 dB above the median of its
-neighbours 3..8 bins away. This detection window is independent of the envelope windows, so
+neighbours 3..8 bins away. When no peak stands that far out (algorithm version 4), the local
+maxima within 30 dB of the strongest that stand 10 dB above that median are proposed instead: a
+breathy flute's breath and flutter widen its partials, and a flute G#5 stab had no candidate at
+all, so no model, though its 856 Hz partial stood 33 dB above everything else. This detection
+window is independent of the envelope windows, so
 the partials of a low note in a short trim are resolved (version 1 searched only the first
 envelope window, as short as 1024 samples, where neighbouring partials of a low note hid each
 other). Candidates closer than two envelope-window bins (the Hann main lobe's half width) are
@@ -190,7 +194,52 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   beating and from energy moving between strings) were the 1..2 kHz energy the model lacked. A
   loose mode joins the fitted recording with that
   T60 (and may get a beating partner below), but never the schema-1 profile or its reported
-  validation errors, and a sound with loose modes only has no model.
+  validation errors, unless every mode of the sound is loose (algorithm version 4): then the
+  profile takes the loose modes, so a breathy stab whose partials no fit validates still has a
+  model (before, it had none).
+- **Held partials at an uneven level (algorithm version 4).** A bowed, blown or sung note
+  holds its partials, but not at one level: the bow's pressure and speed, a bow change, the
+  breath and beating between a partial and its neighbours move each partial by several decibels
+  from one envelope window to the next, each partial its own way. Measured on a cello E4 without
+  a detectable vibrato, its three strongest partials (325, 651 and 977 Hz, about -14 dB) moved
+  by +-4 dB: the decay fits rejected them for their error, the loose rules for not falling, and
+  the model kept the partials above 1 kHz only; after the attack the 250 and 500 Hz octaves were
+  40 dB low and the note sounded plucked. A note also has an accent at its start and often a
+  release at its end, which made a held note's partials look like decays (a cello C3 whose
+  release starts at 0.65 s was fitted as decaying, partly held). So first the recording is told
+  to be a **held note**: its RMS level over 1024-sample windows of the analyzed interval obeys
+  the rule below. In a held note every candidate is first tried as held, before the null
+  search and the decay fits, which it skips when it holds; outside a held note the rule is only
+  the last resort above, against the note's trend, so a struck note's partials that the decay
+  and loose fits describe are fitted exactly as before. The rule, on a partial's
+  envelope windows: the **held part** starts at the first window centered at least 0.15 s in
+  (after the accent) and runs to the last window at most 6 dB below the median of the first
+  half of the windows from there (what follows is the release, which the held layer measures);
+  it needs at least five windows, at most a quarter of them more than 20 dB below the held
+  part's median (a bow change's or a beat's null), and the median level of its last third at most
+  3 dB below its first third's (a swell is allowed: the held layer gives the mode its rise).
+  Medians, since a few dips pull a mean down as a decay would. A held partial is sustained (the
+  profile's longest T60, 60 s) at its mean amplitude over the held part, its phase from the
+  held part's first window; its reported estimation and validation errors are the RMS of its
+  levels around that mean. A held note always gets a held layer
+  ([held tones](instrument-sustained-models.md)), whatever share its sustained modes hold. On
+  the cello E4 the 500 Hz..2 kHz octaves then stayed within 6 dB of the recording through the
+  note (the 250 Hz octave dipped 12 dB at 0.3 s, where a beat was fitted on the uneven
+  fundamental), and on a cello C3 the held part stayed within 2 dB of most octaves, with a
+  measured 2.9 s release.
+- **Partials that follow a fading note (algorithm version 4).** A wind or bowed note that is
+  not held may fade as a whole, a trombone E3 by about 6 dB per second, while one of its
+  partials stays at an uneven level that no fit describes and that never clearly falls: the
+  trombone's 329 Hz partial moved by 4 to 9 dB between windows, was dropped, and its octave
+  played 26 dB low at 1 s. So the whole level also gives the note's **trend**: the least-squares
+  slope (at most 0) of its RMS level over 1024-sample windows from 0.15 s on, while within 40 dB
+  of its loudest window (none in a held note, and none from fewer than five windows). As a last
+  resort after the loose rules, a partial whose loudest window is within 30 dB of the note's
+  loudest level (hum and rumble under a piano note are no part of it) is tried by the held rule
+  below with its levels measured against that trend; when it holds against it, it follows the
+  note: its slope is the trend (at most the profile's longest T60, 60 s), its level its mean
+  amplitude against the trend, and it is loose. On the trombone its octave then stayed within
+  6 dB of the recording to 1 s.
 - **Prompt sound and aftersound (algorithm version 4).** A piano note's two or three strings,
   tuned a little apart and coupled through the bridge, give a partial a fast "prompt sound" and
   a slow "aftersound" that can start in opposite phase (Weinreich 1977): the partial falls fast,
@@ -364,6 +413,28 @@ existing set (all or none: duplicates of a key, velocity and source already ther
 is stale once the device is removed or its fitted model changes; the device's own sample, trim
 and root do not concern it. The Sample page offers **Fit folder…**, which asks for the folder
 with the system's dialog.
+
+## Fitting a phrase
+
+A melody played on one instrument (a flute line, a cello phrase, a guitar lick) holds several of
+its notes in one sample. `instrument.fitPhrase` takes an Instrument whose sample is that phrase
+and starts one job like a folder fit, on the sample's trim:
+
+1. Root analysis of the trim ([its held notes](instrument-analysis.md#notes-glides-and-phrases))
+   lists the phrase's held notes, at most 128.
+2. Each held note is fitted exactly as a single sample with its own key as the reference, over
+   the source frames from its start until the next held note starts (its release and ring
+   included) or the trim ends. A note without a fit is reported with the fit's reason; one whose
+   range is empty is skipped.
+3. Its recordings are assembled as a folder's: notes of the same key are velocity layers by
+   level, and at most 32 are kept.
+
+The report is a folder report whose entries are the notes (named by their order and start time,
+with their key) and marked as a phrase; acceptance, addition, staleness and undo are those of a
+folder fit. A note's range holds the start of the next note's attack when the notes overlap, and
+a phrase played legato into a reverberant room can merge two notes or split one; the person
+listens before accepting. The Sample page shows a phrase's held notes after root analysis with
+**Fit notes as model**.
 
 ## Audition and comparison
 

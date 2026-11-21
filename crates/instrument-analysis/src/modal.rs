@@ -123,6 +123,28 @@ const ANTI_EARLY: f64 = 3.0;
 const ANTI_LATE_DB: f64 = 20.0;
 /// Work steps of the null search with the shortest window (6 s of 512-sample windows).
 const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
+/// A held partial at an uneven level: windows it needs, how far below the span's median a window
+/// counts as a dip and the largest share of dips (see instrument-modal-fitting.md › Held
+/// partials at an uneven level).
+const HELD_MIN_WINDOWS: usize = 5;
+const HELD_DIP_DB: f64 = 20.0;
+const HELD_MAX_DIPS: f64 = 0.25;
+/// A held part ends at the last window within this much of its opening level: the release.
+const HELD_RELEASE_DB: f64 = 6.0;
+/// The held part starts after the attack, as the held layer's measurements do.
+const HELD_FROM_SECONDS: f64 = 0.15;
+/// A partial follows the note's trend only when its loudest window is within this much of the
+/// note's loudest level.
+const TREND_MIN_DB: f64 = 30.0;
+/// How far a detection peak must stand above the median of its neighbours 3..8 bins away (20 dB),
+/// and the 10 dB (within 30 dB of the strongest) a sound gets when no peak stands that far out.
+const PEAK_PROMINENCE: f64 = 10.0;
+const PEAK_PROMINENCE_FALLBACK: f64 = 3.162_277_66;
+const PEAK_RANGE_FALLBACK: f64 = 0.031_622_776_6;
+/// The note's trend is fitted while its level is within this much of its loudest window.
+const TREND_FLOOR_DB: f64 = 40.0;
+/// Window of the whole level a held note is told by (46 ms).
+const HELD_LEVEL_FRAME: usize = 1024;
 /// The last resort: windows it needs and how far its first third must stand above its last.
 const FALLBACK_MIN_WINDOWS: usize = 4;
 const FALLBACK_DROP_DB: f64 = 3.0;
@@ -368,26 +390,7 @@ pub fn fit(
     let separation_bins = 2.0 * detection_size as f64 / frame_size as f64;
     let spectrum: Vec<f64> = bins.iter().take(detection_size / 2).map(|x| x.norm()).collect();
     let highest = spectrum.iter().copied().fold(0.0_f64, f64::max);
-    let mut peaks = Vec::with_capacity(detection_size / 2);
-    for bin in 2..spectrum.len().saturating_sub(9) {
-        let hz = bin as f64 * bin_hz;
-        if hz < low_hz || hz > high_hz {
-            continue;
-        }
-        let Some(&value) = spectrum.get(bin) else { continue };
-        let (Some(&before), Some(&after)) = (spectrum.get(bin - 1), spectrum.get(bin + 1)) else { continue };
-        if value < highest * 1e-3 || value <= before || value <= after {
-            continue;
-        }
-        let mut nearby = [0.0_f64; 12];
-        for (slot, delta) in nearby.iter_mut().zip([-8_isize, -7, -6, -5, -4, -3, 3, 4, 5, 6, 7, 8]) {
-            *slot = bin.checked_add_signed(delta).and_then(|b| spectrum.get(b)).copied().unwrap_or(value);
-        }
-        nearby.sort_by(f64::total_cmp);
-        if value >= nearby[6] * 10.0 {
-            peaks.push((bin, value));
-        }
-    }
+    let mut peaks = prominent_peaks(&spectrum, bin_hz, low_hz, high_hz);
     peaks.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     let mut candidates = Vec::with_capacity(MAX_CANDIDATES);
     for (bin, _) in peaks {
@@ -432,7 +435,12 @@ pub fn fit(
         short_windows.push(hann(size));
         size *= 2;
     }
-    let fitter = Fitter { mono: &mono, window: &window, frames, short_windows: &short_windows };
+    // A held note (its whole level holds after the attack, a release may follow): every
+    // partial is first tried as held, so a bowed note's partials are not split between held and
+    // decaying by their own unevenness.
+    let level = held_level(&mono, frame_size, frames);
+    let held_note = level.held;
+    let fitter = Fitter { mono: &mono, window: &window, frames, short_windows: &short_windows, level };
     let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
     for (position, &hz) in frequencies.iter().enumerate() {
         if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position, &string), &mut work)? {
@@ -511,6 +519,11 @@ pub fn fit(
     });
     // Schema-1 profile: the 16 largest slow magnitudes of validated modes, as before.
     let mut largest: Vec<&Fitted> = accepted.iter().filter(|f| !f.evidence.loose).collect();
+    // A sound whose partials are all loose (a breathy stab, a fading wind note) still has them:
+    // its profile takes the loose modes rather than none.
+    if largest.is_empty() {
+        largest = accepted.iter().collect();
+    }
     largest.sort_by(|a, b| b.slow.total_cmp(&a.slow).then_with(|| a.hz.total_cmp(&b.hz)));
     largest.truncate(MAX_PROFILE_MODES);
     largest.sort_by(|a, b| a.hz.total_cmp(&b.hz));
@@ -566,7 +579,7 @@ pub fn fit(
         work.step()?;
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let held_sum: f64 = accepted.iter().filter(|f| f.evidence.sustained).map(Fitted::magnitude).sum();
-        let held = sum > 0.0 && held_sum >= 0.5 * sum;
+        let held = held_note || (sum > 0.0 && held_sum >= 0.5 * sum);
         let layer = if held || vibrato.is_some() {
             let inputs: Vec<sustain::ModeInput> = accepted
                 .iter()
@@ -1427,6 +1440,8 @@ struct Fitter<'a> {
     window: &'a [f64],
     frames: usize,
     short_windows: &'a [Vec<f64>],
+    /// How the recording's whole level moves.
+    level: NoteLevel,
 }
 
 impl Fitter<'_> {
@@ -1445,7 +1460,7 @@ impl Fitter<'_> {
         let short = self.short_windows.iter().find(|w| w.len() as f64 >= needed);
         // A null the long envelope windows would smooth over: the short windows look first.
         let mut found = None;
-        if let Some(short) = short {
+        if let Some(short) = short.filter(|_| !self.level.held) {
             // Far enough for a null seconds in: up to 6 s.
             let reach = (ANTI_SECONDS * f64::from(RATE)) as usize / short.len();
             let count = (mono.len() / short.len()).min(reach);
@@ -1454,14 +1469,14 @@ impl Fitter<'_> {
         }
         let (measurements, thetas) = measure(mono, self.window, self.frames, hz, work)?;
         if found.is_none() {
-            found = estimate(hz, &measurements).map(|e| (e, thetas, self.window));
+            found = estimate(hz, &measurements, self.level).map(|e| (e, thetas, self.window));
         }
         if found.is_none()
             && let Some(short) = short
         {
             let count = (mono.len() / short.len()).min(SHORT_FRAMES);
             let (measurements, thetas) = measure(mono, short, count, hz, work)?;
-            found = estimate(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
+            found = estimate(hz, &measurements, self.level).map(|e| (e, thetas, short.as_slice()));
         }
         let Some((estimate, thetas, used)) = found else { return Ok(None) };
         let slow = estimate.intercept.exp() / window_bias(used, estimate.slope);
@@ -1492,6 +1507,39 @@ impl Fitter<'_> {
         }
         Ok(Some(Fitted { hz, slow, fast, evidence, other: (1.0, 0.0) }))
     }
+}
+
+/// Detection peaks (bin, magnitude) between `low_hz` and `high_hz`: local maxima within 60 dB of
+/// the strongest bin that stand 20 dB above the median of their neighbours 3..8 bins away, or,
+/// when none does, those within 30 dB of it that stand 10 dB above that median.
+fn prominent_peaks(spectrum: &[f64], bin_hz: f64, low_hz: f64, high_hz: f64) -> Vec<(usize, f64)> {
+    let highest = spectrum.iter().copied().fold(0.0_f64, f64::max);
+    let pick = |prominence: f64, range: f64| {
+        let mut peaks = Vec::with_capacity(spectrum.len());
+        for bin in 2..spectrum.len().saturating_sub(9) {
+            let hz = bin as f64 * bin_hz;
+            if hz < low_hz || hz > high_hz {
+                continue;
+            }
+            let Some(&value) = spectrum.get(bin) else { continue };
+            let (Some(&before), Some(&after)) = (spectrum.get(bin - 1), spectrum.get(bin + 1)) else { continue };
+            if value < highest * range || value <= before || value <= after {
+                continue;
+            }
+            let mut nearby = [0.0_f64; 12];
+            for (slot, delta) in nearby.iter_mut().zip([-8_isize, -7, -6, -5, -4, -3, 3, 4, 5, 6, 7, 8]) {
+                *slot = bin.checked_add_signed(delta).and_then(|b| spectrum.get(b)).copied().unwrap_or(value);
+            }
+            nearby.sort_by(f64::total_cmp);
+            if value >= nearby[6] * prominence {
+                peaks.push((bin, value));
+            }
+        }
+        peaks
+    };
+    // A breathy flute's breath and flutter widen its partials until none stands 20 dB out.
+    let peaks = pick(PEAK_PROMINENCE, 1e-3);
+    if peaks.is_empty() { pick(PEAK_PROMINENCE_FALLBACK, PEAK_RANGE_FALLBACK) } else { peaks }
 }
 
 /// Detection bins of a chord note's partials that are not candidates yet: its series as in
@@ -1713,13 +1761,19 @@ struct Estimate {
 /// Decay of one mode from its (window, time, log amplitude) measurements: fitted on its own
 /// span, once more on the span's last two thirds when a long span fails, and with a faster
 /// first part when that describes the span clearly better.
-fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
-    // A null the partial comes back from: prompt sound and aftersound in opposite phase.
-    if let Some(anti) = anti_phase(hz, values) {
-        return Some(anti);
-    }
+fn estimate(hz: f64, values: &[(usize, f64, f64)], level: NoteLevel) -> Option<Estimate> {
+    let held_note = level.held;
     let span = envelope_span(values);
     let first_window = span.first()?.0;
+    // In a held note, a partial that holds is held, however uneven.
+    if held_note && let Some((intercept, slope, evidence)) = held_span(hz, values, 0.0) {
+        let first_window = values.iter().find(|v| v.1 >= HELD_FROM_SECONDS)?.0;
+        return Some(Estimate { intercept, slope, evidence, fast: None, first_window, anti: false });
+    }
+    // A null the partial comes back from: prompt sound and aftersound in opposite phase.
+    if !held_note && let Some(anti) = anti_phase(hz, values) {
+        return Some(anti);
+    }
     let single = fit_span(hz, span);
     // The late retry describes what rings on after a fast early decay; it never makes a mode
     // sustained (beating can flatten a decaying partial's late windows).
@@ -1778,7 +1832,19 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
         }
         (Some(one), None) => Some(plain(one)),
         (None, Some((two, _))) => Some(two),
-        (None, None) => late.or_else(|| loose_span(hz, values)).or_else(|| fallback_span(hz, values)).map(plain),
+        // Last, a partial at an uneven level that never clearly falls follows the note's trend
+        // (a fading wind note's partial), rather than being dropped.
+        (None, None) => late
+            .or_else(|| loose_span(hz, values))
+            .or_else(|| fallback_span(hz, values))
+            .or_else(|| {
+                // Only a partial that matters: within `TREND_MIN_DB` of the note's loudest level
+                // (hum and rumble under a piano note are no part of the note to sustain).
+                let loudest = values.iter().map(|v| v.2).fold(f64::NEG_INFINITY, f64::max);
+                let matters = (level.loudest - loudest) * DB <= TREND_MIN_DB;
+                held_span(hz, values, level.trend).filter(|_| !held_note && matters)
+            })
+            .map(plain),
     }
 }
 
@@ -1826,6 +1892,115 @@ fn loose_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEv
             beat_share: 0.0,
             phase: 0.0,
             loose: true,
+        },
+    ))
+}
+
+/// Whether a recording's whole level holds after its attack (a release may follow), by the
+/// rule of [`held_span`] on the RMS level of `HELD_LEVEL_FRAME`-sample windows over the analyzed
+/// span (finer than the envelope windows, so a short held note still has enough of them).
+fn held_level(mono: &[f64], frame_size: usize, frames: usize) -> NoteLevel {
+    let length = (frame_size * frames).min(mono.len());
+    let frame_size = HELD_LEVEL_FRAME;
+    let levels: Vec<(usize, f64, f64)> = mono
+        .get(..length)
+        .unwrap_or_default()
+        .chunks_exact(frame_size)
+        .enumerate()
+        .map(|(index, frame)| {
+            let power = frame.iter().map(|x| x * x).sum::<f64>() / frame_size as f64;
+            let t = (index as f64 + 0.5) * frame_size as f64 / f64::from(RATE);
+            (index, t, 0.5 * power.max(1e-300).ln())
+        })
+        .collect();
+    let held = held_span(0.0, &levels, 0.0).is_some();
+    // The trend: the least-squares slope of the level after the attack, while within
+    // `TREND_FLOOR_DB` of the loudest window (a swell has none).
+    let loudest = levels.iter().map(|v| v.2).fold(f64::NEG_INFINITY, f64::max);
+    let points: Vec<(f64, f64)> = levels
+        .iter()
+        .filter(|v| v.1 >= HELD_FROM_SECONDS && (loudest - v.2) * DB <= TREND_FLOOR_DB)
+        .map(|v| (v.1, v.2))
+        .collect();
+    let trend =
+        if points.len() >= HELD_MIN_WINDOWS { line(&points).map_or(0.0, |(_, slope)| slope.min(0.0)) } else { 0.0 };
+    NoteLevel { held, trend: if held { 0.0 } else { trend }, loudest }
+}
+
+/// How a recording's whole level moves after its attack.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct NoteLevel {
+    /// The level holds (a release may follow): partials are tried as held first.
+    held: bool,
+    /// Otherwise the level's slope (log amplitude per second, at most 0), which a partial at an
+    /// uneven level that no fit describes follows.
+    trend: f64,
+    /// The loudest window's RMS level (log amplitude).
+    loudest: f64,
+}
+
+/// A partial held at an uneven level (a bowed, blown or sung partial moving with the bow, the
+/// breath or a beat, more than a decay's error limits allow) that never clearly falls while the
+/// note is held: kept sustained at its mean amplitude over the held part. From the first window
+/// centered at least `HELD_FROM_SECONDS` in (after the attack), the held part runs to the last window at most `HELD_RELEASE_DB`
+/// below the median of the span's first half (what follows is the note's release, which the
+/// held layer measures); in it, at most a quarter of the windows lie `HELD_DIP_DB` below their
+/// median (a bow change or a beat's null), and the median level of its last third stands at most
+/// `SUSTAIN_DB` below its first third's (a swell is allowed: the held layer gives the mode its
+/// rise). Medians, since a few dips pull a mean down as a decay would.
+fn held_span(hz: f64, values: &[(usize, f64, f64)], trend: f64) -> Option<(f64, f64, ModeEvidence)> {
+    // After the attack: a bow's or a breath's accent is not the held level. Levels are judged
+    // against the note's own trend (none in a held note).
+    let start = values.iter().position(|v| v.1 >= HELD_FROM_SECONDS)?;
+    let trend = trend.min(0.0);
+    let detrended: Vec<(usize, f64, f64)> =
+        values.get(start..)?.iter().map(|&(i, t, y)| (i, t, y - trend * t)).collect();
+    let whole = detrended.as_slice();
+    let level_median = |part: &[(usize, f64, f64)]| {
+        let mut levels: Vec<f64> = part.iter().map(|p| p.2).collect();
+        median(&mut levels)
+    };
+    let opening = level_median(whole.get(..whole.len().div_ceil(2))?);
+    let end = whole.iter().rposition(|v| (opening - v.2) * DB <= HELD_RELEASE_DB)?;
+    let span = whole.get(..=end)?;
+    if span.len() < HELD_MIN_WINDOWS {
+        return None;
+    }
+    let middle = level_median(span);
+    let dips = span.iter().filter(|v| (middle - v.2) * DB > HELD_DIP_DB).count();
+    if dips as f64 > HELD_MAX_DIPS * span.len() as f64 {
+        return None;
+    }
+    let third = span.len() / 3;
+    let fall_db = (level_median(span.get(..third)?) - level_median(span.get(span.len() - third..)?)) * DB;
+    if fall_db > SUSTAIN_DB {
+        return None;
+    }
+    let count = span.len() as f64;
+    let level = (span.iter().map(|v| v.2.exp()).sum::<f64>() / count).ln();
+    let mean_t = span.iter().map(|v| v.1).sum::<f64>() / count;
+    let longest = -1000.0_f64.ln() / SUSTAINED_SECONDS;
+    let slope = trend.min(longest);
+    let rms_db = (span.iter().map(|v| ((v.2 - level) * DB).powi(2)).sum::<f64>() / count).sqrt();
+    let decay = -1000.0_f64.ln() / slope;
+    Some((
+        level + (trend - slope) * mean_t,
+        slope,
+        ModeEvidence {
+            frequency_hz: hz,
+            decay_seconds: decay,
+            estimation_rms_db: rms_db,
+            validation_rms_db: rms_db,
+            estimation_windows: span.len(),
+            validation_windows: 0,
+            sustained: decay >= SUSTAINED_SECONDS,
+            fast_decay_seconds: 0.0,
+            fast_share: 0.0,
+            beat_hz: 0.0,
+            beat_share: 0.0,
+            phase: 0.0,
+            // Held in a held note; following a fading note's trend, no validated fit.
+            loose: trend < 0.0,
         },
     ))
 }

@@ -279,3 +279,59 @@ fn vibrato_keeps_its_note_but_a_semitone_trill_does_not() {
         .collect();
     assert_eq!(analyze(&trill, RATE, 1, 0..trill.len(), |_, _| true).unwrap().proposal, None);
 }
+
+/// A harmonic tone whose MIDI pitch at time `t` is `pitch(t)`, six partials at 1/k.
+fn sung(seconds: f64, pitch: impl Fn(f64) -> f64, gain: impl Fn(f64) -> f64) -> Vec<f32> {
+    let mut phase = 0.0f64;
+    (0..(f64::from(RATE) * seconds) as usize)
+        .map(|i| {
+            let t = i as f64 / f64::from(RATE);
+            phase += 440.0 * 2.0f64.powf((pitch(t) - 69.0) / 12.0) / f64::from(RATE);
+            let tone: f64 = (1..=6).map(f64::from).map(|k| (std::f64::consts::TAU * phase * k).sin() / k).sum();
+            (0.3 * gain(t) * tone) as f32
+        })
+        .collect()
+}
+
+#[test]
+fn a_glide_into_a_note_proposes_the_note_and_reports_the_glide() {
+    // From A2 up to C3 in 0.3 s, then C3 held for 1.5 s.
+    let samples = sung(1.8, |t| if t < 0.3 { 45.0 + 3.0 * t / 0.3 } else { 48.0 }, |_| 1.0);
+    let report = analyze(&samples, RATE, 1, 0..samples.len(), |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Stable, "{report:?}");
+    assert_eq!(report.proposal.unwrap().root, 48);
+    let glide = report.glide.unwrap();
+    assert!(glide.from_midi < 46.5 && (0.1..0.6).contains(&glide.seconds), "{glide:?}");
+    // A note that starts on its pitch reports no glide.
+    let steady = sung(1.8, |_| 48.0, |_| 1.0);
+    assert_eq!(analyze(&steady, RATE, 1, 0..steady.len(), |_, _| true).unwrap().glide, None);
+}
+
+#[test]
+fn a_phrase_lists_its_held_notes_and_proposes_no_single_note() {
+    // A3, C4 and E4, 0.6 s each.
+    let samples = sung(1.8, |t| [57.0, 60.0, 64.0][((t / 0.6) as usize).min(2)], |_| 1.0);
+    let report = analyze(&samples, RATE, 1, 0..samples.len(), |_, _| true).unwrap();
+    assert_eq!(report.proposal, None, "{report:?}");
+    assert_eq!(report.notes.iter().map(|n| n.root).collect::<Vec<_>>(), vec![57, 60, 64], "{:?}", report.notes);
+    for (note, start) in report.notes.iter().zip([0.0, 0.6, 1.2]) {
+        assert!((note.start_seconds - start).abs() < 0.15, "{note:?}");
+    }
+}
+
+#[test]
+fn a_reverberant_tail_does_not_outvote_its_note() {
+    // C5 for 0.5 s, then 1.5 s of unpitched noise falling from 16 dB below it.
+    let mut seed = 0x2468_ace1u32;
+    let mut samples = sung(0.5, |_| 72.0, |_| 1.0);
+    samples.extend((0..(f64::from(RATE) * 1.5) as usize).map(|i| {
+        seed ^= seed << 13;
+        seed ^= seed >> 17;
+        seed ^= seed << 5;
+        let t = i as f64 / f64::from(RATE);
+        ((seed as f64 / f64::from(u32::MAX) - 0.5) * 0.15 * 10.0f64.powf(-30.0 * t / 1.5 / 20.0)) as f32
+    }));
+    let report = analyze(&samples, RATE, 1, 0..samples.len(), |_, _| true).unwrap();
+    assert_eq!(report.outcome, Outcome::Stable, "{report:?}");
+    assert_eq!(report.proposal.unwrap().root, 72);
+}
