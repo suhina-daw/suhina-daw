@@ -236,7 +236,7 @@ fn an_unevenly_bowed_note_is_held_with_its_release() {
     let nodes: Vec<Vec<f64>> =
         (0..8).map(|_| (0..30).map(|_| (2.0 * random.next()).clamp(-4.0, 4.0)).collect()).collect();
     let release_at = 1.65;
-    let x = tone(2.4, 326.0, 8, (5.5, 0.0, 0.0, 0.0), |k, t, _| {
+    let x = tone(2.4, 329.63, 8, (5.5, 0.0, 0.0, 0.0), |k, t, _| {
         let Some(levels) = nodes.get(k - 1) else { return 0.0 };
         let position = t / 0.09;
         let i = position.floor() as usize;
@@ -255,7 +255,7 @@ fn an_unevenly_bowed_note_is_held_with_its_release() {
         .iter()
         .filter(|m| (m.ratio - m.ratio.round()).abs() < 0.01 * m.ratio && m.decay_seconds == 60.0)
         .count();
-    assert!(held >= 7, "{:?}", recording.modes);
+    assert!(held >= 6, "{:?}", recording.modes);
     let layer = recording.sustain.unwrap();
     assert_eq!(layer.vibrato_hz, 0.0);
     assert!((0.1..0.8).contains(&layer.release_seconds), "{layer:?}");

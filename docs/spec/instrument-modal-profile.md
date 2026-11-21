@@ -235,6 +235,20 @@ recording `[1, 0, 0, 0]` and 33 f32 (the fitted channel's eleven densities, the 
 channel's, the eleven T60s), or `[0, 0, 0, 0]`; densities are 0..1 and T60s 0 (band off) or
 0.05..60.
 
+**Glide.** A recording whose pitch moved into its note (a cello sliding up a tone, a guitar
+bend, a whistle scooping down) carries its glide: 2..16 points of (seconds from the strike,
+cents from the note), the first at 0 s, times increasing to at most 4 s, cents within two
+octaves, the last at 0 cents. A note takes its anchor's glide. From the note-on, every 32
+samples (counted from the note-on, so the result does not depend on the block size), the glide's
+offset at that time, interpolated linearly, is added to the bend and Model tune the fitted sines
+are tuned to (through the held layer when one plays, keeping phase); the attack is read faster
+or slower by the same ratio, which plays back the attack the fitter cut from the recording
+resampled flat along the glide. Once the glide's last time has passed the note holds its pitch.
+A sine the glide moves to 0.45 of the sample rate or above is silenced, as the pitch wheel
+silences it. **Schema 6** stores the glide after the schema-5 parts: per recording
+`[1, count, 0, 0]` and 32 f32 (sixteen times, then sixteen cents, unused points zero), or
+`[0, 0, 0, 0]`; a count outside 2..16 is malformed. A set without glides encodes as before.
+
 **Exact levels.** A fitted voice strikes its resonators with the sines' amplitudes as they are
 (`ModalBank::strike_phased_exact`): the revision 1 and 2 banks scale a strike down when the
 absolute amplitudes sum above 1, which an aftersound in opposite phase makes them do, and a

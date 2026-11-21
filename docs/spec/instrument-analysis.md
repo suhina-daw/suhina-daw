@@ -100,7 +100,9 @@ phrase of several notes and a note with an accent or a long tail are told apart.
   error); a note played again after a pause stays a note of its own. Shorter segments are the
   movement between notes.
 - **The proposal.** When the windows give a stable proposal, it stands. Otherwise a held note
-  with at least 60 % of the voiced energy is the sample's note (a glide into it, a reverberant
+  with at least 60 % of the voiced energy, whose pitch (or its octave) lies within half a
+  semitone of every channel's median window pitch (two channels at different pitches propose
+  nothing, as on the window path), is the sample's note (a glide into it, a reverberant
   tail after it), proposed with its own median, periodicity and spread; then the tonal-center
   path below. On a cello one-shot that plays A# and slides into C (held notes A#1 for 0.6 s and
   A#3 for 0.4 s, then C3 for 1.8 s) the C3 note held 82 % of the energy and was proposed.

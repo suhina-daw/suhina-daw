@@ -21,6 +21,9 @@ pub const VERSION: u32 = 3;
 /// A held note with at least this share of the voiced energy is the sample's note when the
 /// windows find no stable pitch (a glide into it, an accent before it, a reverberant tail).
 const DOMINANT_SHARE: f32 = 0.6;
+/// A dominant note agrees with a channel whose median pitch lies within this many semitones of
+/// it or of its octave.
+const NOTE_AGREEMENT: f32 = 0.5;
 pub const RATE: u32 = 22_050;
 pub const MAX_SECONDS: usize = 8;
 pub const MAX_WINDOWS: usize = 32;
@@ -292,8 +295,20 @@ pub fn analyze(
         report.outcome = Outcome::Silent;
         return Ok(report);
     }
-    let dominant =
-        report.notes.iter().copied().filter(|n| n.share >= DOMINANT_SHARE).max_by(|a, b| a.share.total_cmp(&b.share));
+    // A dominant note must agree with every channel's median pitch (or its octave), as a stable
+    // proposal must: two channels at different pitches propose nothing.
+    let agrees = |note: &HeldNote| {
+        channel_medians.iter().all(|m| {
+            let distance = (m - note.midi).abs();
+            m.is_finite() && distance.min((distance - 12.0).abs()) <= NOTE_AGREEMENT
+        })
+    };
+    let dominant = report
+        .notes
+        .iter()
+        .copied()
+        .filter(|n| n.share >= DOMINANT_SHARE && agrees(n))
+        .max_by(|a, b| a.share.total_cmp(&b.share));
     let voicing = Voicing {
         active_windows: report.active_windows,
         voiced_windows: report.voiced_windows,

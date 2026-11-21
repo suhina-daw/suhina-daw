@@ -299,6 +299,7 @@ mod tests {
             sustain: None,
             stereo: None,
             tail: None,
+            glide: None,
         }
     }
 

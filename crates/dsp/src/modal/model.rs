@@ -6,6 +6,7 @@
 //! `docs/spec/instrument-modal-profile.md` › Fitted model sets.
 
 use super::Mode;
+use super::glide::{GLIDE_FIELDS, GLIDE_POINTS, Glide};
 use super::sustain::{
     ENVELOPE_POINTS, Held, MAX_CORRECTION_DB, NOISE_BANDS, SUSTAIN_FIELDS, Sustain, envelope, envelope_at,
 };
@@ -19,6 +20,8 @@ pub const MODEL_SCHEMA_HELD: u16 = 3;
 pub const MODEL_SCHEMA_STEREO: u16 = 4;
 /// Schema of a set whose recordings carry noise tails: schema 4 plus a third trailer.
 pub const MODEL_SCHEMA_TAIL: u16 = 5;
+/// Schema of a set whose recordings carry glides: schema 5 plus a fourth trailer.
+pub const MODEL_SCHEMA_GLIDE: u16 = 6;
 /// Largest fast share: above 1 the slow part starts in opposite phase (a piano string pair's
 /// aftersound), at most half the prompt sound.
 pub const MAX_FAST_SHARE: f64 = 2.0;
@@ -92,6 +95,8 @@ pub struct ModelRecording {
     pub stereo: Option<Stereo>,
     /// The decaying band noise of what the modes miss after the attack; none without one.
     pub tail: Option<Tail>,
+    /// How the recorded pitch moved into the note; none for a note that starts on its pitch.
+    pub glide: Option<Glide>,
 }
 
 /// How a stereo recording's other channel relates to the channel its modes were fitted on.
@@ -220,6 +225,9 @@ impl ModelRecording {
                 );
             }
         }
+        if let Some(glide) = &self.glide {
+            glide.validate().map_err(ModelError)?;
+        }
         if let Some(tail) = &self.tail {
             tail.validate().map_err(ModelError)?;
         }
@@ -288,6 +296,8 @@ pub struct Voice {
     pub tail_decay_scale: f64,
     /// Whether the tail's channels are independent noise (the anchor is a stereo recording).
     pub tail_stereo: bool,
+    /// The anchor's glide into the note.
+    pub glide: Glide,
 }
 
 impl Default for Voice {
@@ -305,6 +315,7 @@ impl Default for Voice {
             tail: Tail::NONE,
             tail_decay_scale: 1.0,
             tail_stereo: false,
+            glide: Glide::NONE,
         }
     }
 }
@@ -338,6 +349,9 @@ impl ModelSet {
             }
             if recording.tail.is_some_and(|t| t.is_empty()) {
                 recording.tail = None;
+            }
+            if recording.glide.is_some_and(|g| g.is_empty()) {
+                recording.glide = None;
             }
             recording.validate()?;
         }
@@ -388,7 +402,7 @@ impl ModelSet {
     pub fn recording_count(bytes: &[u8]) -> Option<usize> {
         let header = bytes.get(..16)?;
         (header.get(..8) == Some(MODEL_MAGIC.as_slice())
-            && [MODEL_SCHEMA_VERSION, MODEL_SCHEMA_HELD, MODEL_SCHEMA_STEREO, MODEL_SCHEMA_TAIL]
+            && [MODEL_SCHEMA_VERSION, MODEL_SCHEMA_HELD, MODEL_SCHEMA_STEREO, MODEL_SCHEMA_TAIL, MODEL_SCHEMA_GLIDE]
                 .iter()
                 .any(|schema| header.get(8..10) == Some(schema.to_le_bytes().as_slice()))
             && header.get(10..12) == Some(MODEL_REVISION.to_le_bytes().as_slice()))
@@ -410,10 +424,13 @@ impl ModelSet {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(16 + self.recordings.len() * (RECORDING_HEADER + 2048));
-        let tailed = self.recordings.iter().any(|r| r.tail.is_some());
+        let glided = self.recordings.iter().any(|r| r.glide.is_some());
+        let tailed = glided || self.recordings.iter().any(|r| r.tail.is_some());
         let stereo = tailed || self.recordings.iter().any(|r| r.stereo.is_some());
         let held = stereo || self.recordings.iter().any(|r| r.sustain.is_some());
-        let schema = if tailed {
+        let schema = if glided {
+            MODEL_SCHEMA_GLIDE
+        } else if tailed {
             MODEL_SCHEMA_TAIL
         } else if stereo {
             MODEL_SCHEMA_STEREO
@@ -497,6 +514,20 @@ impl ModelSet {
                 }
             }
         }
+        // Schema 6: every recording's glide, flagged with its point count, after the tails.
+        if glided {
+            for recording in &self.recordings {
+                match &recording.glide {
+                    Some(glide) => {
+                        bytes.extend_from_slice(&[1, glide.count, 0, 0]);
+                        for value in glide.fields() {
+                            bytes.extend_from_slice(&value.to_le_bytes());
+                        }
+                    }
+                    None => bytes.extend_from_slice(&[0, 0, 0, 0]),
+                }
+            }
+        }
         bytes
     }
 
@@ -507,8 +538,10 @@ impl ModelSet {
             return Err(header);
         }
         let schema = reader.u16()?;
-        if !matches!(schema, MODEL_SCHEMA_VERSION | MODEL_SCHEMA_HELD | MODEL_SCHEMA_STEREO | MODEL_SCHEMA_TAIL)
-            || reader.u16()? != MODEL_REVISION
+        if !matches!(
+            schema,
+            MODEL_SCHEMA_VERSION | MODEL_SCHEMA_HELD | MODEL_SCHEMA_STEREO | MODEL_SCHEMA_TAIL | MODEL_SCHEMA_GLIDE
+        ) || reader.u16()? != MODEL_REVISION
         {
             return Err(header);
         }
@@ -562,6 +595,7 @@ impl ModelSet {
                 sustain: None,
                 stereo: None,
                 tail: None,
+                glide: None,
             });
         }
         if schema >= MODEL_SCHEMA_HELD {
@@ -605,7 +639,7 @@ impl ModelSet {
                 recording.stereo = Some(Stereo { reference, gains: values, offsets, attack });
             }
         }
-        if schema == MODEL_SCHEMA_TAIL {
+        if schema >= MODEL_SCHEMA_TAIL {
             for recording in &mut recordings {
                 let flag = reader.take(4)?;
                 if flag == [1, 0, 0, 0] {
@@ -616,6 +650,21 @@ impl ModelSet {
                     recording.tail = Some(Tail::from_fields(&fields));
                 } else if flag != [0, 0, 0, 0] {
                     return Err(header);
+                }
+            }
+        }
+        if schema == MODEL_SCHEMA_GLIDE {
+            for recording in &mut recordings {
+                match reader.take(4)? {
+                    [0, 0, 0, 0] => {}
+                    &[1, count, 0, 0] if (2..=GLIDE_POINTS as u8).contains(&count) => {
+                        let mut fields = [0.0_f32; GLIDE_FIELDS];
+                        for field in &mut fields {
+                            *field = f32::from_le_bytes(reader.array()?);
+                        }
+                        recording.glide = Some(Glide::from_fields(count, &fields));
+                    }
+                    _ => return Err(header),
                 }
             }
         }
@@ -789,6 +838,9 @@ impl ModelSet {
             }
         }
         out.reference = anchor_recording.stereo.as_ref().map_or(0, |s| s.reference);
+        if let Some(glide) = &anchor_recording.glide {
+            out.glide = *glide;
+        }
         if let Some(tail) = &anchor_recording.tail {
             out.tail = *tail;
             out.tail_stereo = anchor_recording.stereo.is_some();

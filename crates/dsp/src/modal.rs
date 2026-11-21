@@ -6,6 +6,7 @@
 
 use std::f64::consts::TAU;
 
+pub mod glide;
 pub mod model;
 pub mod profile;
 pub mod sustain;
