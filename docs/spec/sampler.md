@@ -253,25 +253,36 @@ never changes project data. The host resets the view when source audio changes.
 bowed, blown or sung tone, a pad or a texture keeps its real sound (its noise, its highs, its
 stereo and its own movement), which no model of sines gives back. In Sample mode, playing
 forward, the note plays from Start like Gate until it reaches Loop start; from there it holds in
-**grains** of the loop region:
+long **segments** of the loop region, joined by short crossfades (**seams**), the way a sampled
+instrument's sustain loop is made: most of the time one stretch of the recording plays as it was
+recorded, and only a seam mixes two. Grains overlapping by half all the time (0.12..0.6 s, in
+earlier versions) fluttered like an LFO however they were lined up: two takes of a cello's vibrato
+and bow summed at every moment.
 
-- A grain is the loop region's length over 2.2, 0.2..0.6 s (at least two and a half periods of
-  the root key's pitch), read at the note's step, under a Hann window. Grains of 120 ms changed
-  17 times a second and fluttered like a fast LFO, each catching a cello's vibrato and bow at
-  another phase. Grains overlap by half: each half grain a new one starts and
-  the oldest has ended, so the two windows sum to one and the level stays.
-- The first grain is the direct playback at its window's peak, fading out; nothing is cut.
-- Of four random points of the loop region (leaving room for the grain and a period before Loop
-  end), each moved by up to one period of the root key to where its waveform best continues the
-  grain at its peak (the normalized correlation over 64 points every two steps of the mono sum),
-  a new grain starts at the one scoring highest after a penalty for a level unlike the followed
-  grain's (a quarter of the absolute log of their energy ratio).
-- Each new grain is brought to the level where the hold took over (the RMS of a grain's length
-  from there, every fourth sample), by at most 12 dB either way: a cello's held part that swells
-  by 20 dB fluttered between grains of other levels. The two grains then run in phase, so the hold has
-  neither the comb filtering nor the flutter of grains at random phases.
-- Note-off releases the envelope as for Gate; the grains go on through the release.
-- A loop region too short for a grain plays as Gate. Reverse turns Sustain off.
+- The first segment is the direct playback itself: the note plays on from Loop start, nothing is
+  cut or faded.
+- A segment plays from its start to a random point at least a third of the loop region on (but
+  early enough that its seam ends a period before Loop end), so the stretches and their order
+  vary and no loop repeats as one.
+- A seam is 50 ms (at least four periods of the root key's pitch, at most a sixth of the loop
+  region). The next segment starts at the best of eight random points of the loop region (leaving
+  room for a third of the region and a seam), each moved by up to one period of the root key to
+  where its waveform best continues the playing one there: the normalized correlation over 128
+  points of the mono sum an eighth of a period apart, spanning at least 0.12 s (so the vibrato's
+  phase and the pitch match too, not only one cycle's shape), less a quarter of the absolute log
+  of their energy ratio. The shift is searched every 1/32 period, then sample by sample around
+  the best.
+- The seam is a raised cosine (the two gains `cos²` and `sin²`) scaled so that the sum keeps unit
+  power for the two segments' correlation `r` there (`1 / sqrt(out² + in² + 2 r out in)`): two
+  waveforms that match sum like one, two that do not like an equal-power crossfade, so a seam
+  neither dips nor bulges. The incoming segment's gain matches its level at the seam to the
+  playing one's (the RMS over the seam, every fourth sample), by at most 12 dB either way.
+- A slow level follower (0.5 s) keeps the level where the hold took over, by at most 12 dB
+  either way: a held part that swells (a crescendo) would otherwise rise again at every seam,
+  while a tremolo or a bow's movement, faster than the follower, stays.
+- Note-off releases the envelope as for Gate; the segments go on through the release.
+- A loop region too short for a third of itself, a seam and a period plays as Gate. Reverse
+  turns Sustain off.
 
 The seeded random points and the per-sample counters make a render the same for every block
 split.

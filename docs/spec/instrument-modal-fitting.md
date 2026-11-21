@@ -471,7 +471,7 @@ band-limited and in the end like a bell, whatever was added. So a fit names the 
 plays the sound best (algorithm version 4):
 
 - **Recording** for a held recording (a held note, or sustained modes holding half the
-  magnitude): the sample itself, its **held part** sustained in grains by the Sample layer's
+  magnitude): the sample itself, its **held part** sustained in segments by the Sample layer's
   Sustain playback ([sampler](sampler.md) › Sustain playback). The held part runs from the held
   rule's first window (at least 0.25 s, after the attack) to its last (before the release), on the
   whole prepared recording, at least 0.2 s long; the report gives it in source frames (`hold`).

@@ -272,7 +272,7 @@ pub enum Engine {
     /// The fitted model's resonances: a struck or plucked sound.
     #[default]
     Resonance,
-    /// The recording itself, its held part sustained in grains: a bowed, blown or sung tone.
+    /// The recording itself, its held part sustained in segments: a bowed, blown or sung tone.
     Recording,
 }
 
@@ -698,7 +698,7 @@ fn fit_range(
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let held_sum: f64 = accepted.iter().filter(|f| f.evidence.sustained).map(Fitted::magnitude).sum();
         let held = held_note || (sum > 0.0 && held_sum >= 0.5 * sum);
-        // A held tone plays best from the recording itself, held in grains over its held part
+        // A held tone plays best from the recording itself, held in segments over its held part
         // (after the attack, before the release); a decaying one on its resonances.
         if held {
             let recorded = mono.len() as f64 / f64::from(RATE);
