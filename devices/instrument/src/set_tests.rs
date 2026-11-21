@@ -232,6 +232,35 @@ fn the_soft_pedal_strikes_quieter_and_darker() {
     assert_eq!(play(&mut switch, 60, 1.0, 4800, 128), soft);
 }
 
+/// Model tune moves a fitted voice, its attack included, exactly as the pitch wheel's bend does,
+/// also when it changes under a sounding note.
+#[test]
+fn model_tune_moves_the_pitch_as_a_bend_does() {
+    let set = || ModelSet::new(vec![recording(vec![0.1; 2400])]).unwrap();
+    let mut tuned = core(set());
+    tuned.set_param(param::MODEL_TUNE, 1.0);
+    let mut bent = core(set());
+    bent.event(NoteEvent::PitchBend(0.5));
+    let up = play(&mut tuned, 60, 1.0, 4800, 128);
+    assert_eq!(up, play(&mut bent, 60, 1.0, 4800, 128));
+    assert_ne!(up, play(&mut core(set()), 60, 1.0, 4800, 128));
+
+    let continue_for = |core: &mut Instrument, frames: usize| {
+        let mut output = vec![0.0; frames * 2];
+        for buffer in output.chunks_mut(256) {
+            core.process(&ProcessContext::default(), buffer);
+        }
+        output
+    };
+    let mut retuned = core(set());
+    let mut rebent = core(set());
+    play(&mut retuned, 60, 1.0, 1200, 128);
+    play(&mut rebent, 60, 1.0, 1200, 128);
+    retuned.set_param(param::MODEL_TUNE, -0.5);
+    rebent.event(NoteEvent::PitchBend(-0.25));
+    assert_eq!(continue_for(&mut retuned, 2400), continue_for(&mut rebent, 2400));
+}
+
 fn held_recording() -> ModelRecording {
     let mut layer = suhina_dsp::modal::sustain::Sustain {
         vibrato_hz: 5.5,

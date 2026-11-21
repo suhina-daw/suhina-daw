@@ -62,7 +62,8 @@ pub mod param {
     pub const DAMPER_NOISE: usize = 25;
     pub const PEDAL_RESONANCE: usize = 26;
     pub const SOFT_PEDAL: usize = 27;
-    pub const COUNT: usize = 28;
+    pub const MODEL_TUNE: usize = 28;
+    pub const COUNT: usize = 29;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -98,6 +99,7 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("damper_noise", "Damper noise", (0.0, 1.0), 0.2, Unit::Percent),
     control("pedal_resonance", "Pedal resonance", (0.0, 1.0), 0.3, Unit::Percent),
     ParamInfo::toggle("soft_pedal", "Soft pedal", false),
+    control("model_tune", "Model tune", (-24.0, 24.0), 0.0, Unit::Semitones),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
@@ -265,6 +267,28 @@ impl Instrument {
         }
     }
 
+    /// Semitones every modal voice is moved by: the pitch wheel's bend plus Model tune.
+    fn modal_shift(&self) -> f64 {
+        self.bend_semitones + self.params.get(param::MODEL_TUNE)
+    }
+
+    /// Moves the sounding modal voices to the current bend and Model tune, keeping their phase.
+    fn retune(&mut self) {
+        let shift = self.modal_shift();
+        for voice in &mut self.voices {
+            if voice.bank.is_active() {
+                voice.bank.transpose(self.sample_rate, shift);
+            }
+            if voice.fitted.is_active() {
+                if voice.layer.is_active() {
+                    voice.layer.bend(&mut voice.fitted, shift);
+                } else {
+                    voice.fitted.transpose(self.sample_rate, shift);
+                }
+            }
+        }
+    }
+
     fn mix_targets(&self) -> (f32, f32) {
         match self.params.get(param::SOURCE) as u8 {
             1 => (1.0, 0.0),
@@ -393,6 +417,7 @@ impl Instrument {
                 mode.amplitude /= magnitude_sum.max(1.0);
             }
         }
+        let shift = self.modal_shift();
         let slot =
             self.voices.iter().position(|voice| !voice.sounding()).or_else(|| {
                 self.voices.iter().enumerate().min_by_key(|(_, voice)| voice.serial).map(|(index, _)| index)
@@ -413,12 +438,12 @@ impl Instrument {
                     self.set_voice.modes.get(..count).unwrap_or(&[]),
                     self.set_voice.phases.get(..count).unwrap_or(&[]),
                 );
-                voice.fitted.transpose(self.sample_rate, self.bend_semitones);
+                voice.fitted.transpose(self.sample_rate, shift);
                 voice.attack = self.set_voice.attack.map(|(recording, step)| (recording, 0.0, step));
                 voice.attack_gain = self.set_voice.attack_gain as f32;
                 // Seeded by the note's serial and key, so a render repeats exactly.
                 let seed = (self.serial as u32).wrapping_mul(0x0100_0193) ^ u32::from(key);
-                voice.layer.start(&self.set_voice.held, self.sample_rate, self.bend_semitones, seed);
+                voice.layer.start(&self.set_voice.held, self.sample_rate, shift, seed);
                 voice.envelope.start();
                 voice.fitted_voice = true;
                 voice.damped = false;
@@ -433,7 +458,7 @@ impl Instrument {
                 voice.fitted_voice = false;
                 voice.damper = None;
                 voice.bank.strike(self.sample_rate, &modes);
-                voice.bank.transpose(self.sample_rate, self.bend_semitones);
+                voice.bank.transpose(self.sample_rate, shift);
                 voice.amplitude = velocity * 0.25;
                 voice.gate = Smoother::new(0.0, Smoother::ramp_frames(0.002, self.sample_rate));
             }
@@ -518,6 +543,9 @@ impl Device for Instrument {
         if index == param::REVISION && !self.model_supported() {
             self.voices.fill(Voice::default());
         }
+        if index == param::MODEL_TUNE {
+            self.retune();
+        }
     }
 
     fn param(&self, index: usize) -> Option<f64> {
@@ -536,7 +564,8 @@ impl Device for Instrument {
                 frame.fill(0.0);
             }
         }
-        let bend_ratio = 2.0_f64.powf(self.bend_semitones / 12.0);
+        // The attack is read at the modal voices' pitch: the wheel's bend plus Model tune.
+        let bend_ratio = 2.0_f64.powf(self.modal_shift() / 12.0);
         let set = self.set.as_deref();
         let envelope = LinearEnvelopeSettings {
             attack: self.params.get(param::ATTACK),
@@ -678,18 +707,7 @@ impl Device for Instrument {
             }
             NoteEvent::PitchBend(value) if value.is_finite() => {
                 self.bend_semitones = f64::from(value.clamp(-1.0, 1.0)) * 2.0;
-                for voice in &mut self.voices {
-                    if voice.bank.is_active() {
-                        voice.bank.transpose(self.sample_rate, self.bend_semitones);
-                    }
-                    if voice.fitted.is_active() {
-                        if voice.layer.is_active() {
-                            voice.layer.bend(&mut voice.fitted, self.bend_semitones);
-                        } else {
-                            voice.fitted.transpose(self.sample_rate, self.bend_semitones);
-                        }
-                    }
-                }
+                self.retune();
             }
             _ => {}
         }

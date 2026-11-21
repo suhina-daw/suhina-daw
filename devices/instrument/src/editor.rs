@@ -28,6 +28,14 @@ pub(super) fn canvas() -> DeviceUi {
         ui.navigate(name, [24.0 + i as f32 * 144.0, 92.0, 132.0, 32.0], i as u16, false);
     }
 
+    // Beside the page buttons on every page, as the Source menu is.
+    ui.toggle(
+        "soft_pedal",
+        "Soft pedal",
+        [704.0, 92.0, 152.0, 32.0],
+        "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down",
+    );
+
     ui.page(0);
     ui.group("PERFORMANCE", [24.0, 144.0, 832.0, 192.0]);
     ui.dial("gain", "Output gain", [40.0, 192.0, 120.0, 116.0], "Gain for both sources");
@@ -71,12 +79,6 @@ pub(super) fn canvas() -> DeviceUi {
     ui.label(
         "Keys: C3 = 60. Pitch wheel ±2 semitones. Sustain pedal holds keys; CC 67 is the soft pedal.",
         [24.0, 486.0, 640.0, 24.0],
-    );
-    ui.toggle(
-        "soft_pedal",
-        "Soft pedal",
-        [704.0, 92.0, 152.0, 32.0],
-        "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down",
     );
 
     ui.page(1);
@@ -132,11 +134,16 @@ pub(super) fn canvas() -> DeviceUi {
         ),
         ("damper_noise", "Damper noise", "The short noise of a damper landing on note-off"),
         ("pedal_resonance", "Pedal resonance", "Undamped strings ringing along while the sustain pedal is down"),
+        (
+            "model_tune",
+            "Model tune",
+            "Moves the model's pitch in semitones, for a model fitted at the wrong root or a few cents off",
+        ),
     ]
     .into_iter()
     .enumerate()
     {
-        ui.dial(id, name, [54.0 + i as f32 * 196.0, 350.0, 110.0, 92.0], hint);
+        ui.dial(id, name, [54.0 + i as f32 * 160.0, 350.0, 110.0, 92.0], hint);
         ui.only_revision(4);
     }
     ui.label("Modes per voice", [40.0, 456.0, 196.0, 20.0]);

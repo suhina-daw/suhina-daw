@@ -219,6 +219,14 @@ rarely contain them):
   softer felt region are struck, so a note is quieter (level times 0.7), darker (tilt exponent -0.45) and has no beating
   partner. It applies to notes struck while it is down.
 
+**Model tune** (`model_tune`, -24..+24 semitones, continuous, default 0): moves the pitch of every
+modal voice (the original model, a profile and a fitted set) by that many semitones, so a model
+fitted at a wrong root, or a few cents off, can be tuned after it was accepted without fitting
+again. It adds to the pitch wheel's bend: the sines, the held layer and the attack's read rate
+follow `bend + model tune`, and a change retunes sounding notes as a bend does. Which recordings
+of a set a key fuses still follows the played key, so tuning a mislabelled set moves its pitch
+without moving its recordings across the keyboard. The Sample layer keeps its own tuning, Root.
+
 The fitted attack is the recorded hammer; these settings shape what a single recording cannot
 show. Sympathetic coupling between particular strings, the damper's recorded sound and
 half-pedalling remain open in #1624.

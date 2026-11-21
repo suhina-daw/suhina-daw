@@ -355,8 +355,16 @@ fn sample_waveform(
     };
     let value = |id: &str| parameters.iter().find(|p| p.id == id).map_or(0., |p| p.value) as f32;
     let edit_loop = value("mode") == 0. && value("playback") == 2.;
-    let active_start = f64::from(value(if edit_loop { "loop_start" } else { "start" }));
-    let active_end = f64::from(value(if edit_loop { "loop_end" } else { "end" }));
+    // Of a crossed pair the marker further right is the end (`docs/spec/sampler.md`).
+    let (first, second) = (
+        f64::from(value(if edit_loop { "loop_start" } else { "start" })),
+        f64::from(value(if edit_loop { "loop_end" } else { "end" })),
+    );
+    let (active_start, active_end) = (first.min(second), first.max(second));
+    let (source_start, source_end) = {
+        let (a, b) = (value("start"), value("end"));
+        (a.min(b), a.max(b))
+    };
     // Where a boundary can be moved to, kept off the edges: the values here are rounded to f32.
     let boundary_low = active_start + 1e-6;
     let boundary_high = (active_end - 1e-6).max(boundary_low);
@@ -890,7 +898,7 @@ fn sample_waveform(
             for (i, peak) in peaks.iter().enumerate() {
                 let x = field.left() + i as f32 / 1024. * field.width();
                 let point = view.point(x, field);
-                let color = if point < f64::from(value("start")) || point > f64::from(value("end")) {
+                let color = if point < f64::from(source_start) || point > f64::from(source_end) {
                     colors.text_primary.gamma_multiply(0.18)
                 } else {
                     colors.accent
@@ -978,16 +986,19 @@ fn sample_waveform(
             Stroke::new(1., colors.text_primary),
         );
     }
+    let (start_id, end_id) = if edit_loop { ("loop_start", "loop_end") } else { ("start", "end") };
+    let crossed = value(start_id) > value(end_id);
+    // The left marker reads S and the right one E, also while one is dragged over the other.
     for (id, caption, offset) in [
-        (if edit_loop { "loop_start" } else { "start" }, "S", 0.),
-        (if edit_loop { "loop_end" } else { "end" }, "E", 0.),
+        (start_id, if crossed { "E" } else { "S" }, 0.),
+        (end_id, if crossed { "S" } else { "E" }, 0.),
         ("position", "G", 40.),
     ] {
         if id == "position" && value("mode") != 1. {
             continue;
         }
         let (origin, span) =
-            if id == "position" { (value("start"), (value("end") - value("start")).max(1e-6)) } else { (0., 1.) };
+            if id == "position" { (source_start, (source_end - source_start).max(1e-6)) } else { (0., 1.) };
         let x = view.x(f64::from(origin + value(id) * span), field);
         if x < field.left() || x > field.right() {
             continue;
@@ -1021,7 +1032,28 @@ fn sample_waveform(
         } else if (response.dragged() || response.drag_stopped())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": address, "param": id, "value": ((snap(view.point(pos.x,field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "gesture": crate::interaction::commands::gesture(format_args!("param:{}:{address}:{id}", track.0))})));
+            let dropped = ((snap(view.point(pos.x, field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.);
+            let gesture = crate::interaction::commands::gesture(format_args!("param:{}:{address}:{id}", track.0));
+            actions.push(Action::new(
+                "device.setParam",
+                json!({"track": track.0, "device": address, "param": id, "value": dropped, "gesture": gesture}),
+            ));
+            // A drag that ends past the other marker swaps the pair in the same undo step, so the
+            // marker on the right is the end in the fields too.
+            if response.drag_stopped() && id != "position" {
+                let other = if id == start_id { end_id } else { start_id };
+                let other_value = f64::from(value(other));
+                let (start_value, end_value) =
+                    if id == start_id { (dropped, other_value) } else { (other_value, dropped) };
+                if start_value > end_value {
+                    for (param, value) in [(start_id, end_value), (end_id, start_value)] {
+                        actions.push(Action::new(
+                            "device.setParam",
+                            json!({"track": track.0, "device": address, "param": param, "value": value, "gesture": gesture}),
+                        ));
+                    }
+                }
+            }
         }
     }
     if inline_recording {

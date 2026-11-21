@@ -34,15 +34,16 @@ identifies Instrument and its experimental model, with Source always available. 
 
 - **Play:** the shared Gain and Release, Hybrid sample blend, the amplitude envelope (Attack,
   Decay, Sustain) shared by the Sample layer and fitted models, key/velocity admission ranges,
-  and a **Soft pedal** switch beside the page buttons (una corda for fitted models, the same as
-  controller 67 held down). Release is the damper for fitted models and the fade otherwise.
+  and a **Soft pedal** switch beside the page buttons, shown on every page as the Source menu
+  is (una corda for fitted models, the same as controller 67 held down). Release is the damper for fitted models and the fade otherwise.
 - **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
   describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
   excitation control Strike colour: a creative weighting of accepted modes, not a measured
   physical impact position. Profile adoption resets the four model controls and enables all
   profile modes; the underlying stable parameter IDs remain the same. Revision 4 (fitted models)
-  adds a Fitted model group: Source morph, Velocity to brightness, Damper noise and Pedal
-  resonance.
+  adds a Fitted model group: Source morph, Velocity to brightness, Damper noise, Pedal
+  resonance and Model tune (semitones, for a model fitted at the wrong root or slightly off
+  pitch; the Sample layer is tuned with Root).
 - **Sample:** local waveform/drop target, Root (shown as a note name, 60 is C3), Playback, source Start/End, loop Start/End,
   Attack, Decay and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.

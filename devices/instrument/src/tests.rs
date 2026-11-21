@@ -110,6 +110,17 @@ fn both_canvases_carry_the_light_artwork_behind_their_controls() {
     }
 }
 
+/// The Soft pedal switch sits beside the page buttons on every page of the editor, so it can be
+/// found from the Sample page too, and Model tune is on the Model page's Fitted model group.
+#[test]
+fn soft_pedal_shows_on_every_page_and_model_tune_on_the_model_page() {
+    let layout = crate::panel::layout();
+    let editor = layout.expanded.as_ref().unwrap();
+    let switch = editor.controls.iter().find(|c| c.name == "Soft pedal").unwrap();
+    assert!(switch.visible_when.is_none(), "not tied to one page");
+    assert!(editor.controls.iter().any(|c| c.name == "Model tune"));
+}
+
 #[test]
 fn stock_panel_is_valid_sdk_layout() {
     let panel = panel::layout().panel(&INFO).unwrap();

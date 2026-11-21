@@ -318,6 +318,21 @@ fn source_fade(position: f64, start: f64, end: f64, fade_in: f64, fade_out: f64,
 fn random(seed: &mut u32) -> f64 {
     crate::nodes::random::bipolar(seed)
 }
+/// The values with each crossed pair in order: of Start and End, and of Loop start and Loop end,
+/// the marker further right is always the end (`docs/spec/sampler.md`). Playback reads these, the
+/// stored values stay as they were set.
+fn ordered(mut p: [f64; PARAMS.len()]) -> [f64; PARAMS.len()] {
+    for (a, b) in [(1, 2), (3, 4)] {
+        if let (Some(&low), Some(&high)) = (p.get(a), p.get(b))
+            && low > high
+            && let Ok([first, second]) = p.get_disjoint_mut([a, b])
+        {
+            std::mem::swap(first, second);
+        }
+    }
+    p
+}
+
 impl SampleSource for Sampler {
     fn sample_position(&self) -> Option<f32> {
         self.sample_positions().into_iter().flatten().next()
@@ -326,12 +341,13 @@ impl SampleSource for Sampler {
         let frames = self.frames();
         std::array::from_fn(|i| {
             let v = self.voices.get(i).filter(|v| v.active && frames > 0)?;
-            let position = if self.values[0] != 1. {
+            let p = ordered(self.values);
+            let position = if p[0] != 1. {
                 v.position
             } else {
-                let start = self.values[1] * frames as f64;
-                let span = (self.values[2] - self.values[1]) * frames as f64;
-                start + (self.values[20] * span + v.scan).rem_euclid(span.max(1.))
+                let start = p[1] * frames as f64;
+                let span = (p[2] - p[1]) * frames as f64;
+                start + (p[20] * span + v.scan).rem_euclid(span.max(1.))
             };
             Some((position / frames as f64) as f32)
         })
@@ -460,7 +476,7 @@ impl Device for Sampler {
     fn event(&mut self, event: NoteEvent) {
         match event {
             NoteEvent::On { key, velocity } if key <= 127 && velocity.is_finite() && velocity > 0. => {
-                let p = self.values;
+                let p = ordered(self.values);
                 if f64::from(key) < p[31]
                     || f64::from(key) > p[32]
                     || f64::from(velocity) < p[33]
@@ -824,7 +840,7 @@ impl Sampler {
     }
 
     pub(crate) fn process_prepared(&mut self, buffer: &mut [f32]) {
-        let p = self.values;
+        let p = ordered(self.values);
         let total = self.frames() as f64;
         let start = p[1] * total;
         let end = p[2] * total;
