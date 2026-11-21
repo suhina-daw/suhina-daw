@@ -398,3 +398,47 @@ fn partials_that_die_within_an_envelope_window_are_fitted_with_short_windows() {
     }
     assert_eq!(report, fit(&pcm, 22050, 1, 0..pcm.len(), 57, |_, _| true).unwrap());
 }
+
+/// A stereo recording keeps each mode's other-channel gain and phase offset and an attack for
+/// each channel; matching channels store no stereo part (version 4).
+#[test]
+fn a_stereo_recording_keeps_each_modes_placement() {
+    let truth = [(421.7, 1.8, 0.5), (1139.3, 1.1, 0.3)];
+    let placement = [(0.5, 0.6), (1.5, -1.0)];
+    let rate = 22050;
+    let left = struck(rate, 2.0, &truth);
+    let right: Vec<f32> = (0..left.len())
+        .map(|n| {
+            let t = n as f64 / f64::from(rate);
+            truth
+                .iter()
+                .zip(placement)
+                .enumerate()
+                .map(|(i, ((hz, t60, amplitude), (gain, offset)))| {
+                    gain * amplitude
+                        * (-1000.0_f64.ln() * t / t60).exp()
+                        * (TAU * hz * t + 0.37 * i as f64 + offset).sin()
+                })
+                .sum::<f64>() as f32
+        })
+        .collect();
+    let pcm: Vec<f32> = left.iter().zip(&right).flat_map(|(l, r)| [*l, *r]).collect();
+    let report = fit(&pcm, rate, 2, 0..left.len(), 57, |_, _| true).unwrap();
+    assert_eq!(report.channel, 0);
+    let recording = report.recording.unwrap();
+    let stereo = recording.stereo.as_ref().expect("a stereo part");
+    assert_eq!(stereo.reference, 0);
+    assert_eq!(stereo.attack.len(), recording.attack.len());
+    for ((hz, _, _), (gain, offset)) in truth.iter().zip(placement) {
+        let index = recording
+            .modes
+            .iter()
+            .position(|m| (m.ratio * 220.0 - hz).abs() < 1.0)
+            .unwrap_or_else(|| panic!("{hz} Hz missing"));
+        assert!((f64::from(stereo.gains[index]) - gain).abs() < 0.05, "{hz}: {stereo:?}");
+        assert!((f64::from(stereo.offsets[index]) - offset).abs() < 0.05, "{hz}: {stereo:?}");
+    }
+    let same: Vec<f32> = left.iter().flat_map(|x| [*x, *x]).collect();
+    let report = fit(&same, rate, 2, 0..left.len(), 57, |_, _| true).unwrap();
+    assert!(report.recording.unwrap().stereo.is_none(), "matching channels are mono");
+}

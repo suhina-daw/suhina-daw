@@ -19,7 +19,7 @@ pub struct Mode {
     pub amplitude: f64,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 struct Resonance {
     real: f64,
     imaginary: f64,
@@ -27,6 +27,15 @@ struct Resonance {
     sine: f64,
     frequency_hz: f64,
     radius: f64,
+    /// The second output's weights on the sine (imaginary) and cosine (real) parts: `[1, 0]`
+    /// plays the same sine, `[g cos d, g sin d]` plays it `g` times as loud and `d` later.
+    other: [f32; 2],
+}
+
+impl Default for Resonance {
+    fn default() -> Self {
+        Self { real: 0.0, imaginary: 0.0, cosine: 0.0, sine: 0.0, frequency_hz: 0.0, radius: 0.0, other: [1.0, 0.0] }
+    }
 }
 
 /// At most `N` modes. Invalid or inaudible modes are silent; amplitudes are normalized so
@@ -149,6 +158,62 @@ impl<const N: usize> ModalBank<N> {
         output as f32
     }
 
+    /// Sets mode `i`'s second output to `weights[i]` (see [`next_stereo`](Self::next_stereo)):
+    /// `[g cos d, g sin d]` plays the mode `g` times as loud and `d` radians later. Modes without
+    /// an entry keep `[1, 0]`, the same sine. Nonfinite weights are `[1, 0]`.
+    pub fn set_other(&mut self, weights: &[[f32; 2]]) {
+        for (index, mode) in self.modes.iter_mut().enumerate() {
+            mode.other = weights.get(index).copied().filter(|w| w.iter().all(|v| v.is_finite())).unwrap_or([1.0, 0.0]);
+        }
+    }
+
+    /// Like [`next_sample`](Self::next_sample), with a second output: `[first, second]`, where
+    /// the second weighs each mode by its [`set_other`](Self::set_other) weights. Without them
+    /// both outputs equal `next_sample`.
+    pub fn next_stereo(&mut self) -> [f32; 2] {
+        self.next_pair(None)
+    }
+
+    /// [`next_sample_gained`](Self::next_sample_gained) into two outputs, as
+    /// [`next_stereo`](Self::next_stereo).
+    pub fn next_stereo_gained(&mut self, gains: &mut [f32; N], steps: &[f32; N]) -> [f32; 2] {
+        self.next_pair(Some((gains, steps)))
+    }
+
+    fn next_pair(&mut self, mut gains: Option<(&mut [f32; N], &[f32; N])>) -> [f32; 2] {
+        if !self.active {
+            return [0.0; 2];
+        }
+        let (mut first, mut second) = (0.0, 0.0);
+        let mut active = false;
+        for (index, mode) in self.modes.iter_mut().enumerate() {
+            if mode.real.abs() + mode.imaginary.abs() < 1e-12 {
+                mode.real = 0.0;
+                mode.imaginary = 0.0;
+                continue;
+            }
+            let gain = match gains.as_mut() {
+                Some((gains, steps)) => match (gains.get_mut(index), steps.get(index)) {
+                    (Some(gain), Some(step)) => {
+                        let value = f64::from(*gain);
+                        *gain += *step;
+                        value
+                    }
+                    _ => 1.0,
+                },
+                None => 1.0,
+            };
+            first += mode.imaginary * gain;
+            second += (mode.imaginary * f64::from(mode.other[0]) + mode.real * f64::from(mode.other[1])) * gain;
+            let real = mode.real * mode.cosine - mode.imaginary * mode.sine;
+            mode.imaginary = mode.real * mode.sine + mode.imaginary * mode.cosine;
+            mode.real = real;
+            active = true;
+        }
+        self.active = active;
+        [first as f32, second as f32]
+    }
+
     pub fn is_active(&self) -> bool {
         self.active
     }
@@ -202,6 +267,32 @@ mod tests {
             let expected =
                 0.5 * (-1000.0_f64.ln() * n as f64 / 12000.0).exp() * (TAU * 440.0 * n as f64 / 48000.0).sin();
             assert!((f64::from(bank.next_sample()) - expected).abs() < 2e-8);
+        }
+    }
+
+    /// The second output plays each mode times its gain and shifted by its offset, from the same
+    /// resonator; without weights both outputs are `next_sample`.
+    #[test]
+    fn the_second_output_places_each_mode_by_gain_and_offset() {
+        let modes = [
+            Mode { frequency_hz: 440.0, decay_seconds: 0.5, amplitude: 0.4 },
+            Mode { frequency_hz: 1250.0, decay_seconds: 0.2, amplitude: 0.3 },
+        ];
+        let mut plain = ModalBank::<2>::default();
+        plain.strike_phased(48000.0, &modes, &[0.3, -1.1]);
+        let mut placed = plain;
+        placed.set_other(&[[0.5 * 0.8_f32.cos(), 0.5 * 0.8_f32.sin()]]);
+        let mut unplaced = plain;
+        for n in 0..4800 {
+            let t = n as f64 / 48000.0;
+            let mono = f64::from(plain.next_sample());
+            let [first, second] = placed.next_stereo();
+            let decay = |t60: f64| (-1000.0_f64.ln() * t / t60).exp();
+            let expected = 0.5 * 0.4 * decay(0.5) * (TAU * 440.0 * t + 0.3 + 0.8).sin()
+                + 0.3 * decay(0.2) * (TAU * 1250.0 * t - 1.1).sin();
+            assert!((f64::from(first) - mono).abs() < 1e-6, "{n}");
+            assert!((f64::from(second) - expected).abs() < 1e-5, "{n}: {second} vs {expected}");
+            assert_eq!(unplaced.next_stereo(), [mono as f32; 2]);
         }
     }
 

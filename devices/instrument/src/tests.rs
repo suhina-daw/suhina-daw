@@ -22,9 +22,10 @@ fn revision_one_matches_the_independent_analytical_reference_render() {
         );
         assert_eq!(buffer[frame * 2], buffer[frame * 2 + 1]);
     }
-    // A revision-4 voice: 128 fitted resonators beside the 16 of revisions 1 and 2, and its held
-    // layer (per-sine levels, ramps and couplings, eleven noise filters).
-    assert!(std::mem::size_of::<Voice>() <= 12 * 1024);
+    // A revision-4 voice: 128 fitted resonators with their stereo weights beside the 16 of
+    // revisions 1 and 2, and its held layer (per-sine levels, ramps and couplings, eleven noise
+    // filters).
+    assert!(std::mem::size_of::<Voice>() <= 14 * 1024);
     assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
 }
 

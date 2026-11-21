@@ -140,8 +140,14 @@ u8 key, u8 source, two zero bytes, f32 velocity, f64 level, u8 mode count, three
 length, the modes as eight little-endian f64 each (ratio, magnitude, decay, fast decay, fast
 share, beat ratio, beat share, phase) and the attack as little-endian f32. `decode` accepts only
 canonical bytes within these bounds (at most 32 recordings, 64 modes and 12000 attack samples
-each, every number finite) and fails before returning anything otherwise. The model layer's
-opaque state limit is 1 MiB, which holds 32 fitted recordings with their 22050 Hz attacks.
+each, every number finite) and fails before returning anything otherwise. **Schema 4** adds a
+stereo part: the schema-3 held-layer flags (all present, possibly all zero) and then, per
+recording, four bytes `[1, reference channel, 0, 0]` followed by each mode's other-channel gain
+(0..8) and phase offset (-pi..pi) as little-endian f32, a u32 length (0, or the attack's length)
+and the attack's other channel as f32; or `[0, 0, 0, 0]` for a recording without one. A set
+without a stereo part encodes as schema 3 or 2 as before. The model layer's opaque state limit
+is 2 MiB, which holds 32 stereo recordings with their two 22050 Hz attack channels (about
+1.6 MB).
 Decoding precomputes, off the audio thread, which mode of every other recording each mode
 matches (the nearest ratio within 3 %, `|ln(r2 / r1)| <= 0.03`, each mode used at most once) and
 each recording's **decay law**: the least-squares slope of `ln T60` against `ln frequency` over
@@ -202,6 +208,15 @@ every sine's T60 is capped at Release, keeping its phase and frequency, as felt 
 strings; the attack runs to its end. Pedal, voice stealing, pitch wheel and source fades behave as
 for revision 2. A missing, malformed or unsupported set is silent.
 
+**Stereo playback.** A note takes each sine's stereo placement from the anchor recording's mode
+it comes from (its phase comes from there too): the reference channel plays the sine, the other
+channel plays it times the gain and shifted by the offset, `g * sin(phase + offset)`, which the
+resonator gives without a second oscillator (`g cos(offset)` times its sine part plus
+`g sin(offset)` times its cosine part). Pedal resonance, beating partners and fast parts share
+their mode's placement. The anchor's attack plays its two channels the same way round. A
+recording without a stereo part plays every sine in both channels, as before; the original model
+and profiles stay mono.
+
 **Piano pedals and dampers** (approximations of the mechanism, not fitted from recordings, which
 rarely contain them):
 
@@ -238,10 +253,11 @@ without encodes byte for byte as schema 2. A measured release sets the damper's 
 by Release against its default 0.25 s). The layer, its fusion and how a voice plays it are in
 [held tones](instrument-sustained-models.md).
 
-**Budget.** A revision-4 voice holds 128 resonators, an attack read position, its envelope and
-its held layer's state (per-sine levels, ramps and couplings, eleven noise filters) beside the 16
-resonators of revisions 1 and 2: under 12 KiB per voice, under 192 KiB for 16 voices, within the
-runtime's 256 KiB inline target. The set itself (at most 1 MiB) is shared and prepared off the
+**Budget.** A revision-4 voice holds 128 resonators (each with its two other-channel weights),
+an attack read position, its envelope and its held layer's state (per-sine levels, ramps and
+couplings, eleven noise filters) beside the 16 resonators of revisions 1 and 2: under 14 KiB per
+voice, under 224 KiB for 16 voices, within the runtime's 256 KiB inline target. The set itself
+(at most 2 MiB) is shared and prepared off the
 audio thread. Note-on fuses at most 32 recordings of 64 modes without allocating.
 
 **Commands.** `instrument.acceptFit` adopts a set with the fitted recording as its only member

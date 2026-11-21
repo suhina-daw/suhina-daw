@@ -14,6 +14,10 @@ use std::f64::consts::PI;
 pub const MODEL_SCHEMA_VERSION: u16 = 2;
 /// Schema of a set whose recordings carry held layers: schema 2 plus a trailer.
 pub const MODEL_SCHEMA_HELD: u16 = 3;
+/// Schema of a set whose recordings carry stereo parts: schema 3 plus a second trailer.
+pub const MODEL_SCHEMA_STEREO: u16 = 4;
+/// Largest other-channel gain of a mode.
+pub const MAX_OTHER_GAIN: f32 = 8.0;
 pub const MODEL_REVISION: u16 = 4;
 pub const MAX_RECORDINGS: usize = 32;
 /// Sources a set can tell apart for morphing (ten pianos are ten sources).
@@ -78,6 +82,30 @@ pub struct ModelRecording {
     /// Vibrato, onsets, noise, release and the body envelope of a held (bowed, blown, sung)
     /// recording; none for a struck one. See `instrument-sustained-models.md`.
     pub sustain: Option<Sustain>,
+    /// The other channel of a stereo recording; none for a mono one.
+    pub stereo: Option<Stereo>,
+}
+
+/// How a stereo recording's other channel relates to the channel its modes were fitted on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stereo {
+    /// The fitted (reference) channel: 0 left, 1 right.
+    pub reference: u8,
+    /// Per mode, by index: the other channel's gain (0..8) and phase offset (-pi..pi).
+    pub gains: Vec<f32>,
+    pub offsets: Vec<f32>,
+    /// The attack's other channel: empty, or as long as the attack.
+    pub attack: Vec<f32>,
+}
+
+impl Stereo {
+    /// Mode `index`'s weights on the resonator's sine and cosine parts for the other channel.
+    pub fn weights(&self, index: usize) -> [f32; 2] {
+        match (self.gains.get(index), self.offsets.get(index)) {
+            (Some(&gain), Some(&offset)) => [gain * offset.cos(), gain * offset.sin()],
+            _ => [1.0, 0.0],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,6 +194,24 @@ impl ModelRecording {
         if let Some(sustain) = &self.sustain {
             sustain.validate(self.modes.len()).map_err(ModelError)?;
         }
+        if let Some(stereo) = &self.stereo {
+            let modes = self.modes.len();
+            if stereo.reference > 1
+                || stereo.gains.len() != modes
+                || stereo.offsets.len() != modes
+                || !stereo.gains.iter().all(|g| g.is_finite() && (0.0..=MAX_OTHER_GAIN).contains(g))
+                || !stereo
+                    .offsets
+                    .iter()
+                    .all(|d| d.is_finite() && (-std::f32::consts::PI..=std::f32::consts::PI).contains(d))
+                || !(stereo.attack.is_empty() || stereo.attack.len() == self.attack.len())
+                || !stereo.attack.iter().all(|x| x.is_finite())
+            {
+                return fail(
+                    "a stereo part needs reference channel 0 or 1, a gain of 0..8 and an offset within pi per mode, and an attack as long as the recording's",
+                );
+            }
+        }
         Ok(())
     }
 }
@@ -221,6 +267,10 @@ pub struct Voice {
     pub attack_gain: f64,
     /// The fused held layer, per sine; inactive for struck recordings.
     pub held: Held,
+    /// Each sine's other-channel weights ([`Stereo::weights`]) and the reference channel the
+    /// sines and the attack play in (0 left, 1 right).
+    pub other: [[f32; 2]; MAX_VOICE_SINES],
+    pub reference: u8,
 }
 
 impl Default for Voice {
@@ -233,6 +283,8 @@ impl Default for Voice {
             attack: None,
             attack_gain: 1.0,
             held: Held::NONE,
+            other: [[1.0, 0.0]; MAX_VOICE_SINES],
+            reference: 0,
         }
     }
 }
@@ -313,8 +365,9 @@ impl ModelSet {
     pub fn recording_count(bytes: &[u8]) -> Option<usize> {
         let header = bytes.get(..16)?;
         (header.get(..8) == Some(MODEL_MAGIC.as_slice())
-            && (header.get(8..10) == Some(MODEL_SCHEMA_VERSION.to_le_bytes().as_slice())
-                || header.get(8..10) == Some(MODEL_SCHEMA_HELD.to_le_bytes().as_slice()))
+            && [MODEL_SCHEMA_VERSION, MODEL_SCHEMA_HELD, MODEL_SCHEMA_STEREO]
+                .iter()
+                .any(|schema| header.get(8..10) == Some(schema.to_le_bytes().as_slice()))
             && header.get(10..12) == Some(MODEL_REVISION.to_le_bytes().as_slice()))
         .then(|| usize::from(header.get(12).copied().unwrap_or(0)))
         .filter(|count| (1..=MAX_RECORDINGS).contains(count))
@@ -324,10 +377,25 @@ impl ModelSet {
         self.recordings.get(recording).map_or(&[], |r| r.attack.as_slice())
     }
 
+    /// The attack's other channel: a stereo recording's own, else the attack itself.
+    pub fn attack_other(&self, recording: usize) -> &[f32] {
+        self.recordings.get(recording).map_or(&[], |r| match &r.stereo {
+            Some(stereo) if !stereo.attack.is_empty() => stereo.attack.as_slice(),
+            _ => r.attack.as_slice(),
+        })
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(16 + self.recordings.len() * (RECORDING_HEADER + 2048));
-        let held = self.recordings.iter().any(|r| r.sustain.is_some());
-        let schema = if held { MODEL_SCHEMA_HELD } else { MODEL_SCHEMA_VERSION };
+        let stereo = self.recordings.iter().any(|r| r.stereo.is_some());
+        let held = stereo || self.recordings.iter().any(|r| r.sustain.is_some());
+        let schema = if stereo {
+            MODEL_SCHEMA_STEREO
+        } else if held {
+            MODEL_SCHEMA_HELD
+        } else {
+            MODEL_SCHEMA_VERSION
+        };
         bytes.extend_from_slice(MODEL_MAGIC);
         bytes.extend_from_slice(&schema.to_le_bytes());
         bytes.extend_from_slice(&MODEL_REVISION.to_le_bytes());
@@ -371,6 +439,24 @@ impl ModelSet {
                 }
             }
         }
+        // Schema 4: every recording's stereo part, flagged, after the held layers.
+        if stereo {
+            for recording in &self.recordings {
+                match &recording.stereo {
+                    Some(part) => {
+                        bytes.extend_from_slice(&[1, part.reference, 0, 0]);
+                        for value in part.gains.iter().chain(&part.offsets) {
+                            bytes.extend_from_slice(&value.to_le_bytes());
+                        }
+                        bytes.extend_from_slice(&(part.attack.len() as u32).to_le_bytes());
+                        for sample in &part.attack {
+                            bytes.extend_from_slice(&sample.to_le_bytes());
+                        }
+                    }
+                    None => bytes.extend_from_slice(&[0, 0, 0, 0]),
+                }
+            }
+        }
         bytes
     }
 
@@ -381,7 +467,9 @@ impl ModelSet {
             return Err(header);
         }
         let schema = reader.u16()?;
-        if !matches!(schema, MODEL_SCHEMA_VERSION | MODEL_SCHEMA_HELD) || reader.u16()? != MODEL_REVISION {
+        if !matches!(schema, MODEL_SCHEMA_VERSION | MODEL_SCHEMA_HELD | MODEL_SCHEMA_STEREO)
+            || reader.u16()? != MODEL_REVISION
+        {
             return Err(header);
         }
         let count = usize::from(reader.u8()?);
@@ -432,9 +520,10 @@ impl ModelSet {
                 attack_rate,
                 attack,
                 sustain: None,
+                stereo: None,
             });
         }
-        if schema == MODEL_SCHEMA_HELD {
+        if schema >= MODEL_SCHEMA_HELD {
             for recording in &mut recordings {
                 let flag = reader.take(4)?;
                 if flag == [1, 0, 0, 0] {
@@ -446,6 +535,33 @@ impl ModelSet {
                 } else if flag != [0, 0, 0, 0] {
                     return Err(header);
                 }
+            }
+        }
+        if schema == MODEL_SCHEMA_STEREO {
+            for recording in &mut recordings {
+                let flag = reader.take(4)?;
+                if flag == [0, 0, 0, 0] {
+                    continue;
+                }
+                let reference = match flag {
+                    [1, reference @ (0 | 1), 0, 0] => *reference,
+                    _ => return Err(header),
+                };
+                let modes = recording.modes.len();
+                let mut values = Vec::with_capacity(2 * modes);
+                for _ in 0..2 * modes {
+                    values.push(f32::from_le_bytes(reader.array()?));
+                }
+                let offsets = values.split_off(modes);
+                let length = u32::from_le_bytes(reader.array()?) as usize;
+                if length > MAX_ATTACK {
+                    return Err(header);
+                }
+                let mut attack = Vec::with_capacity(length);
+                for _ in 0..length {
+                    attack.push(f32::from_le_bytes(reader.array()?));
+                }
+                recording.stereo = Some(Stereo { reference, gains: values, offsets, attack });
             }
         }
         if reader.at != bytes.len() {
@@ -568,6 +684,8 @@ impl ModelSet {
                 // Undamped strings under the sustain pedal ring along at this partial.
                 (frequency, (2.0 * slow_t60).min(60.0), slow * resonance * 0.15, mode.phase + PI / 2.0),
             ];
+            // Every part of the mode sits where the anchor recording's mode sits.
+            let other = anchor_recording.stereo.as_ref().map_or([1.0, 0.0], |s| s.weights(index));
             for (frequency_hz, decay_seconds, amplitude, phase) in parts {
                 if amplitude > 0.0
                     && decay_seconds > 0.0
@@ -579,6 +697,7 @@ impl ModelSet {
                         phase,
                         score: amplitude * decay_seconds.sqrt(),
                         held,
+                        other,
                     };
                     count += 1;
                 }
@@ -589,9 +708,12 @@ impl ModelSet {
         used.sort_unstable_by(|a, b| b.score.total_cmp(&a.score));
         out.count = count.min(controls.sines.min(MAX_VOICE_SINES));
         for (index, candidate) in used.iter().take(out.count).enumerate() {
-            if let (Some(mode), Some(phase)) = (out.modes.get_mut(index), out.phases.get_mut(index)) {
+            if let (Some(mode), Some(phase), Some(other)) =
+                (out.modes.get_mut(index), out.phases.get_mut(index), out.other.get_mut(index))
+            {
                 *mode = candidate.mode;
                 *phase = candidate.phase;
+                *other = candidate.other;
             }
             let [onset, rise, slope, curve] = candidate.held;
             let h = &mut out.held;
@@ -603,6 +725,7 @@ impl ModelSet {
                 }
             }
         }
+        out.reference = anchor_recording.stereo.as_ref().map_or(0, |s| s.reference);
         self.fuse_held(participants, total, anchor_recording, &mut out.held);
         if !anchor_recording.attack.is_empty() && sample_rate > 0.0 {
             let transpose = 2.0_f64.powf((f64::from(key) - f64::from(anchor_recording.key)) / 12.0);
@@ -681,10 +804,11 @@ struct Candidate {
     phase: f64,
     score: f64,
     held: [f32; 4],
+    other: [f32; 2],
 }
 
 impl Candidate {
-    const SILENT: Self = Self { mode: SILENT, phase: 0.0, score: 0.0, held: [0.0; 4] };
+    const SILENT: Self = Self { mode: SILENT, phase: 0.0, score: 0.0, held: [0.0; 4], other: [1.0, 0.0] };
 }
 
 /// Weighted per-mode held values over the matched modes; a recording without a layer counts

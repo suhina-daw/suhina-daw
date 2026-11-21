@@ -587,20 +587,40 @@ impl Performer {
             self.control(bank);
         }
         self.counter = (self.counter + 1) % CONTROL;
-        let mut output = f64::from(bank.next_sample_gained(&mut self.gains, &self.steps));
-        if self.noise_on {
-            let mut sum = 0.0;
-            for (filter, gain) in self.bands.iter_mut().zip(&self.band_gains) {
-                // Every band draws, so each has its own independent sequence.
-                let white = self.generators.next() * 3.0_f64.sqrt();
-                if *gain > 0.0 {
-                    sum += gain * filter.process(white);
-                }
-            }
-            output += self.noise_level * sum;
-            self.noise_level += self.noise_step;
+        let output = f64::from(bank.next_sample_gained(&mut self.gains, &self.steps));
+        (output + self.next_noise()) as f32
+    }
+
+    /// [`next`](Self::next) into the bank's two outputs ([`ModalBank::next_stereo`]); the noise
+    /// is the same in both.
+    pub fn next_stereo(&mut self, bank: &mut ModalBank<MAX_VOICE_SINES>) -> [f32; 2] {
+        if !self.active {
+            return bank.next_stereo();
         }
-        output as f32
+        if self.counter == 0 {
+            self.control(bank);
+        }
+        self.counter = (self.counter + 1) % CONTROL;
+        let [first, second] = bank.next_stereo_gained(&mut self.gains, &self.steps);
+        let noise = self.next_noise();
+        [(f64::from(first) + noise) as f32, (f64::from(second) + noise) as f32]
+    }
+
+    fn next_noise(&mut self) -> f64 {
+        if !self.noise_on {
+            return 0.0;
+        }
+        let mut sum = 0.0;
+        for (filter, gain) in self.bands.iter_mut().zip(&self.band_gains) {
+            // Every band draws, so each has its own independent sequence.
+            let white = self.generators.next() * 3.0_f64.sqrt();
+            if *gain > 0.0 {
+                sum += gain * filter.process(white);
+            }
+        }
+        let output = self.noise_level * sum;
+        self.noise_level += self.noise_step;
+        output
     }
 }
 

@@ -124,8 +124,11 @@ struct Voice {
     serial: u64,
     amplitude: f32,
     gate: Smoother,
-    last_output: f32,
-    stolen_tail: f32,
+    /// Revision 4: the channel the fitted sines and the attack play in (0 left, 1 right); the
+    /// other channel plays them with the recording's stereo weights.
+    reference: u8,
+    last_output: [f32; 2],
+    stolen_tail: [f32; 2],
     stolen_fade: Smoother,
 }
 
@@ -146,8 +149,9 @@ impl Default for Voice {
             serial: 0,
             amplitude: 0.0,
             gate: Smoother::new(0.0, 1),
-            last_output: 0.0,
-            stolen_tail: 0.0,
+            reference: 0,
+            last_output: [0.0; 2],
+            stolen_tail: [0.0; 2],
             stolen_fade: Smoother::new(0.0, 1),
         }
     }
@@ -426,7 +430,7 @@ impl Instrument {
         if let Some(voice) = slot.and_then(|index| self.voices.get_mut(index)) {
             voice.stolen_tail = voice.last_output;
             voice.stolen_fade = Smoother::new(
-                if voice.last_output == 0.0 { 0.0 } else { 1.0 },
+                if voice.last_output == [0.0; 2] { 0.0 } else { 1.0 },
                 Smoother::ramp_frames(0.002, self.sample_rate),
             );
             voice.stolen_fade.set_target(0.0);
@@ -438,6 +442,8 @@ impl Instrument {
                     self.set_voice.modes.get(..count).unwrap_or(&[]),
                     self.set_voice.phases.get(..count).unwrap_or(&[]),
                 );
+                voice.fitted.set_other(self.set_voice.other.get(..count).unwrap_or(&[]));
+                voice.reference = self.set_voice.reference;
                 voice.fitted.transpose(self.sample_rate, shift);
                 voice.attack = self.set_voice.attack.map(|(recording, step)| (recording, 0.0, step));
                 voice.attack_gain = self.set_voice.attack_gain as f32;
@@ -453,6 +459,7 @@ impl Instrument {
                 voice.gate = Smoother::new(0.0, Smoother::ramp_frames(0.00025, self.sample_rate));
             } else {
                 voice.fitted.reset();
+                voice.reference = 0;
                 voice.attack = None;
                 voice.layer = Performer::default();
                 voice.fitted_voice = false;
@@ -575,7 +582,7 @@ impl Device for Instrument {
         };
         let damper_lowpass = (1.0 - (-std::f64::consts::TAU * 600.0 / self.sample_rate).exp()) as f32;
         for frame in buffer.as_chunks_mut::<2>().0 {
-            let mut modal = 0.0;
+            let mut modal = [0.0_f32; 2];
             for voice in &mut self.voices {
                 if !voice.sounding() && voice.stolen_fade.current() == 0.0 {
                     continue;
@@ -590,19 +597,33 @@ impl Device for Instrument {
                 }
                 let shape =
                     if voice.fitted_voice { voice.envelope.next(&envelope, self.sample_rate) as f32 } else { 1.0 };
-                // Without a held layer the performer plays the fitted bank unchanged.
-                let mut body = voice.bank.next_sample() + voice.layer.next(&mut voice.fitted);
+                // Without a held layer the performer plays the fitted bank unchanged: the
+                // reference channel and the other channel with the recording's stereo weights.
+                let plain = voice.bank.next_sample();
+                let [mut reference, mut other] = voice.layer.next_stereo(&mut voice.fitted);
                 let mut attack_done = false;
                 if let Some((recording, position, step)) = voice.attack.as_mut() {
-                    let attack = set.map_or(&[][..], |set| set.attack(*recording));
+                    let (first, second) =
+                        set.map_or((&[][..], &[][..]), |set| (set.attack(*recording), set.attack_other(*recording)));
                     let index = *position as usize;
-                    if let (Some(a), Some(b)) = (attack.get(index), attack.get(index + 1)) {
-                        body += (a + (b - a) * (*position - index as f64) as f32) * voice.attack_gain;
+                    let fraction = (*position - index as f64) as f32;
+                    let read = |x: &[f32]| match (x.get(index), x.get(index + 1)) {
+                        (Some(a), Some(b)) => Some(a + (b - a) * fraction),
+                        _ => None,
+                    };
+                    if let (Some(a), Some(b)) = (read(first), read(second)) {
+                        reference += a * voice.attack_gain;
+                        other += b * voice.attack_gain;
                         *position += *step * bend_ratio;
                     } else {
                         attack_done = true;
                     }
                 }
+                let body = if voice.reference == 1 {
+                    [plain + other, plain + reference]
+                } else {
+                    [plain + reference, plain + other]
+                };
                 if attack_done {
                     voice.attack = None;
                 }
@@ -619,17 +640,20 @@ impl Device for Instrument {
                 if damper_done {
                     voice.damper = None;
                 }
-                voice.last_output = (body * shape * voice.amplitude + noise) * gate
-                    + voice.stolen_tail * voice.stolen_fade.next_value();
-                modal += voice.last_output;
+                let stolen = voice.stolen_fade.next_value();
+                for ((output, body), tail) in voice.last_output.iter_mut().zip(body).zip(voice.stolen_tail) {
+                    *output = (body * shape * voice.amplitude + noise) * gate + tail * stolen;
+                }
+                modal[0] += voice.last_output[0];
+                modal[1] += voice.last_output[1];
             }
             let sample_mix = self.sample_mix.next_value();
-            let modal = modal * self.modal_mix.next_value();
+            let modal_mix = self.modal_mix.next_value();
             let gain = self.gain.next_value();
-            for sample in frame {
+            for (sample, modal) in frame.iter_mut().zip(modal) {
                 // Imported float audio may already reach the finite f32 limit. Preserve normal
                 // mixing exactly, but saturate an overflow from the final positive gain.
-                *sample = ((*sample * sample_mix + modal) * gain).clamp(-f32::MAX, f32::MAX);
+                *sample = ((*sample * sample_mix + modal * modal_mix) * gain).clamp(-f32::MAX, f32::MAX);
             }
             if !hybrid && self.modal_mix.current() == 0.0 && self.modal_mix.is_settled() {
                 for voice in &mut self.voices {

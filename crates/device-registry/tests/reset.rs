@@ -101,6 +101,7 @@ fn instrument_render_events_and_reset_allocate_and_free_nothing() {
                 attack_rate: 0,
                 attack: Vec::new(),
                 sustain: Some(layer),
+                stereo: None,
             };
             instrument.load_model_state(&ModelSet::new(vec![recording]).unwrap().encode()).unwrap();
         }

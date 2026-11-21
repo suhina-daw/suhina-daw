@@ -24,6 +24,7 @@ fn recording(key: u8, velocity: f32, ratio_two: f64, decay: f64) -> ModelRecordi
         attack_rate: 22050,
         attack: (0..2205).map(|i| (i as f32 * 0.01).sin() * 0.1).collect(),
         sustain: None,
+        stereo: None,
     }
 }
 
@@ -205,6 +206,7 @@ fn controls_transform_fused_modes_and_the_sine_budget_holds() {
         attack_rate: 0,
         attack: vec![],
         sustain: None,
+        stereo: None,
     }])
     .unwrap();
     let mut voice = Voice::default();
@@ -268,6 +270,7 @@ fn a_recordings_decay_law_shortens_higher_notes() {
         attack_rate: 0,
         attack: vec![],
         sustain: None,
+        stereo: None,
     }])
     .unwrap();
     let mut voice = Voice::default();
@@ -426,6 +429,7 @@ fn a_held_recordings_formant_stays_in_hz_when_the_key_moves() {
             attack_rate: 0,
             attack: vec![],
             sustain: None,
+            stereo: None,
         };
         if body_fixed > 0.0 {
             r.sustain = Some(crate::modal::sustain::Sustain { body_fixed, ..Default::default() });
@@ -450,4 +454,64 @@ fn a_held_recordings_formant_stays_in_hz_when_the_key_moves() {
         assert!((fixed / (6.0 * c3) - 1.0).abs() < 1e-6, "{key}: {fixed}");
         assert!((moving / (6.0 * harmonic * c3) - 1.0).abs() < 1e-6, "{key}: {moving}");
     }
+}
+
+fn stereo(modes: usize, attack: usize) -> super::Stereo {
+    super::Stereo {
+        reference: 1,
+        gains: (0..modes).map(|i| 0.5 + i as f32).collect(),
+        offsets: (0..modes).map(|i| 0.3 - i as f32).collect(),
+        attack: (0..attack).map(|i| (i as f32 * 0.02).cos() * 0.05).collect(),
+    }
+}
+
+/// A stereo part makes schema 4 (with the schema-3 held flags, here all zero), round-trips, is
+/// bounded, and a played note carries its anchor's placement and reference channel.
+#[test]
+fn stereo_parts_use_schema_four_and_place_each_sine() {
+    let plain = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), recording(72, 0.8, 2.01, 1.0)]).unwrap();
+    let plain_bytes = plain.encode();
+    let mut wide = recording(72, 0.8, 2.01, 1.0);
+    wide.stereo = Some(stereo(2, 2205));
+    let set = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), wide]).unwrap();
+    let bytes = set.encode();
+    assert_eq!(&bytes[8..10], &super::MODEL_SCHEMA_STEREO.to_le_bytes());
+    assert_eq!(ModelSet::recording_count(&bytes), Some(2));
+    // Held flags (two empty), stereo flags, two modes' gains and offsets, the attack.
+    assert_eq!(bytes.len(), plain_bytes.len() + 8 + 8 + 16 + 4 + 4 * 2205);
+    let decoded = ModelSet::decode(&bytes).unwrap();
+    assert_eq!(decoded, set);
+    assert_eq!(decoded.attack_other(1), set.recordings()[1].stereo.as_ref().unwrap().attack.as_slice());
+    assert_eq!(decoded.attack_other(0), decoded.attack(0), "a mono recording's other channel is its attack");
+    let stereo_flag = plain_bytes.len() + 8;
+    for (offset, value) in [(stereo_flag, 2), (stereo_flag + 1, 2), (stereo_flag + 2, 1)] {
+        let mut bad = bytes.clone();
+        bad[offset] = value;
+        assert!(ModelSet::decode(&bad).is_err(), "byte {offset} = {value}");
+    }
+    let mut cut = bytes.clone();
+    cut.pop();
+    assert!(ModelSet::decode(&cut).is_err());
+    for broken in [
+        super::Stereo { reference: 2, ..stereo(2, 0) },
+        super::Stereo { gains: vec![9.0, 1.0], ..stereo(2, 0) },
+        super::Stereo { offsets: vec![4.0, 0.0], ..stereo(2, 0) },
+        stereo(1, 0),
+        stereo(2, 100),
+    ] {
+        let mut r = recording(60, 0.8, 2.0, 1.0);
+        r.stereo = Some(broken.clone());
+        assert!(r.validate().is_err(), "{broken:?}");
+    }
+    let mut voice = Voice::default();
+    set.voice(72, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert_eq!(voice.reference, 1);
+    let part = set.recordings()[1].stereo.as_ref().unwrap();
+    for index in 0..voice.count {
+        let hz = voice.modes[index].frequency_hz;
+        let mode = if (hz / (440.0 * 2.0_f64.powf(3.0 / 12.0)) - 1.0).abs() < 0.01 { 0 } else { 1 };
+        assert_eq!(voice.other[index], part.weights(mode), "sine {index} at {hz} Hz");
+    }
+    set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert_eq!((voice.reference, voice.other[0]), (0, [1.0, 0.0]), "a mono anchor plays in both channels");
 }
