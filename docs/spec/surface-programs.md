@@ -163,6 +163,11 @@ number, true and false themselves, and null `suhina.null` (a value that is neith
   every 250 ms), is a hang: Suhina ends the process and restarts the program, its ports on their
   profiles meanwhile. A handler that runs longer than the deadline is such a hang — the
   amendment's price for a script whose stopping nobody can know in advance.
+- **A message to the runner is written whole, or the process is ended.** The control socket is
+  read nonblocking, so its writes wait in the drabs the runner's reads make room for — a small
+  pipe buffer is never a lost port message, `state` or answer. A runner that stops taking the
+  host's messages for two seconds is ended the way a hung one is: no wait of the script's
+  outlives the answer it waits on, and a restart takes over.
 
 ## Caps
 

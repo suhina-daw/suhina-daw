@@ -41,6 +41,12 @@ const POLL: Duration = Duration::from_millis(5);
 /// How long a stop waits for the runner to answer its quit before killing it: a wedged
 /// runner must not hold the session's thread, which joins this one on stop.
 const STOP_WAIT: Duration = Duration::from_secs(1);
+/// How long a send to the runner may take before the process is ended: the socket is
+/// nonblocking for the reads' sake, and its buffer is small (Windows named pipes default
+/// to 512 bytes), so a line goes out in the drabs the runner's reads make room for. A
+/// runner that stops reading for this long is wedged, and no wait of its script's may
+/// outlive the answer it waits on.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 /// How often a program may die before the restarts stop and `extensions.restart` is the way.
 const CRASHES_ALLOWED: usize = 3;
 const CRASH_WINDOW: Duration = Duration::from_secs(60);
@@ -96,7 +102,23 @@ pub enum Event {
 
 /// The program's event queue and the signal it is reported on: the supervisor pushes and
 /// notifies, the session drains, and a waiter blocks on the signal rather than a clock.
-pub(crate) type Shared = Arc<(Mutex<VecDeque<Event>>, Condvar)>;
+/// `terminal` is why the supervisor's thread is over; while it is unset, more events can
+/// still come, and a wait for one may answer. Once it is set, no event can come: a wait
+/// for one that is not there fails with the reason instead of waiting on nothing.
+pub(crate) struct Queue {
+    pub(crate) queue: Mutex<VecDeque<Event>>,
+    pub(crate) signal: Condvar,
+    pub(crate) terminal: Mutex<Option<String>>,
+}
+
+impl Default for Queue {
+    fn default() -> Self {
+        Self { queue: Mutex::new(VecDeque::new()), signal: Condvar::new(), terminal: Mutex::new(None) }
+    }
+}
+
+/// The program's shared queue, as the handle and the store hold it.
+pub(crate) type Shared = Arc<Queue>;
 
 /// A running program's handle: the session's half. Dropping it stops the program. Each start
 /// carries a token of its own, so the MIDI router tells a restart's handle from the one it
@@ -121,9 +143,16 @@ fn next_token() -> u64 {
 impl Handle {
     /// What the program reported since the last drain.
     pub fn drain(&mut self) -> Vec<Event> {
-        let (queue, _) = &*self.events;
-        let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut queue = self.events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         queue.drain(..).collect()
+    }
+
+    /// Puts events back at the head of the queue, oldest first: a wait that took one event
+    /// leaves the later ones owed ([`crate::extensions::Extensions::wait_for_event`]).
+    pub(crate) fn requeue(&self, event: Event) {
+        let mut queue = self.events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        queue.push_front(event);
+        self.events.signal.notify_one();
     }
 
     /// The queue and its signal, for the store's blocking drain
@@ -192,15 +221,14 @@ impl Handle {
     /// supervisor would report — so the session's gesture-stream coalescing and its answers
     /// are what they exercise, with no pipeline timing in the way.
     pub fn test_command(&self, token: u64, id: &str, params: &Value, gesture: Option<&str>) {
-        let (queue, signal) = &*self.events;
-        let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut queue = self.events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         queue.push_back(Event::Command {
             token,
             id: id.to_string(),
             params: params.clone(),
             gesture: gesture.map(str::to_string),
         });
-        signal.notify_one();
+        self.events.signal.notify_one();
     }
 
     /// Ends the runner process, as a crash does; the tests make one on cue. Succeeds only when
@@ -272,7 +300,7 @@ pub fn start(id: &str, runner: &str, folder: &Path, script: &str) -> Result<Hand
         return Err(format!("the script {} is missing", script_path.display()).into());
     }
     let (to, from) = channel();
-    let events: Shared = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
+    let events: Shared = Arc::new(Queue::default());
     let id = id.to_string();
     let thread_events = Arc::clone(&events);
     let pid = Arc::new(std::sync::atomic::AtomicU32::new(0));
@@ -302,21 +330,21 @@ fn run(
         // Too many crashes too close together: the restarts stop and the user decides.
         crashes.retain(|at| at.elapsed() < CRASH_WINDOW);
         if crashes.len() >= CRASHES_ALLOWED {
-            report(
-                events,
-                Event::Crashed(format!("{id} crashed {CRASHES_ALLOWED} times in a minute; restart it by hand")),
-            );
+            let reason = format!("{id} crashed {CRASHES_ALLOWED} times in a minute; restart it by hand");
+            report(events, Event::Crashed(reason.clone()));
+            give_up(events, &reason);
             return;
         }
         match watch(runner, script, &from, events, pid, &mut ports) {
             Ok(()) => {
                 suhina_plugins::trace!("surface {id} stopped cleanly");
+                give_up(events, "the program stopped");
                 return;
             }
             Err(reason) => {
                 suhina_plugins::trace!("surface {id} crashed: {reason}");
                 crashes.push(Instant::now());
-                report(events, Event::Crashed(reason));
+                report(events, Event::Crashed(reason.clone()));
             }
         }
     }
@@ -359,17 +387,23 @@ impl Child {
     }
 }
 
-/// One order from the session, applied to the program's link and process. A failed send says
-/// the connection is dead; the next read reports it and the restart takes over. A Ports order
-/// is remembered, so the next process hears the same ports at its handshake.
-fn apply(order: ToProgram, link: &mut Link, child: &mut Child, ports: &mut (Vec<String>, Vec<String>)) {
+/// One order from the session, applied to the program's link and process. A send that
+/// cannot complete is returned: the runner stopped reading, and the caller ends the
+/// process — a wait of the script's must not outlive the answer it waits on. A Ports
+/// order is remembered, so the next process hears the same ports at its handshake.
+fn apply(
+    order: ToProgram,
+    link: &mut Link,
+    child: &mut Child,
+    ports: &mut (Vec<String>, Vec<String>),
+) -> Result<(), String> {
     match order {
         ToProgram::Ports { inputs, outputs } => {
             *ports = (inputs.clone(), outputs.clone());
-            let _ = link.send(&Message::Ports { inputs, outputs });
+            link.send(&Message::Ports { inputs, outputs })
         }
         ToProgram::PortMessage { port, timestamp, bytes } => {
-            let _ = link.send(&Message::PortMessage { port, timestamp, bytes });
+            link.send(&Message::PortMessage { port, timestamp, bytes })
         }
         ToProgram::TestKill { pid } => {
             // The id check: between the order and this line the process may have died and been
@@ -377,24 +411,20 @@ fn apply(order: ToProgram, link: &mut Link, child: &mut Child, ports: &mut (Vec<
             if child.child.id() == pid {
                 let _ = child.child.kill();
             }
+            Ok(())
         }
-        ToProgram::TestTick => {
-            let _ = link.send(&Message::Tick);
-        }
+        ToProgram::TestTick => link.send(&Message::Tick),
         ToProgram::Stop => {
             suhina_plugins::trace!("surface stop order: quit sent");
-            let _ = link.send(&Message::Quit);
+            link.send(&Message::Quit)?;
             child.stop();
+            Ok(())
         }
-        ToProgram::CommandAnswer { token, ok, error } => {
-            let _ = link.send(&Message::CommandResult { token, ok, error });
-        }
+        ToProgram::CommandAnswer { token, ok, error } => link.send(&Message::CommandResult { token, ok, error }),
         ToProgram::ReadAnswer { token, ok, value, error } => {
-            let _ = link.send(&Message::ReadResult { token, ok, value, error });
+            link.send(&Message::ReadResult { token, ok, value, error })
         }
-        ToProgram::StateUpdate { token, value } => {
-            let _ = link.send(&Message::State { token, value });
-        }
+        ToProgram::StateUpdate { token, value } => link.send(&Message::State { token, value }),
     }
 }
 
@@ -533,7 +563,9 @@ fn watch(
     }
     for order in deferred {
         let stopped = matches!(order, ToProgram::Stop);
-        apply(order, &mut link, &mut child, ports);
+        if let Err(reason) = apply(order, &mut link, &mut child, ports) {
+            return Err(child.end(format!("the runner stopped taking the host's messages: {reason}")));
+        }
         if stopped {
             return Ok(());
         }
@@ -567,7 +599,11 @@ fn watch(
                     child.stop();
                     return Ok(());
                 }
-                Ok(order) => apply(order, &mut link, &mut child, ports),
+                Ok(order) => {
+                    if let Err(reason) = apply(order, &mut link, &mut child, ports) {
+                        return Err(child.end(format!("the runner stopped taking the host's messages: {reason}")));
+                    }
+                }
                 Err(TryRecvError::Empty) => break,
             }
         }
@@ -577,8 +613,7 @@ fn watch(
                 Ok(Some(line)) => match Message::decode(&line) {
                     Some(Message::Pong { .. }) => last_pong = Instant::now(),
                     Some(Message::Send { port, bytes }) => {
-                        let (queue, signal) = &**events;
-                        let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        let mut queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                         if queue.iter().filter(|e| matches!(e, Event::SendBack { .. })).count() < SEND_BACKS_MAX {
                             queue.push_back(Event::SendBack { port, bytes });
                             dropped = 0;
@@ -590,7 +625,7 @@ fn watch(
                         }
                         // A waiter of the store's blocking drain sleeps on this signal; a push
                         // without the notify would leave it there however many send-backs come.
-                        signal.notify_one();
+                        events.signal.notify_one();
                     }
                     Some(Message::ScriptError { handler, message }) => {
                         report(events, Event::ScriptError(format!("{handler}: {message}")));
@@ -621,24 +656,37 @@ fn watch(
         }
         if last_ping.elapsed() >= HEALTH_EVERY {
             ping += 1;
-            let _ = link.send(&Message::Ping { id: ping });
+            if let Err(reason) = link.send(&Message::Ping { id: ping }) {
+                return Err(child.end(format!("the runner stopped taking the host's messages: {reason}")));
+            }
             // The script's heartbeat rides the health rhythm: a controller's lights the device
             // drives itself (its press flashes and release darkenings, some releases dropped
             // whole) drift from what the software says, and the script's periodic re-assert
             // heals them. The runner drops a tick freely while a handler is busy; the next is
             // never far.
-            let _ = link.send(&Message::Tick);
+            if let Err(reason) = link.send(&Message::Tick) {
+                return Err(child.end(format!("the runner stopped taking the host's messages: {reason}")));
+            }
             last_ping = Instant::now();
         }
         std::thread::sleep(POLL);
     }
 }
 
+/// The supervisor is over: a waiter for an event that can no longer come learns why now,
+/// not never. The reason stays, so a later wait fails with it at once.
+fn give_up(events: &Shared, reason: &str) {
+    let mut terminal = events.terminal.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if terminal.is_none() {
+        *terminal = Some(reason.to_string());
+    }
+    events.signal.notify_all();
+}
+
 fn report(events: &Shared, event: Event) {
-    let (queue, signal) = &**events;
-    let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     queue.push_back(event);
-    signal.notify_one();
+    events.signal.notify_one();
     // The window is woken now, not at its next frame: while nothing plays, its meters ask for
     // no frames, and a controller's command (a fader's, on the return trip) would wait for the
     // background repaints — a moment when playing, a visible lag when stopped. The same wake
@@ -673,12 +721,32 @@ impl Link {
         Ok(Self { reader: BufReader::new(stream), writer, partial: Vec::new() })
     }
 
+    /// Sends one message, the whole line or nothing less than the process's end: the
+    /// socket is nonblocking for the reads' sake, so a write on a full buffer returns
+    /// `WouldBlock` and the line waits in the drabs the runner's reads make room for,
+    /// continuing from where it stopped. Discarding such a write silently dropped a
+    /// `state` or a port message whole (a controller dark, a test's marker never sent)
+    /// wherever the pipe's buffer ran small. Past [`WRITE_TIMEOUT`] the runner has
+    /// stopped reading: the error ends the process, so no wait of the script's outlives
+    /// the answer it waits on.
     fn send(&mut self, message: &Message) -> Result<(), String> {
         let line = format!("{}\n", message.encode());
-        self.writer
-            .write_all(line.as_bytes())
-            .and_then(|()| self.writer.flush())
-            .map_err(|e| format!("cannot write: {e}"))
+        let deadline = Instant::now() + WRITE_TIMEOUT;
+        let mut written = 0;
+        while written < line.len() {
+            match self.writer.write(&line.as_bytes()[written..]) {
+                Ok(0) => return Err("the connection took no bytes".into()),
+                Ok(n) => written += n,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return Err("the runner stopped reading: the write did not complete in time".into());
+                    }
+                    std::thread::sleep(POLL);
+                }
+                Err(e) => return Err(format!("cannot write: {e}")),
+            }
+        }
+        Ok(())
     }
 
     /// One complete line already readable, without waiting: `None` when nothing whole is there

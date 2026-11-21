@@ -579,49 +579,73 @@ impl Extensions {
     /// — applying the states — and returns the first matching event, with its extension's id.
     /// A wait on the supervisor's signal, not a clock (AGENTS.md rule 7). The tests start
     /// exactly one program, so the one queue is the whole story; the session's frame never
-    /// waits ([`Projects::poll_programs`]).
-    pub fn wait_for_event(&mut self, which: impl Fn(&programs::Event) -> bool) -> Option<(String, programs::Event)> {
-        let shared =
-            self.known.iter().find_map(|extension| extension.program.as_ref()).map(|program| program.shared())?;
-        let (queue, signal) = &*shared;
-        let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        while !queue.iter().any(&which) {
-            queue = signal.wait(queue).unwrap_or_else(std::sync::PoisonError::into_inner);
+    /// waits ([`Projects::poll_programs`]). The answer is the first event that answers
+    /// `which`; the events reported after it stay queued, so a wait for a crash does not
+    /// swallow the replacement's `Running`. The error is the terminal reason: the
+    /// supervisor is over and no event can come.
+    pub fn wait_for_event(
+        &mut self,
+        which: impl Fn(&programs::Event) -> bool,
+    ) -> Result<(String, programs::Event), String> {
+        let Some(shared) =
+            self.known.iter().find_map(|extension| extension.program.as_ref()).map(|program| program.shared())
+        else {
+            return Err("no program runs".into());
+        };
+        let mut queue = shared.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if queue.iter().any(&which) {
+                break;
+            }
+            if let Some(reason) = shared.terminal.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
+                return Err(reason);
+            }
+            queue = shared.signal.wait(queue).unwrap_or_else(std::sync::PoisonError::into_inner);
         }
         drop(queue);
-        self.drain_events().into_iter().find(|(_, event)| which(event))
+        let mut drained = self.drain_events();
+        let Some(at) = drained.iter().position(|(_, event)| which(event)) else {
+            return Err("the event answered, and the drain took it elsewhere".into());
+        };
+        // The state effects of everything drained stay applied (they are idempotent);
+        // the events after the answer are the news that is still owed.
+        let owed: Vec<(String, programs::Event)> = drained.split_off(at + 1);
+        for (id, event) in owed.iter().rev() {
+            if let Some(program) = self.program_mut(id) {
+                program.requeue(event.clone());
+            }
+        }
+        let (id, event) = drained.remove(at);
+        Ok((id, event))
     }
 
-    /// The programs' shared event queue and its signal, for the tests' frame pump.
-    /// The first running program's shared event queue and signal, for the tests' frame pump:
-    /// none while no program runs.
+    /// The programs' shared event queue and its signal, for the tests' pump-while-waiting
+    /// ([`Projects::test_extensions_pump_until`]): the first running program's, or none while
+    /// no program runs.
     pub(crate) fn event_queue(&self) -> Option<Shared> {
         self.known.iter().filter_map(|extension| extension.program.as_ref()).map(|program| program.shared()).next()
     }
 
-    /// Whether the queue already holds an event that answers `which`, without waiting: the
-    /// tests' frame pump alternates this with a look of the session's own.
-    pub fn has_event(&mut self, mut which: impl FnMut(&programs::Event) -> bool) -> bool {
-        self.known.iter().filter_map(|extension| extension.program.as_ref()).any(|program| {
-            let (queue, _) = &*program.shared();
-            let queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            queue.iter().any(&mut which)
-        })
-    }
-
+    /// Whether the queue already holds an event that answers `which`, without waiting.
     /// Blocks until a running program's queue holds an event that answers `which`, and leaves
     /// it queued: the router's tests wait for a send-back this way, then let the frame's drain
-    /// — the one that writes it out — take it. On the supervisor's signal, not a clock.
-    pub fn peek_for_event(&mut self, which: impl Fn(&programs::Event) -> bool) {
+    /// — the one that writes it out — take it. On the supervisor's signal, not a clock. The
+    /// error is the terminal reason: the supervisor is over and no event can come.
+    pub fn peek_for_event(&mut self, which: impl Fn(&programs::Event) -> bool) -> Result<(), String> {
         let Some(shared) =
             self.known.iter().find_map(|extension| extension.program.as_ref()).map(|program| program.shared())
         else {
-            return;
+            return Err("no program runs".into());
         };
-        let (queue, signal) = &*shared;
-        let mut queue = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        while !queue.iter().any(&which) {
-            queue = signal.wait(queue).unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut queue = shared.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if queue.iter().any(&which) {
+                return Ok(());
+            }
+            if let Some(reason) = shared.terminal.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
+                return Err(reason);
+            }
+            queue = shared.signal.wait(queue).unwrap_or_else(std::sync::PoisonError::into_inner);
         }
     }
 

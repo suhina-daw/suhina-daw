@@ -160,6 +160,9 @@ pub struct Projects {
 const OUTPUT_RETRY: std::time::Duration = std::time::Duration::from_secs(2);
 /// How often an output playing in place of the chosen device looks whether it is back.
 const OUTPUT_WATCH: std::time::Duration = std::time::Duration::from_secs(3);
+/// The tests' pump-while-waiting ([`Projects::test_extensions_breath`]): a breath between
+/// looks on the programs' event signal.
+const PUMP_BREATH: std::time::Duration = std::time::Duration::from_millis(10);
 
 const PROJECT: Param = param("project", ParamType::Integer, "project id, from project.list");
 
@@ -955,45 +958,37 @@ impl Projects {
     /// Drains the running programs' events through the store's one drain, blocking until an
     /// event answers `which`: the states are applied and the event comes back, so the tests
     /// see events without stealing them from the session, on a signal rather than a clock.
+    /// The error is the terminal reason: the supervisor is over and the event cannot come.
     pub fn test_extensions_wait_for(
         &mut self,
         which: impl Fn(&crate::extensions::programs::Event) -> bool,
-    ) -> Option<crate::extensions::programs::Event> {
+    ) -> Result<crate::extensions::programs::Event, String> {
         self.extensions.wait_for_event(which).map(|(_, event)| event)
     }
 
     /// Blocks until a running program's queue holds an event that answers `which`, and leaves
     /// it queued for the frame's drain: the router's tests wait for a send-back this way, then
-    /// let `poll_plugins` take it and write it out.
-    pub fn test_extensions_peek_for(&mut self, which: impl Fn(&crate::extensions::programs::Event) -> bool) {
-        self.extensions.peek_for_event(which);
+    /// let `poll_plugins` take it and write it out. The error is the terminal reason.
+    pub fn test_extensions_peek_for(
+        &mut self,
+        which: impl Fn(&crate::extensions::programs::Event) -> bool,
+    ) -> Result<(), String> {
+        self.extensions.peek_for_event(which)
     }
 
-    /// Whether the queue already holds the event, without waiting.
-    pub fn test_extensions_has_event(&mut self, which: impl Fn(&crate::extensions::programs::Event) -> bool) -> bool {
-        self.extensions.has_event(which)
-    }
-
-    /// The tests' frame pump: services the session (`poll_plugins`) at the app's frame pace —
-    /// the idle wait is the programs' own event signal with the frame's timeout — for `frames`
-    /// looks. What a test asserts about afterwards is the state the looks left (a command's
-    /// landed volume), not an event in the queue: a send-back is drained by the very look that
-    /// writes it out, so a queue check would depend on the order the threads ran in.
-    pub fn test_extensions_pump_frames(&mut self, frames: usize) {
-        let shared = self.extensions.event_queue();
-        for _ in 0..frames {
-            self.poll_plugins();
-            // Nothing to wait on while no program runs: the looks service the rest of the
-            // session all the same.
-            let Some((queue, signal)) = shared.as_deref() else {
-                continue;
-            };
-            let guard = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-            let _ = signal
-                .wait_timeout(guard, std::time::Duration::from_millis(10))
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+    /// One breath of the tests' pump-while-waiting, called between looks: waits on the
+    /// running programs' event signal for a breath, and answers why the wait cannot go on
+    /// — the supervisor is over and no event can come.
+    pub fn test_extensions_breath(&mut self) -> Result<(), String> {
+        let Some(shared) = self.extensions.event_queue() else {
+            return Ok(());
+        };
+        let guard = shared.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _ = shared.signal.wait_timeout(guard, PUMP_BREATH).unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(reason) = shared.terminal.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
+            return Err(reason);
         }
-        self.poll_plugins();
+        Ok(())
     }
 
     /// The plug-in library. Taking it for changing counts as changing it: sessions get a new

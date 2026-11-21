@@ -128,17 +128,42 @@ impl Fixture {
     }
 
     /// Waits for the event that answers `which`, on the supervisor's signal — the store's one
-    /// drain applies the states, so `extensions.list` sees them too.
+    /// drain applies the states, so `extensions.list` sees them too. The failure says why the
+    /// program is over, not just that the event never came.
     fn expect(&mut self, which: impl Fn(&programs::Event) -> bool, what: &str) -> programs::Event {
-        self.projects.test_extensions_wait_for(which).unwrap_or_else(|| panic!("the program ended without {what}"))
+        self.projects
+            .test_extensions_wait_for(which)
+            .unwrap_or_else(|reason| panic!("the program ended without {what}: {reason}"))
     }
 
     /// Waits until the queue holds the event, leaving it there for the frame's drain — which
-    /// is what writes a send-back out to its port.
+    /// is what writes a send-back out to its port. The failure says why the program is over.
     fn peek(&mut self, which: impl Fn(&programs::Event) -> bool) {
-        self.projects.test_extensions_peek_for(which);
-        // The wait returns only when the event is there; a program that died first would have
-        // said so, and the wait would not have returned.
+        self.projects
+            .test_extensions_peek_for(which)
+            .unwrap_or_else(|reason| panic!("the program ended before the waited event: {reason}"));
+    }
+
+    /// Services the session and waits until `done` says the waited thing is observable —
+    /// in the queue, or already drained and written out by one of the looks — breathing on
+    /// the programs' event signal between looks. What a test waits for is its own
+    /// observable (a marker written to a port), not a frame count (AGENTS.md rule 7); a
+    /// look may be what produces the waited thing (a script's command is answered where
+    /// the frame drains), so the wait cannot be a plain one on the supervisor's signal.
+    fn pump_until(&mut self, done: impl Fn(&Self) -> bool, what: &str) {
+        for _ in 0..4_000 {
+            if done(self) {
+                return;
+            }
+            self.projects.poll_plugins();
+            if done(self) {
+                return;
+            }
+            if let Err(reason) = self.projects.test_extensions_breath() {
+                panic!("the program ended without {what}: {reason}");
+            }
+        }
+        panic!("{what} never became observable: {:?}", self.midi.written_for("APC out"));
     }
 
     /// Sends the claimed ports to the running program.
@@ -292,9 +317,10 @@ fn a_restarted_program_hears_its_first_state_again() {
     let mut fixture = Fixture::claiming("resubscribe", SCRIPT_SUBSCRIBE);
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
-    // The first state came after the subscribe: the controller byte counts it. The write
-    // lands one look after the push, so a few frames run before the assert.
-    fixture.projects.test_extensions_pump_frames(5);
+    // The first state came after the subscribe: the wait is on the state's marker, not a
+    // frame count; the looks service the subscribe on the way.
+    fixture.pump_until(|f| written_contains(f, [0xB1, 1, 1]), "the first state's marker");
+    fixture.projects.poll_plugins();
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1]]);
     // The process dies and the supervisor starts another one; nothing changes in between.
     let pid = fixture.pid();
@@ -302,9 +328,11 @@ fn a_restarted_program_hears_its_first_state_again() {
     assert!(sent, "the kill was sent");
     fixture.expect(|e| matches!(e, programs::Event::Crashed(_)), "the crash");
     fixture.expect(|e| *e == programs::Event::Running, "running again");
-    fixture.projects.test_extensions_pump_frames(20);
     // The fresh script heard the grid again, though nothing had moved: a second state pushed,
     // and the fresh script's counter counts it as its first.
+    let states =
+        |fixture: &Fixture| fixture.midi.written_for("APC out").iter().filter(|m| m.as_slice() == [0xB1, 1, 1]).count();
+    fixture.pump_until(|f| states(f) >= 2, "the fresh script's marker");
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1], vec![0xB1, 1, 1]]);
 }
 
@@ -317,17 +345,28 @@ fn a_restarted_by_hand_program_hears_its_first_state_again() {
     let mut fixture = Fixture::claiming("handrestart", SCRIPT_SUBSCRIBE);
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
-    fixture.projects.test_extensions_pump_frames(5);
+    // The first state came after the subscribe: the wait is on the state's marker, not a
+    // frame count; the looks service the subscribe on the way.
+    fixture.pump_until(|f| written_contains(f, [0xB1, 1, 1]), "the first state's marker");
+    fixture.projects.poll_plugins();
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1]]);
     // The user's restart: the command a button and the CLI run.
     fixture.projects.execute("extensions.restart", &json!({ "id": "handrestart" })).expect("restarted");
-    fixture.projects.test_extensions_pump_frames(20);
     // The fresh script heard the grid again, though nothing had moved.
+    let states =
+        |fixture: &Fixture| fixture.midi.written_for("APC out").iter().filter(|m| m.as_slice() == [0xB1, 1, 1]).count();
+    fixture.pump_until(|f| states(f) >= 2, "the fresh script's marker");
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1], vec![0xB1, 1, 1]]);
 }
 
 fn find(listed: &Value, id: &str) -> Option<Value> {
     listed["extensions"].as_array()?.iter().find(|e| e["id"] == id).cloned()
+}
+
+/// Whether the program's output port has written the marker yet: the observable a
+/// pump-until waits for, still true after a look drained and wrote it.
+fn written_contains(fixture: &Fixture, marker: [u8; 3]) -> bool {
+    fixture.midi.written_for("APC out").iter().any(|m| m.as_slice() == marker)
 }
 
 /// A claimed port's message reaches the script, and its send-back leaves on the matched
@@ -522,12 +561,18 @@ fn a_fader_storm_through_the_pipeline_lands_at_its_last_value() {
         let cc = 64 + (value % 64);
         fixture.midi.play("APC in", 1, &[0xB0, 0x07, cc]);
     }
-    // The frame pump: the storm drains in a look or two now — the runner answers queued
-    // commands at once (the storm fast path), so the session's coalescing finally sees the
-    // whole stream and keeps the newest per gesture. What lands is the oracle: CC 99 is
-    // -60 + 99/127 of the fader's range, -8.6 dB — a send-back marker could not be waited on,
-    // being drained by the very look that writes it out.
-    fixture.projects.test_extensions_pump_frames(50);
+    // The pipeline is done when the last CC's value marker comes out on the output port: the
+    // script sends it after its command came back, so the newest value has landed. What
+    // landed is the oracle: CC 99 is -60 + 99/127 of the fader's range, -8.6 dB — a queue
+    // check could not be waited on, being drained by the very look that writes it out. The
+    // storm's byte 99 plays twice (values 35 and 99), so the marker is waited for twice:
+    // the second is the last handler's, and the handlers run in the messages' order, so
+    // everything ahead of it is done.
+    let markers = |fixture: &Fixture| {
+        fixture.midi.written_for("APC out").iter().filter(|m| m.as_slice() == [0xB1, 99, 1]).count()
+    };
+    fixture.pump_until(|f| markers(f) >= 1, "the last CC's marker");
+    fixture.pump_until(|f| markers(f) >= 2, "the last CC's marker again");
     let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
     assert_eq!(tracks[0]["volume_db"], json!(-8.6), "{tracks}");
 }
@@ -551,10 +596,12 @@ fn a_programs_command_wakes_the_window() {
     fixture.expect(|e| *e == programs::Event::Running, "running");
     let before = woken.load(std::sync::atomic::Ordering::Relaxed);
     fixture.midi.play("APC in", 1, &[0xB0, 0x07, 64]);
-    // A few looks at the app's pace; CC 64 is -60 + 64/127 of the fader's range, -26.8 dB.
-    // The landed volume is the oracle: the runner's marker for the command is drained by the
-    // very look that writes it out, so a queue check would depend on the order threads ran in.
-    fixture.projects.test_extensions_pump_frames(50);
+    // The pipeline is done when the value marker comes out on the output port: the script
+    // sends it after its command came back, so the volume has landed. CC 64 is -60 + 64/127
+    // of the fader's range, -26.8 dB. The landed volume is the oracle: the runner's marker
+    // for the command is drained by the very look that writes it out, so a queue check would
+    // depend on the order the threads ran in; the wait itself is on the supervisor's signal.
+    fixture.pump_until(|f| written_contains(f, [0xB1, 64, 1]), "the CC's marker");
     let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
     assert_eq!(tracks[0]["volume_db"], json!(-26.8), "{tracks}");
     let after = woken.load(std::sync::atomic::Ordering::Relaxed);
@@ -589,7 +636,9 @@ suhina.on_port_message(function(bytes, port, timestamp)
     local message = suhina.midi.parse(bytes)
     if message ~= nil and message.kind == "note_on" and message.velocity > 0 and message.note == 49 then
         sent = not sent
-        suhina.command("track.setSolo", { tracks = { 1 }, solo = sent })
+        local ok = suhina.command("track.setSolo", { tracks = { 1 }, solo = sent })
+        -- The marker says the press's command came back: the controller byte is the state.
+        suhina.send("APC out", suhina.midi.cc(1, sent and 1 or 0, ok and 1 or 0))
     end
 end)
 "#;
@@ -599,11 +648,12 @@ fn toggle_presses_are_not_coalesced_away() {
     let mut fixture = Fixture::claiming("toggles", SCRIPT_TOGGLE);
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
-    fixture.projects.test_extensions_pump_frames(5);
-    // Two presses inside one look.
+    // Two presses inside one look; the wait is on the second press's marker (its command
+    // came back with the solo off), not a frame count. The looks service the commands on
+    // the way.
     fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
     fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
-    fixture.projects.test_extensions_pump_frames(10);
+    fixture.pump_until(|f| written_contains(f, [0xB1, 0, 1]), "the second press's marker");
     // Both dispatched: the session ends at the second press's value, false.
     let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
     assert_eq!(tracks[0]["solo"], json!(false), "{tracks}");
