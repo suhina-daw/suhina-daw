@@ -573,3 +573,25 @@ fn tails_use_schema_five_and_reach_the_played_note() {
     set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
     assert!(voice.tail.is_empty(), "the anchor at 48 has no tail");
 }
+
+/// A fast share above 1 is an aftersound in opposite phase: the slow part plays negative, the
+/// sines still sum to the magnitude at the strike, and a share above 2 is refused.
+#[test]
+fn a_fast_share_above_one_plays_the_aftersound_in_opposite_phase() {
+    let mut r = recording(60, 0.8, 2.0, 4.0);
+    r.modes[0] = ModelMode { fast_decay_seconds: 0.5, fast_share: 1.5, ..ModelMode::plain(1.0, 0.6, 4.0) };
+    assert!(r.validate().is_ok());
+    let set = ModelSet::new(vec![r.clone()]).unwrap();
+    let mut voice = Voice::default();
+    set.voice(60, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    let c3 = 440.0 * 2.0_f64.powf(-9.0 / 12.0);
+    let parts: Vec<f64> = voice.modes[..voice.count]
+        .iter()
+        .filter(|m| (m.frequency_hz / c3 - 1.0).abs() < 1e-9)
+        .map(|m| m.amplitude)
+        .collect();
+    assert!(parts.iter().any(|a| *a < 0.0), "{parts:?}");
+    assert!((parts.iter().sum::<f64>() - 0.6).abs() < 1e-9, "{parts:?}");
+    r.modes[0].fast_share = 2.5;
+    assert!(r.validate().is_err());
+}

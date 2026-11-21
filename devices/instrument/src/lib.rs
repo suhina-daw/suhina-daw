@@ -446,7 +446,7 @@ impl Instrument {
             if fitted {
                 let count = self.set_voice.count;
                 voice.bank.reset();
-                voice.fitted.strike_phased(
+                voice.fitted.strike_phased_exact(
                     self.sample_rate,
                     self.set_voice.modes.get(..count).unwrap_or(&[]),
                     self.set_voice.phases.get(..count).unwrap_or(&[]),

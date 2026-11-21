@@ -109,8 +109,10 @@ faded the note lost its brightness at once: measured on a synthesizer bass, the 
 fell from -58 dB to below -130 dB at 0.3 s, and a piano chord's 500 Hz..2 kHz octaves were 6 dB
 low from 0.3 s on. So a candidate the envelope windows leave without a mode is measured again
 with **short windows**: the smallest power-of-two Hann size from 512 samples, below the envelope
-window size, whose main lobe stays clear of the nearest other candidate (size at least
-`4 * 22050 / gap`, the gap in Hz), cut from the start of the interval into at most 48
+window size, whose main lobe stays clear of the nearest other candidate that is at most 20 dB
+weaker in the detection spectrum (size at least `4 * 22050 / gap`, the gap in Hz; a weaker
+neighbour leaks too little to matter, and counting it kept a piano's strong 523 Hz partial, 14 Hz
+from a partial 30 dB weaker, out of the short windows its null needs), cut from the start of the interval into at most 48
 consecutive windows. Its span, estimation and validation windows, error limits, late retry and
 loose rule are those above, and the window bias is compensated for the short window. A partial
 the short windows describe is kept like any other and competes for the recording's 64 modes by
@@ -189,6 +191,31 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   loose mode joins the fitted recording with that
   T60 (and may get a beating partner below), but never the schema-1 profile or its reported
   validation errors, and a sound with loose modes only has no model.
+- **Prompt sound and aftersound (algorithm version 4).** A piano note's two or three strings,
+  tuned a little apart and coupled through the bridge, give a partial a fast "prompt sound" and
+  a slow "aftersound" that can start in opposite phase (Weinreich 1977): the partial falls fast,
+  vanishes in a deep null where the two cross, and comes back as a quiet, long ring. Measured on
+  a piano C4, the fundamental fell from -7 to -47 dB at 1.3 s and rose back to -36 dB, where it
+  stayed; a model of two parts in one phase cannot dip, played 20 dB too loud around the null,
+  and the note lost the swell that makes it sound like a piano. So before the fits above, a
+  mode's short windows (the size it would get as a fast partial, over the first 6 s; the
+  envelope windows of a long recording, 0.37 s, smooth a null) and then its envelope windows
+  are searched
+  for a **null**: from its loudest of the first three windows, the
+  first window that is the lowest of the two windows on each side, at least 10 dB below that
+  peak, with a later window at least 6 dB above it. The aftersound is the least-squares line
+  from the loudest window after the null while within 20 dB of it (a beat's next null comes
+  later) and 60 dB below the peak (at least three windows, not rising, its RMS error at most 3 dB, so periodic
+  beating with null after null is left to the beat estimate); the prompt sound is the line
+  through `ln(measured + aftersound)` over the windows before the null where the measurement is
+  at least three times the aftersound (nearer the null the sum flattens the line) (at least three, falling faster than the aftersound). The pair
+  is kept when its envelope `|prompt - aftersound|`, floored 60 dB under the peak, stays within
+  6 dB RMS of the windows (at 9 dB a piano C4's 523 Hz partial got a pair whose null fell 0.7 s
+  late), leaving out the null and the window on each side of it (the pair's
+  exact zero and the measured floor always differ there). The mode's slow part is then the aftersound in opposite phase, its
+  fast part the prompt sound, and its magnitude their difference at the strike; the aftersound
+  is at most half the prompt sound there (the fast share is then at most 2). Such a mode is
+  loose (it stays out of the schema-1 profile).
 - **Two-part decay.** When a span of nine or more windows has a valid fit on its last two thirds
   (the slow part), the excess of the earlier windows over that line is fitted as a second,
   faster exponential. It is kept as `fast_decay_seconds` and `fast_share` when its T60 is under

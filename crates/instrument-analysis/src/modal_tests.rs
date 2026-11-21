@@ -523,3 +523,30 @@ fn the_attack_keeps_the_source_rate_up_to_48_khz() {
         assert_eq!(recording.attack.len(), expected as usize / 4, "{rate}");
     }
 }
+
+/// A partial whose fast prompt sound and slow aftersound start in opposite phase falls into a
+/// null and rings on: it keeps both, the aftersound as a negative slow part (a fast share above
+/// 1), so the model dips and recovers as the recording does (version 4).
+#[test]
+fn a_prompt_sound_and_an_opposite_aftersound_keep_their_null() {
+    let rate = 22050;
+    let ln1000 = 1000.0_f64.ln();
+    let pcm: Vec<f32> = (0..rate as usize * 4)
+        .map(|n| {
+            let t = n as f64 / f64::from(rate);
+            let decay = |t60: f64| (-ln1000 * t / t60).exp();
+            // The null where the two cross: 0.5 * 10^(-3t/1.5) = 0.05 * 10^(-3t/20), at 0.54 s.
+            let pair = 0.5 * decay(1.5) - 0.05 * decay(20.0);
+            (pair * (TAU * 400.0 * t + 0.3).sin() + 0.2 * decay(2.0) * (TAU * 1000.0 * t).sin()) as f32
+        })
+        .collect();
+    let report = fit(&pcm, rate, 1, 0..pcm.len(), 67, |_, _| true).unwrap();
+    let mode = report.recording_modes.iter().find(|m| (m.frequency_hz - 400.0).abs() < 1.0).unwrap();
+    assert!(mode.fast_share > 1.0 && mode.fast_share <= 2.0, "{mode:?}");
+    assert!((mode.fast_decay_seconds - 1.5).abs() / 1.5 < 0.3, "{mode:?}");
+    assert!(mode.decay_seconds > 8.0, "{mode:?}");
+    let recording = report.recording.unwrap();
+    assert!(recording.validate().is_ok());
+    let fitted = recording.modes.iter().find(|m| (m.ratio * 392.0 - 400.0).abs() < 2.0).unwrap();
+    assert!(fitted.fast_share > 1.0, "{fitted:?}");
+}
