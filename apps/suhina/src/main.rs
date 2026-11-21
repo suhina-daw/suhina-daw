@@ -842,7 +842,10 @@ impl Window {
         }
         let from = data_dir().unwrap_or_else(|| default.clone());
         let pointer = (!chosen.is_empty()).then_some(to.as_path());
-        let moved = data_folder::move_data(&from, &to, false)
+        // The extension store rides when it is the settings folder's own: an independent
+        // `SUHINA_EXTENSIONS` root keeps its place (the session refuses a caller's root then).
+        let extensions_rides = std::env::var_os("SUHINA_EXTENSIONS").is_none();
+        let moved = data_folder::move_data(&from, &to, false, extensions_rides)
             .and_then(|(backup, count)| data_folder::point(&default, pointer).map(|()| (backup, count)));
         match moved {
             Ok((backup, count)) => {
@@ -852,6 +855,11 @@ impl Window {
                 self.recent.set_file(Some(to.join(RECENT_FILE)));
                 self.app.projects_mut().set_backup_folder(Some(to.join(suhina_session::backup::SETTINGS_SUBFOLDER)));
                 self.app.set_default_themes_folder(to.join(THEMES_FOLDER));
+                // The extension store reads the new folder's from now on; an independent
+                // `SUHINA_EXTENSIONS` root was not moved and the session keeps it.
+                if extensions_rides {
+                    self.app.projects_mut().set_extensions_root(&to.join("extensions"));
+                }
                 // The settings were moved with the rest; they are written there whole now.
                 let settings = self.app.settings().clone();
                 if let Err(e) = save_settings(&settings) {
@@ -884,7 +892,7 @@ impl Window {
             && from != to
             && from.is_dir()
         {
-            match data_folder::move_data(&from, &to, true) {
+            match data_folder::move_data(&from, &to, true, false) {
                 Ok((backup, count)) => self.app.set_status(Status::Done(format!(
                     "Moved {count} theme files to {}; a backup of them is in {}",
                     to.display(),
