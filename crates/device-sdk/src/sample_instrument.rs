@@ -168,6 +168,11 @@ struct Hold {
     grains: [(f64, usize); 2],
 }
 
+/// Random points a new grain is chosen from, and a hold grain's shortest and longest length
+/// (seconds): long grains, so the grains change seldom and span several vibrato cycles.
+const HOLD_CANDIDATES: usize = 4;
+const HOLD_SHORTEST: f64 = 0.2;
+const HOLD_LONGEST: f64 = 0.6;
 /// The sound's period in source frames, for lining up a new grain with the one it follows.
 fn hold_period(source_rate: f64, root: f64) -> f64 {
     (source_rate / (440. * 2f64.powf((root - 69.) / 12.))).clamp(16., 2048.)
@@ -191,24 +196,30 @@ impl HoldSource<'_> {
         left + right
     }
 
-    /// Where a new grain starts: a random point of the region, moved within one period to where
-    /// its waveform best continues the one now at `follow` (most correlated, normalized by its
-    /// energy, over 64 points every two steps).
+    /// Where a new grain starts: of `HOLD_CANDIDATES` random points of the region, each moved
+    /// within one period to where its waveform best continues the one now at `follow` (the
+    /// normalized correlation over 64 points every two steps), the one whose correlation is the
+    /// highest after a penalty for a level unlike the followed grain's (a quarter of the absolute
+    /// log of their energy ratio): a grain at another level, or another vibrato phase, would
+    /// flutter at the grain rate.
     fn start(&self, follow: f64, seed: &mut u32) -> f64 {
-        let candidate = self.low + (random(seed) + 1.) * 0.5 * (self.high - self.low);
         let reference: [f64; 64] = std::array::from_fn(|n| self.mono(follow + n as f64 * 2. * self.step));
-        let mut best = (f64::NEG_INFINITY, candidate);
-        for shift in 0..(self.period as usize).clamp(1, 2048) {
-            let start = candidate + shift as f64;
-            let (mut dot, mut energy) = (0., 1e-12);
-            for (n, r) in reference.iter().enumerate() {
-                let x = self.mono(start + n as f64 * 2. * self.step);
-                dot += x * r;
-                energy += x * x;
-            }
-            let score = dot / energy.sqrt();
-            if score > best.0 {
-                best = (score, start);
+        let reference_energy = reference.iter().map(|r| r * r).sum::<f64>() + 1e-12;
+        let mut best = (f64::NEG_INFINITY, self.low);
+        for _ in 0..HOLD_CANDIDATES {
+            let candidate = self.low + (random(seed) + 1.) * 0.5 * (self.high - self.low);
+            for shift in 0..(self.period as usize).clamp(1, 2048) {
+                let start = candidate + shift as f64;
+                let (mut dot, mut energy) = (0., 1e-12);
+                for (n, r) in reference.iter().enumerate() {
+                    let x = self.mono(start + n as f64 * 2. * self.step);
+                    dot += x * r;
+                    energy += x * x;
+                }
+                let score = dot / (energy * reference_energy).sqrt() - 0.25 * (energy / reference_energy).ln().abs();
+                if score > best.0 {
+                    best = (score, start);
+                }
             }
         }
         best.1
@@ -1014,7 +1025,11 @@ impl Sampler {
                     / self.rate;
                 v.step += (target_step - v.step) / (p[29] * self.rate).max(1.);
                 let mut signal = [0.; 2];
-                let length = ((p[22] * self.rate / 1000.).max(2.5 * period / v.step.max(1e-6))) as usize;
+                // A hold grain: two fifths of the loop region, 0.2..0.6 s, at least 2.5 periods.
+                let region = (hi - lo) / v.step.max(1e-6);
+                let length = (region / 2.5)
+                    .clamp(HOLD_SHORTEST * self.rate, HOLD_LONGEST * self.rate)
+                    .max(2.5 * period / v.step.max(1e-6)) as usize;
                 // The last start a grain may take and still end inside the loop region.
                 let hold_high = hi - length as f64 * v.step - period - 2.;
                 let from = HoldSource {

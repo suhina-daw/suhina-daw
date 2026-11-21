@@ -217,9 +217,9 @@ fn a_widened_partial_is_detected_by_the_fallback_prominence() {
             }
         }
     }
-    let peaks = prominent_peaks(&spectrum, 2.69, 40.0, 10_000.0);
+    let peaks = prominent_peaks(&spectrum, 2.69, 40.0, 10_000.0, true);
     assert_eq!(peaks.iter().map(|p| p.0).collect::<Vec<_>>(), vec![300], "{peaks:?}");
-    assert!(prominent_peaks(&[1e-4; 1024], 2.69, 40.0, 10_000.0).is_empty());
+    assert!(prominent_peaks(&[1e-4; 1024], 2.69, 40.0, 10_000.0, true).is_empty());
 }
 
 /// A fading note's partial at an uneven level that never clearly falls follows the note's
@@ -257,7 +257,10 @@ fn an_uneven_partial_follows_a_fading_note() {
 }
 
 /// Harmonic tones summed: each (MIDI pitch at time t, gain at time t), twelve partials at 1/k.
-fn voices(seconds: f64, parts: &[(&dyn Fn(f64) -> f64, &dyn Fn(f64) -> f64)]) -> Vec<f32> {
+/// A voice of [`voices`]: its MIDI pitch and its gain at time t.
+type Part<'a> = (&'a dyn Fn(f64) -> f64, &'a dyn Fn(f64) -> f64);
+
+fn voices(seconds: f64, parts: &[Part<'_>]) -> Vec<f32> {
     let mut phases = vec![0.0f64; parts.len()];
     (0..(seconds * f64::from(RATE)) as usize)
         .map(|n| {
