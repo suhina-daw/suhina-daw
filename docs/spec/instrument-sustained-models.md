@@ -23,7 +23,8 @@ instrument.
 
 This document adds a **held layer** to a fitted recording. It is measured from the same one
 recording, stored beside the recording's modes in a revision-4 set, and played by the
-Instrument while the key is held. A struck recording gets none and plays exactly as before.
+Instrument while the key is held. A struck recording gets none of the held tone's parts, but
+every recording may carry **liveliness** (below), which the same layer plays.
 Nothing here is a physical bowing or breath model: it reproduces measured statistics of one
 performance.
 
@@ -94,7 +95,7 @@ After the modes are fitted, a recording is **held** when its sustained modes (th
 fitting marks sustained) hold at least half of its total magnitude, or when modal fitting found
 it a held note (its whole level holds after the attack, a release may follow:
 [held partials at an uneven level](instrument-modal-fitting.md)). Only a held recording, or
-one with vibrato, gets a held layer; a struck recording gets none.
+one with vibrato, gets a held layer; a struck recording gets none (only its liveliness, below).
 
 For a held recording the fine envelope of every mode is measured on the flattened signal with
 1024-sample Hann windows every 256 samples. The **held level** of a mode is the median of its
@@ -147,6 +148,26 @@ envelope from 0.3 s to the release start (or the end).
 The attack residual of a held recording is computed against the modes with their onsets, so it
 holds what the modes miss, not the opposite of their swell.
 
+### 3. Liveliness (every recording)
+
+A model of steady sines sounds static, frozen, however close its spectrum: in a recording every
+partial's level moves a little all the time, and a bowed, blown or whistled one much more. On
+1024-sample Hann windows every 256 samples from 0.15 s, the measured fluctuation of the strongest
+partials (their level in dB minus its moving average over 0.3 s) was about 0.3 dB on a piano's
+main partials, 0.7..4 dB on a cello, 2.3 dB on a whistle, 4..6 dB on a flute and about 4 dB on a
+trombone, at 3..5 Hz, higher partials more. So modal fitting (algorithm version 4) measures, for
+every recording, each kept mode's **shimmer**: from 0.15 s while within 40 dB of the mode's
+loudest window, the RMS of its level in dB minus its moving average over 27 windows (0.3 s, which
+keeps its decay and a beat slower than about 3 Hz out), from 0.2 dB (below, none) to 9 dB, from at
+least 20 such windows; a mode with a beating partner gets none, its beat being its fluctuation.
+The **shimmer bandwidth** is the magnitude-weighted median of the modes' (where each residual's
+autocorrelation falls to half, `ln 2 / (2 pi lag)`), 0.5..20 Hz. Without a measured vibrato, a
+held layer's **drift** comes from the note track (the root analysis's YIN frames, every 512
+samples, octave errors folded): over the frames within half a semitone of the note, the standard
+deviation of their cents, from 3 cents (a piano's track jitters about a cent; below, none) to 20,
+with the bandwidth where its autocorrelation falls to half, 0.5..10 Hz. A recording with
+liveliness but no held tone gets a layer of only these; one with neither has none.
+
 ## How it is stored
 
 A recording's held layer is a `suhina_dsp::modal::sustain::Sustain`:
@@ -178,6 +199,12 @@ per possible mode of a recording).
 Schema-2 bytes still decode, with no held layers; a schema-2 build rejects schema-3 bytes and
 the device stays silent rather than playing the set without its layer. Decoding accepts only
 canonical bytes, as for schema 2.
+
+**Schema 7** stores each layer's liveliness after the schema-6 parts: per recording
+`[1, 0, 0, 0]` and 65 f32 (the 64 per-mode shimmers in dB, complete, then the bandwidth), or
+`[0, 0, 0, 0]`; a flag of 1 needs the schema-3 layer it belongs to. Shimmers are 0..9 dB, zero past
+the recording's modes, with a bandwidth of 0.5..20 Hz when any is set and 0 otherwise. A set
+without liveliness encodes as before.
 
 ## How it plays
 
@@ -212,6 +239,10 @@ fixed storage, no allocation):
   where `e` is 0 before the delay and rises linearly to 1 over the fade. The drift is seeded,
   one-pole low-passed noise at `drift_hz` with standard deviation `drift_cents`. The voice's bank
   is retuned to the pitch wheel plus this deviation; retuning keeps phase.
+- **Shimmer.** Every control update, each sine with a shimmer advances its own seeded
+  noise, one-pole low-passed at the shimmer bandwidth with unit variance; the sine's level swing
+  below gains the shimmer (dB) times that noise, so each partial moves on its own by about its
+  measured RMS. Notes fuse per-sine shimmers like onsets and the bandwidth like the rates.
 - **Partial levels.** Each sine's level is its onset envelope
   `1 - exp(-(t - onset) ln 10 / rise)` (1 with no rise) times
   `10^(clamp(s u + q (u^2 - e^2 vibrato_cents^2 / 2), -12, 12) / 20)`, where `u` is the vibrato

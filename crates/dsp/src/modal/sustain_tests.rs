@@ -266,3 +266,48 @@ fn hostile_starts_stay_inactive() {
     let mut bank = one_sine();
     assert!((0..4800).all(|_| performer.next(&mut bank).is_finite()));
 }
+
+/// A shimmer alone makes a layer active and moves its sine's level by about its RMS in dB, the
+/// same for the same seed; its bounds are checked.
+#[test]
+fn a_shimmer_moves_a_sine_by_its_depth() {
+    let mut held = Held::NONE;
+    held.shimmer[0] = 3.0;
+    held.shimmer_hz = 5.0;
+    assert!(held.is_active());
+    let play = |seed: u32| {
+        let mut bank = one_sine();
+        let mut performer = Performer::default();
+        performer.start(&held, RATE, 0.0, seed);
+        (0..RATE as usize * 8).map(|_| performer.next(&mut bank)).collect::<Vec<f32>>()
+    };
+    let out = play(9);
+    assert_eq!(out, play(9));
+    // RMS level in dB per 20 ms around its straight-line decay (1 dB per second).
+    let levels: Vec<f64> = out
+        .chunks(960)
+        .map(|block| 10.0 * (block.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / 960.0).log10())
+        .collect();
+    let n = levels.len() as f64;
+    let mean_i = (n - 1.0) / 2.0;
+    let mean = levels.iter().sum::<f64>() / n;
+    let slope = levels.iter().enumerate().map(|(i, l)| (i as f64 - mean_i) * (l - mean)).sum::<f64>()
+        / levels.iter().enumerate().map(|(i, _)| (i as f64 - mean_i).powi(2)).sum::<f64>();
+    let spread =
+        (levels.iter().enumerate().map(|(i, l)| (l - mean - slope * (i as f64 - mean_i)).powi(2)).sum::<f64>() / n)
+            .sqrt();
+    assert!((2.0..4.0).contains(&spread), "{spread}");
+    let mut layer = Sustain::NONE;
+    layer.shimmer[0] = 2.0;
+    layer.shimmer_hz = 5.0;
+    assert!(layer.validate(1).is_ok() && layer.lively() && !layer.is_empty());
+    for broken in [
+        Sustain { shimmer_hz: 0.0, ..layer },
+        Sustain { shimmer_hz: 30.0, ..layer },
+        Sustain { shimmer: [10.0; MAX_MODEL_MODES], ..layer },
+        Sustain { shimmer: [0.0; MAX_MODEL_MODES], ..layer },
+    ] {
+        assert!(broken.validate(MAX_MODEL_MODES).is_err(), "{broken:?}");
+    }
+    assert!(layer.validate(0).is_err(), "a shimmer past the modes");
+}
