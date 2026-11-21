@@ -384,6 +384,16 @@ pub struct StruckBar<const N: usize> {
     noise: Noise,
 }
 
+impl<const N: usize> StruckBar<N> {
+    /// Mode `n`'s amplitude in the output: its output weight times the size of its state
+    /// (displacement and velocity together), so it falls as the mode decays and does not move with
+    /// its phase. Zero past the bar's modes or for a state that is not finite.
+    pub fn mode_level(&self, n: usize) -> f64 {
+        let level = self.modes.get(n).map_or(0.0, |mode| mode.output.abs() * mode.z.re.hypot(mode.z.im));
+        if level.is_finite() { level } else { 0.0 }
+    }
+}
+
 /// The knock of a mallet's head: white noise, band-limited by the stroke, scaled by its force.
 #[derive(Debug, Clone, Copy)]
 struct Noise {

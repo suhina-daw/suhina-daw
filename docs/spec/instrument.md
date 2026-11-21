@@ -273,6 +273,25 @@ wheel retunes a ringing bar as it retunes Struck.
 
 A bar whose state stops being finite falls silent instead of producing invalid output.
 
+### Live values for the panel
+
+Instrument hands its panel seven live values ([ADR 0032](../decisions/0032-device-readouts.md)),
+written at the end of every block, so the editor can show what a note does
+([instrument-editor.md](instrument-editor.md) › Expanded editor):
+
+| Readout | Value |
+|---|---|
+| `#r0` to `#r4` | The energy of the body's first five modes, 0 to 1. For each sounding modal voice: the mode's amplitude, divided by the largest sum of its first five amplitudes since the voice's last strike, times that strike's velocity; the largest over the voices |
+| `#r5` | Seconds since the last note-on, 0 to 60 (60 before the first) |
+| `#r6` | The last note-on's velocity, 0 to 1 |
+
+A body's first five modes are the ones it was given first: Struck's and a fitted set's first five
+resonances, a bar's or tine's five lowest bending modes. A mode's amplitude is the size of its
+rotating state (its output weight times its displacement and velocity together), so it falls as
+the mode decays and does not flicker with its phase. A source with no modal voice sounding hands
+zeros for `#r0` to `#r4`. Working the values out reads each voice's first five modes once per
+block; nothing allocates or locks.
+
 ## Import and project state
 
 `device.loadSample` accepts Instrument and loads an ordinary local audio file. The command is

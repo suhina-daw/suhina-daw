@@ -180,7 +180,22 @@ impl Body {
             Self::Fitted(bank) => bank.transpose(sample_rate, semitones),
         }
     }
+
+    /// The amplitudes of the body's first [`LIVE_MODES`] modes (docs/spec/instrument.md › Live
+    /// values for the panel): a bar's lowest bending modes come first.
+    fn levels(&self) -> [f64; LIVE_MODES] {
+        std::array::from_fn(|n| match self {
+            Self::Struck(bank) => bank.level(n),
+            Self::Bar(bar) => bar.mode_level(n),
+            Self::Fitted(bank) => bank.level(n),
+        })
+    }
 }
+
+/// How many modes' energies the panel reads (`#r0` to `#r4`).
+const LIVE_MODES: usize = 5;
+/// The longest time since a note-on the panel is told (`#r5`), in seconds.
+const SINCE_CAP: f64 = 60.0;
 
 #[derive(Clone, Copy)]
 struct Voice {
@@ -205,6 +220,10 @@ struct Voice {
     stolen_fade: Smoother,
     /// Left and right gains: a bar's place in the row, unity for every other body.
     pan: (f32, f32),
+    /// The largest sum of the first modes' amplitudes since the last strike, the panel's scale.
+    level_reference: f64,
+    /// The last strike's velocity, for the panel's energies.
+    strike_velocity: f32,
 }
 
 impl Default for Voice {
@@ -227,6 +246,8 @@ impl Default for Voice {
             stolen_tail: 0.0,
             stolen_fade: Smoother::new(0.0, 1),
             pan: (1.0, 1.0),
+            level_reference: 0.0,
+            strike_velocity: 0.0,
         }
     }
 }
@@ -253,6 +274,11 @@ pub struct Instrument {
     /// Scratch for a revision-4 note-on: no allocation in the callback.
     set_voice: SetVoice,
     invalid_profile: bool,
+    /// The panel's live values (docs/spec/instrument.md › Live values for the panel): the first
+    /// modes' energies, the seconds since the last note-on and its velocity.
+    live: [f32; LIVE_MODES],
+    since_strike: f64,
+    last_velocity: f32,
 }
 
 impl Default for Instrument {
@@ -290,6 +316,9 @@ impl Instrument {
             set: None,
             set_voice: SetVoice::default(),
             invalid_profile: false,
+            live: [0.0; LIVE_MODES],
+            since_strike: SINCE_CAP,
+            last_velocity: 0.0,
         };
         core.set_sample_parameter("poly", MAX_VOICES as f64);
         for (index, info) in PARAMS.iter().enumerate() {
@@ -376,14 +405,53 @@ impl Instrument {
         if !self.model_supported() {
             return;
         }
+        let before = self.serial;
         if self.set.is_some() {
-            return self.strike_fitted(key, velocity);
+            self.strike_fitted(key, velocity);
+        } else {
+            // An accepted profile (revision 2) or fitted set is rendered whatever Body says.
+            match Profile::from_body(self.params.get(param::BODY)).filter(|_| self.profile.is_none()) {
+                Some(profile) => self.strike_bar(profile, key, velocity),
+                None => self.strike_struck(key, velocity),
+            }
         }
-        // An accepted profile (revision 2) or fitted set is rendered whatever Body says.
-        match Profile::from_body(self.params.get(param::BODY)).filter(|_| self.profile.is_none()) {
-            Some(profile) => self.strike_bar(profile, key, velocity),
-            None => self.strike_struck(key, velocity),
+        // The struck voice is the one with the newest serial: its panel scale starts again.
+        if self.serial != before {
+            let serial = self.serial;
+            if let Some(voice) = self.voices.iter_mut().find(|voice| voice.serial == serial) {
+                voice.level_reference = 0.0;
+                voice.strike_velocity = velocity;
+            }
+            self.since_strike = 0.0;
+            self.last_velocity = velocity;
         }
+    }
+
+    /// The panel's live values after a block of `frames`: each of the first modes' energy is
+    /// its amplitude over the voice's largest sum since its strike, times that strike's
+    /// velocity, the largest over the sounding voices; zero while no modal layer sounds.
+    fn update_live(&mut self, frames: usize) {
+        self.since_strike = (self.since_strike + frames as f64 / self.sample_rate).min(SINCE_CAP);
+        let mut live = [0.0_f32; LIVE_MODES];
+        if self.modal_mix.current() > 0.0 {
+            for voice in self.voices.iter_mut().filter(|voice| voice.body.is_active()) {
+                let levels = voice.body.levels();
+                let sum: f64 = levels.iter().sum();
+                if sum.is_finite() {
+                    voice.level_reference = voice.level_reference.max(sum);
+                }
+                if voice.level_reference <= 0.0 {
+                    continue;
+                }
+                for (energy, level) in live.iter_mut().zip(levels) {
+                    let value = (level / voice.level_reference) as f32 * voice.strike_velocity;
+                    if value.is_finite() {
+                        *energy = energy.max(value.clamp(0.0, 1.0));
+                    }
+                }
+            }
+        }
+        self.live = live;
     }
 
     /// Revision 4: the set fuses its recordings for this key and velocity.
@@ -631,6 +699,22 @@ impl Voice {
 }
 
 impl Device for Instrument {
+    /// `#r0` to `#r4` the first modes' energies, `#r5` the seconds since the last note-on,
+    /// `#r6` its velocity (docs/spec/instrument.md › Live values for the panel).
+    fn readouts(&self) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
+        let mut out = [0.0; suhina_device_api::MAX_READOUTS];
+        for (slot, energy) in out.iter_mut().zip(self.live) {
+            *slot = energy;
+        }
+        if let Some(slot) = out.get_mut(LIVE_MODES) {
+            *slot = self.since_strike as f32;
+        }
+        if let Some(slot) = out.get_mut(LIVE_MODES + 1) {
+            *slot = self.last_velocity;
+        }
+        Some(out)
+    }
+
     fn info(&self) -> &DeviceInfo {
         &INFO
     }
@@ -671,6 +755,9 @@ impl Device for Instrument {
 
     fn reset(&mut self) {
         self.voices.fill(Voice::default());
+        self.live = [0.0; LIVE_MODES];
+        self.since_strike = SINCE_CAP;
+        self.last_velocity = 0.0;
         self.serial = 0;
         self.pedal = false;
         self.bend_semitones = 0.0;
@@ -794,6 +881,7 @@ impl Device for Instrument {
                 }
             }
         }
+        self.update_live(buffer.len() / 2);
         // Once its fade is inaudible, retire the source instead of freezing a hidden playhead
         // that could reappear on a later Source switch. The callback reset never frees storage.
         if !hybrid && !self.sample_silent && self.sample_mix.current() == 0.0 && self.sample_mix.is_settled() {

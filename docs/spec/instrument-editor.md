@@ -44,25 +44,30 @@ identifies Instrument and its experimental model, with Source always available. 
     measured physical impact position. Profile adoption resets these four controls and enables
     all profile modes; the underlying stable parameter IDs remain the same. Revision 4 adds a
     Fitted model group: Source morph, Velocity to brightness, Damper noise and Pedal resonance.
-  - Revisions 1 and 3 show a row of body buttons (Struck, Marimba, Vibraphone, Xylophone,
-    Glockenspiel, Kalimba; [bar bodies](instrument.md#bar-bodies-revision-3)) that set Body, the
-    one lit is the one playing. Under them a side view of the selected body: a bar (rosewood for
-    Marimba, lighter wood for Xylophone, aluminium for Vibraphone, steel for Glockenspiel) with
-    its underside arched where the body's is, on posts at its first mode's nodes, over a
-    resonator tube (felt pads for Glockenspiel), and a mallet whose head grows with Weight; or a
-    kalimba's box with the tine over its bridge and a thumb. The mallet or thumb sits at the
-    contact point, a faint dot marks the bar's mirror point, and the contact point is a handle
-    that sets Strike when dragged along the bar or tine (one undo step, like the dial). Struck
-    shows rings and a line of text in its place. Below, three groups of
-    dials: **Body** (Decay, Brightness, Strike; Structure for Struck, Tuning and Ring for a bar
-    or tine, Torsion for a bar), **Mallet** (Hardness, Weight, and Contact and Pulse buttons that
-    set Mallet model; a tine is plucked, so the group is called **Finger** and hides the buttons)
-    and **Space** (Resonator, Width).
-    Struck hides the Mallet and Space groups, which it ignores.
-  - Over the light artwork the editor's own style sheet draws the groups as see-through cards,
-    the buttons as pills (the lit one dark), the drop-downs to match, and the dials' arcs in brass;
-    a dark theme keeps its own look.
-  - Every revision shows Modes per voice.
+  - Revisions 1 and 3 show the bodies' page, from top to bottom:
+    - The bodies as text tabs, Struck, Marimba, Vibraphone, Xylophone, Glockenspiel and Kalimba
+      ([bar bodies](instrument.md#bar-bodies-revision-3)), which set Body; the one playing is
+      underlined in brass.
+    - Across the whole width, behind the controls, `Strands`
+      ([sdk-custom-ui.md](sdk-custom-ui.md) › Reusable functional widgets) shows the body's
+      sound: its ribbons flow at rest, a note's modes (the Instrument's live values,
+      [instrument.md](instrument.md) › Live values for the panel) lift them and raise a ribbon
+      each, and a strike throws sparks out of the centre. Width sets how far they spread, Mallet
+      weight how wide they are, Hardness how fast they flow, and Resonator how strongly they show.
+    - At its centre the page's one large dial, Hardness (Touch for Kalimba, Brightness for
+      Struck, which has no mallet): a machined ivory knob on an espresso rim inside a scale of
+      ticks, with a brass arc and pointer, its name and value inside it, the sound fullest around
+      it.
+    - Under it, the body's name and a line on it at the left, and **Advanced ›** at the right,
+      which opens the Advanced page; then a hairline.
+    - One even row of dials: Decay, Brightness, Strike, Weight (Finger for Kalimba), Resonator
+      (Box for Kalimba) and Width; Struck has Decay, Strike and Structure.
+    - At the bottom right, Mallet model as two choices, Contact and Pulse, the chosen one
+      underlined in brass; Kalimba shows Plucked instead, and Struck nothing.
+  - **Advanced** (revisions 1 and 3): Tuning, Ring and Torsion as larger dials with a line each on
+    what they do (a tine has no Torsion; Struck has Structure alone), then Mallet model and Modes
+    per voice as choices. **‹ Model** goes back. The sound shows at about half strength behind it.
+  - Revisions 2 and 4 show Modes per voice on the Model page.
 - **Sample:** local waveform/drop target, Root (shown as a note name, 60 is C3), Playback, source Start/End, loop Start/End,
   Attack, Decay and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.
@@ -94,15 +99,20 @@ the same local state without modifying the DSP or exported parameter list.
 ## Appearance and validation
 
 Controls, labels, focus and selection use native SDK widgets, theme palette tokens and
-Suhina typography. With a light theme (a variant whose sheet declares a light colour scheme),
-both canvases draw the maintainer's warm ivory artwork behind every control: a cream surface
-with soft relief waves and the Suhina logo at the bottom right
-(`devices/instrument/panel/`, with its provenance). The expanded editor is 880 × 560, its last
-40 points free of controls so the logo stays clear; the compact panel's bottom-right label
-stops short of it. A dark theme hides the artwork (the panel's own style sheet), since its
-light text would not read on it, and keeps its own background. Text and controls stay native
-over the artwork. The canvas uses a quiet centre with grouped controls, distinct primary
-controls and explicit source limitations. Narrow windows scroll the full editor.
+Suhina typography. The page buttons sit at the bottom left of every page, as text. With a
+light theme (a variant whose sheet declares a light colour scheme),
+both canvases draw the maintainer's warm ivory artwork behind every control
+(`devices/instrument/panel/`, with its provenance). The compact panel's has soft relief waves and
+the Suhina logo at the bottom right, its bottom-right label stopping short of the logo. The
+expanded editor (880 × 560) has the same surface with its relief blurred to soft folds and no
+logo of its own; the Suhina logo stands at its top centre, over "Modal bodies · experimental"
+in small spaced capitals, in place of the Instrument title. Its own style sheet makes its
+buttons text: the page buttons, the body tabs and the choices, the chosen one underlined or
+marked in brass. Its dials have machined faces of the editor's own (an ivory dome with a brushed
+sheen on an espresso rim), with brass value arcs. A dark theme hides the artwork and the logo
+(the panel's own style sheet), since its light text would not read on them, shows the
+Instrument title, and keeps its own background and controls. Narrow windows scroll the full
+editor.
 
 Tests validate every binding and hidden parameter, local-page bounds and malformed layouts,
 keyboard/click navigation without project actions, parameter command parity, sample target

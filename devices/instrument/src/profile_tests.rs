@@ -125,42 +125,62 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
     let ui = layout.expanded.as_ref().unwrap();
     for revision in [1.0, 2.0, 3.0, 4.0] {
         for body in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] {
-            let visible = |name: &str| {
-                ui.controls.iter().any(|control| {
-                    control.name == name
-                        && control.visible_when.as_ref().is_none_or(|value| {
-                            value.evaluate(&|id, _, _| match id {
-                                "model_revision" => revision,
-                                "body" => body,
-                                "#page" => 1.0,
-                                _ => 0.0,
-                            }) > 0.0
-                        })
-                })
-            };
-            let bodies = revision == 1.0 || revision == 3.0;
-            let bar = bodies && body > 0.0;
-            assert_eq!(visible("Experimental struck modal · revision 1"), revision == 1.0);
-            assert_eq!(visible("Experimental modal profile · revision 2"), revision == 2.0);
-            assert_eq!(visible("Experimental struck and bar bodies · revision 3"), revision == 3.0);
-            assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
-            assert_eq!(visible("Strike"), bodies);
-            assert_eq!(visible("Strike colour"), !bodies);
-            assert_eq!(visible("Body decay"), !bodies);
-            assert_eq!(visible("Structure"), !bodies || body == 0.0, "Structure at {revision}, body {body}");
-            for button in ["Struck", "Marimba", "Vibraphone", "Xylophone", "Glockenspiel", "Kalimba", "Decay"] {
-                assert_eq!(visible(button), bodies, "{button} at revision {revision}");
+            for page in [1.0, 3.0] {
+                let visible = |name: &str| {
+                    ui.controls.iter().any(|control| {
+                        control.name == name
+                            && control.visible_when.as_ref().is_none_or(|value| {
+                                value.evaluate(&|id, _, _| match id {
+                                    "model_revision" => revision,
+                                    "body" => body,
+                                    "#page" => page,
+                                    _ => 0.0,
+                                }) > 0.0
+                            })
+                    })
+                };
+                let bodies = revision == 1.0 || revision == 3.0;
+                let model = page == 1.0;
+                let advanced = bodies && page == 3.0;
+                let struck_bar = bodies && (1.0..=4.0).contains(&body);
+                let tine = bodies && body == 5.0;
+                let at = format!("revision {revision}, body {body}, page {page}");
+                assert_eq!(visible("Experimental struck modal · revision 1"), revision == 1.0);
+                assert_eq!(visible("Experimental struck and bar bodies · revision 3"), revision == 3.0);
+                assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
+                // A profile or fitted set keeps #1599's struck-body group on the Model page.
+                assert_eq!(visible("Strike colour"), !bodies && model, "{at}");
+                assert_eq!(visible("Body decay"), !bodies && model, "{at}");
+                assert_eq!(visible("Modes per voice"), !bodies && model, "{at}");
+                // The bodies' Model page.
+                for tab in ["Struck", "Marimba", "Vibraphone", "Xylophone", "Glockenspiel", "Kalimba"] {
+                    assert_eq!(visible(tab), bodies && model, "{tab} at {at}");
+                }
+                assert_eq!(visible("Sound"), bodies, "the sound shows on Model and Advanced: {at}");
+                assert_eq!(visible("Advanced page"), bodies && model, "{at}");
+                assert_eq!(visible("Decay"), bodies && model, "{at}");
+                assert_eq!(visible("Strike"), bodies && model, "{at}");
+                assert_eq!(visible("Hardness"), struck_bar && model, "{at}");
+                assert_eq!(visible("Touch"), tine && model, "{at}");
+                assert_eq!(visible("Weight"), struck_bar && model, "{at}");
+                assert_eq!(visible("Finger"), tine && model, "{at}");
+                assert_eq!(visible("Resonator"), struck_bar && model, "{at}");
+                assert_eq!(visible("Box"), tine && model, "{at}");
+                assert_eq!(visible("Width"), (struck_bar || tine) && model, "{at}");
+                assert_eq!(visible("Contact"), struck_bar, "the mallet model shows on both pages: {at}");
+                assert_eq!(visible("Plucked"), tine && model, "{at}");
+                assert_eq!(
+                    visible("Structure"),
+                    (!bodies && model) || (bodies && body == 0.0),
+                    "Structure: the profile's group, or Struck's Model and Advanced pages: {at}"
+                );
+                // The Advanced page: the body's shaping dials and the engine's choices.
+                assert_eq!(visible("Tuning"), advanced && body > 0.0, "{at}");
+                assert_eq!(visible("Ring"), advanced && body > 0.0, "{at}");
+                assert_eq!(visible("Torsion"), advanced && (1.0..=4.0).contains(&body), "a tine has no torsion: {at}");
+                assert_eq!(visible("16 modes"), advanced, "{at}");
+                assert_eq!(visible("Model page back"), advanced, "{at}");
             }
-            for bar_control in ["Tuning", "Ring", "Hardness", "Weight", "Resonator", "Width"] {
-                assert_eq!(visible(bar_control), bar, "{bar_control} at revision {revision}, body {body}");
-            }
-            // A tine is plucked and has no torsional modes: no mallet model and no Torsion.
-            assert_eq!(visible("Contact"), bar && body != 5.0);
-            assert_eq!(visible("Torsion"), bar && body != 5.0);
-            assert_eq!(visible("MALLET"), bar && body != 5.0);
-            assert_eq!(visible("FINGER"), bodies && body == 5.0);
-            assert_eq!(visible("Tine"), bodies && body == 5.0);
-            assert_eq!(visible("Bar"), bar && body != 5.0);
         }
     }
     assert!(layout.panel(&INFO).is_ok());

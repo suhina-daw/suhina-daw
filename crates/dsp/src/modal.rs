@@ -122,6 +122,12 @@ impl<const N: usize> ModalBank<N> {
         output as f32
     }
 
+    /// Mode `n`'s amplitude: the size of its rotating state, which falls as it decays and does
+    /// not move with its phase. Zero past the bank's modes.
+    pub fn level(&self, n: usize) -> f64 {
+        self.modes.get(n).map_or(0.0, |mode| mode.real.hypot(mode.imaginary))
+    }
+
     pub fn is_active(&self) -> bool {
         self.active
     }
@@ -166,6 +172,22 @@ impl<const N: usize> ModalBank<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_modes_level_is_its_decaying_amplitude() {
+        let mut bank = ModalBank::<2>::default();
+        assert_eq!(bank.level(0), 0.0);
+        bank.strike(48000.0, &[Mode { frequency_hz: 440.0, decay_seconds: 0.5, amplitude: 0.5 }]);
+        for n in 1..=24000 {
+            bank.next_sample();
+            if n % 6000 == 0 {
+                let expected = 0.5 * (-1000.0_f64.ln() * n as f64 / 24000.0).exp();
+                assert!((bank.level(0) - expected).abs() < 1e-6, "sample {n}: {} against {expected}", bank.level(0));
+            }
+        }
+        assert_eq!(bank.level(1), 0.0, "an unused mode");
+        assert_eq!(bank.level(9), 0.0, "past the bank");
+    }
 
     #[test]
     fn one_mode_matches_the_analytical_decay_and_pitch() {

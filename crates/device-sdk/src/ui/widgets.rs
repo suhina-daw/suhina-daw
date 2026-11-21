@@ -119,6 +119,29 @@ fn knob(ui: &mut DeviceUi, id: &str, label: &str, b: [f32; 4], log: bool) {
     });
 }
 
+/// `Strands`' colours when a layout leaves them out: warm ivory, champagne gold, deep bronze and
+/// a brass thread.
+pub const STRAND_LIGHT: [u8; 4] = [255, 249, 237, 255];
+pub const STRAND_MID: [u8; 4] = [222, 189, 135, 255];
+pub const STRAND_SHADOW: [u8; 4] = [128, 87, 54, 255];
+pub const STRAND_THREAD: [u8; 4] = [199, 128, 51, 255];
+
+fn strand_light() -> [u8; 4] {
+    STRAND_LIGHT
+}
+
+fn strand_mid() -> [u8; 4] {
+    STRAND_MID
+}
+
+fn strand_shadow() -> [u8; 4] {
+    STRAND_SHADOW
+}
+
+fn strand_thread() -> [u8; 4] {
+    STRAND_THREAD
+}
+
 /// Reusable functional UI nodes. Each instance uses its control's bindings and bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -245,6 +268,32 @@ pub enum Widget {
     /// The one-line note a file-backing device's panel shows under the controls when its
     /// file does not run (the fault, or that the file moved); nothing when it does.
     DeviceNote,
+    /// Host-drawn ribbons of very fine dots that show sound as light: they flow at rest, swell
+    /// and raise a ribbon per further mode with the modes' energies, and throw a shell of sparks
+    /// out of the centre at a strike (docs/spec/sdk-custom-ui.md › Reusable functional widgets).
+    /// Every field but the colours is a value expression read each frame; it has no binding.
+    Strands {
+        /// 1 to 6 energies, 0 to 1. The first carries the ribbons that always flow.
+        modes: Vec<crate::ui::UiValue>,
+        /// Seconds since the last strike, and its strength, 0 to 1.
+        since: crate::ui::UiValue,
+        velocity: crate::ui::UiValue,
+        /// 0 to 1: how far the ribbons spread, how wide they are and how fast they flow.
+        height: crate::ui::UiValue,
+        thickness: crate::ui::UiValue,
+        speed: crate::ui::UiValue,
+        /// 0 to 1: how strongly they show.
+        presence: crate::ui::UiValue,
+        /// A dot facing the light, in between, turned away, and one fibre in seven.
+        #[serde(default = "strand_light")]
+        light: [u8; 4],
+        #[serde(default = "strand_mid")]
+        mid: [u8; 4],
+        #[serde(default = "strand_shadow")]
+        shadow: [u8; 4],
+        #[serde(default = "strand_thread")]
+        thread: [u8; 4],
+    },
     /// Host-drawn response display of the eight-band EQ: the grid, the curve of each band
     /// group in use and a draggable dot per band, with the selected band's Frequency, Gain
     /// and Q strips, the bands' type menus and numbered selectors, and the Edit switch beside
@@ -536,7 +585,7 @@ impl Widget {
             | Self::Envelope { .. }
             | Self::EqCurve => {}
             // Host-rendered: the host draws them from its own state.
-            Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote => {}
+            Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote | Self::Strands { .. } => {}
             Self::Knob { label } => {
                 let label_height = if label.is_empty() { 0. } else { 12. };
                 knob(&mut ui, id, label, [0., label_height, w, height - label_height], binding.logarithmic);

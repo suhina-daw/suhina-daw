@@ -19,7 +19,11 @@ use suhina_device_sdk::{
 /// The light themes' backgrounds (`devices/instrument/panel/README.md`): the compact panel's strip
 /// and the expanded editor's, each with the logo at its bottom right.
 const PANEL_LIGHT: &[u8] = include_bytes!("../panel/panel-light.jpg");
-const EDITOR_LIGHT: &[u8] = include_bytes!("../panel/editor-light.jpg");
+const EDITOR_LIGHT: &[u8] = include_bytes!("../panel/editor-surface.jpg");
+/// The editor's logo at its top centre, and its dials' machined faces, large and small.
+const LOGO: &[u8] = include_bytes!("../panel/logo.png");
+const KNOB_LARGE: &[u8] = include_bytes!("../panel/knob-large.png");
+const KNOB_SMALL: &[u8] = include_bytes!("../panel/knob-small.png");
 /// The artwork shows with a light theme only: a dark theme's light text would not read on it.
 const ARTWORK_STYLE: &str = "@media (prefers-color-scheme: dark) { #artwork-light { display: none; } }";
 
@@ -69,37 +73,6 @@ impl Canvas {
     pub(super) fn style(&mut self, sheet: &str) {
         let style = self.ui.style.take().unwrap_or_default();
         self.ui.style = Some(if style.is_empty() { sheet.into() } else { format!("{style}\n{sheet}") });
-    }
-
-    /// A dot dragged along a drawing that sets parameter `id`, its minimum at the right of
-    /// `bounds` and its maximum at the left, drawn as a short line across `span` (canvas y).
-    pub(super) fn handle(
-        &mut self,
-        id: &str,
-        name: &str,
-        bounds: [f32; 4],
-        span: [f32; 2],
-        color: [u8; 4],
-        tooltip: &str,
-    ) {
-        self.add(
-            name,
-            Widget::Handle {
-                color,
-                span: Some([span[0].into(), span[1].into()]),
-                offset: None,
-                dot: true,
-                relative: false,
-                hollow: false,
-            },
-            bounds,
-            Some(id),
-            UiGesture::Position,
-            tooltip,
-        );
-        if let Some(binding) = self.ui.controls.last_mut().and_then(|control| control.x.as_mut()) {
-            binding.drag_scale = -1.0;
-        }
     }
 
     pub(super) fn page(&mut self, page: u16) {
@@ -161,23 +134,6 @@ impl Canvas {
             .map(|value| value_is(id, *value))
             .reduce(|a, b| UiValue::Expression(Box::new(UiExpression::Add { a, b })));
         self.when(controls, &condition.unwrap_or_else(|| 0.0_f32.into()));
-    }
-
-    /// A segmented button: pressing it sets parameter `id` to `value`.
-    pub(super) fn choice(&mut self, id: &str, value: u16, label: &str, bounds: [f32; 4], tooltip: &str) {
-        self.add(
-            label,
-            Widget::Button { label: label.into(), off_label: None, indicator: false },
-            bounds,
-            Some(id),
-            UiGesture::Set(value),
-            tooltip,
-        );
-    }
-
-    /// A drawing, its coordinates relative to `bounds`' top left.
-    pub(super) fn graphic(&mut self, name: &str, drawing: Vec<Draw>, bounds: [f32; 4]) {
-        self.add(name, Widget::Graphic { drawing }, bounds, None, UiGesture::Drag, "");
     }
 
     /// Show the last `controls` controls only while `condition` holds, on their page.
@@ -316,9 +272,131 @@ impl Canvas {
         );
     }
 
+    /// An image asset of the canvas, under `id`. An image the SDK refuses is left out.
+    pub(super) fn asset(&mut self, id: &str, bytes: &[u8]) {
+        if let Ok(asset) = ImageAsset::from_bytes(id, bytes) {
+            self.ui.assets.push(asset);
+        }
+    }
+
+    /// Gives the last control the id `id`, for the panel's style sheet (`#id`).
+    pub(super) fn set_id(&mut self, id: &str) {
+        if let Some(control) = self.ui.controls.last_mut() {
+            control.id = id.into();
+        }
+    }
+
+    /// Shows the last control only while `condition` holds, whatever its page said.
+    pub(super) fn show_when(&mut self, condition: UiValue) {
+        if let Some(control) = self.ui.controls.last_mut() {
+            control.visible_when = Some(condition);
+        }
+    }
+
+    /// Text drawn as a graphic: `align` against `bounds`' left or centre, in `color` (a palette
+    /// token, `[3, 1, k]`, follows the theme and the panel's sheet).
+    pub(super) fn text(
+        &mut self,
+        name: &str,
+        text: &str,
+        bounds: [f32; 4],
+        size: f32,
+        align: TextAlign,
+        color: [u8; 4],
+    ) {
+        let x = if matches!(align, TextAlign::Center) { bounds[2] / 2.0 } else { 0.0 };
+        self.add(
+            name,
+            Widget::Graphic {
+                drawing: vec![Draw::Text {
+                    position: [x.into(), 0.0.into()],
+                    text: text.into(),
+                    size,
+                    color,
+                    parameter: None,
+                    decimals: 0,
+                    align,
+                    format: TextFormat::Number,
+                }],
+            },
+            bounds,
+            None,
+            UiGesture::Drag,
+            "",
+        );
+    }
+
+    /// A button setting `id` to `value`, named `name` (its accessible name) and showing `label`.
+    pub(super) fn choice_labelled(
+        &mut self,
+        id: &str,
+        value: u16,
+        name: &str,
+        label: &str,
+        bounds: [f32; 4],
+        tooltip: &str,
+    ) {
+        self.add(
+            name,
+            Widget::Button { label: label.into(), off_label: None, indicator: false },
+            bounds,
+            Some(id),
+            UiGesture::Set(value),
+            tooltip,
+        );
+    }
+
+    /// A ringed dial with the canvas's image asset `face` as its knob.
+    pub(super) fn face_dial(&mut self, id: &str, name: &str, bounds: [f32; 4], tooltip: &str, face: &str) {
+        self.dial(id, name, bounds, tooltip);
+        if let Some(control) = self.ui.controls.last_mut()
+            && let Some(Widget::Dial { image, .. }) = control.widget.as_mut()
+        {
+            *image = Some(face.into());
+        }
+    }
+
+    /// A control drawn entirely by `drawing` that sets `id` by vertical drags, as a dial does.
+    pub(super) fn drawn_dial(&mut self, id: &str, name: &str, bounds: [f32; 4], drawing: Vec<Draw>, tooltip: &str) {
+        self.ui.controls.push(CustomControl {
+            id: format!("control_{}", self.ui.controls.len()),
+            name: name.into(),
+            tooltip: tooltip.into(),
+            bounds,
+            widget: None,
+            gesture: UiGesture::Drag,
+            x: None,
+            y: Some(UiBinding::new(id)),
+            drawing,
+            visible_when: self.page.map(page_is),
+        });
+    }
+
     pub(super) fn finish(self) -> DeviceUi {
         self.ui
     }
+}
+
+/// While the editor shows page `page`.
+pub(super) fn page_is(page: u16) -> UiValue {
+    UiValue::Expression(Box::new(UiExpression::Equal {
+        a: UiValue::parameter(PAGE_ID, false),
+        b: f32::from(page).into(),
+    }))
+}
+
+/// While parameter `id` has one of `values`.
+pub(super) fn any_of(id: &str, values: &[u16]) -> UiValue {
+    values
+        .iter()
+        .map(|value| value_is(id, *value))
+        .reduce(|a, b| UiValue::Expression(Box::new(UiExpression::Add { a, b })))
+        .unwrap_or_else(|| 0.0_f32.into())
+}
+
+/// Both conditions.
+pub(super) fn both(a: UiValue, b: UiValue) -> UiValue {
+    UiValue::Expression(Box::new(UiExpression::Multiply { a, b }))
 }
 
 fn revision_is(revision: u16) -> UiValue {

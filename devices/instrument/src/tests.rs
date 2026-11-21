@@ -620,3 +620,50 @@ fn shaping_controls_change_a_bar_and_leave_struck_alone() {
         assert_eq!(render(0.0, index, value), render(0.0, index, default), "{} leaves Struck alone", PARAMS[index].id);
     }
 }
+
+#[test]
+fn the_panel_reads_each_modes_energy_the_time_since_a_strike_and_its_velocity() {
+    let read = |instrument: &Instrument| instrument.readouts().unwrap();
+    let mut marimba = bar_instrument(1.0, 0.0);
+    let mut buffer = vec![0.0; 960];
+    marimba.process(&ProcessContext::default(), &mut buffer);
+    let rest = read(&marimba);
+    assert_eq!(&rest[..5], &[0.0; 5], "nothing sounds yet");
+    assert_eq!(rest[5], 60.0, "no note-on yet");
+    assert_eq!(rest[6], 0.0);
+
+    marimba.event(NoteEvent::On { key: 60, velocity: 0.8 });
+    marimba.process(&ProcessContext::default(), &mut buffer);
+    let struck = read(&marimba);
+    assert!(struck[0] > 0.1, "the fundamental sounds: {:?}", &struck[..5]);
+    assert!(
+        struck[..5].iter().all(|e| (0.0..=0.8).contains(e)),
+        "energies stay within the velocity: {:?}",
+        &struck[..5]
+    );
+    assert!((struck[5] - 0.01).abs() < 1e-4, "480 frames at 48 kHz since the note-on: {}", struck[5]);
+    assert_eq!(struck[6], 0.8);
+
+    // Two seconds later the upper modes have died away faster than the fundamental.
+    let mut long = vec![0.0; 192_000];
+    marimba.process(&ProcessContext::default(), &mut long);
+    let later = read(&marimba);
+    assert!(later[0] < struck[0], "the fundamental decays");
+    assert!(
+        later[1] < 0.5 * struck[1].max(1e-6) || later[1] < 1e-3,
+        "the second mode decays faster: {:?} then {:?}",
+        &struck[..5],
+        &later[..5]
+    );
+    assert!((later[5] - 2.01).abs() < 1e-3, "{}", later[5]);
+
+    // Struck and a Sample-only source.
+    let mut struck_body = bar_instrument(0.0, 0.0);
+    struck_body.event(NoteEvent::On { key: 60, velocity: 1.0 });
+    struck_body.process(&ProcessContext::default(), &mut buffer);
+    assert!(read(&struck_body)[0] > 0.0, "Struck hands its first resonance's energy");
+    marimba.reset();
+    let reset = read(&marimba);
+    assert_eq!(&reset[..5], &[0.0; 5]);
+    assert_eq!(reset[5], 60.0);
+}

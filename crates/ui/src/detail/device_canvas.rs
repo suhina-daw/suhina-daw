@@ -2477,6 +2477,41 @@ pub(crate) fn show(
             );
             continue;
         }
+        // Strands is host-drawn from its expressions: the modes' energies and the strike are
+        // usually the device's live values (`#r0` …), the rest its parameters.
+        if let Some(Widget::Strands {
+            modes,
+            since,
+            velocity,
+            height,
+            thickness,
+            speed,
+            presence,
+            light,
+            mid,
+            shadow,
+            thread,
+        }) = &control.widget
+        {
+            let read = |v: &suhina_device_sdk::ui::UiValue| v.evaluate(&|id, norm, log| values.read(id, norm, log));
+            let mut energies = [0.0; 6];
+            for (energy, mode) in energies.iter_mut().zip(modes) {
+                *energy = read(mode);
+            }
+            let inputs = super::strands::Inputs {
+                modes: energies,
+                since: read(since),
+                velocity: read(velocity),
+                height: read(height),
+                thickness: read(thickness),
+                speed: read(speed),
+                presence: read(presence),
+                colors: [*light, *mid, *shadow, *thread],
+            };
+            let id = ui.scope_id().with(("strands", track.0, device, &control.id));
+            super::strands::show(ui, &painter, bounds, id, &inputs);
+            continue;
+        }
         // The EqCurve is host-drawn: the SDK's validator only lets the built-in EQ's own
         // parameter set claim the shape, so this canvas can only be its panel.
         if matches!(control.widget, Some(Widget::EqCurve)) {

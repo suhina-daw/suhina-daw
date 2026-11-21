@@ -677,6 +677,16 @@ impl DeviceUi {
                         c.x.is_none() && c.y.is_none() && !what.is_empty() && what.len() <= 32
                     }
                     Widget::DeviceNote => c.x.is_none() && c.y.is_none(),
+                    // Strands reads value expressions only: one to six modes and its other inputs.
+                    Widget::Strands { modes, since, velocity, height, thickness, speed, presence, .. } => {
+                        c.x.is_none()
+                            && c.y.is_none()
+                            && (1..=6).contains(&modes.len())
+                            && modes
+                                .iter()
+                                .chain([since, velocity, height, thickness, speed, presence])
+                                .all(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
+                    }
                     // Only the built-in EQ's parameter set reads as an EqCurve's bands:
                     // requiring all 24 keeps a graph file from claiming the host-drawn
                     // panel for parameters that are not the EQ's.
@@ -873,6 +883,7 @@ impl DeviceUi {
                             | Widget::DeviceSwitch
                             | Widget::DeviceFiles { .. }
                             | Widget::DeviceNote
+                            | Widget::Strands { .. }
                             | Widget::EqCurve
                     )
                 )

@@ -214,6 +214,15 @@ rest. Its box resonance is a fixed-frequency tube driven by the whole tine, whic
 leaves in place. The Model page now shows the bodies as buttons, a drawing of the bar or tine whose
 contact point moves with Strike, and the controls in Body, Mallet and Space groups.
 
+That page was then redesigned with the maintainer in a mock-up, against commercial instrument
+editors' layouts and general UI guidance (one main control, no boxes, few controls on the main
+page, the rest on an Advanced page). The result: the sound drawn as light across the page
+(`Widget::Strands`, a host-drawn SDK widget, drawn on the GPU with a lighter CPU version), moved
+by seven live values the Instrument now hands its panel (the first five modes' energies, the time
+since a note-on and its velocity), one large machined Hardness dial at its centre, one even row of
+dials, and Tuning, Ring, Torsion, the mallet model and modes per voice on the Advanced page
+(`docs/spec/instrument-editor.md`, `docs/spec/sdk-custom-ui.md` › Reusable functional widgets).
+
 ## First listening and real use
 
 The maintainer played the Windows test build of the head before the tubes (`d733d20`) on an ASIO

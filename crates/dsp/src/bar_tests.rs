@@ -556,3 +556,33 @@ fn a_fixed_body_resonance_stays_where_it_is_under_the_pitch_wheel() {
     }));
     assert_eq!(bar.tube.omega, 0.0, "a resonance above the margin is left out");
 }
+
+#[test]
+fn mode_levels_follow_the_decay_and_not_the_phase() {
+    let modes = bar_modes(4, 0.3);
+    let mut bar = StruckBar::<4>::default();
+    bar.set_modes(48000.0, &modes);
+    assert!((0..6).all(|n| bar.mode_level(n) == 0.0), "a bar at rest has no level");
+    bar.strike(Excitation::Pulse, soft(), 1.5);
+    for _ in 0..2400 {
+        bar.next_sample();
+    }
+    let early = bar.mode_level(0);
+    assert!(early > 0.0);
+    // Over one period the level barely moves, while the output swings through zero.
+    let period = (48000.0 / modes[0].frequency_hz).round() as usize;
+    let mut largest = 0.0f64;
+    let mut smallest = f64::MAX;
+    for _ in 0..period {
+        bar.next_sample();
+        largest = largest.max(bar.mode_level(0));
+        smallest = smallest.min(bar.mode_level(0));
+    }
+    assert!(smallest > 0.97 * largest, "the level does not flicker with the phase: {smallest} to {largest}");
+    for _ in 0..48000 {
+        bar.next_sample();
+    }
+    assert!(bar.mode_level(0) < 0.2 * early, "the level falls as the mode decays");
+    assert!(bar.mode_level(1) < bar.mode_level(0), "the faster second mode has fallen further");
+    assert_eq!(bar.mode_level(4), 0.0, "past the bar's modes");
+}

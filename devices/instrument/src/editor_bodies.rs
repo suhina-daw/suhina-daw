@@ -1,392 +1,405 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The Model page of the struck, bar and tine bodies (revision 3, and 1 read as 3): the body
-//! buttons, a side view of the chosen bar or tine with its mallet or thumb, which can be dragged
-//! along it, and the body, mallet and space groups (`docs/spec/instrument-editor.md`).
+//! The Model and Advanced pages of the struck, bar and tine bodies (revision 3, and 1 read as 3):
+//! the body tabs, the sound drawn across the page (`Widget::Strands`, from the Instrument's live
+//! values), the large dial at its centre, the body's name and one even row of dials, and the
+//! Advanced page's shaping dials and engine choices (docs/spec/instrument-editor.md).
 
-use super::Canvas;
-use std::f32::consts::PI;
-use suhina_device_sdk::ui::{Draw, TextAlign, TextFormat, UiExpression, UiValue};
+use super::{Canvas, any_of, both, page_is};
+use suhina_device_sdk::ui::{Draw, PAGE_ID, TextAlign, TextFormat, UiExpression, UiGesture, UiValue, Widget};
 
-/// The revisions whose Model page shows the bodies.
-const STRUCK_OR_BARS: &[u16] = &[1, 3];
-/// Body values with a physical bar or tine.
-const BARS: &[u16] = &[1, 2, 3, 4, 5];
-/// Body values with a struck bar (the tine is plucked).
+/// The revisions whose pages these are.
+const BODY_REVISIONS: &[u16] = &[1, 3];
+/// Body values: struck bars, the tine, the abstract body.
 const STRUCK_BARS: &[u16] = &[1, 2, 3, 4];
+const KALIMBA: &[u16] = &[5];
+const STRUCK: &[u16] = &[0];
 
-/// The drawing's place on the canvas, and the bar's within the drawing.
-const HERO: [f32; 4] = [24.0, 178.0, 832.0, 116.0];
-const BAR_LEFT: f32 = 96.0;
-const BAR_LENGTH: f32 = 640.0;
-const BAR_TOP: f32 = 34.0;
-/// The tine's clamp (its bridge) and its length to the free end.
-const TINE_CLAMP: f32 = 200.0;
-const TINE_LENGTH: f32 = 510.0;
-const TINE_TOP: f32 = 44.0;
+/// Palette tokens (`[3, 1, k]`): the theme's text, fainter text, a hairline, a groove and the
+/// accent, so the page reads in a dark theme too; over the light artwork the panel's sheet makes
+/// them espresso and brass.
+const INK: [u8; 4] = [3, 1, 1, 255];
+const MUTED: [u8; 4] = [3, 1, 1, 170];
+const HAIRLINE: [u8; 4] = [3, 1, 1, 56];
+const GROOVE: [u8; 4] = [3, 1, 1, 34];
+const ACCENT: [u8; 4] = [3, 1, 5, 255];
+const GLOW: [u8; 4] = [3, 1, 5, 52];
 
-const INK: [u8; 4] = [74, 58, 46, 255];
-const MUTED: [u8; 4] = [120, 98, 78, 255];
-const ACCENT: [u8; 4] = [184, 116, 47, 255];
-const SHADOW: [u8; 4] = [60, 40, 20, 46];
-const SHINE: [u8; 4] = [255, 255, 255, 80];
-const BRASS: [u8; 4] = [190, 150, 88, 255];
-const STEEL: [u8; 4] = [204, 208, 214, 255];
-const YARN: [u8; 4] = [92, 64, 102, 255];
-const RATTAN: [u8; 4] = [196, 160, 112, 255];
-const SKIN: [u8; 4] = [226, 186, 156, 255];
+/// The bodies in Body's order: their name and a line on each.
+const BODIES: [(u16, &str, &str); 6] = [
+    (0, "Struck", "An abstract struck resonance"),
+    (1, "Marimba", "Rosewood bar · tuned 1 : 4 : 10 · tube resonator"),
+    (2, "Vibraphone", "Aluminium bar · tuned 1 : 4 · long ring"),
+    (3, "Xylophone", "Rosewood bar · tuned 1 : 3 : 6 · short and bright"),
+    (4, "Glockenspiel", "Steel bar · untuned overtones · no resonator"),
+    (5, "Kalimba", "Steel tine · plucked · wooden box"),
+];
 
-/// How a body's bar looks from the side.
-struct BarLook {
-    colour: [u8; 4],
-    thickness: f32,
-    /// How far the underside is cut away between the nodes.
-    arch: f32,
-    grain: bool,
-    tube: bool,
-    felt: bool,
+/// The large dial's turn: from 150° left of the top to 150° right of it, in the SDK's radians
+/// (clockwise from the right).
+const TURN_START: f32 = 2.094_395;
+const TURN_SPAN: f32 = 5.235_988;
+
+/// Letters spread apart, the way the page's names are set.
+fn spaced(text: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in text.to_uppercase().chars().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        out.push(c);
+    }
+    out
 }
 
-const MARIMBA: BarLook =
-    BarLook { colour: [138, 78, 50, 255], thickness: 28.0, arch: 12.0, grain: true, tube: true, felt: false };
-const XYLOPHONE: BarLook =
-    BarLook { colour: [180, 116, 70, 255], thickness: 26.0, arch: 7.0, grain: true, tube: true, felt: false };
-const VIBRAPHONE: BarLook =
-    BarLook { colour: [180, 186, 194, 255], thickness: 20.0, arch: 7.0, grain: false, tube: true, felt: false };
-const GLOCKENSPIEL: BarLook =
-    BarLook { colour: STEEL, thickness: 14.0, arch: 0.0, grain: false, tube: false, felt: true };
-/// The frame rail under the bars.
-const RAIL: f32 = 100.0;
-
-fn n(value: f32) -> UiValue {
-    value.into()
+fn add(a: UiValue, b: UiValue) -> UiValue {
+    UiValue::Expression(Box::new(UiExpression::Add { a, b }))
 }
 
-fn with_alpha(colour: [u8; 4], alpha: u8) -> [u8; 4] {
-    [colour[0], colour[1], colour[2], alpha]
-}
-
-/// `a + b * parameter`, an expression for a drawing that follows a parameter.
-fn follow(a: f32, b: f32, parameter: &str) -> UiValue {
-    UiValue::Expression(Box::new(UiExpression::Add {
-        a: a.into(),
-        b: UiValue::Expression(Box::new(UiExpression::Multiply {
-            a: b.into(),
-            b: UiValue::parameter(parameter, false),
-        })),
-    }))
-}
-
-fn rect(x: f32, y: f32, width: f32, height: f32, color: [u8; 4], radius: f32) -> Draw {
-    Draw::Rect { rect: [n(x), n(y), n(width), n(height)], color, radius }
-}
-
-fn circle(center: [UiValue; 2], radius: UiValue, color: [u8; 4]) -> Draw {
-    Draw::Circle { center, radius, color }
+fn times(a: UiValue, b: f32) -> UiValue {
+    UiValue::Expression(Box::new(UiExpression::Multiply { a, b: b.into() }))
 }
 
 fn line(from: [f32; 2], to: [f32; 2], color: [u8; 4], width: f32) -> Draw {
-    Draw::Line { from: [n(from[0]), n(from[1])], to: [n(to[0]), n(to[1])], color, width }
+    Draw::Line { from: [from[0].into(), from[1].into()], to: [to[0].into(), to[1].into()], color, width }
 }
 
-fn text(position: [f32; 2], text: &str, align: TextAlign) -> Draw {
+fn text(position: [f32; 2], text: &str, size: f32, align: TextAlign, color: [u8; 4]) -> Draw {
     Draw::Text {
-        align,
-        format: TextFormat::Number,
-        position: [n(position[0]), n(position[1])],
+        position: [position[0].into(), position[1].into()],
         text: text.into(),
-        color: MUTED,
-        size: 11.0,
+        size,
+        color,
         parameter: None,
         decimals: 0,
+        align,
+        format: TextFormat::Number,
     }
 }
 
-/// How many pieces draw the arch.
-const ARCH_PIECES: usize = 16;
-
-/// The underside's height at `t` of the length: the bar's bottom, cut away in an arch between
-/// a fifth and four fifths of the length.
-fn underside(look: &BarLook, t: f32) -> f32 {
-    let bottom = BAR_TOP + look.thickness;
-    if (0.2..=0.8).contains(&t) { bottom - look.arch * (PI * (t - 0.2) / 0.6).sin() } else { bottom }
-}
-
-/// The bar's side outline, for its edge (a fill takes only convex shapes, so the body is drawn in
-/// pieces by `bar_body`).
-fn bar_outline(look: &BarLook) -> Vec<[UiValue; 2]> {
-    let mut points = vec![
-        [n(BAR_LEFT), n(BAR_TOP)],
-        [n(BAR_LEFT + BAR_LENGTH), n(BAR_TOP)],
-        [n(BAR_LEFT + BAR_LENGTH), n(BAR_TOP + look.thickness)],
-    ];
-    for i in (0..=ARCH_PIECES).rev() {
-        let t = 0.2 + 0.6 * i as f32 / ARCH_PIECES as f32;
-        points.push([n(BAR_LEFT + BAR_LENGTH * t), n(underside(look, t))]);
+/// The large dial for `parameter`: a machined ivory knob on an espresso rim (the canvas's
+/// `knob-large`), a scale of ticks, a brass arc in a groove with a glow, a brass pointer at the
+/// dome's edge, and `caption` and the value inside the dome. The control is 196 points square.
+fn large_dial(parameter: &str, caption: &str) -> Vec<Draw> {
+    let c = 98.0;
+    let turn = add(TURN_START.into(), times(UiValue::normalized(parameter, false), TURN_SPAN));
+    let at = |radius: f32| {
+        [
+            add(c.into(), times(UiValue::Expression(Box::new(UiExpression::Cos { value: turn.clone() })), radius)),
+            add(c.into(), times(UiValue::Expression(Box::new(UiExpression::Sin { value: turn.clone() })), radius)),
+        ]
+    };
+    let mut drawing = vec![Draw::image("knob-large", [20.0, 24.0, 156.0, 156.0])];
+    for n in 0..=60 {
+        let angle = TURN_START + n as f32 * TURN_SPAN / 60.0;
+        let major = n % 6 == 0;
+        let (inner, outer) = (if major { 86.0 } else { 89.0 }, 93.0);
+        drawing.push(line(
+            [c + inner * angle.cos(), c + inner * angle.sin()],
+            [c + outer * angle.cos(), c + outer * angle.sin()],
+            if major { [3, 1, 1, 96] } else { [3, 1, 1, 46] },
+            if major { 1.6 } else { 1.0 },
+        ));
     }
-    points.push([n(BAR_LEFT), n(BAR_TOP + look.thickness)]);
-    points
-}
-
-/// The bar's body: the slab above the arch, its two ends and the arch as convex pieces that
-/// overlap by a hair, so no seam shows between them.
-fn bar_body(look: &BarLook) -> Vec<Draw> {
-    let slab = look.thickness - look.arch;
-    let bottom = BAR_TOP + look.thickness;
-    let mut pieces = vec![rect(BAR_LEFT, BAR_TOP, BAR_LENGTH, slab + 0.5, look.colour, 3.0)];
-    if look.arch > 0.0 {
-        let end = BAR_LENGTH * 0.2 + 0.5;
-        pieces.push(rect(BAR_LEFT, BAR_TOP + slab, end, look.arch, look.colour, 2.0));
-        pieces.push(rect(BAR_LEFT + BAR_LENGTH - end, BAR_TOP + slab, end, look.arch, look.colour, 2.0));
-        let top = BAR_TOP + slab - 0.5;
-        for i in 0..ARCH_PIECES {
-            let (a, b) = (0.2 + 0.6 * i as f32 / ARCH_PIECES as f32, 0.2 + 0.6 * (i + 1) as f32 / ARCH_PIECES as f32);
-            let (x0, x1) = (BAR_LEFT + BAR_LENGTH * a - 0.4, BAR_LEFT + BAR_LENGTH * b + 0.4);
-            pieces.push(Draw::Path {
-                points: vec![
-                    [n(x0), n(top)],
-                    [n(x1), n(top)],
-                    [n(x1), n(underside(look, b).min(bottom))],
-                    [n(x0), n(underside(look, a).min(bottom))],
-                ],
-                color: look.colour,
-                width: 0.0,
-                closed: true,
-                fill: Some(look.colour),
-            });
-        }
-    }
-    pieces
-}
-
-/// Where the mallet meets the bar, from the left end: `0.5 * (0.98 - p) / 0.96` of its length
-/// for Strike position `p` (`docs/spec/instrument.md`).
-fn bar_contact() -> UiValue {
-    follow(BAR_LEFT + BAR_LENGTH * 0.5 * 0.98 / 0.96, -BAR_LENGTH * 0.5 / 0.96, "strike")
-}
-
-/// A mallet whose head grows with Mallet weight, resting on `top` at `x`.
-fn mallet(x: UiValue, top: f32) -> Vec<Draw> {
-    // The head's radius, 7 to 12 points, and its centre just above the bar.
-    let radius = follow(7.0, 5.0, "mallet_weight");
-    let centre_y = follow(top, -5.0, "mallet_weight");
-    let centre_y = UiValue::Expression(Box::new(UiExpression::Add { a: centre_y, b: n(-7.0) }));
-    let stick_end = UiValue::Expression(Box::new(UiExpression::Add { a: x.clone(), b: n(72.0) }));
-    let shine = UiValue::Expression(Box::new(UiExpression::Add { a: x.clone(), b: n(-2.5) }));
-    let shine_y = UiValue::Expression(Box::new(UiExpression::Add { a: centre_y.clone(), b: n(-2.5) }));
-    vec![
-        Draw::Line { from: [x.clone(), centre_y.clone()], to: [stick_end, n(0.0)], color: RATTAN, width: 3.0 },
-        circle([x, centre_y], radius, YARN),
-        circle([shine, shine_y], n(2.5), SHINE),
-    ]
-}
-
-/// A bar from the side: its supports at the nodes of its first mode, the resonator tube or felt
-/// under it, its shadow and grain, the mirror of the strike point and the mallet.
-fn bar_drawing(look: &BarLook) -> Vec<Draw> {
-    let bottom = BAR_TOP + look.thickness;
-    let nodes = [BAR_LEFT + BAR_LENGTH * 0.224, BAR_LEFT + BAR_LENGTH * 0.776];
-    let centre = BAR_LEFT + BAR_LENGTH / 2.0;
-    let mut drawing = Vec::new();
-    // A rail along the frame and a post under each node.
-    drawing.push(line([BAR_LEFT - 24.0, RAIL], [BAR_LEFT + BAR_LENGTH + 24.0, RAIL], with_alpha(INK, 70), 2.0));
-    for x in nodes {
-        drawing.push(line([x, bottom], [x, RAIL], with_alpha(INK, 90), 2.0));
-    }
-    if look.tube {
-        let (x, top) = (centre - 22.0, bottom + 6.0);
-        drawing.push(rect(x + 4.0, top + 4.0, 44.0, 114.0 - top, SHADOW, 7.0));
-        drawing.push(rect(x, top, 44.0, 114.0 - top, BRASS, 7.0));
-        drawing.push(rect(x + 8.0, top + 5.0, 6.0, 104.0 - top, SHINE, 3.0));
-        drawing.push(rect(x + 32.0, top + 5.0, 5.0, 104.0 - top, [110, 80, 40, 60], 2.5));
-        drawing.push(rect(x - 2.0, top - 3.0, 48.0, 7.0, with_alpha(INK, 210), 3.5));
-    }
-    if look.felt {
-        for x in nodes {
-            drawing.push(rect(x - 12.0, bottom, 24.0, 5.0, [150, 58, 58, 255], 2.0));
-        }
-    }
-    drawing.push(rect(BAR_LEFT + 5.0, BAR_TOP + 6.0, BAR_LENGTH, look.thickness - look.arch * 0.6, SHADOW, 4.0));
-    drawing.extend(bar_body(look));
-    drawing.push(Draw::Path {
-        points: bar_outline(look),
-        color: with_alpha(INK, 110),
-        width: 1.0,
-        closed: true,
-        fill: None,
+    let arc = |end: UiValue, color: [u8; 4], width: f32| Draw::Arc {
+        center: [c.into(), c.into()],
+        radius: 78.0.into(),
+        start: TURN_START.into(),
+        end,
+        color,
+        width,
+    };
+    drawing.push(arc((TURN_START + TURN_SPAN).into(), GROOVE, 5.0));
+    drawing.push(arc(turn.clone(), GLOW, 11.0));
+    drawing.push(arc(turn.clone(), ACCENT, 3.5));
+    drawing.push(Draw::Line { from: at(44.0), to: at(57.0), color: ACCENT, width: 3.5 });
+    drawing.push(text([c, 76.0], &spaced(caption), 9.0, TextAlign::Center, MUTED));
+    drawing.push(Draw::Text {
+        position: [c.into(), 90.0.into()],
+        text: String::new(),
+        size: 24.0,
+        color: INK,
+        parameter: Some(parameter.into()),
+        decimals: 0,
+        align: TextAlign::Center,
+        format: TextFormat::Percent,
     });
-    drawing.push(rect(BAR_LEFT + 4.0, BAR_TOP + 2.0, BAR_LENGTH - 8.0, 3.0, SHINE, 1.5));
-    if look.grain {
-        let grain = [0, 0, 0, 34];
-        let y = BAR_TOP + look.thickness * 0.45;
-        drawing.push(line([BAR_LEFT + 30.0, y], [BAR_LEFT + 250.0, y + 1.0], grain, 1.0));
-        drawing.push(line([BAR_LEFT + 330.0, y + 4.0], [BAR_LEFT + 600.0, y + 3.0], grain, 1.0));
-        drawing.push(line([BAR_LEFT + 120.0, y - 6.0], [BAR_LEFT + 420.0, y - 6.0], grain, 1.0));
-    }
-    for x in nodes {
-        drawing.push(circle([n(x), n(BAR_TOP + look.thickness / 2.0)], n(2.5), with_alpha(INK, 170)));
-    }
-    // The other half of a symmetric bar is struck the same: its strike point, faintly.
-    let mirror = follow(BAR_LEFT + BAR_LENGTH * (1.0 - 0.5 * 0.98 / 0.96), BAR_LENGTH * 0.5 / 0.96, "strike");
-    drawing.push(circle([mirror, n(BAR_TOP + 3.0)], n(4.0), with_alpha(ACCENT, 110)));
-    drawing.extend(mallet(bar_contact(), BAR_TOP));
     drawing
 }
 
-/// A kalimba from the side: the box with its sound hole, the pressure bar and bridge, the tine
-/// over them, and the thumb at the pluck point, `1 - 0.5 * p` of the length from the bridge.
-fn tine_drawing() -> Vec<Draw> {
-    let wood = [196, 146, 96, 255];
-    let thumb_x = follow(TINE_CLAMP + TINE_LENGTH, -TINE_LENGTH * 0.5, "strike");
-    let nail_x = follow(TINE_CLAMP + TINE_LENGTH - 4.0, -TINE_LENGTH * 0.5, "strike");
-    vec![
-        rect(BAR_LEFT + 4.0, 66.0, BAR_LENGTH, 40.0, SHADOW, 9.0),
-        rect(BAR_LEFT, 62.0, BAR_LENGTH, 40.0, wood, 9.0),
-        rect(BAR_LEFT + 6.0, 64.0, BAR_LENGTH - 12.0, 3.0, SHINE, 1.5),
-        circle([n(600.0), n(84.0)], n(10.0), [62, 42, 30, 255]),
-        rect(150.0, TINE_TOP - 2.0, 14.0, 22.0, [120, 124, 130, 255], 3.0),
-        rect(TINE_CLAMP - 4.0, TINE_TOP + 4.0, 8.0, 14.0, INK, 2.0),
-        // The neighbouring tines behind it, shorter and longer, as on a kalimba.
-        rect(144.0, TINE_TOP + 1.0, TINE_CLAMP + TINE_LENGTH - 104.0, 4.0, [150, 154, 160, 150], 2.0),
-        rect(144.0, TINE_TOP + 1.0, TINE_CLAMP + TINE_LENGTH - 250.0, 4.0, [150, 154, 160, 190], 2.0),
-        rect(144.0, TINE_TOP, TINE_CLAMP + TINE_LENGTH - 144.0, 5.0, STEEL, 2.5),
-        rect(146.0, TINE_TOP, TINE_CLAMP + TINE_LENGTH - 148.0, 1.5, SHINE, 0.75),
-        circle([thumb_x, n(TINE_TOP - 12.0)], n(11.0), SKIN),
-        circle([nail_x, n(TINE_TOP - 15.0)], n(4.0), [246, 222, 206, 255]),
-    ]
+/// One even row of dials for the bodies `bodies`: `size` each, spread over `width` points from
+/// `left`, their top at `y`.
+fn dial_row(
+    ui: &mut Canvas,
+    bodies: &[u16],
+    dials: &[(&str, &str, &str)],
+    y: f32,
+    size: [f32; 2],
+    left: f32,
+    width: f32,
+) {
+    let step = width / dials.len().max(1) as f32;
+    for (n, (id, name, tooltip)) in dials.iter().enumerate() {
+        let x = left + step * (n as f32 + 0.5) - size[0] / 2.0;
+        ui.face_dial(id, name, [x, y, size[0], size[1]], tooltip, "knob-small");
+        ui.only_revisions(BODY_REVISIONS, 1);
+        ui.only_values("body", bodies, 1);
+    }
 }
 
-/// Struck has no physical shape: rings for an abstract resonance.
-fn struck_drawing() -> Vec<Draw> {
-    let mut drawing: Vec<Draw> = [(46.0, 22), (34.0, 34), (22.0, 52), (11.0, 90)]
-        .into_iter()
-        .map(|(radius, alpha)| circle([n(416.0), n(50.0)], n(radius), with_alpha(ACCENT, alpha)))
-        .collect();
-    drawing.push(text(
-        [416.0, 100.0],
-        "An abstract struck body. Choose a bar or a tine for a physical model.",
-        TextAlign::Center,
-    ));
-    drawing
+/// A hairline across the page at `y`.
+fn hairline(ui: &mut Canvas, y: f32) {
+    ui.add(
+        "Divider",
+        Widget::Graphic { drawing: vec![line([0.0, 0.5], [768.0, 0.5], HAIRLINE, 1.0)] },
+        [56.0, y, 768.0, 8.0],
+        None,
+        UiGesture::Drag,
+        "",
+    );
+    ui.only_revisions(BODY_REVISIONS, 1);
 }
 
-/// The bodies' part of the Model page.
+type DialSpec = (&'static str, &'static str, &'static str);
+
+const DECAY: DialSpec = (
+    "body_decay",
+    "Decay",
+    "Struck: fundamental T60. Bars and tines: scales their decays relative to 2 seconds. Next strike",
+);
+const BRIGHTNESS: DialSpec = ("brightness", "Brightness", "Energy in the higher resonances; affects the next strike");
+const STRIKE: DialSpec = (
+    "strike",
+    "Strike",
+    "Where the mallet or finger meets the body: a bar from its centre to its end, a tine from its free end. Next strike",
+);
+const STRUCTURE: DialSpec = ("structure", "Structure", "Stretch the resonance frequencies; next strike");
+const WIDTH: DialSpec = ("stereo_width", "Width", "Spread the bars from left (low) to right (high)");
+const TUNING: DialSpec =
+    ("tuning", "Tuning", "How far the body's tuned overtones apply; 0 % leaves the natural bar or tine");
+const RING: DialSpec = ("ring", "Ring", "How long the upper modes ring beside the fundamental; 50 % is the body's own");
+const TORSION: DialSpec = ("torsion", "Torsion", "How much the bar's twisting modes sound; 50 % is the body's own");
+
+/// The bodies' Model page (page 1) and their Advanced page (page 3).
 pub(super) fn body_page(ui: &mut Canvas) {
-    for (i, label) in
-        ["Struck", "Marimba", "Vibraphone", "Xylophone", "Glockenspiel", "Kalimba"].into_iter().enumerate()
-    {
-        ui.choice(
+    ui.page(1);
+    for (i, (value, name, _)) in BODIES.iter().enumerate() {
+        ui.choice_labelled(
             "body",
-            i as u16,
-            label,
-            [24.0 + i as f32 * 140.0, 140.0, 132.0, 30.0],
+            *value,
+            name,
+            &name.to_uppercase(),
+            [110.0 + i as f32 * 110.0, 80.0, 104.0, 22.0],
             "The body Modal plays: the abstract struck body, a struck bar or a plucked tine",
         );
-        ui.only_revisions(STRUCK_OR_BARS, 1);
+        ui.only_revisions(BODY_REVISIONS, 1);
     }
-    ui.graphic("Struck body", struck_drawing(), HERO);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", &[0], 1);
-    for (look, body) in [(&MARIMBA, 1), (&VIBRAPHONE, 2), (&XYLOPHONE, 3), (&GLOCKENSPIEL, 4)] {
-        ui.graphic("Bar", bar_drawing(look), HERO);
-        ui.only_revisions(STRUCK_OR_BARS, 1);
-        ui.only_values("body", &[body], 1);
+
+    // The sound across the page, behind the controls: the Instrument's live values move it, and
+    // it steps back on the Advanced page.
+    let presence = UiValue::Expression(Box::new(UiExpression::Multiply {
+        a: add(0.7.into(), times(UiValue::normalized("resonator", false), 0.3)),
+        b: add(1.0.into(), times(page_is(3), -0.45)),
+    }));
+    ui.add(
+        "Sound",
+        Widget::Strands {
+            modes: (0..5).map(|n| UiValue::parameter(format!("#r{n}"), false)).collect(),
+            since: UiValue::parameter("#r5", false),
+            velocity: UiValue::parameter("#r6", false),
+            height: UiValue::normalized("stereo_width", false),
+            thickness: UiValue::normalized("mallet_weight", false),
+            speed: UiValue::normalized("mallet_hardness", false),
+            presence,
+            light: [255, 249, 237, 255],
+            mid: [222, 189, 135, 255],
+            shadow: [128, 87, 54, 255],
+            thread: [199, 128, 51, 255],
+        },
+        [0.0, 110.0, 880.0, 236.0],
+        None,
+        UiGesture::Drag,
+        "",
+    );
+    ui.show_when(both(any_of("model_revision", BODY_REVISIONS), add(page_is(1), page_is(3))));
+
+    // The large dial at the centre: Hardness for a struck bar, Touch for the tine, Brightness for
+    // the abstract body, which has no mallet.
+    for (bodies, parameter, name, tooltip) in [
+        (
+            STRUCK_BARS,
+            "mallet_hardness",
+            "Hardness",
+            "How hard the mallet is: harder sounds brighter and the sound flows faster",
+        ),
+        (KALIMBA, "mallet_hardness", "Touch", "How hard the finger is: harder sounds brighter"),
+        (STRUCK, "brightness", "Brightness", "Energy in the higher resonances; affects the next strike"),
+    ] {
+        ui.drawn_dial(parameter, name, [342.0, 130.0, 196.0, 196.0], large_dial(parameter, name), tooltip);
+        ui.only_revisions(BODY_REVISIONS, 1);
+        ui.only_values("body", bodies, 1);
     }
-    ui.handle(
-        "strike",
-        "Strike point",
-        [HERO[0] + BAR_LEFT, HERO[1] + BAR_TOP - 6.0, BAR_LENGTH / 2.0, 34.0],
-        [HERO[1] + BAR_TOP - 4.0, HERO[1] + BAR_TOP + 26.0],
-        ACCENT,
-        "Drag along the bar: from its centre (rounder) to its end (thinner)",
-    );
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", STRUCK_BARS, 1);
-    ui.graphic("Tine", tine_drawing(), HERO);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", &[5], 1);
-    let (near, far) = (TINE_CLAMP + TINE_LENGTH * 0.51, TINE_CLAMP + TINE_LENGTH * 0.99);
-    ui.handle(
-        "strike",
-        "Pluck point",
-        [HERO[0] + near, HERO[1] + TINE_TOP - 8.0, far - near, 22.0],
-        [HERO[1] + TINE_TOP - 6.0, HERO[1] + TINE_TOP + 11.0],
-        ACCENT,
-        "Drag along the tine: from its free end (rounder) towards the bridge (brighter)",
-    );
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", &[5], 1);
 
-    ui.group("BODY", [24.0, 300.0, 448.0, 146.0]);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    let dial = |i: usize| [32.0 + i as f32 * 73.0, 322.0, 70.0, 112.0];
-    ui.dial(
-        "body_decay",
-        "Decay",
-        dial(0),
-        "Struck: fundamental T60. Bars and tines: scales their decays relative to 2 seconds. Next strike",
+    // The body's name and a line on it, and the way to the Advanced page.
+    for (value, name, about) in BODIES {
+        ui.add(
+            &format!("{name} name"),
+            Widget::Graphic {
+                drawing: vec![
+                    text([0.0, 0.0], &spaced(name), 18.0, TextAlign::Left, INK),
+                    text([0.0, 27.0], about, 11.0, TextAlign::Left, MUTED),
+                ],
+            },
+            [56.0, 334.0, 420.0, 44.0],
+            None,
+            UiGesture::Drag,
+            "",
+        );
+        ui.only_revisions(BODY_REVISIONS, 1);
+        ui.only_values("body", &[value], 1);
+    }
+    ui.choice_labelled(
+        PAGE_ID,
+        3,
+        "Advanced page",
+        "ADVANCED ›",
+        [704.0, 336.0, 120.0, 22.0],
+        "Fine shaping of the body and the engine's choices",
     );
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.dial("brightness", "Brightness", dial(1), "Energy in the higher resonances; affects the next strike");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.dial(
-        "strike",
-        "Strike",
-        dial(2),
-        "Where the mallet or finger meets the body: a bar from its centre to its end, a tine from its free end. Next strike",
-    );
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.dial("structure", "Structure", dial(3), "Struck only: stretch the resonance frequencies; next strike");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", &[0], 1);
-    ui.dial(
-        "tuning",
-        "Tuning",
-        dial(3),
-        "How far the body's tuned overtones apply; 0 % leaves the natural bar or tine",
-    );
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", BARS, 1);
-    ui.dial("ring", "Ring", dial(4), "How long the upper modes ring beside the fundamental; 50 % is the body's own");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", BARS, 1);
-    ui.dial("torsion", "Torsion", dial(5), "How much the bar's twisting modes sound; 50 % is the body's own");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", STRUCK_BARS, 1);
+    ui.only_revisions(BODY_REVISIONS, 1);
+    hairline(ui, 386.0);
 
-    ui.group("MALLET", [480.0, 300.0, 208.0, 146.0]);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", STRUCK_BARS, 1);
-    // A tine is plucked: the same hardness and weight set the finger's touch.
-    ui.group("FINGER", [480.0, 300.0, 208.0, 146.0]);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", &[5], 1);
-    ui.dial(
-        "mallet_hardness",
-        "Hardness",
-        [488.0, 322.0, 66.0, 112.0],
-        "A harder mallet or finger touches more briefly and sounds brighter",
-    );
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", BARS, 1);
-    ui.dial("mallet_weight", "Weight", [556.0, 322.0, 66.0, 112.0], "The mallet head's mass, 12.5 to 50 g");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", BARS, 1);
-    ui.choice("mallet_model", 0, "Contact", [624.0, 340.0, 58.0, 28.0], "Simulate the mallet against the moving bar");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", STRUCK_BARS, 1);
-    ui.choice("mallet_model", 1, "Pulse", [624.0, 376.0, 58.0, 28.0], "A fixed force pulse, added linearly");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", STRUCK_BARS, 1);
+    // One even row of dials.
+    let small = [96.0, 104.0];
+    let weight = ("mallet_weight", "Weight", "The mallet head's mass, 12.5 to 50 g");
+    let resonator = ("resonator", "Resonator", "The tube under the bar");
+    dial_row(ui, STRUCK_BARS, &[DECAY, BRIGHTNESS, STRIKE, weight, resonator, WIDTH], 394.0, small, 56.0, 768.0);
+    let finger = ("mallet_weight", "Finger", "How heavy the finger's touch is");
+    let body = ("resonator", "Box", "The wooden box under the tine");
+    dial_row(ui, KALIMBA, &[DECAY, BRIGHTNESS, STRIKE, finger, body, WIDTH], 394.0, small, 56.0, 768.0);
+    dial_row(ui, STRUCK, &[DECAY, STRIKE, STRUCTURE], 394.0, small, 56.0, 768.0);
 
-    ui.group("SPACE", [696.0, 300.0, 160.0, 146.0]);
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", BARS, 1);
-    ui.dial("resonator", "Resonator", [700.0, 322.0, 76.0, 112.0], "The tube under a bar or the box under a tine");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", BARS, 1);
-    ui.dial("stereo_width", "Width", [778.0, 322.0, 76.0, 112.0], "Spread the bars from left (low) to right (high)");
-    ui.only_revisions(STRUCK_OR_BARS, 1);
-    ui.only_values("body", BARS, 1);
+    // The mallet model at the bottom right; the tine is plucked.
+    for (value, name) in [(0_u16, "Contact"), (1, "Pulse")] {
+        ui.choice_labelled(
+            "mallet_model",
+            value,
+            name,
+            &name.to_uppercase(),
+            [672.0 + f32::from(value) * 80.0, 518.0, 72.0, 22.0],
+            if value == 0 {
+                "Simulate the mallet against the moving bar"
+            } else {
+                "A fixed force pulse, added linearly"
+            },
+        );
+        ui.only_revisions(BODY_REVISIONS, 1);
+        ui.only_values("body", STRUCK_BARS, 1);
+    }
+    ui.text("Plucked", "PLUCKED", [672.0, 523.0, 152.0, 14.0], 9.5, TextAlign::Left, MUTED);
+    ui.only_revisions(BODY_REVISIONS, 1);
+    ui.only_values("body", KALIMBA, 1);
+
+    advanced_page(ui);
+}
+
+/// The Advanced page: the body's shaping dials, larger, with a line on each, and the engine's
+/// choices. The sound stays behind it, at about half strength.
+fn advanced_page(ui: &mut Canvas) {
+    ui.page(3);
+    ui.text("Advanced", &spaced("Advanced"), [0.0, 116.0, 880.0, 32.0], 26.0, TextAlign::Center, INK);
+    ui.only_revisions(BODY_REVISIONS, 1);
+    ui.text(
+        "Advanced note",
+        "Fine shaping of the chosen body. Every control is neutral at its default.",
+        [0.0, 156.0, 880.0, 14.0],
+        11.0,
+        TextAlign::Center,
+        MUTED,
+    );
+    ui.only_revisions(BODY_REVISIONS, 1);
+    let large = [128.0, 132.0];
+    let shaping: [(&[u16], Vec<DialSpec>, Vec<&str>); 3] = [
+        (
+            STRUCK_BARS,
+            vec![TUNING, RING, TORSION],
+            vec![
+                "How far the tuned overtones apply",
+                "Upper modes ring shorter or longer",
+                "How much the twisting modes sound",
+            ],
+        ),
+        (KALIMBA, vec![TUNING, RING], vec!["How far the tuned overtones apply", "Upper modes ring shorter or longer"]),
+        (STRUCK, vec![STRUCTURE], vec!["Stretches the resonances away from harmonic"]),
+    ];
+    for (bodies, dials, hints) in shaping {
+        let width = dials.len() as f32 * 180.0;
+        let left = 440.0 - width / 2.0;
+        dial_row(ui, bodies, &dials, 186.0, large, left, width);
+        let step = width / hints.len().max(1) as f32;
+        let drawing = hints
+            .iter()
+            .enumerate()
+            .map(|(n, hint)| text([step * (n as f32 + 0.5), 0.0], hint, 10.5, TextAlign::Center, MUTED))
+            .collect();
+        ui.add("Advanced hints", Widget::Graphic { drawing }, [left, 324.0, width, 14.0], None, UiGesture::Drag, "");
+        ui.only_revisions(BODY_REVISIONS, 1);
+        ui.only_values("body", bodies, 1);
+    }
+    ui.choice_labelled(PAGE_ID, 1, "Model page back", "‹  MODEL", [56.0, 358.0, 120.0, 22.0], "Back to the Model page");
+    ui.only_revisions(BODY_REVISIONS, 1);
+    hairline(ui, 386.0);
+
+    ui.text("Mallet model caption", &spaced("Mallet model"), [56.0, 406.0, 300.0, 12.0], 9.0, TextAlign::Left, MUTED);
+    ui.only_revisions(BODY_REVISIONS, 1);
+    for (value, name) in [(0_u16, "Contact"), (1, "Pulse")] {
+        ui.choice_labelled(
+            "mallet_model",
+            value,
+            name,
+            &name.to_uppercase(),
+            [56.0 + f32::from(value) * 88.0, 428.0, 80.0, 22.0],
+            if value == 0 {
+                "Simulate the mallet against the moving bar"
+            } else {
+                "A fixed force pulse, added linearly"
+            },
+        );
+        ui.only_revisions(BODY_REVISIONS, 1);
+        ui.only_values("body", STRUCK_BARS, 1);
+    }
+    ui.text(
+        "Advanced plucked",
+        "Plucked: a tine has no mallet",
+        [56.0, 433.0, 300.0, 14.0],
+        10.5,
+        TextAlign::Left,
+        MUTED,
+    );
+    ui.only_revisions(BODY_REVISIONS, 1);
+    ui.only_values("body", KALIMBA, 1);
+
+    ui.text("Modes caption", &spaced("Modes per voice"), [484.0, 406.0, 340.0, 12.0], 9.0, TextAlign::Left, MUTED);
+    ui.only_revisions(BODY_REVISIONS, 1);
+    for (value, label) in [(0_u16, "8"), (1, "16")] {
+        ui.choice_labelled(
+            "quality",
+            value,
+            &format!("{label} modes"),
+            label,
+            [484.0 + f32::from(value) * 56.0, 428.0, 48.0, 22.0],
+            "Resonances per modal voice: more sound richer and cost more processing",
+        );
+        ui.only_revisions(BODY_REVISIONS, 1);
+    }
+    ui.text(
+        "Modes note",
+        "More modes sound richer and cost more processing.",
+        [484.0, 462.0, 340.0, 14.0],
+        10.5,
+        TextAlign::Left,
+        MUTED,
+    );
+    ui.only_revisions(BODY_REVISIONS, 1);
 }
