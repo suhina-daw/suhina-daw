@@ -154,7 +154,7 @@ fn held_out_temporal_errors_are_not_used_to_fit_the_decay() {
 }
 
 /// A note whose level neither holds nor has a trend.
-const FADING: NoteLevel = NoteLevel { held: false, trend: 0.0, loudest: 0.0 };
+const FADING: NoteLevel = NoteLevel { held: false, trend: 0.0, loudest: 0.0, part: None };
 
 /// A held partial is told from a decaying one by medians after the attack, whatever its dips,
 /// accent and release; in a fading note, an uneven partial follows the note's trend.
@@ -174,7 +174,12 @@ fn a_held_partial_at_an_uneven_level_is_held_and_a_decay_is_not() {
     // Its level is the mean amplitude of the held part, a little under -20 dB with the dip.
     let level = (intercept + slope * 0.6) * DB;
     assert!((-22.0..-19.0).contains(&level), "{level}");
-    assert!(estimate(300.0, &held, NoteLevel { held: true, trend: 0.0, loudest: 0.0 }).unwrap().evidence.sustained);
+    assert!(
+        estimate(300.0, &held, NoteLevel { held: true, trend: 0.0, loudest: 0.0, part: None })
+            .unwrap()
+            .evidence
+            .sustained
+    );
     assert!(fit_span(300.0, envelope_span(&held)).is_none(), "the decay fits reject it");
     // The same wobble on a 12 dB fall over the held part is a decay.
     let falling: Vec<_> = held.iter().map(|&(i, t, y)| (i, t, y - db(12.0 * t))).collect();
