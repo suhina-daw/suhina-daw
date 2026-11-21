@@ -239,10 +239,11 @@ fixed storage, no allocation):
   where `e` is 0 before the delay and rises linearly to 1 over the fade. The drift is seeded,
   one-pole low-passed noise at `drift_hz` with standard deviation `drift_cents`. The voice's bank
   is retuned to the pitch wheel plus this deviation; retuning keeps phase.
-- **Shimmer.** Every control update, each sine with a shimmer advances its own seeded
-  noise, one-pole low-passed at the shimmer bandwidth with unit variance; the sine's level swing
-  below gains the shimmer (dB) times that noise, so each partial moves on its own by about its
-  measured RMS. Notes fuse per-sine shimmers like onsets and the bandwidth like the rates.
+- **Shimmer.** Every control update the note advances one seeded noise, one-pole low-passed
+  at the shimmer bandwidth with unit variance, common to its sines; each sine's level swing below
+  gains its own shimmer (dB) times that noise, so the partials move together, each by about its
+  measured RMS. (Each moving on its own noise sounded like a heap of separate sounds: a bow's or
+  a breath's pressure moves them together.) Notes fuse per-sine shimmers like onsets and the bandwidth like the rates.
 - **Partial levels.** Each sine's level is its onset envelope
   `1 - exp(-(t - onset) ln 10 / rise)` (1 with no rise) times
   `10^(clamp(s u + q (u^2 - e^2 vibrato_cents^2 / 2), -12, 12) / 20)`, where `u` is the vibrato

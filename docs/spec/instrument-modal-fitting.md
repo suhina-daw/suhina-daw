@@ -269,10 +269,18 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   start, the whistle's model sounded 53 cents sharp, a hump of its first note's partials, and the
   cello played its A# bent into C. The signal (and the other channel) is then resampled flat along it, as for a
   vibrato, so each partial keeps the note's frequency; modes, attack and held layer are fitted
-  on the flat signal, the attack at the prepared rate. The recording carries the glide
+  on the flat signal, and the attack at the source's rate from the source channels resampled flat
+  along the glide (cut at the prepared rate, a guitar bend's pick lost its top octave). The recording carries the glide
   ([modal profiles](instrument-modal-profile.md) › Glide), which plays it back when a note is
   played legato. A guitar bend rose 114 cents in 0.4 s; a pedal steel's D4 hammer-on above C2
   was told from a glide, and the cello and the whistle from a change of note.
+- **Stray partials of one note (algorithm version 4).** When the fitted modes form one note
+  (the chord search finds a single note, with its fundamental and inharmonicity), a loose mode
+  that is not a partial of that note's series and is weaker than a tenth (-20 dB) of the
+  strongest mode is left out of the recording; its energy stays in the attack and the noise tail.
+  On an electric guitar's bend the lowered detection tiers and the residual search had kept two
+  dozen such modes (ratios 11.07, 12.72, 13.38, 16.79, 21.6 and more, 30..40 dB down, ringing for
+  2..6 s) whose inharmonic ringing sounded like a bell.
 - **Prompt sound and aftersound (algorithm version 4).** A piano note's two or three strings,
   tuned a little apart and coupled through the bridge, give a partial a fast "prompt sound" and
   a slow "aftersound" that can start in opposite phase (Weinreich 1977): the partial falls fast,

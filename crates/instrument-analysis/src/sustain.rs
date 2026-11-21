@@ -439,14 +439,13 @@ pub(crate) fn drift(pitch: &Pitch, vibrato: Option<&Vibrato>) -> Option<(f64, f6
 /// Step 8: the signal resampled along the pitch curve, so every partial keeps one frequency.
 pub(crate) fn flatten(mono: &[f64], pitch: &Pitch, vibrato: &Vibrato) -> Vec<f64> {
     // The measured curve is the true one seen through the tracking frames.
-    flatten_by(mono, |t| pitch.at(t) / vibrato.response)
+    flatten_by(mono, f64::from(RATE), |t| pitch.at(t) / vibrato.response)
 }
 
 /// The signal resampled so that a pitch `cents(t)` away from its note at input time `t` (seconds)
 /// is moved onto the note: every partial keeps one frequency.
-pub(crate) fn flatten_by(mono: &[f64], cents: impl Fn(f64) -> f64) -> Vec<f64> {
+pub(crate) fn flatten_by(mono: &[f64], rate: f64, cents: impl Fn(f64) -> f64) -> Vec<f64> {
     const HALF: isize = 8;
-    let rate = f64::from(RATE);
     let mut out = Vec::with_capacity(mono.len() + mono.len() / 8);
     // phi(n): warped time in samples at input sample n; output m is the input where phi = m.
     let mut phi = 0.0;

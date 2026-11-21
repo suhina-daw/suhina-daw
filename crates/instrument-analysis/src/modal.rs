@@ -124,6 +124,9 @@ const ANTI_EARLY: f64 = 3.0;
 const ANTI_LATE_DB: f64 = 20.0;
 /// Work steps of the null search with the shortest window (6 s of 512-sample windows).
 const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
+/// A loose mode of a single note off its series and weaker than this share of the strongest mode
+/// (-20 dB) is left out.
+const STRAY_SHARE: f64 = 0.1;
 /// Liveliness: the level windows, where they start, how many on each side the moving average
 /// takes, how far below a mode's loudest they go, how many residual windows a mode needs, and
 /// the smallest shimmer kept (a piano's main partials fluctuate about 0.3 dB).
@@ -421,8 +424,8 @@ fn fit_range(
         Onset::Start(_) | Onset::None => None,
     };
     if let Some(glide) = &glide {
-        mono = sustain::flatten_by(&mono, |t| glide.cents_at(t));
-        other = other.map(|other| sustain::flatten_by(&other, |t| glide.cents_at(t)));
+        mono = sustain::flatten_by(&mono, f64::from(RATE), |t| glide.cents_at(t));
+        other = other.map(|other| sustain::flatten_by(&other, f64::from(RATE), |t| glide.cents_at(t)));
     }
     // Vibrato smears every partial: measure the pitch and resample it flat before fitting.
     work.step()?;
@@ -655,6 +658,18 @@ fn fit_range(
         }
         let stereo = other_detection.and(other.as_deref()).map(|other| (other, channel as u8));
         let notes = chord_notes(&accepted);
+        // One note: a weak loose mode off its string's series (a distortion product, a noise
+        // peak the lowered detection tiers took) rings as a bell; its energy is left to the
+        // attack and the noise tail.
+        let mut accepted = accepted;
+        if let [note] = notes.as_slice() {
+            let strongest = accepted.iter().map(Fitted::magnitude).fold(0.0_f64, f64::max);
+            accepted.retain(|f| {
+                !f.evidence.loose
+                    || f.magnitude() >= strongest * STRAY_SHARE
+                    || partial_number(note.f0, note.inharmonicity, f.hz).is_some()
+            });
+        }
         let every_mode = accepted;
         let accepted = most_energetic(&every_mode);
         work.step()?;
@@ -704,14 +719,24 @@ fn fit_range(
         // The attack at the source's own rate when it is at most 48 kHz and the recording was
         // not resampled flat for a vibrato: the knock keeps its top octave and its edge.
         let attack_frames = ((ATTACK_SECONDS * f64::from(sample_rate)) as usize).min(length);
-        let full_rate = sample_rate <= MAX_ATTACK_RATE && vibrato.is_none() && glide.is_none();
+        let full_rate = sample_rate <= MAX_ATTACK_RATE && vibrato.is_none();
+        // A glide's attack is cut from the source resampled flat along it, at the source's rate.
         let cut_channel = |index: usize| -> Vec<f64> {
             let mean = sums.get(index).copied().unwrap_or(0.0) / length as f64;
-            input
+            let reach = if glide.is_some() { attack_frames + attack_frames / 2 } else { attack_frames };
+            let channel: Vec<f64> = input
                 .chunks_exact(channels)
-                .take(attack_frames)
+                .take(reach)
                 .map(|frame| (f64::from(frame.get(index).copied().unwrap_or(0.0)) - mean) / scale)
-                .collect()
+                .collect();
+            match &glide {
+                Some(glide) => {
+                    let mut flat = sustain::flatten_by(&channel, f64::from(sample_rate), |t| glide.cents_at(t));
+                    flat.truncate(attack_frames);
+                    flat
+                }
+                None => channel,
+            }
         };
         let full_reference = if full_rate { cut_channel(channel) } else { Vec::new() };
         let full_other = if full_rate && stereo.is_some() { cut_channel(1 - channel) } else { Vec::new() };

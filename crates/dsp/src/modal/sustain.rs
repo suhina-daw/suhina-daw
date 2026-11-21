@@ -429,8 +429,9 @@ pub struct Performer {
     fall: f64,
     fall_factor: f64,
     retune: bool,
-    /// Per sine, its level fluctuation: unit-variance low-passed noise, and its generator.
-    shimmer: [f32; MAX_VOICE_SINES],
+    /// The note's level fluctuation, common to its sines: unit-variance low-passed noise, and its
+    /// generator.
+    shimmer: f64,
     shimmer_noise: Noise,
 }
 
@@ -456,7 +457,7 @@ impl Default for Performer {
             fall: 1.0,
             fall_factor: 1.0,
             retune: false,
-            shimmer: [0.0; MAX_VOICE_SINES],
+            shimmer: 0.0,
             shimmer_noise: Noise(1),
         }
     }
@@ -571,8 +572,8 @@ impl Performer {
         for (i, gain) in gains.iter_mut().enumerate() {
             let at = |a: &[f32; MAX_VOICE_SINES]| f64::from(a.get(i).copied().unwrap_or(0.0));
             let onset = rise_level(t, at(&held.onset), at(&held.rise));
-            // A sine's own fluctuation adds to the vibrato-coupled swing.
-            let shimmer = at(&held.shimmer) * f64::from(self.shimmer.get(i).copied().unwrap_or(0.0));
+            // The note's fluctuation, each sine by its own depth, adds to the vibrato-coupled swing.
+            let shimmer = at(&held.shimmer) * self.shimmer;
             let swing = (at(&held.am_slope) * u + at(&held.am_curve) * (u * u - mean_square) + shimmer)
                 .clamp(-MAX_SWING_DB, MAX_SWING_DB);
             *gain = (onset * (swing * LN_10 / 20.0).exp() * common) as f32;
@@ -597,16 +598,13 @@ impl Performer {
     fn control(&mut self, bank: &mut ModalBank<MAX_VOICE_SINES>) {
         self.ticks = self.ticks.saturating_add(1);
         let t = self.time();
-        // Each sine's level fluctuation: one-pole low-passed noise of unit variance at the
-        // shimmer's bandwidth.
+        // The note's level fluctuation: one-pole low-passed noise of unit variance at the
+        // shimmer's bandwidth, common to the sines (a bow's or a breath's pressure moves them
+        // together; each moving on its own sounded like a heap of separate sounds).
         if self.held.shimmer_hz > 0.0 {
             let a = (-TAU * self.held.shimmer_hz * CONTROL as f64 / self.sample_rate).exp();
             let b = (1.0 - a * a).sqrt() * 3.0_f64.sqrt();
-            for (state, depth) in self.shimmer.iter_mut().zip(&self.held.shimmer) {
-                if *depth > 0.0 {
-                    *state = (a * f64::from(*state) + b * self.shimmer_noise.next()) as f32;
-                }
-            }
+            self.shimmer = a * self.shimmer + b * self.shimmer_noise.next();
         }
         if self.held.drift_cents > 0.0 {
             let a = (-TAU * self.held.drift_hz * CONTROL as f64 / self.sample_rate).exp();
