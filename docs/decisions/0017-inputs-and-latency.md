@@ -95,11 +95,13 @@ engine code.
    launch boundary); once the take ends, the track selected then is armed. Turning the
    setting off leaves the arm as it is. The window remembers which track it armed, per project.
    *Amended 2026-10-23, see Amendment: MIDI monitoring, and Amendment: Auto-arm.*
-4. **Every port is on until turned off.** `midi.inputs` lists the ports, `midi.setInput` turns
-   one on or off; the window keeps the ports turned off in its settings. The ports are looked at
-   again every two seconds (every thirty when they cannot be listed at all), so a controller
-   plugged in is heard without a restart, and one taken out is closed. Closing a port lets go of
-   its keys.
+4. **Every port is on until turned off.** `midi.inputs` lists the ports (each with the system's
+   unique id for it), `midi.setInput` turns one on or off; the window keeps the ports turned off
+   in its settings. The ports are looked at again every two seconds (every thirty when they
+   cannot be listed at all), so a controller plugged in is heard without a restart, and one
+   taken out is closed. A port that comes back — or that re-enumerated inside one look, told by
+   its id changing while its name never left — reopens fresh: its old connection died with the
+   device either way. Closing a port lets go of its keys.
 5. **What a key press costs**, from the driver's callback to the speaker: the fixed delay of
    decision 10 (before it, up to one block until the render thread started its next one), what
    is queued ahead in the ring, and the device's buffer and its own delay. A player sets the buffer small (64 to 256 frames, with ASIO or

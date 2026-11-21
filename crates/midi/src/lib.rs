@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! MIDI controllers ([ADR 0017](../../../docs/decisions/0017-inputs-and-latency.md)): lists the
-//! system's MIDI input ports and opens them with `midir`, and turns what they send into the
-//! engine's live notes. This is the only code that opens a MIDI device; the session sees it as a
-//! [`MidiSystem`].
+//! system's MIDI input and output ports and opens them with `midir`, and turns what the inputs
+//! send into the engine's live notes. This is the only code that opens a MIDI device; the
+//! session sees it as a [`MidiSystem`].
 //!
 //! The driver calls back on a thread of its own (never the audio thread), which parses each
 //! message and hands the note to the session's [`LiveInput`], and from there to the engine of
@@ -13,12 +13,17 @@
 //! (#269). Notes, the sustain pedal, every other controller, pitch bend and channel pressure
 //! (aftertouch) are read, on every channel (#812); program change, polyphonic key pressure,
 //! system exclusive, clock and other system messages are ignored.
+//!
+//! The ports a running surface program claims are opened raw instead
+//! ([ADR 0019](../../../docs/decisions/0019-midi-controllers-and-mapping.md) › 10): every
+//! message whole, system exclusive included, goes to the session's sink with the driver's
+//! timestamp, and what the program sends back is written to an output port opened for it.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
-use midir::{Ignore, MidiInput, MidiInputConnection};
+use midir::{Ignore, MidiInput, MidiInputConnection, MidiOutput, MidiOutputConnection};
 use suhina_engine::{LiveEvent, LiveSource, StampClock, live_now, port_id};
-use suhina_session::{LiveInput, MidiSystem};
+use suhina_session::{LiveInput, MidiOut, MidiSystem, RawSink};
 
 /// The name Suhina's ports carry in the system's MIDI graph.
 const CLIENT: &str = "Suhina";
@@ -81,22 +86,64 @@ pub fn parse(message: &[u8]) -> Option<(u8, LiveEvent)> {
     Some((status & 0x0F, event))
 }
 
-/// The system's MIDI input ports.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Midi;
+/// The system's MIDI ports: one listing client per direction, kept alive so the two-second
+/// scan does not create and destroy CoreMIDI clients all day — the churn wedged the frame
+/// loop inside a scan and crashed the teardown. `connect` consumes a client, so an open
+/// takes the cached one out and the next listing makes another.
+#[derive(Default)]
+pub struct Midi {
+    input: Mutex<Option<MidiInput>>,
+    output: Mutex<Option<MidiOutput>>,
+}
 
 impl Midi {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
-}
 
-fn client() -> Result<MidiInput, String> {
-    let mut input = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
-    // System exclusive, clock and active sensing are not read; skipping them saves the
-    // callback's work.
-    input.ignore(Ignore::All);
-    Ok(input)
+    /// The input listing client, made once and borrowed; the scan runs with it held.
+    fn input_client(&self) -> Result<MutexGuard<'_, Option<MidiInput>>, String> {
+        let mut guard = self.input.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.is_none() {
+            let mut client = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
+            // System exclusive, clock and active sensing are not read; skipping them saves the
+            // callback's work.
+            client.ignore(Ignore::All);
+            *guard = Some(client);
+        }
+        Ok(guard)
+    }
+
+    /// The input client by value, for an open: midir's `connect` consumes it. The cache is
+    /// left empty and the next listing makes another.
+    fn take_input(&self) -> Result<MidiInput, String> {
+        let mut guard = self.input.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(client) = guard.take() {
+            return Ok(client);
+        }
+        let mut client = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
+        client.ignore(Ignore::All);
+        Ok(client)
+    }
+
+    /// The output listing client, made once and borrowed.
+    fn output_client(&self) -> Result<MutexGuard<'_, Option<MidiOutput>>, String> {
+        let mut guard = self.output.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.is_none() {
+            let client = MidiOutput::new(CLIENT).map_err(|e| e.to_string())?;
+            *guard = Some(client);
+        }
+        Ok(guard)
+    }
+
+    /// The output client by value, for an open.
+    fn take_output(&self) -> Result<MidiOutput, String> {
+        let mut guard = self.output.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(client) = guard.take() {
+            return Ok(client);
+        }
+        MidiOutput::new(CLIENT).map_err(|e| e.to_string())
+    }
 }
 
 /// An open port: closing it lets go of the keys it holds, on every channel.
@@ -118,13 +165,16 @@ impl Drop for Port {
 }
 
 impl MidiSystem for Midi {
-    fn ports(&self) -> Result<Vec<String>, String> {
-        let input = client()?;
-        Ok(input.ports().iter().filter_map(|port| input.port_name(port).ok()).collect())
+    fn ports(&self) -> Result<Vec<(String, String)>, String> {
+        let guard = self.input_client()?;
+        let Some(input) = guard.as_ref() else {
+            return Err("the input listing client is gone".into());
+        };
+        Ok(input.ports().iter().filter_map(|port| Some((input.port_name(port).ok()?, port.id()))).collect())
     }
 
     fn open(&self, name: &str, input: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String> {
-        let client = client()?;
+        let client = self.take_input()?;
         let port = client
             .ports()
             .into_iter()
@@ -156,6 +206,67 @@ impl MidiSystem for Midi {
             )
             .map_err(|e| e.to_string())?;
         Ok(Box::new(Port { connection: Some(connection), input, port: id }))
+    }
+
+    fn outputs(&self) -> Result<Vec<(String, String)>, String> {
+        let guard = self.output_client()?;
+        let Some(output) = guard.as_ref() else {
+            return Err("the output listing client is gone".into());
+        };
+        Ok(output.ports().iter().filter_map(|port| Some((output.port_name(port).ok()?, port.id()))).collect())
+    }
+
+    fn open_output(&self, name: &str) -> Result<Box<dyn MidiOut>, String> {
+        let output = self.take_output()?;
+        let port = output
+            .ports()
+            .into_iter()
+            .find(|port| output.port_name(port).is_ok_and(|n| n == name))
+            .ok_or_else(|| format!("{name} is not there"))?;
+        let connection = output.connect(&port, &format!("{CLIENT} output")).map_err(|e| e.to_string())?;
+        Ok(Box::new(Out { connection: Mutex::new(connection) }))
+    }
+
+    fn open_raw(&self, name: &str, sink: Arc<dyn RawSink>) -> Result<Box<dyn std::any::Any + Send>, String> {
+        let mut input = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
+        // A claimed port gets every message whole: only timing and active sensing are skipped,
+        // so system exclusive reaches the script.
+        input.ignore(Ignore::TimeAndActiveSense);
+        let port = input
+            .ports()
+            .into_iter()
+            .find(|port| input.port_name(port).is_ok_and(|n| n == name))
+            .ok_or_else(|| format!("{name} is not there"))?;
+        let connection = input
+            .connect(&port, &format!("{CLIENT} raw input"), move |stamp, message, _| sink.message(stamp, message), ())
+            .map_err(|e| e.to_string())?;
+        Ok(Box::new(RawPort { connection: Some(connection) }))
+    }
+}
+
+/// An open output port: writes what it is given, whole; dropping it closes the port.
+struct Out {
+    connection: Mutex<MidiOutputConnection>,
+}
+
+impl MidiOut for Out {
+    fn send(&self, bytes: &[u8]) -> Result<(), String> {
+        let mut connection = self.connection.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        connection.send(bytes).map_err(|e| e.to_string())
+    }
+}
+
+/// An input port opened raw for a surface program: every message whole to the sink; dropping
+/// it closes the port. Nothing was parsed into the engine, so there are no keys to let go of.
+struct RawPort {
+    connection: Option<MidiInputConnection<()>>,
+}
+
+impl Drop for RawPort {
+    fn drop(&mut self) {
+        if let Some(connection) = self.connection.take() {
+            connection.close();
+        }
     }
 }
 
@@ -266,7 +377,7 @@ mod tests {
         // Without a MIDI system (a container without the ALSA sequencer) this is an error, not a
         // crash; with one it lists what is there.
         match Midi::new().ports() {
-            Ok(ports) => assert!(ports.iter().all(|p| !p.is_empty())),
+            Ok(ports) => assert!(ports.iter().all(|(name, id)| !name.is_empty() && !id.is_empty())),
             Err(e) => assert!(!e.is_empty()),
         }
         let input = Arc::new(LiveInput::default());

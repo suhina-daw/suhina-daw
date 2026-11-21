@@ -13,8 +13,13 @@ last_verified: 2026-11-07
   pitch bend, program change, 14-bit controller pairs).
 - **Status:** planned. Built so far: the project's `controller_mappings` with launch keys as
   its first targets, `mapping.add`, `mapping.remove` and `mapping.list` for them, and the
-  **Map** button ([#1162](https://github.com/suhina-daw/suhina-daw/issues/1162), *Launch keys*).
-  Controllers themselves (the other sources and targets, shaping the value, takeover, gestures,
+  **Map** button ([#1162](https://github.com/suhina-daw/suhina-daw/issues/1162), *Launch keys*);
+  and the surface-program router of [Surface programs](#surface-programs-later) — a running
+  program's claimed ports open raw for it, its send-backs are written out, and its commands,
+  reads and subscriptions are serviced
+  ([#1422](https://github.com/suhina-daw/suhina-daw/issues/1422),
+  [#1424](https://github.com/suhina-daw/suhina-daw/issues/1424)). Controllers themselves (the
+  other sources and targets, shaping the value, takeover, gestures,
   profiles, learning MIDI in the mapping mode) are not built; the split into work is in the pull
   request that added this document ([#403](https://github.com/suhina-daw/suhina-daw/issues/403)). It
   builds on MIDI input (ADR 0017, [#291](https://github.com/suhina-daw/suhina-daw/pull/291)).
@@ -330,7 +335,8 @@ patterns the script claims, lists the script file in `programs` with its SHA-256
 `runner` the runner it needs (`"lua"`). Suhina starts the runner it shipped with that script, so
 each surface program is one runner process of its own: a crash or a hang of the runner process
 restarts that program alone, with its ports back on the profiles meanwhile, the way a plug-in
-host's process is restarted. A script holds what any surface program
+host's process is restarted. The protocol the runner speaks, the Lua environment and the API a
+script gets, and the runner's caps, are in [surface programs](surface-programs.md). A script holds what any surface program
 is given and nothing more: every message of its claimed ports, with the timestamp it arrived
 with; a send-back leaves from a queue Suhina drains, and the script never waits on an answer to
 send one; commands, reading commands and subscriptions. The runner's Lua environment is
